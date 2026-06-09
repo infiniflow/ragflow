@@ -163,6 +163,11 @@ async def parse(tenant_id, dataset_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
     if not dataset_tenant_id:
+        logging.warning(
+            "legacy.chunks.parse dataset tenant unresolved dataset_id=%s requester_tenant_id=%s",
+            dataset_id,
+            tenant_id,
+        )
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     req = await get_request_json()
     if not req.get("document_ids"):
@@ -195,6 +200,13 @@ async def parse(tenant_id, dataset_id):
         index_name = search.index_name(dataset_tenant_id)
         if settings.docStoreConn.index_exist(index_name, doc[0].kb_id):
             settings.docStoreConn.delete({"doc_id": id}, index_name, doc[0].kb_id)
+        else:
+            logging.info(
+                "legacy.chunks.parse skip docstore delete: index missing index_name=%s kb_id=%s doc_id=%s",
+                index_name,
+                doc[0].kb_id,
+                id,
+            )
         TaskService.filter_delete([Task.doc_id == id])
         e, doc = DocumentService.get_by_id(id)
         doc = doc.to_dict()
@@ -224,6 +236,11 @@ async def stop_parsing(tenant_id, dataset_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
     if not dataset_tenant_id:
+        logging.warning(
+            "legacy.chunks.stop dataset tenant unresolved dataset_id=%s requester_tenant_id=%s",
+            dataset_id,
+            tenant_id,
+        )
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     req = await get_request_json()
 
@@ -250,6 +267,13 @@ async def stop_parsing(tenant_id, dataset_id):
         index_name = search.index_name(dataset_tenant_id)
         if settings.docStoreConn.index_exist(index_name, doc[0].kb_id):
             settings.docStoreConn.delete({"doc_id": doc[0].id}, index_name, doc[0].kb_id)
+        else:
+            logging.info(
+                "legacy.chunks.stop skip docstore delete: index missing index_name=%s kb_id=%s doc_id=%s",
+                index_name,
+                doc[0].kb_id,
+                doc[0].id,
+            )
         success_count += 1
     if duplicate_messages:
         if success_count > 0:
