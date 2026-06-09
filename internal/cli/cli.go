@@ -365,7 +365,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 
 	commandArgsLen := len(commandArgs)
 	if commandArgsLen > 0 {
-		if commandArgsLen > 1 {
+		if commandArgsLen == 1 {
 			commandLineConfig.Command = &commandArgs[0]
 		} else {
 			ApiCommand := strings.Join(commandArgs, " ")

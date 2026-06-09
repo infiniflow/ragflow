@@ -284,6 +284,8 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "save_config_command":
 		return c.SaveServerConfig(cmd)
 	// ContextEngine commands
+	case "context_engine_command":
+		return nil, c.executeFilesystem(cmd.Params["command"].(string))
 	case "ce_ls":
 		return c.CEList(cmd)
 	case "ce_cat":
