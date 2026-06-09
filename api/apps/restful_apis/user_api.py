@@ -412,10 +412,6 @@ def rollback_user_registration(user_id):
             UserTenantService.delete_by_id(u[0].id)
     except Exception:
         pass
-    try:
-        TenantLLM.delete().where(TenantLLM.tenant_id == user_id).execute()
-    except Exception:
-        pass
 
 
 def user_register(user_id, user):
@@ -448,13 +444,13 @@ def user_register(user_id, user):
         "location": "",
     }
 
-    tenant_llm = get_init_tenant_llm(user_id)
+    # tenant_llm = get_init_tenant_llm(user_id)
 
     if not UserService.save(**user):
         return None
     TenantService.insert(**tenant)
     UserTenantService.insert(**usr_tenant)
-    TenantLLMService.insert_many(tenant_llm)
+    # TenantLLMService.insert_many(tenant_llm)
     FileService.insert(file)
     return UserService.query(email=user["email"])
 
