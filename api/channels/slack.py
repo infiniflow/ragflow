@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 class SlackChannel(Channel):
     """Slack channel integration using Socket Mode (no public webhook required).
 
-    Expected config keys under ``credential``:
+    Expected config keys (top-level in config dict):
       - bot_token   (xoxb-...)
       - app_token   (xapp-...)
 
@@ -36,9 +36,8 @@ class SlackChannel(Channel):
 
     def __init__(self, tenant_id: str, config: dict):
         super().__init__(tenant_id, config)
-        cred = config.get("credential", {})
-        self._bot_token: str = cred.get("bot_token", "")
-        self._app_token: str = cred.get("app_token", "")
+        self._bot_token: str = config.get("bot_token", "")
+        self._app_token: str = config.get("app_token", "")
         self._dialog_id: str = config.get("dialog_id", "")
         self._web_client = None
         self._socket_client = None

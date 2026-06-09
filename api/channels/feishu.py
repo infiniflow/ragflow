@@ -18,6 +18,7 @@ import hashlib
 import hmac
 import json
 import logging
+import time
 
 import aiohttp
 
@@ -33,7 +34,7 @@ _FEISHU_API_BASE = "https://open.feishu.cn/open-apis"
 class FeishuChannel(Channel):
     """Feishu (Lark) channel integration using webhook callbacks.
 
-    Expected config keys under ``credential``:
+    Expected config keys (top-level in config dict):
       - app_id
       - app_secret
       - encrypt_key   (optional, for payload decryption)
@@ -43,12 +44,11 @@ class FeishuChannel(Channel):
 
     def __init__(self, tenant_id: str, config: dict):
         super().__init__(tenant_id, config)
-        cred = config.get("credential", {})
-        self._app_id: str = cred.get("app_id", "")
-        self._app_secret: str = cred.get("app_secret", "")
-        self._encrypt_key: str = cred.get("encrypt_key", "")
+        self._app_id: str = config.get("app_id", "")
+        self._app_secret: str = config.get("app_secret", "")
+        self._encrypt_key: str = config.get("encrypt_key", "")
         self._dialog_id: str = config.get("dialog_id", "")
-        self._token_cache: str | None = None
+        self._token_cache: tuple[str, float] | None = None  # (token, expiry_timestamp)
         self._session: aiohttp.ClientSession | None = None
         # sender_id -> session_id for conversation continuity
         self._sessions: dict[str, str] = {}
@@ -160,16 +160,24 @@ class FeishuChannel(Channel):
             logger.exception("FeishuChannel.send failed for recipient=%s", outgoing.recipient_id)
 
     async def _get_tenant_access_token(self) -> str | None:
-        """Fetch a short-lived tenant access token from Feishu."""
-        if self._token_cache:
-            return self._token_cache
+        """Fetch a short-lived tenant access token from Feishu, with caching and auto-refresh."""
+        now = time.time()
+        if self._token_cache is not None:
+            token, expiry = self._token_cache
+            if now < expiry - 60:
+                return token
+
         url = f"{_FEISHU_API_BASE}/auth/v3/tenant_access_token/internal"
         payload = {"app_id": self._app_id, "app_secret": self._app_secret}
         try:
             async with self._session.post(url, json=payload) as resp:
                 data = await resp.json()
                 token = data.get("tenant_access_token")
-                self._token_cache = token
+                if not token:
+                    logger.error("FeishuChannel: no tenant_access_token in response")
+                    return None
+                expire = data.get("expire", 7200)
+                self._token_cache = (token, now + expire)
                 return token
         except Exception:
             logger.exception("FeishuChannel: failed to fetch tenant access token")
