@@ -164,7 +164,8 @@ export default {
       version: 'Versione',
       skillVersion: 'Versione',
       skillVersionPlaceholder: 'es. 1.0.0',
-      versionFormatHelp: 'La versione deve essere in formato semver (es. 1.0.0)',
+      versionFormatHelp:
+        'La versione deve essere in formato semver (es. 1.0.0)',
       versionRequired: 'La versione è richiesta',
       selectFilesOrFolder: 'Seleziona file o cartella',
       uploadDescription:
@@ -208,9 +209,12 @@ export default {
           'Skill non valida: "name" deve essere minuscolo e URL-safe (solo lettere, numeri, trattini).',
         invalid_version:
           'Skill non valida: "version" deve essere un semver valido (es. 1.0.0).',
-        invalid_metadata: 'Skill non valida: i metadati contengono campi non validi.',
-        invalid_file_type: 'Skill non valida: sono ammessi solo file basati su testo.',
-        invalid_path: 'Skill non valida: il percorso del file contiene caratteri non validi.',
+        invalid_metadata:
+          'Skill non valida: i metadati contengono campi non validi.',
+        invalid_file_type:
+          'Skill non valida: sono ammessi solo file basati su testo.',
+        invalid_path:
+          'Skill non valida: il percorso del file contiene caratteri non validi.',
         file_too_large:
           'Skill non valida: la dimensione del singolo file supera il limite di 5MB.',
         total_size_exceeded:
@@ -236,7 +240,8 @@ export default {
       accessToken: 'Token di accesso',
       githubTokenHelp:
         'Per repository privati o limiti di frequenza più alti (5000 richieste/ora)',
-      giteeTokenHelp: 'Per repository privati o limiti di frequenza più alti (2000 richieste/ora)',
+      giteeTokenHelp:
+        'Per repository privati o limiti di frequenza più alti (2000 richieste/ora)',
       rateLimitInfo: 'Info limite di frequenza',
       githubRateLimit:
         'Repository pubblici: 60 richieste/ora per IP. Usa il token per 5000 richieste/ora.',
@@ -255,7 +260,7 @@ export default {
       similarityThreshold: 'Soglia di similarità',
       topK: 'Top K risultati',
       indexFields: 'Campi indice',
-      indexFieldsDesc: 'Seleziona quali campi includere nell\'indice di ricerca',
+      indexFieldsDesc: "Seleziona quali campi includere nell'indice di ricerca",
       fieldName: 'Nome',
       fieldNameDesc: 'Nome skill',
       fieldTags: 'Tag',
@@ -324,7 +329,7 @@ Procedural Memory: skill apprese, abitudini e procedure automatizzate.`,
         forget: 'Dimentica',
         forgetMessageTip: 'Sei sicuro di voler dimenticare?',
         messageDescription:
-          'L\'estrazione della memoria è configurata con i prompt e la temperatura dalle impostazioni avanzate.',
+          "L'estrazione della memoria è configurata con i prompt e la temperatura dalle impostazioni avanzate.",
         copied: 'Copiato!',
         contentEmbed: 'Embedding contenuto',
         content: 'Contenuto',
@@ -381,15 +386,17 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
         fields: 'campi',
         selectFiles: 'Selezionati {{count}} file',
         type: 'Tipo',
-        fieldNameInvalid: 'Il nome del campo può contenere solo lettere o underscore.',
+        fieldNameInvalid:
+          'Il nome del campo può contenere solo lettere o underscore.',
         builtIn: 'Integrato',
         generation: 'Generazione',
         toMetadataSetting: 'Impostazioni generazione',
-        toMetadataSettingTip: 'Imposta i metadati automatici nella Configurazione.',
+        toMetadataSettingTip:
+          'Imposta i metadati automatici nella Configurazione.',
         descriptionTip:
-          'Fornisci descrizioni o esempi per guidare l\'LLM nell\'estrazione dei valori per questo campo. Se lasciato vuoto, si baserà sul nome del campo.',
+          "Fornisci descrizioni o esempi per guidare l'LLM nell'estrazione dei valori per questo campo. Se lasciato vuoto, si baserà sul nome del campo.",
         restrictDefinedValuesTip:
-          'Modalità Enum: limita l\'estrazione dell\'LLM ai soli valori preimpostati. Definisci i valori qui sotto.',
+          "Modalità Enum: limita l'estrazione dell'LLM ai soli valori preimpostati. Definisci i valori qui sotto.",
         valueExists:
           'Il valore esiste già. Conferma per unire i duplicati e combinare tutti i file associati.',
         fieldNameExists:
@@ -400,7 +407,8 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
           'Il nome del campo esiste già. Conferma per unire i duplicati.',
         fieldExists: 'Il campo esiste già.',
         fieldSetting: 'Impostazioni campo',
-        changesAffectNewParses: 'Le modifiche riguardano solo le nuove analisi.',
+        changesAffectNewParses:
+          'Le modifiche riguardano solo le nuove analisi.',
         restrictDefinedValues: 'Limita ai valori definiti',
         metadataGenerationSettings: 'Impostazioni generazione metadati',
         manageMetadata: 'Gestisci metadati',
@@ -426,7 +434,8 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
         deleteSettingValueWarn: `Questo valore sarà eliminato; i metadati esistenti non saranno interessati.`,
       },
       redoAll: 'Cancella i chunk esistenti',
-      applyAutoMetadataSettings: 'Applica le impostazioni globali dei metadati automatici',
+      applyAutoMetadataSettings:
+        'Applica le impostazioni globali dei metadati automatici',
       parseFileTip: 'Sei sicuro di voler analizzare?',
       parseFile: 'Analizza file',
       emptyMetadata: 'Nessun metadato',
@@ -553,7 +562,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       changeSpecificCategory: 'Cambia categoria specifica',
       uploadTitle: 'Trascina e rilascia il tuo file qui per caricarlo',
       uploadDescription:
-        'Supporta caricamento singolo o multiplo. Per un RAGFlow distribuito localmente: il limite di dimensione totale dei file per caricamento è 1GB, con un limite batch di 32 file. Non c\'è limite al numero totale di file per account. Per cloud.ragflow.io, il limite di dimensione totale dei file per caricamento è 10MB, con ogni file non superiore a 10MB e un massimo di 128 file per account.',
+        "Supporta caricamento singolo o multiplo. Per un RAGFlow distribuito localmente: il limite di dimensione totale dei file per caricamento è 1GB, con un limite batch di 32 file. Non c'è limite al numero totale di file per account. Per cloud.ragflow.io, il limite di dimensione totale dei file per caricamento è 10MB, con ogni file non superiore a 10MB e un massimo di 128 file per account.",
       chunk: 'Chunk',
       bulk: 'Multiplo',
       cancel: 'Annulla',
@@ -609,7 +618,8 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       randomSeedTip:
         'Il seme è il punto di partenza per un algoritmo pseudo-casuale che garantisce la riproducibilità dello stesso output in esecuzioni diverse.',
       datasetDescription: 'Descrivi il tuo dataset',
-      overlappedPercentTip: 'La percentuale di sovrapposizione tra due chunk adiacenti',
+      overlappedPercentTip:
+        'La percentuale di sovrapposizione tra due chunk adiacenti',
       globalIndexModelTip:
         'Usato per generare grafi della conoscenza, RAPTOR, metadati automatici, parole chiave automatiche e domande automatiche. Le prestazioni del modello influenzeranno la qualità della generazione.',
       globalIndexModel: 'Modello di indicizzazione',
@@ -622,22 +632,24 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       mineruOptions: 'Opzioni MinerU',
       mineruParseMethod: 'Metodo di analisi',
       mineruParseMethodTip:
-        'Metodo per l\'analisi del PDF: auto (rilevamento automatico), txt (estrazione testo), ocr (riconoscimento ottico dei caratteri)',
+        "Metodo per l'analisi del PDF: auto (rilevamento automatico), txt (estrazione testo), ocr (riconoscimento ottico dei caratteri)",
       mineruFormulaEnable: 'Riconoscimento formule',
       mineruFormulaEnableTip:
         'Abilita il riconoscimento delle formule. Nota: questo potrebbe non funzionare correttamente per documenti cirillici.',
       mineruTableEnable: 'Riconoscimento tabelle',
-      mineruTableEnableTip: 'Abilita il riconoscimento e l\'estrazione delle tabelle.',
+      mineruTableEnableTip:
+        "Abilita il riconoscimento e l'estrazione delle tabelle.",
       paddleocrOptions: 'Opzioni PaddleOCR',
       paddleocrApiUrl: 'URL API di PaddleOCR',
-      paddleocrApiUrlTip: 'L\'URL dell\'endpoint API del servizio PaddleOCR',
+      paddleocrApiUrlTip: "L'URL dell'endpoint API del servizio PaddleOCR",
       paddleocrApiUrlPlaceholder:
         'es. https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'Token di accesso AI Studio',
-      paddleocrAccessTokenTip: 'Token di accesso per l\'API PaddleOCR (opzionale)',
+      paddleocrAccessTokenTip:
+        "Token di accesso per l'API PaddleOCR (opzionale)",
       paddleocrAccessTokenPlaceholder: 'Il tuo token AI Studio (opzionale)',
       paddleocrAlgorithm: 'Algoritmo PaddleOCR',
-      paddleocrAlgorithmTip: 'Algoritmo da usare per l\'analisi PaddleOCR',
+      paddleocrAlgorithmTip: "Algoritmo da usare per l'analisi PaddleOCR",
       paddleocrSelectAlgorithm: 'Seleziona algoritmo',
       paddleocrModelNamePlaceholder: 'es. paddleocr-from-env-1',
       overlappedPercent: 'Percentuale di sovrapposizione(%)',
@@ -652,7 +664,8 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       baseInfo: 'Base',
       globalIndex: 'Indice globale',
       dataSource: 'Fonte dati',
-      linkSourceSetTip: 'Gestisci il collegamento della fonte dati con questo dataset',
+      linkSourceSetTip:
+        'Gestisci il collegamento della fonte dati con questo dataset',
       linkDataSource: 'Collega fonte dati',
       tocExtraction: 'PageIndex',
       tocExtractionTip:
@@ -672,7 +685,8 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       setDefaultTip: '',
       setDefault: 'Imposta come predefinito',
       editLinkDataPipeline: 'Modifica ingestion pipeline',
-      linkPipelineSetTip: 'Gestisci il collegamento della ingestion pipeline con questo dataset',
+      linkPipelineSetTip:
+        'Gestisci il collegamento della ingestion pipeline con questo dataset',
       default: 'Predefinito',
       dataPipeline: 'Cambia o configura la ingestion pipeline.',
       linkDataPipeline: 'Collega ingestion pipeline',
@@ -688,7 +702,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
         'Aggiorna la configurazione del tuo dataset qui, in particolare il LLM e i prompt.',
       name: 'Nome dataset',
       photo: 'Foto dataset',
-      photoTip: 'Puoi caricare un\'immagine fino a 4 MB.',
+      photoTip: "Puoi caricare un'immagine fino a 4 MB.",
       description: 'Descrizione',
       language: 'Lingua documento',
       languageMessage: 'Inserisci la tua lingua!',
@@ -696,7 +710,8 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       permissions: 'Permessi',
       embeddingModel: 'Modello di embedding',
       chunkTokenNumber: 'Dimensione chunk raccomandata',
-      chunkTokenNumberMessage: 'Il numero di token per chunk per il testo è richiesto',
+      chunkTokenNumberMessage:
+        'Il numero di token per chunk per il testo è richiesto',
       embeddingModelTip:
         'Il modello di embedding predefinito usato dal dataset. Una volta che il dataset contiene chunk, quando si cambia il modello di embedding il sistema estrae casualmente alcuni chunk per una verifica di compatibilità, li ricodifica con il nuovo modello di embedding e calcola la similarità coseno tra i vettori nuovi e quelli vecchi. Il cambio è consentito solo se la similarità media del campione è ≥ 0.9. In caso contrario, è necessario eliminare tutti i chunk nel dataset prima di poterlo modificare.',
       permissionsTip:
@@ -846,13 +861,14 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
         'RAPTOR può essere usato per attività di question-answering multi-hop. Naviga alla pagina File, clicca Genera > RAPTOR per abilitarlo. Vedi https://ragflow.io/docs/dev/enable_raptor per i dettagli.',
       prompt: 'Prompt',
       promptTip:
-        'Usa il prompt di sistema per descrivere il compito per l\'LLM, specificare come dovrebbe rispondere e delineare altri requisiti vari. Il prompt di sistema è spesso usato insieme a chiavi (variabili), che servono come vari input di dati per l\'LLM. Usa una barra `/` o il pulsante (x) per mostrare le chiavi da usare.',
+        "Usa il prompt di sistema per descrivere il compito per l'LLM, specificare come dovrebbe rispondere e delineare altri requisiti vari. Il prompt di sistema è spesso usato insieme a chiavi (variabili), che servono come vari input di dati per l'LLM. Usa una barra `/` o il pulsante (x) per mostrare le chiavi da usare.",
       promptMessage: 'Il prompt è richiesto',
       promptText: `Per favore riassumi i seguenti paragrafi. Fai attenzione ai numeri, non inventare cose. Paragrafi come segue:
       {cluster_content}
 Quanto sopra è il contenuto che devi riassumere.`,
       maxToken: 'Token massimi',
-      maxTokenTip: 'Il numero massimo di token per chunk di riepilogo generato.',
+      maxTokenTip:
+        'Il numero massimo di token per chunk di riepilogo generato.',
       maxTokenMessage: 'Token massimi richiesti',
       threshold: 'Soglia',
       thresholdTip:
@@ -902,12 +918,12 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
       NER: Usa spaCy NER e l'estrazione di parole chiave basata su regole per estrarre entità e relazioni. Non è necessario un LLM per l'estrazione stessa, rendendola veloce ed efficiente nelle risorse.`,
       graphRagBatchChunkTokenSize: 'Dimensione token chunk batch',
       graphRagBatchChunkTokenSizeTip:
-        'Il limite di token per ogni batch di chunk inviati all\'LLM per l\'estrazione di entità e relazioni del grafo della conoscenza. Non applicato a NER.',
+        "Il limite di token per ogni batch di chunk inviati all'LLM per l'estrazione di entità e relazioni del grafo della conoscenza. Non applicato a NER.",
       resolution: 'Risoluzione entità',
       resolutionTip: `Un interruttore di deduplicazione entità. Quando abilitato, l'LLM combinerà entità simili - es. '2025' e 'l'anno 2025', o 'IT' e 'Information Technology' - per costruire un grafo più accurato`,
       community: 'Report comunità',
       communityTip:
-        'In un grafo della conoscenza, una comunità è un cluster di entità collegate da relazioni. Puoi far generare all\'LLM un abstract per ogni comunità, noto come report comunità. Vedi qui per maggiori informazioni: https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
+        "In un grafo della conoscenza, una comunità è un cluster di entità collegate da relazioni. Puoi far generare all'LLM un abstract per ogni comunità, noto come report comunità. Vedi qui per maggiori informazioni: https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/",
       theDocumentBeingParsedCannotBeDeleted:
         'Il documento in fase di analisi non può essere eliminato',
       lastWeek: 'dalla settimana scorsa',
@@ -933,7 +949,8 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
       disabled: 'Disabilitato',
       keyword: 'Parola chiave',
       image: 'Immagine',
-      imageUploaderTitle: 'Carica una nuova immagine per aggiornare questo chunk immagine',
+      imageUploaderTitle:
+        'Carica una nuova immagine per aggiornare questo chunk immagine',
       function: 'Funzione',
       chunkMessage: 'Inserisci un valore!',
       full: 'Testo completo',
@@ -1005,7 +1022,7 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
         - **Considera sempre** l'intera cronologia della conversazione.`,
       systemMessage: 'Inserisci!',
       systemTip:
-        'I tuoi prompt o istruzioni per l\'LLM, inclusi ma non limitati al suo ruolo, la lunghezza desiderata, il tono e la lingua delle sue risposte. Se il tuo modello ha supporto nativo per il ragionamento, puoi aggiungere //no_thinking al prompt per fermare il ragionamento.',
+        "I tuoi prompt o istruzioni per l'LLM, inclusi ma non limitati al suo ruolo, la lunghezza desiderata, il tono e la lingua delle sue risposte. Se il tuo modello ha supporto nativo per il ragionamento, puoi aggiungere //no_thinking al prompt per fermare il ragionamento.",
       topN: 'Top N',
       topNTip: `Non tutti i chunk con punteggio di similarità sopra la 'soglia di similarità' saranno inviati all'LLM. Questo seleziona 'Top N' chunk da quelli recuperati.`,
       variable: 'Variabile',
@@ -1070,7 +1087,7 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
       embedModalTitle: 'Incorpora nella pagina web',
       published: 'Pubblicato',
       publishedTooltip:
-        'Usa la versione pubblicata per questo embed. Quando abilitato, l\'URL generato include release=true.',
+        "Usa la versione pubblicata per questo embed. Quando abilitato, l'URL generato include release=true.",
       embedType: 'Tipo di embed',
       fullscreenChat: 'Chat a schermo intero (iframe tradizionale)',
       floatingWidget: 'Widget fluttuante (stile Intercom)',
@@ -1104,7 +1121,7 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
         'Questo ottimizza le query utente usando il contesto in una conversazione multi-round. Quando abilitato, consumerà token LLM aggiuntivi.',
       howUseId: "Come usare l'ID chat?",
       description: "Descrizione dell'assistente",
-      descriptionPlaceholder: "Sono un assistente chat.",
+      descriptionPlaceholder: 'Sono un assistente chat.',
       useKnowledgeGraph: 'Usa grafo della conoscenza',
       useKnowledgeGraphTip:
         'Se usare il/i grafo/i della conoscenza nel/i dataset specificato/i durante il recupero per il question answering multi-hop. Quando abilitato, ciò comporterebbe ricerche iterative attraverso chunk di entità, relazioni e report di comunità, aumentando notevolmente il tempo di recupero.',
@@ -1127,7 +1144,7 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
       createChat: 'Crea chat',
       metadata: 'Metadati',
       metadataTip:
-        'Il filtraggio dei metadati è il processo di utilizzo degli attributi dei metadati (come tag, categorie o permessi di accesso) per affinare e controllare il recupero delle informazioni rilevanti all\'interno di un sistema.',
+        "Il filtraggio dei metadati è il processo di utilizzo degli attributi dei metadati (come tag, categorie o permessi di accesso) per affinare e controllare il recupero delle informazioni rilevanti all'interno di un sistema.",
       conditions: 'Condizioni',
       metadataKeys: 'Elementi filtrabili',
       addCondition: 'Aggiungi condizione',
@@ -1153,7 +1170,7 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
         'Permette a questo modello di chiamare strumenti quando il tipo di modello selezionato supporta le chiamate a strumenti.',
       deleteModel: 'Elimina modello',
       bedrockCredentialsHint:
-        'Suggerimento: lascia Access Key / Secret Key vuoti per usare l\'autenticazione AWS IAM.',
+        "Suggerimento: lascia Access Key / Secret Key vuoti per usare l'autenticazione AWS IAM.",
       awsAuthModeAccessKeySecret: 'Access Key',
       awsAuthModeIamRole: 'IAM Role',
       awsAuthModeAssumeRole: 'Assume Role',
@@ -1162,10 +1179,11 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
       awsRoleArn: 'AWS Role ARN',
       awsRoleArnMessage: 'Inserisci AWS Role ARN',
       awsAssumeRoleTip:
-        'Se selezioni questa modalità, l\'istanza Amazon EC2 assumerà il suo ruolo esistente per accedere ai servizi AWS. Non sono richieste credenziali aggiuntive.',
+        "Se selezioni questa modalità, l'istanza Amazon EC2 assumerà il suo ruolo esistente per accedere ai servizi AWS. Non sono richieste credenziali aggiuntive.",
       modelEmptyTip:
         'Nessun modello disponibile. <br>Aggiungi modelli dal pannello a destra.',
-      sourceEmptyTip: 'Nessuna fonte dati aggiunta. Selezionane una qui sotto per connetterti.',
+      sourceEmptyTip:
+        'Nessuna fonte dati aggiunta. Selezionane una qui sotto per connetterti.',
       seconds: 'secondi',
       minutes: 'minuti',
       edit: 'Modifica',
@@ -1177,9 +1195,9 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
       connectorNameTip: 'Un nome descrittivo per il connettore',
       syncDeletedFiles: 'Sincronizza file eliminati',
       confluenceIsCloudTip:
-        'Spunta se questa è un\'istanza Confluence Cloud, deseleziona per Confluence Server/Data Center',
+        "Spunta se questa è un'istanza Confluence Cloud, deseleziona per Confluence Server/Data Center",
       confluenceWikiBaseUrlTip:
-        'L\'URL base della tua istanza Confluence (es. https://your-domain.atlassian.net/wiki)',
+        "L'URL base della tua istanza Confluence (es. https://your-domain.atlassian.net/wiki)",
       confluenceSpaceKeyTip:
         'Opzionale: specifica una chiave spazio per limitare la sincronizzazione a uno spazio specifico. Lascia vuoto per sincronizzare tutti gli spazi accessibili. Per più spazi, separa con virgole (es. DEV,DOCS,HR)',
       s3PrefixTip: `Specifica il percorso della cartella all'interno del tuo bucket S3 da cui recuperare i file.
@@ -1215,7 +1233,8 @@ Esempio: Virtual Hosted Style`,
         'Sincronizza pagine e database da Notion per il recupero della conoscenza.',
       google_driveDescription:
         'Connetti il tuo Google Drive tramite OAuth e sincronizza cartelle o drive specifici.',
-      gmailDescription: 'Connetti il tuo Gmail tramite OAuth per sincronizzare le email.',
+      gmailDescription:
+        'Connetti il tuo Gmail tramite OAuth per sincronizzare le email.',
       webdavDescription: 'Connettiti a server WebDAV per sincronizzare i file.',
       webdavRemotePathTip:
         'Opzionale: specifica un percorso cartella sul server WebDAV (es. /Documents). Lascia vuoto per sincronizzare dalla radice.',
@@ -1238,31 +1257,34 @@ Esempio: Virtual Hosted Style`,
       teamsDescription:
         'Connetti Microsoft Teams tramite Microsoft Graph per sincronizzare post e risposte dei canali.',
       teamsTenantIdTip:
-        'ID tenant Azure AD. Richiede un\'app con permessi applicativi Team.ReadBasic.All e ChannelMessage.Read.All (consenso admin).',
+        "ID tenant Azure AD. Richiede un'app con permessi applicativi Team.ReadBasic.All e ChannelMessage.Read.All (consenso admin).",
       slackDescription:
         'Connetti il tuo workspace Slack per sincronizzare messaggi e thread dei canali.',
       slackBotTokenTip:
-        'Token OAuth utente bot Slack (inizia con xoxb-). L\'app necessita degli scope channels:read, channels:history e users:read.',
+        "Token OAuth utente bot Slack (inizia con xoxb-). L'app necessita degli scope channels:read, channels:history e users:read.",
       slackChannelsTip:
         'Opzionale: nomi dei canali da sincronizzare (es. general). Lascia vuoto per sincronizzare tutti i canali accessibili.',
       sharepointDescription:
         'Connetti un sito SharePoint tramite Microsoft Graph per sincronizzare le sue librerie documenti.',
       sharepointSiteUrlTip:
-        'URL completo del sito SharePoint da indicizzare, es. https://contoso.sharepoint.com/sites/MySite. Richiede un\'app Azure AD con permessi applicativi Sites.Read.All e Files.Read.All (consenso admin).',
-      bitbucketDescription: 'Connetti Bitbucket per sincronizzare il contenuto delle PR.',
+        "URL completo del sito SharePoint da indicizzare, es. https://contoso.sharepoint.com/sites/MySite. Richiede un'app Azure AD con permessi applicativi Sites.Read.All e Files.Read.All (consenso admin).",
+      bitbucketDescription:
+        'Connetti Bitbucket per sincronizzare il contenuto delle PR.',
       bitbucketTopWorkspaceTip:
         'Il workspace Bitbucket da indicizzare (es. "atlassian" da https://bitbucket.org/atlassian/workspace ).',
       bitbucketRepositorySlugsTip:
         'Slug dei repository separati da virgola. Es. repo-one,repo-two',
-      bitbucketProjectsTip: 'Chiavi progetto separate da virgola. Es. PROJ1,PROJ2',
+      bitbucketProjectsTip:
+        'Chiavi progetto separate da virgola. Es. PROJ1,PROJ2',
       bitbucketWorkspaceTip:
         'Questo connettore indicizzerà tutti i repository nel workspace.',
-      boxDescription: 'Connetti il tuo drive Box per sincronizzare file e cartelle.',
+      boxDescription:
+        'Connetti il tuo drive Box per sincronizzare file e cartelle.',
 
       githubDescription:
         'Connetti GitHub per sincronizzare pull request e issue per il recupero.',
       airtableDescription:
-        'Connettiti ad Airtable e sincronizza i file da una tabella specificata all\'interno di un workspace designato.',
+        "Connettiti ad Airtable e sincronizza i file da una tabella specificata all'interno di un workspace designato.",
       dingtalkAITableDescription:
         'Connettiti a Dingtalk AI Table e sincronizza i record da una tabella specificata.',
       gitlabDescription:
@@ -1276,30 +1298,33 @@ Esempio: Virtual Hosted Style`,
       moodleDescription:
         'Connettiti al tuo LMS Moodle per sincronizzare contenuti dei corsi, forum e risorse.',
       moodleUrlTip:
-        'L\'URL base della tua istanza Moodle (es. https://moodle.university.edu). Non includere /webservice o /login.',
+        "L'URL base della tua istanza Moodle (es. https://moodle.university.edu). Non includere /webservice o /login.",
       moodleTokenTip:
-        'Genera un token di servizio web in Moodle: vai a Amministrazione del sito → Server → Servizi web → Gestisci token. L\'utente deve essere iscritto ai corsi che vuoi sincronizzare.',
+        "Genera un token di servizio web in Moodle: vai a Amministrazione del sito → Server → Servizi web → Gestisci token. L'utente deve essere iscritto ai corsi che vuoi sincronizzare.",
       seafileDescription:
         'Connettiti al tuo server SeaFile per sincronizzare file e documenti dalle tue librerie.',
       seafileUrlTip:
-        'L\'URL completo del tuo server SeaFile incluso il protocollo. Esempio: https://seafile.example.com - Non includere una barra finale o alcun percorso dopo il dominio.',
+        "L'URL completo del tuo server SeaFile incluso il protocollo. Esempio: https://seafile.example.com - Non includere una barra finale o alcun percorso dopo il dominio.",
       seafileAccountScopeTip:
         'Sincronizza tutte le librerie visibili al token API account qui sotto.',
-      seafileTokenPanelHeading: 'Fornisci uno di questi metodi di autenticazione:',
-      seafileTokenPanelAccountBullet: '- concede accesso a tutte le tue librerie.',
+      seafileTokenPanelHeading:
+        'Fornisci uno di questi metodi di autenticazione:',
+      seafileTokenPanelAccountBullet:
+        '- concede accesso a tutte le tue librerie.',
       seafileTokenPanelLibraryBullet:
         '— limitato a una singola libreria (più sicuro).',
       seafileValidationAccountTokenRequired:
-        'Il token API account è richiesto per l\'ambito Intero account',
+        "Il token API account è richiesto per l'ambito Intero account",
       seafileValidationTokenRequired:
         'Fornisci un token API account o un token libreria',
-      seafileValidationLibraryIdRequired: 'L\'ID libreria è richiesto',
-      seafileValidationDirectoryPathRequired: 'Il percorso directory è richiesto',
+      seafileValidationLibraryIdRequired: "L'ID libreria è richiesto",
+      seafileValidationDirectoryPathRequired:
+        'Il percorso directory è richiesto',
       seafileSyncScopeTip:
         'Controlla cosa viene sincronizzato: ' +
         '(1) Intero account - Sincronizza tutte le librerie a cui il tuo token ha accesso. Richiede un token API account. ' +
-        '(2) Singola libreria - Sincronizza tutti i file all\'interno di una libreria specifica. Richiede l\'ID libreria e un token API account o un token API libreria. ' +
-        '(3) Directory specifica - Sincronizza solo i file all\'interno di una cartella specifica dentro una libreria. Richiede l\'ID libreria, il percorso della cartella all\'interno di quella libreria, e un token API account o un token API libreria.',
+        "(2) Singola libreria - Sincronizza tutti i file all'interno di una libreria specifica. Richiede l'ID libreria e un token API account o un token API libreria. " +
+        "(3) Directory specifica - Sincronizza solo i file all'interno di una cartella specifica dentro una libreria. Richiede l'ID libreria, il percorso della cartella all'interno di quella libreria, e un token API account o un token API libreria.",
       seafileTokenTip:
         'Il tuo token API SeaFile a livello di account. ' +
         'Concede accesso a tutte le librerie visibili al tuo account. ' +
@@ -1309,16 +1334,16 @@ Esempio: Virtual Hosted Style`,
         'Un token API limitato a una libreria che concede accesso solo a una libreria specifica. ' +
         'Può essere usato al posto del token API account per gli ambiti di sincronizzazione "Singola libreria" e "Directory specifica".',
       seafileRepoIdTip:
-        'L\'identificatore univoco (UUID) della libreria SeaFile che vuoi sincronizzare. ' +
-        'Puoi trovarlo nella barra degli indirizzi del browser quando apri la libreria nell\'interfaccia web SeaFile. ' +
+        "L'identificatore univoco (UUID) della libreria SeaFile che vuoi sincronizzare. " +
+        "Puoi trovarlo nella barra degli indirizzi del browser quando apri la libreria nell'interfaccia web SeaFile. " +
         'Esempio: 7a9e1b3c-4d5f-6a7b-8c9d-0e1f2a3b4c5d. ' +
         'Richiesto quando l\'ambito di sincronizzazione è "Singola libreria" o "Directory specifica".',
       seafileSyncPathTip:
-        'Il percorso assoluto della cartella da sincronizzare all\'interno della libreria specificata dall\'ID libreria sopra. ' +
+        "Il percorso assoluto della cartella da sincronizzare all'interno della libreria specificata dall'ID libreria sopra. " +
         'Deve iniziare con una barra in avanti. ' +
         'Tutti i file e le sottocartelle sotto questo percorso saranno inclusi ricorsivamente. ' +
         'Esempio: /Documents/Reports. ' +
-        'Importante: la cartella deve esistere all\'interno della libreria specificata. ' +
+        "Importante: la cartella deve esistere all'interno della libreria specificata. " +
         'I percorsi al di fuori della libreria non sono supportati. ' +
         'Usato solo quando l\'ambito di sincronizzazione è "Directory specifica".',
       seafileIncludeSharedTip:
@@ -1337,8 +1362,7 @@ Esempio: Virtual Hosted Style`,
         'Opzionale: limita la sincronizzazione a una singola chiave progetto (es. ENG).',
       jiraJqlTip:
         'Filtro JQL opzionale. Lascia vuoto per affidarti ai filtri progetto/tempo.',
-      jiraBatchSizeTip:
-        'Numero massimo di issue richieste da Jira per batch.',
+      jiraBatchSizeTip: 'Numero massimo di issue richieste da Jira per batch.',
       jiraCommentsTip:
         'Includi i commenti Jira nel documento markdown generato.',
       jiraAttachmentsTip:
@@ -1346,12 +1370,12 @@ Esempio: Virtual Hosted Style`,
       jiraAttachmentSizeTip:
         'Gli allegati più grandi di questo numero di byte saranno saltati.',
       jiraLabelsTip:
-        'Etichette che dovrebbero essere saltate durante l\'indicizzazione (separate da virgola).',
+        "Etichette che dovrebbero essere saltate durante l'indicizzazione (separate da virgola).",
       jiraBlacklistTip:
         'I commenti la cui email autore corrisponde a queste voci saranno ignorati.',
       jiraScopedTokenTip:
         'Abilita questo quando usi token Atlassian limitati (api.atlassian.com).',
-      jiraEmailTip: 'Email associata all\'account/token API Jira.',
+      jiraEmailTip: "Email associata all'account/token API Jira.",
       jiraTokenTip:
         'Token API generato da https://id.atlassian.com/manage-profile/security/api-tokens.',
       jiraPasswordTip:
@@ -1367,7 +1391,7 @@ Esempio: Virtual Hosted Style`,
       mysqlIdColumnTip:
         'Colonna da usare come ID documento univoco. Se non specificata, sarà usato un hash del contenuto.',
       mysqlTimestampColumnTip:
-        'Colonna datetime/timestamp per la sincronizzazione incrementale. Saranno recuperate solo le righe modificate dopo l\'ultima sincronizzazione.',
+        "Colonna datetime/timestamp per la sincronizzazione incrementale. Saranno recuperate solo le righe modificate dopo l'ultima sincronizzazione.",
       postgresqlDescription:
         'Connettiti al database PostgreSQL per sincronizzare i dati dalle tabelle usando query SQL.',
       postgresqlQueryTip:
@@ -1379,23 +1403,23 @@ Esempio: Virtual Hosted Style`,
       postgresqlIdColumnTip:
         'Colonna da usare come ID documento univoco. Se non specificata, sarà usato un hash del contenuto.',
       postgresqlTimestampColumnTip:
-        'Colonna datetime/timestamp per la sincronizzazione incrementale. Saranno recuperate solo le righe modificate dopo l\'ultima sincronizzazione.',
+        "Colonna datetime/timestamp per la sincronizzazione incrementale. Saranno recuperate solo le righe modificate dopo l'ultima sincronizzazione.",
       rest_apiDescription:
         'Connetti qualsiasi endpoint REST API come fonte dati usando un connettore flessibile guidato dalla configurazione.',
       onedriveDescription:
         'Connetti OneDrive o OneDrive for Business per indicizzare file e cartelle tramite query delta Microsoft Graph.',
       onedriveTenantIdTip:
-        'ID tenant Azure Active Directory (Directory ID) dell\'organizzazione Microsoft 365.',
+        "ID tenant Azure Active Directory (Directory ID) dell'organizzazione Microsoft 365.",
       onedriveClientIdTip:
         'ID applicazione (client) della registrazione app Azure AD con permesso Files.Read.All.',
       onedriveClientSecretTip:
         'Valore del client secret generato nella registrazione app Azure AD.',
       onedriveFolderPathTip:
-        'Percorso sotto-cartella opzionale per limitare l\'indicizzazione (es. /Documents/Reports). Lascia vuoto per indicizzare l\'intero drive.',
+        "Percorso sotto-cartella opzionale per limitare l'indicizzazione (es. /Documents/Reports). Lascia vuoto per indicizzare l'intero drive.",
       outlookDescription:
         'Connetti le caselle Outlook / Microsoft 365 e indicizza i messaggi tramite query delta Microsoft Graph.',
       outlookTenantIdTip:
-        'ID tenant Azure Active Directory (Directory ID) dell\'organizzazione Microsoft 365.',
+        "ID tenant Azure Active Directory (Directory ID) dell'organizzazione Microsoft 365.",
       outlookClientIdTip:
         'ID applicazione (client) della registrazione app Azure AD con permesso Mail.Read.',
       outlookClientSecretTip:
@@ -1405,13 +1429,13 @@ Esempio: Virtual Hosted Style`,
       outlookUserIdsTip:
         'UPN o object ID separati da virgola delle caselle da sincronizzare. Lascia vuoto per sincronizzare ogni casella nel tenant (richiede User.Read.All).',
       salesforceDescription:
-        'Connetti un\'org Salesforce e indicizza i record CRM (Account, Contatti, Opportunità, Casi, articoli Knowledge) tramite SOQL con sincronizzazione incrementale.',
+        "Connetti un'org Salesforce e indicizza i record CRM (Account, Contatti, Opportunità, Casi, articoli Knowledge) tramite SOQL con sincronizzazione incrementale.",
       salesforceInstanceUrlTip:
         'URL org Salesforce, es. https://your-domain.my.salesforce.com (senza barra finale).',
       salesforceClientIdTip:
         'Consumer Key di una Connected App con Client Credentials Flow abilitato e lo scope api.',
       salesforceClientSecretTip:
-        'Consumer Secret della Connected App usata per l\'autenticazione client-credentials.',
+        "Consumer Secret della Connected App usata per l'autenticazione client-credentials.",
       salesforceObjectsTip:
         'Nomi API SObject separati da virgola da indicizzare. Predefinito Account, Contact, Opportunity, Case, Knowledge__kav.',
       salesforceApiVersionTip:
@@ -1421,27 +1445,27 @@ Esempio: Virtual Hosted Style`,
       azureBlobAuthModeTip:
         'Scegli il metodo di autenticazione. Account Key e Connection String richiedono container_name; SAS Token richiede container_url + sas_token.',
       azureBlobAccountNameTip:
-        'Nome account di storage Azure (es. mystorageaccount). Richiesto per l\'autenticazione account-key.',
+        "Nome account di storage Azure (es. mystorageaccount). Richiesto per l'autenticazione account-key.",
       azureBlobAccountKeyTip:
-        'Chiave di accesso account di storage (codificata Base64). Richiesta per l\'autenticazione account-key.',
+        "Chiave di accesso account di storage (codificata Base64). Richiesta per l'autenticazione account-key.",
       azureBlobConnectionStringTip:
-        'Stringa di connessione Azure Storage completa (DefaultEndpointsProtocol=https;AccountName=...;...). Richiesta per l\'autenticazione connection-string.',
+        "Stringa di connessione Azure Storage completa (DefaultEndpointsProtocol=https;AccountName=...;...). Richiesta per l'autenticazione connection-string.",
       azureBlobContainerUrlTip:
-        'URL HTTPS completo del container (es. https://account.blob.core.windows.net/container). Richiesto per l\'autenticazione SAS-token.',
+        "URL HTTPS completo del container (es. https://account.blob.core.windows.net/container). Richiesto per l'autenticazione SAS-token.",
       azureBlobSasTokenTip:
         'Stringa di query SAS (senza il "?" iniziale). Richiesta per l\'autenticazione SAS-token.',
       azureBlobContainerNameTip:
-        'Nome del container da indicizzare. Richiesto per l\'autenticazione account-key e connection-string.',
+        "Nome del container da indicizzare. Richiesto per l'autenticazione account-key e connection-string.",
       azureBlobPrefixTip:
-        'Prefisso nome blob opzionale per limitare l\'indicizzazione a una cartella virtuale (es. documents/reports/). Lascia vuoto per indicizzare l\'intero container.',
+        "Prefisso nome blob opzionale per limitare l'indicizzazione a una cartella virtuale (es. documents/reports/). Lascia vuoto per indicizzare l'intero container.",
       restApiQueryParamsTip:
-        'Coppie Chiave=valore (una per riga) inviate come parametri di query URL. Usa questo invece di incorporare i parametri nell\'URL.',
+        "Coppie Chiave=valore (una per riga) inviate come parametri di query URL. Usa questo invece di incorporare i parametri nell'URL.",
       restApiHeadersTip:
         'Oggetto JSON opzionale di header HTTP aggiuntivi da inviare con ogni richiesta.',
       restApiItemsPathTip:
         'Nome del campo o JSONPath all\'array di elementi nella risposta. Lascia vuoto per il rilevamento automatico (prova "items", "results", "data", ecc.).',
       restApiIdFieldTip:
-        'Percorso del campo all\'interno di ogni elemento usato per costruire un ID documento stabile. Lascia vuoto per generare automaticamente dall\'hash del contenuto.',
+        "Percorso del campo all'interno di ogni elemento usato per costruire un ID documento stabile. Lascia vuoto per generare automaticamente dall'hash del contenuto.",
       restApiContentFieldsTip:
         'Elenco separato da virgola di campi degli elementi da concatenare nel contenuto del documento.',
       restApiMetadataFieldsTip:
@@ -1449,11 +1473,11 @@ Esempio: Virtual Hosted Style`,
       restApiNextCursorPathTip:
         'Espressione JSONPath che si risolve nel cursore della pagina successiva nella risposta API.',
       restApiPollTimestampFieldTip:
-        'Percorso del campo in ogni elemento che rappresenta l\'ora dell\'ultimo aggiornamento, usato per la sincronizzazione incrementale.',
+        "Percorso del campo in ogni elemento che rappresenta l'ora dell'ultimo aggiornamento, usato per la sincronizzazione incrementale.",
       restApiRequestBodyTip:
         'Body JSON opzionale da inviare per le richieste POST. Usato insieme ai parametri di query e alla paginazione.',
       restApiRequestDelayTip:
-        'Ritardo in secondi tra richieste di pagina consecutive. Aiuta a evitare il rate limiting dall\'API. Imposta a 0 per disabilitare.',
+        "Ritardo in secondi tra richieste di pagina consecutive. Aiuta a evitare il rate limiting dall'API. Imposta a 0 per disabilitare.",
       restApiValidationApiKeyRequired:
         'La chiave API è richiesta quando il tipo di autenticazione è API Key (Header).',
       restApiValidationApiKeyHeaderNameRequired:
@@ -1506,7 +1530,8 @@ Esempio: Virtual Hosted Style`,
       timezoneMessage: 'Inserisci il tuo fuso orario!',
       timezonePlaceholder: 'seleziona il tuo fuso orario',
       email: 'Email',
-      emailDescription: "Una volta registrata, l'email non può essere cambiata.",
+      emailDescription:
+        "Una volta registrata, l'email non può essere cambiata.",
       currentPassword: 'Password attuale',
       currentPasswordMessage: 'Inserisci la tua password!',
       newPassword: 'Nuova password',
@@ -1535,7 +1560,8 @@ Esempio: Virtual Hosted Style`,
         'Per utenti cinesi, non è necessario compilare o usare https://dashscope.aliyuncs.com/compatible-mode/v1. Per utenti internazionali, usa https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
       siliconBaseUrlTip:
         'Per utenti cinesi, non è necessario compilare o usare https://api.siliconflow.cn/v1. Per utenti internazionali, usa https://api.siliconflow.com/v1',
-      tongyiBaseUrlPlaceholder: '(Solo utenti internazionali, vedi suggerimento)',
+      tongyiBaseUrlPlaceholder:
+        '(Solo utenti internazionali, vedi suggerimento)',
       minimaxBaseUrlTip:
         'Solo utenti internazionali: usa https://api.minimax.io/v1',
       minimaxBaseUrlPlaceholder:
@@ -1549,7 +1575,7 @@ Esempio: Virtual Hosted Style`,
         'Il modello di embedding predefinito per ogni nuovo dataset creato. Se non riesci a trovare un modello di embedding dal menu a discesa, controlla se stai usando la versione slim di RAGFlow (che non include modelli di embedding) o controlla https://ragflow.io/docs/dev/supported_models per vedere se il tuo fornitore di modelli supporta questo modello.',
       img2txtModel: 'VLM',
       img2txtModelTip:
-        'Il VLM predefinito per ogni nuovo dataset creato. Descrive un\'immagine o un video. Se non riesci a trovare un modello dal menu a discesa, controlla https://ragflow.io/docs/dev/supported_models per vedere se il tuo fornitore di modelli supporta questo modello.',
+        "Il VLM predefinito per ogni nuovo dataset creato. Descrive un'immagine o un video. Se non riesci a trovare un modello dal menu a discesa, controlla https://ragflow.io/docs/dev/supported_models per vedere se il tuo fornitore di modelli supporta questo modello.",
       sequence2txtModel: 'ASR',
       sequence2txtModelTip:
         'Il modello ASR predefinito per ogni nuovo dataset creato. Usa questo modello per tradurre le voci in testo corrispondente.',
@@ -1564,7 +1590,7 @@ Esempio: Virtual Hosted Style`,
       editLlmTitle: 'Modifica modello {{name}}',
       editModel: 'Modifica modello',
       instanceName: 'Nome istanza',
-      instanceNameMessage: 'Inserisci il nome dell\'istanza!',
+      instanceNameMessage: "Inserisci il nome dell'istanza!",
       instanceNameTip:
         'Un nome univoco per identificare questa istanza del fornitore sotto la stessa factory.',
       modelName: 'Nome modello',
@@ -1585,7 +1611,7 @@ Esempio: Virtual Hosted Style`,
         selectAlgorithm: 'Seleziona algoritmo',
         modelNamePlaceholder: 'Ad esempio: paddleocr-from-env-1',
         modelNameRequired: 'Il nome del modello è obbligatorio',
-        apiUrlRequired: 'L\'URL API di PaddleOCR è obbligatorio',
+        apiUrlRequired: "L'URL API di PaddleOCR è obbligatorio",
       },
       vision: 'Supporta Vision?',
       ollamaLink: 'Come integrare {{name}}',
@@ -1593,7 +1619,7 @@ Esempio: Virtual Hosted Style`,
       TencentCloudLink: 'Come usare TencentCloud ASR',
       volcModelNameMessage: 'Inserisci il nome del tuo modello!',
       addEndpointID: 'ID Modello',
-      endpointIDMessage: 'Inserisci l\'ID del tuo modello',
+      endpointIDMessage: "Inserisci l'ID del tuo modello",
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Inserisci la tua ARK_API_KEY',
       bedrockModelNameMessage: 'Inserisci il nome del tuo modello!',
@@ -1656,8 +1682,7 @@ Esempio: Virtual Hosted Style`,
       yiyanAKMessage: 'Inserisci la tua API KEY',
       addyiyanSK: 'yiyan Secret KEY',
       yiyanSKMessage: 'Inserisci la tua Secret KEY',
-      FishAudioModelNameMessage:
-        'Dai un nome al tuo modello di sintesi vocale',
+      FishAudioModelNameMessage: 'Dai un nome al tuo modello di sintesi vocale',
       addFishAudioAK: 'Fish Audio API KEY',
       addFishAudioAKMessage: 'Inserisci la tua API KEY',
       addFishAudioRefID: 'FishAudio Reference ID',
@@ -1694,21 +1719,22 @@ Esempio: Virtual Hosted Style`,
       configuration: 'Configurazione',
       langfuseDescription:
         'Tracce, valutazioni, gestione dei prompt e metriche per il debug e il miglioramento della tua applicazione LLM.',
-      viewLangfuseSDocumentation: "Visualizza la documentazione di Langfuse",
+      viewLangfuseSDocumentation: 'Visualizza la documentazione di Langfuse',
       view: 'Visualizza',
       modelsToBeAddedTooltip:
         'Se il tuo fornitore di modelli non è elencato ma dichiara di essere "OpenAI-compatible", seleziona la scheda OpenAI-API-compatible per aggiungere i modelli pertinenti. ',
       mcp: 'MCP',
       mineru: {
         modelNameRequired: 'Il nome del modello è obbligatorio',
-        apiServerRequired: 'La configurazione del MinerU API Server è richiesta',
+        apiServerRequired:
+          'La configurazione del MinerU API Server è richiesta',
         serverUrlBackendLimit:
-          'L\'indirizzo URL del MinerU Server è disponibile solo per il backend client HTTP',
+          "L'indirizzo URL del MinerU Server è disponibile solo per il backend client HTTP",
         apiserver: 'Configurazione MinerU API Server',
         outputDir: 'Percorso directory di output MinerU',
         backend: 'Tipo di backend di elaborazione MinerU',
         serverUrl: 'Indirizzo URL MinerU Server',
-        deleteOutput: 'Elimina i file di output dopo l\'elaborazione',
+        deleteOutput: "Elimina i file di output dopo l'elaborazione",
         selectBackend: 'Seleziona backend di elaborazione',
         backendOptions: {
           pipeline: 'Elaborazione pipeline standard',
@@ -1787,7 +1813,7 @@ Esempio: Virtual Hosted Style`,
       directory: 'Directory',
       uploadTitle: 'Trascina e rilascia il tuo file qui per caricarlo',
       uploadDescription:
-        'Supporta caricamento singolo o multiplo. Per un RAGFlow distribuito localmente: il limite di dimensione totale dei file per caricamento è 1GB, con un limite batch di 32 file. Non c\'è limite al numero totale di file per account. Per cloud.ragflow.io, il limite di dimensione totale dei file per caricamento è 10MB, con ogni file non superiore a 10MB e un massimo di 128 file per account.',
+        "Supporta caricamento singolo o multiplo. Per un RAGFlow distribuito localmente: il limite di dimensione totale dei file per caricamento è 1GB, con un limite batch di 32 file. Non c'è limite al numero totale di file per account. Per cloud.ragflow.io, il limite di dimensione totale dei file per caricamento è 10MB, con ogni file non superiore a 10MB e un massimo di 128 file per account.",
       local: 'Caricamenti locali',
       s3: 'Caricamenti S3',
       preview: 'Anteprima',
@@ -1813,7 +1839,7 @@ Esempio: Virtual Hosted Style`,
       removeTagAriaLabel: 'Rimuovi {{tag}}',
       includeHeadingContent: 'Separa contenuto intestazione padre',
       includeHeadingContentTip:
-        'Quando abilitato, i chunk includono solo il loro percorso di intestazione e contenuto; il contenuto immediatamente successivo a un\'intestazione padre è mantenuto come chunk separato.',
+        "Quando abilitato, i chunk includono solo il loro percorso di intestazione e contenuto; il contenuto immediatamente successivo a un'intestazione padre è mantenuto come chunk separato.",
       rootAsHeading: 'Imposta il primo chunk come contesto globale',
       rootAsHeadingTip:
         'Tratta la prima divisione come intestazione globale per mantenere un contesto coerente nella gerarchia del documento. Ideale per i curriculum dove la prima sezione identifica il soggetto.',
@@ -1826,7 +1852,7 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
         'Rileva e analizza i layout di pagina multi-colonna per preservare il corretto ordine di lettura. Attiva questo per PDF o documenti con layout a due colonne o stile giornale.',
       removeToc: 'Rimuovi indice originale',
       removeTocTip:
-        'Rimuove l\'indice incluso nel PDF originale, così non viene analizzato come contenuto regolare o suddiviso per il recupero.',
+        "Rimuove l'indice incluso nel PDF originale, così non viene analizzato come contenuto regolare o suddiviso per il recupero.",
       removeHeaderFooter: 'Rimuovi intestazione e piè di pagina',
       autoPlay: 'Riproduzione automatica audio',
       downloadFileTypeTip: 'Il tipo di file da scaricare',
@@ -1888,11 +1914,10 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
       split: 'Dividi',
       script: 'Script',
       iterationItemDescription:
-        'Rappresenta l\'elemento corrente nell\'iterazione, che può essere referenziato e manipolato nei passaggi successivi.',
+        "Rappresenta l'elemento corrente nell'iterazione, che può essere referenziato e manipolato nei passaggi successivi.",
       guidingQuestion: 'Domanda guida',
       onFailure: 'In caso di fallimento',
-      userPromptDefaultValue:
-        'Questo è l\'ordine che devi inviare all\'agente.',
+      userPromptDefaultValue: "Questo è l'ordine che devi inviare all'agente.",
       search: 'Cerca',
       communication: 'Comunicazione',
       developer: 'Sviluppatore',
@@ -1935,7 +1960,8 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
       multimodalModels: 'Modelli multimodali',
       textOnlyModels: 'Modelli solo testo',
       allModels: 'Tutti i modelli',
-      codeExecDescription: 'Scrivi la tua logica Python o Javascript personalizzata.',
+      codeExecDescription:
+        'Scrivi la tua logica Python o Javascript personalizzata.',
       stringTransformDescription:
         'Modifica il contenuto del testo. Attualmente supporta: divisione o concatenazione del testo.',
       foundation: 'Fondamenti',
@@ -1961,7 +1987,7 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
       addMessage: 'Aggiungi messaggio',
       loop: 'Ciclo',
       loopDescription:
-        'Il ciclo è il limite massimo del numero di cicli del componente corrente; quando il numero di cicli supera il valore del ciclo, significa che il componente non può completare l\'attività corrente, per favore ri-ottimizza l\'agente',
+        "Il ciclo è il limite massimo del numero di cicli del componente corrente; quando il numero di cicli supera il valore del ciclo, significa che il componente non può completare l'attività corrente, per favore ri-ottimizza l'agente",
       exitLoop: 'Esci dal ciclo',
       exitLoopDescription: `Equivalente a "break". Questo nodo non ha elementi di configurazione. Quando il corpo del ciclo raggiunge questo nodo, il ciclo termina.`,
       loopVariables: 'Variabili ciclo',
@@ -2016,7 +2042,7 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
         'Un componente che cerca da duckduckgo.com, permettendo di specificare il numero di risultati di ricerca usando TopN. Integra i dataset esistenti.',
       searXNG: 'SearXNG',
       searXNGDescription:
-        'Un componente che cerca tramite l\'URL dell\'istanza SearXNG fornita. Specifica TopN e l\'URL dell\'istanza.',
+        "Un componente che cerca tramite l'URL dell'istanza SearXNG fornita. Specifica TopN e l'URL dell'istanza.",
       docGenerator: 'Generatore Documenti',
       docGeneratorDescription: `Genera un file da contenuto Markdown.`,
       browser: 'Browser',
@@ -2045,7 +2071,7 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
       news: 'Notizie',
       messageHistoryWindowSize: 'Dimensione finestra messaggi',
       messageHistoryWindowSizeTip:
-        'La dimensione della finestra della cronologia conversazione visibile all\'LLM. Più grande è meglio, ma fai attenzione al limite massimo di token dell\'LLM.',
+        "La dimensione della finestra della cronologia conversazione visibile all'LLM. Più grande è meglio, ma fai attenzione al limite massimo di token dell'LLM.",
       wikipedia: 'Wikipedia',
       pubMed: 'PubMed',
       pubMedDescription:
@@ -2097,7 +2123,7 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
         fieldtranslate: 'Traduzione di settore',
       },
       baiduDomainOptions: {
-        it: 'Tecnologia dell\'informazione',
+        it: "Tecnologia dell'informazione",
         finance: 'Finanza ed economia',
         machinery: 'Produzione meccanica',
         senimed: 'Biomedicina',
@@ -2142,7 +2168,7 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
       },
       qWeather: 'QWeather',
       qWeatherDescription:
-        'Un componente che recupera informazioni meteorologiche, come temperatura e qualità dell\'aria, da https://www.qweather.com/.',
+        "Un componente che recupera informazioni meteorologiche, come temperatura e qualità dell'aria, da https://www.qweather.com/.",
       lang: 'Lingua',
       type: 'Tipo',
       webApiKey: 'Web API key',
@@ -2184,7 +2210,7 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
       qWeatherTypeOptions: {
         weather: 'Previsioni meteo',
         indices: 'Indice vita meteo',
-        airquality: 'Qualità dell\'aria',
+        airquality: "Qualità dell'aria",
       },
       qWeatherUserTypeOptions: {
         free: 'Abbonato gratuito',
@@ -2239,7 +2265,7 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
       wenCai: 'WenCai',
       queryType: 'Tipo di query',
       wenCaiDescription:
-        'Un componente che ottiene informazioni finanziarie, inclusi prezzi delle azioni e notizie sui finanziamenti, da un\'ampia gamma di siti web finanziari.',
+        "Un componente che ottiene informazioni finanziarie, inclusi prezzi delle azioni e notizie sui finanziamenti, da un'ampia gamma di siti web finanziari.",
       wenCaiQueryTypeOptions: {
         stock: 'azione',
         zhishu: 'indice',
@@ -2365,7 +2391,7 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
       testRun: 'Test esecuzione',
       template: 'Template',
       templateDescription:
-        'Un componente che formatta l\'output di altri componenti. 1. Supporta template Jinja2, prima converte l\'input in un oggetto e poi renderizza il template, 2. Mantiene contemporaneamente il metodo originale di sostituzione stringhe {parameter}',
+        "Un componente che formatta l'output di altri componenti. 1. Supporta template Jinja2, prima converte l'input in un oggetto e poi renderizza il template, 2. Mantiene contemporaneamente il metodo originale di sostituzione stringhe {parameter}",
       emailComponent: 'Email',
       emailDescription: "Invia un'email a un indirizzo specificato.",
       smtpServer: 'Host SMTP',
@@ -2378,11 +2404,11 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
       ccEmail: 'Email CC',
       emailSubject: 'Oggetto',
       emailContent: 'Contenuto',
-      smtpServerRequired: 'Inserisci l\'indirizzo del server SMTP',
-      senderEmailRequired: 'Inserisci l\'email del mittente',
+      smtpServerRequired: "Inserisci l'indirizzo del server SMTP",
+      senderEmailRequired: "Inserisci l'email del mittente",
       authCodeRequired: 'Inserisci il codice di autorizzazione',
-      toEmailRequired: 'Inserisci l\'email del destinatario',
-      emailContentRequired: 'Inserisci il contenuto dell\'email',
+      toEmailRequired: "Inserisci l'email del destinatario",
+      emailContentRequired: "Inserisci il contenuto dell'email",
       emailSentSuccess: 'Email inviata con successo',
       emailSentFailed: 'Invio email fallito',
       dynamicParameters: 'Parametri dinamici',
@@ -2462,14 +2488,15 @@ Questo delimitatore è usato per dividere il testo di input in diversi pezzi di 
       },
       prompt: 'Prompt',
       promptTip:
-        'Usa il prompt di sistema per descrivere il compito per l\'LLM, specificare come dovrebbe rispondere e delineare altri requisiti vari. Il prompt di sistema è spesso usato insieme a chiavi (variabili), che servono come vari input di dati per l\'LLM. Usa una barra `/` o il pulsante (x) per mostrare le chiavi da usare.',
+        "Usa il prompt di sistema per descrivere il compito per l'LLM, specificare come dovrebbe rispondere e delineare altri requisiti vari. Il prompt di sistema è spesso usato insieme a chiavi (variabili), che servono come vari input di dati per l'LLM. Usa una barra `/` o il pulsante (x) per mostrare le chiavi da usare.",
       promptMessage: 'Il prompt è richiesto',
       infor: 'Esecuzione informativa',
       knowledgeBasesTip:
         'Seleziona i dataset da associare a questo assistente chat, o scegli variabili contenenti ID di dataset qui sotto.',
       knowledgeBaseVars: 'Variabili dataset',
       code: 'Codice',
-      codeDescription: 'Permette agli sviluppatori di scrivere logica Python personalizzata.',
+      codeDescription:
+        'Permette agli sviluppatori di scrivere logica Python personalizzata.',
       dataOperations: 'Operazioni dati',
       dataOperationsDescription: 'Esegui varie operazioni su un oggetto Data.',
       listOperations: 'Operazioni lista',
@@ -2485,7 +2512,7 @@ Questo processo aggrega variabili da più rami in una singola variabile per otte
       openingSwitch: 'Interruttore apertura',
       openingCopy: 'Saluto di apertura',
       openingSwitchTip:
-        'I tuoi utenti vedranno questo messaggio di benvenuto all\'inizio.',
+        "I tuoi utenti vedranno questo messaggio di benvenuto all'inizio.",
       modeTip: 'La modalità definisce come viene avviato il workflow.',
       mode: 'Modalità',
       conversational: 'Conversazionale',
@@ -2508,7 +2535,8 @@ Questo processo aggrega variabili da più rami in una singola variabile per otte
       userFillUpDescription: `Mette in pausa il workflow e attende il messaggio dell'utente prima di continuare.`,
       codeExec: 'Codice',
       tavilySearch: 'Ricerca Tavily',
-      tavilySearchDescription: 'Risultati di ricerca tramite il servizio Tavily.',
+      tavilySearchDescription:
+        'Risultati di ricerca tramite il servizio Tavily.',
       tavilyExtract: 'Estrazione Tavily',
       tavilyExtractDescription: 'Tavily Extract',
       log: 'Log',
@@ -2529,10 +2557,10 @@ Questo processo aggrega variabili da più rami in una singola variabile per otte
 
       logTimeline: {
         begin: 'Pronto a iniziare',
-        agent: 'L\'agente sta pensando',
+        agent: "L'agente sta pensando",
         userFillUp: 'In attesa di te',
         retrieval: 'Consultazione della conoscenza',
-        message: 'L\'agente dice',
+        message: "L'agente dice",
         awaitResponse: 'In attesa di te',
         switch: 'Scelta del percorso migliore',
         iteration: 'Elaborazione batch',
@@ -2547,7 +2575,7 @@ Questo processo aggrega variabili da più rami in una singola variabile per otte
         googleScholar: 'Ricerca accademica',
         gitHub: 'Ricerca su GitHub',
         email: 'Invio email',
-        httpRequest: 'Chiamata a un\'API',
+        httpRequest: "Chiamata a un'API",
         wenCai: 'Interrogazione dati finanziari',
       },
       goto: 'Ramo di fallimento',
@@ -2559,7 +2587,7 @@ Questo processo aggrega variabili da più rami in una singola variabile per otte
       release: 'Pubblica',
       production: 'Produzione',
       productionTooltip:
-        'Questa versione è pubblicata in produzione. Accedivi tramite l\'API o la pagina incorporata.',
+        "Questa versione è pubblicata in produzione. Accedivi tramite l'API o la pagina incorporata.",
       confirmPublish: 'Conferma pubblicazione',
       publishIngestionPipeline:
         'Stai per pubblicare questa ingestion pipeline.',
@@ -2574,7 +2602,7 @@ Questo processo aggrega variabili da più rami in una singola variabile per otte
       chooseAgentType: 'Scegli il tipo di agente',
       parser: 'Parser',
       parserDescription:
-        'Estrae testo grezzo e struttura dai file per l\'elaborazione a valle.',
+        "Estrae testo grezzo e struttura dai file per l'elaborazione a valle.",
       tokenizer: 'Indicizzatore',
       tokenizerRequired: 'Aggiungi prima il nodo Indicizzatore',
       tokenizerDescription:
@@ -2620,7 +2648,7 @@ L'Indicizzatore memorizzerà il contenuto nelle corrispondenti strutture dati pe
       tableResultType: 'Tipo risultato tabella',
       markdownImageResponseType: 'Tipo risposta immagine Markdown',
       systemPromptPlaceholder:
-        'Inserisci il prompt di sistema per l\'analisi dell\'immagine, se vuoto sarà usato il valore predefinito del sistema',
+        "Inserisci il prompt di sistema per l'analisi dell'immagine, se vuoto sarà usato il valore predefinito del sistema",
       exportJson: 'Esporta JSON',
       viewResult: 'Visualizza risultato',
       running: 'In esecuzione',
@@ -2748,7 +2776,7 @@ Le informazioni strutturate importanti possono includere: nomi, date, luoghi, ev
         response: 'Risposta',
         executionMode: 'Modalità di esecuzione',
         executionModeTip:
-          'Risposta accettata: il sistema restituisce un riconoscimento immediatamente dopo che la richiesta è validata, mentre il workflow continua a eseguire in modo asincrono in background. /Risposta finale: il sistema restituisce una risposta solo dopo che l\'esecuzione del workflow è completata.',
+          "Risposta accettata: il sistema restituisce un riconoscimento immediatamente dopo che la richiesta è validata, mentre il workflow continua a eseguire in modo asincrono in background. /Risposta finale: il sistema restituisce una risposta solo dopo che l'esecuzione del workflow è completata.",
         authMethods: 'Metodi di autenticazione',
         authType: 'Tipo di autenticazione',
         limit: 'Limite di frequenza richieste',
@@ -2989,10 +3017,10 @@ Le informazioni strutturate importanti possono includere: nomi, date, luoghi, ev
 
       sandboxSettingsPage: {
         description:
-          'Configura il tuo provider sandbox per l\'esecuzione del codice. La sandbox è usata dal componente Codice negli agenti.',
+          "Configura il tuo provider sandbox per l'esecuzione del codice. La sandbox è usata dal componente Codice negli agenti.",
         providerSelection: 'Selezione provider',
         providerSelectionDescription:
-          'Scegli un provider sandbox per l\'esecuzione del codice',
+          "Scegli un provider sandbox per l'esecuzione del codice",
 
         namedProviderConfiguration: 'Configurazione {{name}}',
         namedProviderConfigurationDescription:
