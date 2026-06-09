@@ -306,7 +306,35 @@ class MarkdownElementExtractor:
             dels = self.get_delimiters(delimiter)
         if len(dels) > 0:
             text = "\n".join(self.lines)
-            return self._extract_delimited_elements(text, dels, include_meta)
+            sections = self._extract_delimited_elements(text, dels, include_meta)
+            # Attach lone header lines to the section that follows them so that
+            # "## Title\n" never becomes an isolated chunk when the delimiter
+            # splits at every newline.  A header is "lone" when it occupies a
+            # single line (no embedded newline after stripping).
+            merged = []
+            i = 0
+            while i < len(sections):
+                content = sections[i]["content"] if include_meta else sections[i]
+                if (
+                    i + 1 < len(sections)
+                    and re.match(r"^#{1,6}\s+\S", content.strip())
+                    and "\n" not in content.strip()
+                ):
+                    next_sec = sections[i + 1]
+                    next_content = next_sec["content"] if include_meta else next_sec
+                    if include_meta:
+                        merged.append({
+                            **sections[i],
+                            "content": content.strip() + "\n" + next_content,
+                            "end_line": next_sec["end_line"],
+                        })
+                    else:
+                        merged.append(content.strip() + "\n" + next_content)
+                    i += 2
+                else:
+                    merged.append(sections[i])
+                    i += 1
+            return merged
         while i < len(self.lines):
             line = self.lines[i]
 
