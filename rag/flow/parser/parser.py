@@ -368,10 +368,10 @@ class Parser(ProcessBase):
                 if not tenant_id:
                     return None
 
-                from api.db.services.tenant_llm_service import TenantLLMService
+                from api.db.joint_services.tenant_model_service import ensure_mineru_from_env, get_models_by_tenant_and_provider_and_model_type
 
-                env_name = TenantLLMService.ensure_mineru_from_env(tenant_id)
-                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="MinerU", model_type=LLMType.OCR.value)
+                env_name = ensure_mineru_from_env(tenant_id)
+                candidates = get_models_by_tenant_and_provider_and_model_type(tenant_id=tenant_id, provider_name="MinerU", model_type=LLMType.OCR)
                 if candidates:
                     return candidates[0].llm_name
                 return env_name
@@ -446,9 +446,11 @@ class Parser(ProcessBase):
                 tenant_id = self._canvas._tenant_id
                 if not tenant_id:
                     return None
-                from api.db.services.tenant_llm_service import TenantLLMService
-                env_name = TenantLLMService.ensure_opendataloader_from_env(tenant_id)
-                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="OpenDataLoader", model_type=LLMType.OCR.value)
+
+                from api.db.joint_services.tenant_model_service import ensure_opendataloader_from_env, get_models_by_tenant_and_provider_and_model_type
+
+                env_name = ensure_opendataloader_from_env(tenant_id)
+                candidates = get_models_by_tenant_and_provider_and_model_type(tenant_id=tenant_id, provider_name="OpenDataLoader", model_type=LLMType.OCR)
                 if candidates:
                     return candidates[0].llm_name
                 return env_name
@@ -550,10 +552,10 @@ class Parser(ProcessBase):
                 if not tenant_id:
                     return None
 
-                from api.db.services.tenant_llm_service import TenantLLMService
+                from api.db.joint_services.tenant_model_service import ensure_paddleocr_from_env, get_models_by_tenant_and_provider_and_model_type
 
-                env_name = TenantLLMService.ensure_paddleocr_from_env(tenant_id)
-                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="PaddleOCR", model_type=LLMType.OCR.value)
+                env_name = ensure_paddleocr_from_env(tenant_id)
+                candidates = get_models_by_tenant_and_provider_and_model_type(tenant_id=tenant_id, provider_name="PaddleOCR", model_type=LLMType.OCR)
                 if candidates:
                     return candidates[0].llm_name
                 return env_name
