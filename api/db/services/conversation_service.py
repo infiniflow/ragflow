@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import hashlib
 import time
 import logging
 from uuid import uuid4
@@ -52,6 +53,29 @@ class ConversationService(CommonService):
             sessions = sessions.paginate(page_number, items_per_page)
 
         return list(sessions.dicts())
+
+    @classmethod
+    @DB.connection_context()
+    def get_or_create_for_channel(cls, dialog_id, channel_id, chat_id, name=None):
+        """Find or create the conversation backing one channel end-user chat.
+
+        A chat_channel is bound to a dialog; each end-user chat on that channel
+        keeps its own conversation history. The conversation is identified by a
+        deterministic id derived from (channel_id, chat_id) so history persists
+        across restarts without a back-reference column on the conversation.
+        """
+        conv_id = hashlib.md5(f"{channel_id}:{chat_id}".encode("utf-8")).hexdigest()[:32]
+        conv = cls.model.get_or_none(cls.model.id == conv_id)
+        if conv is not None:
+            return conv
+        cls.save(
+            id=conv_id,
+            dialog_id=dialog_id,
+            name=name or f"channel:{channel_id}:{chat_id}",
+            message=[],
+            reference=[],
+        )
+        return cls.model.get_or_none(cls.model.id == conv_id)
 
     @classmethod
     @DB.connection_context()
