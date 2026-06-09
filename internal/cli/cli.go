@@ -799,7 +799,10 @@ func (c *CLI) execute(input string) error {
 	// Filesystem mode: execute filesystem command
 	cmd := NewCommand("file_system_command")
 	cmd.Params["command"] = input
-	_, ceErr := c.executeFilesystem(cmd)
+	resp, ceErr := c.executeFilesystem(cmd)
+	if resp != nil {
+		resp.PrintOut()
+	}
 	return ceErr
 }
 
@@ -807,19 +810,32 @@ func (c *CLI) execute(input string) error {
 func (c *CLI) executeFilesystem(cmd *Command) (ResponseIf, error) {
 	rawInput, _ := cmd.Params["command"].(string)
 
-	// Capture stdout output by redirecting to a pipe
-	r, w, _ := os.Pipe()
+	r, w, err := os.Pipe()
+	if err != nil {
+		return nil, fmt.Errorf("create stdout pipe: %w", err)
+	}
 	old := os.Stdout
 	os.Stdout = w
-
-	err := c.executeFilesystemInner(rawInput)
-
-	w.Close()
-	os.Stdout = old
+	defer func() {
+		os.Stdout = old
+		_ = w.Close()
+		_ = r.Close()
+	}()
 
 	var buf strings.Builder
-	io.Copy(&buf, r)
-	return &FileSystemResponse{Output: buf.String()}, err
+	copyErrCh := make(chan error, 1)
+	go func() {
+		_, copyErr := io.Copy(&buf, r)
+		copyErrCh <- copyErr
+	}()
+
+	execErr := c.executeFilesystemInner(rawInput)
+	_ = w.Close() // signal EOF to reader goroutine
+	copyErr := <-copyErrCh
+	if copyErr != nil {
+		return nil, fmt.Errorf("capture filesystem output: %w", copyErr)
+	}
+	return &FileSystemResponse{Output: buf.String()}, execErr
 }
 
 // executeFilesystemInner executes a Filesystem command and writes output to stdout.
