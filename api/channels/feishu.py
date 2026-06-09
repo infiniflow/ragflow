@@ -48,6 +48,8 @@ class FeishuChannel(Channel):
         self._app_secret: str = config.get("app_secret", "")
         self._encrypt_key: str = config.get("encrypt_key", "")
         self._dialog_id: str = config.get("dialog_id", "")
+        if not self._dialog_id:
+            raise ValueError("FeishuChannel requires non-empty dialog_id in config")
         self._token_cache: tuple[str, float] | None = None  # (token, expiry_timestamp)
         self._session: aiohttp.ClientSession | None = None
         # sender_id -> session_id for conversation continuity

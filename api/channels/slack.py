@@ -39,6 +39,8 @@ class SlackChannel(Channel):
         self._bot_token: str = config.get("bot_token", "")
         self._app_token: str = config.get("app_token", "")
         self._dialog_id: str = config.get("dialog_id", "")
+        if not self._dialog_id:
+            raise ValueError("SlackChannel requires non-empty dialog_id in config")
         self._web_client = None
         self._socket_client = None
         self._socket_task: asyncio.Task | None = None
@@ -66,7 +68,7 @@ class SlackChannel(Channel):
                     SocketModeResponse(envelope_id=req.envelope_id)
                 )
                 # Only handle genuine user messages (ignore bot echoes)
-                if event.get("type") == "message" and not event.get("bot_id"):
+                if event.get("type") == "message" and not (event.get("bot_id") or event.get("app_id") or event.get("bot_profile")):
                     text = event.get("text", "").strip()
                     user_id = event.get("user", "")
                     slack_channel_id = event.get("channel", "")
