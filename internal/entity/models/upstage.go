@@ -429,7 +429,7 @@ func (u *UpstageModel) Embed(modelName *string, texts []string, apiConfig *APICo
 }
 
 // ListModels returns the list of model ids visible to the API key.
-func (u *UpstageModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (u *UpstageModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := u.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -476,7 +476,7 @@ func (u *UpstageModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	models := make([]string, 0)
+	models := make([]ListModelResponse, 0)
 	for _, model := range data {
 		modelMap, ok := model.(map[string]interface{})
 		if !ok {
@@ -486,7 +486,7 @@ func (u *UpstageModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		if !ok {
 			continue
 		}
-		models = append(models, modelName)
+		models = append(models, ListModelResponse{Name: modelName})
 	}
 
 	return models, nil

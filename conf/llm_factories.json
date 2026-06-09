@@ -1175,6 +1175,7 @@
             "logo": "",
             "tags": "LLM, TEXT EMBEDDING, IMAGE2TEXT",
             "status": "1",
+            "url": "https://ark.cn-beijing.volces.com/api/v3",
             "llm": []
         },
         {
@@ -3916,7 +3917,56 @@
             "logo": "",
             "tags": "LLM,TTS",
             "status": "1",
-            "llm": []
+            "llm": [
+                {
+                    "llm_name": "Spark-Max",
+                    "tags": "LLM,CHAT,8K",
+                    "max_tokens": 8192,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": ["is_tools", "thinking"]
+                },
+                {
+                    "llm_name": "Spark-Max-32K",
+                    "tags": "LLM,CHAT,32K",
+                    "max_tokens": 32768,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": ["is_tools", "thinking"]
+                },
+                {
+                    "llm_name": "Spark-Lite",
+                    "tags": "LLM,CHAT,8K",
+                    "max_tokens": 8192,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": ["is_tools", "thinking"]
+                },
+                {
+                    "llm_name": "Spark-Pro",
+                    "tags": "LLM,CHAT,8K",
+                    "max_tokens": 8192,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": ["is_tools", "thinking"]
+                },
+                {
+                    "llm_name": "Spark-Pro-128K",
+                    "tags": "LLM,CHAT,128K",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": ["is_tools", "thinking"]
+                },
+                {
+                    "llm_name": "Spark-4.0-Ultra",
+                    "tags": "LLM,CHAT,128K",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": ["is_tools", "thinking"]
+                }
+            ]
         },
         {
             "name": "BaiduYiyan",

@@ -49,6 +49,7 @@ func setupHandlerAgentsTestDB(t *testing.T) *gorm.DB {
 		&entity.User{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.API4Conversation{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
@@ -259,6 +260,251 @@ func TestGetAgentVersionHandler_VersionNotFound(t *testing.T) {
 	code, _ := resp["code"].(float64)
 	if code != float64(common.CodeNotFound) {
 		t.Errorf("expected not found code %d, got %v", common.CodeNotFound, code)
+	}
+}
+
+func TestListAgentSessionsHandlerSuccess(t *testing.T) {
+	c, w, db := setupGinContextWithUserAndDB(t, http.MethodGet, "/api/v1/agents/canvas-1/sessions")
+	c.Params = gin.Params{{Key: "agent_id", Value: "canvas-1"}}
+
+	db.Create(&entity.UserCanvas{
+		ID:     "canvas-1",
+		UserID: "user-1",
+		Title:  sptr("Test Agent"),
+	})
+	db.Create(&entity.API4Conversation{
+		ID:        "session-1",
+		DialogID:  "canvas-1",
+		UserID:    "user-1",
+		Message:   json.RawMessage(`[{"role":"assistant","content":"hello","prompt":"hidden"}]`),
+		Reference: json.RawMessage(`[]`),
+		BaseModel: entity.BaseModel{
+			UpdateTime: ptr(time.Now().UnixMilli()),
+		},
+	})
+	db.Create(&entity.API4Conversation{
+		ID:        "session-2",
+		DialogID:  "canvas-1",
+		UserID:    "user-1",
+		Message:   json.RawMessage(`[{"role":"user","content":"question"}]`),
+		Reference: json.RawMessage(`[]`),
+		BaseModel: entity.BaseModel{
+			UpdateTime: ptr(time.Now().Add(-time.Hour).UnixMilli()),
+		},
+	})
+	db.Create(&entity.API4Conversation{
+		ID:        "session-other-agent",
+		DialogID:  "canvas-other",
+		UserID:    "user-1",
+		Message:   json.RawMessage(`[{"role":"assistant","content":"other"}]`),
+		Reference: json.RawMessage(`[]`),
+	})
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.ListAgentSessions(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected code %d, got %v: %v", common.CodeSuccess, resp["code"], resp["message"])
+	}
+	if resp["total"] != float64(2) {
+		t.Fatalf("expected total 2, got %v", resp["total"])
+	}
+
+	data, ok := resp["data"].([]interface{})
+	if !ok {
+		t.Fatalf("expected data array, got %T", resp["data"])
+	}
+	if len(data) != 2 {
+		t.Fatalf("expected 2 sessions, got %d", len(data))
+	}
+
+	first := data[0].(map[string]interface{})
+	if first["agent_id"] != "canvas-1" {
+		t.Fatalf("expected agent_id canvas-1, got %v", first["agent_id"])
+	}
+	messages := first["message"].([]interface{})
+	message := messages[0].(map[string]interface{})
+	if _, ok := message["prompt"]; ok {
+		t.Fatalf("expected prompt to be stripped from list response")
+	}
+}
+
+func TestGetAgentSessionHandlerSuccess(t *testing.T) {
+	c, w, db := setupGinContextWithUserAndDB(t, http.MethodGet, "/api/v1/agents/canvas-1/sessions/session-1")
+	c.Params = gin.Params{{Key: "agent_id", Value: "canvas-1"}, {Key: "session_id", Value: "session-1"}}
+
+	db.Create(&entity.UserCanvas{
+		ID:     "canvas-1",
+		UserID: "user-1",
+		Title:  sptr("Test Agent"),
+	})
+	db.Create(&entity.API4Conversation{
+		ID:        "session-1",
+		DialogID:  "canvas-1",
+		UserID:    "user-1",
+		Message:   json.RawMessage(`[{"role":"assistant","content":"hello"}]`),
+		Reference: json.RawMessage(`[]`),
+	})
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.GetAgentSession(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected code %d, got %v: %v", common.CodeSuccess, resp["code"], resp["message"])
+	}
+
+	data, ok := resp["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected data object, got %T", resp["data"])
+	}
+	if data["id"] != "session-1" {
+		t.Fatalf("expected session-1, got %v", data["id"])
+	}
+	if data["dialog_id"] != "canvas-1" {
+		t.Fatalf("expected dialog_id canvas-1, got %v", data["dialog_id"])
+	}
+}
+
+func TestGetAgentSessionHandlerRejectsSessionFromAnotherAgent(t *testing.T) {
+	c, w, db := setupGinContextWithUserAndDB(t, http.MethodGet, "/api/v1/agents/canvas-1/sessions/session-other")
+	c.Params = gin.Params{{Key: "agent_id", Value: "canvas-1"}, {Key: "session_id", Value: "session-other"}}
+
+	db.Create(&entity.UserCanvas{
+		ID:     "canvas-1",
+		UserID: "user-1",
+		Title:  sptr("Test Agent"),
+	})
+	db.Create(&entity.API4Conversation{
+		ID:        "session-other",
+		DialogID:  "canvas-other",
+		UserID:    "user-1",
+		Message:   json.RawMessage(`[{"role":"assistant","content":"other"}]`),
+		Reference: json.RawMessage(`[]`),
+	})
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.GetAgentSession(c)
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp["code"] == float64(common.CodeSuccess) {
+		t.Fatalf("expected non-success for cross-agent session, got response %v", resp)
+	}
+	if resp["data"] != nil {
+		t.Fatalf("expected nil data for cross-agent session, got %v", resp["data"])
+	}
+}
+
+func TestDeleteAgentSessionItemHandlerDeletesOnlyMatchingAgent(t *testing.T) {
+	c, w, db := setupGinContextWithUserAndDB(t, http.MethodDelete, "/api/v1/agents/canvas-1/sessions/session-1")
+	c.Params = gin.Params{{Key: "agent_id", Value: "canvas-1"}, {Key: "session_id", Value: "session-1"}}
+
+	db.Create(&entity.UserCanvas{
+		ID:     "canvas-1",
+		UserID: "user-1",
+		Title:  sptr("Test Agent"),
+	})
+	db.Create(&entity.API4Conversation{
+		ID:        "session-1",
+		DialogID:  "canvas-1",
+		UserID:    "user-1",
+		Message:   json.RawMessage(`[]`),
+		Reference: json.RawMessage(`[]`),
+	})
+	db.Create(&entity.API4Conversation{
+		ID:        "session-other",
+		DialogID:  "canvas-other",
+		UserID:    "user-1",
+		Message:   json.RawMessage(`[]`),
+		Reference: json.RawMessage(`[]`),
+	})
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.DeleteAgentSessionItem(c)
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected code %d, got %v: %v", common.CodeSuccess, resp["code"], resp["message"])
+	}
+	if resp["data"] != true {
+		t.Fatalf("expected data true, got %v", resp["data"])
+	}
+
+	var deletedCount int64
+	if err := db.Model(&entity.API4Conversation{}).Where("id = ?", "session-1").Count(&deletedCount).Error; err != nil {
+		t.Fatalf("failed to count deleted session: %v", err)
+	}
+	if deletedCount != 0 {
+		t.Fatalf("expected session-1 to be deleted, count=%d", deletedCount)
+	}
+
+	var otherCount int64
+	if err := db.Model(&entity.API4Conversation{}).Where("id = ?", "session-other").Count(&otherCount).Error; err != nil {
+		t.Fatalf("failed to count other session: %v", err)
+	}
+	if otherCount != 1 {
+		t.Fatalf("expected session-other to remain, count=%d", otherCount)
+	}
+}
+
+func TestDeleteAgentSessionItemHandlerIgnoresSessionFromAnotherAgent(t *testing.T) {
+	c, w, db := setupGinContextWithUserAndDB(t, http.MethodDelete, "/api/v1/agents/canvas-1/sessions/session-other")
+	c.Params = gin.Params{{Key: "agent_id", Value: "canvas-1"}, {Key: "session_id", Value: "session-other"}}
+
+	db.Create(&entity.UserCanvas{
+		ID:     "canvas-1",
+		UserID: "user-1",
+		Title:  sptr("Test Agent"),
+	})
+	db.Create(&entity.API4Conversation{
+		ID:        "session-other",
+		DialogID:  "canvas-other",
+		UserID:    "user-1",
+		Message:   json.RawMessage(`[]`),
+		Reference: json.RawMessage(`[]`),
+	})
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.DeleteAgentSessionItem(c)
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected code %d, got %v: %v", common.CodeSuccess, resp["code"], resp["message"])
+	}
+	if resp["data"] != false {
+		t.Fatalf("expected data false, got %v", resp["data"])
+	}
+
+	var count int64
+	if err := db.Model(&entity.API4Conversation{}).Where("id = ?", "session-other").Count(&count).Error; err != nil {
+		t.Fatalf("failed to count other session: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected cross-agent session to remain, count=%d", count)
 	}
 }
 
@@ -521,5 +767,40 @@ func TestListAgentTemplates_RequiresAuth(t *testing.T) {
 	}
 	if code, _ := body["code"].(float64); int(code) == int(common.CodeSuccess) {
 		t.Errorf("expected non-success without auth, got body=%v", body)
+	}
+}
+
+func TestGetPrompts_Success(t *testing.T) {
+	c, w, _ := setupGinContextWithUserAndDB(t, http.MethodGet, "/api/v1/agents/prompts")
+	
+	// Create handler with fake or real service.
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.GetPrompts(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	code, _ := resp["code"].(float64)
+	if code != float64(common.CodeSuccess) {
+		t.Fatalf("expected code 0, got %v: %v", code, resp["message"])
+	}
+
+	data, ok := resp["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected data map, got %T", resp["data"])
+	}
+
+	// Check if keys exist
+	expectedKeys := []string{"task_analysis", "plan_generation", "reflection", "citation_guidelines"}
+	for _, key := range expectedKeys {
+		if _, ok := data[key]; !ok {
+			t.Errorf("expected key %s in data", key)
+		}
 	}
 }

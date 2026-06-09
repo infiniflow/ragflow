@@ -955,6 +955,11 @@ async def relevant_chunks_with_toc(query: str, toc: list[dict], chat_mdl, topn: 
 
 META_DATA = load_prompt("meta_data")
 async def gen_metadata(chat_mdl, schema: dict, content: str):
+    if not schema:
+        return ""
+    if "properties" not in schema:
+        logging.warning("gen_metadata: schema has no 'properties' key: %s", schema)
+        return ""
     template = PROMPT_JINJA_ENV.from_string(META_DATA)
     for k, desc in schema["properties"].items():
         if "enum" in desc and not desc.get("enum"):
