@@ -460,7 +460,7 @@ func (h *HuggingFaceModel) ParseFile(modelName *string, content []byte, url *str
 	return nil, fmt.Errorf("%s, no such method", h.Name())
 }
 
-func (h *HuggingFaceModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (h *HuggingFaceModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -511,11 +511,11 @@ func (h *HuggingFaceModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]string, 0)
+	models := make([]ListModelResponse, 0)
 	for _, model := range result["data"].([]interface{}) {
 		modelMap := model.(map[string]interface{})
 		modelName := modelMap["id"].(string)
-		models = append(models, modelName)
+		models = append(models, ListModelResponse{Name: modelName})
 	}
 
 	return models, nil

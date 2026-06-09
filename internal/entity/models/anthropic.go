@@ -376,7 +376,7 @@ func parseAnthropicChatResponse(body []byte) (string, string, error) {
 	return answer.String(), reasoning.String(), nil
 }
 
-func (a *AnthropicModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (a *AnthropicModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -425,10 +425,12 @@ func (a *AnthropicModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-	models := make([]string, 0, len(result.Data))
+	models := make([]ListModelResponse, 0, len(result.Data))
 	for _, item := range result.Data {
 		if item.ID != "" {
-			models = append(models, item.ID)
+			models = append(models, ListModelResponse{
+				Name: item.ID,
+			})
 		}
 	}
 	return models, nil

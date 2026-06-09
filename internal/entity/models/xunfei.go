@@ -384,7 +384,7 @@ func (x *XunFeiModel) ParseFile(modelName *string, content []byte, url *string, 
 	return nil, fmt.Errorf("%s, no such method", x.Name())
 }
 
-func (x *XunFeiModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (x *XunFeiModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -436,11 +436,11 @@ func (x *XunFeiModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	// convert result["data"] to []map[string]interface{}
-	models := make([]string, 0)
+	models := make([]ListModelResponse, 0)
 	for _, model := range result["data"].([]interface{}) {
 		modelMap := model.(map[string]interface{})
 		modelName := modelMap["id"].(string)
-		models = append(models, modelName)
+		models = append(models, ListModelResponse{Name: modelName})
 	}
 
 	return models, nil

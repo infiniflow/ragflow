@@ -231,6 +231,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Searchbot routes
 			v1.POST("/searchbots/related_questions", r.searchBotHandler.Handle)
 			v1.POST("/searchbots/retrieval_test", r.searchBotHandler.RetrievalTest)
+			v1.POST("/searchbots/ask", r.searchBotHandler.Ask)
 
 			// Dataset routes
 			datasets := v1.Group("/datasets")
@@ -244,6 +245,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
 				datasets.POST("/search", r.datasetsHandler.SearchDatasets)
 				datasets.GET("/metadata/flattened", r.datasetsHandler.ListMetadataFlattened)
+				datasets.GET("/:dataset_id/metadata/summary", r.documentHandler.MetadataSummaryByDataset)
 
 				// Dataset ingestion logs
 				datasets.GET("/:dataset_id/ingestions/summary", r.datasetsHandler.GetIngestionSummary)
@@ -386,6 +388,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				agents.GET("", r.agentHandler.ListAgents)
 				// Static-path routes must be registered before parameterised routes
 				// so gin's radix tree resolves them with priority.
+				agents.GET("/prompts", r.agentHandler.GetPrompts)
 				agents.GET("/templates", r.agentHandler.ListTemplates)
 				agents.GET("/download", r.agentHandler.DownloadAgentFile)
 				agents.GET("/attachments/:attachment_id/download", r.agentHandler.DownloadAttachment)
