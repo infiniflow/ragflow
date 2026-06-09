@@ -33,6 +33,26 @@ type OllamaModel struct {
 	baseModel BaseModel
 }
 
+// contentToText extracts a plain-text string from a Message.Content value.
+// Content may be a raw string or an OpenAI-style multimodal array
+// ([]interface{} where each element is {"type": "text", "text": "..."}).
+// The first non-empty "text" value found is returned; empty string on no match.
+func contentToText(content interface{}) string {
+	switch c := content.(type) {
+	case string:
+		return c
+	case []interface{}:
+		for _, item := range c {
+			if part, ok := item.(map[string]interface{}); ok {
+				if text, ok := part["text"].(string); ok && text != "" {
+					return text
+				}
+			}
+		}
+	}
+	return ""
+}
+
 // NewOllamaModel creates a new Ollama AI model instance
 func NewOllamaModel(baseURL map[string]string, urlSuffix URLSuffix) *OllamaModel {
 	return &OllamaModel{
@@ -80,15 +100,9 @@ func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, api
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
-		arr, _ := msg.Content.([]interface{})
-
-		first, _ := arr[0].(map[string]interface{})
-
-		text, _ := first["text"].(string)
-
 		apiMessages[i] = map[string]interface{}{
 			"role":    msg.Role,
-			"content": text,
+			"content": contentToText(msg.Content),
 		}
 	}
 
@@ -178,10 +192,7 @@ func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, api
 		return nil, fmt.Errorf("failed to parse response: content not found")
 	}
 
-	reasonContent, ok := message["thinking"].(string)
-	if !ok {
-		return nil, fmt.Errorf("failed to parse response: thinking not found")
-	}
+	reasonContent, _ := message["thinking"].(string)
 
 	chatResponse := &ChatResponse{
 		Answer:        &content,
@@ -209,15 +220,9 @@ func (o *OllamaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	// Convert messages to API format (supporting multimodal content)
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
-		arr, _ := msg.Content.([]interface{})
-
-		first, _ := arr[0].(map[string]interface{})
-
-		text, _ := first["text"].(string)
-
 		apiMessages[i] = map[string]interface{}{
 			"role":    msg.Role,
-			"content": text,
+			"content": contentToText(msg.Content),
 		}
 	}
 

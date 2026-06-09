@@ -178,7 +178,7 @@ func TestJieKouAIListModelsHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if got := strings.Join(models, ","); got != "gpt-5,text-embedding-3-large" {
+	if got := joinModelNames(models, ","); got != "gpt-5,text-embedding-3-large" {
 		t.Errorf("models=%q", got)
 	}
 }

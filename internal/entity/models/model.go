@@ -701,6 +701,23 @@ func modelHasFeature(features Features, featureType string) bool {
 	}
 }
 
+// findRepoRoot walks up from CWD until it finds the repo root (marked by
+// conf/all_models.json).  This makes tests work regardless of the Go test
+// binary's CWD (which is set to the package directory by go test).
+func findRepoRoot() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "."
+	}
+	for dir != "/" && dir != "" {
+		if _, err := os.Stat(filepath.Join(dir, "conf", "all_models.json")); err == nil {
+			return dir
+		}
+		dir = filepath.Dir(dir)
+	}
+	return "."
+}
+
 // Helper: Find provider by name
 func (pm *ProviderManager) FindProvider(name string) *Provider {
 	for i := range pm.Providers {
