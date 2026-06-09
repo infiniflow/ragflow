@@ -201,7 +201,8 @@ class TestGenerateMetadata(_BasePostProcessorTest):
         ctx = make_task_context(parser_config={})
         docs = [{"content_with_weight": "test"}]
         p1, p2 = self._mock_llm_binding()
-        with p1, p2:
+        p3 = patch("rag.svr.task_executor_refactor.chunk_post_processor.DocMetadataService")
+        with p1, p2, p3:
             await generate_metadata(docs, ctx)  # no exception = pass
 
     @pytest.mark.asyncio
@@ -218,7 +219,8 @@ class TestGenerateMetadata(_BasePostProcessorTest):
         p3 = patch("rag.svr.task_executor_refactor.chunk_post_processor.get_llm_cache",
                    return_value=None)
         p4 = patch("rag.svr.task_executor_refactor.chunk_post_processor.set_llm_cache")
-        with p1, p2, p3, p4:
+        p5 = patch("rag.svr.task_executor_refactor.chunk_post_processor.DocMetadataService")
+        with p1, p2, p3, p4, p5:
             await generate_metadata(docs, ctx)  # no exception = pass
 
     @pytest.mark.asyncio
@@ -235,7 +237,8 @@ class TestGenerateMetadata(_BasePostProcessorTest):
         p3 = patch("rag.svr.task_executor_refactor.chunk_post_processor.get_llm_cache",
                    return_value=None)
         p4 = patch("rag.svr.task_executor_refactor.chunk_post_processor.set_llm_cache")
-        with p1, p2, p3, p4:
+        p5 = patch("rag.svr.task_executor_refactor.chunk_post_processor.DocMetadataService")
+        with p1, p2, p3, p4, p5:
             await generate_metadata(docs, ctx)  # no exception = pass
 
     @pytest.mark.asyncio
@@ -254,7 +257,8 @@ class TestGenerateMetadata(_BasePostProcessorTest):
         p3 = patch("rag.svr.task_executor_refactor.chunk_post_processor.get_llm_cache",
                    return_value=None)
         p4 = patch("rag.svr.task_executor_refactor.chunk_post_processor.set_llm_cache")
-        with p1, p2, p3, p4:
+        p5 = patch("rag.svr.task_executor_refactor.chunk_post_processor.DocMetadataService")
+        with p1, p2, p3, p4, p5:
             await generate_metadata(docs, ctx)  # no exception = pass
 
 
