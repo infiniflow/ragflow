@@ -189,7 +189,9 @@ async def parse(tenant_id, dataset_id):
             == 0
         ):
             return get_error_data_result("Can't parse document that is currently being processed")
-        settings.docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), dataset_id)
+        index_name = search.index_name(tenant_id)
+        if settings.docStoreConn.index_exist(index_name, doc[0].kb_id):
+            settings.docStoreConn.delete({"doc_id": id}, index_name, doc[0].kb_id)
         TaskService.filter_delete([Task.doc_id == id])
         e, doc = DocumentService.get_by_id(id)
         doc = doc.to_dict()
@@ -239,7 +241,9 @@ async def stop_parsing(tenant_id, dataset_id):
         cancel_all_task_of(id)
         info = {"run": "2", "progress": 0, "chunk_num": 0}
         DocumentService.update_by_id(id, info)
-        settings.docStoreConn.delete({"doc_id": doc[0].id}, search.index_name(tenant_id), dataset_id)
+        index_name = search.index_name(tenant_id)
+        if settings.docStoreConn.index_exist(index_name, doc[0].kb_id):
+            settings.docStoreConn.delete({"doc_id": doc[0].id}, index_name, doc[0].kb_id)
         success_count += 1
     if duplicate_messages:
         if success_count > 0:
