@@ -583,7 +583,7 @@ func (l *LocalAIModel) Rerank(modelName *string, query string, documents []strin
 	return rerankResponse, nil
 }
 
-func (l *LocalAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (l *LocalAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := l.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -632,7 +632,7 @@ func (l *LocalAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	models := make([]string, 0)
+	models := make([]ListModelResponse, 0)
 	for _, model := range data {
 		modelMap, ok := model.(map[string]interface{})
 		if !ok {
@@ -642,7 +642,7 @@ func (l *LocalAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		if !ok {
 			continue
 		}
-		models = append(models, modelName)
+		models = append(models, ListModelResponse{Name: modelName})
 	}
 
 	return models, nil

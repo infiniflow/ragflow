@@ -385,7 +385,7 @@ func (m *MoonshotModel) Embed(modelName *string, texts []string, apiConfig *APIC
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (m *MoonshotModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (m *MoonshotModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -435,12 +435,12 @@ func (m *MoonshotModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("models response missing data")
 	}
 
-	models := make([]string, 0, len(result.Data))
+	models := make([]ListModelResponse, 0, len(result.Data))
 	for _, model := range result.Data {
 		if strings.TrimSpace(model.ID) == "" {
 			return nil, fmt.Errorf("models response contains empty id")
 		}
-		models = append(models, strings.TrimSpace(model.ID))
+		models = append(models, ListModelResponse{Name: strings.TrimSpace(model.ID)})
 	}
 
 	return models, nil

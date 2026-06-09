@@ -376,7 +376,7 @@ func TestPPIOListModelsAndCheckConnection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if strings.Join(models, ",") != "deepseek/deepseek-r1,qwen/qwen-2.5-72b-instruct" {
+	if joinModelNames(models, ",") != "deepseek/deepseek-r1,qwen/qwen-2.5-72b-instruct" {
 		t.Errorf("models=%v", models)
 	}
 	if err := model.CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {
