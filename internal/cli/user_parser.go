@@ -2447,7 +2447,7 @@ func (p *Parser) parseInsertMetadataFromFile() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseSearchCommand() (*Command, error) {
+func (p *Parser) parseRetrieveCommand() (*Command, error) {
 	p.nextToken() // consume SEARCH
 
 	var err error
@@ -3559,8 +3559,8 @@ func (p *Parser) parseUserStatement() (*Command, error) {
 		return p.parseImportCommand()
 	case TokenInsert:
 		return p.parseInsertCommand()
-	case TokenSearch:
-		return p.parseSearchCommand()
+	case TokenRetrieve:
+		return p.parseRetrieveCommand()
 	case TokenGet:
 		return p.parseGetCommand()
 	case TokenUpdate:

@@ -100,6 +100,7 @@ const (
 	TokenParser
 	TokenPipeline
 	TokenSearch
+	TokenRetrieve
 	TokenCurrent
 	TokenVision
 	TokenEmbedding

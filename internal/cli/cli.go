@@ -510,11 +510,11 @@ const historyFileName = ".ragflow_cli_history"
 // CLI represents the command line interface
 type CLI struct {
 	//client        *RAGFlowClient
-	contextEngine *filesystem.Engine
-	running       bool
-	line          *liner.State
-	args          *ConnectionArgs
-	outputFormat  OutputFormat // Output format
+	//contextEngine *filesystem.Engine
+	running      bool
+	line         *liner.State
+	args         *ConnectionArgs
+	outputFormat OutputFormat // Output format
 
 	APIServerClientMap map[string]*HTTPClient
 	AdminServerClient  *HTTPClient
@@ -809,7 +809,7 @@ func (c *CLI) executeFilesystem(input string) error {
 	}
 
 	// Check if we have a filesystem engine
-	if c.contextEngine == nil {
+	if c.ContextEngine == nil {
 		return fmt.Errorf("filesystem engine not available")
 	}
 
@@ -866,7 +866,7 @@ func (c *CLI) executeFilesystem(input string) error {
 				}
 			}
 			// Get skill provider and perform search
-			provider := c.contextEngine.GetProvider("skills")
+			provider := c.ContextEngine.GetProvider("skills")
 			if provider == nil {
 				return fmt.Errorf("skill provider not available")
 			}
@@ -907,7 +907,7 @@ func (c *CLI) executeFilesystem(input string) error {
 			return fmt.Errorf("cat requires a path argument")
 		}
 		// Handle cat command directly since it returns []byte, not *Result
-		content, err := c.contextEngine.Cat(context.Background(), cmdArgs[0])
+		content, err := c.ContextEngine.Cat(context.Background(), cmdArgs[0])
 		if err != nil {
 			return err
 		}
@@ -921,11 +921,11 @@ func (c *CLI) executeFilesystem(input string) error {
 		return nil
 	case "install-skill":
 		// Get the file provider and skill provider from the engine
-		fileProvider, ok := c.contextEngine.GetProvider("files").(*filesystem.FileProvider)
+		fileProvider, ok := c.ContextEngine.GetProvider("files").(*filesystem.FileProvider)
 		if !ok {
 			return fmt.Errorf("file provider not available")
 		}
-		skillProvider := c.contextEngine.GetProvider("skills")
+		skillProvider := c.ContextEngine.GetProvider("skills")
 		if skillProvider == nil {
 			return fmt.Errorf("skill provider not available")
 		}
@@ -934,11 +934,11 @@ func (c *CLI) executeFilesystem(input string) error {
 		cmd := filesystem.NewInstallSkillCommand(httpAdapter, fileProvider, skillProvider)
 		return cmd.Execute(cmdArgs)
 	case "uninstall-skill":
-		skillProvider := c.contextEngine.GetProvider("skills")
+		skillProvider := c.ContextEngine.GetProvider("skills")
 		if skillProvider == nil {
 			return fmt.Errorf("skill provider not available")
 		}
-		fileProvider := c.contextEngine.GetProvider("files")
+		fileProvider := c.ContextEngine.GetProvider("files")
 		if fileProvider == nil {
 			return fmt.Errorf("file provider not available")
 		}
@@ -950,11 +950,11 @@ func (c *CLI) executeFilesystem(input string) error {
 	case "add-skill":
 		fmt.Println("⚠ Warning: 'add-skill' is deprecated. Use 'install-skill' instead.")
 		// Forward to install-skill
-		fileProvider, ok := c.contextEngine.GetProvider("files").(*filesystem.FileProvider)
+		fileProvider, ok := c.ContextEngine.GetProvider("files").(*filesystem.FileProvider)
 		if !ok {
 			return fmt.Errorf("file provider not available")
 		}
-		skillProvider := c.contextEngine.GetProvider("skills")
+		skillProvider := c.ContextEngine.GetProvider("skills")
 		if skillProvider == nil {
 			return fmt.Errorf("skill provider not available")
 		}
@@ -964,11 +964,11 @@ func (c *CLI) executeFilesystem(input string) error {
 	case "delete-skill":
 		fmt.Println("⚠ Warning: 'delete-skill' is deprecated. Use 'uninstall-skill' instead.")
 		// Forward to uninstall-skill
-		skillProvider := c.contextEngine.GetProvider("skills")
+		skillProvider := c.ContextEngine.GetProvider("skills")
 		if skillProvider == nil {
 			return fmt.Errorf("skill provider not available")
 		}
-		fileProvider := c.contextEngine.GetProvider("files")
+		fileProvider := c.ContextEngine.GetProvider("files")
 		if fileProvider == nil {
 			return fmt.Errorf("file provider not available")
 		}
@@ -982,7 +982,7 @@ func (c *CLI) executeFilesystem(input string) error {
 	}
 
 	// Execute the command
-	result, err := c.contextEngine.Execute(context.Background(), ceCmd)
+	result, err := c.ContextEngine.Execute(context.Background(), ceCmd)
 	if err != nil {
 		return err
 	}

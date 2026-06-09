@@ -110,8 +110,8 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 		return p.parseAdminGenerateCommand()
 	case TokenImport:
 		return p.parseAdminImportCommand()
-	case TokenSearch:
-		return p.parseAdminSearchCommand()
+	case TokenRetrieve:
+		return p.parseAdminRetrieveCommand()
 	case TokenParse:
 		return p.parseAdminParseCommand()
 	case TokenBenchmark:
@@ -178,8 +178,8 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseImportCommand()
 	case TokenInsert:
 		return p.parseInsertCommand()
-	case TokenSearch:
-		return p.parseSearchCommand()
+	case TokenRetrieve:
+		return p.parseRetrieveCommand()
 	case TokenParse:
 		return p.parseParseCommand()
 	case TokenBenchmark:
@@ -225,10 +225,7 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 	case TokenGet:
 		return p.parseGetCommand()
 
-	case TokenLS:
-		// For context engine
-		return p.parseContextEngineCommand()
-	case TokenCat:
+	case TokenLS, TokenCat, TokenSearch:
 		// For context engine
 		return p.parseContextEngineCommand()
 	default:

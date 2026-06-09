@@ -286,13 +286,6 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	// ContextEngine commands
 	case "context_engine_command":
 		return nil, c.executeFilesystem(cmd.Params["command"].(string))
-	case "ce_ls":
-		return c.CEList(cmd)
-	case "ce_cat":
-		return c.CECat(cmd)
-	case "ce_search":
-		return c.CESearch(cmd)
-	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
 	}

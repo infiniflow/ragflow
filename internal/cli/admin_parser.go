@@ -1380,7 +1380,7 @@ func (p *Parser) parseAdminImportCommand() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseAdminSearchCommand() (*Command, error) {
+func (p *Parser) parseAdminRetrieveCommand() (*Command, error) {
 	p.nextToken() // consume SEARCH
 	question, err := p.parseQuotedString()
 	if err != nil {
@@ -1536,8 +1536,8 @@ func (p *Parser) parseAdminUserStatement() (*Command, error) {
 		return p.parseParseCommand()
 	case TokenImport:
 		return p.parseImportCommand()
-	case TokenSearch:
-		return p.parseSearchCommand()
+	case TokenRetrieve:
+		return p.parseRetrieveCommand()
 	default:
 		return nil, fmt.Errorf("invalid user statement: %s", p.curToken.Value)
 	}
