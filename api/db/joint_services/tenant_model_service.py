@@ -107,6 +107,7 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
     extra_fields = json.loads(instance_obj.extra) if instance_obj.extra else {}
 
     if model_obj:
+        model_extra_fields = json.loads(model_obj.extra) if model_obj.extra else {}
         if model_obj.status == ActiveStatusEnum.INACTIVE.value:
             raise LookupError(f"Model {model_name} is disabled.")
 
@@ -116,7 +117,10 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
             "llm_name": model_obj.model_name,
             "api_base": extra_fields.get("base_url", ""),
             "model_type": model_obj.model_type,
-            "is_tools": extra_fields.get("is_tools", is_tool)
+            "is_tools": extra_fields.get("is_tools", is_tool),
+            # SoMark/OCR factories read parser config (somark_*, parse_method, ...)
+            # from model_config["extra"]; see tenant_llm_service.LLMBundle OCR path.
+            "extra": model_extra_fields,
         }
         if api_key_payload is not None:
             model_config["api_key_payload"] = api_key_payload

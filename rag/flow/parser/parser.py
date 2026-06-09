@@ -247,7 +247,7 @@ class ParserParam(ProcessParamBase):
             pdf_parse_method = pdf_config.get("parse_method", "")
             self.check_empty(pdf_parse_method, "Parse method abnormal.")
 
-            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "docling", "opendataloader", "tcadp parser", "paddleocr"]:
+            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "docling", "opendataloader", "tcadp parser", "paddleocr", "somark"]:
                 self.check_empty(pdf_config.get("lang", ""), "PDF VLM language")
 
             pdf_output_format = pdf_config.get("output_format", "")
@@ -341,6 +341,13 @@ class Parser(ProcessBase):
             elif lowered.endswith("@paddleocr"):
                 parser_model_name = raw_parse_method.rsplit("@", 1)[0]
                 parse_method = "PaddleOCR"
+            elif lowered.endswith("@somark"):
+                # Keep the full 3-segment ``<llm_name>@<instance_name>@<provider>``
+                # form produced by the new Tenant LLM Provider UI (#14595);
+                # ``get_model_config_from_provider_instance`` -> ``split_model_name``
+                # downstream requires all three segments.
+                parser_model_name = raw_parse_method
+                parse_method = "SoMark"
 
         # DeepDOC returns structured page boxes directly.
         if parse_method.lower() == "deepdoc":
@@ -501,6 +508,62 @@ class Parser(ProcessBase):
                         pass
                 bboxes.append(box)
 
+        elif parse_method.lower() == "somark":
+
+            def resolve_somark_llm_name():
+                configured = parser_model_name or conf.get("somark_llm_name")
+                if configured:
+                    return configured
+                tenant_id = self._canvas._tenant_id
+                if not tenant_id:
+                    return None
+                from api.db.services.tenant_llm_service import TenantLLMService
+                env_name = TenantLLMService.ensure_somark_from_env(tenant_id)
+                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="SoMark", model_type=LLMType.OCR.value)
+                if candidates:
+                    return candidates[0].llm_name
+                return env_name
+
+            parser_model_name = resolve_somark_llm_name()
+            if not parser_model_name:
+                raise RuntimeError("SoMark model not configured. Please add SoMark in Model Providers or set SOMARK_* env.")
+
+            tenant_id = self._canvas._tenant_id
+            try:
+                ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, parser_model_name)
+            except Exception:
+                if "@" in parser_model_name:
+                    raise
+                from api.db.services.tenant_llm_service import TenantLLMService
+
+                ocr_model_config = TenantLLMService.get_model_config(tenant_id, LLMType.OCR.value, parser_model_name)
+            ocr_model = LLMBundle(tenant_id, ocr_model_config)
+            pdf_parser = ocr_model.mdl
+
+            lines, _ = pdf_parser.parse_pdf(
+                filepath=name,
+                binary=blob,
+                callback=self.callback,
+                parse_method="pipeline",
+            )
+            bboxes = []
+            for item in lines or []:
+                if not isinstance(item, tuple) or len(item) < 3:
+                    continue
+                text, layout_type, poss = item[0], item[1], item[2]
+                box = {
+                    "text": text,
+                    "layout_type": layout_type or "text",
+                }
+                if isinstance(poss, str) and poss:
+                    positions = [[pos[0][-1] + 1, *pos[1:]] for pos in pdf_parser.extract_positions(poss)]
+                    if positions:
+                        box["positions"] = positions
+                    image = pdf_parser.crop(poss, 1)
+                    if image is not None:
+                        box["image"] = image
+                bboxes.append(box)
+
         elif parse_method.lower() == "tcadp parser":
             # ADP is a document parsing tool using Tencent Cloud API
             table_result_type = conf.get("table_result_type", "1")
@@ -649,7 +712,10 @@ class Parser(ProcessBase):
                 b["doc_type_kwd"] = "text"
             elif layout == "table":
                 b["doc_type_kwd"] = "table"
-            elif layout == "figure":
+            elif layout in {"figure", "image"}:
+                # Markdown writer below only renders layout_type == "figure";
+                # normalize "image" so SoMark/PaddleOCR media render inline.
+                b["layout_type"] = "figure"
                 b["doc_type_kwd"] = "image"
             elif not has_layout and b.get("image") is not None:
                 b["doc_type_kwd"] = "image"
