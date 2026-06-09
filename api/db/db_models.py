@@ -1728,7 +1728,20 @@ def migrate_db():
     alter_db_column_type(migrator, "document", "size", BigIntegerField(default=0, index=True))
     alter_db_column_type(migrator, "file", "size", BigIntegerField(default=0, index=True))
     alter_db_add_column(migrator, "tenant", "ocr_id", CharField(max_length=128, null=True, help_text="default ocr model ID", index=True))
-    for table_name, index_name in [("tenant_model_instance", "idx_api_key_provider_id"), ("tenant_model", "idx_provider_model_instance")]:
+    # Drop both the explicit "idx_*" name from later migrations AND the
+    # Peewee-auto-derived "<table-as-classname>_<col1>_<col2>" name from the
+    # original TenantModelInstance definition (commit dc4b82523). Databases
+    # created before #15460 dropped the model's `indexes = ((...,), True)`
+    # tuple still carry the auto-named compound unique index, which makes a
+    # second instance with an empty api_key (e.g. Ollama) fail with
+    # "Duplicate entry ... for key 'tenantmodelinstance_api_key_provider_id'"
+    # — see #15699.
+    legacy_indexes = [
+        ("tenant_model_instance", "idx_api_key_provider_id"),
+        ("tenant_model_instance", "tenantmodelinstance_api_key_provider_id"),
+        ("tenant_model", "idx_provider_model_instance"),
+    ]
+    for table_name, index_name in legacy_indexes:
         try:
             migrate(migrator.drop_index(table_name, index_name))
         except (OperationalError, ProgrammingError) as ex:
