@@ -32,9 +32,7 @@ import (
 //
 // PPIO exposes OpenAI-compatible chat completions and model listing endpoints.
 type PPIOModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 func NewPPIOModel(baseURL map[string]string, urlSuffix URLSuffix) *PPIOModel {
@@ -43,45 +41,30 @@ func NewPPIOModel(baseURL map[string]string, urlSuffix URLSuffix) *PPIOModel {
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
 	return &PPIOModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: transport,
+			},
 		},
 	}
 }
 
 func (p *PPIOModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewPPIOModel(baseURL, p.URLSuffix)
+	return NewPPIOModel(baseURL, p.baseModel.URLSuffix)
 }
 
 func (p *PPIOModel) Name() string {
 	return "ppio"
 }
 
-func (p *PPIOModel) baseURLForRegion(region string) (string, error) {
-	base, ok := p.BaseURL[region]
-	if ok && base != "" {
-		return strings.TrimSuffix(base, "/"), nil
-	}
-	if region == "" {
-		if base, ok := p.BaseURL["default"]; ok && base != "" {
-			return strings.TrimSuffix(base, "/"), nil
-		}
-	}
-	return "", fmt.Errorf("ppio: no base URL configured for region %q", region)
-}
-
 func (p *PPIOModel) endpoint(apiConfig *APIConfig, suffix string) (string, error) {
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := p.baseURLForRegion(region)
+	baseURL, err := p.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return "", err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	return fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(suffix, "/")), nil
 }
 
@@ -137,8 +120,8 @@ type ppioChatResponse struct {
 }
 
 func (p *PPIOModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := p.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
@@ -147,7 +130,7 @@ func (p *PPIOModel) ChatWithMessages(modelName string, messages []Message, apiCo
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	url, err := p.endpoint(apiConfig, p.URLSuffix.Chat)
+	url, err := p.endpoint(apiConfig, p.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +150,7 @@ func (p *PPIOModel) ChatWithMessages(modelName string, messages []Message, apiCo
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := p.httpClient.Do(req)
+	resp, err := p.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -205,11 +188,12 @@ func (p *PPIOModel) ChatWithMessages(modelName string, messages []Message, apiCo
 }
 
 func (p *PPIOModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := p.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if sender == nil {
 		return fmt.Errorf("sender is required")
-	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return fmt.Errorf("model name is required")
@@ -221,7 +205,7 @@ func (p *PPIOModel) ChatStreamlyWithSender(modelName string, messages []Message,
 		return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 	}
 
-	url, err := p.endpoint(apiConfig, p.URLSuffix.Chat)
+	url, err := p.endpoint(apiConfig, p.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
@@ -242,7 +226,7 @@ func (p *PPIOModel) ChatStreamlyWithSender(modelName string, messages []Message,
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	req.Header.Set("Accept", "text/event-stream")
 
-	resp, err := p.httpClient.Do(req)
+	resp, err := p.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -319,12 +303,12 @@ type ppioListModelsResponse struct {
 	Error interface{}     `json:"error"`
 }
 
-func (p *PPIOModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+func (p *PPIOModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := p.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	url, err := p.endpoint(apiConfig, p.URLSuffix.Models)
+	url, err := p.endpoint(apiConfig, p.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
@@ -339,7 +323,7 @@ func (p *PPIOModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := p.httpClient.Do(req)
+	resp, err := p.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -361,10 +345,10 @@ func (p *PPIOModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("ppio: upstream error: %v", result.Error)
 	}
 
-	models := make([]string, 0, len(result.Data))
+	models := make([]ListModelResponse, 0, len(result.Data))
 	for _, model := range result.Data {
 		if model.ID != "" {
-			models = append(models, model.ID)
+			models = append(models, ListModelResponse{Name: model.ID})
 		}
 	}
 	return models, nil

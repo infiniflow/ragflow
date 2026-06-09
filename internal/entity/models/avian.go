@@ -29,63 +29,33 @@ import (
 )
 
 // AvianModel implements ModelDriver for Avian (https://api.avian.io/docs/).
-//
-// Avian is a SaaS inference platform exposing an OpenAI-compatible REST API
-// at https://api.avian.io/v1 (chat completions at /chat/completions, list
-// models at /models). It serves a catalog of third-party chat models
-// (DeepSeek, Kimi, GLM, MiniMax, etc.) behind a single OpenAI-shaped surface.
-//
-// The shipped base URL is https://api.avian.io; the tenant may override
-// per-instance. Authentication is always required: every call sets
-// Authorization: Bearer <api_key>. Reasoning models surface their thinking
-// in either `reasoning_content` (preferred) or `reasoning`; the driver
-// extracts whichever is non-empty and routes it to ChatResponse.ReasonContent
-// (non-stream) or the sender's second argument (stream).
 type AvianModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 // NewAvianModel creates a new Avian model instance.
-//
-// Same transport convention as other Go SaaS drivers in this package:
-// clone http.DefaultTransport, override the connection-pool fields,
-// no client-level Timeout so SSE streams are not capped at the client
-// layer (per-request contexts handle that).
 func NewAvianModel(baseURL map[string]string, urlSuffix URLSuffix) *AvianModel {
 	transport := newPooledTransport()
 	transport.DisableCompression = false
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
 	return &AvianModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: transport,
+			},
 		},
 	}
 }
 
 func (a *AvianModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewAvianModel(baseURL, a.URLSuffix)
+	return NewAvianModel(baseURL, a.baseModel.URLSuffix)
 }
 
 func (a *AvianModel) Name() string {
 	return "avian"
-}
-
-func (a *AvianModel) baseURLForRegion(region string) (string, error) {
-	base, ok := a.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("avian: no base URL configured for region %q", region)
-	}
-	// Tenants may paste in a base URL that already includes the API
-	// version (".../v1" or ".../v1/"); callers append "v1/..." so we
-	// strip those plus any trailing "/" to avoid "/v1/v1/..." paths.
-	base = strings.TrimSuffix(base, "/")
-	base = strings.TrimSuffix(base, "/v1")
-	return strings.TrimSuffix(base, "/"), nil
 }
 
 func (a *AvianModel) chatPayload(modelName string, messages []Message, stream bool, chatModelConfig *ChatConfig) map[string]interface{} {
@@ -122,16 +92,13 @@ func (a *AvianModel) chatPayload(modelName string, messages []Message, stream bo
 }
 
 func (a *AvianModel) chatURL(apiConfig *APIConfig) (string, error) {
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
 
-	baseURL, err := a.baseURLForRegion(region)
+	baseURL, err := a.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s/%s", baseURL, a.URLSuffix.Chat), nil
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	return fmt.Sprintf("%s/%s", baseURL, a.baseModel.URLSuffix.Chat), nil
 }
 
 type avianChatMessage struct {
@@ -153,8 +120,8 @@ type avianChatResponse struct {
 }
 
 func (a *AvianModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
@@ -183,7 +150,7 @@ func (a *AvianModel) ChatWithMessages(modelName string, messages []Message, apiC
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -220,11 +187,12 @@ func (a *AvianModel) ChatWithMessages(modelName string, messages []Message, apiC
 }
 
 func (a *AvianModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if sender == nil {
 		return fmt.Errorf("sender is required")
-	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return fmt.Errorf("model name is required")
@@ -246,9 +214,6 @@ func (a *AvianModel) ChatStreamlyWithSender(modelName string, messages []Message
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// ResponseHeaderTimeout caps the initial header wait. This context
-	// also caps the body-read phase so a stalled SSE stream cannot hold
-	// the caller's goroutine and connection indefinitely.
 	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
 	defer cancel()
 
@@ -259,7 +224,7 @@ func (a *AvianModel) ChatStreamlyWithSender(modelName string, messages []Message
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -331,21 +296,17 @@ type avianModelInfo struct {
 	ID string `json:"id"`
 }
 
-func (a *AvianModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+func (a *AvianModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := a.baseURLForRegion(region)
+	baseURL, err := a.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, a.URLSuffix.Models)
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, a.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -357,7 +318,7 @@ func (a *AvianModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -376,10 +337,12 @@ func (a *AvianModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]string, 0, len(result))
+	models := make([]ListModelResponse, 0, len(result))
 	for _, model := range result {
 		if model.ID != "" {
-			models = append(models, model.ID)
+			models = append(models, ListModelResponse{
+				Name: model.ID,
+			})
 		}
 	}
 	return models, nil

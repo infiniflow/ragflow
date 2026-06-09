@@ -19,6 +19,7 @@ import threading
 from abc import ABC
 from contextlib import contextmanager
 from urllib.parse import urljoin
+from json.decoder import JSONDecodeError
 
 import dashscope
 import numpy as np
@@ -1084,8 +1085,11 @@ class VolcEngineEmbed(Base):
             base_url = "https://ark.cn-beijing.volces.com/api/v3"
         self.base_url = base_url
 
-        cfg = json.loads(key)
-        self.ark_api_key = cfg.get("ark_api_key", "")
+        try:
+            cfg = json.loads(key)
+            self.ark_api_key = cfg.get("ark_api_key", "")
+        except JSONDecodeError:
+            self.ark_api_key = key
         self.model_name = model_name
 
     @staticmethod

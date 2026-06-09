@@ -73,7 +73,7 @@ func TestXAIListModelsHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if strings.Join(models, ",") != "grok-4,grok-3-mini" {
+	if joinModelNames(models, ",") != "grok-4,grok-3-mini" {
 		t.Fatalf("models=%v", models)
 	}
 }

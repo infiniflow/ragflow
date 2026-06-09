@@ -16,6 +16,7 @@
 import logging
 import os
 import enum
+import json
 from common import settings
 from common.constants import LLMType, ActiveStatusEnum
 from api.db.services.tenant_llm_service import TenantLLMService, TenantService
@@ -81,7 +82,7 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
             model_type_val == LLMType.EMBEDDING.value
             and "tei-" in compose_profiles
             and pure_model_name == os.getenv("TEI_MODEL", "")
-            and (provider_name == "Builtin" or provider_name is None)
+            and (provider_name == "Builtin" or not provider_name)
     )
     if is_tei_builtin_embedding:
         # configured local embedding model
@@ -102,7 +103,6 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
         raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
     model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(provider_obj.id, instance_obj.id, model_type_val, pure_model_name)
 
-    import json
     api_key, is_tool, api_key_payload = TenantLLMService._decode_api_key_config(instance_obj.api_key)
     extra_fields = json.loads(instance_obj.extra) if instance_obj.extra else {}
 
@@ -123,7 +123,12 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
 
         return model_config
     else:
-        fac_list = [f for f in settings.FACTORY_LLM_INFOS if f["name"] == provider_name]
+        region = extra_fields.get("region", "default")
+        if region == "intl" and provider_name.lower() == "siliconflow":
+            target_factory_name = "siliconflow_intl"
+        else:
+            target_factory_name = provider_name
+        fac_list = [f for f in settings.FACTORY_LLM_INFOS if f["name"] == target_factory_name]
         if not fac_list:
             raise LookupError(f"Model provider config not found: {provider_name}")
         llm_list = [llm for llm in fac_list[0]["llm"] if llm["llm_name"] == pure_model_name]
@@ -167,7 +172,13 @@ def get_model_type_by_name(tenant_id: str, model_name: str):
         raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
     model_objs = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(provider_obj.id, instance_obj.id, pure_model_name)
     if not model_objs:
-        fac_list = [f for f in settings.FACTORY_LLM_INFOS if f["name"] == provider_name]
+        extra_fields = json.loads(instance_obj.extra) if instance_obj.extra else {}
+        region = extra_fields.get("region", "default")
+        if region == "intl" and provider_name.lower() == "siliconflow":
+            target_factory_name = "siliconflow_intl"
+        else:
+            target_factory_name = provider_name
+        fac_list = [f for f in settings.FACTORY_LLM_INFOS if f["name"] == target_factory_name]
         if not fac_list:
             raise LookupError(f"Model provider config not found: {provider_name}")
         llm_list = [llm for llm in fac_list[0]["llm"] if llm["llm_name"] == pure_model_name]
