@@ -34,7 +34,7 @@ type BenchmarkResult struct {
 }
 
 // RunBenchmark runs a benchmark with the given concurrency and iterations
-func (c *RAGFlowClient) RunBenchmark(cmd *Command) (ResponseIf, error) {
+func (c *CLI) RunBenchmark(cmd *Command) (ResponseIf, error) {
 	concurrency, ok := cmd.Params["concurrency"].(int)
 	if !ok {
 		concurrency = 1
@@ -64,7 +64,7 @@ func (c *RAGFlowClient) RunBenchmark(cmd *Command) (ResponseIf, error) {
 }
 
 // runBenchmarkSingle runs benchmark with single concurrency (sequential execution)
-func (c *RAGFlowClient) runBenchmarkSingle(iterations int, nestedCmd *Command) (*BenchmarkResponse, error) {
+func (c *CLI) runBenchmarkSingle(iterations int, nestedCmd *Command) (*BenchmarkResponse, error) {
 	commandType := nestedCmd.Type
 
 	// For search_on_datasets, convert dataset names to IDs first
@@ -144,7 +144,7 @@ func (c *RAGFlowClient) runBenchmarkSingle(iterations int, nestedCmd *Command) (
 }
 
 // runBenchmarkConcurrent runs benchmark with multiple concurrent workers
-func (c *RAGFlowClient) runBenchmarkConcurrent(concurrency, iterations int, nestedCmd *Command) (*BenchmarkResponse, error) {
+func (c *CLI) runBenchmarkConcurrent(concurrency, iterations int, nestedCmd *Command) (*BenchmarkResponse, error) {
 	results := make([]map[string]interface{}, concurrency)
 	var wg sync.WaitGroup
 
@@ -173,8 +173,13 @@ func (c *RAGFlowClient) runBenchmarkConcurrent(concurrency, iterations int, nest
 			defer wg.Done()
 
 			// Create a new client for each goroutine to avoid race conditions
-			workerClient := NewRAGFlowClient(c.ServerType)
-			workerClient.HTTPClient = c.HTTPClient // Share the same HTTP client config
+			workerClient, err := NewCLIWithConfig(nil)
+			if err != nil {
+				fmt.Printf("fail to create worker client: %s", err)
+				return
+			}
+			workerClient.AdminServerClient = c.AdminServerClient
+			workerClient.APIServerClientMap = c.APIServerClientMap
 
 			// Execute benchmark silently (no output)
 			responseList := workerClient.executeBenchmarkSilent(nestedCmd, iterations)
@@ -218,8 +223,10 @@ func (c *RAGFlowClient) runBenchmarkConcurrent(concurrency, iterations int, nest
 }
 
 // executeBenchmarkSilent executes a command for benchmark without printing output
-func (c *RAGFlowClient) executeBenchmarkSilent(cmd *Command, iterations int) []*Response {
+func (c *CLI) executeBenchmarkSilent(cmd *Command, iterations int) []*Response {
 	responseList := make([]*Response, 0, iterations)
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
 
 	for i := 0; i < iterations; i++ {
 		var resp *Response
@@ -227,12 +234,12 @@ func (c *RAGFlowClient) executeBenchmarkSilent(cmd *Command, iterations int) []*
 
 		switch cmd.Type {
 		case "ping":
-			resp, err = c.HTTPClient.Request("GET", "/system/ping", "web", nil, nil)
+			resp, err = httpClient.Request("GET", "/system/ping", "web", nil, nil)
 		case "list_user_datasets":
-			resp, err = c.HTTPClient.Request("POST", "/kb/list", "web", nil, nil)
+			resp, err = httpClient.Request("POST", "/kb/list", "web", nil, nil)
 		case "list_datasets":
 			userName, _ := cmd.Params["user_name"].(string)
-			resp, err = c.HTTPClient.Request("GET", fmt.Sprintf("/admin/users/%s/datasets", userName), "admin", nil, nil)
+			resp, err = httpClient.Request("GET", fmt.Sprintf("/admin/users/%s/datasets", userName), "admin", nil, nil)
 		case "search_on_datasets":
 			question, _ := cmd.Params["question"].(string)
 			datasetIDs, _ := cmd.Params["dataset_ids"].([]string)
@@ -242,7 +249,7 @@ func (c *RAGFlowClient) executeBenchmarkSilent(cmd *Command, iterations int) []*
 				"similarity_threshold":     0.2,
 				"vector_similarity_weight": 0.3,
 			}
-			resp, err = c.HTTPClient.Request("POST", "/datasets/search", "web", nil, payload)
+			resp, err = httpClient.Request("POST", "/datasets/search", "web", nil, payload)
 		default:
 			// For other commands, we would need to add specific handling
 			// For now, mark as failed

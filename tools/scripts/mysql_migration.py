@@ -834,7 +834,7 @@ class TenantModelStage(MigrationStage):
             create_date DATETIME,
             update_time BIGINT,
             update_date DATETIME,
-            INDEX idx_instance_id (instance_id),
+            INDEX idx_instance_id (instance_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """
         self.db.execute_sql(create_sql)
