@@ -178,7 +178,22 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 		for i := 0; i < len(args); i++ {
 			arg := args[i]
 
-			// If we've found the command, collect remaining args as subcommand args
+			// Handle known global flags (already parsed in first pass).
+			// Intercept here regardless of position so they are never
+			// mistaken for command args or unknown flags downstream.
+			switch arg {
+			case "-o", "--output":
+				if i+1 < len(args) {
+					i++
+				}
+				continue
+			case "-v", "--verbose", "--help", "-help":
+				continue
+			case "--admin", "-admin":
+				return nil, fmt.Errorf("unexpected parameter: --admin")
+			}
+
+			// If we've found the command, collect remaining args
 			if foundCommand {
 				commandArgs = append(commandArgs, arg)
 				continue
@@ -223,17 +238,6 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 					}
 					i++
 				}
-			case "-o", "--output":
-				// Already handled above
-				if i+1 < len(args) {
-					i++
-				}
-				continue
-			case "-v", "--verbose", "--help", "-help":
-				// Already handled above
-				continue
-			case "--admin", "-admin":
-				return nil, fmt.Errorf("unexpected parameter: --admin")
 			default:
 				// Non-flag argument (command)
 				if !strings.HasPrefix(arg, "-") {
@@ -312,7 +316,22 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 		for i := 0; i < len(args); i++ {
 			arg := args[i]
 
-			// If we've found the command, collect remaining args as subcommand args
+			// Handle known global flags regardless of position
+			switch arg {
+			case "-o", "--output":
+				if i+1 < len(args) {
+					i++
+				}
+				continue
+			case "-v", "--verbose", "--admin", "-admin", "--help", "-help":
+				continue
+			case "-t", "--token":
+				return nil, fmt.Errorf("token is invalid in admin mode")
+			case "-f", "--config":
+				return nil, fmt.Errorf("config is invalid in admin mode")
+			}
+
+			// If we've found the command, collect remaining args
 			if foundCommand {
 				commandArgs = append(commandArgs, arg)
 				continue
@@ -330,8 +349,6 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 					AdminConfig.AdminPort = port
 					i++
 				}
-			case "-t", "--token":
-				return nil, fmt.Errorf("token is invalid in admin mode")
 			case "-u", "--user":
 				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
 					AdminConfig.AdminName = &args[i+1]
@@ -342,17 +359,6 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 					AdminConfig.AdminPassword = &args[i+1]
 					i++
 				}
-			case "-f", "--config":
-				return nil, fmt.Errorf("config is invalid in admin mode")
-			case "-o", "--output":
-				// Already handled above
-				if i+1 < len(args) {
-					i++
-				}
-				continue
-			case "-v", "--verbose", "--admin", "-admin", "--help", "-help":
-				// Already handled above
-				continue
 			default:
 				// Non-flag argument (command)
 				if !strings.HasPrefix(arg, "-") {
@@ -535,8 +541,9 @@ func NewCLIWithConfig(commandLineConfig *CommandLineConfig) (*CLI, error) {
 	line := liner.NewLiner()
 
 	cli := &CLI{
-		line:   line,
-		Config: commandLineConfig,
+		line:         line,
+		Config:       commandLineConfig,
+		outputFormat: commandLineConfig.OutputFormat,
 	}
 
 	if commandLineConfig.CLIMode == APIMode {
