@@ -90,17 +90,17 @@ ALLOWED_GEN_CONF_KEYS = frozenset(
         "logprobs",
         "top_logprobs",
         "extra_headers",
-        "thinking",
-        "enable_thinking",
     }
 )
 
 # LiteLLM additionally understands reasoning-control parameters that the
 # model-family policies may inject into `gen_conf` (e.g. `thinking` for
-# Anthropic / Kimi reasoning models, `reasoning_effort` for OpenAI o-series).
+# Anthropic / Kimi reasoning models, `enable_thinking` for Qwen models,
+# `reasoning_effort` for OpenAI o-series).
 LITELLM_ALLOWED_GEN_CONF_KEYS = ALLOWED_GEN_CONF_KEYS | frozenset(
     {
         "thinking",
+        "enable_thinking",
         "reasoning_effort",
         "extra_body",
     }
@@ -120,17 +120,21 @@ def _apply_model_family_policies(
     sanitized_kwargs = dict(request_kwargs) if request_kwargs else {}
 
     def _thinking_type():
-        val = sanitized_gen_conf.pop("thinking", None)
+        val = sanitized_gen_conf.get("thinking")
         if isinstance(val, dict):
             val = val.get("type")
 
-        enable_thinking = sanitized_gen_conf.pop("enable_thinking", None)
+        enable_thinking = sanitized_gen_conf.get("enable_thinking")
 
         if isinstance(val, str) and val in {"enabled", "disabled"}:
             return val
         if isinstance(enable_thinking, bool):
             return "enabled" if enable_thinking else "disabled"
         return None
+
+    def _pop_thinking_controls():
+        sanitized_gen_conf.pop("thinking", None)
+        sanitized_gen_conf.pop("enable_thinking", None)
 
     def _merge_extra_body(target: dict, extra: dict) -> None:
         body = target.get("extra_body")
@@ -143,6 +147,7 @@ def _apply_model_family_policies(
 
     # Qwen3 keeps RAGFlow's system default of disabling thinking unless explicitly overridden.
     if "qwen3" in model_name_lower:
+        _pop_thinking_controls()
         enable_thinking = thinking_type == "enabled" if thinking_type else False
         if backend == "litellm" and provider in {
             SupportedLiteLLMProvider.Tongyi_Qianwen,
@@ -170,6 +175,7 @@ def _apply_model_family_policies(
                 sanitized_gen_conf.pop(key, None)
         elif provider == SupportedLiteLLMProvider.Moonshot:
             if thinking_type:
+                _pop_thinking_controls()
                 sanitized_gen_conf["thinking"] = {"type": thinking_type}
 
             if thinking_type or "kimi-k2.5" in model_name_lower or "kimi-k2.6" in model_name_lower:
@@ -183,6 +189,7 @@ def _apply_model_family_policies(
             and "glm" in model_name_lower
             and thinking_type
         ):
+            _pop_thinking_controls()
             sanitized_gen_conf["thinking"] = {"type": thinking_type}
 
         return sanitized_gen_conf, sanitized_kwargs
