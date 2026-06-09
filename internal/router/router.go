@@ -42,6 +42,10 @@ type Router struct {
 	skillSearchHandler   *handler.SkillSearchHandler
 	providerHandler      *handler.ProviderHandler
 	agentHandler         *handler.AgentHandler
+	searchBotHandler     *handler.SearchBotHandler
+	difyRetrievalHandler *handler.DifyRetrievalHandler
+	pluginHandler        *handler.PluginHandler
+	modelHandler         *handler.ModelHandler
 }
 
 // NewRouter create router
@@ -65,6 +69,10 @@ func NewRouter(
 	skillSearchHandler *handler.SkillSearchHandler,
 	providerHandler *handler.ProviderHandler,
 	agentHandler *handler.AgentHandler,
+	searchBotHandler *handler.SearchBotHandler,
+	difyRetrievalHandler *handler.DifyRetrievalHandler,
+	pluginHandler *handler.PluginHandler,
+	modelHandler *handler.ModelHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -86,11 +94,24 @@ func NewRouter(
 		skillSearchHandler:   skillSearchHandler,
 		providerHandler:      providerHandler,
 		agentHandler:         agentHandler,
+		searchBotHandler:     searchBotHandler,
+		difyRetrievalHandler: difyRetrievalHandler,
+		pluginHandler:        pluginHandler,
+		modelHandler:         modelHandler,
 	}
 }
 
 // Setup setup routes
 func (r *Router) Setup(engine *gin.Engine) {
+	// Mark all responses from Go with a header for debugging.
+	engine.Use(func(c *gin.Context) {
+		c.Header("X-API-Source", "go")
+		c.Next()
+	})
+
+	// Log all HTTP requests.
+	engine.Use(gin.Logger())
+
 	// Health check
 	engine.GET("/health", r.systemHandler.Health)
 
@@ -192,6 +213,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				documents.POST("", r.documentHandler.CreateDocument)
 				documents.GET("", r.documentHandler.ListDocuments)
+				documents.GET("/artifact/:filename", r.documentHandler.GetDocumentArtifact)
+				documents.GET("/:id/preview", r.documentHandler.GetDocumentPreview)
 				documents.GET("/:id", r.documentHandler.GetDocumentByID)
 				documents.PUT("/:id", r.documentHandler.UpdateDocument)
 				documents.DELETE("/:id", r.documentHandler.DeleteDocument)
@@ -205,6 +228,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 				chats.GET("/:chat_id/sessions", r.chatSessionHandler.ListChatSessions)
 			}
 
+			// Searchbot routes
+			v1.POST("/searchbots/related_questions", r.searchBotHandler.Handle)
+			v1.POST("/searchbots/retrieval_test", r.searchBotHandler.RetrievalTest)
+
 			// Dataset routes
 			datasets := v1.Group("/datasets")
 			{
@@ -215,7 +242,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.DELETE("/:dataset_id/graph", r.datasetsHandler.DeleteKnowledgeGraph)
 				datasets.POST("", r.datasetsHandler.CreateDataset)
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
-				datasets.POST("/search", r.chunkHandler.RetrievalTest)
+				datasets.POST("/search", r.datasetsHandler.SearchDatasets)
 				datasets.GET("/metadata/flattened", r.datasetsHandler.ListMetadataFlattened)
 
 				// Dataset ingestion logs
@@ -229,11 +256,13 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 				// Dataset documents
 				datasets.GET("/:dataset_id/documents", r.documentHandler.ListDocuments)
+				datasets.GET("/:dataset_id/documents/:document_id", r.documentHandler.DownloadDocument)
 				datasets.DELETE("/:dataset_id/documents", r.documentHandler.DeleteDocuments)
 
 				// Dataset document chunk
 				datasets.GET("/:dataset_id/documents/:document_id/chunks/:chunk_id", r.chunkHandler.Get)
 				datasets.POST("/:dataset_id/documents/parse", r.documentHandler.ParseDocuments)
+				datasets.POST("/:dataset_id/documents/stop", r.documentHandler.StopParseDocuments)
 				datasets.DELETE("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.RemoveChunks)
 			}
 
@@ -285,14 +314,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// 	message.GET("", r.memoryHandler.GetMessages)
 			// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
 			// }
-
-			mcp := v1.Group("/mcp")
-			{
-				mcp.POST("/servers", r.mcpHandler.CreateMCPServer)
-				mcp.GET("/servers", r.mcpHandler.ListMCPServers)
-				mcp.PUT("/servers/:mcp_id", r.mcpHandler.UpdateMCPServer)
-				mcp.DELETE("/servers/:mcp_id", r.mcpHandler.DeleteMCPServer)
-			}
 
 			// Skill search routes
 			skills := v1.Group("/skills")
@@ -354,10 +375,29 @@ func (r *Router) Setup(engine *gin.Engine) {
 				model.PATCH("/", r.tenantHandler.SetModels)
 			}
 
+			allModels := v1.Group("/all-models")
+			{
+				allModels.GET("", r.modelHandler.ListAllModels)
+			}
+
 			// Agent routes
 			agents := v1.Group("/agents")
 			{
 				agents.GET("", r.agentHandler.ListAgents)
+				agents.GET("/templates", r.agentHandler.ListTemplates)
+				agents.GET("/:agent_id/versions", r.agentHandler.ListAgentVersions)
+				agents.GET("/:agent_id/versions/:version_id", r.agentHandler.GetAgentVersion)
+				agents.POST("/:agent_id/upload", r.agentHandler.UploadAgentFile)
+				agents.PUT("/:agent_id/tags", r.agentHandler.UpdateAgentTags)
+				agents.GET("/:agent_id/sessions", r.agentHandler.ListAgentSessions)
+				agents.GET("/:agent_id/sessions/:session_id", r.agentHandler.GetAgentSession)
+				agents.DELETE("/:agent_id/sessions/:session_id", r.agentHandler.DeleteAgentSessionItem)
+			}
+
+			// Plugin routes
+			plugin := v1.Group("/plugin")
+			{
+				plugin.GET("/tools", r.pluginHandler.ListLLMTools)
 			}
 
 			connector := v1.Group("/connectors")
@@ -371,6 +411,21 @@ func (r *Router) Setup(engine *gin.Engine) {
 				connector.DELETE("/:connector_id", r.connectorHandler.DeleteConnector)
 				connector.POST("/:connector_id/rebuild", r.connectorHandler.RebuildConnector)
 				connector.POST("/:connector_id/test", r.connectorHandler.TestConnector)
+			}
+
+			// MCP server routes. Per-server CRUD ships via separate PRs that
+			// share the same handler/service: GET list (#15253), GET by id
+			// (#15254), POST create (#15260, merged), PUT (#15261), DELETE
+			// (#15262, merged). This PR adds only the non-overlapping
+			// endpoints: import and test.
+			mcp := v1.Group("/mcp")
+			{
+				mcp.POST("/servers", r.mcpHandler.CreateMCPServer)
+				mcp.GET("/servers", r.mcpHandler.ListMCPServers)
+				mcp.PUT("/servers/:mcp_id", r.mcpHandler.UpdateMCPServer)
+				mcp.DELETE("/servers/:mcp_id", r.mcpHandler.DeleteMCPServer)
+				mcp.POST("/servers/import", r.mcpHandler.ImportMCPServers)
+				mcp.POST("/servers/:mcp_id/test", r.mcpHandler.TestMCPServer)
 			}
 
 			system := v1.Group("/system")
@@ -488,6 +543,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 		}
 
 	}
+
+	// Dify retrieval routes
+	dify := authorized.Group("/api/v1/dify")
+	{
+		dify.POST("/retrieval", r.difyRetrievalHandler.Retrieval)
+		dify.GET("/retrieval", r.difyRetrievalHandler.Retrieval)
+	}
+	apiNoAuth.GET("/dify/retrieval/health", r.difyRetrievalHandler.HealthCheck)
 
 	// Handle undefined routes
 	engine.NoRoute(handler.HandleNoRoute)

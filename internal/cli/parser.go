@@ -313,7 +313,10 @@ func (p *Parser) parseNumber() (int, error) {
 }
 
 func (p *Parser) parseFloat() (float64, error) {
-	if p.curToken.Type != TokenInteger {
+	// Accept either TokenInteger or TokenFloat so that literals like
+	// `0.3` (which the lexer tags as TokenFloat) and `10` (TokenInteger)
+	// both parse cleanly.
+	if p.curToken.Type != TokenInteger && p.curToken.Type != TokenFloat {
 		return math.NaN(), fmt.Errorf("expected number, got %s", p.curToken.Value)
 	}
 	result, err := strconv.ParseFloat(p.curToken.Value, 64)
@@ -324,8 +327,66 @@ func (p *Parser) parseFloat() (float64, error) {
 	return result, nil
 }
 
+// parseQuotedStringList consumes a bracket-delimited list of quoted strings:
+//   [ 'a', 'b', 'c' ]
+// Empty list [] is allowed. The cursor must be positioned on '[' when called;
+// on return, the cursor is positioned just past the closing ']'.
+func (p *Parser) parseQuotedStringList() ([]string, error) {
+	if p.curToken.Type != TokenLBracket {
+		return nil, fmt.Errorf("expected '[', got %s", p.curToken.Value)
+	}
+	p.nextToken() // skip '['
+
+	// Always return a non-nil slice so callers (and json.Marshal) see []
+	// instead of null for the empty-list case.
+	list := make([]string, 0)
+	// Allow empty list []
+	if p.curToken.Type == TokenRBracket {
+		p.nextToken() // skip ']'
+		return list, nil
+	}
+
+	for {
+		s, err := p.parseQuotedString()
+		if err != nil {
+			return nil, fmt.Errorf("expected quoted string in list: %w", err)
+		}
+		list = append(list, s)
+		p.nextToken() // step past the closing quote
+
+		if p.curToken.Type == TokenComma {
+			p.nextToken() // step past ','
+			continue
+		}
+		if p.curToken.Type == TokenRBracket {
+			p.nextToken() // step past ']'
+			return list, nil
+		}
+		return nil, fmt.Errorf("expected ',' or ']' in list, got %s", p.curToken.Value)
+	}
+}
+
 func tokenTypeToString(t int) string {
-	// Simplified for error messages
+	switch t {
+	case TokenEOF:
+		return "end of input"
+	case TokenIdentifier:
+		return "identifier"
+	case TokenInteger:
+		return "integer"
+	case TokenFloat:
+		return "float"
+	case TokenQuotedString:
+		return "quoted string"
+	case TokenLBracket:
+		return "'['"
+	case TokenRBracket:
+		return "']'"
+	case TokenComma:
+		return "','"
+	case TokenSemicolon:
+		return "';'"
+	}
 	return fmt.Sprintf("token(%d)", t)
 }
 

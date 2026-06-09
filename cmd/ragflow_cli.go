@@ -43,7 +43,7 @@ func newMain() {
 		logLevel = "info"
 	}
 
-	if err = common.Init(logLevel); err != nil {
+	if err = common.Init(logLevel, ""); err != nil {
 		fmt.Printf("Warning: Failed to initialize logger: %v\n", err)
 	}
 

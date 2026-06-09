@@ -408,7 +408,7 @@ func (c *CLI) ListSupportedModels(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) ShowModel(cmd *Command) (ResponseIf, error) {
+func (c *CLI) ShowProviderModel(cmd *Command) (ResponseIf, error) {
 	providerName, ok := cmd.Params["provider_name"].(string)
 	if !ok {
 		return nil, fmt.Errorf("provider_name not provided")
@@ -883,7 +883,96 @@ func (c *CLI) GetAPIServerInfo(serverName string) (ResponseIf, error) {
 			result.Data["auth"] = "no auth"
 		}
 	}
+	return &result, nil
+}
 
+func (c *CLI) ListAllModels(cmd *Command) (ResponseIf, error) {
+
+	page, ok := cmd.Params["page"].(int)
+	if !ok {
+		page = 0
+	}
+
+	pageSize, ok := cmd.Params["page_size"].(int)
+	if !ok {
+		pageSize = 0
+	}
+
+	payload := map[string]interface{}{
+		"page":      page,
+		"page_size": pageSize,
+	}
+
+	var httpClient *HTTPClient
+	switch c.Config.CLIMode {
+	case AdminMode:
+		httpClient = c.AdminServerClient
+	case APIMode:
+		httpClient = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+	default:
+		return nil, fmt.Errorf("invalid server type")
+	}
+
+	resp, err := httpClient.Request("GET", "/all-models", "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list all models: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list all models: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("failed to list all models: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *CLI) ShowModel(cmd *Command) (ResponseIf, error) {
+
+	modelName, ok := cmd.Params["model_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("model_name not provided")
+	}
+
+	payload := map[string]interface{}{
+		"model_name": modelName,
+	}
+
+	var httpClient *HTTPClient
+	switch c.Config.CLIMode {
+	case AdminMode:
+		httpClient = c.AdminServerClient
+	case APIMode:
+		httpClient = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+	default:
+		return nil, fmt.Errorf("invalid server type")
+	}
+
+	resp, err := httpClient.Request("GET", "/all-models", "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to show model: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to show model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("failed to show model: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
 	return &result, nil
 }
 

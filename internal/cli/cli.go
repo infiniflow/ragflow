@@ -1560,6 +1560,41 @@ Examples:
   search "AI" datasets/kb1                          # Search in kb1
   search "RAG" skills/space1 -n 20                    # Search skills in hub1, return 20 results
   search "data processing" skills                   # Search skills (default space)
+
+Datasets syntax (full filter set):
+  search 'query' on datasets 'kb_names' [with <option> <value> ...] [;]
+
+  'kb_names' is a single quoted string. Pass one name for a single
+  dataset, or a comma-separated list (no spaces) to search across
+  multiple datasets in one call:
+    'kb1'                  # one dataset
+    'kb1,kb2'              # two datasets
+    'kb1,kb2,kb3'          # three datasets
+
+  When 'on datasets' is given, the search runs against the named
+  dataset(s) and accepts the full WITH-option set below.
+
+  WITH options (space-separated, not comma-separated):
+    top_k                   <int>     Number of results (default 5)
+    page_size               <int>     Page size for pagination
+    page                    <int>     Page number (1-based)
+    similarity_threshold    <float>   Minimum similarity score (0.0-1.0)
+    vector_similarity_weight <float>  Weight given to vector vs text score
+    keyword                 true|false  Enable keyword extraction via LLM
+    use_kg                  true|false  Enable knowledge-graph augmentation
+    rerank_id               'id'      Rerank model to apply
+    tenant_rerank_id        'id'      Tenant-scoped rerank model
+    search_id               'id'      Idempotency / search-session id
+    meta_data_filter        '<json>'  Metadata filter (must be valid JSON)
+    cross_languages         ['a','b'] Source languages to translate from
+    doc_ids                 ['d1',...] Restrict to specific document ids
+
+  Examples:
+    search 'AI' on datasets 'kb_chinese' with top_k 10;
+    search 'AI' on datasets 'kb1' 'kb2' with top_k 20 similarity_threshold 0.3 cross_languages ['Chinese']
+        doc_ids ['d1', 'd2'];
+    search 'manual' on datasets 'kb1' with
+        meta_data_filter '{"method":"manual","conditions":[{"key":"author","op":"eq","value":"Luo"}]}';
 `
 	fmt.Println(help)
 }

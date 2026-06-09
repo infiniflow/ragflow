@@ -12,12 +12,14 @@ interface IVerifyButton {
   onVerify: (params: any) => Promise<VerifyResult>;
   isAbsolute?: boolean;
   params?: any;
+  className?: string;
 }
 
 const VerifyButton: React.FC<IVerifyButton> = ({
   onVerify,
   isAbsolute = true,
   params,
+  className,
 }) => {
   const { t, i18n } = useTranslate('setting');
   const isArabic = (i18n.resolvedLanguage || i18n.language || '')
@@ -82,6 +84,7 @@ const VerifyButton: React.FC<IVerifyButton> = ({
         !isAbsolute || (verifyResult && verifyResult.isValid === false)
           ? 'flex flex-col gap-5 w-full '
           : `absolute bottom-6 z-[100] ${isArabic ? 'right-6' : 'left-6'}`,
+        className,
       )}
     >
       <div className="flex gap-2 items-center">
