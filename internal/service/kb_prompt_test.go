@@ -156,7 +156,7 @@ func TestKbPrompt_AllFit(t *testing.T) {
 		{ID: "2", Content: "b"},
 	}
 	result := KbPrompt(chunks, 1000)
-	if !contains(result, "ID: 1") && !contains(result, "ID: 2") {
+	if !contains(result, "ID: 1") || !contains(result, "ID: 2") {
 		t.Error("both chunks should fit under generous limit")
 	}
 }
