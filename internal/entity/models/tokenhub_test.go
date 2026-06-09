@@ -305,7 +305,7 @@ func TestTokenHubListModelsHappyPathSkipsMalformedItems(t *testing.T) {
 		t.Fatalf("ListModels: %v", err)
 	}
 	want := []string{"gpt-4o-mini", "gpt-4o"}
-	if strings.Join(models, ",") != strings.Join(want, ",") {
+	if joinModelNames(models, ",") != strings.Join(want, ",") {
 		t.Fatalf("models=%v, want %v", models, want)
 	}
 }

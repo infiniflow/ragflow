@@ -884,7 +884,7 @@ func (x *XiaomiModel) ParseFile(modelName *string, content []byte, url *string, 
 	return nil, fmt.Errorf("no such method %s", x.Name())
 }
 
-func (x *XiaomiModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (x *XiaomiModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	return nil, fmt.Errorf("no such method %s", x.Name())
 }
 

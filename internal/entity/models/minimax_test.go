@@ -245,7 +245,7 @@ func TestMinimaxListModelsUsesBodylessGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if got := strings.Join(models, ","); got != "MiniMax-M3,minimax-m2.7" {
+	if got := joinModelNames(models, ","); got != "MiniMax-M3,minimax-m2.7" {
 		t.Errorf("models=%q", got)
 	}
 }

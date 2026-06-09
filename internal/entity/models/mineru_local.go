@@ -93,7 +93,7 @@ func (m *MinerULocalModel) OCRFile(modelName *string, content []byte, url *strin
 	return nil, fmt.Errorf("%s no such method", m.Name())
 }
 
-func (m *MinerULocalModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (m *MinerULocalModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	return nil, fmt.Errorf("%s no such method", m.Name())
 }
 
