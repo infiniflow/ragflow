@@ -698,6 +698,10 @@ func (c *CLI) AddAPIServer(cmd *Command) (ResponseIf, error) {
 		apiServerToken = ""
 	}
 
+	if c.Config.APIClientConfig.APIServerMap == nil {
+		c.Config.APIClientConfig.APIServerMap = make(map[string]*APIServerConfig)
+	}
+
 	c.Config.APIClientConfig.APIServerMap[apiServerName] = &APIServerConfig{
 		Name: apiServerName,
 		IP:   apiServerIP,
@@ -712,6 +716,15 @@ func (c *CLI) AddAPIServer(cmd *Command) (ResponseIf, error) {
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
+
+	if c.APIServerClientMap == nil {
+		c.APIServerClientMap = make(map[string]*HTTPClient)
+	}
+
+	if c.APIServerClientMap[apiServerName] != nil {
+		return nil, fmt.Errorf("api server: %s already exists", apiServerName)
+	}
+
 	c.APIServerClientMap[apiServerName] = &HTTPClient{
 		Host:           apiServerIP,
 		Port:           apiServerPort,
@@ -741,6 +754,7 @@ func (c *CLI) DeleteAPIServer(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("cannot delete current api server")
 	}
 	delete(c.Config.APIClientConfig.APIServerMap, apiServerName)
+	delete(c.APIServerClientMap, apiServerName)
 	var result SimpleResponse
 	result.Code = 0
 	result.Message = "api server deleted successfully"
@@ -750,7 +764,7 @@ func (c *CLI) DeleteAPIServer(cmd *Command) (ResponseIf, error) {
 
 func (c *CLI) AddAdminServer(cmd *Command) (ResponseIf, error) {
 
-	if c.AdminServerClient.LoginToken != nil {
+	if c.AdminServerClient != nil && c.AdminServerClient.LoginToken != nil {
 		return nil, fmt.Errorf("admin server already login, please logout")
 	}
 
@@ -762,6 +776,11 @@ func (c *CLI) AddAdminServer(cmd *Command) (ResponseIf, error) {
 	if !ok {
 		return nil, fmt.Errorf("server port not provided")
 	}
+
+	if c.Config.AdminClientConfig == nil {
+		c.Config.AdminClientConfig = &AdminModeConfig{}
+	}
+
 	if adminServerIP != "" {
 		c.Config.AdminClientConfig.AdminHost = adminServerIP
 	}
@@ -778,12 +797,16 @@ func (c *CLI) AddAdminServer(cmd *Command) (ResponseIf, error) {
 
 func (c *CLI) DeleteAdminServer(cmd *Command) (ResponseIf, error) {
 
-	if c.AdminServerClient.LoginToken != nil {
+	if c.AdminServerClient != nil && c.AdminServerClient.LoginToken != nil {
 		return nil, fmt.Errorf("admin server already login, please logout")
 	}
 
-	c.Config.AdminClientConfig.AdminHost = ""
-	c.Config.AdminClientConfig.AdminPort = 0
+	if c.Config.AdminClientConfig == nil {
+		return nil, fmt.Errorf("admin server not set")
+	}
+
+	c.Config.AdminClientConfig = nil
+
 	var result SimpleResponse
 	result.Code = 0
 	result.Message = "admin server deleted successfully"
@@ -824,7 +847,7 @@ func (c *CLI) GetAdminServerInfo() (ResponseIf, error) {
 		if c.Config.AdminClientConfig.AdminPassword != nil {
 			result.Data["admin_password"] = strings.Repeat("*", len(*c.Config.AdminClientConfig.AdminPassword))
 		}
-		if c.AdminServerClient.LoginToken == nil {
+		if c.AdminServerClient == nil || c.AdminServerClient.LoginToken == nil {
 			result.Data["auth"] = "no auth"
 		} else {
 			result.Data["auth"] = "login"

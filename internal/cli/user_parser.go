@@ -975,7 +975,7 @@ func (p *Parser) parseAddAdminServer() (*Command, error) {
 	p.nextToken() // consume SERVER
 
 	if p.curToken.Type != TokenHost {
-		return nil, fmt.Errorf("expected TO")
+		return nil, fmt.Errorf("expected HOST")
 	}
 	p.nextToken()
 
@@ -1246,6 +1246,10 @@ func (p *Parser) parseDeleteCommand() (*Command, error) {
 		return p.parseDeleteProvider()
 	case TokenMetadata:
 		return p.parseDeleteMeta()
+	case TokenAdmin:
+		return p.parseDeleteAdminServer()
+	case TokenAPI:
+		return p.parseDeleteAPIServer()
 	default:
 		return nil, fmt.Errorf("unknown DELETE target: %s", p.curToken.Value)
 	}

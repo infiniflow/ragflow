@@ -118,9 +118,9 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 	case "delete_api_server":
 		return c.DeleteAPIServer(cmd)
 	case "add_admin_server":
-		return c.AddAdminServer(cmd)
+		return nil, fmt.Errorf("cannot add admin server in admin mode")
 	case "delete_admin_server":
-		return c.DeleteAdminServer(cmd)
+		return nil, fmt.Errorf("cannot delete admin server in admin mode")
 	case "save_config_command":
 		return c.SaveServerConfig(cmd)
 	// TODO: Implement other commands

@@ -135,6 +135,8 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 		return p.parseStopIngestion()
 	case TokenAdd:
 		return p.parseAdminAddCommand()
+	case TokenDelete:
+		return p.parseAdminDeleteCommand()
 	case TokenSave:
 		return p.parseAdminSaveCommand()
 	default:
