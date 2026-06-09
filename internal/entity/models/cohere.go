@@ -650,7 +650,7 @@ func (c *CoHereModel) ParseFile(modelName *string, content []byte, url *string, 
 	return nil, fmt.Errorf("%s, no such method", c.Name())
 }
 
-func (c *CoHereModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (c *CoHereModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -692,12 +692,14 @@ func (c *CoHereModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]string, 0)
+	models := make([]ListModelResponse, 0)
 	if modelsRaw, ok := result["models"].([]interface{}); ok {
 		for _, model := range modelsRaw {
 			if modelMap, ok := model.(map[string]interface{}); ok {
 				if modelName, ok := modelMap["name"].(string); ok {
-					models = append(models, modelName)
+					models = append(models, ListModelResponse{
+						Name: modelName,
+					})
 				}
 			}
 		}

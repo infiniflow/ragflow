@@ -1043,6 +1043,34 @@ class BaiduYiyanChat(Base):
 
         yield total_tokens
 
+    async def async_chat_streamly(self, system, history, gen_conf: dict | None = None, **kwargs):
+        gen_conf = dict(gen_conf or {})
+        gen_conf["penalty_score"] = ((gen_conf.get("presence_penalty", 0) + gen_conf.get("frequency_penalty", 0)) / 2) + 1
+        if "max_tokens" in gen_conf:
+            del gen_conf["max_tokens"]
+
+        def _do_chat():
+            system_msg = history[0]["content"] if history and history[0].get("role") == "system" else ""
+            msgs = [h for h in history if h.get("role") != "system"]
+            try:
+                response = self.client.do(model=self.model_name, messages=msgs, system=system_msg, stream=True, **gen_conf)
+                result_text = ""
+                total_tokens = 0
+                for resp in response:
+                    resp = resp.body
+                    result_text = resp["result"]
+                    total_tokens = total_token_count_from_response(resp)
+                return result_text, total_tokens, None
+            except Exception as e:
+                return "", 0, e
+
+        result_text, total_tokens, error = await asyncio.to_thread(_do_chat)
+        if error:
+            yield f"**ERROR**: {error}"
+        else:
+            yield result_text
+        yield total_tokens
+
 
 class GoogleChat(Base):
     _FACTORY_NAME = "Google Cloud"

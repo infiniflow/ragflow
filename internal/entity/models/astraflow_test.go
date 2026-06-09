@@ -374,7 +374,7 @@ func TestAstraflowListModelsHappyPath(t *testing.T) {
 		t.Fatalf("ListModels: %v", err)
 	}
 	want := []string{"claude-opus-4-7", "gpt-5.4", "Qwen/Qwen3-Max"}
-	if strings.Join(models, ",") != strings.Join(want, ",") {
+	if joinModelNames(models, ",") != strings.Join(want, ",") {
 		t.Errorf("models=%v, want %v", models, want)
 	}
 }

@@ -374,7 +374,7 @@ func TestTokenPonyListModelsHappyPath(t *testing.T) {
 		t.Fatalf("ListModels: %v", err)
 	}
 	want := []string{"qwen3-32b", "deepseek-v3-0324", "qwen3-coder-480b"}
-	if strings.Join(models, ",") != strings.Join(want, ",") {
+	if joinModelNames(models, ",") != strings.Join(want, ",") {
 		t.Errorf("models=%v, want %v", models, want)
 	}
 }

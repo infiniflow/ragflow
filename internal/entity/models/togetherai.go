@@ -231,7 +231,7 @@ func (t *TogetherAIModel) ChatStreamlyWithSender(modelName string, messages []Me
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
 	defer cancel()
 
@@ -316,7 +316,7 @@ type togetherAIModelInfo struct {
 	ID string `json:"id"`
 }
 
-func (t *TogetherAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (t *TogetherAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -357,10 +357,10 @@ func (t *TogetherAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]string, 0, len(result))
+	models := make([]ListModelResponse, 0, len(result))
 	for _, model := range result {
 		if model.ID != "" {
-			models = append(models, model.ID)
+			models = append(models, ListModelResponse{Name: model.ID})
 		}
 	}
 	return models, nil
