@@ -22,12 +22,23 @@ import (
 	"strings"
 	"testing"
 )
+// joinModelNames extracts model names from a ListModelResponse slice and
+// joins them with sep, for use in test assertions.
+func joinModelNames(models []ListModelResponse, sep string) string {
+	names := make([]string, len(models))
+	for i, m := range models {
+		names[i] = m.Name
+	}
+	return strings.Join(names, sep)
+}
+
+
 
 func readProviderConfig(t *testing.T, fileName string) []byte {
 	t.Helper()
 
 	for _, candidate := range []string{
-		filepath.Join("..", "..", "conf", "models", fileName),
+		filepath.Join("..", "..", "..", "conf", "models", fileName),
 		filepath.Join("conf", "models", fileName),
 	} {
 		data, err := os.ReadFile(candidate)
@@ -140,6 +151,8 @@ func TestProviderConfigsLoadURLSuffixKeys(t *testing.T) {
 		t.Fatalf("InitProviderManager: %v", err)
 	}
 
+	pm := GetProviderManager()
+
 	cohere := pm.FindProvider("CoHere")
 	if cohere == nil {
 		t.Fatal("CoHere provider not found")
@@ -180,7 +193,7 @@ func TestProviderConfigRejectsUnknownURLSuffixKey(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	_, err := InitProviderManager(dir)
+	err := InitProviderManager(dir)
 	if err == nil {
 		t.Fatal("InitProviderManager succeeded with unknown url_suffix key")
 	}
@@ -202,6 +215,8 @@ func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InitProviderManager: %v", err)
 	}
+
+	pm := GetProviderManager()
 
 	provider := pm.FindProvider("ppio")
 	if provider == nil {
@@ -252,22 +267,22 @@ func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetModelByName: %v", err)
 	}
-	if model.MaxTokens != 64000 {
-		t.Errorf("deepseek/deepseek-r1 max_tokens=%d", model.MaxTokens)
+	if *model.MaxTokens != 64000 {
+		t.Errorf("deepseek/deepseek-r1 max_tokens=%d", *model.MaxTokens)
 	}
 	model, err = pm.GetModelByName("ppio", "deepseek/deepseek-v4-pro")
 	if err != nil {
 		t.Fatalf("GetModelByName v4 pro: %v", err)
 	}
-	if model.MaxTokens != 1048576 {
-		t.Errorf("deepseek/deepseek-v4-pro max_tokens=%d", model.MaxTokens)
+	if *model.MaxTokens != 1048576 {
+		t.Errorf("deepseek/deepseek-v4-pro max_tokens=%d", *model.MaxTokens)
 	}
 	model, err = pm.GetModelByName("ppio", "deepseek/deepseek-v4-flash")
 	if err != nil {
 		t.Fatalf("GetModelByName v4 flash: %v", err)
 	}
-	if model.MaxTokens != 1048576 {
-		t.Errorf("deepseek/deepseek-v4-flash max_tokens=%d", model.MaxTokens)
+	if *model.MaxTokens != 1048576 {
+		t.Errorf("deepseek/deepseek-v4-flash max_tokens=%d", *model.MaxTokens)
 	}
 
 	resp := pm.SearchByType("chat")
@@ -289,6 +304,8 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InitProviderManager: %v", err)
 	}
+
+	pm := GetProviderManager()
 
 	provider := pm.FindProvider("SiliconFlow")
 	if provider == nil {
@@ -314,8 +331,8 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetModelByName DeepSeek-V4-Pro: %v", err)
 	}
-	if deepSeekV4Pro.MaxTokens != 1048576 {
-		t.Errorf("DeepSeek-V4-Pro max_tokens=%d", deepSeekV4Pro.MaxTokens)
+	if *deepSeekV4Pro.MaxTokens != 1048576 {
+		t.Errorf("DeepSeek-V4-Pro max_tokens=%d", *deepSeekV4Pro.MaxTokens)
 	}
 	if !deepSeekV4Pro.ModelTypeMap["chat"] {
 		t.Errorf("DeepSeek-V4-Pro model types=%v, want chat", deepSeekV4Pro.ModelTypes)
@@ -325,8 +342,8 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetModelByName Kimi-K2.6: %v", err)
 	}
-	if kimiK26.MaxTokens != 262144 {
-		t.Errorf("Kimi-K2.6 max_tokens=%d", kimiK26.MaxTokens)
+	if *kimiK26.MaxTokens != 262144 {
+		t.Errorf("Kimi-K2.6 max_tokens=%d", *kimiK26.MaxTokens)
 	}
 	if !kimiK26.ModelTypeMap["chat"] || !kimiK26.ModelTypeMap["vision"] {
 		t.Errorf("Kimi-K2.6 model types=%v, want chat+vision", kimiK26.ModelTypes)
@@ -336,7 +353,7 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetModelByName GLM-5.1: %v", err)
 	}
-	if glm51.MaxTokens != 204800 {
-		t.Errorf("GLM-5.1 max_tokens=%d", glm51.MaxTokens)
+	if *glm51.MaxTokens != 204800 {
+		t.Errorf("GLM-5.1 max_tokens=%d", *glm51.MaxTokens)
 	}
 }
