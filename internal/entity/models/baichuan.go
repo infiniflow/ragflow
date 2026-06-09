@@ -426,7 +426,7 @@ func (b *BaichuanModel) ParseFile(modelName *string, content []byte, url *string
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
-func (b *BaichuanModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (b *BaichuanModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	return nil, fmt.Errorf("no such method")
 }
 

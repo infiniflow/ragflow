@@ -504,7 +504,7 @@ func dispatchReplicateSSEEvent(event replicateSSEEvent, sender func(*string, *st
 	}
 }
 
-func (r *ReplicateModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (r *ReplicateModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -543,10 +543,10 @@ func (r *ReplicateModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]string, 0, len(result.Results))
+	models := make([]ListModelResponse, 0, len(result.Results))
 	for _, model := range result.Results {
 		if model.Owner != "" && model.Name != "" {
-			models = append(models, fmt.Sprintf("%s/%s", model.Owner, model.Name))
+			models = append(models, ListModelResponse{Name: model.Owner + "/" + model.Name})
 		}
 	}
 	return models, nil
