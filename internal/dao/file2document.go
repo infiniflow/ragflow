@@ -28,6 +28,11 @@ func NewFile2DocumentDAO() *File2DocumentDAO {
 	return &File2DocumentDAO{}
 }
 
+// Create inserts a new file2document mapping row.
+func (dao *File2DocumentDAO) Create(mapping *entity.File2Document) error {
+	return DB.Create(mapping).Error
+}
+
 // GetKBInfoByFileID gets knowledge base info by file ID
 func (dao *File2DocumentDAO) GetKBInfoByFileID(fileID string) ([]map[string]interface{}, error) {
 	var results []map[string]interface{}

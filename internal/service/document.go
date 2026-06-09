@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -40,8 +41,8 @@ import (
 
 	"ragflow/internal/server"
 
-	"github.com/cespare/xxhash/v2"
 	"github.com/google/uuid"
+	"github.com/zeebo/xxh3"
 	"gorm.io/gorm"
 )
 
@@ -56,6 +57,7 @@ type DocumentService struct {
 	metadataSvc      *MetadataService
 	taskDAO          *dao.TaskDAO
 	file2DocumentDAO *dao.File2DocumentDAO
+	fileDAO          *dao.FileDAO
 }
 
 // NewDocumentService create document service
@@ -71,6 +73,7 @@ func NewDocumentService() *DocumentService {
 		metadataSvc:      NewMetadataService(),
 		taskDAO:          dao.NewTaskDAO(),
 		file2DocumentDAO: dao.NewFile2DocumentDAO(),
+		fileDAO:          dao.NewFileDAO(),
 	}
 }
 
@@ -388,17 +391,25 @@ func (s *DocumentService) CreateDocument(req *CreateDocumentRequest) (*entity.Do
 // matching Document row into the dataset. It mirrors Python
 // FileService.upload_document: it derives parser_id by filetype, merges the
 // optional parser_config override into the dataset config, dedup-renames the
-// filename, and records size + xxhash content hash. Chunking/embedding happen
-// later in the parse step, so nothing here touches the doc store index.
+// filename, records size + xxhash content hash, and links each document into the
+// file manager (a File row under the dataset folder + a file2document mapping)
+// so it surfaces in the dataset's document list. Chunking/embedding happen later
+// in the parse step, so nothing here touches the doc store index.
 //
-// Gaps vs Python (documented, not yet ported): thumbnail generation,
-// read_potential_broken_pdf repair, and the file-manager folder linking
-// (add_file_from_kb / file2document). The Document row alone makes the file
-// visible and parseable in the dataset.
+// Gaps vs Python (documented, not yet ported): thumbnail generation and
+// read_potential_broken_pdf repair.
 func (s *DocumentService) UploadLocalDocuments(kb *entity.Knowledgebase, tenantID string, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string) {
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, []string{"storage not initialized"}
+	}
+
+	// Resolve (and create if needed) the dataset's file-manager folder up front.
+	// Without the File / file2document linkage the document list (which inner-joins
+	// file2document + file) would never surface the uploaded files.
+	kbFolder, err := s.ensureKBFolder(kb, tenantID)
+	if err != nil {
+		return nil, []string{err.Error()}
 	}
 
 	// Merge parser_config override (allow-listed keys only) over the dataset config.
@@ -412,11 +423,15 @@ func (s *DocumentService) UploadLocalDocuments(kb *entity.Knowledgebase, tenantI
 
 	safeParent := utility.SanitizeFilename(parentPath)
 
+	// Don't silently disable dedupe protection: a transient lookup failure means
+	// the existing-name set is unknown, so fail rather than risk duplicates.
+	names, err := s.documentDAO.ListNamesByKbID(kb.ID)
+	if err != nil {
+		return nil, []string{err.Error()}
+	}
 	taken := map[string]bool{}
-	if names, err := s.documentDAO.ListNamesByKbID(kb.ID); err == nil {
-		for _, n := range names {
-			taken[n] = true
-		}
+	for _, n := range names {
+		taken[n] = true
 	}
 
 	var results []map[string]interface{}
@@ -430,7 +445,6 @@ func (s *DocumentService) UploadLocalDocuments(kb *entity.Knowledgebase, tenantI
 		}
 
 		filename := uniqueUploadName(fh.Filename, taken)
-		taken[filename] = true
 
 		filetype := utility.FilenameType(filename)
 		if filetype == utility.FileTypeOTHER {
@@ -452,9 +466,21 @@ func (s *DocumentService) UploadLocalDocuments(kb *entity.Knowledgebase, tenantI
 
 		doc := s.newDatasetDocument(kb, tenantID, filename, location, filetype, merged, "local", int64(len(blob)), blob)
 		if err := s.documentDAO.Create(doc); err != nil {
+			// Roll back the orphaned blob so a failed insert doesn't leak storage.
+			_ = storageImpl.Remove(kb.ID, location)
 			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
 			continue
 		}
+		if err := s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
+			// Linkage failed: roll back the document row and blob so the partial
+			// state doesn't leave an invisible (unlisted) document behind.
+			_, _ = s.documentDAO.Delete(doc.ID)
+			_ = storageImpl.Remove(kb.ID, location)
+			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
+			continue
+		}
+		// Only reserve the name once the write fully succeeds.
+		taken[filename] = true
 		results = append(results, docToRawMap(doc))
 	}
 
@@ -463,19 +489,115 @@ func (s *DocumentService) UploadLocalDocuments(kb *entity.Knowledgebase, tenantI
 
 // UploadEmptyDocument inserts a zero-byte "virtual" document into the dataset.
 func (s *DocumentService) UploadEmptyDocument(kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error) {
-	if names, err := s.documentDAO.ListNamesByKbID(kb.ID); err == nil {
-		for _, n := range names {
-			if n == name {
-				return nil, common.CodeDataError, fmt.Errorf("Duplicated document name in the same dataset.")
-			}
+	// A transient lookup failure means the existing-name set is unknown; fail
+	// rather than write blind and risk a duplicate.
+	names, err := s.documentDAO.ListNamesByKbID(kb.ID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	for _, n := range names {
+		if n == name {
+			return nil, common.CodeDataError, fmt.Errorf("Duplicated document name in the same dataset.")
 		}
+	}
+
+	kbFolder, err := s.ensureKBFolder(kb, tenantID)
+	if err != nil {
+		return nil, common.CodeServerError, err
 	}
 
 	doc := s.newDatasetDocument(kb, tenantID, name, "", "virtual", kb.ParserConfig, "local", 0, nil)
 	if err := s.documentDAO.Create(doc); err != nil {
 		return nil, common.CodeServerError, err
 	}
+	if err := s.addFileFromKB(doc, kbFolder.ID, kb.TenantID); err != nil {
+		_, _ = s.documentDAO.Delete(doc.ID)
+		return nil, common.CodeServerError, err
+	}
 	return docToRawMap(doc), common.CodeSuccess, nil
+}
+
+// knowledgebaseFolderName is the file-manager folder under each tenant's root
+// that holds per-dataset subfolders, mirroring Python KNOWLEDGEBASE_FOLDER_NAME.
+const knowledgebaseFolderName = ".knowledgebase"
+
+// ensureKBFolder resolves (creating as needed) the per-dataset file-manager
+// folder: root -> .knowledgebase -> <dataset name>. Mirrors Python
+// get_root_folder + get_kb_folder + new_a_file_from_kb.
+func (s *DocumentService) ensureKBFolder(kb *entity.Knowledgebase, tenantID string) (*entity.File, error) {
+	root, err := s.fileDAO.GetRootFolder(tenantID)
+	if err != nil {
+		return nil, err
+	}
+	kbRoot, err := s.newAFileFromKB(tenantID, knowledgebaseFolderName, root.ID)
+	if err != nil {
+		return nil, err
+	}
+	return s.newAFileFromKB(kb.TenantID, kb.Name, kbRoot.ID)
+}
+
+// newAFileFromKB returns the existing folder named name under parentID, or
+// creates it. Mirrors Python FileService.new_a_file_from_kb.
+func (s *DocumentService) newAFileFromKB(tenantID, name, parentID string) (*entity.File, error) {
+	for _, f := range s.fileDAO.Query(name, parentID) {
+		if f.TenantID == tenantID {
+			return f, nil
+		}
+	}
+	loc := ""
+	folder := &entity.File{
+		ID:         strings.ReplaceAll(uuid.New().String(), "-", ""),
+		ParentID:   parentID,
+		TenantID:   tenantID,
+		CreatedBy:  tenantID,
+		Name:       name,
+		Type:       "folder",
+		Size:       0,
+		Location:   &loc,
+		SourceType: string(entity.FileSourceKnowledgebase),
+	}
+	if err := s.fileDAO.Create(folder); err != nil {
+		return nil, err
+	}
+	return folder, nil
+}
+
+// addFileFromKB links a document into the file manager: a File row under the
+// dataset folder plus a file2document mapping. Mirrors Python
+// FileService.add_file_from_kb (idempotent on the document mapping).
+func (s *DocumentService) addFileFromKB(doc *entity.Document, kbFolderID, tenantID string) error {
+	if existing, err := s.file2DocumentDAO.GetByDocumentID(doc.ID); err == nil && len(existing) > 0 {
+		return nil
+	}
+	name := ""
+	if doc.Name != nil {
+		name = *doc.Name
+	}
+	loc := ""
+	if doc.Location != nil {
+		loc = *doc.Location
+	}
+	fileID := strings.ReplaceAll(uuid.New().String(), "-", "")
+	file := &entity.File{
+		ID:         fileID,
+		ParentID:   kbFolderID,
+		TenantID:   tenantID,
+		CreatedBy:  tenantID,
+		Name:       name,
+		Type:       doc.Type,
+		Size:       doc.Size,
+		Location:   &loc,
+		SourceType: string(entity.FileSourceKnowledgebase),
+	}
+	if err := s.fileDAO.Create(file); err != nil {
+		return err
+	}
+	docID := doc.ID
+	return s.file2DocumentDAO.Create(&entity.File2Document{
+		ID:         strings.ReplaceAll(uuid.New().String(), "-", ""),
+		FileID:     &fileID,
+		DocumentID: &docID,
+	})
 }
 
 // UploadWebDocument is not yet supported on the Go server: the Python path
@@ -513,7 +635,10 @@ func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID,
 		Status:       &zero,
 	}
 	if blob != nil {
-		hash := fmt.Sprintf("%016x", xxhash.Sum64(blob))
+		// Match Python's xxhash.xxh128(blob).hexdigest(): canonical big-endian
+		// 32-char digest, consistent with the content_hash column (xxhash128).
+		sum := xxh3.Hash128(blob).Bytes()
+		hash := hex.EncodeToString(sum[:])
 		doc.ContentHash = &hash
 	}
 	return doc
@@ -569,13 +694,21 @@ func uniqueUploadName(name string, taken map[string]bool) string {
 	}
 }
 
+// maxUploadDocSize bounds a single uploaded file held in memory, mirroring the
+// Python DOC_MAXIMUM_SIZE default (128 MiB; overridable there via MAX_CONTENT_LENGTH).
+const maxUploadDocSize = 128 * 1024 * 1024
+
 func readFileHeaderBytes(fh *multipart.FileHeader) ([]byte, error) {
+	if fh.Size > maxUploadDocSize {
+		return nil, fmt.Errorf("file exceeds the maximum allowed size of %d bytes", maxUploadDocSize)
+	}
 	src, err := fh.Open()
 	if err != nil {
 		return nil, err
 	}
 	defer src.Close()
-	return io.ReadAll(src)
+	// LimitReader guards against a header that under-reports the real size.
+	return io.ReadAll(io.LimitReader(src, maxUploadDocSize))
 }
 
 // GetDocumentByID get document by ID

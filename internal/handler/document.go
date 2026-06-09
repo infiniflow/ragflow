@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -181,19 +182,23 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 	}
 
 	// Optional parser_config override — only the allow-listed table column keys.
+	// Reject malformed input rather than silently dropping it, which would save
+	// the dataset default config while making the upload look successful.
 	var override map[string]interface{}
 	if raw := strings.TrimSpace(c.PostForm("parser_config")); raw != "" {
 		var parsed map[string]interface{}
-		if json.Unmarshal([]byte(raw), &parsed) == nil {
-			override = map[string]interface{}{}
-			for _, k := range []string{"table_column_mode", "table_column_roles"} {
-				if v, ok := parsed[k]; ok {
-					override[k] = v
-				}
+		if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+			jsonError(c, common.CodeArgumentError, "Invalid parser_config: must be a JSON object.")
+			return
+		}
+		override = map[string]interface{}{}
+		for _, k := range []string{"table_column_mode", "table_column_roles"} {
+			if v, ok := parsed[k]; ok {
+				override[k] = v
 			}
-			if len(override) == 0 {
-				override = nil
-			}
+		}
+		if len(override) == 0 {
+			override = nil
 		}
 	}
 
@@ -222,7 +227,13 @@ func (h *DocumentHandler) uploadEmptyDocument(c *gin.Context, kb *entity.Knowled
 	var req struct {
 		Name string `json:"name"`
 	}
-	_ = c.ShouldBindJSON(&req)
+	// An empty body is valid (falls through to the name-required check below);
+	// a non-empty but malformed body should report the syntax error, not a
+	// misleading "File name can't be empty."
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		jsonError(c, common.CodeArgumentError, "Invalid JSON body: "+err.Error())
+		return
+	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		jsonError(c, common.CodeArgumentError, "File name can't be empty.")
