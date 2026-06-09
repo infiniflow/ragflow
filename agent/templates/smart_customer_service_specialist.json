@@ -15,7 +15,7 @@
         "components": {
             "Agent:DeepCoatsDress": {
                 "downstream": [
-                    "Message:KhakiSymbolsMarry"
+                    "VariableAggregator:GentleLawsSneeze"
                 ],
                 "obj": {
                     "component_name": "Agent",
@@ -28,7 +28,7 @@
                         "exception_method": "",
                         "frequencyPenaltyEnabled": false,
                         "frequency_penalty": 0.7,
-                        "llm_id": "deepseek-v3@Tongyi-Qianwen",
+                        "llm_id": "deepseek-v4-pro@default@DeepSeek",
                         "maxTokensEnabled": false,
                         "max_retries": 3,
                         "max_rounds": 1,
@@ -65,7 +65,7 @@
             },
             "Agent:PlentyCandiesRefuse": {
                 "downstream": [
-                    "Message:KhakiSymbolsMarry"
+                    "VariableAggregator:GentleLawsSneeze"
                 ],
                 "obj": {
                     "component_name": "Agent",
@@ -78,7 +78,7 @@
                         "exception_method": "",
                         "frequencyPenaltyEnabled": false,
                         "frequency_penalty": 0.7,
-                        "llm_id": "deepseek-v3@Tongyi-Qianwen",
+                        "llm_id": "deepseek-v4-pro@default@DeepSeek",
                         "maxTokensEnabled": false,
                         "max_retries": 3,
                         "max_rounds": 1,
@@ -115,7 +115,7 @@
             },
             "Agent:ShinyCooksCall": {
                 "downstream": [
-                    "Message:KhakiSymbolsMarry"
+                    "VariableAggregator:GentleLawsSneeze"
                 ],
                 "obj": {
                     "component_name": "Agent",
@@ -128,7 +128,7 @@
                         "exception_method": "",
                         "frequencyPenaltyEnabled": false,
                         "frequency_penalty": 0.7,
-                        "llm_id": "deepseek-v3@Tongyi-Qianwen",
+                        "llm_id": "deepseek-v4-pro@default@DeepSeek",
                         "maxTokensEnabled": false,
                         "max_retries": 3,
                         "max_rounds": 1,
@@ -201,7 +201,7 @@
                                 ]
                             }
                         },
-                        "llm_id": "deepseek-v3@Tongyi-Qianwen",
+                        "llm_id": "deepseek-v4-pro@default@DeepSeek",
                         "message_history_window_size": 1,
                         "outputs": {
                             "category_name": {
@@ -221,14 +221,12 @@
                     "component_name": "Message",
                     "params": {
                         "content": [
-                            "{Agent:PlentyCandiesRefuse@content}{Agent:ShinyCooksCall@content}{Agent:DeepCoatsDress@content}"
+                            "{VariableAggregator:GentleLawsSneeze@answer}"
                         ]
                     }
                 },
                 "upstream": [
-                    "Agent:PlentyCandiesRefuse",
-                    "Agent:ShinyCooksCall",
-                    "Agent:DeepCoatsDress"
+                    "VariableAggregator:GentleLawsSneeze"
                 ]
             },
             "Retrieval:EagerTipsFeel": {
@@ -275,6 +273,7 @@
                             "65cb5150819b11f08347047c16ec874f"
                         ],
                         "keywords_similarity_weight": 0.7,
+                        "meta_data_filter": {},
                         "outputs": {
                             "formalized_content": {
                                 "type": "string",
@@ -291,6 +290,43 @@
                 },
                 "upstream": [
                     "Categorize:NewDonkeysShare"
+                ]
+            },
+            "VariableAggregator:GentleLawsSneeze": {
+                "downstream": [
+                    "Message:KhakiSymbolsMarry"
+                ],
+                "obj": {
+                    "component_name": "VariableAggregator",
+                    "params": {
+                        "groups": [
+                            {
+                                "group_name": "answer",
+                                "type": "string",
+                                "variables": [
+                                    {
+                                        "value": "Agent:PlentyCandiesRefuse@content"
+                                    },
+                                    {
+                                        "value": "Agent:ShinyCooksCall@content"
+                                    },
+                                    {
+                                        "value": "Agent:DeepCoatsDress@content"
+                                    }
+                                ]
+                            }
+                        ],
+                        "outputs": {
+                            "answer": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "upstream": [
+                    "Agent:ShinyCooksCall",
+                    "Agent:DeepCoatsDress",
+                    "Agent:PlentyCandiesRefuse"
                 ]
             },
             "begin": {
@@ -312,6 +348,7 @@
         "globals": {
             "sys.conversation_turns": 0,
             "sys.files": [],
+            "sys.history": [],
             "sys.query": "",
             "sys.user_id": ""
         },
@@ -385,40 +422,6 @@
                     "data": {
                         "isHovered": false
                     },
-                    "id": "xy-edge__Agent:PlentyCandiesRefusestart-Message:KhakiSymbolsMarryend",
-                    "markerEnd": "logo",
-                    "source": "Agent:PlentyCandiesRefuse",
-                    "sourceHandle": "start",
-                    "style": {
-                        "stroke": "rgba(91, 93, 106, 1)",
-                        "strokeWidth": 1
-                    },
-                    "target": "Message:KhakiSymbolsMarry",
-                    "targetHandle": "end",
-                    "type": "buttonEdge",
-                    "zIndex": 1001
-                },
-                {
-                    "data": {
-                        "isHovered": false
-                    },
-                    "id": "xy-edge__Agent:ShinyCooksCallstart-Message:KhakiSymbolsMarryend",
-                    "markerEnd": "logo",
-                    "source": "Agent:ShinyCooksCall",
-                    "sourceHandle": "start",
-                    "style": {
-                        "stroke": "rgba(91, 93, 106, 1)",
-                        "strokeWidth": 1
-                    },
-                    "target": "Message:KhakiSymbolsMarry",
-                    "targetHandle": "end",
-                    "type": "buttonEdge",
-                    "zIndex": 1001
-                },
-                {
-                    "data": {
-                        "isHovered": false
-                    },
                     "id": "xy-edge__Categorize:NewDonkeysShare81a65fca-a460-4a3b-a4d5-50e76da760bb-Agent:DeepCoatsDressend",
                     "markerEnd": "logo",
                     "source": "Categorize:NewDonkeysShare",
@@ -436,15 +439,47 @@
                     "data": {
                         "isHovered": false
                     },
-                    "id": "xy-edge__Agent:DeepCoatsDressstart-Message:KhakiSymbolsMarryend",
+                    "id": "xy-edge__Agent:ShinyCooksCallstart-VariableAggregator:GentleLawsSneezeend",
+                    "source": "Agent:ShinyCooksCall",
+                    "sourceHandle": "start",
+                    "target": "VariableAggregator:GentleLawsSneeze",
+                    "targetHandle": "end"
+                },
+                {
+                    "data": {
+                        "isHovered": false
+                    },
+                    "id": "xy-edge__VariableAggregator:GentleLawsSneezestart-Message:KhakiSymbolsMarryend",
+                    "markerEnd": "logo",
+                    "source": "VariableAggregator:GentleLawsSneeze",
+                    "sourceHandle": "start",
+                    "target": "Message:KhakiSymbolsMarry",
+                    "targetHandle": "end",
+                    "type": "buttonEdge",
+                    "zIndex": 1001
+                },
+                {
+                    "data": {
+                        "isHovered": false
+                    },
+                    "id": "xy-edge__Agent:DeepCoatsDressstart-VariableAggregator:GentleLawsSneezeend",
                     "markerEnd": "logo",
                     "source": "Agent:DeepCoatsDress",
                     "sourceHandle": "start",
-                    "style": {
-                        "stroke": "rgba(91, 93, 106, 1)",
-                        "strokeWidth": 1
+                    "target": "VariableAggregator:GentleLawsSneeze",
+                    "targetHandle": "end",
+                    "type": "buttonEdge",
+                    "zIndex": 1001
+                },
+                {
+                    "data": {
+                        "isHovered": false
                     },
-                    "target": "Message:KhakiSymbolsMarry",
+                    "id": "xy-edge__Agent:PlentyCandiesRefusestart-VariableAggregator:GentleLawsSneezeend",
+                    "markerEnd": "logo",
+                    "source": "Agent:PlentyCandiesRefuse",
+                    "sourceHandle": "start",
+                    "target": "VariableAggregator:GentleLawsSneeze",
                     "targetHandle": "end",
                     "type": "buttonEdge",
                     "zIndex": 1001
@@ -514,7 +549,7 @@
                                     "uuid": "81a65fca-a460-4a3b-a4d5-50e76da760bb"
                                 }
                             ],
-                            "llm_id": "deepseek-v3@Tongyi-Qianwen",
+                            "llm_id": "deepseek-v4-pro@default@DeepSeek",
                             "maxTokensEnabled": false,
                             "max_tokens": 256,
                             "message_history_window_size": 1,
@@ -538,7 +573,7 @@
                     "dragging": false,
                     "id": "Categorize:NewDonkeysShare",
                     "measured": {
-                        "height": 172,
+                        "height": 175,
                         "width": 200
                     },
                     "position": {
@@ -559,6 +594,7 @@
                                 "65cb5150819b11f08347047c16ec874f"
                             ],
                             "keywords_similarity_weight": 0.7,
+                            "meta_data_filter": {},
                             "outputs": {
                                 "formalized_content": {
                                     "type": "string",
@@ -578,7 +614,7 @@
                     "dragging": false,
                     "id": "Retrieval:EightyDaysHappen",
                     "measured": {
-                        "height": 96,
+                        "height": 49,
                         "width": 200
                     },
                     "position": {
@@ -601,7 +637,7 @@
                             "exception_method": "",
                             "frequencyPenaltyEnabled": false,
                             "frequency_penalty": 0.7,
-                            "llm_id": "deepseek-v3@Tongyi-Qianwen",
+                            "llm_id": "deepseek-v4-pro@default@DeepSeek",
                             "maxTokensEnabled": false,
                             "max_retries": 3,
                             "max_rounds": 1,
@@ -637,7 +673,7 @@
                     "dragging": false,
                     "id": "Agent:PlentyCandiesRefuse",
                     "measured": {
-                        "height": 84,
+                        "height": 79,
                         "width": 200
                     },
                     "position": {
@@ -677,7 +713,7 @@
                     "dragging": false,
                     "id": "Retrieval:EagerTipsFeel",
                     "measured": {
-                        "height": 96,
+                        "height": 49,
                         "width": 200
                     },
                     "position": {
@@ -700,7 +736,7 @@
                             "exception_method": "",
                             "frequencyPenaltyEnabled": false,
                             "frequency_penalty": 0.7,
-                            "llm_id": "deepseek-v3@Tongyi-Qianwen",
+                            "llm_id": "deepseek-v4-pro@default@DeepSeek",
                             "maxTokensEnabled": false,
                             "max_retries": 3,
                             "max_rounds": 1,
@@ -736,7 +772,7 @@
                     "dragging": false,
                     "id": "Agent:ShinyCooksCall",
                     "measured": {
-                        "height": 84,
+                        "height": 79,
                         "width": 200
                     },
                     "position": {
@@ -759,7 +795,7 @@
                             "exception_method": "",
                             "frequencyPenaltyEnabled": false,
                             "frequency_penalty": 0.7,
-                            "llm_id": "deepseek-v3@Tongyi-Qianwen",
+                            "llm_id": "deepseek-v4-pro@default@DeepSeek",
                             "maxTokensEnabled": false,
                             "max_retries": 3,
                             "max_rounds": 1,
@@ -795,7 +831,7 @@
                     "dragging": false,
                     "id": "Agent:DeepCoatsDress",
                     "measured": {
-                        "height": 84,
+                        "height": 79,
                         "width": 200
                     },
                     "position": {
@@ -811,7 +847,7 @@
                     "data": {
                         "form": {
                             "content": [
-                                "{Agent:PlentyCandiesRefuse@content}{Agent:ShinyCooksCall@content}{Agent:DeepCoatsDress@content}"
+                                "{VariableAggregator:GentleLawsSneeze@answer}"
                             ]
                         },
                         "label": "Message",
@@ -820,12 +856,12 @@
                     "dragging": false,
                     "id": "Message:KhakiSymbolsMarry",
                     "measured": {
-                        "height": 56,
+                        "height": 85,
                         "width": 200
                     },
                     "position": {
-                        "x": 1241.2275787739002,
-                        "y": 238.1004882989556
+                        "x": 1584.2081274006855,
+                        "y": 240.40237117564544
                     },
                     "selected": false,
                     "sourcePosition": "right",
@@ -1044,13 +1080,58 @@
                     "targetPosition": "left",
                     "type": "noteNode",
                     "width": 356
+                },
+                {
+                    "data": {
+                        "form": {
+                            "groups": [
+                                {
+                                    "group_name": "answer",
+                                    "type": "string",
+                                    "variables": [
+                                        {
+                                            "value": "Agent:PlentyCandiesRefuse@content"
+                                        },
+                                        {
+                                            "value": "Agent:ShinyCooksCall@content"
+                                        },
+                                        {
+                                            "value": "Agent:DeepCoatsDress@content"
+                                        }
+                                    ]
+                                }
+                            ],
+                            "outputs": {
+                                "answer": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "label": "VariableAggregator",
+                        "name": "Variable aggregator_0"
+                    },
+                    "dragging": false,
+                    "id": "VariableAggregator:GentleLawsSneeze",
+                    "measured": {
+                        "height": 149,
+                        "width": 200
+                    },
+                    "position": {
+                        "x": 1250.8198102709505,
+                        "y": 240.77998419080623
+                    },
+                    "selected": false,
+                    "sourcePosition": "right",
+                    "targetPosition": "left",
+                    "type": "variableAggregatorNode"
                 }
             ]
         },
         "history": [],
         "messages": [],
         "path": [],
-        "retrieval": []
+        "retrieval": [],
+        "variables": {}
     },
     "avatar": "data:image/png;base64,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"
 }
