@@ -25,7 +25,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 )
 
 // OllamaModel implements ModelDriver for Ollama AI
@@ -60,14 +59,7 @@ func NewOllamaModel(baseURL map[string]string, urlSuffix URLSuffix) *OllamaModel
 			BaseURL:          baseURL,
 			URLSuffix:        urlSuffix,
 			AllowEmptyAPIKey: true,
-			httpClient: &http.Client{
-				Transport: &http.Transport{
-					MaxIdleConns:        100,
-					MaxIdleConnsPerHost: 10,
-					IdleConnTimeout:     90 * time.Second,
-					DisableCompression:  false,
-				},
-			},
+			httpClient:       NewDriverHTTPClient(),
 		},
 	}
 }

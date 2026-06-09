@@ -17,7 +17,10 @@
 package models
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 )
@@ -77,4 +80,48 @@ func (b *BaseModel) GetBaseURL(apiConfig *APIConfig) (string, error) {
 	}
 
 	return baseURL, nil
+}
+
+// ParseSSEStream reads the body of an OpenAI-compatible Server-Sent Events
+// response and calls onEvent for each successfully-parsed JSON payload.
+//
+// T must be a type that json.Unmarshal can decode a single SSE event into.
+// Use map[string]interface{} when the provider schema is untyped; use a
+// concrete struct for full type-safety.
+//
+// It handles only the standard "data: ..." SSE wire format used by
+// OpenAI-compatible endpoints.  Drivers with non-standard transports must
+// not use this helper:
+//   - Xunfei uses a WebSocket connection
+//   - Bedrock uses AWS binary event streams
+//
+// ParseSSEStream stops and returns when:
+//   - a "data: [DONE]" sentinel is received — returns (true, nil),
+//   - the underlying reader is exhausted without a sentinel — returns (false, nil),
+//   - onEvent returns a non-nil error — returns (false, err), or
+//   - the underlying scanner fails — returns (false, err).
+//
+// Lines that cannot be parsed as JSON are silently skipped, matching the
+// behaviour of every existing inline scanner loop in the driver layer.
+func ParseSSEStream[T any](r io.Reader, onEvent func(event T) error) (done bool, err error) {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		data := strings.TrimSpace(line[5:])
+		if data == "[DONE]" {
+			return true, nil
+		}
+		var event T
+		if err := json.Unmarshal([]byte(data), &event); err != nil {
+			continue
+		}
+		if err := onEvent(event); err != nil {
+			return false, err
+		}
+	}
+	return false, scanner.Err()
 }
