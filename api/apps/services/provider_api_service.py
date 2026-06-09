@@ -380,11 +380,22 @@ async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=No
     factory_llms = factory_info[0]["llm"]
     if not factory_llms:
         if not model_info:
-            return False, f"No models found for provider '{provider_name}'"
-        factory_llms = [{
-            "model_type": _type,
-            "llm_name": model.get("model_name", ""),
-        } for model in model_info if model for _type in model.get("model_type", []) ]
+            # Try to fetch models dynamically for self-deployed providers (e.g. Xinference)
+            if provider_name in ModelMeta:
+                model_base_url = base_url or factory_info[0].get("url", "")
+                remote_models = await ModelMeta[provider_name](api_key_str if isinstance(api_key, str) else (json.dumps(api_key) if isinstance(api_key, dict) else ""), model_base_url).get_model_list()
+                if remote_models:
+                    factory_llms = [{
+                        "model_type": m.get("model_types", [LLMType.CHAT.value])[0] if m.get("model_types") else LLMType.CHAT.value,
+                        "llm_name": m.get("name", ""),
+                    } for m in remote_models if m.get("name")]
+            if not factory_llms:
+                return False, f"No models found for provider '{provider_name}'"
+        else:
+            factory_llms = [{
+                "model_type": _type,
+                "llm_name": model.get("model_name", ""),
+            } for model in model_info if model for _type in model.get("model_type", []) ]
 
     # test if api key works
     chat_passed, embd_passed, rerank_passed = False, False, False
