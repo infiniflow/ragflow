@@ -750,6 +750,59 @@ func (c *CLI) executeNew(input string) error {
 	return err
 }
 
+func (c *CLI) execute(input string) error {
+	// Determine execution mode based on input and args
+	input = strings.TrimSpace(input)
+
+	// Handle meta commands (start with \)
+	if strings.HasPrefix(input, "\\") {
+		p := NewParser(input)
+		cmd, err := p.Parse(c.Config.CLIMode)
+		if err != nil {
+			return err
+		}
+		if cmd != nil && cmd.Type == "meta" {
+			return c.handleMetaCommand(cmd)
+		}
+	}
+
+	// Check if we should use SQL mode or Filesystem mode
+	isSQLMode := false
+	if c.args != nil && len(c.args.CommandArgs) > 0 {
+		// Non-interactive mode: use pre-determined mode from args
+		isSQLMode = c.args.IsSQLMode
+	} else {
+		// Interactive mode: determine based on input
+		isSQLMode = looksLikeSQL(input)
+	}
+
+	if isSQLMode {
+		// SQL mode: use parser
+		p := NewParser(input)
+		cmd, err := p.Parse(c.Config.CLIMode)
+		if err != nil {
+			return err
+		}
+		if cmd == nil {
+			return nil
+		}
+		// Execute SQL command using the client
+		var result ResponseIf
+		result, err = c.ExecuteCommand(cmd)
+		if result != nil {
+			result.SetOutputFormat(c.outputFormat)
+			result.PrintOut()
+		}
+		return err
+	}
+
+	// Filesystem mode: execute filesystem command
+	cmd := NewCommand("file_system_command")
+	cmd.Params["command"] = input
+	_, ceErr := c.executeFilesystem(cmd)
+	return ceErr
+}
+
 // executeFilesystem executes a Filesystem command and returns a ResponseIf.
 func (c *CLI) executeFilesystem(cmd *Command) (ResponseIf, error) {
 	rawInput, _ := cmd.Params["command"].(string)
