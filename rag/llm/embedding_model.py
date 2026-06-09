@@ -234,19 +234,26 @@ class LocalAIEmbed(Base):
         return np.array(embds[0]), cnt
 
 
+def _resolve_azure_credentials(key):
+    try:
+        key_obj = json.loads(key)
+        if isinstance(key_obj, dict):
+            return key_obj.get("api_key", ""), key_obj.get("api_version", "2024-02-01")
+        logging.warning(
+            "Azure credential payload parsed as JSON but is not an object; using raw api_key string"
+        )
+    except (json.JSONDecodeError, TypeError):
+        logging.warning("Azure credential payload is not valid JSON; using raw api_key string")
+    return key, "2024-02-01"
+
+
 class AzureEmbed(OpenAIEmbed):
     _FACTORY_NAME = "Azure-OpenAI"
 
     def __init__(self, key, model_name, **kwargs):
         from openai.lib.azure import AzureOpenAI
 
-        try:
-            key_obj = json.loads(key)
-            api_key = key_obj.get("api_key", "")
-            api_version = key_obj.get("api_version", "2024-02-01")
-        except (json.JSONDecodeError, TypeError):
-            api_key = key
-            api_version = "2024-02-01"
+        api_key, api_version = _resolve_azure_credentials(key)
         self.client = AzureOpenAI(api_key=api_key, azure_endpoint=kwargs["base_url"], api_version=api_version)
         self.model_name = model_name
 
