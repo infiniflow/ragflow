@@ -378,20 +378,35 @@ async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=No
         return False, f"Provider '{provider_name}' not found"
 
     factory_llms = factory_info[0]["llm"]
+    api_key_str = api_key if isinstance(api_key, str) else json.dumps(api_key)
     if not factory_llms:
-        if not model_info:
+        # Try to fetch models dynamically for self-deployed providers
+        if provider_name in ModelMeta:
+            model_base_url = base_url or factory_info[0].get("url", "")
+            try:
+                remote_models = await ModelMeta[provider_name](api_key_str, model_base_url).get_model_list()
+                if remote_models:
+                    factory_llms = [{
+                        "model_type": m.get("model_types", [LLMType.CHAT.value])[0] if m.get("model_types") else LLMType.CHAT.value,
+                        "llm_name": m.get("name", ""),
+                    } for m in remote_models if m.get("name")]
+            except Exception:
+                logging.exception("Failed to fetch models dynamically for provider=%s", provider_name)
+
+        if not factory_llms and model_info:
+            factory_llms = [{
+                "model_type": _type,
+                "llm_name": model.get("model_name", ""),
+            } for model in model_info if model for _type in model.get("model_type", []) ]
+
+        if not factory_llms:
             return False, f"No models found for provider '{provider_name}'"
-        factory_llms = [{
-            "model_type": _type,
-            "llm_name": model.get("model_name", ""),
-        } for model in model_info if model for _type in model.get("model_type", []) ]
 
     # test if api key works
     chat_passed, embd_passed, rerank_passed = False, False, False
     timeout_seconds = int(os.environ.get("LLM_TIMEOUT_SECONDS", 10))
     extra = {"provider": provider_name}
     msg = ""
-    api_key_str = api_key if isinstance(api_key, str) else json.dumps(api_key)
     for llm in factory_llms:
         if not embd_passed and llm["model_type"] == LLMType.EMBEDDING.value:
             assert provider_name in EmbeddingModel, f"Embedding model from {provider_name} is not supported yet."
