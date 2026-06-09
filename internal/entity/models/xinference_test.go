@@ -266,7 +266,7 @@ func TestXinferenceListModelsAndCheckConnection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if strings.Join(models, ",") != "qwen2.5-instruct,custom-chat" {
+	if joinModelNames(models, ",") != "qwen2.5-instruct,custom-chat" {
 		t.Errorf("models=%v", models)
 	}
 	if err := x.CheckConnection(apiConfig); err != nil {

@@ -424,7 +424,7 @@ func (a *AzureOpenAIModel) Embed(modelName *string, texts []string, apiConfig *A
 }
 
 // ListModels returns the deployment names visible to the configured API key.
-func (a *AzureOpenAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (a *AzureOpenAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -472,7 +472,7 @@ func (a *AzureOpenAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("invalid deployments list format")
 	}
 
-	models := make([]string, 0, len(data))
+	models := make([]ListModelResponse, 0, len(data))
 	for _, item := range data {
 		m, ok := item.(map[string]interface{})
 		if !ok {
@@ -483,7 +483,9 @@ func (a *AzureOpenAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		if !ok {
 			continue
 		}
-		models = append(models, id)
+		models = append(models, ListModelResponse{
+			Name: id,
+		})
 	}
 
 	return models, nil
