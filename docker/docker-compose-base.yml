@@ -104,10 +104,16 @@ services:
     profiles:
       - oceanbase
     image: oceanbase/oceanbase-ce:4.4.1.0-100000032025101610
+    entrypoint: ["bash", "/root/boot/ragflow-oceanbase-entrypoint.sh"]
+    ulimits:
+      nofile:
+        soft: 655350
+        hard: 655350
     volumes:
       - ./oceanbase/data:/root/ob
       - ./oceanbase/conf:/root/.obd/cluster
       - ./oceanbase/init.d:/root/boot/init.d
+      - ./oceanbase-entrypoint.sh:/root/boot/ragflow-oceanbase-entrypoint.sh:ro
     ports:
       - ${OCEANBASE_PORT:-2881}:2881
     env_file: .env
