@@ -550,6 +550,13 @@ func NewCLIWithConfig(commandLineConfig *CommandLineConfig) (*CLI, error) {
 		cli.APIServerClientMap = map[string]*HTTPClient{
 			cli.Config.APIClientConfig.CurrentAPIServer: httpClient,
 		}
+		// Auto-login if user and password are provided (from config file)
+		if apiServerConfig.UserName != nil && apiServerConfig.UserPassword != nil && apiServerConfig.ApiToken == nil {
+			if err := cli.LoginUserInteractive(*apiServerConfig.UserName, *apiServerConfig.UserPassword); err != nil {
+				line.Close()
+				return nil, fmt.Errorf("auto-login failed: %w", err)
+			}
+		}
 
 		engine := filesystem.NewEngine()
 
@@ -565,6 +572,16 @@ func NewCLIWithConfig(commandLineConfig *CommandLineConfig) (*CLI, error) {
 		httpClient.Host = commandLineConfig.AdminClientConfig.AdminHost
 		httpClient.Port = commandLineConfig.AdminClientConfig.AdminPort
 		cli.AdminServerClient = httpClient
+
+		adminServerConfig := commandLineConfig.AdminClientConfig
+		// Auto-login if user and password are provided (from config file)
+		if adminServerConfig.AdminName != nil && adminServerConfig.AdminPassword != nil {
+			if err := cli.LoginUserInteractive(*adminServerConfig.AdminName, *adminServerConfig.AdminPassword); err != nil {
+				line.Close()
+				return nil, fmt.Errorf("auto-login failed: %w", err)
+			}
+		}
+
 	} else {
 		return nil, fmt.Errorf("invalid CLI mode: %s", commandLineConfig.CLIMode)
 	}
@@ -1367,7 +1384,7 @@ func (c *CLI) RunSingleCommand(command *string) error {
 	defer c.Cleanup()
 
 	// Execute the command
-	if err := c.execute(*command); err != nil {
+	if err := c.executeNew(*command); err != nil {
 		return err
 	}
 	return nil
