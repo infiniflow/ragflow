@@ -147,10 +147,11 @@ class LayoutRecognizer(Recognizer):
                     if lt.get("visited"):
                         continue
                     lt = deepcopy(lt)
-                    del lt["type"]
+                    lt.pop("type", None)
                     lt["text"] = ""
                     lt["layout_type"] = "figure"
                     lt["layoutno"] = f"{ty}-{i}"
+                    logging.debug(f"Created placeholder box {lt['layoutno']} for textless {ty} region")
                     bxs.append(lt)
 
             boxes.extend(bxs)
@@ -457,6 +458,7 @@ class AscendLayoutRecognizer(Recognizer):
                     lt["text"] = ""
                     lt["layout_type"] = "figure"
                     lt["layoutno"] = f"{ty}-{i}"
+                    logging.debug(f"Created placeholder box {lt['layoutno']} for textless {ty} region")
                     bxs.append(lt)
 
             boxes_out.extend(bxs)
