@@ -1455,7 +1455,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
             "dialog_id": cvs.id,
             "user_id": user_id,
             "exp_user_id": user_id,
-            "name": req.get("name", ""),
+            "name": req.get("name") or (query[:250] if query else "") or "",
             "message": [
                 {
                     "role": "user",

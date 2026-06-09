@@ -14,12 +14,11 @@
 //  limitations under the License.
 //
 
-package entity
+package models
 
 import (
 	"os"
 	"path/filepath"
-	modeldrivers "ragflow/internal/entity/models"
 	"strings"
 	"testing"
 )
@@ -54,16 +53,18 @@ func TestHostedProviderConfigsLoadSharedDrivers(t *testing.T) {
 		}
 	}
 
-	pm, err := NewProviderManager(dir)
+	err := InitProviderManager(dir)
 	if err != nil {
-		t.Fatalf("NewProviderManager: %v", err)
+		t.Fatalf("InitProviderManager: %v", err)
 	}
+
+	pm := GetProviderManager()
 
 	minerU := pm.FindProvider("MinerU.Net")
 	if minerU == nil {
 		t.Fatal("MinerU.Net provider not found")
 	}
-	if _, ok := minerU.ModelDriver.(*modeldrivers.MinerUModel); !ok {
+	if _, ok := minerU.ModelDriver.(*MinerUModel); !ok {
 		t.Fatalf("MinerU.Net ModelDriver=%T, want *models.MinerUModel", minerU.ModelDriver)
 	}
 	if minerU.Class != "mineru.net" {
@@ -77,7 +78,7 @@ func TestHostedProviderConfigsLoadSharedDrivers(t *testing.T) {
 	if paddleOCR == nil {
 		t.Fatal("PaddleOCR.Net provider not found")
 	}
-	if _, ok := paddleOCR.ModelDriver.(*modeldrivers.PaddleOCRModel); !ok {
+	if _, ok := paddleOCR.ModelDriver.(*PaddleOCRModel); !ok {
 		t.Fatalf("PaddleOCR.Net ModelDriver=%T, want *models.PaddleOCRModel", paddleOCR.ModelDriver)
 	}
 	if paddleOCR.Class != "paddleocr.net" {
@@ -96,16 +97,18 @@ func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
 		}
 	}
 
-	pm, err := NewProviderManager(dir)
+	err := InitProviderManager(dir)
 	if err != nil {
-		t.Fatalf("NewProviderManager: %v", err)
+		t.Fatalf("InitProviderManager: %v", err)
 	}
+
+	pm := GetProviderManager()
 
 	minerU := pm.FindProvider("MinerU")
 	if minerU == nil {
 		t.Fatal("MinerU provider not found")
 	}
-	if _, ok := minerU.ModelDriver.(*modeldrivers.MinerULocalModel); !ok {
+	if _, ok := minerU.ModelDriver.(*MinerULocalModel); !ok {
 		t.Fatalf("MinerU ModelDriver=%T, want *models.MinerULocalModel", minerU.ModelDriver)
 	}
 	if minerU.URLSuffix.DocumentParse != "file_parse" {
@@ -116,7 +119,7 @@ func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
 	if paddleOCR == nil {
 		t.Fatal("PaddleOCR provider not found")
 	}
-	if _, ok := paddleOCR.ModelDriver.(*modeldrivers.PaddleOCRLocalModel); !ok {
+	if _, ok := paddleOCR.ModelDriver.(*PaddleOCRLocalModel); !ok {
 		t.Fatalf("PaddleOCR ModelDriver=%T, want *models.PaddleOCRLocalModel", paddleOCR.ModelDriver)
 	}
 	if paddleOCR.URLSuffix.OCR != "layout-parsing" {
@@ -132,9 +135,9 @@ func TestProviderConfigsLoadURLSuffixKeys(t *testing.T) {
 		}
 	}
 
-	pm, err := NewProviderManager(dir)
+	err := InitProviderManager(dir)
 	if err != nil {
-		t.Fatalf("NewProviderManager: %v", err)
+		t.Fatalf("InitProviderManager: %v", err)
 	}
 
 	cohere := pm.FindProvider("CoHere")
@@ -177,9 +180,9 @@ func TestProviderConfigRejectsUnknownURLSuffixKey(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	_, err := NewProviderManager(dir)
+	_, err := InitProviderManager(dir)
 	if err == nil {
-		t.Fatal("NewProviderManager succeeded with unknown url_suffix key")
+		t.Fatal("InitProviderManager succeeded with unknown url_suffix key")
 	}
 	if !strings.Contains(err.Error(), `unknown field "unknown_suffix"`) {
 		t.Fatalf("error=%q, want unknown_suffix field", err)
@@ -195,9 +198,9 @@ func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
 		t.Fatalf("write ppio config: %v", err)
 	}
 
-	pm, err := NewProviderManager(dir)
+	err := InitProviderManager(dir)
 	if err != nil {
-		t.Fatalf("NewProviderManager: %v", err)
+		t.Fatalf("InitProviderManager: %v", err)
 	}
 
 	provider := pm.FindProvider("ppio")
@@ -219,7 +222,7 @@ func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
 	if provider.URLSuffix.Models != "models" {
 		t.Errorf("models suffix=%q", provider.URLSuffix.Models)
 	}
-	if _, ok := provider.ModelDriver.(*modeldrivers.PPIOModel); !ok {
+	if _, ok := provider.ModelDriver.(*PPIOModel); !ok {
 		t.Fatalf("ModelDriver=%T, want *models.PPIOModel", provider.ModelDriver)
 	}
 	if provider.ModelDriver.Name() != "ppio" {
@@ -282,9 +285,9 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 		t.Fatalf("write siliconflow config: %v", err)
 	}
 
-	pm, err := NewProviderManager(dir)
+	err := InitProviderManager(dir)
 	if err != nil {
-		t.Fatalf("NewProviderManager: %v", err)
+		t.Fatalf("InitProviderManager: %v", err)
 	}
 
 	provider := pm.FindProvider("SiliconFlow")
@@ -297,7 +300,7 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	if provider.URLSuffix.Chat != "chat/completions" {
 		t.Errorf("chat suffix=%q", provider.URLSuffix.Chat)
 	}
-	if _, ok := provider.ModelDriver.(*modeldrivers.SiliconflowModel); !ok {
+	if _, ok := provider.ModelDriver.(*SiliconflowModel); !ok {
 		t.Fatalf("ModelDriver=%T, want *models.SiliconflowModel", provider.ModelDriver)
 	}
 	if provider.ModelDriver.Name() != "siliconflow" {

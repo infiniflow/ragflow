@@ -58,7 +58,7 @@ func (d *DummyModel) Embed(modelName *string, texts []string, apiConfig *APIConf
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (d *DummyModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (d *DummyModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 

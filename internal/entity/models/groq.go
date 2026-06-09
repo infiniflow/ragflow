@@ -327,7 +327,7 @@ type groqListModelsResponse struct {
 	Error interface{}     `json:"error"`
 }
 
-func (g *GroqModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (g *GroqModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -369,10 +369,10 @@ func (g *GroqModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("groq: upstream error: %v", result.Error)
 	}
 
-	models := make([]string, 0, len(result.Data))
+	models := make([]ListModelResponse, 0, len(result.Data))
 	for _, model := range result.Data {
 		if model.ID != "" {
-			models = append(models, model.ID)
+			models = append(models, ListModelResponse{Name: model.ID})
 		}
 	}
 	return models, nil
