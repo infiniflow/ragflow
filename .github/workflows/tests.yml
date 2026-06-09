@@ -155,6 +155,7 @@ jobs:
           ln -sf "${RESOURCE_PATH}/wordnet" resource/wordnet
 
       - name: Test Go packages
+        working-directory: ${{ github.workspace }}
         run: |
           set -euo pipefail
           packages=$(go list ./internal/... | grep -vE '/storage(/|$)')
