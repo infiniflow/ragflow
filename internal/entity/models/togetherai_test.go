@@ -265,10 +265,14 @@ func TestTogetherAIListModelsAndCheckConnection(t *testing.T) {
 
 func TestTogetherAIUnsupportedMethods(t *testing.T) {
 	m := newTogetherAIForTest("http://unused")
-	if _, err := m.Rerank(nil, "", nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("Rerank error=%v", err)
+	apiKey := "test-key"
+	// Rerank IS implemented; with nil documents it short-circuits to empty response (no error).
+	// It should NOT be blocked by APIConfigCheck.
+	if _, err := m.Rerank(nil, "", nil, &APIConfig{ApiKey: &apiKey}, nil); err != nil {
+		t.Errorf("Rerank error=%v (expected no error for empty documents)", err)
 	}
-	if _, err := m.Balance(nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	// Balance IS a stub → "no such method"
+	if _, err := m.Balance(&APIConfig{ApiKey: &apiKey}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Balance error=%v", err)
 	}
 }

@@ -164,7 +164,10 @@ export const useListModelsPicker = ({
         // (empty on first load, populated on re-opens) so the backend
         // sees an array shape consistent with the verify/submit payloads.
         const verifyArgs = config.verifyTransform
-          ? config.verifyTransform(values, modelInfoList)
+          ? config.verifyTransform({
+              ...values,
+              model_info: modelInfoList,
+            })
           : { apiKey: values.api_key ?? '', baseUrl: values.base_url };
         const res = await listProviderModels({
           provider_name: llmFactory,
