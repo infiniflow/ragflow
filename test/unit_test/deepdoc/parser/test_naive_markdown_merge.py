@@ -9,7 +9,7 @@ import sys
 import os
 
 # Add project root to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
 
 from rag.app.naive import _is_short_header
 
