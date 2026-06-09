@@ -100,14 +100,12 @@ export interface ProviderConfig {
   /**
    * Transform form values into verify API parameters
    * Used to construct api_key / base_url / region / model_info when the Verify button is clicked.
-   * `modelInfo` is the array of currently selected models from the list-models picker
-   * (one entry per checked list item). Providers without a list-models picker can ignore it.
+   * `modelInfo` is assembled from `values` by the transform itself: if `values.model_info`
+   * is already an array (the picker-merged case), it is used as-is; otherwise the transform
+   * falls back to assembling from individual form fields (model_name / model_type / max_tokens / is_tools).
    */
-  verifyTransform?: (
-    values: Record<string, any>,
-    modelInfo: IModelInfo[],
-  ) => {
-    apiKey: string;
+  verifyTransform?: (values: Record<string, any>) => {
+    apiKey: string | object | Record<string, any>;
     baseUrl?: string;
     region?: string;
     modelInfo?: IModelInfo[];
@@ -115,13 +113,9 @@ export interface ProviderConfig {
   /**
    * Transform form values into submit API parameters.
    * Used to handle special field name mapping (e.g. volcengine's endpoint_id -> ark_api_key).
-   * `modelInfo` is the array of currently selected models from the list-models picker
-   * (one entry per checked list item). Providers without a list-models picker can ignore it.
+   * `modelInfo` is assembled from `values` by the transform itself (same rules as verifyTransform).
    */
-  submitTransform?: (
-    values: Record<string, any>,
-    modelInfo: IModelInfo[],
-  ) => Record<string, any>;
+  submitTransform?: (values: Record<string, any>) => Record<string, any>;
   /**
    * Optional link at the bottom of the modal
    * e.g. the official documentation link for Ollama-family providers
