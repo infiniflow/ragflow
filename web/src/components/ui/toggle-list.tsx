@@ -79,6 +79,18 @@ export interface ToggleListProps<V = unknown> {
    * (e.g. lazy-fetching list data) on first open.
    */
   onOpenChange?: (open: boolean) => void;
+  /**
+   * Optional footer slot rendered at the bottom of the dropdown, OUTSIDE
+   * the scrollable items area. Stays pinned to the bottom of the panel
+   * regardless of how many options are scrolled. Use it for actions
+   * that should always be reachable (e.g. an "Add custom" button).
+   *
+   * The footer receives the current `open` state as a render prop so
+   * callers can render a different node when the panel is collapsed.
+   */
+  footer?: React.ReactNode | ((state: { open: boolean }) => React.ReactNode);
+  /** Class applied to the footer wrapper (e.g. for borders / background). */
+  footerClassName?: string;
 }
 
 /**
@@ -93,6 +105,9 @@ export interface ToggleListProps<V = unknown> {
  *   API mode (with `onSearch`) only emits the query and lets the caller refetch.
  * - Optional load-more pagination. The caller owns the data; the component
  *   renders the trigger button.
+ * - Optional `footer` slot rendered outside the scrollable items area,
+ *   pinned to the bottom of the dropdown panel. Use it for actions that
+ *   should always be reachable regardless of how many options are scrolled.
  *
  * Behavior notes:
  * - Clicking a list item calls that item's `onClick`. The component does not
@@ -118,6 +133,8 @@ export function ToggleList<V = unknown>({
   searchClassName,
   loadMore,
   onOpenChange,
+  footer,
+  footerClassName,
 }: ToggleListProps<V>) {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState('');
@@ -169,6 +186,10 @@ export function ToggleList<V = unknown>({
     searchable && query.trim().length > 0 && filteredOptions.length === 0;
   const showEmpty = !showNoResults && options.length === 0;
 
+  // Resolve the footer node. Render-prop form gives callers the current
+  // `open` state so they can render a different node when collapsed.
+  const footerNode = typeof footer === 'function' ? footer({ open }) : footer;
+
   return (
     <div ref={containerRef} className={cn('flex flex-col', className)}>
       <button
@@ -213,7 +234,7 @@ export function ToggleList<V = unknown>({
           {searchable && (
             <div
               className={cn(
-                'flex items-center gap-2 px-2 h-9 border-b border-border-button',
+                'flex items-center gap-2 px-2 h-9 bg-bg-card m-2 rounded-md py-1',
                 searchClassName,
               )}
             >
@@ -274,7 +295,7 @@ export function ToggleList<V = unknown>({
                       option.onClick?.();
                     }}
                     className={cn(
-                      'cursor-pointer px-3 py-2 text-sm hover:bg-border-button ',
+                      'cursor-pointer px-3 py-4 text-sm hover:bg-border-button ',
                       itemClassName,
                     )}
                   >
@@ -305,6 +326,16 @@ export function ToggleList<V = unknown>({
                 </button>
               )}
           </div>
+          {footerNode && (
+            <div
+              className={cn(
+                'shrink-0 border-t border-border-button ',
+                footerClassName,
+              )}
+            >
+              {footerNode}
+            </div>
+          )}
         </div>
       )}
     </div>

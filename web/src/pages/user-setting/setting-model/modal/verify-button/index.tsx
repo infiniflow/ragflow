@@ -101,7 +101,7 @@ const VerifyButton: React.FC<IVerifyButton> = ({
           type="button"
           onClick={handleVerify}
           disabled={isVerifying}
-          variant={'ghost'}
+          variant={'outline'}
         >
           <RefreshCcw
             size={14}
