@@ -181,6 +181,10 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListSupportedModels(cmd)
 	case "list_instance_models":
 		return c.ListInstanceModels(cmd)
+	case "show_provider_model":
+		return c.ShowProviderModel(cmd)
+	case "list_all_models":
+		return c.ListAllModels(cmd)
 	case "show_model":
 		return c.ShowModel(cmd)
 	case "list_admin_tasks":
@@ -250,6 +254,10 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListSupportedModels(cmd)
 	case "list_instance_models":
 		return c.ListInstanceModels(cmd)
+	case "show_provider_model":
+		return c.ShowProviderModel(cmd)
+	case "list_all_models":
+		return c.ListAllModels(cmd)
 	case "show_model":
 		return c.ShowModel(cmd)
 	// Provider commands

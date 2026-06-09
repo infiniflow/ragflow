@@ -42,6 +42,29 @@ func providerConfigDir(t *testing.T) string {
 	return ""
 }
 
+func newProviderManagerForTest(t *testing.T, dir string) (*ProviderManager, error) {
+	t.Helper()
+
+	chdirRepoRootForProviderManager(t)
+	return NewProviderManager(dir)
+}
+
+func chdirRepoRootForProviderManager(t *testing.T) {
+	t.Helper()
+
+	for _, candidate := range []string{
+		".",
+		filepath.Join("..", ".."),
+	} {
+		if _, err := os.Stat(filepath.Join(candidate, "conf", "all_models.json")); err == nil {
+			t.Chdir(candidate)
+			return
+		}
+	}
+
+	t.Fatal("could not locate conf/all_models.json")
+}
+
 func readProviderConfig(t *testing.T, fileName string) []byte {
 	t.Helper()
 
@@ -142,7 +165,7 @@ func TestNewProviderManagerRejectsUnknownURLSuffixKey(t *testing.T) {
 		t.Fatalf("write bad provider config: %v", err)
 	}
 
-	_, err := NewProviderManager(dir)
+	_, err := newProviderManagerForTest(t, dir)
 	if err == nil {
 		t.Fatal("expected unknown url_suffix key error, got nil")
 	}
@@ -161,7 +184,7 @@ func TestHostedProviderConfigsLoadSharedDrivers(t *testing.T) {
 		}
 	}
 
-	pm, err := NewProviderManager(dir)
+	pm, err := newProviderManagerForTest(t, dir)
 	if err != nil {
 		t.Fatalf("NewProviderManager: %v", err)
 	}
@@ -203,7 +226,7 @@ func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
 		}
 	}
 
-	pm, err := NewProviderManager(dir)
+	pm, err := newProviderManagerForTest(t, dir)
 	if err != nil {
 		t.Fatalf("NewProviderManager: %v", err)
 	}
@@ -231,13 +254,78 @@ func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
 	}
 }
 
+func TestProviderConfigsLoadURLSuffixKeys(t *testing.T) {
+	dir := t.TempDir()
+	for _, fileName := range []string{"cohere.json", "xai.json"} {
+		if err := os.WriteFile(filepath.Join(dir, fileName), readProviderConfig(t, fileName), 0o600); err != nil {
+			t.Fatalf("write %s config: %v", fileName, err)
+		}
+	}
+
+	pm, err := newProviderManagerForTest(t, dir)
+	if err != nil {
+		t.Fatalf("NewProviderManager: %v", err)
+	}
+
+	cohere := pm.FindProvider("CoHere")
+	if cohere == nil {
+		t.Fatal("CoHere provider not found")
+	}
+	if cohere.URLSuffix.Embedding != "v2/embed" {
+		t.Errorf("CoHere embedding suffix=%q", cohere.URLSuffix.Embedding)
+	}
+
+	xAI := pm.FindProvider("xAI")
+	if xAI == nil {
+		t.Fatal("xAI provider not found")
+	}
+	if xAI.URLSuffix.ASR != "stt" {
+		t.Errorf("xAI ASR suffix=%q", xAI.URLSuffix.ASR)
+	}
+}
+
+func TestProviderConfigRejectsUnknownURLSuffixKey(t *testing.T) {
+	dir := t.TempDir()
+	config := []byte(`{
+  "name": "OpenAI",
+  "url": {
+    "default": "https://example.com"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "unknown_suffix": "ignored"
+  },
+  "models": [
+    {
+      "name": "test-model",
+      "max_tokens": 4096,
+      "model_types": ["chat"]
+    }
+  ]
+}`)
+	if err := os.WriteFile(filepath.Join(dir, "unknown_suffix.json"), config, 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, err := newProviderManagerForTest(t, dir)
+	if err == nil {
+		t.Fatal("NewProviderManager succeeded with unknown url_suffix key")
+	}
+	if !strings.Contains(err.Error(), `unknown url_suffix key "unknown_suffix"`) {
+		t.Fatalf("error=%q, want unknown_suffix key", err)
+	}
+	if !strings.Contains(err.Error(), "unknown_suffix.json") {
+		t.Fatalf("error=%q, want config file context", err)
+	}
+}
+
 func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "ppio.json"), readPPIOProviderConfig(t), 0o600); err != nil {
 		t.Fatalf("write ppio config: %v", err)
 	}
 
-	pm, err := NewProviderManager(dir)
+	pm, err := newProviderManagerForTest(t, dir)
 	if err != nil {
 		t.Fatalf("NewProviderManager: %v", err)
 	}
@@ -324,7 +412,7 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 		t.Fatalf("write siliconflow config: %v", err)
 	}
 
-	pm, err := NewProviderManager(dir)
+	pm, err := newProviderManagerForTest(t, dir)
 	if err != nil {
 		t.Fatalf("NewProviderManager: %v", err)
 	}
