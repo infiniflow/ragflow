@@ -461,7 +461,7 @@ func (o *OllamaModel) ParseFile(modelName *string, content []byte, url *string, 
 	return nil, fmt.Errorf("%s, no such method", o.Name())
 }
 
-func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 
 	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -515,11 +515,11 @@ func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	// convert result["data"] to []map[string]interface{}
-	models := make([]string, 0)
+	models := make([]ListModelResponse, 0)
 	for _, model := range result["models"].([]interface{}) {
 		modelMap := model.(map[string]interface{})
 		modelName := modelMap["name"].(string)
-		models = append(models, modelName)
+		models = append(models, ListModelResponse{Name: modelName})
 	}
 
 	return models, nil

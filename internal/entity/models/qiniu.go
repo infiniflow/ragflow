@@ -445,7 +445,7 @@ func (q *QiniuModel) ParseFile(modelName *string, content []byte, url *string, a
 	return nil, fmt.Errorf("%s, no such method", q.Name())
 }
 
-func (q *QiniuModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (q *QiniuModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := q.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -490,7 +490,7 @@ func (q *QiniuModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	models := make([]string, 0, len(data))
+	models := make([]ListModelResponse, 0, len(data))
 	for _, model := range data {
 		modelMap, ok := model.(map[string]interface{})
 		if !ok {
@@ -500,7 +500,7 @@ func (q *QiniuModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		if !ok || modelID == "" {
 			continue
 		}
-		models = append(models, modelID)
+		models = append(models, ListModelResponse{Name: modelID})
 	}
 
 	return models, nil
