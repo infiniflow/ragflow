@@ -73,26 +73,32 @@ func TestRemoveMemberAuthCheck(t *testing.T) {
 }
 
 // TestRemoveMemberSelfAllowed verifies that a user removing themselves passes the auth check.
-// (It will fail at the DB layer in unit tests, but the auth check must pass first.)
+// The DAO is nil so the operation fails at the data layer, but the auth check must pass first.
 func TestRemoveMemberSelfAllowed(t *testing.T) {
 	s := &TenantService{}
-	// userID == targetUserID: auth check should pass, expect DB error (nil userTenantDAO).
+	// userID == targetUserID: auth check should pass.
 	code, err := s.RemoveMember("user-abc", "tenant-xyz", "user-abc")
 	if code == common.CodeAuthenticationError {
 		t.Errorf("self-removal should pass auth check, got CodeAuthenticationError: %v", err)
 	}
+	if code != common.CodeServerError {
+		t.Errorf("expected CodeServerError (DAO not initialized), got %v", code)
+	}
+	if err == nil {
+		t.Error("expected non-nil error when userTenantDAO is nil")
+	}
 }
 
-// TestAcceptInviteAuthCheck verifies that AcceptInvite fails when no membership exists (nil DAO).
+// TestAcceptInviteAuthCheck verifies that AcceptInvite fails when DAO is not initialized.
 func TestAcceptInviteAuthCheck(t *testing.T) {
 	s := &TenantService{}
-	// nil userTenantDAO: FilterByUserIDAndTenantID will panic/err, so we expect CodeDataError.
+	// nil userTenantDAO: nil guard returns CodeServerError.
 	code, err := s.AcceptInvite("user-abc", "tenant-xyz")
 	if err == nil {
-		t.Fatal("expected error when no membership exists, got nil")
+		t.Fatal("expected error when userTenantDAO is nil, got nil")
 	}
-	if code != common.CodeDataError {
-		t.Errorf("expected CodeDataError, got %v", code)
+	if code != common.CodeServerError {
+		t.Errorf("expected CodeServerError (DAO not initialized), got %v", code)
 	}
 }
 
