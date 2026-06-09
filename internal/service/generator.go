@@ -36,8 +36,8 @@ import (
 // Uses ChatModel to call the LLM with a keyword extraction prompt.
 // Returns comma-separated top N important keywords/phrases from the content.
 func KeywordExtraction(ctx context.Context, chatModel *modelModule.ChatModel, content string, topN int) (string, error) {
-	if chatModel == nil {
-		return "", fmt.Errorf("chat model is nil")
+	if !isUsableChatModel(chatModel) {
+		return "", nil
 	}
 
 	if content == "" {
@@ -99,7 +99,7 @@ func KeywordExtraction(ctx context.Context, chatModel *modelModule.ChatModel, co
 // Corresponds to rag/prompts/generator.py:full_question().
 func FullQuestion(ctx context.Context, chatModel *modelModule.ChatModel, messages []map[string]interface{}, language string) (string, error) {
 	fallback := latestUserMessageText(messages)
-	if chatModel == nil || chatModel.ModelDriver == nil || chatModel.ModelName == nil || strings.TrimSpace(*chatModel.ModelName) == "" {
+	if !isUsableChatModel(chatModel) {
 		return fallback, nil
 	}
 	if len(messages) == 0 || fallback == "" {
@@ -186,8 +186,8 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 }
 
 func crossLanguagesWithChatModel(ctx context.Context, chatModel *modelModule.ChatModel, query string, languages []string) (string, error) {
-	if chatModel == nil {
-		return query, fmt.Errorf("failed to get chat model: nil chat model")
+	if !isUsableChatModel(chatModel) {
+		return query, nil
 	}
 
 	if query == "" {
@@ -264,6 +264,13 @@ func crossLanguagesWithChatModel(ctx context.Context, chatModel *modelModule.Cha
 	}
 
 	return query, nil
+}
+
+func isUsableChatModel(chatModel *modelModule.ChatModel) bool {
+	return chatModel != nil &&
+		chatModel.ModelDriver != nil &&
+		chatModel.ModelName != nil &&
+		strings.TrimSpace(*chatModel.ModelName) != ""
 }
 
 func conversationText(messages []map[string]interface{}) string {
