@@ -511,7 +511,6 @@ const historyFileName = ".ragflow_cli_history"
 type CLI struct {
 	//client        *RAGFlowClient
 	contextEngine *filesystem.Engine
-	prompt        string
 	running       bool
 	line          *liner.State
 	args          *ConnectionArgs
@@ -548,7 +547,6 @@ func NewCLIWithConfig(commandLineConfig *CommandLineConfig) (*CLI, error) {
 			httpClient.APIToken = apiServerConfig.ApiToken
 			httpClient.useAPIToken = true
 		}
-		cli.prompt = fmt.Sprintf("RAGFlow(user)> ")
 		cli.APIServerClientMap = map[string]*HTTPClient{
 			cli.Config.APIClientConfig.CurrentAPIServer: httpClient,
 		}
@@ -566,7 +564,6 @@ func NewCLIWithConfig(commandLineConfig *CommandLineConfig) (*CLI, error) {
 		httpClient := NewHTTPClient()
 		httpClient.Host = commandLineConfig.AdminClientConfig.AdminHost
 		httpClient.Port = commandLineConfig.AdminClientConfig.AdminPort
-		cli.prompt = fmt.Sprintf("RAGFlow(admin)> ")
 		cli.AdminServerClient = httpClient
 	} else {
 		return nil, fmt.Errorf("invalid CLI mode: %s", commandLineConfig.CLIMode)
@@ -669,87 +666,16 @@ func (c *CLI) NewRun() error {
 	fmt.Println()
 
 	for c.running {
-		input, err := c.line.Prompt(c.prompt)
-		if err != nil {
-			fmt.Printf("Error reading input: %v\n", err)
-			continue
+		var prompt string
+		switch cliConfig.CLIMode {
+		case APIMode:
+			prompt = fmt.Sprintf("RAGFlow(api/%s)> ", c.Config.APIClientConfig.CurrentAPIServer)
+		case AdminMode:
+			prompt = "RAGFlow(admin)> "
+		default:
+			return fmt.Errorf("unexpected CLI mode: %s", cliConfig.CLIMode)
 		}
-
-		input = strings.TrimSpace(input)
-
-		if input == "" {
-			continue
-		}
-
-		// Add to history (skip meta commands)
-		if !strings.HasPrefix(input, "\\") {
-			c.line.AppendHistory(input)
-		}
-
-		if err = c.executeNew(input); err != nil {
-			fmt.Printf("CLI error: %v\n", err)
-		}
-	}
-
-	return nil
-}
-
-// Run starts the interactive CLI
-func (c *CLI) Run() error {
-	// If username is provided without password, prompt for password
-	if c.args != nil && c.args.UserName != "" && c.args.Password == "" && c.args.APIToken == "" {
-		maxAttempts := 3
-		for attempt := 1; attempt <= maxAttempts; attempt++ {
-			fmt.Print("Please input your password: ")
-
-			password, err := ReadPassword()
-
-			if password == "" {
-				if attempt < maxAttempts {
-					fmt.Println("Password cannot be empty, please try again")
-					continue
-				}
-				return errors.New("no password provided after 3 attempts")
-			}
-
-			c.args.Password = password
-
-			if err = c.VerifyAuth(); err != nil {
-				if attempt < maxAttempts {
-					fmt.Printf("Authentication failed: %v (%d/%d attempts)\n", err, attempt, maxAttempts)
-					continue
-				}
-				return fmt.Errorf("authentication failed after %d attempts: %v", maxAttempts, err)
-			}
-
-			break
-		}
-	}
-
-	c.running = true
-
-	// Load history from file
-	histFile := HistoryFile()
-	if f, err := os.Open(histFile); err == nil {
-		c.line.ReadHistory(f)
-		f.Close()
-	}
-
-	// Save history on exit
-	defer func() {
-		if f, err := os.Create(histFile); err == nil {
-			c.line.WriteHistory(f)
-			f.Close()
-		}
-		c.line.Close()
-	}()
-
-	fmt.Println("Welcome to RAGFlow CLI")
-	fmt.Println("Type \\? for help, \\q to quit")
-	fmt.Println()
-
-	for c.running {
-		input, err := c.line.Prompt(c.prompt)
+		input, err := c.line.Prompt(prompt)
 		if err != nil {
 			fmt.Printf("Error reading input: %v\n", err)
 			continue
@@ -1434,25 +1360,6 @@ func (c *CLI) Cleanup() {
 		c.line.Close()
 	}
 }
-
-//// RunInteractive runs the CLI in interactive mode
-//func RunInteractive() error {
-//	cli, err := NewCLI()
-//	if err != nil {
-//		return fmt.Errorf("failed to create CLI: %v", err)
-//	}
-//
-//	// Handle interrupt signal
-//	sigChan := make(chan os.Signal, 1)
-//	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-//	go func() {
-//		<-sigChan
-//		cli.Cleanup()
-//		os.Exit(0)
-//	}()
-//
-//	return cli.Run()
-//}
 
 // RunSingleCommand executes a single command and exits
 func (c *CLI) RunSingleCommand(command *string) error {
