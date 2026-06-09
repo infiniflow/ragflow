@@ -114,7 +114,6 @@ services:
       - ./oceanbase/conf:/root/.obd/cluster
       - ./oceanbase/init.d:/root/boot/init.d
       - ./oceanbase-entrypoint.sh:/root/boot/ragflow-oceanbase-entrypoint.sh:ro
-      - ./oceanbase-reconcile.sh:/root/boot/ragflow-ob-reconcile.sh:ro
     ports:
       - ${OCEANBASE_PORT:-2881}:2881
     env_file: .env
