@@ -70,6 +70,8 @@ def list_providers(tenant_id: str, all_available: bool = False):
             }
             if factory_info["name"].lower() == "siliconflow":
                 provider["url"]["intl"] = factory_info_map.get("siliconflow_intl", {}).get("url", "https://api.siliconflow.com/v1")
+            elif factory_info["name"] == "Tongyi-Qianwen":
+                provider["url"]["intl"] = "https://dashscope-intl.aliyuncs.com/compatible-model/v1"
             providers.append(provider)
         providers.sort(key=lambda x: (factory_rank_mapping.get(x["name"]), x["name"]))
         return True, providers
@@ -96,6 +98,8 @@ def list_providers(tenant_id: str, all_available: bool = False):
             }
             if factory_info["name"].lower() == "siliconflow":
                 provider["url"]["intl"] = factory_info_map.get("siliconflow_intl", {}).get("url", "https://api.siliconflow.com/v1")
+            elif factory_info["name"] == "Tongyi-Qianwen":
+                provider["url"]["intl"] = "https://dashscope-intl.aliyuncs.com/compatible-model/v1"
             providers.append(provider)
     providers.sort(key=lambda x: (factory_rank_mapping.get(x["name"]), x["name"]))
     return True, providers
