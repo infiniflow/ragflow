@@ -28,12 +28,13 @@ type Parser struct {
 	lexer     *Lexer
 	curToken  Token
 	peekToken Token
+	original  string
 }
 
 // NewParser creates a new parser
 func NewParser(input string) *Parser {
 	l := NewLexer(input)
-	p := &Parser{lexer: l}
+	p := &Parser{lexer: l, original: input}
 	// Read two tokens to initialize curToken and peekToken
 	p.nextToken()
 	p.nextToken()
@@ -46,7 +47,7 @@ func (p *Parser) nextToken() {
 }
 
 // Parse parses the input and returns a Command
-func (p *Parser) Parse(adminCommand bool) (*Command, error) {
+func (p *Parser) Parse(cliMode CommandLineMode) (*Command, error) {
 	if p.curToken.Type == TokenEOF {
 		return nil, nil
 	}
@@ -56,13 +57,7 @@ func (p *Parser) Parse(adminCommand bool) (*Command, error) {
 		return p.parseMetaCommand()
 	}
 
-	// Check for ContextEngine commands (ls, cat, search)
-	// Note: These are now handled in parseUserCommand to support both SQL-style and CE-style syntax
-	// if p.curToken.Type == TokenIdentifier && isCECommand(p.curToken.Value) {
-	// 	return p.parseCECommand()
-	// }
-
-	return p.parseCommand(adminCommand)
+	return p.parseCommand(cliMode)
 }
 
 func (p *Parser) parseMetaCommand() (*Command, error) {
@@ -115,8 +110,8 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 		return p.parseAdminGenerateCommand()
 	case TokenImport:
 		return p.parseAdminImportCommand()
-	case TokenSearch:
-		return p.parseAdminSearchCommand()
+	case TokenRetrieve:
+		return p.parseAdminRetrieveCommand()
 	case TokenParse:
 		return p.parseAdminParseCommand()
 	case TokenBenchmark:
@@ -133,6 +128,12 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 		return p.parseStartIngestion()
 	case TokenStop:
 		return p.parseStopIngestion()
+	case TokenAdd:
+		return p.parseAdminAddCommand()
+	case TokenDelete:
+		return p.parseAdminDeleteCommand()
+	case TokenSave:
+		return p.parseAdminSaveCommand()
 	default:
 		return nil, fmt.Errorf("unknown command: %s", p.curToken.Value)
 	}
@@ -177,8 +178,8 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseImportCommand()
 	case TokenInsert:
 		return p.parseInsertCommand()
-	case TokenSearch:
-		return p.parseSearchCommand()
+	case TokenRetrieve:
+		return p.parseRetrieveCommand()
 	case TokenParse:
 		return p.parseParseCommand()
 	case TokenBenchmark:
@@ -213,10 +214,8 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseOCRCommand()
 	case TokenCheck:
 		return p.parseCheckCommand()
-	case TokenLS:
-		return p.parseCEListCommand()
-	case TokenCat:
-		return p.parseCECatCommand()
+	case TokenSave:
+		return p.parseUserSaveCommand()
 	case TokenUse:
 		return p.parseUseCommand()
 	case TokenUpdate:
@@ -226,21 +225,27 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 	case TokenGet:
 		return p.parseGetCommand()
 
+	case TokenLS, TokenCat, TokenSearch:
+		// For context engine
+		return p.parseContextEngineCommand()
 	default:
 		return nil, fmt.Errorf("unknown command: %s", p.curToken.Value)
 	}
 }
 
-func (p *Parser) parseCommand(adminCommand bool) (*Command, error) {
+func (p *Parser) parseCommand(cliMode CommandLineMode) (*Command, error) {
 	if p.curToken.Type != TokenIdentifier && !isKeyword(p.curToken.Type) {
 		return nil, fmt.Errorf("expected command, got %s", p.curToken.Value)
 	}
 
-	if adminCommand {
+	switch cliMode {
+	case AdminMode:
 		return p.parseAdminCommand()
+	case APIMode:
+		return p.parseUserCommand()
+	default:
+		return nil, fmt.Errorf("unknown mode: %s", cliMode)
 	}
-
-	return p.parseUserCommand()
 }
 
 func (p *Parser) expectPeek(tokenType int) error {
@@ -385,20 +390,13 @@ func tokenTypeToString(t int) string {
 	return fmt.Sprintf("token(%d)", t)
 }
 
-// parseCECommand parses ContextEngine commands (ls, search)
-func (p *Parser) parseCECommand() (*Command, error) {
-	cmdName := strings.ToUpper(p.curToken.Value)
+func (p *Parser) parseContextEngineCommand() (*Command, error) {
+	p.nextToken() // consume COMMAND
 
-	switch cmdName {
-	case "LS", "LIST":
-		return p.parseCEListCommand()
-	case "CAT":
-		return p.parseCECatCommand()
-	case "SEARCH":
-		return p.parseCESearchCommand()
-	default:
-		return nil, fmt.Errorf("unknown ContextEngine command: %s", cmdName)
-	}
+	cmd := NewCommand("context_engine_command")
+	cmd.Params["command"] = p.original
+
+	return cmd, nil
 }
 
 // parseCEListCommand parses the ls command
