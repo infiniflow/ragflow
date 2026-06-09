@@ -151,13 +151,19 @@ func StreamThinkTagDelta(ctx context.Context, chunks <-chan string, minTokens in
 		for {
 			select {
 			case <-ctx.Done():
-				for range chunks {
-				}
+				go func() {
+					for range chunks {
+					}
+				}()
 				return
 			case chunk, ok := <-chunks:
 				if !ok {
 					for _, d := range FlushThinkBuffer(state) {
-						out <- d
+						select {
+						case out <- d:
+						case <-ctx.Done():
+							return
+						}
 					}
 					return
 				}
@@ -167,8 +173,10 @@ func StreamThinkTagDelta(ctx context.Context, chunks <-chan string, minTokens in
 						select {
 						case out <- d:
 						case <-ctx.Done():
-							for range chunks {
-							}
+							go func() {
+								for range chunks {
+								}
+							}()
 							return
 						}
 					}
@@ -181,8 +189,10 @@ func StreamThinkTagDelta(ctx context.Context, chunks <-chan string, minTokens in
 						select {
 						case out <- d:
 						case <-ctx.Done():
-							for range chunks {
-							}
+							go func() {
+								for range chunks {
+								}
+							}()
 							return
 						}
 					}

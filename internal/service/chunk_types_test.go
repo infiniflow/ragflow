@@ -17,6 +17,7 @@
 package service
 
 import (
+	"ragflow/internal/common"
 	"testing"
 )
 
@@ -254,48 +255,142 @@ func TestNewSourcedChunks_RoundTrip(t *testing.T) {
 }
 
 func TestGetPageNum_Nil(t *testing.T) {
-	if got := getPageNum(nil, 10); got != 10 {
-		t.Errorf("getPageNum(nil, 10) = %d, want 10", got)
+	if got := common.CoalesceInt(nil, 10); got != 10 {
+		t.Errorf("CoalesceInt(nil, 10) = %d, want 10", got)
 	}
 }
 
 func TestGetPageNum_ZeroReturnsDefault(t *testing.T) {
 	val := 0
-	if got := getPageNum(&val, 5); got != 5 {
-		t.Errorf("getPageNum(&0, 5) = %d, want 5", got)
+	if got := common.CoalesceInt(&val, 5); got != 5 {
+		t.Errorf("CoalesceInt(&0, 5) = %d, want 5", got)
 	}
 }
 
 func TestGetPageNum_NegativeReturnsDefault(t *testing.T) {
 	val := -1
-	if got := getPageNum(&val, 5); got != 5 {
-		t.Errorf("getPageNum(&-1, 5) = %d, want 5", got)
+	if got := common.CoalesceInt(&val, 5); got != 5 {
+		t.Errorf("CoalesceInt(&-1, 5) = %d, want 5", got)
 	}
 }
 
 func TestGetPageNum_Valid(t *testing.T) {
 	val := 3
-	if got := getPageNum(&val, 5); got != 3 {
-		t.Errorf("getPageNum(&3, 5) = %d, want 3", got)
+	if got := common.CoalesceInt(&val, 5); got != 3 {
+		t.Errorf("CoalesceInt(&3, 5) = %d, want 3", got)
 	}
 }
 
 func TestGetPageSize_Nil(t *testing.T) {
-	if got := getPageSize(nil, 20); got != 20 {
-		t.Errorf("getPageSize(nil, 20) = %d, want 20", got)
+	if got := common.CoalesceInt(nil, 20); got != 20 {
+		t.Errorf("CoalesceInt(nil, 20) = %d, want 20", got)
 	}
 }
 
 func TestGetPageSize_ZeroReturnsDefault(t *testing.T) {
 	val := 0
-	if got := getPageSize(&val, 20); got != 20 {
-		t.Errorf("getPageSize(&0, 20) = %d, want 20", got)
+	if got := common.CoalesceInt(&val, 20); got != 20 {
+		t.Errorf("CoalesceInt(&0, 20) = %d, want 20", got)
 	}
 }
 
 func TestGetPageSize_Valid(t *testing.T) {
 	val := 50
-	if got := getPageSize(&val, 20); got != 50 {
-		t.Errorf("getPageSize(&50, 20) = %d, want 50", got)
+	if got := common.CoalesceInt(&val, 20); got != 50 {
+		t.Errorf("CoalesceInt(&50, 20) = %d, want 50", got)
+	}
+}
+
+func TestIsInternalField(t *testing.T) {
+	tests := []struct {
+		field string
+		want  bool
+	}{
+		{"vector_vec", true},
+		{"content_sm_ltks", true},
+		{"content_ltks", true},
+		{"content", false},
+		{"docnm_kwd", false},
+		{"important_kwd", false},
+		{"knowledge_graph_kwd", false},
+	}
+	for _, tt := range tests {
+		if got := isInternalField(tt.field); got != tt.want {
+			t.Errorf("isInternalField(%q) = %v, want %v", tt.field, got, tt.want)
+		}
+	}
+}
+
+func TestSplitKwdHash(t *testing.T) {
+	tests := []struct {
+		name  string
+		input interface{}
+	}{
+		{"non-string int", 42},
+		{"no hash", "hello world"},
+		{"simple hash", "a###b###c"},
+		{"hash with empty", "a######b"},
+		{"hash only", "###"},
+	}
+	for _, tt := range tests {
+		_ = splitKwdHash(tt.input)
+	}
+
+	// Verify actual output
+	result := splitKwdHash("a###b###c")
+	slice, ok := result.([]interface{})
+	if !ok {
+		t.Errorf("expected []interface{}, got %T", result)
+		return
+	}
+	if len(slice) != 3 {
+		t.Errorf("expected 3 elements, got %d", len(slice))
+	}
+
+	// Non-string returns unchanged
+	if splitKwdHash(42) != 42 {
+		t.Error("non-string should return unchanged")
+	}
+}
+
+func TestApplyCommonChunkMapping(t *testing.T) {
+	result := make(map[string]interface{})
+
+	// content -> content_with_weight
+	if !applyCommonChunkMapping(result, "content", "hello") {
+		t.Error("content should be handled")
+	}
+	if result["content_with_weight"] != "hello" {
+		t.Errorf("content_with_weight = %v, want hello", result["content_with_weight"])
+	}
+
+	// docnm -> docnm_kwd
+	result = make(map[string]interface{})
+	applyCommonChunkMapping(result, "docnm", "mydoc")
+	if result["docnm_kwd"] != "mydoc" {
+		t.Errorf("docnm_kwd = %v, want mydoc", result["docnm_kwd"])
+	}
+
+	// important_keywords -> important_kwd
+	result = make(map[string]interface{})
+	applyCommonChunkMapping(result, "important_keywords", []interface{}{"kw1"})
+	if _, ok := result["important_kwd"]; !ok {
+		t.Error("important_kwd should be set")
+	}
+
+	// *_kwd empty handling
+	result = make(map[string]interface{})
+	applyCommonChunkMapping(result, "entity_kwd", "")
+	if _, ok := result["entity_kwd"]; !ok {
+		t.Error("entity_kwd should be set even for empty")
+	}
+
+	// Unknown field should not be handled
+	result = make(map[string]interface{})
+	if applyCommonChunkMapping(result, "unknown_field", "val") {
+		t.Error("unknown_field should not be handled")
+	}
+	if len(result) != 0 {
+		t.Error("result should be empty for unhandled field")
 	}
 }

@@ -365,8 +365,8 @@ func (s *ChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID s
 		Question:               modifiedQuestion,
 		KbIDs:                  []string(req.Datasets),
 		DocIDs:                 docIDs,
-		Page:                   getPageNum(req.Page, 1),
-		PageSize:               getPageSize(req.Size, 30),
+		Page:                   common.CoalesceInt(req.Page, 1),
+		PageSize:               common.CoalesceInt(req.Size, 30),
 		Top:                    req.TopK,
 		SimilarityThreshold:    req.SimilarityThreshold,
 		VectorSimilarityWeight: req.VectorSimilarityWeight,
@@ -425,7 +425,7 @@ func hydrateChunkVectors(ctx context.Context, engine engine.DocEngine, chunks []
 			continue
 		}
 		v, _ := ck["vector"].([]float64)
-		if len(v) == 0 || isZeroVector(v) {
+		if len(v) == 0 || common.IsZeroVector(v) {
 			missingIDs = append(missingIDs, id)
 			missingIdx[id] = i
 		}
@@ -447,20 +447,12 @@ func hydrateChunkVectors(ctx context.Context, engine engine.DocEngine, chunks []
 
 	vectors := FetchChunkVectors(ctx, engine, missingIDs, tenantIDs, kbIDs, dim)
 	for id, v := range vectors {
-		if idx, ok := missingIdx[id]; ok && !isZeroVector(v) {
+		if idx, ok := missingIdx[id]; ok && !common.IsZeroVector(v) {
 			chunks[idx]["vector"] = v
 		}
 	}
 }
 
-func isZeroVector(v []float64) bool {
-	for _, x := range v {
-		if x != 0 {
-			return false
-		}
-	}
-	return true
-}
 
 // Get retrieves a chunk by ID
 func (s *ChunkService) Get(req *service.GetChunkRequest, userID string) (*service.GetChunkResponse, error) {
@@ -607,8 +599,8 @@ func (s *ChunkService) List(req *service.ListChunksRequest, userID string) (*ser
 
 	indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
 
-	page := getPageNum(req.Page, 1)
-	size := getPageSize(req.Size, 30)
+	page := common.CoalesceInt(req.Page, 1)
+	size := common.CoalesceInt(req.Size, 30)
 	keywords := req.Keywords
 
 	// Build search request - same as retrieval test but filtered by doc_id
@@ -940,16 +932,3 @@ func (s *ChunkService) RemoveChunks(req *service.RemoveChunksRequest, userID str
 	return deletedCount, nil
 }
 
-func getPageNum(page *int, defaultVal int) int {
-	if page != nil && *page > 0 {
-		return *page
-	}
-	return defaultVal
-}
-
-func getPageSize(size *int, defaultVal int) int {
-	if size != nil && *size > 0 {
-		return *size
-	}
-	return defaultVal
-}

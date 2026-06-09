@@ -2,21 +2,22 @@ package chunk
 
 import (
 	"context"
+	"ragflow/internal/common"
 	"reflect"
 	"testing"
 )
 
 func TestIsZeroVector(t *testing.T) {
-	if !isZeroVector([]float64{0, 0, 0}) {
+	if !common.IsZeroVector([]float64{0, 0, 0}) {
 		t.Error("all zeros should be true")
 	}
-	if isZeroVector([]float64{0, 1, 0}) {
+	if common.IsZeroVector([]float64{0, 1, 0}) {
 		t.Error("non-zero should be false")
 	}
-	if !isZeroVector([]float64{}) {
+	if !common.IsZeroVector([]float64{}) {
 		t.Error("empty should be true (treated as zero)")
 	}
-	if !isZeroVector(nil) {
+	if !common.IsZeroVector(nil) {
 		t.Error("nil should be true")
 	}
 }

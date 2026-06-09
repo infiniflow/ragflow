@@ -196,7 +196,7 @@ func ExtractChunkVectors(chunks []map[string]interface{}) [][]float64 {
 	out := make([][]float64, 0, len(chunks))
 	for _, ck := range chunks {
 		v := toFloat64Slice(ck["vector"])
-		if len(v) == 0 || isZeroVector(v) {
+		if len(v) == 0 || common.IsZeroVector(v) {
 			out = append(out, nil)
 		} else {
 			out = append(out, v)

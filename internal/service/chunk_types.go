@@ -126,26 +126,13 @@ func (s *ChunkService) Get(req *GetChunkRequest, userID string) (*GetChunkRespon
 					"id": true, "authors": true, "_score": true, "SCORE": true,
 				}
 				for k, v := range chunk {
-					if skipFields[k] || strings.HasSuffix(k, "_vec") || strings.Contains(k, "_sm_") || strings.HasSuffix(k, "_tks") || strings.HasSuffix(k, "_ltks") {
+					if skipFields[k] || isInternalField(k) {
+						continue
+					}
+					if applyCommonChunkMapping(result, k, v) {
 						continue
 					}
 					switch k {
-					case "content":
-						result["content_with_weight"] = v
-					case "docnm":
-						result["docnm_kwd"] = v
-					case "important_keywords":
-						utility.SetFieldArray(result, "important_kwd", v)
-					case "questions":
-						utility.SetFieldArray(result, "question_kwd", v)
-					case "entities_kwd", "entity_kwd", "entity_type_kwd", "from_entity_kwd",
-						"name_kwd", "raptor_kwd", "removed_kwd", "source_id", "tag_kwd",
-						"to_entity_kwd", "toc_kwd", "authors_tks", "doc_type_kwd":
-						if utility.IsEmpty(v) {
-							result[k] = []interface{}{}
-						} else {
-							result[k] = v
-						}
 					case "tag_feas":
 						if utility.IsEmpty(v) {
 							result[k] = map[string]interface{}{}
@@ -242,8 +229,8 @@ func (s *ChunkService) List(req *ListChunksRequest, userID string) (*ListChunksR
 
 	indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
 
-	page := getPageNum(req.Page, 1)
-	size := getPageSize(req.Size, 30)
+	page := common.CoalesceInt(req.Page, 1)
+	size := common.CoalesceInt(req.Size, 30)
 	keywords := req.Keywords
 
 	// Build search request - same as retrieval test but filtered by doc_id
@@ -278,7 +265,10 @@ func (s *ChunkService) List(req *ListChunksRequest, userID string) (*ListChunksR
 			"important_kwd_empty_count": true, "kb_id": true, "mom_id": true, "page_num_int": true,
 		}
 		for k, v := range chunk {
-			if skipFields[k] || strings.HasSuffix(k, "_vec") || strings.Contains(k, "_sm_") || strings.HasSuffix(k, "_ltks") || strings.HasSuffix(k, "_tks") {
+			if skipFields[k] || isInternalField(k) {
+				continue
+			}
+			if applyCommonChunkMapping(result, k, v) {
 				continue
 			}
 			switch k {
@@ -292,37 +282,9 @@ func (s *ChunkService) List(req *ListChunksRequest, userID string) (*ListChunksR
 				result["positions"] = v
 			case "id":
 				result["chunk_id"] = v
-			case "content":
-				result["content_with_weight"] = v
-			case "docnm":
-				result["docnm_kwd"] = v
-			case "important_keywords":
-				utility.SetFieldArray(result, "important_kwd", v)
-			case "questions":
-				utility.SetFieldArray(result, "question_kwd", v)
-			case "entities_kwd", "entity_kwd", "entity_type_kwd", "from_entity_kwd",
-				"name_kwd", "raptor_kwd", "removed_kwd",
-				"source_id", "tag_kwd", "to_entity_kwd", "toc_kwd", "doc_type_kwd":
-				if utility.IsEmpty(v) {
-					result[k] = []interface{}{}
-				} else {
-					result[k] = v
-				}
 			default:
-				// Handle _kwd fields that need "###" splitting
 				if strings.HasSuffix(k, "_kwd") && k != "knowledge_graph_kwd" {
-					if strVal, ok := v.(string); ok && strings.Contains(strVal, "###") {
-						parts := strings.Split(strVal, "###")
-						var filtered []interface{}
-						for _, p := range parts {
-							if p != "" {
-								filtered = append(filtered, p)
-							}
-						}
-						result[k] = filtered
-					} else {
-						result[k] = v
-					}
+					result[k] = splitKwdHash(v)
 				} else {
 					result[k] = v
 				}
@@ -698,25 +660,55 @@ func getMap(m map[string]interface{}, key string) map[string]interface{} {
 	}
 	return nil
 }
-func isZeroVector(v []float64) bool {
-	for _, x := range v {
-		if x != 0 {
-			return false
+
+// isInternalField reports whether k is an internal/technical field that
+// should be excluded from API chunk responses.
+func isInternalField(k string) bool {
+	return strings.HasSuffix(k, "_vec") ||
+		strings.Contains(k, "_sm_") ||
+		strings.HasSuffix(k, "_tks") ||
+		strings.HasSuffix(k, "_ltks")
+}
+
+// applyCommonChunkMapping applies field mappings shared between GetChunk and
+// ListChunks. Returns true if the field was handled.
+func applyCommonChunkMapping(result map[string]interface{}, k string, v interface{}) bool {
+	switch k {
+	case "content":
+		result["content_with_weight"] = v
+	case "docnm":
+		result["docnm_kwd"] = v
+	case "important_keywords":
+		utility.SetFieldArray(result, "important_kwd", v)
+	case "questions":
+		utility.SetFieldArray(result, "question_kwd", v)
+	case "entities_kwd", "entity_kwd", "entity_type_kwd", "from_entity_kwd",
+		"name_kwd", "raptor_kwd", "removed_kwd", "source_id", "tag_kwd",
+		"to_entity_kwd", "toc_kwd", "doc_type_kwd":
+		if utility.IsEmpty(v) {
+			result[k] = []interface{}{}
+		} else {
+			result[k] = v
 		}
+	default:
+		return false
 	}
 	return true
 }
 
-func getPageNum(page *int, defaultVal int) int {
-	if page != nil && *page > 0 {
-		return *page
+// splitKwdHash splits a "###"-separated _kwd string into a slice.
+// Non-string values or values without "###" are returned unchanged.
+func splitKwdHash(v interface{}) interface{} {
+	strVal, ok := v.(string)
+	if !ok || !strings.Contains(strVal, "###") {
+		return v
 	}
-	return defaultVal
-}
-
-func getPageSize(size *int, defaultVal int) int {
-	if size != nil && *size > 0 {
-		return *size
+	parts := strings.Split(strVal, "###")
+	filtered := make([]interface{}, 0, len(parts))
+	for _, p := range parts {
+		if p != "" {
+			filtered = append(filtered, p)
+		}
 	}
-	return defaultVal
+	return filtered
 }

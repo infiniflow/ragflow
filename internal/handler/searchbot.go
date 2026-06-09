@@ -95,10 +95,14 @@ func chatStreamWithContext(ctx context.Context, chatModel *modelModule.ChatModel
 				}
 				select {
 				case ch <- *delta:
+					return nil
 				case <-ctx.Done():
+					return ctx.Err()
 				}
-				return nil
 			}); err != nil {
+			if err == context.Canceled || err == context.DeadlineExceeded {
+				return
+			}
 			common.Warn("ChatStreamlyWithSender returned error", zap.Error(err))
 		}
 	}()
