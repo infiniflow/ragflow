@@ -35,8 +35,20 @@ class _PassthroughManager:
         return lambda func: func
 
 
+class _LenientModule(ModuleType):
+    """A stub module that yields a harmless placeholder for any attribute that
+    wasn't explicitly provided. agent_api.py's top-level `from <mod> import a, b`
+    only needs every imported name to exist; symbols not on the
+    download_attachment path are never called, so a no-op placeholder is safe.
+    This keeps the test from rotting each time agent_api.py grows an import.
+    """
+
+    def __getattr__(self, _name):
+        return lambda *_a, **_k: None
+
+
 def _stub(monkeypatch, name, **attrs):
-    mod = ModuleType(name)
+    mod = _LenientModule(name)
     for key, value in attrs.items():
         setattr(mod, key, value)
     monkeypatch.setitem(sys.modules, name, mod)
@@ -99,19 +111,41 @@ def _load_agent_api(monkeypatch, *, storage_get):
         server_error_response=lambda e: {"kind": "server_error", "error": str(e)},
         add_tenant_id_to_kwargs=lambda func: func,
         get_request_json=lambda: {},
+        # Used as `@validate_request(...)` decorator factory at module level, so it
+        # must return an identity decorator (the lenient fallback would return None
+        # and `@None` raises TypeError during import).
+        validate_request=lambda *_a, **_k: (lambda func: func),
     )
-    _stub(monkeypatch, "common.settings", retriever=SimpleNamespace(), kg_retriever=SimpleNamespace())
+    _stub(
+        monkeypatch, "common.settings",
+        retriever=SimpleNamespace(), kg_retriever=SimpleNamespace(),
+        # download_attachment reads settings.STORAGE_IMPL.get after
+        # `from common import settings` rebinds the module's `settings` name.
+        STORAGE_IMPL=SimpleNamespace(get=storage_get),
+    )
     _stub(monkeypatch, "common.ssrf_guard", assert_host_is_safe=lambda *_a, **_k: None)
+    _stub(monkeypatch, "common.constants", RetCode=SimpleNamespace())
+    _stub(monkeypatch, "api.utils.pagination_utils", validate_rest_api_page_size=lambda *_a, **_k: None)
+    _stub(monkeypatch, "peewee")
+
+    async def _thread_pool_exec(fn, *args, **kwargs):
+        # download_attachment does `await thread_pool_exec(STORAGE_IMPL.get, ...)`;
+        # run the callable inline so the storage stub's return value flows through.
+        return fn(*args, **kwargs)
+
+    _stub(monkeypatch, "common.misc_utils", get_uuid=lambda: "uuid", thread_pool_exec=_thread_pool_exec)
     _stub(
         monkeypatch, "api.utils.web_utils",
         CONTENT_TYPE_MAP={"markdown": "text/markdown"},
         apply_safe_file_response_headers=lambda *_a, **_k: None,
     )
 
-    quart_stub = ModuleType("quart")
+    # Lenient: agent_api.py imports Response, jsonify, request, make_response from
+    # quart; only request and make_response are on the download path, the rest
+    # resolve to placeholders so the import line can't break the test.
+    quart_stub = _LenientModule("quart")
     quart_stub.request = SimpleNamespace(method="GET", args={"ext": "markdown"})
     quart_stub.make_response = _make_response
-    quart_stub.send_file = lambda *_a, **_k: None
     monkeypatch.setitem(sys.modules, "quart", quart_stub)
 
     # parents[5] = repo root from test/unit_test/api/apps/restful_apis/<file>
