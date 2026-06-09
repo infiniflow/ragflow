@@ -87,7 +87,10 @@ export const useProviderModalActions = ({
       if (!config.verifyTransform) {
         return { isValid: null, logs: '' } as VerifyResult;
       }
-      const verifyArgs = config.verifyTransform(values, modelInfoList);
+      const verifyArgs = config.verifyTransform({
+        ...values,
+        model_info: modelInfoList,
+      });
       const region = resolveRegionFromValues(values, baseUrlRegionMaps);
       if (region !== undefined) {
         verifyArgs.region = region;
@@ -133,7 +136,10 @@ export const useProviderModalActions = ({
 
       const transformed = (
         config.submitTransform
-          ? config.submitTransform(values as Record<string, any>, modelInfoList)
+          ? config.submitTransform({
+              ...(values as Record<string, any>),
+              model_info: modelInfoList,
+            })
           : values
       ) as Record<string, any>;
       const region = resolveRegionFromValues(
