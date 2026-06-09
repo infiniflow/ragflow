@@ -289,10 +289,19 @@ func (s *DocumentService) InsertDocument(doc *entity.Document) error {
 		if err := tx.Create(doc).Error; err != nil {
 			return fmt.Errorf("failed to create document: %w", err)
 		}
-		if err := tx.Model(&entity.Knowledgebase{}).
+		// Guard the counter bump with RowsAffected: documents.kb_id has no DB-level
+		// FK, so Create can succeed against a non-existent KB and the Update would
+		// then report a nil error with 0 rows touched, silently desyncing doc_num.
+		// Roll the whole transaction back in that case (mirrors the counter checks
+		// in deleteDocRecordWithCounters).
+		result := tx.Model(&entity.Knowledgebase{}).
 			Where("id = ?", doc.KbID).
-			Update("doc_num", gorm.Expr("doc_num + 1")).Error; err != nil {
-			return fmt.Errorf("failed to increment doc_num for KB %s: %w", doc.KbID, err)
+			Update("doc_num", gorm.Expr("doc_num + 1"))
+		if result.Error != nil {
+			return fmt.Errorf("failed to increment doc_num for KB %s: %w", doc.KbID, result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("knowledgebase %s not found", doc.KbID)
 		}
 		return nil
 	})
