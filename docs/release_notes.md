@@ -15,12 +15,13 @@ Released on June 9, 2026.
 
 ### New features
 
-- **Model providers**: Allows configuring multiple API keys for the same model provider.
+- **Model providers**: Implements auto-populated model lists for multiple providers, eliminating the need to type model names manually. This feature currently supports: Ollama, OpenRouter, vLLM, OpenAI-API-Compatible, LM-Studio, VolcEngine, Xinference, LocalAI, BaiduYiyan, GPUStack, and Fish Audio.
+- **Model providers**: Allows configuring multiple API keys for the same model provider. [#14595](https://github.com/infiniflow/ragflow/pull/14595)
 - **Data source connectors**: Implements new data source connectors for Outlook, OneDrive, Microsoft Teams, Slack, and SharePoint. [#15333](https://github.com/infiniflow/ragflow/pull/15333)[#15330](https://github.com/infiniflow/ragflow/pull/15330)[#15332](https://github.com/infiniflow/ragflow/pull/15332)[#15188](https://github.com/infiniflow/ragflow/pull/15188)[#15190](https://github.com/infiniflow/ragflow/pull/15190)
 
 ### Improvements
 
-- Marks MySQL migrations as applied, ensuring the database schema remains synchronized with the application's current version requirements. [#15504](https://github.com/infiniflow/ragflow/pull/15504)
+- Marks MySQL migrations as applied. [#15504](https://github.com/infiniflow/ragflow/pull/15504)
 
 ### Model Support
 
