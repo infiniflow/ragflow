@@ -57,6 +57,7 @@ CASES = [
                 " the</think>",
                 " user</think>",
                 "'s</think>",
+                " greeting</think>",
                 ' "</think>',
                 "hello</think>",
                 '".</think>',
