@@ -86,13 +86,23 @@ const collectModelExtras = (payload: FlatPayload) => {
 };
 
 export const splitProviderPayload = (payload: FlatPayload): SplitResult => {
+  const {
+    instance_name,
+    llm_factory,
+    base_url,
+    api_base,
+    region,
+    model_info,
+    ...other
+  } = payload;
   const instancePayload = {
-    instance_name: payload.instance_name as string,
-    llm_factory: payload.llm_factory as string,
+    instance_name: instance_name as string,
+    llm_factory: llm_factory as string,
     api_key: collectApiKeyExtras(payload),
-    base_url: (payload.base_url ?? payload.api_base) as string | undefined,
-    region: (payload.region as string | undefined) || 'default',
-    model_info: payload.model_info,
+    base_url: (base_url ?? api_base) as string | undefined,
+    region: (region as string | undefined) || 'default',
+    model_info: model_info,
+    ...other,
   };
 
   const modelExtra = collectModelExtras(payload);
