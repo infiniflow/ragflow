@@ -244,7 +244,7 @@ func TestMoonshotListModelsUsesBodylessGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if got := strings.Join(models, ","); got != "kimi-k2.6,moonshot-v1-8k" {
+	if got := joinModelNames(models, ","); got != "kimi-k2.6,moonshot-v1-8k" {
 		t.Errorf("models=%q", got)
 	}
 }
