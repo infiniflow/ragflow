@@ -635,13 +635,17 @@ class OpenRouterCV(GptV4):
     def __init__(self, key, model_name, lang="Chinese", base_url="https://openrouter.ai/api/v1", **kwargs):
         if not base_url:
             base_url = "https://openrouter.ai/api/v1"
-        api_key = json.loads(key).get("api_key", "")
+        try:
+            api_key = json.loads(key).get("api_key", "")
+            provider_order = json.loads(key).get("provider_order", "")
+        except JSONDecodeError:
+            api_key = key
+            provider_order = ""
         self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.async_client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang
         Base.__init__(self, **kwargs)
-        provider_order = json.loads(key).get("provider_order", "")
         self.extra_body = {}
         if provider_order:
 

@@ -19,14 +19,48 @@ package models
 import "strings"
 
 func GetThinkingAndAnswer(modelType *string, content *string) (*string, *string) {
-	switch *modelType {
+	if content == nil {
+		return nil, nil
+	}
+
+	switch NormalizeModelFamily(modelType) {
 	case "qwen3":
 		return extractThinkContent(content)
 	}
 	return nil, content
 }
 
+// NormalizeModelFamily normalizes provider-prefixed model class/name strings for shared response parsing.
+func NormalizeModelFamily(modelType *string) string {
+	if modelType == nil {
+		return ""
+	}
+
+	family := strings.ToLower(strings.TrimSpace(*modelType))
+	if family == "" {
+		return ""
+	}
+
+	if slash := strings.LastIndex(family, "/"); slash >= 0 && slash < len(family)-1 {
+		family = family[slash+1:]
+	}
+
+	if family == "qwen3" || strings.HasPrefix(family, "qwen3-") || strings.HasPrefix(family, "qwen3.") {
+		return "qwen3"
+	}
+
+	if dash := strings.Index(family, "-"); dash >= 0 {
+		family = family[:dash]
+	}
+
+	return family
+}
+
 func extractThinkContent(content *string) (*string, *string) {
+	if content == nil {
+		return nil, nil
+	}
+
 	startTag := "<think>"
 	endTag := "</think>"
 

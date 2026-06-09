@@ -131,6 +131,182 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 	})
 }
 
+// ListAgentSessions List all sessions
+func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	agentID := c.Param("agent_id")
+	if agentID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeArgumentError,
+			"data":    nil,
+			"message": "agent_id is required",
+		})
+		return
+	}
+
+	page := parsePositiveIntQuery(c, "page", 1)
+	pageSize := parsePositiveIntQuery(c, "page_size", 30)
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	req := service.ListAgentSessionsRequest{
+		SessionID:  c.Query("id"),
+		UserID:     c.Query("user_id"),
+		Page:       page,
+		PageSize:   pageSize,
+		Keywords:   c.Query("keywords"),
+		FromDate:   c.Query("from_date"),
+		ToDate:     c.Query("to_date"),
+		OrderBy:    defaultQueryString(c.Query("orderby"), "update_time"),
+		ExpUserID:  c.Query("exp_user_id"),
+		Desc:       c.Query("desc") != "False" && c.Query("desc") != "false",
+		IncludeDSL: c.Query("dsl") != "False" && c.Query("dsl") != "false",
+	}
+
+	tenantID := user.ID
+	result, code, err := h.agentService.ListAgentSessions(user.ID, tenantID, agentID, req)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"data":    nil,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    result.Data,
+		"message": "success",
+		"total":   result.Total,
+	})
+}
+
+func parsePositiveIntQuery(c *gin.Context, key string, defaultValue int) int {
+	raw := c.Query(key)
+	if raw == "" {
+		return defaultValue
+	}
+
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return defaultValue
+	}
+
+	return value
+}
+
+func defaultQueryString(value, defaultValue string) string {
+	if value == "" {
+		return defaultValue
+	}
+	return value
+}
+
+func (h *AgentHandler) GetAgentSession(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	agentID := c.Param("agent_id")
+	if agentID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeOperatingError,
+			"data":    nil,
+			"message": "agent_id is required",
+		})
+		return
+	}
+
+	sessionID := c.Param("session_id")
+	if sessionID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"data":    nil,
+			"message": "session_id is required",
+		})
+		return
+	}
+
+	userID := user.ID
+	userID = strings.TrimSpace(userID)
+	sessionID = strings.TrimSpace(sessionID)
+	agentID = strings.TrimSpace(agentID)
+
+	data, code, err := h.agentService.GetAgentSession(userID, agentID, sessionID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"data":    nil,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    data,
+		"message": "success",
+	})
+}
+
+func (h *AgentHandler) DeleteAgentSessionItem(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	agentID := c.Param("agent_id")
+	if agentID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeOperatingError,
+			"data":    nil,
+			"message": "agent_id is required",
+		})
+		return
+	}
+
+	sessionID := c.Param("session_id")
+	if sessionID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"data":    nil,
+			"message": "session_id is required",
+		})
+		return
+	}
+
+	userID := user.ID
+	userID = strings.TrimSpace(userID)
+	sessionID = strings.TrimSpace(sessionID)
+	agentID = strings.TrimSpace(agentID)
+
+	ok, code, err := h.agentService.DeleteAgentSessionItem(userID, agentID, sessionID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"data":    false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    code,
+		"data":    ok,
+		"message": "success",
+	})
+}
+
 // ListAgentVersions returns versions for a specific agent.
 // @Summary List Agent Versions
 // @Description Returns all versions for a specific agent, ordered by update_time DESC.

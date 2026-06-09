@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 	"strconv"
 	"strings"
 	"time"
@@ -55,6 +56,9 @@ type documentServiceIface interface {
 	DeleteDocumentMetadata(docID string, keys []string) error
 	DeleteDocumentAllMetadata(docID string) error
 	GetDocumentMetadataByID(docID string) (map[string]interface{}, error)
+	GetDocumentArtifact(filename string) (*service.ArtifactResponse, error)
+	GetDocumentPreview(docID string) (*service.DocumentPreview, error)
+	DownloadDocument(datasetID, docID string) (*service.DownloadDocumentResp, error)
 }
 
 // DocumentHandler document handler
@@ -196,6 +200,68 @@ func (h *DocumentHandler) GetDocumentImage(c *gin.Context) {
 		contentType = "image/JPEG"
 	}
 	c.Data(http.StatusOK, contentType, data)
+}
+
+func (h *DocumentHandler) GetDocumentArtifact(c *gin.Context) {
+	filename := c.Param("filename")
+	artifact, err := h.documentService.GetDocumentArtifact(filename)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrArtifactInvalidFilename),
+			errors.Is(err, service.ErrArtifactInvalidFileType),
+			errors.Is(err, service.ErrArtifactNotFound):
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeDataError,
+				"message": err.Error(),
+			})
+		default:
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeExceptionError,
+				"data":    nil,
+				"message": err.Error(),
+			})
+		}
+		return
+	}
+
+	c.Header("Content-Type", artifact.ContentType)
+	if artifact.ForceAttachment {
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("Content-Disposition", "attachment")
+	} else {
+		c.Header("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, artifact.SafeFilename))
+	}
+	c.Data(http.StatusOK, artifact.ContentType, artifact.Data)
+}
+
+func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
+	docID := c.Param("id")
+
+	if docID == "" {
+		jsonError(c, common.CodeParamError, "id is required")
+		return
+	}
+
+	preview, err := h.documentService.GetDocumentPreview(docID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"message": "Document not found!",
+		})
+		return
+	}
+
+	ext := utility.GetFileExtension(preview.FileName)
+	if preview.ContentType != "" {
+		c.Header("Content-Type", preview.ContentType)
+	}
+
+	if utility.ShouldForceAttachment(ext, preview.ContentType) {
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("Content-Disposition", "attachment")
+	}
+
+	c.Data(http.StatusOK, preview.ContentType, preview.Data)
 }
 
 // UpdateDocument update document
@@ -380,6 +446,40 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 			"docs":  docs,
 		},
 	})
+}
+
+func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
+	datasetID := c.Param("dataset_id")
+	docID := c.Param("document_id")
+
+	if docID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"message": "Specify document_id please.",
+		})
+		return
+	}
+	if datasetID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"message": fmt.Sprintf("The dataset not own the document %s.", docID),
+		})
+		return
+	}
+
+	res, err := h.documentService.DownloadDocument(datasetID, docID)
+
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.Header("Content-Type", res.ContentType)
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, res.FileName))
+	c.Data(http.StatusOK, res.ContentType, res.Data)
 }
 
 func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]interface{}) map[string]interface{} {

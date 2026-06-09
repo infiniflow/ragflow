@@ -6,46 +6,19 @@ import (
 	"testing"
 )
 
-func TestElasticsearchGetFieldsAppliesMappingsAndFilter(t *testing.T) {
+func TestElasticsearchGetFieldsFiltersAndUsesIDFallback(t *testing.T) {
 	engine := &elasticsearchEngine{}
 	chunks := []map[string]interface{}{
 		{
-			"_id":                "fallback-chunk",
-			"docnm":              "guide.md",
-			"important_keywords": "alpha,beta",
-			"questions":          "What is alpha?\nWhat is beta?",
-			"content":            "Alpha beta body.",
-			"authors":            "Ada",
-			"position_int":       "00000001_00000002_00000003_00000004_00000005_00000006",
-			"page_num_int":       "0000000a_0000000b",
-			"top_int":            "0000000c",
-			"tag_kwd":            "tag-a###tag-b###",
-			"ROW_ID":             "row-7",
+			"_id":                 "fallback-chunk",
+			"docnm_kwd":           []interface{}{"guide.md"},
+			"content_with_weight": "Alpha beta body.",
+			"available_int":       float64(1),
+			"ignored":             "not requested",
 		},
 	}
 
-	fields := []string{
-		"id",
-		"docnm_kwd",
-		"title_tks",
-		"title_sm_tks",
-		"important_kwd",
-		"important_tks",
-		"question_kwd",
-		"question_tks",
-		"content_with_weight",
-		"content_ltks",
-		"content_sm_ltks",
-		"authors_tks",
-		"authors_sm_tks",
-		"position_int",
-		"page_num_int",
-		"top_int",
-		"tag_kwd",
-		"row_id()",
-	}
-
-	got := engine.GetFields(chunks, fields)
+	got := engine.GetFields(chunks, []string{"id", "docnm_kwd", "content_with_weight", "available_int"})
 	fieldMap, ok := got["fallback-chunk"]
 	if !ok {
 		t.Fatalf("GetFields keys=%v, want fallback-chunk", got)
@@ -53,33 +26,15 @@ func TestElasticsearchGetFieldsAppliesMappingsAndFilter(t *testing.T) {
 
 	assertEqual(t, fieldMap["id"], "fallback-chunk")
 	assertEqual(t, fieldMap["docnm_kwd"], "guide.md")
-	assertEqual(t, fieldMap["title_tks"], "guide.md")
-	assertEqual(t, fieldMap["title_sm_tks"], "guide.md")
-	assertEqual(t, fieldMap["important_kwd"], []interface{}{"alpha", "beta"})
-	assertEqual(t, fieldMap["important_tks"], "alpha,beta")
-	assertEqual(t, fieldMap["question_kwd"], []interface{}{"What is alpha?", "What is beta?"})
-	assertEqual(t, fieldMap["question_tks"], "What is alpha?\nWhat is beta?")
 	assertEqual(t, fieldMap["content_with_weight"], "Alpha beta body.")
-	assertEqual(t, fieldMap["content_ltks"], "Alpha beta body.")
-	assertEqual(t, fieldMap["content_sm_ltks"], "Alpha beta body.")
-	assertEqual(t, fieldMap["authors_tks"], "Ada")
-	assertEqual(t, fieldMap["authors_sm_tks"], "Ada")
-	// Position values are grouped as x, y, width, height, page; trailing values start a new group.
-	assertEqual(t, fieldMap["position_int"], [][]int{{1, 2, 3, 4, 5}, {6}})
-	assertEqual(t, fieldMap["page_num_int"], []int{10, 11})
-	assertEqual(t, fieldMap["top_int"], []int{12})
-	assertEqual(t, fieldMap["tag_kwd"], []interface{}{"tag-a", "tag-b"})
-	assertEqual(t, fieldMap["row_id()"], "row-7")
+	assertEqual(t, fieldMap["available_int"], float64(1))
 
-	if _, ok := fieldMap["docnm"]; ok {
-		t.Fatalf("field filter leaked raw docnm: %#v", fieldMap)
-	}
-	if _, ok := fieldMap["ROW_ID"]; ok {
-		t.Fatalf("ROW_ID should be mapped to row_id(): %#v", fieldMap)
+	if _, ok := fieldMap["ignored"]; ok {
+		t.Fatalf("field filter leaked unrequested field: %#v", fieldMap)
 	}
 }
 
-func TestElasticsearchGetFieldsEmptyDefaultsAndSkippedIDs(t *testing.T) {
+func TestElasticsearchGetFieldsEmptyAndSkippedIDs(t *testing.T) {
 	engine := &elasticsearchEngine{}
 
 	if got := engine.GetFields(nil, nil); got == nil || len(got) != 0 {
@@ -87,15 +42,18 @@ func TestElasticsearchGetFieldsEmptyDefaultsAndSkippedIDs(t *testing.T) {
 	}
 
 	got := engine.GetFields([]map[string]interface{}{
-		{"id": "chunk-1"},
-		{"id": "", "_id": "fallback-chunk"},
+		{"id": "chunk-1", "docnm_kwd": "doc.md"},
+		{"id": "", "_id": "fallback-chunk", "docnm_kwd": "fallback.md"},
 		{"docnm": "missing-id.md"},
-	}, nil)
+	}, []string{"id", "docnm_kwd"})
 
 	fieldMap, ok := got["chunk-1"]
 	if !ok {
 		t.Fatalf("GetFields keys=%v, want chunk-1", got)
 	}
+	assertEqual(t, fieldMap["id"], "chunk-1")
+	assertEqual(t, fieldMap["docnm_kwd"], "doc.md")
+
 	if _, ok := got["missing-id.md"]; ok {
 		t.Fatalf("chunk without id should be skipped: %#v", got)
 	}
@@ -103,30 +61,7 @@ func TestElasticsearchGetFieldsEmptyDefaultsAndSkippedIDs(t *testing.T) {
 		t.Fatalf("GetFields keys=%v, want fallback-chunk", got)
 	} else {
 		assertEqual(t, fallbackMap["id"], "fallback-chunk")
-	}
-
-	emptyArrayFields := []string{
-		"doc_type_kwd",
-		"important_kwd",
-		"question_kwd",
-		"tag_kwd",
-	}
-	for _, field := range emptyArrayFields {
-		assertEqual(t, fieldMap[field], []interface{}{})
-	}
-
-	emptyTextFields := []string{
-		"important_tks",
-		"question_tks",
-		"authors_tks",
-		"authors_sm_tks",
-		"title_tks",
-		"title_sm_tks",
-		"content_ltks",
-		"content_sm_ltks",
-	}
-	for _, field := range emptyTextFields {
-		assertEqual(t, fieldMap[field], "")
+		assertEqual(t, fallbackMap["docnm_kwd"], "fallback.md")
 	}
 }
 
@@ -160,7 +95,7 @@ func TestElasticsearchGetAggregationSplitsCountsAndSorts(t *testing.T) {
 	}
 }
 
-func TestElasticsearchGetDocIDsPreservesOrderWithFallback(t *testing.T) {
+func TestElasticsearchGetChunkIDsPreservesOrderWithFallback(t *testing.T) {
 	engine := &elasticsearchEngine{}
 	chunks := []map[string]interface{}{
 		{"id": "source-id", "_id": "hit-id"},
@@ -170,11 +105,11 @@ func TestElasticsearchGetDocIDsPreservesOrderWithFallback(t *testing.T) {
 		{"id": "last-id"},
 	}
 
-	got := engine.GetDocIDs(chunks)
+	got := engine.GetChunkIDs(chunks)
 	assertEqual(t, got, []string{"source-id", "fallback-id", "last-id"})
 
-	if got := engine.GetDocIDs(nil); got != nil {
-		t.Fatalf("GetDocIDs(nil)=%#v, want nil", got)
+	if got := engine.GetChunkIDs(nil); got == nil || len(got) != 0 {
+		t.Fatalf("GetChunkIDs(nil)=%#v, want empty non-nil slice", got)
 	}
 }
 

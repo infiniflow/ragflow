@@ -1,0 +1,84 @@
+{
+  "models": [
+    {
+      "name": "deepseek-v4-flash",
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "deepseek-v4-pro",
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "minimax-m3",
+      "max_tokens": 1024000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "glm-4.5v",
+      "max_tokens": 64000,
+      "model_types": [
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "bge-m3",
+      "alias": ["baai/bge-m3"],
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "bge-reranker-v2-m3",
+      "alias": ["baai/bge-reranker-v2-m3"],
+      "max_tokens": 1024,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "step-audio-tts-3b",
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen3-asr-1.7b",
+      "alias": ["qwen/qwen3-asr-1.7b"],
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "paddleocr-vl-0.9b",
+      "alias": ["paddleocr-vl-1.5"],
+      "model_types": [
+        "ocr"
+      ]
+    }
+  ]
+}
