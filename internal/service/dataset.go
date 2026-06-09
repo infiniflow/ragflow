@@ -88,6 +88,10 @@ type DatasetService struct {
 // NewDatasetService creates a new datasets service.
 func NewDatasetService() *DatasetService {
 	cfg := server.GetConfig()
+	engineType := server.EngineType("")
+	if cfg != nil {
+		engineType = cfg.DocEngine.Type
+	}
 	return &DatasetService{
 		kbDAO:          dao.NewKnowledgebaseDAO(),
 		documentDAO:    dao.NewDocumentDAO(),
@@ -99,7 +103,7 @@ func NewDatasetService() *DatasetService {
 		searchService:  NewSearchService(),
 		docEngine:      engine.Get(),
 		embeddingCache: utility.NewEmbeddingLRU(1000),
-		engineType:     cfg.DocEngine.Type,
+		engineType:     engineType,
 	}
 }
 

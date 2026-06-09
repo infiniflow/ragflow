@@ -48,8 +48,9 @@ func NewLocalAIModel(baseURL map[string]string, urlSuffix URLSuffix) *LocalAIMod
 
 	return &LocalAIModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
+			BaseURL:          baseURL,
+			URLSuffix:        urlSuffix,
+			AllowEmptyAPIKey: true,
 			httpClient: &http.Client{
 				Transport: transport,
 			},
@@ -146,7 +147,9 @@ func (l *LocalAIModel) ChatWithMessages(modelName string, messages []Message, ap
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -268,7 +271,9 @@ func (l *LocalAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -435,7 +440,9 @@ func (l *LocalAIModel) Embed(modelName *string, texts []string, apiConfig *APICo
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -538,7 +545,9 @@ func (l *LocalAIModel) Rerank(modelName *string, query string, documents []strin
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -574,7 +583,7 @@ func (l *LocalAIModel) Rerank(modelName *string, query string, documents []strin
 	return rerankResponse, nil
 }
 
-func (l *LocalAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (l *LocalAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := l.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -594,7 +603,9 @@ func (l *LocalAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -621,7 +632,7 @@ func (l *LocalAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	models := make([]string, 0)
+	models := make([]ListModelResponse, 0)
 	for _, model := range data {
 		modelMap, ok := model.(map[string]interface{})
 		if !ok {
@@ -631,7 +642,7 @@ func (l *LocalAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		if !ok {
 			continue
 		}
-		models = append(models, modelName)
+		models = append(models, ListModelResponse{Name: modelName})
 	}
 
 	return models, nil

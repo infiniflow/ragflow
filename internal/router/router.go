@@ -23,28 +23,29 @@ import (
 )
 
 type Router struct {
-	authHandler             *handler.AuthHandler
-	userHandler             *handler.UserHandler
-	tenantHandler           *handler.TenantHandler
-	documentHandler         *handler.DocumentHandler
-	datasetsHandler         *handler.DatasetsHandler
-	systemHandler           *handler.SystemHandler
-	knowledgebaseHandler    *handler.KnowledgebaseHandler
-	chunkHandler            *handler.ChunkHandler
-	llmHandler              *handler.LLMHandler
-	chatHandler             *handler.ChatHandler
-	chatSessionHandler      *handler.ChatSessionHandler
-	connectorHandler        *handler.ConnectorHandler
-	searchHandler           *handler.SearchHandler
-	fileHandler             *handler.FileHandler
-	memoryHandler           *handler.MemoryHandler
-	mcpHandler              *handler.MCPHandler
-	skillSearchHandler      *handler.SkillSearchHandler
-	providerHandler         *handler.ProviderHandler
-	agentHandler            *handler.AgentHandler
-	searchBotHandler      *handler.SearchBotHandler
-	difyRetrievalHandler    *handler.DifyRetrievalHandler
-	pluginHandler           *handler.PluginHandler
+	authHandler          *handler.AuthHandler
+	userHandler          *handler.UserHandler
+	tenantHandler        *handler.TenantHandler
+	documentHandler      *handler.DocumentHandler
+	datasetsHandler      *handler.DatasetsHandler
+	systemHandler        *handler.SystemHandler
+	knowledgebaseHandler *handler.KnowledgebaseHandler
+	chunkHandler         *handler.ChunkHandler
+	llmHandler           *handler.LLMHandler
+	chatHandler          *handler.ChatHandler
+	chatSessionHandler   *handler.ChatSessionHandler
+	connectorHandler     *handler.ConnectorHandler
+	searchHandler        *handler.SearchHandler
+	fileHandler          *handler.FileHandler
+	memoryHandler        *handler.MemoryHandler
+	mcpHandler           *handler.MCPHandler
+	skillSearchHandler   *handler.SkillSearchHandler
+	providerHandler      *handler.ProviderHandler
+	agentHandler         *handler.AgentHandler
+	searchBotHandler     *handler.SearchBotHandler
+	difyRetrievalHandler *handler.DifyRetrievalHandler
+	pluginHandler        *handler.PluginHandler
+	modelHandler         *handler.ModelHandler
 }
 
 // NewRouter create router
@@ -71,30 +72,32 @@ func NewRouter(
 	searchBotHandler *handler.SearchBotHandler,
 	difyRetrievalHandler *handler.DifyRetrievalHandler,
 	pluginHandler *handler.PluginHandler,
+	modelHandler *handler.ModelHandler,
 ) *Router {
 	return &Router{
-		authHandler:             authHandler,
-		userHandler:             userHandler,
-		tenantHandler:           tenantHandler,
-		documentHandler:         documentHandler,
-		datasetsHandler:         datasetsHandler,
-		systemHandler:           systemHandler,
-		knowledgebaseHandler:    knowledgebaseHandler,
-		chunkHandler:            chunkHandler,
-		llmHandler:              llmHandler,
-		chatHandler:             chatHandler,
-		chatSessionHandler:      chatSessionHandler,
-		connectorHandler:        connectorHandler,
-		searchHandler:           searchHandler,
-		fileHandler:             fileHandler,
-		memoryHandler:           memoryHandler,
-		mcpHandler:              mcpHandler,
-		skillSearchHandler:      skillSearchHandler,
-		providerHandler:         providerHandler,
-		agentHandler:            agentHandler,
-		searchBotHandler:      searchBotHandler,
-		difyRetrievalHandler:    difyRetrievalHandler,
-		pluginHandler:           pluginHandler,
+		authHandler:          authHandler,
+		userHandler:          userHandler,
+		tenantHandler:        tenantHandler,
+		documentHandler:      documentHandler,
+		datasetsHandler:      datasetsHandler,
+		systemHandler:        systemHandler,
+		knowledgebaseHandler: knowledgebaseHandler,
+		chunkHandler:         chunkHandler,
+		llmHandler:           llmHandler,
+		chatHandler:          chatHandler,
+		chatSessionHandler:   chatSessionHandler,
+		connectorHandler:     connectorHandler,
+		searchHandler:        searchHandler,
+		fileHandler:          fileHandler,
+		memoryHandler:        memoryHandler,
+		mcpHandler:           mcpHandler,
+		skillSearchHandler:   skillSearchHandler,
+		providerHandler:      providerHandler,
+		agentHandler:         agentHandler,
+		searchBotHandler:     searchBotHandler,
+		difyRetrievalHandler: difyRetrievalHandler,
+		pluginHandler:        pluginHandler,
+		modelHandler:         modelHandler,
 	}
 }
 
@@ -241,6 +244,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
 				datasets.POST("/search", r.datasetsHandler.SearchDatasets)
 				datasets.GET("/metadata/flattened", r.datasetsHandler.ListMetadataFlattened)
+				datasets.GET("/:dataset_id/metadata/summary", r.documentHandler.MetadataSummaryByDataset)
 
 				// Dataset ingestion logs
 				datasets.GET("/:dataset_id/ingestions/summary", r.datasetsHandler.GetIngestionSummary)
@@ -372,10 +376,16 @@ func (r *Router) Setup(engine *gin.Engine) {
 				model.PATCH("/", r.tenantHandler.SetModels)
 			}
 
+			allModels := v1.Group("/all-models")
+			{
+				allModels.GET("", r.modelHandler.ListAllModels)
+			}
+
 			// Agent routes
 			agents := v1.Group("/agents")
 			{
 				agents.GET("", r.agentHandler.ListAgents)
+				agents.GET("/prompts", r.agentHandler.GetPrompts)
 				agents.GET("/templates", r.agentHandler.ListTemplates)
 				agents.POST("/test_db_connection", r.agentHandler.TestDBConnection)
 				agents.GET("/:agent_id/versions", r.agentHandler.ListAgentVersions)

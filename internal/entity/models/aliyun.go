@@ -590,7 +590,7 @@ type AliyunModelList struct {
 	Output    AliyunModelOutput `json:"output"`
 }
 
-func (a *AliyunModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (a *AliyunModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -643,10 +643,12 @@ func (a *AliyunModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	var models []string
+	var models []ListModelResponse
 	for _, model := range modelList.Output.Models {
 		modelName := model.ModelName
-		models = append(models, modelName)
+		models = append(models, ListModelResponse{
+			Name: modelName,
+		})
 	}
 
 	return models, nil

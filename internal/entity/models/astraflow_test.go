@@ -374,7 +374,7 @@ func TestAstraflowListModelsHappyPath(t *testing.T) {
 		t.Fatalf("ListModels: %v", err)
 	}
 	want := []string{"claude-opus-4-7", "gpt-5.4", "Qwen/Qwen3-Max"}
-	if strings.Join(models, ",") != strings.Join(want, ",") {
+	if joinModelNames(models, ",") != strings.Join(want, ",") {
 		t.Errorf("models=%v, want %v", models, want)
 	}
 }
@@ -425,23 +425,30 @@ func TestAstraflowBaseURLForRegionUnknown(t *testing.T) {
 }
 
 func TestAstraflowEmbedReturnsNoSuchMethod(t *testing.T) {
-	model := "x"
-	_, err := newAstraflowForTest("http://unused").Embed(&model, []string{"a"}, &APIConfig{}, nil)
-	if err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("Embed: want 'no such method', got %v", err)
+	// Embed IS implemented (not a stub). It should NOT be blocked by APIConfigCheck.
+	// With empty input texts it short-circuits to empty result (no error).
+	apiKey := "test-key"
+	embeddings, err := newAstraflowForTest("http://unused").Embed(nil, nil, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil || len(embeddings) != 0 {
+		t.Errorf("Embed: want empty result (no error), got embeddings=%v err=%v", embeddings, err)
 	}
 }
 
 func TestAstraflowAudioOCRReturnNoSuchMethod(t *testing.T) {
 	m := newAstraflowForTest("http://unused")
 	model := "x"
-	if _, err := m.TranscribeAudio(&model, &model, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	apiKey := "test-key"
+	// TranscribeAudio is a stub → "no such method"
+	if _, err := m.TranscribeAudio(&model, &model, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("TranscribeAudio: %v", err)
 	}
-	if _, err := m.AudioSpeech(&model, &model, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("AudioSpeech: %v", err)
+	// AudioSpeech IS implemented; pass nil content to hit input validation,
+	// not api-key check (which would mean APIConfigCheck still blocks it).
+	if _, err := m.AudioSpeech(&model, nil, &APIConfig{ApiKey: &apiKey}, nil); err == nil || strings.Contains(err.Error(), "api key is required") {
+		t.Errorf("AudioSpeech: expected non-api-key error, got %v", err)
 	}
-	if _, err := m.OCRFile(&model, nil, &model, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	// OCRFile is a stub → "no such method"
+	if _, err := m.OCRFile(&model, nil, &model, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: %v", err)
 	}
 }
