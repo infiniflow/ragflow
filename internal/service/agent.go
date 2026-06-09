@@ -17,6 +17,7 @@
 package service
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -401,6 +402,7 @@ func checkDuplicateSessionIDs(ids []string) ([]string, []string) {
 	uniqueIDs := make([]string, 0, len(ids))
 
 	for _, id := range ids {
+		id = strings.TrimSpace(id)
 		seen[id]++
 		if seen[id] == 1 {
 			uniqueIDs = append(uniqueIDs, id)
@@ -784,13 +786,14 @@ func (s *AgentService) TestDBConnection(userID string, req *TestDBConnectionRequ
 	switch req.DBType {
 	case "mysql", "mariadb", "oceanbase":
 		port := dbConnectionPort(req.Port)
+		dbProbeTimeout := 5 * time.Second
 		config := mysql.Config{
 			User:                 req.Username,
 			Passwd:               req.Password,
 			Net:                  "tcp",
 			Addr:                 net.JoinHostPort(safeHost, port),
 			DBName:               req.Database,
-			Timeout:              5 * time.Second,
+			Timeout:              dbProbeTimeout,
 			AllowNativePasswords: true,
 		}
 		db, err := sql.Open("mysql", config.FormatDSN())
@@ -799,10 +802,13 @@ func (s *AgentService) TestDBConnection(userID string, req *TestDBConnectionRequ
 		}
 		defer db.Close()
 
-		if err := db.Ping(); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), dbProbeTimeout)
+		defer cancel()
+
+		if err := db.PingContext(ctx); err != nil {
 			return common.CodeExceptionError, err
 		}
-		if _, err := db.Exec("SELECT 1"); err != nil {
+		if _, err := db.ExecContext(ctx, "SELECT 1"); err != nil {
 			return common.CodeExceptionError, err
 		}
 	default:
