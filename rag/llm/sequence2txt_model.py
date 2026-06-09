@@ -80,8 +80,8 @@ class GPTSeq2txt(Base):
                 segments = getattr(result, "segments", None) or []
                 if segments:
                     return [{"text": s.text.strip(), "start": float(s.start), "end": float(s.end)} for s in segments]
-            except Exception:
-                pass
+            except Exception as e:
+                logging.warning("[%s] transcription_with_timestamps failed, falling back to untimed: %s", self.__class__.__name__, e)
         # Provider didn't return segments — fall back to single untimed segment
         text, _ = self.transcription(audio_path, **kwargs)
         return [{"text": text, "start": 0.0, "end": 0.0}]
@@ -257,9 +257,16 @@ class XinferenceSeq2txt(Base):
             result = response.json()
             segments = result.get("segments", [])
             if segments:
-                return [{"text": s["text"].strip(), "start": float(s["start"]), "end": float(s["end"])} for s in segments]
-        except Exception:
-            pass
+                return [
+                    {
+                        "text": s.get("text", "").strip(),
+                        "start": float(s.get("start", 0.0)),
+                        "end": float(s.get("end", 0.0)),
+                    }
+                    for s in segments
+                ]
+        except Exception as e:
+            logging.warning("[XinferenceSeq2txt] transcription_with_timestamps failed, falling back to untimed: %s", e)
         text, _ = self.transcription(audio_path, **kwargs)
         return [{"text": text, "start": 0.0, "end": 0.0}]
 

@@ -103,6 +103,9 @@ class Chunk(BaseModel):
     image_id: str = ""
     available: bool = True
     positions: list[list[int]] = Field(default_factory=list)
+    start_time: float | None = None
+    end_time: float | None = None
+    doc_type: str = ""
 
     @validator("positions")
     def validate_positions(cls, value):
