@@ -88,7 +88,7 @@ func insertTestKB(t *testing.T, id, tenantID string, docNum, tokenNum, chunkNum 
 		Name:     "test-kb",
 		EmbdID:   "embd-1",
 		CreatedBy: "user-1",
-		Permission: string(entity.TenantPermissionMe),
+		Permission: string(entity.TenantPermissionTeam),
 		DocNum:   docNum,
 		TokenNum: tokenNum,
 		ChunkNum: chunkNum,

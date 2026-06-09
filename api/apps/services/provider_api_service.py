@@ -70,6 +70,8 @@ def list_providers(tenant_id: str, all_available: bool = False):
             }
             if factory_info["name"].lower() == "siliconflow":
                 provider["url"]["intl"] = factory_info_map.get("siliconflow_intl", {}).get("url", "https://api.siliconflow.com/v1")
+            elif factory_info["name"] == "Tongyi-Qianwen":
+                provider["url"]["intl"] = "https://dashscope-intl.aliyuncs.com/compatible-model/v1"
             providers.append(provider)
         providers.sort(key=lambda x: (factory_rank_mapping.get(x["name"]), x["name"]))
         return True, providers
@@ -96,6 +98,8 @@ def list_providers(tenant_id: str, all_available: bool = False):
             }
             if factory_info["name"].lower() == "siliconflow":
                 provider["url"]["intl"] = factory_info_map.get("siliconflow_intl", {}).get("url", "https://api.siliconflow.com/v1")
+            elif factory_info["name"] == "Tongyi-Qianwen":
+                provider["url"]["intl"] = "https://dashscope-intl.aliyuncs.com/compatible-model/v1"
             providers.append(provider)
     providers.sort(key=lambda x: (factory_rank_mapping.get(x["name"]), x["name"]))
     return True, providers
@@ -256,7 +260,7 @@ async def create_provider_instance(tenant_id: str, provider_name: str, instance_
     :param region: region
     :param model_info: model info, [{
         "model_type": ["chat"],  # support multiple
-        "model_name": "name"，
+        "model_name": "name",
         "max_tokens": 4096,
         "extra": {
             "field1": "value1",
@@ -352,7 +356,7 @@ async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=No
     :param region: region
     :param model_info: model info, [{
         "model_type": ["chat"],  # support multiple
-        "model_name": "name"，
+        "model_name": "name",
         "max_tokens": 4096,
         "extra": {
             "field1": "value1",
@@ -393,7 +397,7 @@ async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=No
             assert provider_name in EmbeddingModel, f"Embedding model from {provider_name} is not supported yet."
             mdl = EmbeddingModel[provider_name](api_key_str, llm["llm_name"], base_url=base_url)
             try:
-                arr, tc = asyncio.wait_for(
+                arr, tc = await asyncio.wait_for(
                     asyncio.to_thread(mdl.encode, ["Test if the api key is available"]),
                     timeout=timeout_seconds,
                 )
@@ -401,6 +405,11 @@ async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=No
                     raise Exception("Fail")
                 embd_passed = True
             except Exception as e:
+                logging.exception(
+                    "Fail to access embedding model for provider=%s model=%s",
+                    provider_name,
+                    llm["llm_name"],
+                )
                 msg += f"\nFail to access embedding model({llm['llm_name']}) using this api key." + str(e)
         elif not chat_passed and llm["model_type"] == LLMType.CHAT.value:
             assert provider_name in ChatModel, f"Chat model from {provider_name} is not supported yet."
@@ -422,6 +431,11 @@ async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=No
                 else:
                     raise Exception("No valid response received")
             except Exception as e:
+                logging.exception(
+                    "Fail to access chat model for provider=%s model=%s",
+                    provider_name,
+                    llm["llm_name"],
+                )
                 msg += f"\nFail to access model({provider_name}/{llm['llm_name']}) using this api key." + str(e)
         elif not rerank_passed and llm["model_type"] == LLMType.RERANK.value:
             assert provider_name in RerankModel, f"Rerank model from {provider_name} is not supported yet."
@@ -436,6 +450,11 @@ async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=No
                 rerank_passed = True
                 logging.debug(f"passed model rerank {llm['llm_name']}")
             except Exception as e:
+                logging.exception(
+                    "Fail to access rerank model for provider=%s model=%s",
+                    provider_name,
+                    llm["llm_name"],
+                )
                 msg += f"\nFail to access model({provider_name}/{llm['llm_name']}) using this api key." + str(e)
         if any([embd_passed, chat_passed, rerank_passed]):
             msg = ""

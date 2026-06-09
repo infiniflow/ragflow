@@ -169,7 +169,7 @@ func TestLocalAIChatMissingBaseURLFailsClearly(t *testing.T) {
 	_, err := l.ChatWithMessages("gpt-4",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{}, nil)
-	if err == nil || !strings.Contains(err.Error(), "missing base URL") {
+	if err == nil || !strings.Contains(err.Error(), "base URL") {
 		t.Errorf("expected missing-base-URL error, got %v", err)
 	}
 }

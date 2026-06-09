@@ -1,6 +1,7 @@
 import { FormFieldType } from '@/components/dynamic-form';
 import { LLMFactory } from '@/constants/llm';
 import type { ProviderConfig } from '../types';
+import { buildModelInfoFromValues } from './utils';
 
 /**
  * Factory configuration mapping table
@@ -86,18 +87,18 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         shouldRender: 'modelTypeIncludesChat',
       },
     ],
-    verifyTransform: (values, modelInfo) => ({
+    verifyTransform: (values) => ({
       apiKey: values.api_key,
       baseUrl: values.api_base,
-      modelInfo,
+      modelInfo: buildModelInfoFromValues(values),
     }),
-    submitTransform: (values, modelInfo) => ({
+    submitTransform: (values) => ({
       instance_name: values.instance_name,
       llm_factory: LLMFactory.AzureOpenAI,
       api_base: values.api_base,
       api_key: values.api_key,
       api_version: values.api_version,
-      model_info: modelInfo,
+      model_info: buildModelInfoFromValues(values),
     }),
   },
 
@@ -165,19 +166,19 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         validation: { min: 0 },
       },
     ],
-    verifyTransform: (values, modelInfo) => ({
-      apiKey: JSON.stringify({
+    verifyTransform: (values) => ({
+      apiKey: {
         ark_api_key: values.api_key,
         endpoint_id: values.endpoint_id,
-      }),
-      modelInfo,
+      },
+      modelInfo: buildModelInfoFromValues(values),
     }),
-    submitTransform: (values, modelInfo) => ({
+    submitTransform: (values) => ({
       instance_name: values.instance_name,
       llm_factory: LLMFactory.VolcEngine,
       endpoint_id: values.endpoint_id,
       ark_api_key: values.api_key,
-      model_info: modelInfo,
+      model_info: buildModelInfoFromValues(values),
     }),
   },
 
@@ -251,21 +252,21 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         validation: { min: 0, message: 'maxTokensMinMessage' },
       },
     ],
-    verifyTransform: (values, modelInfo) => ({
-      apiKey: JSON.stringify({
+    verifyTransform: (values) => ({
+      apiKey: {
         google_project_id: values.google_project_id,
         google_region: values.google_region,
         google_service_account_key: values.google_service_account_key,
-      }),
-      modelInfo,
+      },
+      modelInfo: buildModelInfoFromValues(values),
     }),
-    submitTransform: (values, modelInfo) => ({
+    submitTransform: (values) => ({
       instance_name: values.instance_name,
       llm_factory: LLMFactory.GoogleCloud,
       google_project_id: values.google_project_id,
       google_region: values.google_region,
       google_service_account_key: values.google_service_account_key,
-      model_info: modelInfo,
+      model_info: buildModelInfoFromValues(values),
     }),
   },
 
@@ -344,19 +345,19 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         validation: { message: 'TencentCloudSKMessage' },
       },
     ],
-    verifyTransform: (values, modelInfo) => ({
-      apiKey: JSON.stringify({
+    verifyTransform: (values) => ({
+      apiKey: {
         TencentCloud_sid: values.TencentCloud_sid,
         TencentCloud_sk: values.TencentCloud_sk,
-      }),
-      modelInfo,
+      },
+      modelInfo: buildModelInfoFromValues(values),
     }),
-    submitTransform: (values, modelInfo) => ({
+    submitTransform: (values) => ({
       instance_name: values.instance_name,
       llm_factory: LLMFactory.TencentCloud,
       TencentCloud_sid: values.TencentCloud_sid,
       TencentCloud_sk: values.TencentCloud_sk,
-      model_info: modelInfo,
+      model_info: buildModelInfoFromValues(values),
     }),
   },
 
@@ -439,19 +440,25 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         validation: { min: 0, message: 'maxTokensInvalidMessage' },
       },
     ],
-    verifyTransform: (values, modelInfo) => ({
-      apiKey: JSON.stringify({
+    verifyTransform: (values) => ({
+      apiKey: {
         spark_api_password: values.spark_api_password,
         spark_app_id: values.spark_app_id,
         spark_api_secret: values.spark_api_secret,
         spark_api_key: values.spark_api_key,
-      }),
-      modelInfo,
+      },
+      modelInfo: buildModelInfoFromValues(values),
     }),
-    submitTransform: (values, modelInfo) => ({
+    submitTransform: (values) => ({
       instance_name: values.instance_name,
       llm_factory: LLMFactory.XunFeiSpark,
-      model_info: modelInfo,
+      api_key: {
+        spark_api_password: values.spark_api_password,
+        spark_app_id: values.spark_app_id,
+        spark_api_secret: values.spark_api_secret,
+        spark_api_key: values.spark_api_key,
+      },
+      model_info: buildModelInfoFromValues(values),
     }),
   },
 
@@ -517,21 +524,21 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         validation: { min: 0 },
       },
     ],
-    verifyTransform: (values, modelInfo) => ({
-      apiKey: JSON.stringify({
+    verifyTransform: (values) => ({
+      apiKey: {
         yiyan_ak: values.yiyan_ak,
         yiyan_sk: values.yiyan_sk,
-      }),
-      modelInfo,
+      },
+      modelInfo: buildModelInfoFromValues(values),
     }),
-    submitTransform: (values, modelInfo) => ({
+    submitTransform: (values) => ({
       instance_name: values.instance_name,
       llm_factory: LLMFactory.BaiduYiYan,
       api_key: {
         yiyan_ak: values.yiyan_ak,
         yiyan_sk: values.yiyan_sk,
       },
-      model_info: modelInfo,
+      model_info: buildModelInfoFromValues(values),
     }),
   },
 
@@ -595,19 +602,19 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         validation: { min: 0, message: 'maxTokensInvalidMessage' },
       },
     ],
-    verifyTransform: (values, modelInfo) => ({
-      apiKey: JSON.stringify({
+    verifyTransform: (values) => ({
+      apiKey: {
         fish_audio_ak: values.fish_audio_ak,
         fish_audio_refid: values.fish_audio_refid,
-      }),
-      modelInfo,
+      },
+      modelInfo: buildModelInfoFromValues(values),
     }),
-    submitTransform: (values, modelInfo) => ({
+    submitTransform: (values) => ({
       instance_name: values.instance_name,
       llm_factory: LLMFactory.FishAudio,
       fish_audio_ak: values.fish_audio_ak,
       fish_audio_refid: values.fish_audio_refid,
-      model_info: modelInfo,
+      model_info: buildModelInfoFromValues(values),
     }),
   },
 
@@ -635,7 +642,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       },
       {
         name: 'opendataloader_apiserver',
-        label: 'opendataloaderApiserver',
+        label: 'baseUrl',
         type: FormFieldType.Text,
         required: true,
         placeholder: 'opendataloaderApiserverPlaceholder',
@@ -649,7 +656,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         placeholder: 'apiKeyPlaceholder',
       },
     ],
-    verifyTransform: (values, modelInfo) => {
+    verifyTransform: (values) => {
       const cfg: Record<string, any> = {};
       if (values.opendataloader_apiserver) {
         cfg.opendataloader_apiserver = values.opendataloader_apiserver;
@@ -657,13 +664,20 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       if (values.opendataloader_api_key) {
         cfg.opendataloader_api_key = values.opendataloader_api_key;
       }
+      cfg.llm_name = values.model_name;
       return {
-        apiKey: JSON.stringify(cfg),
+        apiKey: cfg,
         baseUrl: values.opendataloader_apiserver,
-        modelInfo,
+        modelInfo: [
+          {
+            model_name: values.model_name,
+            model_type: 'ocr',
+            max_tokens: 0,
+          },
+        ],
       };
     },
-    submitTransform: (values, modelInfo) => {
+    submitTransform: (values) => {
       const cfg: Record<string, any> = {};
       if (values.opendataloader_apiserver) {
         cfg.opendataloader_apiserver = values.opendataloader_apiserver;
@@ -671,12 +685,19 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       if (values.opendataloader_api_key) {
         cfg.opendataloader_api_key = values.opendataloader_api_key;
       }
+      cfg.llm_name = values.model_name;
       return {
         instance_name: values.instance_name,
         llm_factory: LLMFactory.OpenDataLoader,
-        api_key: JSON.stringify(cfg),
+        api_key: cfg,
         api_base: '',
-        model_info: modelInfo,
+        model_info: [
+          {
+            model_name: values.model_name,
+            model_type: 'ocr',
+            max_tokens: 0,
+          },
+        ],
       };
     },
   },
@@ -734,7 +755,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         ],
       },
     ],
-    verifyTransform: (values, modelInfo) => {
+    verifyTransform: (values) => {
       const cfg: Record<string, any> = {};
       if (values.paddleocr_api_url)
         cfg.paddleocr_api_url = values.paddleocr_api_url;
@@ -743,12 +764,12 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       if (values.paddleocr_algorithm)
         cfg.paddleocr_algorithm = values.paddleocr_algorithm;
       return {
-        apiKey: JSON.stringify(cfg),
+        apiKey: cfg,
         baseUrl: values.paddleocr_api_url,
-        modelInfo,
+        modelInfo: buildModelInfoFromValues(values),
       };
     },
-    submitTransform: (values, modelInfo) => {
+    submitTransform: (values) => {
       const cfg: Record<string, any> = {};
       if (values.paddleocr_api_url)
         cfg.paddleocr_api_url = values.paddleocr_api_url;
@@ -759,9 +780,9 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       return {
         instance_name: values.instance_name,
         llm_factory: LLMFactory.PaddleOCR,
-        api_key: JSON.stringify(cfg),
+        api_key: cfg,
         api_base: '',
-        model_info: modelInfo,
+        model_info: buildModelInfoFromValues(values),
       };
     },
   },
@@ -839,7 +860,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         defaultValue: true,
       },
     ],
-    verifyTransform: (values, modelInfo) => {
+    verifyTransform: (values) => {
       const cfg: Record<string, any> = { ...values };
       delete cfg.instance_name;
       delete cfg.model_name;
@@ -848,12 +869,12 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         delete cfg.mineru_server_url;
       }
       return {
-        apiKey: JSON.stringify(cfg),
+        apiKey: cfg,
         baseUrl: values.mineru_apiserver,
-        modelInfo,
+        modelInfo: buildModelInfoFromValues(values),
       };
     },
-    submitTransform: (values, modelInfo) => {
+    submitTransform: (values) => {
       const cfg: Record<string, any> = { ...values };
       delete cfg.instance_name;
       delete cfg.model_name;
@@ -864,9 +885,9 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       return {
         instance_name: values.instance_name,
         llm_factory: LLMFactory.MinerU,
-        api_key: JSON.stringify(cfg),
+        api_key: cfg,
         api_base: '',
-        model_info: modelInfo,
+        model_info: buildModelInfoFromValues(values),
       };
     },
   },
