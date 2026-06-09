@@ -30,8 +30,8 @@ type googleModelPage struct {
 	nextPageToken string
 }
 
-func collectGoogleModelNames(ctx context.Context, listPage func(context.Context, string) (googleModelPage, error)) ([]string, error) {
-	var modelNames []string
+func collectGoogleModelNames(ctx context.Context, listPage func(context.Context, string) (googleModelPage, error)) ([]ListModelResponse, error) {
+	var modelNames []ListModelResponse
 	pageToken := ""
 
 	for {
@@ -40,7 +40,11 @@ func collectGoogleModelNames(ctx context.Context, listPage func(context.Context,
 			return nil, err
 		}
 
-		modelNames = append(modelNames, page.items...)
+		for _, modelName := range page.items {
+			modelNames = append(modelNames, ListModelResponse{
+				Name: modelName,
+			})
+		}
 		if page.nextPageToken == "" {
 			return modelNames, nil
 		}
@@ -48,7 +52,7 @@ func collectGoogleModelNames(ctx context.Context, listPage func(context.Context,
 	}
 }
 
-var googleListModels = func(ctx context.Context, config *genai.ClientConfig) ([]string, error) {
+var googleListModels = func(ctx context.Context, config *genai.ClientConfig) ([]ListModelResponse, error) {
 	client, err := genai.NewClient(ctx, config)
 	if err != nil {
 		return nil, err
@@ -339,7 +343,7 @@ func (g *GoogleModel) Embed(modelName *string, texts []string, apiConfig *APICon
 	return result, nil
 }
 
-func (g *GoogleModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (g *GoogleModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}

@@ -500,7 +500,7 @@ func (l *LmStudioModel) ParseFile(modelName *string, content []byte, url *string
 }
 
 // ListModels list supported models
-func (l *LmStudioModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (l *LmStudioModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := l.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -561,11 +561,11 @@ func (l *LmStudioModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	// convert result["data"] 2 []map[string]interface{}
-	models := make([]string, 0)
+	models := make([]ListModelResponse, 0)
 	for _, model := range result["data"].([]interface{}) {
 		modelMap := model.(map[string]interface{})
 		modelName := modelMap["id"].(string)
-		models = append(models, modelName)
+		models = append(models, ListModelResponse{Name: modelName})
 	}
 
 	return models, nil

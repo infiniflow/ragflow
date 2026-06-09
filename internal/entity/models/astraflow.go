@@ -328,7 +328,7 @@ func (a *AstraflowModel) ChatStreamlyWithSender(modelName string, messages []Mes
 	return nil
 }
 
-func (a *AstraflowModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (a *AstraflowModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -373,17 +373,21 @@ func (a *AstraflowModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	models := make([]string, 0, len(data))
+	models := make([]ListModelResponse, 0, len(data))
+	var modelMap map[string]interface{}
 	for _, m := range data {
-		modelMap, ok := m.(map[string]interface{})
+		modelMap, ok = m.(map[string]interface{})
 		if !ok {
 			continue
 		}
-		id, ok := modelMap["id"].(string)
+		var id string
+		id, ok = modelMap["id"].(string)
 		if !ok {
 			continue
 		}
-		models = append(models, id)
+		models = append(models, ListModelResponse{
+			Name: id,
+		})
 	}
 	return models, nil
 }
