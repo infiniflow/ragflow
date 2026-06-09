@@ -244,6 +244,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
 				datasets.POST("/search", r.datasetsHandler.SearchDatasets)
 				datasets.GET("/metadata/flattened", r.datasetsHandler.ListMetadataFlattened)
+				datasets.GET("/:dataset_id/metadata/summary", r.documentHandler.MetadataSummaryByDataset)
 
 				// Dataset ingestion logs
 				datasets.GET("/:dataset_id/ingestions/summary", r.datasetsHandler.GetIngestionSummary)
@@ -385,6 +386,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			agents := v1.Group("/agents")
 			{
 				agents.GET("", r.agentHandler.ListAgents)
+				agents.GET("/prompts", r.agentHandler.GetPrompts)
 				agents.GET("/templates", r.agentHandler.ListTemplates)
 				agents.GET("/:agent_id/versions", r.agentHandler.ListAgentVersions)
 				agents.GET("/:agent_id/versions/:version_id", r.agentHandler.GetAgentVersion)

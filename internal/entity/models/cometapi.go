@@ -244,16 +244,18 @@ type cometapiModelCatalogItem struct {
 	ID string `json:"id"`
 }
 
-func parseCometAPIModelCatalog(body []byte) ([]string, error) {
+func parseCometAPIModelCatalog(body []byte) ([]ListModelResponse, error) {
 	var parsed cometapiModelCatalogResponse
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]string, 0, len(parsed.Data))
+	models := make([]ListModelResponse, 0, len(parsed.Data))
 	for _, model := range parsed.Data {
 		if model.ID != "" {
-			models = append(models, model.ID)
+			models = append(models, ListModelResponse{
+				Name: model.ID,
+			})
 		}
 	}
 	return models, nil
@@ -498,7 +500,7 @@ func (c *CometAPIModel) Embed(modelName *string, texts []string, apiConfig *APIC
 }
 
 // ListModels returns the public CometAPI model catalog.
-func (c *CometAPIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (c *CometAPIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	url, err := c.endpointURL(cometapiRegion(apiConfig), c.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
