@@ -266,7 +266,11 @@ func (g *GoogleModel) ChatStreamlyWithSender(modelName string, messages []Messag
 
 		var responseContent string
 		if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-			responseContent = response.Candidates[0].Content.Parts[0].Text
+			if len(response.Candidates) > 0 &&
+				response.Candidates[0].Content != nil &&
+				len(response.Candidates[0].Content.Parts) > 0 {
+				responseContent = response.Candidates[0].Content.Parts[0].Text
+			}
 		}
 
 		if responseContent != "" {
