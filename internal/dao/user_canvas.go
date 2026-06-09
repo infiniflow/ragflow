@@ -55,14 +55,7 @@ func (dao *UserCanvasDAO) Delete(id string) error {
 
 // GetList get canvases list with pagination and filtering
 // Similar to Python UserCanvasService.get_list
-func (dao *UserCanvasDAO) GetList(
-	tenantID string,
-	pageNumber, itemsPerPage int,
-	orderby string,
-	desc bool,
-	id, title string,
-	canvasCategory string,
-) ([]*entity.UserCanvas, error) {
+func (dao *UserCanvasDAO) GetList(tenantID string, pageNumber, itemsPerPage int, orderby string, desc bool, id, title string, canvasCategory string) ([]*entity.UserCanvas, error) {
 
 	query := DB.Model(&entity.UserCanvas{}).
 		Where("user_id = ?", tenantID)
@@ -116,15 +109,7 @@ func (dao *UserCanvasDAO) GetAllCanvasesByTenantIDs(tenantIDs []string, userID s
 // ListByTenantIDs lists agent canvases accessible to the given owner IDs with optional
 // keyword filter, pagination, and ordering.
 // Mirrors Python UserCanvasService.get_by_tenant_ids (list route only).
-func (dao *UserCanvasDAO) ListByTenantIDs(
-	ownerIDs []string,
-	userID string,
-	page, pageSize int,
-	orderby string,
-	desc bool,
-	keywords string,
-	canvasCategory string,
-) ([]*entity.UserCanvas, int64, error) {
+func (dao *UserCanvasDAO) ListByTenantIDs(ownerIDs []string, userID string, page, pageSize int, orderby string, desc bool, keywords string, canvasCategory string) ([]*entity.UserCanvas, int64, error) {
 	if len(ownerIDs) == 0 {
 		return nil, 0, nil
 	}
@@ -199,6 +184,12 @@ func (dao *UserCanvasDAO) GetAllCanvasIDsByUserID(userID string) ([]string, erro
 		Where("user_id = ?", userID).
 		Pluck("id", &canvasIDs).Error
 	return canvasIDs, err
+}
+
+// UpdateDSL updates a canvas DSL by canvas ID.
+func (dao *UserCanvasDAO) UpdateDSL(canvasID string, dsl entity.JSONMap) (int64, error) {
+	result := DB.Model(&entity.UserCanvas{}).Where("id = ?", canvasID).Update("dsl", dsl)
+	return result.RowsAffected, result.Error
 }
 
 // UpdateTags updates a canvas's comma-separated tags by canvas ID.

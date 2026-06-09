@@ -214,7 +214,7 @@ func TestGoogleModelChatStreamlyRequiresAPIKey(t *testing.T) {
 			if err == nil {
 				t.Fatal("expected an API key error")
 			}
-			if !strings.Contains(err.Error(), "api key is nil or empty") {
+			if !strings.Contains(err.Error(), "api key is required") {
 				t.Fatalf("expected API key error, got %v", err)
 			}
 		})
