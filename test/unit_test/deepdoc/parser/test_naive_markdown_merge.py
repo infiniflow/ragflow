@@ -3,100 +3,107 @@ Unit tests for markdown chunk merging logic in rag/app/naive.py.
 
 Tests the _is_short_header() helper function to ensure short markdown headers
 are correctly identified and will be force-merged with the next section.
+
+Uses lazy import via fixture to avoid triggering deepdoc model loading
+at pytest collection time (which would fail in CI without model files).
 """
 
 import sys
-import os
+from pathlib import Path
 
-# Add project root to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
+import pytest
 
-from rag.app.naive import _is_short_header
+_REPO = Path(__file__).parents[4]
+
+
+@pytest.fixture(scope="module")
+def is_short_header():
+    sys.path.insert(0, str(_REPO))
+    from rag.app.naive import _is_short_header
+
+    return _is_short_header
 
 
 class TestIsShortHeader:
     """Test cases for _is_short_header() function."""
 
-    def test_short_header_h1(self):
+    def test_short_header_h1(self, is_short_header):
         """Short level-1 header should return True."""
         text = "# Quick Start"
-        result = _is_short_header(text)
+        result = is_short_header(text)
         assert result is True
 
-    def test_short_header_h2(self):
+    def test_short_header_h2(self, is_short_header):
         """Short level-2 header should return True."""
         text = "## Quick Travel"
-        result = _is_short_header(text)
+        result = is_short_header(text)
         assert result is True
 
-    def test_short_header_h3(self):
+    def test_short_header_h3(self, is_short_header):
         """Short level-3 header should return True."""
         text = "### Setup"
-        result = _is_short_header(text)
+        result = is_short_header(text)
         assert result is True
 
-    def test_long_header(self):
+    def test_long_header(self, is_short_header):
         """Long header (> 50 tokens) should return False."""
         text = "# " + "Very long header " * 20  # ~100 tokens
-        result = _is_short_header(text)
+        result = is_short_header(text)
         assert result is False
 
-    def test_non_header_short_text(self):
+    def test_non_header_short_text(self, is_short_header):
         """Short text without header pattern should return False."""
         text = "This is short"
-        result = _is_short_header(text)
+        result = is_short_header(text)
         assert result is False
 
-    def test_empty_text(self):
+    def test_empty_text(self, is_short_header):
         """Empty text should return False."""
         text = ""
-        result = _is_short_header(text)
+        result = is_short_header(text)
         assert result is False
 
-    def test_whitespace_only(self):
+    def test_whitespace_only(self, is_short_header):
         """Whitespace-only text should return False."""
         text = "   "
-        result = _is_short_header(text)
+        result = is_short_header(text)
         assert result is False
 
-    def test_header_exactly_50_tokens(self):
+    def test_header_exactly_50_tokens(self, is_short_header):
         """Header with exactly 50 tokens should return False (strict <)."""
-        # Construct a header with exactly 50 tokens
-        words = ["word"] * 49  # 49 words = 49 tokens, plus "# " = 1 token
+        words = ["word"] * 49
         text = "# " + " ".join(words)
-        result = _is_short_header(text, max_tokens=50)
-        # 50 tokens = not < 50, so should return False
+        result = is_short_header(text, max_tokens=50)
         assert result is False
 
-    def test_header_49_tokens(self):
+    def test_header_49_tokens(self, is_short_header):
         """Header with 49 tokens should return True (< 50)."""
-        words = ["word"] * 48  # 48 words = 48 tokens, plus "# " = 1 token = 49 tokens
+        words = ["word"] * 48
         text = "# " + " ".join(words)
-        result = _is_short_header(text, max_tokens=50)
+        result = is_short_header(text, max_tokens=50)
         assert result is True
 
-    def test_custom_max_tokens(self):
+    def test_custom_max_tokens(self, is_short_header):
         """Should respect custom max_tokens parameter."""
         text = "# Short"
-        result = _is_short_header(text, max_tokens=5)
-        assert result is False  # "# Short" is ~2 tokens, but wait...
+        result = is_short_header(text, max_tokens=5)
+        assert result is False
 
-        result = _is_short_header(text, max_tokens=10)
+        result = is_short_header(text, max_tokens=10)
         assert result is True
 
-    def test_header_with_special_chars(self):
+    def test_header_with_special_chars(self, is_short_header):
         """Header with special characters should still be recognized."""
         text = "## API Endpoint: /api/v1/users"
-        result = _is_short_header(text)
+        result = is_short_header(text)
         assert result is True
 
-    def test_header_with_cjk_chars(self):
+    def test_header_with_cjk_chars(self, is_short_header):
         """Header with CJK characters should be recognized."""
         text = "## 快速旅行"
-        result = _is_short_header(text)
+        result = is_short_header(text)
         assert result is True
 
 
 if __name__ == "__main__":
-    import pytest
     pytest.main([__file__, "-v"])
