@@ -302,8 +302,13 @@ class AzureGptV4(GptV4):
     _FACTORY_NAME = "Azure-OpenAI"
 
     def __init__(self, key, model_name, lang="Chinese", **kwargs):
-        api_key = json.loads(key).get("api_key", "")
-        api_version = json.loads(key).get("api_version", "2024-02-01")
+        try:
+            key_obj = json.loads(key)
+            api_key = key_obj.get("api_key", "")
+            api_version = key_obj.get("api_version", "2024-02-01")
+        except (json.JSONDecodeError, TypeError):
+            api_key = key
+            api_version = "2024-02-01"
         self.client = AzureOpenAI(api_key=api_key, azure_endpoint=kwargs["base_url"], api_version=api_version)
         self.async_client = AsyncAzureOpenAI(api_key=api_key, azure_endpoint=kwargs["base_url"], api_version=api_version)
         self.model_name = model_name
