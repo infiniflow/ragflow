@@ -1,4 +1,4 @@
-#
+
 #  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,13 +24,13 @@ def normalize_layout_recognizer(layout_recognizer_raw: Any) -> tuple[Any, str | 
     if isinstance(layout_recognizer_raw, str):
         lowered = layout_recognizer_raw.lower()
         if lowered.endswith("@mineru"):
-            parser_model_name = layout_recognizer_raw
+            parser_model_name = layout_recognizer_raw.rsplit("@")[0]
             layout_recognizer = "MinerU"
         elif lowered.endswith("@paddleocr"):
-            parser_model_name = layout_recognizer_raw
+            parser_model_name = layout_recognizer_raw.rsplit("@")[0]
             layout_recognizer = "PaddleOCR"
         elif lowered.endswith("@opendataloader"):
-            parser_model_name = layout_recognizer_raw
+            parser_model_name = layout_recognizer_raw.rsplit("@")[0]
             layout_recognizer = "OpenDataLoader"
 
     return layout_recognizer, parser_model_name
