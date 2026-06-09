@@ -294,9 +294,8 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.DeleteAdminServer(cmd)
 	case "save_config_command":
 		return c.SaveServerConfig(cmd)
-	// ContextEngine commands
-	case "context_engine_command":
-		return nil, c.executeFilesystem(cmd.Params["command"].(string))
+	case "file_system_command":
+		return c.executeFilesystem(cmd)
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
 	}

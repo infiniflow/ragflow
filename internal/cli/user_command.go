@@ -18,7 +18,6 @@ package cli
 
 import (
 	"bufio"
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -29,7 +28,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	ce "ragflow/internal/cli/filesystem"
 	"strings"
 	"time"
 )
@@ -2736,113 +2734,6 @@ func (c *CLI) AddCustomModel(cmd *Command) (ResponseIf, error) {
 
 }
 
-// Context related commands
-
-// CECat handles the cat command - shows content using Context Engine
-func (c *CLI) CECat(cmd *Command) (ResponseIf, error) {
-	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
-		return nil, fmt.Errorf("API token not set. Please login first")
-	}
-	if c.Config.CLIMode != APIMode {
-		return nil, fmt.Errorf("this command is only allowed in USER mode")
-	}
-
-	path, ok := cmd.Params["path"].(string)
-	if !ok {
-		return nil, fmt.Errorf("fail to convert 'path' to string")
-	}
-
-	// Execute cat command through Filesystem Engine
-	ctx := context.Background()
-	content, err := c.ContextEngine.Cat(ctx, path)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert to response
-	var response ContextCatResponse
-	response.OutputFormat = c.outputFormat
-	response.Code = 0
-	response.Content = string(content)
-
-	return &response, nil
-}
-
-// CEList handles the ls command - lists nodes using Context Engine
-func (c *CLI) CEList(cmd *Command) (ResponseIf, error) {
-	// Get path from command params, default to "datasets"
-	path, _ := cmd.Params["path"].(string)
-	if path == "" {
-		path = "datasets"
-	}
-
-	// Parse options
-	opts := &ce.ListOptions{}
-	if recursive, ok := cmd.Params["recursive"].(bool); ok {
-		opts.Recursive = recursive
-	}
-	if limit, ok := cmd.Params["limit"].(int); ok {
-		opts.Limit = limit
-	}
-	if offset, ok := cmd.Params["offset"].(int); ok {
-		opts.Offset = offset
-	}
-
-	// Execute list command through Filesystem Engine
-	ctx := context.Background()
-	result, err := c.ContextEngine.List(ctx, path, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert to response
-	var response ContextListResponse
-	response.OutputFormat = c.outputFormat
-	response.Code = 0
-	response.Data = ce.FormatNodes(result.Nodes, string(c.outputFormat))
-
-	return &response, nil
-}
-
-// CESearch handles the search command using Context Engine
-func (c *CLI) CESearch(cmd *Command) (ResponseIf, error) {
-	// Get path and query from command params
-	path, _ := cmd.Params["path"].(string)
-	if path == "" {
-		path = "datasets"
-	}
-	query, _ := cmd.Params["query"].(string)
-
-	// Parse options
-	opts := &ce.SearchOptions{
-		Query: query,
-	}
-	if limit, ok := cmd.Params["limit"].(int); ok {
-		opts.Limit = limit
-	}
-	if offset, ok := cmd.Params["offset"].(int); ok {
-		opts.Offset = offset
-	}
-	if recursive, ok := cmd.Params["recursive"].(bool); ok {
-		opts.Recursive = recursive
-	}
-
-	// Execute search command through Filesystem Engine
-	ctx := context.Background()
-	result, err := c.ContextEngine.Search(ctx, path, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert to response
-	var response ContextSearchResponse
-	response.OutputFormat = c.outputFormat
-	response.Code = 0
-	response.Total = result.Total
-	response.Data = ce.FormatNodes(result.Nodes, string(c.outputFormat))
-
-	return &response, nil
-}
 
 // InsertChunksFromFile inserts chunks from a JSON file
 func (c *CLI) InsertChunksFromFile(cmd *Command) (ResponseIf, error) {
