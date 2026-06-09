@@ -364,7 +364,7 @@ func (x *XAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig
 }
 
 // ListModels returns the list of model ids visible to the API key.
-func (x *XAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (x *XAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -417,7 +417,7 @@ func (x *XAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	models := make([]string, 0)
+	models := make([]ListModelResponse, 0)
 	for _, model := range data {
 		modelMap, ok := model.(map[string]interface{})
 		if !ok {
@@ -427,7 +427,7 @@ func (x *XAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		if !ok {
 			continue
 		}
-		models = append(models, modelName)
+		models = append(models, ListModelResponse{Name: modelName})
 	}
 
 	return models, nil

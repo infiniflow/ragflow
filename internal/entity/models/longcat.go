@@ -348,7 +348,7 @@ type longCatListModelsResponse struct {
 
 const longCatMaxListModelsResponseBytes = 1 << 20
 
-func (l *LongCatModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (l *LongCatModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := l.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -398,10 +398,10 @@ func (l *LongCatModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	models := make([]string, 0, len(result.Data))
+	models := make([]ListModelResponse, 0, len(result.Data))
 	for _, model := range result.Data {
 		if model.ID != "" {
-			models = append(models, model.ID)
+			models = append(models, ListModelResponse{Name: model.ID})
 		}
 	}
 	return models, nil
