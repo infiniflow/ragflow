@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	ce "ragflow/internal/cli/filesystem"
 	"time"
 )
 
@@ -363,4 +364,47 @@ func (c *HTTPClient) RequestStream(method, path string, authKind string, headers
 	}
 
 	return resp.Body, nil
+}
+
+// PasswordPromptFunc is a function type for password input
+type PasswordPromptFunc func(prompt string) (string, error)
+
+// CurrentModel holds the current model configuration
+type CurrentModel struct {
+	Provider string
+	Instance string
+	Model    string
+}
+
+// httpClientAdapter adapts HTTPClient to ce.HTTPClientInterface
+type httpClientAdapter struct {
+	client *HTTPClient
+}
+
+func (a *httpClientAdapter) Request(method, path string, authKind string, headers map[string]string, jsonBody map[string]interface{}) (*ce.HTTPResponse, error) {
+	// Auto-detect auth kind based on available tokens
+	// If authKind is "auto" or empty, determine based on token availability
+	if authKind == "auto" || authKind == "" {
+		if a.client.useAPIToken && a.client.APIToken != nil {
+			authKind = "api"
+		} else if a.client.LoginToken != nil {
+			authKind = "web"
+		} else {
+			authKind = "web" // default
+		}
+	}
+	resp, err := a.client.Request(method, path, authKind, headers, jsonBody)
+	if err != nil {
+		return nil, err
+	}
+	return &ce.HTTPResponse{
+		StatusCode: resp.StatusCode,
+		Body:       resp.Body,
+		Headers:    resp.Headers,
+		Duration:   resp.Duration,
+	}, nil
+}
+
+func (a *httpClientAdapter) UploadMultipart(path string, contentType string, body io.Reader) error {
+	return a.client.UploadMultipart(path, contentType, body)
 }
