@@ -29,7 +29,6 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.connector_service import Connector2KbService
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, TaskService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
-from api.db.services.tenant_llm_service import TenantLLMService
 from common.constants import FileSource, StatusEnum
 from api.utils.api_utils import deep_merge, get_parser_config, remap_dictionary_keys, verify_embedding_availability
 
