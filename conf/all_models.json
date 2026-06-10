@@ -399,7 +399,7 @@
       ],
       "max_tokens": 4096,
       "model_types": [
-        "chat"
+        "image2text"
       ]
     },
     {
@@ -410,7 +410,7 @@
       ],
       "max_tokens": 4096,
       "model_types": [
-        "chat"
+        "image2text"
       ]
     },
     {
@@ -421,7 +421,7 @@
       ],
       "max_tokens": 4096,
       "model_types": [
-        "chat"
+        "image2text"
       ]
     },
     {
@@ -624,7 +624,7 @@
       ],
       "max_tokens": 16384,
       "model_types": [
-        "chat"
+        "image2text"
       ]
     },
     {
@@ -635,7 +635,7 @@
       ],
       "max_tokens": 16384,
       "model_types": [
-        "chat"
+        "image2text"
       ]
     },
     {
@@ -646,7 +646,7 @@
       ],
       "max_tokens": 16384,
       "model_types": [
-        "chat"
+        "image2text"
       ]
     },
     {
@@ -657,7 +657,7 @@
       ],
       "max_tokens": 16384,
       "model_types": [
-        "chat"
+        "image2text"
       ]
     },
     {
@@ -873,7 +873,7 @@
       "name": "glm-4.5v",
       "max_tokens": 64000,
       "model_types": [
-        "chat"
+        "vision"
       ],
       "thinking": {
         "default_value": true,
