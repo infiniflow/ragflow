@@ -2115,7 +2115,15 @@ class XWiki(SyncBase):
             )
 
         self.log_connection("XWiki", self.conf.get("base_url", ""), task)
-        return document_generator
+
+        def wrapper():
+            try:
+                for document_batch in document_generator:
+                    yield document_batch
+            finally:
+                self.connector.close()
+
+        return wrapper()
 
 
 func_factory = {

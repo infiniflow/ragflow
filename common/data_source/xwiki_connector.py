@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from collections.abc import Generator, Iterator
 from datetime import datetime, timezone
 from typing import Any
@@ -11,6 +12,8 @@ import requests
 from common.data_source.config import DocumentSource, INDEX_BATCH_SIZE, REQUEST_TIMEOUT_SECONDS
 from common.data_source.interfaces import LoadConnector, PollConnector, SlimConnectorWithPermSync
 from common.data_source.models import Document, SecondsSinceUnixEpoch, SlimDocument
+
+logger = logging.getLogger(__name__)
 
 
 class XWikiConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
@@ -30,6 +33,21 @@ class XWikiConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         self.session = requests.Session()
         self._credentials: dict[str, Any] = {}
 
+    def __enter__(self) -> XWikiConnector:
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+        del exc_type, exc, traceback
+        self.close()
+
+    def __del__(self) -> None:
+        self.close()
+
+    def close(self) -> None:
+        close = getattr(getattr(self, "session", None), "close", None)
+        if close is not None:
+            close()
+
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         self._credentials = credentials or {}
         token = self._credentials.get("xwiki_api_token")
@@ -37,8 +55,10 @@ class XWikiConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         password = self._credentials.get("xwiki_password")
         if token:
             self.session.headers.update({"Authorization": f"Bearer {token}"})
+            logger.info("XWiki connector using bearer token authentication")
         elif username and password:
             self.session.auth = (username, password)
+            logger.info("XWiki connector using basic authentication for user: %s", username)
         return None
 
     def validate_connector_settings(self) -> None:
@@ -48,6 +68,7 @@ class XWikiConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             raise ValueError("XWiki connector requires a space or page IDs")
 
     def load_from_state(self) -> Generator[list[Document], None, None]:
+        logger.debug("XWiki load_from_state started")
         yield from self._batch_documents(self._iter_documents())
 
     def poll_source(
@@ -55,6 +76,7 @@ class XWikiConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         start: SecondsSinceUnixEpoch,
         end: SecondsSinceUnixEpoch,
     ) -> Generator[list[Document], None, None]:
+        logger.debug("XWiki poll_source started start=%s end=%s", start, end)
         start_dt = datetime.fromtimestamp(start, tz=timezone.utc)
         end_dt = datetime.fromtimestamp(end, tz=timezone.utc)
         docs = (
@@ -77,6 +99,12 @@ class XWikiConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             yield batch
 
     def _iter_documents(self) -> Iterator[Document]:
+        logger.debug(
+            "XWiki iterating documents wiki=%s space=%s configured_pages=%s",
+            self.wiki,
+            self.space,
+            len(self.page_ids),
+        )
         summaries = self._configured_page_summaries() if self.page_ids else self._list_space_pages(self.space)
         for summary in summaries:
             page = self._page_detail(summary)
@@ -88,6 +116,7 @@ class XWikiConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
 
     def _list_space_pages(self, space: str) -> Iterator[dict[str, Any]]:
         path = f"rest/wikis/{quote(self.wiki)}/{self._space_path(space)}/pages"
+        logger.debug("XWiki listing pages path=%s", path)
         for item in self._items_from_payload(self._get(path)):
             yield item
 
@@ -101,14 +130,20 @@ class XWikiConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             return summary
         space, page = full_name.rsplit(".", 1)
         path = f"rest/wikis/{quote(self.wiki)}/{self._space_path(space)}/pages/{quote(page)}"
+        logger.debug("XWiki fetching page detail full_name=%s path=%s", full_name, path)
         detail = self._get(path)
         detail.setdefault("fullName", full_name)
         return {**summary, **detail}
 
     def _get(self, path: str) -> dict[str, Any]:
         url = urljoin(f"{self.base_url}/", path)
-        response = self.session.get(url, timeout=REQUEST_TIMEOUT_SECONDS)
-        response.raise_for_status()
+        logger.debug("XWiki request url=%s", url)
+        try:
+            response = self.session.get(url, timeout=REQUEST_TIMEOUT_SECONDS)
+            response.raise_for_status()
+        except requests.RequestException:
+            logger.exception("XWiki request failed url=%s", url)
+            raise
         return response.json()
 
     @staticmethod
@@ -144,6 +179,14 @@ class XWikiConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         ).strip()
         blob = text.encode("utf-8")
         doc_id = f"xwiki:{full_name}"
+        fingerprint = hashlib.sha256(blob).hexdigest()
+        logger.debug(
+            "XWiki built document id=%s full_name=%s size=%s fingerprint=%s",
+            doc_id,
+            full_name,
+            len(blob),
+            fingerprint,
+        )
         return Document(
             id=doc_id,
             source=DocumentSource.XWIKI,
@@ -157,7 +200,7 @@ class XWikiConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                 "space": full_name.rsplit(".", 1)[0] if "." in full_name else "",
                 "url": link,
             },
-            fingerprint=hashlib.sha256(blob).hexdigest(),
+            fingerprint=fingerprint,
         )
 
     def _page_link(self, page: dict[str, Any]) -> str:
@@ -182,14 +225,16 @@ class XWikiConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                 return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
             except ValueError:
                 pass
-        return datetime.fromtimestamp(0, tz=timezone.utc)
+        return datetime.now(timezone.utc)
 
     def _batch_documents(self, docs: Iterator[Document]) -> Generator[list[Document], None, None]:
         batch: list[Document] = []
         for doc in docs:
             batch.append(doc)
             if len(batch) >= self.batch_size:
+                logger.debug("XWiki yielding document batch size=%s", len(batch))
                 yield batch
                 batch = []
         if batch:
+            logger.debug("XWiki yielding final document batch size=%s", len(batch))
             yield batch

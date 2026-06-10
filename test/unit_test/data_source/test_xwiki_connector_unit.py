@@ -24,9 +24,15 @@ class FakeSession:
         self.auth: tuple[str, str] | None = None
         self.headers: dict[str, str] = {}
         self.calls: list[str] = []
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
 
     def get(self, url: str, timeout: int) -> FakeResponse:
         del timeout
+        if not url.startswith("https://xwiki.test/"):
+            raise ValueError(f"unexpected XWiki test URL: {url}")
         path = url.split("https://xwiki.test/", 1)[1]
         self.calls.append(path)
         payloads = {
@@ -50,6 +56,8 @@ class FakeSession:
                 "xwikiRelativeUrl": "bin/view/Main/",
             },
         }
+        if path not in payloads:
+            raise KeyError(f"unexpected XWiki test path: url={url}, path={path}")
         return FakeResponse(payloads[path])
 
 
@@ -104,3 +112,13 @@ def test_xwiki_connector_requires_base_url() -> None:
 
     with pytest.raises(ValueError, match="base_url"):
         connector.validate_connector_settings()
+
+
+@pytest.mark.p1
+def test_xwiki_connector_closes_session() -> None:
+    connector = make_connector()
+    session = connector.session
+
+    connector.close()
+
+    assert session.closed
