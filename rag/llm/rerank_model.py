@@ -432,8 +432,11 @@ class QWenRerank(Base):
                 log_exception(_e, resp)
             return rank, total_token_count_from_response(resp)
         else:
-            error_body = getattr(resp, "text", None)
-            if error_body is None:
+            try:
+                error_body = resp["text"] if isinstance(resp, dict) and "text" in resp else None
+            except Exception:
+                error_body = None
+            if not error_body:
                 try:
                     error_body = json.dumps(dict(resp), ensure_ascii=False)
                 except Exception:
