@@ -36,7 +36,7 @@ type ModelDriver interface {
 	// ParseFile parse file
 	ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error)
 	// ListModels List supported models
-	ListModels(apiConfig *APIConfig) ([]string, error)
+	ListModels(apiConfig *APIConfig) ([]ListModelResponse, error)
 
 	Balance(apiConfig *APIConfig) (map[string]interface{}, error)
 
@@ -76,6 +76,14 @@ type TTSResponse struct {
 
 type OCRFileResponse struct {
 	Text *string `json:"text"`
+}
+
+type ListModelResponse struct {
+	Name       string         `json:"name"`
+	MaxTokens  *int           `json:"max_tokens"`
+	ModelTypes []string       `json:"model_types"`
+	Thinking   *ModelThinking `json:"thinking"`
+	Dimension  *int           `json:"dimension"` // used by embedding models
 }
 
 type ParseFileResponse struct {
@@ -130,8 +138,9 @@ type ChatConfig struct {
 }
 
 type APIConfig struct {
-	ApiKey *string
-	Region *string
+	ApiKey  *string
+	Region  *string
+	BaseURL *string
 }
 
 type EmbeddingConfig struct {

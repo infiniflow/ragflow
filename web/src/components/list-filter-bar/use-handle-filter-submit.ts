@@ -49,16 +49,21 @@ export function useHandleFilterSubmit() {
   );
 
   const checkValue = useCallback((filters: FilterCollection[]) => {
-    if (!filters?.length || !filterValue) {
+    if (!filters?.length) {
       return;
     }
+
     const validFields = filters.reduce((pre, cur) => {
       return [...pre, ...getFilterIds(cur as FilterType)];
     }, [] as string[]);
+
     if (!validFields.length) {
       return;
     }
+
     setFilterValue((preValue) => {
+      if (!preValue) return preValue;
+
       const newValue: FilterValue = mergeFilterValue(preValue, validFields);
       return newValue;
     });

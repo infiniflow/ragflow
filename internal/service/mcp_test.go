@@ -17,11 +17,74 @@
 package service
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"ragflow/internal/entity"
 )
+
+func TestIsValidMCPServerType(t *testing.T) {
+	for _, v := range []string{mcpServerTypeSSE, mcpServerTypeStreamableHTTP} {
+		if !isValidMCPServerType(v) {
+			t.Errorf("expected %q to be a valid MCP server type", v)
+		}
+	}
+	for _, v := range []string{"", "stdio", "http", "SSE"} {
+		if isValidMCPServerType(v) {
+			t.Errorf("expected %q to be an invalid MCP server type", v)
+		}
+	}
+}
+
+func TestServerInputValidation(t *testing.T) {
+	s := &MCPService{}
+
+	// Empty URL is rejected before any connection attempt.
+	if _, err := s.TestServer("id-1", &TestServerRequest{ServerType: mcpServerTypeSSE}); !errors.Is(err, ErrMCPInvalidURL) {
+		t.Errorf("expected ErrMCPInvalidURL for empty url, got %v", err)
+	}
+
+	// nil body is treated as empty URL.
+	if _, err := s.TestServer("id-1", nil); !errors.Is(err, ErrMCPInvalidURL) {
+		t.Errorf("expected ErrMCPInvalidURL for nil body, got %v", err)
+	}
+
+	// Invalid server type is rejected before connecting.
+	if _, err := s.TestServer("id-1", &TestServerRequest{URL: "http://example.com/sse", ServerType: "stdio"}); !errors.Is(err, ErrMCPInvalidType) {
+		t.Errorf("expected ErrMCPInvalidType for bad type, got %v", err)
+	}
+}
+
+func TestImportServersValidationErrors(t *testing.T) {
+	s := &MCPService{}
+
+	// Missing url and type produce an in-band error per entry rather than
+	// failing the batch.
+	configs := map[string]map[string]interface{}{
+		"missing-fields": {"foo": "bar"},
+		"bad-type":       {"url": "http://example.com", "type": "stdio"},
+	}
+	results, err := s.ImportServers("tenant-1", configs, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+	for _, r := range results {
+		if r.Success {
+			t.Errorf("expected failure result for %q", r.Server)
+		}
+		if r.Server == "missing-fields" && !strings.Contains(r.Message, "Missing required fields") {
+			t.Errorf("unexpected message for missing-fields: %q", r.Message)
+		}
+		if r.Server == "bad-type" && !strings.Contains(r.Message, "Unsupported MCP server type") {
+			t.Errorf("unexpected message for bad-type: %q", r.Message)
+		}
+	}
+}
 
 func TestPaginateMCPServersNegativeValuesMatchPythonSlice(t *testing.T) {
 	servers := makeMCPServers(13)
