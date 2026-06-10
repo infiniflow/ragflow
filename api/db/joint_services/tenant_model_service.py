@@ -17,7 +17,6 @@ import logging
 import os
 import enum
 import json
-from peewee import IntegrityError
 from common import settings
 from common.constants import ActiveStatusEnum, LLMType, MINERU_DEFAULT_CONFIG, MINERU_ENV_KEYS, OPENDATALOADER_DEFAULT_CONFIG, OPENDATALOADER_ENV_KEYS, PADDLEOCR_DEFAULT_CONFIG, PADDLEOCR_ENV_KEYS
 from api.db.services.tenant_llm_service import TenantService
