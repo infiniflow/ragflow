@@ -354,12 +354,7 @@ def list_provider_instances(tenant_id: str, provider_name: str):
             "status": instance_obj.status,
         })
 
-    active_instances = [instance for instance in instances if instance["status"] == ActiveStatusEnum.ACTIVE.value]
-    inactive_instances = [instance for instance in instances if instance["status"] == ActiveStatusEnum.INACTIVE.value]
-    active_instances.sort(key=lambda x: x["instance_name"])
-    inactive_instances.sort(key=lambda x: x["instance_name"])
-
-    return True, active_instances + inactive_instances
+    return True, instances
 
 
 async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=None, region: str=None, model_info: list[dict]=None):
@@ -637,11 +632,7 @@ def list_instance_models(tenant_id: str, provider_name: str, instance_name: str,
                 "max_tokens": extra_fields.get("max_tokens", 8192),
                 "status": model_info_dict["status"],
             })
-    active_models = [model for model in models if model["status"] == ActiveStatusEnum.ACTIVE.value]
-    inactive_models = [model for model in models if model["status"] == ActiveStatusEnum.INACTIVE.value]
-    active_models.sort(key=lambda x: x["name"])
-    inactive_models.sort(key=lambda x: x["name"])
-    return True, active_models + inactive_models
+    return True, models
 
 
 def add_model_to_instance(tenant_id: str, provider_name: str, instance_name: str, model_name: str, model_type: str|list[str], max_tokens: int=8192, extra: dict=None):
