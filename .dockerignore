@@ -27,9 +27,6 @@ docker/oceanbase/
 docker/seekdb/
 
 # ── Go and C++ build outputs ────────────────────────────────────────────────
-# Go binaries (server_main, admin_server, ragflow_cli) are NOT excluded —
-# they are pre-built on the host / in CI and required at runtime for
-# hybrid (Go+Python) deployments.
 internal/cpp/build/
 internal/cpp/cmake-build-release/
 internal/cpp/cmake-build-debug/
