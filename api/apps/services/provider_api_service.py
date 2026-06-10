@@ -354,12 +354,7 @@ def list_provider_instances(tenant_id: str, provider_name: str):
             "status": instance_obj.status,
         })
 
-    active_instances = [instance for instance in instances if instance["status"] == ActiveStatusEnum.ACTIVE.value]
-    inactive_instances = [instance for instance in instances if instance["status"] == ActiveStatusEnum.INACTIVE.value]
-    active_instances.sort(key=lambda x: x["instance_name"])
-    inactive_instances.sort(key=lambda x: x["instance_name"])
-
-    return True, active_instances + inactive_instances
+    return True, instances
 
 
 async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=None, region: str=None, model_info: list[dict]=None):
