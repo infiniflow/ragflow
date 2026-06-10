@@ -422,24 +422,6 @@ func parseHostPort(hostPort string) (string, int, error) {
 	return host, port, nil
 }
 
-// looksLikeSQL checks if a string looks like a SQL command
-func looksLikeSQL(s string) bool {
-	s = strings.ToUpper(strings.TrimSpace(s))
-	sqlPrefixes := []string{
-		"LIST ", "SHOW ", "CREATE ", "DROP ", "ALTER ",
-		"LOGIN ", "REGISTER ", "PING", "GRANT ", "REVOKE ",
-		"SET ", "UNSET ", "UPDATE ", "DELETE ", "INSERT ",
-		"SELECT ", "DESCRIBE ", "EXPLAIN ", "ADD ", "ENABLE ", "DISABLE ", "CHAT ", "USE", "THINK",
-		"REMOVE ",
-	}
-	for _, prefix := range sqlPrefixes {
-		if strings.HasPrefix(s, prefix) {
-			return true
-		}
-	}
-	return false
-}
-
 // PrintUsage prints the CLI usage information
 func PrintUsage() {
 	fmt.Println(`RAGFlow CLI Client
@@ -509,11 +491,6 @@ type CLI struct {
 	CurrentModel       *CurrentModel      // Current model configuration
 	Config             *CommandLineConfig
 }
-
-// NewCLI creates a new CLI instance
-//func NewCLI() (*CLI, error) {
-//	return NewCLIWithArgs(nil)
-//}
 
 func NewCLIWithConfig(commandLineConfig *CommandLineConfig) (*CLI, error) {
 	// Create liner first
