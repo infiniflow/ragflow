@@ -21,6 +21,7 @@ import (
 	"log"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/entity/models"
 	"strings"
 	"time"
 
@@ -34,7 +35,7 @@ import (
 )
 
 var DB *gorm.DB
-var modelProviderManager *entity.ProviderManager
+var modelProviderManager *models.ProviderManager
 
 // LLMFactoryConfig represents a single LLM factory configuration
 type LLMFactoryConfig struct {
@@ -106,8 +107,8 @@ func InitDB() error {
 	sqlDB.SetMaxOpenConns(100)
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
-	// Auto migrate all models
-	models := []interface{}{
+	// Auto migrate all dataModels
+	dataModels := []interface{}{
 		&entity.User{},
 		&entity.Tenant{},
 		&entity.UserTenant{},
@@ -150,7 +151,7 @@ func InitDB() error {
 		&entity.TenantModelGroup{},
 	}
 
-	for _, m := range models {
+	for _, m := range dataModels {
 		if err = autoMigrateSafely(DB, m); err != nil {
 			return fmt.Errorf("failed to migrate model %T: %w", m, err)
 		}
@@ -163,11 +164,14 @@ func InitDB() error {
 
 	common.Info("Database connected and migrated successfully")
 
-	modelProviderManager, err = entity.NewProviderManager("conf/models")
+	err = models.InitProviderManager("conf/models")
 	if err != nil {
 		log.Fatal("Failed to load model providers:", err)
 	}
+
+	modelProviderManager = models.GetProviderManager()
 	common.Info("Model providers loaded successfully")
+
 	return nil
 }
 
@@ -177,7 +181,7 @@ func GetDB() *gorm.DB {
 }
 
 // GetModelProviderManager get database instance
-func GetModelProviderManager() *entity.ProviderManager {
+func GetModelProviderManager() *models.ProviderManager {
 	return modelProviderManager
 }
 

@@ -74,6 +74,9 @@ function ProviderCard({
   ) => void;
 }) {
   const { data: instances } = useFetchProviderInstances(provider.name);
+  if (!instances || instances.length <= 0) {
+    return null;
+  }
 
   return (
     <div
@@ -90,7 +93,6 @@ function ProviderCard({
           </div>
         </div>
       </div>
-
       {/* Instances */}
       {instances.length > 0 && (
         <div className="border-t border-border-button">

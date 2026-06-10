@@ -270,7 +270,7 @@ func (v *VoyageModel) Rerank(modelName *string, query string, documents []string
 	return rerankResponse, nil
 }
 
-func (v *VoyageModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (v *VoyageModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
 
