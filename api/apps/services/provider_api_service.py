@@ -105,6 +105,9 @@ def list_providers(tenant_id: str, all_available: bool = False):
                 for llm in factory_info.get("llm", [])
                 for model_type in _factory_model_types(llm)
             ))
+            if name in ["MinerU", "PaddleOCR", "OpenDataLoader"]:
+                model_types.append("ocr")
+
             provider = {
                 "model_types": model_types,
                 "name": factory_info["name"],
