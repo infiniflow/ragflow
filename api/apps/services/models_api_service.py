@@ -16,6 +16,7 @@
 import os
 import logging
 
+from api.db.joint_services.tenant_model_service import ensure_mineru_from_env, ensure_paddleocr_from_env
 from common.constants import ActiveStatusEnum, LLMType
 from common.settings import FACTORY_LLM_INFOS
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
@@ -300,6 +301,9 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
     e, tenant = TenantService.get_by_id(tenant_id)
     if not e:
         return False, "Tenant not found"
+
+    ensure_mineru_from_env(tenant_id)
+    ensure_paddleocr_from_env(tenant_id)
 
     if model_type_filter:
         model_type_filter = model_type_filter.lower()

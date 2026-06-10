@@ -318,7 +318,7 @@ func (j *JinaModel) Rerank(modelName *string, query string, documents []string, 
 	return &rerankResponse, nil
 }
 
-func (j *JinaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (j *JinaModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 
 	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -355,11 +355,11 @@ func (j *JinaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	// convert result["data"] to []map[string]interface{}
-	models := make([]string, 0)
+	models := make([]ListModelResponse, 0)
 	for _, model := range result["data"].([]interface{}) {
 		modelMap := model.(map[string]interface{})
 		modelName := modelMap["name"].(string)
-		models = append(models, modelName)
+		models = append(models, ListModelResponse{Name: modelName})
 	}
 
 	return models, nil
