@@ -306,6 +306,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				memory.GET("/:memory_id", r.memoryHandler.GetMemoryMessages)
 			}
 
+			// This pr is implemented in another pr
 			// TODO: Message routes - Implementation pending - depends on CanvasService, TaskService and embedding engine
 			// message := v1.Group("/messages")
 			// {
