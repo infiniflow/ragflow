@@ -23,7 +23,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -37,6 +36,12 @@ import (
 
 type DeepInfraModel struct {
 	baseModel BaseModel
+}
+
+type deepInfraModelListItem struct {
+	ModelName    string `json:"model_name"`
+	ReportedType string `json:"reported_type"`
+	MaxTokens    *int   `json:"max_tokens"`
 }
 
 func NewDeepInfraModel(baseURL map[string]string, urlSuffix URLSuffix) *DeepInfraModel {
@@ -841,6 +846,9 @@ func (d *DeepInfraModel) ParseFile(modelName *string, content []byte, url *strin
 }
 
 func (d *DeepInfraModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
 
 	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -848,22 +856,16 @@ func (d *DeepInfraModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, 
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.Models)
 
-	reqBody := map[string]interface{}{}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
 
 	resp, err := d.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -871,7 +873,7 @@ func (d *DeepInfraModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, 
 	}
 	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
@@ -880,21 +882,21 @@ func (d *DeepInfraModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, 
 		return nil, fmt.Errorf("failed to read response: %s", string(body))
 	}
 
-	// Parse response
-	var result []struct {
-		ModelName string `json:"model_name"`
-	}
+	var result []deepInfraModelListItem
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
-	models := make([]ListModelResponse, 0)
+	models := make([]ListModelResponse, 0, len(result))
 	for _, model := range result {
-		if model.ModelName != "" {
-			models = append(models, ListModelResponse{
-				Name: model.ModelName,
-			})
+		modelName := strings.TrimSpace(model.ModelName)
+		if modelName == "" {
+			continue
 		}
+		models = append(models, ListModelResponse{
+			Name:      modelName,
+			MaxTokens: model.MaxTokens,
+		})
 	}
 
 	return models, nil
