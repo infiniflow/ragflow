@@ -789,19 +789,29 @@ func (b *BaiduModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, erro
 	}
 
 	// Parse response
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	// convert result["data"] to []map[string]interface{}
-	models := make([]ListModelResponse, 0)
-	for _, model := range result["data"].([]interface{}) {
-		modelMap := model.(map[string]interface{})
-		modelName := modelMap["id"].(string)
-		models = append(models, ListModelResponse{
-			Name: modelName,
-		})
+	var models []ListModelResponse
+	for _, model := range modelList.Models {
+		modelName := model.ID
+		var modelResponse ListModelResponse
+		pm := GetProviderManager()
+		modelEntity := pm.GetModelByNameOrAlias(modelName)
+		if model.OwnedBy != "" {
+			modelName = model.ID + "@" + model.OwnedBy
+		}
+		modelResponse.Name = modelName
+		if modelEntity != nil {
+			modelResponse.Dimension = modelEntity.Dimension
+			modelResponse.MaxTokens = modelEntity.MaxTokens
+			modelResponse.ModelTypes = modelEntity.ModelTypes
+			modelResponse.Thinking = modelEntity.Thinking
+		}
+
+		models = append(models, modelResponse)
 	}
 
 	return models, nil

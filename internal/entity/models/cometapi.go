@@ -245,18 +245,29 @@ type cometapiModelCatalogItem struct {
 }
 
 func parseCometAPIModelCatalog(body []byte) ([]ListModelResponse, error) {
-	var parsed cometapiModelCatalogResponse
-	if err := json.Unmarshal(body, &parsed); err != nil {
+	var modelList ModelList
+	if err := json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]ListModelResponse, 0, len(parsed.Data))
-	for _, model := range parsed.Data {
-		if model.ID != "" {
-			models = append(models, ListModelResponse{
-				Name: model.ID,
-			})
+	var models []ListModelResponse
+	for _, model := range modelList.Models {
+		modelName := model.ID
+		var modelResponse ListModelResponse
+		pm := GetProviderManager()
+		modelEntity := pm.GetModelByNameOrAlias(modelName)
+		if model.OwnedBy != "" {
+			modelName = model.ID + "@" + model.OwnedBy
 		}
+		modelResponse.Name = modelName
+		if modelEntity != nil {
+			modelResponse.Dimension = modelEntity.Dimension
+			modelResponse.MaxTokens = modelEntity.MaxTokens
+			modelResponse.ModelTypes = modelEntity.ModelTypes
+			modelResponse.Thinking = modelEntity.Thinking
+		}
+
+		models = append(models, modelResponse)
 	}
 	return models, nil
 }

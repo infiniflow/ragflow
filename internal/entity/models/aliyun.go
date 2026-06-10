@@ -637,18 +637,29 @@ func (a *AliyunModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, err
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
-	var modelList AliyunModelList
+	var modelList ModelList
 	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
 	var models []ListModelResponse
-	for _, model := range modelList.Output.Models {
-		modelName := model.ModelName
-		models = append(models, ListModelResponse{
-			Name: modelName,
-		})
+	for _, model := range modelList.Models {
+		modelName := model.ID
+		var modelResponse ListModelResponse
+		pm := GetProviderManager()
+		modelEntity := pm.GetModelByNameOrAlias(modelName)
+		if model.OwnedBy != "" {
+			modelName = model.ID + "@" + model.OwnedBy
+		}
+		modelResponse.Name = modelName
+		if modelEntity != nil {
+			modelResponse.Dimension = modelEntity.Dimension
+			modelResponse.MaxTokens = modelEntity.MaxTokens
+			modelResponse.ModelTypes = modelEntity.ModelTypes
+			modelResponse.Thinking = modelEntity.Thinking
+		}
+
+		models = append(models, modelResponse)
 	}
 
 	return models, nil
