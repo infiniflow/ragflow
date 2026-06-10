@@ -19,6 +19,7 @@ package handler
 import (
 	"errors"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -310,6 +311,89 @@ func (h *AgentHandler) DeleteAgentSessionItem(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    code,
 		"data":    ok,
+		"message": "success",
+	})
+}
+
+type deleteAgentSessionsRequest struct {
+	IDs       []string `json:"ids"`
+	DeleteAll bool     `json:"delete_all,omitempty"`
+}
+
+func (h *AgentHandler) DeleteAgentSessions(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	agentID := strings.TrimSpace(c.Param("agent_id"))
+	if agentID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeOperatingError,
+			"data":    nil,
+			"message": "agent_id is required",
+		})
+		return
+	}
+
+	var req deleteAgentSessionsRequest
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"data":    false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	result, code, err := h.agentService.DeleteAgentSessions(strings.TrimSpace(user.ID), agentID, req.IDs, req.DeleteAll)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	response := gin.H{"code": common.CodeSuccess}
+	if result != nil && result.Data != nil {
+		response["data"] = result.Data
+	}
+	if result != nil && result.Message != "" {
+		response["message"] = result.Message
+	}
+	c.JSON(http.StatusOK, response)
+}
+
+// TestDBConnection Test DB connection
+func (h *AgentHandler) TestDBConnection(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req service.TestDBConnectionRequest
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	code, err := h.agentService.TestDBConnection(user.ID, &req)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
 		"message": "success",
 	})
 }

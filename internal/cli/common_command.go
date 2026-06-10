@@ -713,16 +713,16 @@ func (c *CLI) AddAPIServer(cmd *Command) (ResponseIf, error) {
 		c.Config.APIClientConfig.APIServerMap[apiServerName].ApiToken = &apiServerToken
 	}
 
-	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-
 	if c.APIServerClientMap == nil {
 		c.APIServerClientMap = make(map[string]*HTTPClient)
 	}
 
 	if c.APIServerClientMap[apiServerName] != nil {
 		return nil, fmt.Errorf("api server: %s already exists", apiServerName)
+	}
+
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 
 	c.APIServerClientMap[apiServerName] = &HTTPClient{
@@ -786,6 +786,23 @@ func (c *CLI) AddAdminServer(cmd *Command) (ResponseIf, error) {
 	}
 	if adminServerPort != 0 {
 		c.Config.AdminClientConfig.AdminPort = adminServerPort
+	}
+
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+
+	c.AdminServerClient = &HTTPClient{
+		Host:           adminServerIP,
+		Port:           adminServerPort,
+		APIVersion:     "v1",
+		ConnectTimeout: 5 * time.Second,
+		ReadTimeout:    60 * time.Second,
+		VerifySSL:      false,
+		client: &http.Client{
+			Transport: transport,
+			Timeout:   300 * time.Second,
+		},
 	}
 
 	var result SimpleResponse
@@ -1026,4 +1043,63 @@ func FlattenMap(data map[string]interface{}, prefix string, result *[]map[string
 			*result = append(*result, resultItem)
 		}
 	}
+}
+
+func (c *CLI) UseAPIServer(cmd *Command) (ResponseIf, error) {
+	serverName, ok := cmd.Params["server_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("server_name not provided")
+	}
+
+	if c.Config.CLIMode == APIMode {
+		if c.Config.APIClientConfig.CurrentAPIServer == serverName {
+			return nil, fmt.Errorf("api server %s is already used", serverName)
+		}
+	}
+
+	var httpClient *HTTPClient
+	httpClient, ok = c.APIServerClientMap[serverName]
+	if !ok {
+		return nil, fmt.Errorf("api server %s not found", serverName)
+	}
+	if httpClient == nil {
+		return nil, fmt.Errorf("api server %s is nil", serverName)
+	}
+	var apiServerConfig *APIServerConfig
+	apiServerConfig, ok = c.Config.APIClientConfig.APIServerMap[serverName]
+	if !ok {
+		return nil, fmt.Errorf("api server %s not found in config", serverName)
+	}
+	if apiServerConfig == nil {
+		return nil, fmt.Errorf("api server %s is nil", serverName)
+	}
+
+	c.Config.APIClientConfig.CurrentAPIServer = serverName
+	c.Config.CLIMode = APIMode
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = fmt.Sprintf("switch to api server %s", serverName)
+	result.Duration = 0
+	return &result, nil
+
+}
+
+func (c *CLI) UseAdminServer(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode == AdminMode {
+		return nil, fmt.Errorf("already in admin mode")
+	}
+
+	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
+		return nil, fmt.Errorf("admin server not added")
+	}
+
+	c.Config.CLIMode = AdminMode
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "switch to admin server"
+	result.Duration = 0
+	return &result, nil
 }
