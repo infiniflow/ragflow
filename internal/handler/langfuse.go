@@ -25,9 +25,16 @@ import (
 	"ragflow/internal/service"
 )
 
+// langfuseServiceIface defines the LangfuseService methods used by LangfuseHandler.
+type langfuseServiceIface interface {
+	SetAPIKey(tenantID string, req *service.SetAPIKeyRequest) (map[string]interface{}, error)
+	GetAPIKey(tenantID string) (map[string]interface{}, error)
+	DeleteAPIKey(tenantID string) (bool, error)
+}
+
 // LangfuseHandler manages Langfuse credential endpoints.
 type LangfuseHandler struct {
-	langfuseService *service.LangfuseService
+	langfuseService langfuseServiceIface
 }
 
 // NewLangfuseHandler creates a LangfuseHandler.
