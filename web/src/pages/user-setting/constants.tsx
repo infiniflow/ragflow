@@ -31,6 +31,7 @@ export const LocalLlmFactories = [
   LLMFactory.Xinference,
   LLMFactory.LocalAI,
   LLMFactory.LMStudio,
+  LLMFactory.OMLX,
   LLMFactory.OpenAiAPICompatible,
   LLMFactory.TogetherAI,
   LLMFactory.Replicate,
