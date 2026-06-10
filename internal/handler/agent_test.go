@@ -794,6 +794,202 @@ func TestUpdateAgentTagsHandlerNoPermission(t *testing.T) {
 // ptr returns a pointer to the given int64.
 func ptr(v int64) *int64 { return &v }
 
+func TestGetAgentHandlerSuccess(t *testing.T) {
+	c, w, db := setupGinContextWithUserAndDB(t, http.MethodGet, "/api/v1/agents/canvas-1")
+	c.Params = gin.Params{{Key: "agent_id", Value: "canvas-1"}}
+
+	db.Create(&entity.UserCanvas{
+		ID:     "canvas-1",
+		UserID: "user-1",
+		Title:  sptr("My Agent"),
+	})
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.GetAgent(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected code %d, got %v: %v", common.CodeSuccess, resp["code"], resp["message"])
+	}
+	data, ok := resp["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected data map, got %T", resp["data"])
+	}
+	if data["id"] != "canvas-1" {
+		t.Fatalf("expected id canvas-1, got %v", data["id"])
+	}
+}
+
+func TestGetAgentHandlerNotFound(t *testing.T) {
+	c, w, _ := setupGinContextWithUserAndDB(t, http.MethodGet, "/api/v1/agents/no-such-canvas")
+	c.Params = gin.Params{{Key: "agent_id", Value: "no-such-canvas"}}
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.GetAgent(c)
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeOperatingError) {
+		t.Fatalf("expected code %d (operating error), got %v", common.CodeOperatingError, resp["code"])
+	}
+}
+
+func TestGetAgentHandlerNoPermission(t *testing.T) {
+	c, w, db := setupGinContextWithUserAndDB(t, http.MethodGet, "/api/v1/agents/canvas-private")
+	c.Params = gin.Params{{Key: "agent_id", Value: "canvas-private"}}
+
+	db.Create(&entity.UserCanvas{
+		ID:         "canvas-private",
+		UserID:     "user-other",
+		Permission: "me",
+		Title:      sptr("Private Agent"),
+	})
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.GetAgent(c)
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeOperatingError) {
+		t.Fatalf("expected code %d (operating error), got %v", common.CodeOperatingError, resp["code"])
+	}
+}
+
+func TestGetAgentLogsHandlerSuccess(t *testing.T) {
+	c, w, db := setupGinContextWithUserAndDB(t, http.MethodGet, "/api/v1/agents/canvas-1/logs/msg-1")
+	c.Params = gin.Params{{Key: "agent_id", Value: "canvas-1"}, {Key: "message_id", Value: "msg-1"}}
+
+	db.Create(&entity.UserCanvas{
+		ID:     "canvas-1",
+		UserID: "user-1",
+		Title:  sptr("Test Agent"),
+	})
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.GetAgentLogs(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected code %d, got %v: %v", common.CodeSuccess, resp["code"], resp["message"])
+	}
+	// Redis is nil in tests; service returns empty map
+	if _, ok := resp["data"].(map[string]interface{}); !ok {
+		t.Fatalf("expected data map, got %T: %v", resp["data"], resp["data"])
+	}
+}
+
+func TestGetAgentLogsHandlerNoPermission(t *testing.T) {
+	c, w, db := setupGinContextWithUserAndDB(t, http.MethodGet, "/api/v1/agents/canvas-private/logs/msg-1")
+	c.Params = gin.Params{{Key: "agent_id", Value: "canvas-private"}, {Key: "message_id", Value: "msg-1"}}
+
+	db.Create(&entity.UserCanvas{
+		ID:         "canvas-private",
+		UserID:     "user-other",
+		Permission: "me",
+		Title:      sptr("Private Agent"),
+	})
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.GetAgentLogs(c)
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeOperatingError) {
+		t.Fatalf("expected code %d (operating error), got %v", common.CodeOperatingError, resp["code"])
+	}
+}
+
+func TestGetAgentLogsHandlerMissingParams(t *testing.T) {
+	c, w, _ := setupGinContextWithUserAndDB(t, http.MethodGet, "/api/v1/agents/canvas-1/logs/")
+	// message_id intentionally empty
+	c.Params = gin.Params{{Key: "agent_id", Value: "canvas-1"}, {Key: "message_id", Value: ""}}
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.GetAgentLogs(c)
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeArgumentError) {
+		t.Fatalf("expected code %d (argument error), got %v", common.CodeArgumentError, resp["code"])
+	}
+}
+
+func TestDownloadAttachmentMissingID(t *testing.T) {
+	c, w, _ := setupGinContextWithUserAndDB(t, http.MethodGet, "/api/v1/agents/attachments//download")
+	c.Params = gin.Params{{Key: "attachment_id", Value: ""}}
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.DownloadAttachment(c)
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeArgumentError) {
+		t.Fatalf("expected code %d (argument error), got %v", common.CodeArgumentError, resp["code"])
+	}
+}
+
+func TestDownloadAttachmentStorageUnavailable(t *testing.T) {
+	c, w, _ := setupGinContextWithUserAndDB(t, http.MethodGet, "/api/v1/agents/attachments/report.pdf/download")
+	c.Params = gin.Params{{Key: "attachment_id", Value: "report.pdf"}}
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.DownloadAttachment(c)
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	// Storage is nil in unit tests → service returns an error
+	if resp["code"] == float64(common.CodeSuccess) {
+		t.Fatalf("expected non-success when storage unavailable, got code %v", resp["code"])
+	}
+}
+
+func TestDownloadAttachmentReturnsErrorBodyNotBlob(t *testing.T) {
+	c, w, _ := setupGinContextWithUserAndDB(t, http.MethodGet, "/api/v1/agents/attachments/report.pdf/download")
+	c.Params = gin.Params{{Key: "attachment_id", Value: "report.pdf"}}
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.DownloadAttachment(c)
+
+	// Storage is nil in unit tests; handler must return a JSON error body, not raw blob bytes.
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("expected JSON error body, got non-JSON: %s", w.Body.String())
+	}
+	if resp["code"] == float64(common.CodeSuccess) {
+		t.Fatalf("expected non-success code, got success with body: %v", resp)
+	}
+	// Security headers must not be set on the error path.
+	if w.Header().Get("X-Content-Type-Options") != "" {
+		t.Errorf("X-Content-Type-Options must not be set on error path")
+	}
+}
+
 // fakeAgentService satisfies the subset of AgentService used by the handler.
 // It is injected via a wrapper to avoid importing the real DAO (which requires a DB).
 type fakeAgentService struct {
