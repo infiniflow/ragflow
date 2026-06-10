@@ -335,12 +335,13 @@ func (h *AgentHandler) ListAgentVersions(c *gin.Context) {
 	}
 
 	ok, err := h.agentService.CheckCanvasAccess(user.ID, agentID)
-	if err != nil || !ok {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeOperatingError,
-			"data":    nil,
-			"message": "Agent not found or no permission.",
-		})
+	if err != nil {
+		common.Warn("check canvas access failed", zap.String("agent_id", agentID), zap.Error(err))
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeServerError, "data": false, "message": "Internal server error"})
+		return
+	}
+	if !ok {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeOperatingError, "data": nil, "message": "Agent not found or no permission."})
 		return
 	}
 
@@ -424,12 +425,13 @@ func (h *AgentHandler) GetAgentVersion(c *gin.Context) {
 	}
 
 	ok, err := h.agentService.CheckCanvasAccess(user.ID, agentID)
-	if err != nil || !ok {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeOperatingError,
-			"data":    nil,
-			"message": "Agent not found or no permission.",
-		})
+	if err != nil {
+		common.Warn("check canvas access failed", zap.String("agent_id", agentID), zap.Error(err))
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeServerError, "data": false, "message": "Internal server error"})
+		return
+	}
+	if !ok {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeOperatingError, "data": nil, "message": "Agent not found or no permission."})
 		return
 	}
 
@@ -486,12 +488,13 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 	}
 
 	ok, err := h.agentService.CheckCanvasAccess(user.ID, agentID)
-	if err != nil || !ok {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeOperatingError,
-			"data":    nil,
-			"message": "Agent not found or no permission.",
-		})
+	if err != nil {
+		common.Warn("check canvas access failed", zap.String("agent_id", agentID), zap.Error(err))
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeServerError, "data": false, "message": "Internal server error"})
+		return
+	}
+	if !ok {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeOperatingError, "data": nil, "message": "Agent not found or no permission."})
 		return
 	}
 
@@ -657,7 +660,12 @@ func (h *AgentHandler) GetAgent(c *gin.Context) {
 
 	canvas, err := h.agentService.GetAgent(user.ID, agentID)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": common.CodeOperatingError, "data": false, "message": err.Error()})
+		if errors.Is(err, gorm.ErrRecordNotFound) || err.Error() == "canvas not found" {
+			c.JSON(http.StatusOK, gin.H{"code": common.CodeOperatingError, "data": false, "message": "canvas not found"})
+		} else {
+			common.Warn("get agent failed", zap.String("agent_id", agentID), zap.Error(err))
+			c.JSON(http.StatusOK, gin.H{"code": common.CodeServerError, "data": false, "message": "Internal server error"})
+		}
 		return
 	}
 
@@ -688,7 +696,12 @@ func (h *AgentHandler) GetAgentLogs(c *gin.Context) {
 	}
 
 	ok, err := h.agentService.CheckCanvasAccess(user.ID, agentID)
-	if err != nil || !ok {
+	if err != nil {
+		common.Warn("check canvas access failed", zap.String("agent_id", agentID), zap.Error(err))
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeServerError, "data": false, "message": "Internal server error"})
+		return
+	}
+	if !ok {
 		c.JSON(http.StatusOK, gin.H{"code": common.CodeOperatingError, "data": false, "message": "Make sure you have permission to access the agent."})
 		return
 	}
@@ -764,7 +777,12 @@ func (h *AgentHandler) DownloadAttachment(c *gin.Context) {
 		return
 	}
 
-	ext := c.DefaultQuery("ext", "markdown")
+	// Derive extension from the storage object name to prevent client-driven
+	// MIME spoofing via the query parameter.
+	ext := utility.GetFileExtension(attachmentID)
+	if ext == "" {
+		ext = "markdown"
+	}
 
 	blob, err := h.agentService.DownloadAttachment(user.ID, attachmentID)
 	if err != nil {
@@ -776,5 +794,7 @@ func (h *AgentHandler) DownloadAttachment(c *gin.Context) {
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+url.QueryEscape(attachmentID))
 	c.Data(http.StatusOK, contentType, blob)
 }
