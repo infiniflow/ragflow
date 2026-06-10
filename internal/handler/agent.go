@@ -22,6 +22,8 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
+	"ragflow/internal/utility"
 	"strconv"
 	"strings"
 
@@ -36,19 +38,24 @@ import (
 
 // AgentHandler agent handler
 // fileUploader is the subset of FileService used by agent handlers.
-type fileUploader interface {
+type agentFileService interface {
 	UploadFile(tenantID, parentID string, files []*multipart.FileHeader) ([]map[string]interface{}, error)
+	DownloadAgentFile(tenantID, location string) ([]byte, error)
 }
 
 // AgentHandler agent handler
 type AgentHandler struct {
 	agentService *service.AgentService
-	fileService  fileUploader
+	fileService  agentFileService
 }
 
 // NewAgentHandler create agent handler
+
 func NewAgentHandler(agentService *service.AgentService, fileService *service.FileService) *AgentHandler {
-	return &AgentHandler{agentService: agentService, fileService: fileService}
+	return &AgentHandler{
+		agentService: agentService,
+		fileService:  fileService,
+	}
 }
 
 // ListAgents lists agent canvases for the current user.
@@ -655,14 +662,42 @@ func (h *AgentHandler) UpdateAgentTags(c *gin.Context) {
 	})
 }
 
-// GetPrompts returns the default prompts used by the agent.
-// @Summary Get Agent Prompts
-// @Description Returns the default prompts used by the agent, such as task analysis, plan generation, reflection, and citation guidelines.
-// @Tags agents
-// @Produce json
-// @Security ApiKeyAuth
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/agents/prompts [get]
+func (h *AgentHandler) DownloadAgentFile(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	fileID := c.Query("id")
+	if fileID == "" {
+		jsonError(c, common.CodeArgumentError, "id parameter is required")
+		return
+	}
+
+	blob, err := h.fileService.DownloadAgentFile(user.ID, fileID)
+	if err != nil {
+		jsonError(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	ext := utility.GetFileExtension(fileID)
+	contentType := utility.GetContentType(ext, "")
+	if contentType != "" {
+		c.Header("Content-Type", contentType)
+	} else {
+		c.Header("Content-Type", "application/octet-stream")
+	}
+
+	if utility.ShouldForceAttachment(ext, contentType) {
+		c.Header("X-Content-Type-Options", "nosniff")
+		encodedName := url.QueryEscape(fileID)
+		c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+encodedName)
+	}
+
+	c.Data(http.StatusOK, contentType, blob)
+}
+
 func (h *AgentHandler) GetPrompts(c *gin.Context) {
 	if _, errorCode, errorMessage := GetUser(c); errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
