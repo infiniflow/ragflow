@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import logging
+import time
 from collections.abc import Generator, Iterator
 from datetime import datetime, timezone
 from typing import Any
@@ -11,6 +13,9 @@ import requests
 from common.data_source.config import DocumentSource, INDEX_BATCH_SIZE, REQUEST_TIMEOUT_SECONDS
 from common.data_source.interfaces import LoadConnector, PollConnector, SlimConnectorWithPermSync
 from common.data_source.models import Document, SecondsSinceUnixEpoch, SlimDocument
+
+
+logger = logging.getLogger(__name__)
 
 
 class TrinoConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
@@ -37,6 +42,17 @@ class TrinoConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         self.batch_size = batch_size or INDEX_BATCH_SIZE
         self.session = requests.Session()
         self._credentials: dict[str, Any] = {}
+        logger.info(
+            "Initialized Trino connector server_url=%s catalog=%s schema=%s batch_size=%s content_columns=%s metadata_columns=%s has_id_column=%s has_timestamp_column=%s",
+            self.server_url,
+            self.catalog,
+            self.schema,
+            self.batch_size,
+            len(self.content_columns),
+            len(self.metadata_columns),
+            bool(self.id_column),
+            bool(self.timestamp_column),
+        )
 
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         self._credentials = credentials or {}
@@ -47,8 +63,12 @@ class TrinoConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             self.session.headers.update({"X-Trino-User": username})
         if token:
             self.session.headers.update({"Authorization": f"Bearer {token}"})
+            logger.info("Loaded Trino connector credentials auth_mode=bearer has_username=%s", bool(username))
         elif username and password:
             self.session.auth = (username, password)
+            logger.info("Loaded Trino connector credentials auth_mode=basic has_username=%s", bool(username))
+        else:
+            logger.info("Loaded Trino connector credentials auth_mode=none has_username=%s", bool(username))
         return None
 
     def validate_connector_settings(self) -> None:
@@ -94,23 +114,41 @@ class TrinoConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             yield self._document_from_row(row)
 
     def _query_rows(self) -> Iterator[dict[str, Any]]:
-        response = self.session.post(
-            urljoin(f"{self.server_url}/", "v1/statement"),
-            data=self.query,
-            headers=self._statement_headers(),
-            timeout=REQUEST_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        while True:
-            self._raise_for_trino_error(payload)
-            yield from self._rows_from_payload(payload)
-            next_uri = payload.get("nextUri")
-            if not next_uri:
-                break
-            response = self.session.get(next_uri, timeout=REQUEST_TIMEOUT_SECONDS)
+        started_at = time.perf_counter()
+        row_count = 0
+        logger.info("Starting Trino query catalog=%s schema=%s", self.catalog, self.schema)
+        try:
+            response = self.session.post(
+                urljoin(f"{self.server_url}/", "v1/statement"),
+                data=self.query,
+                headers=self._statement_headers(),
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            )
             response.raise_for_status()
             payload = response.json()
+            while True:
+                self._raise_for_trino_error(payload)
+                for row in self._rows_from_payload(payload):
+                    row_count += 1
+                    yield row
+                next_uri = payload.get("nextUri")
+                if not next_uri:
+                    break
+                response = self.session.get(next_uri, timeout=REQUEST_TIMEOUT_SECONDS)
+                response.raise_for_status()
+                payload = response.json()
+            logger.info(
+                "Finished Trino query rows=%s elapsed_seconds=%.3f",
+                row_count,
+                time.perf_counter() - started_at,
+            )
+        except Exception:
+            logger.exception(
+                "Trino query failed rows=%s elapsed_seconds=%.3f",
+                row_count,
+                time.perf_counter() - started_at,
+            )
+            raise
 
     def _statement_headers(self) -> dict[str, str]:
         headers = {"X-Trino-Source": "ragflow"}
@@ -120,8 +158,7 @@ class TrinoConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             headers["X-Trino-Schema"] = self.schema
         return headers
 
-    @staticmethod
-    def _raise_for_trino_error(payload: dict[str, Any]) -> None:
+    def _raise_for_trino_error(self, payload: dict[str, Any]) -> None:
         error = payload.get("error")
         if not error:
             return
@@ -129,6 +166,7 @@ class TrinoConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         name = error.get("errorName")
         if name:
             message = f"{name}: {message}"
+        logger.error("Trino returned query error error_name=%s message=%s", name, message)
         raise ValueError(message)
 
     @staticmethod
@@ -141,7 +179,7 @@ class TrinoConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         content_lines = [f"{column}: {row.get(column, '')}" for column in self.content_columns]
         metadata = {column: row.get(column) for column in self.metadata_columns}
         row_id = str(row.get(self.id_column) if self.id_column else self._row_hash(row))
-        updated_at = self._parse_datetime(row.get(self.timestamp_column)) if self.timestamp_column else datetime.now(timezone.utc)
+        updated_at = self._parse_datetime(row.get(self.timestamp_column)) if self.timestamp_column else self._parse_datetime(None)
         text = "\n".join(content_lines)
         blob = text.encode("utf-8")
         metadata.update(

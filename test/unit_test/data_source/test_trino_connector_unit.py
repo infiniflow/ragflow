@@ -51,6 +51,39 @@ class ErrorSession(FakeSession):
         return FakeResponse({"error": {"errorName": "USER_ERROR", "message": "bad query"}})
 
 
+class PaginatedSession(FakeSession):
+    def post(self, url: str, data: str, headers: dict[str, str], timeout: int) -> FakeResponse:
+        del timeout
+        self.calls.append(f"POST {url} {data} {headers.get('X-Trino-Catalog')}")
+        return FakeResponse(
+            {
+                "columns": [
+                    {"name": "id"},
+                    {"name": "title"},
+                    {"name": "body"},
+                    {"name": "updated_at"},
+                ],
+                "data": [["1", "Policy", "Quarterly policy text", "2026-06-01T10:00:00Z"]],
+                "nextUri": "https://trino.test/v1/statement/queued/2",
+            }
+        )
+
+    def get(self, url: str, timeout: int) -> FakeResponse:
+        del timeout
+        self.calls.append(f"GET {url}")
+        return FakeResponse(
+            {
+                "columns": [
+                    {"name": "id"},
+                    {"name": "title"},
+                    {"name": "body"},
+                    {"name": "updated_at"},
+                ],
+                "data": [["2", "Runbook", "Incident response steps", "2026-06-01T11:00:00Z"]],
+            }
+        )
+
+
 def make_connector() -> TrinoConnector:
     connector = TrinoConnector(
         server_url="https://trino.test",
@@ -103,6 +136,18 @@ def test_trino_connector_retrieves_slim_docs() -> None:
     batches = list(connector.retrieve_all_slim_docs_perm_sync())
 
     assert [[doc.id for doc in batch] for batch in batches] == [["trino:1"]]
+
+
+@pytest.mark.p1
+def test_trino_connector_follows_next_uri_pages() -> None:
+    connector = make_connector()
+    session = PaginatedSession()
+    connector.session = session
+
+    batches = list(connector.load_from_state())
+
+    assert [[doc.id for doc in batch] for batch in batches] == [["trino:1", "trino:2"]]
+    assert "GET https://trino.test/v1/statement/queued/2" in session.calls
 
 
 @pytest.mark.p1
