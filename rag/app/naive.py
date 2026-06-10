@@ -33,6 +33,7 @@ from common.constants import LLMType, MAXIMUM_PAGE_NUMBER
 from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import (
     ensure_mineru_from_env,
+    ensure_opendataloader_from_env,
     ensure_paddleocr_from_env,
     get_first_provider_model_name,
     get_model_config_from_provider_instance,
@@ -219,15 +220,8 @@ def by_opendataloader(
     if tenant_id:
         if not opendataloader_llm_name:
             try:
-                from api.db.joint_services.tenant_model_service import get_models_by_tenant_and_provider_and_model_type, ensure_opendataloader_from_env
-
-                env_name = ensure_opendataloader_from_env(tenant_id)
-                candidates = get_models_by_tenant_and_provider_and_model_type(tenant_id=tenant_id, provider_name="OpenDataLoader", model_type=LLMType.OCR)
-                if candidates:
-                    opendataloader_llm_name = candidates[0].llm_name
-                elif env_name:
-                    opendataloader_llm_name = env_name
-            except Exception as e:
+                opendataloader_llm_name = get_first_provider_model_name(tenant_id, "OpenDataLoader", LLMType.OCR) or ensure_opendataloader_from_env(tenant_id)
+            except Exception as e:  # best-effort fallback
                 logging.warning(f"fallback to env opendataloader: {e}")
 
         if opendataloader_llm_name:
