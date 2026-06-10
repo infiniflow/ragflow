@@ -32,6 +32,7 @@
     "@ant-design/icons": "^5.2.6",
     "@antv/g2": "^5.2.10",
     "@antv/g6": "^5.1.0",
+    "@extend-ai/react-docx": "^0.6.7",
     "@floating-ui/react": "^0.27.19",
     "@hookform/resolvers": "^3.9.1",
     "@js-preview/excel": "^1.7.14",
