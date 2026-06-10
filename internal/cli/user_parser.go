@@ -3692,12 +3692,21 @@ func (p *Parser) parseCheckProviderByKeyCommand() (*Command, error) {
 func (p *Parser) parseUseCommand() (*Command, error) {
 	p.nextToken() // consume USE
 
-	if p.curToken.Type != TokenModel {
-		return nil, fmt.Errorf("expected MODEL after USE")
+	switch p.curToken.Type {
+	case TokenModel:
+		return p.parseUseModel()
+	case TokenAPI:
+		return p.parseUseAPIServer()
+	case TokenAdmin:
+		return p.parseUseAdminServer()
+	default:
+		return nil, fmt.Errorf("expected MODEL or SKILL after USE")
 	}
+}
+
+func (p *Parser) parseUseModel() (*Command, error) {
 	p.nextToken() // consume MODEL
 
-	// Parse model identifier in format 'model@instance@provider'
 	compositeModelName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, fmt.Errorf("expected model identifier in format 'model@instance@provider': %w", err)
@@ -3711,6 +3720,36 @@ func (p *Parser) parseUseCommand() (*Command, error) {
 
 	cmd := NewCommand("use_model")
 	cmd.Params["composite_model_name"] = compositeModelName
+	return cmd, nil
+}
+
+func (p *Parser) parseUseAPIServer() (*Command, error) {
+	p.nextToken() // consume API
+
+	serverName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+	cmd := NewCommand("use_api_server")
+	cmd.Params["server_name"] = serverName
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+func (p *Parser) parseUseAdminServer() (*Command, error) {
+	p.nextToken() // consume ADMIN
+
+	cmd := NewCommand("use_admin_server")
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
 	return cmd, nil
 }
 

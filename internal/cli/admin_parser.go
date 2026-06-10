@@ -1674,6 +1674,18 @@ func (p *Parser) parseAdminSaveCommand() (*Command, error) {
 	}
 }
 
+func (p *Parser) parseAdminUseCommand() (*Command, error) {
+	p.nextToken() // consume USE
+	switch p.curToken.Type {
+	case TokenAPI:
+		return p.parseUseAPIServer()
+	case TokenAdmin:
+		return p.parseUseAdminServer()
+	default:
+		return nil, fmt.Errorf("expected MODEL or SKILL after USE")
+	}
+}
+
 func (p *Parser) parseStartIngestion() (*Command, error) {
 	p.nextToken() // consume Start
 

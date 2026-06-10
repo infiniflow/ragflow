@@ -764,7 +764,10 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       return {
         apiKey: cfg,
         baseUrl: values.paddleocr_api_url,
-        modelInfo: buildModelInfoFromValues(values),
+        modelInfo: buildModelInfoFromValues({
+          ...values,
+          model_type: ['ocr'],
+        }),
       };
     },
     submitTransform: (values) => {
@@ -780,7 +783,10 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         llm_factory: LLMFactory.PaddleOCR,
         api_key: cfg,
         api_base: '',
-        model_info: buildModelInfoFromValues(values),
+        model_info: buildModelInfoFromValues({
+          ...values,
+          model_type: ['ocr'],
+        }),
       };
     },
   },
