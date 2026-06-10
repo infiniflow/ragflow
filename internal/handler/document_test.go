@@ -681,3 +681,160 @@ func TestDownloadDocument_NotFound(t *testing.T) {
 		t.Fatalf("expected code %d, got %v", common.CodeDataError, resp["code"])
 	}
 }
+
+func TestUploadInfo_MissingInput(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &DocumentHandler{
+		documentService: &fakeDocumentService{},
+		datasetService:  service.NewDatasetService(),
+		fileService:     service.NewFileService(),
+	}
+	// No URL and no multipart file
+	c, w := setupGinContextWithUser("POST", "/api/v1/documents/upload", "")
+	h.UploadInfo(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["code"] != float64(common.CodeArgumentError) {
+		t.Fatalf("expected code %d (argument error), got %v", common.CodeArgumentError, resp["code"])
+	}
+}
+
+func TestUploadInfo_URLInvalidFormat(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &DocumentHandler{
+		documentService: &fakeDocumentService{},
+		datasetService:  service.NewDatasetService(),
+		fileService:     service.NewFileService(),
+	}
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/api/v1/documents/upload?url=not-a-url", nil)
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+	c.Set("user", &entity.User{ID: "user-1"})
+	c.Set("user_id", "user-1")
+
+	h.UploadInfo(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["code"] != float64(common.CodeDataError) {
+		t.Fatalf("expected code %d (data error for invalid URL), got %v", common.CodeDataError, resp["code"])
+	}
+}
+
+func TestBatchMetadataUpdate_Success(t *testing.T) {
+	db := setupHandlerAccessDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	gin.SetMode(gin.TestMode)
+
+	fake := &fakeDocumentService{}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  service.NewDatasetService(),
+	}
+
+	body := `{"updates":[{"key":"author","value":"alice"}],"deletes":[]}`
+	c, w := setupGinContextWithUser("PATCH", "/api/v1/datasets/ds-1/documents/metadatas", body)
+	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+
+	h.UpdateDocumentMetadatas(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected code %d, got %v: %v", common.CodeSuccess, resp["code"], resp["message"])
+	}
+}
+
+func TestBatchMetadataUpdate_NoPermission(t *testing.T) {
+	db := setupHandlerAccessDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	gin.SetMode(gin.TestMode)
+
+	h := &DocumentHandler{
+		documentService: &fakeDocumentService{},
+		datasetService:  service.NewDatasetService(),
+	}
+
+	body := `{"updates":[{"key":"author","value":"alice"}]}`
+	c, w := setupGinContextWithUser("PATCH", "/api/v1/datasets/ds-1/documents/metadatas", body)
+	c.Set("user_id", "other-user")
+	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+
+	h.UpdateDocumentMetadatas(c)
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["code"] != float64(common.CodeDataError) {
+		t.Fatalf("expected code %d (no permission), got %v", common.CodeDataError, resp["code"])
+	}
+}
+
+func TestBatchMetadataUpdate_UpdateMissingKey(t *testing.T) {
+	db := setupHandlerAccessDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	gin.SetMode(gin.TestMode)
+
+	h := &DocumentHandler{
+		documentService: &fakeDocumentService{},
+		datasetService:  service.NewDatasetService(),
+	}
+
+	body := `{"updates":[{"value":"no-key-field"}]}`
+	c, w := setupGinContextWithUser("POST", "/api/v1/datasets/ds-1/metadata/update", body)
+	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+
+	h.MetadataBatchUpdate(c)
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["code"] != float64(common.CodeDataError) {
+		t.Fatalf("expected code %d (missing key in update), got %v", common.CodeDataError, resp["code"])
+	}
+}
+
+func TestBatchMetadataUpdate_DeleteMissingKey(t *testing.T) {
+	db := setupHandlerAccessDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	gin.SetMode(gin.TestMode)
+
+	h := &DocumentHandler{
+		documentService: &fakeDocumentService{},
+		datasetService:  service.NewDatasetService(),
+	}
+
+	body := `{"deletes":[{"no_key_field":"x"}]}`
+	c, w := setupGinContextWithUser("POST", "/api/v1/datasets/ds-1/metadata/update", body)
+	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+
+	h.MetadataBatchUpdate(c)
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["code"] != float64(common.CodeDataError) {
+		t.Fatalf("expected code %d (missing key in delete), got %v", common.CodeDataError, resp["code"])
+	}
+}
