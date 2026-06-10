@@ -25,6 +25,7 @@ from quart import request
 
 from api.apps import login_required
 from api.db.joint_services.tenant_model_service import (
+    split_model_name,
     get_model_config_from_provider_instance,
     get_tenant_default_model_by_type,
 )
@@ -266,7 +267,7 @@ async def retrieval_test(tenant_id):
         if not KnowledgebaseService.accessible(kb_id=id, user_id=tenant_id):
             return get_error_data_result(f"You don't own the dataset {id}.")
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
-    embd_nms = list(set([TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]))
+    embd_nms = list(set([split_model_name(kb.embd_id)[0] for kb in kbs]))
     if len(embd_nms) != 1:
         return get_result(message="Datasets use different embedding models.", code=RetCode.DATA_ERROR)
     if "question" not in req:

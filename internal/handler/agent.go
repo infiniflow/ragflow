@@ -19,8 +19,11 @@ package handler
 import (
 	"errors"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
+	"ragflow/internal/utility"
 	"strconv"
 	"strings"
 
@@ -35,19 +38,24 @@ import (
 
 // AgentHandler agent handler
 // fileUploader is the subset of FileService used by agent handlers.
-type fileUploader interface {
+type agentFileService interface {
 	UploadFile(tenantID, parentID string, files []*multipart.FileHeader) ([]map[string]interface{}, error)
+	DownloadAgentFile(tenantID, location string) ([]byte, error)
 }
 
 // AgentHandler agent handler
 type AgentHandler struct {
 	agentService *service.AgentService
-	fileService  fileUploader
+	fileService  agentFileService
 }
 
 // NewAgentHandler create agent handler
+
 func NewAgentHandler(agentService *service.AgentService, fileService *service.FileService) *AgentHandler {
-	return &AgentHandler{agentService: agentService, fileService: fileService}
+	return &AgentHandler{
+		agentService: agentService,
+		fileService:  fileService,
+	}
 }
 
 // ListAgents lists agent canvases for the current user.
@@ -303,6 +311,89 @@ func (h *AgentHandler) DeleteAgentSessionItem(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    code,
 		"data":    ok,
+		"message": "success",
+	})
+}
+
+type deleteAgentSessionsRequest struct {
+	IDs       []string `json:"ids"`
+	DeleteAll bool     `json:"delete_all,omitempty"`
+}
+
+func (h *AgentHandler) DeleteAgentSessions(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	agentID := strings.TrimSpace(c.Param("agent_id"))
+	if agentID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeOperatingError,
+			"data":    nil,
+			"message": "agent_id is required",
+		})
+		return
+	}
+
+	var req deleteAgentSessionsRequest
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"data":    false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	result, code, err := h.agentService.DeleteAgentSessions(strings.TrimSpace(user.ID), agentID, req.IDs, req.DeleteAll)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	response := gin.H{"code": common.CodeSuccess}
+	if result != nil && result.Data != nil {
+		response["data"] = result.Data
+	}
+	if result != nil && result.Message != "" {
+		response["message"] = result.Message
+	}
+	c.JSON(http.StatusOK, response)
+}
+
+// TestDBConnection Test DB connection
+func (h *AgentHandler) TestDBConnection(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req service.TestDBConnectionRequest
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	code, err := h.agentService.TestDBConnection(user.ID, &req)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
 		"message": "success",
 	})
 }
@@ -567,14 +658,42 @@ func (h *AgentHandler) UpdateAgentTags(c *gin.Context) {
 	})
 }
 
-// GetPrompts returns the default prompts used by the agent.
-// @Summary Get Agent Prompts
-// @Description Returns the default prompts used by the agent, such as task analysis, plan generation, reflection, and citation guidelines.
-// @Tags agents
-// @Produce json
-// @Security ApiKeyAuth
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/agents/prompts [get]
+func (h *AgentHandler) DownloadAgentFile(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	fileID := c.Query("id")
+	if fileID == "" {
+		jsonError(c, common.CodeArgumentError, "id parameter is required")
+		return
+	}
+
+	blob, err := h.fileService.DownloadAgentFile(user.ID, fileID)
+	if err != nil {
+		jsonError(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	ext := utility.GetFileExtension(fileID)
+	contentType := utility.GetContentType(ext, "")
+	if contentType != "" {
+		c.Header("Content-Type", contentType)
+	} else {
+		c.Header("Content-Type", "application/octet-stream")
+	}
+
+	if utility.ShouldForceAttachment(ext, contentType) {
+		c.Header("X-Content-Type-Options", "nosniff")
+		encodedName := url.QueryEscape(fileID)
+		c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+encodedName)
+	}
+
+	c.Data(http.StatusOK, contentType, blob)
+}
+
 func (h *AgentHandler) GetPrompts(c *gin.Context) {
 	if _, errorCode, errorMessage := GetUser(c); errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)

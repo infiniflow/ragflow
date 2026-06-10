@@ -1464,12 +1464,7 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
         if not text:
             return None
         if section == "think":
-            state.think_buffer += text
-            if num_tokens_from_string(state.think_buffer) >= min_tokens:
-                out = state.think_buffer
-                state.think_buffer = ""
-                return out
-            return None
+            return text
         state.answer_buffer += text
         if num_tokens_from_string(state.answer_buffer) >= min_tokens:
             out = state.answer_buffer

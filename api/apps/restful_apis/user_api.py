@@ -27,10 +27,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from api.apps.auth import get_auth_client
 from api.db import FileType, UserTenantRole
-from api.db.db_models import TenantLLM
 from api.db.services.file_service import FileService
-from api.db.services.llm_service import get_init_tenant_llm
-from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
 from common.time_utils import current_timestamp, datetime_format, get_format_time
 from common.misc_utils import download_img, get_uuid
@@ -412,10 +409,6 @@ def rollback_user_registration(user_id):
             UserTenantService.delete_by_id(u[0].id)
     except Exception:
         pass
-    try:
-        TenantLLM.delete().where(TenantLLM.tenant_id == user_id).execute()
-    except Exception:
-        pass
 
 
 def user_register(user_id, user):
@@ -448,13 +441,13 @@ def user_register(user_id, user):
         "location": "",
     }
 
-    tenant_llm = get_init_tenant_llm(user_id)
+    # tenant_llm = get_init_tenant_llm(user_id)
 
     if not UserService.save(**user):
         return None
     TenantService.insert(**tenant)
     UserTenantService.insert(**usr_tenant)
-    TenantLLMService.insert_many(tenant_llm)
+    # TenantLLMService.insert_many(tenant_llm)
     FileService.insert(file)
     return UserService.query(email=user["email"])
 
