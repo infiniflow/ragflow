@@ -442,7 +442,7 @@ type DSModelList struct {
 	Models []DSModel `json:"data"`
 }
 
-func (d *DeepSeekModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (d *DeepSeekModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -493,9 +493,11 @@ func (d *DeepSeekModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	var models []string
+	var models []ListModelResponse
 	for _, model := range modelList.Models {
-		models = append(models, model.ID)
+		models = append(models, ListModelResponse{
+			Name: model.ID,
+		})
 	}
 
 	return models, nil

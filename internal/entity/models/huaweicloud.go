@@ -631,7 +631,7 @@ func (h *HuaweiCloudModel) ParseFile(modelName *string, content []byte, url *str
 	return nil, fmt.Errorf("%s, no such method", h.Name())
 }
 
-func (h *HuaweiCloudModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (h *HuaweiCloudModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -680,10 +680,10 @@ func (h *HuaweiCloudModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	models := make([]string, 0, len(parsed.Data))
+	models := make([]ListModelResponse, 0, len(parsed.Data))
 	for _, item := range parsed.Data {
 		if item.ID != "" {
-			models = append(models, item.ID)
+			models = append(models, ListModelResponse{Name: item.ID})
 		}
 	}
 	if len(models) == 0 {

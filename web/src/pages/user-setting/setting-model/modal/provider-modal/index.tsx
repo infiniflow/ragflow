@@ -1,15 +1,20 @@
 import { DynamicForm, DynamicFormRef } from '@/components/dynamic-form';
 import { Modal } from '@/components/ui/modal/modal';
-import { ToggleList } from '@/components/ui/toggle-list';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
+import { useAddInstanceModel } from '@/hooks/use-llm-request';
+import { IProviderModelItem } from '@/interfaces/request/llm';
+import { cn } from '@/lib/utils';
 import {
   useFetchInstanceNameSet,
   useHideWhenInstanceExists,
+  VerifyResult,
 } from '@/pages/user-setting/setting-model/hooks';
-import { memo, useRef } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FieldValues } from 'react-hook-form';
 import { LLMHeader } from '../../components/llm-header';
 import VerifyButton from '../verify-button';
+import { AddableToggleList } from './components/addable-toggle-list';
+import { useCustomModelFields } from './components/use-custom-model-fields';
 import {
   useListModelsOptions,
   useListModelsPicker,
@@ -36,6 +41,34 @@ const ProviderModal = ({
   const formRef = useRef<DynamicFormRef>(null);
   const { instanceNameSet } = useFetchInstanceNameSet(llmFactory);
   const hideWhenInstanceExists = useHideWhenInstanceExists(instanceNameSet);
+  const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
+  const scrollAnchorRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    setVerifyResult(null);
+    return () => {
+      setVerifyResult(null);
+    };
+  }, [visible]);
+
+  // When a verify result comes back, the VerifyButton renders new log
+  // content below the existing form. Scroll the modal's scrollable area
+  // to the bottom so the user actually sees the result. We walk up the
+  // DOM from a ref inside the scrollable container (the Modal renders
+  // it via a Radix Portal) and use rAF to wait for the new content to
+  // be laid out before measuring scrollHeight.
+  useEffect(() => {
+    if (!verifyResult || !scrollAnchorRef.current) {
+      return;
+    }
+    const scrollContainer =
+      scrollAnchorRef.current.closest<HTMLElement>('.overflow-y-auto');
+    if (!scrollContainer) {
+      return;
+    }
+    requestAnimationFrame(() => {
+      scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    });
+  }, [verifyResult]);
 
   // Field config, default values, doc link, and the LIST_MODEL_PROVIDERS
   // flag are all derived from the current llmFactory / mode / initialValues.
@@ -69,6 +102,7 @@ const ProviderModal = ({
     handleListOpenChange,
     handleSelectModel,
     handleToggleAll,
+    setModels,
   } = useListModelsPicker({
     visible,
     hasModelNameField,
@@ -79,6 +113,48 @@ const ProviderModal = ({
     config,
     formRef,
   });
+
+  // Mutation for adding a model to an existing instance (viewMode path)
+  const { addInstanceModel } = useAddInstanceModel();
+
+  // Dialog field schema for adding a custom model. Derived from
+  // `IProviderModelItem` (the shape of items in `listModelsOptions`),
+  // so the form automatically tracks the model interface. The hook lives
+  // next to the dialog so the schema is the single source of truth.
+  const customModelDialogFields = useCustomModelFields();
+
+  // Get existing model names for uniqueness validation
+  const existingNames = useMemo(() => models.map((m) => m.name), [models]);
+
+  // Handle adding a custom model
+  // - In viewMode, call the API to persist the model on the existing instance.
+  // - Always update the local `models` catalog so the new option is visible.
+  // - Selection is owned by `AddableToggleList` (it calls `handleSelectModel`
+  //   after `onAdd` resolves). Do NOT also push into `selectedModelItems`
+  //   here — that would race with the wrapper's toggle and the new option
+  //   would be inserted then immediately removed.
+  const handleAddCustomModel = useCallback(
+    async (item: IProviderModelItem) => {
+      if (viewMode && initialValues?.instance_name) {
+        await addInstanceModel({
+          provider_name: llmFactory,
+          instance_name: initialValues.instance_name,
+          model_name: item.name,
+          model_type: item.model_types,
+          max_tokens: item.max_tokens,
+          extra: item.features
+            ? {
+                is_tools: item.features.includes('is_tools'),
+              }
+            : undefined,
+        });
+      }
+      setModels((prev) =>
+        prev.some((m) => m.name === item.name) ? prev : [...prev, item],
+      );
+    },
+    [viewMode, initialValues, llmFactory, addInstanceModel, setModels],
+  );
 
   // Render-only: turn the fetched model list into ToggleList options with
   // the "All models" sentinel row at the top.
@@ -125,28 +201,39 @@ const ProviderModal = ({
         labelClassName="font-normal"
       >
         {hasModelNameField && (
-          <ToggleList
+          <AddableToggleList
             className="w-full"
             buttonClassName="self-end"
             searchable={listModelsOptions.length > 10}
-            btnText={hasModelNameField ? t('listModels') : 'Select an option'}
-            options={
-              hasModelNameField
-                ? listModelsOptions
-                : listModelsOptions.length > 0
-                  ? listModelsOptions
-                  : []
-            }
+            btnText={t('listModels')}
+            options={listModelsOptions}
             searchPlaceholder={t('listModelsSearchPlaceholder')}
             emptyText={t('listModelsEmpty')}
             searchLoading={listLoading}
             onOpenChange={handleListOpenChange}
             maxHeight={400}
+            dialogTitle={t('addCustomModelTitle')}
+            dialogFields={customModelDialogFields}
+            dialogSubmitText={tc('confirm')}
+            dialogCancelText={tc('cancel')}
+            onAdd={handleAddCustomModel}
+            handleSelectModel={handleSelectModel}
+            existingNames={existingNames}
           />
         )}
 
-        <VerifyButton onVerify={handleVerify} />
-
+        <div ref={scrollAnchorRef}>
+          <VerifyButton
+            onVerify={handleVerify}
+            verifyCallback={(result: VerifyResult | null) => {
+              setVerifyResult(result);
+            }}
+            className={cn({
+              '!flex flex-col ![position:inherit] ':
+                verifyResult && docLinkText && config.docLink,
+            })}
+          />
+        </div>
         <div
           className={
             docLinkText
@@ -159,7 +246,9 @@ const ProviderModal = ({
               href={config.docLink}
               target="_blank"
               rel="noreferrer"
-              className="text-primary hover:underline ml-24"
+              className={cn('text-primary hover:underline', {
+                'ml-24': !verifyResult,
+              })}
             >
               {docLinkText}
             </a>

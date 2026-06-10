@@ -476,7 +476,7 @@ func (v *VllmModel) Embed(modelName *string, texts []string, apiConfig *APIConfi
 	return embeddings, nil
 }
 
-func (v *VllmModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (v *VllmModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -537,11 +537,11 @@ func (v *VllmModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	// convert result["data"] to []map[string]interface{}
-	models := make([]string, 0)
+	models := make([]ListModelResponse, 0)
 	for _, model := range result["data"].([]interface{}) {
 		modelMap := model.(map[string]interface{})
 		modelName := modelMap["id"].(string)
-		models = append(models, modelName)
+		models = append(models, ListModelResponse{Name: modelName})
 	}
 
 	return models, nil

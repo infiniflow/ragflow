@@ -474,7 +474,7 @@ func (z *ZhipuAIModel) Embed(modelName *string, texts []string, apiConfig *APICo
 	return embeddings, nil
 }
 
-func (z *ZhipuAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (z *ZhipuAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -517,10 +517,10 @@ func (z *ZhipuAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]string, 0, len(modelList.Models))
+	models := make([]ListModelResponse, 0, len(modelList.Models))
 	for _, model := range modelList.Models {
 		modelName := model.ID
-		models = append(models, modelName)
+		models = append(models, ListModelResponse{Name: modelName})
 	}
 
 	return models, nil

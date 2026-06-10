@@ -312,7 +312,7 @@ func (t *TokenPonyModel) ChatStreamlyWithSender(modelName string, messages []Mes
 	return nil
 }
 
-func (t *TokenPonyModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (t *TokenPonyModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -357,7 +357,7 @@ func (t *TokenPonyModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	models := make([]string, 0, len(data))
+	models := make([]ListModelResponse, 0, len(data))
 	for _, m := range data {
 		modelMap, ok := m.(map[string]interface{})
 		if !ok {
@@ -367,7 +367,7 @@ func (t *TokenPonyModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		if !ok {
 			continue
 		}
-		models = append(models, id)
+		models = append(models, ListModelResponse{Name: id})
 	}
 	return models, nil
 }

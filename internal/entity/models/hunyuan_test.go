@@ -378,7 +378,7 @@ func TestHunyuanListModelsHappyPath(t *testing.T) {
 		t.Fatalf("ListModels: %v", err)
 	}
 	want := []string{"hunyuan-pro", "hunyuan-standard", "hunyuan-standard-256K"}
-	if strings.Join(models, ",") != strings.Join(want, ",") {
+	if joinModelNames(models, ",") != strings.Join(want, ",") {
 		t.Errorf("models=%v, want %v", models, want)
 	}
 }
