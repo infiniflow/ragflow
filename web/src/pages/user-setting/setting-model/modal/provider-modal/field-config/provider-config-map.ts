@@ -871,7 +871,10 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       return {
         apiKey: cfg,
         baseUrl: values.mineru_apiserver,
-        modelInfo: buildModelInfoFromValues(values),
+        modelInfo: buildModelInfoFromValues({
+          ...values,
+          model_type: ['ocr'],
+        }),
       };
     },
     submitTransform: (values) => {
@@ -887,7 +890,10 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         llm_factory: LLMFactory.MinerU,
         api_key: cfg,
         api_base: '',
-        model_info: buildModelInfoFromValues(values),
+        model_info: buildModelInfoFromValues({
+          ...values,
+          model_type: ['ocr'],
+        }),
       };
     },
   },

@@ -310,7 +310,7 @@ func (h *HunyuanModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	return nil
 }
 
-func (h *HunyuanModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (h *HunyuanModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -355,7 +355,7 @@ func (h *HunyuanModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	models := make([]string, 0, len(data))
+	models := make([]ListModelResponse, 0, len(data))
 	for _, m := range data {
 		modelMap, ok := m.(map[string]interface{})
 		if !ok {
@@ -365,7 +365,7 @@ func (h *HunyuanModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		if !ok {
 			continue
 		}
-		models = append(models, id)
+		models = append(models, ListModelResponse{Name: id})
 	}
 	return models, nil
 }

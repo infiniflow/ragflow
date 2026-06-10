@@ -299,7 +299,7 @@ type avianModelInfo struct {
 	ID string `json:"id"`
 }
 
-func (a *AvianModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (a *AvianModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -340,10 +340,12 @@ func (a *AvianModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]string, 0, len(result))
+	models := make([]ListModelResponse, 0, len(result))
 	for _, model := range result {
 		if model.ID != "" {
-			models = append(models, model.ID)
+			models = append(models, ListModelResponse{
+				Name: model.ID,
+			})
 		}
 	}
 	return models, nil

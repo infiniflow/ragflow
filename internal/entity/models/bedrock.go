@@ -777,7 +777,7 @@ type bedrockListModelsResponse struct {
 // configured credentials. The control plane lives at
 // bedrock.{region}.amazonaws.com (not bedrock-runtime), signs against
 // the "bedrock" service, and is GET-only.
-func (b *BedrockModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (b *BedrockModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -805,7 +805,7 @@ func (b *BedrockModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("bedrock: build request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
-	if err := signBedrockRequest(ctx, req, nil, creds, bedrockControlService, region); err != nil {
+	if err = signBedrockRequest(ctx, req, nil, creds, bedrockControlService, region); err != nil {
 		return nil, err
 	}
 
@@ -824,15 +824,17 @@ func (b *BedrockModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	var parsed bedrockListModelsResponse
-	if err := json.Unmarshal(respBody, &parsed); err != nil {
+	if err = json.Unmarshal(respBody, &parsed); err != nil {
 		return nil, fmt.Errorf("bedrock: parse ListModels response: %w", err)
 	}
-	models := make([]string, 0, len(parsed.ModelSummaries))
+	models := make([]ListModelResponse, 0, len(parsed.ModelSummaries))
 	for _, m := range parsed.ModelSummaries {
 		if m.ModelID == "" {
 			continue
 		}
-		models = append(models, m.ModelID)
+		models = append(models, ListModelResponse{
+			Name: m.ModelID,
+		})
 	}
 	return models, nil
 }

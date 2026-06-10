@@ -352,7 +352,7 @@ func (f *FishAudioModel) ParseFile(modelName *string, content []byte, url *strin
 	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
 
-func (f *FishAudioModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (f *FishAudioModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := f.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -399,9 +399,11 @@ func (f *FishAudioModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]string, 0, len(result.Items))
+	models := make([]ListModelResponse, 0, len(result.Items))
 	for _, item := range result.Items {
-		models = append(models, item.Title)
+		models = append(models, ListModelResponse{
+			Name: item.Title,
+		})
 	}
 
 	return models, nil

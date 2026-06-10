@@ -986,3 +986,47 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 		"data":    result,
 	})
 }
+
+func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := c.Param("dataset_id")
+	if datasetID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": "dataset_id is required",
+		})
+		return
+	}
+	if !h.datasetService.Accessible(datasetID, user.ID) {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": "You don't own the dataset " + datasetID,
+		})
+		return
+	}
+
+	var docIDS []string
+	if docIDsParam := c.Query("doc_ids"); docIDsParam != "" {
+		docIDS = strings.Split(docIDsParam, ",")
+	}
+
+	summary, err := h.documentService.GetMetadataSummary(datasetID, docIDS)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    common.CodeServerError,
+			"message": "Failed to  get metadata summary" + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    gin.H{"summary": summary},
+	})
+}
