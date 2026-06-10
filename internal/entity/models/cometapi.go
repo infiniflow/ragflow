@@ -244,34 +244,6 @@ type cometapiModelCatalogItem struct {
 	ID string `json:"id"`
 }
 
-func parseCometAPIModelCatalog(body []byte) ([]ListModelResponse, error) {
-	var modelList ModelList
-	if err := json.Unmarshal(body, &modelList); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	var models []ListModelResponse
-	for _, model := range modelList.Models {
-		modelName := model.ID
-		var modelResponse ListModelResponse
-		pm := GetProviderManager()
-		modelEntity := pm.GetModelByNameOrAlias(modelName)
-		if model.OwnedBy != "" {
-			modelName = model.ID + "@" + model.OwnedBy
-		}
-		modelResponse.Name = modelName
-		if modelEntity != nil {
-			modelResponse.Dimension = modelEntity.Dimension
-			modelResponse.MaxTokens = modelEntity.MaxTokens
-			modelResponse.ModelTypes = modelEntity.ModelTypes
-			modelResponse.Thinking = modelEntity.Thinking
-		}
-
-		models = append(models, modelResponse)
-	}
-	return models, nil
-}
-
 // ChatWithMessages sends multiple messages with roles and returns the response.
 func (c *CometAPIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
@@ -533,7 +505,13 @@ func (c *CometAPIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, e
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(resp.Body))
 	}
-	return parseCometAPIModelCatalog(resp.Body)
+
+	// Parse response
+	var modelList ModelList
+	if err = json.Unmarshal(resp.Body, &modelList); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	return ParseListModel(modelList), nil
 }
 
 // Balance queries CometAPI's quota service.
