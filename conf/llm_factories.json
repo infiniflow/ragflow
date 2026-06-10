@@ -1697,7 +1697,8 @@
             "tags": "LLM,IMAGE2TEXT",
             "status": "1",
             "llm": [],
-            "rank": "989"
+            "rank": "989",
+            "url": "https://openrouter.ai/api/v1"
         },
         {
             "name": "StepFun",
