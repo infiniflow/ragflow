@@ -310,8 +310,8 @@ type ppioModelInfo struct {
 }
 
 type ppioListModelsResponse struct {
-	Data  []ppioModelInfo `json:"data"`
-	Error interface{}     `json:"error"`
+	Data  []DSModel   `json:"data"`
+	Error interface{} `json:"error"`
 }
 
 func (p *PPIOModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
@@ -356,13 +356,7 @@ func (p *PPIOModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error
 		return nil, fmt.Errorf("ppio: upstream error: %v", result.Error)
 	}
 
-	models := make([]ListModelResponse, 0, len(result.Data))
-	for _, model := range result.Data {
-		if model.ID != "" {
-			models = append(models, ListModelResponse{Name: model.ID})
-		}
-	}
-	return models, nil
+	return ParseListModel(ModelList{Models: result.Data}), nil
 }
 
 func (p *PPIOModel) CheckConnection(apiConfig *APIConfig) error {

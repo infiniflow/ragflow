@@ -432,27 +432,7 @@ func (m *MinimaxModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, er
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	var models []ListModelResponse
-	for _, model := range modelList.Models {
-		modelName := model.ID
-		var modelResponse ListModelResponse
-		pm := GetProviderManager()
-		modelEntity := pm.GetModelByNameOrAlias(modelName)
-		if model.OwnedBy != "" {
-			modelName = model.ID + "@" + model.OwnedBy
-		}
-		modelResponse.Name = modelName
-		if modelEntity != nil {
-			modelResponse.Dimension = modelEntity.Dimension
-			modelResponse.MaxTokens = modelEntity.MaxTokens
-			modelResponse.ModelTypes = modelEntity.ModelTypes
-			modelResponse.Thinking = modelEntity.Thinking
-		}
-
-		models = append(models, modelResponse)
-	}
-
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 func (m *MinimaxModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

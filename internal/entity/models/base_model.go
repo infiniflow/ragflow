@@ -82,11 +82,14 @@ func (b *BaseModel) GetBaseURL(apiConfig *APIConfig) (string, error) {
 // ParseListModel Parse model list
 func ParseListModel(modelList ModelList) []ListModelResponse {
 	var models []ListModelResponse
+	pm := GetProviderManager()
 	for _, model := range modelList.Models {
 		modelName := model.ID
 		var modelResponse ListModelResponse
-		pm := GetProviderManager()
-		modelEntity := pm.GetModelByNameOrAlias(modelName)
+		var modelEntity *Model
+		if pm != nil {
+			modelEntity = pm.GetModelByNameOrAlias(modelName)
+		}
 		if model.OwnedBy != "" {
 			modelName = model.ID + "@" + model.OwnedBy
 		}
