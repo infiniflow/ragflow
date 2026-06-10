@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
@@ -285,9 +286,12 @@ func TestReplicateListModelsAndCheckConnection(t *testing.T) {
 			t.Errorf("Authorization=%q", got)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"next": "https://api.replicate.com/v1/models?cursor=next-page",
 			"results": []map[string]string{
-				{"owner": "meta", "name": "meta-llama-3-70b-instruct"},
+				{"owner": " meta ", "name": " meta-llama-3-70b-instruct "},
+				{"owner": "", "name": "missing-owner"},
 				{"owner": "replicate", "name": "hello-world"},
+				{"owner": "missing-name", "name": ""},
 			},
 		})
 	}))
@@ -305,6 +309,49 @@ func TestReplicateListModelsAndCheckConnection(t *testing.T) {
 	if err := model.CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {
 		t.Fatalf("CheckConnection: %v", err)
 	}
+}
+
+func TestReplicateListModelsRejectsMissingResults(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"next": nil})
+	}))
+	defer srv.Close()
+
+	apiKey := "test-key"
+	_, err := newReplicateForTest(srv.URL).ListModels(&APIConfig{ApiKey: &apiKey})
+	if err == nil || !strings.Contains(err.Error(), "results field is missing") {
+		t.Fatalf("err=%v, want missing results error", err)
+	}
+}
+
+func TestReplicateListModelsIntegration(t *testing.T) {
+	if os.Getenv("REPLICATE_LIST_MODELS_INTEGRATION") != "1" {
+		t.Skip("set REPLICATE_LIST_MODELS_INTEGRATION=1 to call the Replicate models API")
+	}
+
+	apiKey := strings.TrimSpace(os.Getenv("REPLICATE_API_TOKEN"))
+	if apiKey == "" {
+		t.Fatal("REPLICATE_API_TOKEN is required")
+	}
+
+	models, err := newReplicateForTest("https://api.replicate.com").ListModels(&APIConfig{ApiKey: &apiKey})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(models) == 0 {
+		t.Fatal("expected at least one Replicate model")
+	}
+
+	samples := make([]string, 0, 3)
+	for _, model := range models {
+		if model.Name == "" {
+			t.Fatal("model name should not be empty")
+		}
+		if len(samples) < 3 {
+			samples = append(samples, model.Name)
+		}
+	}
+	t.Logf("Replicate ListModels returned %d models; samples: %s", len(models), strings.Join(samples, ", "))
 }
 
 func TestReplicateUnsupportedMethods(t *testing.T) {
