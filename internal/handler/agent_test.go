@@ -18,6 +18,7 @@ package handler
 
 import (
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -508,6 +509,215 @@ func TestDeleteAgentSessionItemHandlerIgnoresSessionFromAnotherAgent(t *testing.
 	}
 }
 
+func TestDeleteAgentSessionsHandlerDeletesDuplicateIDsPartially(t *testing.T) {
+	c, w, db := setupGinContextWithUserAndDB(t, http.MethodDelete, "/api/v1/agents/canvas-1/sessions")
+	c.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/agents/canvas-1/sessions", strings.NewReader(`{"ids":["session-1","session-1"]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "agent_id", Value: "canvas-1"}}
+
+	db.Create(&entity.UserCanvas{
+		ID:     "canvas-1",
+		UserID: "user-1",
+		Title:  sptr("Test Agent"),
+	})
+	db.Create(&entity.API4Conversation{
+		ID:        "session-1",
+		DialogID:  "canvas-1",
+		UserID:    "user-1",
+		Message:   json.RawMessage(`[]`),
+		Reference: json.RawMessage(`[]`),
+	})
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.DeleteAgentSessions(c)
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected code %d, got %v: %v", common.CodeSuccess, resp["code"], resp["message"])
+	}
+	data, ok := resp["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected partial data object, got %T", resp["data"])
+	}
+	if data["success_count"] != float64(1) {
+		t.Fatalf("expected success_count 1, got %v", data["success_count"])
+	}
+	errorsList, ok := data["errors"].([]interface{})
+	if !ok || len(errorsList) != 1 {
+		t.Fatalf("expected one duplicate error, got %v", data["errors"])
+	}
+	if errorsList[0] != "Duplicate session ids: session-1" {
+		t.Fatalf("unexpected duplicate error: %v", errorsList[0])
+	}
+
+	var count int64
+	if err := db.Model(&entity.API4Conversation{}).Where("id = ?", "session-1").Count(&count).Error; err != nil {
+		t.Fatalf("failed to count deleted session: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected session-1 to be deleted, count=%d", count)
+	}
+}
+
+func TestDeleteAgentSessionsHandlerDeleteAll(t *testing.T) {
+	c, w, db := setupGinContextWithUserAndDB(t, http.MethodDelete, "/api/v1/agents/canvas-1/sessions")
+	c.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/agents/canvas-1/sessions", strings.NewReader(`{"delete_all":true}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "agent_id", Value: "canvas-1"}}
+
+	db.Create(&entity.UserCanvas{
+		ID:     "canvas-1",
+		UserID: "user-1",
+		Title:  sptr("Test Agent"),
+	})
+	db.Create(&entity.API4Conversation{
+		ID:        "session-1",
+		DialogID:  "canvas-1",
+		UserID:    "user-1",
+		Message:   json.RawMessage(`[]`),
+		Reference: json.RawMessage(`[]`),
+	})
+	db.Create(&entity.API4Conversation{
+		ID:        "session-2",
+		DialogID:  "canvas-1",
+		UserID:    "user-1",
+		Message:   json.RawMessage(`[]`),
+		Reference: json.RawMessage(`[]`),
+	})
+	db.Create(&entity.API4Conversation{
+		ID:        "session-other",
+		DialogID:  "canvas-other",
+		UserID:    "user-1",
+		Message:   json.RawMessage(`[]`),
+		Reference: json.RawMessage(`[]`),
+	})
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.DeleteAgentSessions(c)
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected code %d, got %v: %v", common.CodeSuccess, resp["code"], resp["message"])
+	}
+
+	var ownCount int64
+	if err := db.Model(&entity.API4Conversation{}).Where("dialog_id = ?", "canvas-1").Count(&ownCount).Error; err != nil {
+		t.Fatalf("failed to count own sessions: %v", err)
+	}
+	if ownCount != 0 {
+		t.Fatalf("expected all canvas-1 sessions to be deleted, count=%d", ownCount)
+	}
+
+	var otherCount int64
+	if err := db.Model(&entity.API4Conversation{}).Where("id = ?", "session-other").Count(&otherCount).Error; err != nil {
+		t.Fatalf("failed to count other session: %v", err)
+	}
+	if otherCount != 1 {
+		t.Fatalf("expected other agent session to remain, count=%d", otherCount)
+	}
+}
+
+func TestDeleteAgentSessionsHandlerRequiresOwner(t *testing.T) {
+	c, w, db := setupGinContextWithUserAndDB(t, http.MethodDelete, "/api/v1/agents/canvas-1/sessions")
+	c.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/agents/canvas-1/sessions", strings.NewReader(`{"ids":["session-1"]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "agent_id", Value: "canvas-1"}}
+
+	db.Create(&entity.UserCanvas{
+		ID:         "canvas-1",
+		UserID:     "user-2",
+		Permission: "team",
+		Title:      sptr("Team Agent"),
+	})
+	db.Create(&entity.API4Conversation{
+		ID:        "session-1",
+		DialogID:  "canvas-1",
+		UserID:    "user-1",
+		Message:   json.RawMessage(`[]`),
+		Reference: json.RawMessage(`[]`),
+	})
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.DeleteAgentSessions(c)
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeDataError) {
+		t.Fatalf("expected code %d, got %v: %v", common.CodeDataError, resp["code"], resp["message"])
+	}
+
+	var count int64
+	if err := db.Model(&entity.API4Conversation{}).Where("id = ?", "session-1").Count(&count).Error; err != nil {
+		t.Fatalf("failed to count session: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected session to remain, count=%d", count)
+	}
+}
+
+func TestTestDBConnectionHandlerMissingFields(t *testing.T) {
+	c, w, _ := setupGinContextWithUserAndDB(t, http.MethodPost, "/api/v1/agents/test_db_connection")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/agents/test_db_connection", strings.NewReader(`{"db_type":"mysql"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.TestDBConnection(c)
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeArgumentError) {
+		t.Fatalf("expected code %d, got %v: %v", common.CodeArgumentError, resp["code"], resp["message"])
+	}
+	if resp["data"] != nil {
+		t.Fatalf("expected nil data, got %v", resp["data"])
+	}
+	want := "required argument are missing: database,username,host,port,password; "
+	if resp["message"] != want {
+		t.Fatalf("expected message %q, got %v", want, resp["message"])
+	}
+}
+
+func TestTestDBConnectionHandlerRejectsLocalhost(t *testing.T) {
+	c, w, _ := setupGinContextWithUserAndDB(t, http.MethodPost, "/api/v1/agents/test_db_connection")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/agents/test_db_connection", strings.NewReader(`{
+		"db_type":"mysql",
+		"database":"rag_flow",
+		"username":"root",
+		"host":"localhost",
+		"port":3306,
+		"password":"infini_rag_flow"
+	}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.TestDBConnection(c)
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeDataError) {
+		t.Fatalf("expected code %d, got %v: %v", common.CodeDataError, resp["code"], resp["message"])
+	}
+	if resp["data"] != nil {
+		t.Fatalf("expected nil data, got %v", resp["data"])
+	}
+	message, ok := resp["message"].(string)
+	if !ok || !strings.Contains(message, "non-public address") {
+		t.Fatalf("expected non-public host message, got %v", resp["message"])
+	}
+}
+
 func TestUpdateAgentTagsHandlerSuccess(t *testing.T) {
 	c, w, db := setupGinContextWithUserAndDB(t, http.MethodPut, "/api/v1/agents/canvas-1/tags")
 	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/agents/canvas-1/tags", strings.NewReader(`{"tags":["alpha","beta","alpha"]}`))
@@ -770,9 +980,71 @@ func TestListAgentTemplates_RequiresAuth(t *testing.T) {
 	}
 }
 
+type fakeAgentFileService struct {
+	blob []byte
+	err  error
+}
+
+func (f *fakeAgentFileService) UploadFile(tenantID, parentID string, files []*multipart.FileHeader) ([]map[string]interface{}, error) {
+	return nil, nil
+}
+
+func (f *fakeAgentFileService) DownloadAgentFile(tenantID, location string) ([]byte, error) {
+	return f.blob, f.err
+}
+
+func TestDownloadAgentFile_Success(t *testing.T) {
+	c, w, _ := setupGinContextWithUserAndDB(t, http.MethodGet, "/api/v1/agents/download?id=test-file.pdf")
+
+	fakeFileSvc := &fakeAgentFileService{
+		blob: []byte("test content"),
+		err:  nil,
+	}
+
+	h := &AgentHandler{
+		agentService: service.NewAgentService(),
+		fileService:  fakeFileSvc,
+	}
+
+	h.DownloadAgentFile(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	if w.Header().Get("Content-Type") != "application/pdf" {
+		t.Errorf("expected Content-Type application/pdf, got %s", w.Header().Get("Content-Type"))
+	}
+
+	if w.Body.String() != "test content" {
+		t.Errorf("expected 'test content', got %s", w.Body.String())
+	}
+}
+
+func TestDownloadAgentFile_MissingID(t *testing.T) {
+	c, w, _ := setupGinContextWithUserAndDB(t, http.MethodGet, "/api/v1/agents/download")
+
+	h := &AgentHandler{
+		agentService: service.NewAgentService(),
+		fileService:  &fakeAgentFileService{},
+	}
+
+	h.DownloadAgentFile(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 (json error return), got %d", w.Code)
+	}
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if code, _ := resp["code"].(float64); code != float64(common.CodeArgumentError) {
+		t.Errorf("expected code 102, got %v", code)
+	}
+}
+
 func TestGetPrompts_Success(t *testing.T) {
 	c, w, _ := setupGinContextWithUserAndDB(t, http.MethodGet, "/api/v1/agents/prompts")
-	
+
 	// Create handler with fake or real service.
 	h := NewAgentHandler(service.NewAgentService(), nil)
 	h.GetPrompts(c)

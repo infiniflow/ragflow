@@ -1194,3 +1194,20 @@ func sanitizeFilename(name string) string {
 	}
 	return name
 }
+
+// DownloadAgentFile downloads an agent-generated file directly from MinIO without querying the database.
+func (s *FileService) DownloadAgentFile(tenantID, location string) ([]byte, error) {
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, fmt.Errorf("storage not initialized")
+	}
+
+	bucketName := fmt.Sprintf("%s-downloads", tenantID)
+
+	blob, err := storageImpl.Get(bucketName, location)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file from storage: %w", err)
+	}
+
+	return blob, nil
+}
