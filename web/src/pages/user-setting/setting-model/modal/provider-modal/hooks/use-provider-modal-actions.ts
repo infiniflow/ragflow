@@ -1,4 +1,6 @@
 import { DynamicFormRef } from '@/components/dynamic-form';
+import message from '@/components/ui/message';
+import { useTranslate } from '@/hooks/common-hooks';
 import { IModelInfo } from '@/interfaces/request/llm';
 import { VerifyResult } from '@/pages/user-setting/setting-model/hooks';
 import { RefObject, useCallback } from 'react';
@@ -81,10 +83,16 @@ export const useProviderModalActions = ({
   onVerify,
   onViewModeOk,
 }: ActionParams) => {
+  const { t } = useTranslate('setting');
+
   const handleVerify = useCallback(
     async (params: any) => {
       const values = formRef.current?.getValues() || params;
       if (!config.verifyTransform) {
+        return { isValid: null, logs: '' } as VerifyResult;
+      }
+      if (hasModelNameField && modelInfoList.length === 0) {
+        message.error(t('selectModelBeforeVerify'));
         return { isValid: null, logs: '' } as VerifyResult;
       }
       const verifyArgs = config.verifyTransform({
@@ -98,7 +106,15 @@ export const useProviderModalActions = ({
       const res = await onVerify({ ...params, ...verifyArgs });
       return (res || { isValid: null, logs: '' }) as VerifyResult;
     },
-    [config, onVerify, modelInfoList, formRef, baseUrlRegionMaps],
+    [
+      config,
+      onVerify,
+      modelInfoList,
+      formRef,
+      baseUrlRegionMaps,
+      hasModelNameField,
+      t,
+    ],
   );
 
   const handleSubmit = useCallback(
