@@ -389,6 +389,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				agents.GET("", r.agentHandler.ListAgents)
 				agents.GET("/prompts", r.agentHandler.GetPrompts)
 				agents.GET("/templates", r.agentHandler.ListTemplates)
+				agents.GET("/download", r.agentHandler.DownloadAgentFile)
 				agents.POST("/test_db_connection", r.agentHandler.TestDBConnection)
 				agents.GET("/:agent_id/versions", r.agentHandler.ListAgentVersions)
 				agents.GET("/:agent_id/versions/:version_id", r.agentHandler.GetAgentVersion)
