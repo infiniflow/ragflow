@@ -119,6 +119,31 @@ func (dao *API4ConversationDAO) Stats(tenantID, fromDate, toDate string, source 
 	return rows, err
 }
 
+func (dao *API4ConversationDAO) GetBySessionID(sessionID, agentID string) (*entity.API4Conversation, error) {
+	var result entity.API4Conversation
+	tx := DB.Where("id = ? AND dialog_id = ?", sessionID, agentID).Find(&result)
+	if tx.Error != nil {
+		return nil, tx.Error
+	}
+	if tx.RowsAffected == 0 {
+		return nil, nil
+	}
+	return &result, nil
+}
+
+// ListIDsByAgentID lists conversation IDs for one agent.
+func (dao *API4ConversationDAO) ListIDsByAgentID(agentID string) ([]string, error) {
+	var ids []string
+	err := DB.Model(&entity.API4Conversation{}).Where("dialog_id = ?", agentID).Pluck("id", &ids).Error
+	return ids, err
+}
+
+// DeleteBySessionIDAndAgentID deletes API4Conversations by sessionID and agentID
+func (dao *API4ConversationDAO) DeleteBySessionIDAndAgentID(sessionID, agentID string) (int64, error) {
+	result := DB.Where("id = ? AND dialog_id = ?", sessionID, agentID).Delete(&entity.API4Conversation{})
+	return result.RowsAffected, result.Error
+}
+
 // DeleteByDialogIDs deletes API4Conversations by dialog IDs (hard delete)
 func (dao *API4ConversationDAO) DeleteByDialogIDs(dialogIDs []string) (int64, error) {
 	if len(dialogIDs) == 0 {

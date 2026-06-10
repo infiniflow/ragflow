@@ -17,11 +17,29 @@
 package dao
 
 import (
+	"strings"
+	"time"
+
 	"ragflow/internal/entity"
 )
 
 // ChatSessionDAO chat session data access object
 type ChatSessionDAO struct{}
+
+type ListAgentSessionsParams struct {
+	AgentID    string
+	Page       int
+	PageSize   int
+	OrderBy    string
+	Desc       bool
+	SessionID  string
+	UserID     string
+	IncludeDSL bool
+	Keywords   string
+	FromDate   *time.Time
+	ToDate     *time.Time
+	ExpUserID  string
+}
 
 // NewChatSessionDAO create chat session DAO
 func NewChatSessionDAO() *ChatSessionDAO {
@@ -91,4 +109,108 @@ func (dao *ChatSessionDAO) DeleteByDialogIDs(dialogIDs []string) (int64, error) 
 	}
 	result := DB.Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&entity.ChatSession{})
 	return result.RowsAffected, result.Error
+}
+
+func (dao *ChatSessionDAO) ListAgentSessionNames(agentID, expUserID string) ([]map[string]interface{}, error) {
+	var rows []map[string]interface{}
+	err := DB.Model(&entity.API4Conversation{}).
+		Select("id", "name").
+		Where("dialog_id = ? AND exp_user_id = ?", agentID, expUserID).
+		Order("create_date DESC").
+		Find(&rows).Error
+	return rows, err
+}
+
+func normalizeAgentSessionOrderBy(orderBy string) string {
+	switch orderBy {
+	case "id":
+		return "id"
+	case "name":
+		return "name"
+	case "create_time":
+		return "create_time"
+	case "create_date":
+		return "create_date"
+	case "update_time":
+		return "update_time"
+	case "update_date":
+		return "update_date"
+	case "tokens":
+		return "tokens"
+	case "duration":
+		return "duration"
+	case "round":
+		return "round"
+	case "thumb_up":
+		return "thumb_up"
+	default:
+		return "update_time"
+	}
+}
+
+func (dao *ChatSessionDAO) ListAgentSessions(params ListAgentSessionsParams) (int64, []*entity.API4Conversation, error) {
+	query := DB.Model(&entity.API4Conversation{}).Where("dialog_id = ?", params.AgentID)
+	if !params.IncludeDSL {
+		query = query.Omit("dsl")
+	}
+
+	if params.SessionID != "" {
+		query = query.Where("id = ?", params.SessionID)
+	}
+
+	if params.UserID != "" {
+		query = query.Where("user_id = ?", params.UserID)
+	}
+
+	if params.Keywords != "" {
+		query = query.Where("LOWER(message) LIKE ?", "%"+strings.ToLower(params.Keywords)+"%")
+	}
+
+	dateColumn := "create_date"
+	if strings.HasPrefix(params.OrderBy, "update_") {
+		dateColumn = "update_date"
+	}
+
+	if params.FromDate != nil {
+		query = query.Where(dateColumn+" >= ?", *params.FromDate)
+	}
+
+	if params.ToDate != nil {
+		query = query.Where(dateColumn+" <= ?", *params.ToDate)
+	}
+
+	if params.ExpUserID != "" {
+		query = query.Where("exp_user_id = ?", params.ExpUserID)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return 0, nil, err
+	}
+
+	orderBy := normalizeAgentSessionOrderBy(params.OrderBy)
+	if params.Desc {
+		orderBy += " DESC"
+	} else {
+		orderBy += " ASC"
+	}
+
+	page := params.Page
+	if page <= 0 {
+		page = 1
+	}
+
+	pageSize := params.PageSize
+	if pageSize <= 0 {
+		pageSize = 30
+	}
+
+	var sessions []*entity.API4Conversation
+	err := query.
+		Order(orderBy).
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		Find(&sessions).Error
+
+	return total, sessions, err
 }

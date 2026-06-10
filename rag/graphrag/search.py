@@ -78,10 +78,18 @@ class KGSearch(Dealer):
                 continue
             if isinstance(ent["entity_kwd"], list):
                 ent["entity_kwd"] = ent["entity_kwd"][0]
+            # n_hop_with_weight may be absent (older chunks) or an empty string
+            # (the Infinity column default), neither of which json.loads handles.
+            n_hop_raw = ent.get("n_hop_with_weight") or "[]"
+            try:
+                n_hop_ents = json.loads(n_hop_raw)
+            except (json.JSONDecodeError, TypeError):
+                logging.warning(f"Failed to parse n_hop_with_weight for entity {ent.get('entity_kwd')}: {n_hop_raw}")
+                n_hop_ents = []
             res[ent["entity_kwd"]] = {
                 "sim": get_float(ent.get("_score", 0)),
                 "pagerank": get_float(ent.get("rank_flt", 0)),
-                "n_hop_ents": json.loads(ent.get("n_hop_with_weight", "[]")),
+                "n_hop_ents": n_hop_ents,
                 "description": ent.get("content_with_weight", "{}")
             }
         return res

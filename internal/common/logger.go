@@ -19,6 +19,7 @@ package common
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -93,7 +94,7 @@ func initPackageLogLevels(rootLevel zapcore.Level) {
 
 // Init initializes the global logger
 // Note: This requires zap to be installed: go get go.uber.org/zap
-func Init(level string) error {
+func Init(level string, logFile string) error {
 	zapLevel, err := parseZapLevel(level)
 	if err != nil {
 		zapLevel = zapcore.InfoLevel
@@ -118,14 +119,23 @@ func Init(level string) error {
 		EncodeCaller:   zapcore.ShortCallerEncoder, // Not used since CallerKey is empty
 	}
 
+	// Determine output paths
+	outputPaths := []string{"stdout"}
+	errorPaths := []string{"stderr"}
+	if logFile != "" {
+		logFile = filepath.Join("logs", logFile)
+		outputPaths = append(outputPaths, logFile)
+		errorPaths = append(errorPaths, logFile)
+	}
+
 	// Configure zap
 	config := zap.Config{
 		Level:            atomicLevel,
 		Development:      false,
 		Encoding:         "console",
 		EncoderConfig:    encoderConfig,
-		OutputPaths:      []string{"stdout"},
-		ErrorOutputPaths: []string{"stderr"},
+		OutputPaths:      outputPaths,
+		ErrorOutputPaths: errorPaths,
 	}
 
 	// Build logger

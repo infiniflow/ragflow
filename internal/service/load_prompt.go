@@ -31,8 +31,28 @@ var (
 	promptsBaseDir string
 )
 
-// thinkBlockRE is used to strip think blocks from LLM responses
-var thinkBlockRE = regexp.MustCompile(`<think>[\s\S]*?`)
+// thinkBlockRE strips think blocks from LLM responses.
+//
+// This mirrors the Python original
+//
+//	re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
+//
+// exactly: `.*` with re.DOTALL is greedy, so the regex consumes
+// everything from the start of the string up to and including the
+// LAST </think> on the input. The Go form uses [\s\S] (Go's
+// newline-aware any-char) and a greedy `*`. A non-greedy `*?` here
+// would diverge for responses containing more than one </think>
+// (e.g. malformed streams that re-emit a partial think block
+// after the real answer), stripping only the first and leaving the
+// rest of the response invisible to the caller.
+var thinkBlockRE = regexp.MustCompile(`^[\s\S]*</think>`)
+
+// jsonFenceRE matches markdown code fences around JSON responses.
+// Mirrors Python's re.sub(r"(`{3}json\n|`{3}\n*$)", ..., flags=re.DOTALL).
+// Note: `\n*` is intentionally narrower than Go's `\s*` — Python only
+// matches newlines, not other whitespace, so a closing fence followed
+// by trailing spaces (e.g. "```   \n") is left intact.
+var jsonFenceRE = regexp.MustCompile("```json\\n|```\\n*$")
 
 func init() {
 	// Strategy 1: Check working directory first (most reliable during development/tests)

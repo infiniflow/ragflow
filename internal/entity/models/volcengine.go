@@ -31,47 +31,50 @@ import (
 
 // VolcEngine implements ModelDriver for VolcEngine
 type VolcEngine struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client // Reusable HTTP client with connection pool
+	baseModel BaseModel
 }
 
 // NewVolcEngine creates a new VolcEngine model instance
 func NewVolcEngine(baseURL map[string]string, urlSuffix URLSuffix) *VolcEngine {
 	return &VolcEngine{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-				DisableCompression:  false,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: &http.Transport{
+					MaxIdleConns:        100,
+					MaxIdleConnsPerHost: 10,
+					IdleConnTimeout:     90 * time.Second,
+					DisableCompression:  false,
+				},
 			},
 		},
 	}
 }
 
-func (z *VolcEngine) NewInstance(baseURL map[string]string) ModelDriver {
-	return nil
+func (v *VolcEngine) NewInstance(baseURL map[string]string) ModelDriver {
+	return NewVolcEngine(baseURL, v.baseModel.URLSuffix)
 }
 
-func (z *VolcEngine) Name() string {
+func (v *VolcEngine) Name() string {
 	return "volcengine"
 }
 
 // ChatWithMessages sends multiple messages with roles and returns response
-func (z *VolcEngine) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (v *VolcEngine) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Chat)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -159,11 +162,9 @@ func (z *VolcEngine) ChatWithMessages(modelName string, messages []Message, apiC
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig != nil && apiConfig.ApiKey != nil {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -224,18 +225,20 @@ func (z *VolcEngine) ChatWithMessages(modelName string, messages []Message, apiC
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
-func (z *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (v *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
 	}
-
-	url := fmt.Sprintf("%s/chat/completions", z.BaseURL[region])
+	url := fmt.Sprintf("%s/chat/completions", resolvedBaseURL)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -332,7 +335,7 @@ func (z *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -439,17 +442,20 @@ type volcenginePromptTokensDetails struct {
 }
 
 // Embed embeds a list of texts into embeddings
-func (z *VolcEngine) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (v *VolcEngine) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Embedding)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Embedding)
 
 	var embeddings []EmbeddingData
 
@@ -491,7 +497,7 @@ func (z *VolcEngine) Embed(modelName *string, texts []string, apiConfig *APIConf
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-			resp, err := z.httpClient.Do(req)
+			resp, err := v.baseModel.httpClient.Do(req)
 			if err != nil {
 				return parsed, fmt.Errorf("failed to send request: %w", err)
 			}
@@ -525,52 +531,52 @@ func (z *VolcEngine) Embed(modelName *string, texts []string, apiConfig *APIConf
 }
 
 // Rerank calculates similarity scores between query and documents
-func (z *VolcEngine) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
+func (v *VolcEngine) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	return nil, fmt.Errorf("%s, Rerank not implemented", v.Name())
 }
 
 // TranscribeAudio transcribe audio
-func (o *VolcEngine) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+func (v *VolcEngine) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
 
-func (z *VolcEngine) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (v *VolcEngine) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", v.Name())
 }
 
 // AudioSpeech convert text to audio
-func (o *VolcEngine) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+func (v *VolcEngine) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
 
-func (z *VolcEngine) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (v *VolcEngine) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", v.Name())
 }
 
 // OCRFile OCR file
-func (m *VolcEngine) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (v *VolcEngine) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
 
 // ParseFile parse file
-func (z *VolcEngine) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (v *VolcEngine) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
 
-func (z *VolcEngine) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+func (v *VolcEngine) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	baseURL := z.BaseURL[region]
-	if baseURL == "" {
-		baseURL = z.BaseURL["default"]
+	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
+	baseURL := resolvedBaseURL
 	if baseURL == "" {
-		return nil, fmt.Errorf("volcengine: no base URL configured for region %q", region)
+		baseURL = resolvedBaseURL
 	}
-	modelsSuffix := strings.Trim(strings.TrimSpace(z.URLSuffix.Models), "/")
+	modelsSuffix := strings.Trim(strings.TrimSpace(v.baseModel.URLSuffix.Models), "/")
 	if modelsSuffix == "" {
 		return nil, fmt.Errorf("volcengine: models URL suffix is not configured")
 	}
@@ -585,11 +591,9 @@ func (z *VolcEngine) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -609,29 +613,32 @@ func (z *VolcEngine) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]string, 0, len(modelList.Models))
+	models := make([]ListModelResponse, 0, len(modelList.Models))
 	for _, model := range modelList.Models {
 		modelName := model.ID
 		if model.OwnedBy != "" {
 			modelName = model.ID + "@" + model.OwnedBy
 		}
-		models = append(models, modelName)
+		models = append(models, ListModelResponse{Name: modelName})
 	}
 
 	return models, nil
 }
 
-func (z *VolcEngine) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (v *VolcEngine) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
 
-func (z *VolcEngine) CheckConnection(apiConfig *APIConfig) error {
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+func (v *VolcEngine) CheckConnection(apiConfig *APIConfig) error {
+	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Files)
+	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Files)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -644,7 +651,7 @@ func (z *VolcEngine) CheckConnection(apiConfig *APIConfig) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -662,10 +669,10 @@ func (z *VolcEngine) CheckConnection(apiConfig *APIConfig) error {
 	return nil
 }
 
-func (z *VolcEngine) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (v *VolcEngine) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
 
-func (z *VolcEngine) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (v *VolcEngine) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", v.Name())
 }

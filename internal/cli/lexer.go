@@ -94,6 +94,12 @@ func (l *Lexer) NextToken() Token {
 	case '-':
 		tok = newToken(TokenDash, l.ch)
 		l.readChar()
+	case '[':
+		tok = newToken(TokenLBracket, l.ch)
+		l.readChar()
+	case ']':
+		tok = newToken(TokenRBracket, l.ch)
+		l.readChar()
 	case '\'':
 		tok.Type = TokenQuotedString
 		tok.Value = l.readQuotedString('\'')
@@ -215,8 +221,14 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenActive, Value: ident}
 	case "ADMIN":
 		return Token{Type: TokenAdmin, Value: ident}
+	case "SERVER":
+		return Token{Type: TokenServer, Value: ident}
+	case "API":
+		return Token{Type: TokenAPI, Value: ident}
 	case "ADD":
 		return Token{Type: TokenAdd, Value: ident}
+	case "HOST":
+		return Token{Type: TokenHost, Value: ident}
 	case "DELETE":
 		return Token{Type: TokenDelete, Value: ident}
 	case "PASSWORD":
@@ -267,6 +279,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenVars, Value: ident}
 	case "CONFIGS":
 		return Token{Type: TokenConfigs, Value: ident}
+	case "CONFIG":
+		return Token{Type: TokenConfig, Value: ident}
 	case "ENVS":
 		return Token{Type: TokenEnvs, Value: ident}
 	case "KEY":
@@ -343,6 +357,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenGet, Value: ident}
 	case "SEARCH":
 		return Token{Type: TokenSearch, Value: ident}
+	case "RETRIEVE":
+		return Token{Type: TokenRetrieve, Value: ident}
 	case "CURRENT":
 		return Token{Type: TokenCurrent, Value: ident}
 	case "VISION":
