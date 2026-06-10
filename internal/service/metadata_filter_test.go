@@ -17,6 +17,7 @@
 package service
 
 import (
+	"sort"
 	"testing"
 
 	"ragflow/internal/common"
@@ -454,7 +455,7 @@ func TestApplySingleConditionRelationalFallsBackToString(t *testing.T) {
 		val  string
 		want []string
 	}{
-		{op: ">", val: "banana", want: []string{"d-c"}},   // "cherry" > "banana"
+		{op: ">", val: "banana", want: []string{"d-c"}},        // "cherry" > "banana"
 		{op: "<", val: "cherry", want: []string{"d-a", "d-b"}}, // apple, banana
 		{op: ">=", val: "banana", want: []string{"d-b", "d-c"}},
 		{op: "<=", val: "banana", want: []string{"d-a", "d-b"}},

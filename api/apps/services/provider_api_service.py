@@ -25,7 +25,7 @@ from api.db.joint_services.tenant_model_service import get_model_config_from_pro
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
 from api.db.services.tenant_model_service import TenantModelService
-from rag.llm import EmbeddingModel, ChatModel, RerankModel, ModelMeta
+from rag.llm import ChatModel, EmbeddingModel, ModelMeta, OcrModel, RerankModel
 
 
 def _to_int(v, default=500):
@@ -33,6 +33,15 @@ def _to_int(v, default=500):
         return int(v)
     except (TypeError, ValueError):
         return default
+
+
+def _normalize_provider_base_url(provider_name: str, base_url: str | None):
+    if provider_name != "VLLM" or not base_url:
+        return base_url
+    base_url = base_url.strip().rstrip("/")
+    if not base_url.endswith("/v1"):
+        base_url += "/v1"
+    return base_url
 
 
 def list_providers(tenant_id: str, all_available: bool = False):
@@ -70,6 +79,8 @@ def list_providers(tenant_id: str, all_available: bool = False):
             }
             if factory_info["name"].lower() == "siliconflow":
                 provider["url"]["intl"] = factory_info_map.get("siliconflow_intl", {}).get("url", "https://api.siliconflow.com/v1")
+            elif factory_info["name"] == "Tongyi-Qianwen":
+                provider["url"]["intl"] = "https://dashscope-intl.aliyuncs.com/compatible-model/v1"
             providers.append(provider)
         providers.sort(key=lambda x: (factory_rank_mapping.get(x["name"]), x["name"]))
         return True, providers
@@ -96,6 +107,8 @@ def list_providers(tenant_id: str, all_available: bool = False):
             }
             if factory_info["name"].lower() == "siliconflow":
                 provider["url"]["intl"] = factory_info_map.get("siliconflow_intl", {}).get("url", "https://api.siliconflow.com/v1")
+            elif factory_info["name"] == "Tongyi-Qianwen":
+                provider["url"]["intl"] = "https://dashscope-intl.aliyuncs.com/compatible-model/v1"
             providers.append(provider)
     providers.sort(key=lambda x: (factory_rank_mapping.get(x["name"]), x["name"]))
     return True, providers
@@ -194,7 +207,7 @@ async def list_provider_models(provider_name: str, api_key: str = None, base_url
             )
         } for llm in factory_info[0]["llm"]]
 
-    model_base_url = base_url or factory_info[0].get("url", "")
+    model_base_url = _normalize_provider_base_url(provider_name, base_url) or factory_info[0].get("url", "")
     remote_models = []
     if provider_name in ModelMeta:
         remote_models = await ModelMeta[provider_name](api_key, model_base_url).get_model_list()
@@ -256,7 +269,7 @@ async def create_provider_instance(tenant_id: str, provider_name: str, instance_
     :param region: region
     :param model_info: model info, [{
         "model_type": ["chat"],  # support multiple
-        "model_name": "name"，
+        "model_name": "name",
         "max_tokens": 4096,
         "extra": {
             "field1": "value1",
@@ -267,6 +280,8 @@ async def create_provider_instance(tenant_id: str, provider_name: str, instance_
     """
     if not provider_name:
         return False, "Provider name is required"
+
+    base_url = _normalize_provider_base_url(provider_name, base_url)
 
     if instance_name == "default":
         return False, "Instance name cannot be 'default'"
@@ -352,7 +367,7 @@ async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=No
     :param region: region
     :param model_info: model info, [{
         "model_type": ["chat"],  # support multiple
-        "model_name": "name"，
+        "model_name": "name",
         "max_tokens": 4096,
         "extra": {
             "field1": "value1",
@@ -363,6 +378,8 @@ async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=No
     """
     if not provider_name:
         return False, "Provider name is required"
+
+    base_url = _normalize_provider_base_url(provider_name, base_url)
 
     if region and region == "intl" and provider_name.lower() == "siliconflow":
         target_factory_name = "siliconflow_intl"
@@ -381,19 +398,27 @@ async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=No
             "model_type": _type,
             "llm_name": model.get("model_name", ""),
         } for model in model_info if model for _type in model.get("model_type", []) ]
+        if not factory_llms:
+            return False, f"No valid models found for provider '{provider_name}'"
 
     # test if api key works
-    chat_passed, embd_passed, rerank_passed = False, False, False
+    chat_passed, embd_passed, rerank_passed, ocr_passed = False, False, False, False
     timeout_seconds = int(os.environ.get("LLM_TIMEOUT_SECONDS", 10))
     extra = {"provider": provider_name}
     msg = ""
+    if provider_name == "BaiduYiyan":
+        if isinstance(api_key, str):
+            try:
+                json.loads(api_key)
+            except (json.JSONDecodeError, TypeError):
+                api_key = {"yiyan_ak": api_key, "yiyan_sk": ""}
     api_key_str = api_key if isinstance(api_key, str) else json.dumps(api_key)
     for llm in factory_llms:
         if not embd_passed and llm["model_type"] == LLMType.EMBEDDING.value:
             assert provider_name in EmbeddingModel, f"Embedding model from {provider_name} is not supported yet."
             mdl = EmbeddingModel[provider_name](api_key_str, llm["llm_name"], base_url=base_url)
             try:
-                arr, tc = asyncio.wait_for(
+                arr, tc = await asyncio.wait_for(
                     asyncio.to_thread(mdl.encode, ["Test if the api key is available"]),
                     timeout=timeout_seconds,
                 )
@@ -401,6 +426,11 @@ async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=No
                     raise Exception("Fail")
                 embd_passed = True
             except Exception as e:
+                logging.exception(
+                    "Fail to access embedding model for provider=%s model=%s",
+                    provider_name,
+                    llm["llm_name"],
+                )
                 msg += f"\nFail to access embedding model({llm['llm_name']}) using this api key." + str(e)
         elif not chat_passed and llm["model_type"] == LLMType.CHAT.value:
             assert provider_name in ChatModel, f"Chat model from {provider_name} is not supported yet."
@@ -422,6 +452,11 @@ async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=No
                 else:
                     raise Exception("No valid response received")
             except Exception as e:
+                logging.exception(
+                    "Fail to access chat model for provider=%s model=%s",
+                    provider_name,
+                    llm["llm_name"],
+                )
                 msg += f"\nFail to access model({provider_name}/{llm['llm_name']}) using this api key." + str(e)
         elif not rerank_passed and llm["model_type"] == LLMType.RERANK.value:
             assert provider_name in RerankModel, f"Rerank model from {provider_name} is not supported yet."
@@ -436,12 +471,35 @@ async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=No
                 rerank_passed = True
                 logging.debug(f"passed model rerank {llm['llm_name']}")
             except Exception as e:
+                logging.exception(
+                    "Fail to access rerank model for provider=%s model=%s",
+                    provider_name,
+                    llm["llm_name"],
+                )
                 msg += f"\nFail to access model({provider_name}/{llm['llm_name']}) using this api key." + str(e)
-        if any([embd_passed, chat_passed, rerank_passed]):
+        elif not ocr_passed and llm["model_type"] == LLMType.OCR.value:
+            assert provider_name in OcrModel, f"OCR model from {provider_name} is not supported yet."
+            mdl = OcrModel[provider_name](key=api_key_str, model_name=llm["llm_name"], base_url=base_url)
+            try:
+                ok, reason = await asyncio.wait_for(
+                    asyncio.to_thread(mdl.check_available),
+                    timeout=timeout_seconds,
+                )
+                if not ok:
+                    raise RuntimeError(reason or "Model not available")
+                ocr_passed = True
+            except Exception as e:
+                logging.exception(
+                    "Fail to access OCR model for provider=%s model=%s",
+                    provider_name,
+                    llm["llm_name"],
+                )
+                msg += f"\nFail to access model({provider_name}/{llm['llm_name']})." + str(e)
+        if any([embd_passed, chat_passed, rerank_passed, ocr_passed]):
             msg = ""
             break
 
-    success = any([embd_passed, chat_passed, rerank_passed])
+    success = any([embd_passed, chat_passed, rerank_passed, ocr_passed])
     return success, "success" if success else msg
 
 
