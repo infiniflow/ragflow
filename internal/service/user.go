@@ -17,6 +17,7 @@
 package service
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -1116,7 +1117,12 @@ type UserTenantRelation struct {
  *	}
  */
 func (s *UserTenantService) GetUserTenantRelationByUserID(userID string) ([]*UserTenantRelation, error) {
-	relations, err := s.userTenantDAO.GetByUserID(userID)
+	return s.GetUserTenantRelationByUserIDWithContext(context.Background(), userID)
+}
+
+// GetUserTenantRelationByUserIDWithContext retrieves all user-tenant relationships for a given user ID with context.
+func (s *UserTenantService) GetUserTenantRelationByUserIDWithContext(ctx context.Context, userID string) ([]*UserTenantRelation, error) {
+	relations, err := s.userTenantDAO.GetByUserIDWithContext(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
