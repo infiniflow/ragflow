@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package mcpclient
+package utility
 
 import (
 	"context"
@@ -27,21 +27,19 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"ragflow/internal/utility"
 )
 
 // allowLoopbackForTests overrides the SSRF guard's resolver so 127.0.0.1
 // targets used by httptest are accepted by AssertURLSafe.
 func allowLoopbackForTests(t *testing.T) func() {
 	t.Helper()
-	orig := utility.LookupHost
-	utility.LookupHost = func(host string) ([]string, error) {
+	orig := LookupHost
+	LookupHost = func(host string) ([]string, error) {
 		// Return a public IPv4 so the guard sees the host as global; the
 		// httptest server is on loopback but we connect via raw URL.
 		return []string{"8.8.8.8"}, nil
 	}
-	return func() { utility.LookupHost = orig }
+	return func() { LookupHost = orig }
 }
 
 func TestFetchToolsStreamableHTTPJSON(t *testing.T) {

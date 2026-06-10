@@ -249,7 +249,12 @@ class LLM(ComponentBase):
 
         self.imgs = self._uniq_images(self.imgs + extracted_imgs)
         model_types = get_model_type_by_name(self._canvas.get_tenant_id(), self._param.llm_id)
-        model_type = LLMType.CHAT.value if LLMType.CHAT.value in model_types else model_types[0]
+        if self.imgs and LLMType.IMAGE2TEXT.value in model_types:
+            model_type = LLMType.IMAGE2TEXT.value
+        elif LLMType.CHAT.value in model_types:
+            model_type = LLMType.CHAT.value
+        else:
+            model_type = model_types[0]
         model_config = get_model_config_from_provider_instance(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
         if self.imgs:
             self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), model_config, max_retries=self._param.max_retries,
