@@ -219,10 +219,10 @@ def by_opendataloader(
     if tenant_id:
         if not opendataloader_llm_name:
             try:
-                from api.db.services.tenant_llm_service import TenantLLMService
+                from api.db.joint_services.tenant_model_service import get_models_by_tenant_and_provider_and_model_type, ensure_opendataloader_from_env
 
-                env_name = TenantLLMService.ensure_opendataloader_from_env(tenant_id)
-                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="OpenDataLoader", model_type=LLMType.OCR)
+                env_name = ensure_opendataloader_from_env(tenant_id)
+                candidates = get_models_by_tenant_and_provider_and_model_type(tenant_id=tenant_id, provider_name="OpenDataLoader", model_type=LLMType.OCR)
                 if candidates:
                     opendataloader_llm_name = candidates[0].llm_name
                 elif env_name:

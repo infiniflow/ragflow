@@ -1774,6 +1774,8 @@ Example: Virtual Hosted Style`,
       listModelsSearchPlaceholder: 'Search models…',
       listModelsEmpty: 'No models available',
       listModelsLoading: 'Loading models…',
+      selectModelBeforeVerify:
+        'Please select at least one model before verification.',
       addCustomModel: 'Add custom model',
       addCustomModelTitle: 'Add custom model',
       modelMaxTokens: 'Max tokens',
