@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 	"ragflow/internal/common"
@@ -169,9 +170,13 @@ func (h *FileHandler) GetParentFolder(c *gin.Context) {
 		return
 	}
 
-	// Get parent folder with permission check
-	parentFolder, err := h.fileService.GetParentFolder(userID, fileID)
+	// Get parent folder
+	parentFolder, err := h.fileService.GetParentFolder(user.ID, fileID)
 	if err != nil {
+		if errors.Is(err, service.ErrNoAuthorization) {
+			jsonError(c, common.CodeUnauthorized, err.Error())
+			return
+		}
 		jsonError(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -207,9 +212,13 @@ func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 		return
 	}
 
-	// Get all parent folders with permission check
-	parentFolders, err := h.fileService.GetAllParentFolders(userID, fileID)
+	// Get all parent folders
+	parentFolders, err := h.fileService.GetAllParentFolders(user.ID, fileID)
 	if err != nil {
+		if errors.Is(err, service.ErrNoAuthorization) {
+			jsonError(c, common.CodeUnauthorized, err.Error())
+			return
+		}
 		jsonError(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -244,9 +253,12 @@ func (h *FileHandler) GetFileAncestors(c *gin.Context) {
 		return
 	}
 
-	// Get all parent folders with permission check
-	parentFolders, err := h.fileService.GetAllParentFolders(userID, fileID)
+	parentFolders, err := h.fileService.GetAllParentFolders(user.ID, fileID)
 	if err != nil {
+		if errors.Is(err, service.ErrNoAuthorization) {
+			jsonError(c, common.CodeUnauthorized, err.Error())
+			return
+		}
 		jsonError(c, common.CodeServerError, err.Error())
 		return
 	}
