@@ -388,6 +388,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				agents.GET("", r.agentHandler.ListAgents)
 				agents.GET("/prompts", r.agentHandler.GetPrompts)
 				agents.GET("/templates", r.agentHandler.ListTemplates)
+				agents.POST("/test_db_connection", r.agentHandler.TestDBConnection)
 				agents.GET("/:agent_id/versions", r.agentHandler.ListAgentVersions)
 				agents.GET("/:agent_id/versions/:version_id", r.agentHandler.GetAgentVersion)
 				agents.POST("/:agent_id/upload", r.agentHandler.UploadAgentFile)
@@ -395,6 +396,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				agents.GET("/:agent_id/sessions", r.agentHandler.ListAgentSessions)
 				agents.GET("/:agent_id/sessions/:session_id", r.agentHandler.GetAgentSession)
 				agents.DELETE("/:agent_id/sessions/:session_id", r.agentHandler.DeleteAgentSessionItem)
+				agents.DELETE("/:agent_id/sessions", r.agentHandler.DeleteAgentSessions)
 			}
 
 			// Plugin routes
