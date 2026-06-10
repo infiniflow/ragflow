@@ -78,36 +78,3 @@ func (b *BaseModel) GetBaseURL(apiConfig *APIConfig) (string, error) {
 
 	return baseURL, nil
 }
-
-func ParseListModel(modelList ModelList) []ListModelResponse {
-	models := make([]ListModelResponse, 0, len(modelList.Models))
-	pm := GetProviderManager()
-
-	for _, model := range modelList.Models {
-		modelID := strings.TrimSpace(model.ID)
-		if modelID == "" {
-			continue
-		}
-
-		modelName := modelID
-		var modelEntity *Model
-		if pm != nil {
-			modelEntity = pm.GetModelByNameOrAlias(modelID)
-		}
-		if ownedBy := strings.TrimSpace(model.OwnedBy); ownedBy != "" {
-			modelName = modelID + "@" + ownedBy
-		}
-
-		modelResponse := ListModelResponse{Name: modelName}
-		if modelEntity != nil {
-			modelResponse.MaxTokens = modelEntity.MaxTokens
-			modelResponse.ModelTypes = modelEntity.ModelTypes
-			modelResponse.Thinking = modelEntity.Thinking
-			modelResponse.Dimension = modelEntity.Dimension
-		}
-
-		models = append(models, modelResponse)
-	}
-
-	return models
-}

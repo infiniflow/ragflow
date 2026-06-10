@@ -785,15 +785,21 @@ func (o *OpenRouterModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse,
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var modelList ModelList
-	if err = json.Unmarshal(body, &modelList); err != nil {
+	// Parse response
+	var result map[string]interface{}
+	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-	if modelList.Models == nil {
-		return nil, fmt.Errorf("invalid OpenRouter models response: data field is missing")
+
+	// convert result["data"] to []map[string]interface{}
+	models := make([]ListModelResponse, 0)
+	for _, model := range result["data"].([]interface{}) {
+		modelMap := model.(map[string]interface{})
+		modelName := modelMap["id"].(string)
+		models = append(models, ListModelResponse{Name: modelName})
 	}
 
-	return ParseListModel(modelList), nil
+	return models, nil
 }
 
 func (o *OpenRouterModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
