@@ -153,8 +153,9 @@ def find_codec(blob):
         try:
             blob[:1024].decode(encoding)
             return encoding
-        except (UnicodeDecodeError, LookupError):
-            pass
+        except (UnicodeDecodeError, LookupError) as e:
+            logging.debug("find_codec: confident detection %r (%.2f) did not decode the sample, "
+                          "falling back to brute force: %s", encoding, detected['confidence'], e)
 
     for c in all_codecs:
         try:
