@@ -1,0 +1,928 @@
+{
+  "models": [
+    {
+      "name": "deepseek-v4-flash",
+      "alias": [
+        "deepseek-v4-flash",
+        "deepseek-chat",
+        "deepseek-ai/DeepSeek-V4-Flash",
+        "deepseek-ai/deepseek-v4-flash",
+        "deepseek/deepseek-v4-flash",
+        "deepseek-v4-flash-260425"
+      ],
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "deepseek-v4-flash-base",
+      "alias": [
+        "deepseek-v4-flash-base",
+        "deepseek/deepseek-v4-flash-base",
+        "deepseek-ai/DeepSeek-V4-Flash-Base",
+        "deepseek-ai/deepseek-v4-flash-base"
+      ],
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v4-pro",
+      "alias": [
+        "deepseek-v4-pro",
+        "deepseek-ai/DeepSeek-V4-Pro",
+        "deepseek-ai/deepseek-v4-pro",
+        "deepseek/deepseek-v4-pro",
+        "deepseek-v4-pro-260425"
+      ],
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "deepseek-v4-pro-base",
+      "alias": [
+        "deepseek-v4-pro-base",
+        "deepseek/deepseek-v4-pro-base",
+        "deepseek-ai/DeepSeek-V4-Pro-Base",
+        "deepseek-ai/deepseek-v4-pro-base"
+      ],
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-ocr-2",
+      "alias": [
+        "deepseek-ocr-2",
+        "deepseek-ai/DeepSeek-OCR-2",
+        "deepseek-ai/deepseek-ocr-2"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "ocr"
+      ]
+    },
+    {
+      "name": "deepseek-v3.2",
+      "alias": [
+        "deepseek-v3.2",
+        "deepseek-ai/DeepSeek-V3.2",
+        "deepseek-ai/deepseek-v3.2",
+        "deepseek/deepseek-v3.2",
+        "Pro/deepseek-ai/DeepSeek-V3.2",
+        "deepseek/deepseek-v3.2-251201",
+        "deepseek-v3-2-251201"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v3.2-speciale",
+      "alias": [
+        "deepseek-v3.2-speciale",
+        "deepseek-ai/DeepSeek-V3.2-Speciale",
+        "deepseek-ai/deepseek-v3.2-speciale"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-math-v2",
+      "alias": [
+        "deepseek-math-v2",
+        "deepseek-ai/DeepSeek-Math-V2",
+        "deepseek-ai/deepseek-math-v2",
+        "deepseek/deepseek-math-v2"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-ocr",
+      "alias": [
+        "deepseek-ocr",
+        "deepseek-ai/DeepSeek-OCR",
+        "deepseek-ai/deepseek-ocr"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "ocr"
+      ]
+    },
+    {
+      "name": "deepseek-v3.2-exp",
+      "alias": [
+        "deepseek-v3.2-exp",
+        "deepseek-ai/DeepSeek-V3.2-Exp",
+        "deepseek-ai/deepseek-v3.2-exp",
+        "deepseek/deepseek-v3.2-exp",
+        "deepseek/deepseek-v3.2-exp-thinking"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v3.2-exp-base",
+      "alias": [
+        "deepseek-v3.2-exp-base",
+        "deepseek-ai/DeepSeek-V3.2-Exp-Base",
+        "deepseek-ai/deepseek-v3.2-exp-base"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v3.1-terminus",
+      "alias": [
+        "deepseek-v3.1-terminus",
+        "deepseek-ai/DeepSeek-V3.1-Terminus",
+        "deepseek-ai/deepseek-v3.1-terminus",
+        "deepseek/deepseek-v3.1-terminus",
+        "Pro/deepseek-ai/DeepSeek-V3.1-Terminus",
+        "deepseek/deepseek-v3.1-terminus-thinking"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v3.1",
+      "alias": [
+        "deepseek-v3.1",
+        "deepseek-ai/DeepSeek-V3.1",
+        "deepseek-ai/deepseek-v3.1",
+        "deepseek/deepseek-chat-v3.1",
+        "deepseek-v3-1-250821"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v3.1-base",
+      "alias": [
+        "deepseek-v3.1-base",
+        "deepseek-ai/DeepSeek-V3.1-Base",
+        "deepseek-ai/deepseek-v3.1-base"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-r1-0528-qwen3-8b",
+      "alias": [
+        "deepseek-r1-0528-qwen3-8b",
+        "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
+        "deepseek-ai/deepseek-r1-0528-qwen3-8b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-r1-0528",
+      "alias": [
+        "deepseek-r1-0528",
+        "deepseek-ai/DeepSeek-R1-0528",
+        "deepseek-ai/deepseek-r1-0528",
+        "deepseek/deepseek-r1-0528",
+        "deepseek-r1-250528",
+        "Pro/deepseek-ai/DeepSeek-R1"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-prover-v2-671b",
+      "alias": [
+        "deepseek-prover-v2-671b",
+        "deepseek-ai/DeepSeek-Prover-V2-671B",
+        "deepseek-ai/deepseek-prover-v2-671b"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-prover-v2-7b",
+      "alias": [
+        "deepseek-prover-v2-7b",
+        "deepseek-ai/DeepSeek-Prover-V2-7B",
+        "deepseek-ai/deepseek-prover-v2-7b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v3-0324",
+      "alias": [
+        "deepseek-v3-0324",
+        "deepseek-ai/DeepSeek-V3-0324",
+        "deepseek-ai/deepseek-v3-0324",
+        "deepseek/deepseek-chat-v3-0324",
+        "deepseek-v3-250324",
+        "Pro/deepseek-ai/DeepSeek-V3"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-r1",
+      "alias": [
+        "deepseek-r1",
+        "deepseek-ai/DeepSeek-R1",
+        "deepseek-ai/deepseek-r1",
+        "deepseek/deepseek-r1",
+        "DeepSeek-R1",
+        "deepseek-r1-250120",
+        "deepseek-r1_32k"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-r1-distill-llama-70b",
+      "alias": [
+        "deepseek-r1-distill-llama-70b",
+        "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+        "deepseek-ai/deepseek-r1-distill-llama-70b",
+        "deepseek/deepseek-r1-distill-llama-70b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-r1-distill-llama-8b",
+      "alias": [
+        "deepseek-r1-distill-llama-8b",
+        "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
+        "deepseek-ai/deepseek-r1-distill-llama-8b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-r1-distill-qwen-1.5b",
+      "alias": [
+        "deepseek-r1-distill-qwen-1.5b",
+        "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
+        "deepseek-ai/deepseek-r1-distill-qwen-1.5b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-r1-distill-qwen-14b",
+      "alias": [
+        "deepseek-r1-distill-qwen-14b",
+        "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
+        "deepseek-ai/deepseek-r1-distill-qwen-14b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-r1-distill-qwen-32b",
+      "alias": [
+        "deepseek-r1-distill-qwen-32b",
+        "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
+        "deepseek-ai/deepseek-r1-distill-qwen-32b",
+        "deepseek/deepseek-r1-distill-qwen-32b",
+        "deepseek-r1-distill-qwen-32b-250120"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-r1-distill-qwen-7b",
+      "alias": [
+        "deepseek-r1-distill-qwen-7b",
+        "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+        "deepseek-ai/deepseek-r1-distill-qwen-7b",
+        "deepseek-r1-distill-qwen-7b-250120"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-r1-zero",
+      "alias": [
+        "deepseek-r1-zero",
+        "deepseek-ai/DeepSeek-R1-Zero",
+        "deepseek-ai/deepseek-r1-zero"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v3",
+      "alias": [
+        "deepseek-v3",
+        "deepseek-ai/DeepSeek-V3",
+        "deepseek-ai/deepseek-v3",
+        "deepseek/deepseek-chat",
+        "DeepSeek-V3"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v3-base",
+      "alias": [
+        "deepseek-v3-base",
+        "deepseek-ai/DeepSeek-V3-Base",
+        "deepseek-ai/deepseek-v3-base"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-vl2",
+      "alias": [
+        "deepseek-vl2",
+        "deepseek-ai/deepseek-vl2"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "image2text"
+      ]
+    },
+    {
+      "name": "deepseek-vl2-small",
+      "alias": [
+        "deepseek-vl2-small",
+        "deepseek-ai/deepseek-vl2-small"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "image2text"
+      ]
+    },
+    {
+      "name": "deepseek-vl2-tiny",
+      "alias": [
+        "deepseek-vl2-tiny",
+        "deepseek-ai/deepseek-vl2-tiny"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "image2text"
+      ]
+    },
+    {
+      "name": "deepseek-v2.5-1210",
+      "alias": [
+        "deepseek-v2.5-1210",
+        "deepseek-ai/DeepSeek-V2.5-1210",
+        "deepseek-ai/deepseek-v2.5-1210"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-v2-instruct-0724",
+      "alias": [
+        "deepseek-coder-v2-instruct-0724",
+        "deepseek-ai/DeepSeek-Coder-V2-Instruct-0724",
+        "deepseek-ai/deepseek-coder-v2-instruct-0724"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v2.5",
+      "alias": [
+        "deepseek-v2.5",
+        "deepseek-ai/DeepSeek-V2.5",
+        "deepseek-ai/deepseek-v2.5"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-prover-v1",
+      "alias": [
+        "deepseek-prover-v1",
+        "deepseek-ai/DeepSeek-Prover-V1",
+        "deepseek-ai/deepseek-prover-v1"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-prover-v1.5-base",
+      "alias": [
+        "deepseek-prover-v1.5-base",
+        "deepseek-ai/DeepSeek-Prover-V1.5-Base",
+        "deepseek-ai/deepseek-prover-v1.5-base"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-prover-v1.5-rl",
+      "alias": [
+        "deepseek-prover-v1.5-rl",
+        "deepseek-ai/DeepSeek-Prover-V1.5-RL",
+        "deepseek-ai/deepseek-prover-v1.5-rl"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-prover-v1.5-sft",
+      "alias": [
+        "deepseek-prover-v1.5-sft",
+        "deepseek-ai/DeepSeek-Prover-V1.5-SFT",
+        "deepseek-ai/deepseek-prover-v1.5-sft"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v2-chat-0628",
+      "alias": [
+        "deepseek-v2-chat-0628",
+        "deepseek-ai/DeepSeek-V2-Chat-0628",
+        "deepseek-ai/deepseek-v2-chat-0628"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-v2-base",
+      "alias": [
+        "deepseek-coder-v2-base",
+        "deepseek-ai/DeepSeek-Coder-V2-Base",
+        "deepseek-ai/deepseek-coder-v2-base"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-v2-instruct",
+      "alias": [
+        "deepseek-coder-v2-instruct",
+        "deepseek-ai/DeepSeek-Coder-V2-Instruct",
+        "deepseek-ai/deepseek-coder-v2-instruct"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-v2-lite-base",
+      "alias": [
+        "deepseek-coder-v2-lite-base",
+        "deepseek-ai/DeepSeek-Coder-V2-Lite-Base",
+        "deepseek-ai/deepseek-coder-v2-lite-base"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-v2-lite-instruct",
+      "alias": [
+        "deepseek-coder-v2-lite-instruct",
+        "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct",
+        "deepseek-ai/deepseek-coder-v2-lite-instruct"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v2-lite",
+      "alias": [
+        "deepseek-v2-lite",
+        "deepseek-ai/DeepSeek-V2-Lite",
+        "deepseek-ai/deepseek-v2-lite"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v2-lite-chat",
+      "alias": [
+        "deepseek-v2-lite-chat",
+        "deepseek-ai/DeepSeek-V2-Lite-Chat",
+        "deepseek-ai/deepseek-v2-lite-chat"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v2-chat",
+      "alias": [
+        "deepseek-v2-chat",
+        "deepseek-ai/DeepSeek-V2-Chat",
+        "deepseek-ai/deepseek-v2-chat"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v2",
+      "alias": [
+        "deepseek-v2",
+        "deepseek-ai/DeepSeek-V2",
+        "deepseek-ai/deepseek-v2"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-vl-1.3b-base",
+      "alias": [
+        "deepseek-vl-1.3b-base",
+        "deepseek-ai/deepseek-vl-1.3b-base"
+      ],
+      "max_tokens": 16384,
+      "model_types": [
+        "image2text"
+      ]
+    },
+    {
+      "name": "deepseek-vl-1.3b-chat",
+      "alias": [
+        "deepseek-vl-1.3b-chat",
+        "deepseek-ai/deepseek-vl-1.3b-chat"
+      ],
+      "max_tokens": 16384,
+      "model_types": [
+        "image2text"
+      ]
+    },
+    {
+      "name": "deepseek-vl-7b-base",
+      "alias": [
+        "deepseek-vl-7b-base",
+        "deepseek-ai/deepseek-vl-7b-base"
+      ],
+      "max_tokens": 16384,
+      "model_types": [
+        "image2text"
+      ]
+    },
+    {
+      "name": "deepseek-vl-7b-chat",
+      "alias": [
+        "deepseek-vl-7b-chat",
+        "deepseek-ai/deepseek-vl-7b-chat"
+      ],
+      "max_tokens": 16384,
+      "model_types": [
+        "image2text"
+      ]
+    },
+    {
+      "name": "deepseek-math-7b-base",
+      "alias": [
+        "deepseek-math-7b-base",
+        "deepseek-ai/deepseek-math-7b-base"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-math-7b-instruct",
+      "alias": [
+        "deepseek-math-7b-instruct",
+        "deepseek-ai/deepseek-math-7b-instruct"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-math-7b-rl",
+      "alias": [
+        "deepseek-math-7b-rl",
+        "deepseek-ai/deepseek-math-7b-rl"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-7b-base-v1.5",
+      "alias": [
+        "deepseek-coder-7b-base-v1.5",
+        "deepseek-ai/deepseek-coder-7b-base-v1.5"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-7b-instruct-v1.5",
+      "alias": [
+        "deepseek-coder-7b-instruct-v1.5",
+        "deepseek-ai/deepseek-coder-7b-instruct-v1.5"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-moe-16b-chat",
+      "alias": [
+        "deepseek-moe-16b-chat",
+        "deepseek-ai/deepseek-moe-16b-chat"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-moe-16b-base",
+      "alias": [
+        "deepseek-moe-16b-base",
+        "deepseek-ai/deepseek-moe-16b-base"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-llm-67b-base",
+      "alias": [
+        "deepseek-llm-67b-base",
+        "deepseek-ai/deepseek-llm-67b-base"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-llm-67b-chat",
+      "alias": [
+        "deepseek-llm-67b-chat",
+        "deepseek-ai/deepseek-llm-67b-chat"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-llm-7b-base",
+      "alias": [
+        "deepseek-llm-7b-base",
+        "deepseek-ai/deepseek-llm-7b-base"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-llm-7b-chat",
+      "alias": [
+        "deepseek-llm-7b-chat",
+        "deepseek-ai/deepseek-llm-7b-chat"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-33b-instruct",
+      "alias": [
+        "deepseek-coder-33b-instruct",
+        "deepseek-ai/deepseek-coder-33b-instruct"
+      ],
+      "max_tokens": 16384,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-5.7bmqa-base",
+      "alias": [
+        "deepseek-coder-5.7bmqa-base",
+        "deepseek-ai/deepseek-coder-5.7bmqa-base"
+      ],
+      "max_tokens": 16384,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-1.3b-instruct",
+      "alias": [
+        "deepseek-coder-1.3b-instruct",
+        "deepseek-ai/deepseek-coder-1.3b-instruct"
+      ],
+      "max_tokens": 16384,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-6.7b-instruct",
+      "alias": [
+        "deepseek-coder-6.7b-instruct",
+        "deepseek-ai/deepseek-coder-6.7b-instruct"
+      ],
+      "max_tokens": 16384,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-1.3b-base",
+      "alias": [
+        "deepseek-coder-1.3b-base",
+        "deepseek-ai/deepseek-coder-1.3b-base"
+      ],
+      "max_tokens": 16384,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-33b-base",
+      "alias": [
+        "deepseek-coder-33b-base",
+        "deepseek-ai/deepseek-coder-33b-base"
+      ],
+      "max_tokens": 16384,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-6.7b-base",
+      "alias": [
+        "deepseek-coder-6.7b-base",
+        "deepseek-ai/deepseek-coder-6.7b-base"
+      ],
+      "max_tokens": 16384,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "minimax-m3",
+      "max_tokens": 1024000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "glm-4.5v",
+      "max_tokens": 64000,
+      "model_types": [
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "bge-m3",
+      "alias": [
+        "baai/bge-m3"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "bge-reranker-v2-m3",
+      "alias": [
+        "baai/bge-reranker-v2-m3"
+      ],
+      "max_tokens": 1024,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "step-audio-tts-3b",
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen3-asr-1.7b",
+      "alias": [
+        "qwen/qwen3-asr-1.7b"
+      ],
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "paddleocr-vl-0.9b",
+      "alias": [
+        "paddleocr-vl-1.5"
+      ],
+      "model_types": [
+        "ocr"
+      ]
+    }
+  ]
+}

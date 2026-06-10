@@ -14,7 +14,9 @@ import {
   IAddProviderRequestBody,
   IDeleteProviderInstanceRequestBody,
   IListAllModelsRequestParams,
+  IListProviderModelsRequestBody,
   IListProvidersRequestParams,
+  IModelInfo,
   ISetDefaultModelRequestBody,
   IUpdateModelStatusRequestBody,
 } from '@/interfaces/request/llm';
@@ -32,6 +34,8 @@ export const enum LLMApiAction {
   AddedProviders = 'addedProviders',
   AddProvider = 'addProvider',
   AddProviderInstance = 'addProviderInstance',
+  VerifyProviderConnection = 'verifyProviderConnection',
+  ListProviderModels = 'listProviderModels',
   AddInstanceModel = 'addInstanceModel',
   DeleteProviderInstance = 'deleteProviderInstance',
   ListDefaultModels = 'listDefaultModels',
@@ -45,6 +49,13 @@ export const LlmKeys = {
     [LLMApiAction.AllModels, modelType] as const,
   providerInstances: (providerName: string) =>
     [LLMApiAction.AddedProviders, providerName, 'instances'] as const,
+  providerInstance: (providerName: string, instanceName: string) =>
+    [
+      LLMApiAction.AddedProviders,
+      providerName,
+      instanceName,
+      'instance',
+    ] as const,
   instanceModels: (providerName: string, instanceName: string) =>
     [
       LLMApiAction.AddedProviders,
@@ -140,6 +151,31 @@ export const useFetchProviderInstances = (providerName: string) => {
   return { data, loading };
 };
 
+/**
+ * Fetch full details of a single provider instance (used in viewMode to
+ * retrieve fields like `baseUrl` that the list endpoint does not return).
+ * Disabled by default; call from an event handler (e.g. onClick) and
+ * rely on the returned `refetch` to actually trigger the request.
+ */
+export const useFetchProviderInstance = (
+  providerName: string,
+  instanceName: string,
+) => {
+  return useQuery<IProviderInstance>({
+    queryKey: LlmKeys.providerInstance(providerName, instanceName),
+    initialData: undefined as unknown as IProviderInstance,
+    gcTime: 0,
+    enabled: false,
+    queryFn: async () => {
+      const { data } = await llmService.showProviderInstance(
+        { provider_name: providerName, instance_name: instanceName },
+        true,
+      );
+      return (data?.data ?? {}) as IProviderInstance;
+    },
+  });
+};
+
 export const useFetchInstanceModels = (
   providerName: string,
   instanceName: string,
@@ -227,12 +263,65 @@ export const useAddProviderInstance = () => {
         queryClient.invalidateQueries({
           queryKey: LlmKeys.addedProviders(),
         });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.allModels(),
+        });
       }
       return data;
     },
   });
 
   return { data, loading, addProviderInstance: mutateAsync };
+};
+
+export const useVerifyProviderConnection = () => {
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [LLMApiAction.VerifyProviderConnection],
+    mutationFn: async (params: {
+      provider_name: string;
+      api_key: string;
+      base_url?: string;
+      region?: string;
+      model_info?: IModelInfo[];
+    }) => {
+      const { data } = await llmService.verifyProviderConnection(params);
+      return data;
+    },
+  });
+
+  return { data, loading, verifyProviderConnection: mutateAsync };
+};
+
+export const useListProviderModels = () => {
+  const { isPending: loading, mutateAsync } = useMutation({
+    mutationKey: [LLMApiAction.ListProviderModels],
+    mutationFn: async (params: IListProviderModelsRequestBody) => {
+      const { provider_name, api_key, base_url } = params;
+      // GET /api/v1/providers/<provider_name>/models
+      // The API accepts api_key and base_url as optional query parameters.
+      // api_key is expected as a string; values in {} object form must be
+      // JSON-stringified before being sent.
+      const queryParams: Record<string, string> = {};
+      if (api_key) {
+        queryParams.api_key =
+          typeof api_key === 'string' ? api_key : JSON.stringify(api_key);
+      }
+      if (base_url) {
+        queryParams.base_url = base_url;
+      }
+      const { data } = await llmService.listProviderModels(
+        { provider_name, params: queryParams },
+        true,
+      );
+      return data;
+    },
+  });
+
+  return { loading, listProviderModels: mutateAsync };
 };
 
 export const useAddInstanceModel = () => {
@@ -253,6 +342,9 @@ export const useAddInstanceModel = () => {
       if (data.code === 0) {
         queryClient.invalidateQueries({
           queryKey: LlmKeys.addedProviders(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.allModels(),
         });
       }
       return data;
@@ -280,6 +372,9 @@ export const useDeleteProviderInstance = () => {
         });
         queryClient.invalidateQueries({
           queryKey: LlmKeys.providerInstances(params.provider_name),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.allModels(),
         });
         queryClient.invalidateQueries({
           queryKey: LlmKeys.defaultModels(),
@@ -335,7 +430,7 @@ export const useFetchDefaultModels = () => {
 };
 
 export const useFetchDefaultModelDictionary = (showEmptyModelWarn = false) => {
-  const { data: defaultModels } = useFetchDefaultModels();
+  const { data: defaultModels, loading } = useFetchDefaultModels();
 
   const result = useMemo(() => {
     const dict: Record<string, string> = {};
@@ -346,7 +441,7 @@ export const useFetchDefaultModelDictionary = (showEmptyModelWarn = false) => {
     return dict;
   }, [defaultModels]);
 
-  useWarnEmptyModel(showEmptyModelWarn, result.embd_id, result.llm_id);
+  useWarnEmptyModel(showEmptyModelWarn, result.embd_id, result.llm_id, loading);
 
   return result;
 };

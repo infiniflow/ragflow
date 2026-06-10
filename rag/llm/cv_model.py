@@ -25,6 +25,7 @@ from copy import deepcopy
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import urljoin
+from json.decoder import JSONDecodeError
 
 import requests
 from openai import OpenAI, AsyncOpenAI
@@ -38,6 +39,22 @@ from rag.prompts.generator import vision_llm_describe_prompt
 
 
 from common.misc_utils import thread_pool_exec
+
+def _qwen3_no_think_extra_body(model_name: str) -> dict[str, bool] | None:
+    """Build DashScope-compatible options that disable Qwen3.x thinking."""
+    if "qwen3." in model_name.lower():
+        return {"enable_thinking": False}
+    return None
+
+
+def _remove_sampling_params(model_name: str, gen_conf: dict | None) -> dict:
+    """Remove sampling options from Qwen3.x CV requests for now."""
+    sanitized_gen_conf = dict(gen_conf or {})
+    if "qwen3." in model_name.lower():
+        for key in ("temperature", "top_p"):
+            sanitized_gen_conf.pop(key, None)
+    return sanitized_gen_conf
+
 
 class Base(ABC):
     def __init__(self, **kwargs):
@@ -310,6 +327,9 @@ class QWenCV(GptV4):
         if not base_url:
             base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
+        # Qwen3.x models can be registered as IMAGE2TEXT and routed through this CV wrapper.
+        # Disable thinking here so parser-side extraction tasks do not emit reasoning text.
+        self.extra_body = _qwen3_no_think_extra_body(self.model_name) or self.extra_body
 
     @staticmethod
     def _extract_text_from_content(content):
@@ -345,6 +365,7 @@ class QWenCV(GptV4):
         return "Please summarize this video in proper sentences."
 
     async def async_chat(self, system, history, gen_conf, images=None, video_bytes=None, filename="", **kwargs):
+        gen_conf = _remove_sampling_params(self.model_name, gen_conf)
         if video_bytes:
             try:
                 summary, summary_num_tokens = self._process_video(video_bytes, filename, self._resolve_video_prompt(system, history, **kwargs))
@@ -538,13 +559,20 @@ class VolcEngineCV(GptV4):
     def __init__(self, key, model_name, lang="Chinese", base_url="https://ark.cn-beijing.volces.com/api/v3", **kwargs):
         if not base_url:
             base_url = "https://ark.cn-beijing.volces.com/api/v3"
-        ark_api_key = json.loads(key).get("ark_api_key", "")
-        self.client = OpenAI(api_key=ark_api_key, base_url=base_url)
-        self.async_client = AsyncOpenAI(api_key=ark_api_key, base_url=base_url)
-        self.model_name = json.loads(key).get("ep_id", "") + json.loads(key).get("endpoint_id", "")
+
+        try:
+            api_key = json.loads(key).get("ark_api_key", "")
+            llm_name = json.loads(key).get("ep_id", "") + json.loads(key).get("endpoint_id", "")
+
+        except JSONDecodeError:
+            api_key = key
+            llm_name = model_name
+
+        self.client = OpenAI(api_key=api_key, base_url=base_url)
+        self.async_client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        self.model_name = llm_name
         self.lang = lang
         Base.__init__(self, **kwargs)
-
 
 class LmStudioCV(GptV4):
     _FACTORY_NAME = "LM-Studio"
@@ -607,13 +635,17 @@ class OpenRouterCV(GptV4):
     def __init__(self, key, model_name, lang="Chinese", base_url="https://openrouter.ai/api/v1", **kwargs):
         if not base_url:
             base_url = "https://openrouter.ai/api/v1"
-        api_key = json.loads(key).get("api_key", "")
+        try:
+            api_key = json.loads(key).get("api_key", "")
+            provider_order = json.loads(key).get("provider_order", "")
+        except JSONDecodeError:
+            api_key = key
+            provider_order = ""
         self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.async_client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang
         Base.__init__(self, **kwargs)
-        provider_order = json.loads(key).get("provider_order", "")
         self.extra_body = {}
         if provider_order:
 
