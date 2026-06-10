@@ -713,16 +713,16 @@ func (c *CLI) AddAPIServer(cmd *Command) (ResponseIf, error) {
 		c.Config.APIClientConfig.APIServerMap[apiServerName].ApiToken = &apiServerToken
 	}
 
-	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-
 	if c.APIServerClientMap == nil {
 		c.APIServerClientMap = make(map[string]*HTTPClient)
 	}
 
 	if c.APIServerClientMap[apiServerName] != nil {
 		return nil, fmt.Errorf("api server: %s already exists", apiServerName)
+	}
+
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 
 	c.APIServerClientMap[apiServerName] = &HTTPClient{
@@ -786,6 +786,23 @@ func (c *CLI) AddAdminServer(cmd *Command) (ResponseIf, error) {
 	}
 	if adminServerPort != 0 {
 		c.Config.AdminClientConfig.AdminPort = adminServerPort
+	}
+
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+
+	c.AdminServerClient = &HTTPClient{
+		Host:           adminServerIP,
+		Port:           adminServerPort,
+		APIVersion:     "v1",
+		ConnectTimeout: 5 * time.Second,
+		ReadTimeout:    60 * time.Second,
+		VerifySSL:      false,
+		client: &http.Client{
+			Transport: transport,
+			Timeout:   300 * time.Second,
+		},
 	}
 
 	var result SimpleResponse
