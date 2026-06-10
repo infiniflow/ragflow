@@ -246,11 +246,12 @@ func (h *AgentHandler) GetAgentSession(c *gin.Context) {
 
 	data, code, err := h.agentService.GetAgentSession(userID, agentID, sessionID)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    code,
-			"data":    nil,
-			"message": err.Error(),
-		})
+		msg := err.Error()
+		if code == common.CodeServerError {
+			common.Warn("get agent session failed", zap.String("session_id", sessionID), zap.Error(err))
+			msg = "Internal server error"
+		}
+		c.JSON(http.StatusOK, gin.H{"code": code, "data": nil, "message": msg})
 		return
 	}
 
@@ -295,11 +296,12 @@ func (h *AgentHandler) DeleteAgentSessionItem(c *gin.Context) {
 
 	ok, code, err := h.agentService.DeleteAgentSessionItem(userID, agentID, sessionID)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    code,
-			"data":    false,
-			"message": err.Error(),
-		})
+		msg := err.Error()
+		if code == common.CodeServerError {
+			common.Warn("delete agent session failed", zap.String("session_id", sessionID), zap.Error(err))
+			msg = "Internal server error"
+		}
+		c.JSON(http.StatusOK, gin.H{"code": code, "data": false, "message": msg})
 		return
 	}
 
