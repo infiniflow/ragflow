@@ -293,7 +293,11 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		if chatModelConfig.Thinking != nil {
 			if *chatModelConfig.Thinking {
 				var thinkingFlag string
-				switch *chatModelConfig.Effort {
+				effort := "high"
+				if chatModelConfig.Effort != nil {
+					effort = *chatModelConfig.Effort
+				}
+				switch effort {
 				case "none":
 					thinkingFlag = "disabled"
 					break
