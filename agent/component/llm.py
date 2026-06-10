@@ -225,6 +225,40 @@ class LLM(ComponentBase):
 
         return value
 
+    def _collect_sys_files(self) -> tuple[list[str], list[str]]:
+        files = self._canvas.globals.get("sys.files") or []
+        if not files:
+            logging.debug("[LLM] sys.files empty; skipping attachment injection")
+            return [], []
+
+        logging.info("[LLM] sys.files present: count=%d", len(files))
+
+        explicit = "{sys.files}" in (self._param.sys_prompt or "")
+        if not explicit and isinstance(self._param.prompts, list):
+            for p in self._param.prompts:
+                if isinstance(p, dict) and "{sys.files}" in (p.get("content") or ""):
+                    explicit = True
+                    break
+        if explicit:
+            logging.info("[LLM] prompt template references {sys.files}; skipping auto-injection (explicit=%s)", explicit)
+            return [], []
+
+        text_parts: list[str] = []
+        image_data_uris: list[str] = []
+        for f in files:
+            if not isinstance(f, str):
+                logging.debug("[LLM] skipping non-str sys.files entry: type=%s", type(f).__name__)
+                continue
+            if f.startswith("data:image/"):
+                image_data_uris.append(f)
+            else:
+                text_parts.append(f)
+        logging.info(
+            "[LLM] sys.files split: text_parts=%d image_data_uris=%d (explicit=%s)",
+            len(text_parts), len(image_data_uris), explicit,
+        )
+        return text_parts, image_data_uris
+
     def _prepare_prompt_variables(self):
         self.imgs = []
         if self._param.visual_files_var:
@@ -247,16 +281,42 @@ class LLM(ComponentBase):
                     args[k] = str(args[k])
             self.set_input_value(k, args[k])
 
-        self.imgs = self._uniq_images(self.imgs + extracted_imgs)
-        model_types = get_model_type_by_name(self._canvas.get_tenant_id(), self._param.llm_id)
-        model_type = LLMType.CHAT.value if LLMType.CHAT.value in model_types else model_types[0]
-        model_config = get_model_config_from_provider_instance(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
-        if self.imgs:
-            self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), model_config, max_retries=self._param.max_retries,
+        sys_file_texts, sys_file_imgs = self._collect_sys_files()
+        prev_img_count = len(self.imgs) + len(extracted_imgs)
+        self.imgs = self._uniq_images(self.imgs + extracted_imgs + sys_file_imgs)
+        logging.debug(
+            "[LLM] imgs rebuilt: total=%d sys_files_added=%d unique_dropped=%d",
+            len(self.imgs), len(sys_file_imgs), max(0, prev_img_count + len(sys_file_imgs) - len(self.imgs)),
+        )
+        llm_type = TenantLLMService.llm_id2llm_type(self._param.llm_id)
+        if self.imgs and llm_type == LLMType.CHAT.value:
+            logging.info("[LLM] images present with chat-typed llm_id=%s; switching to IMAGE2TEXT", self._param.llm_id)
+            self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT.value,
+                                      self._param.llm_id, max_retries=self._param.max_retries,
                                       retry_interval=self._param.delay_after_error
                                       )
+        else:
+            logging.debug("[LLM] no model switch: imgs=%d llm_type=%s", len(self.imgs), llm_type)
 
         msg, sys_prompt = self._sys_prompt_and_msg(self._canvas.get_history(self._param.message_history_window_size)[:-1], args)
+
+        if sys_file_texts:
+            joined = "\n\n".join(sys_file_texts)
+            merged_idx = -1
+            for i in range(len(msg) - 1, -1, -1):
+                if msg[i].get("role") == "user":
+                    msg[i]["content"] = (msg[i].get("content") or "") + "\n\n" + joined
+                    merged_idx = i
+                    break
+            else:
+                msg.append({"role": "user", "content": joined})
+                merged_idx = len(msg) - 1
+            logging.info(
+                "[LLM] sys.files text merged into msg: parts=%d total_chars=%d msg_index=%d action=%s",
+                len(sys_file_texts), len(joined), merged_idx,
+                "merged_into_existing_user" if merged_idx < len(msg) - 1 or msg[merged_idx].get("content", "") != joined else "appended_new_user",
+            )
+
         user_defined_prompt, sys_prompt = self._extract_prompts(sys_prompt)
         if self._param.cite and self._canvas.get_reference()["chunks"]:
             sys_prompt += citation_prompt(user_defined_prompt)
