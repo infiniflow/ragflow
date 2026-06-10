@@ -78,3 +78,4 @@ func (b *BaseModel) GetBaseURL(apiConfig *APIConfig) (string, error) {
 
 	return baseURL, nil
 }
+
