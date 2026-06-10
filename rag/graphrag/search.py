@@ -112,7 +112,7 @@ class KGSearch(Dealer):
         filters = deepcopy(filters)
         filters["knowledge_graph_kwd"] = "entity"
         matchDense = await self.get_vector(", ".join(keywords), emb_mdl, 1024, sim_thr)
-        es_res = self.dataStore.search(["content_with_weight", "entity_kwd", "rank_flt"], [], filters, [matchDense],
+        es_res = self.dataStore.search(["content_with_weight", "entity_kwd", "rank_flt", "n_hop_with_weight"], [], filters, [matchDense],
                                        OrderByExpr(), 0, N,
                                        idxnms, kb_ids)
         return self._ent_info_from_(es_res, sim_thr)
