@@ -167,17 +167,15 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       },
     ],
     verifyTransform: (values) => ({
-      apiKey: {
-        ark_api_key: values.api_key,
-        endpoint_id: values.endpoint_id,
-      },
+      apiKey: values.api_key,
+      endpoint_id: values.endpoint_id,
       modelInfo: buildModelInfoFromValues(values),
     }),
     submitTransform: (values) => ({
       instance_name: values.instance_name,
       llm_factory: LLMFactory.VolcEngine,
       endpoint_id: values.endpoint_id,
-      ark_api_key: values.api_key,
+      api_key: values.api_key,
       model_info: buildModelInfoFromValues(values),
     }),
   },
