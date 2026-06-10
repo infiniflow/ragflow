@@ -52,6 +52,13 @@ def _to_int(v, default=500):
         return default
 
 
+def _factory_model_types(llm: dict) -> list[str]:
+    model_type = llm.get("model_type")
+    if isinstance(model_type, list):
+        return model_type
+    return [model_type] if model_type else []
+
+
 def _get_model_info(tenant_id: str, default_model: str, model_type: str):
     """
     Parse a composite model string (modelName@instanceName@providerName or modelName@providerName)
@@ -146,7 +153,7 @@ def _get_model_info(tenant_id: str, default_model: str, model_type: str):
         return None
 
     # Check if the model_type matches
-    if target_llm[0].get("model_type") != model_type:
+    if model_type not in _factory_model_types(target_llm[0]):
         logging.warning(f"Model '{model_name}' isn't a {model_type} model")
         return None
 
@@ -216,7 +223,7 @@ def _check_model_available(tenant_id: str, provider_name: str, instance_name: st
         return False, f"Model '{model_name}' not found for provider '{provider_name}'"
 
     if target_llm:
-        if target_llm[0].get("model_type") != model_type:
+        if model_type not in _factory_model_types(target_llm[0]):
             return False, f"Model '{model_name}' isn't a {model_type} model"
 
     return True, None
@@ -342,7 +349,8 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
         if not factory_instances:
             continue
         for llm in factory["llm"]:
-            if model_type_filter and llm["model_type"] != model_type_filter:
+            factory_model_types = _factory_model_types(llm)
+            if model_type_filter and model_type_filter not in factory_model_types:
                 continue
 
             for factory_instance in factory_instances:
@@ -351,7 +359,7 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
                 manual_modified_models = model_record_map.get(model_record_key, [])
                 active_model_types = [manual_model.model_type for manual_model in manual_modified_models if manual_model.status == ActiveStatusEnum.ACTIVE.value]
                 inactive_model_types = [manual_model.model_type for manual_model in manual_modified_models if manual_model.status == ActiveStatusEnum.INACTIVE.value]
-                model_types = list(set([llm["model_type"]] + active_model_types) - set(inactive_model_types))
+                model_types = list(set(factory_model_types + active_model_types) - set(inactive_model_types))
                 if not model_types:
                     continue
 
