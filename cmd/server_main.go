@@ -40,6 +40,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/handler"
+	"ragflow/internal/service/chunk"
 	"ragflow/internal/router"
 	"ragflow/internal/service"
 	"ragflow/internal/service/nlp"
@@ -178,7 +179,7 @@ func startServer(config *server.Config) {
 	datasetsService := service.NewDatasetService()
 	knowledgebaseService := service.NewKnowledgebaseService()
 	metadataService := service.NewMetadataService()
-	chunkService := service.NewChunkService()
+	chunkService := chunk.NewChunkService()
 	llmService := service.NewLLMService()
 	tenantService := service.NewTenantService()
 	chatService := service.NewChatService()
@@ -214,12 +215,15 @@ func startServer(config *server.Config) {
 	skillSearchHandler := handler.NewSkillSearchHandler(docEngine)
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
 	agentHandler := handler.NewAgentHandler(service.NewAgentService(), fileService)
+	searchBotLLM := &handler.SearchBotRealLLM{Svc: modelProviderService}
 	searchBotHandler := handler.NewSearchBotHandler(
 		searchService,
 		tenantService,
-		&handler.SearchBotRealLLM{Svc: modelProviderService},
+		searchBotLLM,
 		chunkService,
 	)
+	searchBotHandler.SetStreamLLM(searchBotLLM)
+	searchBotHandler.SetAskService(service.NewAskService(chunkService, nil, 0, 0))
 	pluginHandler := handler.NewPluginHandler(service.NewPluginService())
 	modelHandler := handler.NewModelHandler(service.NewModelProviderService())
 
