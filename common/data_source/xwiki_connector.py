@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 
 class XWikiConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
+    _INVALID_TIMESTAMP = datetime.fromtimestamp(0, tz=timezone.utc)
+
     def __init__(
         self,
         base_url: str,
@@ -31,6 +33,7 @@ class XWikiConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         self.page_ids = [p.strip() for p in page_ids.split(",") if p.strip()]
         self.batch_size = batch_size or INDEX_BATCH_SIZE
         self.session = requests.Session()
+        self.session.headers.update({"Accept": "application/json"})
         self._credentials: dict[str, Any] = {}
 
     def __enter__(self) -> XWikiConnector:
@@ -58,7 +61,8 @@ class XWikiConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             logger.info("XWiki connector using bearer token authentication")
         elif username and password:
             self.session.auth = (username, password)
-            logger.info("XWiki connector using basic authentication for user: %s", username)
+            logger.info("XWiki connector using basic authentication")
+        self.session.headers.setdefault("Accept", "application/json")
         return None
 
     def validate_connector_settings(self) -> None:
@@ -82,7 +86,7 @@ class XWikiConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         docs = (
             doc
             for doc in self._iter_documents()
-            if start_dt <= doc.doc_updated_at <= end_dt
+            if doc.doc_updated_at != self._INVALID_TIMESTAMP and start_dt <= doc.doc_updated_at <= end_dt
         )
         yield from self._batch_documents(docs)
 
@@ -178,11 +182,12 @@ class XWikiConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             if part is not None
         ).strip()
         blob = text.encode("utf-8")
-        doc_id = f"xwiki:{full_name}"
-        fingerprint = hashlib.sha256(blob).hexdigest()
+        doc_id = f"xwiki:{self.wiki}:{full_name}"
+        fingerprint = hashlib.md5(blob).hexdigest()
         logger.debug(
-            "XWiki built document id=%s full_name=%s size=%s fingerprint=%s",
+            "XWiki built document id=%s wiki=%s full_name=%s size=%s fingerprint=%s",
             doc_id,
+            self.wiki,
             full_name,
             len(blob),
             fingerprint,
@@ -196,6 +201,7 @@ class XWikiConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             doc_updated_at=updated_at,
             size_bytes=len(blob),
             metadata={
+                "wiki": self.wiki,
                 "page": full_name,
                 "space": full_name.rsplit(".", 1)[0] if "." in full_name else "",
                 "url": link,
@@ -225,7 +231,7 @@ class XWikiConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                 return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
             except ValueError:
                 pass
-        return datetime.now(timezone.utc)
+        return XWikiConnector._INVALID_TIMESTAMP
 
     def _batch_documents(self, docs: Iterator[Document]) -> Generator[list[Document], None, None]:
         batch: list[Document] = []

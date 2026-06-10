@@ -61,6 +61,15 @@ class FakeSession:
         return FakeResponse(payloads[path])
 
 
+class InvalidTimestampSession(FakeSession):
+    def get(self, url: str, timeout: int) -> FakeResponse:
+        response = super().get(url, timeout)
+        payload = response.json()
+        if payload.get("fullName") == "Main.WebHome":
+            payload = {**payload, "modified": "not-a-date"}
+        return FakeResponse(payload)
+
+
 def make_connector() -> XWikiConnector:
     connector = XWikiConnector("https://xwiki.test", space="Main")
     connector.session = FakeSession()
@@ -77,13 +86,14 @@ def test_xwiki_connector_builds_page_documents() -> None:
     assert len(batches) == 1
     doc = batches[0][0]
     text = doc.blob.decode("utf-8")
-    assert doc.id == "xwiki:Main.WebHome"
+    assert doc.id == "xwiki:xwiki:Main.WebHome"
     assert doc.source == "xwiki"
     assert doc.semantic_identifier == "Home"
     assert "Runbooks and onboarding notes." in text
+    assert doc.metadata["wiki"] == "xwiki"
     assert doc.metadata["space"] == "Main"
     assert doc.metadata["url"] == "https://xwiki.test/bin/view/Main/"
-    assert doc.fingerprint
+    assert doc.fingerprint and len(doc.fingerprint) == 32
 
 
 @pytest.mark.p1
@@ -94,7 +104,19 @@ def test_xwiki_connector_poll_source_filters_by_date() -> None:
 
     batches = list(connector.poll_source(start, end))
 
-    assert [[doc.id for doc in batch] for batch in batches] == [["xwiki:Main.WebHome"]]
+    assert [[doc.id for doc in batch] for batch in batches] == [["xwiki:xwiki:Main.WebHome"]]
+
+
+@pytest.mark.p1
+def test_xwiki_connector_poll_source_skips_invalid_timestamps() -> None:
+    connector = make_connector()
+    connector.session = InvalidTimestampSession()
+    start = datetime(2026, 5, 30, tzinfo=timezone.utc).timestamp()
+    end = datetime(2026, 6, 2, tzinfo=timezone.utc).timestamp()
+
+    batches = list(connector.poll_source(start, end))
+
+    assert batches == []
 
 
 @pytest.mark.p1
@@ -103,7 +125,7 @@ def test_xwiki_connector_retrieves_slim_docs() -> None:
 
     batches = list(connector.retrieve_all_slim_docs_perm_sync())
 
-    assert [[doc.id for doc in batch] for batch in batches] == [["xwiki:Main.WebHome"]]
+    assert [[doc.id for doc in batch] for batch in batches] == [["xwiki:xwiki:Main.WebHome"]]
 
 
 @pytest.mark.p1
