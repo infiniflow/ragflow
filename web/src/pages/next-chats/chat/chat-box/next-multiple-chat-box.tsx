@@ -317,6 +317,7 @@ export function MultipleChatBox({
     async ({
       enableInternet,
       enableThinking,
+      enableModelThinking,
     }: NextMessageInputOnPressEnterParameter) => {
       if (trim(value) === '') return;
 
@@ -330,6 +331,7 @@ export function MultipleChatBox({
         box?.({
           enableInternet,
           enableThinking,
+          enableModelThinking,
           ...data,
         });
       });
@@ -379,6 +381,7 @@ export function MultipleChatBox({
           stopOutputMessage={stopOutputMessage}
           onUpload={handleUploadFile}
           showReasoning
+          showModelThinking
           showInternet={showInternet}
           removeFile={removeFile}
           isUploading={isUploading}

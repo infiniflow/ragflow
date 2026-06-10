@@ -115,6 +115,7 @@ const ChatContainer = () => {
                 showUploadIcon={false}
                 stopOutputMessage={stopOutputMessage}
                 showReasoning
+                showModelThinking
                 showInternet={chatInfo?.has_tavily_key}
               ></NextMessageInput>
             </div>

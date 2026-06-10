@@ -1,3 +1,4 @@
+import { NextMessageInputOnPressEnterParameter } from '@/components/message-input/next';
 import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useFetchExternalAgentInputs } from '@/hooks/use-agent-request';
@@ -99,9 +100,12 @@ export const useSendNextSharedMessage = (
     [hideParameterDialog, isTaskMode, ret],
   );
 
-  const onPressEnter = useCallback(() => {
-    handlePressEnter();
-  }, [handlePressEnter]);
+  const onPressEnter = useCallback(
+    (params: NextMessageInputOnPressEnterParameter) => {
+      handlePressEnter(params);
+    },
+    [handlePressEnter],
+  );
 
   const runTask = useCallback(() => {
     if (

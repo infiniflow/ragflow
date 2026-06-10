@@ -59,6 +59,7 @@ export function useSendSingleMessage({
       messages,
       enableInternet,
       enableThinking,
+      enableModelThinking,
       ...params
     }: {
       message: IMessage;
@@ -78,6 +79,7 @@ export function useSendSingleMessage({
             message,
           ],
           reasoning: enableThinking,
+          enable_thinking: enableModelThinking,
           internet: enableInternet,
           ...params,
           pass_all_history_messages: true,
@@ -106,6 +108,7 @@ export function useSendSingleMessage({
   const handlePressEnter = useCallback(
     async ({
       enableThinking,
+      enableModelThinking,
       enableInternet,
       currentMessages,
       targetConversationId,
@@ -136,6 +139,7 @@ export function useSendSingleMessage({
           },
           enableInternet,
           enableThinking,
+          enableModelThinking,
           ...params,
         });
       }

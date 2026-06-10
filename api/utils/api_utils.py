@@ -90,6 +90,18 @@ async def _coerce_request_data() -> dict:
 async def get_request_json():
     return await _coerce_request_data()
 
+
+def get_bool_request_flag(req, *names, default=False):
+    for name in names:
+        if name not in req:
+            continue
+        value = req.pop(name)
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(value)
+    return default
+
+
 def serialize_for_json(obj):
     """
     Recursively serialize objects to make them JSON serializable.

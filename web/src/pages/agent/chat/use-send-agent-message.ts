@@ -1,3 +1,4 @@
+import { NextMessageInputOnPressEnterParameter } from '@/components/message-input/next';
 import sonnerMessage from '@/components/ui/message';
 import { MessageType } from '@/constants/chat';
 import {
@@ -294,11 +295,13 @@ export const useSendAgentMessage = ({
       message,
       beginInputs,
       exploreSessionId,
+      enable_thinking,
     }: {
       message: Message;
       messages?: Message[];
       beginInputs?: BeginQuery[];
       exploreSessionId?: string;
+      enable_thinking?: boolean;
     }) => {
       const params: Record<string, unknown> = { agent_id: agentId };
 
@@ -327,6 +330,10 @@ export const useSendAgentMessage = ({
 
         if (userId) {
           params.user_id = userId;
+        }
+
+        if (enable_thinking !== undefined) {
+          params.enable_thinking = enable_thinking;
         }
       }
 
@@ -410,7 +417,13 @@ export const useSendAgentMessage = ({
   ]);
 
   const handlePressEnter = useCallback(
-    ({ exploreSessionId }: { exploreSessionId?: string } = {}) => {
+    ({
+      exploreSessionId,
+      enableModelThinking,
+    }: {
+      exploreSessionId?: string;
+      enableModelThinking?: boolean;
+    } & NextMessageInputOnPressEnterParameter = {}) => {
       if (trim(value) === '') return;
       const msgBody = buildRequestBody(value);
       if (done) {
@@ -418,6 +431,7 @@ export const useSendAgentMessage = ({
         sendMessage({
           message: msgBody,
           exploreSessionId,
+          enable_thinking: enableModelThinking,
         });
       }
       addNewestOneQuestion({ ...msgBody, files: fileList });
