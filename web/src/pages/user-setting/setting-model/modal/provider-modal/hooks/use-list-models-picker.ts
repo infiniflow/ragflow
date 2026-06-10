@@ -18,7 +18,7 @@ const getIsToolsFromFeatures = (
   features: IProviderModelItem['features'],
 ): boolean | undefined => {
   if (!Array.isArray(features)) return undefined;
-  return features.includes('tool_call') || features.includes('function_call');
+  return features.includes('is_tools');
 };
 
 // Map a fetched list-model item to the request-side IModelInfo shape.

@@ -144,9 +144,7 @@ const ProviderModal = ({
           max_tokens: item.max_tokens,
           extra: item.features
             ? {
-                is_tools:
-                  item.features.includes('tool_call') ||
-                  item.features.includes('function_call'),
+                is_tools: item.features.includes('is_tools'),
               }
             : undefined,
         });
