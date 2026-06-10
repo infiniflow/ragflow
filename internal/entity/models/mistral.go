@@ -498,15 +498,30 @@ func (m *MistralModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, er
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var modelList ModelList
-	if err = json.Unmarshal(body, &modelList); err != nil {
+	var result map[string]interface{}
+	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-	if modelList.Models == nil {
-		return nil, fmt.Errorf("invalid Mistral models response: data field is missing")
+
+	data, ok := result["data"].([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	return ParseListModel(modelList), nil
+	models := make([]ListModelResponse, 0)
+	for _, model := range data {
+		modelMap, ok := model.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		modelName, ok := modelMap["id"].(string)
+		if !ok {
+			continue
+		}
+		models = append(models, ListModelResponse{Name: modelName})
+	}
+
+	return models, nil
 }
 
 // Balance is not exposed by the Mistral API, so this returns "no such method".

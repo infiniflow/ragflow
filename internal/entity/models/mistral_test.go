@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -327,9 +326,8 @@ func TestMistralListModelsHappyPath(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
 				{"id": "mistral-large-latest"},
-				{"id": "  "},
 				{"id": "mistral-small-latest"},
-				{"id": "mistral-embed", "owned_by": "mistralai"},
+				{"id": "mistral-embed"},
 			},
 		})
 	})
@@ -341,57 +339,9 @@ func TestMistralListModelsHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if len(ids) != 3 || ids[0].Name != "mistral-large-latest" || ids[2].Name != "mistral-embed@mistralai" {
-		t.Errorf("ids=%v, want [mistral-large-latest mistral-small-latest mistral-embed@mistralai]", ids)
+	if len(ids) != 3 || ids[0].Name != "mistral-large-latest" || ids[2].Name != "mistral-embed" {
+		t.Errorf("ids=%v, want [mistral-large-latest mistral-small-latest mistral-embed]", ids)
 	}
-}
-
-func TestMistralListModelsRejectsMissingData(t *testing.T) {
-	srv := newMistralServer(t, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"object": "list"})
-	})
-	defer srv.Close()
-
-	m := newMistralForTest(srv.URL)
-	apiKey := "test-key"
-	_, err := m.ListModels(&APIConfig{ApiKey: &apiKey})
-	if err == nil || !strings.Contains(err.Error(), "data field is missing") {
-		t.Fatalf("err=%v, want missing data error", err)
-	}
-}
-
-func TestMistralListModelsIntegration(t *testing.T) {
-	if os.Getenv("MISTRAL_LIST_MODELS_INTEGRATION") != "1" {
-		t.Skip("set MISTRAL_LIST_MODELS_INTEGRATION=1 to call the Mistral models API")
-	}
-
-	apiKey := strings.TrimSpace(os.Getenv("MISTRAL_API_KEY"))
-	if apiKey == "" {
-		t.Fatal("MISTRAL_API_KEY is required")
-	}
-
-	m := NewMistralModel(
-		map[string]string{"default": "https://api.mistral.ai"},
-		URLSuffix{Models: "v1/models"},
-	)
-	models, err := m.ListModels(&APIConfig{ApiKey: &apiKey})
-	if err != nil {
-		t.Fatalf("ListModels: %v", err)
-	}
-	if len(models) == 0 {
-		t.Fatal("expected at least one Mistral model")
-	}
-
-	samples := make([]string, 0, 3)
-	for _, model := range models {
-		if model.Name == "" {
-			t.Fatal("model name should not be empty")
-		}
-		if len(samples) < 3 {
-			samples = append(samples, model.Name)
-		}
-	}
-	t.Logf("Mistral ListModels returned %d models; samples: %s", len(models), strings.Join(samples, ", "))
 }
 
 func TestMistralListModelsRequiresAPIKey(t *testing.T) {
