@@ -6,7 +6,8 @@
         "deepseek-v4-pro",
         "deepseek-ai/DeepSeek-V4-Pro",
         "deepseek-ai/deepseek-v4-pro",
-        "deepseek/deepseek-v4-pro"
+        "deepseek/deepseek-v4-pro",
+        "deepseek-v4-pro-260425"
       ],
       "max_tokens": 1048576,
       "model_types": [
@@ -37,7 +38,8 @@
         "deepseek-chat",
         "deepseek-ai/DeepSeek-V4-Flash",
         "deepseek-ai/deepseek-v4-flash",
-        "deepseek/deepseek-v4-flash"
+        "deepseek/deepseek-v4-flash",
+        "deepseek-v4-flash-260425"
       ],
       "max_tokens": 1048576,
       "model_types": [
@@ -79,7 +81,10 @@
         "deepseek-v3.2",
         "deepseek-ai/DeepSeek-V3.2",
         "deepseek-ai/deepseek-v3.2",
-        "deepseek/deepseek-v3.2"
+        "deepseek/deepseek-v3.2",
+        "Pro/deepseek-ai/DeepSeek-V3.2",
+        "deepseek/deepseek-v3.2-251201",
+        "deepseek-v3-2-251201"
       ],
       "max_tokens": 163840,
       "model_types": [
@@ -103,7 +108,8 @@
       "alias": [
         "deepseek-math-v2",
         "deepseek-ai/DeepSeek-Math-V2",
-        "deepseek-ai/deepseek-math-v2"
+        "deepseek-ai/deepseek-math-v2",
+        "deepseek/deepseek-math-v2"
       ],
       "max_tokens": 163840,
       "model_types": [
@@ -128,7 +134,8 @@
         "deepseek-v3.2-exp",
         "deepseek-ai/DeepSeek-V3.2-Exp",
         "deepseek-ai/deepseek-v3.2-exp",
-        "deepseek/deepseek-v3.2-exp"
+        "deepseek/deepseek-v3.2-exp",
+        "deepseek/deepseek-v3.2-exp-thinking"
       ],
       "max_tokens": 163840,
       "model_types": [
@@ -153,7 +160,9 @@
         "deepseek-v3.1-terminus",
         "deepseek-ai/DeepSeek-V3.1-Terminus",
         "deepseek-ai/deepseek-v3.1-terminus",
-        "deepseek/deepseek-v3.1-terminus"
+        "deepseek/deepseek-v3.1-terminus",
+        "Pro/deepseek-ai/DeepSeek-V3.1-Terminus",
+        "deepseek/deepseek-v3.1-terminus-thinking"
       ],
       "max_tokens": 163840,
       "model_types": [
@@ -166,7 +175,8 @@
         "deepseek-v3.1",
         "deepseek-ai/DeepSeek-V3.1",
         "deepseek-ai/deepseek-v3.1",
-        "deepseek/deepseek-chat-v3.1"
+        "deepseek/deepseek-chat-v3.1",
+        "deepseek-v3-1-250821"
       ],
       "max_tokens": 163840,
       "model_types": [
@@ -203,7 +213,9 @@
         "deepseek-r1-0528",
         "deepseek-ai/DeepSeek-R1-0528",
         "deepseek-ai/deepseek-r1-0528",
-        "deepseek/deepseek-r1-0528"
+        "deepseek/deepseek-r1-0528",
+        "deepseek-r1-250528",
+        "Pro/deepseek-ai/DeepSeek-R1"
       ],
       "max_tokens": 163840,
       "model_types": [
@@ -240,7 +252,9 @@
         "deepseek-v3-0324",
         "deepseek-ai/DeepSeek-V3-0324",
         "deepseek-ai/deepseek-v3-0324",
-        "deepseek/deepseek-chat-v3-0324"
+        "deepseek/deepseek-chat-v3-0324",
+        "deepseek-v3-250324",
+        "Pro/deepseek-ai/DeepSeek-V3"
       ],
       "max_tokens": 163840,
       "model_types": [
@@ -253,7 +267,8 @@
         "deepseek-r1-distill-qwen-32b",
         "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
         "deepseek-ai/deepseek-r1-distill-qwen-32b",
-        "deepseek/deepseek-r1-distill-qwen-32b"
+        "deepseek/deepseek-r1-distill-qwen-32b",
+        "deepseek-r1-distill-qwen-32b-250120"
       ],
       "max_tokens": 131072,
       "model_types": [
@@ -277,7 +292,8 @@
       "alias": [
         "deepseek-r1-distill-qwen-7b",
         "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
-        "deepseek-ai/deepseek-r1-distill-qwen-7b"
+        "deepseek-ai/deepseek-r1-distill-qwen-7b",
+        "deepseek-r1-distill-qwen-7b-250120"
       ],
       "max_tokens": 131072,
       "model_types": [
@@ -327,7 +343,10 @@
         "deepseek-r1",
         "deepseek-ai/DeepSeek-R1",
         "deepseek-ai/deepseek-r1",
-        "deepseek/deepseek-r1"
+        "deepseek/deepseek-r1",
+        "DeepSeek-R1",
+        "deepseek-r1-250120",
+        "deepseek-r1_32k"
       ],
       "max_tokens": 163840,
       "model_types": [
@@ -352,7 +371,8 @@
         "deepseek-v3",
         "deepseek-ai/DeepSeek-V3",
         "deepseek-ai/deepseek-v3",
-        "deepseek/deepseek-chat"
+        "deepseek/deepseek-chat",
+        "DeepSeek-V3"
       ],
       "max_tokens": 163840,
       "model_types": [
