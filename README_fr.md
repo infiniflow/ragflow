@@ -87,6 +87,7 @@ Essayez notre service cloud sur [https://cloud.ragflow.io](https://cloud.ragflow
 
 ## 🔥 Dernières mises à jour
 
+- 15-06-2026 Prise en charge de plusieurs canaux de discussion tels que Feishu, Discord, Telegram, Line, etc.
 - 24-04-2026 Prise en charge de DeepSeek v4.
 - 24-03-2026 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — Fournit un skill officiel pour accéder aux datasets RAGFlow via OpenClaw.
 - 26-12-2025 Prise en charge de la « Mémoire » pour l'agent IA.
@@ -97,7 +98,6 @@ Essayez notre service cloud sur [https://cloud.ragflow.io](https://cloud.ragflow
 - 08-08-2025 Prise en charge des derniers modèles de la série GPT-5 d'OpenAI.
 - 01-08-2025 Prise en charge du flux de travail agentique et de MCP.
 - 23-05-2025 Ajout d'un composant exécuteur de code Python/JavaScript à l'Agent.
-- 05-05-2025 Prise en charge des requêtes inter-langues.
 - 19-03-2025 Prise en charge de l'utilisation d'un modèle multi-modal pour analyser les images dans les fichiers PDF ou DOCX.
 
 ## 🎉 Restez informé

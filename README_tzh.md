@@ -87,6 +87,7 @@
 
 ## 🔥 近期更新
 
+- 2026-06-15 支援飛書、Discord、Telegram、Line 等多種聊天管道。
 - 2026-04-24 支援 DeepSeek v4 版本。
 - 2026-03-24 發布 [RAGFlow 官方 Skill](https://clawhub.ai/yingfeng/ragflow-skill) — 提供官方 Skill 以透過 OpenClaw 訪問 RAGFlow 數據集。
 - 2025-12-26 支援AI代理的「記憶」功能。
@@ -97,10 +98,8 @@
 - 2025-08-08 支援 OpenAI 最新的 GPT-5 系列模型。
 - 2025-08-01 支援 agentic workflow 和 MCP。
 - 2025-05-23 為 Agent 新增 Python/JS 程式碼執行器元件。
-- 2025-05-05 支援跨語言查詢。
 - 2025-03-19 PDF和DOCX中的圖支持用多模態大模型去解析得到描述。
-- 2024-12-18 升級了 DeepDoc 的文檔佈局分析模型。
-- 2024-08-22 支援用 RAG 技術實現從自然語言到 SQL 語句的轉換。
+
 
 ## 🎉 關注項目
 
