@@ -160,8 +160,11 @@ func TestSearchBotsRetrieval_NoAuth(t *testing.T) {
 	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval_test", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401, got %d", w.Code)
+	// Converged in #15744: auth failure now uses jsonError → HTTP 200 + the
+	// CodeAuthenticationError code on the body, matching ChunkHandler and the
+	// rest of the codebase (kb.go).
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 (jsonError convention), got %d", w.Code)
 	}
 }
 
