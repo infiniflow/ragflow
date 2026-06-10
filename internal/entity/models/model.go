@@ -292,9 +292,10 @@ func InitProviderManager(dirPath string) error {
 		return fmt.Errorf("no JSON files found in directory %s", dirPath)
 	}
 
-	// Read the file
+	// Read the file.  Use a repo-root-relative path so that go test
+	// (which sets CWD to the package directory) can still find it.
 	var data []byte
-	data, err = os.ReadFile("conf/all_models.json")
+	data, err = os.ReadFile(filepath.Join(findRepoRoot(), "conf", "all_models.json"))
 	if err != nil {
 		return fmt.Errorf("error reading file 'conf/all_models.json': %w", err)
 	}
@@ -698,6 +699,23 @@ func modelHasFeature(features Features, featureType string) bool {
 	default:
 		return false
 	}
+}
+
+// findRepoRoot walks up from CWD until it finds the repo root (marked by
+// conf/all_models.json).  This makes tests work regardless of the Go test
+// binary's CWD (which is set to the package directory by go test).
+func findRepoRoot() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "."
+	}
+	for dir != "/" && dir != "" {
+		if _, err := os.Stat(filepath.Join(dir, "conf", "all_models.json")); err == nil {
+			return dir
+		}
+		dir = filepath.Dir(dir)
+	}
+	return "."
 }
 
 // Helper: Find provider by name
