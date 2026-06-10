@@ -131,6 +131,13 @@ func (dao *API4ConversationDAO) GetBySessionID(sessionID, agentID string) (*enti
 	return &result, nil
 }
 
+// ListIDsByAgentID lists conversation IDs for one agent.
+func (dao *API4ConversationDAO) ListIDsByAgentID(agentID string) ([]string, error) {
+	var ids []string
+	err := DB.Model(&entity.API4Conversation{}).Where("dialog_id = ?", agentID).Pluck("id", &ids).Error
+	return ids, err
+}
+
 // DeleteBySessionIDAndAgentID deletes API4Conversations by sessionID and agentID
 func (dao *API4ConversationDAO) DeleteBySessionIDAndAgentID(sessionID, agentID string) (int64, error) {
 	result := DB.Where("id = ? AND dialog_id = ?", sessionID, agentID).Delete(&entity.API4Conversation{})

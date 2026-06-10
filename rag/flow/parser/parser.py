@@ -27,7 +27,13 @@ from PIL import Image
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
+from api.db.joint_services.tenant_model_service import (
+    ensure_mineru_from_env,
+    ensure_paddleocr_from_env,
+    get_first_provider_model_name,
+    get_model_config_from_provider_instance,
+    get_tenant_default_model_by_type,
+)
 from common import settings
 from common.constants import LLMType
 from common.misc_utils import get_uuid, thread_pool_exec
@@ -336,10 +342,10 @@ class Parser(ProcessBase):
         if isinstance(raw_parse_method, str):
             lowered = raw_parse_method.lower()
             if lowered.endswith("@mineru"):
-                parser_model_name = raw_parse_method.rsplit("@", 1)[0]
+                parser_model_name = raw_parse_method
                 parse_method = "MinerU"
             elif lowered.endswith("@paddleocr"):
-                parser_model_name = raw_parse_method.rsplit("@", 1)[0]
+                parser_model_name = raw_parse_method
                 parse_method = "PaddleOCR"
 
         # DeepDOC returns structured page boxes directly.
@@ -368,13 +374,7 @@ class Parser(ProcessBase):
                 if not tenant_id:
                     return None
 
-                from api.db.joint_services.tenant_model_service import ensure_mineru_from_env, get_models_by_tenant_and_provider_and_model_type
-
-                env_name = ensure_mineru_from_env(tenant_id)
-                candidates = get_models_by_tenant_and_provider_and_model_type(tenant_id=tenant_id, provider_name="MinerU", model_type=LLMType.OCR)
-                if candidates:
-                    return candidates[0].llm_name
-                return env_name
+                return get_first_provider_model_name(tenant_id, "MinerU", LLMType.OCR) or ensure_mineru_from_env(tenant_id)
 
             parser_model_name = resolve_mineru_llm_name()
             if not parser_model_name:
@@ -552,13 +552,7 @@ class Parser(ProcessBase):
                 if not tenant_id:
                     return None
 
-                from api.db.joint_services.tenant_model_service import ensure_paddleocr_from_env, get_models_by_tenant_and_provider_and_model_type
-
-                env_name = ensure_paddleocr_from_env(tenant_id)
-                candidates = get_models_by_tenant_and_provider_and_model_type(tenant_id=tenant_id, provider_name="PaddleOCR", model_type=LLMType.OCR)
-                if candidates:
-                    return candidates[0].llm_name
-                return env_name
+                return get_first_provider_model_name(tenant_id, "PaddleOCR", LLMType.OCR) or ensure_paddleocr_from_env(tenant_id)
 
             parser_model_name = resolve_paddleocr_llm_name()
             if not parser_model_name:

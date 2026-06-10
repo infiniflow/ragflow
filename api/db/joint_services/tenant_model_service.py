@@ -19,13 +19,113 @@ import enum
 import json
 from peewee import IntegrityError
 from common import settings
-from common.constants import LLMType, ActiveStatusEnum, MINERU_DEFAULT_CONFIG, MINERU_ENV_KEYS, PADDLEOCR_DEFAULT_CONFIG, PADDLEOCR_ENV_KEYS, OPENDATALOADER_DEFAULT_CONFIG, OPENDATALOADER_ENV_KEYS
-from api.db.services.tenant_llm_service import TenantLLMService, TenantService
+from common.constants import ActiveStatusEnum, LLMType, MINERU_DEFAULT_CONFIG, MINERU_ENV_KEYS, OPENDATALOADER_DEFAULT_CONFIG, OPENDATALOADER_ENV_KEYS, PADDLEOCR_DEFAULT_CONFIG, PADDLEOCR_ENV_KEYS
+from api.db.services.tenant_llm_service import TenantService
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
 from api.db.services.tenant_model_service import TenantModelService
 
 logger = logging.getLogger(__name__)
+
+
+def _decode_api_key_config(raw_api_key: str) -> tuple[str, bool | None, str | None]:
+    if not raw_api_key:
+        return raw_api_key, None, None
+
+    try:
+        parsed = json.loads(raw_api_key)
+    except Exception:
+        return raw_api_key, None, None
+
+    if not isinstance(parsed, dict):
+        return raw_api_key, None, None
+
+    is_tools = bool(parsed["is_tools"]) if "is_tools" in parsed else None
+    if set(parsed.keys()) <= {"api_key", "is_tools"}:
+        return parsed.get("api_key", ""), is_tools, None
+
+    return parsed.get("api_key", raw_api_key), is_tools, raw_api_key
+
+
+def get_first_provider_model_name(tenant_id: str, provider_name: str, model_type: str | enum.Enum) -> str | None:
+    model_type_val = model_type if isinstance(model_type, str) else model_type.value
+    provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
+    if not provider_obj:
+        return None
+
+    for instance_obj in TenantModelInstanceService.get_all_by_provider_id(provider_obj.id):
+        if instance_obj.status != ActiveStatusEnum.ACTIVE.value:
+            continue
+        for model_obj in TenantModelService.get_models_by_instance_id(instance_obj.id):
+            if model_obj.model_type == model_type_val and model_obj.status == ActiveStatusEnum.ACTIVE.value:
+                return f"{model_obj.model_name}@{instance_obj.instance_name}@{provider_name}"
+    return None
+
+
+def _collect_env_config(env_keys: list[str], default_config: dict) -> dict | None:
+    config = dict(default_config)
+    found = False
+    for key in env_keys:
+        value = os.environ.get(key)
+        if value:
+            found = True
+            config[key] = value
+    return config if found else None
+
+
+def _ensure_ocr_provider_from_env(tenant_id: str, provider_name: str, model_name: str, config: dict | None) -> str | None:
+    if not config:
+        return None
+
+    provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
+    if not provider_obj:
+        TenantModelProviderService.insert(tenant_id=tenant_id, provider_name=provider_name)
+        provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
+
+    api_key = json.dumps(config)
+    instance_obj = TenantModelInstanceService.get_by_provider_id_and_api_key(provider_obj.id, api_key)
+    if not instance_obj:
+        instance_obj = TenantModelInstanceService.create_instance(
+            provider_id=provider_obj.id,
+            instance_name=model_name,
+            api_key=api_key,
+            extra="{}",
+        )
+
+    model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(
+        provider_obj.id,
+        instance_obj.id,
+        LLMType.OCR.value,
+        model_name,
+    )
+    if not model_obj:
+        TenantModelService.insert(
+            model_name=model_name,
+            provider_id=provider_obj.id,
+            instance_id=instance_obj.id,
+            model_type=LLMType.OCR.value,
+            extra=json.dumps({"max_tokens": 0}),
+        )
+
+    return f"{model_name}@{instance_obj.instance_name}@{provider_name}"
+
+
+def ensure_mineru_from_env(tenant_id: str) -> str | None:
+    return _ensure_ocr_provider_from_env(
+        tenant_id,
+        "MinerU",
+        "mineru-from-env",
+        _collect_env_config(MINERU_ENV_KEYS, MINERU_DEFAULT_CONFIG),
+    )
+
+
+def ensure_paddleocr_from_env(tenant_id: str) -> str | None:
+    return _ensure_ocr_provider_from_env(
+        tenant_id,
+        "PaddleOCR",
+        "paddleocr-from-env",
+        _collect_env_config(PADDLEOCR_ENV_KEYS, PADDLEOCR_DEFAULT_CONFIG),
+    )
 
 
 def get_tenant_default_model_by_type(tenant_id: str, model_type: str|enum.Enum):
@@ -104,7 +204,7 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
         raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
     model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(provider_obj.id, instance_obj.id, model_type_val, pure_model_name)
 
-    api_key, is_tool, api_key_payload = TenantLLMService._decode_api_key_config(instance_obj.api_key)
+    api_key, is_tool, api_key_payload = _decode_api_key_config(instance_obj.api_key)
     extra_fields = json.loads(instance_obj.extra) if instance_obj.extra else {}
 
     if model_obj:
@@ -197,220 +297,13 @@ def delete_instances_by_provider_ids(provider_ids: list[str]):
     return TenantModelInstanceService.delete_by_provider_ids(provider_ids)
 
 
-def ensure_mineru_from_env(tenant_id: str) -> str | None:
-    """
-    Ensure a MinerU OCR model exists for the tenant if env variables are present.
-    Return the existing or newly created model name (format: model_name@instance_name@MinerU), or None if env not set.
-    """
-    cfg = TenantLLMService._collect_mineru_env_config()
-    if not cfg:
-        return None
-
-    def _parse_api_key(raw: str) -> dict:
-        try:
-            return json.loads(raw or "{}")
-        except Exception:
-            return {}
-
-    provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, "MinerU")
-
-    # Check existing models for matching config
-    if provider_obj:
-        instances = TenantModelInstanceService.get_all_by_provider_id(provider_obj.id)
-        for inst in instances:
-            api_cfg = _parse_api_key(inst.api_key)
-            normalized = {k: api_cfg.get(k, MINERU_DEFAULT_CONFIG.get(k)) for k in MINERU_ENV_KEYS}
-            if normalized == cfg:
-                models = TenantModelService.get_models_by_instance_id(inst.id)
-                ocr_models = [m for m in models if m.model_type == LLMType.OCR.value]
-                if ocr_models:
-                    return f"{ocr_models[0].model_name}@{inst.instance_name}@MinerU"
-
-    # Collect used model names for OCR type under MinerU provider
-    used_names = set()
-    if provider_obj:
-        instances = TenantModelInstanceService.get_all_by_provider_id(provider_obj.id)
-        for inst in instances:
-            models = TenantModelService.get_models_by_instance_id(inst.id)
-            for m in models:
-                if m.model_type == LLMType.OCR.value:
-                    used_names.add(m.model_name)
-
-    idx = 1
-    base_name = "mineru-from-env"
-    while True:
-        candidate = f"{base_name}-{idx}"
-        if candidate in used_names:
-            idx += 1
-            continue
-
-        try:
-            if not provider_obj:
-                provider_obj = TenantModelProviderService.insert(tenant_id=tenant_id, provider_name="MinerU")
-
-            inst_obj = TenantModelInstanceService.create_instance(
-                provider_id=provider_obj.id,
-                instance_name=candidate,
-                api_key=json.dumps(cfg),
-                extra=json.dumps({"base_url": ""}),
-            )
-
-            TenantModelService.insert(
-                model_name=candidate,
-                provider_id=provider_obj.id,
-                instance_id=inst_obj.id,
-                model_type=LLMType.OCR.value,
-            )
-            return f"{candidate}@{inst_obj.instance_name}@MinerU"
-        except IntegrityError:
-            logging.warning("MinerU env model %s already exists for tenant %s, retry with next name", candidate, tenant_id)
-            used_names.add(candidate)
-            idx += 1
-            continue
-
-
-def ensure_paddleocr_from_env(tenant_id: str) -> str | None:
-    """
-    Ensure a PaddleOCR model exists for the tenant if env variables are present.
-    Return the existing or newly created model name (format: model_name@instance_name@PaddleOCR), or None if env not set.
-    """
-    cfg = TenantLLMService._collect_paddleocr_env_config()
-    if not cfg:
-        return None
-
-    def _parse_api_key(raw: str) -> dict:
-        try:
-            return json.loads(raw or "{}")
-        except Exception:
-            return {}
-
-    provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, "PaddleOCR")
-
-    # Check existing models for matching config
-    if provider_obj:
-        instances = TenantModelInstanceService.get_all_by_provider_id(provider_obj.id)
-        for inst in instances:
-            api_cfg = _parse_api_key(inst.api_key)
-            normalized = {k: api_cfg.get(k, PADDLEOCR_DEFAULT_CONFIG.get(k)) for k in PADDLEOCR_ENV_KEYS}
-            if normalized == cfg:
-                models = TenantModelService.get_models_by_instance_id(inst.id)
-                ocr_models = [m for m in models if m.model_type == LLMType.OCR.value]
-                if ocr_models:
-                    return f"{ocr_models[0].model_name}@{inst.instance_name}@PaddleOCR"
-
-    # Collect used model names for OCR type under PaddleOCR provider
-    used_names = set()
-    if provider_obj:
-        instances = TenantModelInstanceService.get_all_by_provider_id(provider_obj.id)
-        for inst in instances:
-            models = TenantModelService.get_models_by_instance_id(inst.id)
-            for m in models:
-                if m.model_type == LLMType.OCR.value:
-                    used_names.add(m.model_name)
-
-    idx = 1
-    base_name = "paddleocr-from-env"
-    while True:
-        candidate = f"{base_name}-{idx}"
-        if candidate in used_names:
-            idx += 1
-            continue
-
-        try:
-            if not provider_obj:
-                provider_obj = TenantModelProviderService.insert(tenant_id=tenant_id, provider_name="PaddleOCR")
-
-            inst_obj = TenantModelInstanceService.create_instance(
-                provider_id=provider_obj.id,
-                instance_name=candidate,
-                api_key=json.dumps(cfg),
-                extra=json.dumps({"base_url": ""}),
-            )
-
-            TenantModelService.insert(
-                model_name=candidate,
-                provider_id=provider_obj.id,
-                instance_id=inst_obj.id,
-                model_type=LLMType.OCR.value,
-            )
-            return f"{candidate}@{inst_obj.instance_name}@PaddleOCR"
-        except IntegrityError:
-            logging.warning("PaddleOCR env model %s already exists for tenant %s, retry with next name", candidate, tenant_id)
-            used_names.add(candidate)
-            idx += 1
-            continue
-
-
 def ensure_opendataloader_from_env(tenant_id: str) -> str | None:
-    """
-    Ensure an OpenDataLoader OCR model exists for the tenant if env variables are present.
-    Return the existing or newly created model name (format: model_name@instance_name@OpenDataLoader), or None if env not set.
-    """
-    cfg = TenantLLMService._collect_opendataloader_env_config()
-    if not cfg:
-        return None
-
-    def _parse_api_key(raw: str) -> dict:
-        try:
-            return json.loads(raw or "{}")
-        except Exception:
-            return {}
-
-    provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, "OpenDataLoader")
-
-    # Check existing models for matching config
-    if provider_obj:
-        instances = TenantModelInstanceService.get_all_by_provider_id(provider_obj.id)
-        for inst in instances:
-            api_cfg = _parse_api_key(inst.api_key)
-            normalized = {k: api_cfg.get(k, OPENDATALOADER_DEFAULT_CONFIG.get(k)) for k in OPENDATALOADER_ENV_KEYS}
-            if normalized == cfg:
-                models = TenantModelService.get_models_by_instance_id(inst.id)
-                ocr_models = [m for m in models if m.model_type == LLMType.OCR.value]
-                if ocr_models:
-                    return f"{ocr_models[0].model_name}@{inst.instance_name}@OpenDataLoader"
-
-    # Collect used model names for OCR type under OpenDataLoader provider
-    used_names = set()
-    if provider_obj:
-        instances = TenantModelInstanceService.get_all_by_provider_id(provider_obj.id)
-        for inst in instances:
-            models = TenantModelService.get_models_by_instance_id(inst.id)
-            for m in models:
-                if m.model_type == LLMType.OCR.value:
-                    used_names.add(m.model_name)
-
-    idx = 1
-    base_name = "opendataloader-from-env"
-    while True:
-        candidate = f"{base_name}-{idx}"
-        if candidate in used_names:
-            idx += 1
-            continue
-
-        try:
-            if not provider_obj:
-                provider_obj = TenantModelProviderService.insert(tenant_id=tenant_id, provider_name="OpenDataLoader")
-
-            inst_obj = TenantModelInstanceService.create_instance(
-                provider_id=provider_obj.id,
-                instance_name=candidate,
-                api_key=json.dumps(cfg),
-                extra=json.dumps({"base_url": ""}),
-            )
-
-            TenantModelService.insert(
-                model_name=candidate,
-                provider_id=provider_obj.id,
-                instance_id=inst_obj.id,
-                model_type=LLMType.OCR.value,
-            )
-            return f"{candidate}@{inst_obj.instance_name}@OpenDataLoader"
-        except IntegrityError:
-            logging.warning("OpenDataLoader env model %s already exists for tenant %s, retry with next name", candidate, tenant_id)
-            used_names.add(candidate)
-            idx += 1
-            continue
+    return _ensure_ocr_provider_from_env(
+        tenant_id,
+        "OpenDataLoader",
+        "opendataloader-from-env",
+        _collect_env_config(OPENDATALOADER_ENV_KEYS, OPENDATALOADER_DEFAULT_CONFIG),
+    )
 
 
 def get_models_by_tenant_and_provider_and_model_type(tenant_id: str, provider_name: str, model_type: str):
