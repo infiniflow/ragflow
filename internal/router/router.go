@@ -266,6 +266,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.POST("/:dataset_id/documents/parse", r.documentHandler.ParseDocuments)
 				datasets.POST("/:dataset_id/documents/stop", r.documentHandler.StopParseDocuments)
 				datasets.DELETE("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.RemoveChunks)
+				datasets.PUT("/:dataset_id/documents/:document_id/metadata/config", r.datasetsHandler.UpdateDocumentMetadataConfig)
 			}
 
 			// Search routes
@@ -392,6 +393,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				agents.GET("/templates", r.agentHandler.ListTemplates)
 				agents.GET("/download", r.agentHandler.DownloadAgentFile)
 				agents.GET("/attachments/:attachment_id/download", r.agentHandler.DownloadAttachment)
+				agents.POST("/test_db_connection", r.agentHandler.TestDBConnection)
 				agents.GET("/:agent_id", r.agentHandler.GetAgent)
 				agents.GET("/:agent_id/versions", r.agentHandler.ListAgentVersions)
 				agents.GET("/:agent_id/versions/:version_id", r.agentHandler.GetAgentVersion)
@@ -401,6 +403,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				agents.GET("/:agent_id/sessions/:session_id", r.agentHandler.GetAgentSession)
 				agents.DELETE("/:agent_id/sessions/:session_id", r.agentHandler.DeleteAgentSessionItem)
 				agents.GET("/:agent_id/logs/:message_id", r.agentHandler.GetAgentLogs)
+				agents.DELETE("/:agent_id/sessions", r.agentHandler.DeleteAgentSessions)
 			}
 
 			// Plugin routes

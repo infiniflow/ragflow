@@ -18,13 +18,113 @@ import os
 import enum
 import json
 from common import settings
-from common.constants import LLMType, ActiveStatusEnum
-from api.db.services.tenant_llm_service import TenantLLMService, TenantService
+from common.constants import ActiveStatusEnum, LLMType, MINERU_DEFAULT_CONFIG, MINERU_ENV_KEYS, PADDLEOCR_DEFAULT_CONFIG, PADDLEOCR_ENV_KEYS
+from api.db.services.tenant_llm_service import TenantService
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
 from api.db.services.tenant_model_service import TenantModelService
 
 logger = logging.getLogger(__name__)
+
+
+def _decode_api_key_config(raw_api_key: str) -> tuple[str, bool | None, str | None]:
+    if not raw_api_key:
+        return raw_api_key, None, None
+
+    try:
+        parsed = json.loads(raw_api_key)
+    except Exception:
+        return raw_api_key, None, None
+
+    if not isinstance(parsed, dict):
+        return raw_api_key, None, None
+
+    is_tools = bool(parsed["is_tools"]) if "is_tools" in parsed else None
+    if set(parsed.keys()) <= {"api_key", "is_tools"}:
+        return parsed.get("api_key", ""), is_tools, None
+
+    return parsed.get("api_key", raw_api_key), is_tools, raw_api_key
+
+
+def get_first_provider_model_name(tenant_id: str, provider_name: str, model_type: str | enum.Enum) -> str | None:
+    model_type_val = model_type if isinstance(model_type, str) else model_type.value
+    provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
+    if not provider_obj:
+        return None
+
+    for instance_obj in TenantModelInstanceService.get_all_by_provider_id(provider_obj.id):
+        if instance_obj.status != ActiveStatusEnum.ACTIVE.value:
+            continue
+        for model_obj in TenantModelService.get_models_by_instance_id(instance_obj.id):
+            if model_obj.model_type == model_type_val and model_obj.status == ActiveStatusEnum.ACTIVE.value:
+                return f"{model_obj.model_name}@{instance_obj.instance_name}@{provider_name}"
+    return None
+
+
+def _collect_env_config(env_keys: list[str], default_config: dict) -> dict | None:
+    config = dict(default_config)
+    found = False
+    for key in env_keys:
+        value = os.environ.get(key)
+        if value:
+            found = True
+            config[key] = value
+    return config if found else None
+
+
+def _ensure_ocr_provider_from_env(tenant_id: str, provider_name: str, model_name: str, config: dict | None) -> str | None:
+    if not config:
+        return None
+
+    provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
+    if not provider_obj:
+        TenantModelProviderService.insert(tenant_id=tenant_id, provider_name=provider_name)
+        provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
+
+    api_key = json.dumps(config)
+    instance_obj = TenantModelInstanceService.get_by_provider_id_and_api_key(provider_obj.id, api_key)
+    if not instance_obj:
+        instance_obj = TenantModelInstanceService.create_instance(
+            provider_id=provider_obj.id,
+            instance_name=model_name,
+            api_key=api_key,
+            extra="{}",
+        )
+
+    model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(
+        provider_obj.id,
+        instance_obj.id,
+        LLMType.OCR.value,
+        model_name,
+    )
+    if not model_obj:
+        TenantModelService.insert(
+            model_name=model_name,
+            provider_id=provider_obj.id,
+            instance_id=instance_obj.id,
+            model_type=LLMType.OCR.value,
+            extra=json.dumps({"max_tokens": 0}),
+        )
+
+    return f"{model_name}@{instance_obj.instance_name}@{provider_name}"
+
+
+def ensure_mineru_from_env(tenant_id: str) -> str | None:
+    return _ensure_ocr_provider_from_env(
+        tenant_id,
+        "MinerU",
+        "mineru-from-env",
+        _collect_env_config(MINERU_ENV_KEYS, MINERU_DEFAULT_CONFIG),
+    )
+
+
+def ensure_paddleocr_from_env(tenant_id: str) -> str | None:
+    return _ensure_ocr_provider_from_env(
+        tenant_id,
+        "PaddleOCR",
+        "paddleocr-from-env",
+        _collect_env_config(PADDLEOCR_ENV_KEYS, PADDLEOCR_DEFAULT_CONFIG),
+    )
 
 
 def get_tenant_default_model_by_type(tenant_id: str, model_type: str|enum.Enum):
@@ -103,7 +203,7 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
         raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
     model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(provider_obj.id, instance_obj.id, model_type_val, pure_model_name)
 
-    api_key, is_tool, api_key_payload = TenantLLMService._decode_api_key_config(instance_obj.api_key)
+    api_key, is_tool, api_key_payload = _decode_api_key_config(instance_obj.api_key)
     extra_fields = json.loads(instance_obj.extra) if instance_obj.extra else {}
 
     if model_obj:
