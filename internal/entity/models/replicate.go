@@ -542,11 +542,16 @@ func (r *ReplicateModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, 
 	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
+	if result.Results == nil {
+		return nil, fmt.Errorf("invalid Replicate models response: results field is missing")
+	}
 
 	models := make([]ListModelResponse, 0, len(result.Results))
 	for _, model := range result.Results {
-		if model.Owner != "" && model.Name != "" {
-			models = append(models, ListModelResponse{Name: model.Owner + "/" + model.Name})
+		owner := strings.TrimSpace(model.Owner)
+		name := strings.TrimSpace(model.Name)
+		if owner != "" && name != "" {
+			models = append(models, ListModelResponse{Name: owner + "/" + name})
 		}
 	}
 	return models, nil
