@@ -1,37 +1,6 @@
 {
   "models": [
     {
-      "name": "deepseek-v4-pro",
-      "alias": [
-        "deepseek-v4-pro",
-        "deepseek-ai/DeepSeek-V4-Pro",
-        "deepseek-ai/deepseek-v4-pro",
-        "deepseek/deepseek-v4-pro",
-        "deepseek-v4-pro-260425"
-      ],
-      "max_tokens": 1048576,
-      "model_types": [
-        "chat"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      }
-    },
-    {
-      "name": "deepseek-v4-pro-base",
-      "alias": [
-        "deepseek-v4-pro-base",
-        "deepseek/deepseek-v4-pro-base",
-        "deepseek-ai/DeepSeek-V4-Pro-Base",
-        "deepseek-ai/deepseek-v4-pro-base"
-      ],
-      "max_tokens": 1048576,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
       "name": "deepseek-v4-flash",
       "alias": [
         "deepseek-v4-flash",
@@ -57,6 +26,37 @@
         "deepseek/deepseek-v4-flash-base",
         "deepseek-ai/DeepSeek-V4-Flash-Base",
         "deepseek-ai/deepseek-v4-flash-base"
+      ],
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v4-pro",
+      "alias": [
+        "deepseek-v4-pro",
+        "deepseek-ai/DeepSeek-V4-Pro",
+        "deepseek-ai/deepseek-v4-pro",
+        "deepseek/deepseek-v4-pro",
+        "deepseek-v4-pro-260425"
+      ],
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "deepseek-v4-pro-base",
+      "alias": [
+        "deepseek-v4-pro-base",
+        "deepseek/deepseek-v4-pro-base",
+        "deepseek-ai/DeepSeek-V4-Pro-Base",
+        "deepseek-ai/deepseek-v4-pro-base"
       ],
       "max_tokens": 1048576,
       "model_types": [
@@ -223,18 +223,6 @@
       ]
     },
     {
-      "name": "deepseek-prover-v2-7b",
-      "alias": [
-        "deepseek-prover-v2-7b",
-        "deepseek-ai/DeepSeek-Prover-V2-7B",
-        "deepseek-ai/deepseek-prover-v2-7b"
-      ],
-      "max_tokens": 32768,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
       "name": "deepseek-prover-v2-671b",
       "alias": [
         "deepseek-prover-v2-671b",
@@ -242,6 +230,18 @@
         "deepseek-ai/deepseek-prover-v2-671b"
       ],
       "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-prover-v2-7b",
+      "alias": [
+        "deepseek-prover-v2-7b",
+        "deepseek-ai/DeepSeek-Prover-V2-7B",
+        "deepseek-ai/deepseek-prover-v2-7b"
+      ],
+      "max_tokens": 32768,
       "model_types": [
         "chat"
       ]
@@ -262,40 +262,17 @@
       ]
     },
     {
-      "name": "deepseek-r1-distill-qwen-32b",
+      "name": "deepseek-r1",
       "alias": [
-        "deepseek-r1-distill-qwen-32b",
-        "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
-        "deepseek-ai/deepseek-r1-distill-qwen-32b",
-        "deepseek/deepseek-r1-distill-qwen-32b",
-        "deepseek-r1-distill-qwen-32b-250120"
+        "deepseek-r1",
+        "deepseek-ai/DeepSeek-R1",
+        "deepseek-ai/deepseek-r1",
+        "deepseek/deepseek-r1",
+        "DeepSeek-R1",
+        "deepseek-r1-250120",
+        "deepseek-r1_32k"
       ],
-      "max_tokens": 131072,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-r1-distill-qwen-14b",
-      "alias": [
-        "deepseek-r1-distill-qwen-14b",
-        "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
-        "deepseek-ai/deepseek-r1-distill-qwen-14b"
-      ],
-      "max_tokens": 131072,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-r1-distill-qwen-7b",
-      "alias": [
-        "deepseek-r1-distill-qwen-7b",
-        "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
-        "deepseek-ai/deepseek-r1-distill-qwen-7b",
-        "deepseek-r1-distill-qwen-7b-250120"
-      ],
-      "max_tokens": 131072,
+      "max_tokens": 163840,
       "model_types": [
         "chat"
       ]
@@ -338,17 +315,40 @@
       ]
     },
     {
-      "name": "deepseek-r1",
+      "name": "deepseek-r1-distill-qwen-14b",
       "alias": [
-        "deepseek-r1",
-        "deepseek-ai/DeepSeek-R1",
-        "deepseek-ai/deepseek-r1",
-        "deepseek/deepseek-r1",
-        "DeepSeek-R1",
-        "deepseek-r1-250120",
-        "deepseek-r1_32k"
+        "deepseek-r1-distill-qwen-14b",
+        "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
+        "deepseek-ai/deepseek-r1-distill-qwen-14b"
       ],
-      "max_tokens": 163840,
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-r1-distill-qwen-32b",
+      "alias": [
+        "deepseek-r1-distill-qwen-32b",
+        "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
+        "deepseek-ai/deepseek-r1-distill-qwen-32b",
+        "deepseek/deepseek-r1-distill-qwen-32b",
+        "deepseek-r1-distill-qwen-32b-250120"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-r1-distill-qwen-7b",
+      "alias": [
+        "deepseek-r1-distill-qwen-7b",
+        "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+        "deepseek-ai/deepseek-r1-distill-qwen-7b",
+        "deepseek-r1-distill-qwen-7b-250120"
+      ],
+      "max_tokens": 131072,
       "model_types": [
         "chat"
       ]
@@ -473,6 +473,18 @@
       ]
     },
     {
+      "name": "deepseek-prover-v1.5-base",
+      "alias": [
+        "deepseek-prover-v1.5-base",
+        "deepseek-ai/DeepSeek-Prover-V1.5-Base",
+        "deepseek-ai/deepseek-prover-v1.5-base"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
       "name": "deepseek-prover-v1.5-rl",
       "alias": [
         "deepseek-prover-v1.5-rl",
@@ -497,59 +509,11 @@
       ]
     },
     {
-      "name": "deepseek-prover-v1.5-base",
-      "alias": [
-        "deepseek-prover-v1.5-base",
-        "deepseek-ai/DeepSeek-Prover-V1.5-Base",
-        "deepseek-ai/deepseek-prover-v1.5-base"
-      ],
-      "max_tokens": 4096,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
       "name": "deepseek-v2-chat-0628",
       "alias": [
         "deepseek-v2-chat-0628",
         "deepseek-ai/DeepSeek-V2-Chat-0628",
         "deepseek-ai/deepseek-v2-chat-0628"
-      ],
-      "max_tokens": 163840,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-coder-v2-lite-instruct",
-      "alias": [
-        "deepseek-coder-v2-lite-instruct",
-        "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct",
-        "deepseek-ai/deepseek-coder-v2-lite-instruct"
-      ],
-      "max_tokens": 163840,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-coder-v2-lite-base",
-      "alias": [
-        "deepseek-coder-v2-lite-base",
-        "deepseek-ai/DeepSeek-Coder-V2-Lite-Base",
-        "deepseek-ai/deepseek-coder-v2-lite-base"
-      ],
-      "max_tokens": 163840,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-coder-v2-instruct",
-      "alias": [
-        "deepseek-coder-v2-instruct",
-        "deepseek-ai/DeepSeek-Coder-V2-Instruct",
-        "deepseek-ai/deepseek-coder-v2-instruct"
       ],
       "max_tokens": 163840,
       "model_types": [
@@ -569,11 +533,35 @@
       ]
     },
     {
-      "name": "deepseek-v2-lite-chat",
+      "name": "deepseek-coder-v2-instruct",
       "alias": [
-        "deepseek-v2-lite-chat",
-        "deepseek-ai/DeepSeek-V2-Lite-Chat",
-        "deepseek-ai/deepseek-v2-lite-chat"
+        "deepseek-coder-v2-instruct",
+        "deepseek-ai/DeepSeek-Coder-V2-Instruct",
+        "deepseek-ai/deepseek-coder-v2-instruct"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-v2-lite-base",
+      "alias": [
+        "deepseek-coder-v2-lite-base",
+        "deepseek-ai/DeepSeek-Coder-V2-Lite-Base",
+        "deepseek-ai/deepseek-coder-v2-lite-base"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-v2-lite-instruct",
+      "alias": [
+        "deepseek-coder-v2-lite-instruct",
+        "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct",
+        "deepseek-ai/deepseek-coder-v2-lite-instruct"
       ],
       "max_tokens": 163840,
       "model_types": [
@@ -586,6 +574,18 @@
         "deepseek-v2-lite",
         "deepseek-ai/DeepSeek-V2-Lite",
         "deepseek-ai/deepseek-v2-lite"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v2-lite-chat",
+      "alias": [
+        "deepseek-v2-lite-chat",
+        "deepseek-ai/DeepSeek-V2-Lite-Chat",
+        "deepseek-ai/deepseek-v2-lite-chat"
       ],
       "max_tokens": 163840,
       "model_types": [
@@ -617,17 +617,6 @@
       ]
     },
     {
-      "name": "deepseek-vl-7b-base",
-      "alias": [
-        "deepseek-vl-7b-base",
-        "deepseek-ai/deepseek-vl-7b-base"
-      ],
-      "max_tokens": 16384,
-      "model_types": [
-        "image2text"
-      ]
-    },
-    {
       "name": "deepseek-vl-1.3b-base",
       "alias": [
         "deepseek-vl-1.3b-base",
@@ -650,6 +639,17 @@
       ]
     },
     {
+      "name": "deepseek-vl-7b-base",
+      "alias": [
+        "deepseek-vl-7b-base",
+        "deepseek-ai/deepseek-vl-7b-base"
+      ],
+      "max_tokens": 16384,
+      "model_types": [
+        "image2text"
+      ]
+    },
+    {
       "name": "deepseek-vl-7b-chat",
       "alias": [
         "deepseek-vl-7b-chat",
@@ -661,10 +661,10 @@
       ]
     },
     {
-      "name": "deepseek-math-7b-rl",
+      "name": "deepseek-math-7b-base",
       "alias": [
-        "deepseek-math-7b-rl",
-        "deepseek-ai/deepseek-math-7b-rl"
+        "deepseek-math-7b-base",
+        "deepseek-ai/deepseek-math-7b-base"
       ],
       "max_tokens": 4096,
       "model_types": [
@@ -683,21 +683,10 @@
       ]
     },
     {
-      "name": "deepseek-math-7b-base",
+      "name": "deepseek-math-7b-rl",
       "alias": [
-        "deepseek-math-7b-base",
-        "deepseek-ai/deepseek-math-7b-base"
-      ],
-      "max_tokens": 4096,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-coder-7b-instruct-v1.5",
-      "alias": [
-        "deepseek-coder-7b-instruct-v1.5",
-        "deepseek-ai/deepseek-coder-7b-instruct-v1.5"
+        "deepseek-math-7b-rl",
+        "deepseek-ai/deepseek-math-7b-rl"
       ],
       "max_tokens": 4096,
       "model_types": [
@@ -709,6 +698,17 @@
       "alias": [
         "deepseek-coder-7b-base-v1.5",
         "deepseek-ai/deepseek-coder-7b-base-v1.5"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-7b-instruct-v1.5",
+      "alias": [
+        "deepseek-coder-7b-instruct-v1.5",
+        "deepseek-ai/deepseek-coder-7b-instruct-v1.5"
       ],
       "max_tokens": 4096,
       "model_types": [
@@ -738,17 +738,6 @@
       ]
     },
     {
-      "name": "deepseek-llm-67b-chat",
-      "alias": [
-        "deepseek-llm-67b-chat",
-        "deepseek-ai/deepseek-llm-67b-chat"
-      ],
-      "max_tokens": 4096,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
       "name": "deepseek-llm-67b-base",
       "alias": [
         "deepseek-llm-67b-base",
@@ -760,10 +749,10 @@
       ]
     },
     {
-      "name": "deepseek-llm-7b-chat",
+      "name": "deepseek-llm-67b-chat",
       "alias": [
-        "deepseek-llm-7b-chat",
-        "deepseek-ai/deepseek-llm-7b-chat"
+        "deepseek-llm-67b-chat",
+        "deepseek-ai/deepseek-llm-67b-chat"
       ],
       "max_tokens": 4096,
       "model_types": [
@@ -775,6 +764,17 @@
       "alias": [
         "deepseek-llm-7b-base",
         "deepseek-ai/deepseek-llm-7b-base"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-llm-7b-chat",
+      "alias": [
+        "deepseek-llm-7b-chat",
+        "deepseek-ai/deepseek-llm-7b-chat"
       ],
       "max_tokens": 4096,
       "model_types": [
@@ -826,10 +826,10 @@
       ]
     },
     {
-      "name": "deepseek-coder-33b-base",
+      "name": "deepseek-coder-1.3b-base",
       "alias": [
-        "deepseek-coder-33b-base",
-        "deepseek-ai/deepseek-coder-33b-base"
+        "deepseek-coder-1.3b-base",
+        "deepseek-ai/deepseek-coder-1.3b-base"
       ],
       "max_tokens": 16384,
       "model_types": [
@@ -837,10 +837,10 @@
       ]
     },
     {
-      "name": "deepseek-coder-1.3b-base",
+      "name": "deepseek-coder-33b-base",
       "alias": [
-        "deepseek-coder-1.3b-base",
-        "deepseek-ai/deepseek-coder-1.3b-base"
+        "deepseek-coder-33b-base",
+        "deepseek-ai/deepseek-coder-33b-base"
       ],
       "max_tokens": 16384,
       "model_types": [
@@ -882,7 +882,9 @@
     },
     {
       "name": "bge-m3",
-      "alias": ["baai/bge-m3"],
+      "alias": [
+        "baai/bge-m3"
+      ],
       "max_tokens": 8192,
       "model_types": [
         "embedding"
@@ -890,7 +892,9 @@
     },
     {
       "name": "bge-reranker-v2-m3",
-      "alias": ["baai/bge-reranker-v2-m3"],
+      "alias": [
+        "baai/bge-reranker-v2-m3"
+      ],
       "max_tokens": 1024,
       "model_types": [
         "rerank"
@@ -904,14 +908,18 @@
     },
     {
       "name": "qwen3-asr-1.7b",
-      "alias": ["qwen/qwen3-asr-1.7b"],
+      "alias": [
+        "qwen/qwen3-asr-1.7b"
+      ],
       "model_types": [
         "asr"
       ]
     },
     {
       "name": "paddleocr-vl-0.9b",
-      "alias": ["paddleocr-vl-1.5"],
+      "alias": [
+        "paddleocr-vl-1.5"
+      ],
       "model_types": [
         "ocr"
       ]
