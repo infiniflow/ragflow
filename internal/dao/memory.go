@@ -20,6 +20,7 @@
 package dao
 
 import (
+	"context"
 	"fmt"
 	"ragflow/internal/entity"
 	"strings"
@@ -123,8 +124,13 @@ func (dao *MemoryDAO) Create(memory *entity.Memory) error {
 //   - *model.Memory: Memory model pointer
 //   - error: Database operation error
 func (dao *MemoryDAO) GetByID(id string) (*entity.Memory, error) {
+	return dao.GetByIDWithContext(context.Background(), id)
+}
+
+// GetByIDWithContext retrieves a memory record by ID from database with context.
+func (dao *MemoryDAO) GetByIDWithContext(ctx context.Context, id string) (*entity.Memory, error) {
 	var memory entity.Memory
-	err := DB.Where("id = ?", id).First(&memory).Error
+	err := DB.WithContext(ctx).Where("id = ?", id).First(&memory).Error
 	if err != nil {
 		return nil, err
 	}

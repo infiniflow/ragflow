@@ -13,6 +13,17 @@
   "class": "minimax",
   "models": [
     {
+      "name": "MiniMax-M3",
+      "max_tokens": 1024000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
       "name": "minimax-m2.7",
       "max_tokens": 204800,
       "model_types": [
