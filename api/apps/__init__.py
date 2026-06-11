@@ -151,6 +151,16 @@ def _load_user(auth_types=None):
     
     # No Authorization header, try to load user from session cookie if JWT auth is allowed
     authorization = request.headers.get("Authorization")
+    if not authorization and AUTH_BETA in auth_types:
+        # Browser-initiated requests (iframe / <embed> for PDF previews, image
+        # tags, etc.) cannot set an Authorization header. The shared chat /
+        # embed SPA already carries the beta token in the URL as ?auth=<token>
+        # (see web/src/utils/authorization-util.ts:getAuthorization); accept
+        # the same query parameter here so anonymous viewers of a shared chat
+        # can actually fetch the referenced documents. See #15895.
+        query_token = request.args.get("auth") or request.args.get("api_key")
+        if query_token:
+            authorization = f"Bearer {query_token}"
     if not authorization:
         return _load_user_from_session() if AUTH_JWT in auth_types else None
 
