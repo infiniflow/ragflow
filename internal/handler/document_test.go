@@ -775,7 +775,7 @@ func TestBatchMetadataUpdate_NoPermission(t *testing.T) {
 
 	body := `{"updates":[{"key":"author","value":"alice"}]}`
 	c, w := setupGinContextWithUser("PATCH", "/api/v1/datasets/ds-1/documents/metadatas", body)
-	c.Set("user_id", "other-user")
+	c.Set("user", &entity.User{ID: "other-user"})
 	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
 
 	h.UpdateDocumentMetadatas(c)

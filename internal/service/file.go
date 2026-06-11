@@ -158,6 +158,25 @@ const DatasetFolderName = ".knowledgebase"
 // FileSourceDataset represents dataset as file source
 const FileSourceDataset = "knowledgebase"
 
+// toUploadInfoResponse converts a newly-uploaded file record to the shape
+// Python's upload_info endpoint returns.
+func (s *FileService) toUploadInfoResponse(file *entity.File, mimeType string) map[string]interface{} {
+	ext := ""
+	if idx := strings.LastIndex(file.Name, "."); idx >= 0 {
+		ext = strings.ToLower(file.Name[idx+1:])
+	}
+	return map[string]interface{}{
+		"id":          file.ID,
+		"name":        file.Name,
+		"size":        file.Size,
+		"extension":   ext,
+		"mime_type":   mimeType,
+		"created_by":  file.CreatedBy,
+		"created_at":  float64(time.Now().UnixMilli()) / 1000.0,
+		"preview_url": nil,
+	}
+}
+
 // toFileResponse converts file model to response format
 func (s *FileService) toFileResponse(file *entity.File) map[string]interface{} {
 	result := map[string]interface{}{
@@ -387,7 +406,8 @@ func (s *FileService) UploadFile(tenantID, parentID string, files []*multipart.F
 			return nil, fmt.Errorf("failed to insert file record: %w", err)
 		}
 
-		result = append(result, s.toFileResponse(fileRecord))
+		mimeType := fileHeader.Header.Get("Content-Type")
+		result = append(result, s.toUploadInfoResponse(fileRecord, mimeType))
 	}
 
 	return result, nil
@@ -1060,7 +1080,8 @@ func (s *FileService) UploadFromURL(tenantID, rawURL string) (map[string]interfa
 	if err := s.fileDAO.Insert(fileRecord); err != nil {
 		return nil, fmt.Errorf("failed to insert file record: %w", err)
 	}
-	return s.toFileResponse(fileRecord), nil
+	mimeType := http.DetectContentType(data)
+	return s.toUploadInfoResponse(fileRecord, mimeType), nil
 }
 
 // fetchRemoteFileSafely downloads rawURL with SSRF protection, connect/overall

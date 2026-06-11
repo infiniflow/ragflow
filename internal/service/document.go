@@ -58,13 +58,17 @@ type DocumentService struct {
 // NewDocumentService create document service
 func NewDocumentService() *DocumentService {
 	cfg := server.GetConfig()
+	engineType := ""
+	if cfg != nil {
+		engineType = cfg.DocEngine.Type
+	}
 	return &DocumentService{
 		documentDAO:      dao.NewDocumentDAO(),
 		ingestionTaskDAO: dao.NewIngestionDAO(),
 		ingestionLogDAO:  dao.NewIngestionLogDAO(),
 		kbDAO:            dao.NewKnowledgebaseDAO(),
 		docEngine:        engine.Get(),
-		engineType:       cfg.DocEngine.Type,
+		engineType:       engineType,
 		metadataSvc:      NewMetadataService(),
 		taskDAO:          dao.NewTaskDAO(),
 		file2DocumentDAO: dao.NewFile2DocumentDAO(),
