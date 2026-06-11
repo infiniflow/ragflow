@@ -51,12 +51,12 @@ func NewPreprocessOperator(config map[string]interface{}) (*PreprocessOperator, 
 	return operator, nil
 }
 
-func (o *PreprocessOperator) Prepare(config map[string]interface{}) error {
+func (o *PreprocessOperator) Prepare(chunkCtx *ChunkContext) error {
 	return nil
 }
 
-func (o *PreprocessOperator) Execute(ctx *Context) error {
-	text := ctx.Text
+func (o *PreprocessOperator) Execute(chunkCtx *ChunkContext) error {
+	text := chunkCtx.Origin
 
 	if o.normalizeNewlines {
 		// \r\n → \n, \r → \n
@@ -87,11 +87,11 @@ func (o *PreprocessOperator) Execute(ctx *Context) error {
 		text = strings.Join(filtered, "\n")
 	}
 
-	ctx.Text = text
+	chunkCtx.TextAfterPreprocess = text
 	return nil
 }
 
-func (o *PreprocessOperator) Finish() error {
+func (o *PreprocessOperator) Finish(chunkCtx *ChunkContext) error {
 	return nil
 }
 

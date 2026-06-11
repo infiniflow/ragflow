@@ -119,26 +119,24 @@ func (e *ChunkEngine) Compile(dsl string) (*ChunkPlan, error) {
 // Execute — run the pipeline operators on input text
 // ---------------------------------------------------------------------------
 
-func (e *ChunkEngine) Execute(plan *ChunkPlan, text string) (*chunk.Context, error) {
-	ctx := &chunk.Context{Text: text}
+func (e *ChunkEngine) Execute(plan *ChunkPlan, text string) (*chunk.ChunkContext, error) {
+	chunkContext := &chunk.ChunkContext{Origin: text}
 
 	for i, op := range plan.Operators {
-		if err := op.Prepare(nil); err != nil {
-			return ctx, fmt.Errorf("re-prepare operator[%d]: %w", i, err)
+		if err := op.Prepare(chunkContext); err != nil {
+			return nil, fmt.Errorf("re-prepare operator[%d]: %w", i, err)
 		}
-	}
-	for i, op := range plan.Operators {
-		if err := op.Execute(ctx); err != nil {
-			return ctx, fmt.Errorf("execute operator[%d]: %w", i, err)
+
+		if err := op.Execute(chunkContext); err != nil {
+			return nil, fmt.Errorf("execute operator[%d]: %w", i, err)
 		}
-	}
-	for i, op := range plan.Operators {
-		if err := op.Finish(); err != nil {
-			return ctx, fmt.Errorf("finish operator[%d]: %w", i, err)
+
+		if err := op.Finish(chunkContext); err != nil {
+			return nil, fmt.Errorf("finish operator[%d]: %w", i, err)
 		}
 	}
 
-	return ctx, nil
+	return chunkContext, nil
 }
 
 // ---------------------------------------------------------------------------

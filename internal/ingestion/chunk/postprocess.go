@@ -151,13 +151,13 @@ func NewPostprocessOperator(config map[string]interface{}) (*PostprocessOperator
 	return op, nil
 }
 
-func (o *PostprocessOperator) Prepare(config map[string]interface{}) error {
+func (o *PostprocessOperator) Prepare(chunkCtx *ChunkContext) error {
 
 	return nil
 }
 
-func (o *PostprocessOperator) Execute(ctx *Context) error {
-	chunks := ctx.Chunks
+func (o *PostprocessOperator) Execute(chunkCtx *ChunkContext) error {
+	chunks := chunkCtx.SplitChunks
 	if len(chunks) == 0 {
 		return nil
 	}
@@ -185,11 +185,11 @@ func (o *PostprocessOperator) Execute(ctx *Context) error {
 		chunks[i].Index = i
 	}
 
-	ctx.Chunks = chunks
+	chunkCtx.ResultChunks = chunks
 	return nil
 }
 
-func (o *PostprocessOperator) Finish() error {
+func (o *PostprocessOperator) Finish(chunkCtx *ChunkContext) error {
 	return nil
 }
 

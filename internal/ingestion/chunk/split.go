@@ -24,7 +24,7 @@ import (
 
 type SplitOperator struct {
 	strategy       string
-	boundaries     []rune
+	boundaries     []string
 	keepSeparators bool
 }
 
@@ -42,9 +42,7 @@ func NewSplitOperator(config map[string]interface{}) (*SplitOperator, error) {
 			if boundStrs, ok := b.([]interface{}); ok {
 				for _, bs := range boundStrs {
 					if s, ok := bs.(string); ok {
-						for _, r := range s {
-							op.boundaries = append(op.boundaries, r)
-						}
+						op.boundaries = append(op.boundaries, s)
 					}
 				}
 			}
@@ -59,12 +57,12 @@ func NewSplitOperator(config map[string]interface{}) (*SplitOperator, error) {
 	return op, nil
 }
 
-func (o *SplitOperator) Prepare(config map[string]interface{}) error {
+func (o *SplitOperator) Prepare(ctx *ChunkContext) error {
 	return nil
 }
 
-func (o *SplitOperator) Execute(ctx *Context) error {
-	text := ctx.Text
+func (o *SplitOperator) Execute(ctx *ChunkContext) error {
+	text := ctx.TextAfterPreprocess
 
 	if o.strategy == "" {
 		o.strategy = "sentence"
@@ -72,19 +70,19 @@ func (o *SplitOperator) Execute(ctx *Context) error {
 
 	switch o.strategy {
 	case "sentence":
-		ctx.Chunks = o.splitSentences(text)
+		ctx.SplitChunks = o.splitSentences(text)
 	case "char":
-		ctx.Chunks = o.splitByChar(text)
+		ctx.SplitChunks = o.splitByChar(text)
 	case "paragraph":
-		ctx.Chunks = o.splitByParagraph(text)
+		ctx.SplitChunks = o.splitByParagraph(text)
 	default:
-		ctx.Chunks = o.splitSentences(text)
+		ctx.SplitChunks = o.splitSentences(text)
 	}
 
 	return nil
 }
 
-func (o *SplitOperator) Finish() error {
+func (o *SplitOperator) Finish(ctx *ChunkContext) error {
 	return nil
 }
 
@@ -100,50 +98,58 @@ func (o *SplitOperator) String() string {
 	return buf.String()
 }
 
-// splitSentences splits text at boundary runes, optionally keeping separators.
+// splitSentences splits text at multi-rune boundaries, optionally keeping separators.
 func (o *SplitOperator) splitSentences(text string) []ChunkData {
 	if len(o.boundaries) == 0 {
-		o.boundaries = []rune{'。', '！', '？', '\n'}
+		o.boundaries = []string{"。", "！", "？", "\n"}
 	}
 
-	boundSet := make(map[rune]bool, len(o.boundaries))
-	for _, r := range o.boundaries {
-		boundSet[r] = true
-	}
-
-	runes := []rune(text)
 	var chunks []ChunkData
 	var buf strings.Builder
-	index := 0
+	i := 0
 
-	flush := func(sep rune) {
-		if buf.Len() > 0 || sep != 0 {
-			if sep != 0 && o.keepSeparators {
-				buf.WriteRune(sep)
+	for i < len(text) {
+		// Try to match any boundary at current position (first match wins)
+		matchedBound := ""
+		for _, bound := range o.boundaries {
+			if bound != "" && i+len(bound) <= len(text) && text[i:i+len(bound)] == bound {
+				matchedBound = bound
+				break
+			}
+		}
+
+		if matchedBound != "" {
+			if o.keepSeparators {
+				buf.WriteString(matchedBound)
 			}
 			if buf.Len() > 0 {
 				chunks = append(chunks, ChunkData{
 					Content: buf.String(),
-					Index:   index,
+					Index:   len(chunks),
 					Metadata: map[string]interface{}{
 						"language": DetectLanguage(buf.String()),
 					},
 				})
-				index++
 				buf.Reset()
 			}
+			i += len(matchedBound)
+		} else {
+			r, size := utf8.DecodeRuneInString(text[i:])
+			buf.WriteRune(r)
+			i += size
 		}
 	}
 
-	for _, r := range runes {
-		if boundSet[r] {
-			flush(r)
-		} else {
-			buf.WriteRune(r)
-		}
+	// flush remaining text
+	if buf.Len() > 0 {
+		chunks = append(chunks, ChunkData{
+			Content: buf.String(),
+			Index:   len(chunks),
+			Metadata: map[string]interface{}{
+				"language": DetectLanguage(buf.String()),
+			},
+		})
 	}
-	// flush remaining
-	flush(0)
 
 	return chunks
 }

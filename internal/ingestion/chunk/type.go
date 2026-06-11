@@ -19,11 +19,11 @@ package chunk
 // Operator defines the interface for all chunking pipeline stages.
 type Operator interface {
 	// Prepare configures the operator from a DSL stage config map.
-	Prepare(config map[string]interface{}) error
+	Prepare(ctx *ChunkContext) error
 	// Execute runs the operator on the shared context.
-	Execute(ctx *Context) error
+	Execute(ctx *ChunkContext) error
 	// Finish performs any cleanup.
-	Finish() error
+	Finish(ctx *ChunkContext) error
 
 	String() string
 }
@@ -31,6 +31,7 @@ type Operator interface {
 // ChunkData represents a single chunk produced by the pipeline.
 type ChunkData struct {
 	Content  string                 `json:"content"`
+	Size     int                    `json:"size"`
 	Index    int                    `json:"index,omitempty"`
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
@@ -42,8 +43,13 @@ func (c *ChunkData) GetContent() string {
 	return c.Content
 }
 
-// Context flows through the pipeline, carrying text and chunks.
-type Context struct {
-	Text   string      // raw / intermediate text
-	Chunks []ChunkData // final or intermediate chunks
+// ChunkContext flows through the pipeline, carrying text and chunks.
+type ChunkContext struct {
+	Origin string // raw text
+
+	TextAfterPreprocess string // text after preprocess operator
+
+	SplitChunks []ChunkData // chunks after split operator
+
+	ResultChunks []ChunkData // final or intermediate chunks
 }

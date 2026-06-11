@@ -243,13 +243,14 @@ func TestPlan_Execute_FullPipeline(t *testing.T) {
 	if ctx == nil {
 		t.Fatal("Execute returned nil context")
 	}
-	if len(ctx.Chunks) == 0 {
+	if len(ctx.ResultChunks) == 0 {
 		t.Fatal("expected at least one chunk after execution")
 	}
-	for i, c := range ctx.Chunks {
+	for i, c := range ctx.ResultChunks {
 		if c.Content == "" {
 			t.Errorf("chunk[%d] has empty content", i)
 		}
+		println(c.Content)
 		if c.Metadata == nil {
 			t.Errorf("chunk[%d] has nil metadata", i)
 		}
@@ -271,7 +272,7 @@ func TestPlan_Execute_MinimalPipeline(t *testing.T) {
 	if ctx == nil {
 		t.Fatal("Execute returned nil context")
 	}
-	if len(ctx.Chunks) == 0 {
+	if len(ctx.ResultChunks) == 0 {
 		t.Fatal("expected at least one chunk after execution")
 	}
 }
@@ -287,11 +288,11 @@ func TestPlan_Explain(t *testing.T) {
 		t.Fatalf("Plan error: %v", err)
 	}
 
-	explanation, err := engine.Explain(plan)
+	_, err = engine.Explain(plan)
 	if err != nil {
 		t.Fatalf("Explain error: %v", err)
 	}
-	fmt.Println(explanation)
+	//fmt.Println(explanation)
 }
 
 func TestPlan_ReuseEngine(t *testing.T) {
