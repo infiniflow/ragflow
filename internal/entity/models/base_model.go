@@ -100,6 +100,7 @@ func ParseListModel(modelList ModelList) []ListModelResponse {
 			modelResponse.MaxTokens = modelEntity.MaxTokens
 			modelResponse.ModelTypes = modelEntity.ModelTypes
 			modelResponse.Thinking = modelEntity.Thinking
+			modelResponse.Dimensions = modelEntity.Dimensions
 		}
 
 		models = append(models, modelResponse)

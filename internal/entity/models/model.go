@@ -387,12 +387,6 @@ func (pm *ProviderManager) ListAllModels() ([]map[string]interface{}, error) {
 		if model.MaxTokens != nil {
 			modelData["max_tokens"] = *model.MaxTokens
 		}
-		if model.MaxDimension != nil {
-			modelData["max_dimension"] = *model.MaxDimension
-		}
-		if len(model.Dimensions) > 0 {
-			modelData["dimensions"] = model.Dimensions
-		}
 		modelList = append(modelList, modelData)
 	}
 
