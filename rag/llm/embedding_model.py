@@ -969,10 +969,18 @@ class ReplicateEmbed(Base):
 
     def __init__(self, key, model_name, base_url=None):
         from replicate.client import Client
-        from rag.llm.replicate_utils import normalize_replicate_api_key
 
         self.model_name = model_name
-        self.client = Client(api_token=normalize_replicate_api_key(key))
+        if isinstance(key, dict):
+            key = key.get("api_key") or json.dumps(key)
+        elif isinstance(key, str):
+            try:
+                payload = json.loads(key)
+                if isinstance(payload, dict) and payload.get("api_key"):
+                    key = payload["api_key"]
+            except (json.JSONDecodeError, TypeError):
+                pass
+        self.client = Client(api_token=key)
 
     def encode(self, texts: list):
         batch_size = 16

@@ -51,11 +51,6 @@ def _normalize_provider_base_url(provider_name: str, base_url: str | None):
     return base_url
 
 
-def _get_supported_model_class(registry: dict, provider_name: str, model_kind: str):
-    if provider_name in registry:
-        return registry[provider_name], ""
-    return None, f"{model_kind} model from {provider_name} is not supported yet."
-
 
 def _factory_llm_name(llm: dict) -> str:
     return llm.get("name") or llm.get("llm_name", "")
@@ -431,12 +426,8 @@ async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=No
     for llm in factory_llms:
         model_types = _factory_model_types(llm)
         if not embd_passed and LLMType.EMBEDDING.value in model_types:
-            embedding_cls, unsupported_msg = _get_supported_model_class(EmbeddingModel, provider_name, "Embedding")
-            if not embedding_cls:
-                logging.warning(unsupported_msg)
-                msg += f"\n{unsupported_msg}"
-                continue
-            mdl = embedding_cls(api_key_str, llm["llm_name"], base_url=base_url)
+            assert provider_name in EmbeddingModel, f"Embedding model from {provider_name} is not supported yet."
+            mdl = EmbeddingModel[provider_name](api_key_str, llm["llm_name"], base_url=base_url)
             try:
                 arr, tc = await asyncio.wait_for(
                     asyncio.to_thread(mdl.encode, ["Test if the api key is available"]),
@@ -453,12 +444,8 @@ async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=No
                 )
                 msg += f"\nFail to access embedding model({llm['llm_name']}) using this api key." + str(e)
         elif not chat_passed and LLMType.CHAT.value in model_types:
-            chat_cls, unsupported_msg = _get_supported_model_class(ChatModel, provider_name, "Chat")
-            if not chat_cls:
-                logging.warning(unsupported_msg)
-                msg += f"\n{unsupported_msg}"
-                continue
-            mdl = chat_cls(api_key_str, llm["llm_name"], base_url=base_url, **extra)
+            assert provider_name in ChatModel, f"Chat model from {provider_name} is not supported yet."
+            mdl = ChatModel[provider_name](api_key_str, llm["llm_name"], base_url=base_url, **extra)
             try:
                 async def check_streamly():
                     async for chunk in mdl.async_chat_streamly(
@@ -483,12 +470,12 @@ async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=No
                 )
                 msg += f"\nFail to access model({provider_name}/{llm['llm_name']}) using this api key." + str(e)
         elif not rerank_passed and LLMType.RERANK.value in model_types:
-            rerank_cls, unsupported_msg = _get_supported_model_class(RerankModel, provider_name, "Rerank")
-            if not rerank_cls:
+            if provider_name not in RerankModel:
+                unsupported_msg = f"Rerank model from {provider_name} is not supported yet."
                 logging.warning(unsupported_msg)
                 msg += f"\n{unsupported_msg}"
                 continue
-            mdl = rerank_cls(api_key_str, llm["llm_name"], base_url=base_url)
+            mdl = RerankModel[provider_name](api_key_str, llm["llm_name"], base_url=base_url)
             try:
                 arr, tc = await asyncio.wait_for(
                     asyncio.to_thread(mdl.similarity, "What's the weather?", ["Is it sunny today?"]),

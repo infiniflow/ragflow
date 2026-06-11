@@ -936,10 +936,18 @@ class ReplicateChat(Base):
         super().__init__(key, model_name, base_url=base_url, **kwargs)
 
         from replicate.client import Client
-        from rag.llm.replicate_utils import normalize_replicate_api_key
 
         self.model_name = model_name
-        self.client = Client(api_token=normalize_replicate_api_key(key))
+        if isinstance(key, dict):
+            key = key.get("api_key") or json.dumps(key)
+        elif isinstance(key, str):
+            try:
+                payload = json.loads(key)
+                if isinstance(payload, dict) and payload.get("api_key"):
+                    key = payload["api_key"]
+            except (json.JSONDecodeError, TypeError):
+                pass
+        self.client = Client(api_token=key)
 
     def _chat(self, history, gen_conf=None, **kwargs):
         gen_conf = dict(gen_conf or {})
