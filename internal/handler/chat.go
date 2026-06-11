@@ -21,6 +21,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -261,19 +262,11 @@ func (h *ChatHandler) RemoveChats(c *gin.Context) {
 
 	// Call service to remove dialogs
 	if err := h.chatService.RemoveChats(userID, req.DialogIDs); err != nil {
-		// Check if it's an authorization error
-		if err.Error() == "only owner of chat authorized for this operation" {
-			c.JSON(http.StatusForbidden, gin.H{
-				"code":    403,
-				"data":    false,
-				"message": err.Error(),
-			})
+		if errors.Is(err, service.ErrChatNoAuth) {
+			c.JSON(http.StatusOK, gin.H{"code": common.CodeAuthenticationError, "data": false, "message": err.Error()})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": err.Error(),
-		})
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": err.Error()})
 		return
 	}
 
@@ -515,19 +508,24 @@ func (h *ChatHandler) CreateChatSession(c *gin.Context) {
 	}
 
 	var body struct {
-		Name string `json:"name"`
+		Name *string `json:"name"`
 	}
-	// The body is optional (an empty body falls back to the default name), but a
-	// non-empty malformed body should fail fast with a sanitized message rather
-	// than be silently ignored.
+	// The body is optional (absent body → default name), but a non-empty malformed
+	// body should fail fast with a sanitized message.
 	if err := c.ShouldBindJSON(&body); err != nil && !errors.Is(err, io.EOF) {
 		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": "Invalid request body."})
 		return
 	}
 
-	name := body.Name
-	if name == "" {
+	var name string
+	if body.Name == nil {
 		name = "New session"
+	} else {
+		name = strings.TrimSpace(*body.Name)
+		if name == "" {
+			c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": "`name` can not be empty."})
+			return
+		}
 	}
 
 	data, err := h.chatService.CreateChatSession(user.ID, chatID, name)

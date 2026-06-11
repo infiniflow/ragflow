@@ -36,6 +36,7 @@ type ChatService struct {
 	kbDAO          *dao.KnowledgebaseDAO
 	userTenantDAO  *dao.UserTenantDAO
 	tenantDAO      *dao.TenantDAO
+	tenantLLMDAO   *dao.TenantLLMDAO
 }
 
 // NewChatService create chat service
@@ -46,7 +47,49 @@ func NewChatService() *ChatService {
 		kbDAO:          dao.NewKnowledgebaseDAO(),
 		userTenantDAO:  dao.NewUserTenantDAO(),
 		tenantDAO:      dao.NewTenantDAO(),
+		tenantLLMDAO:   dao.NewTenantLLMDAO(),
 	}
+}
+
+// defaultRerankModels mirrors Python's _DEFAULT_RERANK_MODELS — built-in rerank
+// models that are always available and do not need a tenant_llm record.
+var defaultRerankModels = map[string]struct{}{
+	"BAAI/bge-reranker-v2-m3":          {},
+	"maidalun1020/bce-reranker-base_v1": {},
+}
+
+// validateLLMID checks that the given llm_id exists in the tenant's LLM table.
+// Mirrors Python _validate_llm_id (chat model type).
+func (s *ChatService) validateLLMID(userID, llmID string) error {
+	if llmID == "" {
+		return nil
+	}
+	_, _, err := dao.LookupTenantLLMByName(s.tenantLLMDAO, userID, llmID, entity.ModelTypeChat)
+	if err != nil {
+		return fmt.Errorf("`llm_id` %s doesn't exist", llmID)
+	}
+	return nil
+}
+
+// validateRerankID checks that the given rerank_id exists in the tenant's LLM
+// table (or is a built-in model that needs no record).
+// Mirrors Python _validate_rerank_id.
+func (s *ChatService) validateRerankID(userID, rerankID string) error {
+	if rerankID == "" {
+		return nil
+	}
+	modelName := rerankID
+	if idx := strings.Index(rerankID, "@"); idx > 0 {
+		modelName = rerankID[:idx]
+	}
+	if _, ok := defaultRerankModels[modelName]; ok {
+		return nil
+	}
+	_, _, err := dao.LookupTenantLLMByName(s.tenantLLMDAO, userID, rerankID, entity.ModelTypeRerank)
+	if err != nil {
+		return fmt.Errorf("`rerank_id` %s doesn't exist", rerankID)
+	}
+	return nil
 }
 
 // ChatWithKBNames chat with knowledge base names
@@ -571,49 +614,22 @@ func getEmbdIDs(kbs []*entity.Knowledgebase) []string {
 	return ids
 }
 
-// RemoveChats removes dialogs by setting their status to invalid (soft delete)
-// Only the owner of the chat can perform this operation
+// RemoveChats removes dialogs by setting their status to invalid (soft delete).
+// Mirrors Python bulk_delete_chats: uses _ensure_owned_chat per entry.
 func (s *ChatService) RemoveChats(userID string, chatIDs []string) error {
-	// Get user's tenants
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
-	if err != nil {
-		return err
-	}
-
-	// Build a set of user's tenant IDs for quick lookup
-	tenantIDSet := make(map[string]bool)
-	for _, tid := range tenantIDs {
-		tenantIDSet[tid] = true
-	}
-	// Also add userID itself as a tenant (for cases where tenant_id = user_id)
-	tenantIDSet[userID] = true
-
-	// Check each chat and build update list
 	var updates []map[string]interface{}
 	for _, chatID := range chatIDs {
-		// Get the chat to check ownership
-		chat, err := s.chatDAO.GetByID(chatID)
-		if err != nil {
-			return fmt.Errorf("chat not found: %s", chatID)
+		if _, err := s.ensureOwnedChat(userID, chatID); err != nil {
+			return err
 		}
-
-		// Check if user is the owner (chat's tenant_id must be in user's tenants)
-		if !tenantIDSet[chat.TenantID] {
-			return errors.New("only owner of chat authorized for this operation")
-		}
-
-		// Add to update list (soft delete by setting status to "0")
 		updates = append(updates, map[string]interface{}{
 			"id":     chatID,
 			"status": "0",
 		})
 	}
-
-	// Batch update all dialogs
 	if err := s.chatDAO.UpdateManyByID(updates); err != nil {
 		return err
 	}
-
 	return nil
 }
 
@@ -877,13 +893,15 @@ func (s *ChatService) CreateChat(userID string, req *CreateChatRequest) (map[str
 		llmID = tenant.LLMID
 	}
 
-	// Apply prompt defaults.
-	promptConfig := applyPromptDefaults(req.PromptConfig, kbIDs)
-
-	// Validate parameters vs. system prompt.
-	if err := validatePromptParams(promptConfig); err != nil {
+	if err := s.validateLLMID(userID, req.LLMID); err != nil {
 		return nil, err
 	}
+	if err := s.validateRerankID(userID, req.RerankID); err != nil {
+		return nil, err
+	}
+
+	// Apply prompt defaults.
+	promptConfig := applyPromptDefaults(req.PromptConfig, kbIDs)
 
 	// Duplicate name check.
 	exists, err := s.chatDAO.NameConflictExists(userID, name, "", "1")
@@ -1021,6 +1039,9 @@ func (s *ChatService) PatchChat(userID, chatID string, req *PatchChatRequest) (m
 	}
 
 	if req.LLMID != nil {
+		if err := s.validateLLMID(userID, *req.LLMID); err != nil {
+			return nil, err
+		}
 		updates["llm_id"] = *req.LLMID
 	}
 
@@ -1049,6 +1070,9 @@ func (s *ChatService) PatchChat(userID, chatID string, req *PatchChatRequest) (m
 	}
 
 	if req.RerankID != nil {
+		if err := s.validateRerankID(userID, *req.RerankID); err != nil {
+			return nil, err
+		}
 		updates["rerank_id"] = *req.RerankID
 	}
 	if req.SimilarityThreshold != nil {

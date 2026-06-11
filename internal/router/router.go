@@ -226,6 +226,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				chats.GET("", r.chatHandler.ListChats)
 				chats.POST("", r.chatHandler.CreateChat)
 				chats.GET("/:chat_id", r.chatHandler.GetChat)
+				chats.PUT("/:chat_id", r.chatHandler.PatchChat)
 				chats.PATCH("/:chat_id", r.chatHandler.PatchChat)
 				chats.DELETE("/:chat_id", r.chatHandler.DeleteChatByID)
 				chats.GET("/:chat_id/sessions", r.chatSessionHandler.ListChatSessions)
