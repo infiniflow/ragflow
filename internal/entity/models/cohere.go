@@ -687,27 +687,27 @@ func (c *CoHereModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, err
 		return nil, fmt.Errorf("Cohere API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result map[string]interface{}
+	// Parse response
+	var result struct {
+		Models []struct {
+			ModelName string `json:"name"`
+		} `json:"models"`
+	}
 	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
-	models := make([]ListModelResponse, 0)
-	if modelsRaw, ok := result["models"].([]interface{}); ok {
-		for _, model := range modelsRaw {
-			if modelMap, ok := model.(map[string]interface{}); ok {
-				if modelName, ok := modelMap["name"].(string); ok {
-					models = append(models, ListModelResponse{
-						Name: modelName,
-					})
-				}
-			}
+	models := make([]DSModel, 0, len(result.Models))
+	for _, model := range result.Models {
+		if model.ModelName != "" {
+			models = append(models, DSModel{
+				ID:      model.ModelName,
+				OwnedBy: c.Name(),
+			})
 		}
-	} else {
-		return nil, fmt.Errorf("failed to find 'models' array in response")
 	}
 
-	return models, nil
+	return ParseListModel(ModelList{Models: models}), nil
 }
 
 func (c *CoHereModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

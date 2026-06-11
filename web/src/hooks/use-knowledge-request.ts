@@ -87,21 +87,24 @@ export const useTestRetrieval = () => {
   });
 
   const refetch = useCallback(() => {
+    setPage(1);
     if (queryParams.question) {
-      mutation.mutate(queryParams);
+      const newParams = { ...queryParams, page: 1 };
+      mutation.mutate(newParams);
     }
   }, [mutation, queryParams]);
 
   const onPaginationChange = useCallback(
     (newPage: number, newPageSize: number) => {
-      setPage(newPage);
+      const nextPage = newPageSize !== pageSize ? 1 : newPage;
+      setPage(nextPage);
       setPageSize(newPageSize);
       if (mutation.data && queryParams.question) {
-        const newParams = { ...queryParams, page: newPage, size: newPageSize };
+        const newParams = { ...queryParams, page: nextPage, size: newPageSize };
         mutation.mutate(newParams);
       }
     },
-    [mutation, queryParams],
+    [mutation, queryParams, pageSize],
   );
 
   const handleFilterSubmit = useCallback(

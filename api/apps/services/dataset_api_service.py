@@ -1429,7 +1429,6 @@ async def search_datasets(tenant_id: str, req: dict):
         except Exception:
             logging.warning("search_datasets KG retrieval failed: datasets=%s tenant=%s", kb_ids, tenant_id, exc_info=True)
     ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], tenant_ids)
-    ranks["total"] = len(ranks["chunks"])
 
     for c in ranks["chunks"]:
         c.pop("vector", None)
