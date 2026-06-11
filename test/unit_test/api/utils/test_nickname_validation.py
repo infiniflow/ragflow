@@ -17,7 +17,7 @@
 import pytest
 
 from api.constants import NICKNAME_MAX_LENGTH
-from api.utils.validation_utils import validate_nickname
+from api.utils.nickname_validation import validate_nickname
 from common.constants import RetCode
 
 

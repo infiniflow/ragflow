@@ -40,7 +40,7 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
-from api.utils.validation_utils import validate_nickname
+from api.utils.nickname_validation import validate_nickname
 from api.utils.crypt import decrypt
 from rag.utils.redis_conn import REDIS_CONN
 from api.apps import login_required, current_user, login_user, logout_user
