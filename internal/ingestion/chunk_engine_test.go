@@ -113,9 +113,9 @@ var minimalDSL = `{
 
 func TestPlan_FullDSL(t *testing.T) {
 	engine := NewChunkEngine()
-	plan, err := engine.Plan(&mediaAwareDSL)
+	plan, err := engine.Compile(mediaAwareDSL)
 	if err != nil {
-		t.Fatalf("Plan(mediaAwareDSL) unexpected error: %v", err)
+		t.Fatalf("Compile(mediaAwareDSL) unexpected error: %v", err)
 	}
 	if plan == nil {
 		t.Fatal("Plan returned nil")
@@ -151,9 +151,9 @@ func TestPlan_FullDSL(t *testing.T) {
 
 func TestPlan_MinimalDSL(t *testing.T) {
 	engine := NewChunkEngine()
-	plan, err := engine.Plan(&minimalDSL)
+	plan, err := engine.Compile(minimalDSL)
 	if err != nil {
-		t.Fatalf("Plan(minimalDSL) unexpected error: %v", err)
+		t.Fatalf("Compile(minimalDSL) unexpected error: %v", err)
 	}
 	if plan == nil {
 		t.Fatal("Plan returned nil")
@@ -170,7 +170,7 @@ func TestPlan_MinimalDSL(t *testing.T) {
 func TestPlan_InvalidJSON(t *testing.T) {
 	engine := NewChunkEngine()
 	invalid := `{bad json}`
-	plan, err := engine.Plan(&invalid)
+	plan, err := engine.Compile(invalid)
 	if err == nil {
 		t.Fatal("expected error for invalid JSON, got nil")
 	}
@@ -182,7 +182,7 @@ func TestPlan_InvalidJSON(t *testing.T) {
 func TestPlan_UnknownOperator(t *testing.T) {
 	engine := NewChunkEngine()
 	dsl := `{"pipeline": [{"operator": "unknown_operator"}]}`
-	plan, err := engine.Plan(&dsl)
+	plan, err := engine.Compile(dsl)
 	if err == nil {
 		t.Fatal("expected error for unknown operator, got nil")
 	}
@@ -197,7 +197,7 @@ func TestPlan_UnknownOperator(t *testing.T) {
 func TestPlan_EmptyPipeline(t *testing.T) {
 	engine := NewChunkEngine()
 	dsl := `{"pipeline": []}`
-	plan, err := engine.Plan(&dsl)
+	plan, err := engine.Compile(dsl)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -212,7 +212,7 @@ func TestPlan_EmptyPipeline(t *testing.T) {
 func TestPlan_MissingPipeline(t *testing.T) {
 	engine := NewChunkEngine()
 	dsl := `{"version": "1.0"}`
-	plan, err := engine.Plan(&dsl)
+	plan, err := engine.Compile(dsl)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -230,7 +230,7 @@ func TestPlan_MissingPipeline(t *testing.T) {
 
 func TestPlan_Execute_FullPipeline(t *testing.T) {
 	engine := NewChunkEngine()
-	plan, err := engine.Plan(&mediaAwareDSL)
+	plan, err := engine.Compile(mediaAwareDSL)
 	if err != nil {
 		t.Fatalf("Plan error: %v", err)
 	}
@@ -258,7 +258,7 @@ func TestPlan_Execute_FullPipeline(t *testing.T) {
 
 func TestPlan_Execute_MinimalPipeline(t *testing.T) {
 	engine := NewChunkEngine()
-	plan, err := engine.Plan(&minimalDSL)
+	plan, err := engine.Compile(minimalDSL)
 	if err != nil {
 		t.Fatalf("Plan error: %v", err)
 	}
@@ -282,7 +282,7 @@ func TestPlan_Execute_MinimalPipeline(t *testing.T) {
 
 func TestPlan_Explain(t *testing.T) {
 	engine := NewChunkEngine()
-	plan, err := engine.Plan(&mediaAwareDSL)
+	plan, err := engine.Compile(mediaAwareDSL)
 	if err != nil {
 		t.Fatalf("Plan error: %v", err)
 	}
@@ -298,13 +298,13 @@ func TestPlan_ReuseEngine(t *testing.T) {
 	engine := NewChunkEngine()
 
 	// First plan
-	plan1, err := engine.Plan(&mediaAwareDSL)
+	plan1, err := engine.Compile(mediaAwareDSL)
 	if err != nil {
 		t.Fatalf("first Plan error: %v", err)
 	}
 
 	// Second plan from the same engine
-	plan2, err := engine.Plan(&minimalDSL)
+	plan2, err := engine.Compile(minimalDSL)
 	if err != nil {
 		t.Fatalf("second Plan error: %v", err)
 	}
@@ -320,7 +320,7 @@ func BenchmarkPlan_FullDSL(b *testing.B) {
 	dsl := mediaAwareDSL
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := engine.Plan(&dsl)
+		_, err := engine.Compile(dsl)
 		if err != nil {
 			b.Fatalf("Plan error: %v", err)
 		}
@@ -330,7 +330,7 @@ func BenchmarkPlan_FullDSL(b *testing.B) {
 func BenchmarkPlan_Execute_FullDSL(b *testing.B) {
 	engine := NewChunkEngine()
 	dsl := mediaAwareDSL
-	plan, err := engine.Plan(&dsl)
+	plan, err := engine.Compile(dsl)
 	if err != nil {
 		b.Fatalf("Plan error: %v", err)
 	}

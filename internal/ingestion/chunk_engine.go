@@ -49,13 +49,13 @@ func NewChunkEngine() *ChunkEngine {
 }
 
 // ---------------------------------------------------------------------------
-// Plan  — parse DSL JSON into an ordered operator list
+// Compile  — compile DSL JSON into an ordered operator list
 // ---------------------------------------------------------------------------
 
-func (e *ChunkEngine) Plan(dsl *string) (*ChunkPlan, error) {
+func (e *ChunkEngine) Compile(dsl string) (*ChunkPlan, error) {
 	var parsed map[string]interface{}
-	if err := json.Unmarshal([]byte(*dsl), &parsed); err != nil {
-		return nil, fmt.Errorf("parse DSL: %w", err)
+	if err := json.Unmarshal([]byte(dsl), &parsed); err != nil {
+		return nil, fmt.Errorf("compile DSL: %w", err)
 	}
 
 	plan := &ChunkPlan{}

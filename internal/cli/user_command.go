@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"ragflow/internal/ingestion"
 	"strings"
 	"time"
 )
@@ -3278,28 +3279,46 @@ func (c *CLI) ChunkCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
+	var result ExplainResponse
+	start := time.Now()
+
 	filename, ok := cmd.Params["filename"].(string)
 	if !ok {
 		return nil, fmt.Errorf("filename not provided")
 	}
-	dsl, ok := cmd.Params["dsl"].(string)
+	dslFilename, ok := cmd.Params["dsl"].(string)
 	if !ok {
 		return nil, fmt.Errorf("dsl not provided")
 	}
+	dsl, err := os.ReadFile(dslFilename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read dsl file: %w", err)
+	}
+
 	explain, ok := cmd.Params["explain"].(bool)
 	if !ok {
 		explain = false
 	}
 
 	if explain {
-		fmt.Printf("Explain chunk file: %s, DSL: %s\n", filename, dsl)
+		engine := ingestion.NewChunkEngine()
+		plan, err := engine.Compile(string(dsl))
+		if err != nil {
+			return nil, fmt.Errorf("compile failed: %w", err)
+		}
+
+		explanation, err := engine.Explain(plan)
+		if err != nil {
+			return nil, fmt.Errorf("explain error: %w", err)
+		}
+
+		result.Message = explanation
 	} else {
 		fmt.Printf("Chunk file: %s, DSL: %s\n", filename, dsl)
 	}
 
-	var result SimpleResponse
+	result.Duration = time.Since(start).Seconds()
 	result.Code = 0
-	result.Message = fmt.Sprintf("Success to chunk %s", filename)
 
 	return &result, nil
 }
