@@ -16,6 +16,7 @@
 
 import os
 import os.path
+import sys
 import logging
 from logging.handlers import RotatingFileHandler
 from common.file_utils import get_project_base_directory
@@ -40,7 +41,7 @@ def init_root_logger(logfile_basename: str, log_format: str = "%(asctime)-15s %(
     handler1.setFormatter(formatter)
     logger.addHandler(handler1)
 
-    handler2 = logging.StreamHandler()
+    handler2 = logging.StreamHandler(sys.stdout)
     handler2.setFormatter(formatter)
     logger.addHandler(handler2)
 
