@@ -95,15 +95,17 @@ func (e *ChunkEngine) Plan(dsl *string) (*ChunkPlan, error) {
 				return nil, fmt.Errorf("create preprocess operator[%d]: %w", i, err)
 			}
 		case "split":
-			op := chunk.NewSplitOperator(operator)
-			if err := op.Prepare(operator); err != nil {
-				return nil, fmt.Errorf("prepare operator[%d]: %w", i, err)
+			op, err = chunk.NewSplitOperator(operator)
+			if err != nil {
+				return nil, fmt.Errorf("create split operator[%d]: %w", i, err)
 			}
 		case "postprocess":
-			op := chunk.NewPostprocessOperator()
-			if err := op.Prepare(operator); err != nil {
-				return nil, fmt.Errorf("prepare operator[%d]: %w", i, err)
+			op, err = chunk.NewPostprocessOperator(operator)
+			if err != nil {
+				return nil, fmt.Errorf("create postprocess operator[%d]: %w", i, err)
 			}
+		default:
+			return nil, fmt.Errorf("pipeline[%d]: unknown operator %s", i, operatorName)
 		}
 		delete(operator, "operator")
 

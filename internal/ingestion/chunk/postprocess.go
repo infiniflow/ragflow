@@ -63,45 +63,43 @@ type PostprocessOperator struct {
 		conditions []overlapCondition
 		defaultCfg overlapConfig
 	}
-	filter       *filterConfig
-	addMetadata  *metadataConfig
+	filter      *filterConfig
+	addMetadata *metadataConfig
 }
 
-func NewPostprocessOperator() *PostprocessOperator {
-	return &PostprocessOperator{}
-}
+func NewPostprocessOperator(config map[string]interface{}) (*PostprocessOperator, error) {
+	op := &PostprocessOperator{}
 
-func (o *PostprocessOperator) Prepare(config map[string]interface{}) error {
 	// Merge
 	if m, ok := config["merge"].(map[string]interface{}); ok {
-		o.merge = &mergeConfig{}
+		op.merge = &mergeConfig{}
 		if ts, ok := m["target_size"].(float64); ok {
-			o.merge.TargetSize = int(ts)
+			op.merge.TargetSize = int(ts)
 		} else {
-			o.merge.TargetSize = 500
+			op.merge.TargetSize = 500
 		}
 		if s, ok := m["strategy"].(string); ok {
-			o.merge.Strategy = s
+			op.merge.Strategy = s
 		} else {
-			o.merge.Strategy = "greedy"
+			op.merge.Strategy = "greedy"
 		}
 	}
 
 	// Overlap
 	if ov, ok := config["overlap"].(map[string]interface{}); ok {
 		if u, ok := ov["unit"].(string); ok {
-			o.overlap.unit = u
+			op.overlap.unit = u
 		} else {
-			o.overlap.unit = "char"
+			op.overlap.unit = "char"
 		}
 		if m, ok := ov["mode"].(string); ok {
-			o.overlap.mode = m
+			op.overlap.mode = m
 		} else {
-			o.overlap.mode = "if_only"
+			op.overlap.mode = "if_only"
 		}
 		// Default
 		if d, ok := ov["default"].(map[string]interface{}); ok {
-			o.overlap.defaultCfg = parseOverlapConfig(d)
+			op.overlap.defaultCfg = parseOverlapConfig(d)
 		}
 
 		// Conditions
@@ -121,36 +119,41 @@ func (o *PostprocessOperator) Prepare(config map[string]interface{}) error {
 				if thenMap, ok := c["then"].(map[string]interface{}); ok {
 					cond.Then = parseOverlapConfig(thenMap)
 				}
-				o.overlap.conditions = append(o.overlap.conditions, cond)
+				op.overlap.conditions = append(op.overlap.conditions, cond)
 			}
 		}
 	}
 
 	// Filter
 	if f, ok := config["filter"].(map[string]interface{}); ok {
-		o.filter = &filterConfig{}
+		op.filter = &filterConfig{}
 		if v, ok := f["min_length"].(float64); ok {
-			o.filter.MinLength = int(v)
+			op.filter.MinLength = int(v)
 		}
 		if v, ok := f["max_length"].(float64); ok {
-			o.filter.MaxLength = int(v)
+			op.filter.MaxLength = int(v)
 		}
 	}
 
 	// Add metadata
 	if am, ok := config["add_metadata"].(map[string]interface{}); ok {
-		o.addMetadata = &metadataConfig{}
+		op.addMetadata = &metadataConfig{}
 		if inc, ok := am["include_index"].(bool); ok {
-			o.addMetadata.IncludeIndex = inc
+			op.addMetadata.IncludeIndex = inc
 		}
 		if cf, ok := am["custom_fields"].(map[string]interface{}); ok {
 			m := make(map[string]string, len(cf))
 			for k, v := range cf {
 				m[k] = fmt.Sprintf("%v", v)
 			}
-			o.addMetadata.CustomFields = m
+			op.addMetadata.CustomFields = m
 		}
 	}
+
+	return op, nil
+}
+
+func (o *PostprocessOperator) Prepare(config map[string]interface{}) error {
 
 	return nil
 }

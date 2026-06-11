@@ -17,7 +17,6 @@
 package chunk
 
 import (
-	"fmt"
 	"strings"
 	"unicode/utf8"
 )
@@ -28,49 +27,38 @@ type SplitOperator struct {
 	keepSeparators bool
 }
 
-func NewSplitOperator(config map[string]interface{}) *SplitOperator {
-	return &SplitOperator{}
-}
+func NewSplitOperator(config map[string]interface{}) (*SplitOperator, error) {
+	op := &SplitOperator{}
 
-func (o *SplitOperator) Prepare(config map[string]interface{}) error {
 	if v, ok := config["strategy"]; ok {
-		s, ok := v.(string)
-		if !ok {
-			return fmt.Errorf("split: strategy must be string")
+		if s, ok := v.(string); ok {
+			op.strategy = s
 		}
-		o.strategy = s
 	}
 
 	if params, ok := config["params"].(map[string]interface{}); ok {
 		if b, ok := params["boundaries"]; ok {
-			boundStrs, ok := b.([]interface{})
-			if !ok {
-				return fmt.Errorf("split: boundaries must be array of strings")
-			}
-			for _, bs := range boundStrs {
-				s, ok := bs.(string)
-				if !ok {
-					return fmt.Errorf("split: boundary must be string")
-				}
-				runes := []rune(s)
-				if len(runes) == 1 {
-					o.boundaries = append(o.boundaries, runes[0])
-				}
-				// multi-rune boundaries (like "\n") — store by the rune
-				for _, r := range runes {
-					o.boundaries = append(o.boundaries, r)
+			if boundStrs, ok := b.([]interface{}); ok {
+				for _, bs := range boundStrs {
+					if s, ok := bs.(string); ok {
+						for _, r := range s {
+							op.boundaries = append(op.boundaries, r)
+						}
+					}
 				}
 			}
 		}
 		if ks, ok := params["keep_separators"]; ok {
-			b, ok := ks.(bool)
-			if !ok {
-				return fmt.Errorf("split: keep_separators must be bool")
+			if b, ok := ks.(bool); ok {
+				op.keepSeparators = b
 			}
-			o.keepSeparators = b
 		}
 	}
 
+	return op, nil
+}
+
+func (o *SplitOperator) Prepare(config map[string]interface{}) error {
 	return nil
 }
 
