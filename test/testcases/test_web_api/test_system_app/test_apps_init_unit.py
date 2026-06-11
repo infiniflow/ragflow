@@ -156,6 +156,12 @@ def test_load_user_api_token_fallback_and_fallback_exception(monkeypatch, caplog
     monkeypatch.setattr(apps_module.Serializer, "loads", _raise_decode)
 
     fallback_user_empty_token = SimpleNamespace(email="fallback@example.com", access_token="")
+    valid_token = "a" * 32
+    beta_user = SimpleNamespace(
+        id="tenant-1",
+        email="embed@example.com",
+        access_token=valid_token,
+    )
 
     async def _case():
         monkeypatch.setattr(apps_module.APIToken, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
@@ -170,6 +176,29 @@ def test_load_user_api_token_fallback_and_fallback_exception(monkeypatch, caplog
         async with quart_app.test_request_context("/", headers={"Authorization": "Bearer api-token"}):
             with caplog.at_level(logging.WARNING):
                 assert apps_module._load_user() is None
+
+        def _query_api_token(**kwargs):
+            if kwargs.get("beta") == "embed-beta":
+                return [SimpleNamespace(tenant_id="tenant-1")]
+            return []
+
+        def _query_user(**kwargs):
+            if (
+                kwargs.get("id") == "tenant-1"
+                and kwargs.get("status") == apps_module.StatusEnum.VALID.value
+            ):
+                return [beta_user]
+            return []
+
+        monkeypatch.setattr(apps_module.APIToken, "query", _query_api_token)
+        monkeypatch.setattr(apps_module.UserService, "query", _query_user)
+        async with quart_app.test_request_context("/", headers={"Authorization": "Bearer embed-beta"}):
+            user = apps_module._load_user(auth_types=[apps_module.AUTH_BETA])
+            assert user is beta_user
+            assert apps_module.g.auth_type == apps_module.AUTH_BETA
+
+        async with quart_app.test_request_context("/", headers={"Authorization": "Bearer invalid-beta"}):
+            assert apps_module._load_user(auth_types=[apps_module.AUTH_BETA]) is None
 
     _run(_case())
     assert "api token fallback failed" in caplog.text
