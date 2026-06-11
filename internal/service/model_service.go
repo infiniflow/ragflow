@@ -256,7 +256,7 @@ func (m *ModelProviderService) ListSupportedModels(providerName, instanceName, u
 		})
 		modelData := map[string]interface{}{
 			"name":        model.Name,
-			"dimension":   model.Dimension,
+			"dimension":   model.MaxDimension,
 			"max_tokens":  model.MaxTokens,
 			"model_types": model.ModelTypes,
 			"thinking":    model.Thinking,
