@@ -30,6 +30,11 @@ Released on June 11, 2026.
 - Latest Anthropic models [#15516](https://github.com/infiniflow/ragflow/pull/15516)
 - Voyage 4 model family [#15516](https://github.com/infiniflow/ragflow/pull/15516)
 
+### i18n
+
+- Completes Korean translation. [#15863](https://github.com/infiniflow/ragflow/pull/15863)
+- Completes Italian translation. [#15729](https://github.com/infiniflow/ragflow/pull/15729)
+
 ### Bug fixes
 
 - The thinking mode of MiniMax models was not correctly enabled. [#15496](https://github.com/infiniflow/ragflow/pull/15496)
