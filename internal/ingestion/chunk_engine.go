@@ -1,118 +1,155 @@
 //
-//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+// Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
 //      http://www.apache.org/licenses/LICENSE-2.0
 //
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //
 
 package ingestion
 
-import "ragflow/internal/ingestion/chunk"
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+
+	"ragflow/internal/ingestion/chunk"
+)
 
 /*
-{
-  "version": "1.0",
-  "name": "media_aware_chunking",
-  "description": "遇到图片/视频 URL 时禁用 overlap",
+ DSL reference — see comment block above for the full JSON structure.
 
-  "pipeline": [
-    {
-      "stage": "preprocess",
-      "normalize_newlines": true,
-      "strip_whitespace": true,
-      "remove_empty_lines": true
-    },
-
-    {
-      "stage": "split",
-      "strategy": "sentence",
-      "params": {
-        "boundaries": ["。", "！", "？", "\n"],
-        "keep_separators": true
-      }
-    },
-
-    {
-      "stage": "postprocess",
-      "merge": {
-        "target_size": 500,
-        "strategy": "greedy"
-      },
-      "overlap": {
-        "unit": "char",
-        "mode": "if_only",
-        "conditions": [
-          {
-            "name": "包含媒体URL",
-            "if": "has_media_url = true",
-            "then": {"size": 0}
-          },
-          {
-            "name": "包含图片URL",
-            "if": "has_image_url = true",
-            "then": {"size": 0}
-          },
-          {
-            "name": "包含视频URL",
-            "if": "has_video_url = true",
-            "then": {"size": 0}
-          },
-          {
-            "name": "普通中文长句子",
-            "if": "language = 'zh' AND length > 50 AND has_media_url = false",
-            "then": {"size": 1, "unit": "sentence"}
-          },
-          {
-            "name": "普通中文短句子",
-            "if": "language = 'zh' AND length <= 50 AND has_media_url = false",
-            "then": {"size": 30}
-          }
-        ],
-        "default": {"size": 50}
-      },
-      "filter": {
-        "min_length": 10,
-        "max_length": 1200
-      },
-      "add_metadata": {
-        "include_index": true,
-        "custom_fields": {
-          "has_media_url": "auto_detect"
-        }
-      }
-    }
-  ]
-}
+ Pipeline stages:
+   1. "preprocess"  → chunk.PreprocessOperator
+   2. "split"       → chunk.SplitOperator
+   3. "postprocess" → chunk.PostprocessOperator
 */
 
+// ChunkPlan holds the ordered pipeline operators.
 type ChunkPlan struct {
 	Operators []chunk.Operator
 }
 
-type ChunkEngine struct {
-}
+// ChunkEngine parses DSL JSON into a plan and executes it.
+type ChunkEngine struct{}
 
 func NewChunkEngine() *ChunkEngine {
 	return &ChunkEngine{}
 }
 
+// ---------------------------------------------------------------------------
+// DSL JSON model
+// ---------------------------------------------------------------------------
+
+type dslPipeline struct {
+	Version     string     `json:"version"`
+	Name        string     `json:"name"`
+	Description string     `json:"description"`
+	Pipeline    []dslStage `json:"pipeline"`
+}
+
+type dslStage struct {
+	Stage string                 `json:"stage"`
+	Body  map[string]interface{} `json:"-"` // everything else
+}
+
+// UnmarshalJSON custom unmarshaler for dslStage — captures all keys except "stage"
+// into Body.
+func (s *dslStage) UnmarshalJSON(data []byte) error {
+	raw := make(map[string]interface{})
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if stage, ok := raw["stage"].(string); ok {
+		s.Stage = stage
+	}
+	delete(raw, "stage")
+	s.Body = raw
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Plan  — parse DSL JSON into an ordered operator list
+// ---------------------------------------------------------------------------
+
 func (e *ChunkEngine) Plan(dsl *string) (*ChunkPlan, error) {
-	return nil, nil
+	var pipeline dslPipeline
+	if err := json.Unmarshal([]byte(*dsl), &pipeline); err != nil {
+		return nil, fmt.Errorf("parse DSL: %w", err)
+	}
+
+	plan := &ChunkPlan{}
+
+	for _, stage := range pipeline.Pipeline {
+		op, err := buildOperator(stage.Stage)
+		if err != nil {
+			return nil, fmt.Errorf("build operator %q: %w", stage.Stage, err)
+		}
+		if err := op.Prepare(stage.Body); err != nil {
+			return nil, fmt.Errorf("prepare operator %q: %w", stage.Stage, err)
+		}
+		plan.Operators = append(plan.Operators, op)
+	}
+
+	return plan, nil
 }
 
-func (e *ChunkEngine) Execute(chunk *ChunkPlan) error {
-	return nil
+func buildOperator(stage string) (chunk.Operator, error) {
+	switch stage {
+	case "preprocess":
+		return chunk.NewPreprocessOperator(), nil
+	case "split":
+		return chunk.NewSplitOperator(), nil
+	case "postprocess":
+		return chunk.NewPostprocessOperator(), nil
+	default:
+		return nil, fmt.Errorf("unknown stage: %q", stage)
+	}
 }
 
-func (e *ChunkEngine) Explain(chunk *ChunkPlan) error {
-	return nil
+// ---------------------------------------------------------------------------
+// Execute — run the pipeline operators on input text
+// ---------------------------------------------------------------------------
+
+func (e *ChunkEngine) Execute(plan *ChunkPlan, text string) (*chunk.Context, error) {
+	ctx := &chunk.Context{Text: text}
+
+	for i, op := range plan.Operators {
+		if err := op.Prepare(nil); err != nil {
+			return ctx, fmt.Errorf("re-prepare operator[%d]: %w", i, err)
+		}
+	}
+	for i, op := range plan.Operators {
+		if err := op.Execute(ctx); err != nil {
+			return ctx, fmt.Errorf("execute operator[%d]: %w", i, err)
+		}
+	}
+	for i, op := range plan.Operators {
+		if err := op.Finish(); err != nil {
+			return ctx, fmt.Errorf("finish operator[%d]: %w", i, err)
+		}
+	}
+
+	return ctx, nil
+}
+
+// ---------------------------------------------------------------------------
+// Explain — describe the plan in human-readable form
+// ---------------------------------------------------------------------------
+
+func (e *ChunkEngine) Explain(plan *ChunkPlan) (string, error) {
+	var buf strings.Builder
+	buf.WriteString("Chunk Pipeline Plan:\n")
+	for i, op := range plan.Operators {
+		buf.WriteString(fmt.Sprintf("  [%d] %T\n", i, op))
+	}
+	return buf.String(), nil
 }
