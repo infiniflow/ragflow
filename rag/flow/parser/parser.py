@@ -29,6 +29,7 @@ from api.db.services.file_service import FileService
 from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import (
     ensure_mineru_from_env,
+    ensure_opendataloader_from_env,
     ensure_paddleocr_from_env,
     get_first_provider_model_name,
     get_model_config_from_provider_instance,
@@ -447,13 +448,7 @@ class Parser(ProcessBase):
                 if not tenant_id:
                     return None
 
-                from api.db.joint_services.tenant_model_service import ensure_opendataloader_from_env, get_models_by_tenant_and_provider_and_model_type
-
-                env_name = ensure_opendataloader_from_env(tenant_id)
-                candidates = get_models_by_tenant_and_provider_and_model_type(tenant_id=tenant_id, provider_name="OpenDataLoader", model_type=LLMType.OCR)
-                if candidates:
-                    return candidates[0].llm_name
-                return env_name
+                return get_first_provider_model_name(tenant_id, "OpenDataLoader", LLMType.OCR) or ensure_opendataloader_from_env(tenant_id)
 
             parser_model_name = resolve_opendataloader_llm_name()
             if not parser_model_name:

@@ -669,7 +669,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         modelInfo: [
           {
             model_name: values.model_name,
-            model_type: 'ocr',
+            model_type: ['ocr'],
             max_tokens: 0,
           },
         ],
@@ -692,7 +692,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         model_info: [
           {
             model_name: values.model_name,
-            model_type: 'ocr',
+            model_type: ['ocr'],
             max_tokens: 0,
           },
         ],

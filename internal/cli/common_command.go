@@ -46,7 +46,7 @@ func (c *CLI) LoginUserByCommand(cmd *Command) (ResponseIf, error) {
 
 	var result SimpleResponse
 	result.Code = 0
-	result.SetOutputFormat(c.outputFormat)
+	result.SetOutputFormat(c.Config.OutputFormat)
 	result.Message = "Login successful"
 
 	return &result, nil
@@ -78,7 +78,7 @@ func (c *CLI) LoginUserInteractive(email, password string) error {
 		return err
 	}
 
-	fmt.Printf("Login user %s successfully\n", email)
+	fmt.Printf("Login successfully\n")
 
 	switch c.Config.CLIMode {
 	case AdminMode:
@@ -139,7 +139,7 @@ func (c *CLI) PingServer(iterations int) (ResponseIf, error) {
 	switch c.Config.CLIMode {
 	case AdminMode:
 		if err = json.Unmarshal(resp.Body, &result); err != nil {
-			return nil, fmt.Errorf("list users failed: invalid JSON (%w)", err)
+			return nil, fmt.Errorf("ping failed: invalid JSON (%w)", err)
 		}
 	case APIMode:
 		if string(resp.Body) == "pong" {
