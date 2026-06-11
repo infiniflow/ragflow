@@ -1242,7 +1242,7 @@ async def session_completion(chat_id_in_arg=""):
             """Yield SSE-formatted chunks from the async chat generator."""
             nonlocal dia, msg, req, conv
             try:
-                async for ans in async_chat(dia, msg, True, **req):
+                async for ans in async_chat(dia, msg, True, **req):#rag_agent(dia, msg, True, **req):
                     ans = _format_answer(ans)
                     payload = _sanitize_json_floats({"code": 0, "message": "", "data": ans})
                     yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"

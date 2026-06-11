@@ -512,7 +512,7 @@ class LLM4Tenant:
         assert self.mdl, "Can't find model for {}/{}/{}".format(tenant_id, model_config["model_type"], model_config["llm_name"])
         self.max_length = model_config.get("max_tokens", 8192)
 
-        self.is_tools = model_config.get("is_tools", False)
+        self.is_tools = True#model_config.get("is_tools", False)
         self.verbose_tool_use = kwargs.get("verbose_tool_use")
 
         langfuse_keys = TenantLangfuseService.filter_by_tenant(tenant_id=tenant_id)
