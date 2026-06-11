@@ -7,6 +7,8 @@ const {
   listProviders,
   addProvider,
   addProviderInstance,
+  verifyProviderConnection,
+  listProviderModels,
   listProviderInstances,
   listInstanceModels,
   showProviderInstance,
@@ -39,6 +41,14 @@ const methods = {
   addProviderInstance: {
     url: addProviderInstance,
     method: 'post',
+  },
+  verifyProviderConnection: {
+    url: verifyProviderConnection,
+    method: 'post',
+  },
+  listProviderModels: {
+    url: listProviderModels,
+    method: 'get',
   },
   listProviderInstances: {
     url: listProviderInstances,

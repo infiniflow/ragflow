@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package models
 
 import (
@@ -7,43 +23,24 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 )
 
 type MinerUModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 func NewMinerUModel(baseURL map[string]string, urlSuffix URLSuffix) *MinerUModel {
 	return &MinerUModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				MaxIdleConnsPerHost: 100,
-				IdleConnTimeout:     time.Second * 90,
-				DisableCompression:  false,
-			},
+		baseModel: BaseModel{
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
 
 func (m *MinerUModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return &MinerUModel{
-		BaseURL:   baseURL,
-		URLSuffix: m.URLSuffix,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				MaxIdleConnsPerHost: 100,
-				IdleConnTimeout:     time.Second * 90,
-				DisableCompression:  false,
-			},
-		},
-	}
+	return NewMinerUModel(baseURL, m.baseModel.URLSuffix)
 }
 
 func (m *MinerUModel) Name() string {
@@ -86,7 +83,7 @@ func (m *MinerUModel) OCRFile(modelName *string, content []byte, url *string, ap
 	return nil, fmt.Errorf("%s no such method", m.Name())
 }
 
-func (m *MinerUModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (m *MinerUModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	return nil, fmt.Errorf("%s no such method", m.Name())
 }
 
@@ -108,20 +105,23 @@ type mineruTaskSubmitResponse struct {
 }
 
 func (m *MinerUModel) ParseFile(modelName *string, content []byte, documentURL *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if documentURL == nil || *documentURL == "" {
 		return nil, fmt.Errorf("MinerU API requires a valid public document URL; direct file upload is not supported")
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	apiURL := fmt.Sprintf("%s/api/%s", m.BaseURL[region], m.URLSuffix.DocumentParse)
+	apiURL := fmt.Sprintf("%s/api/%s", resolvedBaseURL, m.baseModel.URLSuffix.DocumentParse)
 
 	reqBody := map[string]interface{}{
 		"url": *documentURL,
@@ -147,7 +147,7 @@ func (m *MinerUModel) ParseFile(modelName *string, content []byte, documentURL *
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -196,17 +196,16 @@ type mineruTaskQueryResponse struct {
 }
 
 func (m *MinerUModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
-	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	// URL: https://mineru.net/api/v4/extract/task/{task_id}
-	apiURL := fmt.Sprintf("%s/api/%s/%s", m.BaseURL[region], m.URLSuffix.DocumentParse, taskID)
+	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	apiURL := fmt.Sprintf("%s/api/%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.DocumentParse, taskID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -218,7 +217,7 @@ func (m *MinerUModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskRespon
 
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
