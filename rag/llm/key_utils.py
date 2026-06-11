@@ -18,12 +18,14 @@ import json
 
 def _normalize_replicate_key(key):
     if isinstance(key, dict):
-        return key.get("api_key") or json.dumps(key)
+        if "api_key" in key:
+            return key.get("api_key")
+        return json.dumps(key)
     if isinstance(key, str):
         try:
             payload = json.loads(key)
-            if isinstance(payload, dict) and payload.get("api_key"):
-                return payload["api_key"]
+            if isinstance(payload, dict) and "api_key" in payload:
+                return payload.get("api_key")
         except (json.JSONDecodeError, TypeError):
             pass
     return key
