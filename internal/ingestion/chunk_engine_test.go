@@ -28,8 +28,8 @@ import (
 var mediaAwareDSL = `{
   "version": "1.0",
   "name": "media_aware_chunking",
-  "description": "\u9047\u5230\u56fe\u7247/\u89c6\u9891 URL \u65f6\u7981\u7528 overlap",
-
+  "description": "Disable overlap when encountering image/video URLs",
+  
   "pipeline": [
     {
       "stage": "preprocess",
@@ -37,16 +37,16 @@ var mediaAwareDSL = `{
       "strip_whitespace": true,
       "remove_empty_lines": true
     },
-
+    
     {
       "stage": "split",
       "strategy": "sentence",
       "params": {
-        "boundaries": ["\u3002", "\uff01", "\uff1f", "\n"],
+        "boundaries": [". ", "! ", "? ", "\n"],
         "keep_separators": true
       }
     },
-
+    
     {
       "stage": "postprocess",
       "merge": {
@@ -54,32 +54,33 @@ var mediaAwareDSL = `{
         "strategy": "greedy"
       },
       "overlap": {
+        "enabled": true,
         "unit": "char",
         "mode": "if_only",
         "conditions": [
           {
-            "name": "\u5305\u542b\u5a92\u4f53URL",
+            "name": "Contains media URL",
             "if": "has_media_url = true",
             "then": {"size": 0}
           },
           {
-            "name": "\u5305\u542b\u56fe\u7247URL",
+            "name": "Contains image URL",
             "if": "has_image_url = true",
             "then": {"size": 0}
           },
           {
-            "name": "\u5305\u542b\u89c6\u9891URL",
+            "name": "Contains video URL", 
             "if": "has_video_url = true",
             "then": {"size": 0}
           },
           {
-            "name": "\u666e\u901a\u4e2d\u6587\u957f\u53e5\u5b50",
-            "if": "language = 'zh' AND length > 50 AND has_media_url = false",
+            "name": "Normal English long sentence",
+            "if": "language = 'en' AND length > 50 AND has_media_url = false",
             "then": {"size": 1, "unit": "sentence"}
           },
           {
-            "name": "\u666e\u901a\u4e2d\u6587\u77ed\u53e5\u5b50",
-            "if": "language = 'zh' AND length <= 50 AND has_media_url = false",
+            "name": "Normal English short sentence",
+            "if": "language = 'en' AND length <= 50 AND has_media_url = false",
             "then": {"size": 30}
           }
         ],
