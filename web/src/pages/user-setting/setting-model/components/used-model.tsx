@@ -12,6 +12,7 @@ import {
   useDeleteProviderInstance,
   useFetchAddedProviders,
   useFetchInstanceModels,
+  useFetchProviderInstance,
   useFetchProviderInstances,
   useUpdateModelStatus,
 } from '@/hooks/use-llm-request';
@@ -20,15 +21,21 @@ import {
   IInstanceModel,
   IProviderInstance,
 } from '@/interfaces/database/llm';
-import { ChevronsDown, ChevronsUp, Trash2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { ChevronsDown, ChevronsUp, Settings, Trash2 } from 'lucide-react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { mapModelKey } from './un-add-model';
 
 export function UsedModel({
   handleAddModel,
+  onEditInstance,
 }: {
   handleAddModel: (factory: string) => void;
+  onEditInstance?: (
+    providerName: string,
+    instance: IProviderInstance,
+    models: IInstanceModel[],
+  ) => void;
 }) {
   const { t } = useTranslation();
   const { data: providerList } = useFetchAddedProviders();
@@ -46,6 +53,7 @@ export function UsedModel({
           key={provider.name}
           provider={provider}
           handleAddModel={handleAddModel}
+          onEditInstance={onEditInstance}
         />
       ))}
     </div>
@@ -55,11 +63,20 @@ export function UsedModel({
 function ProviderCard({
   provider,
   handleAddModel,
+  onEditInstance,
 }: {
   provider: IAvailableProvider;
   handleAddModel: (factory: string) => void;
+  onEditInstance?: (
+    providerName: string,
+    instance: IProviderInstance,
+    models: IInstanceModel[],
+  ) => void;
 }) {
   const { data: instances } = useFetchProviderInstances(provider.name);
+  if (!instances || instances.length <= 0) {
+    return null;
+  }
 
   return (
     <div
@@ -76,7 +93,6 @@ function ProviderCard({
           </div>
         </div>
       </div>
-
       {/* Instances */}
       {instances.length > 0 && (
         <div className="border-t border-border-button">
@@ -86,6 +102,7 @@ function ProviderCard({
               instance={instance}
               providerName={provider.name}
               handleAddModel={handleAddModel}
+              onEditInstance={onEditInstance}
             />
           ))}
         </div>
@@ -98,10 +115,16 @@ function InstanceRow({
   instance,
   providerName,
   // handleAddModel,
+  onEditInstance,
 }: {
   instance: IProviderInstance;
   providerName: string;
   handleAddModel: (factory: string) => void;
+  onEditInstance?: (
+    providerName: string,
+    instance: IProviderInstance,
+    models: IInstanceModel[],
+  ) => void;
 }) {
   const { t } = useTranslation();
   const [visible, setVisible] = useState(false);
@@ -157,6 +180,8 @@ function InstanceRow({
           <InstanceModelList
             providerName={providerName}
             instanceName={instance.instance_name}
+            instance={instance}
+            onEditInstance={onEditInstance}
           />
         </CollapsibleContent>
       </div>
@@ -167,11 +192,41 @@ function InstanceRow({
 function InstanceModelList({
   providerName,
   instanceName,
+  instance,
+  onEditInstance,
 }: {
   providerName: string;
   instanceName: string;
+  instance: IProviderInstance;
+  onEditInstance?: (
+    providerName: string,
+    instance: IProviderInstance,
+    models: IInstanceModel[],
+  ) => void;
 }) {
   const { data: models } = useFetchInstanceModels(providerName, instanceName);
+  // Lazily fetches the full instance details (incl. baseUrl) only when
+  // the user opens the settings dialog — keeps the collapsed section
+  // cheap and avoids the extra request for users who never click it.
+  const { refetch: fetchInstanceDetails } = useFetchProviderInstance(
+    providerName,
+    instanceName,
+  );
+
+  const handleSettingsClick = useCallback(async () => {
+    let details: IProviderInstance = instance;
+    try {
+      const ret = await fetchInstanceDetails();
+      if (ret.data) {
+        details = { ...instance, ...(ret.data as IProviderInstance) };
+      }
+    } catch {
+      // Fall back to the list-level instance data if the show request
+      // fails (e.g. network error) — the modal still gets a usable
+      // baseline.
+    }
+    onEditInstance?.(providerName, details, models);
+  }, [fetchInstanceDetails, instance, models, onEditInstance, providerName]);
 
   const modelTypes = useMemo(() => {
     const types = new Set<string>();
@@ -187,15 +242,22 @@ function InstanceModelList({
     <div className="px-4 pb-4">
       {/* Model type tags */}
       {modelTypes.length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-3">
-          {modelTypes.map((type) => (
-            <span
-              key={type}
-              className="px-2 py-1 text-xs bg-bg-card text-text-secondary rounded-md"
-            >
-              {mapModelKey[type.trim() as keyof typeof mapModelKey] || type}
-            </span>
-          ))}
+        <div className="flex justify-between items-center">
+          <div className="flex flex-wrap gap-2 mb-3">
+            {modelTypes.map((type) => (
+              <span
+                key={type}
+                className="px-2 py-1 text-xs bg-bg-card text-text-secondary rounded-md"
+              >
+                {mapModelKey[type.trim() as keyof typeof mapModelKey] || type}
+              </span>
+            ))}
+          </div>
+          {false && (
+            <Button size="icon" variant="ghost" onClick={handleSettingsClick}>
+              <Settings size={12} />
+            </Button>
+          )}
         </div>
       )}
 

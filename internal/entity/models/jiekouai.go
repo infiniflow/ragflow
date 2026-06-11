@@ -292,6 +292,7 @@ func (j *JieKouAIModel) ChatStreamlyWithSender(modelName string, messages []Mess
 
 	// SSE parsing: read line by line
 	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 
@@ -544,7 +545,7 @@ func (j *JieKouAIModel) ParseFile(modelName *string, content []byte, url *string
 	return nil, fmt.Errorf("%s, no such method", j.Name())
 }
 
-func (j *JieKouAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (j *JieKouAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -580,9 +581,7 @@ func (j *JieKouAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	var result struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
+		Data []DSModel `json:"data"`
 	}
 	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
@@ -591,15 +590,15 @@ func (j *JieKouAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("models response missing data")
 	}
 
-	models := make([]string, 0, len(result.Data))
-	for _, model := range result.Data {
-		if strings.TrimSpace(model.ID) == "" {
+	for idx, model := range result.Data {
+		model.ID = strings.TrimSpace(model.ID)
+		if model.ID == "" {
 			return nil, fmt.Errorf("models response contains empty id")
 		}
-		models = append(models, strings.TrimSpace(model.ID))
+		result.Data[idx] = model
 	}
 
-	return models, nil
+	return ParseListModel(ModelList{Models: result.Data}), nil
 }
 
 func (j *JieKouAIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

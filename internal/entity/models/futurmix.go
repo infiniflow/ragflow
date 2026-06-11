@@ -358,7 +358,7 @@ func (f *FuturMixModel) Rerank(modelName *string, query string, documents []stri
 }
 
 // ListModels is not documented as a public endpoint by FuturMix.
-func (f *FuturMixModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (f *FuturMixModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
 

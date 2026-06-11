@@ -631,7 +631,7 @@ func (h *HuaweiCloudModel) ParseFile(modelName *string, content []byte, url *str
 	return nil, fmt.Errorf("%s, no such method", h.Name())
 }
 
-func (h *HuaweiCloudModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (h *HuaweiCloudModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -672,24 +672,16 @@ func (h *HuaweiCloudModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	var parsed struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
+		Data []DSModel `json:"data"`
 	}
 	if err = json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	models := make([]string, 0, len(parsed.Data))
-	for _, item := range parsed.Data {
-		if item.ID != "" {
-			models = append(models, item.ID)
-		}
-	}
-	if len(models) == 0 {
+	if len(parsed.Data) == 0 {
 		return nil, fmt.Errorf("no models in response")
 	}
-	return models, nil
+	return ParseListModel(ModelList{Models: parsed.Data}), nil
 }
 
 func (h *HuaweiCloudModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

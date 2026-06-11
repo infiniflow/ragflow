@@ -236,3 +236,6 @@ func TestUploadAgentFileHandler_TeamMemberTenant(t *testing.T) {
 
 // sp returns a pointer to the given string.
 func sp(s string) *string { return &s }
+func (f *fakeUploadFileService) DownloadAgentFile(tenantID, location string) ([]byte, error) {
+	panic("DownloadAgentFile should not be called during upload tests")
+}

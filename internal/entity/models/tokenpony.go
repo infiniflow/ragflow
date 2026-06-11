@@ -312,7 +312,7 @@ func (t *TokenPonyModel) ChatStreamlyWithSender(modelName string, messages []Mes
 	return nil
 }
 
-func (t *TokenPonyModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (t *TokenPonyModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -347,29 +347,16 @@ func (t *TokenPonyModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
+	// Parse response
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	data, ok := result["data"].([]interface{})
-	if !ok {
+	if modelList.Models == nil {
 		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	models := make([]string, 0, len(data))
-	for _, m := range data {
-		modelMap, ok := m.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		id, ok := modelMap["id"].(string)
-		if !ok {
-			continue
-		}
-		models = append(models, id)
-	}
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 // CheckConnection verifies the API key by calling ListModels.

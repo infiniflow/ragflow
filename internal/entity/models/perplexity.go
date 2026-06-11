@@ -308,10 +308,10 @@ type perplexityModelInfo struct {
 }
 
 type perplexityModelListResponse struct {
-	Data []perplexityModelInfo `json:"data"`
+	Data []DSModel `json:"data"`
 }
 
-func (p *PerplexityModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (p *PerplexityModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := p.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -350,26 +350,14 @@ func (p *PerplexityModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	// or alternate payloads may return a bare array; accept both.
 	var wrapped perplexityModelListResponse
 	if err = json.Unmarshal(body, &wrapped); err == nil && len(wrapped.Data) > 0 {
-		models := make([]string, 0, len(wrapped.Data))
-		for _, model := range wrapped.Data {
-			if model.ID != "" {
-				models = append(models, model.ID)
-			}
-		}
-		return models, nil
+		return ParseListModel(ModelList{Models: wrapped.Data}), nil
 	}
 
-	var bare []perplexityModelInfo
+	var bare []DSModel
 	if err = json.Unmarshal(body, &bare); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-	models := make([]string, 0, len(bare))
-	for _, model := range bare {
-		if model.ID != "" {
-			models = append(models, model.ID)
-		}
-	}
-	return models, nil
+	return ParseListModel(ModelList{Models: bare}), nil
 }
 
 func (p *PerplexityModel) CheckConnection(apiConfig *APIConfig) error {

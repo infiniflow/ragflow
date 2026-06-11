@@ -852,7 +852,7 @@ func (g *GiteeModel) getParseFile(baseURL *string, apiKey, taskID *string, timeO
 	return nil, nil
 }
 
-func (g *GiteeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (g *GiteeModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 
 	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -894,21 +894,12 @@ func (g *GiteeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	// Parse response
-	var modelList DSModelList
+	var modelList ModelList
 	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	var models []string
-	for _, model := range modelList.Models {
-		modelName := model.ID
-		if model.OwnedBy != "" {
-			modelName = model.ID + "@" + model.OwnedBy
-		}
-		models = append(models, modelName)
-	}
-
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 func (g *GiteeModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

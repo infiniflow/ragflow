@@ -19,10 +19,14 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/storage"
+	"ragflow/internal/utility"
 	"regexp"
 	"sort"
 	"strings"
@@ -40,15 +44,15 @@ import (
 
 // DocumentService document service
 type DocumentService struct {
-	documentDAO       *dao.DocumentDAO
-	kbDAO             *dao.KnowledgebaseDAO
-	ingestionTaskDAO  *dao.IngestionDAO
-	ingestionLogDAO   *dao.IngestionLogDAO
-	docEngine         engine.DocEngine
-	engineType        server.EngineType
-	metadataSvc       *MetadataService
-	taskDAO           *dao.TaskDAO
-	file2DocumentDAO  *dao.File2DocumentDAO
+	documentDAO      *dao.DocumentDAO
+	kbDAO            *dao.KnowledgebaseDAO
+	ingestionTaskDAO *dao.IngestionDAO
+	ingestionLogDAO  *dao.IngestionLogDAO
+	docEngine        engine.DocEngine
+	engineType       server.EngineType
+	metadataSvc      *MetadataService
+	taskDAO          *dao.TaskDAO
+	file2DocumentDAO *dao.File2DocumentDAO
 }
 
 // NewDocumentService create document service
@@ -117,6 +121,51 @@ type ThumbnailResponse struct {
 	KbID      string  `json:"kb_id"`
 }
 
+type ArtifactResponse struct {
+	Data            []byte
+	ContentType     string
+	SafeFilename    string
+	ForceAttachment bool
+}
+
+var (
+	ErrArtifactInvalidFilename = errors.New("Invalid filename.")
+	ErrArtifactInvalidFileType = errors.New("Invalid file type.")
+	ErrArtifactNotFound        = errors.New("Artifact not found.")
+)
+
+var artifactContentTypes = map[string]string{
+	".png":  "image/png",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".svg":  "image/svg+xml",
+	".pdf":  "application/pdf",
+	".csv":  "text/csv",
+	".json": "application/json",
+	".html": "text/html",
+}
+
+var artifactForceAttachmentExtensions = map[string]struct{}{
+	".htm":   {},
+	".html":  {},
+	".shtml": {},
+	".xht":   {},
+	".xhtml": {},
+	".xml":   {},
+	".mhtml": {},
+	".svg":   {},
+}
+var artifactForceAttachmentContentTypes = map[string]struct{}{
+	"text/html":             {},
+	"image/svg+xml":         {},
+	"application/xhtml+xml": {},
+	"text/xml":              {},
+	"application/xml":       {},
+	"multipart/related":     {},
+}
+
+var artifactUnsafeFilenameChars = regexp.MustCompile(`[^\pL\pN_.-]`)
+
 // GetDocumentImage retrieves an image object from storage.
 func (s *DocumentService) GetDocumentImage(imageID string) ([]byte, error) {
 	parts := strings.Split(imageID, "-")
@@ -130,6 +179,186 @@ func (s *DocumentService) GetDocumentImage(imageID string) ([]byte, error) {
 	}
 
 	return storageImpl.Get(parts[0], parts[1])
+}
+
+// GetDocumentArtifact retrieves a sandbox artifact from object storage.
+func (s *DocumentService) GetDocumentArtifact(filename string) (*ArtifactResponse, error) {
+	basename := filepath.Base(filename)
+	if basename != filename || strings.Contains(filename, "/") || strings.Contains(filename, "\\") {
+		return nil, ErrArtifactInvalidFilename
+	}
+
+	ext := strings.ToLower(filepath.Ext(basename))
+	contentType, ok := artifactContentTypes[ext]
+	if !ok {
+		return nil, ErrArtifactInvalidFileType
+	}
+
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, fmt.Errorf("storage not initialized")
+	}
+
+	bucket := sandboxArtifactBucket()
+	if !storageImpl.ObjExist(bucket, basename) {
+		return nil, ErrArtifactNotFound
+	}
+
+	data, err := storageImpl.Get(bucket, basename)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, ErrArtifactNotFound
+	}
+
+	return &ArtifactResponse{
+		Data:            data,
+		ContentType:     contentType,
+		SafeFilename:    sanitizeArtifactFilename(basename),
+		ForceAttachment: shouldForceArtifactAttachment(ext, contentType),
+	}, nil
+}
+
+func sandboxArtifactBucket() string {
+	if bucket := os.Getenv("SANDBOX_ARTIFACT_BUCKET"); bucket != "" {
+		return bucket
+	}
+	return "sandbox-artifacts"
+}
+
+func sanitizeArtifactFilename(filename string) string {
+	return artifactUnsafeFilenameChars.ReplaceAllString(filename, "_")
+}
+
+func shouldForceArtifactAttachment(ext, contentType string) bool {
+	if _, ok := artifactForceAttachmentExtensions[strings.ToLower(ext)]; ok {
+		return true
+	}
+	_, ok := artifactForceAttachmentContentTypes[strings.ToLower(contentType)]
+	return ok
+}
+
+type DocumentPreview struct {
+	Data        []byte
+	ContentType string
+	FileName    string
+}
+
+func (s *DocumentService) GetDocumentPreview(docID string) (*DocumentPreview, error) {
+	doc, err := s.documentDAO.GetByID(docID)
+	if err != nil {
+		return nil, err
+	}
+
+	bucket, name, err := s.GetDocumentStorageAddress(doc)
+	if err != nil {
+		return nil, err
+	}
+
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, fmt.Errorf("storage not initialized")
+	}
+
+	data, err := storageImpl.Get(bucket, name)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, ErrArtifactNotFound
+	}
+
+	fileName := ""
+	if doc.Name != nil {
+		fileName = *doc.Name
+	}
+
+	ext := utility.GetFileExtension(fileName)
+	contentType := utility.GetContentType(ext, doc.Type)
+
+	return &DocumentPreview{
+		Data:        data,
+		ContentType: contentType,
+		FileName:    fileName,
+	}, nil
+}
+
+func (s *DocumentService) GetDocumentStorageAddress(doc *entity.Document) (string, string, error) {
+	if doc == nil {
+		return "", "", fmt.Errorf("document is nil")
+	}
+
+	file2DocumentDAO := dao.NewFile2DocumentDAO()
+	fileDAO := dao.NewFileDAO()
+
+	mappings, err := file2DocumentDAO.GetByDocumentID(doc.ID)
+	if err != nil {
+		return "", "", err
+	}
+
+	if len(mappings) > 0 && mappings[0].FileID != nil {
+		file, err := fileDAO.GetByID(*mappings[0].FileID)
+		if err != nil {
+			return "", "", err
+		}
+
+		if file.SourceType == "" || entity.FileSource(file.SourceType) == entity.FileSourceLocal {
+			if file.Location == nil || *file.Location == "" {
+				return "", "", fmt.Errorf("file location is empty")
+			}
+			return file.ParentID, *file.Location, nil
+		}
+	}
+
+	if doc.Location == nil || *doc.Location == "" {
+		return "", "", fmt.Errorf("document location is empty")
+	}
+	return doc.KbID, *doc.Location, nil
+}
+
+type DownloadDocumentResp struct {
+	Data        []byte
+	FileName    string
+	ContentType string
+}
+
+func (s *DocumentService) DownloadDocument(datasetID, docID string) (*DownloadDocumentResp, error) {
+	if docID == "" {
+		return nil, fmt.Errorf("Specify document_id please.")
+	}
+	doc, err := s.documentDAO.GetByID(docID)
+	if err != nil || doc.KbID != datasetID {
+		return nil, fmt.Errorf("The dataset not own the document %s.", docID)
+	}
+	bucket, name, err := s.GetDocumentStorageAddress(doc)
+	if err != nil {
+		return nil, err
+	}
+
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, fmt.Errorf("storage not initialized")
+	}
+
+	data, err := storageImpl.Get(bucket, name)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, fmt.Errorf("This file is empty.")
+	}
+
+	fileName := ""
+	if doc.Name != nil {
+		fileName = *doc.Name
+	}
+
+	return &DownloadDocumentResp{
+		Data:        data,
+		FileName:    fileName,
+		ContentType: "application/octet-stream",
+	}, nil
 }
 
 // CreateDocument create document
@@ -261,6 +490,50 @@ func (s *DocumentService) deleteDocumentFull(docID string) error {
 	s.cleanupFileReferences(docID)
 
 	return nil
+}
+
+// RemoveDocumentKeepFile removes a document's chunks/metadata and the document
+// row, decrementing the KB counters (doc_num/chunk_num/token_num), WITHOUT
+// deleting the underlying file record, its storage blob, or its file2document
+// mappings. Mirrors Python DocumentService.remove_document — the caller is
+// responsible for cleaning up the file2document mappings separately.
+func (s *DocumentService) RemoveDocumentKeepFile(docID string) error {
+	doc, kb, err := s.resolveDocAndKB(docID)
+	if err != nil {
+		return err
+	}
+	if _, delErr := s.taskDAO.DeleteByDocIDs([]string{docID}); delErr != nil {
+		common.Logger.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to delete tasks for %s: %v", docID, delErr))
+	}
+	s.deleteDocEngineData(docID, kb.TenantID, doc.KbID)
+	return s.deleteDocRecordWithCounters(doc, kb.ID)
+}
+
+// InsertDocument creates a document row and increments the owning KB's doc_num
+// counter in a single transaction. Mirrors Python DocumentService.insert, which
+// updates dataset/document counters on insert. The document's ID and timestamps
+// are populated by the caller / model hooks before insertion.
+func (s *DocumentService) InsertDocument(doc *entity.Document) error {
+	return dao.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(doc).Error; err != nil {
+			return fmt.Errorf("failed to create document: %w", err)
+		}
+		// Guard the counter bump with RowsAffected: documents.kb_id has no DB-level
+		// FK, so Create can succeed against a non-existent KB and the Update would
+		// then report a nil error with 0 rows touched, silently desyncing doc_num.
+		// Roll the whole transaction back in that case (mirrors the counter checks
+		// in deleteDocRecordWithCounters).
+		result := tx.Model(&entity.Knowledgebase{}).
+			Where("id = ?", doc.KbID).
+			Update("doc_num", gorm.Expr("doc_num + 1"))
+		if result.Error != nil {
+			return fmt.Errorf("failed to increment doc_num for KB %s: %w", doc.KbID, result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("knowledgebase %s not found", doc.KbID)
+		}
+		return nil
+	})
 }
 
 // resolveDocAndKB loads the document and its knowledgebase, returning both or
@@ -686,7 +959,7 @@ func (s *DocumentService) GetMetadataSummary(kbID string, docIDs []string) (map[
 	}
 
 	// Aggregate metadata from results
-	return aggregateMetadata(searchResult.Chunks), nil
+	return aggregateMetadata(searchResult.MetadataRecords), nil
 }
 
 // SetDocumentMetadata sets metadata for a document in the document engine
@@ -783,9 +1056,9 @@ func (s *DocumentService) GetDocumentMetadataByID(docID string) (map[string]inte
 	}
 
 	// Return metadata if found
-	if len(searchResult.Chunks) > 0 {
-		chunk := searchResult.Chunks[0]
-		return ExtractMetaFields(chunk)
+	if len(searchResult.MetadataRecords) > 0 {
+		metadata := searchResult.MetadataRecords[0]
+		return ExtractMetaFields(metadata)
 	}
 
 	return make(map[string]interface{}), nil
@@ -803,20 +1076,20 @@ func (s *DocumentService) GetMetadataByKBs(kbIDs []string) (map[string]interface
 	}
 
 	flattenedMeta := make(map[string]map[string][]string)
-	numChunks := len(searchResult.Chunks)
+	numMetadata := len(searchResult.MetadataRecords)
 
 	var allMetaFields []map[string]interface{}
-	if numChunks > 1 && len(searchResult.Chunks) > 0 {
-		firstChunk := searchResult.Chunks[0]
-		if metaFieldsVal := firstChunk["meta_fields"]; metaFieldsVal != nil {
+	if numMetadata > 1 && len(searchResult.MetadataRecords) > 0 {
+		firstMetadata := searchResult.MetadataRecords[0]
+		if metaFieldsVal := firstMetadata["meta_fields"]; metaFieldsVal != nil {
 			if v, ok := metaFieldsVal.([]byte); ok {
 				allMetaFields = ParseAllLengthPrefixedJSON(v)
 			}
 		}
 	}
 
-	for idx, chunk := range searchResult.Chunks {
-		docID, ok := ExtractDocumentID(chunk)
+	for idx, metadata := range searchResult.MetadataRecords {
+		docID, ok := ExtractDocumentID(metadata)
 		if !ok {
 			continue
 		}
@@ -829,7 +1102,7 @@ func (s *DocumentService) GetMetadataByKBs(kbIDs []string) (map[string]interface
 			metaFields = allMetaFields[idx]
 		} else {
 			// Normal case - get from chunk
-			metaFieldsVal = chunk["meta_fields"]
+			metaFieldsVal = metadata["meta_fields"]
 			if metaFieldsVal != nil {
 				switch v := metaFieldsVal.(type) {
 				case string:

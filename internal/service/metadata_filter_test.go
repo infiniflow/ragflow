@@ -17,6 +17,7 @@
 package service
 
 import (
+	"sort"
 	"testing"
 
 	"ragflow/internal/common"
@@ -370,5 +371,140 @@ func TestConvertToMetaCondition_InMixedSpaces(t *testing.T) {
 	}
 	if vals[0] != "A" || vals[1] != "B" || vals[2] != "C" {
 		t.Errorf("expected [A B C], got %v", vals)
+	}
+}
+
+// buildValueMap constructs the valueMap shape that applySingleCondition
+// expects: metaData[key] is a map[string]interface{} where each value is
+// the list of doc IDs that carry that metadata value.
+func buildValueMap(pairs map[string][]string) map[string]interface{} {
+	m := make(map[string]interface{}, len(pairs))
+	for k, ids := range pairs {
+		m[k] = ids
+	}
+	return m
+}
+
+func asSortedIDs(ids []string) []string {
+	out := append([]string(nil), ids...)
+	sort.Strings(out)
+	return out
+}
+
+// TestApplySingleConditionRelationalNumericOrdering pins down the fix for
+// lexicographic ordering in relational operators. Before the fix, "10" < "2"
+// evaluated true, so a filter like `year > 2` against values {2, 10, 20, 100}
+// would have produced {10, 100, 20} (lexicographic) instead of {10, 20, 100}
+// (numeric). The same bug applied to <, >=, <=.
+func TestApplySingleConditionRelationalNumericOrdering(t *testing.T) {
+	// valueMap[year] = { value -> [docID,...] }
+	metaData := map[string]interface{}{
+		"year": buildValueMap(map[string][]string{
+			"2":   {"d-2"},
+			"10":  {"d-10"},
+			"20":  {"d-20"},
+			"100": {"d-100"},
+		}),
+	}
+
+	tests := []struct {
+		name string
+		op   string
+		val  string
+		want []string
+	}{
+		{name: "gt_returns_strictly_greater", op: ">", val: "2", want: []string{"d-10", "d-20", "d-100"}},
+		{name: "gt_lexicographic_trap", op: ">", val: "20", want: []string{"d-100"}}, // "100" > "20" numerically, not lex
+		{name: "lt_returns_strictly_lesser", op: "<", val: "20", want: []string{"d-2", "d-10"}},
+		{name: "lt_lexicographic_trap", op: "<", val: "10", want: []string{"d-2"}}, // "2" < "10" numerically, not lex
+		{name: "gte_includes_equal", op: ">=", val: "10", want: []string{"d-10", "d-20", "d-100"}},
+		{name: "lte_includes_equal", op: "<=", val: "10", want: []string{"d-2", "d-10"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cond := MetaFilterCondition{Key: "year", Op: tt.op, Value: tt.val}
+			got := asSortedIDs(applySingleCondition(metaData, cond))
+			want := asSortedIDs(tt.want)
+			if len(got) != len(want) {
+				t.Fatalf("len = %d (%v), want %d (%v)", len(got), got, len(want), want)
+			}
+			for i := range got {
+				if got[i] != want[i] {
+					t.Fatalf("[%d] = %q, want %q (full got=%v want=%v)", i, got[i], want[i], got, want)
+				}
+			}
+		})
+	}
+}
+
+// TestApplySingleConditionRelationalFallsBackToString ensures non-numeric
+// metadata (names, tags, etc.) still works via lexicographic comparison when
+// at least one side isn't a valid number.
+func TestApplySingleConditionRelationalFallsBackToString(t *testing.T) {
+	metaData := map[string]interface{}{
+		"tag": buildValueMap(map[string][]string{
+			"apple":  {"d-a"},
+			"banana": {"d-b"},
+			"cherry": {"d-c"},
+		}),
+	}
+
+	tests := []struct {
+		op   string
+		val  string
+		want []string
+	}{
+		{op: ">", val: "banana", want: []string{"d-c"}},        // "cherry" > "banana"
+		{op: "<", val: "cherry", want: []string{"d-a", "d-b"}}, // apple, banana
+		{op: ">=", val: "banana", want: []string{"d-b", "d-c"}},
+		{op: "<=", val: "banana", want: []string{"d-a", "d-b"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.op+tt.val, func(t *testing.T) {
+			cond := MetaFilterCondition{Key: "tag", Op: tt.op, Value: tt.val}
+			got := asSortedIDs(applySingleCondition(metaData, cond))
+			want := asSortedIDs(tt.want)
+			if len(got) != len(want) {
+				t.Fatalf("op=%q val=%q: got %v, want %v", tt.op, tt.val, got, want)
+			}
+			for i := range got {
+				if got[i] != want[i] {
+					t.Fatalf("op=%q val=%q [%d] = %q, want %q", tt.op, tt.val, i, got[i], want[i])
+				}
+			}
+		})
+	}
+}
+
+// TestCompareValuesDirectly exercises the helper in isolation for
+// completeness — in particular, the numeric-only path and the mixed
+// numeric/string fallback path.
+func TestCompareValuesDirectly(t *testing.T) {
+	cases := []struct {
+		v1, v2, op string
+		want       bool
+	}{
+		// Numeric ordering — the bug we are fixing
+		{"10", "2", ">", true},
+		{"2", "10", ">", false},
+		{"100", "20", "<", false},
+		{"20", "100", "<", true},
+		{"10", "10", ">=", true},
+		{"10", "10", "<=", true},
+		// String fallback
+		{"banana", "apple", ">", true},
+		{"apple", "banana", ">", false},
+		// Mixed: one side is a number, the other isn't → fallback
+		{"10", "banana", ">", false},
+		{"banana", "10", ">", true},
+		// Unknown op
+		{"1", "2", "==", false},
+	}
+	for _, tt := range cases {
+		got := compareValues(tt.v1, tt.v2, tt.op)
+		if got != tt.want {
+			t.Errorf("compareValues(%q, %q, %q) = %v, want %v", tt.v1, tt.v2, tt.op, got, tt.want)
+		}
 	}
 }

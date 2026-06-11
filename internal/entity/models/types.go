@@ -36,7 +36,7 @@ type ModelDriver interface {
 	// ParseFile parse file
 	ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error)
 	// ListModels List supported models
-	ListModels(apiConfig *APIConfig) ([]string, error)
+	ListModels(apiConfig *APIConfig) ([]ListModelResponse, error)
 
 	Balance(apiConfig *APIConfig) (map[string]interface{}, error)
 
@@ -78,6 +78,14 @@ type OCRFileResponse struct {
 	Text *string `json:"text"`
 }
 
+type ListModelResponse struct {
+	Name       string         `json:"name"`
+	MaxTokens  *int           `json:"max_tokens"`
+	ModelTypes []string       `json:"model_types"`
+	Thinking   *ModelThinking `json:"thinking"`
+	Dimension  *int           `json:"dimension"` // used by embedding models
+}
+
 type ParseFileResponse struct {
 	TaskID string `json:"task_id"`
 }
@@ -94,6 +102,11 @@ type TaskSegment struct {
 
 type TaskResponse struct {
 	Segments []TaskSegment `json:"segments"`
+}
+
+type ModelList struct {
+	Object string    `json:"object"`
+	Models []DSModel `json:"data"`
 }
 
 // URLSuffix represents the URL suffixes for different API endpoints

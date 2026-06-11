@@ -51,9 +51,7 @@ type modelscopeChatResponse struct {
 }
 
 type modelscopeModelListResponse struct {
-	Data []struct {
-		ID string `json:"id"`
-	} `json:"data"`
+	Data []DSModel `json:"data"`
 }
 
 // NewModelScopeModel creates a new ModelScope model instance.
@@ -75,8 +73,9 @@ func NewModelScopeModel(baseURL map[string]string, urlSuffix URLSuffix) *ModelSc
 
 	return &ModelScopeModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
+			BaseURL:          baseURL,
+			URLSuffix:        urlSuffix,
+			AllowEmptyAPIKey: true,
 			httpClient: &http.Client{
 				Transport: transport,
 			},
@@ -189,7 +188,9 @@ func (m *ModelScopeModel) ChatWithMessages(modelName string, messages []Message,
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -263,7 +264,9 @@ func (m *ModelScopeModel) ChatStreamlyWithSender(modelName string, messages []Me
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -397,7 +400,7 @@ func (m *ModelScopeModel) ParseFile(modelName *string, content []byte, url *stri
 
 // ListModels returns the model IDs exposed by ModelScope's OpenAI-compatible
 // /v1/models endpoint.
-func (m *ModelScopeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (m *ModelScopeModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -418,7 +421,9 @@ func (m *ModelScopeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -439,13 +444,7 @@ func (m *ModelScopeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]string, 0, len(result.Data))
-	for _, model := range result.Data {
-		if model.ID != "" {
-			models = append(models, model.ID)
-		}
-	}
-	return models, nil
+	return ParseListModel(ModelList{Models: result.Data}), nil
 }
 
 func (m *ModelScopeModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

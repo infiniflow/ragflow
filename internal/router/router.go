@@ -23,27 +23,29 @@ import (
 )
 
 type Router struct {
-	authHandler             *handler.AuthHandler
-	userHandler             *handler.UserHandler
-	tenantHandler           *handler.TenantHandler
-	documentHandler         *handler.DocumentHandler
-	datasetsHandler         *handler.DatasetsHandler
-	systemHandler           *handler.SystemHandler
-	knowledgebaseHandler    *handler.KnowledgebaseHandler
-	chunkHandler            *handler.ChunkHandler
-	llmHandler              *handler.LLMHandler
-	chatHandler             *handler.ChatHandler
-	chatSessionHandler      *handler.ChatSessionHandler
-	connectorHandler        *handler.ConnectorHandler
-	searchHandler           *handler.SearchHandler
-	fileHandler             *handler.FileHandler
-	memoryHandler           *handler.MemoryHandler
-	mcpHandler              *handler.MCPHandler
-	skillSearchHandler      *handler.SkillSearchHandler
-	providerHandler         *handler.ProviderHandler
-	agentHandler            *handler.AgentHandler
-	relatedQuestionsHandler *handler.SearchbotHandler
-	difyRetrievalHandler  *handler.DifyRetrievalHandler
+	authHandler          *handler.AuthHandler
+	userHandler          *handler.UserHandler
+	tenantHandler        *handler.TenantHandler
+	documentHandler      *handler.DocumentHandler
+	datasetsHandler      *handler.DatasetsHandler
+	systemHandler        *handler.SystemHandler
+	knowledgebaseHandler *handler.KnowledgebaseHandler
+	chunkHandler         *handler.ChunkHandler
+	llmHandler           *handler.LLMHandler
+	chatHandler          *handler.ChatHandler
+	chatSessionHandler   *handler.ChatSessionHandler
+	connectorHandler     *handler.ConnectorHandler
+	searchHandler        *handler.SearchHandler
+	fileHandler          *handler.FileHandler
+	memoryHandler        *handler.MemoryHandler
+	mcpHandler           *handler.MCPHandler
+	skillSearchHandler   *handler.SkillSearchHandler
+	providerHandler      *handler.ProviderHandler
+	agentHandler         *handler.AgentHandler
+	searchBotHandler     *handler.SearchBotHandler
+	difyRetrievalHandler *handler.DifyRetrievalHandler
+	pluginHandler        *handler.PluginHandler
+	modelHandler         *handler.ModelHandler
 }
 
 // NewRouter create router
@@ -67,31 +69,35 @@ func NewRouter(
 	skillSearchHandler *handler.SkillSearchHandler,
 	providerHandler *handler.ProviderHandler,
 	agentHandler *handler.AgentHandler,
-	relatedQuestionsHandler *handler.SearchbotHandler,
-	difyRetrievalHandler  *handler.DifyRetrievalHandler,
+	searchBotHandler *handler.SearchBotHandler,
+	difyRetrievalHandler *handler.DifyRetrievalHandler,
+	pluginHandler *handler.PluginHandler,
+	modelHandler *handler.ModelHandler,
 ) *Router {
 	return &Router{
-		authHandler:             authHandler,
-		userHandler:             userHandler,
-		tenantHandler:           tenantHandler,
-		documentHandler:         documentHandler,
-		datasetsHandler:         datasetsHandler,
-		systemHandler:           systemHandler,
-		knowledgebaseHandler:    knowledgebaseHandler,
-		chunkHandler:            chunkHandler,
-		llmHandler:              llmHandler,
-		chatHandler:             chatHandler,
-		chatSessionHandler:      chatSessionHandler,
-		connectorHandler:        connectorHandler,
-		searchHandler:           searchHandler,
-		fileHandler:             fileHandler,
-		memoryHandler:           memoryHandler,
-		mcpHandler:              mcpHandler,
-		skillSearchHandler:      skillSearchHandler,
-		providerHandler:         providerHandler,
-		agentHandler:            agentHandler,
-		relatedQuestionsHandler: relatedQuestionsHandler,
-			difyRetrievalHandler:  difyRetrievalHandler,
+		authHandler:          authHandler,
+		userHandler:          userHandler,
+		tenantHandler:        tenantHandler,
+		documentHandler:      documentHandler,
+		datasetsHandler:      datasetsHandler,
+		systemHandler:        systemHandler,
+		knowledgebaseHandler: knowledgebaseHandler,
+		chunkHandler:         chunkHandler,
+		llmHandler:           llmHandler,
+		chatHandler:          chatHandler,
+		chatSessionHandler:   chatSessionHandler,
+		connectorHandler:     connectorHandler,
+		searchHandler:        searchHandler,
+		fileHandler:          fileHandler,
+		memoryHandler:        memoryHandler,
+		mcpHandler:           mcpHandler,
+		skillSearchHandler:   skillSearchHandler,
+		providerHandler:      providerHandler,
+		agentHandler:         agentHandler,
+		searchBotHandler:     searchBotHandler,
+		difyRetrievalHandler: difyRetrievalHandler,
+		pluginHandler:        pluginHandler,
+		modelHandler:         modelHandler,
 	}
 }
 
@@ -150,6 +156,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// Google redirects here after Gmail / Google Drive web OAuth completes.
 		apiNoAuth.GET("/connectors/gmail/oauth/web/callback", r.connectorHandler.GmailWebOAuthCallback)
 		apiNoAuth.GET("/connectors/google-drive/oauth/web/callback", r.connectorHandler.GoogleDriveWebOAuthCallback)
+		// Forgot-password flow (fixes #15282).
+		// Routes are intentionally registered before any auth middleware:
+		// a user who has forgotten their password is, by definition,
+		// unauthenticated.
+		apiNoAuth.POST("/auth/password/forgot/captcha", r.userHandler.ForgotCaptcha)
+		apiNoAuth.POST("/auth/password/forgot/otp", r.userHandler.ForgotSendOTP)
+		apiNoAuth.POST("/auth/password/forgot/otp/verify", r.userHandler.ForgotVerifyOTP)
+		apiNoAuth.POST("/auth/password/reset", r.userHandler.ForgotResetPassword)
 	}
 
 	// Protected routes
@@ -207,6 +221,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				documents.POST("", r.documentHandler.CreateDocument)
 				documents.GET("", r.documentHandler.ListDocuments)
+				documents.GET("/artifact/:filename", r.documentHandler.GetDocumentArtifact)
+				documents.GET("/:id/preview", r.documentHandler.GetDocumentPreview)
 				documents.GET("/:id", r.documentHandler.GetDocumentByID)
 				documents.PUT("/:id", r.documentHandler.UpdateDocument)
 				documents.DELETE("/:id", r.documentHandler.DeleteDocument)
@@ -221,7 +237,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 			}
 
 			// Searchbot routes
-			v1.POST("/searchbots/related_questions", r.relatedQuestionsHandler.Handle)
+			v1.POST("/searchbots/related_questions", r.searchBotHandler.Handle)
+			v1.POST("/searchbots/retrieval_test", r.searchBotHandler.RetrievalTest)
+			v1.POST("/searchbots/ask", r.searchBotHandler.Ask)
 
 			// Dataset routes
 			datasets := v1.Group("/datasets")
@@ -233,8 +251,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.DELETE("/:dataset_id/graph", r.datasetsHandler.DeleteKnowledgeGraph)
 				datasets.POST("", r.datasetsHandler.CreateDataset)
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
-				datasets.POST("/search", r.chunkHandler.RetrievalTest)
+				datasets.POST("/search", r.datasetsHandler.SearchDatasets)
 				datasets.GET("/metadata/flattened", r.datasetsHandler.ListMetadataFlattened)
+				datasets.GET("/:dataset_id/metadata/summary", r.documentHandler.MetadataSummaryByDataset)
 
 				// Dataset ingestion logs
 				datasets.GET("/:dataset_id/ingestions/summary", r.datasetsHandler.GetIngestionSummary)
@@ -247,6 +266,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 				// Dataset documents
 				datasets.GET("/:dataset_id/documents", r.documentHandler.ListDocuments)
+				datasets.GET("/:dataset_id/documents/:document_id", r.documentHandler.DownloadDocument)
 				datasets.DELETE("/:dataset_id/documents", r.documentHandler.DeleteDocuments)
 
 				// Dataset document chunk
@@ -254,6 +274,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.POST("/:dataset_id/documents/parse", r.documentHandler.ParseDocuments)
 				datasets.POST("/:dataset_id/documents/stop", r.documentHandler.StopParseDocuments)
 				datasets.DELETE("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.RemoveChunks)
+				datasets.PUT("/:dataset_id/documents/:document_id/metadata/config", r.datasetsHandler.UpdateDocumentMetadataConfig)
 			}
 
 			// Search routes
@@ -272,6 +293,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				file.GET("", r.fileHandler.ListFiles)
 				file.DELETE("", r.fileHandler.DeleteFiles)
 				file.POST("/move", r.fileHandler.MoveFiles)
+				file.POST("/link-to-datasets", r.fileHandler.LinkToDatasets)
 				file.GET("/:id/ancestors", r.fileHandler.GetFileAncestors)
 				file.GET("/:id/parent", r.fileHandler.GetParentFolder)
 				file.GET("/:id", r.fileHandler.Download)
@@ -294,16 +316,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 				memory.GET("/:memory_id", r.memoryHandler.GetMemoryMessages)
 			}
 
-			// TODO: Message routes - Implementation pending - depends on CanvasService, TaskService and embedding engine
-			// message := v1.Group("/messages")
-			// {
-			// 	message.POST("", r.memoryHandler.AddMessage)
-			// 	message.DELETE("/:memory_id/:message_id", r.memoryHandler.ForgetMessage)
-			// 	message.PUT("/:memory_id/:message_id", r.memoryHandler.UpdateMessage)
-			// 	message.GET("/search", r.memoryHandler.SearchMessage)
-			// 	message.GET("", r.memoryHandler.GetMessages)
-			// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
-			// }
+			// Message routes
+			message := v1.Group("/messages")
+			{
+				message.DELETE("/:memory_message", r.memoryHandler.ForgetMessage)
+			}
 
 			// Skill search routes
 			skills := v1.Group("/skills")
@@ -365,15 +382,33 @@ func (r *Router) Setup(engine *gin.Engine) {
 				model.PATCH("/", r.tenantHandler.SetModels)
 			}
 
+			allModels := v1.Group("/all-models")
+			{
+				allModels.GET("", r.modelHandler.ListAllModels)
+			}
+
 			// Agent routes
 			agents := v1.Group("/agents")
 			{
 				agents.GET("", r.agentHandler.ListAgents)
+				agents.GET("/prompts", r.agentHandler.GetPrompts)
 				agents.GET("/templates", r.agentHandler.ListTemplates)
+				agents.GET("/download", r.agentHandler.DownloadAgentFile)
+				agents.POST("/test_db_connection", r.agentHandler.TestDBConnection)
 				agents.GET("/:agent_id/versions", r.agentHandler.ListAgentVersions)
 				agents.GET("/:agent_id/versions/:version_id", r.agentHandler.GetAgentVersion)
 				agents.POST("/:agent_id/upload", r.agentHandler.UploadAgentFile)
 				agents.PUT("/:agent_id/tags", r.agentHandler.UpdateAgentTags)
+				agents.GET("/:agent_id/sessions", r.agentHandler.ListAgentSessions)
+				agents.GET("/:agent_id/sessions/:session_id", r.agentHandler.GetAgentSession)
+				agents.DELETE("/:agent_id/sessions/:session_id", r.agentHandler.DeleteAgentSessionItem)
+				agents.DELETE("/:agent_id/sessions", r.agentHandler.DeleteAgentSessions)
+			}
+
+			// Plugin routes
+			plugin := v1.Group("/plugin")
+			{
+				plugin.GET("/tools", r.pluginHandler.ListLLMTools)
 			}
 
 			connector := v1.Group("/connectors")
