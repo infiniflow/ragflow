@@ -155,6 +155,7 @@ const (
 	TokenGet
 	TokenUpdate
 	TokenRemove
+	TokenExplain
 	TokenChunk
 	TokenChunks
 	TokenDocument
