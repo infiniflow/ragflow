@@ -31,9 +31,9 @@ type overlapConfig struct {
 }
 
 type overlapCondition struct {
-	Name       string
-	Expression string
-	Then       overlapConfig
+	Name          string
+	Condition     Expr // pre-compiled expression AST from CompileExpression
+	OverlapConfig overlapConfig
 }
 
 type mergeConfig struct {
@@ -113,11 +113,14 @@ func NewPostprocessOperator(config map[string]interface{}) (*PostprocessOperator
 				if n, ok := c["name"].(string); ok {
 					cond.Name = n
 				}
-				if expr, ok := c["if"].(string); ok {
-					cond.Expression = expr
+				if exprStr, ok := c["if"].(string); ok {
+					expression, err := CompileExpression(exprStr)
+					if err == nil {
+						cond.Condition = expression
+					}
 				}
 				if thenMap, ok := c["then"].(map[string]interface{}); ok {
-					cond.Then = parseOverlapConfig(thenMap)
+					cond.OverlapConfig = parseOverlapConfig(thenMap)
 				}
 				op.overlap.conditions = append(op.overlap.conditions, cond)
 			}
@@ -342,12 +345,15 @@ func (o *PostprocessOperator) resolveOverlapConfig(chunk ChunkData) overlapConfi
 	vars := buildExprContext(&chunk, chunk.Metadata)
 
 	for _, cond := range o.overlap.conditions {
-		result, err := Evaluate(cond.Expression, vars)
+		if cond.Condition == nil {
+			continue
+		}
+		result, err := EvalCompiled(cond.Condition, vars)
 		if err != nil {
 			continue
 		}
 		if result {
-			cfg := cond.Then
+			cfg := cond.OverlapConfig
 			if cfg.Unit == "" {
 				cfg.Unit = o.overlap.unit
 			}

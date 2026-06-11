@@ -51,9 +51,9 @@ const (
 )
 
 var keywords = map[string]tokenType{
-	"AND": tokenAnd,
-	"OR":  tokenOr,
-	"NOT": tokenNot,
+	"AND":   tokenAnd,
+	"OR":    tokenOr,
+	"NOT":   tokenNot,
 	"true":  tokenTrue,
 	"false": tokenFalse,
 	"TRUE":  tokenTrue,
@@ -180,14 +180,14 @@ func (l *lexer) peek() token {
 // AST nodes
 // ---------------------------------------------------------------------------
 
-type expr interface {
+type Expr interface {
 	String() string
 }
 
 type binaryExpr struct {
-	left  expr
+	left  Expr
 	op    tokenType
-	right expr
+	right Expr
 }
 
 func (e binaryExpr) String() string {
@@ -206,7 +206,7 @@ func (e binaryExpr) String() string {
 
 type unaryExpr struct {
 	op    tokenType
-	right expr
+	right Expr
 }
 
 func (e unaryExpr) String() string {
@@ -286,12 +286,12 @@ func (p *parser) expect(typ tokenType) token {
 	return tok
 }
 
-func (p *parser) parse() expr {
+func (p *parser) parse() Expr {
 	return p.parseOr()
 }
 
 // or_expr → and_expr ("OR" and_expr)*
-func (p *parser) parseOr() expr {
+func (p *parser) parseOr() Expr {
 	e := p.parseAnd()
 	for p.cur.typ == tokenOr {
 		op := p.cur.typ
@@ -303,7 +303,7 @@ func (p *parser) parseOr() expr {
 }
 
 // and_expr → not_expr ("AND" not_expr)*
-func (p *parser) parseAnd() expr {
+func (p *parser) parseAnd() Expr {
 	e := p.parseNot()
 	for p.cur.typ == tokenAnd {
 		op := p.cur.typ
@@ -315,7 +315,7 @@ func (p *parser) parseAnd() expr {
 }
 
 // not_expr → "NOT" not_expr | primary
-func (p *parser) parseNot() expr {
+func (p *parser) parseNot() Expr {
 	if p.cur.typ == tokenNot {
 		op := p.cur.typ
 		p.advance()
@@ -326,7 +326,7 @@ func (p *parser) parseNot() expr {
 }
 
 // primary → comparison | "(" expression ")"
-func (p *parser) parsePrimary() expr {
+func (p *parser) parsePrimary() Expr {
 	if p.cur.typ == tokenLParen {
 		p.advance()
 		e := p.parseOr()
@@ -338,7 +338,7 @@ func (p *parser) parsePrimary() expr {
 
 // comparison → IDENTIFIER OP value | value
 // comparison → IDENTIFIER OP value
-func (p *parser) parseComparison() expr {
+func (p *parser) parseComparison() Expr {
 	if p.cur.typ == tokenIdentifier {
 		id := p.cur.raw
 		p.advance()
@@ -361,7 +361,7 @@ func (p *parser) parseComparison() expr {
 }
 
 // value → STRING | NUMBER | BOOLEAN
-func (p *parser) parseValue() expr {
+func (p *parser) parseValue() Expr {
 	switch p.cur.typ {
 	case tokenString:
 		v := stringExpr{value: p.cur.raw}
@@ -435,7 +435,35 @@ func Evaluate(exprStr string, vars map[string]interface{}) (bool, error) {
 	return b, nil
 }
 
-func eval(e expr, vars map[string]interface{}) (interface{}, error) {
+// CompileExpression parses an expression string into a reusable AST.
+func CompileExpression(exprStr string) (Expr, error) {
+	defer func() {
+		if r := recover(); r != nil {
+			panic(fmt.Sprintf("compile expression %q: %v", exprStr, r))
+		}
+	}()
+	p := newParser(exprStr)
+	return p.parse(), nil
+}
+
+// EvalCompiled evaluates a pre-compiled expression AST against variables.
+func EvalCompiled(ast interface{}, vars map[string]interface{}) (bool, error) {
+	e, ok := ast.(Expr)
+	if !ok {
+		return false, fmt.Errorf("invalid AST type: %T", ast)
+	}
+	res, err := eval(e, vars)
+	if err != nil {
+		return false, err
+	}
+	b, ok := toBool(res)
+	if !ok {
+		return false, fmt.Errorf("result %v (%T) is not boolean", res, res)
+	}
+	return b, nil
+}
+
+func eval(e Expr, vars map[string]interface{}) (interface{}, error) {
 	switch n := e.(type) {
 	case binaryExpr:
 		return evalBinary(n, vars)
