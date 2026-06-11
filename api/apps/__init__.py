@@ -160,6 +160,15 @@ def _load_user(auth_types=None):
         # can actually fetch the referenced documents. See #15895.
         query_token = request.args.get("auth") or request.args.get("api_key")
         if query_token:
+            # Audit trail: record that the AUTH_BETA path was reached via the
+            # URL fallback. Path is recorded for triage; the raw token is
+            # deliberately NOT logged. The token itself is still validated
+            # against APIToken.query(beta=...) below, so an invalid value
+            # produces the existing "API key is invalid" warning.
+            logging.info(
+                "auth: AUTH_BETA token sourced from URL query param path=%s",
+                request.path,
+            )
             authorization = f"Bearer {query_token}"
     if not authorization:
         return _load_user_from_session() if AUTH_JWT in auth_types else None
