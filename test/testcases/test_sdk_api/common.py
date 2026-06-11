@@ -20,6 +20,48 @@ from ragflow_sdk import Chat, Chunk, DataSet, Document, RAGFlow, Session
 from utils.file_utils import create_txt_file
 
 
+REST_API_MAX_PAGE_SIZE = 100
+
+
+def list_all_documents(dataset: DataSet, *, limit: int | None = None, page_size: int = REST_API_MAX_PAGE_SIZE) -> list[Document]:
+    page_size = min(page_size, REST_API_MAX_PAGE_SIZE)
+    documents: list[Document] = []
+    page = 1
+    while True:
+        batch = dataset.list_documents(page=page, page_size=page_size)
+        documents.extend(batch)
+        if limit is not None and len(documents) >= limit:
+            return documents[:limit]
+        if len(batch) < page_size:
+            return documents
+        page += 1
+
+
+def list_all_sessions(chat_assistant: Chat, *, limit: int | None = None, page_size: int = REST_API_MAX_PAGE_SIZE) -> list[Session]:
+    page_size = min(page_size, REST_API_MAX_PAGE_SIZE)
+    sessions: list[Session] = []
+    page = 1
+    while True:
+        batch = chat_assistant.list_sessions(page=page, page_size=page_size)
+        sessions.extend(batch)
+        if limit is not None and len(sessions) >= limit:
+            return sessions[:limit]
+        if len(batch) < page_size:
+            return sessions
+        page += 1
+
+
+def valid_chat_llm_id(client: RAGFlow) -> str:
+    # SDK tests use the tenant's configured chat model; this helper discovers test fixture state, not SDK behavior.
+    res = client.get('/users/me/models')
+    data = res.json()
+    if data.get('code') == 0:
+        llm_id = (data.get('data') or {}).get('llm_id')
+        if llm_id:
+            return llm_id
+    raise Exception('No valid chat llm_id is configured for the current tenant')
+
+
 # DATASET MANAGEMENT
 def batch_create_datasets(client: RAGFlow, num: int) -> list[DataSet]:
     return [client.create_dataset(name=f"dataset_{i}") for i in range(num)]

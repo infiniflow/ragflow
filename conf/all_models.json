@@ -1,0 +1,6719 @@
+{
+  "models": [
+    {
+      "name": "deepseek-v4-flash",
+      "alias": [
+        "deepseek-v4-flash",
+        "deepseek-chat",
+        "deepseek-ai/DeepSeek-V4-Flash",
+        "deepseek-ai/deepseek-v4-flash",
+        "deepseek/deepseek-v4-flash",
+        "deepseek-v4-flash-260425"
+      ],
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "deepseek-v4-flash-base",
+      "alias": [
+        "deepseek-v4-flash-base",
+        "deepseek/deepseek-v4-flash-base",
+        "deepseek-ai/DeepSeek-V4-Flash-Base",
+        "deepseek-ai/deepseek-v4-flash-base"
+      ],
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v4-pro",
+      "alias": [
+        "deepseek-v4-pro",
+        "deepseek-ai/DeepSeek-V4-Pro",
+        "deepseek-ai/deepseek-v4-pro",
+        "deepseek/deepseek-v4-pro",
+        "deepseek-v4-pro-260425"
+      ],
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "deepseek-v4-pro-base",
+      "alias": [
+        "deepseek-v4-pro-base",
+        "deepseek/deepseek-v4-pro-base",
+        "deepseek-ai/DeepSeek-V4-Pro-Base",
+        "deepseek-ai/deepseek-v4-pro-base"
+      ],
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-ocr-2",
+      "alias": [
+        "deepseek-ocr-2",
+        "deepseek-ai/DeepSeek-OCR-2",
+        "deepseek-ai/deepseek-ocr-2"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "ocr"
+      ]
+    },
+    {
+      "name": "deepseek-v3.2",
+      "alias": [
+        "deepseek-v3.2",
+        "deepseek-ai/DeepSeek-V3.2",
+        "deepseek-ai/deepseek-v3.2",
+        "deepseek/deepseek-v3.2",
+        "Pro/deepseek-ai/DeepSeek-V3.2",
+        "deepseek/deepseek-v3.2-251201",
+        "deepseek-v3-2-251201"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v3.2-speciale",
+      "alias": [
+        "deepseek-v3.2-speciale",
+        "deepseek-ai/DeepSeek-V3.2-Speciale",
+        "deepseek-ai/deepseek-v3.2-speciale"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-math-v2",
+      "alias": [
+        "deepseek-math-v2",
+        "deepseek-ai/DeepSeek-Math-V2",
+        "deepseek-ai/deepseek-math-v2",
+        "deepseek/deepseek-math-v2"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-ocr",
+      "alias": [
+        "deepseek-ocr",
+        "deepseek-ai/DeepSeek-OCR",
+        "deepseek-ai/deepseek-ocr"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "ocr"
+      ]
+    },
+    {
+      "name": "deepseek-v3.2-exp",
+      "alias": [
+        "deepseek-v3.2-exp",
+        "deepseek-ai/DeepSeek-V3.2-Exp",
+        "deepseek-ai/deepseek-v3.2-exp",
+        "deepseek/deepseek-v3.2-exp",
+        "deepseek/deepseek-v3.2-exp-thinking"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v3.2-exp-base",
+      "alias": [
+        "deepseek-v3.2-exp-base",
+        "deepseek-ai/DeepSeek-V3.2-Exp-Base",
+        "deepseek-ai/deepseek-v3.2-exp-base"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v3.1-terminus",
+      "alias": [
+        "deepseek-v3.1-terminus",
+        "deepseek-ai/DeepSeek-V3.1-Terminus",
+        "deepseek-ai/deepseek-v3.1-terminus",
+        "deepseek/deepseek-v3.1-terminus",
+        "Pro/deepseek-ai/DeepSeek-V3.1-Terminus",
+        "deepseek/deepseek-v3.1-terminus-thinking"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v3.1",
+      "alias": [
+        "deepseek-v3.1",
+        "deepseek-ai/DeepSeek-V3.1",
+        "deepseek-ai/deepseek-v3.1",
+        "deepseek/deepseek-chat-v3.1",
+        "deepseek-v3-1-250821"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v3.1-base",
+      "alias": [
+        "deepseek-v3.1-base",
+        "deepseek-ai/DeepSeek-V3.1-Base",
+        "deepseek-ai/deepseek-v3.1-base"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-r1-0528-qwen3-8b",
+      "alias": [
+        "deepseek-r1-0528-qwen3-8b",
+        "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
+        "deepseek-ai/deepseek-r1-0528-qwen3-8b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-r1-0528",
+      "alias": [
+        "deepseek-r1-0528",
+        "deepseek-ai/DeepSeek-R1-0528",
+        "deepseek-ai/deepseek-r1-0528",
+        "deepseek/deepseek-r1-0528",
+        "deepseek-r1-250528",
+        "Pro/deepseek-ai/DeepSeek-R1"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-prover-v2-671b",
+      "alias": [
+        "deepseek-prover-v2-671b",
+        "deepseek-ai/DeepSeek-Prover-V2-671B",
+        "deepseek-ai/deepseek-prover-v2-671b"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-prover-v2-7b",
+      "alias": [
+        "deepseek-prover-v2-7b",
+        "deepseek-ai/DeepSeek-Prover-V2-7B",
+        "deepseek-ai/deepseek-prover-v2-7b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v3-0324",
+      "alias": [
+        "deepseek-v3-0324",
+        "deepseek-ai/DeepSeek-V3-0324",
+        "deepseek-ai/deepseek-v3-0324",
+        "deepseek/deepseek-chat-v3-0324",
+        "deepseek-v3-250324",
+        "Pro/deepseek-ai/DeepSeek-V3"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-r1",
+      "alias": [
+        "deepseek-r1",
+        "deepseek-ai/DeepSeek-R1",
+        "deepseek-ai/deepseek-r1",
+        "deepseek/deepseek-r1",
+        "DeepSeek-R1",
+        "deepseek-r1-250120",
+        "deepseek-r1_32k"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-r1-distill-llama-70b",
+      "alias": [
+        "deepseek-r1-distill-llama-70b",
+        "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+        "deepseek-ai/deepseek-r1-distill-llama-70b",
+        "deepseek/deepseek-r1-distill-llama-70b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-r1-distill-llama-8b",
+      "alias": [
+        "deepseek-r1-distill-llama-8b",
+        "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
+        "deepseek-ai/deepseek-r1-distill-llama-8b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-r1-distill-qwen-1.5b",
+      "alias": [
+        "deepseek-r1-distill-qwen-1.5b",
+        "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
+        "deepseek-ai/deepseek-r1-distill-qwen-1.5b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-r1-distill-qwen-14b",
+      "alias": [
+        "deepseek-r1-distill-qwen-14b",
+        "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
+        "deepseek-ai/deepseek-r1-distill-qwen-14b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-r1-distill-qwen-32b",
+      "alias": [
+        "deepseek-r1-distill-qwen-32b",
+        "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
+        "deepseek-ai/deepseek-r1-distill-qwen-32b",
+        "deepseek/deepseek-r1-distill-qwen-32b",
+        "deepseek-r1-distill-qwen-32b-250120"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-r1-distill-qwen-7b",
+      "alias": [
+        "deepseek-r1-distill-qwen-7b",
+        "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+        "deepseek-ai/deepseek-r1-distill-qwen-7b",
+        "deepseek-r1-distill-qwen-7b-250120"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-r1-zero",
+      "alias": [
+        "deepseek-r1-zero",
+        "deepseek-ai/DeepSeek-R1-Zero",
+        "deepseek-ai/deepseek-r1-zero"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v3",
+      "alias": [
+        "deepseek-v3",
+        "deepseek-ai/DeepSeek-V3",
+        "deepseek-ai/deepseek-v3",
+        "deepseek/deepseek-chat",
+        "DeepSeek-V3"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v3-base",
+      "alias": [
+        "deepseek-v3-base",
+        "deepseek-ai/DeepSeek-V3-Base",
+        "deepseek-ai/deepseek-v3-base"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-vl2",
+      "alias": [
+        "deepseek-vl2",
+        "deepseek-ai/deepseek-vl2"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "image2text"
+      ]
+    },
+    {
+      "name": "deepseek-vl2-small",
+      "alias": [
+        "deepseek-vl2-small",
+        "deepseek-ai/deepseek-vl2-small"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "image2text"
+      ]
+    },
+    {
+      "name": "deepseek-vl2-tiny",
+      "alias": [
+        "deepseek-vl2-tiny",
+        "deepseek-ai/deepseek-vl2-tiny"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "image2text"
+      ]
+    },
+    {
+      "name": "deepseek-v2.5-1210",
+      "alias": [
+        "deepseek-v2.5-1210",
+        "deepseek-ai/DeepSeek-V2.5-1210",
+        "deepseek-ai/deepseek-v2.5-1210"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-v2-instruct-0724",
+      "alias": [
+        "deepseek-coder-v2-instruct-0724",
+        "deepseek-ai/DeepSeek-Coder-V2-Instruct-0724",
+        "deepseek-ai/deepseek-coder-v2-instruct-0724"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v2.5",
+      "alias": [
+        "deepseek-v2.5",
+        "deepseek-ai/DeepSeek-V2.5",
+        "deepseek-ai/deepseek-v2.5"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-prover-v1",
+      "alias": [
+        "deepseek-prover-v1",
+        "deepseek-ai/DeepSeek-Prover-V1",
+        "deepseek-ai/deepseek-prover-v1"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-prover-v1.5-base",
+      "alias": [
+        "deepseek-prover-v1.5-base",
+        "deepseek-ai/DeepSeek-Prover-V1.5-Base",
+        "deepseek-ai/deepseek-prover-v1.5-base"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-prover-v1.5-rl",
+      "alias": [
+        "deepseek-prover-v1.5-rl",
+        "deepseek-ai/DeepSeek-Prover-V1.5-RL",
+        "deepseek-ai/deepseek-prover-v1.5-rl"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-prover-v1.5-sft",
+      "alias": [
+        "deepseek-prover-v1.5-sft",
+        "deepseek-ai/DeepSeek-Prover-V1.5-SFT",
+        "deepseek-ai/deepseek-prover-v1.5-sft"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v2-chat-0628",
+      "alias": [
+        "deepseek-v2-chat-0628",
+        "deepseek-ai/DeepSeek-V2-Chat-0628",
+        "deepseek-ai/deepseek-v2-chat-0628"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-v2-base",
+      "alias": [
+        "deepseek-coder-v2-base",
+        "deepseek-ai/DeepSeek-Coder-V2-Base",
+        "deepseek-ai/deepseek-coder-v2-base"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-v2-instruct",
+      "alias": [
+        "deepseek-coder-v2-instruct",
+        "deepseek-ai/DeepSeek-Coder-V2-Instruct",
+        "deepseek-ai/deepseek-coder-v2-instruct"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-v2-lite-base",
+      "alias": [
+        "deepseek-coder-v2-lite-base",
+        "deepseek-ai/DeepSeek-Coder-V2-Lite-Base",
+        "deepseek-ai/deepseek-coder-v2-lite-base"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-v2-lite-instruct",
+      "alias": [
+        "deepseek-coder-v2-lite-instruct",
+        "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct",
+        "deepseek-ai/deepseek-coder-v2-lite-instruct"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v2-lite",
+      "alias": [
+        "deepseek-v2-lite",
+        "deepseek-ai/DeepSeek-V2-Lite",
+        "deepseek-ai/deepseek-v2-lite"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v2-lite-chat",
+      "alias": [
+        "deepseek-v2-lite-chat",
+        "deepseek-ai/DeepSeek-V2-Lite-Chat",
+        "deepseek-ai/deepseek-v2-lite-chat"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v2-chat",
+      "alias": [
+        "deepseek-v2-chat",
+        "deepseek-ai/DeepSeek-V2-Chat",
+        "deepseek-ai/deepseek-v2-chat"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v2",
+      "alias": [
+        "deepseek-v2",
+        "deepseek-ai/DeepSeek-V2",
+        "deepseek-ai/deepseek-v2"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-vl-1.3b-base",
+      "alias": [
+        "deepseek-vl-1.3b-base",
+        "deepseek-ai/deepseek-vl-1.3b-base"
+      ],
+      "max_tokens": 16384,
+      "model_types": [
+        "image2text"
+      ]
+    },
+    {
+      "name": "deepseek-vl-1.3b-chat",
+      "alias": [
+        "deepseek-vl-1.3b-chat",
+        "deepseek-ai/deepseek-vl-1.3b-chat"
+      ],
+      "max_tokens": 16384,
+      "model_types": [
+        "image2text"
+      ]
+    },
+    {
+      "name": "deepseek-vl-7b-base",
+      "alias": [
+        "deepseek-vl-7b-base",
+        "deepseek-ai/deepseek-vl-7b-base"
+      ],
+      "max_tokens": 16384,
+      "model_types": [
+        "image2text"
+      ]
+    },
+    {
+      "name": "deepseek-vl-7b-chat",
+      "alias": [
+        "deepseek-vl-7b-chat",
+        "deepseek-ai/deepseek-vl-7b-chat"
+      ],
+      "max_tokens": 16384,
+      "model_types": [
+        "image2text"
+      ]
+    },
+    {
+      "name": "deepseek-math-7b-base",
+      "alias": [
+        "deepseek-math-7b-base",
+        "deepseek-ai/deepseek-math-7b-base"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-math-7b-instruct",
+      "alias": [
+        "deepseek-math-7b-instruct",
+        "deepseek-ai/deepseek-math-7b-instruct"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-math-7b-rl",
+      "alias": [
+        "deepseek-math-7b-rl",
+        "deepseek-ai/deepseek-math-7b-rl"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-7b-base-v1.5",
+      "alias": [
+        "deepseek-coder-7b-base-v1.5",
+        "deepseek-ai/deepseek-coder-7b-base-v1.5"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-7b-instruct-v1.5",
+      "alias": [
+        "deepseek-coder-7b-instruct-v1.5",
+        "deepseek-ai/deepseek-coder-7b-instruct-v1.5"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-moe-16b-chat",
+      "alias": [
+        "deepseek-moe-16b-chat",
+        "deepseek-ai/deepseek-moe-16b-chat"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-moe-16b-base",
+      "alias": [
+        "deepseek-moe-16b-base",
+        "deepseek-ai/deepseek-moe-16b-base"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-llm-67b-base",
+      "alias": [
+        "deepseek-llm-67b-base",
+        "deepseek-ai/deepseek-llm-67b-base"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-llm-67b-chat",
+      "alias": [
+        "deepseek-llm-67b-chat",
+        "deepseek-ai/deepseek-llm-67b-chat"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-llm-7b-base",
+      "alias": [
+        "deepseek-llm-7b-base",
+        "deepseek-ai/deepseek-llm-7b-base"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-llm-7b-chat",
+      "alias": [
+        "deepseek-llm-7b-chat",
+        "deepseek-ai/deepseek-llm-7b-chat"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-33b-instruct",
+      "alias": [
+        "deepseek-coder-33b-instruct",
+        "deepseek-ai/deepseek-coder-33b-instruct"
+      ],
+      "max_tokens": 16384,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-5.7bmqa-base",
+      "alias": [
+        "deepseek-coder-5.7bmqa-base",
+        "deepseek-ai/deepseek-coder-5.7bmqa-base"
+      ],
+      "max_tokens": 16384,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-1.3b-instruct",
+      "alias": [
+        "deepseek-coder-1.3b-instruct",
+        "deepseek-ai/deepseek-coder-1.3b-instruct"
+      ],
+      "max_tokens": 16384,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-6.7b-instruct",
+      "alias": [
+        "deepseek-coder-6.7b-instruct",
+        "deepseek-ai/deepseek-coder-6.7b-instruct"
+      ],
+      "max_tokens": 16384,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-1.3b-base",
+      "alias": [
+        "deepseek-coder-1.3b-base",
+        "deepseek-ai/deepseek-coder-1.3b-base"
+      ],
+      "max_tokens": 16384,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-33b-base",
+      "alias": [
+        "deepseek-coder-33b-base",
+        "deepseek-ai/deepseek-coder-33b-base"
+      ],
+      "max_tokens": 16384,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-coder-6.7b-base",
+      "alias": [
+        "deepseek-coder-6.7b-base",
+        "deepseek-ai/deepseek-coder-6.7b-base"
+      ],
+      "max_tokens": 16384,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "minimax-m3",
+      "max_tokens": 1024000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "glm-4.5v",
+      "max_tokens": 64000,
+      "model_types": [
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "bge-m3",
+      "alias": [
+        "baai/bge-m3"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "bge-reranker-v2-m3",
+      "alias": [
+        "baai/bge-reranker-v2-m3"
+      ],
+      "max_tokens": 1024,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "step-audio-tts-3b",
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/sae-res-qwen3.5-35b-a3b-base-w128k-l0_100",
+      "alias": [
+        "qwen/sae-res-qwen3.5-35b-a3b-base-w128k-l0_100",
+        "Qwen/SAE-Res-Qwen3.5-35B-A3B-Base-W128K-L0_100",
+        "sae-res-qwen3.5-35b-a3b-base-w128k-l0_100"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/sae-res-qwen3.5-35b-a3b-base-w32k-l0_50",
+      "alias": [
+        "qwen/sae-res-qwen3.5-35b-a3b-base-w32k-l0_50",
+        "Qwen/SAE-Res-Qwen3.5-35B-A3B-Base-W32K-L0_50",
+        "sae-res-qwen3.5-35b-a3b-base-w32k-l0_50"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/sae-res-qwen3-30b-a3b-base-w128k-l0_100",
+      "alias": [
+        "qwen/sae-res-qwen3-30b-a3b-base-w128k-l0_100",
+        "Qwen/SAE-Res-Qwen3-30B-A3B-Base-W128K-L0_100",
+        "sae-res-qwen3-30b-a3b-base-w128k-l0_100"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/sae-res-qwen3-30b-a3b-base-w32k-l0_50",
+      "alias": [
+        "qwen/sae-res-qwen3-30b-a3b-base-w32k-l0_50",
+        "Qwen/SAE-Res-Qwen3-30B-A3B-Base-W32K-L0_50",
+        "sae-res-qwen3-30b-a3b-base-w32k-l0_50"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/sae-res-qwen3.5-27b-w80k-l0_100",
+      "alias": [
+        "qwen/sae-res-qwen3.5-27b-w80k-l0_100",
+        "Qwen/SAE-Res-Qwen3.5-27B-W80K-L0_100",
+        "sae-res-qwen3.5-27b-w80k-l0_100"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/sae-res-qwen3.5-27b-w80k-l0_50",
+      "alias": [
+        "qwen/sae-res-qwen3.5-27b-w80k-l0_50",
+        "Qwen/SAE-Res-Qwen3.5-27B-W80K-L0_50",
+        "sae-res-qwen3.5-27b-w80k-l0_50"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/sae-res-qwen3.5-9b-base-w64k-l0_100",
+      "alias": [
+        "qwen/sae-res-qwen3.5-9b-base-w64k-l0_100",
+        "Qwen/SAE-Res-Qwen3.5-9B-Base-W64K-L0_100",
+        "sae-res-qwen3.5-9b-base-w64k-l0_100"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/sae-res-qwen3.5-2b-base-w32k-l0_100",
+      "alias": [
+        "qwen/sae-res-qwen3.5-2b-base-w32k-l0_100",
+        "Qwen/SAE-Res-Qwen3.5-2B-Base-W32K-L0_100",
+        "sae-res-qwen3.5-2b-base-w32k-l0_100"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/sae-res-qwen3.5-9b-base-w64k-l0_50",
+      "alias": [
+        "qwen/sae-res-qwen3.5-9b-base-w64k-l0_50",
+        "Qwen/SAE-Res-Qwen3.5-9B-Base-W64K-L0_50",
+        "sae-res-qwen3.5-9b-base-w64k-l0_50"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/sae-res-qwen3.5-2b-base-w32k-l0_50",
+      "alias": [
+        "qwen/sae-res-qwen3.5-2b-base-w32k-l0_50",
+        "Qwen/SAE-Res-Qwen3.5-2B-Base-W32K-L0_50",
+        "sae-res-qwen3.5-2b-base-w32k-l0_50"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/sae-res-qwen3-8b-base-w64k-l0_100",
+      "alias": [
+        "qwen/sae-res-qwen3-8b-base-w64k-l0_100",
+        "Qwen/SAE-Res-Qwen3-8B-Base-W64K-L0_100",
+        "sae-res-qwen3-8b-base-w64k-l0_100"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/sae-res-qwen3-8b-base-w64k-l0_50",
+      "alias": [
+        "qwen/sae-res-qwen3-8b-base-w64k-l0_50",
+        "Qwen/SAE-Res-Qwen3-8B-Base-W64K-L0_50",
+        "sae-res-qwen3-8b-base-w64k-l0_50"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/sae-res-qwen3-1.7b-base-w32k-l0_100",
+      "alias": [
+        "qwen/sae-res-qwen3-1.7b-base-w32k-l0_100",
+        "Qwen/SAE-Res-Qwen3-1.7B-Base-W32K-L0_100",
+        "sae-res-qwen3-1.7b-base-w32k-l0_100"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/sae-res-qwen3-1.7b-base-w32k-l0_50",
+      "alias": [
+        "qwen/sae-res-qwen3-1.7b-base-w32k-l0_50",
+        "Qwen/SAE-Res-Qwen3-1.7B-Base-W32K-L0_50",
+        "sae-res-qwen3-1.7b-base-w32k-l0_50"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3.6-27b-fp8",
+      "alias": [
+        "qwen/qwen3.6-27b-fp8",
+        "Qwen/Qwen3.6-27B-FP8",
+        "qwen3.6-27b-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.6-27b",
+      "alias": [
+        "qwen/qwen3.6-27b",
+        "Qwen/Qwen3.6-27B",
+        "qwen3.6-27b"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.6-35b-a3b-fp8",
+      "alias": [
+        "qwen/qwen3.6-35b-a3b-fp8",
+        "Qwen/Qwen3.6-35B-A3B-FP8",
+        "qwen3.6-35b-a3b-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.6-35b-a3b",
+      "alias": [
+        "qwen/qwen3.6-35b-a3b",
+        "Qwen/Qwen3.6-35B-A3B",
+        "qwen3.6-35b-a3b"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-35b-a3b-gptq-int4",
+      "alias": [
+        "qwen/qwen3.5-35b-a3b-gptq-int4",
+        "Qwen/Qwen3.5-35B-A3B-GPTQ-Int4",
+        "qwen3.5-35b-a3b-gptq-int4"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-27b-gptq-int4",
+      "alias": [
+        "qwen/qwen3.5-27b-gptq-int4",
+        "Qwen/Qwen3.5-27B-GPTQ-Int4",
+        "qwen3.5-27b-gptq-int4"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-397b-a17b-gptq-int4",
+      "alias": [
+        "qwen/qwen3.5-397b-a17b-gptq-int4",
+        "Qwen/Qwen3.5-397B-A17B-GPTQ-Int4",
+        "qwen3.5-397b-a17b-gptq-int4"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-122b-a10b-gptq-int4",
+      "alias": [
+        "qwen/qwen3.5-122b-a10b-gptq-int4",
+        "Qwen/Qwen3.5-122B-A10B-GPTQ-Int4",
+        "qwen3.5-122b-a10b-gptq-int4"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-0.8b-base",
+      "alias": [
+        "qwen/qwen3.5-0.8b-base",
+        "Qwen/Qwen3.5-0.8B-Base",
+        "qwen3.5-0.8b-base"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen3.5-2b-base",
+      "alias": [
+        "qwen/qwen3.5-2b-base",
+        "Qwen/Qwen3.5-2B-Base",
+        "qwen3.5-2b-base"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen3.5-0.8b",
+      "alias": [
+        "qwen/qwen3.5-0.8b",
+        "Qwen/Qwen3.5-0.8B",
+        "qwen3.5-0.8b"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-2b",
+      "alias": [
+        "qwen/qwen3.5-2b",
+        "Qwen/Qwen3.5-2B",
+        "qwen3.5-2b"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-4b",
+      "alias": [
+        "qwen/qwen3.5-4b",
+        "Qwen/Qwen3.5-4B",
+        "qwen3.5-4b"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-4b-base",
+      "alias": [
+        "qwen/qwen3.5-4b-base",
+        "Qwen/Qwen3.5-4B-Base",
+        "qwen3.5-4b-base"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen3.5-9b",
+      "alias": [
+        "qwen/qwen3.5-9b",
+        "Qwen/Qwen3.5-9B",
+        "qwen3.5-9b"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-9b-base",
+      "alias": [
+        "qwen/qwen3.5-9b-base",
+        "Qwen/Qwen3.5-9B-Base",
+        "qwen3.5-9b-base"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen3.5-35b-a3b-fp8",
+      "alias": [
+        "qwen/qwen3.5-35b-a3b-fp8",
+        "Qwen/Qwen3.5-35B-A3B-FP8",
+        "qwen3.5-35b-a3b-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-27b-fp8",
+      "alias": [
+        "qwen/qwen3.5-27b-fp8",
+        "Qwen/Qwen3.5-27B-FP8",
+        "qwen3.5-27b-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-122b-a10b-fp8",
+      "alias": [
+        "qwen/qwen3.5-122b-a10b-fp8",
+        "Qwen/Qwen3.5-122B-A10B-FP8",
+        "qwen3.5-122b-a10b-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-122b-a10b",
+      "alias": [
+        "qwen/qwen3.5-122b-a10b",
+        "Qwen/Qwen3.5-122B-A10B",
+        "qwen3.5-122b-a10b"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-35b-a3b-base",
+      "alias": [
+        "qwen/qwen3.5-35b-a3b-base",
+        "Qwen/Qwen3.5-35B-A3B-Base",
+        "qwen3.5-35b-a3b-base"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen3.5-27b",
+      "alias": [
+        "qwen/qwen3.5-27b",
+        "Qwen/Qwen3.5-27B",
+        "qwen3.5-27b"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-35b-a3b",
+      "alias": [
+        "qwen/qwen3.5-35b-a3b",
+        "Qwen/Qwen3.5-35B-A3B",
+        "qwen3.5-35b-a3b"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-397b-a17b-fp8",
+      "alias": [
+        "qwen/qwen3.5-397b-a17b-fp8",
+        "Qwen/Qwen3.5-397B-A17B-FP8",
+        "qwen3.5-397b-a17b-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-397b-a17b",
+      "alias": [
+        "qwen/qwen3.5-397b-a17b",
+        "Qwen/Qwen3.5-397B-A17B",
+        "qwen3.5-397b-a17b"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/webworld-32b",
+      "alias": [
+        "qwen/webworld-32b",
+        "Qwen/WebWorld-32B",
+        "webworld-32b"
+      ],
+      "max_tokens": 40960,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/webworld-14b",
+      "alias": [
+        "qwen/webworld-14b",
+        "Qwen/WebWorld-14B",
+        "webworld-14b"
+      ],
+      "max_tokens": 40960,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/webworld-8b",
+      "alias": [
+        "qwen/webworld-8b",
+        "Qwen/WebWorld-8B",
+        "webworld-8b"
+      ],
+      "max_tokens": 40960,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-coder-next-gguf",
+      "alias": [
+        "qwen/qwen3-coder-next-gguf",
+        "Qwen/Qwen3-Coder-Next-GGUF",
+        "qwen3-coder-next-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 262144
+    },
+    {
+      "name": "qwen/qwen3-coder-next-base",
+      "alias": [
+        "qwen/qwen3-coder-next-base",
+        "Qwen/Qwen3-Coder-Next-Base",
+        "qwen3-coder-next-base"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-coder-next-fp8",
+      "alias": [
+        "qwen/qwen3-coder-next-fp8",
+        "Qwen/Qwen3-Coder-Next-FP8",
+        "qwen3-coder-next-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-coder-next",
+      "alias": [
+        "qwen/qwen3-coder-next",
+        "Qwen/Qwen3-Coder-Next",
+        "qwen3-coder-next"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-forcedaligner-0.6b",
+      "alias": [
+        "qwen/qwen3-forcedaligner-0.6b",
+        "Qwen/Qwen3-ForcedAligner-0.6B",
+        "qwen3-forcedaligner-0.6b"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-asr-1.7b",
+      "alias": [
+        "qwen/qwen3-asr-1.7b",
+        "Qwen/Qwen3-ASR-1.7B",
+        "qwen3-asr-1.7b"
+      ],
+      "max_tokens": 65536,
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-asr-0.6b",
+      "alias": [
+        "qwen/qwen3-asr-0.6b",
+        "Qwen/Qwen3-ASR-0.6B",
+        "qwen3-asr-0.6b"
+      ],
+      "max_tokens": 65536,
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-tts-12hz-0.6b-base",
+      "alias": [
+        "qwen/qwen3-tts-12hz-0.6b-base",
+        "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+        "qwen3-tts-12hz-0.6b-base"
+      ],
+      "max_tokens": 65536,
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-tts-12hz-0.6b-customvoice",
+      "alias": [
+        "qwen/qwen3-tts-12hz-0.6b-customvoice",
+        "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
+        "qwen3-tts-12hz-0.6b-customvoice"
+      ],
+      "max_tokens": 65536,
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-tts-12hz-1.7b-base",
+      "alias": [
+        "qwen/qwen3-tts-12hz-1.7b-base",
+        "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+        "qwen3-tts-12hz-1.7b-base"
+      ],
+      "max_tokens": 65536,
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-tts-12hz-1.7b-customvoice",
+      "alias": [
+        "qwen/qwen3-tts-12hz-1.7b-customvoice",
+        "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+        "qwen3-tts-12hz-1.7b-customvoice"
+      ],
+      "max_tokens": 65536,
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-tts-tokenizer-12hz",
+      "alias": [
+        "qwen/qwen3-tts-tokenizer-12hz",
+        "Qwen/Qwen3-TTS-Tokenizer-12Hz",
+        "qwen3-tts-tokenizer-12hz"
+      ],
+      "max_tokens": 8000,
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-tts-12hz-1.7b-voicedesign",
+      "alias": [
+        "qwen/qwen3-tts-12hz-1.7b-voicedesign",
+        "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+        "qwen3-tts-12hz-1.7b-voicedesign"
+      ],
+      "max_tokens": 65536,
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-vl-reranker-8b",
+      "alias": [
+        "qwen/qwen3-vl-reranker-8b",
+        "Qwen/Qwen3-VL-Reranker-8B",
+        "qwen3-vl-reranker-8b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-vl-reranker-2b",
+      "alias": [
+        "qwen/qwen3-vl-reranker-2b",
+        "Qwen/Qwen3-VL-Reranker-2B",
+        "qwen3-vl-reranker-2b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-vl-embedding-2b",
+      "alias": [
+        "qwen/qwen3-vl-embedding-2b",
+        "Qwen/Qwen3-VL-Embedding-2B",
+        "qwen3-vl-embedding-2b"
+      ],
+      "max_tokens": 32768,
+      "dimension": 2048,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-vl-embedding-8b",
+      "alias": [
+        "qwen/qwen3-vl-embedding-8b",
+        "Qwen/Qwen3-VL-Embedding-8B",
+        "qwen3-vl-embedding-8b"
+      ],
+      "max_tokens": 32768,
+      "dimension": 4096,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-image-2512",
+      "alias": [
+        "qwen/qwen-image-2512",
+        "Qwen/Qwen-Image-2512",
+        "qwen-image-2512"
+      ],
+      "model_types": [
+        "text-to-image",
+        "image_generation",
+        "image_edit",
+        "image_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-image-layered",
+      "alias": [
+        "qwen/qwen-image-layered",
+        "Qwen/Qwen-Image-Layered",
+        "qwen-image-layered"
+      ],
+      "model_types": [
+        "image_edit",
+        "image_layer_decomposition",
+        "image_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-image-edit-2511",
+      "alias": [
+        "qwen/qwen-image-edit-2511",
+        "Qwen/Qwen-Image-Edit-2511",
+        "qwen-image-edit-2511"
+      ],
+      "model_types": [
+        "image_edit",
+        "image_generation",
+        "image_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-next-80b-a3b-thinking-gguf",
+      "alias": [
+        "qwen/qwen3-next-80b-a3b-thinking-gguf",
+        "Qwen/Qwen3-Next-80B-A3B-Thinking-GGUF",
+        "qwen3-next-80b-a3b-thinking-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-next-80b-a3b-instruct-gguf",
+      "alias": [
+        "qwen/qwen3-next-80b-a3b-instruct-gguf",
+        "Qwen/Qwen3-Next-80B-A3B-Instruct-GGUF",
+        "qwen3-next-80b-a3b-instruct-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-vl-235b-a22b-thinking-gguf",
+      "alias": [
+        "qwen/qwen3-vl-235b-a22b-thinking-gguf",
+        "Qwen/Qwen3-VL-235B-A22B-Thinking-GGUF",
+        "qwen3-vl-235b-a22b-thinking-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "max_tokens": 262144
+    },
+    {
+      "name": "qwen/qwen3-vl-30b-a3b-thinking-gguf",
+      "alias": [
+        "qwen/qwen3-vl-30b-a3b-thinking-gguf",
+        "Qwen/Qwen3-VL-30B-A3B-Thinking-GGUF",
+        "qwen3-vl-30b-a3b-thinking-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "max_tokens": 262144
+    },
+    {
+      "name": "qwen/qwen3-vl-235b-a22b-instruct-gguf",
+      "alias": [
+        "qwen/qwen3-vl-235b-a22b-instruct-gguf",
+        "Qwen/Qwen3-VL-235B-A22B-Instruct-GGUF",
+        "qwen3-vl-235b-a22b-instruct-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 262144
+    },
+    {
+      "name": "qwen/qwen3-vl-30b-a3b-instruct-gguf",
+      "alias": [
+        "qwen/qwen3-vl-30b-a3b-instruct-gguf",
+        "Qwen/Qwen3-VL-30B-A3B-Instruct-GGUF",
+        "qwen3-vl-30b-a3b-instruct-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 262144
+    },
+    {
+      "name": "qwen/qwen3-vl-2b-thinking-gguf",
+      "alias": [
+        "qwen/qwen3-vl-2b-thinking-gguf",
+        "Qwen/Qwen3-VL-2B-Thinking-GGUF",
+        "qwen3-vl-2b-thinking-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "max_tokens": 262144
+    },
+    {
+      "name": "qwen/qwen3-vl-4b-thinking-gguf",
+      "alias": [
+        "qwen/qwen3-vl-4b-thinking-gguf",
+        "Qwen/Qwen3-VL-4B-Thinking-GGUF",
+        "qwen3-vl-4b-thinking-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "max_tokens": 262144
+    },
+    {
+      "name": "qwen/qwen3-vl-8b-thinking-gguf",
+      "alias": [
+        "qwen/qwen3-vl-8b-thinking-gguf",
+        "Qwen/Qwen3-VL-8B-Thinking-GGUF",
+        "qwen3-vl-8b-thinking-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "max_tokens": 262144
+    },
+    {
+      "name": "qwen/qwen3-vl-32b-thinking-gguf",
+      "alias": [
+        "qwen/qwen3-vl-32b-thinking-gguf",
+        "Qwen/Qwen3-VL-32B-Thinking-GGUF",
+        "qwen3-vl-32b-thinking-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "max_tokens": 262144
+    },
+    {
+      "name": "qwen/qwen3-vl-32b-instruct-gguf",
+      "alias": [
+        "qwen/qwen3-vl-32b-instruct-gguf",
+        "Qwen/Qwen3-VL-32B-Instruct-GGUF",
+        "qwen3-vl-32b-instruct-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 262144
+    },
+    {
+      "name": "qwen/qwen3-vl-8b-instruct-gguf",
+      "alias": [
+        "qwen/qwen3-vl-8b-instruct-gguf",
+        "Qwen/Qwen3-VL-8B-Instruct-GGUF",
+        "qwen3-vl-8b-instruct-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 262144
+    },
+    {
+      "name": "qwen/qwen3-vl-4b-instruct-gguf",
+      "alias": [
+        "qwen/qwen3-vl-4b-instruct-gguf",
+        "Qwen/Qwen3-VL-4B-Instruct-GGUF",
+        "qwen3-vl-4b-instruct-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 262144
+    },
+    {
+      "name": "qwen/qwen3-vl-2b-instruct-gguf",
+      "alias": [
+        "qwen/qwen3-vl-2b-instruct-gguf",
+        "Qwen/Qwen3-VL-2B-Instruct-GGUF",
+        "qwen3-vl-2b-instruct-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 262144
+    },
+    {
+      "name": "qwen/qwen3-vl-2b-thinking-fp8",
+      "alias": [
+        "qwen/qwen3-vl-2b-thinking-fp8",
+        "Qwen/Qwen3-VL-2B-Thinking-FP8",
+        "qwen3-vl-2b-thinking-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-vl-2b-thinking",
+      "alias": [
+        "qwen/qwen3-vl-2b-thinking",
+        "Qwen/Qwen3-VL-2B-Thinking",
+        "qwen3-vl-2b-thinking"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-vl-2b-instruct-fp8",
+      "alias": [
+        "qwen/qwen3-vl-2b-instruct-fp8",
+        "Qwen/Qwen3-VL-2B-Instruct-FP8",
+        "qwen3-vl-2b-instruct-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-vl-2b-instruct",
+      "alias": [
+        "qwen/qwen3-vl-2b-instruct",
+        "Qwen/Qwen3-VL-2B-Instruct",
+        "qwen3-vl-2b-instruct"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-vl-32b-instruct-fp8",
+      "alias": [
+        "qwen/qwen3-vl-32b-instruct-fp8",
+        "Qwen/Qwen3-VL-32B-Instruct-FP8",
+        "qwen3-vl-32b-instruct-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-vl-32b-thinking-fp8",
+      "alias": [
+        "qwen/qwen3-vl-32b-thinking-fp8",
+        "Qwen/Qwen3-VL-32B-Thinking-FP8",
+        "qwen3-vl-32b-thinking-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-vl-32b-thinking",
+      "alias": [
+        "qwen/qwen3-vl-32b-thinking",
+        "Qwen/Qwen3-VL-32B-Thinking",
+        "qwen3-vl-32b-thinking"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-vl-32b-instruct",
+      "alias": [
+        "qwen/qwen3-vl-32b-instruct",
+        "Qwen/Qwen3-VL-32B-Instruct",
+        "qwen3-vl-32b-instruct"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-vl-8b-instruct-fp8",
+      "alias": [
+        "qwen/qwen3-vl-8b-instruct-fp8",
+        "Qwen/Qwen3-VL-8B-Instruct-FP8",
+        "qwen3-vl-8b-instruct-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-vl-8b-thinking-fp8",
+      "alias": [
+        "qwen/qwen3-vl-8b-thinking-fp8",
+        "Qwen/Qwen3-VL-8B-Thinking-FP8",
+        "qwen3-vl-8b-thinking-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-vl-4b-thinking-fp8",
+      "alias": [
+        "qwen/qwen3-vl-4b-thinking-fp8",
+        "Qwen/Qwen3-VL-4B-Thinking-FP8",
+        "qwen3-vl-4b-thinking-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-vl-4b-instruct-fp8",
+      "alias": [
+        "qwen/qwen3-vl-4b-instruct-fp8",
+        "Qwen/Qwen3-VL-4B-Instruct-FP8",
+        "qwen3-vl-4b-instruct-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-vl-8b-thinking",
+      "alias": [
+        "qwen/qwen3-vl-8b-thinking",
+        "Qwen/Qwen3-VL-8B-Thinking",
+        "qwen3-vl-8b-thinking"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-vl-4b-thinking",
+      "alias": [
+        "qwen/qwen3-vl-4b-thinking",
+        "Qwen/Qwen3-VL-4B-Thinking",
+        "qwen3-vl-4b-thinking"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-vl-8b-instruct",
+      "alias": [
+        "qwen/qwen3-vl-8b-instruct",
+        "Qwen/Qwen3-VL-8B-Instruct",
+        "qwen3-vl-8b-instruct"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-vl-4b-instruct",
+      "alias": [
+        "qwen/qwen3-vl-4b-instruct",
+        "Qwen/Qwen3-VL-4B-Instruct",
+        "qwen3-vl-4b-instruct"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-vl-30b-a3b-thinking-fp8",
+      "alias": [
+        "qwen/qwen3-vl-30b-a3b-thinking-fp8",
+        "Qwen/Qwen3-VL-30B-A3B-Thinking-FP8",
+        "qwen3-vl-30b-a3b-thinking-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-vl-30b-a3b-instruct-fp8",
+      "alias": [
+        "qwen/qwen3-vl-30b-a3b-instruct-fp8",
+        "Qwen/Qwen3-VL-30B-A3B-Instruct-FP8",
+        "qwen3-vl-30b-a3b-instruct-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-vl-235b-a22b-thinking-fp8",
+      "alias": [
+        "qwen/qwen3-vl-235b-a22b-thinking-fp8",
+        "Qwen/Qwen3-VL-235B-A22B-Thinking-FP8",
+        "qwen3-vl-235b-a22b-thinking-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-vl-235b-a22b-instruct-fp8",
+      "alias": [
+        "qwen/qwen3-vl-235b-a22b-instruct-fp8",
+        "Qwen/Qwen3-VL-235B-A22B-Instruct-FP8",
+        "qwen3-vl-235b-a22b-instruct-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-vl-30b-a3b-thinking",
+      "alias": [
+        "qwen/qwen3-vl-30b-a3b-thinking",
+        "Qwen/Qwen3-VL-30B-A3B-Thinking",
+        "qwen3-vl-30b-a3b-thinking"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-vl-30b-a3b-instruct",
+      "alias": [
+        "qwen/qwen3-vl-30b-a3b-instruct",
+        "Qwen/Qwen3-VL-30B-A3B-Instruct",
+        "qwen3-vl-30b-a3b-instruct"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-4b-saferl",
+      "alias": [
+        "qwen/qwen3-4b-saferl",
+        "Qwen/Qwen3-4B-SafeRL",
+        "qwen3-4b-saferl"
+      ],
+      "max_tokens": 40960,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3guard-stream-8b",
+      "alias": [
+        "qwen/qwen3guard-stream-8b",
+        "Qwen/Qwen3Guard-Stream-8B",
+        "qwen3guard-stream-8b"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3guard-stream-4b",
+      "alias": [
+        "qwen/qwen3guard-stream-4b",
+        "Qwen/Qwen3Guard-Stream-4B",
+        "qwen3guard-stream-4b"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3guard-stream-0.6b",
+      "alias": [
+        "qwen/qwen3guard-stream-0.6b",
+        "Qwen/Qwen3Guard-Stream-0.6B",
+        "qwen3guard-stream-0.6b"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3guard-gen-8b",
+      "alias": [
+        "qwen/qwen3guard-gen-8b",
+        "Qwen/Qwen3Guard-Gen-8B",
+        "qwen3guard-gen-8b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3guard-gen-4b",
+      "alias": [
+        "qwen/qwen3guard-gen-4b",
+        "Qwen/Qwen3Guard-Gen-4B",
+        "qwen3guard-gen-4b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3guard-gen-0.6b",
+      "alias": [
+        "qwen/qwen3guard-gen-0.6b",
+        "Qwen/Qwen3Guard-Gen-0.6B",
+        "qwen3guard-gen-0.6b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-image-edit-2509",
+      "alias": [
+        "qwen/qwen-image-edit-2509",
+        "Qwen/Qwen-Image-Edit-2509",
+        "qwen-image-edit-2509"
+      ],
+      "model_types": [
+        "image_edit",
+        "image_generation",
+        "image_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-vl-235b-a22b-thinking",
+      "alias": [
+        "qwen/qwen3-vl-235b-a22b-thinking",
+        "Qwen/Qwen3-VL-235B-A22B-Thinking",
+        "qwen3-vl-235b-a22b-thinking"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-vl-235b-a22b-instruct",
+      "alias": [
+        "qwen/qwen3-vl-235b-a22b-instruct",
+        "Qwen/Qwen3-VL-235B-A22B-Instruct",
+        "qwen3-vl-235b-a22b-instruct"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-next-80b-a3b-thinking-fp8",
+      "alias": [
+        "qwen/qwen3-next-80b-a3b-thinking-fp8",
+        "Qwen/Qwen3-Next-80B-A3B-Thinking-FP8",
+        "qwen3-next-80b-a3b-thinking-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-next-80b-a3b-instruct-fp8",
+      "alias": [
+        "qwen/qwen3-next-80b-a3b-instruct-fp8",
+        "Qwen/Qwen3-Next-80B-A3B-Instruct-FP8",
+        "qwen3-next-80b-a3b-instruct-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-omni-30b-a3b-instruct",
+      "alias": [
+        "qwen/qwen3-omni-30b-a3b-instruct",
+        "Qwen/Qwen3-Omni-30B-A3B-Instruct",
+        "qwen3-omni-30b-a3b-instruct"
+      ],
+      "max_tokens": 65536,
+      "model_types": [
+        "chat",
+        "omni",
+        "image2text",
+        "vision",
+        "video_understanding",
+        "audio2text",
+        "speech2text",
+        "audio_understanding",
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-omni-30b-a3b-thinking",
+      "alias": [
+        "qwen/qwen3-omni-30b-a3b-thinking",
+        "Qwen/Qwen3-Omni-30B-A3B-Thinking",
+        "qwen3-omni-30b-a3b-thinking"
+      ],
+      "max_tokens": 65536,
+      "model_types": [
+        "chat",
+        "omni",
+        "image2text",
+        "vision",
+        "video_understanding",
+        "audio2text",
+        "speech2text",
+        "audio_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-omni-30b-a3b-captioner",
+      "alias": [
+        "qwen/qwen3-omni-30b-a3b-captioner",
+        "Qwen/Qwen3-Omni-30B-A3B-Captioner",
+        "qwen3-omni-30b-a3b-captioner"
+      ],
+      "max_tokens": 65536,
+      "model_types": [
+        "audio_caption",
+        "audio2text",
+        "audio_understanding",
+        "caption"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-next-80b-a3b-thinking",
+      "alias": [
+        "qwen/qwen3-next-80b-a3b-thinking",
+        "Qwen/Qwen3-Next-80B-A3B-Thinking",
+        "qwen3-next-80b-a3b-thinking"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-next-80b-a3b-instruct",
+      "alias": [
+        "qwen/qwen3-next-80b-a3b-instruct",
+        "Qwen/Qwen3-Next-80B-A3B-Instruct",
+        "qwen3-next-80b-a3b-instruct"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-image-bench",
+      "alias": [
+        "qwen/qwen-image-bench",
+        "Qwen/Qwen-Image-Bench",
+        "qwen-image-bench"
+      ],
+      "model_types": [
+        "benchmark",
+        "image_eval",
+        "benchmark_judge",
+        "image2text"
+      ]
+    },
+    {
+      "name": "qwen/qwen-image-edit",
+      "alias": [
+        "qwen/qwen-image-edit",
+        "Qwen/Qwen-Image-Edit",
+        "qwen-image-edit"
+      ],
+      "model_types": [
+        "image_edit",
+        "image_generation",
+        "image_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-4b-instruct-2507-fp8",
+      "alias": [
+        "qwen/qwen3-4b-instruct-2507-fp8",
+        "Qwen/Qwen3-4B-Instruct-2507-FP8",
+        "qwen3-4b-instruct-2507-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-4b-thinking-2507-fp8",
+      "alias": [
+        "qwen/qwen3-4b-thinking-2507-fp8",
+        "Qwen/Qwen3-4B-Thinking-2507-FP8",
+        "qwen3-4b-thinking-2507-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-4b-thinking-2507",
+      "alias": [
+        "qwen/qwen3-4b-thinking-2507",
+        "Qwen/Qwen3-4B-Thinking-2507",
+        "qwen3-4b-thinking-2507"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-4b-instruct-2507",
+      "alias": [
+        "qwen/qwen3-4b-instruct-2507",
+        "Qwen/Qwen3-4B-Instruct-2507",
+        "qwen3-4b-instruct-2507"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-image",
+      "alias": [
+        "qwen/qwen-image",
+        "Qwen/Qwen-Image",
+        "qwen-image"
+      ],
+      "model_types": [
+        "text-to-image",
+        "image_generation",
+        "image_edit",
+        "image_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-coder-30b-a3b-instruct-fp8",
+      "alias": [
+        "qwen/qwen3-coder-30b-a3b-instruct-fp8",
+        "Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8",
+        "qwen3-coder-30b-a3b-instruct-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-coder-30b-a3b-instruct",
+      "alias": [
+        "qwen/qwen3-coder-30b-a3b-instruct",
+        "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+        "qwen3-coder-30b-a3b-instruct"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-30b-a3b-thinking-2507-fp8",
+      "alias": [
+        "qwen/qwen3-30b-a3b-thinking-2507-fp8",
+        "Qwen/Qwen3-30B-A3B-Thinking-2507-FP8",
+        "qwen3-30b-a3b-thinking-2507-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-30b-a3b-thinking-2507",
+      "alias": [
+        "qwen/qwen3-30b-a3b-thinking-2507",
+        "Qwen/Qwen3-30B-A3B-Thinking-2507",
+        "qwen3-30b-a3b-thinking-2507"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-30b-a3b-instruct-2507-fp8",
+      "alias": [
+        "qwen/qwen3-30b-a3b-instruct-2507-fp8",
+        "Qwen/Qwen3-30B-A3B-Instruct-2507-FP8",
+        "qwen3-30b-a3b-instruct-2507-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-30b-a3b-instruct-2507",
+      "alias": [
+        "qwen/qwen3-30b-a3b-instruct-2507",
+        "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "qwen3-30b-a3b-instruct-2507"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-235b-a22b-thinking-2507-fp8",
+      "alias": [
+        "qwen/qwen3-235b-a22b-thinking-2507-fp8",
+        "Qwen/Qwen3-235B-A22B-Thinking-2507-FP8",
+        "qwen3-235b-a22b-thinking-2507-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-235b-a22b-thinking-2507",
+      "alias": [
+        "qwen/qwen3-235b-a22b-thinking-2507",
+        "Qwen/Qwen3-235B-A22B-Thinking-2507",
+        "qwen3-235b-a22b-thinking-2507"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-coder-480b-a35b-instruct-fp8",
+      "alias": [
+        "qwen/qwen3-coder-480b-a35b-instruct-fp8",
+        "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
+        "qwen3-coder-480b-a35b-instruct-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-coder-480b-a35b-instruct",
+      "alias": [
+        "qwen/qwen3-coder-480b-a35b-instruct",
+        "Qwen/Qwen3-Coder-480B-A35B-Instruct",
+        "qwen3-coder-480b-a35b-instruct",
+        "qwen3-coder-480b"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-235b-a22b-instruct-2507-fp8",
+      "alias": [
+        "qwen/qwen3-235b-a22b-instruct-2507-fp8",
+        "Qwen/Qwen3-235B-A22B-Instruct-2507-FP8",
+        "qwen3-235b-a22b-instruct-2507-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-235b-a22b-instruct-2507",
+      "alias": [
+        "qwen/qwen3-235b-a22b-instruct-2507",
+        "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "qwen3-235b-a22b-instruct-2507"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-14b-mlx-bf16",
+      "alias": [
+        "qwen/qwen3-14b-mlx-bf16",
+        "Qwen/Qwen3-14B-MLX-bf16",
+        "qwen3-14b-mlx-bf16"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-235b-a22b-mlx-8bit",
+      "alias": [
+        "qwen/qwen3-235b-a22b-mlx-8bit",
+        "Qwen/Qwen3-235B-A22B-MLX-8bit",
+        "qwen3-235b-a22b-mlx-8bit"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-235b-a22b-mlx-6bit",
+      "alias": [
+        "qwen/qwen3-235b-a22b-mlx-6bit",
+        "Qwen/Qwen3-235B-A22B-MLX-6bit",
+        "qwen3-235b-a22b-mlx-6bit"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-235b-a22b-mlx-4bit",
+      "alias": [
+        "qwen/qwen3-235b-a22b-mlx-4bit",
+        "Qwen/Qwen3-235B-A22B-MLX-4bit",
+        "qwen3-235b-a22b-mlx-4bit"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-235b-a22b-mlx-bf16",
+      "alias": [
+        "qwen/qwen3-235b-a22b-mlx-bf16",
+        "Qwen/Qwen3-235B-A22B-MLX-bf16",
+        "qwen3-235b-a22b-mlx-bf16"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-30b-a3b-mlx-4bit",
+      "alias": [
+        "qwen/qwen3-30b-a3b-mlx-4bit",
+        "Qwen/Qwen3-30B-A3B-MLX-4bit",
+        "qwen3-30b-a3b-mlx-4bit"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-30b-a3b-mlx-6bit",
+      "alias": [
+        "qwen/qwen3-30b-a3b-mlx-6bit",
+        "Qwen/Qwen3-30B-A3B-MLX-6bit",
+        "qwen3-30b-a3b-mlx-6bit"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-30b-a3b-mlx-8bit",
+      "alias": [
+        "qwen/qwen3-30b-a3b-mlx-8bit",
+        "Qwen/Qwen3-30B-A3B-MLX-8bit",
+        "qwen3-30b-a3b-mlx-8bit"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-30b-a3b-mlx-bf16",
+      "alias": [
+        "qwen/qwen3-30b-a3b-mlx-bf16",
+        "Qwen/Qwen3-30B-A3B-MLX-bf16",
+        "qwen3-30b-a3b-mlx-bf16"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-32b-mlx-4bit",
+      "alias": [
+        "qwen/qwen3-32b-mlx-4bit",
+        "Qwen/Qwen3-32B-MLX-4bit",
+        "qwen3-32b-mlx-4bit"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-32b-mlx-6bit",
+      "alias": [
+        "qwen/qwen3-32b-mlx-6bit",
+        "Qwen/Qwen3-32B-MLX-6bit",
+        "qwen3-32b-mlx-6bit"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-32b-mlx-8bit",
+      "alias": [
+        "qwen/qwen3-32b-mlx-8bit",
+        "Qwen/Qwen3-32B-MLX-8bit",
+        "qwen3-32b-mlx-8bit"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-32b-mlx-bf16",
+      "alias": [
+        "qwen/qwen3-32b-mlx-bf16",
+        "Qwen/Qwen3-32B-MLX-bf16",
+        "qwen3-32b-mlx-bf16"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-embedding-0.6b-gguf",
+      "alias": [
+        "qwen/qwen3-embedding-0.6b-gguf",
+        "Qwen/Qwen3-Embedding-0.6B-GGUF",
+        "qwen3-embedding-0.6b-gguf"
+      ],
+      "max_tokens": 32768,
+      "dimension": 1024,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-embedding-4b-gguf",
+      "alias": [
+        "qwen/qwen3-embedding-4b-gguf",
+        "Qwen/Qwen3-Embedding-4B-GGUF",
+        "qwen3-embedding-4b-gguf"
+      ],
+      "max_tokens": 32768,
+      "dimension": 2560,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-embedding-8b-gguf",
+      "alias": [
+        "qwen/qwen3-embedding-8b-gguf",
+        "Qwen/Qwen3-Embedding-8B-GGUF",
+        "qwen3-embedding-8b-gguf"
+      ],
+      "max_tokens": 32768,
+      "dimension": 4096,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-reranker-4b",
+      "alias": [
+        "qwen/qwen3-reranker-4b",
+        "Qwen/Qwen3-Reranker-4B",
+        "qwen3-reranker-4b",
+        "Qwen3-Reranker-4B"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-embedding-8b",
+      "alias": [
+        "qwen/qwen3-embedding-8b",
+        "Qwen/Qwen3-Embedding-8B",
+        "qwen3-embedding-8b",
+        "Qwen3-Embedding-8B"
+      ],
+      "max_tokens": 32768,
+      "dimension": 4096,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-embedding-4b",
+      "alias": [
+        "qwen/qwen3-embedding-4b",
+        "Qwen/Qwen3-Embedding-4B",
+        "qwen3-embedding-4b",
+        "Qwen3-Embedding-4B"
+      ],
+      "max_tokens": 32768,
+      "dimension": 2560,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-embedding-0.6b",
+      "alias": [
+        "qwen/qwen3-embedding-0.6b",
+        "Qwen/Qwen3-Embedding-0.6B",
+        "qwen3-embedding-0.6b",
+        "Qwen3-Embedding-0.6B"
+      ],
+      "max_tokens": 32768,
+      "dimension": 1024,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-reranker-0.6b",
+      "alias": [
+        "qwen/qwen3-reranker-0.6b",
+        "Qwen/Qwen3-Reranker-0.6B",
+        "qwen3-reranker-0.6b",
+        "Qwen3-Reranker-0.6B"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-reranker-8b",
+      "alias": [
+        "qwen/qwen3-reranker-8b",
+        "Qwen/Qwen3-Reranker-8B",
+        "qwen3-reranker-8b",
+        "Qwen3-Reranker-8B"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-14b-mlx-4bit",
+      "alias": [
+        "qwen/qwen3-14b-mlx-4bit",
+        "Qwen/Qwen3-14B-MLX-4bit",
+        "qwen3-14b-mlx-4bit"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-4b-mlx-4bit",
+      "alias": [
+        "qwen/qwen3-4b-mlx-4bit",
+        "Qwen/Qwen3-4B-MLX-4bit",
+        "qwen3-4b-mlx-4bit"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-4b-mlx-6bit",
+      "alias": [
+        "qwen/qwen3-4b-mlx-6bit",
+        "Qwen/Qwen3-4B-MLX-6bit",
+        "qwen3-4b-mlx-6bit"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-14b-mlx-6bit",
+      "alias": [
+        "qwen/qwen3-14b-mlx-6bit",
+        "Qwen/Qwen3-14B-MLX-6bit",
+        "qwen3-14b-mlx-6bit"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-4b-mlx-8bit",
+      "alias": [
+        "qwen/qwen3-4b-mlx-8bit",
+        "Qwen/Qwen3-4B-MLX-8bit",
+        "qwen3-4b-mlx-8bit"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-14b-mlx-8bit",
+      "alias": [
+        "qwen/qwen3-14b-mlx-8bit",
+        "Qwen/Qwen3-14B-MLX-8bit",
+        "qwen3-14b-mlx-8bit"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-4b-mlx-bf16",
+      "alias": [
+        "qwen/qwen3-4b-mlx-bf16",
+        "Qwen/Qwen3-4B-MLX-bf16",
+        "qwen3-4b-mlx-bf16"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-8b-mlx-bf16",
+      "alias": [
+        "qwen/qwen3-8b-mlx-bf16",
+        "Qwen/Qwen3-8B-MLX-bf16",
+        "qwen3-8b-mlx-bf16"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-8b-mlx-8bit",
+      "alias": [
+        "qwen/qwen3-8b-mlx-8bit",
+        "Qwen/Qwen3-8B-MLX-8bit",
+        "qwen3-8b-mlx-8bit"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-8b-mlx-4bit",
+      "alias": [
+        "qwen/qwen3-8b-mlx-4bit",
+        "Qwen/Qwen3-8B-MLX-4bit",
+        "qwen3-8b-mlx-4bit"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-1.7b-mlx-4bit",
+      "alias": [
+        "qwen/qwen3-1.7b-mlx-4bit",
+        "Qwen/Qwen3-1.7B-MLX-4bit",
+        "qwen3-1.7b-mlx-4bit"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-1.7b-mlx-8bit",
+      "alias": [
+        "qwen/qwen3-1.7b-mlx-8bit",
+        "Qwen/Qwen3-1.7B-MLX-8bit",
+        "qwen3-1.7b-mlx-8bit"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-1.7b-mlx-6bit",
+      "alias": [
+        "qwen/qwen3-1.7b-mlx-6bit",
+        "Qwen/Qwen3-1.7B-MLX-6bit",
+        "qwen3-1.7b-mlx-6bit"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-8b-mlx-6bit",
+      "alias": [
+        "qwen/qwen3-8b-mlx-6bit",
+        "Qwen/Qwen3-8B-MLX-6bit",
+        "qwen3-8b-mlx-6bit"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-1.7b-mlx-bf16",
+      "alias": [
+        "qwen/qwen3-1.7b-mlx-bf16",
+        "Qwen/Qwen3-1.7B-MLX-bf16",
+        "qwen3-1.7b-mlx-bf16"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-0.6b-mlx-8bit",
+      "alias": [
+        "qwen/qwen3-0.6b-mlx-8bit",
+        "Qwen/Qwen3-0.6B-MLX-8bit",
+        "qwen3-0.6b-mlx-8bit"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-0.6b-mlx-bf16",
+      "alias": [
+        "qwen/qwen3-0.6b-mlx-bf16",
+        "Qwen/Qwen3-0.6B-MLX-bf16",
+        "qwen3-0.6b-mlx-bf16"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-0.6b-mlx-6bit",
+      "alias": [
+        "qwen/qwen3-0.6b-mlx-6bit",
+        "Qwen/Qwen3-0.6B-MLX-6bit",
+        "qwen3-0.6b-mlx-6bit"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-0.6b-mlx-4bit",
+      "alias": [
+        "qwen/qwen3-0.6b-mlx-4bit",
+        "Qwen/Qwen3-0.6B-MLX-4bit",
+        "qwen3-0.6b-mlx-4bit"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/worldpm-72b-rlhflow",
+      "alias": [
+        "qwen/worldpm-72b-rlhflow",
+        "Qwen/WorldPM-72B-RLHFLow",
+        "worldpm-72b-rlhflow"
+      ],
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "qwen/worldpm-72b-ultrafeedback",
+      "alias": [
+        "qwen/worldpm-72b-ultrafeedback",
+        "Qwen/WorldPM-72B-UltraFeedback",
+        "worldpm-72b-ultrafeedback"
+      ],
+      "max_tokens": 2048,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "qwen/worldpm-72b-helpsteer2",
+      "alias": [
+        "qwen/worldpm-72b-helpsteer2",
+        "Qwen/WorldPM-72B-HelpSteer2",
+        "worldpm-72b-helpsteer2"
+      ],
+      "max_tokens": 2048,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "qwen/worldpm-72b",
+      "alias": [
+        "qwen/worldpm-72b",
+        "Qwen/WorldPM-72B",
+        "worldpm-72b"
+      ],
+      "max_tokens": 2048,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-omni-7b-gptq-int4",
+      "alias": [
+        "qwen/qwen2.5-omni-7b-gptq-int4",
+        "Qwen/Qwen2.5-Omni-7B-GPTQ-Int4",
+        "qwen2.5-omni-7b-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat",
+        "omni",
+        "image2text",
+        "vision",
+        "video_understanding",
+        "audio2text",
+        "speech2text",
+        "audio_understanding",
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-omni-7b-awq",
+      "alias": [
+        "qwen/qwen2.5-omni-7b-awq",
+        "Qwen/Qwen2.5-Omni-7B-AWQ",
+        "qwen2.5-omni-7b-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat",
+        "omni",
+        "image2text",
+        "vision",
+        "video_understanding",
+        "audio2text",
+        "speech2text",
+        "audio_understanding",
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-235b-a22b-gguf",
+      "alias": [
+        "qwen/qwen3-235b-a22b-gguf",
+        "Qwen/Qwen3-235B-A22B-GGUF",
+        "qwen3-235b-a22b-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 32768
+    },
+    {
+      "name": "qwen/qwen3-235b-a22b-gptq-int4",
+      "alias": [
+        "qwen/qwen3-235b-a22b-gptq-int4",
+        "Qwen/Qwen3-235B-A22B-GPTQ-Int4",
+        "qwen3-235b-a22b-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-0.6b-gptq-int8",
+      "alias": [
+        "qwen/qwen3-0.6b-gptq-int8",
+        "Qwen/Qwen3-0.6B-GPTQ-Int8",
+        "qwen3-0.6b-gptq-int8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-1.7b-gptq-int8",
+      "alias": [
+        "qwen/qwen3-1.7b-gptq-int8",
+        "Qwen/Qwen3-1.7B-GPTQ-Int8",
+        "qwen3-1.7b-gptq-int8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-4b-awq",
+      "alias": [
+        "qwen/qwen3-4b-awq",
+        "Qwen/Qwen3-4B-AWQ",
+        "qwen3-4b-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-0.6b-gguf",
+      "alias": [
+        "qwen/qwen3-0.6b-gguf",
+        "Qwen/Qwen3-0.6B-GGUF",
+        "qwen3-0.6b-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 32768
+    },
+    {
+      "name": "qwen/qwen3-1.7b-gguf",
+      "alias": [
+        "qwen/qwen3-1.7b-gguf",
+        "Qwen/Qwen3-1.7B-GGUF",
+        "qwen3-1.7b-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 32768
+    },
+    {
+      "name": "qwen/qwen3-30b-a3b-gptq-int4",
+      "alias": [
+        "qwen/qwen3-30b-a3b-gptq-int4",
+        "Qwen/Qwen3-30B-A3B-GPTQ-Int4",
+        "qwen3-30b-a3b-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-4b-gguf",
+      "alias": [
+        "qwen/qwen3-4b-gguf",
+        "Qwen/Qwen3-4B-GGUF",
+        "qwen3-4b-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 32768
+    },
+    {
+      "name": "qwen/qwen3-30b-a3b-gguf",
+      "alias": [
+        "qwen/qwen3-30b-a3b-gguf",
+        "Qwen/Qwen3-30B-A3B-GGUF",
+        "qwen3-30b-a3b-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 32768
+    },
+    {
+      "name": "qwen/qwen3-8b-gguf",
+      "alias": [
+        "qwen/qwen3-8b-gguf",
+        "Qwen/Qwen3-8B-GGUF",
+        "qwen3-8b-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 32768
+    },
+    {
+      "name": "qwen/qwen3-8b-awq",
+      "alias": [
+        "qwen/qwen3-8b-awq",
+        "Qwen/Qwen3-8B-AWQ",
+        "qwen3-8b-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-14b-awq",
+      "alias": [
+        "qwen/qwen3-14b-awq",
+        "Qwen/Qwen3-14B-AWQ",
+        "qwen3-14b-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-32b-awq",
+      "alias": [
+        "qwen/qwen3-32b-awq",
+        "Qwen/Qwen3-32B-AWQ",
+        "qwen3-32b-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-14b-gguf",
+      "alias": [
+        "qwen/qwen3-14b-gguf",
+        "Qwen/Qwen3-14B-GGUF",
+        "qwen3-14b-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 32768
+    },
+    {
+      "name": "qwen/qwen3-32b-gguf",
+      "alias": [
+        "qwen/qwen3-32b-gguf",
+        "Qwen/Qwen3-32B-GGUF",
+        "qwen3-32b-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 32768
+    },
+    {
+      "name": "qwen/qwen2.5-omni-3b",
+      "alias": [
+        "qwen/qwen2.5-omni-3b",
+        "Qwen/Qwen2.5-Omni-3B",
+        "qwen2.5-omni-3b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat",
+        "omni",
+        "image2text",
+        "vision",
+        "video_understanding",
+        "audio2text",
+        "speech2text",
+        "audio_understanding",
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-235b-a22b-fp8",
+      "alias": [
+        "qwen/qwen3-235b-a22b-fp8",
+        "Qwen/Qwen3-235B-A22B-FP8",
+        "qwen3-235b-a22b-fp8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-30b-a3b-fp8",
+      "alias": [
+        "qwen/qwen3-30b-a3b-fp8",
+        "Qwen/Qwen3-30B-A3B-FP8",
+        "qwen3-30b-a3b-fp8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-32b-fp8",
+      "alias": [
+        "qwen/qwen3-32b-fp8",
+        "Qwen/Qwen3-32B-FP8",
+        "qwen3-32b-fp8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-14b-fp8",
+      "alias": [
+        "qwen/qwen3-14b-fp8",
+        "Qwen/Qwen3-14B-FP8",
+        "qwen3-14b-fp8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-8b-fp8",
+      "alias": [
+        "qwen/qwen3-8b-fp8",
+        "Qwen/Qwen3-8B-FP8",
+        "qwen3-8b-fp8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-4b-fp8",
+      "alias": [
+        "qwen/qwen3-4b-fp8",
+        "Qwen/Qwen3-4B-FP8",
+        "qwen3-4b-fp8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-1.7b-fp8",
+      "alias": [
+        "qwen/qwen3-1.7b-fp8",
+        "Qwen/Qwen3-1.7B-FP8",
+        "qwen3-1.7b-fp8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-0.6b-fp8",
+      "alias": [
+        "qwen/qwen3-0.6b-fp8",
+        "Qwen/Qwen3-0.6B-FP8",
+        "qwen3-0.6b-fp8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-0.6b-base",
+      "alias": [
+        "qwen/qwen3-0.6b-base",
+        "Qwen/Qwen3-0.6B-Base",
+        "qwen3-0.6b-base"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-14b-base",
+      "alias": [
+        "qwen/qwen3-14b-base",
+        "Qwen/Qwen3-14B-Base",
+        "qwen3-14b-base"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-1.7b-base",
+      "alias": [
+        "qwen/qwen3-1.7b-base",
+        "Qwen/Qwen3-1.7B-Base",
+        "qwen3-1.7b-base"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-4b-base",
+      "alias": [
+        "qwen/qwen3-4b-base",
+        "Qwen/Qwen3-4B-Base",
+        "qwen3-4b-base"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-8b-base",
+      "alias": [
+        "qwen/qwen3-8b-base",
+        "Qwen/Qwen3-8B-Base",
+        "qwen3-8b-base"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-30b-a3b-base",
+      "alias": [
+        "qwen/qwen3-30b-a3b-base",
+        "Qwen/Qwen3-30B-A3B-Base",
+        "qwen3-30b-a3b-base"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-235b-a22b",
+      "alias": [
+        "qwen/qwen3-235b-a22b",
+        "Qwen/Qwen3-235B-A22B",
+        "qwen3-235b-a22b",
+        "Qwen3-235B-A22B"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-32b",
+      "alias": [
+        "qwen/qwen3-32b",
+        "Qwen/Qwen3-32B",
+        "qwen3-32b",
+        "Qwen3-32B"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-30b-a3b",
+      "alias": [
+        "qwen/qwen3-30b-a3b",
+        "Qwen/Qwen3-30B-A3B",
+        "qwen3-30b-a3b",
+        "Qwen3-30B-A3B"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-14b",
+      "alias": [
+        "qwen/qwen3-14b",
+        "Qwen/Qwen3-14B",
+        "qwen3-14b",
+        "Qwen3-14B"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-8b",
+      "alias": [
+        "qwen/qwen3-8b",
+        "Qwen/Qwen3-8B",
+        "qwen3-8b",
+        "Qwen3-8B"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-4b",
+      "alias": [
+        "qwen/qwen3-4b",
+        "Qwen/Qwen3-4B",
+        "qwen3-4b",
+        "Qwen3-4B"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-1.7b",
+      "alias": [
+        "qwen/qwen3-1.7b",
+        "Qwen/Qwen3-1.7B",
+        "qwen3-1.7b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-0.6b",
+      "alias": [
+        "qwen/qwen3-0.6b",
+        "Qwen/Qwen3-0.6B",
+        "qwen3-0.6b",
+        "Qwen3-0.6B"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-vl-32b-instruct-awq",
+      "alias": [
+        "qwen/qwen2.5-vl-32b-instruct-awq",
+        "Qwen/Qwen2.5-VL-32B-Instruct-AWQ",
+        "qwen2.5-vl-32b-instruct-awq"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-omni-7b",
+      "alias": [
+        "qwen/qwen2.5-omni-7b",
+        "Qwen/Qwen2.5-Omni-7B",
+        "qwen2.5-omni-7b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat",
+        "omni",
+        "image2text",
+        "vision",
+        "video_understanding",
+        "audio2text",
+        "speech2text",
+        "audio_understanding",
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-vl-32b-instruct",
+      "alias": [
+        "qwen/qwen2.5-vl-32b-instruct",
+        "Qwen/Qwen2.5-VL-32B-Instruct",
+        "qwen2.5-vl-32b-instruct",
+        "Qwen2.5-VL-32B",
+        "Qwen2.5-VL-32B-Instruct"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwq-32b-gguf",
+      "alias": [
+        "qwen/qwq-32b-gguf",
+        "Qwen/QwQ-32B-GGUF",
+        "qwq-32b-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "max_tokens": 131072
+    },
+    {
+      "name": "qwen/qwq-32b",
+      "alias": [
+        "qwen/qwq-32b",
+        "Qwen/QwQ-32B",
+        "qwq-32b",
+        "QwQ-32B"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwq-32b-awq",
+      "alias": [
+        "qwen/qwq-32b-awq",
+        "Qwen/QwQ-32B-AWQ",
+        "qwq-32b-awq"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen2.5-vl-7b-instruct-awq",
+      "alias": [
+        "qwen/qwen2.5-vl-7b-instruct-awq",
+        "Qwen/Qwen2.5-VL-7B-Instruct-AWQ",
+        "qwen2.5-vl-7b-instruct-awq"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-vl-72b-instruct-awq",
+      "alias": [
+        "qwen/qwen2.5-vl-72b-instruct-awq",
+        "Qwen/Qwen2.5-VL-72B-Instruct-AWQ",
+        "qwen2.5-vl-72b-instruct-awq"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-vl-3b-instruct-awq",
+      "alias": [
+        "qwen/qwen2.5-vl-3b-instruct-awq",
+        "Qwen/Qwen2.5-VL-3B-Instruct-AWQ",
+        "qwen2.5-vl-3b-instruct-awq"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-vl-72b-instruct",
+      "alias": [
+        "qwen/qwen2.5-vl-72b-instruct",
+        "Qwen/Qwen2.5-VL-72B-Instruct",
+        "qwen2.5-vl-72b-instruct",
+        "qwen-2.5-vl-72b-instruct",
+        "Qwen2.5-VL-72B",
+        "qwen2.5-vl-72b"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-vl-7b-instruct",
+      "alias": [
+        "qwen/qwen2.5-vl-7b-instruct",
+        "Qwen/Qwen2.5-VL-7B-Instruct",
+        "qwen2.5-vl-7b-instruct",
+        "qwen-2.5-vl-7b-instruct"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-vl-3b-instruct",
+      "alias": [
+        "qwen/qwen2.5-vl-3b-instruct",
+        "Qwen/Qwen2.5-VL-3B-Instruct",
+        "qwen2.5-vl-3b-instruct"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-7b-instruct-1m",
+      "alias": [
+        "qwen/qwen2.5-7b-instruct-1m",
+        "Qwen/Qwen2.5-7B-Instruct-1M",
+        "qwen2.5-7b-instruct-1m"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-14b-instruct-1m",
+      "alias": [
+        "qwen/qwen2.5-14b-instruct-1m",
+        "Qwen/Qwen2.5-14B-Instruct-1M",
+        "qwen2.5-14b-instruct-1m"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-math-prm-7b",
+      "alias": [
+        "qwen/qwen2.5-math-prm-7b",
+        "Qwen/Qwen2.5-Math-PRM-7B",
+        "qwen2.5-math-prm-7b"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-math-prm-72b",
+      "alias": [
+        "qwen/qwen2.5-math-prm-72b",
+        "Qwen/Qwen2.5-Math-PRM-72B",
+        "qwen2.5-math-prm-72b"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-math-7b-prm800k",
+      "alias": [
+        "qwen/qwen2.5-math-7b-prm800k",
+        "Qwen/Qwen2.5-Math-7B-PRM800K",
+        "qwen2.5-math-7b-prm800k"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "qwen/qvq-72b-preview",
+      "alias": [
+        "qwen/qvq-72b-preview",
+        "Qwen/QVQ-72B-Preview",
+        "qvq-72b-preview"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-vl-72b",
+      "alias": [
+        "qwen/qwen2-vl-72b",
+        "Qwen/Qwen2-VL-72B",
+        "qwen2-vl-72b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwq-32b-preview",
+      "alias": [
+        "qwen/qwq-32b-preview",
+        "Qwen/QwQ-32B-Preview",
+        "qwq-32b-preview"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen2.5-coder-0.5b-instruct-gguf",
+      "alias": [
+        "qwen/qwen2.5-coder-0.5b-instruct-gguf",
+        "Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF",
+        "qwen2.5-coder-0.5b-instruct-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-0.5b-instruct-awq",
+      "alias": [
+        "qwen/qwen2.5-coder-0.5b-instruct-awq",
+        "Qwen/Qwen2.5-Coder-0.5B-Instruct-AWQ",
+        "qwen2.5-coder-0.5b-instruct-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-3b-instruct-gguf",
+      "alias": [
+        "qwen/qwen2.5-coder-3b-instruct-gguf",
+        "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF",
+        "qwen2.5-coder-3b-instruct-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-3b-instruct-awq",
+      "alias": [
+        "qwen/qwen2.5-coder-3b-instruct-awq",
+        "Qwen/Qwen2.5-Coder-3B-Instruct-AWQ",
+        "qwen2.5-coder-3b-instruct-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-14b-instruct-gguf",
+      "alias": [
+        "qwen/qwen2.5-coder-14b-instruct-gguf",
+        "Qwen/Qwen2.5-Coder-14B-Instruct-GGUF",
+        "qwen2.5-coder-14b-instruct-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-14b-instruct-awq",
+      "alias": [
+        "qwen/qwen2.5-coder-14b-instruct-awq",
+        "Qwen/Qwen2.5-Coder-14B-Instruct-AWQ",
+        "qwen2.5-coder-14b-instruct-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-32b-instruct-gguf",
+      "alias": [
+        "qwen/qwen2.5-coder-32b-instruct-gguf",
+        "Qwen/Qwen2.5-Coder-32B-Instruct-GGUF",
+        "qwen2.5-coder-32b-instruct-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-32b-instruct-awq",
+      "alias": [
+        "qwen/qwen2.5-coder-32b-instruct-awq",
+        "Qwen/Qwen2.5-Coder-32B-Instruct-AWQ",
+        "qwen2.5-coder-32b-instruct-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-32b-instruct-gptq-int4",
+      "alias": [
+        "qwen/qwen2.5-coder-32b-instruct-gptq-int4",
+        "Qwen/Qwen2.5-Coder-32B-Instruct-GPTQ-Int4",
+        "qwen2.5-coder-32b-instruct-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-32b-instruct-gptq-int8",
+      "alias": [
+        "qwen/qwen2.5-coder-32b-instruct-gptq-int8",
+        "Qwen/Qwen2.5-Coder-32B-Instruct-GPTQ-Int8",
+        "qwen2.5-coder-32b-instruct-gptq-int8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-14b-instruct-gptq-int4",
+      "alias": [
+        "qwen/qwen2.5-coder-14b-instruct-gptq-int4",
+        "Qwen/Qwen2.5-Coder-14B-Instruct-GPTQ-Int4",
+        "qwen2.5-coder-14b-instruct-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-14b-instruct-gptq-int8",
+      "alias": [
+        "qwen/qwen2.5-coder-14b-instruct-gptq-int8",
+        "Qwen/Qwen2.5-Coder-14B-Instruct-GPTQ-Int8",
+        "qwen2.5-coder-14b-instruct-gptq-int8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-3b-instruct-gptq-int4",
+      "alias": [
+        "qwen/qwen2.5-coder-3b-instruct-gptq-int4",
+        "Qwen/Qwen2.5-Coder-3B-Instruct-GPTQ-Int4",
+        "qwen2.5-coder-3b-instruct-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-3b-instruct-gptq-int8",
+      "alias": [
+        "qwen/qwen2.5-coder-3b-instruct-gptq-int8",
+        "Qwen/Qwen2.5-Coder-3B-Instruct-GPTQ-Int8",
+        "qwen2.5-coder-3b-instruct-gptq-int8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-0.5b-instruct-gptq-int4",
+      "alias": [
+        "qwen/qwen2.5-coder-0.5b-instruct-gptq-int4",
+        "Qwen/Qwen2.5-Coder-0.5B-Instruct-GPTQ-Int4",
+        "qwen2.5-coder-0.5b-instruct-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-0.5b-instruct-gptq-int8",
+      "alias": [
+        "qwen/qwen2.5-coder-0.5b-instruct-gptq-int8",
+        "Qwen/Qwen2.5-Coder-0.5B-Instruct-GPTQ-Int8",
+        "qwen2.5-coder-0.5b-instruct-gptq-int8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-32b",
+      "alias": [
+        "qwen/qwen2.5-coder-32b",
+        "Qwen/Qwen2.5-Coder-32B",
+        "qwen2.5-coder-32b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-14b",
+      "alias": [
+        "qwen/qwen2.5-coder-14b",
+        "Qwen/Qwen2.5-Coder-14B",
+        "qwen2.5-coder-14b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-3b",
+      "alias": [
+        "qwen/qwen2.5-coder-3b",
+        "Qwen/Qwen2.5-Coder-3B",
+        "qwen2.5-coder-3b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-0.5b",
+      "alias": [
+        "qwen/qwen2.5-coder-0.5b",
+        "Qwen/Qwen2.5-Coder-0.5B",
+        "qwen2.5-coder-0.5b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-32b-instruct",
+      "alias": [
+        "qwen/qwen2.5-coder-32b-instruct",
+        "Qwen/Qwen2.5-Coder-32B-Instruct",
+        "qwen2.5-coder-32b-instruct"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-14b-instruct",
+      "alias": [
+        "qwen/qwen2.5-coder-14b-instruct",
+        "Qwen/Qwen2.5-Coder-14B-Instruct",
+        "qwen2.5-coder-14b-instruct"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-3b-instruct",
+      "alias": [
+        "qwen/qwen2.5-coder-3b-instruct",
+        "Qwen/Qwen2.5-Coder-3B-Instruct",
+        "qwen2.5-coder-3b-instruct"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-0.5b-instruct",
+      "alias": [
+        "qwen/qwen2.5-coder-0.5b-instruct",
+        "Qwen/Qwen2.5-Coder-0.5B-Instruct",
+        "qwen2.5-coder-0.5b-instruct"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-1.5b-instruct-awq",
+      "alias": [
+        "qwen/qwen2.5-coder-1.5b-instruct-awq",
+        "Qwen/Qwen2.5-Coder-1.5B-Instruct-AWQ",
+        "qwen2.5-coder-1.5b-instruct-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-7b-instruct-awq",
+      "alias": [
+        "qwen/qwen2.5-coder-7b-instruct-awq",
+        "Qwen/Qwen2.5-Coder-7B-Instruct-AWQ",
+        "qwen2.5-coder-7b-instruct-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-7b-instruct-gptq-int8",
+      "alias": [
+        "qwen/qwen2.5-coder-7b-instruct-gptq-int8",
+        "Qwen/Qwen2.5-Coder-7B-Instruct-GPTQ-Int8",
+        "qwen2.5-coder-7b-instruct-gptq-int8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-7b-instruct-gptq-int4",
+      "alias": [
+        "qwen/qwen2.5-coder-7b-instruct-gptq-int4",
+        "Qwen/Qwen2.5-Coder-7B-Instruct-GPTQ-Int4",
+        "qwen2.5-coder-7b-instruct-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-1.5b-instruct-gptq-int8",
+      "alias": [
+        "qwen/qwen2.5-coder-1.5b-instruct-gptq-int8",
+        "Qwen/Qwen2.5-Coder-1.5B-Instruct-GPTQ-Int8",
+        "qwen2.5-coder-1.5b-instruct-gptq-int8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-1.5b-instruct-gptq-int4",
+      "alias": [
+        "qwen/qwen2.5-coder-1.5b-instruct-gptq-int4",
+        "Qwen/Qwen2.5-Coder-1.5B-Instruct-GPTQ-Int4",
+        "qwen2.5-coder-1.5b-instruct-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-math-7b-instruct",
+      "alias": [
+        "qwen/qwen2.5-math-7b-instruct",
+        "Qwen/Qwen2.5-Math-7B-Instruct",
+        "qwen2.5-math-7b-instruct"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-1.5b-instruct-gguf",
+      "alias": [
+        "qwen/qwen2.5-coder-1.5b-instruct-gguf",
+        "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF",
+        "qwen2.5-coder-1.5b-instruct-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-7b-instruct-gguf",
+      "alias": [
+        "qwen/qwen2.5-coder-7b-instruct-gguf",
+        "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
+        "qwen2.5-coder-7b-instruct-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-1.5b-instruct",
+      "alias": [
+        "qwen/qwen2.5-coder-1.5b-instruct",
+        "Qwen/Qwen2.5-Coder-1.5B-Instruct",
+        "qwen2.5-coder-1.5b-instruct"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-1.5b",
+      "alias": [
+        "qwen/qwen2.5-coder-1.5b",
+        "Qwen/Qwen2.5-Coder-1.5B",
+        "qwen2.5-coder-1.5b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-7b-instruct-mlx",
+      "alias": [
+        "qwen/qwen2-7b-instruct-mlx",
+        "Qwen/Qwen2-7B-Instruct-MLX",
+        "qwen2-7b-instruct-mlx"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-1.5b-instruct",
+      "alias": [
+        "qwen/qwen2.5-1.5b-instruct",
+        "Qwen/Qwen2.5-1.5B-Instruct",
+        "qwen2.5-1.5b-instruct"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-3b-instruct",
+      "alias": [
+        "qwen/qwen2.5-3b-instruct",
+        "Qwen/Qwen2.5-3B-Instruct",
+        "qwen2.5-3b-instruct"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-72b-instruct-gguf",
+      "alias": [
+        "qwen/qwen2.5-72b-instruct-gguf",
+        "Qwen/Qwen2.5-72B-Instruct-GGUF",
+        "qwen2.5-72b-instruct-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 131072
+    },
+    {
+      "name": "qwen/qwen2.5-32b-instruct-gguf",
+      "alias": [
+        "qwen/qwen2.5-32b-instruct-gguf",
+        "Qwen/Qwen2.5-32B-Instruct-GGUF",
+        "qwen2.5-32b-instruct-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 131072
+    },
+    {
+      "name": "qwen/qwen2.5-14b-instruct-gguf",
+      "alias": [
+        "qwen/qwen2.5-14b-instruct-gguf",
+        "Qwen/Qwen2.5-14B-Instruct-GGUF",
+        "qwen2.5-14b-instruct-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 131072
+    },
+    {
+      "name": "qwen/qwen2.5-7b-instruct-gguf",
+      "alias": [
+        "qwen/qwen2.5-7b-instruct-gguf",
+        "Qwen/Qwen2.5-7B-Instruct-GGUF",
+        "qwen2.5-7b-instruct-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 131072
+    },
+    {
+      "name": "qwen/qwen2.5-3b-instruct-gguf",
+      "alias": [
+        "qwen/qwen2.5-3b-instruct-gguf",
+        "Qwen/Qwen2.5-3B-Instruct-GGUF",
+        "qwen2.5-3b-instruct-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-1.5b-instruct-gguf",
+      "alias": [
+        "qwen/qwen2.5-1.5b-instruct-gguf",
+        "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
+        "qwen2.5-1.5b-instruct-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-0.5b-instruct-gguf",
+      "alias": [
+        "qwen/qwen2.5-0.5b-instruct-gguf",
+        "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
+        "qwen2.5-0.5b-instruct-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-72b-instruct-awq",
+      "alias": [
+        "qwen/qwen2.5-72b-instruct-awq",
+        "Qwen/Qwen2.5-72B-Instruct-AWQ",
+        "qwen2.5-72b-instruct-awq"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-32b-instruct-awq",
+      "alias": [
+        "qwen/qwen2.5-32b-instruct-awq",
+        "Qwen/Qwen2.5-32B-Instruct-AWQ",
+        "qwen2.5-32b-instruct-awq"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-14b-instruct-awq",
+      "alias": [
+        "qwen/qwen2.5-14b-instruct-awq",
+        "Qwen/Qwen2.5-14B-Instruct-AWQ",
+        "qwen2.5-14b-instruct-awq"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-7b-instruct-awq",
+      "alias": [
+        "qwen/qwen2.5-7b-instruct-awq",
+        "Qwen/Qwen2.5-7B-Instruct-AWQ",
+        "qwen2.5-7b-instruct-awq"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-3b-instruct-awq",
+      "alias": [
+        "qwen/qwen2.5-3b-instruct-awq",
+        "Qwen/Qwen2.5-3B-Instruct-AWQ",
+        "qwen2.5-3b-instruct-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-1.5b-instruct-awq",
+      "alias": [
+        "qwen/qwen2.5-1.5b-instruct-awq",
+        "Qwen/Qwen2.5-1.5B-Instruct-AWQ",
+        "qwen2.5-1.5b-instruct-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-0.5b-instruct-awq",
+      "alias": [
+        "qwen/qwen2.5-0.5b-instruct-awq",
+        "Qwen/Qwen2.5-0.5B-Instruct-AWQ",
+        "qwen2.5-0.5b-instruct-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-7b-instruct",
+      "alias": [
+        "qwen/qwen2.5-coder-7b-instruct",
+        "Qwen/Qwen2.5-Coder-7B-Instruct",
+        "qwen2.5-coder-7b-instruct"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-72b-instruct-gptq-int8",
+      "alias": [
+        "qwen/qwen2.5-72b-instruct-gptq-int8",
+        "Qwen/Qwen2.5-72B-Instruct-GPTQ-Int8",
+        "qwen2.5-72b-instruct-gptq-int8"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-72b-instruct-gptq-int4",
+      "alias": [
+        "qwen/qwen2.5-72b-instruct-gptq-int4",
+        "Qwen/Qwen2.5-72B-Instruct-GPTQ-Int4",
+        "qwen2.5-72b-instruct-gptq-int4"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-32b-instruct-gptq-int8",
+      "alias": [
+        "qwen/qwen2.5-32b-instruct-gptq-int8",
+        "Qwen/Qwen2.5-32B-Instruct-GPTQ-Int8",
+        "qwen2.5-32b-instruct-gptq-int8"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-32b-instruct-gptq-int4",
+      "alias": [
+        "qwen/qwen2.5-32b-instruct-gptq-int4",
+        "Qwen/Qwen2.5-32B-Instruct-GPTQ-Int4",
+        "qwen2.5-32b-instruct-gptq-int4"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-14b-instruct-gptq-int8",
+      "alias": [
+        "qwen/qwen2.5-14b-instruct-gptq-int8",
+        "Qwen/Qwen2.5-14B-Instruct-GPTQ-Int8",
+        "qwen2.5-14b-instruct-gptq-int8"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-14b-instruct-gptq-int4",
+      "alias": [
+        "qwen/qwen2.5-14b-instruct-gptq-int4",
+        "Qwen/Qwen2.5-14B-Instruct-GPTQ-Int4",
+        "qwen2.5-14b-instruct-gptq-int4"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-7b-instruct-gptq-int8",
+      "alias": [
+        "qwen/qwen2.5-7b-instruct-gptq-int8",
+        "Qwen/Qwen2.5-7B-Instruct-GPTQ-Int8",
+        "qwen2.5-7b-instruct-gptq-int8"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-7b-instruct-gptq-int4",
+      "alias": [
+        "qwen/qwen2.5-7b-instruct-gptq-int4",
+        "Qwen/Qwen2.5-7B-Instruct-GPTQ-Int4",
+        "qwen2.5-7b-instruct-gptq-int4"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-3b-instruct-gptq-int8",
+      "alias": [
+        "qwen/qwen2.5-3b-instruct-gptq-int8",
+        "Qwen/Qwen2.5-3B-Instruct-GPTQ-Int8",
+        "qwen2.5-3b-instruct-gptq-int8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-3b-instruct-gptq-int4",
+      "alias": [
+        "qwen/qwen2.5-3b-instruct-gptq-int4",
+        "Qwen/Qwen2.5-3B-Instruct-GPTQ-Int4",
+        "qwen2.5-3b-instruct-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-1.5b-instruct-gptq-int8",
+      "alias": [
+        "qwen/qwen2.5-1.5b-instruct-gptq-int8",
+        "Qwen/Qwen2.5-1.5B-Instruct-GPTQ-Int8",
+        "qwen2.5-1.5b-instruct-gptq-int8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-1.5b-instruct-gptq-int4",
+      "alias": [
+        "qwen/qwen2.5-1.5b-instruct-gptq-int4",
+        "Qwen/Qwen2.5-1.5B-Instruct-GPTQ-Int4",
+        "qwen2.5-1.5b-instruct-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-0.5b-instruct-gptq-int8",
+      "alias": [
+        "qwen/qwen2.5-0.5b-instruct-gptq-int8",
+        "Qwen/Qwen2.5-0.5B-Instruct-GPTQ-Int8",
+        "qwen2.5-0.5b-instruct-gptq-int8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-0.5b-instruct-gptq-int4",
+      "alias": [
+        "qwen/qwen2.5-0.5b-instruct-gptq-int4",
+        "Qwen/Qwen2.5-0.5B-Instruct-GPTQ-Int4",
+        "qwen2.5-0.5b-instruct-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-math-rm-72b",
+      "alias": [
+        "qwen/qwen2-math-rm-72b",
+        "Qwen/Qwen2-Math-RM-72B",
+        "qwen2-math-rm-72b"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-math-rm-72b",
+      "alias": [
+        "qwen/qwen2.5-math-rm-72b",
+        "Qwen/Qwen2.5-Math-RM-72B",
+        "qwen2.5-math-rm-72b"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-vl-72b-instruct-gptq-int8",
+      "alias": [
+        "qwen/qwen2-vl-72b-instruct-gptq-int8",
+        "Qwen/Qwen2-VL-72B-Instruct-GPTQ-Int8",
+        "qwen2-vl-72b-instruct-gptq-int8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-vl-72b-instruct-gptq-int4",
+      "alias": [
+        "qwen/qwen2-vl-72b-instruct-gptq-int4",
+        "Qwen/Qwen2-VL-72B-Instruct-GPTQ-Int4",
+        "qwen2-vl-72b-instruct-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-vl-72b-instruct-awq",
+      "alias": [
+        "qwen/qwen2-vl-72b-instruct-awq",
+        "Qwen/Qwen2-VL-72B-Instruct-AWQ",
+        "qwen2-vl-72b-instruct-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-vl-72b-instruct",
+      "alias": [
+        "qwen/qwen2-vl-72b-instruct",
+        "Qwen/Qwen2-VL-72B-Instruct",
+        "qwen2-vl-72b-instruct",
+        "qwen/qwen-2-vl-72b-instruct"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-32b-instruct",
+      "alias": [
+        "qwen/qwen2.5-32b-instruct",
+        "Qwen/Qwen2.5-32B-Instruct",
+        "qwen2.5-32b-instruct",
+        "Qwen2.5-32B-Instruct"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-math-72b-instruct",
+      "alias": [
+        "qwen/qwen2.5-math-72b-instruct",
+        "Qwen/Qwen2.5-Math-72B-Instruct",
+        "qwen2.5-math-72b-instruct"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-math-72b",
+      "alias": [
+        "qwen/qwen2.5-math-72b",
+        "Qwen/Qwen2.5-Math-72B",
+        "qwen2.5-math-72b"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-math-7b",
+      "alias": [
+        "qwen/qwen2.5-math-7b",
+        "Qwen/Qwen2.5-Math-7B",
+        "qwen2.5-math-7b"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-math-1.5b-instruct",
+      "alias": [
+        "qwen/qwen2.5-math-1.5b-instruct",
+        "Qwen/Qwen2.5-Math-1.5B-Instruct",
+        "qwen2.5-math-1.5b-instruct"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-math-1.5b",
+      "alias": [
+        "qwen/qwen2.5-math-1.5b",
+        "Qwen/Qwen2.5-Math-1.5B",
+        "qwen2.5-math-1.5b"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-coder-7b",
+      "alias": [
+        "qwen/qwen2.5-coder-7b",
+        "Qwen/Qwen2.5-Coder-7B",
+        "qwen2.5-coder-7b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-72b-instruct",
+      "alias": [
+        "qwen/qwen2.5-72b-instruct",
+        "Qwen/Qwen2.5-72B-Instruct",
+        "qwen2.5-72b-instruct",
+        "qwen/qwen-2.5-72b-instruct",
+        "Qwen2.5-72B-Instruct"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-14b-instruct",
+      "alias": [
+        "qwen/qwen2.5-14b-instruct",
+        "Qwen/Qwen2.5-14B-Instruct",
+        "qwen2.5-14b-instruct",
+        "Qwen2.5-14B-Instruct"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-7b-instruct",
+      "alias": [
+        "qwen/qwen2.5-7b-instruct",
+        "Qwen/Qwen2.5-7B-Instruct",
+        "qwen2.5-7b-instruct",
+        "Qwen2.5-7B-Instruct"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-0.5b-instruct",
+      "alias": [
+        "qwen/qwen2.5-0.5b-instruct",
+        "Qwen/Qwen2.5-0.5B-Instruct",
+        "qwen2.5-0.5b-instruct"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-72b",
+      "alias": [
+        "qwen/qwen2.5-72b",
+        "Qwen/Qwen2.5-72B",
+        "qwen2.5-72b",
+        "Qwen2.5-72B"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-32b",
+      "alias": [
+        "qwen/qwen2.5-32b",
+        "Qwen/Qwen2.5-32B",
+        "qwen2.5-32b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-14b",
+      "alias": [
+        "qwen/qwen2.5-14b",
+        "Qwen/Qwen2.5-14B",
+        "qwen2.5-14b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-7b",
+      "alias": [
+        "qwen/qwen2.5-7b",
+        "Qwen/Qwen2.5-7B",
+        "qwen2.5-7b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-3b",
+      "alias": [
+        "qwen/qwen2.5-3b",
+        "Qwen/Qwen2.5-3B",
+        "qwen2.5-3b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-1.5b",
+      "alias": [
+        "qwen/qwen2.5-1.5b",
+        "Qwen/Qwen2.5-1.5B",
+        "qwen2.5-1.5b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2.5-0.5b",
+      "alias": [
+        "qwen/qwen2.5-0.5b",
+        "Qwen/Qwen2.5-0.5B",
+        "qwen2.5-0.5b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-vl-7b",
+      "alias": [
+        "qwen/qwen2-vl-7b",
+        "Qwen/Qwen2-VL-7B",
+        "qwen2-vl-7b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-vl-2b",
+      "alias": [
+        "qwen/qwen2-vl-2b",
+        "Qwen/Qwen2-VL-2B",
+        "qwen2-vl-2b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-vl-2b-instruct-gptq-int8",
+      "alias": [
+        "qwen/qwen2-vl-2b-instruct-gptq-int8",
+        "Qwen/Qwen2-VL-2B-Instruct-GPTQ-Int8",
+        "qwen2-vl-2b-instruct-gptq-int8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-vl-2b-instruct-gptq-int4",
+      "alias": [
+        "qwen/qwen2-vl-2b-instruct-gptq-int4",
+        "Qwen/Qwen2-VL-2B-Instruct-GPTQ-Int4",
+        "qwen2-vl-2b-instruct-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-vl-2b-instruct-awq",
+      "alias": [
+        "qwen/qwen2-vl-2b-instruct-awq",
+        "Qwen/Qwen2-VL-2B-Instruct-AWQ",
+        "qwen2-vl-2b-instruct-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-vl-7b-instruct-gptq-int8",
+      "alias": [
+        "qwen/qwen2-vl-7b-instruct-gptq-int8",
+        "Qwen/Qwen2-VL-7B-Instruct-GPTQ-Int8",
+        "qwen2-vl-7b-instruct-gptq-int8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-vl-7b-instruct-gptq-int4",
+      "alias": [
+        "qwen/qwen2-vl-7b-instruct-gptq-int4",
+        "Qwen/Qwen2-VL-7B-Instruct-GPTQ-Int4",
+        "qwen2-vl-7b-instruct-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-vl-7b-instruct-awq",
+      "alias": [
+        "qwen/qwen2-vl-7b-instruct-awq",
+        "Qwen/Qwen2-VL-7B-Instruct-AWQ",
+        "qwen2-vl-7b-instruct-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-vl-7b-instruct",
+      "alias": [
+        "qwen/qwen2-vl-7b-instruct",
+        "Qwen/Qwen2-VL-7B-Instruct",
+        "qwen2-vl-7b-instruct"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-vl-2b-instruct",
+      "alias": [
+        "qwen/qwen2-vl-2b-instruct",
+        "Qwen/Qwen2-VL-2B-Instruct",
+        "qwen2-vl-2b-instruct"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-math-1.5b",
+      "alias": [
+        "qwen/qwen2-math-1.5b",
+        "Qwen/Qwen2-Math-1.5B",
+        "qwen2-math-1.5b"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-math-7b",
+      "alias": [
+        "qwen/qwen2-math-7b",
+        "Qwen/Qwen2-Math-7B",
+        "qwen2-math-7b"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-math-72b",
+      "alias": [
+        "qwen/qwen2-math-72b",
+        "Qwen/Qwen2-Math-72B",
+        "qwen2-math-72b"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-math-1.5b-instruct",
+      "alias": [
+        "qwen/qwen2-math-1.5b-instruct",
+        "Qwen/Qwen2-Math-1.5B-Instruct",
+        "qwen2-math-1.5b-instruct"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-math-7b-instruct",
+      "alias": [
+        "qwen/qwen2-math-7b-instruct",
+        "Qwen/Qwen2-Math-7B-Instruct",
+        "qwen2-math-7b-instruct"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-math-72b-instruct",
+      "alias": [
+        "qwen/qwen2-math-72b-instruct",
+        "Qwen/Qwen2-Math-72B-Instruct",
+        "qwen2-math-72b-instruct"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-audio-7b-instruct",
+      "alias": [
+        "qwen/qwen2-audio-7b-instruct",
+        "Qwen/Qwen2-Audio-7B-Instruct",
+        "qwen2-audio-7b-instruct",
+        "Qwen2-Audio-7B-Instruct"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat",
+        "audio2text",
+        "speech2text",
+        "audio_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-audio-7b",
+      "alias": [
+        "qwen/qwen2-audio-7b",
+        "Qwen/Qwen2-Audio-7B",
+        "qwen2-audio-7b"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "audio2text",
+        "speech2text",
+        "audio_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-57b-a14b-instruct-gguf",
+      "alias": [
+        "qwen/qwen2-57b-a14b-instruct-gguf",
+        "Qwen/Qwen2-57B-A14B-Instruct-GGUF",
+        "qwen2-57b-a14b-instruct-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-1.5b-instruct-gguf",
+      "alias": [
+        "qwen/qwen2-1.5b-instruct-gguf",
+        "Qwen/Qwen2-1.5B-Instruct-GGUF",
+        "qwen2-1.5b-instruct-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-7b-instruct-gguf",
+      "alias": [
+        "qwen/qwen2-7b-instruct-gguf",
+        "Qwen/Qwen2-7B-Instruct-GGUF",
+        "qwen2-7b-instruct-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-72b-instruct-gguf",
+      "alias": [
+        "qwen/qwen2-72b-instruct-gguf",
+        "Qwen/Qwen2-72B-Instruct-GGUF",
+        "qwen2-72b-instruct-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-1.5b-instruct-mlx",
+      "alias": [
+        "qwen/qwen2-1.5b-instruct-mlx",
+        "Qwen/Qwen2-1.5B-Instruct-MLX",
+        "qwen2-1.5b-instruct-mlx"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-0.5b-instruct-gguf",
+      "alias": [
+        "qwen/qwen2-0.5b-instruct-gguf",
+        "Qwen/Qwen2-0.5B-Instruct-GGUF",
+        "qwen2-0.5b-instruct-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-0.5b-instruct-mlx",
+      "alias": [
+        "qwen/qwen2-0.5b-instruct-mlx",
+        "Qwen/Qwen2-0.5B-Instruct-MLX",
+        "qwen2-0.5b-instruct-mlx"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-0.5b-instruct-awq",
+      "alias": [
+        "qwen/qwen2-0.5b-instruct-awq",
+        "Qwen/Qwen2-0.5B-Instruct-AWQ",
+        "qwen2-0.5b-instruct-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-0.5b-instruct-gptq-int8",
+      "alias": [
+        "qwen/qwen2-0.5b-instruct-gptq-int8",
+        "Qwen/Qwen2-0.5B-Instruct-GPTQ-Int8",
+        "qwen2-0.5b-instruct-gptq-int8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-0.5b-instruct-gptq-int4",
+      "alias": [
+        "qwen/qwen2-0.5b-instruct-gptq-int4",
+        "Qwen/Qwen2-0.5B-Instruct-GPTQ-Int4",
+        "qwen2-0.5b-instruct-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-7b-instruct-awq",
+      "alias": [
+        "qwen/qwen2-7b-instruct-awq",
+        "Qwen/Qwen2-7B-Instruct-AWQ",
+        "qwen2-7b-instruct-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-7b-instruct-gptq-int8",
+      "alias": [
+        "qwen/qwen2-7b-instruct-gptq-int8",
+        "Qwen/Qwen2-7B-Instruct-GPTQ-Int8",
+        "qwen2-7b-instruct-gptq-int8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-7b-instruct-gptq-int4",
+      "alias": [
+        "qwen/qwen2-7b-instruct-gptq-int4",
+        "Qwen/Qwen2-7B-Instruct-GPTQ-Int4",
+        "qwen2-7b-instruct-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-1.5b-instruct-awq",
+      "alias": [
+        "qwen/qwen2-1.5b-instruct-awq",
+        "Qwen/Qwen2-1.5B-Instruct-AWQ",
+        "qwen2-1.5b-instruct-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-1.5b-instruct-gptq-int8",
+      "alias": [
+        "qwen/qwen2-1.5b-instruct-gptq-int8",
+        "Qwen/Qwen2-1.5B-Instruct-GPTQ-Int8",
+        "qwen2-1.5b-instruct-gptq-int8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-1.5b-instruct-gptq-int4",
+      "alias": [
+        "qwen/qwen2-1.5b-instruct-gptq-int4",
+        "Qwen/Qwen2-1.5B-Instruct-GPTQ-Int4",
+        "qwen2-1.5b-instruct-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-57b-a14b-instruct-gptq-int4",
+      "alias": [
+        "qwen/qwen2-57b-a14b-instruct-gptq-int4",
+        "Qwen/Qwen2-57B-A14B-Instruct-GPTQ-Int4",
+        "qwen2-57b-a14b-instruct-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-7b",
+      "alias": [
+        "qwen/qwen2-7b",
+        "Qwen/Qwen2-7B",
+        "qwen2-7b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-7b-instruct",
+      "alias": [
+        "qwen/qwen2-7b-instruct",
+        "Qwen/Qwen2-7B-Instruct",
+        "qwen2-7b-instruct",
+        "qwen/qwen-2-7b-instruct",
+        "Qwen2-7B-Instruct"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-57b-a14b-instruct",
+      "alias": [
+        "qwen/qwen2-57b-a14b-instruct",
+        "Qwen/Qwen2-57B-A14B-Instruct",
+        "qwen2-57b-a14b-instruct"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-72b-instruct-awq",
+      "alias": [
+        "qwen/qwen2-72b-instruct-awq",
+        "Qwen/Qwen2-72B-Instruct-AWQ",
+        "qwen2-72b-instruct-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-72b-instruct-gptq-int8",
+      "alias": [
+        "qwen/qwen2-72b-instruct-gptq-int8",
+        "Qwen/Qwen2-72B-Instruct-GPTQ-Int8",
+        "qwen2-72b-instruct-gptq-int8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-72b-instruct-gptq-int4",
+      "alias": [
+        "qwen/qwen2-72b-instruct-gptq-int4",
+        "Qwen/Qwen2-72B-Instruct-GPTQ-Int4",
+        "qwen2-72b-instruct-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-1.5b-instruct",
+      "alias": [
+        "qwen/qwen2-1.5b-instruct",
+        "Qwen/Qwen2-1.5B-Instruct",
+        "qwen2-1.5b-instruct"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-0.5b-instruct",
+      "alias": [
+        "qwen/qwen2-0.5b-instruct",
+        "Qwen/Qwen2-0.5B-Instruct",
+        "qwen2-0.5b-instruct"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-1.5b",
+      "alias": [
+        "qwen/qwen2-1.5b",
+        "Qwen/Qwen2-1.5B",
+        "qwen2-1.5b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-0.5b",
+      "alias": [
+        "qwen/qwen2-0.5b",
+        "Qwen/Qwen2-0.5B",
+        "qwen2-0.5b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-72b-instruct",
+      "alias": [
+        "qwen/qwen2-72b-instruct",
+        "Qwen/Qwen2-72B-Instruct",
+        "qwen2-72b-instruct",
+        "Qwen2-72B-Instruct"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-57b-a14b",
+      "alias": [
+        "qwen/qwen2-57b-a14b",
+        "Qwen/Qwen2-57B-A14B",
+        "qwen2-57b-a14b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen2-72b",
+      "alias": [
+        "qwen/qwen2-72b",
+        "Qwen/Qwen2-72B",
+        "qwen2-72b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-110b-chat-gguf",
+      "alias": [
+        "qwen/qwen1.5-110b-chat-gguf",
+        "Qwen/Qwen1.5-110B-Chat-GGUF",
+        "qwen1.5-110b-chat-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-110b-chat-awq",
+      "alias": [
+        "qwen/qwen1.5-110b-chat-awq",
+        "Qwen/Qwen1.5-110B-Chat-AWQ",
+        "qwen1.5-110b-chat-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-110b-chat-gptq-int4",
+      "alias": [
+        "qwen/qwen1.5-110b-chat-gptq-int4",
+        "Qwen/Qwen1.5-110B-Chat-GPTQ-Int4",
+        "qwen1.5-110b-chat-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-110b-chat",
+      "alias": [
+        "qwen/qwen1.5-110b-chat",
+        "Qwen/Qwen1.5-110B-Chat",
+        "qwen1.5-110b-chat"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-110b",
+      "alias": [
+        "qwen/qwen1.5-110b",
+        "Qwen/Qwen1.5-110B",
+        "qwen1.5-110b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/codeqwen1.5-7b-awq",
+      "alias": [
+        "qwen/codeqwen1.5-7b-awq",
+        "Qwen/CodeQwen1.5-7B-AWQ",
+        "codeqwen1.5-7b-awq"
+      ],
+      "max_tokens": 65536,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/codeqwen1.5-7b-chat-gguf",
+      "alias": [
+        "qwen/codeqwen1.5-7b-chat-gguf",
+        "Qwen/CodeQwen1.5-7B-Chat-GGUF",
+        "codeqwen1.5-7b-chat-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/codeqwen1.5-7b-chat-awq",
+      "alias": [
+        "qwen/codeqwen1.5-7b-chat-awq",
+        "Qwen/CodeQwen1.5-7B-Chat-AWQ",
+        "codeqwen1.5-7b-chat-awq"
+      ],
+      "max_tokens": 65536,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/codeqwen1.5-7b-chat",
+      "alias": [
+        "qwen/codeqwen1.5-7b-chat",
+        "Qwen/CodeQwen1.5-7B-Chat",
+        "codeqwen1.5-7b-chat"
+      ],
+      "max_tokens": 65536,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/codeqwen1.5-7b",
+      "alias": [
+        "qwen/codeqwen1.5-7b",
+        "Qwen/CodeQwen1.5-7B",
+        "codeqwen1.5-7b"
+      ],
+      "max_tokens": 65536,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-32b-chat-awq",
+      "alias": [
+        "qwen/qwen1.5-32b-chat-awq",
+        "Qwen/Qwen1.5-32B-Chat-AWQ",
+        "qwen1.5-32b-chat-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-32b-chat-gguf",
+      "alias": [
+        "qwen/qwen1.5-32b-chat-gguf",
+        "Qwen/Qwen1.5-32B-Chat-GGUF",
+        "qwen1.5-32b-chat-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-32b-chat",
+      "alias": [
+        "qwen/qwen1.5-32b-chat",
+        "Qwen/Qwen1.5-32B-Chat",
+        "qwen1.5-32b-chat"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-32b-chat-gptq-int4",
+      "alias": [
+        "qwen/qwen1.5-32b-chat-gptq-int4",
+        "Qwen/Qwen1.5-32B-Chat-GPTQ-Int4",
+        "qwen1.5-32b-chat-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-32b",
+      "alias": [
+        "qwen/qwen1.5-32b",
+        "Qwen/Qwen1.5-32B",
+        "qwen1.5-32b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-moe-a2.7b-chat-gptq-int4",
+      "alias": [
+        "qwen/qwen1.5-moe-a2.7b-chat-gptq-int4",
+        "Qwen/Qwen1.5-MoE-A2.7B-Chat-GPTQ-Int4",
+        "qwen1.5-moe-a2.7b-chat-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-moe-a2.7b-chat",
+      "alias": [
+        "qwen/qwen1.5-moe-a2.7b-chat",
+        "Qwen/Qwen1.5-MoE-A2.7B-Chat",
+        "qwen1.5-moe-a2.7b-chat"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-moe-a2.7b",
+      "alias": [
+        "qwen/qwen1.5-moe-a2.7b",
+        "Qwen/Qwen1.5-MoE-A2.7B",
+        "qwen1.5-moe-a2.7b"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-0.5b-chat-gptq-int8",
+      "alias": [
+        "qwen/qwen1.5-0.5b-chat-gptq-int8",
+        "Qwen/Qwen1.5-0.5B-Chat-GPTQ-Int8",
+        "qwen1.5-0.5b-chat-gptq-int8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-0.5b-chat-gptq-int4",
+      "alias": [
+        "qwen/qwen1.5-0.5b-chat-gptq-int4",
+        "Qwen/Qwen1.5-0.5B-Chat-GPTQ-Int4",
+        "qwen1.5-0.5b-chat-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-1.8b-chat-gptq-int4",
+      "alias": [
+        "qwen/qwen1.5-1.8b-chat-gptq-int4",
+        "Qwen/Qwen1.5-1.8B-Chat-GPTQ-Int4",
+        "qwen1.5-1.8b-chat-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-1.8b-chat-gptq-int8",
+      "alias": [
+        "qwen/qwen1.5-1.8b-chat-gptq-int8",
+        "Qwen/Qwen1.5-1.8B-Chat-GPTQ-Int8",
+        "qwen1.5-1.8b-chat-gptq-int8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-4b-chat-gptq-int4",
+      "alias": [
+        "qwen/qwen1.5-4b-chat-gptq-int4",
+        "Qwen/Qwen1.5-4B-Chat-GPTQ-Int4",
+        "qwen1.5-4b-chat-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-4b-chat-gptq-int8",
+      "alias": [
+        "qwen/qwen1.5-4b-chat-gptq-int8",
+        "Qwen/Qwen1.5-4B-Chat-GPTQ-Int8",
+        "qwen1.5-4b-chat-gptq-int8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-7b-chat-gptq-int4",
+      "alias": [
+        "qwen/qwen1.5-7b-chat-gptq-int4",
+        "Qwen/Qwen1.5-7B-Chat-GPTQ-Int4",
+        "qwen1.5-7b-chat-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-7b-chat-gptq-int8",
+      "alias": [
+        "qwen/qwen1.5-7b-chat-gptq-int8",
+        "Qwen/Qwen1.5-7B-Chat-GPTQ-Int8",
+        "qwen1.5-7b-chat-gptq-int8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-14b-chat-gptq-int4",
+      "alias": [
+        "qwen/qwen1.5-14b-chat-gptq-int4",
+        "Qwen/Qwen1.5-14B-Chat-GPTQ-Int4",
+        "qwen1.5-14b-chat-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-14b-chat-gptq-int8",
+      "alias": [
+        "qwen/qwen1.5-14b-chat-gptq-int8",
+        "Qwen/Qwen1.5-14B-Chat-GPTQ-Int8",
+        "qwen1.5-14b-chat-gptq-int8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-72b-chat-gptq-int4",
+      "alias": [
+        "qwen/qwen1.5-72b-chat-gptq-int4",
+        "Qwen/Qwen1.5-72B-Chat-GPTQ-Int4",
+        "qwen1.5-72b-chat-gptq-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-72b-chat-gptq-int8",
+      "alias": [
+        "qwen/qwen1.5-72b-chat-gptq-int8",
+        "Qwen/Qwen1.5-72B-Chat-GPTQ-Int8",
+        "qwen1.5-72b-chat-gptq-int8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-4b-chat-gguf",
+      "alias": [
+        "qwen/qwen1.5-4b-chat-gguf",
+        "Qwen/Qwen1.5-4B-Chat-GGUF",
+        "qwen1.5-4b-chat-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-1.8b-chat-gguf",
+      "alias": [
+        "qwen/qwen1.5-1.8b-chat-gguf",
+        "Qwen/Qwen1.5-1.8B-Chat-GGUF",
+        "qwen1.5-1.8b-chat-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-0.5b-chat-gguf",
+      "alias": [
+        "qwen/qwen1.5-0.5b-chat-gguf",
+        "Qwen/Qwen1.5-0.5B-Chat-GGUF",
+        "qwen1.5-0.5b-chat-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-14b-chat-gguf",
+      "alias": [
+        "qwen/qwen1.5-14b-chat-gguf",
+        "Qwen/Qwen1.5-14B-Chat-GGUF",
+        "qwen1.5-14b-chat-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-7b-chat-gguf",
+      "alias": [
+        "qwen/qwen1.5-7b-chat-gguf",
+        "Qwen/Qwen1.5-7B-Chat-GGUF",
+        "qwen1.5-7b-chat-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-72b-chat-gguf",
+      "alias": [
+        "qwen/qwen1.5-72b-chat-gguf",
+        "Qwen/Qwen1.5-72B-Chat-GGUF",
+        "qwen1.5-72b-chat-gguf"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-0.5b-chat-awq",
+      "alias": [
+        "qwen/qwen1.5-0.5b-chat-awq",
+        "Qwen/Qwen1.5-0.5B-Chat-AWQ",
+        "qwen1.5-0.5b-chat-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-1.8b-chat-awq",
+      "alias": [
+        "qwen/qwen1.5-1.8b-chat-awq",
+        "Qwen/Qwen1.5-1.8B-Chat-AWQ",
+        "qwen1.5-1.8b-chat-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-4b-chat-awq",
+      "alias": [
+        "qwen/qwen1.5-4b-chat-awq",
+        "Qwen/Qwen1.5-4B-Chat-AWQ",
+        "qwen1.5-4b-chat-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-7b-chat-awq",
+      "alias": [
+        "qwen/qwen1.5-7b-chat-awq",
+        "Qwen/Qwen1.5-7B-Chat-AWQ",
+        "qwen1.5-7b-chat-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-14b-chat-awq",
+      "alias": [
+        "qwen/qwen1.5-14b-chat-awq",
+        "Qwen/Qwen1.5-14B-Chat-AWQ",
+        "qwen1.5-14b-chat-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-72b-chat-awq",
+      "alias": [
+        "qwen/qwen1.5-72b-chat-awq",
+        "Qwen/Qwen1.5-72B-Chat-AWQ",
+        "qwen1.5-72b-chat-awq"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-0.5b-chat",
+      "alias": [
+        "qwen/qwen1.5-0.5b-chat",
+        "Qwen/Qwen1.5-0.5B-Chat",
+        "qwen1.5-0.5b-chat"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-72b-chat",
+      "alias": [
+        "qwen/qwen1.5-72b-chat",
+        "Qwen/Qwen1.5-72B-Chat",
+        "qwen1.5-72b-chat"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-14b-chat",
+      "alias": [
+        "qwen/qwen1.5-14b-chat",
+        "Qwen/Qwen1.5-14B-Chat",
+        "qwen1.5-14b-chat"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-7b-chat",
+      "alias": [
+        "qwen/qwen1.5-7b-chat",
+        "Qwen/Qwen1.5-7B-Chat",
+        "qwen1.5-7b-chat"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-4b-chat",
+      "alias": [
+        "qwen/qwen1.5-4b-chat",
+        "Qwen/Qwen1.5-4B-Chat",
+        "qwen1.5-4b-chat"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-1.8b-chat",
+      "alias": [
+        "qwen/qwen1.5-1.8b-chat",
+        "Qwen/Qwen1.5-1.8B-Chat",
+        "qwen1.5-1.8b-chat"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-72b",
+      "alias": [
+        "qwen/qwen1.5-72b",
+        "Qwen/Qwen1.5-72B",
+        "qwen1.5-72b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-14b",
+      "alias": [
+        "qwen/qwen1.5-14b",
+        "Qwen/Qwen1.5-14B",
+        "qwen1.5-14b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-7b",
+      "alias": [
+        "qwen/qwen1.5-7b",
+        "Qwen/Qwen1.5-7B",
+        "qwen1.5-7b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-4b",
+      "alias": [
+        "qwen/qwen1.5-4b",
+        "Qwen/Qwen1.5-4B",
+        "qwen1.5-4b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-1.8b",
+      "alias": [
+        "qwen/qwen1.5-1.8b",
+        "Qwen/Qwen1.5-1.8B",
+        "qwen1.5-1.8b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen1.5-0.5b",
+      "alias": [
+        "qwen/qwen1.5-0.5b",
+        "Qwen/Qwen1.5-0.5B",
+        "qwen1.5-0.5b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-audio-chat",
+      "alias": [
+        "qwen/qwen-audio-chat",
+        "Qwen/Qwen-Audio-Chat",
+        "qwen-audio-chat"
+      ],
+      "max_tokens": 2048,
+      "model_types": [
+        "chat",
+        "audio2text",
+        "speech2text",
+        "audio_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-audio",
+      "alias": [
+        "qwen/qwen-audio",
+        "Qwen/Qwen-Audio",
+        "qwen-audio"
+      ],
+      "max_tokens": 2048,
+      "model_types": [
+        "audio2text",
+        "speech2text",
+        "audio_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-72b-chat-int8",
+      "alias": [
+        "qwen/qwen-72b-chat-int8",
+        "Qwen/Qwen-72B-Chat-Int8",
+        "qwen-72b-chat-int8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-72b-chat-int4",
+      "alias": [
+        "qwen/qwen-72b-chat-int4",
+        "Qwen/Qwen-72B-Chat-Int4",
+        "qwen-72b-chat-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-1_8b-chat-int4",
+      "alias": [
+        "qwen/qwen-1_8b-chat-int4",
+        "Qwen/Qwen-1_8B-Chat-Int4",
+        "qwen-1_8b-chat-int4"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-1_8b-chat-int8",
+      "alias": [
+        "qwen/qwen-1_8b-chat-int8",
+        "Qwen/Qwen-1_8B-Chat-Int8",
+        "qwen-1_8b-chat-int8"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-1_8b",
+      "alias": [
+        "qwen/qwen-1_8b",
+        "Qwen/Qwen-1_8B",
+        "qwen-1_8b"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-72b-chat",
+      "alias": [
+        "qwen/qwen-72b-chat",
+        "Qwen/Qwen-72B-Chat",
+        "qwen-72b-chat"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-72b",
+      "alias": [
+        "qwen/qwen-72b",
+        "Qwen/Qwen-72B",
+        "qwen-72b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-14b-chat-int8",
+      "alias": [
+        "qwen/qwen-14b-chat-int8",
+        "Qwen/Qwen-14B-Chat-Int8",
+        "qwen-14b-chat-int8"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-7b-chat-int8",
+      "alias": [
+        "qwen/qwen-7b-chat-int8",
+        "Qwen/Qwen-7B-Chat-Int8",
+        "qwen-7b-chat-int8"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-14b",
+      "alias": [
+        "qwen/qwen-14b",
+        "Qwen/Qwen-14B",
+        "qwen-14b"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-14b-chat",
+      "alias": [
+        "qwen/qwen-14b-chat",
+        "Qwen/Qwen-14B-Chat",
+        "qwen-14b-chat"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-14b-chat-int4",
+      "alias": [
+        "qwen/qwen-14b-chat-int4",
+        "Qwen/Qwen-14B-Chat-Int4",
+        "qwen-14b-chat-int4"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-vl-chat-int4",
+      "alias": [
+        "qwen/qwen-vl-chat-int4",
+        "Qwen/Qwen-VL-Chat-Int4",
+        "qwen-vl-chat-int4"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-7b-chat-int4",
+      "alias": [
+        "qwen/qwen-7b-chat-int4",
+        "Qwen/Qwen-7B-Chat-Int4",
+        "qwen-7b-chat-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-vl-chat",
+      "alias": [
+        "qwen/qwen-vl-chat",
+        "Qwen/Qwen-VL-Chat",
+        "qwen-vl-chat"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-vl",
+      "alias": [
+        "qwen/qwen-vl",
+        "Qwen/Qwen-VL",
+        "qwen-vl"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-7b-chat",
+      "alias": [
+        "qwen/qwen-7b-chat",
+        "Qwen/Qwen-7B-Chat",
+        "qwen-7b-chat"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-7b",
+      "alias": [
+        "qwen/qwen-7b",
+        "Qwen/Qwen-7B",
+        "qwen-7b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-tokenizer",
+      "alias": [
+        "qwen/qwen-tokenizer",
+        "Qwen/Qwen-tokenizer",
+        "qwen-tokenizer"
+      ],
+      "model_types": [
+        "tokenizer"
+      ]
+    },
+    {
+      "name": "paddleocr-vl-0.9b",
+      "alias": [
+        "paddleocr-vl-1.5"
+      ],
+      "model_types": [
+        "ocr"
+      ]
+    }
+  ]
+}
