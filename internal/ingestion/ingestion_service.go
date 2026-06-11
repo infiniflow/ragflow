@@ -140,7 +140,12 @@ func (e *Ingestor) Start() error {
 				}
 			}
 			if task == nil {
-				common.Info(fmt.Sprintf("task %s is already stopped", taskMessage.TaskID))
+				common.Info(fmt.Sprintf("task %s is already removed", taskMessage.TaskID))
+				err = taskHandle.Ack()
+				if err != nil {
+					return err
+				}
+				continue
 			}
 
 			switch task.Status {
