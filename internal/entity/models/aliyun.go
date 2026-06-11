@@ -601,21 +601,12 @@ func (a *AliyunModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, err
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
-	var modelList AliyunModelList
+	var modelList ModelList
 	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	var models []ListModelResponse
-	for _, model := range modelList.Output.Models {
-		modelName := model.ModelName
-		models = append(models, ListModelResponse{
-			Name: modelName,
-		})
-	}
-
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 func (a *AliyunModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

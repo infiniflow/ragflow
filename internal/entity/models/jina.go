@@ -358,14 +358,16 @@ func (j *JinaModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error
 	}
 
 	// convert result["data"] to []map[string]interface{}
-	models := make([]ListModelResponse, 0)
+	models := make([]DSModel, 0, len(result["data"].([]interface{})))
 	for _, model := range result["data"].([]interface{}) {
-		modelMap := model.(map[string]interface{})
-		modelName := modelMap["name"].(string)
-		models = append(models, ListModelResponse{Name: modelName})
+		modelName := model.(map[string]interface{})["name"].(string)
+		models = append(models, DSModel{
+			ID:      modelName,
+			OwnedBy: "",
+		})
 	}
-
-	return models, nil
+	// Jina list models: `Jina AI: Jina Embeddings v5 Text Nano`
+	return ParseListModel(ModelList{Models: models}), nil
 }
 
 func (j *JinaModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

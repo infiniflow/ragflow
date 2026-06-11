@@ -50,9 +50,7 @@ type modelscopeChatResponse struct {
 }
 
 type modelscopeModelListResponse struct {
-	Data []struct {
-		ID string `json:"id"`
-	} `json:"data"`
+	Data []DSModel `json:"data"`
 }
 
 // NewModelScopeModel creates a new ModelScope model instance.
@@ -410,13 +408,7 @@ func (m *ModelScopeModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse,
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]ListModelResponse, 0, len(result.Data))
-	for _, model := range result.Data {
-		if model.ID != "" {
-			models = append(models, ListModelResponse{Name: model.ID})
-		}
-	}
-	return models, nil
+	return ParseListModel(ModelList{Models: result.Data}), nil
 }
 
 func (m *ModelScopeModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

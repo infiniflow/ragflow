@@ -519,21 +519,12 @@ func (s *SiliconflowModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse
 	}
 
 	// Parse response
-	var modelList DSModelList
+	var modelList ModelList
 	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	var models []ListModelResponse
-	for _, model := range modelList.Models {
-		modelName := model.ID
-		if model.OwnedBy != "" {
-			modelName = model.ID + "@" + model.OwnedBy
-		}
-		models = append(models, ListModelResponse{Name: modelName})
-	}
-
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 type siliconflowBalanceResponse struct {

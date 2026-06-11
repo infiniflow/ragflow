@@ -284,7 +284,11 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		if chatModelConfig.Thinking != nil {
 			if *chatModelConfig.Thinking {
 				var thinkingFlag string
-				switch *chatModelConfig.Effort {
+				effort := "high"
+				if chatModelConfig.Effort != nil {
+					effort = *chatModelConfig.Effort
+				}
+				switch effort {
 				case "none":
 					thinkingFlag = "disabled"
 					break
@@ -410,11 +414,6 @@ type DSModel struct {
 	OwnedBy string `json:"owned_by"`
 }
 
-type DSModelList struct {
-	Object string    `json:"object"`
-	Models []DSModel `json:"data"`
-}
-
 func (d *DeepSeekModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -461,19 +460,12 @@ func (d *DeepSeekModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, e
 	}
 
 	// Parse response
-	var modelList DSModelList
+	var modelList ModelList
 	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	var models []ListModelResponse
-	for _, model := range modelList.Models {
-		models = append(models, ListModelResponse{
-			Name: model.ID,
-		})
-	}
-
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 // deepseekBalanceResponse is the shape returned by

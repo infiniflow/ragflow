@@ -248,6 +248,10 @@ func (v *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message
 		"temperature": 1,
 	}
 
+	if modelConfig == nil {
+		modelConfig = &ChatConfig{}
+	}
+
 	if modelConfig.Stream != nil {
 		reqBody["stream"] = *modelConfig.Stream
 	}
@@ -276,7 +280,11 @@ func (v *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message
 	if modelConfig.Thinking != nil {
 		if *modelConfig.Thinking {
 			var thinkingFlag string
-			switch *modelConfig.Effort {
+			effort := "medium"
+			if modelConfig.Effort != nil {
+				effort = *modelConfig.Effort
+			}
+			switch effort {
 			case "none", "minimal":
 				thinkingFlag = "disabled"
 				reqBody["reasoning_effort"] = "minimal"
@@ -575,21 +583,13 @@ func (v *VolcEngine) ListModels(apiConfig *APIConfig) ([]ListModelResponse, erro
 		return nil, fmt.Errorf("VolcEngine models API error: %s, body: %s", resp.Status, string(body))
 	}
 
-	var modelList DSModelList
+	// Parse response
+	var modelList ModelList
 	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]ListModelResponse, 0, len(modelList.Models))
-	for _, model := range modelList.Models {
-		modelName := model.ID
-		if model.OwnedBy != "" {
-			modelName = model.ID + "@" + model.OwnedBy
-		}
-		models = append(models, ListModelResponse{Name: modelName})
-	}
-
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 func (v *VolcEngine) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

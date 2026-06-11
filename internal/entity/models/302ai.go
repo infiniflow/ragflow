@@ -876,29 +876,12 @@ func (a *AI302Model) ListModels(apiConfig *APIConfig) ([]ListModelResponse, erro
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	if err = json.Unmarshal(body, &result); err != nil {
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-	if result.Data == nil {
-		return nil, fmt.Errorf("models response missing data")
-	}
 
-	models := make([]ListModelResponse, 0, len(result.Data))
-	for _, model := range result.Data {
-		if strings.TrimSpace(model.ID) == "" {
-			return nil, fmt.Errorf("models response contains empty id")
-		}
-		models = append(models, ListModelResponse{
-			Name: strings.TrimSpace(model.ID),
-		})
-	}
-
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 func (a *AI302Model) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

@@ -480,18 +480,13 @@ func (z *ZhipuAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, er
 		return nil, fmt.Errorf("ZhipuAI models API error: %s, body: %s", resp.Status, string(body))
 	}
 
-	var modelList DSModelList
+	// Parse response
+	var modelList ModelList
 	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]ListModelResponse, 0, len(modelList.Models))
-	for _, model := range modelList.Models {
-		modelName := model.ID
-		models = append(models, ListModelResponse{Name: modelName})
-	}
-
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 func (z *ZhipuAIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

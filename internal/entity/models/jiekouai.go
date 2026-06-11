@@ -553,9 +553,7 @@ func (j *JieKouAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, e
 	}
 
 	var result struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
+		Data []DSModel `json:"data"`
 	}
 	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
@@ -564,15 +562,15 @@ func (j *JieKouAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, e
 		return nil, fmt.Errorf("models response missing data")
 	}
 
-	models := make([]ListModelResponse, 0, len(result.Data))
-	for _, model := range result.Data {
-		if strings.TrimSpace(model.ID) == "" {
+	for idx, model := range result.Data {
+		model.ID = strings.TrimSpace(model.ID)
+		if model.ID == "" {
 			return nil, fmt.Errorf("models response contains empty id")
 		}
-		models = append(models, ListModelResponse{Name: strings.TrimSpace(model.ID)})
+		result.Data[idx] = model
 	}
 
-	return models, nil
+	return ParseListModel(ModelList{Models: result.Data}), nil
 }
 
 func (j *JieKouAIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
