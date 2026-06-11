@@ -53,9 +53,7 @@ type xinferenceChatResponse struct {
 }
 
 type xinferenceModelListResponse struct {
-	Data []struct {
-		ID string `json:"id"`
-	} `json:"data"`
+	Data []DSModel `json:"data"`
 }
 
 // NewXinferenceModel creates a new Xinference model instance.
@@ -757,7 +755,7 @@ func (x *XinferenceModel) ParseFile(modelName *string, content []byte, url *stri
 
 // ListModels returns the model IDs exposed by Xinference's OpenAI-compatible
 // /v1/models endpoint.
-func (x *XinferenceModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (x *XinferenceModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -801,13 +799,7 @@ func (x *XinferenceModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]string, 0, len(result.Data))
-	for _, model := range result.Data {
-		if model.ID != "" {
-			models = append(models, model.ID)
-		}
-	}
-	return models, nil
+	return ParseListModel(ModelList{Models: result.Data}), nil
 }
 
 func (x *XinferenceModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

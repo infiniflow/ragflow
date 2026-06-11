@@ -134,6 +134,8 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 		return p.parseAdminDeleteCommand()
 	case TokenSave:
 		return p.parseAdminSaveCommand()
+	case TokenUse:
+		return p.parseAdminUseCommand()
 	default:
 		return nil, fmt.Errorf("unknown command: %s", p.curToken.Value)
 	}
@@ -224,6 +226,10 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseRemoveCommand()
 	case TokenGet:
 		return p.parseGetCommand()
+	case TokenExplain:
+		return p.parseExplainCommand()
+	case TokenChunk:
+		return p.parseChunkCommand(false)
 
 	case TokenLS, TokenCat, TokenSearch:
 		// For context engine
@@ -328,7 +334,9 @@ func (p *Parser) parseFloat() (float64, error) {
 }
 
 // parseQuotedStringList consumes a bracket-delimited list of quoted strings:
-//   [ 'a', 'b', 'c' ]
+//
+//	[ 'a', 'b', 'c' ]
+//
 // Empty list [] is allowed. The cursor must be positioned on '[' when called;
 // on return, the cursor is positioned just past the closing ']'.
 func (p *Parser) parseQuotedStringList() ([]string, error) {
@@ -398,5 +406,3 @@ func (p *Parser) parseFileSystemCommand() (*Command, error) {
 
 	return cmd, nil
 }
-
-

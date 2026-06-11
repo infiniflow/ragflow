@@ -332,10 +332,10 @@ type gpustackModelInfo struct {
 }
 
 type gpustackModelsResponse struct {
-	Data []gpustackModelInfo `json:"data"`
+	Data []DSModel `json:"data"`
 }
 
-func (g *GPUStackModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (g *GPUStackModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -378,13 +378,7 @@ func (g *GPUStackModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]string, 0, len(parsed.Data))
-	for _, m := range parsed.Data {
-		if m.ID != "" {
-			models = append(models, m.ID)
-		}
-	}
-	return models, nil
+	return ParseListModel(ModelList{Models: parsed.Data}), nil
 }
 
 func (g *GPUStackModel) CheckConnection(apiConfig *APIConfig) error {

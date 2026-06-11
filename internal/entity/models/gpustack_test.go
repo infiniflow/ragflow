@@ -438,7 +438,7 @@ func TestGPUStackListModelsHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if strings.Join(models, ",") != "qwen3-8b,qwen3-32b" {
+	if joinModelNames(models, ",") != "qwen3-8b,qwen3-32b" {
 		t.Errorf("models=%v", models)
 	}
 	if err := model.CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {
