@@ -348,6 +348,8 @@ volumes:
     driver: local
   kibana_data:
     driver: local
+  nats_data:
+    driver: local
 
 networks:
   ragflow:
