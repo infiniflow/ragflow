@@ -15,9 +15,12 @@ Released on June 11, 2026.
 
 ### New features
 
-- **Model providers**: Implements auto-populated model lists for multiple providers, eliminating the need to type model names manually. This feature currently supports: Ollama, OpenRouter, vLLM, OpenAI-API-Compatible, LM-Studio, VolcEngine, Xinference, LocalAI, BaiduYiyan, GPUStack, and Fish Audio.
-- **Model providers**: Allows configuring multiple API keys for the same model provider. [#14595](https://github.com/infiniflow/ragflow/pull/14595)
+- **Model providers**
+  - Implements auto-populated model lists for multiple providers, eliminating the need to type model names manually. This feature currently supports: Ollama, OpenRouter, vLLM, OpenAI-API-Compatible, LM-Studio, VolcEngine, Xinference, LocalAI, BaiduYiyan, GPUStack, and Fish Audio.
+  - Allows configuring multiple API keys for the same model provider. [#14595](https://github.com/infiniflow/ragflow/pull/14595)
+  - Dynamically populates model selection dropdowns in the UI by fetching the currently available models directly from remote model providers. [#15711](https://github.com/infiniflow/ragflow/pull/15711)
 - **Data source connectors**: Implements new data source connectors for Outlook, OneDrive, Microsoft Teams, Slack, SharePoint, Salesforce, and Azure Blob Storage. [#15333](https://github.com/infiniflow/ragflow/pull/15333)[#15330](https://github.com/infiniflow/ragflow/pull/15330)[#15332](https://github.com/infiniflow/ragflow/pull/15332)[#15188](https://github.com/infiniflow/ragflow/pull/15188)[#15190](https://github.com/infiniflow/ragflow/pull/15190)[#15462](https://github.com/infiniflow/ragflow/pull/15462)[#15466](https://github.com/infiniflow/ragflow/pull/15466)
+- **Dataset** - Implements a checkpoint and resume feature for community extraction and entity resolution, the most expensive and time-consuming parts of the GraphRAG indexing pipeline. [#15518](https://github.com/infiniflow/ragflow/issues/15518)[#15523](https://github.com/infiniflow/ragflow/pull/15523)
 
 ### Improvements
 
@@ -54,6 +57,7 @@ Released on June 11, 2026.
 - Caps the maximum page size to fix system crashes or slowdowns from large queries. [#15292](https://github.com/infiniflow/ragflow/pull/15292)
 - Client errors were caused by the OpenAI-compatible chat completion API incorrectly defaulting to streamed responses. [#15356](https://github.com/infiniflow/ragflow/issues/15356)[#15394](https://github.com/infiniflow/ragflow/pull/15394)
 - HTTP 500 internal server errors were triggered instead of standard 4xx client errors when users attempted to download missing files from the storage backend. [#15369](https://github.com/infiniflow/ragflow/issues/15369)[#15371](https://github.com/infiniflow/ragflow/pull/15371)
+- GraphRAG entity ranking was broken. [#15795](https://github.com/infiniflow/ragflow/issues/15795)[#15797](https://github.com/infiniflow/ragflow/pull/15797)
 
 ## v0.25.6
 
