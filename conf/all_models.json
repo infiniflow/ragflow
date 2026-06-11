@@ -1,6 +1,2011 @@
 {
   "models": [
     {
+      "name": "zai-org/embedding-3",
+      "alias": [
+        "zai-org/embedding-3",
+        "embedding-3",
+        "Embedding-3"
+      ],
+      "max_tokens": 8192,
+      "dimension": 2048,
+      "dimensions": [
+        256,
+        512,
+        1024,
+        2048
+      ],
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "zai-org/embedding-2",
+      "alias": [
+        "zai-org/embedding-2",
+        "embedding-2",
+        "Embedding-2"
+      ],
+      "max_tokens": 8192,
+      "dimension": 1024,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "zai-org/rerank",
+      "alias": [
+        "zai-org/rerank",
+        "rerank"
+      ],
+      "max_chars": 4096,
+      "max_documents": 128,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "zai-org/scail-2",
+      "alias": [
+        "zai-org/scail-2",
+        "zai-org/SCAIL-2",
+        "SCAIL-2",
+        "scail-2"
+      ],
+      "model_types": [
+        "image_generation"
+      ]
+    },
+    {
+      "name": "zai-org/glm-5.1-fp8",
+      "alias": [
+        "zai-org/glm-5.1-fp8",
+        "zai-org/GLM-5.1-FP8",
+        "GLM-5.1-FP8",
+        "glm-5.1-fp8"
+      ],
+      "max_tokens": 202752,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/glm-5.1",
+      "alias": [
+        "zai-org/glm-5.1",
+        "zai-org/GLM-5.1",
+        "GLM-5.1",
+        "glm-5.1",
+        "z-ai/glm-5.1",
+        "ZHIPU/GLM-5.1",
+        "Pro/zai-org/GLM-5.1",
+        "Z-AI/GLM 5.1"
+      ],
+      "max_tokens": 202752,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/glm-5",
+      "alias": [
+        "zai-org/glm-5",
+        "zai-org/GLM-5",
+        "GLM-5",
+        "glm-5",
+        "z-ai/glm-5",
+        "ZHIPU/GLM-5"
+      ],
+      "max_tokens": 202752,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/glm-5-fp8",
+      "alias": [
+        "zai-org/glm-5-fp8",
+        "zai-org/GLM-5-FP8",
+        "GLM-5-FP8",
+        "glm-5-fp8"
+      ],
+      "max_tokens": 202752,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/glm-ocr",
+      "alias": [
+        "zai-org/glm-ocr",
+        "zai-org/GLM-OCR",
+        "GLM-OCR",
+        "glm-ocr"
+      ],
+      "max_tokens": 655380,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "zai-org/glm-4.7-flash",
+      "alias": [
+        "zai-org/glm-4.7-flash",
+        "zai-org/GLM-4.7-Flash",
+        "GLM-4.7-Flash",
+        "glm-4.7-flash",
+        "z-ai/glm-4.7-flash"
+      ],
+      "max_tokens": 202752,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/glm-image",
+      "alias": [
+        "zai-org/glm-image",
+        "zai-org/GLM-Image",
+        "GLM-Image",
+        "glm-image"
+      ],
+      "model_types": [
+        "text-to-image",
+        "image_generation"
+      ]
+    },
+    {
+      "name": "zai-org/glm-4.7-fp8",
+      "alias": [
+        "zai-org/glm-4.7-fp8",
+        "zai-org/GLM-4.7-FP8",
+        "GLM-4.7-FP8",
+        "glm-4.7-fp8"
+      ],
+      "max_tokens": 202752,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/glm-4.7",
+      "alias": [
+        "zai-org/glm-4.7",
+        "zai-org/GLM-4.7",
+        "GLM-4.7",
+        "glm-4.7",
+        "z-ai/glm-4.7",
+        "Pro/zai-org/GLM-4.7",
+        "Z-Ai/GLM 4.7"
+      ],
+      "max_tokens": 202752,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/realvideo",
+      "alias": [
+        "zai-org/realvideo",
+        "zai-org/RealVideo",
+        "RealVideo",
+        "realvideo"
+      ],
+      "model_types": [
+        "omni"
+      ]
+    },
+    {
+      "name": "zai-org/glm-tts",
+      "alias": [
+        "zai-org/glm-tts",
+        "zai-org/GLM-TTS",
+        "GLM-TTS",
+        "glm-tts"
+      ],
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "zai-org/glm-asr-nano-2512",
+      "alias": [
+        "zai-org/glm-asr-nano-2512",
+        "zai-org/GLM-ASR-Nano-2512",
+        "GLM-ASR-Nano-2512",
+        "glm-asr-nano-2512"
+      ],
+      "max_tokens": 65536,
+      "model_types": [
+        "asr",
+        "speech2text"
+      ]
+    },
+    {
+      "name": "zai-org/autoglm-phone-9b-multilingual",
+      "alias": [
+        "zai-org/autoglm-phone-9b-multilingual",
+        "zai-org/AutoGLM-Phone-9B-Multilingual",
+        "AutoGLM-Phone-9B-Multilingual",
+        "autoglm-phone-9b-multilingual"
+      ],
+      "max_tokens": 64000,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "zai-org/scail-preview",
+      "alias": [
+        "zai-org/scail-preview",
+        "zai-org/SCAIL-Preview",
+        "SCAIL-Preview",
+        "scail-preview"
+      ],
+      "model_types": [
+        "image_generation"
+      ]
+    },
+    {
+      "name": "zai-org/autoglm-phone-9b",
+      "alias": [
+        "zai-org/autoglm-phone-9b",
+        "zai-org/AutoGLM-Phone-9B",
+        "AutoGLM-Phone-9B",
+        "autoglm-phone-9b"
+      ],
+      "max_tokens": 64000,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "zai-org/glm-4.6v-fp8",
+      "alias": [
+        "zai-org/glm-4.6v-fp8",
+        "zai-org/GLM-4.6V-FP8",
+        "GLM-4.6V-FP8",
+        "glm-4.6v-fp8"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/glm-4.6v",
+      "alias": [
+        "zai-org/glm-4.6v",
+        "zai-org/GLM-4.6V",
+        "GLM-4.6V",
+        "glm-4.6v",
+        "z-ai/glm-4.6v"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/glm-4.6v-flash",
+      "alias": [
+        "zai-org/glm-4.6v-flash",
+        "zai-org/GLM-4.6V-Flash",
+        "GLM-4.6V-Flash",
+        "glm-4.6v-flash"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/ssvae",
+      "alias": [
+        "zai-org/ssvae",
+        "zai-org/SSVAE",
+        "SSVAE",
+        "ssvae"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/webvia-agent",
+      "alias": [
+        "zai-org/webvia-agent",
+        "zai-org/WebVIA-Agent",
+        "WebVIA-Agent",
+        "webvia-agent"
+      ],
+      "max_tokens": 65536,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "zai-org/ui2code_n",
+      "alias": [
+        "zai-org/ui2code_n",
+        "zai-org/UI2Code_N",
+        "UI2Code_N",
+        "ui2code_n"
+      ],
+      "max_tokens": 65536,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "zai-org/kaleido-14b-s2v",
+      "alias": [
+        "zai-org/kaleido-14b-s2v",
+        "zai-org/Kaleido-14B-S2V",
+        "Kaleido-14B-S2V",
+        "kaleido-14b-s2v"
+      ],
+      "model_types": [
+        "image_generation"
+      ]
+    },
+    {
+      "name": "zai-org/glyph",
+      "alias": [
+        "zai-org/glyph",
+        "zai-org/Glyph",
+        "Glyph",
+        "glyph"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "zai-org/glm-4.6",
+      "alias": [
+        "zai-org/glm-4.6",
+        "zai-org/GLM-4.6",
+        "GLM-4.6",
+        "glm-4.6",
+        "z-ai/glm-4.6",
+        "Z-AI/GLM 4.6"
+      ],
+      "max_tokens": 202752,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/glm-4.6-fp8",
+      "alias": [
+        "zai-org/glm-4.6-fp8",
+        "zai-org/GLM-4.6-FP8",
+        "GLM-4.6-FP8",
+        "glm-4.6-fp8"
+      ],
+      "max_tokens": 202752,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/glm-4.5v",
+      "alias": [
+        "zai-org/glm-4.5v",
+        "zai-org/GLM-4.5V",
+        "GLM-4.5V",
+        "glm-4.5v",
+        "z-ai/glm-4.5v"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/glm-4.5v-fp8",
+      "alias": [
+        "zai-org/glm-4.5v-fp8",
+        "zai-org/GLM-4.5V-FP8",
+        "GLM-4.5V-FP8",
+        "glm-4.5v-fp8"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/glm-4.5-base",
+      "alias": [
+        "zai-org/glm-4.5-base",
+        "zai-org/GLM-4.5-Base",
+        "GLM-4.5-Base",
+        "glm-4.5-base"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/glm-4.5-air-fp8",
+      "alias": [
+        "zai-org/glm-4.5-air-fp8",
+        "zai-org/GLM-4.5-Air-FP8",
+        "GLM-4.5-Air-FP8",
+        "glm-4.5-air-fp8"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/glm-4.5-fp8",
+      "alias": [
+        "zai-org/glm-4.5-fp8",
+        "zai-org/GLM-4.5-FP8",
+        "GLM-4.5-FP8",
+        "glm-4.5-fp8"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/glm-4.5-air",
+      "alias": [
+        "zai-org/glm-4.5-air",
+        "zai-org/GLM-4.5-Air",
+        "GLM-4.5-Air",
+        "glm-4.5-air",
+        "z-ai/glm-4.5-air",
+        "z-ai/glm-4.5-air:free",
+        "GLM 4.5 Air (free)"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/glm-4.5",
+      "alias": [
+        "zai-org/glm-4.5",
+        "zai-org/GLM-4.5",
+        "GLM-4.5",
+        "glm-4.5",
+        "z-ai/glm-4.5",
+        "GLM 4.5"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/glm-4.5-air-base",
+      "alias": [
+        "zai-org/glm-4.5-air-base",
+        "zai-org/GLM-4.5-Air-Base",
+        "GLM-4.5-Air-Base",
+        "glm-4.5-air-base"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/glm-4.1v-9b-thinking",
+      "alias": [
+        "zai-org/glm-4.1v-9b-thinking",
+        "zai-org/GLM-4.1V-9B-Thinking",
+        "GLM-4.1V-9B-Thinking",
+        "glm-4.1v-9b-thinking"
+      ],
+      "max_tokens": 65536,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/glm-4.1v-9b-base",
+      "alias": [
+        "zai-org/glm-4.1v-9b-base",
+        "zai-org/GLM-4.1V-9B-Base",
+        "GLM-4.1V-9B-Base",
+        "glm-4.1v-9b-base"
+      ],
+      "max_tokens": 65536,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "zai-org/androidgen-llama-3-70b",
+      "alias": [
+        "zai-org/androidgen-llama-3-70b",
+        "androidgen-llama-3-70b"
+      ],
+      "max_tokens": 16384,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/androidgen-glm-4-9b",
+      "alias": [
+        "zai-org/androidgen-glm-4-9b",
+        "androidgen-glm-4-9b"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/glm-z1-rumination-32b-0414",
+      "alias": [
+        "zai-org/glm-z1-rumination-32b-0414",
+        "zai-org/GLM-Z1-Rumination-32B-0414",
+        "GLM-Z1-Rumination-32B-0414",
+        "glm-z1-rumination-32b-0414"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/glm-z1-32b-0414",
+      "alias": [
+        "zai-org/glm-z1-32b-0414",
+        "zai-org/GLM-Z1-32B-0414",
+        "GLM-Z1-32B-0414",
+        "glm-z1-32b-0414"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/glm-z1-9b-0414",
+      "alias": [
+        "zai-org/glm-z1-9b-0414",
+        "zai-org/GLM-Z1-9B-0414",
+        "GLM-Z1-9B-0414",
+        "glm-z1-9b-0414",
+        "THUDM/GLM-Z1-9B-0414"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/glm-4-32b-base-0414",
+      "alias": [
+        "zai-org/glm-4-32b-base-0414",
+        "zai-org/GLM-4-32B-Base-0414",
+        "GLM-4-32B-Base-0414",
+        "glm-4-32b-base-0414"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/glm-4-32b-0414",
+      "alias": [
+        "zai-org/glm-4-32b-0414",
+        "zai-org/GLM-4-32B-0414",
+        "GLM-4-32B-0414",
+        "glm-4-32b-0414",
+        "THUDM/GLM-4-32B-0414"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/glm-4-9b-0414",
+      "alias": [
+        "zai-org/glm-4-9b-0414",
+        "zai-org/GLM-4-9B-0414",
+        "GLM-4-9B-0414",
+        "glm-4-9b-0414"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/swe-dev-9b",
+      "alias": [
+        "zai-org/swe-dev-9b",
+        "zai-org/SWE-Dev-9B",
+        "SWE-Dev-9B",
+        "swe-dev-9b"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/swe-dev-32b",
+      "alias": [
+        "zai-org/swe-dev-32b",
+        "zai-org/SWE-Dev-32B",
+        "SWE-Dev-32B",
+        "swe-dev-32b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/swe-dev-7b",
+      "alias": [
+        "zai-org/swe-dev-7b",
+        "zai-org/SWE-Dev-7B",
+        "SWE-Dev-7B",
+        "swe-dev-7b"
+      ],
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/cogview4-6b",
+      "alias": [
+        "zai-org/cogview4-6b",
+        "zai-org/CogView4-6B",
+        "CogView4-6B",
+        "cogview4-6b"
+      ],
+      "model_types": [
+        "text-to-image",
+        "image_generation"
+      ]
+    },
+    {
+      "name": "zai-org/visionreward-image-bf16",
+      "alias": [
+        "zai-org/visionreward-image-bf16",
+        "zai-org/VisionReward-Image-bf16",
+        "VisionReward-Image-bf16",
+        "visionreward-image-bf16"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "zai-org/glm-4-9b-hf",
+      "alias": [
+        "zai-org/glm-4-9b-hf",
+        "glm-4-9b-hf"
+      ],
+      "max_tokens": 8000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/cogagent-9b-20241220",
+      "alias": [
+        "zai-org/cogagent-9b-20241220",
+        "cogagent-9b-20241220"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "zai-org/visionreward-image",
+      "alias": [
+        "zai-org/visionreward-image",
+        "zai-org/VisionReward-Image",
+        "VisionReward-Image",
+        "visionreward-image"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "zai-org/visionreward-video",
+      "alias": [
+        "zai-org/visionreward-video",
+        "zai-org/VisionReward-Video",
+        "VisionReward-Video",
+        "visionreward-video"
+      ],
+      "max_tokens": 2048,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "zai-org/webrl-orm-llama-3.1-8b",
+      "alias": [
+        "zai-org/webrl-orm-llama-3.1-8b",
+        "webrl-orm-llama-3.1-8b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/mathglm-vision-19b",
+      "alias": [
+        "zai-org/mathglm-vision-19b",
+        "zai-org/MathGLM-Vision-19B",
+        "MathGLM-Vision-19B",
+        "mathglm-vision-19b"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/mathglm-vision",
+      "alias": [
+        "zai-org/mathglm-vision",
+        "zai-org/MathGLM-Vision",
+        "MathGLM-Vision",
+        "mathglm-vision"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/glm-edge-4b-chat-gguf",
+      "alias": [
+        "zai-org/glm-edge-4b-chat-gguf",
+        "glm-edge-4b-chat-gguf"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/glm-edge-1.5b-chat-gguf",
+      "alias": [
+        "zai-org/glm-edge-1.5b-chat-gguf",
+        "glm-edge-1.5b-chat-gguf"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/glm-edge-v-2b-gguf",
+      "alias": [
+        "zai-org/glm-edge-v-2b-gguf",
+        "glm-edge-v-2b-gguf"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "zai-org/glm-edge-v-5b-gguf",
+      "alias": [
+        "zai-org/glm-edge-v-5b-gguf",
+        "glm-edge-v-5b-gguf"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "zai-org/glm-edge-v-5b",
+      "alias": [
+        "zai-org/glm-edge-v-5b",
+        "glm-edge-v-5b"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "zai-org/glm-edge-v-2b",
+      "alias": [
+        "zai-org/glm-edge-v-2b",
+        "glm-edge-v-2b"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "zai-org/glm-edge-4b-chat",
+      "alias": [
+        "zai-org/glm-edge-4b-chat",
+        "glm-edge-4b-chat"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/glm-edge-1.5b-chat",
+      "alias": [
+        "zai-org/glm-edge-1.5b-chat",
+        "glm-edge-1.5b-chat"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/webrl-llama-3.1-70b",
+      "alias": [
+        "zai-org/webrl-llama-3.1-70b",
+        "webrl-llama-3.1-70b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/webrl-llama-3.1-8b",
+      "alias": [
+        "zai-org/webrl-llama-3.1-8b",
+        "webrl-llama-3.1-8b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/webrl-glm-4-9b",
+      "alias": [
+        "zai-org/webrl-glm-4-9b",
+        "webrl-glm-4-9b"
+      ],
+      "max_tokens": 8000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/cogvideox1.5-5b-sat",
+      "alias": [
+        "zai-org/cogvideox1.5-5b-sat",
+        "zai-org/CogVideoX1.5-5B-SAT",
+        "CogVideoX1.5-5B-SAT",
+        "cogvideox1.5-5b-sat"
+      ],
+      "model_types": [
+        "image_generation"
+      ]
+    },
+    {
+      "name": "zai-org/cogvideox1.5-5b-i2v",
+      "alias": [
+        "zai-org/cogvideox1.5-5b-i2v",
+        "zai-org/CogVideoX1.5-5B-I2V",
+        "CogVideoX1.5-5B-I2V",
+        "cogvideox1.5-5b-i2v"
+      ],
+      "model_types": [
+        "image_generation"
+      ]
+    },
+    {
+      "name": "zai-org/cogvideox1.5-5b",
+      "alias": [
+        "zai-org/cogvideox1.5-5b",
+        "zai-org/CogVideoX1.5-5B",
+        "CogVideoX1.5-5B",
+        "cogvideox1.5-5b"
+      ],
+      "model_types": [
+        "image_generation"
+      ]
+    },
+    {
+      "name": "zai-org/longreward-glm4-9b-dpo",
+      "alias": [
+        "zai-org/longreward-glm4-9b-dpo",
+        "zai-org/LongReward-glm4-9b-DPO",
+        "LongReward-glm4-9b-DPO",
+        "longreward-glm4-9b-dpo"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/glm-4-voice-9b",
+      "alias": [
+        "zai-org/glm-4-voice-9b",
+        "glm-4-voice-9b"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/glm-4-voice-tokenizer",
+      "alias": [
+        "zai-org/glm-4-voice-tokenizer",
+        "glm-4-voice-tokenizer"
+      ],
+      "model_types": [
+        "tokenizer"
+      ]
+    },
+    {
+      "name": "zai-org/glm-4-voice-decoder",
+      "alias": [
+        "zai-org/glm-4-voice-decoder",
+        "glm-4-voice-decoder"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/glm-4-9b-chat-1m-hf",
+      "alias": [
+        "zai-org/glm-4-9b-chat-1m-hf",
+        "glm-4-9b-chat-1m-hf"
+      ],
+      "max_tokens": 1024000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/glm-4-9b-chat-hf",
+      "alias": [
+        "zai-org/glm-4-9b-chat-hf",
+        "glm-4-9b-chat-hf"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/longreward-llama3.1-8b-dpo",
+      "alias": [
+        "zai-org/longreward-llama3.1-8b-dpo",
+        "zai-org/LongReward-llama3.1-8b-DPO",
+        "LongReward-llama3.1-8b-DPO",
+        "longreward-llama3.1-8b-dpo"
+      ],
+      "max_tokens": 65536,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/cogview3-plus-3b",
+      "alias": [
+        "zai-org/cogview3-plus-3b",
+        "zai-org/CogView3-Plus-3B",
+        "CogView3-Plus-3B",
+        "cogview3-plus-3b"
+      ],
+      "model_types": [
+        "text-to-image",
+        "image_generation"
+      ]
+    },
+    {
+      "name": "zai-org/cogvlm2-llama3-caption",
+      "alias": [
+        "zai-org/cogvlm2-llama3-caption",
+        "cogvlm2-llama3-caption"
+      ],
+      "max_tokens": 2048,
+      "model_types": [
+        "chat",
+        "video_understanding",
+        "vision"
+      ]
+    },
+    {
+      "name": "zai-org/cogvideox-5b-i2v",
+      "alias": [
+        "zai-org/cogvideox-5b-i2v",
+        "zai-org/CogVideoX-5b-I2V",
+        "CogVideoX-5b-I2V",
+        "cogvideox-5b-i2v"
+      ],
+      "model_types": [
+        "image_generation"
+      ]
+    },
+    {
+      "name": "zai-org/longcite-llama3.1-8b",
+      "alias": [
+        "zai-org/longcite-llama3.1-8b",
+        "zai-org/LongCite-llama3.1-8b",
+        "LongCite-llama3.1-8b",
+        "longcite-llama3.1-8b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/longcite-glm4-9b",
+      "alias": [
+        "zai-org/longcite-glm4-9b",
+        "zai-org/LongCite-glm4-9b",
+        "LongCite-glm4-9b",
+        "longcite-glm4-9b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/cogvideox-5b",
+      "alias": [
+        "zai-org/cogvideox-5b",
+        "zai-org/CogVideoX-5b",
+        "CogVideoX-5b",
+        "cogvideox-5b"
+      ],
+      "model_types": [
+        "image_generation"
+      ]
+    },
+    {
+      "name": "zai-org/longwriter-glm4-9b",
+      "alias": [
+        "zai-org/longwriter-glm4-9b",
+        "zai-org/LongWriter-glm4-9b",
+        "LongWriter-glm4-9b",
+        "longwriter-glm4-9b"
+      ],
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/longwriter-llama3.1-8b",
+      "alias": [
+        "zai-org/longwriter-llama3.1-8b",
+        "zai-org/LongWriter-llama3.1-8b",
+        "LongWriter-llama3.1-8b",
+        "longwriter-llama3.1-8b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/cogvideox-2b",
+      "alias": [
+        "zai-org/cogvideox-2b",
+        "zai-org/CogVideoX-2b",
+        "CogVideoX-2b",
+        "cogvideox-2b"
+      ],
+      "model_types": [
+        "image_generation"
+      ]
+    },
+    {
+      "name": "zai-org/apar-13b",
+      "alias": [
+        "zai-org/apar-13b",
+        "apar-13b"
+      ],
+      "max_tokens": 2048,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/apar-7b",
+      "alias": [
+        "zai-org/apar-7b",
+        "apar-7b"
+      ],
+      "max_tokens": 2048,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/codegeex4-all-9b-gguf",
+      "alias": [
+        "zai-org/codegeex4-all-9b-gguf",
+        "zai-org/codegeex4-all-9b-GGUF",
+        "codegeex4-all-9b-GGUF",
+        "codegeex4-all-9b-gguf"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/codegeex4-all-9b",
+      "alias": [
+        "zai-org/codegeex4-all-9b",
+        "codegeex4-all-9b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/cogvlm2-video-llama3-base",
+      "alias": [
+        "zai-org/cogvlm2-video-llama3-base",
+        "cogvlm2-video-llama3-base"
+      ],
+      "max_tokens": 2048,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "zai-org/cogvlm2-video-llama3-chat",
+      "alias": [
+        "zai-org/cogvlm2-video-llama3-chat",
+        "cogvlm2-video-llama3-chat"
+      ],
+      "max_tokens": 2048,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "zai-org/msagpt",
+      "alias": [
+        "zai-org/msagpt",
+        "zai-org/MSAGPT",
+        "MSAGPT",
+        "msagpt"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/cogvlm2-llama3-chat-19b-tgi",
+      "alias": [
+        "zai-org/cogvlm2-llama3-chat-19b-tgi",
+        "zai-org/cogvlm2-llama3-chat-19B-tgi",
+        "cogvlm2-llama3-chat-19B-tgi",
+        "cogvlm2-llama3-chat-19b-tgi"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "zai-org/cogvlm2-llama3-chinese-chat-19b-tgi",
+      "alias": [
+        "zai-org/cogvlm2-llama3-chinese-chat-19b-tgi",
+        "zai-org/cogvlm2-llama3-chinese-chat-19B-tgi",
+        "cogvlm2-llama3-chinese-chat-19B-tgi",
+        "cogvlm2-llama3-chinese-chat-19b-tgi"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "zai-org/glm-4-9b-chat-1m",
+      "alias": [
+        "zai-org/glm-4-9b-chat-1m",
+        "glm-4-9b-chat-1m"
+      ],
+      "max_tokens": 1024000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/glm-4-9b-chat",
+      "alias": [
+        "zai-org/glm-4-9b-chat",
+        "glm-4-9b-chat"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/glm-4-9b",
+      "alias": [
+        "zai-org/glm-4-9b",
+        "glm-4-9b"
+      ],
+      "max_tokens": 8000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/glm-4v-9b",
+      "alias": [
+        "zai-org/glm-4v-9b",
+        "glm-4v-9b"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/cogvlm2-llama3-chinese-chat-19b-int4",
+      "alias": [
+        "zai-org/cogvlm2-llama3-chinese-chat-19b-int4",
+        "zai-org/cogvlm2-llama3-chinese-chat-19B-int4",
+        "cogvlm2-llama3-chinese-chat-19B-int4",
+        "cogvlm2-llama3-chinese-chat-19b-int4"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "zai-org/cogvlm2-llama3-chat-19b-int4",
+      "alias": [
+        "zai-org/cogvlm2-llama3-chat-19b-int4",
+        "zai-org/cogvlm2-llama3-chat-19B-int4",
+        "cogvlm2-llama3-chat-19B-int4",
+        "cogvlm2-llama3-chat-19b-int4"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "zai-org/cogvlm2-llama3-chinese-chat-19b",
+      "alias": [
+        "zai-org/cogvlm2-llama3-chinese-chat-19b",
+        "zai-org/cogvlm2-llama3-chinese-chat-19B",
+        "cogvlm2-llama3-chinese-chat-19B",
+        "cogvlm2-llama3-chinese-chat-19b"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "zai-org/cogvlm2-llama3-chat-19b",
+      "alias": [
+        "zai-org/cogvlm2-llama3-chat-19b",
+        "zai-org/cogvlm2-llama3-chat-19B",
+        "cogvlm2-llama3-chat-19B",
+        "cogvlm2-llama3-chat-19b"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "zai-org/chatglm3-6b-128k",
+      "alias": [
+        "zai-org/chatglm3-6b-128k",
+        "chatglm3-6b-128k"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/longalign-13b-64k-base",
+      "alias": [
+        "zai-org/longalign-13b-64k-base",
+        "zai-org/LongAlign-13B-64k-base",
+        "LongAlign-13B-64k-base",
+        "longalign-13b-64k-base"
+      ],
+      "max_tokens": 65536,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/longalign-7b-64k-base",
+      "alias": [
+        "zai-org/longalign-7b-64k-base",
+        "zai-org/LongAlign-7B-64k-base",
+        "LongAlign-7B-64k-base",
+        "longalign-7b-64k-base"
+      ],
+      "max_tokens": 65536,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/longalign-6b-64k-base",
+      "alias": [
+        "zai-org/longalign-6b-64k-base",
+        "zai-org/LongAlign-6B-64k-base",
+        "LongAlign-6B-64k-base",
+        "longalign-6b-64k-base"
+      ],
+      "max_tokens": 65536,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/longalign-13b-64k",
+      "alias": [
+        "zai-org/longalign-13b-64k",
+        "zai-org/LongAlign-13B-64k",
+        "LongAlign-13B-64k",
+        "longalign-13b-64k"
+      ],
+      "max_tokens": 65536,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/longalign-6b-64k",
+      "alias": [
+        "zai-org/longalign-6b-64k",
+        "zai-org/LongAlign-6B-64k",
+        "LongAlign-6B-64k",
+        "longalign-6b-64k"
+      ],
+      "max_tokens": 65536,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/longalign-7b-64k",
+      "alias": [
+        "zai-org/longalign-7b-64k",
+        "zai-org/LongAlign-7B-64k",
+        "LongAlign-7B-64k",
+        "longalign-7b-64k"
+      ],
+      "max_tokens": 65536,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/cogagent-vqa-hf",
+      "alias": [
+        "zai-org/cogagent-vqa-hf",
+        "cogagent-vqa-hf"
+      ],
+      "max_tokens": 2048,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/cogagent",
+      "alias": [
+        "zai-org/cogagent",
+        "zai-org/CogAgent",
+        "CogAgent",
+        "cogagent"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/cogagent-chat-hf",
+      "alias": [
+        "zai-org/cogagent-chat-hf",
+        "cogagent-chat-hf"
+      ],
+      "max_tokens": 2048,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/bpo",
+      "alias": [
+        "zai-org/bpo",
+        "zai-org/BPO",
+        "BPO",
+        "bpo"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/cogvlm-grounding-generalist-hf",
+      "alias": [
+        "zai-org/cogvlm-grounding-generalist-hf",
+        "cogvlm-grounding-generalist-hf"
+      ],
+      "max_tokens": 2048,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/cogvlm-grounding-base-hf",
+      "alias": [
+        "zai-org/cogvlm-grounding-base-hf",
+        "cogvlm-grounding-base-hf"
+      ],
+      "max_tokens": 2048,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/cogvlm-base-490-hf",
+      "alias": [
+        "zai-org/cogvlm-base-490-hf",
+        "cogvlm-base-490-hf"
+      ],
+      "max_tokens": 2048,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/cogvlm-base-224-hf",
+      "alias": [
+        "zai-org/cogvlm-base-224-hf",
+        "cogvlm-base-224-hf"
+      ],
+      "max_tokens": 2048,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/cogvlm-chat-hf",
+      "alias": [
+        "zai-org/cogvlm-chat-hf",
+        "cogvlm-chat-hf"
+      ],
+      "max_tokens": 2048,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/chatglm3-6b-32k",
+      "alias": [
+        "zai-org/chatglm3-6b-32k",
+        "chatglm3-6b-32k"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/chatglm3-6b-base",
+      "alias": [
+        "zai-org/chatglm3-6b-base",
+        "chatglm3-6b-base"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/chatglm3-6b",
+      "alias": [
+        "zai-org/chatglm3-6b",
+        "chatglm3-6b"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/agentlm-7b",
+      "alias": [
+        "zai-org/agentlm-7b",
+        "agentlm-7b"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/cogvlm",
+      "alias": [
+        "zai-org/cogvlm",
+        "zai-org/CogVLM",
+        "CogVLM",
+        "cogvlm"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/agentlm-70b",
+      "alias": [
+        "zai-org/agentlm-70b",
+        "agentlm-70b"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/agentlm-13b",
+      "alias": [
+        "zai-org/agentlm-13b",
+        "agentlm-13b"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/mathglm",
+      "alias": [
+        "zai-org/mathglm",
+        "zai-org/MathGLM",
+        "MathGLM",
+        "mathglm"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/chatglm2-6b-32k-int4",
+      "alias": [
+        "zai-org/chatglm2-6b-32k-int4",
+        "chatglm2-6b-32k-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/chatglm2-6b-32k",
+      "alias": [
+        "zai-org/chatglm2-6b-32k",
+        "chatglm2-6b-32k"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/codegeex2-6b-int4",
+      "alias": [
+        "zai-org/codegeex2-6b-int4",
+        "codegeex2-6b-int4"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/codegeex2-6b",
+      "alias": [
+        "zai-org/codegeex2-6b",
+        "codegeex2-6b"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/chatglm2-6b-int4",
+      "alias": [
+        "zai-org/chatglm2-6b-int4",
+        "chatglm2-6b-int4"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/chatglm2-6b",
+      "alias": [
+        "zai-org/chatglm2-6b",
+        "chatglm2-6b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/webglm-2b",
+      "alias": [
+        "zai-org/webglm-2b",
+        "zai-org/WebGLM-2B",
+        "WebGLM-2B",
+        "webglm-2b"
+      ],
+      "max_tokens": 1024,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/webglm",
+      "alias": [
+        "zai-org/webglm",
+        "zai-org/WebGLM",
+        "WebGLM",
+        "webglm"
+      ],
+      "max_tokens": 1024,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/visualglm-6b",
+      "alias": [
+        "zai-org/visualglm-6b",
+        "visualglm-6b"
+      ],
+      "max_tokens": 2048,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "zai-org/chatglm-6b-int8",
+      "alias": [
+        "zai-org/chatglm-6b-int8",
+        "chatglm-6b-int8"
+      ],
+      "max_tokens": 2048,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/imagereward",
+      "alias": [
+        "zai-org/imagereward",
+        "zai-org/ImageReward",
+        "ImageReward",
+        "imagereward"
+      ],
+      "model_types": [
+        "text-to-image",
+        "image_generation"
+      ]
+    },
+    {
+      "name": "zai-org/chatglm-6b-int4-qe",
+      "alias": [
+        "zai-org/chatglm-6b-int4-qe",
+        "chatglm-6b-int4-qe"
+      ],
+      "max_tokens": 2048,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/chatglm-6b-int4",
+      "alias": [
+        "zai-org/chatglm-6b-int4",
+        "chatglm-6b-int4"
+      ],
+      "max_tokens": 2048,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/chatglm-6b",
+      "alias": [
+        "zai-org/chatglm-6b",
+        "chatglm-6b"
+      ],
+      "max_tokens": 2048,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/glm-roberta-large",
+      "alias": [
+        "zai-org/glm-roberta-large",
+        "glm-roberta-large"
+      ],
+      "max_tokens": 512,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/glm-large-chinese",
+      "alias": [
+        "zai-org/glm-large-chinese",
+        "glm-large-chinese"
+      ],
+      "max_tokens": 1024,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/glm-2b",
+      "alias": [
+        "zai-org/glm-2b",
+        "glm-2b"
+      ],
+      "max_tokens": 1024,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/glm-10b",
+      "alias": [
+        "zai-org/glm-10b",
+        "glm-10b"
+      ],
+      "max_tokens": 1024,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/glm-10b-chinese",
+      "alias": [
+        "zai-org/glm-10b-chinese",
+        "glm-10b-chinese"
+      ],
+      "max_tokens": 1024,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "zai-org/cogvideo",
+      "alias": [
+        "zai-org/cogvideo",
+        "zai-org/CogVideo",
+        "CogVideo",
+        "cogvideo"
+      ],
+      "model_types": [
+        "image_generation"
+      ]
+    },
+    {
+      "name": "zai-org/cogview2",
+      "alias": [
+        "zai-org/cogview2",
+        "zai-org/CogView2",
+        "CogView2",
+        "cogview2"
+      ],
+      "model_types": [
+        "image_generation"
+      ]
+    },
+    {
       "name": "deepseek-v4-flash",
       "alias": [
         "deepseek-v4-flash",
@@ -863,17 +2868,6 @@
       "max_tokens": 1024000,
       "model_types": [
         "chat"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      }
-    },
-    {
-      "name": "glm-4.5v",
-      "max_tokens": 64000,
-      "model_types": [
-        "vision"
       ],
       "thinking": {
         "default_value": true,
