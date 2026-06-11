@@ -4,7 +4,8 @@
     "default": "https://futurmix.ai"
   },
   "url_suffix": {
-    "chat": "v1/chat/completions"
+    "chat": "v1/chat/completions",
+    "models": "v1/models"
   },
   "class": "futurmix",
   "models": [

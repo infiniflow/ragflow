@@ -5,7 +5,8 @@
   },
   "url_suffix": {
     "chat": "chat/completions",
-    "embedding": "embeddings"
+    "embedding": "embeddings",
+    "models": "models"
   },
   "class": "baichuan",
   "models": [

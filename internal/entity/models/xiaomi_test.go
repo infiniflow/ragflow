@@ -357,3 +357,43 @@ func TestXiaomiUnsupportedMethods(t *testing.T) {
 		t.Errorf("OCRFile: %v", err)
 	}
 }
+
+func TestXiaomiListModels(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("method=%s, want GET", r.Method)
+		}
+		if r.URL.Path != "/models" {
+			t.Errorf("path=%s, want /models", r.URL.Path)
+		}
+		// Xiaomi authenticates via the api-key header, not Bearer.
+		if got := r.Header.Get("api-key"); got != "test-key" {
+			t.Errorf("api-key=%q, want test-key", got)
+		}
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Errorf("Authorization=%q, want empty", got)
+		}
+		_, _ = io.WriteString(w, `{"object":"list","data":[{"id":"mimo-v2.5-pro"},{"id":"mimo-v2.5-flash"}]}`)
+	}))
+	defer srv.Close()
+
+	apiKey := "test-key"
+	m := NewXiaomiModel(map[string]string{"default": srv.URL}, URLSuffix{Models: "models"})
+	models, err := m.ListModels(&APIConfig{ApiKey: &apiKey})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(models) != 2 {
+		t.Fatalf("len(models)=%d, want 2", len(models))
+	}
+	if models[0].Name != "mimo-v2.5-pro" || models[1].Name != "mimo-v2.5-flash" {
+		t.Fatalf("names=%v, want [mimo-v2.5-pro mimo-v2.5-flash]", []string{models[0].Name, models[1].Name})
+	}
+}
+
+func TestXiaomiListModelsRequiresAPIKey(t *testing.T) {
+	m := newXiaomiForTest("http://unused")
+	if _, err := m.ListModels(&APIConfig{}); err == nil {
+		t.Fatal("ListModels: expected error for missing api key, got nil")
+	}
+}
