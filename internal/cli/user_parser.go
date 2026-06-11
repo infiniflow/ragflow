@@ -4571,6 +4571,7 @@ func (p *Parser) parseUserListIngestionTasks() (*Command, error) {
 	if p.curToken.Type != TokenTasks {
 		return nil, fmt.Errorf("expected TASKS")
 	}
+	p.nextToken() // consume TASKS
 
 	cmd := NewCommand("user_list_ingestion_tasks")
 

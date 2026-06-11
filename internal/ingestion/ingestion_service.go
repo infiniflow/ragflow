@@ -539,7 +539,7 @@ func (e *Ingestor) executeTask(taskCtx *TaskContext) {
 		case <-ctx.Done():
 			// Task canceled
 			common.Info(fmt.Sprintf("Task %s stopped", task.ID))
-			break
+			return
 		case <-time.After(5000 * time.Millisecond):
 			common.Info(fmt.Sprintf("Task %s is running step %d", task.ID, i))
 			checkpointMap["current_step"] = i + 1
@@ -598,7 +598,7 @@ func (e *Ingestor) executeTasklet(taskCtx *TaskContext) {
 		case <-ctx.Done():
 			// Task canceled
 			common.Info(fmt.Sprintf("Tasklet %s stopped", tasklet.ID))
-			break
+			return
 		case <-time.After(3000 * time.Millisecond):
 			common.Info(fmt.Sprintf("Tasklet %s is running step %d", tasklet.ID, i))
 			checkpointMap["current_step"] = i + 1

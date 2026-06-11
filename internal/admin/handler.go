@@ -1255,11 +1255,15 @@ func (h *Handler) ListMessagesFromQueue(c *gin.Context) {
 	messages, err := msgQueueEngine.ListMessages("ingestion", false)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
+		return
 	}
 	var result []map[string]string
 	for _, message := range messages {
 		var taskMessage common.TaskMessage
-		json.Unmarshal([]byte(message["message"]), &taskMessage)
+		err = json.Unmarshal([]byte(message["message"]), &taskMessage)
+		if err != nil {
+			return
+		}
 		result = append(result, map[string]string{
 			"subject": message["subject"],
 			"id":      taskMessage.TaskID,
@@ -1290,12 +1294,14 @@ func (h *Handler) PublishMessageToQueue(c *gin.Context) {
 	taskMessageStr, err := json.Marshal(taskMessage)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
+		return
 	}
 
 	msgQueueEngine := engine.GetMessageQueueEngine()
 	err = msgQueueEngine.PublishTask("tasks.RAGFLOW", taskMessageStr)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
+		return
 	}
 
 	success(c, nil, "Publish message successfully")
@@ -1317,6 +1323,7 @@ func (h *Handler) PullMessageFromQueue(c *gin.Context) {
 	err := msgQueueEngine.InitConsumer("tasks.RAGFLOW")
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
+		return
 	}
 	messages, err := msgQueueEngine.GetMessages(req.MessageCount)
 	var result []map[string]string
@@ -1360,6 +1367,7 @@ func (h *Handler) ShowMessageQueue(c *gin.Context) {
 	result, err := msgQueueEngine.ShowMessageQueue()
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
+		return
 	}
 
 	success(c, result, "show message queue successfully")
@@ -1379,6 +1387,7 @@ func (h *Handler) RemoveIngestionTasks(c *gin.Context) {
 	tasks, err := h.service.RemoveIngestionTasks(req.Tasks)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
+		return
 	}
 
 	success(c, tasks, "Remove tasks successfully")
@@ -1398,6 +1407,7 @@ func (h *Handler) StopIngestionTasks(c *gin.Context) {
 	tasks, err := h.service.StopIngestionTasks(req.Tasks)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
+		return
 	}
 
 	var result []map[string]string
