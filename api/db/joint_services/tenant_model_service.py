@@ -222,7 +222,7 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
             "llm_name": model_obj.model_name,
             "api_base": extra_fields.get("base_url", ""),
             "model_type": model_obj.model_type,
-            "is_tools": extra_fields.get("is_tools", is_tool),
+            "is_tools": model_extra.get("is_tools", is_tool),
             "max_tokens": model_extra.get("max_tokens", 8192),
         }
         if api_key_payload is not None:
