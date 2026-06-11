@@ -995,6 +995,7 @@ type boxWebOAuthState struct {
 	AuthURL      string `json:"auth_url"`
 	ClientID     string `json:"client_id"`
 	ClientSecret string `json:"client_secret"`
+	RedirectURI  string `json:"redirect_uri,omitempty"`
 	CreatedAt    int64  `json:"created_at"`
 }
 
@@ -1076,6 +1077,7 @@ func (s *ConnectorService) StartBoxWebOAuth(userID string, req *StartBoxWebOAuth
 		AuthURL:      authURL,
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
+		RedirectURI:  redirectURI,
 		CreatedAt:    time.Now().Unix(),
 	}
 	if ok := redisClient.SetObj(webStateCacheKey(flowID, "box"), state, webFlowTTL); !ok {
@@ -1140,7 +1142,7 @@ func (s *ConnectorService) BoxWebOAuthCallback(stateID, oauthError, errorDescrip
 		return renderGoogleWebOAuthPopup(stateID, false, "Missing authorization code from Box.", "box")
 	}
 
-	accessToken, refreshToken, err := exchangeBoxOAuthCode(state.ClientID, state.ClientSecret, code)
+	accessToken, refreshToken, err := exchangeBoxOAuthCode(state.ClientID, state.ClientSecret, state.RedirectURI, code)
 	if err != nil {
 		redisClient.Delete(stateKey)
 		return renderGoogleWebOAuthPopup(stateID, false, "Failed to exchange tokens with Box. Please retry.", "box")
@@ -1191,14 +1193,13 @@ func (s *ConnectorService) PollBoxWebOAuthResult(userID string, req *PollBoxWebO
 
 // exchangeBoxOAuthCode exchanges an authorization code for Box access + refresh tokens.
 // Box token endpoint: POST https://api.box.com/oauth2/token
-func exchangeBoxOAuthCode(clientID, clientSecret, code string) (accessToken, refreshToken string, err error) {
+func exchangeBoxOAuthCode(clientID, clientSecret, redirectURI, code string) (accessToken, refreshToken string, err error) {
 	form := url.Values{}
 	form.Set("grant_type", "authorization_code")
 	form.Set("code", code)
 	form.Set("client_id", clientID)
 	form.Set("client_secret", clientSecret)
 
-	redirectURI := defaultBoxWebOAuthRedirectURI()
 	if redirectURI != "" {
 		form.Set("redirect_uri", redirectURI)
 	}
@@ -1244,7 +1245,8 @@ func exchangeBoxOAuthCode(clientID, clientSecret, code string) (accessToken, ref
 }
 
 // defaultBoxWebOAuthRedirectURI returns the configured Box OAuth redirect URI
-// from the BOX_WEB_OAUTH_REDIRECT_URI environment variable, or "" when unset.
+// from the BOX_WEB_OAUTH_REDIRECT_URI environment variable, falling back to
+// the same default as Python: http://localhost:9380/v1/connector/box/oauth/web/callback.
 func defaultBoxWebOAuthRedirectURI() string {
-	return getenvDefault("BOX_WEB_OAUTH_REDIRECT_URI", "")
+	return getenvDefault("BOX_WEB_OAUTH_REDIRECT_URI", "http://localhost:9380/v1/connector/box/oauth/web/callback")
 }
