@@ -107,7 +107,11 @@ export const useShowMindMapDrawer = (
   } = useSearchFetchMindMap();
 
   const handleShowModal = useCallback(() => {
-    const searchParams = { question: trim(question), kb_ids: kbIds, searchId };
+    const searchParams = {
+      question: trim(question),
+      kb_ids: kbIds,
+      search_id: searchId,
+    };
     if (
       !isEmpty(searchParams.question) &&
       !isEqual(searchParams, ref.current)
