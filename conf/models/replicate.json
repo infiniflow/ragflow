@@ -10,6 +10,20 @@
   "class": "replicate",
   "models": [
     {
+      "name": "meta/llama-4-maverick-instruct",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "meta/llama-4-scout-instruct",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
       "name": "meta/meta-llama-3-70b-instruct",
       "max_tokens": 8192,
       "model_types": [
@@ -31,10 +45,10 @@
       ]
     },
     {
-      "name": "yxzwayne/bge-reranker-v2-m3:7f7c6e9d18336e2cbf07d88e9362d881d2fe4d6a9854ec1260f115cabc106a8c",
-      "max_tokens": 8192,
+      "name": "ibm-granite/granite-embedding-278m-multilingual:1f76d42a05f120e12272746d5a2d86b525c13420773f795a4cbef9117d8685f1",
+      "max_tokens": 512,
       "model_types": [
-        "rerank"
+        "embedding"
       ]
     }
   ]

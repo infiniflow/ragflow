@@ -497,30 +497,16 @@ func (t *TokenHubModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, e
 	}
 
 	// Parse response
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
+	// Parse response
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	data, ok := result["data"].([]interface{})
-	if !ok {
+	if modelList.Models == nil {
 		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	models := make([]ListModelResponse, 0, len(data))
-	for _, model := range data {
-		modelMap, ok := model.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		modelName, ok := modelMap["id"].(string)
-		if !ok {
-			continue
-		}
-		models = append(models, ListModelResponse{Name: modelName})
-	}
-
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 func (t *TokenHubModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

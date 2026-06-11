@@ -342,8 +342,8 @@ type longCatModelInfo struct {
 }
 
 type longCatListModelsResponse struct {
-	Data  []longCatModelInfo `json:"data"`
-	Error interface{}        `json:"error"`
+	Data  []DSModel   `json:"data"`
+	Error interface{} `json:"error"`
 }
 
 const longCatMaxListModelsResponseBytes = 1 << 20
@@ -398,13 +398,7 @@ func (l *LongCatModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, er
 		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	models := make([]ListModelResponse, 0, len(result.Data))
-	for _, model := range result.Data {
-		if model.ID != "" {
-			models = append(models, ListModelResponse{Name: model.ID})
-		}
-	}
-	return models, nil
+	return ParseListModel(ModelList{Models: result.Data}), nil
 }
 
 func (l *LongCatModel) CheckConnection(apiConfig *APIConfig) error {
