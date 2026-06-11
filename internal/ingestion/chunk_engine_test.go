@@ -32,14 +32,14 @@ var mediaAwareDSL = `{
   
   "pipeline": [
     {
-      "stage": "preprocess",
+      "operator": "preprocess",
       "normalize_newlines": true,
       "strip_whitespace": true,
       "remove_empty_lines": true
     },
     
     {
-      "stage": "split",
+      "operator": "split",
       "strategy": "sentence",
       "params": {
         "boundaries": [". ", "! ", "? ", "\n"],
@@ -48,7 +48,7 @@ var mediaAwareDSL = `{
     },
     
     {
-      "stage": "postprocess",
+      "operator": "postprocess",
       "merge": {
         "target_size": 500,
         "strategy": "greedy"
@@ -102,9 +102,9 @@ var mediaAwareDSL = `{
 
 var minimalDSL = `{
   "pipeline": [
-    {"stage": "preprocess", "normalize_newlines": true},
-    {"stage": "split", "strategy": "sentence", "params": {"boundaries": ["\n"], "keep_separators": false}},
-    {"stage": "postprocess", "filter": {"min_length": 1}}
+    {"operator": "preprocess", "normalize_newlines": true},
+    {"operator": "split", "strategy": "sentence", "params": {"boundaries": ["\n"], "keep_separators": false}},
+    {"operator": "postprocess", "filter": {"min_length": 1}}
   ]
 }`
 
@@ -180,15 +180,15 @@ func TestPlan_InvalidJSON(t *testing.T) {
 	}
 }
 
-func TestPlan_UnknownStage(t *testing.T) {
+func TestPlan_UnknownOperator(t *testing.T) {
 	engine := NewChunkEngine()
-	dsl := `{"pipeline": [{"stage": "unknown_stage"}]}`
+	dsl := `{"pipeline": [{"operator": "unknown_operator"}]}`
 	plan, err := engine.Plan(&dsl)
 	if err == nil {
-		t.Fatal("expected error for unknown stage, got nil")
+		t.Fatal("expected error for unknown operator, got nil")
 	}
-	if !strings.Contains(err.Error(), "unknown_stage") {
-		t.Errorf("error should mention unknown stage, got: %v", err)
+	if !strings.Contains(err.Error(), "unknown_operator") {
+		t.Errorf("error should mention unknown operator, got: %v", err)
 	}
 	if plan != nil {
 		t.Fatal("expected nil plan on error")

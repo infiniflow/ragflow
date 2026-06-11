@@ -35,7 +35,10 @@ import (
 
 // ChunkPlan holds the ordered pipeline operators.
 type ChunkPlan struct {
-	Operators []chunk.Operator
+	Operators   []chunk.Operator
+	Version     string
+	Description string
+	Name        string
 }
 
 // ChunkEngine parses DSL JSON into a plan and executes it.
@@ -46,55 +49,48 @@ func NewChunkEngine() *ChunkEngine {
 }
 
 // ---------------------------------------------------------------------------
-// DSL JSON model
-// ---------------------------------------------------------------------------
-
-type dslPipeline struct {
-	Version     string     `json:"version"`
-	Name        string     `json:"name"`
-	Description string     `json:"description"`
-	Pipeline    []dslStage `json:"pipeline"`
-}
-
-type dslStage struct {
-	Stage string                 `json:"stage"`
-	Body  map[string]interface{} `json:"-"` // everything else
-}
-
-// UnmarshalJSON custom unmarshaler for dslStage — captures all keys except "stage"
-// into Body.
-func (s *dslStage) UnmarshalJSON(data []byte) error {
-	raw := make(map[string]interface{})
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-	if stage, ok := raw["stage"].(string); ok {
-		s.Stage = stage
-	}
-	delete(raw, "stage")
-	s.Body = raw
-	return nil
-}
-
-// ---------------------------------------------------------------------------
 // Plan  — parse DSL JSON into an ordered operator list
 // ---------------------------------------------------------------------------
 
 func (e *ChunkEngine) Plan(dsl *string) (*ChunkPlan, error) {
-	var pipeline dslPipeline
-	if err := json.Unmarshal([]byte(*dsl), &pipeline); err != nil {
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(*dsl), &parsed); err != nil {
 		return nil, fmt.Errorf("parse DSL: %w", err)
 	}
 
 	plan := &ChunkPlan{}
 
-	for _, stage := range pipeline.Pipeline {
-		op, err := buildOperator(stage.Stage)
-		if err != nil {
-			return nil, fmt.Errorf("build operator %q: %w", stage.Stage, err)
+	pipelineRaw, ok := parsed["pipeline"].([]interface{})
+	if !ok || len(pipelineRaw) == 0 {
+		return plan, nil
+	}
+
+	plan.Name, ok = parsed["name"].(string)
+	if !ok {
+		plan.Name = "No name"
+	}
+	plan.Description, ok = parsed["description"].(string)
+	if !ok {
+		plan.Description = "No description"
+	}
+	plan.Version, ok = parsed["version"].(string)
+	if !ok {
+		plan.Version = "1.0"
+	}
+
+	for i, operatorRaw := range pipelineRaw {
+		var operator map[string]interface{}
+		operator, ok = operatorRaw.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("pipeline[%d]: expected object", i)
 		}
-		if err := op.Prepare(stage.Body); err != nil {
-			return nil, fmt.Errorf("prepare operator %q: %w", stage.Stage, err)
+
+		operatorName, _ := operator["operator"].(string)
+		delete(operator, "operator")
+
+		op, err := buildOperator(operatorName)
+		if err != nil {
+			return nil, fmt.Errorf("build operator %q: %w", operatorName, err)
 		}
 		plan.Operators = append(plan.Operators, op)
 	}
@@ -102,8 +98,8 @@ func (e *ChunkEngine) Plan(dsl *string) (*ChunkPlan, error) {
 	return plan, nil
 }
 
-func buildOperator(stage string) (chunk.Operator, error) {
-	switch stage {
+func buildOperator(operator string) (chunk.Operator, error) {
+	switch operator {
 	case "preprocess":
 		return chunk.NewPreprocessOperator(), nil
 	case "split":
@@ -111,7 +107,7 @@ func buildOperator(stage string) (chunk.Operator, error) {
 	case "postprocess":
 		return chunk.NewPostprocessOperator(), nil
 	default:
-		return nil, fmt.Errorf("unknown stage: %q", stage)
+		return nil, fmt.Errorf("unknown stage: %q", operator)
 	}
 }
 
