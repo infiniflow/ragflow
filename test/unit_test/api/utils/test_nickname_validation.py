@@ -44,6 +44,8 @@ def test_validate_nickname_accepts_valid_values(nickname):
         ("", "Nickname cannot be empty."),
         ("   ", "Nickname cannot be empty."),
         ("carh!@#$%^&*()_+WFAGD", "Nickname contains invalid characters."),
+        ("John\tDoe", "Nickname contains invalid characters."),
+        ("John\nDoe", "Nickname contains invalid characters."),
         ("a" * (NICKNAME_MAX_LENGTH + 1), f"Nickname must be at most {NICKNAME_MAX_LENGTH} characters."),
     ],
 )

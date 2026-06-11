@@ -13,12 +13,19 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import re
 
 from api.constants import NICKNAME_MAX_LENGTH
 from common.constants import RetCode
 
-_NICKNAME_PATTERN = re.compile(r"^[\w\s.'-]+$", re.UNICODE)
+# Match frontend NICKNAME_PATTERN: letters, numbers, space, and . _ ' -
+_NICKNAME_PATTERN = re.compile(r"^[\w ._'-]+$", re.UNICODE)
+
+
+def _reject_nickname(message: str) -> tuple[str, int]:
+    logging.warning("Nickname validation failed: %s", message)
+    return message, RetCode.ARGUMENT_ERROR
 
 
 def validate_nickname(nickname: str | None) -> tuple[str | None, int | None]:
@@ -30,15 +37,15 @@ def validate_nickname(nickname: str | None) -> tuple[str | None, int | None]:
         or (None, None) if validation passes.
     """
     if not isinstance(nickname, (str, type(None))):
-        return "Nickname must be a string.", RetCode.ARGUMENT_ERROR
+        return _reject_nickname("Nickname must be a string.")
     if nickname is None:
-        return "Nickname is required.", RetCode.ARGUMENT_ERROR
+        return _reject_nickname("Nickname is required.")
 
     nickname = nickname.strip()
     if not nickname:
-        return "Nickname cannot be empty.", RetCode.ARGUMENT_ERROR
+        return _reject_nickname("Nickname cannot be empty.")
     if len(nickname) > NICKNAME_MAX_LENGTH:
-        return f"Nickname must be at most {NICKNAME_MAX_LENGTH} characters.", RetCode.ARGUMENT_ERROR
+        return _reject_nickname(f"Nickname must be at most {NICKNAME_MAX_LENGTH} characters.")
     if not _NICKNAME_PATTERN.fullmatch(nickname):
-        return "Nickname contains invalid characters.", RetCode.ARGUMENT_ERROR
+        return _reject_nickname("Nickname contains invalid characters.")
     return None, None
