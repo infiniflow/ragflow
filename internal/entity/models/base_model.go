@@ -138,12 +138,6 @@ func ParseListModel(modelList ModelList) []ListModelResponse {
 }
 
 // NewDriverHTTPClient returns an *http.Client with the standard connection-pool
-// settings used by every model driver. It clones http.DefaultTransport when
-// possible so proxy settings (HTTP_PROXY / HTTPS_PROXY / NO_PROXY) and any
-// process-wide transport customisation are inherited automatically.
-//
-// Drivers should call this once in their constructor and store the result in
-// baseModel.httpClient; do not create a bare &http.Client{} inline.
 func NewDriverHTTPClient() *http.Client {
 	var t *http.Transport
 	if dt, ok := http.DefaultTransport.(*http.Transport); ok {
@@ -159,12 +153,7 @@ func NewDriverHTTPClient() *http.Client {
 	return &http.Client{Transport: t}
 }
 
-// PostJSONRequest marshals body to JSON, creates a POST request to url using
-// client, and sets the Content-Type header to application/json.  If auth is
-// non-empty it is set as the Authorization header verbatim (include the scheme,
-// e.g. "Bearer sk-...").
-//
-// The caller is responsible for closing resp.Body.
+// PostJSONRequest marshals body to JSON, creates a POST request to url
 func PostJSONRequest(ctx context.Context, client *http.Client, url, auth string, body map[string]interface{}) (*http.Response, error) {
 	data, err := json.Marshal(body)
 	if err != nil {
@@ -182,9 +171,6 @@ func PostJSONRequest(ctx context.Context, client *http.Client, url, auth string,
 }
 
 // ReadErrorBody reads all bytes from r and returns them as a string suitable
-// for embedding in an error message. It never returns an error of its own;
-// if reading fails it returns an empty string so the caller's error path stays
-// simple.
 func ReadErrorBody(r io.Reader) string {
 	b, _ := io.ReadAll(r)
 	return string(b)
