@@ -643,7 +643,9 @@ def list_instance_models(tenant_id: str, provider_name: str, instance_name: str,
     for llm in llms:
         models.append({
             "name": llm["llm_name"],
-            "model_type": _factory_model_types(llm) + model_info_map.get(llm["llm_name"], {}).get("model_type", []),
+            "model_type": list(
+                dict.fromkeys(_factory_model_types(llm) + model_info_map.get(llm["llm_name"], {}).get("model_type", []))
+            ),
             "max_tokens": llm.get("max_tokens"),
             "status": model_info_map.get(llm["llm_name"], {}).get("status", "active"),
         })
