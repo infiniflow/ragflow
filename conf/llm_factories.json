@@ -7307,6 +7307,15 @@
                     "model_type": "embedding"
                 }
             ]
+        },
+        {
+            "name": "Starveri",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": [],
+            "rank": "950",
+            "url": "https://api.starveri.net/v1"
         }
     ]
 }

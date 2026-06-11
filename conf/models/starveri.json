@@ -1,0 +1,12 @@
+{
+  "name": "Starveri",
+  "url": {
+    "default": "https://api.starveri.net/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models"
+  },
+  "class": "starveri",
+  "models": []
+}
