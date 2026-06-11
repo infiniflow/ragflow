@@ -14,6 +14,7 @@ export default {
       yes: 'Yes',
       no: 'No',
       total: 'Total',
+      top: 'Top {{top}}',
       rename: 'Rename',
       name: 'Name',
       save: 'Save',
@@ -914,6 +915,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       theDocumentBeingParsedCannotBeDeleted:
         'The document being parsed cannot be deleted',
       lastWeek: 'from last week',
+      top: 'Top',
     },
     chunk: {
       type: 'Type',

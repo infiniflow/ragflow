@@ -104,6 +104,11 @@ type TaskResponse struct {
 	Segments []TaskSegment `json:"segments"`
 }
 
+type ModelList struct {
+	Object string    `json:"object"`
+	Models []DSModel `json:"data"`
+}
+
 // URLSuffix represents the URL suffixes for different API endpoints
 type URLSuffix struct {
 	Chat          string `json:"chat"`

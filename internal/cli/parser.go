@@ -226,6 +226,10 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseRemoveCommand()
 	case TokenGet:
 		return p.parseGetCommand()
+	case TokenExplain:
+		return p.parseExplainCommand()
+	case TokenChunk:
+		return p.parseChunkCommand(false)
 
 	case TokenLS, TokenCat, TokenSearch:
 		// For context engine

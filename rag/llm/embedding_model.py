@@ -28,10 +28,11 @@ from ollama import Client
 from openai import OpenAI
 from zhipuai import ZhipuAI
 
+from common import settings
 from common.exceptions import ModelException
 from common.log_utils import log_exception
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
-from common import settings
+from rag.llm.key_utils import _normalize_replicate_key
 import logging
 import base64
 
@@ -234,14 +235,26 @@ class LocalAIEmbed(Base):
         return np.array(embds[0]), cnt
 
 
+def _resolve_azure_credentials(key):
+    try:
+        key_obj = json.loads(key)
+        if isinstance(key_obj, dict):
+            return key_obj.get("api_key", ""), key_obj.get("api_version", "2024-02-01")
+        logging.warning(
+            "Azure credential payload parsed as JSON but is not an object; using raw api_key string"
+        )
+    except (json.JSONDecodeError, TypeError):
+        logging.warning("Azure credential payload is not valid JSON; using raw api_key string")
+    return key, "2024-02-01"
+
+
 class AzureEmbed(OpenAIEmbed):
     _FACTORY_NAME = "Azure-OpenAI"
 
     def __init__(self, key, model_name, **kwargs):
         from openai.lib.azure import AzureOpenAI
 
-        api_key = json.loads(key).get("api_key", "")
-        api_version = json.loads(key).get("api_version", "2024-02-01")
+        api_key, api_version = _resolve_azure_credentials(key)
         self.client = AzureOpenAI(api_key=api_key, azure_endpoint=kwargs["base_url"], api_version=api_version)
         self.model_name = model_name
 
@@ -971,7 +984,7 @@ class ReplicateEmbed(Base):
         from replicate.client import Client
 
         self.model_name = model_name
-        self.client = Client(api_token=key)
+        self.client = Client(api_token=_normalize_replicate_key(key))
 
     def encode(self, texts: list):
         batch_size = 16
