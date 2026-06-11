@@ -45,6 +45,11 @@ const (
 	agentTagMaxLen    = 64
 )
 
+// ErrAgentNotFound is returned by GetAgent when the canvas does not exist or
+// the caller has no permission to view it (both cases surface the same message
+// to avoid leaking existence information).
+var ErrAgentNotFound = errors.New("agent not found")
+
 // AgentService agent service
 type AgentService struct {
 	canvasDAO            *dao.UserCanvasDAO
@@ -970,7 +975,7 @@ func (s *AgentService) GetAgent(userID, agentID string) (*entity.UserCanvas, err
 	// Verify access: owner always OK; team permission requires joined-tenant check.
 	if canvas.UserID != userID {
 		if canvas.Permission != string(entity.TenantPermissionTeam) {
-			return nil, fmt.Errorf("canvas not found")
+			return nil, ErrAgentNotFound
 		}
 		tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
 		if err != nil {
@@ -984,7 +989,7 @@ func (s *AgentService) GetAgent(userID, agentID string) (*entity.UserCanvas, err
 			}
 		}
 		if !found {
-			return nil, fmt.Errorf("canvas not found")
+			return nil, ErrAgentNotFound
 		}
 	}
 	return canvas, nil

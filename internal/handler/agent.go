@@ -779,8 +779,8 @@ func (h *AgentHandler) GetAgent(c *gin.Context) {
 
 	canvas, err := h.agentService.GetAgent(user.ID, agentID)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) || err.Error() == "canvas not found" {
-			c.JSON(http.StatusOK, gin.H{"code": common.CodeOperatingError, "data": false, "message": "canvas not found"})
+		if errors.Is(err, service.ErrAgentNotFound) || errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusOK, gin.H{"code": common.CodeOperatingError, "data": false, "message": "Agent not found."})
 		} else {
 			common.Warn("get agent failed", zap.String("agent_id", agentID), zap.Error(err))
 			c.JSON(http.StatusOK, gin.H{"code": common.CodeServerError, "data": false, "message": "Internal server error"})
