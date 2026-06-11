@@ -28,7 +28,7 @@
 //
 // The full Python implementation lives in common/mcp_tool_call_conn.py; this
 // is a reduced port focused on tools/list discovery.
-package mcpclient
+package utility
 
 import (
 	"bufio"
@@ -43,8 +43,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"ragflow/internal/utility"
 )
 
 // Transport identifiers. Mirrors common.constants.MCPServerType.
@@ -94,14 +92,14 @@ func FetchTools(ctx context.Context, opts FetchOptions) ([]Tool, error) {
 		opts.Timeout = 10 * time.Second
 	}
 
-	hostname, resolvedIP, err := utility.AssertURLSafe(opts.URL)
+	hostname, resolvedIP, err := AssertURLSafe(opts.URL)
 	if err != nil {
 		return nil, err
 	}
 	opts.pinHostname = hostname
 	opts.pinIP = resolvedIP
 	if opts.HTTPClient == nil {
-		opts.HTTPClient = utility.PinnedHTTPClient(hostname, resolvedIP, opts.Timeout)
+		opts.HTTPClient = PinnedHTTPClient(hostname, resolvedIP, opts.Timeout)
 	}
 
 	headers, headerErr := renderHeaders(opts.Headers, opts.Variables)
@@ -346,11 +344,11 @@ func fetchToolsSSE(ctx context.Context, endpoint string, headers map[string]stri
 	// differs from the original SSE host — swap in a fresh pinned
 	// client so the dial-time IP override still applies.
 	postClient := client
-	if postHost, postIP, vErr := utility.AssertURLSafe(postURL); vErr != nil {
+	if postHost, postIP, vErr := AssertURLSafe(postURL); vErr != nil {
 		return nil, vErr
 	} else if u, perr := url.Parse(postURL); perr == nil && u.Hostname() != "" {
 		if u.Hostname() != originalHost(endpoint) {
-			postClient = utility.PinnedHTTPClient(postHost, postIP, sseTimeoutFrom(ctx))
+			postClient = PinnedHTTPClient(postHost, postIP, sseTimeoutFrom(ctx))
 		}
 	}
 
