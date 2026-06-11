@@ -76,7 +76,9 @@ def list_providers(tenant_id: str, all_available: bool = False):
                 model_type
                 for llm in factory_info.get("llm", [])
                 for model_type in _factory_model_types(llm)
-            ))
+            )) if factory_info.get("llm", []) else []
+            if factory_info["name"] in ["MinerU", "PaddleOCR", "OpenDataLoader"]:
+                model_types.append("ocr")
             provider = {
                 "model_types": model_types,
                 "name": factory_info["name"],
@@ -104,7 +106,10 @@ def list_providers(tenant_id: str, all_available: bool = False):
                 model_type
                 for llm in factory_info.get("llm", [])
                 for model_type in _factory_model_types(llm)
-            ))
+            )) if factory_info.get("llm", []) else []
+            if name in ["MinerU", "PaddleOCR", "OpenDataLoader"]:
+                model_types.append("ocr")
+
             provider = {
                 "model_types": model_types,
                 "name": factory_info["name"],
