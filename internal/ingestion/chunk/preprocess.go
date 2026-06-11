@@ -94,3 +94,12 @@ func (o *PreprocessOperator) Execute(ctx *Context) error {
 func (o *PreprocessOperator) Finish() error {
 	return nil
 }
+
+func (o *PreprocessOperator) String() string {
+	var buf strings.Builder
+	buf.WriteString("preprocess:\n")
+	fmt.Fprintf(&buf, "  normalize_newlines: %t\n", o.normalizeNewlines)
+	fmt.Fprintf(&buf, "  strip_whitespace: %t\n", o.stripWhitespace)
+	fmt.Fprintf(&buf, "  remove_empty_lines: %t\n", o.removeEmptyLines)
+	return buf.String()
+}

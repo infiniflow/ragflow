@@ -17,6 +17,7 @@
 package chunk
 
 import (
+	"fmt"
 	"strings"
 	"unicode/utf8"
 )
@@ -85,6 +86,18 @@ func (o *SplitOperator) Execute(ctx *Context) error {
 
 func (o *SplitOperator) Finish() error {
 	return nil
+}
+
+func (o *SplitOperator) String() string {
+	var buf strings.Builder
+	buf.WriteString("split:\n")
+	fmt.Fprintf(&buf, "  strategy: %q\n", o.strategy)
+	fmt.Fprintf(&buf, "  boundaries:\n")
+	for _, r := range o.boundaries {
+		fmt.Fprintf(&buf, "    - %q\n", r)
+	}
+	fmt.Fprintf(&buf, "  keep_separators: %t\n", o.keepSeparators)
+	return buf.String()
 }
 
 // splitSentences splits text at boundary runes, optionally keeping separators.

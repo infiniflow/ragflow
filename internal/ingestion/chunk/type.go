@@ -24,6 +24,8 @@ type Operator interface {
 	Execute(ctx *Context) error
 	// Finish performs any cleanup.
 	Finish() error
+
+	String() string
 }
 
 // ChunkData represents a single chunk produced by the pipeline.

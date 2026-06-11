@@ -149,7 +149,7 @@ func (e *ChunkEngine) Explain(plan *ChunkPlan) (string, error) {
 	var buf strings.Builder
 	buf.WriteString("Chunk Pipeline Plan:\n")
 	for i, op := range plan.Operators {
-		buf.WriteString(fmt.Sprintf("  [%d] %T\n", i, op))
+		buf.WriteString(fmt.Sprintf("  [%d] %s\n", i, op.String()))
 	}
 	return buf.String(), nil
 }

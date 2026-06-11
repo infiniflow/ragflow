@@ -59,7 +59,6 @@ type PostprocessOperator struct {
 	merge   *mergeConfig
 	overlap struct {
 		unit       string // "char" (default) or "sentence"
-		mode       string // "if_only"
 		conditions []overlapCondition
 		defaultCfg overlapConfig
 	}
@@ -92,11 +91,7 @@ func NewPostprocessOperator(config map[string]interface{}) (*PostprocessOperator
 		} else {
 			op.overlap.unit = "char"
 		}
-		if m, ok := ov["mode"].(string); ok {
-			op.overlap.mode = m
-		} else {
-			op.overlap.mode = "if_only"
-		}
+
 		// Default
 		if d, ok := ov["default"].(map[string]interface{}); ok {
 			op.overlap.defaultCfg = parseOverlapConfig(d)
@@ -173,9 +168,7 @@ func (o *PostprocessOperator) Execute(ctx *Context) error {
 	}
 
 	// 2. Overlap
-	if o.overlap.mode != "" {
-		chunks = o.applyOverlap(chunks)
-	}
+	chunks = o.applyOverlap(chunks)
 
 	// 3. Filter
 	if o.filter != nil {
@@ -198,6 +191,56 @@ func (o *PostprocessOperator) Execute(ctx *Context) error {
 
 func (o *PostprocessOperator) Finish() error {
 	return nil
+}
+
+func (o *PostprocessOperator) String() string {
+	var buf strings.Builder
+	buf.WriteString("postprocess:\n")
+
+	if o.merge != nil {
+		fmt.Fprintf(&buf, "  merge:\n")
+		fmt.Fprintf(&buf, "    target_size: %d\n", o.merge.TargetSize)
+		fmt.Fprintf(&buf, "    strategy: %q\n", o.merge.Strategy)
+	}
+
+	fmt.Fprintf(&buf, "  overlap:\n")
+	fmt.Fprintf(&buf, "    unit: %q\n", o.overlap.unit)
+	fmt.Fprintf(&buf, "    default:\n")
+	fmt.Fprintf(&buf, "      size: %d\n", o.overlap.defaultCfg.Size)
+	if o.overlap.defaultCfg.Unit != "" {
+		fmt.Fprintf(&buf, "      unit: %q\n", o.overlap.defaultCfg.Unit)
+	}
+	if len(o.overlap.conditions) > 0 {
+		fmt.Fprintf(&buf, "    conditions:\n")
+		for _, c := range o.overlap.conditions {
+			fmt.Fprintf(&buf, "      - name: %q\n", c.Name)
+			fmt.Fprintf(&buf, "        condition: %q\n", c.Condition.String())
+			fmt.Fprintf(&buf, "        then:\n")
+			fmt.Fprintf(&buf, "          size: %d\n", c.OverlapConfig.Size)
+			if c.OverlapConfig.Unit != "" {
+				fmt.Fprintf(&buf, "          unit: %q\n", c.OverlapConfig.Unit)
+			}
+		}
+	}
+
+	if o.filter != nil {
+		fmt.Fprintf(&buf, "  filter:\n")
+		fmt.Fprintf(&buf, "    min_length: %d\n", o.filter.MinLength)
+		fmt.Fprintf(&buf, "    max_length: %d\n", o.filter.MaxLength)
+	}
+
+	if o.addMetadata != nil {
+		fmt.Fprintf(&buf, "  add_metadata:\n")
+		fmt.Fprintf(&buf, "    include_index: %t\n", o.addMetadata.IncludeIndex)
+		if len(o.addMetadata.CustomFields) > 0 {
+			fmt.Fprintf(&buf, "    custom_fields:\n")
+			for k, v := range o.addMetadata.CustomFields {
+				fmt.Fprintf(&buf, "      %s: %q\n", k, v)
+			}
+		}
+	}
+
+	return buf.String()
 }
 
 // ---------------------------------------------------------------------------
