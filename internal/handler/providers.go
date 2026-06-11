@@ -680,17 +680,10 @@ func (h *ProviderHandler) ListInstanceModels(c *gin.Context) {
 			return
 		}
 
-		var modelResponse []map[string]string
-		for _, modelName := range modelList {
-			modelResponse = append(modelResponse, map[string]string{
-				"model_name": modelName,
-			})
-		}
-
 		c.JSON(http.StatusOK, gin.H{
 			"code":    0,
 			"message": "success",
-			"data":    modelResponse,
+			"data":    modelList,
 		})
 		return
 	}

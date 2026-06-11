@@ -9,10 +9,8 @@ import { FC, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 export const mapModelKey = {
-  IMAGE2TEXT: 'VLM',
-  'TEXT EMBEDDING': 'Embedding',
-  SPEECH2TEXT: 'ASR',
-  'TEXT RE-RANK': 'Rerank',
+  image2text: 'VLM',
+  speech2text: 'ASR',
   chat: 'LLM',
   vision: 'VLM',
   embedding: 'Embedding',
@@ -28,6 +26,8 @@ const orderMap: Record<ModelType, number> = {
   rerank: 3,
   tts: 4,
   asr: 5,
+  speech2text: 5,
+  image2text: 6,
   vision: 6,
   ocr: 7,
 };
@@ -38,6 +38,8 @@ type ModelType =
   | 'rerank'
   | 'tts'
   | 'asr'
+  | 'speech2text'
+  | 'image2text'
   | 'vision'
   | 'ocr';
 
@@ -89,10 +91,8 @@ export const AvailableModels: FC<{
     factoryList.forEach((model) => {
       model.model_types.forEach((type) => tagsSet.add(type));
     });
-    return Array.from(tagsSet).sort(
-      (a, b) =>
-        (orderMap[a as ModelType] || 999) - (orderMap[b as ModelType] || 999),
-    );
+    const res = sortModelTypes(Array.from(tagsSet));
+    return res;
   }, [factoryList]);
 
   const handleTagClick = (tag: string) => {

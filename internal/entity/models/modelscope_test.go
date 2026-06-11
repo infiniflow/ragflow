@@ -308,7 +308,7 @@ func TestModelScopeListModelsAndCheckConnection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if strings.Join(models, ",") != "Qwen/Qwen2.5-7B-Instruct,Qwen/Qwen3-8B" {
+	if joinModelNames(models, ",") != "Qwen/Qwen2.5-7B-Instruct,Qwen/Qwen3-8B" {
 		t.Errorf("models=%v", models)
 	}
 	if err := m.CheckConnection(apiConfig); err != nil {

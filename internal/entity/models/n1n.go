@@ -528,11 +528,11 @@ type n1nModelCatalogItem struct {
 }
 
 type n1nModelCatalogResponse struct {
-	Data []n1nModelCatalogItem `json:"data"`
+	Data []DSModel `json:"data"`
 }
 
 // ListModels returns the live n1n.ai model catalog
-func (n *N1NModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (n *N1NModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -570,13 +570,7 @@ func (n *N1NModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]string, 0, len(parsed.Data))
-	for _, item := range parsed.Data {
-		if item.ID != "" {
-			models = append(models, item.ID)
-		}
-	}
-	return models, nil
+	return ParseListModel(ModelList{Models: parsed.Data}), nil
 }
 
 // CheckConnection verifies the API key
