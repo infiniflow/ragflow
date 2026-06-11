@@ -36,8 +36,9 @@ type PaddleOCRModel struct {
 func NewPaddleOCRModel(baseURL map[string]string, urlSuffix URLSuffix) *PaddleOCRModel {
 	return &PaddleOCRModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
+			BaseURL:          baseURL,
+			URLSuffix:        urlSuffix,
+			AllowEmptyAPIKey: true,
 			httpClient: &http.Client{
 				Transport: &http.Transport{
 					MaxIdleConns:        100,
@@ -175,7 +176,9 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 		req.Header.Set("Content-Type", writer.FormDataContentType())
 	}
 
-	req.Header.Set("Authorization", fmt.Sprintf("bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := p.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -209,7 +212,9 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 		}
 
 		pollReq, _ := http.NewRequestWithContext(ctx, "GET", pollUrl, nil)
-		pollReq.Header.Set("Authorization", fmt.Sprintf("bearer %s", *apiConfig.ApiKey))
+		if auth := BearerAuth(apiConfig); auth != "" {
+			pollReq.Header.Set("Authorization", auth)
+		}
 
 		pollResp, err := p.baseModel.httpClient.Do(pollReq)
 		if err != nil {
@@ -291,7 +296,7 @@ func (p *PaddleOCRModel) ParseFile(modelName *string, content []byte, url *strin
 	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PaddleOCRModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (p *PaddleOCRModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 

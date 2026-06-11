@@ -591,7 +591,7 @@ func (n *NvidiaModel) ParseFile(modelName *string, content []byte, url *string, 
 // and returns the list of available model ids. The endpoint is
 // OpenAI-compatible, so the parsing follows the same shape used by
 // the moonshot, xai, and openai drivers.
-func (n NvidiaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (n NvidiaModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -632,30 +632,16 @@ func (n NvidiaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("Nvidia models API error: %s, body: %s", resp.Status, string(body))
 	}
 
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
+	// Parse response
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	data, ok := result["data"].([]interface{})
-	if !ok {
+	if modelList.Models == nil {
 		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	models := make([]string, 0, len(data))
-	for _, item := range data {
-		m, ok := item.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		id, ok := m["id"].(string)
-		if !ok {
-			continue
-		}
-		models = append(models, id)
-	}
-
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 func (n NvidiaModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

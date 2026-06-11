@@ -38,8 +38,9 @@ type LmStudioModel struct {
 func NewLmStudioModel(baseURL map[string]string, urlSuffix URLSuffix) *LmStudioModel {
 	return &LmStudioModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
+			BaseURL:          baseURL,
+			URLSuffix:        urlSuffix,
+			AllowEmptyAPIKey: true,
 			httpClient: &http.Client{
 				Transport: &http.Transport{
 					MaxIdleConns:        100,
@@ -147,7 +148,9 @@ func (l *LmStudioModel) ChatWithMessages(modelName string, messages []Message, a
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -295,7 +298,9 @@ func (l *LmStudioModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -427,7 +432,9 @@ func (l *LmStudioModel) Embed(modelName *string, texts []string, apiConfig *APIC
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -493,7 +500,7 @@ func (l *LmStudioModel) ParseFile(modelName *string, content []byte, url *string
 }
 
 // ListModels list supported models
-func (l *LmStudioModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (l *LmStudioModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := l.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -528,7 +535,9 @@ func (l *LmStudioModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -546,20 +555,16 @@ func (l *LmStudioModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	// Parse response
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
+	// Parse response
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	// convert result["data"] 2 []map[string]interface{}
-	models := make([]string, 0)
-	for _, model := range result["data"].([]interface{}) {
-		modelMap := model.(map[string]interface{})
-		modelName := modelMap["id"].(string)
-		models = append(models, modelName)
+	if modelList.Models == nil {
+		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 func (l *LmStudioModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

@@ -38,8 +38,9 @@ type VllmModel struct {
 func NewVllmModel(baseURL map[string]string, urlSuffix URLSuffix) *VllmModel {
 	return &VllmModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
+			BaseURL:          baseURL,
+			URLSuffix:        urlSuffix,
+			AllowEmptyAPIKey: true,
 			httpClient: &http.Client{
 				Transport: &http.Transport{
 					MaxIdleConns:        100,
@@ -147,7 +148,9 @@ func (v *VllmModel) ChatWithMessages(modelName string, messages []Message, apiCo
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -295,7 +298,9 @@ func (v *VllmModel) ChatStreamlyWithSender(modelName string, messages []Message,
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -436,7 +441,9 @@ func (v *VllmModel) Embed(modelName *string, texts []string, apiConfig *APIConfi
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -469,7 +476,7 @@ func (v *VllmModel) Embed(modelName *string, texts []string, apiConfig *APIConfi
 	return embeddings, nil
 }
 
-func (v *VllmModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (v *VllmModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -504,7 +511,9 @@ func (v *VllmModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -522,20 +531,16 @@ func (v *VllmModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	// Parse response
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
+	// Parse response
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	// convert result["data"] to []map[string]interface{}
-	models := make([]string, 0)
-	for _, model := range result["data"].([]interface{}) {
-		modelMap := model.(map[string]interface{})
-		modelName := modelMap["id"].(string)
-		models = append(models, modelName)
+	if modelList.Models == nil {
+		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 func (v *VllmModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
@@ -629,7 +634,9 @@ func (v *VllmModel) Rerank(modelName *string, query string, documents []string, 
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {

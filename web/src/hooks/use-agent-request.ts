@@ -719,7 +719,7 @@ export const useFetchSessionsByCanvasId = () => {
 
       const { data } = await fetchAgentLogsByCanvasId(canvasId, {
         page: 1,
-        page_size: 100000,
+        page_size: 100,
         exp_user_id: tenantInfo.tenant_id,
       });
 

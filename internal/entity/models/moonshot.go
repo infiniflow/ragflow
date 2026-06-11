@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"ragflow/internal/common"
 	"strings"
 	"time"
 )
@@ -60,11 +59,22 @@ func (m *MoonshotModel) Name() string {
 	return "moonshot"
 }
 
+func validateMoonshotModelName(modelName string) (string, error) {
+	if strings.TrimSpace(modelName) == "" {
+		return "", fmt.Errorf("model name is required")
+	}
+	return strings.TrimSpace(modelName), nil
+}
+
 func (m *MoonshotModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
+	modelName, err := validateMoonshotModelName(modelName)
+	if err != nil {
+		return nil, err
+	}
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
@@ -93,10 +103,6 @@ func (m *MoonshotModel) ChatWithMessages(modelName string, messages []Message, a
 	}
 
 	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
-		}
-
 		if chatModelConfig.MaxTokens != nil {
 			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
 		}
@@ -140,7 +146,7 @@ func (m *MoonshotModel) ChatWithMessages(modelName string, messages []Message, a
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -205,9 +211,16 @@ func (m *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
-
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
+	modelName, err := validateMoonshotModelName(modelName)
+	if err != nil {
+		return err
+	}
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
+	}
+	if sender == nil {
+		return fmt.Errorf("sender is required")
 	}
 
 	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
@@ -233,10 +246,6 @@ func (m *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	}
 
 	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
-		}
-
 		if chatModelConfig.MaxTokens != nil {
 			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
 		}
@@ -284,7 +293,8 @@ func (m *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
+	req.Header.Set("Accept", "text/event-stream")
 
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -302,7 +312,6 @@ func (m *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
-		common.Info(line)
 
 		// SSE data line starts with "data:"
 		if !strings.HasPrefix(line, "data:") {
@@ -358,13 +367,17 @@ func (m *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		}
 	}
 
+	if err = scanner.Err(); err != nil {
+		return err
+	}
+
 	// Send [DONE] marker for OpenAI compatibility
 	endOfStream := "[DONE]"
 	if err = sender(&endOfStream, nil); err != nil {
 		return err
 	}
 
-	return scanner.Err()
+	return nil
 }
 
 // Embed embeds a list of texts into embeddings
@@ -372,10 +385,11 @@ func (m *MoonshotModel) Embed(modelName *string, texts []string, apiConfig *APIC
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (m *MoonshotModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (m *MoonshotModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 
 	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -383,24 +397,16 @@ func (m *MoonshotModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Models)
 
-	// Build request body
-	reqBody := map[string]interface{}{}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
+	req.Header.Set("Accept", "application/json")
 
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -418,26 +424,19 @@ func (m *MoonshotModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	// Parse response
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	// convert result["data"] to []map[string]interface{}
-	models := make([]string, 0)
-	for _, model := range result["data"].([]interface{}) {
-		modelMap := model.(map[string]interface{})
-		modelName := modelMap["id"].(string)
-		models = append(models, modelName)
-	}
-
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 func (m *MoonshotModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 
 	baseURL, err := m.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -445,24 +444,16 @@ func (m *MoonshotModel) Balance(apiConfig *APIConfig) (map[string]interface{}, e
 	}
 	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Balance)
 
-	// Build request body
-	reqBody := map[string]interface{}{}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
+	req.Header.Set("Accept", "application/json")
 
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -479,17 +470,20 @@ func (m *MoonshotModel) Balance(apiConfig *APIConfig) (map[string]interface{}, e
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
-	var result map[string]interface{}
+	var result struct {
+		Data *struct {
+			AvailableBalance *float64 `json:"available_balance"`
+		} `json:"data"`
+	}
 	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	data := result["data"].(map[string]interface{})
-	balance := data["available_balance"].(float64)
+	if result.Data == nil || result.Data.AvailableBalance == nil {
+		return nil, fmt.Errorf("balance response missing available_balance")
+	}
 
 	var response = map[string]interface{}{
-		"balance":  balance,
+		"balance":  *result.Data.AvailableBalance,
 		"currency": "CNY",
 	}
 

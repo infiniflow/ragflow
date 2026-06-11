@@ -27,7 +27,14 @@ from PIL import Image
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
+from api.db.joint_services.tenant_model_service import (
+    ensure_mineru_from_env,
+    ensure_opendataloader_from_env,
+    ensure_paddleocr_from_env,
+    get_first_provider_model_name,
+    get_model_config_from_provider_instance,
+    get_tenant_default_model_by_type,
+)
 from common import settings
 from common.constants import LLMType
 from common.misc_utils import get_uuid, thread_pool_exec
@@ -336,10 +343,10 @@ class Parser(ProcessBase):
         if isinstance(raw_parse_method, str):
             lowered = raw_parse_method.lower()
             if lowered.endswith("@mineru"):
-                parser_model_name = raw_parse_method.rsplit("@", 1)[0]
+                parser_model_name = raw_parse_method
                 parse_method = "MinerU"
             elif lowered.endswith("@paddleocr"):
-                parser_model_name = raw_parse_method.rsplit("@", 1)[0]
+                parser_model_name = raw_parse_method
                 parse_method = "PaddleOCR"
 
         # DeepDOC returns structured page boxes directly.
@@ -368,13 +375,7 @@ class Parser(ProcessBase):
                 if not tenant_id:
                     return None
 
-                from api.db.services.tenant_llm_service import TenantLLMService
-
-                env_name = TenantLLMService.ensure_mineru_from_env(tenant_id)
-                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="MinerU", model_type=LLMType.OCR.value)
-                if candidates:
-                    return candidates[0].llm_name
-                return env_name
+                return get_first_provider_model_name(tenant_id, "MinerU", LLMType.OCR) or ensure_mineru_from_env(tenant_id)
 
             parser_model_name = resolve_mineru_llm_name()
             if not parser_model_name:
@@ -446,12 +447,8 @@ class Parser(ProcessBase):
                 tenant_id = self._canvas._tenant_id
                 if not tenant_id:
                     return None
-                from api.db.services.tenant_llm_service import TenantLLMService
-                env_name = TenantLLMService.ensure_opendataloader_from_env(tenant_id)
-                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="OpenDataLoader", model_type=LLMType.OCR.value)
-                if candidates:
-                    return candidates[0].llm_name
-                return env_name
+
+                return get_first_provider_model_name(tenant_id, "OpenDataLoader", LLMType.OCR) or ensure_opendataloader_from_env(tenant_id)
 
             parser_model_name = resolve_opendataloader_llm_name()
             if not parser_model_name:
@@ -550,13 +547,7 @@ class Parser(ProcessBase):
                 if not tenant_id:
                     return None
 
-                from api.db.services.tenant_llm_service import TenantLLMService
-
-                env_name = TenantLLMService.ensure_paddleocr_from_env(tenant_id)
-                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="PaddleOCR", model_type=LLMType.OCR.value)
-                if candidates:
-                    return candidates[0].llm_name
-                return env_name
+                return get_first_provider_model_name(tenant_id, "PaddleOCR", LLMType.OCR) or ensure_paddleocr_from_env(tenant_id)
 
             parser_model_name = resolve_paddleocr_llm_name()
             if not parser_model_name:
@@ -1055,7 +1046,7 @@ class Parser(ProcessBase):
 
         self.callback(random.randint(1, 5) / 100.0, "Start to work on an image.")
         conf = self._param.setups["image"]
-        self.set_output("output_format", conf["output_format"])
+        self.set_output("output_format", "json")
 
         img = Image.open(io.BytesIO(blob)).convert("RGB")
 
