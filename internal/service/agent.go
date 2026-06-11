@@ -58,6 +58,7 @@ type AgentService struct {
 	canvasTemplateDAO    *dao.CanvasTemplateDAO
 	api4ConversationDAO  *dao.API4ConversationDAO
 	fileDAO              *dao.FileDAO
+	kbDAO                *dao.KnowledgebaseDAO
 }
 
 // NewAgentService create agent service
@@ -69,6 +70,7 @@ func NewAgentService() *AgentService {
 		api4ConversationDAO:  dao.NewAPI4ConversationDAO(),
 		canvasTemplateDAO:    dao.NewCanvasTemplateDAO(),
 		fileDAO:              dao.NewFileDAO(),
+		kbDAO:                dao.NewKnowledgebaseDAO(),
 	}
 }
 
@@ -966,8 +968,28 @@ func (s *AgentService) GetVersion(canvasID, versionID string) (*entity.UserCanva
 	return version, nil
 }
 
+// AgentDatasetItem is the minimal dataset representation added to DataFlow agents,
+// matching Python's {"id", "name", "avatar"} projection.
+type AgentDatasetItem struct {
+	ID     string  `json:"id"`
+	Name   string  `json:"name"`
+	Avatar *string `json:"avatar,omitempty"`
+}
+
+// AgentDetail augments the raw UserCanvas with computed fields that Python
+// derives at read time: last_publish_time and, for DataFlow canvases, datasets.
+// normalize_chunker_dsl and CanvasReplicaService.bootstrap are not yet ported
+// to Go; they are no-ops in this layer.
+type AgentDetail struct {
+	*entity.UserCanvas
+	LastPublishTime *int64             `json:"last_publish_time"`
+	Datasets        []AgentDatasetItem `json:"datasets,omitempty"`
+}
+
 // GetAgent returns a single agent canvas after verifying the caller has access.
-func (s *AgentService) GetAgent(userID, agentID string) (*entity.UserCanvas, error) {
+// Mirrors Python's get_agent: computes last_publish_time from released versions
+// and, for DataFlow canvases, appends the linked datasets.
+func (s *AgentService) GetAgent(userID, agentID string) (*AgentDetail, error) {
 	canvas, err := s.canvasDAO.GetByID(agentID)
 	if err != nil {
 		return nil, err
@@ -992,7 +1014,42 @@ func (s *AgentService) GetAgent(userID, agentID string) (*entity.UserCanvas, err
 			return nil, ErrAgentNotFound
 		}
 	}
-	return canvas, nil
+
+	detail := &AgentDetail{UserCanvas: canvas}
+
+	// Compute last_publish_time from the most recently updated released version.
+	versions, err := s.userCanvasVersionDAO.ListByCanvasID(agentID)
+	if err == nil {
+		var latestPublish *int64
+		for _, v := range versions {
+			if !v.Release || v.UpdateTime == nil {
+				continue
+			}
+			t := *v.UpdateTime
+			if latestPublish == nil || t > *latestPublish {
+				latestPublish = &t
+			}
+		}
+		detail.LastPublishTime = latestPublish
+	}
+
+	// For DataFlow canvases, add the linked datasets (mirrors Python's canvas["datasets"]).
+	if canvas.CanvasCategory == "dataflow_canvas" {
+		kbs, err := s.kbDAO.Query(map[string]interface{}{"pipeline_id": agentID})
+		if err == nil {
+			items := make([]AgentDatasetItem, 0, len(kbs))
+			for _, kb := range kbs {
+				items = append(items, AgentDatasetItem{
+					ID:     kb.ID,
+					Name:   kb.Name,
+					Avatar: kb.Avatar,
+				})
+			}
+			detail.Datasets = items
+		}
+	}
+
+	return detail, nil
 }
 
 // GetAgentLogs retrieves execution logs for a given message from Redis.

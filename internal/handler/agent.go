@@ -832,7 +832,7 @@ func (h *AgentHandler) GetAgentLogs(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": logs, "message": ""})
+	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": logs, "message": "success"})
 }
 
 // DownloadAgentFile downloads a file blob associated with an agent.
@@ -896,8 +896,11 @@ func (h *AgentHandler) DownloadAttachment(c *gin.Context) {
 		return
 	}
 
-	// Derive extension from the storage object name to prevent client-driven
-	// MIME spoofing via the query parameter.
+	// Intentional deviation from Python: Python uses the caller-supplied `ext`
+	// query parameter to set Content-Type, which allows MIME spoofing. Go
+	// derives the extension from the storage object name instead, and the
+	// Content-Disposition header forces a download so the browser never renders
+	// the blob inline. This is a deliberate, safer behaviour change.
 	ext := utility.GetFileExtension(attachmentID)
 	if ext == "" {
 		ext = "markdown"
