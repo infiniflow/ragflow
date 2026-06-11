@@ -153,10 +153,29 @@ def _load_agent_api(monkeypatch, *, storage_get):
     module_path = repo_root / "api" / "apps" / "restful_apis" / "agent_api.py"
     spec = importlib.util.spec_from_file_location("test_agent_api_module", module_path)
     module = importlib.util.module_from_spec(spec)
+    # `manager` must exist before exec so the @manager.route decorators run.
     module.manager = _PassthroughManager()
-    module.settings = SimpleNamespace(STORAGE_IMPL=SimpleNamespace(get=storage_get))
     monkeypatch.setitem(sys.modules, "test_agent_api_module", module)
     spec.loader.exec_module(module)
+
+    # Pin every module global that download_attachment resolves at call time.
+    # The sys.modules stubs above only guarantee the import *succeeds*. In the
+    # full test environment `from common import settings` (and the api_utils /
+    # misc_utils imports) can bind the REAL modules instead of our stubs — e.g.
+    # if another test already imported common.settings, it is an attribute on the
+    # already-loaded `common` package and the sys.modules stub is bypassed — so
+    # settings.STORAGE_IMPL would be the uninitialised real None and the handler
+    # would 500 with "'NoneType' object has no attribute 'get'". Overriding the
+    # globals on the loaded module makes behaviour identical in both the
+    # bare-stub (local) and full-dependency (CI) environments.
+    module.settings = SimpleNamespace(STORAGE_IMPL=SimpleNamespace(get=storage_get))
+    module.request = SimpleNamespace(method="GET", args={"ext": "markdown"})
+    module.make_response = _make_response
+    module.thread_pool_exec = _thread_pool_exec
+    module.get_data_error_result = lambda message="", **_k: {"kind": "data_error", "message": message}
+    module.server_error_response = lambda e: {"kind": "server_error", "error": str(e)}
+    module.CONTENT_TYPE_MAP = {"markdown": "text/markdown"}
+    module.apply_safe_file_response_headers = lambda *_a, **_k: None
     return module
 
 
