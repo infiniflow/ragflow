@@ -731,6 +731,75 @@ class TestDocRoutesUnit:
         res = _run(module.stop_parsing.__wrapped__("tenant-1", "ds-1"))
         assert res["code"] == 0
 
+    def test_legacy_chunks_parse_uses_dataset_owner_tenant_for_delete(self, monkeypatch):
+        module = _load_doc_module(monkeypatch)
+        deleted = []
+        requester_tenant = "team-member"
+        owner_tenant = "dataset-owner"
+
+        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: True)
+        monkeypatch.setattr(
+            module.KnowledgebaseService,
+            "get_by_id",
+            lambda _id: (True, SimpleNamespace(tenant_id=owner_tenant)),
+        )
+        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"document_ids": ["doc-1"]}))
+        monkeypatch.setattr(module, "check_duplicate_ids", lambda ids, _kind: (ids, []))
+        monkeypatch.setattr(
+            module.DocumentService,
+            "query",
+            lambda **_kwargs: [_DummyDoc(doc_id="doc-1", run=module.TaskStatus.UNSTART.value)],
+        )
+        monkeypatch.setattr(module.DocumentService, "filter_update", lambda *_args, **_kwargs: 1)
+        monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _id: (True, _DummyDoc(doc_id="doc-1")))
+        monkeypatch.setattr(module.File2DocumentService, "get_storage_address", lambda **_kwargs: ("b", "n"))
+        monkeypatch.setattr(module.TaskService, "filter_delete", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(module, "queue_tasks", lambda *_args, **_kwargs: None)
+        _patch_docstore(
+            monkeypatch,
+            module,
+            index_exist=lambda *_args, **_kwargs: True,
+            delete=lambda condition, index, kb_id: deleted.append((condition, index, kb_id)),
+        )
+
+        res = _run(module.parse.__wrapped__(requester_tenant, "ds-1"))
+
+        assert res["code"] == 0
+        assert deleted == [({"doc_id": "doc-1"}, module.search.index_name(owner_tenant), "kb-1")]
+
+    def test_legacy_chunks_stop_uses_dataset_owner_tenant_for_delete(self, monkeypatch):
+        module = _load_doc_module(monkeypatch)
+        deleted = []
+        requester_tenant = "team-member"
+        owner_tenant = "dataset-owner"
+
+        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: True)
+        monkeypatch.setattr(
+            module.KnowledgebaseService,
+            "get_by_id",
+            lambda _id: (True, SimpleNamespace(tenant_id=owner_tenant)),
+        )
+        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"document_ids": ["doc-1"]}))
+        monkeypatch.setattr(module, "check_duplicate_ids", lambda ids, _kind: (ids, []))
+        monkeypatch.setattr(
+            module.DocumentService,
+            "query",
+            lambda **_kwargs: [_DummyDoc(doc_id="doc-1", run=module.TaskStatus.RUNNING.value)],
+        )
+        monkeypatch.setattr(module, "cancel_all_task_of", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(module.DocumentService, "update_by_id", lambda *_args, **_kwargs: True)
+        _patch_docstore(
+            monkeypatch,
+            module,
+            index_exist=lambda *_args, **_kwargs: True,
+            delete=lambda condition, index, kb_id: deleted.append((condition, index, kb_id)),
+        )
+
+        res = _run(module.stop_parsing.__wrapped__(requester_tenant, "ds-1"))
+
+        assert res["code"] == 0
+        assert deleted == [({"doc_id": "doc-1"}, module.search.index_name(owner_tenant), "kb-1")]
+
     def test_stop_parse_documents_cleans_partial_chunks(self, monkeypatch):
         module = _load_doc_module(monkeypatch, module_basename="document_api")
         updated = []
