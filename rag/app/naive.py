@@ -31,7 +31,14 @@ from common.token_utils import num_tokens_from_string
 
 from common.constants import LLMType, MAXIMUM_PAGE_NUMBER
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
+from api.db.joint_services.tenant_model_service import (
+    ensure_mineru_from_env,
+    ensure_opendataloader_from_env,
+    ensure_paddleocr_from_env,
+    get_first_provider_model_name,
+    get_model_config_from_provider_instance,
+    get_tenant_default_model_by_type,
+)
 from rag.utils.file_utils import extract_embed_file, extract_links_from_pdf, extract_links_from_docx, extract_html
 from deepdoc.parser import DocxParser, EpubParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
 from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_docx_wrapper_naive, vision_figure_parser_pdf_wrapper
@@ -54,6 +61,28 @@ from rag.nlp import (
     append_context2table_image4pdf,
     tokenize_chunks_with_images,
 )  # noqa: F401
+
+
+def _is_short_header(text, max_tokens=50):
+    """
+    Check if text is a short markdown header.
+    
+    Args:
+        text: The text to check
+        max_tokens: Maximum tokens for a header to be considered "short"
+    
+    Returns:
+        bool: True if text is a short markdown header, False otherwise
+    """
+    if not text or not text.strip():
+        return False
+    
+    # Check if it matches markdown header pattern: 1-6 # followed by space
+    if not re.match(r"^#{1,6}\s+", text.strip()):
+        return False
+    
+    # Check if token count is below threshold
+    return num_tokens_from_string(text) < max_tokens
 
 
 def _normalize_section_text_for_rtl_presentation_forms(sections):
@@ -115,14 +144,7 @@ def by_mineru(
     if tenant_id:
         if not mineru_llm_name:
             try:
-                from api.db.services.tenant_llm_service import TenantLLMService
-
-                env_name = TenantLLMService.ensure_mineru_from_env(tenant_id)
-                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="MinerU", model_type=LLMType.OCR)
-                if candidates:
-                    mineru_llm_name = candidates[0].llm_name
-                elif env_name:
-                    mineru_llm_name = env_name
+                mineru_llm_name = get_first_provider_model_name(tenant_id, "MinerU", LLMType.OCR) or ensure_mineru_from_env(tenant_id)
             except Exception as e:  # best-effort fallback
                 logging.warning(f"fallback to env mineru: {e}")
 
@@ -198,15 +220,8 @@ def by_opendataloader(
     if tenant_id:
         if not opendataloader_llm_name:
             try:
-                from api.db.services.tenant_llm_service import TenantLLMService
-
-                env_name = TenantLLMService.ensure_opendataloader_from_env(tenant_id)
-                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="OpenDataLoader", model_type=LLMType.OCR)
-                if candidates:
-                    opendataloader_llm_name = candidates[0].llm_name
-                elif env_name:
-                    opendataloader_llm_name = env_name
-            except Exception as e:
+                opendataloader_llm_name = get_first_provider_model_name(tenant_id, "OpenDataLoader", LLMType.OCR) or ensure_opendataloader_from_env(tenant_id)
+            except Exception as e:  # best-effort fallback
                 logging.warning(f"fallback to env opendataloader: {e}")
 
         if opendataloader_llm_name:
@@ -259,14 +274,7 @@ def by_paddleocr(
     if tenant_id:
         if not paddleocr_llm_name:
             try:
-                from api.db.services.tenant_llm_service import TenantLLMService
-
-                env_name = TenantLLMService.ensure_paddleocr_from_env(tenant_id)
-                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="PaddleOCR", model_type=LLMType.OCR)
-                if candidates:
-                    paddleocr_llm_name = candidates[0].llm_name
-                elif env_name:
-                    paddleocr_llm_name = env_name
+                paddleocr_llm_name = get_first_provider_model_name(tenant_id, "PaddleOCR", LLMType.OCR) or ensure_paddleocr_from_env(tenant_id)
             except Exception as e:  # best-effort fallback
                 logging.warning(f"fallback to env paddleocr: {e}")
 
@@ -1067,6 +1075,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
     st = timer()
     overlapped_percent = normalize_overlapped_percent(parser_config.get("overlapped_percent", 0))
+    
     if is_markdown:
         merged_chunks = []
         merged_images = []
@@ -1081,7 +1090,8 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             sec_tokens = num_tokens_from_string(text)
             sec_image = section_images[idx] if section_images and idx < len(section_images) else None
 
-            if current_text and current_tokens + sec_tokens > chunk_limit:
+            # Don't finalize chunk if current_text is a short header (force merge with next section)
+            if current_text and not _is_short_header(current_text) and current_tokens + sec_tokens > chunk_limit:
                 merged_chunks.append(current_text)
                 merged_images.append(current_image)
                 overlap_part = ""
