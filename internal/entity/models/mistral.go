@@ -399,6 +399,9 @@ func (m *MistralModel) Embed(modelName *string, texts []string, apiConfig *APICo
 		"model": *modelName,
 		"input": texts,
 	}
+	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
+		reqBody["output_dimension"] = embeddingConfig.Dimension
+	}
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {

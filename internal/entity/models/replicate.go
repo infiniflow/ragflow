@@ -76,16 +76,19 @@ type replicatePrediction struct {
 	URLs   replicatePredictionURLs `json:"urls"`
 }
 
-type replicateModelsResponse struct {
-	Results []struct {
-		Owner string `json:"owner"`
-		Name  string `json:"name"`
-	} `json:"results"`
-}
-
 type replicateSSEEvent struct {
 	event string
 	data  string
+}
+
+type replicateModelList struct {
+	Results []replicateModelSummary `json:"results"`
+}
+
+type replicateModelSummary struct {
+	ID    string `json:"id"`
+	Owner string `json:"owner"`
+	Name  string `json:"name"`
 }
 
 func (r *ReplicateModel) endpoint(apiConfig *APIConfig, suffix string) (string, error) {
@@ -538,35 +541,38 @@ func (r *ReplicateModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, 
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result replicateModelsResponse
-	if err = json.Unmarshal(body, &result); err != nil {
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	models := make([]ListModelResponse, 0, len(result.Results))
-	pm := GetProviderManager()
-	for _, model := range result.Results {
-		modelName := model.Name
-		var modelResponse ListModelResponse
-		var modelEntity *Model
-		if pm != nil {
-			modelEntity = pm.GetModelByNameOrAlias(modelName)
-		}
-		if model.Owner != "" {
-			modelName = model.Name + "@" + model.Owner
-		}
-		modelResponse.Name = modelName
-		if modelEntity != nil {
-			modelResponse.MaxDimension = modelEntity.MaxDimension
-			modelResponse.Dimensions = modelEntity.Dimensions
-			modelResponse.MaxTokens = modelEntity.MaxTokens
-			modelResponse.ModelTypes = modelEntity.ModelTypes
-			modelResponse.Thinking = modelEntity.Thinking
-		}
-
-		models = append(models, modelResponse)
+	if modelList.Models != nil {
+		return ParseListModel(modelList), nil
 	}
-	return models, nil
+
+	var replicateList replicateModelList
+	if err = json.Unmarshal(body, &replicateList); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	if replicateList.Results == nil {
+		return nil, fmt.Errorf("invalid models list format")
+	}
+	for _, model := range replicateList.Results {
+		modelName := strings.TrimSpace(model.ID)
+		if modelName == "" && model.Owner != "" && model.Name != "" {
+			modelName = fmt.Sprintf("%s/%s", model.Owner, model.Name)
+		}
+		if modelName == "" {
+			modelName = strings.TrimSpace(model.Name)
+		}
+		if modelName == "" {
+			continue
+		}
+		modelList.Models = append(modelList.Models, DSModel{
+			ID: modelName,
+		})
+	}
+
+	return ParseListModel(modelList), nil
 }
 
 func (r *ReplicateModel) CheckConnection(apiConfig *APIConfig) error {

@@ -372,6 +372,10 @@ func (c *CoHereModel) Embed(modelName *string, texts []string, apiConfig *APICon
 		"input_type":      "search_document",
 		"embedding_types": []string{"float"},
 	}
+	// This is only available for embed-v4 and newer models. Possible values are 256, 512, 1024, and 1536. The default is 1536.
+	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
+		reqBody["output_dimension"] = embeddingConfig.Dimension
+	}
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {

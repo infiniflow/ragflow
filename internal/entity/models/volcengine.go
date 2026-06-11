@@ -479,6 +479,9 @@ func (v *VolcEngine) Embed(modelName *string, texts []string, apiConfig *APIConf
 				},
 			},
 		}
+		if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
+			reqBody["dimensions"] = embeddingConfig.Dimension
+		}
 
 		jsonData, err := json.Marshal(reqBody)
 		if err != nil {
