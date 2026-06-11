@@ -18,6 +18,8 @@ package dao
 
 import (
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 // TenantModelDAO tenant model data access object
@@ -30,6 +32,21 @@ func NewTenantModelDAO() *TenantModelDAO {
 
 func (dao *TenantModelDAO) Create(instance *entity.TenantModel) error {
 	return DB.Create(instance).Error
+}
+
+func (dao *TenantModelDAO) CreateBatch(models []*entity.TenantModel) error {
+	if len(models) == 0 {
+		return nil
+	}
+
+	return DB.Transaction(func(tx *gorm.DB) error {
+		for _, model := range models {
+			if err := tx.Create(model).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (dao *TenantModelDAO) DeleteByModelID(modelID string) (int64, error) {
@@ -60,6 +77,24 @@ func (dao *TenantModelDAO) GetByID(id string) (*entity.TenantModel, error) {
 func (dao *TenantModelDAO) GetModelByProviderIDAndInstanceIDAndModelName(providerID, instanceID, modelName string) (*entity.TenantModel, error) {
 	var model entity.TenantModel
 	err := DB.Where("provider_id = ? AND instance_id = ? AND model_name = ?", providerID, instanceID, modelName).First(&model).Error
+	if err != nil {
+		return nil, err
+	}
+	return &model, nil
+}
+
+func (dao *TenantModelDAO) GetModelsByProviderIDAndInstanceIDAndModelName(providerID, instanceID, modelName string) ([]*entity.TenantModel, error) {
+	var models []*entity.TenantModel
+	err := DB.Where("provider_id = ? AND instance_id = ? AND model_name = ?", providerID, instanceID, modelName).Find(&models).Error
+	if err != nil {
+		return nil, err
+	}
+	return models, nil
+}
+
+func (dao *TenantModelDAO) GetByProviderIDAndInstanceIDAndModelTypeAndModelName(providerID, instanceID, modelType, modelName string) (*entity.TenantModel, error) {
+	var model entity.TenantModel
+	err := DB.Where("provider_id = ? AND instance_id = ? AND model_type = ? AND model_name = ?", providerID, instanceID, modelType, modelName).First(&model).Error
 	if err != nil {
 		return nil, err
 	}

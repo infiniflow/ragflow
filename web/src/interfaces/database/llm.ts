@@ -54,6 +54,12 @@ export interface IProviderInstance {
   provider_id: string;
   region: string;
   status: string;
+  /**
+   * Optional: only returned by the showProviderInstance endpoint. Used
+   * to pre-fill the base_url/api_base form field in the ProviderModal
+   * (e.g. when opening an existing instance in viewMode).
+   */
+  base_url?: string;
 }
 export interface IAddedModel {
   model_type: string[];

@@ -74,7 +74,7 @@ func main() {
 	flag.Parse()
 
 	// Initialize logger with default level
-	if err := common.Init("info"); err != nil {
+	if err := common.Init("info", "ingestion_server.log"); err != nil {
 		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
 	}
 
@@ -98,10 +98,12 @@ func main() {
 	}
 
 	// Reinitialize logger with configured level if different
-	if config.Log.Level != "" && config.Log.Level != "info" {
-		if err := common.Init(config.Log.Level); err != nil {
-			common.Error("Failed to reinitialize logger with configured level", err)
-		}
+	level := config.Log.Level
+	if level == "" {
+		level = "info"
+	}
+	if err := common.Init(level, "ingestion_server.log"); err != nil {
+		common.Error("Failed to reinitialize logger", err)
 	}
 	server.SetLogger(common.Logger)
 
@@ -110,13 +112,6 @@ func main() {
 	// Initialize database
 	if err := dao.InitDB(); err != nil {
 		common.Fatal("Failed to initialize database", zap.Error(err))
-	}
-
-	// Initialize LLM factory data models from configuration file
-	if err := dao.InitLLMFactory(); err != nil {
-		common.Error("Failed to initialize LLM factory", err)
-	} else {
-		common.Info("LLM factory initialized successfully")
 	}
 
 	// Initialize doc engine

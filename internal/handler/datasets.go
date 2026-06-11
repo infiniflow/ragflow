@@ -602,6 +602,128 @@ func (h *DatasetsHandler) ListMetadataFlattened(c *gin.Context) {
 	jsonResponse(c, common.CodeSuccess, flattenedMeta, "success")
 }
 
+func (h *DatasetsHandler) UpdateDocumentMetadataConfig(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := strings.TrimSpace(c.Param("dataset_id"))
+	if datasetID == "" {
+		jsonError(c, common.CodeArgumentError, "dataset_id is required")
+		return
+	}
+	documentID := strings.TrimSpace(c.Param("document_id"))
+	if documentID == "" {
+		jsonError(c, common.CodeArgumentError, "document_id is required")
+		return
+	}
+	userID := strings.TrimSpace(user.ID)
+	if userID == "" {
+		jsonError(c, common.CodeArgumentError, "user_id is required")
+		return
+	}
+
+	var req map[string]interface{}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	data, code, err := h.datasetsService.UpdateDocumentMetadataConfig(userID, datasetID, documentID, req)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    code,
+		"data":    data,
+		"message": "success",
+	})
+}
+
+// SearchDatasets searches chunks across datasets based on a question
+// @Summary Search Datasets
+// @Description Search for relevant chunks across one or more datasets based on a question
+// @Tags datasets
+// @Accept json
+// @Produce json
+// @Param request body service.SearchDatasetsRequest true "search parameters"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/datasets/search [post]
+func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req service.SearchDatasetsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	if req.Page == nil {
+		defaultPage := 1
+		req.Page = &defaultPage
+	}
+	if req.Size == nil {
+		defaultSize := 30
+		req.Size = &defaultSize
+	}
+	if req.TopK == nil {
+		defaultTopK := 1024
+		req.TopK = &defaultTopK
+	}
+	if req.UseKG == nil {
+		defaultUseKG := false
+		req.UseKG = &defaultUseKG
+	}
+
+	if req.Question == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "question is required",
+		})
+		return
+	}
+	if req.DatasetIDs == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "kb_id is required",
+		})
+		return
+	}
+
+	if len(req.DatasetIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "kb_id array cannot be empty",
+		})
+		return
+	}
+
+	resp, err := h.datasetsService.SearchDatasets(&req, user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": resp,
+	})
+}
+
 func firstStringValue(value interface{}) string {
 	switch v := value.(type) {
 	case string:

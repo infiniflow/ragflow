@@ -30,6 +30,10 @@ export default {
   addProvider: `${restAPIv1}/providers/`,
   addProviderInstance: ({ llm_factory }: { llm_factory: string }) =>
     `${restAPIv1}/providers/${llm_factory}/instances`,
+  verifyProviderConnection: ({ provider_name }: { provider_name: string }) =>
+    `${restAPIv1}/providers/${provider_name}/connection`,
+  listProviderModels: ({ provider_name }: { provider_name: string }) =>
+    `${restAPIv1}/providers/${provider_name}/models`,
   listProviderInstances: ({ provider_name }: { provider_name: string }) =>
     `${restAPIv1}/providers/${provider_name}/instances`,
   listInstanceModels: ({

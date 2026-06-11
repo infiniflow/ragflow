@@ -31,6 +31,10 @@ os:
   hosts: 'http://${OS_HOST:-opensearch01}:9201'
   username: '${OS_USER:-admin}'
   password: '${OPENSEARCH_PASSWORD:-infini_rag_flow_OS_01}'
+  # Optional hybrid (BM25 + KNN) search tuning. The connector self-provisions the
+  # normalization search pipeline on start-up (requires OpenSearch >= 2.10).
+  # hybrid_search_pipeline: 'ragflow_hybrid_pipeline'
+  # hybrid_search_weights: [0.5, 0.5]   # [text/BM25 leg, vector/KNN leg]
 infinity:
   uri: '${INFINITY_HOST:-infinity}:23817'
   postgres_port: 5432
