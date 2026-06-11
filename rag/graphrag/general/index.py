@@ -748,7 +748,7 @@ async def merge_subgraph(
     for node_name, pagerank in pr.items():
         new_graph.nodes[node_name]["pagerank"] = pagerank
 
-    await set_graph(tenant_id, kb_id, embedding_model, new_graph, change, callback)
+    await set_graph(tenant_id, kb_id, embedding_model, new_graph, change, callback, persist_subgraphs=False)
     now = asyncio.get_running_loop().time()
     callback(msg=f"merging subgraph for doc {doc_id} into the global graph done in {now - start:.2f} seconds.")
     return new_graph
