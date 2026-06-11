@@ -156,6 +156,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// Google redirects here after Gmail / Google Drive web OAuth completes.
 		apiNoAuth.GET("/connectors/gmail/oauth/web/callback", r.connectorHandler.GmailWebOAuthCallback)
 		apiNoAuth.GET("/connectors/google-drive/oauth/web/callback", r.connectorHandler.GoogleDriveWebOAuthCallback)
+		// Forgot-password flow (fixes #15282).
+		// Routes are intentionally registered before any auth middleware:
+		// a user who has forgotten their password is, by definition,
+		// unauthenticated.
+		apiNoAuth.POST("/auth/password/forgot/captcha", r.userHandler.ForgotCaptcha)
+		apiNoAuth.POST("/auth/password/forgot/otp", r.userHandler.ForgotSendOTP)
+		apiNoAuth.POST("/auth/password/forgot/otp/verify", r.userHandler.ForgotVerifyOTP)
+		apiNoAuth.POST("/auth/password/reset", r.userHandler.ForgotResetPassword)
 	}
 
 	// Protected routes
@@ -266,6 +274,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.POST("/:dataset_id/documents/parse", r.documentHandler.ParseDocuments)
 				datasets.POST("/:dataset_id/documents/stop", r.documentHandler.StopParseDocuments)
 				datasets.DELETE("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.RemoveChunks)
+				datasets.PUT("/:dataset_id/documents/:document_id/metadata/config", r.datasetsHandler.UpdateDocumentMetadataConfig)
 			}
 
 			// Search routes
@@ -284,6 +293,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				file.GET("", r.fileHandler.ListFiles)
 				file.DELETE("", r.fileHandler.DeleteFiles)
 				file.POST("/move", r.fileHandler.MoveFiles)
+				file.POST("/link-to-datasets", r.fileHandler.LinkToDatasets)
 				file.GET("/:id/ancestors", r.fileHandler.GetFileAncestors)
 				file.GET("/:id/parent", r.fileHandler.GetParentFolder)
 				file.GET("/:id", r.fileHandler.Download)
@@ -306,16 +316,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 				memory.GET("/:memory_id", r.memoryHandler.GetMemoryMessages)
 			}
 
-			// TODO: Message routes - Implementation pending - depends on CanvasService, TaskService and embedding engine
-			// message := v1.Group("/messages")
-			// {
-			// 	message.POST("", r.memoryHandler.AddMessage)
-			// 	message.DELETE("/:memory_id/:message_id", r.memoryHandler.ForgetMessage)
-			// 	message.PUT("/:memory_id/:message_id", r.memoryHandler.UpdateMessage)
-			// 	message.GET("/search", r.memoryHandler.SearchMessage)
-			// 	message.GET("", r.memoryHandler.GetMessages)
-			// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
-			// }
+			// Message routes
+			message := v1.Group("/messages")
+			{
+				message.DELETE("/:memory_message", r.memoryHandler.ForgetMessage)
+			}
 
 			// Skill search routes
 			skills := v1.Group("/skills")
@@ -388,6 +393,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 				agents.GET("", r.agentHandler.ListAgents)
 				agents.GET("/prompts", r.agentHandler.GetPrompts)
 				agents.GET("/templates", r.agentHandler.ListTemplates)
+				agents.GET("/download", r.agentHandler.DownloadAgentFile)
+				agents.POST("/test_db_connection", r.agentHandler.TestDBConnection)
 				agents.GET("/:agent_id/versions", r.agentHandler.ListAgentVersions)
 				agents.GET("/:agent_id/versions/:version_id", r.agentHandler.GetAgentVersion)
 				agents.POST("/:agent_id/upload", r.agentHandler.UploadAgentFile)
@@ -395,6 +402,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				agents.GET("/:agent_id/sessions", r.agentHandler.ListAgentSessions)
 				agents.GET("/:agent_id/sessions/:session_id", r.agentHandler.GetAgentSession)
 				agents.DELETE("/:agent_id/sessions/:session_id", r.agentHandler.DeleteAgentSessionItem)
+				agents.DELETE("/:agent_id/sessions", r.agentHandler.DeleteAgentSessions)
 			}
 
 			// Plugin routes

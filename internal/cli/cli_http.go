@@ -127,7 +127,10 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("cannot delete admin server in admin mode")
 	case "save_config_command":
 		return c.SaveServerConfig(cmd)
-	// TODO: Implement other commands
+	case "use_api_server":
+		return c.UseAPIServer(cmd)
+	case "use_admin_server":
+		return c.UseAdminServer(cmd)
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
 	}
@@ -240,6 +243,10 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.CheckProviderWithKey(cmd)
 	case "use_model":
 		return c.UseModel(cmd)
+	case "use_api_server":
+		return c.UseAPIServer(cmd)
+	case "use_admin_server":
+		return c.UseAdminServer(cmd)
 	case "set_default_model":
 		return c.SetDefaultModel(cmd)
 	case "reset_default_model":
@@ -278,6 +285,8 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.GetMetadata(cmd)
 	case "parse_documents_user_command":
 		return c.ParseDocumentsUserCommand(cmd)
+	case "user_parse_local_file_command":
+		return c.UserParseLocalFile(cmd)
 	case "show_admin_server":
 		return c.ShowAdminServer(cmd)
 	case "show_api_server":
@@ -292,6 +301,8 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.AddAdminServer(cmd)
 	case "delete_admin_server":
 		return c.DeleteAdminServer(cmd)
+	case "user_chunk_command":
+		return c.ChunkCommand(cmd)
 	case "save_config_command":
 		return c.SaveServerConfig(cmd)
 	case "file_system_command":
