@@ -23,12 +23,12 @@ import (
 )
 
 type SplitOperator struct {
-	strategy      string
-	boundaries    []rune
+	strategy       string
+	boundaries     []rune
 	keepSeparators bool
 }
 
-func NewSplitOperator() *SplitOperator {
+func NewSplitOperator(config map[string]interface{}) *SplitOperator {
 	return &SplitOperator{}
 }
 

@@ -85,30 +85,32 @@ func (e *ChunkEngine) Plan(dsl *string) (*ChunkPlan, error) {
 			return nil, fmt.Errorf("pipeline[%d]: expected object", i)
 		}
 
+		var op chunk.Operator
+		var err error
 		operatorName, _ := operator["operator"].(string)
+		switch operatorName {
+		case "preprocess":
+			op, err = chunk.NewPreprocessOperator(operator)
+			if err != nil {
+				return nil, fmt.Errorf("create preprocess operator[%d]: %w", i, err)
+			}
+		case "split":
+			op := chunk.NewSplitOperator(operator)
+			if err := op.Prepare(operator); err != nil {
+				return nil, fmt.Errorf("prepare operator[%d]: %w", i, err)
+			}
+		case "postprocess":
+			op := chunk.NewPostprocessOperator()
+			if err := op.Prepare(operator); err != nil {
+				return nil, fmt.Errorf("prepare operator[%d]: %w", i, err)
+			}
+		}
 		delete(operator, "operator")
 
-		op, err := buildOperator(operatorName)
-		if err != nil {
-			return nil, fmt.Errorf("build operator %q: %w", operatorName, err)
-		}
 		plan.Operators = append(plan.Operators, op)
 	}
 
 	return plan, nil
-}
-
-func buildOperator(operator string) (chunk.Operator, error) {
-	switch operator {
-	case "preprocess":
-		return chunk.NewPreprocessOperator(), nil
-	case "split":
-		return chunk.NewSplitOperator(), nil
-	case "postprocess":
-		return chunk.NewPostprocessOperator(), nil
-	default:
-		return nil, fmt.Errorf("unknown stage: %q", operator)
-	}
 }
 
 // ---------------------------------------------------------------------------

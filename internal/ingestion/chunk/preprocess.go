@@ -28,32 +28,30 @@ type PreprocessOperator struct {
 	removeEmptyLines  bool
 }
 
-func NewPreprocessOperator() *PreprocessOperator {
-	return &PreprocessOperator{}
+func NewPreprocessOperator(config map[string]interface{}) (*PreprocessOperator, error) {
+	operator := &PreprocessOperator{}
+	if v, ok := config["normalize_newlines"]; ok {
+		operator.normalizeNewlines, ok = v.(bool)
+		if !ok {
+			return nil, fmt.Errorf("preprocess: normalize_newlines must be bool")
+		}
+	}
+	if v, ok := config["strip_whitespace"]; ok {
+		operator.stripWhitespace, ok = v.(bool)
+		if !ok {
+			return nil, fmt.Errorf("preprocess: strip_whitespace must be bool")
+		}
+	}
+	if v, ok := config["remove_empty_lines"]; ok {
+		operator.removeEmptyLines, ok = v.(bool)
+		if !ok {
+			return nil, fmt.Errorf("preprocess: remove_empty_lines must be bool")
+		}
+	}
+	return operator, nil
 }
 
 func (o *PreprocessOperator) Prepare(config map[string]interface{}) error {
-	if v, ok := config["normalize_newlines"]; ok {
-		b, ok := v.(bool)
-		if !ok {
-			return fmt.Errorf("preprocess: normalize_newlines must be bool")
-		}
-		o.normalizeNewlines = b
-	}
-	if v, ok := config["strip_whitespace"]; ok {
-		b, ok := v.(bool)
-		if !ok {
-			return fmt.Errorf("preprocess: strip_whitespace must be bool")
-		}
-		o.stripWhitespace = b
-	}
-	if v, ok := config["remove_empty_lines"]; ok {
-		b, ok := v.(bool)
-		if !ok {
-			return fmt.Errorf("preprocess: remove_empty_lines must be bool")
-		}
-		o.removeEmptyLines = b
-	}
 	return nil
 }
 
