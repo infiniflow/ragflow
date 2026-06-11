@@ -969,9 +969,10 @@ class ReplicateEmbed(Base):
 
     def __init__(self, key, model_name, base_url=None):
         from replicate.client import Client
+        from rag.llm.replicate_utils import normalize_replicate_api_key
 
         self.model_name = model_name
-        self.client = Client(api_token=key)
+        self.client = Client(api_token=normalize_replicate_api_key(key))
 
     def encode(self, texts: list):
         batch_size = 16
