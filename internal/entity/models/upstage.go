@@ -35,7 +35,15 @@ type UpstageModel struct {
 
 // NewUpstageModel creates a new Upstage model instance.
 func NewUpstageModel(baseURL map[string]string, urlSuffix URLSuffix) *UpstageModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
+	var transport *http.Transport
+	if ok {
+		transport = defaultTransport.Clone()
+	} else {
+		transport = &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+		}
+	}
 	transport.MaxIdleConns = 100
 	transport.MaxIdleConnsPerHost = 10
 	transport.IdleConnTimeout = 90 * time.Second
