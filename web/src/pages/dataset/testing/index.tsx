@@ -24,7 +24,7 @@ export default function RetrievalTesting() {
     filterValue,
   } = useTestRetrieval();
 
-  const [count] = useState(1);
+  const [count] = useState(1); // TODO: Different layouts are needed; if they are no longer required, consider deleting them.
 
   return (
     <div className="pr-5 pb-5">

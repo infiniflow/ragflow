@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 	"strconv"
 	"strings"
 	"time"
@@ -36,9 +37,33 @@ import (
 
 var IMG_BASE64_PREFIX = "data:image/png;base64,"
 
+// documentServiceIface defines the DocumentService methods used by DocumentHandler.
+type documentServiceIface interface {
+	CreateDocument(req *service.CreateDocumentRequest) (*entity.Document, error)
+	GetDocumentByID(id string) (*service.DocumentResponse, error)
+	UpdateDocument(id string, req *service.UpdateDocumentRequest) error
+	DeleteDocument(id string) error
+	DeleteDocuments(ids []string, deleteAll bool, datasetID, userID string) (int, error)
+	ParseDocuments(datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
+	StopParseDocuments(datasetID string, docIDs []string) (map[string]interface{}, error)
+	ListDocuments(page, pageSize int) ([]*service.DocumentResponse, int64, error)
+	ListDocumentsByDatasetID(kbID string, page, pageSize int) ([]*entity.DocumentListItem, int64, error)
+	GetDocumentsByAuthorID(authorID, page, pageSize int) ([]*service.DocumentResponse, int64, error)
+	GetThumbnail(docID string) (*service.ThumbnailResponse, error)
+	GetDocumentImage(imageID string) ([]byte, error)
+	GetMetadataSummary(kbID string, docIDs []string) (map[string]interface{}, error)
+	SetDocumentMetadata(docID string, meta map[string]interface{}) error
+	DeleteDocumentMetadata(docID string, keys []string) error
+	DeleteDocumentAllMetadata(docID string) error
+	GetDocumentMetadataByID(docID string) (map[string]interface{}, error)
+	GetDocumentArtifact(filename string) (*service.ArtifactResponse, error)
+	GetDocumentPreview(docID string) (*service.DocumentPreview, error)
+	DownloadDocument(datasetID, docID string) (*service.DownloadDocumentResp, error)
+}
+
 // DocumentHandler document handler
 type DocumentHandler struct {
-	documentService *service.DocumentService
+	documentService documentServiceIface
 	datasetService  *service.DatasetService
 }
 
@@ -177,6 +202,68 @@ func (h *DocumentHandler) GetDocumentImage(c *gin.Context) {
 	c.Data(http.StatusOK, contentType, data)
 }
 
+func (h *DocumentHandler) GetDocumentArtifact(c *gin.Context) {
+	filename := c.Param("filename")
+	artifact, err := h.documentService.GetDocumentArtifact(filename)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrArtifactInvalidFilename),
+			errors.Is(err, service.ErrArtifactInvalidFileType),
+			errors.Is(err, service.ErrArtifactNotFound):
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeDataError,
+				"message": err.Error(),
+			})
+		default:
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeExceptionError,
+				"data":    nil,
+				"message": err.Error(),
+			})
+		}
+		return
+	}
+
+	c.Header("Content-Type", artifact.ContentType)
+	if artifact.ForceAttachment {
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("Content-Disposition", "attachment")
+	} else {
+		c.Header("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, artifact.SafeFilename))
+	}
+	c.Data(http.StatusOK, artifact.ContentType, artifact.Data)
+}
+
+func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
+	docID := c.Param("id")
+
+	if docID == "" {
+		jsonError(c, common.CodeParamError, "id is required")
+		return
+	}
+
+	preview, err := h.documentService.GetDocumentPreview(docID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"message": "Document not found!",
+		})
+		return
+	}
+
+	ext := utility.GetFileExtension(preview.FileName)
+	if preview.ContentType != "" {
+		c.Header("Content-Type", preview.ContentType)
+	}
+
+	if utility.ShouldForceAttachment(ext, preview.ContentType) {
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("Content-Disposition", "attachment")
+	}
+
+	c.Data(http.StatusOK, preview.ContentType, preview.Data)
+}
+
 // UpdateDocument update document
 // @Summary Update Document
 // @Description Update document info
@@ -258,6 +345,54 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 	})
 }
 
+// DeleteDocuments handles DELETE /api/v1/datasets/:dataset_id/documents
+func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := c.Param("dataset_id")
+	if datasetID == "" {
+		jsonError(c, common.CodeArgumentError, "dataset_id is required")
+		return
+	}
+
+	var req struct {
+		IDs       *[]string `json:"ids"`
+		DeleteAll bool      `json:"delete_all,omitempty"`
+	}
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			jsonError(c, common.CodeDataError, err.Error())
+			return
+		}
+	}
+
+	var ids []string
+	if req.IDs != nil {
+		ids = *req.IDs
+	}
+	if len(ids) > 0 && req.DeleteAll {
+		jsonError(c, common.CodeArgumentError, "should not provide both ids and delete_all")
+		return
+	}
+	if len(ids) == 0 && !req.DeleteAll {
+		jsonError(c, common.CodeArgumentError, "should either provide doc ids or set delete_all(true)")
+		return
+	}
+
+	userID := c.GetString("user_id")
+	deleted, err := h.documentService.DeleteDocuments(ids, req.DeleteAll, datasetID, userID)
+	if err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, map[string]interface{}{"deleted": deleted}, "success")
+}
+
 // ListDocuments document list
 
 func (h *DocumentHandler) ListDocuments(c *gin.Context) {
@@ -311,6 +446,40 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 			"docs":  docs,
 		},
 	})
+}
+
+func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
+	datasetID := c.Param("dataset_id")
+	docID := c.Param("document_id")
+
+	if docID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"message": "Specify document_id please.",
+		})
+		return
+	}
+	if datasetID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"message": fmt.Sprintf("The dataset not own the document %s.", docID),
+		})
+		return
+	}
+
+	res, err := h.documentService.DownloadDocument(datasetID, docID)
+
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.Header("Content-Type", res.ContentType)
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, res.FileName))
+	c.Data(http.StatusOK, res.ContentType, res.Data)
 }
 
 func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]interface{}) map[string]interface{} {
@@ -772,5 +941,92 @@ func (h *DocumentHandler) ParseDocuments(c *gin.Context) {
 		"code":    0,
 		"message": "success",
 		"data":    parseResult,
+	})
+}
+
+type StopParseDocumentRequest struct {
+	DocumentIDs []string `json:"document_ids" binding:"required"`
+}
+
+func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
+	datasetID := c.Param("dataset_id")
+
+	var req StopParseDocumentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	if len(req.DocumentIDs) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": "`document_ids` is required",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	if !h.datasetService.Accessible(datasetID, userID) {
+		jsonError(c, common.CodeAuthenticationError, "You don't own the dataset.")
+		return
+	}
+
+	result, err := h.documentService.StopParseDocuments(datasetID, req.DocumentIDs)
+	if err != nil {
+		jsonError(c, common.CodeExceptionError, err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    result,
+	})
+}
+
+func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := c.Param("dataset_id")
+	if datasetID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": "dataset_id is required",
+		})
+		return
+	}
+	if !h.datasetService.Accessible(datasetID, user.ID) {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": "You don't own the dataset " + datasetID,
+		})
+		return
+	}
+
+	var docIDS []string
+	if docIDsParam := c.Query("doc_ids"); docIDsParam != "" {
+		docIDS = strings.Split(docIDsParam, ",")
+	}
+
+	summary, err := h.documentService.GetMetadataSummary(datasetID, docIDS)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    common.CodeServerError,
+			"message": "Failed to  get metadata summary" + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    gin.H{"summary": summary},
 	})
 }

@@ -26,6 +26,8 @@ import (
 	"strings"
 	"time"
 
+	"ragflow/internal/common"
+
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
@@ -44,6 +46,7 @@ type Config struct {
 	StorageEngine    StorageConfig          `mapstructure:"storage_engine"`
 	RegisterEnabled  int                    `mapstructure:"register_enabled"`
 	OAuth            map[string]OAuthConfig `mapstructure:"oauth"`
+	SMTP             common.SMTPConfig      `mapstructure:"smtp"`
 	Admin            AdminConfig            `mapstructure:"admin"`
 	UserDefaultLLM   UserDefaultLLMConfig   `mapstructure:"user_default_llm"`
 	DefaultSuperUser DefaultSuperUser       `mapstructure:"default_super_user"`

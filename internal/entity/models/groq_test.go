@@ -73,7 +73,7 @@ func TestNewGroqModelHandlesCustomDefaultTransport(t *testing.T) {
 	})
 
 	model := NewGroqModel(map[string]string{"default": "http://unused"}, URLSuffix{})
-	if model == nil || model.httpClient == nil || model.httpClient.Transport == nil {
+	if model == nil || model.baseModel.httpClient == nil || model.baseModel.httpClient.Transport == nil {
 		t.Fatalf("NewGroqModel returned incomplete model: %#v", model)
 	}
 }
@@ -306,7 +306,7 @@ func TestGroqListModelsAndCheckConnection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if strings.Join(models, ",") != "llama-3.3-70b-versatile,openai/gpt-oss-120b" {
+	if joinModelNames(models, ",") != "llama-3.3-70b-versatile,openai/gpt-oss-120b" {
 		t.Errorf("models=%v", models)
 	}
 	if err := model.CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {

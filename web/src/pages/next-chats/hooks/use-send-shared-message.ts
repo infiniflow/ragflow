@@ -6,6 +6,7 @@ import {
   useSelectDerivedMessages,
   useSendMessageWithSse,
 } from '@/hooks/logic-hooks';
+import { useFetchExternalChatInfo } from '@/hooks/use-chat-request';
 import { Message } from '@/interfaces/database/chat';
 import { get } from 'lodash';
 import trim from 'lodash/trim';
@@ -48,6 +49,7 @@ export const useSendSharedMessage = () => {
   } = useGetSharedChatSearchParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
   const completionUrl = `/api/v1/${from === SharedFrom.Agent ? 'agentbots' : 'chatbots'}/${conversationId}/completions`;
+  const { data: chatInfo } = useFetchExternalChatInfo();
   const { send, answer, done, stopOutputMessage } = useSendMessageWithSse();
   const {
     derivedMessages,
@@ -75,6 +77,7 @@ export const useSendSharedMessage = () => {
         session_id: get(derivedMessages, '0.session_id'),
         reasoning: enableThinking,
         internet: enableInternet,
+        ...(chatInfo?.llm_id ? { model_name: chatInfo.llm_id } : {}),
       });
 
       if (isCompletionError(res)) {
@@ -90,6 +93,7 @@ export const useSendSharedMessage = () => {
       derivedMessages,
       setValue,
       removeLatestMessage,
+      chatInfo,
     ],
   );
 
@@ -108,7 +112,7 @@ export const useSendSharedMessage = () => {
     const payload = { question: '' };
     const ret = await send(completionUrl, { ...payload, ...data });
     if (isCompletionError(ret)) {
-      message.error(ret?.data.message);
+      message.error(ret?.data.message ?? 'Unknown error');
       setHasError(true);
     }
   }, [send, completionUrl]);
