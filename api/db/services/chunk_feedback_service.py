@@ -319,3 +319,38 @@ class ChunkFeedbackService:
             "fail_count": fail_count,
             "chunk_ids": chunk_ids
         }
+
+    @classmethod
+    def thumbs_down_rate(cls, dialog_id: str, window_days: int = 7) -> float:
+        """Return the fraction of API4Conversation sessions for ``dialog_id``
+        that have ``thumb_up = 0`` (no explicit upvote) among those created
+        in the last ``window_days`` days that have received any feedback
+        (``thumb_up`` in {0, 1}).
+
+        Returns 0.0 when there is no feedback data in the window.
+        """
+        try:
+            from api.db.db_models import API4Conversation
+            from common.time_utils import current_timestamp
+
+            cutoff = current_timestamp() - window_days * 86400 * 1000
+            rows = (
+                API4Conversation
+                .select(API4Conversation.thumb_up)
+                .where(
+                    (API4Conversation.dialog_id == dialog_id) &
+                    (API4Conversation.create_time >= cutoff) &
+                    (API4Conversation.thumb_up << [0, 1])
+                )
+                .tuples()
+            )
+            total = 0
+            downvotes = 0
+            for (thumb_up,) in rows:
+                total += 1
+                if thumb_up == 0:
+                    downvotes += 1
+            return downvotes / total if total > 0 else 0.0
+        except Exception as e:
+            logging.error("thumbs_down_rate failed for dialog %s: %s", dialog_id, e)
+            return 0.0

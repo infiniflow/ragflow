@@ -305,7 +305,7 @@ class EvaluationService(CommonService):
 
             # Execute evaluation asynchronously (in production, use task queue)
             # For now, we'll execute synchronously
-            cls._execute_evaluation(run_id, dataset_id, dialog)
+            cls.execute_evaluation(run_id, dataset_id, dialog)
 
             return True, run_id
         except Exception as e:
@@ -313,7 +313,7 @@ class EvaluationService(CommonService):
             return False, str(e)
 
     @classmethod
-    def _execute_evaluation(cls, run_id: str, dataset_id: str, dialog: Any):
+    def execute_evaluation(cls, run_id: str, dataset_id: str, dialog: Any):
         """
         Execute evaluation for all test cases.
 
@@ -500,15 +500,37 @@ class EvaluationService(CommonService):
 
         # Generation metrics
         if generated_answer:
-            # Basic metrics
             metrics["answer_length"] = len(generated_answer)
             metrics["has_answer"] = 1.0 if generated_answer.strip() else 0.0
 
-            # TODO: Implement advanced metrics using LLM-as-judge
-            # - Faithfulness (hallucination detection)
-            # - Answer relevance
-            # - Context relevance
-            # - Semantic similarity (if reference answer provided)
+            # answer_relevancy: heuristic proxy — 1.0 when answer is non-trivial
+            # (≥10 chars) and shares at least one content word with the question.
+            # Replace with an LLM-as-judge call when available.
+            question_words = set(question.lower().split())
+            answer_words = set(generated_answer.lower().split())
+            overlap = len(question_words & answer_words)
+            metrics["answer_relevancy"] = (
+                1.0 if len(generated_answer.strip()) >= 10 and overlap > 0 else 0.0
+            )
+
+            # Semantic similarity vs reference answer (simple word-overlap F1)
+            if reference_answer:
+                ref_words = set(reference_answer.lower().split())
+                if ref_words and answer_words:
+                    prec = len(answer_words & ref_words) / len(answer_words)
+                    rec = len(answer_words & ref_words) / len(ref_words)
+                    metrics["answer_similarity"] = (
+                        2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
+                    )
+
+        # citation_hit_rate: fraction of relevant chunks that were retrieved.
+        # Mirrors hit_rate but is named explicitly for the optimisation pipeline.
+        if relevant_chunk_ids and retrieved_chunks:
+            retrieved_ids = {c.get("chunk_id") for c in retrieved_chunks}
+            relevant_set = set(relevant_chunk_ids)
+            metrics["citation_hit_rate"] = (
+                len(retrieved_ids & relevant_set) / len(relevant_set)
+            )
 
         return metrics
 
@@ -679,3 +701,52 @@ class EvaluationService(CommonService):
         except Exception as e:
             logging.error(f"Error generating recommendations for run {run_id}: {e}")
             return []
+
+    @classmethod
+    def get_rolling_score(cls, dialog_id: str, metric: str = "avg_answer_relevancy",
+                          window_days: int = 7) -> float:
+        """Return the rolling average of ``metric`` across completed evaluation runs
+        for ``dialog_id`` in the last ``window_days`` days.
+
+        Returns 0.0 when no runs exist in the window.
+        """
+        try:
+            from common.time_utils import current_timestamp
+            cutoff = current_timestamp() - window_days * 86400 * 1000
+            runs = (
+                EvaluationRun
+                .select(EvaluationRun.metrics_summary)
+                .where(
+                    (EvaluationRun.dialog_id == dialog_id) &
+                    (EvaluationRun.status == "COMPLETED") &
+                    (EvaluationRun.create_time >= cutoff)
+                )
+                .tuples()
+            )
+            # _compute_summary_metrics stores per-metric averages as "avg_<metric>".
+            # Accept either the base name or the prefixed key so callers don't need
+            # to know the internal naming convention.
+            summary_key = metric if metric.startswith("avg_") else f"avg_{metric}"
+            weighted_sum = 0.0
+            total_cases_sum = 0
+            for (metrics_summary,) in runs:
+                if not metrics_summary:
+                    continue
+                if isinstance(metrics_summary, str):
+                    import json
+                    try:
+                        metrics_summary = json.loads(metrics_summary)
+                    except Exception:
+                        continue
+                v = metrics_summary.get(summary_key)
+                try:
+                    cases = int(metrics_summary.get("total_cases", 0))
+                    if v is not None and cases > 0:
+                        weighted_sum += float(v) * cases
+                        total_cases_sum += cases
+                except (TypeError, ValueError):
+                    pass
+            return weighted_sum / total_cases_sum if total_cases_sum > 0 else 0.0
+        except Exception as e:
+            logging.error(f"get_rolling_score failed for dialog {dialog_id}: {e}")
+            return 0.0

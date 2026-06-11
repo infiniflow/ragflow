@@ -59,6 +59,21 @@ def _chunk_kb_id_for_doc(row_dict, kb_ids, doc_id):
     return row_dict.get("kb_id") or row_dict.get("kb_id_kwd")
 
 
+def _tally_tokens(kwargs: dict, question: str, answer: str) -> None:
+    conv_id = kwargs.get("_conv_id")
+    if not conv_id:
+        return
+    try:
+        # Only charge for tokens actually produced this turn: the new answer
+        # tokens plus the user's question tokens, NOT the full packed prompt
+        # history which would double-count prior turns.
+        delta = num_tokens_from_string(question) + num_tokens_from_string(answer)
+        from api.db.services.conversation_service import ConversationService
+        ConversationService.increment_token_tally(conv_id, delta)
+    except Exception as e:
+        logging.warning("_tally_tokens failed for conv %s: %s", conv_id, e)
+
+
 async def _hydrate_chunk_vectors(retriever, chunks, tenant_ids, kb_ids):
     """
     Citation prep: on the ES backend the main retrieval call deliberately
@@ -286,7 +301,7 @@ class DialogService(CommonService):
         return list(objs)
 
 
-async def async_chat_solo(dialog, messages, stream=True):
+async def async_chat_solo(dialog, messages, stream=True, **kwargs):
     llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
     attachments = ""
     image_attachments = []
@@ -316,17 +331,23 @@ async def async_chat_solo(dialog, messages, stream=True):
         msg[-1]["content"] += attachments
     if "chat" in llm_types and image_attachments:
         convert_last_user_msg_to_multimodal(msg, image_attachments, factory)
+
+    question = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+
     if stream:
         if "chat" in llm_types:
             stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, dialog.llm_setting)
         else:
             stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, dialog.llm_setting, images=image_files)
+        full_answer = ""
         async for kind, value, state in _stream_with_think_delta(stream_iter):
             if kind == "marker":
                 flags = {"start_to_think": True} if value == "<think>" else {"end_to_think": True}
                 yield {"answer": "", "reference": {}, "audio_binary": None, "prompt": "", "created_at": time.time(), "final": False, **flags}
                 continue
+            full_answer += value
             yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "prompt": "", "created_at": time.time(), "final": False}
+        _tally_tokens(kwargs, question, full_answer)
     else:
         if "chat" in llm_types:
             answer = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, dialog.llm_setting)
@@ -334,6 +355,7 @@ async def async_chat_solo(dialog, messages, stream=True):
             answer = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, dialog.llm_setting, images=image_files)
         user_content = msg[-1].get("content", "[content not available]")
         logging.debug("User: {}|Assistant: {}".format(user_content, answer))
+        _tally_tokens(kwargs, question, answer)
         yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, answer), "prompt": "", "created_at": time.time()}
 
 
@@ -544,7 +566,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     use_web_search = _should_use_web_search(dialog.prompt_config, kwargs.get("internet"))
     logging.debug("web_search kb=%s tavily=%s internet=%r enabled=%s", bool(dialog.kb_ids), bool(dialog.prompt_config.get("tavily_api_key")), kwargs.get("internet"), use_web_search)
     if not dialog.kb_ids and not use_web_search:
-        async for ans in async_chat_solo(dialog, messages, stream):
+        async for ans in async_chat_solo(dialog, messages, stream, **kwargs):
             yield ans
         return
 
@@ -765,6 +787,49 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     prompt4citation = ""
     if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
         prompt4citation = citation_prompt()
+
+    # Context compression: roll up oldest turns when token budget is tight
+    _conv_id = kwargs.get("_conv_id")
+    _compression_cfg = prompt_config.get("context_compression", {})
+    _summary_msg = None
+    if _conv_id and _compression_cfg.get("enabled"):
+        try:
+            from api.db.services.context_compressor import ContextCompressor
+            from api.db.services.conversation_service import ConversationService
+            _ctx_limit = _compression_cfg.get("model_ctx_limit", max_tokens)
+            _threshold = _compression_cfg.get("threshold_pct", 0.80)
+            _tally = ConversationService.get_token_tally(_conv_id)
+            _compressor = ContextCompressor(_conv_id, chat_mdl, _ctx_limit, _threshold)
+            if _compressor.should_compress(_tally):
+                await _compressor.rolling_compress()
+                # Re-read compression state but keep in-flight messages (not yet
+                # committed to DB) so the latest user turn is never lost.
+                _conv = ConversationService.get_by_id(_conv_id)[1]
+                _new_cursor = _conv.compression_cursor or 0
+                _compressed = _conv.compressed_message
+                if _compressed:
+                    _parts = [_compressed.get("summary", "")]
+                    _kf = _compressed.get("key_facts", [])
+                    if _kf:
+                        _parts.append("Key facts established:\n" + "\n".join(f"- {f}" for f in _kf))
+                    _oq = _compressed.get("open_questions", [])
+                    if _oq:
+                        _parts.append("Open questions:\n" + "\n".join(f"- {q}" for q in _oq))
+                    _summary_msg = {
+                        "role": "system",
+                        "content": "[Earlier conversation summary]\n\n" + "\n\n".join(_parts),
+                        "_is_summary": True,
+                    }
+                # Only keep messages from the new cursor onward; the current
+                # `messages` argument already contains the latest in-flight turn.
+                messages = messages[_new_cursor:]
+        except Exception as _ce:
+            logging.warning("Context compression failed for conv %s: %s", _conv_id, _ce)
+
+    # Insert the compression summary as a second system message right after the
+    # existing system prompt so the LLM treats it as high-priority context.
+    if _summary_msg:
+        msg.insert(1, {"role": "system", "content": _summary_msg["content"]})
     msg.extend([{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])} for m in messages if m["role"] != "system"])
     used_token_count, msg = message_fit_in(msg, int(max_tokens * 0.95))
     if llm_model_config["model_type"] == "chat" and image_attachments:
@@ -832,6 +897,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         generate_result_time_cost = (finish_chat_ts - retrieval_ts) * 1000
 
         tk_num = num_tokens_from_string(think + answer)
+        _tally_tokens(kwargs, questions[-1] if questions else "", think + answer)
         prompt += "\n\n### Query:\n%s" % " ".join(questions)
         prompt = (
             f"{prompt}\n\n"
