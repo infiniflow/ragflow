@@ -36,18 +36,7 @@ type NovitaModel struct {
 
 // NewNovitaModel creates a new Novita model instance.
 func NewNovitaModel(baseURL map[string]string, urlSuffix URLSuffix) *NovitaModel {
-	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
-	var transport *http.Transport
-	if ok {
-		transport = defaultTransport.Clone()
-	} else {
-		transport = &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-		}
-	}
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
+	transport := newPooledTransport()
 	transport.DisableCompression = false
 	transport.ResponseHeaderTimeout = 60 * time.Second
 

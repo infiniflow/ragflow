@@ -35,10 +35,7 @@ type FuturMixModel struct {
 
 // NewFuturMixModel creates a new FuturMix model instance.
 func NewFuturMixModel(baseURL map[string]string, urlSuffix URLSuffix) *FuturMixModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
+	transport := newPooledTransport()
 	transport.DisableCompression = false
 	transport.ResponseHeaderTimeout = 60 * time.Second
 

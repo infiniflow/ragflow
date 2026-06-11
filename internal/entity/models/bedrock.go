@@ -110,10 +110,7 @@ type BedrockModel struct {
 // Non-streaming callers wrap each request in context.WithTimeout
 // instead, and ResponseHeaderTimeout still caps connection setup.
 func NewBedrockModel(baseURL map[string]string, urlSuffix URLSuffix) *BedrockModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
+	transport := newPooledTransport()
 	transport.DisableCompression = false
 	transport.ResponseHeaderTimeout = 60 * time.Second
 

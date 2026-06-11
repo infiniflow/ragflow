@@ -35,18 +35,7 @@ type N1NModel struct {
 
 // NewN1NModel creates a new n1n.ai model instance.
 func NewN1NModel(baseURL map[string]string, urlSuffix URLSuffix) *N1NModel {
-	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
-	var transport *http.Transport
-	if ok {
-		transport = defaultTransport.Clone()
-	} else {
-		transport = &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-		}
-	}
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
+	transport := newPooledTransport()
 	transport.DisableCompression = false
 	transport.ResponseHeaderTimeout = 60 * time.Second
 

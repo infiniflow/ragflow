@@ -40,10 +40,7 @@ type OpenAIModel struct {
 
 // NewOpenAIModel creates a new OpenAI model instance.
 func NewOpenAIModel(baseURL map[string]string, urlSuffix URLSuffix) *OpenAIModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
+	transport := newPooledTransport()
 	transport.DisableCompression = false
 	transport.ResponseHeaderTimeout = 60 * time.Second
 

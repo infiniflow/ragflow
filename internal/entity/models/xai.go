@@ -45,10 +45,7 @@ type XAIModel struct {
 
 // NewXAIModel creates a new xAI model instance.
 func NewXAIModel(baseURL map[string]string, urlSuffix URLSuffix) *XAIModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
+	transport := newPooledTransport()
 	transport.DisableCompression = false
 
 	return &XAIModel{

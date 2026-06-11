@@ -51,10 +51,7 @@ type AstraflowModel struct {
 
 // NewAstraflowModel creates a new Astraflow model instance.
 func NewAstraflowModel(baseURL map[string]string, urlSuffix URLSuffix) *AstraflowModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
+	transport := newPooledTransport()
 	transport.DisableCompression = false
 	transport.ResponseHeaderTimeout = 60 * time.Second
 

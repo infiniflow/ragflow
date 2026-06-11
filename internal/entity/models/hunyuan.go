@@ -35,10 +35,7 @@ type HunyuanModel struct {
 
 // NewHunyuanModel creates a new Hunyuan model instance.
 func NewHunyuanModel(baseURL map[string]string, urlSuffix URLSuffix) *HunyuanModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
+	transport := newPooledTransport()
 	transport.DisableCompression = false
 	transport.ResponseHeaderTimeout = 60 * time.Second
 

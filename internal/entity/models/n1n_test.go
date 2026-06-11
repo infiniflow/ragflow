@@ -5,12 +5,6 @@ import (
 	"testing"
 )
 
-type roundTripperFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) {
-	return f(r)
-}
-
 func newN1NForTest(baseURL string) *N1NModel {
 	return NewN1NModel(
 		map[string]string{"default": baseURL},

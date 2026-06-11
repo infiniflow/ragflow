@@ -35,18 +35,7 @@ type LongCatModel struct {
 
 // NewLongCatModel creates a new LongCat model instance.
 func NewLongCatModel(baseURL map[string]string, urlSuffix URLSuffix) *LongCatModel {
-	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
-	var transport *http.Transport
-	if ok {
-		transport = defaultTransport.Clone()
-	} else {
-		transport = &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-		}
-	}
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
+	transport := newPooledTransport()
 	transport.DisableCompression = false
 	transport.ResponseHeaderTimeout = 60 * time.Second
 

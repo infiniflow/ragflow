@@ -36,10 +36,7 @@ type StepFunModel struct {
 
 // NewStepFunModel creates a new StepFun model instance.
 func NewStepFunModel(baseURL map[string]string, urlSuffix URLSuffix) *StepFunModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
+	transport := newPooledTransport()
 	transport.DisableCompression = false
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
