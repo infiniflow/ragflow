@@ -17,6 +17,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"ragflow/internal/common"
@@ -26,6 +27,8 @@ import (
 	"time"
 
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
+	enginetypes "ragflow/internal/engine/types"
 )
 
 const (
@@ -70,6 +73,16 @@ const (
 // validForgettingPolicies defines which forgetting policies are valid
 var validForgettingPolicies = map[ForgettingPolicy]bool{
 	ForgettingPolicyFIFO: true,
+}
+
+// ResourceNotFoundError marks client-visible missing memory/message resources.
+type ResourceNotFoundError struct {
+	Resource string
+	ID       string
+}
+
+func (e *ResourceNotFoundError) Error() string {
+	return fmt.Sprintf("%s '%s' not found.", e.Resource, e.ID)
 }
 
 //
@@ -226,6 +239,7 @@ func generateOutputFormat(typesToExtract []string) string {
 // It provides methods for creating, updating, deleting, and querying memories
 type MemoryService struct {
 	memoryDAO *dao.MemoryDAO
+	docEngine engine.DocEngine
 }
 
 // NewMemoryService creates a new MemoryService instance
@@ -235,6 +249,7 @@ type MemoryService struct {
 func NewMemoryService() *MemoryService {
 	return &MemoryService{
 		memoryDAO: dao.NewMemoryDAO(),
+		docEngine: engine.Get(),
 	}
 }
 
@@ -755,6 +770,82 @@ func (s *MemoryService) DeleteMemory(memoryID string) error {
 	return nil
 }
 
+// ForgetMessage marks a memory message as forgotten by setting forget_at.
+// This mirrors Python memory_api_service.forget_message and keeps the message
+// record for retention/cleanup policies instead of deleting it immediately.
+func (s *MemoryService) ForgetMessage(ctx context.Context, userID string, memoryID string, messageID int64) error {
+	memory, err := s.requireMemoryAccess(ctx, userID, memoryID)
+	if err != nil {
+		return err
+	}
+
+	if s.docEngine == nil {
+		return errors.New("message store is not initialized")
+	}
+
+	now := time.Now().UTC()
+	forgetTime := now.Format("2006-01-02 15:04:05")
+	messageDocID := fmt.Sprintf("%s_%d", memoryID, messageID)
+	updates := map[string]interface{}{
+		"forget_at":     forgetTime,
+		"forget_at_flt": now.UnixMilli(),
+	}
+	condition := map[string]interface{}{
+		"id": messageDocID,
+	}
+	indexName := fmt.Sprintf("memory_%s", memory.TenantID)
+
+	if err := s.docEngine.UpdateChunks(ctx, condition, updates, indexName, memoryID); err != nil {
+		if isMessageDocumentNotFound(err) {
+			// Match Python delete-by-query behavior: forgetting an already-missing
+			// message document is idempotent and still considered successful.
+			return nil
+		}
+		return fmt.Errorf("failed to forget message '%d' in memory '%s': %w", messageID, memoryID, err)
+	}
+
+	return nil
+}
+
+func isMessageDocumentNotFound(err error) bool {
+	return errors.Is(err, enginetypes.ErrDocumentNotFound)
+}
+
+func (s *MemoryService) requireMemoryAccess(ctx context.Context, userID string, memoryID string) (*entity.Memory, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	memory, err := s.memoryDAO.GetByIDWithContext(ctx, memoryID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, &ResourceNotFoundError{Resource: "Memory", ID: memoryID}
+		}
+		return nil, fmt.Errorf("failed to get memory '%s': %w", memoryID, err)
+	}
+	if memory.TenantID == userID {
+		return memory, nil
+	}
+	if memory.Permissions != string(TenantPermissionTeam) {
+		return nil, &ResourceNotFoundError{Resource: "Memory", ID: memoryID}
+	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	userTenantService := NewUserTenantService()
+	userTenants, err := userTenantService.GetUserTenantRelationByUserIDWithContext(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	for _, tenant := range userTenants {
+		if tenant.TenantID == memory.TenantID {
+			return memory, nil
+		}
+	}
+
+	return nil, &ResourceNotFoundError{Resource: "Memory", ID: memoryID}
+}
+
 // ListMemories retrieves a paginated list of memories with optional filters
 // When tenantIDs is empty, it retrieves all tenants associated with the user
 //
@@ -850,9 +941,6 @@ func (s *MemoryService) GetMemoryConfig(memoryID string) (*CreateMemoryResponse,
 
 // TODO: AddMessage - Implementation pending - depends on embedding engine
 // func (s *MemoryService) AddMessage(memoryIDs []string, messageDict map[string]interface{}) (bool, string, error) { ... }
-
-// TODO: ForgetMessage - Implementation pending - depends on embedding engine
-// func (s *MemoryService) ForgetMessage(memoryID string, messageID int) (bool, error) { ... }
 
 // TODO: UpdateMessageStatus - Implementation pending - depends on embedding engine
 // func (s *MemoryService) UpdateMessageStatus(memoryID string, messageID int, status bool) (bool, error) { ... }

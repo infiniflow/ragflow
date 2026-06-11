@@ -312,10 +312,14 @@ func InitProviderManager(dirPath string) error {
 	alias2ModelIndex := make(map[string]int)
 	for idx, model := range allModels.Models {
 		if model.Alias == nil {
-			alias2ModelIndex[model.Name] = idx
+			alias2ModelIndex[strings.ToLower(model.Name)] = idx
 		} else {
 			for _, alias := range model.Alias {
-				alias2ModelIndex[alias] = idx
+				lowerAlias := strings.ToLower(alias)
+				if existingIdx, ok := alias2ModelIndex[lowerAlias]; ok && existingIdx != idx {
+					return fmt.Errorf("duplicate alias %q for models %q and %q", alias, allModels.Models[existingIdx].Name, model.Name)
+				}
+				alias2ModelIndex[lowerAlias] = idx
 			}
 		}
 	}

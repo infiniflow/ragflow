@@ -1462,6 +1462,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       listModelsSearchPlaceholder: '搜索模型…',
       listModelsEmpty: '暂无可用模型',
       listModelsLoading: '正在加载模型…',
+      selectModelBeforeVerify: '请至少选择一个模型后再验证。',
       addCustomModel: '添加自定义模型',
       addCustomModelTitle: '添加自定义模型',
       modelMaxTokens: '最大 Token 数',
