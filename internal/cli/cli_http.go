@@ -285,6 +285,8 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.GetMetadata(cmd)
 	case "parse_documents_user_command":
 		return c.ParseDocumentsUserCommand(cmd)
+	case "user_parse_local_file_command":
+		return c.UserParseLocalFile(cmd)
 	case "show_admin_server":
 		return c.ShowAdminServer(cmd)
 	case "show_api_server":
@@ -299,6 +301,8 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.AddAdminServer(cmd)
 	case "delete_admin_server":
 		return c.DeleteAdminServer(cmd)
+	case "user_chunk_command":
+		return c.ChunkCommand(cmd)
 	case "save_config_command":
 		return c.SaveServerConfig(cmd)
 	case "file_system_command":
