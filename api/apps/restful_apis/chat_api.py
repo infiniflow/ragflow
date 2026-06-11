@@ -158,6 +158,13 @@ def _build_session_response(conv: dict) -> dict:
     conv = dict(conv)
     conv["chat_id"] = conv.pop("dialog_id", conv.get("chat_id"))
     conv["messages"] = conv.pop("message", conv.get("messages", []))
+    # Compression telemetry fields
+    conv.setdefault("token_tally", 0)
+    conv.setdefault("compression_cursor", 0)
+    cursor = conv["compression_cursor"]
+    total_msgs = len(conv["messages"])
+    conv["compressed_turn_count"] = max(0, cursor)
+    conv["uncompressed_turn_count"] = max(0, total_msgs - cursor)
     return conv
 
 
@@ -347,6 +354,28 @@ async def _validate_dataset_ids(dataset_ids, tenant_id):
     return normalized_ids
 
 
+def _validate_context_compression(cc):
+    """Validate a ``context_compression`` config dict.
+
+    Returns ``None`` on success or an error message string on failure.
+    """
+    if cc is None:
+        return None
+    if not isinstance(cc, dict):
+        return "`context_compression` must be an object."
+    if "enabled" in cc and not isinstance(cc["enabled"], bool):
+        return "`context_compression.enabled` must be a boolean."
+    if "threshold_pct" in cc:
+        v = cc["threshold_pct"]
+        if not isinstance(v, (int, float)) or not (0.5 <= v <= 0.99):
+            return "`context_compression.threshold_pct` must be a number between 0.5 and 0.99."
+    if "model_ctx_limit" in cc:
+        v = cc["model_ctx_limit"]
+        if not isinstance(v, int) or v < 512:
+            return "`context_compression.model_ctx_limit` must be an integer >= 512."
+    return None
+
+
 def _apply_prompt_defaults(req):
     prompt_config = req.setdefault("prompt_config", {})
     for key, value in _DEFAULT_PROMPT_CONFIG.items():
@@ -397,9 +426,9 @@ async def create():
         if "prompt_config" in req:
             if not isinstance(req["prompt_config"], dict):
                 return get_data_error_result(message="`prompt_config` should be an object.")
-            # err = _validate_prompt_config(req["prompt_config"])
-            # if err:
-            #     return get_data_error_result(message=err)
+            err = _validate_context_compression(req["prompt_config"].get("context_compression"))
+            if err:
+                return get_data_error_result(message=err)
 
         req.setdefault("kb_ids", [])
         req.setdefault("llm_id", tenant.llm_id)
@@ -556,9 +585,9 @@ async def update_chat(chat_id):
         if "prompt_config" in req:
             if not isinstance(req["prompt_config"], dict):
                 return get_data_error_result(message="`prompt_config` should be an object.")
-            # err = _validate_prompt_config(req["prompt_config"])
-            # if err:
-            #     return get_data_error_result(message=err)
+            err = _validate_context_compression(req["prompt_config"].get("context_compression"))
+            if err:
+                return get_data_error_result(message=err)
 
         # prompt_config = req.get("prompt_config", {})
         # if not prompt_config:
@@ -638,12 +667,12 @@ async def patch_chat(chat_id):
         if "prompt_config" in req:
             if not isinstance(req["prompt_config"], dict):
                 return get_data_error_result(message="`prompt_config` should be an object.")
+            err = _validate_context_compression(req["prompt_config"].get("context_compression"))
+            if err:
+                return get_data_error_result(message=err)
             prompt_config = deepcopy(current_chat.get("prompt_config", {}))
             prompt_config.update(req["prompt_config"])
             req["prompt_config"] = prompt_config
-            # err = _validate_prompt_config(prompt_config)
-            # if err:
-            #     return get_data_error_result(message=err)
 
         if "llm_setting" in req:
             llm_setting = deepcopy(current_chat.get("llm_setting", {}))
@@ -829,6 +858,55 @@ async def get_session(chat_id, session_id):
         result = _build_session_response(conv.to_dict())
         result["avatar"] = avatar
         return get_json_result(data=result)
+    except Exception as ex:
+        return server_error_response(ex)
+
+
+@manager.route("/chats/<chat_id>/sessions/<session_id>/compress", methods=["POST"])  # noqa: F821
+@login_required
+async def compress_session(chat_id, session_id):
+    """Trigger an on-demand compression pass for a session.
+
+    Requires the chat to have ``prompt_config.context_compression.enabled = true``.
+    Returns the new ``compressed_message`` and updated ``compression_cursor``.
+    """
+    if not await _ensure_owned_chat(chat_id):
+        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+    try:
+        ok, conv = await thread_pool_exec(ConversationService.get_by_id, session_id)
+        if not ok:
+            return get_data_error_result(message="Session not found!")
+        if conv.dialog_id != chat_id:
+            return get_data_error_result(message="Session does not belong to this chat!")
+
+        dialogs = await _ensure_owned_chat(chat_id)
+        if not dialogs:
+            return get_data_error_result(message="Chat not found!")
+        dialog = dialogs[0]
+        cc = (dialog.prompt_config or {}).get("context_compression", {})
+        if not cc.get("enabled"):
+            return get_data_error_result(message="Context compression is not enabled for this chat.")
+
+        from api.db.services.dialog_service import get_models
+        from api.db.services.context_compressor import ContextCompressor
+        _, _, _, chat_mdl, _ = await thread_pool_exec(get_models, dialog)
+        ctx_limit = cc.get("model_ctx_limit", 8192)
+        threshold_pct = float(cc.get("threshold_pct", 0.80))
+        compressor = ContextCompressor(session_id, chat_mdl, ctx_limit, threshold_pct)
+        compressed = await compressor.rolling_compress()
+        if not compressed:
+            return get_json_result(data={"compressed": False, "message": "Nothing to compress."})
+
+        ok2, updated = await thread_pool_exec(ConversationService.get_by_id, session_id)
+        if not ok2:
+            return get_data_error_result(message="Failed to retrieve updated session.")
+
+        return get_json_result(data={
+            "compressed": True,
+            "compressed_message": updated.compressed_message,
+            "compression_cursor": updated.compression_cursor,
+            "token_tally": updated.token_tally,
+        })
     except Exception as ex:
         return server_error_response(ex)
 
@@ -1237,6 +1315,9 @@ async def session_completion(chat_id_in_arg=""):
             if chat_id:
                 formatted["chat_id"] = chat_id
             return formatted
+
+        if conv is not None:
+            req["_conv_id"] = conv.id
 
         async def stream():
             """Yield SSE-formatted chunks from the async chat generator."""

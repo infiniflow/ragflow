@@ -35,6 +35,36 @@ class ConversationService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_token_tally(cls, conv_id: str) -> int:
+        rows = cls.model.select(cls.model.token_tally).where(cls.model.id == conv_id)
+        row = rows.first()
+        return row.token_tally if row else 0
+
+    @classmethod
+    @DB.connection_context()
+    def increment_token_tally(cls, conv_id: str, delta: int) -> None:
+        cls.model.update(token_tally=cls.model.token_tally + delta).where(cls.model.id == conv_id).execute()
+
+    @classmethod
+    @DB.connection_context()
+    def get_effective_history(cls, conv_id: str, chat_mdl=None) -> list:
+        """Return the message list to pass to the LLM for this session.
+
+        When a compressed summary exists, turns before ``compression_cursor``
+        are replaced with a single synthetic assistant message.
+        """
+        from api.db.services.context_compressor import ContextCompressor
+
+        ok, conv = cls.get_by_id(conv_id)
+        if not ok:
+            return []
+        if chat_mdl is None:
+            return conv.message or []
+        compressor = ContextCompressor(conv_id, chat_mdl, model_ctx_limit=0)
+        return compressor.get_effective_history(conv)
+
+    @classmethod
+    @DB.connection_context()
     def get_list(cls, dialog_id, page_number, items_per_page, orderby, desc, id, name, user_id=None):
         sessions = cls.model.select().where(cls.model.dialog_id == dialog_id)
         if id:

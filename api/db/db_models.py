@@ -1017,6 +1017,9 @@ class Conversation(DataBaseModel):
     message = JSONField(null=True)
     reference = JSONField(null=True, default=[])
     user_id = CharField(max_length=255, null=True, help_text="user_id", index=True)
+    compressed_message = JSONField(null=True, help_text="rolling summary of turns before compression_cursor")
+    compression_cursor = IntegerField(default=0, help_text="index of last turn included in compressed_message")
+    token_tally = IntegerField(default=0, help_text="cumulative token count for this session")
 
     class Meta:
         db_table = "conversation"
@@ -1728,6 +1731,9 @@ def migrate_db():
     alter_db_column_type(migrator, "document", "size", BigIntegerField(default=0, index=True))
     alter_db_column_type(migrator, "file", "size", BigIntegerField(default=0, index=True))
     alter_db_add_column(migrator, "tenant", "ocr_id", CharField(max_length=128, null=True, help_text="default ocr model ID", index=True))
+    alter_db_add_column(migrator, "conversation", "compressed_message", JSONField(null=True, help_text="rolling summary of turns before compression_cursor"))
+    alter_db_add_column(migrator, "conversation", "compression_cursor", IntegerField(default=0, help_text="index of last turn included in compressed_message"))
+    alter_db_add_column(migrator, "conversation", "token_tally", IntegerField(default=0, help_text="cumulative token count for this session"))
     for table_name, index_name in [("tenant_model_instance", "idx_api_key_provider_id"), ("tenant_model", "idx_provider_model_instance")]:
         try:
             migrate(migrator.drop_index(table_name, index_name))
