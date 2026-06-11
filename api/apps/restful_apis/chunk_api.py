@@ -38,14 +38,13 @@ from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService, cancel_all_task_of, queue_tasks
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.utils.api_utils import (
+    get_result,
     add_tenant_id_to_kwargs,
     check_duplicate_ids,
-    construct_json_result,
-    get_error_data_result,
     get_request_json,
-    get_result,
     server_error_response,
 )
+
 from api.utils.pagination_utils import validate_rest_api_page_size
 from api.utils.image_utils import store_chunk_image
 from api.utils.reference_metadata_utils import (
@@ -161,10 +160,10 @@ def _enrich_chunks_with_document_metadata(chunks: list[dict], metadata_fields=No
 @add_tenant_id_to_kwargs
 async def parse(tenant_id, dataset_id):
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the dataset {dataset_id}.")
     req = await get_request_json()
     if not req.get("document_ids"):
-        return get_error_data_result("`document_ids` is required")
+        return get_result(code=RetCode.DATA_ERROR, message="`document_ids` is required")
     doc_list = req.get("document_ids")
     unique_doc_ids, duplicate_messages = check_duplicate_ids(doc_list, "document")
     doc_list = unique_doc_ids
@@ -177,7 +176,7 @@ async def parse(tenant_id, dataset_id):
             not_found.append(id)
             continue
         if not doc:
-            return get_error_data_result(message=f"You don't own the document {id}.")
+            return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the document {id}.")
         info = {"run": "1", "progress": 0, "progress_msg": "", "chunk_num": 0, "token_num": 0}
         if (
             DocumentService.filter_update(
@@ -189,7 +188,7 @@ async def parse(tenant_id, dataset_id):
             )
             == 0
         ):
-            return get_error_data_result("Can't parse document that is currently being processed")
+            return get_result(code=RetCode.DATA_ERROR, message="Can't parse document that is currently being processed")
         settings.docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), dataset_id)
         TaskService.filter_delete([Task.doc_id == id])
         e, doc = DocumentService.get_by_id(id)
@@ -207,7 +206,7 @@ async def parse(tenant_id, dataset_id):
                 data={"success_count": success_count, "errors": duplicate_messages},
             )
         else:
-            return get_error_data_result(message=";".join(duplicate_messages))
+            return get_result(code=RetCode.DATA_ERROR, message=";".join(duplicate_messages))
 
     return get_result()
 
@@ -217,11 +216,11 @@ async def parse(tenant_id, dataset_id):
 @add_tenant_id_to_kwargs
 async def stop_parsing(tenant_id, dataset_id):
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the dataset {dataset_id}.")
     req = await get_request_json()
 
     if not req.get("document_ids"):
-        return get_error_data_result("`document_ids` is required")
+        return get_result(code=RetCode.DATA_ERROR, message="`document_ids` is required")
     doc_list = req.get("document_ids")
     unique_doc_ids, duplicate_messages = check_duplicate_ids(doc_list, "document")
     doc_list = unique_doc_ids
@@ -230,9 +229,9 @@ async def stop_parsing(tenant_id, dataset_id):
     for id in doc_list:
         doc = DocumentService.query(id=id, kb_id=dataset_id)
         if not doc:
-            return get_error_data_result(message=f"You don't own the document {id}.")
+            return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the document {id}.")
         if doc[0].run != TaskStatus.RUNNING.value:
-            return construct_json_result(
+            return get_result(
                 code=RetCode.DATA_ERROR,
                 message=DOC_STOP_PARSING_INVALID_STATE_MESSAGE,
                 data={"error_code": DOC_STOP_PARSING_INVALID_STATE_ERROR_CODE},
@@ -249,7 +248,7 @@ async def stop_parsing(tenant_id, dataset_id):
                 data={"success_count": success_count, "errors": duplicate_messages},
             )
         else:
-            return get_error_data_result(message=";".join(duplicate_messages))
+            return get_result(code=RetCode.DATA_ERROR, message=";".join(duplicate_messages))
     return get_result()
 
 
@@ -259,19 +258,19 @@ async def stop_parsing(tenant_id, dataset_id):
 async def retrieval_test(tenant_id):
     req = await get_request_json()
     if not req.get("dataset_ids"):
-        return get_error_data_result("`dataset_ids` is required.")
+        return get_result(code=RetCode.DATA_ERROR, message="`dataset_ids` is required.")
     kb_ids = req["dataset_ids"]
     if not isinstance(kb_ids, list):
-        return get_error_data_result("`dataset_ids` should be a list")
+        return get_result(code=RetCode.DATA_ERROR, message="`dataset_ids` should be a list")
     for id in kb_ids:
         if not KnowledgebaseService.accessible(kb_id=id, user_id=tenant_id):
-            return get_error_data_result(f"You don't own the dataset {id}.")
+            return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the dataset {id}.")
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
     embd_nms = list(set([split_model_name(kb.embd_id)[0] for kb in kbs]))
     if len(embd_nms) != 1:
         return get_result(message="Datasets use different embedding models.", code=RetCode.DATA_ERROR)
     if "question" not in req:
-        return get_error_data_result("`question` is required.")
+        return get_result(code=RetCode.DATA_ERROR, message="`question` is required.")
     page = int(req.get("page", 1))
     size = validate_rest_api_page_size(int(req.get("page_size", 30)))
     question = req["question"].strip() if isinstance(req["question"], str) else req["question"]
@@ -282,12 +281,12 @@ async def retrieval_test(tenant_id):
     toc_enhance = req.get("toc_enhance", False)
     langs = req.get("cross_languages", [])
     if not isinstance(doc_ids, list):
-        return get_error_data_result("`documents` should be a list")
+        return get_result(code=RetCode.DATA_ERROR, message="`documents` should be a list")
     if doc_ids:
         doc_ids_list = KnowledgebaseService.list_documents_by_ids(kb_ids)
         for doc_id in doc_ids:
             if doc_id not in doc_ids_list:
-                return get_error_data_result(f"The datasets don't own the document {doc_id}")
+                return get_result(code=RetCode.DATA_ERROR, message=f"The datasets don't own the document {doc_id}")
     if not doc_ids:
         metadata_condition = req.get("metadata_condition")
         if metadata_condition:
@@ -303,7 +302,7 @@ async def retrieval_test(tenant_id):
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     top = int(req.get("top_k", 1024))
     if top <= 0:
-        return get_error_data_result("`top_k` must be greater than 0")
+        return get_result(code=RetCode.DATA_ERROR, message="`top_k` must be greater than 0")
     highlight_val = req.get("highlight", None)
     if highlight_val is None:
         highlight = False
@@ -312,13 +311,13 @@ async def retrieval_test(tenant_id):
     elif isinstance(highlight_val, str) and highlight_val.lower() in ["true", "false"]:
         highlight = highlight_val.lower() == "true"
     else:
-        return get_error_data_result("`highlight` should be a boolean")
+        return get_result(code=RetCode.DATA_ERROR, message="`highlight` should be a boolean")
     include_metadata, metadata_fields = _resolve_reference_metadata(req)
     try:
         tenant_ids = list(set([kb.tenant_id for kb in kbs]))
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
         if not e:
-            return get_error_data_result(message="Dataset not found!")
+            return get_result(code=RetCode.DATA_ERROR, message="Dataset not found!")
         embd_model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
         embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
@@ -380,13 +379,13 @@ async def list_chunks(tenant_id, dataset_id, document_id):
     from rag.nlp import search
 
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the dataset {dataset_id}.")
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
     if not dataset_tenant_id:
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the dataset {dataset_id}.")
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
-        return get_error_data_result(message=f"You don't own the document {document_id}.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the document {document_id}.")
     doc = doc[0]
     req = request.args
     page = int(req.get("page", 1))
@@ -466,13 +465,13 @@ async def get_chunk(tenant_id, dataset_id, document_id, chunk_id):
     from rag.nlp import search
 
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the dataset {dataset_id}.")
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
     if not dataset_tenant_id:
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the dataset {dataset_id}.")
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
-        return get_error_data_result(message=f"You don't own the document {document_id}.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the document {document_id}.")
     try:
         chunk = settings.docStoreConn.get(chunk_id, search.index_name(dataset_tenant_id), [dataset_id])
         if chunk is None or str(chunk.get("doc_id", chunk.get("document_id"))) != str(document_id):
@@ -491,21 +490,21 @@ async def add_chunk(tenant_id, dataset_id, document_id):
     from rag.nlp import rag_tokenizer, search
 
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the dataset {dataset_id}.")
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
     if not dataset_tenant_id:
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the dataset {dataset_id}.")
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
-        return get_error_data_result(message=f"You don't own the document {document_id}.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the document {document_id}.")
     doc = doc[0]
     req = await get_request_json()
     if is_content_empty(req.get("content")):
-        return get_error_data_result(message="`content` is required")
+        return get_result(code=RetCode.DATA_ERROR, message="`content` is required")
     if "important_keywords" in req and not isinstance(req["important_keywords"], list):
-        return get_error_data_result("`important_keywords` is required to be a list")
+        return get_result(code=RetCode.DATA_ERROR, message="`important_keywords` is required to be a list")
     if "questions" in req and not isinstance(req["questions"], list):
-        return get_error_data_result("`questions` is required to be a list")
+        return get_result(code=RetCode.DATA_ERROR, message="`questions` is required to be a list")
 
     chunk_id = xxhash.xxh64((req["content"] + document_id).encode("utf-8")).hexdigest()
     d = {
@@ -526,23 +525,23 @@ async def add_chunk(tenant_id, dataset_id, document_id):
 
     if "tag_kwd" in req:
         if not isinstance(req["tag_kwd"], list):
-            return get_error_data_result("`tag_kwd` is required to be a list")
+            return get_result(code=RetCode.DATA_ERROR, message="`tag_kwd` is required to be a list")
         if not all(isinstance(t, str) for t in req["tag_kwd"]):
-            return get_error_data_result("`tag_kwd` must be a list of strings")
+            return get_result(code=RetCode.DATA_ERROR, message="`tag_kwd` must be a list of strings")
         d["tag_kwd"] = req["tag_kwd"]
     if "tag_feas" in req:
         try:
             d["tag_feas"] = validate_tag_features(req["tag_feas"])
         except ValueError as exc:
-            return get_error_data_result(f"`tag_feas` {exc}")
+            return get_result(code=RetCode.DATA_ERROR, message=f"`tag_feas` {exc}")
 
     if "image_base64" in req:
         image_binary, image_err = _decode_chunk_image_base64(req.get("image_base64"))
         if image_err:
-            return get_error_data_result(message=image_err)
+            return get_result(code=RetCode.DATA_ERROR, message=image_err)
         store_err = _store_chunk_image_or_error(dataset_id, chunk_id, image_binary)
         if store_err:
-            return get_error_data_result(message=store_err)
+            return get_result(code=RetCode.DATA_ERROR, message=store_err)
         d["img_id"] = f"{dataset_id}-{chunk_id}"
         d["doc_type_kwd"] = "image"
 
@@ -580,13 +579,13 @@ async def rm_chunk(tenant_id, dataset_id, document_id):
     from rag.nlp import search
 
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the dataset {dataset_id}.")
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
     if not dataset_tenant_id:
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the dataset {dataset_id}.")
     docs = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not docs:
-        return get_error_data_result(message=f"You don't own the document {document_id}.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the document {document_id}.")
     req = await get_request_json()
     if not req:
         return get_result()
@@ -613,7 +612,7 @@ async def rm_chunk(tenant_id, dataset_id, document_id):
     if chunk_number != len(unique_chunk_ids):
         if len(unique_chunk_ids) == 0:
             return get_result(message=f"deleted {chunk_number} chunks")
-        return get_error_data_result(message=f"rm_chunk deleted chunks {chunk_number}, expect {len(unique_chunk_ids)}")
+        return get_result(code=RetCode.DATA_ERROR, message=f"rm_chunk deleted chunks {chunk_number}, expect {len(unique_chunk_ids)}")
     if duplicate_messages:
         return get_result(
             message=f"Partially deleted {chunk_number} chunks with {len(duplicate_messages)} errors",
@@ -630,22 +629,22 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
     from rag.nlp import rag_tokenizer, search
 
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the dataset {dataset_id}.")
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
     if not dataset_tenant_id:
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the dataset {dataset_id}.")
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
-        return get_error_data_result(message=f"You don't own the document {document_id}.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the document {document_id}.")
     doc = doc[0]
     chunk = settings.docStoreConn.get(chunk_id, search.index_name(dataset_tenant_id), [dataset_id])
     if chunk is None or str(chunk.get("doc_id", chunk.get("document_id"))) != str(document_id):
-        return get_error_data_result(f"Can't find this chunk {chunk_id}")
+        return get_result(code=RetCode.DATA_ERROR, message=f"Can't find this chunk {chunk_id}")
     req = await get_request_json()
     content = req.get("content")
     if content is not None:
         if is_content_empty(content):
-            return get_error_data_result(message="`content` is required")
+            return get_result(code=RetCode.DATA_ERROR, message="`content` is required")
     else:
         content = chunk.get("content_with_weight", "")
     d = {"id": chunk_id, "content_with_weight": content}
@@ -653,38 +652,38 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
     if "important_keywords" in req:
         if not isinstance(req["important_keywords"], list):
-            return get_error_data_result("`important_keywords` should be a list")
+            return get_result(code=RetCode.DATA_ERROR, message="`important_keywords` should be a list")
         d["important_kwd"] = req.get("important_keywords", [])
         d["important_tks"] = rag_tokenizer.tokenize(" ".join(req["important_keywords"]))
     if "questions" in req:
         if not isinstance(req["questions"], list):
-            return get_error_data_result("`questions` should be a list")
+            return get_result(code=RetCode.DATA_ERROR, message="`questions` should be a list")
         d["question_kwd"] = [str(q).strip() for q in req.get("questions", []) if str(q).strip()]
         d["question_tks"] = rag_tokenizer.tokenize("\n".join(req["questions"]))
     if "available" in req:
         d["available_int"] = int(req["available"])
     if "positions" in req:
         if not isinstance(req["positions"], list):
-            return get_error_data_result("`positions` should be a list")
+            return get_result(code=RetCode.DATA_ERROR, message="`positions` should be a list")
         d["position_int"] = req["positions"]
     if "tag_kwd" in req:
         if not isinstance(req["tag_kwd"], list):
-            return get_error_data_result("`tag_kwd` should be a list")
+            return get_result(code=RetCode.DATA_ERROR, message="`tag_kwd` should be a list")
         if not all(isinstance(t, str) for t in req["tag_kwd"]):
-            return get_error_data_result("`tag_kwd` must be a list of strings")
+            return get_result(code=RetCode.DATA_ERROR, message="`tag_kwd` must be a list of strings")
         d["tag_kwd"] = req["tag_kwd"]
     if "tag_feas" in req:
         try:
             d["tag_feas"] = validate_tag_features(req["tag_feas"])
         except ValueError as exc:
-            return get_error_data_result(f"`tag_feas` {exc}")
+            return get_result(code=RetCode.DATA_ERROR, message=f"`tag_feas` {exc}")
     if "image_base64" in req:
         image_binary, image_err = _decode_chunk_image_base64(req.get("image_base64"))
         if image_err:
-            return get_error_data_result(message=image_err)
+            return get_result(code=RetCode.DATA_ERROR, message=image_err)
         store_err = _store_chunk_image_or_error(dataset_id, chunk_id, image_binary)
         if store_err:
-            return get_error_data_result(message=store_err)
+            return get_result(code=RetCode.DATA_ERROR, message=store_err)
         d["img_id"] = f"{dataset_id}-{chunk_id}"
         d["doc_type_kwd"] = "image"
 
@@ -694,7 +693,7 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
     if doc.parser_id == ParserType.QA:
         arr = [t for t in re.split(r"[\n\t]", d["content_with_weight"]) if len(t) > 1]
         if len(arr) != 2:
-            return get_error_data_result(message="Q&A must be separated by TAB/ENTER key.")
+            return get_result(code=RetCode.DATA_ERROR, message="Q&A must be separated by TAB/ENTER key.")
         q, a = rmPrefix(arr[0]), rmPrefix(arr[1])
         d = beAdoc(d, arr[0], arr[1], not any([rag_tokenizer.is_chinese(t) for t in q + a]))
 
@@ -717,24 +716,24 @@ async def switch_chunks(tenant_id, dataset_id, document_id):
     from rag.nlp import search
 
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the dataset {dataset_id}.")
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
     if not dataset_tenant_id:
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the dataset {dataset_id}.")
     req = await get_request_json()
     if not req.get("chunk_ids"):
-        return get_error_data_result(message="`chunk_ids` is required.")
+        return get_result(code=RetCode.DATA_ERROR, message="`chunk_ids` is required.")
     if "available_int" not in req and "available" not in req:
-        return get_error_data_result(message="`available_int` or `available` is required.")
+        return get_result(code=RetCode.DATA_ERROR, message="`available_int` or `available` is required.")
     available_int = int(req["available_int"]) if "available_int" in req else (1 if req.get("available") else 0)
 
     try:
         def _switch_sync():
             e, doc = DocumentService.get_by_id(document_id)
             if not e:
-                return get_error_data_result(message="Document not found!")
+                return get_result(code=RetCode.DATA_ERROR, message="Document not found!")
             if not doc or str(doc.kb_id) != str(dataset_id):
-                return get_error_data_result(message="Document not found!")
+                return get_result(code=RetCode.DATA_ERROR, message="Document not found!")
             for cid in req["chunk_ids"]:
                 if not settings.docStoreConn.update(
                     {"id": cid},
@@ -742,7 +741,7 @@ async def switch_chunks(tenant_id, dataset_id, document_id):
                     search.index_name(dataset_tenant_id),
                     doc.kb_id,
                 ):
-                    return get_error_data_result(message="Index updating failure")
+                    return get_result(code=RetCode.DATA_ERROR, message="Index updating failure")
             return get_result(data=True)
 
         return await thread_pool_exec(_switch_sync)

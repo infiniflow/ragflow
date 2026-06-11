@@ -29,6 +29,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
 from common.metadata_utils import meta_filter, convert_conditions
+from api.utils.api_utils import get_result, apikey_required, get_request_json
 from api.apps import login_required
 from api.utils.api_utils import add_tenant_id_to_kwargs, build_error_result, get_request_json, get_json_result
 from rag.app.tag import label_question
@@ -226,13 +227,13 @@ async def retrieval(tenant_id):
     try:
         req = await _read_retrieval_request()
     except parse_exception_types as e:
-        return build_error_result(
+        return get_result(
             message=f"invalid or malformed arguments: {str(e)}; ",
             code=RetCode.ARGUMENT_ERROR,
         )
     missing = [field for field in ("knowledge_id", "query") if not req.get(field)]
     if missing:
-        return build_error_result(
+        return get_result(
             message=f"required arguments are missing: {','.join(missing)}; ",
             code=RetCode.ARGUMENT_ERROR,
         )
@@ -242,7 +243,7 @@ async def retrieval(tenant_id):
     try:
         _, similarity_threshold, top = _parse_retrieval_options(req.get("retrieval_setting", {}))
     except ValueError as e:
-        return build_error_result(
+        return get_result(
             message=f"invalid or malformed arguments: {str(e)}; ",
             code=RetCode.ARGUMENT_ERROR,
         )
@@ -254,14 +255,14 @@ async def retrieval(tenant_id):
 
         e, kb = KnowledgebaseService.get_by_id(kb_id)
         if not e:
-            return build_error_result(message="Knowledgebase not found!", code=RetCode.NOT_FOUND)
+            return get_result(code=RetCode.NOT_FOUND, message="Knowledgebase not found!")
         if not KnowledgebaseService.accessible(kb_id, tenant_id):
             logger.warning(
                 "Rejected /dify/retrieval cross-tenant access: caller_tenant=%s knowledge_id=%s",
                 tenant_id,
                 kb_id,
             )
-            return build_error_result(message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+            return get_result(code=RetCode.AUTHENTICATION_ERROR, message="No authorization.")
         model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
         embd_mdl = LLMBundle(kb.tenant_id, model_config)
         if metadata_condition:
@@ -317,16 +318,16 @@ async def retrieval(tenant_id):
         return jsonify({"records": records})
     except Exception as e:
         if "not_found" in str(e):
-            return build_error_result(
+            return get_result(
                 message='No chunk found! Check the chunk status please!',
                 code=RetCode.NOT_FOUND
             )
         logging.exception(e)
-        return build_error_result(message=str(e), code=RetCode.SERVER_ERROR)
+        return get_result(message=str(e), code=RetCode.SERVER_ERROR)
    
   
 @manager.route('/dify/retrieval/health', methods=['GET'])  # noqa: F821
 async def retrieval_health_check():
     """Health check endpoint for Dify external knowledge base connectivity verification."""
-    return get_json_result(data=True)
+    return get_result(data=True)
   

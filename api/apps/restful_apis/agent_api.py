@@ -56,10 +56,12 @@ from api.utils.api_utils import (
     get_error_data_result,
     get_json_result,
     get_result,
+    add_tenant_id_to_kwargs,
     get_request_json,
     server_error_response,
     validate_request,
 )
+
 from api.utils.pagination_utils import validate_rest_api_page_size
 from common import settings
 from common.ssrf_guard import assert_host_is_safe
@@ -75,7 +77,7 @@ def _require_canvas_access_sync(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
         if not UserCanvasService.accessible(kwargs.get('agent_id'), kwargs.get('tenant_id')):
-            return get_json_result(data=False, message="Make sure you have permission to access the agent.", code=RetCode.OPERATING_ERROR)
+            return get_result(code=RetCode.OPERATING_ERROR, message="Make sure you have permission to access the agent.", data=False)
         return func(*args, **kwargs)
     return wrapper
 
@@ -86,7 +88,7 @@ def _require_canvas_access_async(func):
         agent_id = kwargs.get('agent_id')
         tenant_id = kwargs.get('tenant_id')
         if not await thread_pool_exec(UserCanvasService.accessible, agent_id, tenant_id):
-            return get_json_result(data=False, message="Make sure you have permission to access the agent.", code=RetCode.OPERATING_ERROR)
+            return get_result(code=RetCode.OPERATING_ERROR, message="Make sure you have permission to access the agent.", data=False)
         return await func(*args, **kwargs)
     return wrapper
 
@@ -95,7 +97,7 @@ def _require_canvas_owner_sync(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
         if not UserCanvasService.query(user_id=kwargs.get('tenant_id'), id=kwargs.get('agent_id')):
-            return get_json_result(data=False, message="Only the owner of the agent is authorized for this operation.", code=RetCode.OPERATING_ERROR)
+            return get_result(code=RetCode.OPERATING_ERROR, message="Only the owner of the agent is authorized for this operation.", data=False)
         return func(*args, **kwargs)
     return wrapper
 
@@ -410,9 +412,9 @@ async def create_agent_session(agent_id, tenant_id):
     try:
         cvs, dsl = UserCanvasService.get_agent_dsl_with_release(agent_id, release_mode, tenant_id)
     except LookupError:
-        return get_data_error_result(message="Agent not found.")
+        return get_result(code=RetCode.DATA_ERROR, message="Agent not found.")
     except PermissionError as e:
-        return get_data_error_result(message=str(e))
+        return get_result(code=RetCode.DATA_ERROR, message=str(e))
 
     session_id = get_uuid()
     canvas = Canvas(dsl, tenant_id, agent_id, canvas_id=cvs.id)
@@ -443,8 +445,8 @@ async def create_agent_session(agent_id, tenant_id):
 def get_agent_session(agent_id, session_id, tenant_id):
     exists, conv = API4ConversationService.get_by_id(session_id)
     if not exists:
-        return get_data_error_result(message="Session not found!")
-    return get_json_result(data=conv.to_dict())
+        return get_result(code=RetCode.DATA_ERROR, message="Session not found!")
+    return get_result(data=conv.to_dict())
 
 
 @manager.route("/agents/<agent_id>/sessions/<session_id>", methods=["DELETE"])  # noqa: F821
@@ -452,7 +454,7 @@ def get_agent_session(agent_id, session_id, tenant_id):
 @add_tenant_id_to_kwargs
 @_require_canvas_access_sync
 def delete_agent_session_item(agent_id, session_id, tenant_id):
-    return get_json_result(data=API4ConversationService.delete_by_id(session_id))
+    return get_result(data=API4ConversationService.delete_by_id(session_id))
 
 
 @manager.route("/agents/<agent_id>/sessions", methods=["DELETE"])  # noqa: F821
@@ -553,7 +555,7 @@ async def _iter_session_completion_events(tenant_id, agent_id, req, return_trace
 @manager.route("/agents/templates", methods=["GET"])  # noqa: F821
 @login_required
 def list_agent_template():
-    return get_json_result(data=[item.to_dict() for item in CanvasTemplateService.get_all()])
+    return get_result(data=[item.to_dict() for item in CanvasTemplateService.get_all()])
 
 
 @manager.route("/agents/prompts", methods=["GET"])  # noqa: F821
@@ -567,7 +569,7 @@ def prompts():
         REFLECT,
     )
 
-    return get_json_result(
+    return get_result(
         data={
             "task_analysis": f"{ANALYZE_TASK_SYSTEM}\n\n{ANALYZE_TASK_USER}",
             "plan_generation": NEXT_STEP,
@@ -598,10 +600,10 @@ def list_agents(tenant_id):
         requested_owner_ids = set(owner_ids)
         unauthorized_owner_ids = requested_owner_ids - authorized_owner_ids
         if unauthorized_owner_ids:
-            return get_json_result(
-                data=False,
-                message="Only authorized owner_ids can be queried.",
+            return get_result(
                 code=RetCode.OPERATING_ERROR,
+                message="Only authorized owner_ids can be queried.",
+                data=False,
             )
         effective_owner_ids = list(requested_owner_ids)
     else:
@@ -619,7 +621,7 @@ def list_agents(tenant_id):
         tags,
     )
 
-    return get_json_result(data={"canvas": canvas, "total": total})
+    return get_result(data={"canvas": canvas, "total": total})
 
 
 @manager.route("/agents/tags", methods=["GET"])  # noqa: F821
@@ -637,7 +639,7 @@ def list_agent_tags(tenant_id):
         canvas_category,
         len(counts),
     )
-    return get_json_result(data=[{"tag": k, "count": v} for k, v in sorted(counts.items(), key=lambda x: (-x[1], x[0]))])
+    return get_result(data=[{"tag": k, "count": v} for k, v in sorted(counts.items(), key=lambda x: (-x[1], x[0]))])
 
 
 @manager.route("/agents/<canvas_id>/tags", methods=["PUT"])  # noqa: F821
@@ -650,7 +652,7 @@ async def update_agent_tags(tenant_id, canvas_id):
             tenant_id,
             canvas_id,
         )
-        return get_json_result(
+        return get_result(
             data=False,
             message="Agent not found or no permission.",
             code=RetCode.OPERATING_ERROR,
@@ -666,7 +668,7 @@ async def update_agent_tags(tenant_id, canvas_id):
             canvas_id,
             len(incoming),
         )
-        return get_json_result(
+        return get_result(
             data=False,
             message="Agent not found or no permission.",
             code=RetCode.OPERATING_ERROR,
@@ -678,7 +680,7 @@ async def update_agent_tags(tenant_id, canvas_id):
         len(incoming),
         rows_affected,
     )
-    return get_json_result(data=True)
+    return get_result(data=True)
 
 
 @manager.route("/agents", methods=["POST"])  # noqa: F821
@@ -692,7 +694,7 @@ async def create_agent(tenant_id):
     req["release"] = bool(req.get("release", ""))
 
     if req.get("dsl") is None:
-        return get_json_result(
+        return get_result(
             data=False,
             message="No DSL data in request.",
             code=RetCode.ARGUMENT_ERROR,
@@ -701,14 +703,14 @@ async def create_agent(tenant_id):
     try:
         req["dsl"] = CanvasReplicaService.normalize_dsl(req["dsl"])
     except ValueError as exc:
-        return get_json_result(
+        return get_result(
             data=False,
             message=str(exc),
             code=RetCode.ARGUMENT_ERROR,
         )
 
     if req.get("title") is None:
-        return get_json_result(
+        return get_result(
             data=False,
             message="No title in request.",
             code=RetCode.ARGUMENT_ERROR,
@@ -720,11 +722,11 @@ async def create_agent(tenant_id):
         title=req["title"],
         canvas_category=req["canvas_category"],
     ):
-        return get_data_error_result(message=f"{req['title']} already exists.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"{req['title']} already exists.")
 
     req["id"] = get_uuid()
     if not UserCanvasService.save(**req):
-        return get_data_error_result(message="Fail to create agent.")
+        return get_result(code=RetCode.DATA_ERROR, message="Fail to create agent.")
 
     owner_nickname = _get_user_nickname(tenant_id)
     UserCanvasVersionService.save_or_replace_latest(
@@ -742,12 +744,12 @@ async def create_agent(tenant_id):
         title=req.get("title", ""),
     )
     if not replica_ok:
-        return get_data_error_result(message="canvas saved, but replica sync failed.")
+        return get_result(code=RetCode.DATA_ERROR, message="canvas saved, but replica sync failed.")
 
     exists, created_agent = UserCanvasService.get_by_canvas_id(req["id"])
     if not exists:
-        return get_data_error_result(message="Fail to create agent.")
-    return get_json_result(data=created_agent)
+        return get_result(code=RetCode.DATA_ERROR, message="Fail to create agent.")
+    return get_result(data=created_agent)
 
 
 @manager.route("/agents/<agent_id>/upload", methods=["POST"])  # noqa: F821
@@ -768,11 +770,11 @@ async def upload_agent_file(agent_id, tenant_id):
             uploaded = await thread_pool_exec(
                 FileService.upload_info, tenant_id, file_objs[0], request.args.get("url")
             )
-            return get_json_result(data=uploaded)
+            return get_result(data=uploaded)
         results = await asyncio.gather(
             *(thread_pool_exec(FileService.upload_info, tenant_id, file_obj) for file_obj in file_objs)
         )
-        return get_json_result(data=results)
+        return get_result(data=results)
     except Exception as exc:
         logging.exception(
             "Agent file upload failed: tenant_id=%s agent_id=%s",
@@ -792,9 +794,9 @@ def get_agent_component_input_form(agent_id, component_id, tenant_id):
 
         exists, user_canvas = UserCanvasService.get_by_id(agent_id)
         if not exists:
-            return get_data_error_result(message="canvas not found.")
+            return get_result(code=RetCode.DATA_ERROR, message="canvas not found.")
         canvas = Canvas(json.dumps(user_canvas.dsl), tenant_id, canvas_id=user_canvas.id)
-        return get_json_result(data=canvas.get_component_input_form(component_id))
+        return get_result(data=canvas.get_component_input_form(component_id))
     except Exception as exc:
         return server_error_response(exc)
 
@@ -832,7 +834,7 @@ async def debug_agent_component(agent_id, component_id, tenant_id):
                     for c in iter_obj:
                         txt += c
                 outputs[k] = txt
-        return get_json_result(data=outputs)
+        return get_result(data=outputs)
     except Exception as exc:
         return server_error_response(exc)
 
@@ -842,11 +844,11 @@ async def debug_agent_component(agent_id, component_id, tenant_id):
 @add_tenant_id_to_kwargs
 def get_agent(agent_id, tenant_id):
     if not UserCanvasService.accessible(agent_id, tenant_id):
-        return get_data_error_result(message="canvas not found.")
+        return get_result(code=RetCode.DATA_ERROR, message="canvas not found.")
 
     exists, canvas = UserCanvasService.get_by_canvas_id(agent_id)
     if not exists:
-        return get_data_error_result(message="canvas not found.")
+        return get_result(code=RetCode.DATA_ERROR, message="canvas not found.")
 
     try:
         CanvasReplicaService.bootstrap(
@@ -858,7 +860,7 @@ def get_agent(agent_id, tenant_id):
             title=canvas.get("title", ""),
         )
     except ValueError as exc:
-        return get_data_error_result(message=str(exc))
+        return get_result(code=RetCode.DATA_ERROR, message=str(exc))
 
     last_publish_time = None
     versions = UserCanvasVersionService.list_by_canvas_id(agent_id)
@@ -877,7 +879,7 @@ def get_agent(agent_id, tenant_id):
         datasets = list(KnowledgebaseService.query(pipeline_id=agent_id))
         canvas["datasets"] = [{"id": item.id, "name": item.name, "avatar": item.avatar} for item in datasets]
 
-    return get_json_result(data=canvas)
+    return get_result(data=canvas)
 
 
 @manager.route("/agents/<agent_id>/versions", methods=["GET"])  # noqa: F821
@@ -890,9 +892,9 @@ def list_agent_versions(agent_id, tenant_id):
             [item.to_dict() for item in UserCanvasVersionService.list_by_canvas_id(agent_id)],
             key=lambda item: item["update_time"] * -1,
         )
-        return get_json_result(data=versions)
+        return get_result(data=versions)
     except Exception as exc:
-        return get_data_error_result(message=f"Error getting history files: {exc}")
+        return get_result(code=RetCode.DATA_ERROR, message=f"Error getting history files: {exc}")
 
 
 @manager.route("/agents/<agent_id>/versions/<version_id>", methods=["GET"])  # noqa: F821
@@ -903,10 +905,10 @@ def get_agent_version(agent_id, version_id, tenant_id):
     try:
         exists, version = UserCanvasVersionService.get_by_id(version_id)
         if not exists or not version or str(version.user_canvas_id) != str(agent_id):
-            return get_data_error_result(message="Version not found.")
-        return get_json_result(data=version.to_dict())
+            return get_result(code=RetCode.DATA_ERROR, message="Version not found.")
+        return get_result(data=version.to_dict())
     except Exception as exc:
-        return get_data_error_result(message=f"Error getting history file: {exc}")
+        return get_result(code=RetCode.DATA_ERROR, message=f"Error getting history file: {exc}")
 
 
 @manager.route("/agents/<agent_id>/logs/<message_id>", methods=["GET"])  # noqa: F821
@@ -919,10 +921,10 @@ async def get_agent_logs(agent_id, message_id, tenant_id):
 
         binary = await thread_pool_exec(REDIS_CONN.get, f"{agent_id}-{message_id}-logs")
         if not binary:
-            return get_json_result(data={})
+            return get_result(data={})
 
         payload = binary.decode("utf-8") if isinstance(binary, bytes) else binary
-        return get_json_result(data=json.loads(payload))
+        return get_result(data=json.loads(payload))
     except Exception as exc:
         logging.exception(exc)
         return server_error_response(exc)
@@ -934,7 +936,7 @@ async def get_agent_logs(agent_id, message_id, tenant_id):
 @_require_canvas_owner_sync
 def delete_agent(agent_id, tenant_id):
     UserCanvasService.delete_by_id(agent_id)
-    return get_json_result(data=True)
+    return get_result(data=True)
 
 
 @manager.route("/agents/<agent_id>", methods=["PUT"])  # noqa: F821
@@ -950,7 +952,7 @@ async def update_agent(agent_id, tenant_id):
         try:
             req["dsl"] = CanvasReplicaService.normalize_dsl(req["dsl"])
         except ValueError as exc:
-            return get_json_result(
+            return get_result(
                 data=False,
                 message=str(exc),
                 code=RetCode.ARGUMENT_ERROR,
@@ -984,9 +986,9 @@ async def update_agent(agent_id, tenant_id):
             title=agent_title_for_version,
         )
         if not replica_ok:
-            return get_data_error_result(message="agent saved, but replica sync failed.")
+            return get_result(code=RetCode.DATA_ERROR, message="agent saved, but replica sync failed.")
 
-    return get_json_result(data=True)
+    return get_result(data=True)
 
 
 @manager.route("/agents/<agent_id>/reset", methods=["POST"])  # noqa: F821
@@ -999,7 +1001,7 @@ async def reset_agent(agent_id, tenant_id):
 
         exists, user_canvas = UserCanvasService.get_by_id(agent_id)
         if not exists:
-            return get_data_error_result(message="canvas not found.")
+            return get_result(code=RetCode.DATA_ERROR, message="canvas not found.")
 
         canvas = Canvas(json.dumps(user_canvas.dsl), tenant_id, canvas_id=user_canvas.id)
         canvas.reset()
@@ -1014,8 +1016,8 @@ async def reset_agent(agent_id, tenant_id):
             title=user_canvas.title,
         )
         if not replica_ok:
-            return get_data_error_result(message="agent reset, but replica sync failed.")
-        return get_json_result(data=dsl)
+            return get_result(code=RetCode.DATA_ERROR, message="agent reset, but replica sync failed.")
+        return get_result(data=dsl)
     except Exception as exc:
         return server_error_response(exc)
 
@@ -1030,10 +1032,10 @@ async def rerun_agent(tenant_id):
     req = await get_request_json()
     doc = PipelineOperationLogService.get_documents_info(req["id"])
     if not doc:
-        return get_data_error_result(message="Document not found.")
+        return get_result(code=RetCode.DATA_ERROR, message="Document not found.")
     doc = doc[0]
     if 0 < doc["progress"] < 1:
-        return get_data_error_result(message=f"`{doc['name']}` is processing...")
+        return get_result(code=RetCode.DATA_ERROR, message=f"`{doc['name']}` is processing...")
 
     if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc["kb_id"]):
         settings.docStoreConn.delete({"doc_id": doc["id"]}, search.index_name(tenant_id), doc["kb_id"])
@@ -1055,7 +1057,7 @@ async def rerun_agent(tenant_id):
         priority=0,
         rerun=True,
     )
-    return get_json_result(data=True)
+    return get_result(data=True)
 
 
 @manager.route("/agents/test_db_connection", methods=["POST"])  # noqa: F821
@@ -1070,14 +1072,14 @@ async def test_db_connection():
             "Rejected test_db_connection: unsafe host %r (db_type=%s, user=%s): %s",
             req.get("host"), req.get("db_type"), current_user.id, exc,
         )
-        return get_data_error_result(message=str(exc))
+        return get_result(code=RetCode.DATA_ERROR, message=str(exc))
     except OSError as exc:
         logging.warning(
             "Rejected test_db_connection: cannot resolve host %r (db_type=%s, user=%s): %s",
             req.get("host"), req.get("db_type"), current_user.id, exc,
         )
         logging.debug("Full resolver exception for host %r", req.get("host"), exc_info=True)
-        return get_data_error_result(message=f"Could not resolve host {req.get('host')!r}.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"Could not resolve host {req.get('host')!r}.")
     try:
         if req["db_type"] in ["mysql", "mariadb"]:
             db = MySQLDatabase(
@@ -1189,7 +1191,7 @@ async def test_db_connection():
         else:
             return server_error_response("Unsupported database type.")
 
-        return get_json_result(data="Database Connection Successful!")
+        return get_result(data="Database Connection Successful!")
     except Exception as exc:
         return server_error_response(exc)
 
@@ -1218,7 +1220,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
     agent_id = agent_id or req.get("agent_id")
     openai_compatible = bool(req.get("openai-compatible", False))
     if not agent_id:
-        return get_json_result(
+        return get_result(
             data=False,
             message="`agent_id` is required.",
             code=RetCode.ARGUMENT_ERROR,
@@ -1233,15 +1235,15 @@ async def agent_chat_completion(tenant_id, agent_id=None):
     if session_id:
         exists, conv = API4ConversationService.get_by_id(session_id)
         if not exists:
-            return get_data_error_result(message="Session not found!")
+            return get_result(code=RetCode.DATA_ERROR, message="Session not found!")
         if conv.dialog_id != agent_id:
-            return get_json_result(
+            return get_result(
                 data=False,
                 message="Session does not belong to the requested agent.",
                 code=RetCode.OPERATING_ERROR,
             )
         if not UserCanvasService.accessible(agent_id, tenant_id):
-            return get_json_result(
+            return get_result(
                 data=False,
                 message="Only authorized users can access this agent session.",
                 code=RetCode.OPERATING_ERROR,
@@ -1254,7 +1256,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
         # OpenAI-compatible mode uses a different wire format, keep it separate from regular agent events.
         messages = req.get("messages", [])
         if not messages:
-            return get_data_error_result(message="You must provide at least one message.")
+            return get_result(code=RetCode.DATA_ERROR, message="You must provide at least one message.")
         question = next((m.get("content", "") for m in reversed(messages) if m.get("role") == "user"), "")
         stream = req.pop("stream", False)
         session_id = req.pop("session_id", req.get("id", "")) or req.get("metadata", {}).get("id", "")
@@ -1291,7 +1293,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
 
         _, cvs = await thread_pool_exec(UserCanvasService.get_by_id, agent_id)
         if not cvs:
-            return get_data_error_result(message="canvas not found.")
+            return get_result(code=RetCode.DATA_ERROR, message="canvas not found.")
 
         if not isinstance(workflow_conv.get("message"), list):
             workflow_conv["message"] = []
@@ -1349,7 +1351,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
 
     if not session_id:
         if not UserCanvasService.accessible(agent_id, tenant_id):
-            return get_json_result(
+            return get_result(
                 data=False,
                 message="Make sure you have permission to access the agent.",
                 code=RetCode.OPERATING_ERROR,
@@ -1367,7 +1369,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
 
         _, cvs = await thread_pool_exec(UserCanvasService.get_by_id, agent_id)
         if not cvs:
-            return get_data_error_result(message="canvas not found.")
+            return get_result(code=RetCode.DATA_ERROR, message="canvas not found.")
 
         replica_payload = CanvasReplicaService.load_for_run(
             canvas_id=agent_id,
@@ -1385,9 +1387,9 @@ async def agent_chat_completion(tenant_id, agent_id=None):
                     title=getattr(cvs, "title", ""),
                 )
             except ValueError as exc:
-                return get_data_error_result(message=str(exc))
+                return get_result(code=RetCode.DATA_ERROR, message=str(exc))
         if not replica_payload:
-            return get_data_error_result(message="canvas replica not found, please fetch the agent first.")
+            return get_result(code=RetCode.DATA_ERROR, message="canvas replica not found, please fetch the agent first.")
 
         replica_dsl = replica_payload.get("dsl", {})
         canvas_title = replica_payload.get("title", "")
@@ -1440,8 +1442,8 @@ async def agent_chat_completion(tenant_id, agent_id=None):
                 0,
             )
             if not ok:
-                return get_data_error_result(message=error_message)
-            return get_json_result(data={"message_id": task_id, "session_id": session_id})
+                return get_result(code=RetCode.DATA_ERROR, message=error_message)
+            return get_result(data={"message_id": task_id, "session_id": session_id})
 
         try:
             from agent.canvas import Canvas
@@ -1556,16 +1558,16 @@ async def webhook(agent_id: str):
     # 1. Fetch canvas by agent_id
     exists, cvs = UserCanvasService.get_by_id(agent_id)
     if not exists:
-        return get_data_error_result(code=RetCode.BAD_REQUEST,message="Canvas not found."),RetCode.BAD_REQUEST
+        return get_result(code=RetCode.BAD_REQUEST, message="Canvas not found."),RetCode.BAD_REQUEST
 
     # 2. Check canvas category
     if cvs.canvas_category == CanvasCategory.DataFlow:
-        return get_data_error_result(code=RetCode.BAD_REQUEST,message="Dataflow can not be triggered by webhook."),RetCode.BAD_REQUEST
+        return get_result(code=RetCode.BAD_REQUEST, message="Dataflow can not be triggered by webhook."),RetCode.BAD_REQUEST
 
     # 3. Load DSL from canvas
     dsl = getattr(cvs, "dsl", None)
     if not isinstance(dsl, dict):
-        return get_data_error_result(code=RetCode.BAD_REQUEST,message="Invalid DSL format."),RetCode.BAD_REQUEST
+        return get_result(code=RetCode.BAD_REQUEST, message="Invalid DSL format."),RetCode.BAD_REQUEST
 
     # 4. Check webhook configuration in DSL
     webhook_cfg = {}
@@ -1576,14 +1578,14 @@ async def webhook(agent_id: str):
             webhook_cfg = cpn_obj["params"]
 
     if not webhook_cfg:
-        return get_data_error_result(code=RetCode.BAD_REQUEST,message="Webhook not configured for this agent."),RetCode.BAD_REQUEST
+        return get_result(code=RetCode.BAD_REQUEST, message="Webhook not configured for this agent."),RetCode.BAD_REQUEST
 
     # 5. Validate request method against webhook_cfg.methods
     allowed_methods = webhook_cfg.get("methods", [])
     request_method = request.method.upper()
     if allowed_methods and request_method not in allowed_methods:
-        return get_data_error_result(
-            code=RetCode.BAD_REQUEST,message=f"HTTP method '{request_method}' not allowed for this webhook."
+        return get_result(
+            code=RetCode.BAD_REQUEST, message=f"HTTP method '{request_method}' not allowed for this webhook."
         ),RetCode.BAD_REQUEST
 
     # 6. Validate webhook security
@@ -1799,7 +1801,7 @@ async def webhook(agent_id: str):
         security_config=webhook_cfg.get("security", {})
         await validate_webhook_security(security_config)
     except Exception as e:
-        return get_data_error_result(code=RetCode.BAD_REQUEST,message=str(e)),RetCode.BAD_REQUEST
+        return get_result(code=RetCode.BAD_REQUEST, message=str(e)),RetCode.BAD_REQUEST
     if not isinstance(cvs.dsl, str):
         dsl = json.dumps(cvs.dsl, ensure_ascii=False)
     try:
@@ -1807,7 +1809,7 @@ async def webhook(agent_id: str):
 
         canvas = Canvas(dsl, cvs.user_id, agent_id, canvas_id=agent_id)
     except Exception as e:
-        resp=get_data_error_result(code=RetCode.BAD_REQUEST,message=str(e))
+        resp=get_result(code=RetCode.BAD_REQUEST, message=str(e))
         resp.status_code = RetCode.BAD_REQUEST
         return resp
 
@@ -2045,7 +2047,7 @@ async def webhook(agent_id: str):
         header_clean = extract_by_schema(parsed["headers"], SCHEMA.get("headers", {}), name="headers")
         body_clean   = extract_by_schema(parsed["body"],    SCHEMA.get("body", {}),    name="body")
     except Exception as e:
-        return get_data_error_result(code=RetCode.BAD_REQUEST,message=str(e)),RetCode.BAD_REQUEST
+        return get_result(code=RetCode.BAD_REQUEST, message=str(e)),RetCode.BAD_REQUEST
 
     clean_request = {
         "query": query_clean,
@@ -2082,10 +2084,10 @@ async def webhook(agent_id: str):
         try:
             status = int(status)
         except (TypeError, ValueError):
-            return get_data_error_result(code=RetCode.BAD_REQUEST,message=str(f"Invalid response status code: {status}")),RetCode.BAD_REQUEST
+            return get_result(code=RetCode.BAD_REQUEST, message=str(f"Invalid response status code: {status}")),RetCode.BAD_REQUEST
 
         if not (200 <= status <= 399):
-            return get_data_error_result(code=RetCode.BAD_REQUEST,message=str(f"Invalid response status code: {status}, must be between 200 and 399")),RetCode.BAD_REQUEST
+            return get_result(code=RetCode.BAD_REQUEST, message=str(f"Invalid response status code: {status}, must be between 200 and 399")),RetCode.BAD_REQUEST
 
         body_tpl = response_cfg.get("body_template", "")
 
@@ -2240,9 +2242,7 @@ async def webhook(agent_id: str):
 async def webhook_trace(agent_id: str):
     exists, cvs = UserCanvasService.get_by_id(agent_id)
     if not exists or str(cvs.user_id) != str(current_user.id):
-        return get_data_error_result(
-            message="Canvas not found.",
-        )
+        return get_result(code=RetCode.DATA_ERROR, message="Canvas not found.")
 
     def encode_webhook_id(start_ts: str) -> str:
         WEBHOOK_ID_SECRET = "webhook_id_secret"
@@ -2268,7 +2268,7 @@ async def webhook_trace(agent_id: str):
 
     if since_ts is None:
         now = time.time()
-        return get_json_result(
+        return get_result(
             data={
                 "webhook_id": None,
                 "events": [],
@@ -2278,7 +2278,7 @@ async def webhook_trace(agent_id: str):
         )
 
     if not raw:
-        return get_json_result(
+        return get_result(
             data={
                 "webhook_id": None,
                 "events": [],
@@ -2296,7 +2296,7 @@ async def webhook_trace(agent_id: str):
         ]
 
         if not candidates:
-            return get_json_result(
+            return get_result(
                 data={
                     "webhook_id": None,
                     "events": [],
@@ -2309,7 +2309,7 @@ async def webhook_trace(agent_id: str):
         real_id = str(start_ts)
         webhook_id = encode_webhook_id(real_id)
 
-        return get_json_result(
+        return get_result(
             data={
                 "webhook_id": webhook_id,
                 "events": [],
@@ -2321,7 +2321,7 @@ async def webhook_trace(agent_id: str):
     real_id = decode_webhook_id(webhook_id, webhooks)
 
     if not real_id:
-        return get_json_result(
+        return get_result(
             data={
                 "webhook_id": webhook_id,
                 "events": [],
@@ -2340,7 +2340,7 @@ async def webhook_trace(agent_id: str):
 
     finished = any(e.get("event") == "finished" for e in new_events)
 
-    return get_json_result(
+    return get_result(
         data={
             "webhook_id": webhook_id,
             "events": new_events,

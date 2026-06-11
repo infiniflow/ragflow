@@ -38,13 +38,13 @@ from api.db.services.llm_service import LLMBundle
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import (
+    get_result,
     check_duplicate_ids,
-    get_data_error_result,
-    get_json_result,
     get_request_json,
     server_error_response,
     validate_request,
 )
+
 from api.utils.pagination_utils import validate_rest_api_page_size
 from common.constants import LLMType, RetCode, StatusEnum
 from common import settings
@@ -217,7 +217,7 @@ def _normalize_completion_messages(req):
     if messages is None:
         question = req.get("question")
         if question is None:
-            return None, get_data_error_result(
+            return None, get_result(
                 code=RetCode.ARGUMENT_ERROR,
                 message="required argument are missing: messages",
             )
@@ -226,19 +226,19 @@ def _normalize_completion_messages(req):
             messages[-1]["files"] = req["files"]
 
     if not isinstance(messages, list) or not messages:
-        return None, get_data_error_result(
+        return None, get_result(
             code=RetCode.ARGUMENT_ERROR,
             message="`messages` must be a non-empty list.",
         )
 
     for message in messages:
         if not isinstance(message, dict):
-            return None, get_data_error_result(
+            return None, get_result(
                 code=RetCode.ARGUMENT_ERROR,
                 message="Every item in `messages` must be an object.",
             )
         if "role" not in message or "content" not in message:
-            return None, get_data_error_result(
+            return None, get_result(
                 code=RetCode.ARGUMENT_ERROR,
                 message="Every item in `messages` must include `role` and `content`.",
             )
@@ -252,12 +252,12 @@ def _normalize_completion_messages(req):
         msg.append(m)
 
     if not msg:
-        return None, get_data_error_result(
+        return None, get_result(
             code=RetCode.ARGUMENT_ERROR,
             message="`messages` must contain a user message.",
         )
     if msg[-1]["role"] != "user":
-        return None, get_data_error_result(
+        return None, get_result(
             code=RetCode.ARGUMENT_ERROR,
             message="The last message must be from user.",
         )
@@ -365,41 +365,41 @@ async def create():
         req = await get_request_json()
         ok, tenant = TenantService.get_by_id(current_user.id)
         if not ok:
-            return get_data_error_result(message="Tenant not found!")
+            return get_result(code=RetCode.DATA_ERROR, message="Tenant not found!")
 
         # Validate tenant_id should not be provided
         if req.get("tenant_id"):
-            return get_data_error_result(message="`tenant_id` must not be provided.")
+            return get_result(code=RetCode.DATA_ERROR, message="`tenant_id` must not be provided.")
 
         # Validate name
         name, err = _validate_name(req.get("name"), required=True)
         if err:
-            return get_data_error_result(message=err)
+            return get_result(code=RetCode.DATA_ERROR, message=err)
         req["name"] = name
 
         if "dataset_ids" in req:
             kb_ids = await _validate_dataset_ids(req.get("dataset_ids"), current_user.id)
             if isinstance(kb_ids, str):
-                return get_data_error_result(message=kb_ids)
+                return get_result(code=RetCode.DATA_ERROR, message=kb_ids)
             req["kb_ids"] = kb_ids
             req.pop("dataset_ids", None)
 
         if "llm_id" in req:
             err = await _validate_llm_id(req.get("llm_id"), current_user.id, req.get("llm_setting"))
             if err:
-                return get_data_error_result(message=err)
+                return get_result(code=RetCode.DATA_ERROR, message=err)
 
         if "rerank_id" in req:
             err = await _validate_rerank_id(req.get("rerank_id"), current_user.id)
             if err:
-                return get_data_error_result(message=err)
+                return get_result(code=RetCode.DATA_ERROR, message=err)
 
         if "prompt_config" in req:
             if not isinstance(req["prompt_config"], dict):
-                return get_data_error_result(message="`prompt_config` should be an object.")
+                return get_result(code=RetCode.DATA_ERROR, message="`prompt_config` should be an object.")
             # err = _validate_prompt_config(req["prompt_config"])
             # if err:
-            #     return get_data_error_result(message=err)
+            #     return get_result(code=RetCode.DATA_ERROR, message=err)
 
         req.setdefault("kb_ids", [])
         req.setdefault("llm_id", tenant.llm_id)
@@ -416,7 +416,7 @@ async def create():
         _apply_prompt_defaults(req)
         # err = _validate_prompt_config(req["prompt_config"])
         # if err:
-        #     return get_data_error_result(message=err)
+        #     return get_result(code=RetCode.DATA_ERROR, message=err)
 
         req = {field: value for field, value in req.items() if field in _PERSISTED_FIELDS}
         for field in _READONLY_FIELDS:
@@ -427,17 +427,17 @@ async def create():
             tenant_id=current_user.id,
             status=StatusEnum.VALID.value,
         ):
-            return get_data_error_result(message="Duplicated chat name in creating chat.")
+            return get_result(code=RetCode.DATA_ERROR, message="Duplicated chat name in creating chat.")
 
         req["id"] = get_uuid()
         req["tenant_id"] = current_user.id
         if not DialogService.save(**req):
-            return get_data_error_result(message="Failed to create chat.")
+            return get_result(code=RetCode.DATA_ERROR, message="Failed to create chat.")
 
         ok, chat = DialogService.get_by_id(req["id"])
         if not ok:
-            return get_data_error_result(message="Failed to retrieve created chat.")
-        return get_json_result(data=_build_chat_response(chat))
+            return get_result(code=RetCode.DATA_ERROR, message="Failed to retrieve created chat.")
+        return get_result(data=_build_chat_response(chat))
     except Exception as ex:
         return server_error_response(ex)
 
@@ -460,6 +460,20 @@ async def list_chats():
         items_per_page = validate_rest_api_page_size(int(request.args.get("page_size", 0)))
 
         if owner_ids:
+            requested_owner_ids = set(owner_ids)
+            unauthorized_owner_ids = requested_owner_ids - authorized_owner_ids
+            if unauthorized_owner_ids:
+                logging.warning(
+                    "Rejected list_chats request: user=%s attempted unauthorized owner_ids=%s",
+                    current_user.id,
+                    sorted(unauthorized_owner_ids),
+                )
+                return get_result(
+                    data=False,
+                    message="Only authorized owner_ids can be queried.",
+                    code=RetCode.OPERATING_ERROR,
+                )
+            effective_owner_ids = list(requested_owner_ids)
             chats, total = await thread_pool_exec(
                 DialogService.get_by_tenant_ids,
                 owner_ids, current_user.id, 0, 0, orderby, desc, keywords, **exact_filters,
@@ -475,7 +489,7 @@ async def list_chats():
                 [], current_user.id, page_number, items_per_page, orderby, desc, keywords, **exact_filters,
             )
 
-        return get_json_result(
+        return get_result(
             data={"chats": [_build_chat_response(chat) for chat in chats], "total": total}
         )
     except Exception as ex:
@@ -494,7 +508,7 @@ async def get_chat(chat_id):
             ):
                 break
         else:
-            return get_json_result(
+            return get_result(
                 data=False,
                 message="No authorization.",
                 code=RetCode.AUTHENTICATION_ERROR,
@@ -502,8 +516,8 @@ async def get_chat(chat_id):
 
         ok, chat = await thread_pool_exec(DialogService.get_by_id, chat_id)
         if not ok:
-            return get_data_error_result(message="Chat not found!")
-        return get_json_result(data=_build_chat_response(chat))
+            return get_result(code=RetCode.DATA_ERROR, message="Chat not found!")
+        return get_result(data=_build_chat_response(chat))
     except Exception as ex:
         return server_error_response(ex)
 
@@ -512,7 +526,7 @@ async def get_chat(chat_id):
 @login_required
 async def update_chat(chat_id):
     if not await _ensure_owned_chat(chat_id):
-        return get_json_result(
+        return get_result(
             data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR
         )
 
@@ -520,52 +534,52 @@ async def update_chat(chat_id):
         req = await get_request_json()
         ok, tenant = TenantService.get_by_id(current_user.id)
         if not ok:
-            return get_data_error_result(message="Tenant not found!")
+            return get_result(code=RetCode.DATA_ERROR, message="Tenant not found!")
 
         ok, current_chat = DialogService.get_by_id(chat_id)
         if not ok:
-            return get_data_error_result(message="Chat not found!")
+            return get_result(code=RetCode.DATA_ERROR, message="Chat not found!")
         current_chat = current_chat.to_dict()
 
         if req.get("tenant_id"):
-            return get_data_error_result(message="`tenant_id` must not be provided.")
+            return get_result(code=RetCode.DATA_ERROR, message="`tenant_id` must not be provided.")
 
         if "name" in req:
             name, err = _validate_name(req.get("name"), required=True)
             if err:
-                return get_data_error_result(message=err)
+                return get_result(code=RetCode.DATA_ERROR, message=err)
             req["name"] = name
 
         if "dataset_ids" in req:
             kb_ids = await _validate_dataset_ids(req.get("dataset_ids"), current_user.id)
             if isinstance(kb_ids, str):
-                return get_data_error_result(message=kb_ids)
+                return get_result(code=RetCode.DATA_ERROR, message=kb_ids)
             req["kb_ids"] = kb_ids
             req.pop("dataset_ids", None)
 
         if "llm_id" in req:
             err = await _validate_llm_id(req.get("llm_id"), current_user.id, req.get("llm_setting"))
             if err:
-                return get_data_error_result(message=err)
+                return get_result(code=RetCode.DATA_ERROR, message=err)
 
         if "rerank_id" in req:
             err = await _validate_rerank_id(req.get("rerank_id"), current_user.id)
             if err:
-                return get_data_error_result(message=err)
+                return get_result(code=RetCode.DATA_ERROR, message=err)
 
         if "prompt_config" in req:
             if not isinstance(req["prompt_config"], dict):
-                return get_data_error_result(message="`prompt_config` should be an object.")
+                return get_result(code=RetCode.DATA_ERROR, message="`prompt_config` should be an object.")
             # err = _validate_prompt_config(req["prompt_config"])
             # if err:
-            #     return get_data_error_result(message=err)
+            #     return get_result(code=RetCode.DATA_ERROR, message=err)
 
         # prompt_config = req.get("prompt_config", {})
         # if not prompt_config:
         #     prompt_config = current_chat.get("prompt_config", {})
         # kb_ids = req.get("kb_ids", current_chat.get("kb_ids", []))
         # if not kb_ids and not prompt_config.get("tavily_api_key") and _has_knowledge_placeholder(prompt_config):
-        #     return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no dataset / Tavily used here.")
+        #     return get_result(code=RetCode.DATA_ERROR, message="Please remove `{knowledge}` in system prompt since no dataset / Tavily used here.")
         req = {field: value for field, value in req.items() if field in _PERSISTED_FIELDS}
         for field in _READONLY_FIELDS:
             req.pop(field, None)
@@ -579,15 +593,15 @@ async def update_chat(chat_id):
                 status=StatusEnum.VALID.value,
             )
         ):
-            return get_data_error_result(message="Duplicated chat name.")
+            return get_result(code=RetCode.DATA_ERROR, message="Duplicated chat name.")
 
         if not DialogService.update_by_id(chat_id, req):
-            return get_data_error_result(message="Chat not found!")
+            return get_result(code=RetCode.DATA_ERROR, message="Chat not found!")
 
         ok, chat = DialogService.get_by_id(chat_id)
         if not ok:
-            return get_data_error_result(message="Failed to retrieve updated chat.")
-        return get_json_result(data=_build_chat_response(chat))
+            return get_result(code=RetCode.DATA_ERROR, message="Failed to retrieve updated chat.")
+        return get_result(data=_build_chat_response(chat))
     except Exception as ex:
         return server_error_response(ex)
 
@@ -596,7 +610,7 @@ async def update_chat(chat_id):
 @login_required
 async def patch_chat(chat_id):
     if not await _ensure_owned_chat(chat_id):
-        return get_json_result(
+        return get_result(
             data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR
         )
 
@@ -604,46 +618,46 @@ async def patch_chat(chat_id):
         req = await get_request_json()
         ok, tenant = TenantService.get_by_id(current_user.id)
         if not ok:
-            return get_data_error_result(message="Tenant not found!")
+            return get_result(code=RetCode.DATA_ERROR, message="Tenant not found!")
 
         ok, current_chat = DialogService.get_by_id(chat_id)
         if not ok:
-            return get_data_error_result(message="Chat not found!")
+            return get_result(code=RetCode.DATA_ERROR, message="Chat not found!")
         current_chat = current_chat.to_dict()
 
         if "name" in req:
             name, err = _validate_name(req.get("name"), required=False)
             if err:
-                return get_data_error_result(message=err)
+                return get_result(code=RetCode.DATA_ERROR, message=err)
             if name is not None:
                 req["name"] = name
 
         if "dataset_ids" in req:
             kb_ids = await _validate_dataset_ids(req.get("dataset_ids"), current_user.id)
             if isinstance(kb_ids, str):
-                return get_data_error_result(message=kb_ids)
+                return get_result(code=RetCode.DATA_ERROR, message=kb_ids)
             req["kb_ids"] = kb_ids
             req.pop("dataset_ids", None)
 
         if "llm_id" in req:
             err = await _validate_llm_id(req.get("llm_id"), current_user.id, req.get("llm_setting"))
             if err:
-                return get_data_error_result(message=err)
+                return get_result(code=RetCode.DATA_ERROR, message=err)
 
         if "rerank_id" in req:
             err = await _validate_rerank_id(req.get("rerank_id"), current_user.id)
             if err:
-                return get_data_error_result(message=err)
+                return get_result(code=RetCode.DATA_ERROR, message=err)
 
         if "prompt_config" in req:
             if not isinstance(req["prompt_config"], dict):
-                return get_data_error_result(message="`prompt_config` should be an object.")
+                return get_result(code=RetCode.DATA_ERROR, message="`prompt_config` should be an object.")
             prompt_config = deepcopy(current_chat.get("prompt_config", {}))
             prompt_config.update(req["prompt_config"])
             req["prompt_config"] = prompt_config
             # err = _validate_prompt_config(prompt_config)
             # if err:
-            #     return get_data_error_result(message=err)
+            #     return get_result(code=RetCode.DATA_ERROR, message=err)
 
         if "llm_setting" in req:
             llm_setting = deepcopy(current_chat.get("llm_setting", {}))
@@ -654,7 +668,7 @@ async def patch_chat(chat_id):
         #     prompt_config = req.get("prompt_config", current_chat.get("prompt_config", {}))
         #     kb_ids = req.get("kb_ids", current_chat.get("kb_ids", []))
         #     if not kb_ids and not prompt_config.get("tavily_api_key") and _has_knowledge_placeholder(prompt_config):
-        #         return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no dataset / Tavily used here.")
+        #         return get_result(code=RetCode.DATA_ERROR, message="Please remove `{knowledge}` in system prompt since no dataset / Tavily used here.")
 
         req = {field: value for field, value in req.items() if field in _PERSISTED_FIELDS}
         for field in _READONLY_FIELDS:
@@ -669,15 +683,15 @@ async def patch_chat(chat_id):
                 status=StatusEnum.VALID.value,
             )
         ):
-            return get_data_error_result(message="Duplicated chat name.")
+            return get_result(code=RetCode.DATA_ERROR, message="Duplicated chat name.")
 
         if not DialogService.update_by_id(chat_id, req):
-            return get_data_error_result(message="Failed to update chat.")
+            return get_result(code=RetCode.DATA_ERROR, message="Failed to update chat.")
 
         ok, chat = DialogService.get_by_id(chat_id)
         if not ok:
-            return get_data_error_result(message="Failed to retrieve updated chat.")
-        return get_json_result(data=_build_chat_response(chat))
+            return get_result(code=RetCode.DATA_ERROR, message="Failed to retrieve updated chat.")
+        return get_result(data=_build_chat_response(chat))
     except Exception as ex:
         return server_error_response(ex)
 
@@ -686,14 +700,14 @@ async def patch_chat(chat_id):
 @login_required
 async def delete_chat(chat_id):
     if not await _ensure_owned_chat(chat_id):
-        return get_json_result(
+        return get_result(
             data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR
         )
 
     try:
         if not DialogService.update_by_id(chat_id, {"status": StatusEnum.INVALID.value}):
-            return get_data_error_result(message=f"Failed to delete chat {chat_id}")
-        return get_json_result(data=True)
+            return get_result(code=RetCode.DATA_ERROR, message=f"Failed to delete chat {chat_id}")
+        return get_result(data=True)
     except Exception as ex:
         return server_error_response(ex)
 
@@ -703,7 +717,7 @@ async def delete_chat(chat_id):
 async def bulk_delete_chats():
     req = await get_request_json()
     if not req:
-        return get_json_result(data={})
+        return get_result(data={})
 
     ids = req.get("ids")
     if not ids:
@@ -715,18 +729,18 @@ async def bulk_delete_chats():
                 )
             ]
             if not ids:
-                return get_json_result(data={})
+                return get_result(data={})
         else:
             # keep backward compatibility, DELETE with chat_id in request body
             chat_id = req.get("chat_id")
             if chat_id:
                 try:
                     if not DialogService.update_by_id(chat_id, {"status": StatusEnum.INVALID.value}):
-                        return get_data_error_result(message=f"Failed to delete chat {chat_id}")
-                    return get_json_result(data=True)
+                        return get_result(code=RetCode.DATA_ERROR, message=f"Failed to delete chat {chat_id}")
+                    return get_result(data=True)
                 except Exception as ex:
                     return server_error_response(ex)
-            return get_json_result(data={})
+            return get_result(data={})
 
     errors = []
     success_count = 0
@@ -741,13 +755,13 @@ async def bulk_delete_chats():
     all_errors = errors + duplicate_messages
     if all_errors:
         if success_count > 0:
-            return get_json_result(
+            return get_result(
                 data={"success_count": success_count, "errors": all_errors},
                 message=f"Partially deleted {success_count} chats with {len(all_errors)} errors",
             )
-        return get_data_error_result(message="; ".join(all_errors))
+        return get_result(code=RetCode.DATA_ERROR, message="; ".join(all_errors))
 
-    return get_json_result(data={"success_count": success_count})
+    return get_result(data={"success_count": success_count})
 
 
 @manager.route("/chats/<chat_id>/sessions", methods=["POST"])  # noqa: F821
@@ -755,15 +769,15 @@ async def bulk_delete_chats():
 async def create_session(chat_id):
     """Create a new conversation session for the given chat, owned by the authenticated user."""
     if not await _ensure_owned_chat(chat_id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
     try:
         req = await get_request_json()
         ok, dia = DialogService.get_by_id(chat_id)
         if not ok:
-            return get_data_error_result(message="Chat not found!")
+            return get_result(code=RetCode.DATA_ERROR, message="Chat not found!")
         name = req.get("name", "New session")
         if not isinstance(name, str) or not name.strip():
-            return get_data_error_result(message="`name` can not be empty.")
+            return get_result(code=RetCode.DATA_ERROR, message="`name` can not be empty.")
         name = name.strip()[:255]
         conv = {
             "id": get_uuid(),
@@ -776,8 +790,8 @@ async def create_session(chat_id):
         ConversationService.save(**conv)
         ok, conv_obj = ConversationService.get_by_id(conv["id"])
         if not ok:
-            return get_data_error_result(message="Fail to create a session!")
-        return get_json_result(data=_build_session_response(conv_obj.to_dict()))
+            return get_result(code=RetCode.DATA_ERROR, message="Fail to create a session!")
+        return get_result(data=_build_session_response(conv_obj.to_dict()))
     except Exception as ex:
         return server_error_response(ex)
 
@@ -787,7 +801,7 @@ async def create_session(chat_id):
 async def list_sessions(chat_id):
     try:
         if not await _ensure_owned_chat(chat_id):
-            return get_json_result(
+            return get_result(
                 data=False,
                 message="No authorization.",
                 code=RetCode.AUTHENTICATION_ERROR,
@@ -804,7 +818,7 @@ async def list_sessions(chat_id):
         )
         if items_per_page == 0:
             convs = []
-        return get_json_result(data=[_build_session_response(c) for c in convs])
+        return get_result(data=[_build_session_response(c) for c in convs])
     except Exception as ex:
         return server_error_response(ex)
 
@@ -813,13 +827,13 @@ async def list_sessions(chat_id):
 @login_required
 async def get_session(chat_id, session_id):
     if not await _ensure_owned_chat(chat_id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
     try:
         ok, conv = await thread_pool_exec(ConversationService.get_by_id, session_id)
         if not ok:
-            return get_data_error_result(message="Session not found!")
+            return get_result(code=RetCode.DATA_ERROR, message="Session not found!")
         if conv.dialog_id != chat_id:
-            return get_data_error_result(message="Session does not belong to this chat!")
+            return get_result(code=RetCode.DATA_ERROR, message="Session does not belong to this chat!")
         dialog = await _ensure_owned_chat(chat_id)
         avatar = dialog[0].icon if dialog else ""
         for ref in conv.reference:
@@ -828,7 +842,7 @@ async def get_session(chat_id, session_id):
             ref["chunks"] = chunks_format(ref)
         result = _build_session_response(conv.to_dict())
         result["avatar"] = avatar
-        return get_json_result(data=result)
+        return get_result(data=result)
     except Exception as ex:
         return server_error_response(ex)
 
@@ -837,27 +851,27 @@ async def get_session(chat_id, session_id):
 @login_required
 async def update_session(chat_id, session_id):
     if not await _ensure_owned_chat(chat_id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
     try:
         req = await get_request_json()
         if not ConversationService.query(id=session_id, dialog_id=chat_id):
-            return get_data_error_result(message="Session not found!")
+            return get_result(code=RetCode.DATA_ERROR, message="Session not found!")
         if "message" in req or "messages" in req:
-            return get_data_error_result(message="`messages` cannot be changed.")
+            return get_result(code=RetCode.DATA_ERROR, message="`messages` cannot be changed.")
         if "reference" in req:
-            return get_data_error_result(message="`reference` cannot be changed.")
+            return get_result(code=RetCode.DATA_ERROR, message="`reference` cannot be changed.")
         name = req.get("name")
         if name is not None:
             if not isinstance(name, str) or not name.strip():
-                return get_data_error_result(message="`name` can not be empty.")
+                return get_result(code=RetCode.DATA_ERROR, message="`name` can not be empty.")
             req["name"] = name.strip()[:255]
         update_fields = {k: v for k, v in req.items() if k not in {"id", "dialog_id", "chat_id", "user_id"}}
         if not ConversationService.update_by_id(session_id, update_fields):
-            return get_data_error_result(message="Session not found!")
+            return get_result(code=RetCode.DATA_ERROR, message="Session not found!")
         ok, conv = ConversationService.get_by_id(session_id)
         if not ok:
-            return get_data_error_result(message="Fail to update a session!")
-        return get_json_result(data=_build_session_response(conv.to_dict()))
+            return get_result(code=RetCode.DATA_ERROR, message="Fail to update a session!")
+        return get_result(data=_build_session_response(conv.to_dict()))
     except Exception as ex:
         return server_error_response(ex)
 
@@ -866,20 +880,20 @@ async def update_session(chat_id, session_id):
 @login_required
 async def delete_sessions(chat_id):
     if not await _ensure_owned_chat(chat_id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
     try:
         req = await get_request_json()
         if not req:
-            return get_json_result(data={})
+            return get_result(data={})
 
         session_ids = req.get("ids")
         if not session_ids:
             if req.get("delete_all") is True:
                 session_ids = [conv.id for conv in ConversationService.query(dialog_id=chat_id)]
                 if not session_ids:
-                    return get_json_result(data={})
+                    return get_result(data={})
             else:
-                return get_json_result(data={})
+                return get_result(data={})
         unique_ids, duplicate_messages = check_duplicate_ids(session_ids, "session")
         errors = []
         success_count = 0
@@ -903,12 +917,12 @@ async def delete_sessions(chat_id):
         all_errors = errors + duplicate_messages
         if all_errors:
             if success_count > 0:
-                return get_json_result(
+                return get_result(
                     data={"success_count": success_count, "errors": all_errors},
                     message=f"Partially deleted {success_count} sessions with {len(all_errors)} errors",
                 )
-            return get_data_error_result(message="; ".join(all_errors))
-        return get_json_result(data=True)
+            return get_result(code=RetCode.DATA_ERROR, message="; ".join(all_errors))
+        return get_result(data=True)
     except Exception as ex:
         return server_error_response(ex)
 
@@ -917,11 +931,11 @@ async def delete_sessions(chat_id):
 @login_required
 async def delete_session_message(chat_id, session_id, msg_id):
     if not await _ensure_owned_chat(chat_id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
     try:
         ok, conv = ConversationService.get_by_id(session_id)
         if not ok or conv.dialog_id != chat_id:
-            return get_data_error_result(message="Session not found!")
+            return get_result(code=RetCode.DATA_ERROR, message="Session not found!")
         conv = conv.to_dict()
         for i, msg in enumerate(conv["message"]):
             if msg_id != msg.get("id", ""):
@@ -932,7 +946,7 @@ async def delete_session_message(chat_id, session_id, msg_id):
             conv["reference"].pop(max(0, i // 2 - 1))
             break
         ConversationService.update_by_id(conv["id"], conv)
-        return get_json_result(data=_build_session_response(conv))
+        return get_result(data=_build_session_response(conv))
     except Exception as ex:
         return server_error_response(ex)
 
@@ -942,15 +956,15 @@ async def delete_session_message(chat_id, session_id, msg_id):
 async def update_message_feedback(chat_id, session_id, msg_id):
     owned = await _ensure_owned_chat(chat_id)
     if not owned:
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
     try:
         req = await get_request_json()
         ok, conv = ConversationService.get_by_id(session_id)
         if not ok or conv.dialog_id != chat_id:
-            return get_data_error_result(message="Session not found!")
+            return get_result(code=RetCode.DATA_ERROR, message="Session not found!")
         thumb_raw = req.get("thumbup")
         if not isinstance(thumb_raw, bool):
-            return get_data_error_result(message="thumbup must be a boolean")
+            return get_result(code=RetCode.DATA_ERROR, message="thumbup must be a boolean")
         feedback = req.get("feedback", "")
         conv_dict = conv.to_dict()
         message_index = None
@@ -999,7 +1013,7 @@ async def update_message_feedback(chat_id, session_id, msg_id):
                 logging.warning("Failed to apply chunk feedback: %s", e)
 
         await thread_pool_exec(ConversationService.update_by_id, conv_dict["id"], conv_dict)
-        return get_json_result(data=_build_session_response(conv_dict))
+        return get_result(data=_build_session_response(conv_dict))
     except Exception as ex:
         return server_error_response(ex)
 
@@ -1013,7 +1027,7 @@ async def tts():
     try:
         default_tts_model_config = get_tenant_default_model_by_type(current_user.id, LLMType.TTS)
     except Exception as e:
-        return get_data_error_result(message=str(e))
+        return get_result(code=RetCode.DATA_ERROR, message=str(e))
 
     tts_mdl = LLMBundle(current_user.id, default_tts_model_config)
 
@@ -1039,7 +1053,7 @@ async def transcription():
     stream_mode = req.get("stream", "false").lower() == "true"
     files = await request.files
     if "file" not in files:
-        return get_data_error_result(message="Missing 'file' in multipart form-data")
+        return get_result(code=RetCode.DATA_ERROR, message="Missing 'file' in multipart form-data")
 
     uploaded = files["file"]
 
@@ -1052,8 +1066,7 @@ async def transcription():
     filename = uploaded.filename or ""
     suffix = os.path.splitext(filename)[-1].lower()
     if suffix not in ALLOWED_EXTS:
-        return get_data_error_result(
-            message=f"Unsupported audio format: {suffix}. Allowed: {', '.join(sorted(ALLOWED_EXTS))}"
+        return get_result(code=RetCode.DATA_ERROR, message=f"Unsupported audio format: {suffix}. Allowed: {', '.join(sorted(ALLOWED_EXTS))}"
         )
 
     fd, temp_audio_path = tempfile.mkstemp(suffix=suffix)
@@ -1063,7 +1076,7 @@ async def transcription():
     try:
         default_asr_model_config = get_tenant_default_model_by_type(current_user.id, LLMType.SPEECH2TEXT)
     except Exception as e:
-        return get_data_error_result(message=str(e))
+        return get_result(code=RetCode.DATA_ERROR, message=str(e))
 
     asr_mdl = LLMBundle(current_user.id, default_asr_model_config)
     if not stream_mode:
@@ -1072,7 +1085,7 @@ async def transcription():
             os.remove(temp_audio_path)
         except Exception as e:
             logging.error(f"Failed to remove temp audio file: {str(e)}")
-        return get_json_result(data={"text": text})
+        return get_result(data={"text": text})
 
     async def event_stream():
         try:
@@ -1105,7 +1118,7 @@ async def mindmap():
     mind_map = await gen_mindmap(req["question"], kb_ids, search_app.get("tenant_id", current_user.id), search_config)
     if "error" in mind_map:
         return server_error_response(Exception(mind_map["error"]))
-    return get_json_result(data=mind_map)
+    return get_result(data=mind_map)
 
 
 @manager.route("/chat/recommendation", methods=["POST"])  # noqa: F821
@@ -1143,7 +1156,7 @@ async def recommendation():
         ],
         gen_conf,
     )
-    return get_json_result(data=[re.sub(r"^[0-9]\. ", "", a) for a in ans.split("\n") if re.match(r"^[0-9]\. ", a)])
+    return get_result(data=[re.sub(r"^[0-9]\. ", "", a) for a in ans.split("\n") if re.match(r"^[0-9]\. ", a)])
 
 
 @manager.route("/chat/completions", methods=["POST"])  # noqa: F821
@@ -1168,24 +1181,24 @@ async def session_completion(chat_id_in_arg=""):
     try:
         conv = None
         if session_id and not chat_id:
-            return get_data_error_result(message="`chat_id` is required when `session_id` is provided.")
+            return get_result(code=RetCode.DATA_ERROR, message="`chat_id` is required when `session_id` is provided.")
 
         if chat_id:
             if not await _ensure_owned_chat(chat_id):
-                return get_json_result(
+                return get_result(
                     data=False,
                     message="No authorization.",
                     code=RetCode.AUTHENTICATION_ERROR,
                 )
             e, dia = await thread_pool_exec(DialogService.get_by_id, chat_id)
             if not e:
-                return get_data_error_result(message="Chat not found!")
+                return get_result(code=RetCode.DATA_ERROR, message="Chat not found!")
             if session_id:
                 e, conv = await thread_pool_exec(ConversationService.get_by_id, session_id)
                 if not e:
-                    return get_data_error_result(message="Session not found!")
+                    return get_result(code=RetCode.DATA_ERROR, message="Session not found!")
                 if conv.dialog_id != chat_id:
-                    return get_data_error_result(message="Session does not belong to this chat!")
+                    return get_result(code=RetCode.DATA_ERROR, message="Session does not belong to this chat!")
             else:
                 conv = await _create_session_for_completion(chat_id, dia, current_user.id)
                 session_id = conv.id
@@ -1218,7 +1231,7 @@ async def session_completion(chat_id_in_arg=""):
 
         if chat_model_id:
             if not await thread_pool_exec(get_api_key, tenant_id=dia.tenant_id, model_name=chat_model_id):
-                return get_data_error_result(message=f"Cannot use specified model {chat_model_id}.")
+                return get_result(code=RetCode.DATA_ERROR, message=f"Cannot use specified model {chat_model_id}.")
             dia.llm_id = chat_model_id
             dia.llm_setting = chat_model_config
         elif not dia.llm_id:
@@ -1267,6 +1280,6 @@ async def session_completion(chat_id_in_arg=""):
             if conv is not None:
                 await thread_pool_exec(ConversationService.update_by_id, conv.id, conv.to_dict())
             break
-        return get_json_result(data=_sanitize_json_floats(answer))
+        return get_result(data=_sanitize_json_floats(answer))
     except Exception as ex:
         return server_error_response(ex)

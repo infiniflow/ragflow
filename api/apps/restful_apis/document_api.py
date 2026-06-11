@@ -39,8 +39,7 @@ from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.common.check_team_permission import check_kb_team_permission
 from api.db.services.task_service import TaskService, cancel_all_task_of
-from api.utils.api_utils import construct_json_result, get_data_error_result, get_error_data_result, get_result, get_json_result, \
-    server_error_response, add_tenant_id_to_kwargs, get_request_json, get_error_argument_result, check_duplicate_ids
+from api.utils.api_utils import get_result, add_tenant_id_to_kwargs, check_duplicate_ids, get_request_json, server_error_response
 from api.utils.pagination_utils import validate_rest_api_page_size
 from api.utils.validation_utils import (
     UpdateDocumentReq, format_validation_error_message, validate_and_parse_json_request, DeleteDocumentReq,
@@ -92,10 +91,10 @@ async def upload_info(tenant_id: str):
     url = request.args.get("url")
 
     if file_objs and url:
-        return get_error_argument_result("Provide either multipart file(s) or ?url=..., not both.")
+        return get_result(code=RetCode.ARGUMENT_ERROR, message="Provide either multipart file(s) or ?url=..., not both.")
 
     if not file_objs and not url:
-        return get_error_argument_result("Missing input: provide multipart file(s) or url")
+        return get_result(code=RetCode.ARGUMENT_ERROR, message="Missing input: provide multipart file(s) or url")
 
     try:
         if url and not file_objs:
@@ -103,7 +102,7 @@ async def upload_info(tenant_id: str):
                 assert_url_is_safe(url)
             except ValueError as ve:
                 logging.warning("upload_info: rejected unsafe url: %s", ve)
-                return get_error_argument_result(str(ve))
+                return get_result(code=RetCode.ARGUMENT_ERROR, message=str(ve))
 
             data = await thread_pool_exec(FileService.upload_info, tenant_id, None, url)
             return get_result(data=data)
@@ -175,34 +174,34 @@ async def update_document(tenant_id, dataset_id, document_id):
 
     # Verify ownership and existence of dataset and document
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
-        return get_error_data_result(message="You don't own the dataset.")
+        return get_result(code=RetCode.DATA_ERROR, message="You don't own the dataset.")
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:
-        return get_error_data_result(message="Can't find this dataset!")
+        return get_result(code=RetCode.DATA_ERROR, message="Can't find this dataset!")
 
     # Prepare data for validation
     docs = DocumentService.query(kb_id=dataset_id, id=document_id)
     if not docs:
-        return get_error_data_result(message="The dataset doesn't own the document.")
+        return get_result(code=RetCode.DATA_ERROR, message="The dataset doesn't own the document.")
 
     # Validate document update request parameters
     try:
         update_doc_req = UpdateDocumentReq(**req)
     except ValidationError as e:
-        return get_error_data_result(message=format_validation_error_message(e), code=RetCode.DATA_ERROR)
+        return get_result(code=RetCode.DATA_ERROR, message=format_validation_error_message(e))
 
     doc = docs[0]
 
     # further check with inner status (from DB)
     error_msg, error_code = validate_document_update_fields(update_doc_req, doc, req)
     if error_msg:
-        return get_error_data_result(message=error_msg, code=error_code)
+        return get_result(code=error_code, message=error_msg)
 
     # All validations passed, now perform all updates
     # meta_fields provided, then update it
     if "meta_fields" in req:
         if not DocMetadataService.update_document_metadata(document_id, update_doc_req.meta_fields):
-            return get_error_data_result(message="Failed to update metadata")
+            return get_result(code=RetCode.DATA_ERROR, message="Failed to update metadata")
     # doc name provided from request and diff with existing value, update
     if "name" in req and req["name"] != doc.name:
         if error := update_document_name_only(document_id, req["name"]):
@@ -211,7 +210,7 @@ async def update_document(tenant_id, dataset_id, document_id):
     # "parser_id" provided but does not match with existing doc's file type
     if "parser_id" in req and ((doc.type == FileType.VISUAL and req["parser_id"] != "picture")
             or (re.search(r"\.(ppt|pptx|pages)$", doc.name) and req["parser_id"] != "presentation")):
-        return get_data_error_result(message="Not supported yet!")
+        return get_result(code=RetCode.DATA_ERROR, message="Not supported yet!")
 
     # parser config provided (already validated in UpdateDocumentReq), update it
     if update_doc_req.parser_config:
@@ -236,10 +235,10 @@ async def update_document(tenant_id, dataset_id, document_id):
         original_doc_id = doc.id
         ok, doc = DocumentService.get_by_id(doc.id)
         if not ok:
-            return get_error_data_result(message=f"Can not get document by id:{original_doc_id}")
+            return get_result(code=RetCode.DATA_ERROR, message=f"Can not get document by id:{original_doc_id}")
     except OperationalError as e:
         logging.exception(e)
-        return get_error_data_result(message="Database operation failed")
+        return get_result(code=RetCode.DATA_ERROR, message="Database operation failed")
     renamed_doc = map_doc_keys(doc)
     return get_result(data=renamed_doc)
 
@@ -271,7 +270,7 @@ async def metadata_summary(dataset_id, tenant_id):
         description: Metadata summary retrieved successfully.
     """
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
+        return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the dataset {dataset_id}. ")
     # Get doc_ids from query parameters (comma-separated string)
     doc_ids_param = request.args.get("doc_ids", "")
     doc_ids = doc_ids_param.split(",") if doc_ids_param else None
@@ -317,7 +316,7 @@ async def metadata_batch_update(dataset_id, tenant_id):
         description: Metadata updated successfully.
     """
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
+        return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the dataset {dataset_id}. ")
 
     req = await get_request_json()
     selector = req.get("selector", {}) or {}
@@ -325,31 +324,31 @@ async def metadata_batch_update(dataset_id, tenant_id):
     deletes = req.get("deletes", []) or []
 
     if not isinstance(selector, dict):
-        return get_error_data_result(message="selector must be an object.")
+        return get_result(code=RetCode.DATA_ERROR, message="selector must be an object.")
     if not isinstance(updates, list) or not isinstance(deletes, list):
-        return get_error_data_result(message="updates and deletes must be lists.")
+        return get_result(code=RetCode.DATA_ERROR, message="updates and deletes must be lists.")
 
     metadata_condition = selector.get("metadata_condition", {}) or {}
     if metadata_condition and not isinstance(metadata_condition, dict):
-        return get_error_data_result(message="metadata_condition must be an object.")
+        return get_result(code=RetCode.DATA_ERROR, message="metadata_condition must be an object.")
 
     document_ids = selector.get("document_ids", []) or []
     if document_ids and not isinstance(document_ids, list):
-        return get_error_data_result(message="document_ids must be a list.")
+        return get_result(code=RetCode.DATA_ERROR, message="document_ids must be a list.")
 
     for upd in updates:
         if not isinstance(upd, dict) or not upd.get("key") or "value" not in upd:
-            return get_error_data_result(message="Each update requires key and value.")
+            return get_result(code=RetCode.DATA_ERROR, message="Each update requires key and value.")
     for d in deletes:
         if not isinstance(d, dict) or not d.get("key"):
-            return get_error_data_result(message="Each delete requires key.")
+            return get_result(code=RetCode.DATA_ERROR, message="Each delete requires key.")
 
     target_doc_ids = set()
     if document_ids:
         kb_doc_ids = KnowledgebaseService.list_documents_by_ids([dataset_id])
         invalid_ids = set(document_ids) - set(kb_doc_ids)
         if invalid_ids:
-            return get_error_data_result(message=f"These documents do not belong to dataset {dataset_id}: {', '.join(invalid_ids)}")
+            return get_result(code=RetCode.DATA_ERROR, message=f"These documents do not belong to dataset {dataset_id}: {', '.join(invalid_ids)}")
         target_doc_ids = set(document_ids)
 
     if metadata_condition:
@@ -438,11 +437,11 @@ async def upload_document(dataset_id, tenant_id):
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:
         logging.error(f"Can't find the dataset with ID {dataset_id}!")
-        return get_error_data_result(message=f"Can't find the dataset with ID {dataset_id}!", code=RetCode.DATA_ERROR)
+        return get_result(code=RetCode.DATA_ERROR, message=f"Can't find the dataset with ID {dataset_id}!")
 
     if not check_kb_team_permission(kb, tenant_id):
         logging.error("No authorization.")
-        return get_error_data_result(message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_result(code=RetCode.AUTHENTICATION_ERROR, message="No authorization.")
 
     if upload_type == "web":
         return await _upload_web_document(dataset_id, kb, tenant_id)
@@ -451,10 +450,7 @@ async def upload_document(dataset_id, tenant_id):
         return await _upload_empty_document(dataset_id, kb, tenant_id)
 
     if upload_type != "local":
-        return get_error_data_result(
-            message='`type` must be one of "local", "web", or "empty".',
-            code=RetCode.ARGUMENT_ERROR,
-        )
+        return get_result(code=RetCode.ARGUMENT_ERROR, message='`type` must be one of "local", "web", or "empty".')
 
     return await _upload_local_documents(kb, tenant_id)
 
@@ -465,16 +461,13 @@ async def _upload_web_document(dataset_id, kb, tenant_id):
     url = form.get("url")
 
     if not name:
-        return get_error_data_result(message='Lack of "name"', code=RetCode.ARGUMENT_ERROR)
+        return get_result(code=RetCode.ARGUMENT_ERROR, message='Lack of "name"')
     if not url:
-        return get_error_data_result(message='Lack of "url"', code=RetCode.ARGUMENT_ERROR)
+        return get_result(code=RetCode.ARGUMENT_ERROR, message='Lack of "url"')
     if len(name.encode("utf-8")) > FILE_NAME_LEN_LIMIT:
-        return get_error_data_result(
-            message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.",
-            code=RetCode.ARGUMENT_ERROR,
-        )
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.")
     if not is_valid_url(url):
-        return get_error_data_result(message="The URL format is invalid", code=RetCode.ARGUMENT_ERROR)
+        return get_result(code=RetCode.ARGUMENT_ERROR, message="The URL format is invalid")
 
     blob = html2pdf(url)
     if not blob:
@@ -531,22 +524,19 @@ async def _upload_empty_document(dataset_id, kb, tenant_id):
     name = (req.get("name") or "").strip()
 
     if not name:
-        return get_error_data_result(message="File name can't be empty.", code=RetCode.ARGUMENT_ERROR)
+        return get_result(code=RetCode.ARGUMENT_ERROR, message="File name can't be empty.")
     if len(name.encode("utf-8")) > FILE_NAME_LEN_LIMIT:
-        return get_error_data_result(
-            message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.",
-            code=RetCode.ARGUMENT_ERROR,
-        )
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.")
     if DocumentService.query(name=name, kb_id=dataset_id):
-        return get_error_data_result(message="Duplicated document name in the same dataset.")
+        return get_result(code=RetCode.DATA_ERROR, message="Duplicated document name in the same dataset.")
 
     try:
         kb_root_folder = FileService.get_kb_folder(kb.tenant_id)
         if not kb_root_folder:
-            return get_error_data_result(message="Cannot find the root folder.")
+            return get_result(code=RetCode.DATA_ERROR, message="Cannot find the root folder.")
         kb_folder = FileService.new_a_file_from_kb(kb.tenant_id, kb.name, kb_root_folder["id"])
         if not kb_folder:
-            return get_error_data_result(message="Cannot find the kb folder for this file.")
+            return get_result(code=RetCode.DATA_ERROR, message="Cannot find the kb folder for this file.")
 
         doc = DocumentService.insert(
             {
@@ -574,17 +564,17 @@ async def _upload_local_documents(kb, tenant_id):
     files = await request.files
     if "file" not in files:
         logging.error("No file part!")
-        return get_error_data_result(message="No file part!", code=RetCode.ARGUMENT_ERROR)
+        return get_result(code=RetCode.ARGUMENT_ERROR, message="No file part!")
 
     file_objs = files.getlist("file")
     for file_obj in file_objs:
         if file_obj is None or file_obj.filename is None or file_obj.filename == "":
             logging.error("No file selected!")
-            return get_error_data_result(message="No file selected!", code=RetCode.ARGUMENT_ERROR)
+            return get_result(code=RetCode.ARGUMENT_ERROR, message="No file selected!")
         if len(file_obj.filename.encode("utf-8")) > FILE_NAME_LEN_LIMIT:
             msg = f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less."
             logging.error(msg)
-            return get_error_data_result(message=msg, code=RetCode.ARGUMENT_ERROR)
+            return get_result(code=RetCode.ARGUMENT_ERROR, message=msg)
 
     # Parse optional parser_config overrides from form data
     parser_config_override = None
@@ -609,12 +599,12 @@ async def _upload_local_documents(kb, tenant_id):
     if err:
         msg = "\n".join(err)
         logging.error(msg)
-        return get_error_data_result(message=msg, code=RetCode.SERVER_ERROR)
+        return get_result(code=RetCode.SERVER_ERROR, message=msg)
 
     if not files:
         msg = "There seems to be an issue with your file format. please verify it is correct and not corrupted."
         logging.error(msg)
-        return get_error_data_result(message=msg, code=RetCode.DATA_ERROR)
+        return get_result(code=RetCode.DATA_ERROR, message=msg)
 
     files = [f[0] for f in files]  # remove the blob
     return_raw_files = request.args.get("return_raw_files", "false").lower() == "true"
@@ -736,17 +726,17 @@ def list_docs(dataset_id, tenant_id):
     """
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         logging.error(f"You don't own the dataset {dataset_id}. ")
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
+        return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the dataset {dataset_id}. ")
 
     if request.args.get("type") == "filter":
         err_code, err_msg, payload, total = _get_doc_filters_with_request(request, dataset_id)
         if err_code != RetCode.SUCCESS:
-            return get_data_error_result(code=err_code, message=err_msg)
-        return get_json_result(data={"total": total, "filter": payload})
+            return get_result(code=err_code, message=err_msg)
+        return get_result(data={"total": total, "filter": payload})
 
     err_code, err_msg, payload, total = _get_docs_with_request(request, dataset_id)
     if err_code != RetCode.SUCCESS:
-        return get_data_error_result(code=err_code, message=err_msg)
+        return get_result(code=err_code, message=err_msg)
 
     renamed_doc_list = [map_doc_keys(doc) for doc in payload]
     for doc_item in renamed_doc_list:
@@ -756,7 +746,7 @@ def list_docs(dataset_id, tenant_id):
             doc_item["source_type"] = doc_item["source_type"].split("/")[0]
         if doc_item["parser_config"].get("metadata"):
             doc_item["parser_config"]["metadata"] = turn2jsonschema(doc_item["parser_config"]["metadata"])
-    return get_json_result(data={"total": total, "docs": renamed_doc_list})
+    return get_result(data={"total": total, "docs": renamed_doc_list})
 
 
 def _get_docs_with_request(req, dataset_id:str):
@@ -1072,29 +1062,28 @@ async def delete_documents(tenant_id, dataset_id):
     """
     req, err = await validate_and_parse_json_request(request, DeleteDocumentReq)
     if err is not None or req is None:
-        return get_error_argument_result(err)
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=err)
 
     try:
         # Validate dataset exists and user has permission
         if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-            return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
+            return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the dataset {dataset_id}. ")
 
         # Get documents to delete
         doc_ids = req.get("ids") or []
         delete_all = req.get("delete_all", False)
         if not delete_all and len(doc_ids) == 0:
-            return get_error_data_result(message=f"should either provide doc ids or set delete_all(true), dataset: {dataset_id}. ")
+            return get_result(code=RetCode.DATA_ERROR, message=f"should either provide doc ids or set delete_all(true), dataset: {dataset_id}. ")
 
         if len(doc_ids) > 0 and delete_all:
-            return get_error_data_result(message=f"should not provide both doc ids and delete_all(true), dataset: {dataset_id}. ")
+            return get_result(code=RetCode.DATA_ERROR, message=f"should not provide both doc ids and delete_all(true), dataset: {dataset_id}. ")
         if delete_all:
             doc_ids = [doc.id for doc in DocumentService.query(kb_id=dataset_id)]
 
         dataset_doc_ids = {doc.id for doc in DocumentService.query(kb_id=dataset_id)}
         invalid_ids = [doc_id for doc_id in doc_ids if doc_id not in dataset_doc_ids]
         if invalid_ids:
-            return get_error_data_result(
-                message=f"These documents do not belong to dataset {dataset_id} or Document not found: {', '.join(invalid_ids)}"
+            return get_result(code=RetCode.DATA_ERROR, message=f"These documents do not belong to dataset {dataset_id} or Document not found: {', '.join(invalid_ids)}"
             )
 
         # make sure each id is unique
@@ -1108,12 +1097,12 @@ async def delete_documents(tenant_id, dataset_id):
         errors = await thread_pool_exec(FileService.delete_docs, doc_ids, tenant_id)
 
         if errors:
-            return get_error_data_result(message=str(errors))
+            return get_result(code=RetCode.DATA_ERROR, message=str(errors))
 
         return get_result(data={"deleted": len(doc_ids)})
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>/metadata/config", methods=["PUT"])  # noqa: F821
 @login_required
@@ -1158,34 +1147,34 @@ async def update_metadata_config(tenant_id, dataset_id, document_id):
     """
     # Verify ownership and existence of dataset
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
-        return get_error_data_result(message="You don't own the dataset.")
+        return get_result(code=RetCode.DATA_ERROR, message="You don't own the dataset.")
 
     # Verify document exists in the dataset
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
         msg = f"Document {document_id} not found in dataset {dataset_id}"
-        return get_error_data_result(message=msg)
+        return get_result(code=RetCode.DATA_ERROR, message=msg)
     doc = doc[0]
 
     # Get request body
     req = await get_request_json()
     if "metadata" not in req:
-        return get_error_argument_result(message="metadata is required")
+        return get_result(code=RetCode.ARGUMENT_ERROR, message="metadata is required")
 
     # Update parser config with metadata
     try:
         DocumentService.update_parser_config(doc.id, {"metadata": req["metadata"]})
     except Exception as e:
         logging.error("error when update_parser_config", exc_info=e)
-        return get_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e))
+        return get_result(code=RetCode.EXCEPTION_ERROR, message=repr(e))
 
     # Get updated document
     try:
         e, doc = DocumentService.get_by_id(doc.id)
         if not e:
-            return get_data_error_result(message="Document not found!")
+            return get_result(code=RetCode.DATA_ERROR, message="Document not found!")
     except Exception as e:
-        return get_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e))
+        return get_result(code=RetCode.EXCEPTION_ERROR, message=repr(e))
 
     return get_result(data=doc.to_dict())
 
@@ -1215,7 +1204,7 @@ def list_thumbnails():
 
     doc_ids = request.args.getlist("doc_ids")
     if not doc_ids:
-        return get_json_result(data=False, message='Lack of "Document ID"', code=RetCode.ARGUMENT_ERROR)
+        return get_result(data=False, message='Lack of "Document ID"', code=RetCode.ARGUMENT_ERROR)
 
     try:
         docs = DocumentService.get_thumbnails(doc_ids)
@@ -1224,7 +1213,7 @@ def list_thumbnails():
             if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
                 doc_item["thumbnail"] = f"/api/v1/documents/images/{doc_item['kb_id']}-{doc_item['thumbnail']}"
 
-        return get_json_result(data={d["id"]: d["thumbnail"] for d in docs})
+        return get_result(data={d["id"]: d["thumbnail"] for d in docs})
     except Exception as e:
         return server_error_response(e)
 
@@ -1294,7 +1283,7 @@ async def update_metadata(tenant_id, dataset_id):
     """
     # Verify ownership of dataset
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the dataset {dataset_id}.")
 
     # Get request body
     req = await get_request_json()
@@ -1304,29 +1293,29 @@ async def update_metadata(tenant_id, dataset_id):
 
     # Validate selector
     if not isinstance(selector, dict):
-        return get_error_data_result(message="selector must be an object.")
+        return get_result(code=RetCode.DATA_ERROR, message="selector must be an object.")
     if not isinstance(updates, list) or not isinstance(deletes, list):
-        return get_error_data_result(message="updates and deletes must be lists.")
+        return get_result(code=RetCode.DATA_ERROR, message="updates and deletes must be lists.")
 
     # Validate metadata_condition
     metadata_condition = selector.get("metadata_condition", {}) or {}
     if metadata_condition and not isinstance(metadata_condition, dict):
-        return get_error_data_result(message="metadata_condition must be an object.")
+        return get_result(code=RetCode.DATA_ERROR, message="metadata_condition must be an object.")
 
     # Validate document_ids
     document_ids = selector.get("document_ids", []) or []
     if document_ids and not isinstance(document_ids, list):
-        return get_error_data_result(message="document_ids must be a list.")
+        return get_result(code=RetCode.DATA_ERROR, message="document_ids must be a list.")
 
     # Validate updates
     for upd in updates:
         if not isinstance(upd, dict) or not upd.get("key") or "value" not in upd:
-            return get_error_data_result(message="Each update requires key and value.")
+            return get_result(code=RetCode.DATA_ERROR, message="Each update requires key and value.")
 
     # Validate deletes
     for d in deletes:
         if not isinstance(d, dict) or not d.get("key"):
-            return get_error_data_result(message="Each delete requires key.")
+            return get_result(code=RetCode.DATA_ERROR, message="Each delete requires key.")
 
     # Initialize target document IDs
     target_doc_ids = set()
@@ -1336,8 +1325,7 @@ async def update_metadata(tenant_id, dataset_id):
         kb_doc_ids = KnowledgebaseService.list_documents_by_ids([dataset_id])
         invalid_ids = set(document_ids) - set(kb_doc_ids)
         if invalid_ids:
-            return get_error_data_result(
-                message=f"These documents do not belong to dataset {dataset_id}: {', '.join(invalid_ids)}"
+            return get_result(code=RetCode.DATA_ERROR, message=f"These documents do not belong to dataset {dataset_id}: {', '.join(invalid_ids)}"
             )
         target_doc_ids = set(document_ids)
 
@@ -1369,9 +1357,9 @@ async def ingest(tenant_id):
 
         if error_code:
             logging.error(f"error when ingest documents:{req}, error message:{error_message}")
-            return get_json_result(error_code, error_message)
+            return get_result(error_code, error_message)
 
-        return get_json_result(data=True)
+        return get_result(data=True)
     except Exception as e:
         logging.exception("document ingest/run failed")
         return server_error_response(e)
@@ -1467,17 +1455,17 @@ async def parse_documents(tenant_id, dataset_id):
         description: Successful operation.
     """
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the dataset {dataset_id}.")
 
     req = await get_request_json()
     if req is None:
-        return get_error_data_result(message="Request body is required")
+        return get_result(code=RetCode.DATA_ERROR, message="Request body is required")
 
     document_ids = req.get("document_ids")
     if document_ids is None or not isinstance(document_ids, list):
-        return get_error_data_result(message="`document_ids` is required")
+        return get_result(code=RetCode.DATA_ERROR, message="`document_ids` is required")
     if len(document_ids) == 0:
-        return get_error_data_result(message="`document_ids` is required")
+        return get_result(code=RetCode.DATA_ERROR, message="`document_ids` is required")
 
     # Check for duplicate document IDs
     unique_doc_ids, duplicate_messages = check_duplicate_ids(document_ids, "document")
@@ -1497,7 +1485,7 @@ async def parse_documents(tenant_id, dataset_id):
         errors.append(f"Documents not found: {not_found_ids}")
         # Still parse valid documents, but return error code
         if not valid_doc_ids:
-            return get_error_data_result(message=f"Documents not found: {not_found_ids}")
+            return get_result(code=RetCode.DATA_ERROR, message=f"Documents not found: {not_found_ids}")
 
     try:
         def _run_sync():
@@ -1533,11 +1521,11 @@ async def parse_documents(tenant_id, dataset_id):
 
         result = await thread_pool_exec(_run_sync)
         if not_found_ids:
-            return get_error_data_result(message=f"Documents not found: {not_found_ids}")
+            return get_result(code=RetCode.DATA_ERROR, message=f"Documents not found: {not_found_ids}")
         return get_result(data=result)
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/datasets/<dataset_id>/documents/stop", methods=["POST"])  # noqa: F821
@@ -1579,17 +1567,17 @@ async def stop_parse_documents(tenant_id, dataset_id):
         description: Successful operation.
     """
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the dataset {dataset_id}.")
 
     req = await get_request_json()
     if req is None:
-        return get_error_data_result(message="Request body is required")
+        return get_result(code=RetCode.DATA_ERROR, message="Request body is required")
 
     document_ids = req.get("document_ids")
     if document_ids is None or not isinstance(document_ids, list):
-        return get_error_data_result(message="`document_ids` is required")
+        return get_result(code=RetCode.DATA_ERROR, message="`document_ids` is required")
     if len(document_ids) == 0:
-        return get_error_data_result(message="`document_ids` is required")
+        return get_result(code=RetCode.DATA_ERROR, message="`document_ids` is required")
 
     # Check for duplicate document IDs
     unique_doc_ids, duplicate_messages = check_duplicate_ids(document_ids, "document")
@@ -1606,7 +1594,7 @@ async def stop_parse_documents(tenant_id, dataset_id):
             valid_doc_ids.append(doc_id)
 
     if not_found_ids:
-        return get_error_data_result(message=f"Documents not found: {not_found_ids}")
+        return get_result(code=RetCode.DATA_ERROR, message=f"Documents not found: {not_found_ids}")
 
     try:
         def _run_sync():
@@ -1635,11 +1623,11 @@ async def stop_parse_documents(tenant_id, dataset_id):
 
         result = await thread_pool_exec(_run_sync)
         if not_found_ids:
-            return get_error_data_result(message=f"Documents not found: {not_found_ids}")
+            return get_result(code=RetCode.DATA_ERROR, message=f"Documents not found: {not_found_ids}")
         return get_result(data=result)
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 def _parse_document_image_id(image_id: str) -> tuple[str, str] | None:
@@ -1714,11 +1702,11 @@ async def get_document_image(image_id):
     try:
         parsed = _parse_document_image_id(image_id)
         if not parsed:
-            return get_data_error_result(message="Image not found.")
+            return get_result(code=RetCode.DATA_ERROR, message="Image not found.")
         bkt, nm = parsed
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, bkt, nm)
         if not data:
-            return get_data_error_result(message="Image not found.")
+            return get_result(code=RetCode.DATA_ERROR, message="Image not found.")
         content_type = _content_type_for_document_image(nm, data)
         response = await make_response(data)
         response.headers.set("Content-Type", content_type)
@@ -1771,13 +1759,13 @@ async def get_artifact(filename):
         # Validate filename: must be uuid hex + allowed extension, nothing else
         basename = os.path.basename(filename)
         if basename != filename or "/" in filename or "\\" in filename:
-            return get_data_error_result(message="Invalid filename.")
+            return get_result(code=RetCode.DATA_ERROR, message="Invalid filename.")
         ext = os.path.splitext(basename)[1].lower()
         if ext not in ARTIFACT_CONTENT_TYPES:
-            return get_data_error_result(message="Invalid file type.")
+            return get_result(code=RetCode.DATA_ERROR, message="Invalid file type.")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, bucket, basename)
         if not data:
-            return get_data_error_result(message="Artifact not found.")
+            return get_result(code=RetCode.DATA_ERROR, message="Artifact not found.")
         content_type = ARTIFACT_CONTENT_TYPES.get(ext, "application/octet-stream")
         response = await make_response(data)
         safe_filename = re.sub(r"[^\w.\-]", "_", basename)
@@ -1838,21 +1826,21 @@ async def batch_update_document_status(tenant_id, dataset_id):
     req = await get_request_json()
     doc_ids = req.get("doc_ids", [])
     if not isinstance(doc_ids, list) or not doc_ids:
-        return get_error_argument_result(message='"doc_ids" must be a non-empty list.')
+        return get_result(code=RetCode.ARGUMENT_ERROR, message='"doc_ids" must be a non-empty list.')
     if any(not isinstance(doc_id, str) or not doc_id for doc_id in doc_ids):
-        return get_error_argument_result(message='"doc_ids" must contain non-empty document IDs.')
+        return get_result(code=RetCode.ARGUMENT_ERROR, message='"doc_ids" must contain non-empty document IDs.')
 
     status = str(req.get("status", -1))
     if status not in ["0", "1"]:
-        return get_error_argument_result(message=f'"Status" must be either 0 or 1:{status}!')
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=f'"Status" must be either 0 or 1:{status}!')
 
     # Verify dataset ownership
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
-        return get_error_data_result(message="You don't own the dataset.")
+        return get_result(code=RetCode.DATA_ERROR, message="You don't own the dataset.")
 
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:
-        return get_error_data_result(message="Can't find this dataset!")
+        return get_result(code=RetCode.DATA_ERROR, message="Can't find this dataset!")
 
     result = {}
     has_error = False
@@ -1906,8 +1894,8 @@ async def batch_update_document_status(tenant_id, dataset_id):
             has_error = True
 
     if has_error:
-        return get_json_result(data=result, message="Partial failure", code=RetCode.SERVER_ERROR)
-    return get_json_result(data=result)
+        return get_result(data=result, message="Partial failure", code=RetCode.SERVER_ERROR)
+    return get_result(data=result)
 
 @manager.route("/documents/<doc_id>/preview", methods=["GET"])  # noqa: F821
 @login_required(auth_types=[AUTH_JWT, AUTH_API, AUTH_BETA])
@@ -1924,12 +1912,12 @@ async def get(doc_id):
 
         e, doc = DocumentService.get_by_id(doc_id)
         if not e:
-            return get_data_error_result(message="Document not found!")
+            return get_result(code=RetCode.DATA_ERROR, message="Document not found!")
 
         b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, b, n)
         if not data:
-            return get_data_error_result(message="This file is empty.")
+            return get_result(code=RetCode.DATA_ERROR, message="This file is empty.")
         response = await make_response(data)
 
         ext = re.search(r"\.([^.]+)$", doc.name.lower())
@@ -1992,15 +1980,15 @@ async def download(dataset_id, document_id):
           type: object
     """
     if not document_id:
-        return get_error_data_result(message="Specify document_id please.")
+        return get_result(code=RetCode.DATA_ERROR, message="Specify document_id please.")
     doc = DocumentService.query(kb_id=dataset_id, id=document_id)
     if not doc:
-        return get_error_data_result(message=f"The dataset not own the document {document_id}.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"The dataset not own the document {document_id}.")
     # The process of downloading
     doc_id, doc_location = File2DocumentService.get_storage_address(doc_id=document_id)  # minio address
     file_stream = settings.STORAGE_IMPL.get(doc_id, doc_location)
     if not file_stream:
-        return construct_json_result(message="This file is empty.", code=RetCode.DATA_ERROR)
+        return get_result(message="This file is empty.", code=RetCode.DATA_ERROR)
     file = BytesIO(file_stream)
     # Use send_file with a proper filename and MIME type
     return await send_file(
@@ -2049,15 +2037,15 @@ async def download_document(document_id):
           type: object
     """
     if not document_id:
-        return get_error_data_result(message="Specify document_id please.")
+        return get_result(code=RetCode.DATA_ERROR, message="Specify document_id please.")
     doc = DocumentService.query(id=document_id)
     if not doc:
-        return get_error_data_result(message=f"The dataset not own the document {document_id}.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"The dataset not own the document {document_id}.")
     # The process of downloading
     doc_id, doc_location = File2DocumentService.get_storage_address(doc_id=document_id)  # minio address
     file_stream = settings.STORAGE_IMPL.get(doc_id, doc_location)
     if not file_stream:
-        return construct_json_result(message="This file is empty.", code=RetCode.DATA_ERROR)
+        return get_result(message="This file is empty.", code=RetCode.DATA_ERROR)
     file = BytesIO(file_stream)
     # Use send_file with a proper filename and MIME type
     return await send_file(

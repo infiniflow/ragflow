@@ -24,7 +24,7 @@ from api.apps.restful_apis._generation_params import extract_generation_config, 
 from api.db.services.dialog_service import DialogService, async_chat
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_api_key
-from api.utils.api_utils import get_error_data_result, get_request_json, validate_request
+from api.utils.api_utils import get_result, get_request_json, validate_request
 from common.constants import RetCode, StatusEnum
 from common.metadata_utils import convert_conditions, meta_filter
 from common.token_utils import num_tokens_from_string
@@ -240,25 +240,27 @@ async def openai_chat_completions(chat_id):
 
     extra_body = req.get("extra_body") or {}
     if extra_body and not isinstance(extra_body, dict):
-        return get_error_data_result("extra_body must be an object.")
+        return get_result(code=RetCode.DATA_ERROR, message="extra_body must be an object.")
 
     need_reference = bool(extra_body.get("reference", False))
     reference_metadata = extra_body.get("reference_metadata") or {}
     if reference_metadata and not isinstance(reference_metadata, dict):
-        return get_error_data_result("reference_metadata must be an object.")
+        return get_result(code=RetCode.DATA_ERROR, message="reference_metadata must be an object.")
     include_reference_metadata = bool(reference_metadata.get("include", False))
     metadata_fields = reference_metadata.get("fields")
     if metadata_fields is not None and not isinstance(metadata_fields, list):
-        return get_error_data_result("reference_metadata.fields must be an array.")
+        return get_result(code=RetCode.DATA_ERROR, message="reference_metadata.fields must be an array.")
 
-    messages = req.get("messages", [])
-    if len(messages) < 1:
-        return get_error_data_result("You have to provide messages.")
+    messages = req.get("messages") or []
+    if not isinstance(messages, list):
+        return get_result(code=RetCode.DATA_ERROR, message="You have to provide messages.")
     messages, normalize_error = _normalize_openai_messages(messages)
     if normalize_error:
-        return get_error_data_result(normalize_error)
+        return get_result(code=RetCode.DATA_ERROR, message=normalize_error)
+    if len(messages) < 1:
+        return get_result(code=RetCode.DATA_ERROR, message="You have to provide messages.")
     if messages[-1]["role"] != "user":
-        return get_error_data_result("The last content of this conversation is not from user.")
+        return get_result(code=RetCode.DATA_ERROR, message="The last content of this conversation is not from user.")
 
     prompt = messages[-1]["content"]
     context_token_used = sum(num_tokens_from_string(message["content"]) for message in messages)
@@ -267,7 +269,7 @@ async def openai_chat_completions(chat_id):
 
     dia = DialogService.query(tenant_id=current_user.id, id=chat_id, status=StatusEnum.VALID.value)
     if not dia:
-        return get_error_data_result(f"You don't own the chat {chat_id}")
+        return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the chat {chat_id}")
     dia = dia[0]
 
     using_placeholder_model = requested_model == "model"
@@ -276,15 +278,15 @@ async def openai_chat_completions(chat_id):
     else:
         llm_id_error = _validate_llm_id(requested_model, current_user.id, {"model_type": "chat"})
         if llm_id_error:
-            return get_error_data_result(message=llm_id_error, code=RetCode.ARGUMENT_ERROR)
+            return get_result(code=RetCode.ARGUMENT_ERROR, message=llm_id_error)
         dia.llm_id = requested_model
         if not get_api_key(tenant_id=dia.tenant_id, model_name=requested_model):
-            return get_error_data_result(message=f"Cannot use specified model {requested_model}.")
+            return get_result(code=RetCode.DATA_ERROR, message=f"Cannot use specified model {requested_model}.")
     merge_generation_config(dia, extract_generation_config(req))
 
     metadata_condition = extra_body.get("metadata_condition") or {}
     if metadata_condition and not isinstance(metadata_condition, dict):
-        return get_error_data_result(message="metadata_condition must be an object.")
+        return get_result(code=RetCode.DATA_ERROR, message="metadata_condition must be an object.")
 
     doc_ids_str = None
     if metadata_condition:

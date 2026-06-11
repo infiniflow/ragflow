@@ -19,6 +19,7 @@ import functools
 import inspect
 import json
 import logging
+import os
 import sys
 import time
 from copy import deepcopy
@@ -31,7 +32,7 @@ from quart import (
     request,
     has_app_context,
 )
-from werkzeug.exceptions import BadRequest as WerkzeugBadRequest
+from werkzeug.exceptions import BadRequest as WerkzeugBadRequest, Unauthorized as WerkzeugUnauthorized
 
 try:
     from quart.exceptions import BadRequest as QuartBadRequest
@@ -48,6 +49,7 @@ from common.connection_utils import timeout
 from common.constants import RetCode
 from common import settings
 from common.misc_utils import thread_pool_exec
+from api.db.db_models import APIToken
 
 requests.models.complexjson.dumps = functools.partial(json.dumps, cls=CustomJSONEncoder)
 
@@ -136,19 +138,19 @@ def server_error_response(e):
     try:
         msg = repr(e).lower()
         if getattr(e, "code", None) == 401 or ("unauthorized" in msg) or ("401" in msg):
-            resp = get_json_result(code=RetCode.UNAUTHORIZED, message="Unauthorized")
+            resp = get_result(code=RetCode.UNAUTHORIZED, message="Unauthorized")
             resp.status_code = RetCode.UNAUTHORIZED
             return resp
     except Exception as ex:
         logging.warning(f"error checking authorization: {ex}")
 
     if repr(e).find("index_not_found_exception") >= 0:
-        return get_json_result(code=RetCode.EXCEPTION_ERROR, message="No chunk found, please upload file and parse it.")
+        return get_result(code=RetCode.EXCEPTION_ERROR, message="No chunk found, please upload file and parse it.")
 
     if "not_found" in str(e):
-        return get_error_data_result(message="No chunk found! Check the chunk status please!")
+        return get_result(code=RetCode.DATA_ERROR, message="No chunk found! Check the chunk status please!")
 
-    return get_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e))
+    return get_result(code=RetCode.EXCEPTION_ERROR, message=repr(e))
 
 
 def validate_request(*args, **kwargs):
@@ -191,7 +193,7 @@ def validate_request(*args, **kwargs):
                 input_arguments = await _coerce_request_data()
             errs = process_args(input_arguments)
             if errs:
-                return get_json_result(code=RetCode.ARGUMENT_ERROR, message=errs)
+                return get_result(code=RetCode.ARGUMENT_ERROR, message=errs)
             if inspect.iscoroutinefunction(func):
                 return await func(*_args, **_kwargs)
             return func(*_args, **_kwargs)
@@ -207,7 +209,7 @@ def not_allowed_parameters(*params):
             input_arguments = await _coerce_request_data()
             for param in params:
                 if param in input_arguments:
-                    return get_json_result(code=RetCode.ARGUMENT_ERROR, message=f"Parameter {param} isn't allowed")
+                    return get_result(code=RetCode.ARGUMENT_ERROR, message=f"Parameter {param} isn't allowed")
             if inspect.iscoroutinefunction(func):
                 return await func(*args, **kwargs)
             return func(*args, **kwargs)
@@ -226,7 +228,7 @@ def active_required(func):
         usr = UserService.filter_by_id(user_id)
         # check is_active
         if not usr or not usr.is_active == ActiveEnum.ACTIVE.value:
-            return get_json_result(code=RetCode.FORBIDDEN, message="User isn't active, please activate first.")
+            return get_result(code=RetCode.FORBIDDEN, message="User isn't active, please activate first.")
         if inspect.iscoroutinefunction(func):
             return await func(*args, **kwargs)
         return func(*args, **kwargs)
@@ -250,6 +252,33 @@ def get_json_result(code: RetCode = RetCode.SUCCESS, message="success", data=Non
     return _safe_jsonify(response)
 
 
+def apikey_required(func):
+    @wraps(func)
+    async def decorated_function(*args, **kwargs):
+        authorization = request.headers.get("Authorization")
+        if not authorization:
+            err = WerkzeugUnauthorized(description="Authorization header is missing!")
+            err.code = RetCode.AUTHENTICATION_ERROR
+            raise err
+        parts = authorization.split()
+        if len(parts) < 2:
+            err = WerkzeugUnauthorized(description="Please check your authorization format.")
+            err.code = RetCode.AUTHENTICATION_ERROR
+            raise err
+        token = parts[1]
+        objs = APIToken.query(token=token)
+        if not objs:
+            err = WerkzeugUnauthorized(description="API-KEY is invalid!")
+            err.code = RetCode.AUTHENTICATION_ERROR
+            raise err
+        kwargs["tenant_id"] = objs[0].tenant_id
+        if inspect.iscoroutinefunction(func):
+            return await func(*args, **kwargs)
+        return func(*args, **kwargs)
+
+    return decorated_function
+
+
 def build_error_result(code=RetCode.FORBIDDEN, message="success"):
     response = {"code": code, "message": message}
     response = _safe_jsonify(response)
@@ -264,41 +293,121 @@ def construct_json_result(code: RetCode = RetCode.SUCCESS, message="success", da
     return _safe_jsonify({"code": code, "message": message, "data": data})
 
 
+def token_required(func):
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        # Validate the token (API Key)
+        if os.environ.get("DISABLE_SDK"):
+            err = WerkzeugUnauthorized(description="`Authorization` can't be empty")
+            err.code = RetCode.SUCCESS
+            raise err
+
+        authorization_str = request.headers.get("Authorization")
+        if not authorization_str:
+            err = WerkzeugUnauthorized(description="`Authorization` can't be empty")
+            err.code = RetCode.SUCCESS
+            raise err
+
+        authorization_list = authorization_str.split()
+        if len(authorization_list) < 2:
+            err = WerkzeugUnauthorized(description="Please check your authorization format.")
+            err.code = RetCode.AUTHENTICATION_ERROR
+            raise err
+
+        token = authorization_list[1]
+
+        # First try API token (explicit API token authentication)
+        objs = APIToken.query(token=token)
+        if objs:
+            # On success, inject tenant_id into the route function's kwargs
+            kwargs["tenant_id"] = objs[0].tenant_id
+            result = func(*args, **kwargs)
+            if inspect.iscoroutine(result):
+                return await result
+            return result
+
+        # Fallback: try login token (for clients that use login token as API token)
+        # Login tokens are JWT-encoded (URLSafeTimedSerializer), need to decode to get raw access_token
+        from api.db.services.user_service import UserService
+        from common.constants import StatusEnum
+        from common import settings
+        from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
+        try:
+            jwt = Serializer(secret_key=settings.get_secret_key())
+            raw_token = str(jwt.loads(token))
+            user = UserService.query(access_token=raw_token, status=StatusEnum.VALID.value)
+            if user:
+                # On success, inject tenant_id from user's tenant
+                from api.db.services.user_service import UserTenantService
+                tenants = UserTenantService.query(user_id=user[0].id)
+                if tenants:
+                    kwargs["tenant_id"] = tenants[0].tenant_id
+                    result = func(*args, **kwargs)
+                    if inspect.iscoroutine(result):
+                        return await result
+                    return result
+        except Exception:
+            pass
+
+        err = WerkzeugUnauthorized(description="Authentication error: API key is invalid!")
+        err.code = RetCode.AUTHENTICATION_ERROR
+        raise err
+
+    return wrapper
+
+
+def get_result(code=RetCode.SUCCESS, message="success", data=None, total=None):
+    """Canonical response envelope: {code, message, data, total}.
+
+    All four fields are always present so clients can parse a single shape.
+    ``total`` is null when pagination does not apply.
 def get_result(code=RetCode.SUCCESS, message="", data=None, total=None):
     """
-    Standard API response format:
-    {
-        "code": 0,
-        "data": [...],        # List or object, backward compatible
-        "total": 47,          # Optional field for pagination
-        "message": "..."      # Error or status message
+    response: dict = {
+        "code": code,
+        "message": message if message else ("success" if code == RetCode.SUCCESS else "Error"),
+        "data": data,
+        "total": total,
     }
-    """
-    response = {"code": code}
+    return _safe_jsonify(response)
 
-    if code == RetCode.SUCCESS:
-        if data is not None:
-            response["data"] = data
-        if total is not None:
-            response["total_datasets"] = total
+
+# ---------------------------------------------------------------------------
+# Deprecated helpers — kept as thin shims so callers still work.
+# These are intentionally thin; migrating call-sites to get_result() directly
+# is the preferred path.
+# ---------------------------------------------------------------------------
+
+def get_json_result(code: RetCode = RetCode.SUCCESS, message="success", data=None):
+    logging.warning("get_json_result() is deprecated; use get_result() instead", stacklevel=2)
+    return get_result(code=code, message=message, data=data)
+
+
+def get_data_error_result(code=RetCode.DATA_ERROR, message="Sorry! Data missing!"):
+    if sys.exc_info()[0] is not None:
+        logging.exception(message)
     else:
-        response["message"] = message or "Error"
+        logging.error(message)
+    logging.warning("get_data_error_result() is deprecated; use get_result() instead", stacklevel=2)
+    return get_result(code=code, message=message)
 
-    return _safe_jsonify(response)
+
+def get_error_data_result(message="Sorry! Data missing!", code=RetCode.DATA_ERROR):
+    logging.warning("get_error_data_result() is deprecated; use get_result() instead", stacklevel=2)
+    return get_result(code=code, message=message)
 
 
-def get_error_data_result(
-    message="Sorry! Data missing!",
-    code=RetCode.DATA_ERROR,
-):
-    result_dict = {"code": code, "message": message}
-    response = {}
-    for key, value in result_dict.items():
-        if value is None and key != "code":
-            continue
-        else:
-            response[key] = value
-    return _safe_jsonify(response)
+def build_error_result(code=RetCode.FORBIDDEN, message="success"):
+    logging.warning("build_error_result() is deprecated; use get_result() instead", stacklevel=2)
+    response = get_result(code=code, message=message)
+    if hasattr(response, "status_code"):
+        response.status_code = code
+    return response
+
+
+def construct_json_result(code: RetCode = RetCode.SUCCESS, message="success", data=None):
+    logging.warning("construct_json_result() is deprecated; use get_result() instead", stacklevel=2)
+    return get_result(code=code, message=message, data=data)
 
 
 def get_error_argument_result(message="Invalid arguments"):

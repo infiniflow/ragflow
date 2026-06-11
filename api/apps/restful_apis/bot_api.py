@@ -26,6 +26,8 @@ from api.apps import AUTH_BETA, login_required
 from api.db.services.api_service import API4ConversationService
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.canvas_service import completion as agent_completion
+from api.db.services.user_canvas_version import UserCanvasVersionService
+from api.db.db_models import APIToken
 from api.db.services.conversation_service import async_iframe_completion as iframe_completion
 from api.db.services.dialog_service import DialogService, async_ask, gen_mindmap
 from api.db.services.doc_metadata_service import DocMetadataService
@@ -36,9 +38,12 @@ from common.metadata_utils import apply_meta_data_filter
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import UserTenantService
 from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
-from common.misc_utils import thread_pool_exec
-from api.utils.api_utils import get_error_data_result, get_json_result, \
-    add_tenant_id_to_kwargs, get_result, get_request_json, server_error_response, validate_request
+from common.misc_utils import get_uuid, thread_pool_exec
+from api.utils.api_utils import (
+    get_result, get_error_data_result, get_json_result,
+    check_duplicate_ids, get_request_json, server_error_response,
+    token_required, validate_request, add_tenant_id_to_kwargs,
+)
 from rag.app.tag import label_question
 from rag.prompts.template import load_prompt
 from rag.prompts.generator import cross_languages, keyword_extraction
@@ -50,6 +55,98 @@ from api.utils.reference_metadata_utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@manager.route("/agents/<agent_id>/sessions", methods=["POST"])  # noqa: F821
+@token_required
+async def create_agent_session(tenant_id, agent_id):
+    req = await get_request_json()
+    user_id = req.get("user_id") or request.args.get("user_id", tenant_id)
+    release_mode = bool(req.get("release", request.args.get("release", False)))
+
+    if not await thread_pool_exec(UserCanvasService.query, user_id=tenant_id, id=agent_id):
+        return get_result(code=RetCode.DATA_ERROR, message="You cannot access the agent.")
+
+    try:
+        cvs, dsl = await thread_pool_exec(UserCanvasService.get_agent_dsl_with_release, agent_id, release_mode, tenant_id)
+    except LookupError:
+        return get_result(code=RetCode.DATA_ERROR, message="Agent not found.")
+    except PermissionError as e:
+        return get_result(code=RetCode.DATA_ERROR, message=str(e))
+
+    session_id = get_uuid()
+    canvas = Canvas(dsl, tenant_id, agent_id, canvas_id=cvs.id)
+    canvas.reset()
+
+    cvs.dsl = json.loads(str(canvas))
+    # Get the version title based on release_mode
+    version_title = await thread_pool_exec(UserCanvasVersionService.get_latest_version_title, cvs.id, release_mode=release_mode)
+    conv = {
+        "id": session_id,
+        "dialog_id": cvs.id,
+        "user_id": user_id,
+        "message": [{"role": "assistant", "content": canvas.get_prologue()}],
+        "source": "agent",
+        "dsl": cvs.dsl,
+        "version_title": version_title
+    }
+    await thread_pool_exec(API4ConversationService.save, **conv)
+    conv["agent_id"] = conv.pop("dialog_id")
+    return get_result(data=conv)
+
+
+@manager.route("/agents/<agent_id>/sessions", methods=["DELETE"])  # noqa: F821
+@token_required
+async def delete_agent_session(tenant_id, agent_id):
+    errors = []
+    success_count = 0
+    req = await get_request_json()
+    cvs = await thread_pool_exec(UserCanvasService.query, user_id=tenant_id, id=agent_id)
+    if not cvs:
+        return get_result(code=RetCode.DATA_ERROR, message=f"You don't own the agent {agent_id}")
+
+    if not req:
+        return get_result()
+
+    ids = req.get("ids")
+    if not ids:
+        if req.get("delete_all") is True:
+            ids = [conv.id for conv in await thread_pool_exec(API4ConversationService.query, dialog_id=agent_id)]
+            if not ids:
+                return get_result()
+        else:
+            return get_result()
+
+    conv_list = ids
+
+    unique_conv_ids, duplicate_messages = check_duplicate_ids(conv_list, "session")
+    conv_list = unique_conv_ids
+
+    for session_id in conv_list:
+        conv = await thread_pool_exec(API4ConversationService.query, id=session_id, dialog_id=agent_id)
+        if not conv:
+            errors.append(f"The agent doesn't own the session {session_id}")
+            continue
+        await thread_pool_exec(API4ConversationService.delete_by_id, session_id)
+        success_count += 1
+
+    if errors:
+        if success_count > 0:
+            return get_result(data={"success_count": success_count, "errors": errors},
+                              message=f"Partially deleted {success_count} sessions with {len(errors)} errors")
+        else:
+            return get_result(code=RetCode.DATA_ERROR, message="; ".join(errors))
+
+    if duplicate_messages:
+        if success_count > 0:
+            return get_result(
+                message=f"Partially deleted {success_count} sessions with {len(duplicate_messages)} errors",
+                data={"success_count": success_count, "errors": duplicate_messages})
+        else:
+            return get_result(code=RetCode.DATA_ERROR, message=";".join(duplicate_messages))
+
+    return get_result()
+
 
 
 @manager.route("/chatbots/<dialog_id>/completions", methods=["POST"])  # noqa: F821
@@ -70,7 +167,7 @@ async def chatbot_completions(dialog_id, tenant_id=None):
             req.get("user_id"),
             req.get("session_id"),
         )
-        return get_error_data_result(message="Authentication error: no access to this chatbot!")
+        return get_result(code=RetCode.DATA_ERROR, message="Authentication error: no access to this chatbot!")
 
     if "quote" not in req:
         req["quote"] = False
@@ -97,7 +194,7 @@ async def chatbot_completions(dialog_id, tenant_id=None):
                 req.get("user_id"),
                 req.get("session_id"),
             )
-            return get_error_data_result(message="Authentication error: no access to this chatbot!")
+            return get_result(code=RetCode.DATA_ERROR, message="Authentication error: no access to this chatbot!")
 
         resp = Response(iframe_completion(dialog_id, tenant_id=tenant_id, **req), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
@@ -119,7 +216,7 @@ async def chatbot_completions(dialog_id, tenant_id=None):
             req.get("user_id"),
             req.get("session_id"),
         )
-        return get_error_data_result(message="Authentication error: no access to this chatbot!")
+        return get_result(code=RetCode.DATA_ERROR, message="Authentication error: no access to this chatbot!")
 
     return None
 
@@ -142,7 +239,7 @@ async def chatbots_inputs(dialog_id, tenant_id=None):
             request_user_id,
             request_session_id,
         )
-        return get_error_data_result(message="Authentication error: no access to this chatbot!")
+        return get_result(code=RetCode.DATA_ERROR, message="Authentication error: no access to this chatbot!")
     return get_result(
         data={
             "title": dialog.name,
@@ -166,7 +263,7 @@ async def agent_bot_completions(agent_id, tenant_id=None):
                     yield answer
             except Exception as e:
                 logging.exception(e)
-                error_result = get_error_data_result(message=str(e) or "Unknown error")
+                error_result = get_result(code=RetCode.DATA_ERROR, message=str(e) or "Unknown error")
                 yield "data:" + json.dumps(
                     {
                         "event": "message",
@@ -232,7 +329,7 @@ async def agent_bot_completions(agent_id, tenant_id=None):
         return get_result(data=final_ans)
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message=str(e) or "Unknown error")
+        return get_result(code=RetCode.DATA_ERROR, message=str(e) or "Unknown error")
 
 
 @manager.route("/agentbots/<agent_id>/inputs", methods=["GET"])  # noqa: F821
@@ -241,7 +338,7 @@ async def agent_bot_completions(agent_id, tenant_id=None):
 async def begin_inputs(agent_id, tenant_id=None):
     e, cvs = await thread_pool_exec(UserCanvasService.get_by_id, agent_id)
     if not e:
-        return get_error_data_result(f"Can't find agent by ID: {agent_id}")
+        return get_result(code=RetCode.DATA_ERROR, message=f"Can't find agent by ID: {agent_id}")
 
     canvas = Canvas(json.dumps(cvs.dsl), tenant_id, canvas_id=cvs.id)
     return get_result(
@@ -300,7 +397,7 @@ async def retrieval_test_embedded(tenant_id=None):
     if isinstance(kb_ids, str):
         kb_ids = [kb_ids]
     if not kb_ids:
-        return get_json_result(data=False, message='Please specify dataset firstly.',
+        return get_result(data=False, message='Please specify dataset firstly.',
                                code=RetCode.DATA_ERROR)
     doc_ids = req.get("doc_ids", [])
     similarity_threshold = float(req.get("similarity_threshold", 0.0))
@@ -308,11 +405,11 @@ async def retrieval_test_embedded(tenant_id=None):
     use_kg = req.get("use_kg", False)
     top = int(req.get("top_k", 1024))
     if top <= 0:
-        return get_error_data_result("`top_k` must be greater than 0")
+        return get_result(code=RetCode.DATA_ERROR, message="`top_k` must be greater than 0")
     langs = req.get("cross_languages", [])
     rerank_id = req.get("rerank_id", "")
     if not tenant_id:
-        return get_error_data_result(message="permission denined.")
+        return get_result(code=RetCode.DATA_ERROR, message="permission denined.")
     search_config = {}
 
     async def _retrieval():
@@ -369,12 +466,12 @@ async def retrieval_test_embedded(tenant_id=None):
                     tenant_ids.append(tenant.tenant_id)
                     break
             else:
-                return get_json_result(data=False, message="Only owner of dataset authorized for this operation.",
+                return get_result(data=False, message="Only owner of dataset authorized for this operation.",
                                        code=RetCode.OPERATING_ERROR)
 
         e, kb = await thread_pool_exec(KnowledgebaseService.get_by_id, kb_ids[0])
         if not e:
-            return get_error_data_result(message="Knowledgebase not found!")
+            return get_result(code=RetCode.DATA_ERROR, message="Knowledgebase not found!")
 
         if langs:
             _question = await cross_languages(kb.tenant_id, None, _question, langs)
@@ -412,13 +509,13 @@ async def retrieval_test_embedded(tenant_id=None):
 
         ranks["labels"] = labels
 
-        return get_json_result(data=ranks)
+        return get_result(data=ranks)
 
     try:
         return await _retrieval()
     except Exception as e:
         if "not_found" in str(e):
-            return get_json_result(data=False, message="No chunk found! Check the chunk status please!",
+            return get_result(data=False, message="No chunk found! Check the chunk status please!",
                                    code=RetCode.DATA_ERROR)
         return server_error_response(e)
 
@@ -430,7 +527,7 @@ async def retrieval_test_embedded(tenant_id=None):
 async def related_questions_embedded(tenant_id=None):
     req = await get_request_json()
     if not tenant_id:
-        return get_error_data_result(message="permission denined.")
+        return get_result(code=RetCode.DATA_ERROR, message="permission denined.")
 
     search_id = req.get("search_id", "")
     search_config = {}
@@ -462,7 +559,7 @@ Related search terms:
         ],
         gen_conf,
     )
-    return get_json_result(data=[re.sub(r"^[0-9]\. ", "", a) for a in ans.split("\n") if re.match(r"^[0-9]\. ", a)])
+    return get_result(data=[re.sub(r"^[0-9]\. ", "", a) for a in ans.split("\n") if re.match(r"^[0-9]\. ", a)])
 
 
 @manager.route("/searchbots/detail", methods=["GET"])  # noqa: F821
@@ -471,20 +568,20 @@ Related search terms:
 async def detail_share_embedded(tenant_id=None):
     search_id = request.args["search_id"]
     if not tenant_id:
-        return get_error_data_result(message="permission denined.")
+        return get_result(code=RetCode.DATA_ERROR, message="permission denined.")
     try:
         tenants = await thread_pool_exec(UserTenantService.query, user_id=tenant_id)
         for tenant in tenants:
             if await thread_pool_exec(SearchService.query, tenant_id=tenant.tenant_id, id=search_id):
                 break
         else:
-            return get_json_result(data=False, message="Has no permission for this operation.",
+            return get_result(data=False, message="Has no permission for this operation.",
                                    code=RetCode.OPERATING_ERROR)
 
         search = await thread_pool_exec(SearchService.get_detail, search_id)
         if not search:
-            return get_error_data_result(message="Can't find this Search App!")
-        return get_json_result(data=search)
+            return get_result(code=RetCode.DATA_ERROR, message="Can't find this Search App!")
+        return get_result(data=search)
     except Exception as e:
         return server_error_response(e)
 
@@ -502,7 +599,7 @@ async def mindmap(tenant_id=None):
     mind_map =await gen_mindmap(req["question"], req["kb_ids"], tenant_id, search_app.get("search_config", {}))
     if "error" in mind_map:
         return server_error_response(Exception(mind_map["error"]))
-    return get_json_result(data=mind_map)
+    return get_result(data=mind_map)
 
 
 def _resolve_reference_metadata(req, search_config=None):

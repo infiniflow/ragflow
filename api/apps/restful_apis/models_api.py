@@ -20,11 +20,11 @@ from quart import request
 from api.apps import login_required
 from api.apps.services import models_api_service
 from api.utils.api_utils import (
-    add_tenant_id_to_kwargs,
-    get_error_argument_result,
-    get_error_data_result,
     get_result,
+    add_tenant_id_to_kwargs,
 )
+from common.constants import RetCode
+
 
 
 @manager.route("/models", methods=["GET"])  # noqa: F821
@@ -75,10 +75,10 @@ def get_added_models(tenant_id: str):
         if success:
             return get_result(data=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/models/default", methods=["GET"])  # noqa: F821
@@ -128,10 +128,10 @@ def get_default_models(tenant_id: str):
         if success:
             return get_result(data=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/models/default", methods=["PATCH"])  # noqa: F821
@@ -180,7 +180,7 @@ async def set_default_models(tenant_id: str):
     """
     data = await request.get_json()
     if not data or "model_type" not in data:
-        return get_error_argument_result(message="model_type is required")
+        return get_result(code=RetCode.ARGUMENT_ERROR, message="model_type is required")
 
     model_provider = data.get("model_provider", "")
     model_instance = data.get("model_instance", "")
@@ -195,7 +195,7 @@ async def set_default_models(tenant_id: str):
             logging.info(f"success: {success}, msg: {msg}")
             return get_result(message=msg)
         else:
-            return get_error_data_result(message=msg)
+            return get_result(code=RetCode.DATA_ERROR, message=msg)
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")

@@ -17,7 +17,7 @@
 
 from quart import Response
 from api.apps import login_required
-from api.utils.api_utils import get_json_result
+from api.utils.api_utils import get_result
 from agent.plugin import GlobalPluginManager
 
 
@@ -27,4 +27,4 @@ def llm_tools() -> Response:
     tools = GlobalPluginManager.get_llm_tools()
     tools_metadata = [t.get_metadata() for t in tools]
 
-    return get_json_result(data=tools_metadata)
+    return get_result(data=tools_metadata)

@@ -20,10 +20,10 @@ from api.apps import current_user, login_required
 from api.db.db_models import MCPServer
 from api.db.services.mcp_server_service import MCPServerService
 from api.db.services.user_service import TenantService
-from api.utils.api_utils import get_data_error_result, get_json_result, get_mcp_tools, get_request_json, server_error_response, validate_request
+from api.utils.api_utils import get_result, get_mcp_tools, get_request_json, server_error_response, validate_request
 from api.utils.pagination_utils import validate_rest_api_page_size
 from api.utils.web_utils import get_float, safe_json_parse
-from common.constants import VALID_MCP_SERVER_TYPES
+from common.constants import RetCode, VALID_MCP_SERVER_TYPES
 from common.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_toolcall_sessions
 from common.misc_utils import get_uuid, thread_pool_exec
 from common.ssrf_guard import assert_url_is_safe, pin_dns_global
@@ -87,7 +87,7 @@ async def list_mcp() -> Response:
         if page_number and items_per_page:
             servers = servers[(page_number - 1) * items_per_page : page_number * items_per_page]
 
-        return get_json_result(data={"mcp_servers": servers, "total": total})
+        return get_result(data={"mcp_servers": servers, "total": total})
     except Exception as e:
         return server_error_response(e)
 
@@ -99,15 +99,15 @@ def detail(mcp_id: str) -> Response:
         if request.args.get("mode") == "download":
             exported_servers = _export_mcp_servers([mcp_id])
             if exported_servers is None:
-                return get_data_error_result(message=f"Cannot find MCP server {mcp_id} for user {current_user.id}")
-            return get_json_result(data=exported_servers)
+                return get_result(code=RetCode.DATA_ERROR, message=f"Cannot find MCP server {mcp_id} for user {current_user.id}")
+            return get_result(data=exported_servers)
 
         mcp_server = MCPServerService.get_or_none(id=mcp_id, tenant_id=current_user.id)
 
         if mcp_server is None:
-            return get_data_error_result(message=f"Cannot find MCP server {mcp_id} for user {current_user.id}")
+            return get_result(code=RetCode.DATA_ERROR, message=f"Cannot find MCP server {mcp_id} for user {current_user.id}")
 
-        return get_json_result(data=mcp_server.to_dict())
+        return get_result(data=mcp_server.to_dict())
     except Exception as e:
         return server_error_response(e)
 
@@ -120,20 +120,20 @@ async def create() -> Response:
 
     server_type = req.get("server_type", "")
     if server_type not in VALID_MCP_SERVER_TYPES:
-        return get_data_error_result(message="Unsupported MCP server type.")
+        return get_result(code=RetCode.DATA_ERROR, message="Unsupported MCP server type.")
 
     server_name = req.get("name", "")
     if not server_name or len(server_name.encode("utf-8")) > 255:
-        return get_data_error_result(message=f"Invalid MCP name or length is {len(server_name)} which is large than 255.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"Invalid MCP name or length is {len(server_name)} which is large than 255.")
 
     e, _ = MCPServerService.get_by_name_and_tenant(name=server_name, tenant_id=current_user.id)
     if e:
-        return get_data_error_result(message="Duplicated MCP server name.")
+        return get_result(code=RetCode.DATA_ERROR, message="Duplicated MCP server name.")
 
     url = req.get("url", "")
     hostname, resolved_ip, url_error = _assert_mcp_url_is_safe(url)
     if url_error:
-        return get_data_error_result(message=url_error)
+        return get_result(code=RetCode.DATA_ERROR, message=url_error)
 
     headers = safe_json_parse(req.get("headers", {}))
     req["headers"] = headers
@@ -148,13 +148,13 @@ async def create() -> Response:
 
         e, _ = TenantService.get_by_id(current_user.id)
         if not e:
-            return get_data_error_result(message="Tenant not found.")
+            return get_result(code=RetCode.DATA_ERROR, message="Tenant not found.")
 
         mcp_server = MCPServer(id=server_name, name=server_name, url=url, server_type=server_type, variables=variables, headers=headers)
         with pin_dns_global(hostname, resolved_ip):
             server_tools, err_message = await thread_pool_exec(get_mcp_tools, [mcp_server], timeout)
         if err_message:
-            return get_data_error_result(message=err_message)
+            return get_result(code=RetCode.DATA_ERROR, message=err_message)
 
         tools = server_tools[server_name]
         tools = {tool["name"]: tool for tool in tools if isinstance(tool, dict) and "name" in tool}
@@ -162,9 +162,9 @@ async def create() -> Response:
         req["variables"] = variables
 
         if not MCPServerService.insert(**req):
-            return get_data_error_result(message="Failed to create MCP server.")
+            return get_result(code=RetCode.DATA_ERROR, message="Failed to create MCP server.")
 
-        return get_json_result(data=req)
+        return get_result(data=req)
     except Exception as e:
         return server_error_response(e)
 
@@ -176,18 +176,18 @@ async def update(mcp_id: str) -> Response:
 
     e, mcp_server = MCPServerService.get_by_id(mcp_id)
     if not e or mcp_server.tenant_id != current_user.id:
-        return get_data_error_result(message=f"Cannot find MCP server {mcp_id} for user {current_user.id}")
+        return get_result(code=RetCode.DATA_ERROR, message=f"Cannot find MCP server {mcp_id} for user {current_user.id}")
 
     server_type = req.get("server_type", mcp_server.server_type)
     if server_type and server_type not in VALID_MCP_SERVER_TYPES:
-        return get_data_error_result(message="Unsupported MCP server type.")
+        return get_result(code=RetCode.DATA_ERROR, message="Unsupported MCP server type.")
     server_name = req.get("name", mcp_server.name)
     if server_name and len(server_name.encode("utf-8")) > 255:
-        return get_data_error_result(message=f"Invalid MCP name or length is {len(server_name)} which is large than 255.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"Invalid MCP name or length is {len(server_name)} which is large than 255.")
     url = req.get("url", mcp_server.url)
     hostname, resolved_ip, url_error = _assert_mcp_url_is_safe(url)
     if url_error:
-        return get_data_error_result(message=url_error)
+        return get_result(code=RetCode.DATA_ERROR, message=url_error)
 
     headers = safe_json_parse(req.get("headers", mcp_server.headers))
     req["headers"] = headers
@@ -205,7 +205,7 @@ async def update(mcp_id: str) -> Response:
         with pin_dns_global(hostname, resolved_ip):
             server_tools, err_message = await thread_pool_exec(get_mcp_tools, [mcp_server], timeout)
         if err_message:
-            return get_data_error_result(message=err_message)
+            return get_result(code=RetCode.DATA_ERROR, message=err_message)
 
         tools = server_tools[server_name]
         tools = {tool["name"]: tool for tool in tools if isinstance(tool, dict) and "name" in tool}
@@ -213,13 +213,13 @@ async def update(mcp_id: str) -> Response:
         req["variables"] = variables
 
         if not MCPServerService.filter_update([MCPServer.id == mcp_id, MCPServer.tenant_id == current_user.id], req):
-            return get_data_error_result(message="Failed to updated MCP server.")
+            return get_result(code=RetCode.DATA_ERROR, message="Failed to updated MCP server.")
 
         e, updated_mcp = MCPServerService.get_by_id(req["id"])
         if not e:
-            return get_data_error_result(message="Failed to fetch updated MCP server.")
+            return get_result(code=RetCode.DATA_ERROR, message="Failed to fetch updated MCP server.")
 
-        return get_json_result(data=updated_mcp.to_dict())
+        return get_result(data=updated_mcp.to_dict())
     except Exception as e:
         return server_error_response(e)
 
@@ -230,11 +230,11 @@ async def rm(mcp_id: str) -> Response:
     try:
         e, mcp_server = MCPServerService.get_by_id(mcp_id)
         if not e or mcp_server.tenant_id != current_user.id:
-            return get_data_error_result(message=f"Cannot find MCP server {mcp_id} for user {current_user.id}")
+            return get_result(code=RetCode.DATA_ERROR, message=f"Cannot find MCP server {mcp_id} for user {current_user.id}")
         if not MCPServerService.delete_by_ids([mcp_id]):
-            return get_data_error_result(message=f"Failed to delete MCP servers {[mcp_id]}")
+            return get_result(code=RetCode.DATA_ERROR, message=f"Failed to delete MCP servers {[mcp_id]}")
 
-        return get_json_result(data=True)
+        return get_result(data=True)
     except Exception as e:
         return server_error_response(e)
 
@@ -246,7 +246,7 @@ async def import_multiple() -> Response:
     req = await get_request_json()
     servers = req.get("mcpServers", {})
     if not servers:
-        return get_data_error_result(message="No MCP servers provided.")
+        return get_result(code=RetCode.DATA_ERROR, message="No MCP servers provided.")
 
     timeout = get_float(req, "timeout", 10)
 
@@ -309,7 +309,7 @@ async def import_multiple() -> Response:
             else:
                 results.append({"server": server_name, "success": False, "message": "Failed to create MCP server."})
 
-        return get_json_result(data={"results": results})
+        return get_result(data={"results": results})
     except Exception as e:
         return server_error_response(e)
 
@@ -322,15 +322,15 @@ async def test_mcp(mcp_id: str) -> Response:
 
     url = req.get("url", "")
     if not isinstance(url, str) or not url:
-        return get_data_error_result(message="Invalid MCP url.")
+        return get_result(code=RetCode.DATA_ERROR, message="Invalid MCP url.")
 
     server_type = req.get("server_type", "")
     if server_type not in VALID_MCP_SERVER_TYPES:
-        return get_data_error_result(message="Unsupported MCP server type.")
+        return get_result(code=RetCode.DATA_ERROR, message="Unsupported MCP server type.")
 
     hostname, resolved_ip, url_error = _assert_mcp_url_is_safe(url, "Invalid MCP url.")
     if url_error:
-        return get_data_error_result(message=url_error)
+        return get_result(code=RetCode.DATA_ERROR, message=url_error)
 
     timeout = get_float(req, "timeout", 10)
     headers = safe_json_parse(req.get("headers", {}))
@@ -346,7 +346,7 @@ async def test_mcp(mcp_id: str) -> Response:
             try:
                 tools = await thread_pool_exec(tool_call_session.get_tools, timeout)
             except Exception as e:
-                return get_data_error_result(message=f"Test MCP error: {e}")
+                return get_result(code=RetCode.DATA_ERROR, message=f"Test MCP error: {e}")
             finally:
                 await thread_pool_exec(close_multiple_mcp_toolcall_sessions, [tool_call_session])
 
@@ -355,6 +355,6 @@ async def test_mcp(mcp_id: str) -> Response:
             tool_dict["enabled"] = True
             result.append(tool_dict)
 
-        return get_json_result(data=result)
+        return get_result(data=result)
     except Exception as e:
         return server_error_response(e)
