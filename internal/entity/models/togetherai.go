@@ -352,18 +352,12 @@ func (t *TogetherAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse,
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result []togetherAIModelInfo
+	var result []DSModel
 	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]ListModelResponse, 0, len(result))
-	for _, model := range result {
-		if model.ID != "" {
-			models = append(models, ListModelResponse{Name: model.ID})
-		}
-	}
-	return models, nil
+	return ParseListModel(ModelList{Models: result}), nil
 }
 
 func (t *TogetherAIModel) CheckConnection(apiConfig *APIConfig) error {
