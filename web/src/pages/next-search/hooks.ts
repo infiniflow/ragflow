@@ -148,10 +148,12 @@ export const useTestChunkRetrieval = (
     gcTime: 0,
     mutationFn: async (values: any) => {
       const { data } = await retrievalTestFunc({
-        ...values,
-        kb_id: values.kb_id ?? knowledgeBaseId,
+        // URL params are only fallbacks; an explicit page/size in `values`
+        // must win, otherwise pagination clicks refetch the stale URL page.
         page,
         size: pageSize,
+        ...values,
+        kb_id: values.kb_id ?? knowledgeBaseId,
         tenant_id: tenantId,
       });
       if (data.code === 0) {
@@ -199,11 +201,13 @@ export const useTestChunkAllRetrieval = (
     gcTime: 0,
     mutationFn: async (values: any) => {
       const { data } = await retrievalTestFunc({
+        // URL params are only fallbacks; an explicit page/size in `values`
+        // must win, otherwise pagination clicks refetch the stale URL page.
+        page,
+        size: pageSize,
         ...values,
         kb_id: values.kb_id ?? knowledgeBaseId,
         doc_ids: [],
-        page,
-        size: pageSize,
         tenant_id: tenantId,
       });
       if (data.code === 0) {
