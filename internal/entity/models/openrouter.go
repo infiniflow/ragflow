@@ -740,7 +740,7 @@ func (o *OpenRouterModel) ParseFile(modelName *string, content []byte, url *stri
 	return nil, fmt.Errorf("%s, no such method", o.Name())
 }
 
-func (o *OpenRouterModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (o *OpenRouterModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -792,11 +792,11 @@ func (o *OpenRouterModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	// convert result["data"] to []map[string]interface{}
-	models := make([]string, 0)
+	models := make([]ListModelResponse, 0)
 	for _, model := range result["data"].([]interface{}) {
 		modelMap := model.(map[string]interface{})
 		modelName := modelMap["id"].(string)
-		models = append(models, modelName)
+		models = append(models, ListModelResponse{Name: modelName})
 	}
 
 	return models, nil

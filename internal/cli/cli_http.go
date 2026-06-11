@@ -16,121 +16,31 @@
 
 package cli
 
-import (
-	"fmt"
-	"io"
-
-	ce "ragflow/internal/cli/filesystem"
-)
-
-// PasswordPromptFunc is a function type for password input
-type PasswordPromptFunc func(prompt string) (string, error)
-
-// CurrentModel holds the current model configuration
-type CurrentModel struct {
-	Provider string
-	Instance string
-	Model    string
-}
-
-// RAGFlowClient handles API interactions with the RAGFlow server
-type RAGFlowClient struct {
-	HTTPClient     *HTTPClient
-	ServerType     string             // "admin" or "user"
-	PasswordPrompt PasswordPromptFunc // Function for password input
-	OutputFormat   OutputFormat       // Output format: table, plain, json
-	ContextEngine  *ce.Engine         // Context Engine for virtual filesystem
-	CurrentModel   *CurrentModel      // Current model configuration
-}
-
-func NewRAGFlowClient(serverType string) *RAGFlowClient {
-	httpClient := NewHTTPClient()
-	// Set port from configuration file based on server type
-	if serverType == "admin" {
-		httpClient.Port = 9381
-	} else {
-		httpClient.Port = 9380
-	}
-
-	client := &RAGFlowClient{
-		HTTPClient: httpClient,
-		ServerType: serverType,
-	}
-
-	// Initialize Context Engine
-	client.initContextEngine()
-
-	return client
-}
-
-// initContextEngine initializes the Context Engine with all providers
-func (c *RAGFlowClient) initContextEngine() {
-	engine := ce.NewEngine()
-
-	// Register providers
-	engine.RegisterProvider(ce.NewDatasetProvider(&httpClientAdapter{c.HTTPClient}))
-	engine.RegisterProvider(ce.NewFileProvider(&httpClientAdapter{c.HTTPClient}))
-	engine.RegisterProvider(ce.NewSkillProvider(&httpClientAdapter{c.HTTPClient}))
-
-	c.ContextEngine = engine
-}
-
-// httpClientAdapter adapts HTTPClient to ce.HTTPClientInterface
-type httpClientAdapter struct {
-	client *HTTPClient
-}
-
-func (a *httpClientAdapter) Request(method, path string, authKind string, headers map[string]string, jsonBody map[string]interface{}) (*ce.HTTPResponse, error) {
-	// Auto-detect auth kind based on available tokens
-	// If authKind is "auto" or empty, determine based on token availability
-	if authKind == "auto" || authKind == "" {
-		if a.client.useAPIToken && a.client.APIToken != "" {
-			authKind = "api"
-		} else if a.client.LoginToken != "" {
-			authKind = "web"
-		} else {
-			authKind = "web" // default
-		}
-	}
-	resp, err := a.client.Request(method, path, authKind, headers, jsonBody)
-	if err != nil {
-		return nil, err
-	}
-	return &ce.HTTPResponse{
-		StatusCode: resp.StatusCode,
-		Body:       resp.Body,
-		Headers:    resp.Headers,
-		Duration:   resp.Duration,
-	}, nil
-}
-
-func (a *httpClientAdapter) UploadMultipart(path string, contentType string, body io.Reader) error {
-	return a.client.UploadMultipart(path, contentType, body)
-}
+import "fmt"
 
 // ExecuteCommand executes a parsed command
 // Returns benchmark result map for commands that support it (e.g., ping_server with iterations > 1)
-func (c *RAGFlowClient) ExecuteCommand(cmd *Command) (ResponseIf, error) {
-	switch c.ServerType {
-	case "admin":
+func (c *CLI) ExecuteCommand(cmd *Command) (ResponseIf, error) {
+	switch c.Config.CLIMode {
+	case APIMode:
+		// Interactive mode: execute command with user privileges
+		return c.ExecuteUserCommand(cmd)
+	case AdminMode:
 		// Admin mode: execute command with admin privileges
 		return c.ExecuteAdminCommand(cmd)
-	case "user":
-		// User mode: execute command with user privileges
-		return c.ExecuteUserCommand(cmd)
 	default:
-		return nil, fmt.Errorf("invalid server type: %s", c.ServerType)
+		return nil, fmt.Errorf("invalid server type: %s", c.Config.CLIMode)
 	}
 }
 
-func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 	switch cmd.Type {
 	case "login_user":
-		return nil, c.LoginUser(cmd)
+		return c.LoginUserByCommand(cmd)
 	case "logout":
 		return c.Logout()
 	case "ping":
-		return c.PingAdmin(cmd)
+		return c.PingByCommand(cmd)
 	case "benchmark":
 		return c.RunBenchmark(cmd)
 	case "list_users":
@@ -153,6 +63,8 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowService(cmd)
 	case "show_version":
 		return c.ShowAdminVersion(cmd)
+	case "show_current":
+		return c.ShowCommonCurrent(cmd)
 	case "show_user":
 		return c.ShowUser(cmd)
 	case "list_variables":
@@ -181,8 +93,12 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListSupportedModels(cmd)
 	case "list_instance_models":
 		return c.ListInstanceModels(cmd)
+	case "show_provider_model":
+		return c.ShowProviderModel(cmd)
 	case "show_model":
 		return c.ShowModel(cmd)
+	case "list_all_models":
+		return c.ListAllModels(cmd)
 	case "list_admin_tasks":
 		return c.ListAdminTasks(cmd)
 	case "admin_list_ingestors":
@@ -195,21 +111,40 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminShutdownIngestor(cmd)
 	case "list_admin_ingestion_tasks":
 		return c.ListAdminIngestionTasks(cmd)
-	// TODO: Implement other commands
+	case "show_admin_server":
+		return c.ShowAdminServer(cmd)
+	case "show_api_server":
+		return c.ShowAPIServer(cmd)
+	case "list_api_server":
+		return c.ListAPIServer(cmd)
+	case "add_api_server":
+		return c.AddAPIServer(cmd)
+	case "delete_api_server":
+		return c.DeleteAPIServer(cmd)
+	case "add_admin_server":
+		return nil, fmt.Errorf("cannot add admin server in admin mode")
+	case "delete_admin_server":
+		return nil, fmt.Errorf("cannot delete admin server in admin mode")
+	case "save_config_command":
+		return c.SaveServerConfig(cmd)
+	case "use_api_server":
+		return c.UseAPIServer(cmd)
+	case "use_admin_server":
+		return c.UseAdminServer(cmd)
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
 	}
 }
-func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	switch cmd.Type {
 	case "register_user":
 		return c.RegisterUser(cmd)
 	case "login_user":
-		return nil, c.LoginUser(cmd)
+		return c.LoginUserByCommand(cmd)
 	case "logout":
 		return c.Logout()
 	case "ping":
-		return c.PingServer(cmd)
+		return c.PingByCommand(cmd)
 	// Configuration commands
 	case "list_configs":
 		return c.ListConfigs(cmd)
@@ -240,6 +175,8 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.UnsetToken(cmd)
 	case "show_version":
 		return c.ShowServerVersion(cmd)
+	case "show_current":
+		return c.ShowCommonCurrent(cmd)
 	case "list_available_providers":
 		return c.ListAvailableProviders(cmd)
 	case "show_provider":
@@ -250,8 +187,12 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListSupportedModels(cmd)
 	case "list_instance_models":
 		return c.ListInstanceModels(cmd)
+	case "show_provider_model":
+		return c.ShowProviderModel(cmd)
 	case "show_model":
 		return c.ShowModel(cmd)
+	case "list_all_models":
+		return c.ListAllModels(cmd)
 	// Provider commands
 	case "add_provider":
 		return c.AddProvider(cmd)
@@ -302,8 +243,10 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.CheckProviderWithKey(cmd)
 	case "use_model":
 		return c.UseModel(cmd)
-	case "show_current_model":
-		return c.ShowCurrentModel(cmd)
+	case "use_api_server":
+		return c.UseAPIServer(cmd)
+	case "use_admin_server":
+		return c.UseAdminServer(cmd)
 	case "set_default_model":
 		return c.SetDefaultModel(cmd)
 	case "reset_default_model":
@@ -342,24 +285,26 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.GetMetadata(cmd)
 	case "parse_documents_user_command":
 		return c.ParseDocumentsUserCommand(cmd)
-	// ContextEngine commands
-	case "ce_ls":
-		return c.CEList(cmd)
-	case "ce_cat":
-		return c.CECat(cmd)
-	case "ce_search":
-		return c.CESearch(cmd)
-	// TODO: Implement other commands
+	case "show_admin_server":
+		return c.ShowAdminServer(cmd)
+	case "show_api_server":
+		return c.ShowAPIServer(cmd)
+	case "list_api_server":
+		return c.ListAPIServer(cmd)
+	case "add_api_server":
+		return c.AddAPIServer(cmd)
+	case "delete_api_server":
+		return c.DeleteAPIServer(cmd)
+	case "add_admin_server":
+		return c.AddAdminServer(cmd)
+	case "delete_admin_server":
+		return c.DeleteAdminServer(cmd)
+	case "save_config_command":
+		return c.SaveServerConfig(cmd)
+	case "file_system_command":
+		return c.executeFilesystem(cmd)
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
 	}
-}
 
-// ShowCurrentUser shows the current logged-in user information
-// TODO: Implement showing current user information when API is available
-func (c *RAGFlowClient) ShowCurrentUser(cmd *Command) (map[string]interface{}, error) {
-	// TODO: Call the appropriate API to get current user information
-	// Currently there is no /admin/user/info or /user/info API available
-	// The /admin/auth API only verifies authorization, does not return user info
-	return nil, fmt.Errorf("command 'SHOW CURRENT USER' is not yet implemented")
 }

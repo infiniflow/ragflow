@@ -14,14 +14,14 @@
 //  limitations under the License.
 //
 
-package entity
+package models
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"ragflow/internal/entity/models"
 	"strings"
 )
 
@@ -156,10 +156,12 @@ type ModelThinking struct {
 // Model represents a single LLM model
 type Model struct {
 	Name         string         `json:"name"`
-	MaxTokens    int            `json:"max_tokens"`
+	MaxTokens    *int           `json:"max_tokens"`
 	ModelTypes   []string       `json:"model_types"`
 	Thinking     *ModelThinking `json:"thinking"`
 	Class        *string        `json:"class"`
+	Dimension    *int           `json:"dimension"` // used by embedding models
+	Alias        []string       `json:"alias"`
 	ModelTypeMap map[string]bool
 }
 
@@ -167,16 +169,18 @@ type Model struct {
 type Provider struct {
 	Name        string            `json:"name"`
 	URL         map[string]string `json:"url"`
-	URLSuffix   models.URLSuffix  `json:"url_suffix"`
+	URLSuffix   URLSuffix         `json:"url_suffix"`
 	Models      []*Model          `json:"models"`
 	Features    Features          `json:"features"`
 	Class       string            `json:"class"`
-	ModelDriver models.ModelDriver
+	ModelDriver ModelDriver
 }
 
 // ProviderManager manages provider and model operations
 type ProviderManager struct {
-	Providers []Provider `json:"model_providers"`
+	Providers        []Provider     `json:"model_providers"`
+	AllModels        []Model        `json:"all_models"`
+	Alias2ModelIndex map[string]int `json:"alias2_model_index_map"`
 }
 
 // ModelResponse represents the standard response structure
@@ -186,17 +190,48 @@ type ModelResponse struct {
 	Message string                   `json:"message"`
 }
 
-// NewProviderManager creates a new ProviderManager by reading all JSON files from a directory
-func NewProviderManager(dirPath string) (*ProviderManager, error) {
+func decodeProviderConfig(data []byte) (Provider, error) {
+	var provider Provider
+	if err := json.Unmarshal(data, &provider); err != nil {
+		return Provider{}, err
+	}
+
+	var rawProvider struct {
+		URLSuffix json.RawMessage `json:"url_suffix"`
+	}
+	if err := json.Unmarshal(data, &rawProvider); err != nil {
+		return Provider{}, err
+	}
+	if len(rawProvider.URLSuffix) == 0 {
+		return provider, nil
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(rawProvider.URLSuffix))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&provider.URLSuffix); err != nil {
+		return Provider{}, err
+	}
+
+	return provider, nil
+}
+
+var providerManager *ProviderManager
+
+func GetProviderManager() *ProviderManager {
+	return providerManager
+}
+
+// InitProviderManager creates a new ProviderManager by reading all JSON files from a directory
+func InitProviderManager(dirPath string) error {
 	providers := []Provider{}
 
 	// Read all files in the directory
 	files, err := os.ReadDir(dirPath)
 	if err != nil {
-		return nil, fmt.Errorf("error reading directory %s: %w", dirPath, err)
+		return fmt.Errorf("error reading directory %s: %w", dirPath, err)
 	}
 
-	modelFactory := models.NewModelFactory()
+	modelFactory := NewModelFactory()
 
 	// Iterate through all files
 	for _, file := range files {
@@ -217,13 +252,13 @@ func NewProviderManager(dirPath string) (*ProviderManager, error) {
 		var data []byte
 		data, err = os.ReadFile(filePath)
 		if err != nil {
-			return nil, fmt.Errorf("error reading file %s: %w", filePath, err)
+			return fmt.Errorf("error reading file %s: %w", filePath, err)
 		}
 
 		// Parse JSON
 		var provider Provider
-		if err = json.Unmarshal(data, &provider); err != nil {
-			return nil, fmt.Errorf("error parsing JSON from file %s: %w", filePath, err)
+		if provider, err = decodeProviderConfig(data); err != nil {
+			return fmt.Errorf("error parsing JSON from file %s: %w", filePath, err)
 		}
 
 		for _, model := range provider.Models {
@@ -246,7 +281,7 @@ func NewProviderManager(dirPath string) (*ProviderManager, error) {
 
 		provider.ModelDriver, err = modelFactory.CreateModelDriver(provider.Name, provider.URL, provider.URLSuffix)
 		if err != nil {
-			return nil, fmt.Errorf("error creating model driver for provider %s: %w", provider.Name, err)
+			return fmt.Errorf("error creating model driver for provider %s: %w", provider.Name, err)
 		}
 
 		// Add to providers list
@@ -254,12 +289,47 @@ func NewProviderManager(dirPath string) (*ProviderManager, error) {
 	}
 
 	if len(providers) == 0 {
-		return nil, fmt.Errorf("no JSON files found in directory %s", dirPath)
+		return fmt.Errorf("no JSON files found in directory %s", dirPath)
 	}
 
-	return &ProviderManager{
-		Providers: providers,
-	}, nil
+	// Read the file.  Use a repo-root-relative path so that go test
+	// (which sets CWD to the package directory) can still find it.
+	var data []byte
+	data, err = os.ReadFile(filepath.Join(findRepoRoot(), "conf", "all_models.json"))
+	if err != nil {
+		return fmt.Errorf("error reading file 'conf/all_models.json': %w", err)
+	}
+
+	// Parse JSON
+	type AllModels struct {
+		Models []Model `json:"models"`
+	}
+	var allModels AllModels
+	if err = json.Unmarshal(data, &allModels); err != nil {
+		return fmt.Errorf("error parsing JSON from file 'conf/all_models.json': %w", err)
+	}
+
+	alias2ModelIndex := make(map[string]int)
+	for idx, model := range allModels.Models {
+		if model.Alias == nil {
+			alias2ModelIndex[strings.ToLower(model.Name)] = idx
+		} else {
+			for _, alias := range model.Alias {
+				lowerAlias := strings.ToLower(alias)
+				if existingIdx, ok := alias2ModelIndex[lowerAlias]; ok && existingIdx != idx {
+					return fmt.Errorf("duplicate alias %q for models %q and %q", alias, allModels.Models[existingIdx].Name, model.Name)
+				}
+				alias2ModelIndex[lowerAlias] = idx
+			}
+		}
+	}
+
+	providerManager = &ProviderManager{
+		Providers:        providers,
+		AllModels:        allModels.Models,
+		Alias2ModelIndex: alias2ModelIndex,
+	}
+	return nil
 }
 
 // 1. List all providers
@@ -295,6 +365,45 @@ func (pm *ProviderManager) ListProviders() ([]map[string]interface{}, error) {
 	}
 
 	return providers, nil
+}
+
+func (pm *ProviderManager) ListAllModels() ([]map[string]interface{}, error) {
+
+	var modelList []map[string]interface{}
+
+	for _, model := range pm.AllModels {
+
+		modelData := map[string]interface{}{
+			"name":        model.Name,
+			"model_types": model.ModelTypes,
+		}
+		if model.Alias != nil {
+			modelData["alias"] = model.Alias
+		}
+		if model.Thinking != nil {
+			modelData["thinking"] = model.Thinking
+		}
+		if model.MaxTokens != nil {
+			modelData["max_tokens"] = *model.MaxTokens
+		}
+		modelList = append(modelList, modelData)
+	}
+
+	if len(modelList) == 0 {
+		return nil, fmt.Errorf("no models found")
+	}
+
+	return modelList, nil
+}
+
+func (pm *ProviderManager) GetModelByNameOrAlias(modelName string) *Model {
+	lowerModelName := strings.ToLower(modelName)
+	// Check if it is alias
+	modelIndex, ok := pm.Alias2ModelIndex[lowerModelName]
+	if ok {
+		return &pm.AllModels[modelIndex]
+	}
+	return nil
 }
 
 // 2. Show specific provider information (including base_url)
@@ -411,7 +520,7 @@ func (pm *ProviderManager) SearchModelInfo(providerName, modelName string, filte
 		switch filterBy {
 		case "max_tokens":
 			if maxVal, ok := filterValue.(int); ok {
-				if model.MaxTokens < maxVal {
+				if *model.MaxTokens < maxVal {
 					matchFilter = false
 					resp.Code = 400
 					resp.Message = fmt.Sprintf("Model does not meet filter criteria: max_tokens (%d) < %d",
@@ -594,6 +703,23 @@ func modelHasFeature(features Features, featureType string) bool {
 	default:
 		return false
 	}
+}
+
+// findRepoRoot walks up from CWD until it finds the repo root (marked by
+// conf/all_models.json).  This makes tests work regardless of the Go test
+// binary's CWD (which is set to the package directory by go test).
+func findRepoRoot() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "."
+	}
+	for dir != "/" && dir != "" {
+		if _, err := os.Stat(filepath.Join(dir, "conf", "all_models.json")); err == nil {
+			return dir
+		}
+		dir = filepath.Dir(dir)
+	}
+	return "."
 }
 
 // Helper: Find provider by name

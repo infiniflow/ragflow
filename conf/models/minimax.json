@@ -14,7 +14,7 @@
   "models": [
     {
       "name": "MiniMax-M3",
-      "max_tokens": 1000000,
+      "max_tokens": 1024000,
       "model_types": [
         "chat"
       ],

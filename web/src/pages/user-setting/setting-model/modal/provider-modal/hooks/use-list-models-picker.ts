@@ -18,7 +18,7 @@ const getIsToolsFromFeatures = (
   features: IProviderModelItem['features'],
 ): boolean | undefined => {
   if (!Array.isArray(features)) return undefined;
-  return features.includes('tool_call') || features.includes('function_call');
+  return features.includes('is_tools');
 };
 
 // Map a fetched list-model item to the request-side IModelInfo shape.
@@ -81,11 +81,11 @@ export const useListModelsPicker = ({
   config,
   formRef,
 }: UseListModelsPickerParams) => {
-  const [models, setModels] = useState<IProviderModelItem[]>([]);
+  const [models, setModelsState] = useState<IProviderModelItem[]>([]);
   const [listLoading, setListLoading] = useState(false);
   // Items the user has checked in the picker. Carries the full descriptor
   // (including `features`) so we can derive is_tools per model at submit time.
-  const [selectedModelItems, setSelectedModelItems] = useState<
+  const [selectedModelItems, setSelectedModelItemsState] = useState<
     IProviderModelItem[]
   >([]);
   // Edit-mode seed: the model_info array stored on the existing instance.
@@ -164,7 +164,10 @@ export const useListModelsPicker = ({
         // (empty on first load, populated on re-opens) so the backend
         // sees an array shape consistent with the verify/submit payloads.
         const verifyArgs = config.verifyTransform
-          ? config.verifyTransform(values, modelInfoList)
+          ? config.verifyTransform({
+              ...values,
+              model_info: modelInfoList,
+            })
           : { apiKey: values.api_key ?? '', baseUrl: values.base_url };
         const res = await listProviderModels({
           provider_name: llmFactory,
@@ -174,7 +177,7 @@ export const useListModelsPicker = ({
           model_info: (verifyArgs as any).modelInfo ?? modelInfoList,
         });
         if (res?.code === 0 && Array.isArray(res.data)) {
-          setModels(res.data);
+          setModelsState(res.data);
           // Edit-mode pre-check: match the initial model_info entries
           // against the freshly fetched list (by name + model_type set)
           // and seed `selectedModelItems`.
@@ -188,7 +191,7 @@ export const useListModelsPicker = ({
               ),
             );
             if (matched.length > 0) {
-              setSelectedModelItems(matched);
+              setSelectedModelItemsState(matched);
             }
           }
         }
@@ -216,7 +219,7 @@ export const useListModelsPicker = ({
   const handleSelectModel = useCallback((model: IProviderModelItem) => {
     if (selectionLockRef.current) return;
     selectionLockRef.current = true;
-    setSelectedModelItems((prev) => {
+    setSelectedModelItemsState((prev) => {
       const idx = prev.findIndex((p) => p.name === model.name);
       if (idx >= 0) {
         const next = prev.slice();
@@ -240,7 +243,7 @@ export const useListModelsPicker = ({
   const handleToggleAll = useCallback(() => {
     if (selectionLockRef.current) return;
     selectionLockRef.current = true;
-    setSelectedModelItems((prev) => {
+    setSelectedModelItemsState((prev) => {
       if (prev.length === models.length) {
         return [];
       }
@@ -255,12 +258,34 @@ export const useListModelsPicker = ({
   useEffect(() => {
     if (!visible) {
       formRef.current?.reset();
-      setModels([]);
-      setSelectedModelItems([]);
+      setModelsState([]);
+      setSelectedModelItemsState([]);
       setListLoading(false);
       initialModelInfoRef.current = null;
     }
   }, [visible, formRef]);
+
+  const setModels = useCallback(
+    (
+      updater:
+        | IProviderModelItem[]
+        | ((prev: IProviderModelItem[]) => IProviderModelItem[]),
+    ) => {
+      setModelsState(updater);
+    },
+    [],
+  );
+
+  const setSelectedModelItems = useCallback(
+    (
+      updater:
+        | IProviderModelItem[]
+        | ((prev: IProviderModelItem[]) => IProviderModelItem[]),
+    ) => {
+      setSelectedModelItemsState(updater);
+    },
+    [],
+  );
 
   return {
     models,
@@ -271,5 +296,7 @@ export const useListModelsPicker = ({
     handleListOpenChange,
     handleSelectModel,
     handleToggleAll,
+    setModels,
+    setSelectedModelItems,
   };
 };

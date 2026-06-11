@@ -1043,6 +1043,34 @@ class BaiduYiyanChat(Base):
 
         yield total_tokens
 
+    async def async_chat_streamly(self, system, history, gen_conf: dict | None = None, **kwargs):
+        gen_conf = dict(gen_conf or {})
+        gen_conf["penalty_score"] = ((gen_conf.get("presence_penalty", 0) + gen_conf.get("frequency_penalty", 0)) / 2) + 1
+        if "max_tokens" in gen_conf:
+            del gen_conf["max_tokens"]
+
+        def _do_chat():
+            system_msg = history[0]["content"] if history and history[0].get("role") == "system" else ""
+            msgs = [h for h in history if h.get("role") != "system"]
+            try:
+                response = self.client.do(model=self.model_name, messages=msgs, system=system_msg, stream=True, **gen_conf)
+                result_text = ""
+                total_tokens = 0
+                for resp in response:
+                    resp = resp.body
+                    result_text = resp["result"]
+                    total_tokens = total_token_count_from_response(resp)
+                return result_text, total_tokens, None
+            except Exception as e:
+                return "", 0, e
+
+        result_text, total_tokens, error = await asyncio.to_thread(_do_chat)
+        if error:
+            yield f"**ERROR**: {error}"
+        else:
+            yield result_text
+        yield total_tokens
+
 
 class GoogleChat(Base):
     _FACTORY_NAME = "Google Cloud"
@@ -1371,8 +1399,12 @@ class LiteLLMBase(ABC):
 
         # Factory specific fields
         if self.provider == SupportedLiteLLMProvider.OpenRouter:
-            self.api_key = json.loads(key).get("api_key", "")
-            self.provider_order = json.loads(key).get("provider_order", "")
+            try:
+                self.api_key = json.loads(key).get("api_key", "")
+                self.provider_order = json.loads(key).get("provider_order", "")
+            except JSONDecodeError:
+                self.api_key = key
+                self.provider_order = ""
         elif self.provider == SupportedLiteLLMProvider.Azure_OpenAI:
             self.api_key = json.loads(key).get("api_key", "")
             self.api_version = json.loads(key).get("api_version", "2024-02-01")
