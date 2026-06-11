@@ -212,9 +212,9 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 		}
 
 		pollReq, _ := http.NewRequestWithContext(ctx, "GET", pollUrl, nil)
-			if auth := BearerAuth(apiConfig); auth != "" {
-				pollReq.Header.Set("Authorization", auth)
-			}
+		if auth := BearerAuth(apiConfig); auth != "" {
+			pollReq.Header.Set("Authorization", auth)
+		}
 
 		pollResp, err := p.baseModel.httpClient.Do(pollReq)
 		if err != nil {
@@ -296,7 +296,7 @@ func (p *PaddleOCRModel) ParseFile(modelName *string, content []byte, url *strin
 	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PaddleOCRModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (p *PaddleOCRModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 

@@ -447,7 +447,7 @@ func TestCometAPIListModelsHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if len(ids) != 3 || ids[0] != "gpt-5" || ids[2] != "text-embedding-3-small" {
+	if len(ids) != 3 || ids[0].Name != "gpt-5" || ids[2].Name != "text-embedding-3-small" {
 		t.Errorf("ids=%v, want [gpt-5 gpt-4o-mini text-embedding-3-small]", ids)
 	}
 }
@@ -463,7 +463,7 @@ func TestCometAPIListModelsAllowsNilAPIConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels(nil): %v", err)
 	}
-	if len(ids) != 1 || ids[0] != "gpt-5" {
+	if len(ids) != 1 || ids[0].Name != "gpt-5" {
 		t.Errorf("ids=%v want [gpt-5]", ids)
 	}
 }

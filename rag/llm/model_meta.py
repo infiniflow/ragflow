@@ -259,7 +259,7 @@ class LocalAI(Base):
                     context_length = model_info.get("model_info", {}).get("general.context_length", 8192)
                     res.append(
                         {
-                            "name": model["name"],
+                            "name": model["name"].rsplit(":", 1)[0],
                             "model_types": [capability_to_model_type_mapping[c] for c in model_info.get("capabilities", []) if c in capability_to_model_type_mapping],
                             "features": [capability_to_feature_mapping[c] for c in model_info.get("capabilities", []) if c in capability_to_feature_mapping],
                             "max_tokens": context_length or 8192,
@@ -397,7 +397,7 @@ class OpenRouter(Base):
 class OpenAIAPICompatible(Base):
     _FACTORY_NAME = "OpenAI-API-Compatible"
 
-    _EMBEDDING_HINTS = ("embed", "embedding")
+    _EMBEDDING_HINTS = ("embed", "embedding", "bge")
     _RERANK_HINTS = ("rerank", "reranker")
     _SPEECH2TEXT_HINTS = ("asr", "stt", "transcribe", "transcriber", "whisper")
     _TTS_HINTS = ("tts", "text-to-speech")

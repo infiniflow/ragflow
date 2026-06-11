@@ -413,7 +413,7 @@ func (o *OrcaRouterModel) ParseFile(modelName *string, content []byte, url *stri
 	return nil, fmt.Errorf("%s no such method", o.Name())
 }
 
-func (o *OrcaRouterModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (o *OrcaRouterModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -458,20 +458,16 @@ func (o *OrcaRouterModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	// Parse response
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
+	// Parse response
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	// convert result["data"] to []map[string]interface{}
-	models := make([]string, 0)
-	for _, model := range result["data"].([]interface{}) {
-		modelMap := model.(map[string]interface{})
-		modelName := modelMap["id"].(string)
-		models = append(models, modelName)
+	if modelList.Models == nil {
+		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 func (o *OrcaRouterModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
