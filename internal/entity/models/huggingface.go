@@ -25,6 +25,7 @@ import (
 	"io"
 	"net/http"
 	"ragflow/internal/common"
+	"sort"
 	"strings"
 )
 
@@ -428,8 +429,152 @@ func (h *HuggingFaceModel) Embed(modelName *string, texts []string, apiConfig *A
 	return embeddings, nil
 }
 
+// huggingfaceRerankURL builds the HF Inference Providers per-model
+// URL. The shipped chat surface uses the OpenAI-style
+// /v1/chat/completions router path, but rerank models on HF live at
+// the hf-inference per-model path (the same place sentence-classifier
+// pipelines run). The router does not expose a /v1/rerank route —
+// POST /v1/rerank returns 404 with a valid token (probe-verified) —
+// so the canonical rerank URL on the router is
+//
+//	https://router.huggingface.co/hf-inference/models/{owner}/{name}
+//
+// Note this is NOT under /v1/. The driver strips a trailing "/v1"
+// from BaseURL so an existing HF provider configured with
+// "https://router.huggingface.co/v1" still produces the right URL,
+// while a BaseURL already pointing at "https://router.huggingface.co"
+// works unchanged.
+func huggingfaceRerankURL(baseURL, modelName string) string {
+	host := strings.TrimSuffix(strings.TrimRight(baseURL, "/"), "/v1")
+	return fmt.Sprintf("%s/hf-inference/models/%s", host, modelName)
+}
+
+// huggingfaceRerankRequest is the wire shape HF's hf-inference router
+// accepts for cross-encoder / sentence-classifier reranker models
+// (BAAI/bge-reranker-v2-m3, BAAI/bge-reranker-base, etc.).
+//
+// The pipeline expects a JSON array of {text, text_pair} pairs;
+// sending the more-OpenAI-like [[query, doc], ...] shape gets a
+// "send a dictionary {text, text_pair}" 400 error from the
+// TextClassificationPipeline. Live-verified against
+// BAAI/bge-reranker-v2-m3.
+type huggingfaceRerankPair struct {
+	Text     string `json:"text"`
+	TextPair string `json:"text_pair"`
+}
+
+type huggingfaceRerankRequest struct {
+	Inputs []huggingfaceRerankPair `json:"inputs"`
+}
+
+// huggingfaceRerankPrediction is one cross-encoder classification
+// output. HF's TextClassificationPipeline returns score values that
+// are NOT normalized to [0, 1] for raw-logit reranker models like
+// BAAI/bge-reranker-v2-m3 — they're raw logits where higher means
+// more relevant. The label is the model's class id (typically
+// "LABEL_0"); the driver does not interpret it.
+type huggingfaceRerankPrediction struct {
+	Label string  `json:"label"`
+	Score float64 `json:"score"`
+}
+
+// Rerank scores a query against a list of documents using a HF
+// Inference Providers cross-encoder rerank model. The driver targets
+// the BAAI bge-reranker family (BAAI/bge-reranker-v2-m3,
+// BAAI/bge-reranker-base, …), which is what the hf-inference provider
+// supports out of the box for cross-encoder rerank scoring; jina or
+// generic cross-encoder models that aren't on the hf-inference
+// provider return "Model not supported by provider hf-inference".
 func (h *HuggingFaceModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("no such method")
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
+	}
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+	baseURL := h.BaseURL[region]
+	if baseURL == "" {
+		return nil, fmt.Errorf("huggingface: no base URL configured for region %q", region)
+	}
+	url := huggingfaceRerankURL(baseURL, *modelName)
+
+	pairs := make([]huggingfaceRerankPair, len(documents))
+	for i, doc := range documents {
+		pairs[i] = huggingfaceRerankPair{Text: query, TextPair: doc}
+	}
+	reqBody := huggingfaceRerankRequest{Inputs: pairs}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := h.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HF rerank API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	// Cross-encoder pipelines wrap their batch output in a single
+	// outer array: [[{label,score}, {label,score}, ...]]. Unwrap one
+	// level before pairing scores back to documents. Verify count
+	// matches input cardinality so a malformed response fails loudly
+	// rather than silently truncating the rerank batch.
+	var wrapped [][]huggingfaceRerankPrediction
+	if err := json.Unmarshal(body, &wrapped); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	if len(wrapped) != 1 {
+		return nil, fmt.Errorf("huggingface: expected single batch in rerank response, got %d", len(wrapped))
+	}
+	scores := wrapped[0]
+	if len(scores) != len(documents) {
+		return nil, fmt.Errorf("huggingface: expected %d rerank scores, got %d", len(documents), len(scores))
+	}
+
+	// Build the response in original document order; if the caller
+	// asked for top_n, sort by score descending (stable on Index for
+	// deterministic tie-breaking) and truncate. Matches the
+	// surrounding rerank drivers (Voyage, Replicate) in this package.
+	results := make([]RerankResult, len(documents))
+	for i, s := range scores {
+		results[i] = RerankResult{Index: i, RelevanceScore: s.Score}
+	}
+	topN := len(documents)
+	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
+		topN = rerankConfig.TopN
+		sort.SliceStable(results, func(a, b int) bool {
+			if results[a].RelevanceScore == results[b].RelevanceScore {
+				return results[a].Index < results[b].Index
+			}
+			return results[a].RelevanceScore > results[b].RelevanceScore
+		})
+		results = results[:topN]
+	}
+	return &RerankResponse{Data: results}, nil
 }
 
 // TranscribeAudio transcribe audio
