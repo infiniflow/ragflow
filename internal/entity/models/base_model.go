@@ -23,40 +23,85 @@ import (
 )
 
 type BaseModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	BaseURL          map[string]string
+	URLSuffix        URLSuffix
+	httpClient       *http.Client
+	AllowEmptyAPIKey bool
 }
 
 func (b *BaseModel) APIConfigCheck(apiConfig *APIConfig) error {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is nil or empty")
+	if b.AllowEmptyAPIKey {
+		return nil
 	}
 
-	if apiConfig.BaseURL == nil || *apiConfig.BaseURL == "" {
-		if apiConfig.Region == nil || *apiConfig.Region == "" {
-			return fmt.Errorf("no base url and region")
-		}
+	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
+		return fmt.Errorf("api key is required")
 	}
 
 	return nil
 }
 
-func (b *BaseModel) GetBaseURL(apiConfig *APIConfig) (string, error) {
+// BearerAuth returns the Bearer token for Authorization header,
+// or empty string if apiConfig or its ApiKey is nil/empty.
+func BearerAuth(apiConfig *APIConfig) string {
+	if apiConfig == nil || apiConfig.ApiKey == nil {
+		return ""
+	}
+	key := strings.TrimSpace(*apiConfig.ApiKey)
+	if key == "" {
+		return ""
+	}
+	return fmt.Sprintf("Bearer %s", key)
+}
 
-	if apiConfig.BaseURL != nil && *apiConfig.BaseURL != "" {
+func (b *BaseModel) GetBaseURL(apiConfig *APIConfig) (string, error) {
+	if apiConfig != nil && apiConfig.BaseURL != nil && *apiConfig.BaseURL != "" {
 		return strings.TrimSuffix(*apiConfig.BaseURL, "/"), nil
 	}
 
 	region := "default"
-	if apiConfig.Region != nil {
+	hasRegion := false
+	if apiConfig != nil && apiConfig.Region != nil {
+		hasRegion = true
 		region = *apiConfig.Region
 	}
 
 	baseURL, ok := b.BaseURL[region]
 	if !ok || baseURL == "" {
+		if (!hasRegion || region == "") && b.BaseURL != nil {
+			if defaultBaseURL, ok := b.BaseURL["default"]; ok && defaultBaseURL != "" {
+				return defaultBaseURL, nil
+			}
+		}
 		return "", fmt.Errorf("no base URL configured for region %q", region)
 	}
 
 	return baseURL, nil
+}
+
+// ParseListModel Parse model list
+func ParseListModel(modelList ModelList) []ListModelResponse {
+	var models []ListModelResponse
+	pm := GetProviderManager()
+	for _, model := range modelList.Models {
+		modelName := model.ID
+		var modelResponse ListModelResponse
+		var modelEntity *Model
+		if pm != nil {
+			modelEntity = pm.GetModelByNameOrAlias(modelName)
+		}
+		if model.OwnedBy != "" {
+			modelName = model.ID + "@" + model.OwnedBy
+		}
+		modelResponse.Name = modelName
+		if modelEntity != nil {
+			modelResponse.Dimension = modelEntity.Dimension
+			modelResponse.MaxTokens = modelEntity.MaxTokens
+			modelResponse.ModelTypes = modelEntity.ModelTypes
+			modelResponse.Thinking = modelEntity.Thinking
+		}
+
+		models = append(models, modelResponse)
+	}
+	return models
 }

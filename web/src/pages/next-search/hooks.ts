@@ -344,6 +344,7 @@ export const useSendQuestion = (
           kb_ids: kbIds,
           question: q,
           tenantId,
+          search_id: searchId,
         });
       }
       testChunk({

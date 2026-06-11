@@ -1119,6 +1119,36 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         '要同步的邮件文件夹（例如 inbox、sentitems、archive），默认为 inbox。',
       outlookUserIdsTip:
         '要同步的邮箱 UPN 或对象 ID 列表（逗号分隔）。留空则同步租户内的所有邮箱（需要 User.Read.All 权限）。',
+      salesforceDescription:
+        '连接 Salesforce 组织，通过 SOQL 增量同步并索引 CRM 记录（客户、联系人、商机、个案、知识文章）。',
+      salesforceInstanceUrlTip:
+        'Salesforce 组织地址，例如 https://your-domain.my.salesforce.com（不要包含末尾斜杠）。',
+      salesforceClientIdTip:
+        '已启用 Client Credentials Flow 且包含 api 权限的 Connected App 的 Consumer Key。',
+      salesforceClientSecretTip:
+        '用于客户端凭证身份验证的 Connected App 的 Consumer Secret。',
+      salesforceObjectsTip:
+        '要索引的 SObject API 名称列表（逗号分隔）。默认值：Account, Contact, Opportunity, Case, Knowledge__kav。',
+      salesforceApiVersionTip:
+        'Salesforce REST API 版本（例如 v59.0），请使用您组织所支持的版本。',
+      azure_blobDescription:
+        '将 Azure Blob 存储容器中的文件索引到知识库。支持账户密钥、连接字符串和 SAS 令牌三种认证方式，通过 ETag 指纹跳过未变更的文件。',
+      azureBlobAuthModeTip:
+        '选择认证方式。账户密钥和连接字符串需填写容器名称；SAS 令牌方式需填写容器 URL 和 SAS 令牌。',
+      azureBlobAccountNameTip:
+        'Azure 存储账户名称（例如 mystorageaccount），账户密钥认证时必填。',
+      azureBlobAccountKeyTip:
+        '存储账户访问密钥（Base64 编码），账户密钥认证时必填。',
+      azureBlobConnectionStringTip:
+        '完整的 Azure 存储连接字符串（DefaultEndpointsProtocol=https;AccountName=...;...），连接字符串认证时必填。',
+      azureBlobContainerUrlTip:
+        '容器的完整 HTTPS 地址（例如 https://account.blob.core.windows.net/container），SAS 令牌认证时必填。',
+      azureBlobSasTokenTip:
+        'SAS 查询字符串（不含开头的"?"），SAS 令牌认证时必填。',
+      azureBlobContainerNameTip:
+        '要索引的容器名称，账户密钥和连接字符串认证时必填。',
+      azureBlobPrefixTip:
+        '可选的 Blob 名称前缀，用于限定索引范围（例如 documents/reports/）。留空则索引整个容器。',
       teamsDescription:
         '通过 Microsoft Graph 连接 Microsoft Teams，同步频道帖子与回复。',
       teamsTenantIdTip:
@@ -1219,7 +1249,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       confirmPasswordMessage: '请确认新密码',
       confirmPasswordNonMatchMessage: '您输入的新密码不匹配！',
       cancel: '取消',
-      addedModels: '添加了的模型',
+      addedModels: '已添加的模型',
       modelsToBeAdded: '待添加的模型',
       addTheModel: '添加',
       apiKey: 'API-Key',
@@ -1237,6 +1267,38 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       tongyiBaseUrlPlaceholder: '(仅国际用户需要)',
       minimaxBaseUrlTip: '仅国际用户：使用 https://api.minimax.io/v1。',
       minimaxBaseUrlPlaceholder: '(仅国际用户填写 https://api.minimax.io/v1)',
+      openaiBaseUrlPlaceholder: 'https://api.openai.com/v1',
+      anthropicBaseUrlPlaceholder: 'https://api.anthropic.com/v1',
+      siliconflowBaseUrlPlaceholder: 'https://api.siliconflow.cn/v1',
+      groupId: 'Group ID',
+      providerOrder: 'Provider 顺序',
+      paddleocrApiUrl: 'PaddleOCR API URL',
+      paddleocrApiUrlMessage: '请输入 PaddleOCR API URL！',
+      paddleocrApiUrlPlaceholder:
+        '例如：https://paddleocr-server.com/layout-parsing',
+      paddleocrAccessToken: 'AI Studio 访问令牌',
+      paddleocrAccessTokenMessage: 'PaddleOCR API 的访问令牌（可选）',
+      paddleocrAccessTokenPlaceholder: '您的 AI Studio 令牌（可选）',
+      paddleocrAlgorithm: 'PaddleOCR 算法',
+      paddleocrAlgorithmMessage: '请选择 PaddleOCR 算法',
+      mineruApiserver: 'MinerU API 服务器',
+      mineruApiserverMessage: '请输入 MinerU API 服务器地址！',
+      mineruApiserverPlaceholder: '例如：http://host.docker.internal:9987',
+      mineruOutputDir: 'MinerU 输出目录',
+      mineruOutputDirMessage: '请输入 MinerU 输出目录！',
+      mineruOutputDirPlaceholder: '/tmp/mineru',
+      mineruBackend: 'MinerU 后端',
+      mineruBackendMessage: '请选择 MinerU 后端！',
+      mineruSelectBackend: '选择处理后端',
+      mineruServerUrl: 'MinerU 服务器 URL',
+      mineruServerUrlMessage: '请输入 MinerU 服务器 URL！',
+      mineruServerUrlPlaceholder: '例如：http://your-vllm-server:30000',
+      mineruDeleteOutput: '处理完成后删除输出文件',
+      mineruDeleteOutputMessage: '删除输出值无效',
+      opendataloaderApiserver: 'OpenDataLoader API 服务器',
+      opendataloaderApiserverMessage: '请输入 OpenDataLoader API 服务器！',
+      opendataloaderApiserverPlaceholder:
+        'http://your-opendataloader-service:9383',
       modify: '修改',
       systemModelSettings: '设置默认模型',
       chatModel: 'LLM',
@@ -1395,6 +1457,30 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       },
       showToc: '显示目录',
       hideToc: '隐藏目录',
+      listModels: '模型列表',
+      allModels: '所有模型',
+      listModelsSearchPlaceholder: '搜索模型…',
+      listModelsEmpty: '暂无可用模型',
+      listModelsLoading: '正在加载模型…',
+      selectModelBeforeVerify: '请至少选择一个模型后再验证。',
+      addCustomModel: '添加自定义模型',
+      addCustomModelTitle: '添加自定义模型',
+      modelMaxTokens: '最大 Token 数',
+      modelTypes: {
+        chat: 'Chat',
+        embedding: 'Embedding',
+        rerank: 'Rerank',
+        sequence2text: 'sequence2text',
+        tts: 'TTS',
+        image2text: 'OCR',
+        speech2text: 'ASR',
+      },
+      modelFeatures: '模型特性',
+      modelNameRequired: '请输入模型名称',
+      modelNameDuplicate: '模型名称已存在',
+      modelTypeRequired: '请至少选择一个模型类型',
+      modelMaxTokensMessage: '最大 Token 数必须为数字',
+      modelMaxTokensMinMessage: '最大 Token 数不能小于 0',
     },
     message: {
       registered: '注册成功',

@@ -32,24 +32,20 @@ import (
 )
 
 type CoHereModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 func (c *CoHereModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return &CoHereModel{
-		BaseURL:    baseURL,
-		URLSuffix:  c.URLSuffix,
-		httpClient: &http.Client{},
-	}
+	return NewCoHereModel(baseURL, c.baseModel.URLSuffix)
 }
 
 func NewCoHereModel(baseURL map[string]string, urlSuffix URLSuffix) *CoHereModel {
 	return &CoHereModel{
-		BaseURL:    baseURL,
-		URLSuffix:  urlSuffix,
-		httpClient: &http.Client{},
+		baseModel: BaseModel{
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: &http.Client{},
+		},
 	}
 }
 
@@ -58,19 +54,18 @@ func (c *CoHereModel) Name() string {
 }
 
 func (c *CoHereModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is nil or empty")
+	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", c.BaseURL[region], c.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, c.baseModel.URLSuffix.Chat)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -136,7 +131,7 @@ func (c *CoHereModel) ChatWithMessages(modelName string, messages []Message, api
 	req.Header.Set("accept", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -192,16 +187,19 @@ func (c *CoHereModel) ChatWithMessages(modelName string, messages []Message, api
 }
 
 func (c *CoHereModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
 	}
-
-	url := fmt.Sprintf("%s/%s", c.BaseURL[region], c.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, c.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -277,7 +275,7 @@ func (c *CoHereModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	req.Header.Set("accept", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -352,17 +350,20 @@ func (c *CoHereModel) ChatStreamlyWithSender(modelName string, messages []Messag
 }
 
 func (c *CoHereModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	baseURL := strings.TrimSuffix(c.BaseURL[region], "/")
-	suffix := strings.TrimPrefix(c.URLSuffix.Embedding, "/")
+	baseURL := strings.TrimSuffix(resolvedBaseURL, "/")
+	suffix := strings.TrimPrefix(c.baseModel.URLSuffix.Embedding, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, suffix)
 
 	reqBody := map[string]interface{}{
@@ -389,7 +390,7 @@ func (c *CoHereModel) Embed(modelName *string, texts []string, apiConfig *APICon
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -429,17 +430,20 @@ func (c *CoHereModel) Embed(modelName *string, texts []string, apiConfig *APICon
 }
 
 func (c *CoHereModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	baseURL := strings.TrimSuffix(c.BaseURL[region], "/")
-	suffix := strings.TrimPrefix(c.URLSuffix.Rerank, "/")
+	baseURL := strings.TrimSuffix(resolvedBaseURL, "/")
+	suffix := strings.TrimPrefix(c.baseModel.URLSuffix.Rerank, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, suffix)
 
 	var topN = rerankConfig.TopN
@@ -471,7 +475,7 @@ func (c *CoHereModel) Rerank(modelName *string, query string, documents []string
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -511,16 +515,19 @@ func (c *CoHereModel) Rerank(modelName *string, query string, documents []string
 
 // TranscribeAudio transcribe audio
 func (c *CoHereModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if file == nil || *file == "" {
 		return nil, fmt.Errorf("file is missing")
 	}
 
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", c.BaseURL[region], c.URLSuffix.ASR)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, c.baseModel.URLSuffix.ASR)
 
 	// multipart body
 
@@ -594,7 +601,7 @@ func (c *CoHereModel) TranscribeAudio(modelName *string, file *string, apiConfig
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -643,13 +650,16 @@ func (c *CoHereModel) ParseFile(modelName *string, content []byte, url *string, 
 	return nil, fmt.Errorf("%s, no such method", c.Name())
 }
 
-func (c *CoHereModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+func (c *CoHereModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/%s", c.BaseURL[region], c.URLSuffix.Models)
+	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, c.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -660,11 +670,9 @@ func (c *CoHereModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	req.Header.Set("accept", "application/json")
-	if apiConfig != nil && apiConfig.ApiKey != nil {
-		req.Header.Set("Authorization", fmt.Sprintf("bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -679,25 +687,27 @@ func (c *CoHereModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("Cohere API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result map[string]interface{}
+	// Parse response
+	var result struct {
+		Models []struct {
+			ModelName string `json:"name"`
+		} `json:"models"`
+	}
 	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
-	models := make([]string, 0)
-	if modelsRaw, ok := result["models"].([]interface{}); ok {
-		for _, model := range modelsRaw {
-			if modelMap, ok := model.(map[string]interface{}); ok {
-				if modelName, ok := modelMap["name"].(string); ok {
-					models = append(models, modelName)
-				}
-			}
+	models := make([]DSModel, 0, len(result.Models))
+	for _, model := range result.Models {
+		if model.ModelName != "" {
+			models = append(models, DSModel{
+				ID:      model.ModelName,
+				OwnedBy: c.Name(),
+			})
 		}
-	} else {
-		return nil, fmt.Errorf("failed to find 'models' array in response")
 	}
 
-	return models, nil
+	return ParseListModel(ModelList{Models: models}), nil
 }
 
 func (c *CoHereModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

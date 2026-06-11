@@ -5,6 +5,10 @@ services:
     image: elasticsearch:${STACK_VERSION}
     volumes:
       - esdata01:/usr/share/elasticsearch/data
+    # Official ES image ACL on /tmp denies writes for user elasticsearch (r-x only).
+    # entrypoint.sh needs a writable temp dir for bash here-documents.
+    tmpfs:
+      - /tmp:mode=1777,size=512m
     ports:
       - ${ES_PORT}:9200
     env_file: .env
@@ -100,10 +104,16 @@ services:
     profiles:
       - oceanbase
     image: oceanbase/oceanbase-ce:4.4.1.0-100000032025101610
+    entrypoint: ["bash", "/root/boot/ragflow-oceanbase-entrypoint.sh"]
+    ulimits:
+      nofile:
+        soft: 655350
+        hard: 655350
     volumes:
       - ./oceanbase/data:/root/ob
       - ./oceanbase/conf:/root/.obd/cluster
       - ./oceanbase/init.d:/root/boot/init.d
+      - ./oceanbase-entrypoint.sh:/root/boot/ragflow-oceanbase-entrypoint.sh:ro
     ports:
       - ${OCEANBASE_PORT:-2881}:2881
     env_file: .env
