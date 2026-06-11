@@ -34,6 +34,7 @@ from enum import StrEnum
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
+from rag.llm.key_utils import _normalize_replicate_key
 from rag.llm.tool_decorator import FunctionToolSession, is_tool
 from rag.nlp import is_chinese, is_english
 
@@ -938,16 +939,7 @@ class ReplicateChat(Base):
         from replicate.client import Client
 
         self.model_name = model_name
-        if isinstance(key, dict):
-            key = key.get("api_key") or json.dumps(key)
-        elif isinstance(key, str):
-            try:
-                payload = json.loads(key)
-                if isinstance(payload, dict) and payload.get("api_key"):
-                    key = payload["api_key"]
-            except (json.JSONDecodeError, TypeError):
-                pass
-        self.client = Client(api_token=key)
+        self.client = Client(api_token=_normalize_replicate_key(key))
 
     def _chat(self, history, gen_conf=None, **kwargs):
         gen_conf = dict(gen_conf or {})

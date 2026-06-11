@@ -28,10 +28,11 @@ from ollama import Client
 from openai import OpenAI
 from zhipuai import ZhipuAI
 
+from common import settings
 from common.exceptions import ModelException
 from common.log_utils import log_exception
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
-from common import settings
+from rag.llm.key_utils import _normalize_replicate_key
 import logging
 import base64
 
@@ -971,16 +972,7 @@ class ReplicateEmbed(Base):
         from replicate.client import Client
 
         self.model_name = model_name
-        if isinstance(key, dict):
-            key = key.get("api_key") or json.dumps(key)
-        elif isinstance(key, str):
-            try:
-                payload = json.loads(key)
-                if isinstance(payload, dict) and payload.get("api_key"):
-                    key = payload["api_key"]
-            except (json.JSONDecodeError, TypeError):
-                pass
-        self.client = Client(api_token=key)
+        self.client = Client(api_token=_normalize_replicate_key(key))
 
     def encode(self, texts: list):
         batch_size = 16
