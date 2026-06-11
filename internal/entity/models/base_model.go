@@ -95,7 +95,8 @@ func ParseListModel(modelList ModelList) []ListModelResponse {
 		}
 		modelResponse.Name = modelName
 		if modelEntity != nil {
-			modelResponse.Dimension = modelEntity.Dimension
+			modelResponse.MaxDimension = modelEntity.MaxDimension
+			modelResponse.Dimensions = modelEntity.Dimensions
 			modelResponse.MaxTokens = modelEntity.MaxTokens
 			modelResponse.ModelTypes = modelEntity.ModelTypes
 			modelResponse.Thinking = modelEntity.Thinking

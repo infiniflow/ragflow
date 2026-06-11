@@ -247,11 +247,12 @@ func (m *ModelProviderService) ListSupportedModels(providerName, instanceName, u
 	var result []map[string]interface{}
 	for _, model := range modelList {
 		result = append(result, map[string]interface{}{
-			"name":        model.Name,
-			"dimension":   model.Dimension,
-			"max_tokens":  model.MaxTokens,
-			"model_types": model.ModelTypes,
-			"thinking":    model.Thinking,
+			"name":          model.Name,
+			"max_dimension": model.MaxDimension,
+			"dimensions":    model.Dimensions,
+			"max_tokens":    model.MaxTokens,
+			"model_types":   model.ModelTypes,
+			"thinking":      model.Thinking,
 		})
 	}
 	return result, nil
@@ -1108,6 +1109,36 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 	return common.CodeServerError, errors.New("model is disabled")
 }
 
+func validateEmbeddingDimension(model *modelModule.Model, requested int) error {
+	if requested <= 0 || model == nil {
+		return nil
+	}
+
+	if len(model.Dimensions) > 0 {
+		for _, dim := range model.Dimensions {
+			if dim == requested {
+				return nil
+			}
+		}
+		return fmt.Errorf(
+			"dimension %d is not supported by model %s, supported dimensions: %v",
+			requested,
+			model.Name,
+			model.Dimensions,
+		)
+	}
+	if model.MaxDimension != nil && requested > *model.MaxDimension {
+		return fmt.Errorf(
+			"dimension %d is not supported by model %s, max dimension: %d",
+			requested,
+			model.Name,
+			*model.MaxDimension,
+		)
+	}
+
+	return nil
+}
+
 // EmbedText sends texts to the embedding model
 func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, userID string, texts []string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.EmbeddingConfig) ([]modelModule.EmbeddingData, common.ErrorCode, error) {
 	if apiConfig == nil {
@@ -1167,6 +1198,10 @@ func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, 
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
 
+		if err := validateEmbeddingDimension(model, modelConfig.Dimension); err != nil {
+			return nil, common.CodeBadRequest, err
+		}
+
 		var response []modelModule.EmbeddingData
 		response, err = providerInfo.ModelDriver.Embed(&modelName, texts, apiConfig, modelConfig)
 		if err != nil {
@@ -1202,6 +1237,11 @@ func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, 
 		newProviderInfo, err := newModelDriverForBaseURL(providerInfo.ModelDriver, providerName, region, extra["base_url"])
 		if err != nil {
 			return nil, common.CodeServerError, err
+		}
+
+		modelSchema, _ := dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+		if err := validateEmbeddingDimension(modelSchema, modelConfig.Dimension); err != nil {
+			return nil, common.CodeBadRequest, err
 		}
 
 		var response []modelModule.EmbeddingData
