@@ -17,10 +17,11 @@ Released on June 11, 2026.
 
 - **Model providers**: Implements auto-populated model lists for multiple providers, eliminating the need to type model names manually. This feature currently supports: Ollama, OpenRouter, vLLM, OpenAI-API-Compatible, LM-Studio, VolcEngine, Xinference, LocalAI, BaiduYiyan, GPUStack, and Fish Audio.
 - **Model providers**: Allows configuring multiple API keys for the same model provider. [#14595](https://github.com/infiniflow/ragflow/pull/14595)
-- **Data source connectors**: Implements new data source connectors for Outlook, OneDrive, Microsoft Teams, Slack, and SharePoint. [#15333](https://github.com/infiniflow/ragflow/pull/15333)[#15330](https://github.com/infiniflow/ragflow/pull/15330)[#15332](https://github.com/infiniflow/ragflow/pull/15332)[#15188](https://github.com/infiniflow/ragflow/pull/15188)[#15190](https://github.com/infiniflow/ragflow/pull/15190)
+- **Data source connectors**: Implements new data source connectors for Outlook, OneDrive, Microsoft Teams, Slack, SharePoint, Salesforce, and Azure Blob Storage. [#15333](https://github.com/infiniflow/ragflow/pull/15333)[#15330](https://github.com/infiniflow/ragflow/pull/15330)[#15332](https://github.com/infiniflow/ragflow/pull/15332)[#15188](https://github.com/infiniflow/ragflow/pull/15188)[#15190](https://github.com/infiniflow/ragflow/pull/15190)[#15462](https://github.com/infiniflow/ragflow/pull/15462)[#15466](https://github.com/infiniflow/ragflow/pull/15466)
 
 ### Improvements
 
+- Removes `<think>` text buffering to ensure reasoning-capable models feel faster and more transparent during interactions. [#15891](https://github.com/infiniflow/ragflow/pull/15891)
 - Marks MySQL migrations as applied. [#15504](https://github.com/infiniflow/ragflow/pull/15504)
 
 ### Model Support
@@ -29,6 +30,7 @@ Released on June 11, 2026.
 - MiniMax-M3 model [#15513](https://github.com/infiniflow/ragflow/pull/15513)
 - Latest Anthropic models [#15516](https://github.com/infiniflow/ragflow/pull/15516)
 - Voyage 4 model family [#15516](https://github.com/infiniflow/ragflow/pull/15516)
+- Cohere model list. [#15576](https://github.com/infiniflow/ragflow/pull/15576)
 
 ### i18n
 
