@@ -23,7 +23,7 @@ from utils import wait_for
 
 @wait_for(30, 1, "Document parsing timeout")
 def condition(_dataset: DataSet, _document_ids: list[str] = None):
-    documents = _dataset.list_documents(page_size=1000)
+    documents = _dataset.list_documents(page_size=100)
 
     if _document_ids is None:
         for document in documents:
@@ -40,7 +40,7 @@ def condition(_dataset: DataSet, _document_ids: list[str] = None):
 
 
 def validate_document_details(dataset, document_ids):
-    documents = dataset.list_documents(page_size=1000)
+    documents = dataset.list_documents(page_size=100)
     for document in documents:
         if document.id in document_ids:
             assert document.run == "DONE"
