@@ -46,6 +46,7 @@ type Router struct {
 	difyRetrievalHandler *handler.DifyRetrievalHandler
 	pluginHandler        *handler.PluginHandler
 	modelHandler         *handler.ModelHandler
+	langfuseHandler      *handler.LangfuseHandler
 }
 
 // NewRouter create router
@@ -98,6 +99,7 @@ func NewRouter(
 		difyRetrievalHandler: difyRetrievalHandler,
 		pluginHandler:        pluginHandler,
 		modelHandler:         modelHandler,
+		langfuseHandler:      handler.NewLangfuseHandler(),
 	}
 }
 
@@ -409,6 +411,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 			plugin := v1.Group("/plugin")
 			{
 				plugin.GET("/tools", r.pluginHandler.ListLLMTools)
+			}
+
+			// Langfuse credential management routes.
+			langfuse := v1.Group("/langfuse")
+			{
+				langfuse.POST("/api-key", r.langfuseHandler.SetAPIKey)
+				langfuse.PUT("/api-key", r.langfuseHandler.SetAPIKey)
+				langfuse.GET("/api-key", r.langfuseHandler.GetAPIKey)
+				langfuse.DELETE("/api-key", r.langfuseHandler.DeleteAPIKey)
 			}
 
 			connector := v1.Group("/connectors")
