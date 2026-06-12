@@ -40,6 +40,7 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
+from api.utils.nickname_validation import validate_nickname
 from api.utils.crypt import decrypt
 from rag.utils.redis_conn import REDIS_CONN
 from api.apps import login_required, current_user, login_user, logout_user
@@ -357,6 +358,12 @@ async def setting_user():
             continue
         update_dict[k] = request_data[k]
 
+    if "nickname" in update_dict:
+        error_message, error_code = validate_nickname(update_dict["nickname"])
+        if error_message:
+            return get_json_result(data=False, message=error_message, code=error_code)
+        update_dict["nickname"] = update_dict["nickname"].strip()
+
     try:
         UserService.update_by_id(current_user.id, update_dict)
         return get_json_result(data=True)
@@ -512,6 +519,11 @@ async def user_add():
 
     # Construct user info data
     nickname = req["nickname"]
+    error_message, error_code = validate_nickname(nickname)
+    if error_message:
+        return get_json_result(data=False, message=error_message, code=error_code)
+    nickname = nickname.strip()
+
     user_dict = {
         "access_token": get_uuid(),
         "email": email_address,
