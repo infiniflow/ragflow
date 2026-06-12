@@ -39,6 +39,7 @@ export enum Routes {
   Profile = '/profile',
   Api = '/api',
   Mcp = '/mcp',
+  KnowledgeCompilation = '/knowledge-compilation',
   Team = '/team',
   Plan = '/plan',
   Model = '/model',
@@ -59,6 +60,7 @@ export enum Routes {
   Result = '/result',
   ResultView = `${Chunk}${Result}`,
   KnowledgeGraph = '/knowledge-graph',
+  Artifact = '/artifact',
   AgentLogPage = '/agent-log-page',
   AgentShare = '/agent/share',
   ChatShare = `${Chats}/share`,
@@ -195,6 +197,10 @@ const routeConfigOptions = [
             Component: () => import('@/pages/dataset/knowledge-graph'),
           },
           {
+            path: `${Routes.DatasetBase}${Routes.Artifact}/:id`,
+            Component: () => import('@/pages/dataset/artifact'),
+          },
+          {
             path: `${Routes.DatasetBase}${Routes.DataSetOverview}/:id`,
             Component: () => import('@/pages/dataset/dataset-overview'),
           },
@@ -288,6 +294,11 @@ const routeConfigOptions = [
           {
             path: `${Routes.UserSetting}${Routes.Mcp}`,
             Component: () => import('@/pages/user-setting/mcp'),
+          },
+          {
+            path: `${Routes.UserSetting}${Routes.KnowledgeCompilation}`,
+            Component: () =>
+              import('@/pages/user-setting/knowledge-compilation'),
           },
 
           {

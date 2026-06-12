@@ -445,6 +445,8 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'This will extract entities and relationships from all your documents in this dataset. The process may take a while to complete.',
       generateRaptor:
         'Performs recursive clustering and summarization of document chunks to build a hierarchical tree structure, enabling more context-aware retrieval across lengthy documents.',
+      generateArtifact:
+        'Compiles artifact pages (entity / concept / topic wiki) from every document configured with a knowledge compilation template. Only newly added chunks are processed on each run.',
       generate: 'Generate',
       raptor: 'RAPTOR',
       processingType: 'Processing type',
@@ -481,6 +483,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       files: 'files',
       configuration: 'Configuration',
       knowledgeGraph: 'Knowledge graph',
+      artifact: 'Artifact',
       name: 'Name',
       namePlaceholder: 'Please input name!',
       doc: 'Docs',
@@ -659,6 +662,11 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       tocExtraction: 'PageIndex',
       tocExtractionTip:
         " For existing chunks, generate a hierarchical table of contents (one directory per file). During queries, when Directory Enhancement is activated, the system will use a large model to determine which directory items are relevant to the user's question, thereby identifying the relevant chunks.",
+      knowledgeCompilationTemplate: 'Knowledge compilation template',
+      knowledgeCompilationTemplatePlaceholder:
+        'Select a saved knowledge compilation template',
+      knowledgeCompilationTemplateEmpty:
+        'No saved knowledge compilation templates available.',
       deleteGenerateModalContent: `
         <p>Deleting the generated <strong class='text-text-primary'>{{type}}</strong>  results
         will remove all derived entities and relationships from this dataset.
@@ -1462,6 +1470,7 @@ Example: Virtual Hosted Style`,
       model: 'Model providers',
       systemModelDescription: 'Please complete these settings before beginning',
       dataSources: 'Data sources',
+      knowledgeCompilation: 'Knowledge compilation',
       team: 'Team',
       system: 'System',
       logout: 'Log out',
@@ -2797,6 +2806,91 @@ Important structured information may include: names, dates, locations, events, k
       bulkManage: 'Bulk manage',
       exitBulkManage: 'Exit bulk manage',
       selected: 'Selected',
+    },
+    artifact: {
+      pages: 'Pages',
+      title: 'Title',
+      pageType: 'Type',
+      summary: 'Summary',
+      seeAlso: 'See also',
+      empty: 'No artifact pages have been compiled for this dataset yet.',
+      noMatches: 'No pages match your search.',
+      selectPrompt: 'Select a page on the left to view its content.',
+      notFound: 'This page no longer exists.',
+      clearAll: 'Clear all',
+      clearAllTitle: 'Clear all artifact data',
+      clearAllConfirm:
+        'Are you sure you want to clear all compiled artifact data for this dataset?',
+      clearAllBody:
+        'This deletes every MAP extract, REDUCE result, compilation plan, page draft, and published page. The next "Artifact" run will start from a clean slate. This cannot be undone.',
+      graph: 'Graph',
+      openGraph: 'Open knowledge graph',
+      graphTitle: 'Knowledge graph',
+      graphCounts: '{{entities}} entities · {{relations}} relations',
+      graphEmpty:
+        'No knowledge graph data yet. Run the Artifact generator to produce one.',
+    },
+    knowledgeCompilation: {
+      title: 'Knowledge compilation',
+      subtitle:
+        'Define reusable extraction templates that decide how documents are compiled into structured artifacts.',
+      addTemplate: 'Add template',
+      editTemplate: 'Edit template',
+      empty: 'No templates yet. Create one to get started.',
+      noDescription: 'No description',
+      confirmDelete:
+        'Are you sure you want to delete the following template? This cannot be undone.',
+      builtinTemplates: 'Built-in templates',
+      noBuiltins: 'No built-in templates available.',
+      confirmSwitchTitle: 'Discard current edits?',
+      confirmSwitchBody:
+        'Switching to "{{name}}" will overwrite your current edits in this form.',
+      discardAndSwitch: 'Discard and switch',
+      confirmCloseTitle: 'Discard unsaved changes?',
+      confirmCloseBody: 'Closing this panel will discard your unsaved changes.',
+      discardAndClose: 'Discard and close',
+      name: 'Template name',
+      namePlaceholder: 'A short label for this template',
+      nameDuplicated: 'A template with this name already exists.',
+      description: 'Description',
+      descriptionPlaceholder: 'Optional one-line summary',
+      entitySpecification: 'Entity specification',
+      relationSpecification: 'Relation specification',
+      claimSpecification: 'Claim specification',
+      conceptSpecification: 'Concept specification',
+      sectionDescription: 'Description',
+      entityDescriptionPlaceholder:
+        'Role prompt describing what the entity extractor should do.',
+      relationDescriptionPlaceholder:
+        'Role prompt describing what the relation extractor should do.',
+      field: 'Field',
+      addField: 'Add field',
+      fieldType: 'Type',
+      fieldTypePlaceholder: 'e.g. person, org, title, timestamp',
+      fieldDescription: 'Description',
+      fieldDescriptionPlaceholder: 'Short description of this type',
+      fieldRule: 'Rule',
+      fieldRulePlaceholder: 'Constraints and formatting rules for this type',
+      statement: 'Statement',
+      statementPlaceholder: 'What kind of factual sentence counts as a claim?',
+      subject: 'Subject',
+      subjectPlaceholder:
+        'How to choose the entity/concept this claim is about',
+      term: 'Term',
+      termPlaceholder: 'Concept name or thematic topic',
+      definitionExcerpt: 'Definition excerpt',
+      definitionExcerptPlaceholder:
+        'Verbatim or near-verbatim defining phrase from the chunk',
+      globalRules: 'Global compilation rules',
+      globalRulesPlaceholder:
+        'Cross-cutting rules applied to the whole extraction',
+      kind: {
+        page_index: 'PageIndex',
+        timeline: 'Timeline',
+        knowledge_graph: 'Knowledge graph',
+        artifacts: 'Artifacts',
+        empty: 'Empty',
+      },
     },
     search: {
       searchApps: 'Search apps',

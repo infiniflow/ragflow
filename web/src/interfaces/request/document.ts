@@ -11,6 +11,7 @@ export interface IChangeParserConfigRequestBody {
   image_table_context_window?: number;
   image_context_size?: number;
   table_context_size?: number;
+  compilation_template_ids?: string[];
   raptor?: {
     use_raptor?: boolean;
     prompt?: string;

@@ -26,6 +26,27 @@ export interface IChunkListResult {
   dataUpdatedAt?: number; // Timestamp when data was last updated - useful for cache busting
 }
 
+export interface IDocumentStructureGraph {
+  entities: Array<{
+    aliases?: string[];
+    mention_count?: number;
+    name: string;
+    type?: string;
+    discription?: string;
+    description?: string;
+  }>;
+  relations: Array<{
+    from: string;
+    to: string;
+    type?: string;
+  }>;
+}
+
+const EMPTY_DOCUMENT_STRUCTURE_GRAPH: IDocumentStructureGraph = {
+  entities: [],
+  relations: [],
+};
+
 export const useSelectChunkList = () => {
   const queryClient = useQueryClient();
   const data = queryClient.getQueriesData<{
@@ -118,6 +139,26 @@ export const useFetchChunk = (
   });
 
   return data;
+};
+
+export const useFetchDocumentStructureGraph = (enabled: boolean) => {
+  const { knowledgeId, documentId } = useGetKnowledgeSearchParams();
+  const { data, isFetching: loading } = useQuery({
+    queryKey: ['fetchDocumentStructureGraph', knowledgeId, documentId],
+    enabled: enabled && !!knowledgeId && !!documentId,
+    initialData: EMPTY_DOCUMENT_STRUCTURE_GRAPH,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await kbService.getDocumentStructureGraph({
+        kb_id: knowledgeId,
+        doc_id: documentId,
+      });
+
+      return data?.data ?? EMPTY_DOCUMENT_STRUCTURE_GRAPH;
+    },
+  });
+
+  return { data: data ?? EMPTY_DOCUMENT_STRUCTURE_GRAPH, loading };
 };
 
 export const useFetchNextChunkList = (

@@ -14,6 +14,8 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { DocumentParserType, ParseType } from '@/constants/knowledge';
+import { useTranslate } from '@/hooks/common-hooks';
+import { useFetchSavedCompilationTemplates } from '@/hooks/use-compilation-template-request';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { IModalProps } from '@/interfaces/common';
 import { IParserConfig } from '@/interfaces/database/document';
@@ -22,14 +24,13 @@ import { MetadataType } from '@/pages/dataset/components/metedata/constant';
 import {
   AutoMetadata,
   ChunkMethodItem,
-  EnableTocToggle,
   ImageContextWindow,
   ParseTypeItem,
 } from '@/pages/dataset/dataset-setting/configuration/common-item';
 import { zodResolver } from '@hookform/resolvers/zod';
 import omit from 'lodash/omit';
 import { useEffect, useMemo } from 'react';
-import { useForm, useWatch } from 'react-hook-form';
+import { useForm, useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import {
@@ -44,8 +45,18 @@ import { ExcelToHtmlFormField } from '../excel-to-html-form-field';
 import { LayoutRecognizeFormField } from '../layout-recognize-form-field';
 import { MaxTokenNumberFormField } from '../max-token-number-from-field';
 import { MinerUOptionsFormField } from '../mineru-options-form-field';
-import { ButtonLoading } from '../ui/button';
+import { Button, ButtonLoading } from '../ui/button';
+import { Checkbox } from '../ui/checkbox';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '../ui/command';
 import { Input } from '../ui/input';
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { DynamicPageRange } from './dynamic-page-range';
 import { useShowAutoKeywords } from './hooks';
 import {
@@ -54,6 +65,97 @@ import {
 } from './use-default-parser-values';
 
 const FormId = 'ChunkMethodDialogForm';
+
+function KnowledgeCompilationTemplateSelect() {
+  const form = useFormContext();
+  const { t } = useTranslate('knowledgeConfiguration');
+  const { data, loading } = useFetchSavedCompilationTemplates();
+
+  const options = useMemo(
+    () =>
+      data.templates.map((template) => ({
+        label: template.name,
+        value: template.id,
+      })),
+    [data.templates],
+  );
+
+  return (
+    <FormField
+      control={form.control}
+      name="parser_config.compilation_template_ids"
+      render={({ field }) => {
+        const selectedValues = Array.isArray(field.value) ? field.value : [];
+        const selectedLabels = options
+          .filter((option) => selectedValues.includes(option.value))
+          .map((option) => option.label);
+
+        return (
+          <FormItem>
+            <FormLabel>{t('knowledgeCompilationTemplate')}</FormLabel>
+            <FormControl>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={loading}
+                    className="w-full justify-between px-3 font-normal"
+                  >
+                    <span className="truncate text-left">
+                      {selectedLabels.length > 0
+                        ? selectedLabels.join(', ')
+                        : t('knowledgeCompilationTemplatePlaceholder')}
+                    </span>
+                    <span className="ml-2 text-xs text-text-secondary">
+                      {selectedValues.length}
+                    </span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  className="w-[var(--radix-popper-anchor-width)] p-0"
+                  align="start"
+                >
+                  <Command>
+                    <CommandInput placeholder={`${t('common.search')}...`} />
+                    <CommandList>
+                      <CommandEmpty>
+                        {t('knowledgeCompilationTemplateEmpty')}
+                      </CommandEmpty>
+                      <CommandGroup>
+                        {options.map((option) => {
+                          const checked = selectedValues.includes(option.value);
+                          return (
+                            <CommandItem
+                              key={option.value}
+                              value={option.label}
+                              onSelect={() => {
+                                const nextValues = checked
+                                  ? selectedValues.filter(
+                                      (value) => value !== option.value,
+                                    )
+                                  : [...selectedValues, option.value];
+                                field.onChange(nextValues);
+                              }}
+                            >
+                              <Checkbox checked={checked} className="mr-2" />
+                              <span>{option.label}</span>
+                            </CommandItem>
+                          );
+                        })}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        );
+      }}
+    />
+  );
+}
 
 interface IProps extends IModalProps<IChangeParserRequestBody> {
   loading: boolean;
@@ -122,6 +224,7 @@ export function ChunkMethodDialog({
         mineru_formula_enable: z.boolean().optional(),
         mineru_table_enable: z.boolean().optional(),
         mineru_lang: z.string().optional(),
+        compilation_template_ids: z.array(z.string()).optional(),
         raptor: z
           .object({
             use_raptor: z.boolean().optional(),
@@ -218,10 +321,14 @@ export function ChunkMethodDialog({
     const imageTableContextWindow = Number(
       parserConfig?.image_table_context_window || 0,
     );
+    const restParserConfig = omit(
+      parserConfig as any,
+      'compilation_template_id',
+    );
     const nextData = {
       ...data,
       parser_config: {
-        ...parserConfig,
+        ...restParserConfig,
         image_table_context_window: imageTableContextWindow,
         image_context_size: imageTableContextWindow,
         table_context_size: imageTableContextWindow,
@@ -248,7 +355,12 @@ export function ChunkMethodDialog({
         parseType: pipelineId ? ParseType.Pipeline : ParseType.BuiltIn,
         parser_config: fillDefaultParserValue({
           pages: pages.length > 0 ? pages : [{ from: 1, to: 1024 }],
-          ...omit(parserConfig, 'pages'),
+          ...omit(parserConfig, 'pages', 'compilation_template_id'),
+          compilation_template_ids:
+            parserConfig?.compilation_template_ids ??
+            ((parserConfig as any)?.compilation_template_id
+              ? [(parserConfig as any).compilation_template_id]
+              : []),
           image_table_context_window:
             parserConfig?.image_table_context_window ??
             parserConfig?.image_context_size ??
@@ -355,7 +467,7 @@ export function ChunkMethodDialog({
                 <div className="space-y-6 border-t-0.5 border-border-button pt-6 empty:hidden">
                   {selectedTag === DocumentParserType.Naive && (
                     <>
-                      <EnableTocToggle />
+                      <KnowledgeCompilationTemplateSelect />
                       <ImageContextWindow />
                     </>
                   )}

@@ -1,0 +1,33 @@
+kind: page_index
+display_name: PageIndex — Hierarchical table of contents
+config:
+  kind: page_index
+  entity:
+    description: >-
+      You are a robust Table-of-Contents (TOC) extractor.
+    fields:
+      - type: title
+        description: the heading text (clean, no page numbers or leader dots)
+        rule: |
+          - Length restriction:
+              • Chinese heading: ≤25 characters
+              • English heading: ≤80 characters
+          - "title" must be non-empty (or exactly "-1").
+          - If any part of a chunk has no valid heading, output that part as {"title":"-1", ...}.
+          - If a chunk contains multiple headings, expand them in order:
+              - Each heading → {"title":"...","chunk_id":"<chunk_ID>"}.
+          - When ambiguous, prefer "-1" unless the text strongly looks like a heading.
+          - Keep language of "title" the same as the input.
+          - Prefix like following must be titles: 第x章, 第N条, 第N节, 1, 1.1, 1.1.1 ...
+  relation:
+    description: >-
+      You are an expert logical reasoning assistant specializing in hierarchical titles.
+    fields:
+      - type: include
+        description: Upper-level title includes lower-level title.
+        rule: |
+          - "-1" is an invalid title; it does not belong to or include any other titles.
+          - Must follow the hierarchical index/numbering (e.g., "1", "2.1", "3.2.5") when present.
+          - Keep language of "title" the same as the input.
+          - 第N章 must include 第N条 or 第N节.
+  global_rules: ''

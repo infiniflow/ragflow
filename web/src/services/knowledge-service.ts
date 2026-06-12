@@ -157,6 +157,15 @@ const chunkService = {
 
     return response;
   },
+  getDocumentStructureGraph: async (params: Record<string, any>) => {
+    const datasetId = getDatasetId(params);
+    const documentId = getDocumentId(params);
+    return request.get(api.documentStructureGraph(datasetId, documentId), {
+      params: {
+        kind: params.kind,
+      },
+    });
+  },
   createChunk: async (payload: Record<string, any>) => {
     const datasetId = getDatasetId(payload);
     const documentId = getDocumentId(payload);

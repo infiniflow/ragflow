@@ -179,6 +179,12 @@ class ESConnection(ESConnectionBase):
                     bool_query.filter.append(
                         Q("bool", should=[Q("term", id=v), Q("term", _id=v)], minimum_should_match=1))
                 continue
+            if k == "must_not":
+                if isinstance(v, dict):
+                    for kk, vv in v.items():
+                        if kk == "exists":
+                            bool_query.must_not.append(Q("exists", field=vv))
+                    continue
             if not v:
                 continue
             if isinstance(v, list):
@@ -405,6 +411,12 @@ class ESConnection(ESConnectionBase):
             if k == "exists":
                 bool_query.filter.append(Q("exists", field=v))
                 continue
+            if k == "must_not":
+                if isinstance(v, dict):
+                    for kk, vv in v.items():
+                        if kk == "exists":
+                            bool_query.must_not.append(Q("exists", field=vv))
+                    continue
             if isinstance(v, list):
                 bool_query.filter.append(Q("terms", **{k: v}))
             elif isinstance(v, str) or isinstance(v, int):

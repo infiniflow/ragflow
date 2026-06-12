@@ -892,6 +892,8 @@ class Knowledgebase(DataBaseModel):
     raptor_task_finish_at = DateTimeField(null=True)
     mindmap_task_id = CharField(max_length=32, null=True, help_text="Mindmap task ID", index=True)
     mindmap_task_finish_at = DateTimeField(null=True)
+    artifact_task_id = CharField(max_length=32, null=True, help_text="Artifact compilation task ID", index=True)
+    artifact_task_finish_at = DateTimeField(null=True)
 
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
@@ -1112,6 +1114,23 @@ class MCPServer(DataBaseModel):
 
     class Meta:
         db_table = "mcp_server"
+
+
+class CompilationTemplate(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=True, index=True)
+    name = CharField(max_length=128, null=False, index=True)
+    description = TextField(null=True, default="")
+    kind = CharField(max_length=64, null=False, index=True)
+    config = JSONField(null=False, default={})
+    is_builtin = BooleanField(null=False, default=False, index=True)
+    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+
+    class Meta:
+        db_table = "compilation_template"
+        indexes = (
+            (("tenant_id", "name", "is_builtin", "status"), True),
+        )
 
 
 class Search(DataBaseModel):
@@ -1700,6 +1719,8 @@ def migrate_db():
     alter_db_add_column(migrator, "knowledgebase", "raptor_task_finish_at", CharField(null=True))
     alter_db_add_column(migrator, "knowledgebase", "mindmap_task_id", CharField(max_length=32, null=True, help_text="Mindmap task ID", index=True))
     alter_db_add_column(migrator, "knowledgebase", "mindmap_task_finish_at", CharField(null=True))
+    alter_db_add_column(migrator, "knowledgebase", "artifact_task_id", CharField(max_length=32, null=True, help_text="Artifact compilation task ID", index=True))
+    alter_db_add_column(migrator, "knowledgebase", "artifact_task_finish_at", DateTimeField(null=True))
     alter_db_column_type(migrator, "tenant_llm", "api_key", TextField(null=True, help_text="API KEY"))
     alter_db_add_column(migrator, "tenant_llm", "status", CharField(max_length=1, null=False, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True))
     alter_db_add_column(migrator, "connector2kb", "auto_parse", CharField(max_length=1, null=False, default="1", index=False))

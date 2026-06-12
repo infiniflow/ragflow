@@ -62,21 +62,34 @@ import json
 import logging
 from typing import Tuple
 
+import xxhash
+
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string
 from rag.nlp import rag_tokenizer
-from rag.prompts.generator import INPUT_UTILIZATION, gen_json, split_chunks
+from rag.prompts.generator import gen_json
 
 from ._common import (
+    build_chunk_batches as _build_chunk_batches,
     encode as _encode,
     find_vec_field as _find_vec_field,
     stable_row_id as _stable_row_id,
     tokenize_for_search as _tokenize_for_search,
     union_ordered as _union_ordered,
+    run_chunked_pipeline as _run_chunked_pipeline,
 )
 
 
 _STRUCT_TYPES = ("list", "set", "hypergraph")
+
+
+def _struct_normalize_kind(kind) -> str:
+    if not isinstance(kind, str):
+        return ""
+    normalized = kind.strip().lower().replace("-", "_")
+    if normalized in {"pageindex", "page_index", "knowledge_graph"}:
+        return "timeline"
+    return normalized
 
 
 def _struct_localize(value, language: str = "en") -> str:
@@ -114,12 +127,24 @@ def _struct_get(cfg: dict, *keys, default=None):
 
 def _struct_infer_type(parser_config: dict) -> str:
     explicit = _struct_get(parser_config, "compile_type")
-    if isinstance(explicit, str) and explicit.lower() in _STRUCT_TYPES:
-        return explicit.lower()
+    normalized_explicit = _struct_normalize_kind(explicit)
+    if normalized_explicit in _STRUCT_TYPES:
+        return normalized_explicit
+    kind = _struct_get(parser_config, "kind")
+    normalized_kind = _struct_normalize_kind(kind)
+    if normalized_kind:
+        return normalized_kind
     output = _struct_get(parser_config, "output", default={}) or {}
     if _struct_get(output, "entities") and _struct_get(output, "relations"):
         return "hypergraph"
     return "list"
+
+
+def _struct_supported_type(parser_config: dict, autotype: str) -> bool:
+    if autotype in _STRUCT_TYPES:
+        return True
+    kind = _struct_get(parser_config, "kind")
+    return _struct_normalize_kind(kind) == autotype
 
 
 def _struct_render_fields(fields: list, language: str) -> Tuple[str, str]:
@@ -147,29 +172,93 @@ def _struct_render_fields(fields: list, language: str) -> Tuple[str, str]:
     return "\n".join(lines), "{ " + ", ".join(skeleton_parts) + " }"
 
 
+def _struct_render_type_fields(fields: list, language: str, *, kind: str) -> Tuple[str, str]:
+    """Render the new compilation-template field shape.
+
+    New templates define allowed item ``type`` values with descriptions/rules,
+    rather than arbitrary output field names. The extraction output keeps a
+    stable shape so downstream merge logic can compare concrete items instead
+    of collapsing every item into the template type.
+    """
+    lines: list[str] = []
+    type_values: list[str] = []
+    for f in fields or []:
+        if not isinstance(f, dict):
+            continue
+        typ = f.get("type")
+        typ = typ.strip() if isinstance(typ, str) else ""
+        if not typ:
+            continue
+        type_values.append(typ)
+        lines.append(f"- type: {typ}")
+        desc = _struct_localize(f.get("description"), language)
+        rule = _struct_localize(f.get("rule"), language)
+        if desc:
+            lines.append(f"  description: {desc}")
+        if rule:
+            lines.append(f"  rule: {rule}")
+
+    if not type_values:
+        type_values.append("other")
+        lines.append("- type: other")
+
+    if kind == "relation":
+        skeleton = (
+            '{ "type": "<one of: ' + "|".join(type_values) + '>", '
+            '"source": "<known entity name>", '
+            '"target": "<known entity name>", '
+            '"description": "<evidence or relation description>" }'
+        )
+    else:
+        skeleton = (
+            '{ "type": "<one of: ' + "|".join(type_values) + '>", '
+            '"name": "<exact extracted item text>", '
+            '"description": "<evidence, definition, or detail from the source>" }'
+        )
+    return "\n".join(lines), skeleton
+
+
 def _struct_hypergraph_prompts(parser_config: dict, language: str = "en") -> Tuple[str, str]:
-    autotype = _struct_get(parser_config, "compile_type", default="graph")
+    autotype = _struct_infer_type(parser_config)
     guideline = _struct_get(parser_config, "guideline", default={}) or {}
     output = _struct_get(parser_config, "output", default={}) or {}
     options = _struct_get(parser_config, "options", default={}) or {}
+    uses_template_shape = bool(_struct_get(parser_config, "entity") or _struct_get(parser_config, "relation"))
 
     target = _struct_localize(_struct_get(guideline, "target"), language)
     rules_e = _struct_localize(_struct_get(guideline, "rules_for_entities"), language)
     rules_r = _struct_localize(_struct_get(guideline, "rules_for_relations"), language)
     rules_t = _struct_localize(_struct_get(guideline, "rules_for_time"), language)
+    global_rules = _struct_localize(_struct_get(parser_config, "global_rules"), language)
 
     observation_time = _struct_get(options, "observation_time") or datetime.date.today().isoformat()
     if rules_t and "{observation_time}" in rules_t:
         rules_t = rules_t.replace("{observation_time}", observation_time)
 
-    entities_cfg = _struct_get(output, "entities", default={}) or {}
-    relations_cfg = _struct_get(output, "relations", default={}) or {}
+    entities_cfg = (
+        _struct_get(parser_config, "entity", default={}) or {}
+        if uses_template_shape
+        else _struct_get(output, "entities", default={}) or {}
+    )
+    relations_cfg = (
+        _struct_get(parser_config, "relation", default={}) or {}
+        if uses_template_shape
+        else _struct_get(output, "relations", default={}) or {}
+    )
     ent_desc = _struct_localize(_struct_get(entities_cfg, "description"), language)
     rel_desc = _struct_localize(_struct_get(relations_cfg, "description"), language)
-    ent_fields_text, ent_skel = _struct_render_fields(_struct_get(entities_cfg, "fields", default=[]) or [], language)
-    rel_fields_text, rel_skel = _struct_render_fields(_struct_get(relations_cfg, "fields", default=[]) or [], language)
+    ent_fields = _struct_get(entities_cfg, "fields", default=[]) or []
+    rel_fields = _struct_get(relations_cfg, "fields", default=[]) or []
+    if uses_template_shape:
+        ent_fields_text, ent_skel = _struct_render_type_fields(ent_fields, language, kind="entity")
+        rel_fields_text, rel_skel = _struct_render_type_fields(rel_fields, language, kind="relation")
+    else:
+        ent_fields_text, ent_skel = _struct_render_fields(ent_fields, language)
+        rel_fields_text, rel_skel = _struct_render_fields(rel_fields, language)
 
     node_parts = [f"# Role and Task:\n{target}"] if target else []
+    if global_rules:
+        node_parts.append(f"## Global Rules:\n{global_rules}")
     if rules_e:
         node_parts.append(f"## Entity Extraction Rules:\n{rules_e}")
     if ent_desc:
@@ -179,7 +268,7 @@ def _struct_hypergraph_prompts(parser_config: dict, language: str = "en") -> Tup
         "## Response Format:\n"
         "Reply with a single JSON object of the form: "
         f'{{"items": [{ent_skel}, ...]}}.\n'
-        f"Auto-type: \"{autotype}\". "
+        f"Auto-type: \"{_struct_infer_type(parser_config)}\". "
         + ("Items must be unique. " if autotype == "set" else "")
         + "Return JSON only, no commentary."
     )
@@ -189,6 +278,8 @@ def _struct_hypergraph_prompts(parser_config: dict, language: str = "en") -> Tup
         return node_prompt, ""
 
     edge_parts = [f"# Role and Task:\n{target}"] if target else []
+    if global_rules:
+        edge_parts.append(f"## Global Rules:\n{global_rules}")
     if rules_r:
         edge_parts.append(f"## Relation Extraction Rules:\n{rules_r}")
     if rules_t:
@@ -210,6 +301,8 @@ def _struct_hypergraph_prompts(parser_config: dict, language: str = "en") -> Tup
 
 
 def _struct_entity_id_field(parser_config: dict) -> str:
+    if _struct_get(parser_config, "entity"):
+        return "name"
     identifiers = _struct_get(parser_config, "identifiers", default={}) or {}
     entity_id = _struct_get(identifiers, "entity_id")
     if isinstance(entity_id, str) and "{" not in entity_id and entity_id.strip():
@@ -252,6 +345,9 @@ async def _struct_extract_hypergraph(text: str, parser_config: dict, chat_mdl, l
             known_keys.append(v_str)
     known_str = "- " + "\n- ".join(known_keys) if known_keys else "(none)"
 
+    if not edge_prompt_template:
+        return nodes, []
+
     edge_prompt = edge_prompt_template.replace("{known_nodes}", known_str)
     edge_res = await gen_json(edge_prompt, user_prompt, chat_mdl, gen_conf={"temperature": 0.1})
     edges = _struct_unwrap_items(edge_res)
@@ -283,6 +379,72 @@ def _struct_payload_description(payload: dict) -> str:
     return " ".join(parts)
 
 
+def _struct_load_payload(doc: dict) -> dict:
+    try:
+        payload = json.loads(doc.get("content_with_weight") or "{}")
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _struct_graph_entity(payload: dict) -> dict | None:
+    name = payload.get("name") or payload.get("text") or payload.get("term") or payload.get("title")
+    name = str(name).strip() if name is not None else ""
+    if not name:
+        return None
+    typ = payload.get("type") or "other"
+    typ = str(typ).strip() if typ is not None else "other"
+    aliases = payload.get("aliases")
+    if isinstance(aliases, str):
+        aliases = [aliases]
+    if not isinstance(aliases, list):
+        aliases = []
+    aliases = [str(a).strip() for a in aliases if str(a).strip()]
+    description = payload.get("description") or payload.get("discription") or payload.get("definition_excerpt") or ""
+    return {
+        "aliases": aliases,
+        "mention_count": 1,
+        "name": name,
+        "type": typ or "other",
+        "discription": str(description).strip() if description is not None else "",
+    }
+
+
+def _struct_graph_relation(payload: dict) -> dict | None:
+    src = payload.get("source") or payload.get("src") or payload.get("from")
+    tgt = payload.get("target") or payload.get("tgt") or payload.get("to")
+    src = str(src).strip() if src is not None else ""
+    tgt = str(tgt).strip() if tgt is not None else ""
+    if not src or not tgt:
+        return None
+    typ = payload.get("type") or "related"
+    return {
+        "from": src,
+        "to": tgt,
+        "type": str(typ).strip() if typ is not None else "related",
+    }
+
+
+def _struct_merge_graph_entities(entities: list[dict]) -> list[dict]:
+    merged: dict[tuple[str, str], dict] = {}
+    order: list[tuple[str, str]] = []
+    for entity in entities:
+        key = (entity["name"], entity.get("type") or "other")
+        if key not in merged:
+            merged[key] = entity
+            order.append(key)
+            continue
+        target = merged[key]
+        target["mention_count"] = int(target.get("mention_count") or 0) + int(entity.get("mention_count") or 1)
+        aliases = target.setdefault("aliases", [])
+        for alias in entity.get("aliases") or []:
+            if alias not in aliases:
+                aliases.append(alias)
+        if not target.get("discription") and entity.get("discription"):
+            target["discription"] = entity["discription"]
+    return [merged[key] for key in order]
+
+
 def _struct_relation_member_fields(parser_config: dict) -> Tuple:
     """Return (source_field, target_field) for relation docs, or (None, None).
 
@@ -298,6 +460,9 @@ def _struct_relation_member_fields(parser_config: dict) -> Tuple:
         tgt = members.get("target") or members.get("tgt")
         if src or tgt:
             return src, tgt
+
+    if _struct_get(parser_config, "relation"):
+        return "source", "target"
 
     relations_cfg = _struct_get(
         _struct_get(parser_config, "output", default={}) or {},
@@ -421,7 +586,7 @@ async def _struct_process_batch(
 
         embed_inputs = [_struct_payload_description(p) for p in payloads]
         try:
-            embeddings = await _struct_embed(embed_inputs, embd_mdl)
+            embeddings = await _struct_embed(embd_mdl, embed_inputs)
         except Exception as e:
             logging.exception(f"compile_structure_from_text: embedding failed for batch {batch_idx}: {e}")
             return []
@@ -541,7 +706,7 @@ async def compile_structure_from_text(
         return []
 
     autotype = _struct_infer_type(parser_config)
-    if autotype not in _STRUCT_TYPES:
+    if not _struct_supported_type(parser_config, autotype):
         logging.error(f"compile_structure_from_text: unsupported type '{autotype}'")
         return []
 
@@ -749,7 +914,7 @@ def _struct_rebuild_es_doc(
 async def _struct_reembed_payload(payload: dict, embd_mdl):
     """Re-encode a merged payload's description with embd_mdl and return the vector."""
     text = _struct_payload_description(payload)
-    vecs = await _struct_embed([text], embd_mdl)
+    vecs = await _struct_embed(embd_mdl, [text])
     return vecs[0] if vecs else None
 
 
@@ -917,6 +1082,104 @@ async def _struct_es_dedup_one(
         return "skipped"
 
 
+def _struct_graph_row_id(doc_id: str, compile_kwd: str) -> str:
+    return xxhash.xxh64(f"{doc_id}:structure_graph:{compile_kwd}".encode("utf-8", "surrogatepass")).hexdigest()
+
+
+async def _struct_rebuild_graph_json(
+    tenant_id: str,
+    kb_id: str,
+    doc_id: str,
+    compile_kwd: str,
+) -> dict:
+    from common import settings
+    from rag.nlp import search as _rag_search
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    index = _rag_search.index_name(tenant_id)
+    fields = ["content_with_weight", "knowledge_graph_kwd"]
+    res = await thread_pool_exec(
+        settings.docStoreConn.search,
+        fields,
+        [],
+        {
+            "doc_id": [doc_id],
+            "compile_kwd": [compile_kwd],
+            "knowledge_graph_kwd": ["entity", "relation"],
+        },
+        [],
+        OrderByExpr(),
+        0,
+        10000,
+        index,
+        [kb_id],
+    )
+    rows = settings.docStoreConn.get_fields(res, fields)
+    entities: list[dict] = []
+    relations: list[dict] = []
+    for row in rows.values():
+        payload = _struct_load_payload(row)
+        if row.get("knowledge_graph_kwd") == "relation":
+            relation = _struct_graph_relation(payload)
+            if relation:
+                relations.append(relation)
+        else:
+            entity = _struct_graph_entity(payload)
+            if entity:
+                entities.append(entity)
+
+    return {
+        "entities": _struct_merge_graph_entities(entities),
+        "relations": relations,
+    }
+
+
+async def _struct_upsert_graph_json(
+    graph: dict,
+    tenant_id: str,
+    kb_id: str,
+    doc_id: str,
+    compile_kwd: str,
+) -> None:
+    from common import settings
+    from rag.nlp import search as _rag_search
+
+    index = _rag_search.index_name(tenant_id)
+    row_id = _struct_graph_row_id(doc_id, compile_kwd)
+    row = {
+        "id": row_id,
+        "content_with_weight": json.dumps(graph, ensure_ascii=False),
+        "compile_kwd": compile_kwd,
+        "knowledge_graph_kwd": "graph",
+        "doc_id": doc_id,
+        "kb_id": kb_id,
+        "available_int": 0,
+    }
+    old = await thread_pool_exec(settings.docStoreConn.get, row_id, index, [kb_id])
+    if old:
+        await thread_pool_exec(
+            settings.docStoreConn.update,
+            {"id": row_id},
+            {k: v for k, v in row.items() if k != "id"},
+            index,
+            kb_id,
+        )
+    else:
+        await thread_pool_exec(settings.docStoreConn.insert, [row], index, kb_id)
+
+
+async def rebuild_structure_graph_json(
+    tenant_id: str,
+    kb_id: str,
+    doc_id: str,
+    compile_kwd: str,
+) -> dict:
+    """Rebuild and persist the compact document-scoped structure graph."""
+    graph = await _struct_rebuild_graph_json(tenant_id, kb_id, doc_id, compile_kwd)
+    await _struct_upsert_graph_json(graph, tenant_id, kb_id, doc_id, compile_kwd)
+    return graph
+
+
 async def merge_compiled_structures(
     docs: list[dict],
     chat_mdl,
@@ -962,6 +1225,12 @@ async def merge_compiled_structures(
         docs, chat_mdl, embd_mdl, similarity_threshold,
     )
 
+    graph_keys = {
+        (str(d.get("doc_id")), str(d.get("compile_kwd")))
+        for d in deduped
+        if d.get("doc_id") and d.get("compile_kwd") and d.get("knowledge_graph_kwd") in ("entity", "relation")
+    }
+
     inserted = 0
     updated = 0
     for d in deduped:
@@ -977,14 +1246,27 @@ async def merge_compiled_structures(
         elif result == "updated":
             updated += 1
 
+    graphs = 0
+    for doc_id, compile_kwd in graph_keys:
+        try:
+            await rebuild_structure_graph_json(tenant_id, kb_id, doc_id, compile_kwd)
+            graphs += 1
+        except Exception:
+            logging.exception(
+                "merge_compiled_structures: graph rebuild failed for doc=%s compile_kwd=%s",
+                doc_id, compile_kwd,
+            )
+
     return {
         "inserted": inserted,
         "updated": updated,
         "duplicates_dropped": dropped,
+        "graphs": graphs,
     }
 
 
 __all__ = [
     "compile_structure_from_text",
     "merge_compiled_structures",
+    "rebuild_structure_graph_json",
 ]

@@ -16,6 +16,7 @@
 import base64
 import binascii
 import datetime
+import json
 import logging
 import re
 
@@ -53,6 +54,8 @@ from api.utils.reference_metadata_utils import (
 )
 from common import settings
 from common.constants import LLMType, ParserType, RetCode, TaskStatus
+from common.doc_store.doc_store_base import OrderByExpr
+from rag.advanced_rag.knowlege_compile.structure import rebuild_structure_graph_json
 from common.metadata_utils import convert_conditions, meta_filter
 from common.misc_utils import thread_pool_exec
 from common.string_utils import is_content_empty, remove_redundant_spaces
@@ -145,6 +148,15 @@ def _get_dataset_tenant_id(dataset_id):
     if not ok:
         return None
     return kb.tenant_id
+
+
+def _compilation_template_kind(kind) -> str:
+    if not isinstance(kind, str):
+        return ""
+    normalized = kind.strip().lower().replace("-", "_")
+    if normalized in {"pageindex", "page_index", "knowledge_graph"}:
+        return "timeline"
+    return normalized
 
 
 def _resolve_reference_metadata(req: dict, search_config: dict | None = None):
@@ -397,6 +409,7 @@ async def list_chunks(tenant_id, dataset_id, document_id):
         "size": size,
         "question": question,
         "sort": True,
+        "must_not": {"exists": "compile_kwd"},
     }
     if "available" in req:
         query["available_int"] = 1 if req["available"] == "true" else 0
@@ -407,6 +420,8 @@ async def list_chunks(tenant_id, dataset_id, document_id):
         if not chunk:
             return get_result(message=f"Chunk not found: {dataset_id}/{req.get('id')}", code=RetCode.DATA_ERROR)
         if str(chunk.get("doc_id", chunk.get("document_id"))) != str(document_id):
+            return get_result(message=f"Chunk not found: {dataset_id}/{req.get('id')}", code=RetCode.DATA_ERROR)
+        if chunk.get("compile_kwd"):
             return get_result(message=f"Chunk not found: {dataset_id}/{req.get('id')}", code=RetCode.DATA_ERROR)
         _strip_chunk_runtime_fields(chunk)
         res["total"] = 1
@@ -476,10 +491,97 @@ async def get_chunk(tenant_id, dataset_id, document_id, chunk_id):
         chunk = settings.docStoreConn.get(chunk_id, search.index_name(dataset_tenant_id), [dataset_id])
         if chunk is None or str(chunk.get("doc_id", chunk.get("document_id"))) != str(document_id):
             return get_result(data=False, message="Chunk not found!", code=RetCode.DATA_ERROR)
+        if chunk.get("compile_kwd"):
+            return get_result(data=False, message="Chunk not found!", code=RetCode.DATA_ERROR)
         return get_result(data=_strip_chunk_runtime_fields(chunk))
     except Exception as e:
         if str(e).find("NotFoundError") >= 0:
             return get_result(data=False, message="Chunk not found!", code=RetCode.DATA_ERROR)
+        return server_error_response(e)
+
+
+@manager.route("/datasets/<dataset_id>/documents/<document_id>/structure/graph", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def get_document_structure_graph(tenant_id, dataset_id, document_id):
+    from rag.nlp import search
+
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
+    if not dataset_tenant_id:
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    docs = DocumentService.query(id=document_id, kb_id=dataset_id)
+    if not docs:
+        return get_error_data_result(message=f"You don't own the document {document_id}.")
+
+    kind = request.args.get("kind") or ""
+    if not kind:
+        parser_config = docs[0].parser_config or {}
+        template_ids = []
+        if isinstance(parser_config, dict):
+            ids = parser_config.get("compilation_template_ids")
+            if isinstance(ids, list):
+                template_ids = [str(x).strip() for x in ids if isinstance(x, str) and x.strip()]
+            elif isinstance(parser_config.get("compilation_template_id"), str):
+                template_ids = [parser_config["compilation_template_id"].strip()]
+            ext = parser_config.get("ext")
+            if not template_ids and isinstance(ext, dict):
+                ids = ext.get("compilation_template_ids")
+                if isinstance(ids, list):
+                    template_ids = [str(x).strip() for x in ids if isinstance(x, str) and x.strip()]
+                elif isinstance(ext.get("compilation_template_id"), str):
+                    template_ids = [ext["compilation_template_id"].strip()]
+        if template_ids:
+            from api.db.services.compilation_template_service import CompilationTemplateService
+
+            for template_id in template_ids:
+                template = CompilationTemplateService.get_saved(template_id, tenant_id)
+                config = template.get("config") if template else {}
+                candidate = _compilation_template_kind(config.get("kind") if isinstance(config, dict) else "")
+                if candidate and candidate != "artifacts":
+                    kind = candidate
+                    break
+    kind = _compilation_template_kind(kind)
+    if not kind or kind == "artifacts":
+        return get_result(data={"entities": [], "relations": []})
+
+    index_name = search.index_name(dataset_tenant_id)
+    fields = ["content_with_weight"]
+    condition = {
+        "doc_id": [document_id],
+        "compile_kwd": [kind],
+        "knowledge_graph_kwd": ["graph"],
+    }
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            fields,
+            [],
+            condition,
+            [],
+            OrderByExpr(),
+            0,
+            1,
+            index_name,
+            [dataset_id],
+        )
+        rows = settings.docStoreConn.get_fields(res, fields)
+        if rows:
+            row = next(iter(rows.values()))
+            graph = json.loads(row.get("content_with_weight") or "{}")
+            if isinstance(graph, dict):
+                return get_result(data={
+                    "entities": graph.get("entities") or [],
+                    "relations": graph.get("relations") or [],
+                })
+
+        graph = await rebuild_structure_graph_json(dataset_tenant_id, dataset_id, document_id, kind)
+        return get_result(data={
+            "entities": graph.get("entities") or [],
+            "relations": graph.get("relations") or [],
+        })
+    except Exception as e:
         return server_error_response(e)
 
 
@@ -595,7 +697,11 @@ async def rm_chunk(tenant_id, dataset_id, document_id):
         if req.get("delete_all") is True:
             doc = docs[0]
             DocumentService.delete_chunk_images(doc, dataset_tenant_id)
-            chunk_number = settings.docStoreConn.delete({"doc_id": document_id}, search.index_name(dataset_tenant_id), dataset_id)
+            chunk_number = settings.docStoreConn.delete(
+                {"doc_id": document_id, "must_not": {"exists": "compile_kwd"}},
+                search.index_name(dataset_tenant_id),
+                dataset_id,
+            )
             if chunk_number != 0:
                 DocumentService.decrement_chunk_num(document_id, dataset_id, 1, chunk_number, 0)
             return get_result(message=f"deleted {chunk_number} chunks")
@@ -603,7 +709,7 @@ async def rm_chunk(tenant_id, dataset_id, document_id):
 
     unique_chunk_ids, duplicate_messages = check_duplicate_ids(chunk_ids, "chunk")
     chunk_number = settings.docStoreConn.delete(
-        {"doc_id": document_id, "id": unique_chunk_ids},
+        {"doc_id": document_id, "id": unique_chunk_ids, "must_not": {"exists": "compile_kwd"}},
         search.index_name(dataset_tenant_id),
         dataset_id,
     )

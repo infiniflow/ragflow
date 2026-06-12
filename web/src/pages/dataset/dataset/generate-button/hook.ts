@@ -47,6 +47,7 @@ export const useTraceGenerate = ({ open }: { open: boolean }) => {
   const { id } = useParams();
   const [isLoopGraphRun, setLoopGraphRun] = useState(false);
   const [isLoopRaptorRun, setLoopRaptorRun] = useState(false);
+  const [isLoopArtifactRun, setLoopArtifactRun] = useState(false);
   const { data: graphRunData, isFetching: graphRunloading } =
     useQuery<ITraceInfo>({
       queryKey: [GenerateType.KnowledgeGraph, id, open],
@@ -77,6 +78,20 @@ export const useTraceGenerate = ({ open }: { open: boolean }) => {
       },
     });
 
+  const { data: artifactRunData, isFetching: artifactRunloading } =
+    useQuery<ITraceInfo>({
+      queryKey: [GenerateType.Artifact, id, open],
+      gcTime: 0,
+      refetchInterval: isLoopArtifactRun ? 5000 : false,
+      retry: 3,
+      retryDelay: 1000,
+      enabled: open,
+      queryFn: async () => {
+        const { data } = await traceIndex(id, 'artifact');
+        return data?.data || {};
+      },
+    });
+
   useEffect(() => {
     setLoopGraphRun(
       !!(
@@ -96,11 +111,24 @@ export const useTraceGenerate = ({ open }: { open: boolean }) => {
       ),
     );
   }, [raptorRunData?.progress]);
+
+  useEffect(() => {
+    setLoopArtifactRun(
+      !!(
+        (artifactRunData?.progress || artifactRunData?.progress === 0) &&
+        artifactRunData?.progress < 1 &&
+        artifactRunData?.progress >= 0
+      ),
+    );
+  }, [artifactRunData?.progress]);
+
   return {
     graphRunData,
     graphRunloading,
     raptorRunData,
     raptorRunloading,
+    artifactRunData,
+    artifactRunloading,
   };
 };
 
@@ -143,7 +171,11 @@ export const useDatasetGenerate = () => {
     mutationKey: [DatasetKey.generate],
     mutationFn: async ({ type }: { type: GenerateType }) => {
       const indexType =
-        type === GenerateType.KnowledgeGraph ? 'graph' : 'raptor';
+        type === GenerateType.KnowledgeGraph
+          ? 'graph'
+          : type === GenerateType.Artifact
+            ? 'artifact'
+            : 'raptor';
       const { data } = await runIndex(id, indexType);
       if (data.code === 0) {
         message.success(t('message.operated'));

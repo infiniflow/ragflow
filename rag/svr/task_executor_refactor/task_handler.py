@@ -1,4 +1,4 @@
-#
+﻿#
 #  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,6 +24,7 @@ import asyncio
 import logging
 import json
 from rag.advanced_rag.knowlege_compile.artifact import artifact_map_from_chunks, artifact_plan_from_reduction, artifact_reduce_from_extracts, artifact_refine_from_plan
+from rag.advanced_rag.knowlege_compile.structure import compile_structure_from_text, merge_compiled_structures
 import xxhash
 
 from timeit import default_timer as timer
@@ -31,6 +32,7 @@ from typing import Callable, Dict, List, Optional
 
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.compilation_template_service import CompilationTemplateService
 from api.db.joint_services.memory_message_service import handle_save_to_memory_task
 from api.db.joint_services.tenant_model_service import (
     get_tenant_default_model_by_type,
@@ -56,6 +58,36 @@ from rag.graphrag.general.index import run_graphrag_for_kb
 from api.db.services.file2document_service import File2DocumentService
 from rag.prompts.generator import run_toc_from_text
 from common import settings
+
+
+
+def _parser_config_compilation_template_ids(parser_config) -> list[str]:
+    if not isinstance(parser_config, dict):
+        return []
+    ids = parser_config.get("compilation_template_ids")
+    if isinstance(ids, list):
+        return [str(x).strip() for x in ids if isinstance(x, str) and x.strip()]
+    legacy = parser_config.get("compilation_template_id")
+    if isinstance(legacy, str) and legacy.strip():
+        return [legacy.strip()]
+    ext = parser_config.get("ext")
+    if isinstance(ext, dict):
+        ids = ext.get("compilation_template_ids")
+        if isinstance(ids, list):
+            return [str(x).strip() for x in ids if isinstance(x, str) and x.strip()]
+        legacy = ext.get("compilation_template_id")
+        if isinstance(legacy, str) and legacy.strip():
+            return [legacy.strip()]
+    return []
+
+
+def _compilation_template_kind(kind) -> str:
+    if not isinstance(kind, str):
+        return ""
+    normalized = kind.strip().lower().replace("-", "_")
+    if normalized in {"pageindex", "page_index", "knowledge_graph"}:
+        return "timeline"
+    return normalized
 
 
 class TaskHandler:
@@ -135,7 +167,7 @@ class TaskHandler:
             ctx.progress_cb(-1, msg="Task has been canceled.")
             return
 
-        # Language defaults to "Chinese" via TaskContext._DEFAULTS — safe to bind model directly.
+        # Language defaults to "Chinese" via TaskContext._DEFAULTS 鈥?safe to bind model directly.
         # Bind embedding model (matching original do_handle_task order: bind + init_kb before routing)
         result = await self._bind_embedding_model()
         if result is None:
@@ -161,6 +193,8 @@ class TaskHandler:
                 await self._run_graphrag(embedding_model)
             elif task_type == "mindmap":
                 ctx.progress_cb(1, "place holder")
+            elif task_type == "artifact":
+                await self._run_artifact(embedding_model)
             elif task_type == "evaluation":
                 await self._run_evaluation()
             elif task_type == "reembedding":
@@ -488,21 +522,16 @@ class TaskHandler:
 
         ctx.progress_cb(msg="Indexing done ({:.2f}s).".format(timer() - start_ts))
 
-        # Artifact MRP compilation — runs AFTER chunk insert so REFINE's
-        # ``_artifact_load_chunks_by_id(chunk_ids, …)`` actually finds the rows
-        # in ES (previously this ran before insert, which left REFINE
-        # unable to fetch the source chunks and produced the
-        # "still unresolved after fallback" warning).
-        if ctx.parser_id.lower() == "naive" and ctx.parser_config.get("toc_extraction", False):
-            try:
-                await self._artifact_compilation(ctx, chunks, ctx.progress_cb)
-            except Exception:
-                logging.exception("artifact_compilation failed for doc %s", ctx.doc_id)
+        # Artifact compilation runs as a separate KB-wide task that the user
+        # triggers from the "Artifact" generate button 鈥?handled by
+        # TaskHandler._run_artifact when task_type == "artifact".
 
         toc_chunk = await self._process_toc_thread(toc_thread)
         if toc_chunk:
             ctx.recording_context.record("toc_chunk", [toc_chunk])
             await post_processor.insert_toc_chunk(toc_chunk, chunk_service)
+
+        await self._run_document_structure_compile(chunks, embedding_model)
 
         if ctx.has_canceled_func(task_id):
             ctx.progress_cb(-1, msg="Task has been canceled.")
@@ -525,6 +554,60 @@ class TaskHandler:
             )
         )
 
+    async def _run_document_structure_compile(self, chunks: list[dict], embedding_model: LLMBundle) -> None:
+        """Run document-scoped knowledge compilation for non-artifact templates."""
+        ctx = self._task_context
+        template_ids = _parser_config_compilation_template_ids(ctx.parser_config)
+        if not template_ids:
+            return
+
+        compile_chunks = sorted(chunks, key=lambda d: (
+            d.get("page_num_int", 0)[0] if isinstance(d.get("page_num_int", 0), list) else d.get("page_num_int", 0),
+            d.get("top_int", 0)[0] if isinstance(d.get("top_int", 0), list) else d.get("top_int", 0)
+        ))
+
+        doc_task_llm_id = ctx.parser_config.get("llm_id") or ctx.llm_id
+        chat_model_config = get_model_config_from_provider_instance(
+            ctx.tenant_id, LLMType.CHAT, doc_task_llm_id
+        )
+        chat_mdl = LLMBundle(ctx.tenant_id, chat_model_config, lang=ctx.language)
+
+        total = len(template_ids)
+        progress_cb = ctx.progress_cb
+        for idx, template_id in enumerate(template_ids):
+            template = CompilationTemplateService.get_saved(template_id, ctx.tenant_id)
+            if not template:
+                logging.warning("document_structure_compile: template %s not found", template_id)
+                continue
+
+            parser_cfg = template.get("config") or {}
+            if not isinstance(parser_cfg, dict):
+                logging.warning("document_structure_compile: template %s config is invalid", template_id)
+                continue
+
+            kind = _compilation_template_kind(parser_cfg.get("kind"))
+            if not kind or kind == "artifacts":
+                continue
+
+            progress_cb(msg=f"Start document knowledge compilation ({idx + 1}/{total}) ...")
+            docs = await compile_structure_from_text(
+                compile_chunks,
+                parser_cfg,
+                chat_mdl,
+                embedding_model,
+                ctx.doc_id,
+                language=ctx.language,
+                callback=progress_cb,
+            )
+            info = await merge_compiled_structures(
+                docs,
+                chat_mdl,
+                embedding_model,
+                ctx.tenant_id,
+                ctx.kb_id,
+            )
+            ctx.recording_context.record(f"document_structure_compile:{template_id}", info)
+            progress_cb(msg=f"Document knowledge compilation done ({idx + 1}/{total}): {info}")
 
     async def _process_toc_thread(self, toc_thread):
         try:
@@ -542,79 +625,125 @@ class TaskHandler:
         """Get binary from storage."""
         return await thread_pool_exec(settings.STORAGE_IMPL.get, bucket, name)
     
-    async def _artifact_compilation(self, ctx: TaskContext, docs: List[Dict], progress_callback):
-        """Run the artifact MRP pipeline end-to-end: MAP (this doc's chunks) → REDUCE
-        → PLAN → REFINE (KB-wide). Persists per-stage results to ES under
-        ``compile_kwd`` markers (artifact_map_extract, artifact_reduce_result,
-        artifact_compilation_plan, artifact_page_draft, artifact_page).
+    async def _run_artifact(self, embedding_model):
+        """KB-wide artifact compilation task. Runs after the user clicks the
+        "Artifact" button in the dataset generate menu. Iterates every doc in
+        the KB whose parser config has ``compilation_template_ids`` selected,
+        runs MAP per-doc (which uses ES-stored resume rows to skip
+        chunks already processed in a previous run), then runs REDUCE / PLAN /
+        REFINE KB-wide and persists pages.
 
-        Reduce / Plan / Refine run with ``force_rerun=True`` so each new doc
-        upload refreshes the KB-wide artifact. The artifact_page rows include
-        ``artifact_kb_id_kwd``, ``artifact_doc_id_kwd``, ``artifact_outlinks_kwd``,
-        ``artifact_slug_kwd``, ``artifact_title_kwd``, and ``artifact_page_type_kwd`` so the
-        UI can fetch any page from ES by ``(kb_id, slug)`` — the embedded
-        ``[text](artifact/{kb_id}/{slug})`` links in ``content_with_weight`` carry
-        exactly that pair.
+        Batching: each MAP call uses ``batch_size_cap=8`` and
+        ``window_fraction=0.5`` 鈥?i.e. roll over to a new batch when the
+        current batch reaches 8 chunks OR its accumulated token count
+        exceeds 50% of the chat model's ``max_length``.
         """
-        progress_callback(msg="Start to compile artifact ...")
-        
-        chat_model_config = get_model_config_from_provider_instance(
-            ctx.tenant_id, LLMType.CHAT, ctx.llm_id
-        )
-        chat_mdl = LLMBundle(ctx.tenant_id, chat_model_config, lang=ctx.language)
-        embedding_model, _ = await self._bind_embedding_model()
-        docs = sorted(docs, key=lambda d: (
-            d.get("page_num_int", 0)[0] if isinstance(d.get("page_num_int", 0), list) else d.get("page_num_int", 0),
-            d.get("top_int", 0)[0] if isinstance(d.get("top_int", 0), list) else d.get("top_int", 0)
-        ))
+        ctx = self._task_context
+        progress = ctx.progress_cb
+        progress(0.0, "Loading documents for artifact compilation...")
 
-        parser_cfg = ctx.parser_config.get("artifact_compilation") or {}
-        kb_name = parser_cfg.get("kb_name") if isinstance(parser_cfg, dict) else None
-        kb_description = parser_cfg.get("kb_description") if isinstance(parser_cfg, dict) else None
-        
-        settings.docStoreConn.delete({"compile_kwd": "artifact_map_extract"}, search.index_name(ctx.tenant_id), ctx.kb_id)
-        settings.docStoreConn.delete({"compile_kwd": "artifact_reduce_result"}, search.index_name(ctx.tenant_id), ctx.kb_id)
-        settings.docStoreConn.delete({"compile_kwd": "artifact_compilation_plan"}, search.index_name(ctx.tenant_id), ctx.kb_id)
-        settings.docStoreConn.delete({"compile_kwd": "artifact_page_draft"}, search.index_name(ctx.tenant_id), ctx.kb_id)
-        settings.docStoreConn.delete({"compile_kwd": "artifact_page"}, search.index_name(ctx.tenant_id), ctx.kb_id)
-        for kwd in ("artifact_map_extract", "artifact_reduce_result", "artifact_compilation_plan", "artifact_page_draft", "artifact_page"):
-            settings.docStoreConn.delete({"compile_kwd": kwd}, search.index_name(ctx.tenant_id), ctx.kb_id)
+        # 1. Resolve KB metadata for PLAN.
+        ok, kb = KnowledgebaseService.get_by_id(ctx.kb_id)
+        if not ok:
+            progress(-1, f"KB {ctx.kb_id} not found.")
+            return
+        kb_name = kb.name
+        kb_description = kb.description
+
+        # 2. Pick docs eligible for artifact compilation (those with a
+        # compilation_template_ids stamped into their parser_config). The
+        # frontend Artifact button targets the KB, but the per-doc opt-in
+        # is what gates inclusion.
+        all_docs, _ = await thread_pool_exec(
+            DocumentService.get_by_kb_id,
+            kb_id=ctx.kb_id, page_number=0, items_per_page=0,
+            orderby="create_time", desc=False,
+            keywords="", run_status=[], types=[], suffix=[],
+        )
+        eligible = []
+        for d in all_docs or []:
+            pc = d.get("parser_config") or {}
+            for template_id in _parser_config_compilation_template_ids(pc):
+                template = CompilationTemplateService.get_saved(template_id, ctx.tenant_id)
+                config = template.get("config") if template else {}
+                kind = _compilation_template_kind(config.get("kind") if isinstance(config, dict) else "")
+                if kind == "artifacts":
+                    eligible.append((d, template_id))
+                    break
+        if not eligible:
+            progress(1.0, "No documents are configured for artifact compilation.")
+            return
+
+        # 3. Resolve chat model for the KB-level task. There's no per-doc
+        # LLM here (the task has no real ctx.doc_id) so fall back to the
+        # tenant default chat model 鈥?same pattern raptor/graphrag use.
+        chat_model_config = get_tenant_default_model_by_type(ctx.tenant_id, LLMType.CHAT)
+        chat_mdl = LLMBundle(ctx.tenant_id, chat_model_config, lang=ctx.language)
 
         def _stage_cb(prefix: str):
             def _cb(*args, **kwargs):
                 try:
                     if args and isinstance(args[0], (int, float)):
                         msg = args[1] if len(args) > 1 else kwargs.get("msg", "")
-                        progress_callback(msg=f"{prefix} {msg}")
+                        progress(msg=f"{prefix} {msg}")
                     else:
                         msg = kwargs.get("msg") or (args[0] if args else "")
-                        progress_callback(msg=f"{prefix} {msg}")
+                        progress(msg=f"{prefix} {msg}")
                 except Exception:
-                    logging.exception("artifact_compilation: progress callback failed")
+                    logging.exception("artifact: progress callback failed")
             return _cb
 
-        async def _run():
-            # Phase 1 — MAP: per-chunk extraction for this doc.
-            # ``parser_cfg`` is the ``artifact_compilation`` block on the KB's
-            # parser config. When it carries ``output.entities.fields`` /
-            # ``output.relations.fields`` and / or
-            # ``guideline.rules_for_entities|relations``, those drive the
-            # entity / relation schema and Rules section of the MAP prompt;
-            # otherwise the built-in artifact defaults are used.
-            phase1 = await artifact_map_from_chunks(
-                chunks=docs,
-                chat_mdl=chat_mdl,
-                embd_mdl=embedding_model,
-                doc_id=ctx.doc_id,
-                tenant_id=ctx.tenant_id,
-                kb_id=ctx.kb_id,
-                language=ctx.language,
-                callback=_stage_cb("[artifact MAP]"),
-                parser_config=parser_cfg,
-            )
-            logging.info("Artifact compilation PHASE【1】"+ json.dumps(phase1, ensure_ascii=False, indent=4))
-            # Phase 2 — REDUCE: KB-wide dedup of every MAP extract in this KB.
-            phase2 = await artifact_reduce_from_extracts(
+        # 4. MAP per eligible doc. Each MAP call's own resume mechanism
+        # (artifact_map_extract rows keyed by chunk_id) skips chunks that
+        # were already processed in a prior run 鈥?this is the incremental
+        # behavior the user asked for.
+        n_docs = len(eligible)
+        for i, (doc, template_id) in enumerate(eligible):
+            doc_id = doc["id"]
+            progress(0.05 + 0.6 * (i / n_docs), f"MAP {i + 1}/{n_docs}: {doc.get('name', doc_id)}")
+
+            # Resolve the per-doc template's config (different docs may use
+            # different templates within the same KB).
+            template = CompilationTemplateService.get_saved(template_id, ctx.tenant_id)
+            if not template:
+                logging.warning("artifact: template %s not found for doc %s; skipping", template_id, doc_id)
+                continue
+            parser_cfg = template.get("config") or {}
+
+            chunks = await self._load_chunks_for_doc(ctx.tenant_id, ctx.kb_id, doc_id)
+            if not chunks:
+                logging.info("artifact: no chunks for doc %s; skipping", doc_id)
+                continue
+
+            try:
+                phase1 = await artifact_map_from_chunks(
+                    chunks=chunks,
+                    chat_mdl=chat_mdl,
+                    embd_mdl=embedding_model,
+                    doc_id=doc_id,
+                    tenant_id=ctx.tenant_id,
+                    kb_id=ctx.kb_id,
+                    language=ctx.language,
+                    callback=_stage_cb(f"[artifact MAP {i + 1}/{n_docs}]"),
+                    parser_config=parser_cfg,
+                    batch_size_cap=8,
+                    window_fraction=0.5,
+                )
+                logging.info(
+                    "artifact: MAP doc=%s entities=%d concepts=%d claims=%d relations=%d",
+                    doc_id,
+                    len(phase1.get("entities") or []),
+                    len(phase1.get("concepts") or []),
+                    len(phase1.get("claims") or []),
+                    len(phase1.get("relations") or []),
+                )
+            except Exception:
+                logging.exception("artifact: MAP failed for doc %s", doc_id)
+
+        # 5. REDUCE / PLAN / REFINE KB-wide.
+        try:
+            progress(0.65, "Reducing extracts KB-wide...")
+            await artifact_reduce_from_extracts(
                 chat_mdl=chat_mdl,
                 embd_mdl=embedding_model,
                 tenant_id=ctx.tenant_id,
@@ -622,9 +751,9 @@ class TaskHandler:
                 force_rerun=True,
                 callback=_stage_cb("[artifact REDUCE]"),
             )
-            logging.info("Artifact compilation PHASE【2】"+ json.dumps(phase2, ensure_ascii=False, indent=4))
-            # Phase 3 — PLAN: KB-wide compilation plan.
-            phase3 = await artifact_plan_from_reduction(
+
+            progress(0.75, "Planning artifact pages...")
+            await artifact_plan_from_reduction(
                 chat_mdl=chat_mdl,
                 embd_mdl=embedding_model,
                 tenant_id=ctx.tenant_id,
@@ -634,9 +763,9 @@ class TaskHandler:
                 force_rerun=True,
                 callback=_stage_cb("[artifact PLAN]"),
             )
-            logging.info("Artifact compilation PHASE【3】"+ json.dumps(phase3, ensure_ascii=False, indent=4))
-            # Phase 4 — REFINE: write/merge every planned page to ES as artifact_page.
-            phase4 = await artifact_refine_from_plan(
+
+            progress(0.85, "Refining pages...")
+            pages = await artifact_refine_from_plan(
                 chat_mdl=chat_mdl,
                 embd_mdl=embedding_model,
                 tenant_id=ctx.tenant_id,
@@ -644,29 +773,197 @@ class TaskHandler:
                 force_rerun=True,
                 callback=_stage_cb("[artifact REFINE]"),
             )
-            logging.info("Artifact compilation PHASE【4】"+ json.dumps(phase4, ensure_ascii=False, indent=4))
-            return phase4
+        except Exception:
+            logging.exception("artifact: REDUCE/PLAN/REFINE failed for kb %s", ctx.kb_id)
+            progress(-1, "Artifact pipeline failed during REDUCE/PLAN/REFINE.")
+            return
+
+        # 6. Persist searchable artifact_page rows.
+        try:
+            await self._persist_artifact_pages_to_es(ctx, pages or [], embedding_model)
+        except Exception:
+            logging.exception("artifact: ES persist failed for kb %s", ctx.kb_id)
+
+        progress(1.0, f"Artifact compiled 鈥?{len(pages or [])} page(s).")
+
+    @staticmethod
+    async def _load_chunks_for_doc(tenant_id: str, kb_id: str, doc_id: str) -> List[Dict]:
+        """Load all available chunks for one document from the doc store.
+
+        Paginates with a 500-row window. Skips ``compile_kwd``-marked rows
+        (artifact pages, structure entities, etc.) by filtering on
+        ``available_int=1`` + ``doc_id=<doc_id>`` 鈥?the artifact writer
+        stores its rows under ``doc_id=<kb_id_str>`` as a sentinel, so a
+        real-doc filter excludes them naturally.
+        """
+        from common.doc_store.doc_store_base import OrderByExpr
+
+        index_nm = search.index_name(tenant_id)
+        if not settings.docStoreConn.index_exist(index_nm, kb_id):
+            return []
+
+        select_fields = [
+            "id", "doc_id", "content_with_weight",
+            "page_num_int", "top_int",
+        ]
+        chunks: List[Dict] = []
+        offset = 0
+        PAGE = 500
+        while True:
+            try:
+                res = await thread_pool_exec(
+                    settings.docStoreConn.search,
+                    select_fields, [], {"doc_id": [doc_id], "available_int": 1},
+                    [], OrderByExpr(), offset, PAGE,
+                    index_nm, [kb_id],
+                )
+                field_map = settings.docStoreConn.get_fields(res, select_fields)
+            except Exception:
+                logging.exception("artifact: failed to load chunks for doc=%s", doc_id)
+                break
+            if not field_map:
+                break
+            for row_id, row in field_map.items():
+                # Defensive: skip any row that snuck in with a compile_kwd
+                # (some backends ignore the doc_id filter for sentinel rows).
+                if row.get("compile_kwd"):
+                    continue
+                chunks.append({
+                    "id": row_id,
+                    "doc_id": row.get("doc_id") or doc_id,
+                    "content_with_weight": row.get("content_with_weight") or "",
+                    "page_num_int": row.get("page_num_int", 0),
+                    "top_int": row.get("top_int", 0),
+                })
+            if len(field_map) < PAGE:
+                break
+            offset += PAGE
+        # Stable ordering by (page, top) so MAP batches are reproducible.
+        chunks.sort(key=lambda d: (
+            (d.get("page_num_int", 0) or [0])[0] if isinstance(d.get("page_num_int"), list) else d.get("page_num_int", 0),
+            (d.get("top_int", 0) or [0])[0] if isinstance(d.get("top_int"), list) else d.get("top_int", 0),
+        ))
+        return chunks
+
+    async def _persist_artifact_pages_to_es(
+        self, ctx: TaskContext, pages: List[Dict], embd_mdl,
+    ) -> None:
+        """Insert one ES row per generated artifact page using the
+        knowledge-compilation schema:
+
+          id                  xxh64(kb_id + ":" + slug)        鈥?16-char hex
+          compile_kwd         "artifact_page"                  鈥?marker (unchanged)
+          slug_kwd            page.slug
+          title_kwd           page.title
+          page_type_kwd       page.page_type
+          entity_names_kwd    page.entity_names
+          outlinks_kwd        page.outlinks
+          related_kb_pages_kwd page.related_kb_pages
+          source_chunk_ids    page.source_chunk_ids            (pass-through)
+          source_doc_ids      page.source_doc_ids              (pass-through)
+          kb_id               ctx.kb_id                        (pass-through)
+          content_with_weight rendered markdown                鈥?for UI render
+          content_ltks /
+          content_sm_ltks     tokenize(content_md + summary)   鈥?for keyword search
+          q_<dim>_vec         embed(summary)                   鈥?for vector search
+
+        ``action`` is intentionally not stored 鈥?it's a planner artifact
+        and has no meaning post-write.
+        """
+        if not pages:
+            return
+
+        from rag.nlp import rag_tokenizer
+
+        index = search.index_name(ctx.tenant_id)
+        kb_id_str = str(ctx.kb_id)
+
+        # Batch the summary embeddings in one model call. The encoder rejects
+        # empty strings on most providers, so swap empties for a single space 鈥?
+        # they still yield a vector but contribute nothing meaningful, which
+        # matches the "no summary" page's lack of semantic signal.
+        summaries = [(p.get("summary") or "").strip() for p in pages]
+        embed_inputs = [s if s else " " for s in summaries]
+        try:
+            embeddings, _ = await thread_pool_exec(embd_mdl.encode, embed_inputs)
+        except Exception:
+            logging.exception("artifact_persist: summary embedding batch failed for kb=%s", kb_id_str)
+            return
+        try:
+            n_emb = len(embeddings) if embeddings is not None else 0
+        except TypeError:
+            n_emb = 0
+        if n_emb != len(pages):
+            logging.warning(
+                "artifact_persist: embedding count %d != pages %d for kb=%s; aborting",
+                n_emb, len(pages), kb_id_str,
+            )
+            return
+
+        rows: List[Dict] = []
+        for page, vec in zip(pages, embeddings):
+            slug = page.get("slug") or ""
+            if not slug:
+                continue
+            title = page.get("title") or slug
+            summary = page.get("summary") or ""
+            content_md = (
+                page.get("content_md_rendered")
+                or page.get("content_md")
+                or page.get("content_md_raw")
+                or ""
+            )
+
+            vec_list = vec.tolist() if hasattr(vec, "tolist") else list(vec)
+            if not vec_list:
+                logging.warning("artifact_persist: empty embedding for slug=%s; skipping", slug)
+                continue
+
+            text_for_search = (content_md + "\n\n" + summary).strip()
+            content_ltks = rag_tokenizer.tokenize(text_for_search) if text_for_search else ""
+            content_sm_ltks = (
+                rag_tokenizer.fine_grained_tokenize(content_ltks) if content_ltks else ""
+            )
+
+            row_id = xxhash.xxh64(
+                f"{kb_id_str}:{slug}".encode("utf-8", "surrogatepass"),
+            ).hexdigest()
+
+            rows.append({
+                "id": row_id,
+                "kb_id": kb_id_str,
+                "doc_id": kb_id_str,  # sentinel; KB-scoped row, real provenance in source_doc_ids
+                "compile_kwd": "artifact_page",
+                "slug_kwd": slug,
+                "title_kwd": title,
+                "page_type_kwd": page.get("page_type") or "concept",
+                "entity_names_kwd": list(page.get("entity_names") or []),
+                "outlinks_kwd": list(page.get("outlinks") or []),
+                "outlinks_int": len(list(page.get("outlinks") or [])),
+                "related_kb_pages_kwd": list(page.get("related_kb_pages") or []),
+                "source_chunk_ids": list(page.get("source_chunk_ids") or []),
+                "source_doc_ids": list(page.get("source_doc_ids") or []),
+                "content_with_weight": content_md,
+                # Summary kept verbatim alongside the rendered body so the
+                # viewer can render it as a distinct (smaller) block above
+                # the main content.
+                "summary_with_weight": summary,
+                "content_ltks": content_ltks,
+                "content_sm_ltks": content_sm_ltks,
+                f"q_{len(vec_list)}_vec": vec_list,
+                "available_int": 1,
+            })
+
+        if not rows:
+            return
 
         try:
-            pages = asyncio.run(_run())
+            await thread_pool_exec(settings.docStoreConn.insert, rows, index, ctx.kb_id)
         except Exception:
-            logging.exception("artifact_compilation: pipeline failed for doc %s", ctx.doc_id)
-            return None
-
-        summary = [
-            {"slug": p.get("slug"), "title": p.get("title"),
-            "action": p.get("action"), "page_type": p.get("page_type"),
-            "outlinks": p.get("outlinks") or [],
-            "source_doc_ids": p.get("source_doc_ids") or [],
-            "source_chunk_ids": p.get("source_chunk_ids") or []}
-            for p in (pages or [])
-        ]
-        logging.info(
-            "------------ Artifact Compilation -------------\nkb=%s doc=%s pages=%d\n%s",
-            ctx.kb_id, ctx.doc_id, len(summary),
-            json.dumps(summary, ensure_ascii=False, indent=2),
-        )
-        return pages
+            logging.exception(
+                "artifact_persist: bulk insert failed for kb=%s (rows=%d)",
+                kb_id_str, len(rows),
+            )
 
     @classmethod
     def _build_toc(cls, ctx: TaskContext, docs: List[Dict], progress_cb: Callable) -> Optional[Dict]:

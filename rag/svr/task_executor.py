@@ -137,6 +137,7 @@ TASK_TYPE_TO_PIPELINE_TASK_TYPE = {
     "graphrag": PipelineTaskType.GRAPH_RAG,
     "mindmap": PipelineTaskType.MINDMAP,
     "memory": PipelineTaskType.MEMORY,
+    "artifact": PipelineTaskType.ARTIFACT,
 }
 
 UNACKED_ITERATOR = None
@@ -1762,8 +1763,11 @@ async def handle_task():
     finally:
         if not task.get("dataflow_id", ""):
             referred_document_id = None
-            if task_type in ["graphrag", "raptor", "mindmap"]:
-                referred_document_id = task["doc_ids"][0]
+            if task_type in ["graphrag", "raptor", "mindmap", "artifact"]:
+                # KB-level fan-out tasks store the participating doc list in
+                # task["doc_ids"]; the first entry is used as a referent so
+                # the pipeline operation log has something to anchor to.
+                referred_document_id = (task.get("doc_ids") or [None])[0]
             ret = PipelineOperationLogService.record_pipeline_operation(document_id=task["doc_id"], pipeline_id="",
                                                                   task_type=pipeline_task_type,
                                                                   task_id=task_id, referred_document_id=referred_document_id)

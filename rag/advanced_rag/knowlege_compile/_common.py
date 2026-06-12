@@ -334,17 +334,27 @@ def build_chunk_batches(
     label_fn: Callable[[int], str] = _default_label,
     chunk_text_picker: Optional[Callable[[dict], str]] = None,
     budget_floor: int = 1024,
+    batch_size_cap: Optional[int] = None,
+    window_fraction: Optional[float] = None,
 ) -> tuple[list[list[dict]], dict]:
-    """Filter chunks, pack via ``split_chunks``, return per-batch entries.
+    """Filter chunks, pack into batches, return per-batch entries.
 
     Each batch entry is ``{"label": str, "chunk_id": str, "text": str}``
     where ``label`` is per-batch positional (default ``C1``, ``C2``, …) and
     ``text`` is the post-scrub chunk body. Empty or resume-skipped chunks
     are dropped.
 
-    Returns ``(batches, info)`` where ``info`` is a small stats dict:
-    ``{"total": N, "kept": M, "skipped_resume": K, "skipped_empty": L,
-       "input_budget": B, "n_batches": len(batches)}``.
+    Two packing modes:
+      - **Default (split_chunks)**: ``input_budget`` derived from
+        ``chat_mdl.max_length * INPUT_UTILIZATION - prompt_overhead_tokens``.
+        Used by ``structure.py`` and the legacy artifact MAP path.
+      - **Cap+fraction (greedy)**: when ``batch_size_cap`` is provided,
+        chunks are packed greedily with two cutoffs — chunk-count exceeds
+        ``batch_size_cap`` OR accumulated tokens exceed
+        ``chat_mdl.max_length * window_fraction``. This is the artifact
+        compilation rule (BS=8, window=0.5).
+
+    Returns ``(batches, info)`` where ``info`` is a small stats dict.
     """
     if not chunks:
         return [], {"total": 0, "kept": 0, "skipped_resume": 0, "skipped_empty": 0,
@@ -385,24 +395,53 @@ def build_chunk_batches(
             "input_budget": 0, "n_batches": 0,
         }
 
-    input_budget = max(
-        int(chat_mdl.max_length * INPUT_UTILIZATION) - prompt_overhead_tokens,
-        budget_floor,
-    )
-
-    raw_batches = split_chunks(chunk_texts, input_budget) or []
     batches: list[list[dict]] = []
-    for batch in raw_batches:
-        packed: list[dict] = []
-        for position, item in enumerate(batch):
-            for idx, text in item.items():
-                packed.append({
-                    "label": label_fn(position),
-                    "chunk_id": chunk_ids[idx],
-                    "text": text,
-                })
-        if packed:
-            batches.append(packed)
+    input_budget: int
+
+    if batch_size_cap is not None:
+        # Artifact mode — greedy bin-packing with chunk-count + token caps.
+        fraction = window_fraction if window_fraction is not None else 0.5
+        token_cap = max(int(chat_mdl.max_length * fraction), budget_floor)
+        input_budget = token_cap
+
+        current: list[dict] = []
+        current_tks = 0
+        for idx, text in enumerate(chunk_texts):
+            tks = num_tokens_from_string(text)
+            would_overflow_count = len(current) >= batch_size_cap
+            would_overflow_tokens = (
+                current and (current_tks + tks > token_cap)
+            )
+            if would_overflow_count or would_overflow_tokens:
+                batches.append(current)
+                current = []
+                current_tks = 0
+            current.append({
+                "label": label_fn(len(current)),
+                "chunk_id": chunk_ids[idx],
+                "text": text,
+            })
+            current_tks += tks
+        if current:
+            batches.append(current)
+    else:
+        input_budget = max(
+            int(chat_mdl.max_length * INPUT_UTILIZATION) - prompt_overhead_tokens,
+            budget_floor,
+        )
+
+        raw_batches = split_chunks(chunk_texts, input_budget) or []
+        for batch in raw_batches:
+            packed: list[dict] = []
+            for position, item in enumerate(batch):
+                for idx, text in item.items():
+                    packed.append({
+                        "label": label_fn(position),
+                        "chunk_id": chunk_ids[idx],
+                        "text": text,
+                    })
+            if packed:
+                batches.append(packed)
 
     info = {
         "total": len(chunks),

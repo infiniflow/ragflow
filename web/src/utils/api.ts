@@ -143,6 +143,8 @@ export default {
   // chunk
   chunkList: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/chunks`,
+  documentStructureGraph: (datasetId: string, documentId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/structure/graph`,
   chunkDetail: (datasetId: string, documentId: string, chunkId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/chunks/${chunkId}`,
   retrievalTest: `${restAPIv1}/datasets/search`,
@@ -275,6 +277,32 @@ export default {
   exportMcpServer: (id: string) =>
     `${restAPIv1}/mcp/servers/${id}?mode=download`,
   testMcpServer: (id: string) => `${restAPIv1}/mcp/servers/${id}/test`,
+
+  // knowledge compilation templates
+  listCompilationTemplates: `${restAPIv1}/compilation_templates`,
+  getCompilationTemplate: (id: string) =>
+    `${restAPIv1}/compilation_templates/${id}`,
+  createCompilationTemplate: `${restAPIv1}/compilation_templates`,
+  updateCompilationTemplate: (id: string) =>
+    `${restAPIv1}/compilation_templates/${id}`,
+  deleteCompilationTemplate: (id: string) =>
+    `${restAPIv1}/compilation_templates/${id}`,
+  listBuiltinCompilationTemplates: `${restAPIv1}/compilation_templates/builtins`,
+
+  // dataset artifact (knowledge compilation pages)
+  hasAnyArtifact: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/any_artifact`,
+  listDatasetArtifacts: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts`,
+  clearDatasetArtifacts: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts`,
+  getDatasetArtifactGraph: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts/graph`,
+  getDatasetArtifactPage: (datasetId: string, pageType: string, slug: string) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts/${encodeURIComponent(pageType)}/${slug
+      .split('/')
+      .map((s) => encodeURIComponent(s))
+      .join('/')}`,
 
   // next-search
   createSearch: `${restAPIv1}/searches`,

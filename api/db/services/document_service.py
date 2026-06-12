@@ -1071,7 +1071,7 @@ def queue_raptor_o_graphrag_tasks(sample_doc, ty, priority, fake_doc_id="", doc_
     """
     if doc_ids is None:
         doc_ids = []
-    assert ty in ["graphrag", "raptor", "mindmap"], "type should be graphrag, raptor or mindmap"
+    assert ty in ["graphrag", "raptor", "mindmap", "artifact"], "type should be graphrag, raptor, mindmap or artifact"
 
     chunking_config = DocumentService.get_chunking_config(sample_doc["id"])
     hasher = xxhash.xxh64()

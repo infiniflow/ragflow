@@ -36,11 +36,7 @@ import asyncio
 import json
 import logging
 import re
-import string
 from typing import Callable, Optional
-
-import xxhash
-
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string
 from rag.nlp import rag_tokenizer
@@ -51,17 +47,8 @@ from ._common import (
     bulk_dedup_items as _bulk_dedup_items,
     encode as _common_encode,
     ensure_llm_bundle as _ensure_llm_bundle,
-    es_delete as _es_delete,
-    es_insert as _es_insert,
-    es_search as _es_search,
-    es_upsert_one as _es_upsert_one,
-    find_vec_field as _common_find_vec_field,
-    make_input_budget as _make_input_budget,
-    normalize_key as _normalize_key,
     run_chunked_pipeline as _run_chunked_pipeline,
-    stable_row_id as _stable_row_id,
-    tokenize_for_search as _tokenize_for_search,
-    union_ordered as _union_ordered,
+    stable_row_id as _stable_row_id
 )
 # Tiny parser_config helpers shared with the structure pipeline. Pulled in
 # here so the MAP entity/relation schemas and rules can be driven from the
@@ -85,6 +72,7 @@ ARTIFACT_MAP_SYSTEM = (
     "You are a knowledge extraction engine. Extract structured knowledge from the "
     "provided document section. Return ONLY valid JSON matching the schema exactly. "
     "Never include any text outside the JSON object. If a category has no items, use []."
+    "Keep the chunks' original language (Chinese/English etc.) for generated data."
 )
 
 
@@ -121,27 +109,33 @@ exact schema:
 {{
   "entities": [
     {{
-{entity_schema_body}
+      "name": "string - entity canonical name as it appears in text",
+      "type": "string - {entity_type_rules}",
+      "aliases": ["string"],
+      "source_chunk_id": "string - exact value from the chunk_id list above"
     }}
   ],
   "concepts": [
     {{
-      "term": "string — concept name OR a thematic section topic (prefer the source's heading wording when coherent)",
-      "definition_excerpt": "string — verbatim or near-verbatim defining phrase from the chunk",
-      "source_chunk_id": "string — exact value from the chunk_id list above"
+      "term": "string - {concept_term}",
+      "definition_excerpt": "string - {concept_definition_excerpt}",
+      "source_chunk_id": "string - exact value from the chunk_id list above"
     }}
   ],
   "claims": [
     {{
-      "statement": "string — a complete factual sentence stated in the source. Any sentence of the form 'X is Y', 'X has Y', 'X does Y', 'X was founded in Y', 'X is located in Y', 'X reported Y', etc. is a claim. Aim for at least 1-3 claims per entity per chunk that mentions it.",
-      "subject": "string — entity/concept this claim is about (must match one of the entity/concept names extracted above)",
+      "statement": "string - {claim_statement}",
+      "subject": "string - {claim_subject}",
       "confidence": "explicit",
-      "source_chunk_id": "string — exact value from the chunk_id list above"
+      "source_chunk_id": "string - exact value from the chunk_id list above"
     }}
   ],
   "relations": [
     {{
-{relation_schema_body}
+      "from": "string - source entity/concept name",
+      "to": "string - target entity/concept name",
+      "type": "string - {relation_type_rules}",
+      "source_chunk_id": "string - exact value from the chunk_id list above"
     }}
   ],
   "topics": ["string"]
@@ -307,6 +301,68 @@ def _artifact_build_custom_rules(parser_config, language: str) -> str:
     return "\n" + "\n\n".join(sections) + "\n"
 
 
+def _artifact_template_fields(parser_config, section: str) -> list:
+    if not isinstance(parser_config, dict):
+        return []
+    cfg = _struct_get(parser_config, section, default={}) or {}
+    fields = _struct_get(cfg, "fields", default=[]) or []
+    return fields if isinstance(fields, list) else []
+
+
+def _artifact_type_rules(fields: list) -> str:
+    lines: list[str] = []
+    for field in fields:
+        if not isinstance(field, dict):
+            continue
+        typ = field.get("type")
+        typ = typ.strip() if isinstance(typ, str) else ""
+        if not typ:
+            continue
+        description = field.get("description")
+        description = description.strip() if isinstance(description, str) else ""
+        rule = field.get("rule")
+        rule = rule.strip() if isinstance(rule, str) else ""
+        lines.append(f"type: {typ}")
+        if description:
+            lines.append(f"  - discription: {description}")
+        if rule:
+            lines.append(f"  - rule: {rule}")
+    return "\n".join(lines)
+
+
+def _artifact_pipe_join(fields: list, key: str) -> str:
+    values: list[str] = []
+    for field in fields:
+        if not isinstance(field, dict):
+            continue
+        value = field.get(key)
+        value = value.strip() if isinstance(value, str) else ""
+        if value:
+            values.append(value)
+    return "|".join(values)
+
+
+def _artifact_colon_join(fields: list, left_key: str, right_key: str) -> str:
+    values: list[str] = []
+    for field in fields:
+        if not isinstance(field, dict):
+            continue
+        left = field.get(left_key)
+        left = left.strip() if isinstance(left, str) else ""
+        right = field.get(right_key)
+        right = right.strip() if isinstance(right, str) else ""
+        if left or right:
+            values.append(f"{left}:{right}")
+    return "\n".join(values)
+
+
+def _artifact_template_custom_rules(parser_config) -> str:
+    if not isinstance(parser_config, dict):
+        return ""
+    rules = parser_config.get("global_rules")
+    return rules.strip() if isinstance(rules, str) else ""
+
+
 def _artifact_build_user_prompt(
     *,
     parser_config,
@@ -318,30 +374,59 @@ def _artifact_build_user_prompt(
 ) -> str:
     """Fill ``ARTIFACT_MAP_USER_TEMPLATE`` with the dynamic entity / relation
     schema bodies plus optional rules drawn from ``parser_config``."""
-    ent_fields: list = []
-    rel_fields: list = []
+    ent_fields = _artifact_template_fields(parser_config, "entity")
+    rel_fields = _artifact_template_fields(parser_config, "relation")
+    concept_fields = _artifact_template_fields(parser_config, "concept")
+    claim_fields = _artifact_template_fields(parser_config, "claim")
+    entity_type_rules = _artifact_type_rules(ent_fields)
+    relation_type_rules = _artifact_type_rules(rel_fields)
+    concept_term = _artifact_pipe_join(concept_fields, "term")
+    concept_definition_excerpt = _artifact_colon_join(concept_fields, "term", "definition_excerpt")
+    claim_statement = _artifact_pipe_join(claim_fields, "subject")
+    claim_subject = _artifact_colon_join(claim_fields, "subject", "subject")
+    custom_rules = _artifact_template_custom_rules(parser_config)
+
     if isinstance(parser_config, dict):
         output = _struct_get(parser_config, "output", default={}) or {}
         entities_cfg = _struct_get(output, "entities", default={}) or {}
         relations_cfg = _struct_get(output, "relations", default={}) or {}
-        ent_fields = _struct_get(entities_cfg, "fields", default=[]) or []
-        rel_fields = _struct_get(relations_cfg, "fields", default=[]) or []
+        legacy_ent_fields = _struct_get(entities_cfg, "fields", default=[]) or []
+        legacy_rel_fields = _struct_get(relations_cfg, "fields", default=[]) or []
+        if not entity_type_rules and legacy_ent_fields:
+            entity_type_rules = _artifact_render_schema_body(
+                legacy_ent_fields, language, _DEFAULT_ENTITY_SCHEMA_BODY,
+            )
+        if not relation_type_rules and legacy_rel_fields:
+            relation_type_rules = _artifact_render_schema_body(
+                legacy_rel_fields, language, _DEFAULT_RELATION_SCHEMA_BODY,
+            )
 
-    entity_schema_body = _artifact_render_schema_body(
-        ent_fields, language, _DEFAULT_ENTITY_SCHEMA_BODY,
-    )
-    relation_schema_body = _artifact_render_schema_body(
-        rel_fields, language, _DEFAULT_RELATION_SCHEMA_BODY,
-    )
-    custom_rules = _artifact_build_custom_rules(parser_config, language)
+    if not entity_type_rules:
+        entity_type_rules = "person|org|product|regulation|location|system|equipment|other"
+    if not relation_type_rules:
+        relation_type_rules = "include|ordered|owns|part_of|caused_by|regulates|uses|located_in|other"
+    if not concept_term:
+        concept_term = "named term or topic"
+    if not concept_definition_excerpt:
+        concept_definition_excerpt = "short definition excerpt from the source text"
+    if not claim_statement:
+        claim_statement = "factual statement"
+    if not claim_subject:
+        claim_subject = "entity or concept that the claim is about"
+    if not custom_rules:
+        custom_rules = _artifact_build_custom_rules(parser_config, language)
 
     return ARTIFACT_MAP_USER_TEMPLATE.format(
         doc_id=doc_id,
         chunk_count=chunk_count,
         chunk_id_list=chunk_id_list,
         packed_chunks=packed_chunks,
-        entity_schema_body=entity_schema_body,
-        relation_schema_body=relation_schema_body,
+        entity_type_rules=entity_type_rules,
+        relation_type_rules=relation_type_rules,
+        concept_term=concept_term,
+        concept_definition_excerpt=concept_definition_excerpt,
+        claim_statement=claim_statement,
+        claim_subject=claim_subject,
         custom_rules=custom_rules,
     )
 
@@ -723,6 +808,8 @@ async def artifact_map_from_chunks(
     timeout: int = DEFAULT_ARTIFACT_MAP_TIMEOUT,
     callback: Optional[Callable] = None,
     parser_config: Optional[dict] = None,
+    batch_size_cap: Optional[int] = None,
+    window_fraction: Optional[float] = None,
 ) -> dict:
     """Phase 1 (MAP) of the artifact compilation pipeline.
 
@@ -746,13 +833,7 @@ async def artifact_map_from_chunks(
         timeout: seconds per batch extraction call.
         callback: optional ``(progress: float, msg: str)`` progress callback.
         parser_config: optional YAML-style config (same shape that
-            ``compile_structure_from_text`` accepts). When provided, the
-            entity / relation schemas in the LLM prompt and the prompt's
-            Rules section are rendered from
-            ``parser_config["output"]["entities"]["fields"]``,
-            ``parser_config["output"]["relations"]["fields"]``,
-            ``parser_config["guideline"]["rules_for_entities"]`` and
-            ``parser_config["guideline"]["rules_for_relations"]``. The
+            ``compile_structure_from_text`` accepts).
             ``source_chunk_id`` field is always appended so chunk
             attribution survives regardless of the user's schema. When
             omitted, the built-in default artifact schema is used.
@@ -792,6 +873,8 @@ async def artifact_map_from_chunks(
         resume_chunk_ids=resume_set,
         scrub_text=lambda t: _artifact_scrub_known_ids(t, all_known_ids),
         chunk_text_picker=_artifact_pick_chunk_text,
+        batch_size_cap=batch_size_cap,
+        window_fraction=window_fraction,
     )
     if not packed_batches:
         return _artifact_empty_extract()
@@ -1199,11 +1282,13 @@ ARTIFACT_PLAN_PLANNING_SYSTEM = (
     "You are a artifact compilation planner. Given extracted entities and their "
     "relationship to an existing knowledge base, produce a compilation plan. "
     "Return ONLY valid JSON."
+    "Keep the user's original language (Chinese/English etc.) for generated data."
 )
 
 
 ARTIFACT_PLAN_RECONCILE_SYSTEM = (
     "You are a knowledge base assistant. Return only a JSON boolean array."
+    "Keep the user's original language (Chinese/English etc.) for generated data."
 )
 
 
@@ -1394,7 +1479,7 @@ async def _artifact_reconcile_with_kb(
 
     index = _rag_search.index_name(tenant_id)
     condition = {"compile_kwd": [ARTIFACT_PAGE_COMPILE_KWD]}
-    select_fields = ["id", "artifact_slug_kwd", "artifact_title_kwd", "artifact_page_type_kwd"]
+    select_fields = ["id", "slug_kwd", "title_kwd", "page_type_kwd"]
 
     for (_kind, key, _src), vec in zip(items, vectors):
         vec_list = list(vec) if not hasattr(vec, "tolist") else vec.tolist()
@@ -1446,8 +1531,8 @@ async def _artifact_reconcile_with_kb(
         if sim <= 0.0:
             sim = float(top_row.get("similarity", maybe_threshold))
 
-        slug = top_row.get("artifact_slug_kwd")
-        title = top_row.get("artifact_title_kwd")
+        slug = top_row.get("slug_kwd")
+        title = top_row.get("title_kwd")
         if sim >= update_threshold:
             action = "UPDATE"
         else:
@@ -2403,11 +2488,11 @@ async def _artifact_get_existing_page(
     index = _rag_search.index_name(tenant_id)
     condition = {
         "compile_kwd": [ARTIFACT_PAGE_COMPILE_KWD],
-        "artifact_slug_kwd": [slug],
+        "slug_kwd": [slug],
     }
     select_fields = [
-        "id", "content_with_weight", "artifact_raw_md_kwd",
-        "artifact_title_kwd", "artifact_page_type_kwd",
+        "id", "content_with_weight",
+        "title_kwd", "page_type_kwd",
     ]
     try:
         res = await thread_pool_exec(
@@ -2423,13 +2508,12 @@ async def _artifact_get_existing_page(
         return None
     row_id, row = next(iter(field_map.items()))
     rendered = row.get("content_with_weight") or ""
-    raw = row.get("artifact_raw_md_kwd") or rendered  # fall back to rendered if no raw stored
     return {
         "id": row_id,
         "content_md": rendered,
-        "content_md_raw": raw,
-        "title": row.get("artifact_title_kwd") or "",
-        "page_type": row.get("artifact_page_type_kwd") or "concept",
+        "content_md_raw": rendered,
+        "title": row.get("title_kwd") or "",
+        "page_type": row.get("page_type_kwd") or "concept",
     }
 
 
@@ -2571,116 +2655,6 @@ def _artifact_page_row_id(kb_id: str, slug: str) -> str:
 
 def _artifact_draft_row_id(kb_id: str, slug: str) -> str:
     return _stable_row_id(ARTIFACT_DRAFT_COMPILE_KWD, kb_id, slug)
-
-
-async def _artifact_persist_page(
-    page: dict, embd_mdl, tenant_id: str, kb_id: str,
-) -> None:
-    """Upsert one searchable artifact_page row for ``page``.
-
-    Storage layout (the fields needed to fetch a page by clicking a link plus
-    the metadata a UI needs to show provenance):
-
-    - ``content_with_weight`` — rendered markdown with ``[[slug]]`` rewritten
-      to clickable links ``[text](artifact/{kb_id}/{slug})``. This is the
-      front-end-displayable form.
-    - ``artifact_raw_md_kwd`` — pre-transform markdown with the original
-      ``[[slug]]`` artifactlinks; used by the merger and any LLM-facing re-read.
-    - ``artifact_slug_kwd`` / ``artifact_title_kwd`` / ``artifact_page_type_kwd`` —
-      lookup + display fields.
-    - ``artifact_kb_id_kwd`` — explicit KB identifier (the ``doc_id`` field is a
-      sentinel and shouldn't be relied on for filtering).
-    - ``artifact_doc_id_kwd`` — list of source document ids that contributed to
-      this page (derived from the source chunks).
-    - ``artifact_outlinks_kwd`` — slugs this page links to.
-    - ``source_id`` — list of source chunk ids.
-    - ``q_<dim>_vec`` — embedding of ``title + summary + content``.
-    - ``available_int=1`` so retrievers surface the page.
-    """
-    from common import settings
-    from rag.nlp import search as _rag_search
-
-    slug = page.get("slug") or ""
-    if not slug:
-        return
-
-    index = _rag_search.index_name(tenant_id)
-    kb_id_str = str(kb_id)
-    title = page.get("title") or slug
-    page_type = page.get("page_type") or "concept"
-    summary = page.get("summary") or ""
-
-    # Prefer the rendered form if the caller already transformed it (e.g. on
-    # resume from draft cache). Otherwise transform now from the raw form.
-    content_md_raw = page.get("content_md_raw") or page.get("content_md") or ""
-    if page.get("content_md_rendered"):
-        content_md_rendered = page["content_md_rendered"]
-        outlinks = list(page.get("outlinks") or [])
-    else:
-        content_md_rendered, outlinks = _artifact_transform_links(content_md_raw, kb_id_str)
-        page["content_md_rendered"] = content_md_rendered
-        page["outlinks"] = outlinks
-
-    source_chunk_ids = list(page.get("source_chunk_ids") or [])
-    source_doc_ids = page.get("source_doc_ids")
-    if source_doc_ids is None:
-        source_doc_ids = await _artifact_collect_doc_ids(source_chunk_ids, tenant_id, kb_id)
-        page["source_doc_ids"] = source_doc_ids
-
-    embed_text = (f"{title}\n\n{summary}\n\n{content_md_rendered}")[:8000]
-    try:
-        embeddings, _ = await thread_pool_exec(embd_mdl.encode, [embed_text])
-    except Exception:
-        logging.exception("artifact_refine: embedding failed for slug=%s; skipping persist", slug)
-        return
-    # ``embeddings`` is typically a numpy.ndarray of shape (1, D); a bare
-    # ``if not embeddings`` would trip the array-truth-value error, so check
-    # length explicitly.
-    try:
-        n_embeddings = len(embeddings) if embeddings is not None else 0
-    except TypeError:
-        n_embeddings = 0
-    if n_embeddings == 0:
-        logging.warning("artifact_refine: empty embedding for slug=%s; skipping persist", slug)
-        return
-    vec = embeddings[0]
-    vec_list = vec.tolist() if hasattr(vec, "tolist") else list(vec)
-    if not vec_list:
-        logging.warning("artifact_refine: zero-length embedding for slug=%s; skipping persist", slug)
-        return
-
-    content_ltks, content_sm_ltks = _tokenize_for_search(content_md_rendered)
-
-    row = {
-        "id": _artifact_page_row_id(kb_id_str, slug),
-        "doc_id": kb_id_str,                     # sentinel; use artifact_kb_id_kwd for filtering
-        "compile_kwd": ARTIFACT_PAGE_COMPILE_KWD,
-        "artifact_slug_kwd": slug,
-        "artifact_title_kwd": title,
-        "artifact_page_type_kwd": page_type,
-        "artifact_kb_id_kwd": kb_id_str,
-        "artifact_doc_id_kwd": list(source_doc_ids),
-        "artifact_outlinks_kwd": list(outlinks),
-        "artifact_raw_md_kwd": content_md_raw,
-        "source_id": source_chunk_ids,
-        "content_with_weight": content_md_rendered,
-        "content_ltks": content_ltks,
-        "content_sm_ltks": content_sm_ltks,
-        f"q_{len(vec_list)}_vec": vec_list,
-        "available_int": 1,
-    }
-    try:
-        try:
-            await thread_pool_exec(
-                settings.docStoreConn.delete,
-                {"compile_kwd": ARTIFACT_PAGE_COMPILE_KWD, "artifact_slug_kwd": slug},
-                index, kb_id,
-            )
-        except Exception:
-            logging.debug("artifact_refine: prior artifact_page delete failed; relying on id upsert")
-        await thread_pool_exec(settings.docStoreConn.insert, [row], index, kb_id)
-    except Exception:
-        logging.exception("artifact_refine: failed to persist artifact_page slug=%s", slug)
 
 
 async def _artifact_persist_draft(page: dict, tenant_id: str, kb_id: str) -> None:
@@ -2975,10 +2949,10 @@ async def artifact_refine_from_plan(
                 logging.exception("artifact_refine: writer failed for slug=%s", slug)
                 return None
 
-            try:
-                await _artifact_persist_page(page, embd_mdl, tenant_id, kb_id)
-            except Exception:
-                logging.exception("artifact_refine: persist_page failed for slug=%s", slug)
+            # Searchable artifact_page persistence has moved to the task
+            # handler (TaskHandler._persist_artifact_pages_to_es) so the ES
+            # schema can be controlled in one place at the ingest layer.
+            # REFINE now just builds the page dict and resume cache.
             try:
                 await _artifact_persist_draft(page, tenant_id, kb_id)
             except Exception:

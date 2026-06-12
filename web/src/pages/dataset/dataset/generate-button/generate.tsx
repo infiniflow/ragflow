@@ -34,10 +34,12 @@ import {
 export enum GenerateType {
   KnowledgeGraph = 'KnowledgeGraph',
   Raptor = 'Raptor',
+  Artifact = 'Artifact',
 }
 export const GenerateTypeMap = {
   [GenerateType.KnowledgeGraph]: ProcessingType.knowledgeGraph,
   [GenerateType.Raptor]: ProcessingType.raptor,
+  [GenerateType.Artifact]: ProcessingType.artifact,
 };
 const MenuItem: React.FC<{
   name: GenerateType;
@@ -61,6 +63,7 @@ const MenuItem: React.FC<{
   const iconKeyMap = {
     KnowledgeGraph: 'knowledgegraph',
     Raptor: 'dataflow-01',
+    Artifact: 'book-open-01',
   };
   const status = useMemo(() => {
     if (!data) {
@@ -189,7 +192,9 @@ type GenerateProps = {
 const Generate: React.FC<GenerateProps> = (props) => {
   const { disabled = false } = props;
   const [open, setOpen] = useState(false);
-  const { graphRunData, raptorRunData } = useTraceGenerate({ open });
+  const { graphRunData, raptorRunData, artifactRunData } = useTraceGenerate({
+    open,
+  });
   const { runGenerate, pauseGenerate } = useDatasetGenerate();
   const handleOpenChange = (isOpen: boolean) => {
     setOpen(isOpen);
@@ -224,7 +229,11 @@ const Generate: React.FC<GenerateProps> = (props) => {
       <DropdownMenuContent className="w-[380px] p-5 flex flex-col gap-2 ">
         {Object.values(GenerateType).map((name) => {
           const data = (
-            name === GenerateType.KnowledgeGraph ? graphRunData : raptorRunData
+            name === GenerateType.KnowledgeGraph
+              ? graphRunData
+              : name === GenerateType.Artifact
+                ? artifactRunData
+                : raptorRunData
           ) as ITraceInfo;
           return (
             <div key={name}>

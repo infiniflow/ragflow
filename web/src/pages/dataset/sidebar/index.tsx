@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
+  LucideBookOpen,
   LucideFolderOpen,
   LucideLogs,
   LucideSettings,
@@ -14,6 +15,7 @@ import { IconFontFill } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import { useSecondPathName } from '@/hooks/route-hook';
+import { useHasAnyArtifact } from '@/hooks/use-dataset-artifact-request';
 import { useFetchKnowledgeGraph } from '@/hooks/use-knowledge-request';
 import { cn, formatBytes } from '@/lib/utils';
 import { Routes } from '@/routes';
@@ -31,6 +33,7 @@ export function SideBar({ dataset: data }: PropType) {
   const pathName = useSecondPathName();
   const { id } = useParams();
   const { data: routerData } = useFetchKnowledgeGraph();
+  const { data: artifactProbe } = useHasAnyArtifact();
   const { t } = useTranslation();
 
   const items = useMemo(() => {
@@ -65,8 +68,16 @@ export function SideBar({ dataset: data }: PropType) {
       });
     }
 
+    if (artifactProbe?.has) {
+      list.push({
+        icon: <LucideBookOpen className="size-[1em]" />,
+        label: t(`knowledgeDetails.artifact`),
+        key: Routes.Artifact,
+      });
+    }
+
     return list;
-  }, [t, routerData]);
+  }, [t, routerData, artifactProbe]);
 
   return (
     <aside className="flex flex-col w-64 relative">

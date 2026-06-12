@@ -59,17 +59,17 @@ export default defineConfig(({ mode }) => {
   const proxySchemes = {
     python: {
       '/api/v1/admin': {
-        target: 'http://127.0.0.1:9381/',
+        target: 'http://192.168.1.24:9381/',
         changeOrigin: true,
         ws: true,
       },
       '/api': {
-        target: 'http://127.0.0.1:9380/',
+        target: 'http://192.168.1.24:9382/',
         changeOrigin: true,
         ws: true,
       },
       '/v1': {
-        target: 'http://127.0.0.1:9380/',
+        target: 'http://192.168.1.24:9382/',
         changeOrigin: true,
         ws: true,
       },

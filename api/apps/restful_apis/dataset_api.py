@@ -556,6 +556,127 @@ async def get_knowledge_graph(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
+@manager.route("/datasets/<dataset_id>/any_artifact", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def has_any_artifact(tenant_id, dataset_id):
+    """Probe whether this dataset has any compiled artifact pages.
+
+    GET /api/v1/datasets/<dataset_id>/any_artifact
+    Success: {"code": 0, "data": {"has": bool}}
+    The frontend uses this to decide whether to surface the Artifact tab
+    in the dataset sidebar.
+    """
+    try:
+        success, result = await dataset_api_service.has_any_artifact(dataset_id, tenant_id)
+        if success:
+            return get_result(data=result)
+        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/artifacts", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def list_artifacts(tenant_id, dataset_id):
+    """List artifact pages for the dataset Artifact tab.
+
+    GET /api/v1/datasets/<dataset_id>/artifacts?page=1&page_size=200&page_type=entity
+    Success: {"code": 0, "data": {"total": int, "items": [{slug, title, page_type}]}}
+    """
+    try:
+        page = int(request.args.get("page", 1) or 1)
+        page_size = int(request.args.get("page_size", 200) or 200)
+    except (TypeError, ValueError):
+        return get_error_argument_result("page and page_size must be integers")
+    page_type = request.args.get("page_type") or None
+
+    try:
+        success, result = await dataset_api_service.list_artifacts(
+            dataset_id, tenant_id, page=page, page_size=page_size, page_type=page_type,
+        )
+        if success:
+            return get_result(data=result)
+        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/artifacts/graph", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def get_artifact_graph(tenant_id, dataset_id):
+    """Return the REDUCE-phase graph payload for this dataset.
+
+    GET /api/v1/datasets/<dataset_id>/artifacts/graph
+    Success: {"code": 0, "data": {"entities":[…],"concepts":[…],"claims":[…],"relations":[…]}}
+    The body comes from the ES row ``compile_kwd=artifact_reduce_result``.
+    """
+    try:
+        success, result = await dataset_api_service.get_artifact_graph(
+            dataset_id, tenant_id,
+        )
+        if success:
+            return get_result(data=result)
+        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/artifacts", methods=["DELETE"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def clear_artifacts(tenant_id, dataset_id):
+    """Wipe every artifact-related row from ES for this KB.
+
+    DELETE /api/v1/datasets/<dataset_id>/artifacts
+    Removes the five ``compile_kwd`` row types written by the artifact
+    pipeline (MAP extracts / REDUCE results / PLAN / page drafts / pages).
+    Success: {"code": 0, "data": {"deleted": {kwd: result}}}
+    """
+    try:
+        success, result = await dataset_api_service.clear_artifacts(
+            dataset_id, tenant_id,
+        )
+        if success:
+            return get_result(data=result)
+        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route(
+    "/datasets/<dataset_id>/artifacts/<page_type>/<path:slug>",
+    methods=["GET"],
+)  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def get_artifact_page(tenant_id, dataset_id, page_type, slug):
+    """Fetch one artifact page by (page_type, slug).
+
+    GET /api/v1/datasets/<dataset_id>/artifacts/<page_type>/<slug>
+    ``slug`` is the tail after the page type — the same form that markdown
+    links in ``content_md_rendered`` carry as
+    ``artifact/<kb_id>/<page_type>/<slug>``.
+    Success: {"code": 0, "data": page_dict | null}
+    """
+    try:
+        success, result = await dataset_api_service.get_artifact_page(
+            dataset_id, tenant_id, page_type, slug,
+        )
+        if success:
+            return get_result(data=result)
+        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
 @manager.route("/datasets/<dataset_id>/index", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs

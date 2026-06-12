@@ -127,6 +127,8 @@ class Dealer:
                     "removed_kwd"]:
             if key in req and req[key] is not None:
                 condition[key] = req[key]
+        if isinstance(req.get("must_not"), dict):
+            condition["must_not"] = req["must_not"]
         return condition
 
     async def search(self, req, idx_names: str | list[str],

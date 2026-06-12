@@ -1,4 +1,5 @@
 import {
+  useFetchDocumentStructureGraph,
   useFetchNextChunkList,
   useSwitchChunk,
 } from '@/hooks/use-chunk-request';
@@ -36,10 +37,14 @@ import {
   useNavigatePage,
 } from '@/hooks/logic-hooks/navigate-hooks';
 import { LucideArrowBigLeft } from 'lucide-react';
+import { DocumentStructureGraph } from './components/document-structure-graph';
 import styles from './index.module.less';
 
 const Chunk = () => {
   const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
+  const [structureGraphVisible, setStructureGraphVisible] = useState(false);
+  const [structureGraphAutoOpened, setStructureGraphAutoOpened] =
+    useState(false);
   const { removeChunk } = useDeleteChunkByIds();
   const {
     data: { documentInfo, data = [], total },
@@ -51,6 +56,8 @@ const Chunk = () => {
     handleSetAvailable,
     dataUpdatedAt,
   } = useFetchNextChunkList();
+  const { data: structureGraph, loading: structureGraphLoading } =
+    useFetchDocumentStructureGraph(true);
   const { handleChunkCardClick, selectedChunkId } = useHandleChunkCardClick();
   const isPdf = documentInfo?.type === 'pdf';
 
@@ -72,6 +79,15 @@ const Chunk = () => {
   useEffect(() => {
     setChunkList(data);
   }, [data]);
+
+  useEffect(() => {
+    const hasGraph =
+      structureGraph.entities.length > 0 || structureGraph.relations.length > 0;
+    if (!structureGraphLoading && hasGraph && !structureGraphAutoOpened) {
+      setStructureGraphVisible(true);
+      setStructureGraphAutoOpened(true);
+    }
+  }, [structureGraph, structureGraphAutoOpened, structureGraphLoading]);
   const onPaginationChange: RAGFlowPaginationType['onChange'] = (
     page,
     size,
@@ -208,14 +224,31 @@ const Chunk = () => {
             )}
           >
             <header className="flex-0 p-5 pb-2.5 border-b-0.5 border-b-border-button">
-              <h2 className="text-[24px]">{t('chunk.chunkResult')}</h2>
-              <div className="text-[14px] text-text-secondary">
-                {t('chunk.chunkResultTip')}
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-[24px]">{t('chunk.chunkResult')}</h2>
+                  <div className="text-[14px] text-text-secondary">
+                    {t('chunk.chunkResultTip')}
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => setStructureGraphVisible(true)}
+                >
+                  Structure graph
+                </Button>
               </div>
             </header>
 
             <Spin spinning={loading} className="flex-1 h-0" size="large">
               <div className="relative @container h-full px-5 pb-5 overflow-x-hidden overflow-y-auto">
+                {structureGraphVisible && (
+                  <DocumentStructureGraph
+                    data={structureGraph}
+                    loading={structureGraphLoading}
+                    onClose={() => setStructureGraphVisible(false)}
+                  />
+                )}
                 <div
                   className="
                     sticky top-0 z-[1] bg-bg-base space-y-4 py-5
