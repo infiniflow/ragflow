@@ -16,7 +16,11 @@
 
 package parser
 
-import "fmt"
+import (
+	"fmt"
+
+	officeOxide "github.com/yfedoseev/office_oxide/go"
+)
 
 type XLSParser struct {
 }
@@ -27,6 +31,30 @@ func NewXLSParser() *XLSParser {
 
 func (p *XLSParser) Parse(filename string, data []byte) error {
 	fmt.Printf("Parsing XLS file: %s\n", filename)
+	doc, err := officeOxide.OpenFromBytes(data, "xls")
+	if err != nil {
+		return err
+	}
+	defer doc.Close()
+
+	docFormat, err := doc.Format()
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Document format:", docFormat)
+
+	docContext, err := doc.PlainText()
+	if err != nil {
+		return err
+	}
+	fmt.Println("Document context:", docContext)
+
+	md, err := doc.ToMarkdown()
+	if err != nil {
+		return err
+	}
+	fmt.Println("Document Markdown:", md)
 	return nil
 }
 
