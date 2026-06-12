@@ -286,7 +286,6 @@ def _load_module(monkeypatch):
             return cls.model.update(data).where(cls.model.id == pid).execute()
         @classmethod
         def filter_update(cls, filters, update_data):
-            from peewee import Expression
             return cls.model.update(update_data).where(*filters).execute()
 
     # Stub: common.constants with FileSource for resolver
