@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/cache"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/entity"
 	"ragflow/internal/server"
@@ -43,45 +44,49 @@ import (
 
 // Service admin service layer
 type Service struct {
-	userDAO           *dao.UserDAO
-	licenseDAO        *dao.LicenseDAO
-	timeRecordDAO     *dao.TimeRecordDAO
-	systemSettingsDAO *dao.SystemSettingsDAO
-	tenantDAO         *dao.TenantDAO
-	userTenantDAO     *dao.UserTenantDAO
-	tenantLLMDAO      *dao.TenantLLMDAO
-	fileDAO           *dao.FileDAO
-	documentDAO       *dao.DocumentDAO
-	taskDAO           *dao.TaskDAO
-	kbDAO             *dao.KnowledgebaseDAO
-	canvasDAO         *dao.UserCanvasDAO
-	chatDAO           *dao.ChatDAO
-	chatSessionDAO    *dao.ChatSessionDAO
-	apiTokenDAO       *dao.APITokenDAO
-	api4ConvDAO       *dao.API4ConversationDAO
-	llmDAO            *dao.LLMDAO
+	userDAO             *dao.UserDAO
+	licenseDAO          *dao.LicenseDAO
+	timeRecordDAO       *dao.TimeRecordDAO
+	systemSettingsDAO   *dao.SystemSettingsDAO
+	tenantDAO           *dao.TenantDAO
+	userTenantDAO       *dao.UserTenantDAO
+	tenantLLMDAO        *dao.TenantLLMDAO
+	fileDAO             *dao.FileDAO
+	documentDAO         *dao.DocumentDAO
+	taskDAO             *dao.TaskDAO
+	kbDAO               *dao.KnowledgebaseDAO
+	canvasDAO           *dao.UserCanvasDAO
+	chatDAO             *dao.ChatDAO
+	chatSessionDAO      *dao.ChatSessionDAO
+	apiTokenDAO         *dao.APITokenDAO
+	api4ConvDAO         *dao.API4ConversationDAO
+	llmDAO              *dao.LLMDAO
+	ingestionTaskDAO    *dao.IngestionTaskDAO
+	ingestionTaskLogDao *dao.IngestionTaskLogDAO
 }
 
 // NewService create admin service
 func NewService() *Service {
 	return &Service{
-		userDAO:           dao.NewUserDAO(),
-		licenseDAO:        dao.NewLicenseDAO(),
-		timeRecordDAO:     dao.NewTimeRecordDAO(),
-		systemSettingsDAO: dao.NewSystemSettingsDAO(),
-		tenantDAO:         dao.NewTenantDAO(),
-		userTenantDAO:     dao.NewUserTenantDAO(),
-		tenantLLMDAO:      dao.NewTenantLLMDAO(),
-		fileDAO:           dao.NewFileDAO(),
-		documentDAO:       dao.NewDocumentDAO(),
-		taskDAO:           dao.NewTaskDAO(),
-		kbDAO:             dao.NewKnowledgebaseDAO(),
-		canvasDAO:         dao.NewUserCanvasDAO(),
-		chatDAO:           dao.NewChatDAO(),
-		chatSessionDAO:    dao.NewChatSessionDAO(),
-		apiTokenDAO:       dao.NewAPITokenDAO(),
-		api4ConvDAO:       dao.NewAPI4ConversationDAO(),
-		llmDAO:            dao.NewLLMDAO(),
+		userDAO:             dao.NewUserDAO(),
+		licenseDAO:          dao.NewLicenseDAO(),
+		timeRecordDAO:       dao.NewTimeRecordDAO(),
+		systemSettingsDAO:   dao.NewSystemSettingsDAO(),
+		tenantDAO:           dao.NewTenantDAO(),
+		userTenantDAO:       dao.NewUserTenantDAO(),
+		tenantLLMDAO:        dao.NewTenantLLMDAO(),
+		fileDAO:             dao.NewFileDAO(),
+		documentDAO:         dao.NewDocumentDAO(),
+		taskDAO:             dao.NewTaskDAO(),
+		kbDAO:               dao.NewKnowledgebaseDAO(),
+		canvasDAO:           dao.NewUserCanvasDAO(),
+		chatDAO:             dao.NewChatDAO(),
+		chatSessionDAO:      dao.NewChatSessionDAO(),
+		apiTokenDAO:         dao.NewAPITokenDAO(),
+		api4ConvDAO:         dao.NewAPI4ConversationDAO(),
+		llmDAO:              dao.NewLLMDAO(),
+		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
+		ingestionTaskLogDao: dao.NewIngestionTaskLogDAO(),
 	}
 }
 
@@ -96,51 +101,99 @@ func (s *Service) Logout(user interface{}) error {
 }
 
 // ListTasks
-func (s *Service) ListTasks() ([]map[string]interface{}, error) {
+func (s *Service) ListIngestionTasks() ([]map[string]interface{}, error) {
 
-	//tasks, err := s.taskDAO.GetAllTasks()
-	//if err != nil {
-	//	return nil, err
-	//}
-	//
-	//var result []map[string]interface{}
-	//for _, task := range tasks {
-	//	// task.ChunkIDs is a string, delimiter is space, count the word count
-	//	ChunkCount := strings.Count(*task.ChunkIDs, " ")
-	//	result = append(result, map[string]interface{}{
-	//		"id":          task.ID,
-	//		"task_type":   task.TaskType,
-	//		"document_id": task.DocID,
-	//		"chunk_count": ChunkCount,
-	//		"from_page":   task.FromPage,
-	//		"to_page":     task.ToPage,
-	//		"priority":    task.Priority,
-	//		"duration":    task.ProcessDuration,
-	//		"progress":    task.Progress,
-	//		//"message":     *task.ProgressMsg,
-	//		"retry_count": task.RetryCount,
-	//		"digest":      task.Digest,
-	//	})
-	//}
-
-	ingestionMgr := GetIngestionManager()
-	ingestionTasks, err := ingestionMgr.ListIngestionTasks()
+	ingestionTasks, err := s.ingestionTaskDAO.GetAllTasks(0, 0)
 	if err != nil {
-		return nil, fmt.Errorf("fail to list ingestion tasks")
+		return nil, err
 	}
 
-	return ingestionTasks, nil
+	showTasks := []map[string]interface{}{}
+	for _, task := range ingestionTasks {
+		var user *entity.User
+		user, err = s.userDAO.GetByTenantID(task.UserID)
+		if err != nil {
+			return nil, err
+		}
+		//var document *entity.Document
+		//document, err = s.documentDAO.GetByID(task.DocumentID)
+		//if err != nil {
+		//	return nil, err
+		//}
+
+		var showTask map[string]interface{}
+		var latestLog *entity.IngestionTaskLog
+		latestLog, err = s.ingestionTaskLogDao.LatestLogByTaskID(task.ID)
+		showTask = map[string]interface{}{
+			"id":          task.ID,
+			"user_id":     task.UserID,
+			"user":        user.Email,
+			"document_id": task.DocumentID,
+			"status":      task.Status,
+		}
+		if err == nil {
+			showTask = map[string]interface{}{
+				"id":          task.ID,
+				"user_id":     task.UserID,
+				"user":        user.Email,
+				"document_id": task.DocumentID,
+				"status":      task.Status,
+				"step":        int(latestLog.Checkpoint["current_step"].(float64)),
+			}
+		}
+
+		showTasks = append(showTasks, showTask)
+	}
+	return showTasks, nil
+}
+
+func (s *Service) RemoveIngestionTasks(tasks []string) ([]map[string]string, error) {
+	var deletedTasks []map[string]string
+	for _, taskID := range tasks {
+		taskRecord := map[string]string{
+			"task_id": taskID,
+		}
+		_, err := s.ingestionTaskDAO.RemoveByAPIServerOrAdminServer(taskID, nil)
+		if err != nil {
+			taskRecord["remove"] = fmt.Sprintf("fail: %s", err.Error())
+		} else {
+			taskRecord["remove"] = "success"
+		}
+		deletedTasks = append(deletedTasks, taskRecord)
+	}
+	return deletedTasks, nil
+}
+
+func (s *Service) StopIngestionTasks(tasks []string) ([]*entity.IngestionTask, error) {
+	var taskResponses []*entity.IngestionTask
+	for _, taskID := range tasks {
+		task, err := s.ingestionTaskDAO.SetStoppingByAPIServer(taskID)
+		if err != nil {
+			return nil, err
+		}
+
+		if task.Status == common.STOPPING {
+			msgQueueEngine := engine.GetMessageQueueEngine()
+			err = msgQueueEngine.PublishTask("tasks.RAGFLOW", []byte(task.ID))
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		taskResponses = append(taskResponses, task)
+	}
+	return taskResponses, nil
 }
 
 // GetUserByToken get user by access token
 func (s *Service) GetUserByToken(token string) (*entity.User, error) {
 	user, err := s.userDAO.GetByAccessToken(token)
 	if err != nil {
-		return nil, ErrInvalidToken
+		return nil, common.ErrInvalidToken
 	}
 
 	if user.IsSuperuser == nil || !*user.IsSuperuser {
-		return nil, ErrNotAdmin
+		return nil, common.ErrNotAdmin
 	}
 
 	if user.IsActive != "1" {
@@ -477,7 +530,7 @@ func (s *Service) GetUserDetails(username string) (map[string]interface{}, error
 	var user entity.User
 	err := dao.DB.Where("email = ?", username).First(&user).Error
 	if err != nil {
-		return nil, ErrUserNotFound
+		return nil, common.ErrUserNotFound
 	}
 
 	return map[string]interface{}{
@@ -1050,11 +1103,11 @@ func (s *Service) ListServices() ([]map[string]interface{}, error) {
 			}
 			result = append(result, configDict)
 		}
-
 	}
 
 	id := len(result)
 	serverList := GlobalServerStore.ListInfos()
+	now := time.Now()
 	for _, serverStatus := range serverList {
 		serverItem := make(map[string]interface{})
 		serverItem["name"] = serverStatus.ServerName
@@ -1063,7 +1116,12 @@ func (s *Service) ListServices() ([]map[string]interface{}, error) {
 		id++
 		serverItem["host"] = serverStatus.Host
 		serverItem["port"] = serverStatus.Port
-		serverItem["status"] = "alive"
+		// the difference between now and serverStatus.Timestamp is less than 5 seconds, then the server is alive
+		if now.Sub(serverStatus.Timestamp) < 30*time.Second {
+			serverItem["status"] = "alive"
+		} else {
+			serverItem["status"] = "timeout"
+		}
 		result = append(result, serverItem)
 	}
 	return result, nil
@@ -1699,11 +1757,6 @@ func (s *Service) HandleHeartbeat(message *common.BaseMessage) (common.ErrorCode
 	}
 	GlobalServerStore.UpdateServerInfo(message.ServerName, status)
 	return common.CodeLicenseValid, ""
-}
-
-func (s *Service) ListIngestionTasks() ([]map[string]interface{}, error) {
-	// TODO: Implement with sandbox manager
-	return []map[string]interface{}{}, nil
 }
 
 // InitDefaultAdmin initialize default admin user
