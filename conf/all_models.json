@@ -10078,6 +10078,754 @@
       "model_types": [
         "chat"
       ]
+    },
+    {
+      "name": "openai/privacy-filter",
+      "alias": [
+        "openai/privacy-filter",
+        "privacy-filter"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "other"
+      ]
+    },
+    {
+      "name": "openai/gpt-oss-safeguard-20b",
+      "alias": [
+        "openai/gpt-oss-safeguard-20b",
+        "gpt-oss-safeguard-20b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "openai/circuit-sparsity",
+      "alias": [
+        "openai/circuit-sparsity",
+        "circuit-sparsity"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "openai/gpt-oss-safeguard-120b",
+      "alias": [
+        "openai/gpt-oss-safeguard-120b",
+        "gpt-oss-safeguard-120b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "openai/gpt-oss-20b",
+      "alias": [
+        "openai/gpt-oss-20b",
+        "gpt-oss-20b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "openai/gpt-oss-120b",
+      "alias": [
+        "openai/gpt-oss-120b",
+        "gpt-oss-120b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "openai/whisper-large-v3-turbo",
+      "alias": [
+        "openai/whisper-large-v3-turbo",
+        "whisper-large-v3-turbo"
+      ],
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "openai/whisper-large-v3",
+      "alias": [
+        "openai/whisper-large-v3",
+        "whisper-large-v3"
+      ],
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "openai/whisper-large-v2",
+      "alias": [
+        "openai/whisper-large-v2",
+        "whisper-large-v2"
+      ],
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "openai/whisper-large",
+      "alias": [
+        "openai/whisper-large",
+        "whisper-large"
+      ],
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "openai/whisper-medium",
+      "alias": [
+        "openai/whisper-medium",
+        "whisper-medium"
+      ],
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "openai/whisper-small",
+      "alias": [
+        "openai/whisper-small",
+        "whisper-small"
+      ],
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "openai/whisper-tiny",
+      "alias": [
+        "openai/whisper-tiny",
+        "whisper-tiny"
+      ],
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "openai/whisper-base",
+      "alias": [
+        "openai/whisper-base",
+        "whisper-base"
+      ],
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "openai/clip-vit-base-patch32",
+      "alias": [
+        "openai/clip-vit-base-patch32",
+        "clip-vit-base-patch32"
+      ],
+      "dimension": 512,
+      "dimensions": [
+        512
+      ],
+      "model_types": [
+        "embedding",
+        "vision"
+      ]
+    },
+    {
+      "name": "openai/whisper-medium.en",
+      "alias": [
+        "openai/whisper-medium.en",
+        "whisper-medium.en"
+      ],
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "openai/whisper-small.en",
+      "alias": [
+        "openai/whisper-small.en",
+        "whisper-small.en"
+      ],
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "openai/whisper-tiny.en",
+      "alias": [
+        "openai/whisper-tiny.en",
+        "whisper-tiny.en"
+      ],
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "openai/whisper-base.en",
+      "alias": [
+        "openai/whisper-base.en",
+        "whisper-base.en"
+      ],
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "openai/shap-e",
+      "alias": [
+        "openai/shap-e",
+        "shap-e"
+      ],
+      "model_types": [
+        "3d_generation"
+      ]
+    },
+    {
+      "name": "openai/consistency-decoder",
+      "alias": [
+        "openai/consistency-decoder",
+        "consistency-decoder"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "openai/diffusers-ct_imagenet64",
+      "alias": [
+        "openai/diffusers-ct_imagenet64",
+        "diffusers-ct_imagenet64"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "openai/diffusers-cd_imagenet64_lpips",
+      "alias": [
+        "openai/diffusers-cd_imagenet64_lpips",
+        "diffusers-cd_imagenet64_lpips"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "openai/diffusers-cd_imagenet64_l2",
+      "alias": [
+        "openai/diffusers-cd_imagenet64_l2",
+        "diffusers-cd_imagenet64_l2"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "openai/clip-vit-large-patch14",
+      "alias": [
+        "openai/clip-vit-large-patch14",
+        "clip-vit-large-patch14"
+      ],
+      "dimension": 768,
+      "dimensions": [
+        768
+      ],
+      "model_types": [
+        "embedding",
+        "vision"
+      ]
+    },
+    {
+      "name": "openai/shap-e-img2img",
+      "alias": [
+        "openai/shap-e-img2img",
+        "shap-e-img2img"
+      ],
+      "model_types": [
+        "image2image",
+        "3d_generation"
+      ]
+    },
+    {
+      "name": "openai/diffusers-cd_cat256_lpips",
+      "alias": [
+        "openai/diffusers-cd_cat256_lpips",
+        "diffusers-cd_cat256_lpips"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "openai/diffusers-cd_cat256_l2",
+      "alias": [
+        "openai/diffusers-cd_cat256_l2",
+        "diffusers-cd_cat256_l2"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "openai/diffusers-cd_bedroom256_l2",
+      "alias": [
+        "openai/diffusers-cd_bedroom256_l2",
+        "diffusers-cd_bedroom256_l2"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "openai/diffusers-ct_bedroom256",
+      "alias": [
+        "openai/diffusers-ct_bedroom256",
+        "diffusers-ct_bedroom256"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "openai/diffusers-cd_bedroom256_lpips",
+      "alias": [
+        "openai/diffusers-cd_bedroom256_lpips",
+        "diffusers-cd_bedroom256_lpips"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "openai/diffusers-ct_cat256",
+      "alias": [
+        "openai/diffusers-ct_cat256",
+        "diffusers-ct_cat256"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "openai/imagegpt-small",
+      "alias": [
+        "openai/imagegpt-small",
+        "imagegpt-small"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "openai/imagegpt-medium",
+      "alias": [
+        "openai/imagegpt-medium",
+        "imagegpt-medium"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "openai/imagegpt-large",
+      "alias": [
+        "openai/imagegpt-large",
+        "imagegpt-large"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "openai/jukebox-5b-lyrics",
+      "alias": [
+        "openai/jukebox-5b-lyrics",
+        "jukebox-5b-lyrics"
+      ],
+      "model_types": [
+        "audio_generation"
+      ]
+    },
+    {
+      "name": "openai/jukebox-1b-lyrics",
+      "alias": [
+        "openai/jukebox-1b-lyrics",
+        "jukebox-1b-lyrics"
+      ],
+      "model_types": [
+        "audio_generation"
+      ]
+    },
+    {
+      "name": "openai/clip-vit-base-patch16",
+      "alias": [
+        "openai/clip-vit-base-patch16",
+        "clip-vit-base-patch16"
+      ],
+      "dimension": 512,
+      "dimensions": [
+        512
+      ],
+      "model_types": [
+        "embedding",
+        "vision"
+      ]
+    },
+    {
+      "name": "openai/clip-vit-large-patch14-336",
+      "alias": [
+        "openai/clip-vit-large-patch14-336",
+        "clip-vit-large-patch14-336"
+      ],
+      "dimension": 768,
+      "dimensions": [
+        768
+      ],
+      "model_types": [
+        "embedding",
+        "vision"
+      ]
+    },
+    {
+      "name": "gpt-5.4",
+      "alias": [
+        "gpt-5.4"
+      ],
+      "max_tokens": 1050000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-image-2",
+      "alias": [
+        "gpt-image-2"
+      ],
+      "model_types": [
+        "image",
+        "image_edit"
+      ]
+    },
+    {
+      "name": "gpt-5.1",
+      "alias": [
+        "gpt-5.1"
+      ],
+      "max_tokens": 400000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-5.2",
+      "alias": [
+        "gpt-5.2"
+      ],
+      "max_tokens": 400000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-5.4-mini",
+      "alias": [
+        "gpt-5.4-mini"
+      ],
+      "max_tokens": 400000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-5",
+      "alias": [
+        "gpt-5"
+      ],
+      "max_tokens": 400000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-5-codex",
+      "alias": [
+        "gpt-5-codex"
+      ],
+      "max_tokens": 400000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-5.3-codex",
+      "alias": [
+        "gpt-5.3-codex"
+      ],
+      "max_tokens": 400000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-5.1-codex",
+      "alias": [
+        "gpt-5.1-codex"
+      ],
+      "max_tokens": 400000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-5.3-codex-spark",
+      "alias": [
+        "gpt-5.3-codex-spark"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-5-codex-mini",
+      "alias": [
+        "gpt-5-codex-mini"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-5.1-codex-max",
+      "alias": [
+        "gpt-5.1-codex-max"
+      ],
+      "max_tokens": 400000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-5.5",
+      "alias": [
+        "gpt-5.5"
+      ],
+      "max_tokens": 1050000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-5.1-codex-mini",
+      "alias": [
+        "gpt-5.1-codex-mini"
+      ],
+      "max_tokens": 400000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-5.2-codex",
+      "alias": [
+        "gpt-5.2-codex"
+      ],
+      "max_tokens": 400000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "claude-fable-5",
+      "alias": [
+        "claude-fable-5",
+        "anthropic.claude-fable-5"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "claude-mythos-5",
+      "alias": [
+        "claude-mythos-5"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "claude-opus-4-8",
+      "alias": [
+        "claude-opus-4-8",
+        "anthropic.claude-opus-4-8"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "claude-sonnet-4-7",
+      "alias": [
+        "claude-sonnet-4-7",
+        "anthropic.claude-sonnet-4-7"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "claude-sonnet-4-6",
+      "alias": [
+        "claude-sonnet-4-6",
+        "anthropic.claude-sonnet-4-6"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "claude-sonnet-4-5",
+      "alias": [
+        "claude-sonnet-4-5",
+        "anthropic.claude-sonnet-4-5"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "claude-haiku-4-5-20251001",
+      "alias": [
+        "claude-haiku-4-5-20251001",
+        "claude-haiku-4-5",
+        "anthropic.claude-haiku-4-5-20251001-v1:0"
+      ],
+      "max_tokens": 200000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     }
   ]
 }
