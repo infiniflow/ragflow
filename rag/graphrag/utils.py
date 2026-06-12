@@ -41,6 +41,11 @@ ErrorHandlerFn = Callable[[BaseException | None, str | None, dict | None], None]
 
 chat_limiter = LoopLocalSemaphore(int(os.environ.get("MAX_CONCURRENT_CHATS", 10)))
 
+# GraphRAG entity/relation embeddings are filled in batches of this size so a
+# batch-capable embedding backend makes one encode() call per group instead of
+# one call per node/edge. Override with GRAPH_EMBED_BATCH_SIZE.
+GRAPH_EMBED_BATCH_SIZE = int(os.environ.get("GRAPH_EMBED_BATCH_SIZE", 16))
+
 # Doc-store insert batching for GraphRAG subgraph/node/edge/community_report
 # chunks.  Defaults (64 docs per batch, up to 4 batches in flight) mirror the
 # regular ingest pipeline in document_service.py while still keeping the total
@@ -371,9 +376,13 @@ def chunk_id(chunk):
     return xxhash.xxh64((chunk["content_with_weight"] + chunk["kb_id"]).encode("utf-8")).hexdigest()
 
 
-async def graph_node_to_chunk(kb_id, embd_mdl, ent_name, meta, chunks, nhop_neighbors=None):
-    global chat_limiter
-    enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
+def build_node_chunk(kb_id, ent_name, meta, nhop_neighbors=None):
+    """Build an entity chunk without its embedding vector.
+
+    Returns ``(chunk, cache_key, embed_text)``. The caller batch-fills the
+    ``q_<dim>_vec`` field via :func:`embed_graph_chunks`, so a graph update with
+    many entities issues a few batched ``encode`` calls instead of one per node.
+    """
     chunk = {
         "id": get_uuid(),
         "important_kwd": [ent_name],
@@ -393,19 +402,7 @@ async def graph_node_to_chunk(kb_id, embd_mdl, ent_name, meta, chunks, nhop_neig
         "available_int": 0,
     }
     chunk["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(chunk["content_ltks"])
-    ebd = get_embed_cache(embd_mdl.llm_name, ent_name)
-    if ebd is None:
-        async with chat_limiter:
-            timeout = 3 if enable_timeout_assertion else 30000000
-            ebd, _ = await asyncio.wait_for(
-                thread_pool_exec(embd_mdl.encode, [ent_name]),
-                timeout=timeout
-            )
-        ebd = ebd[0]
-        set_embed_cache(embd_mdl.llm_name, ent_name, ebd)
-    assert ebd is not None
-    chunk["q_%d_vec" % len(ebd)] = ebd
-    chunks.append(chunk)
+    return chunk, ent_name, ent_name
 
 
 @timeout(3, 3)
@@ -430,8 +427,12 @@ async def get_relation(tenant_id, kb_id, from_ent_name, to_ent_name, size=1):
     return res
 
 
-async def graph_edge_to_chunk(kb_id, embd_mdl, from_ent_name, to_ent_name, meta, chunks):
-    enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
+def build_edge_chunk(kb_id, from_ent_name, to_ent_name, meta):
+    """Build a relation chunk without its embedding vector.
+
+    Returns ``(chunk, cache_key, embed_text)`` for batched embedding by
+    :func:`embed_graph_chunks`.
+    """
     chunk = {
         "id": get_uuid(),
         "from_entity_kwd": from_ent_name,
@@ -447,22 +448,45 @@ async def graph_edge_to_chunk(kb_id, embd_mdl, from_ent_name, to_ent_name, meta,
     }
     chunk["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(chunk["content_ltks"])
     txt = f"{from_ent_name}->{to_ent_name}"
-    ebd = get_embed_cache(embd_mdl.llm_name, txt)
-    if ebd is None:
+    return chunk, txt, f"{txt}: {meta['description']}"
+
+
+async def embed_graph_chunks(embd_mdl, pending, callback=None, label="", batch_size=GRAPH_EMBED_BATCH_SIZE):
+    """Fill ``q_<dim>_vec`` on graph chunks, batching embedding-model calls.
+
+    ``pending`` is a list of ``(chunk, cache_key, embed_text)`` produced by
+    :func:`build_node_chunk` / :func:`build_edge_chunk`. Cached vectors are
+    applied directly; the remaining texts are encoded in groups of ``batch_size``
+    so a batch-capable backend makes one ``encode`` call per group instead of one
+    per node/edge. Mutates the chunk dicts in place.
+    """
+    global chat_limiter
+    enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
+
+    misses = []
+    for chunk, cache_key, embed_text in pending:
+        ebd = get_embed_cache(embd_mdl.llm_name, cache_key)
+        if ebd is not None:
+            chunk["q_%d_vec" % len(ebd)] = ebd
+        else:
+            misses.append((chunk, cache_key, embed_text))
+
+    for start in range(0, len(misses), batch_size):
+        batch = misses[start:start + batch_size]
+        texts = [embed_text for _, _, embed_text in batch]
         async with chat_limiter:
-            timeout = 3 if enable_timeout_assertion else 300000000
-            ebd, _ = await asyncio.wait_for(
-                thread_pool_exec(
-                    embd_mdl.encode,
-                    [txt + f": {meta['description']}"]
-                ),
-                timeout=timeout
+            timeout = 3 if enable_timeout_assertion else 30000000
+            embeddings, _ = await asyncio.wait_for(
+                thread_pool_exec(embd_mdl.encode, texts),
+                timeout=timeout,
             )
-        ebd = ebd[0]
-        set_embed_cache(embd_mdl.llm_name, txt, ebd)
-    assert ebd is not None
-    chunk["q_%d_vec" % len(ebd)] = ebd
-    chunks.append(chunk)
+        for (chunk, cache_key, _), ebd in zip(batch, embeddings):
+            assert ebd is not None
+            set_embed_cache(embd_mdl.llm_name, cache_key, ebd)
+            chunk["q_%d_vec" % len(ebd)] = ebd
+        if callback:
+            done = min(start + batch_size, len(misses))
+            callback(msg=f"Get embedding of {label}: {done}/{len(misses)}")
 
 
 async def does_graph_contains(tenant_id, kb_id, doc_id):
@@ -552,42 +576,27 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
             }
         )
 
-    tasks = []
-    for ii, node in enumerate(change.added_updated_nodes):
+    # Two-phase: build all entity/relation chunks (no vectors) first, then fill
+    # embeddings in bounded batches. This replaces one asyncio task + one encode()
+    # call per node/edge, which scaled poorly on large graphs.
+    node_pending = []
+    for node in change.added_updated_nodes:
         node_attrs = graph.nodes[node]
         nhop_neighbors = n_neighbor(graph, node)
-        tasks.append(asyncio.create_task(
-            graph_node_to_chunk(kb_id, embd_mdl, node, node_attrs, chunks, nhop_neighbors)
-        ))
-        if ii % 100 == 9 and callback:
-            callback(msg=f"Get embedding of nodes: {ii}/{len(change.added_updated_nodes)}")
-    try:
-        await asyncio.gather(*tasks, return_exceptions=False)
-    except Exception as e:
-        logging.error(f"Error in get_embedding_of_nodes: {e}")
-        for t in tasks:
-            t.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-        raise
+        chunk, cache_key, embed_text = build_node_chunk(kb_id, node, node_attrs, nhop_neighbors)
+        chunks.append(chunk)
+        node_pending.append((chunk, cache_key, embed_text))
+    await embed_graph_chunks(embd_mdl, node_pending, callback, "nodes")
 
-    tasks = []
-    for ii, (from_node, to_node) in enumerate(change.added_updated_edges):
+    edge_pending = []
+    for from_node, to_node in change.added_updated_edges:
         edge_attrs = graph.get_edge_data(from_node, to_node)
         if not edge_attrs:
             continue
-        tasks.append(asyncio.create_task(
-            graph_edge_to_chunk(kb_id, embd_mdl, from_node, to_node, edge_attrs, chunks)
-        ))
-        if ii % 100 == 9 and callback:
-            callback(msg=f"Get embedding of edges: {ii}/{len(change.added_updated_edges)}")
-    try:
-        await asyncio.gather(*tasks, return_exceptions=False)
-    except Exception as e:
-        logging.error(f"Error in get_embedding_of_edges: {e}")
-        for t in tasks:
-            t.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-        raise
+        chunk, cache_key, embed_text = build_edge_chunk(kb_id, from_node, to_node, edge_attrs)
+        chunks.append(chunk)
+        edge_pending.append((chunk, cache_key, embed_text))
+    await embed_graph_chunks(embd_mdl, edge_pending, callback, "edges")
 
     now = asyncio.get_running_loop().time()
     if callback:
