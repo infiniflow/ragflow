@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -321,5 +322,51 @@ func TestConnectorHandlerListLogs(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestGoogleGmailWebOAuthCallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &ConnectorHandler{}
+	router := gin.New()
+	router.GET("/api/v1/connectors/gmail/oauth/web/callback", h.GoogleGmailWebOAuthCallback)
+
+	t.Run("missing_state", func(t *testing.T) {
+		resp := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/connectors/gmail/oauth/web/callback", nil)
+		router.ServeHTTP(resp, req)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+		}
+		if !strings.Contains(resp.Body.String(), "Missing OAuth state parameter.") {
+			t.Fatalf("unexpected body: %s", resp.Body.String())
+		}
+		if !strings.Contains(resp.Body.String(), "ragflow-gmail-oauth") {
+			t.Fatalf("missing popup payload type: %s", resp.Body.String())
+		}
+		if !strings.Contains(resp.Body.String(), "<title>Google Gmail Authorization</title>") {
+			t.Fatalf("missing popup title: %s", resp.Body.String())
+		}
+	})
+
+	t.Run("expired_state_without_redis", func(t *testing.T) {
+		resp := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/connectors/gmail/oauth/web/callback?state=fake-state", nil)
+		router.ServeHTTP(resp, req)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+		}
+		if !strings.Contains(resp.Body.String(), "Authorization session expired. Please restart from the main window.") {
+			t.Fatalf("unexpected body: %s", resp.Body.String())
+		}
+	})
+}
+
+func TestGmailOAuthDefaults(t *testing.T) {
+	if defaultGmailWebOAuthRedirectURI != "http://localhost:9380/api/v1/connectors/gmail/oauth/web/callback" {
+		t.Fatalf("unexpected redirect uri default: %s", defaultGmailWebOAuthRedirectURI)
+	}
+	if gmailWebOAuthHTTPClient.Timeout != gmailWebOAuthHTTPTimeout {
+		t.Fatalf("expected http client timeout %s, got %s", gmailWebOAuthHTTPTimeout, gmailWebOAuthHTTPClient.Timeout)
 	}
 }

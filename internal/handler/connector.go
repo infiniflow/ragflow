@@ -22,8 +22,11 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -49,6 +52,15 @@ type ConnectorHandler struct {
 	connectorService connectorServiceIface
 	userService      *service.UserService
 }
+
+const (
+	gmailWebFlowTTLSeconds         = 15 * 60
+	gmailWebOAuthTokenURL          = "https://oauth2.googleapis.com/token"
+	defaultGmailWebOAuthRedirectURI = "http://localhost:9380/api/v1/connectors/gmail/oauth/web/callback"
+	gmailWebOAuthHTTPTimeout       = 15 * time.Second
+)
+
+var gmailWebOAuthHTTPClient = &http.Client{Timeout: gmailWebOAuthHTTPTimeout}
 
 // NewConnectorHandler create connector handler
 func NewConnectorHandler(connectorService *service.ConnectorService, userService *service.UserService) *ConnectorHandler {
