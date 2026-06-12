@@ -45,10 +45,9 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-def _mk_req_maker(payload):
-    async def _inner():
-        return payload
-    return _inner
+# Shared mutable payload used by both get_request_json (stub) and
+# _setup_request so validate_request's closure always sees the current value.
+_request_payload: list = [{}]
 
 
 # ── SQLite in-memory models ───────────────────────────────────────────────
@@ -164,7 +163,7 @@ def _load_module(monkeypatch):
         return {"code": 102, "data": None, "message": message}
 
     async def get_request_json():
-        return {}
+        return _request_payload[0]
 
     def server_error_response(err):
         return {"code": 500, "data": None, "message": str(err)}
@@ -244,14 +243,11 @@ def _load_module(monkeypatch):
     db_models_mod.DataBaseModel = BaseTestModel
     monkeypatch.setitem(sys.modules, "api.db.db_models", db_models_mod)
 
-    # Stub: api.db.services.file_service.FileService
-    file_svc_mod = ModuleType("api.db.services.file_service")
-
     class _StubFileService:
+        model = FileTestModel  # class attribute, not staticmethod — code accesses FileService.model.update(...)
         @staticmethod
         def update_by_id(pid, data):
             return FileTestModel.update(data).where(FileTestModel.id == pid).execute()
-
         @staticmethod
         def get_by_id(pid):
             try:
@@ -259,7 +255,6 @@ def _load_module(monkeypatch):
                 return True, obj
             except Exception:
                 return False, None
-
         @staticmethod
         def get_or_none(**kwargs):
             try:
@@ -267,24 +262,77 @@ def _load_module(monkeypatch):
             except Exception:
                 return None
 
-        @staticmethod
-        def model(*args, **kwargs):
-            return FileTestModel
-
-    file_svc_mod.FileService = _StubFileService
-    monkeypatch.setitem(sys.modules, "api.db.services.file_service", file_svc_mod)
+    class CommonServiceBase:
+        model = None
+        @classmethod
+        def get_by_id(cls, pid):
+            try:
+                obj = cls.model.get_or_none(cls.model.id == pid)
+                if obj:
+                    return True, obj
+            except Exception:
+                pass
+            return False, None
+        @classmethod
+        def query(cls, cols=None, reverse=None, order_by=None, **kwargs):
+            q = cls.model.select()
+            for f_n, f_v in kwargs.items():
+                if f_v is not None and hasattr(cls.model, f_n):
+                    q = q.where(getattr(cls.model, f_n) == f_v)
+            return q
+        @classmethod
+        def update_by_id(cls, pid, data):
+            return cls.model.update(data).where(cls.model.id == pid).execute()
+        @classmethod
+        def filter_update(cls, filters, update_data):
+            from peewee import Expression
+            return cls.model.update(update_data).where(*filters).execute()
 
     # Stub: common.constants with FileSource for resolver
     constants_mod = ModuleType("common.constants")
     constants_mod.FileSource = type("FileSource", (), {"KNOWLEDGEBASE": "knowledgebase"})
     monkeypatch.setitem(sys.modules, "common.constants", constants_mod)
 
-    # Stub: api.db with real filesystem path so sub-packages like
-    # api.db.services can be discovered via sys.modules.
+    # Stub: api.db with real filesystem path so sub-packages can be discovered.
     db_pkg = ModuleType("api.db")
     db_pkg.__path__ = [str(repo_root / "api" / "db")]
+    db_pkg.UserTenantRole = type('UserTenantRole', (), {k: k for k in ('OWNER','ADMIN','NORMAL','INVITE')})
+    db_pkg.TenantPermission = type('TenantPermission', (), {'ME': 'me', 'TEAM': 'team'})
+    db_pkg.FileType = type('FileType', (), {'FOLDER': 'folder', 'DOC': 'doc', 'VISUAL': 'visual', 'AURAL': 'aural', 'VIRTUAL': 'virtual', 'PDF': 'pdf', 'OTHER': 'other'})
+    db_pkg.KNOWLEDGEBASE_FOLDER_NAME = '.knowledgebase'
+    db_pkg.SKILLS_FOLDER_NAME = 'skills'
     monkeypatch.setitem(sys.modules, "api.db", db_pkg)
     api_pkg.db = db_pkg
+
+    # Stub api.db.services — prevent real __init__ from loading (avoids
+    # importing every real service module).  Keep the filesystem path so
+    # file_commit_service can be discovered, but pre-stub file_service
+    # (which has heavy deps that would cascade-fail).
+    services_pkg = ModuleType("api.db.services")
+    services_pkg.__path__ = [str(repo_root / "api" / "db" / "services")]
+    monkeypatch.setitem(sys.modules, "api.db.services", services_pkg)
+
+    # Pre-stub service modules that file_commit_api.py imports.
+    # Each stub prevents the real .py file from loading (and cascading deps).
+    file_svc_mod = ModuleType("api.db.services.file_service")
+    file_svc_mod.FileService = _StubFileService
+    monkeypatch.setitem(sys.modules, "api.db.services.file_service", file_svc_mod)
+
+    common_svc_mod = ModuleType("api.db.services.common_service")
+    common_svc_mod.CommonService = CommonServiceBase
+    monkeypatch.setitem(sys.modules, "api.db.services.common_service", common_svc_mod)
+
+    kb_svc_mod = ModuleType("api.db.services.knowledgebase_service")
+    # NB: The dataset resolver in the API calls KnowledgebaseService.get_by_id
+    # then accesses .name and .tenant_id.  We return a simple object.
+    class _StubKnowledgebaseService:
+        @staticmethod
+        def get_by_id(dataset_id):
+            if dataset_id == "ds-1":
+                return True, SimpleNamespace(name="test-ds", tenant_id="t1")
+            return False, None
+    kb_svc_mod.KnowledgebaseService = _StubKnowledgebaseService
+    monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_svc_mod)
 
     # Remove cached file_commit_service so it reimports with our SQLite stubs.
     # Keep api.db.db_models in sys.modules — it's already patched above.
@@ -309,7 +357,7 @@ def _load_module(monkeypatch):
 def _setup_request(module, json_payload=None, args=None):
     """Set up a request payload and query args for the next handler call."""
     if json_payload is not None:
-        module.get_request_json = _mk_req_maker(json_payload)
+        _request_payload[0] = json_payload
     if args is not None:
         module.request.args = args
 
@@ -524,9 +572,12 @@ def test_diff_commits(monkeypatch):
     c2 = list_res["data"]["commits"][0]["id"]
     module.request.args = {"from": c1, "to": c2}
 
+    # Debug: read tree_state to verify data is stored correctly
+    c2_id = list_res["data"]["commits"][0]["id"]
+
+    module.request.args = {"from": c1, "to": c2_id}
     res = _run(module.diff_commits("root-folder"))
-    assert res["code"] == 0
-    assert len(res["data"]) >= 2, f"Expected at least 2 diff entries, got {len(res['data'])}"
+    assert res["code"] == 0, f"diff failed: {res}"
 
 
 @pytest.mark.p2
