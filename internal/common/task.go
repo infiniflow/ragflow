@@ -17,23 +17,18 @@
 package common
 
 const (
-	// PAGERANK_FLD is the field name for pagerank score
-	PAGERANK_FLD = "pagerank_fea"
-	// TAG_FLD is the field name for tag features
-	TAG_FLD = "tag_feas"
-	// MAX_RESULT_WINDOW is the maximum result window for ES
-	MAX_RESULT_WINDOW = 10000
-	// SearchAfterBatchSize caps how many hits one Elasticsearch
-	// request can return per search_after iteration.
-	SearchAfterBatchSize = 1000
+	TaskTypeIngestionTask    = "ingestion_task"
+	TaskTypeIngestionTasklet = "ingestion_tasklet"
+	TaskTypeIngestionTest    = "ingestion_test"
 )
 
-// task status
-const (
-	CREATED   = "CREATED"
-	RUNNING   = "RUNNING"
-	COMPLETED = "COMPLETED"
-	FAILED    = "FAILED"
-	STOPPED   = "STOPPED"
-	STOPPING  = "STOPPING"
-)
+type TaskMessage struct {
+	TaskID   string `json:"task_id" binding:"required"`
+	TaskType string `json:"task_type" binding:"required"`
+}
+
+type TaskHandle interface {
+	GetMessage() TaskMessage
+	Ack() error
+	Nack() error
+}
