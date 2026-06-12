@@ -208,9 +208,10 @@ def _load_module(monkeypatch):
     )
     monkeypatch.setitem(sys.modules, "common", common_mod)
 
-    # Stub: common.time_utils
+    # Stub: common.time_utils (monotonically increasing timestamps)
+    _ts_iter = iter(range(1718200000000, 1718200000100))
     time_utils_mod = ModuleType("common.time_utils")
-    time_utils_mod.current_timestamp = lambda: 1718200000000
+    time_utils_mod.current_timestamp = lambda: next(_ts_iter)
     time_utils_mod.datetime_format = lambda *_a, **__: "mock"
     monkeypatch.setitem(sys.modules, "common.time_utils", time_utils_mod)
 
@@ -563,21 +564,24 @@ def test_diff_commits(monkeypatch):
             {"file_id": "f1", "file_name": "a.txt", "operation": "modify", "content": "v2"},
         ],
     })
-    _run(module.create_commit("root-folder"))
+    c2 = _run(module.create_commit("root-folder"))["data"]["id"]
+    assert c1 != c2, "c1 and c2 must have different IDs"
 
-    module.request.args = {"from": c1}
-    # Diff needs "to" as well — set it
-    # We need a second commit id; get the latest using the list
-    list_res = _run(module.list_commits("root-folder"))
-    c2 = list_res["data"]["commits"][0]["id"]
     module.request.args = {"from": c1, "to": c2}
-
-    # Debug: read tree_state to verify data is stored correctly
-    c2_id = list_res["data"]["commits"][0]["id"]
-
-    module.request.args = {"from": c1, "to": c2_id}
     res = _run(module.diff_commits("root-folder"))
     assert res["code"] == 0, f"diff failed: {res}"
+    assert len(res["data"]) == 2, f"Expected 2 diff entries, got {len(res['data'])}: {res['data']}"
+
+    # Verify f2 was added (present in c2 but not in c1)
+    f2_entries = [e for e in res["data"] if e["file_id"] == "f2"]
+    assert len(f2_entries) == 1
+    assert f2_entries[0]["operation"] == "add"
+
+    # Verify f1 was modified (hash changed from v1 to v2)
+    f1_entries = [e for e in res["data"] if e["file_id"] == "f1"]
+    assert len(f1_entries) == 1
+    assert f1_entries[0]["operation"] == "modify"
+    assert f1_entries[0]["old_hash"] != f1_entries[0]["new_hash"]
 
 
 @pytest.mark.p2
