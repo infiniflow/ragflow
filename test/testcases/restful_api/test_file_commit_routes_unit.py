@@ -284,9 +284,13 @@ def _load_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.db", db_pkg)
     api_pkg.db = db_pkg
 
-    # Clear cached service/DB modules so they reimport with monkeypatched deps
+    # Remove cached db_models so it reimports with our SQLite stubs.
+    # Keep api.db.services (parent package) in sys.modules so the
+    # import path remains valid.
     for mod_name in list(sys.modules.keys()):
-        if "api.db.services" in mod_name or mod_name == "api.db.db_models":
+        if mod_name == "api.db.db_models":
+            del sys.modules[mod_name]
+        elif mod_name.startswith("api.db.services.file_commit"):
             del sys.modules[mod_name]
 
     # Load the module

@@ -7633,7 +7633,9 @@ Failure:
 **GET** `/api/v1/folders/{folder_id}/commits`
 
 Lists all commits for the specified folder with pagination.  
-Also available at `/api/v1/workspace/{workspace_id}/commits`.
+Also available at:
+- `/api/v1/workspace/{workspace_id}/commits`
+- `/api/v1/datasets/{dataset_id}/commits`
 
 #### Request
 
@@ -7699,7 +7701,9 @@ Success:
 **GET** `/api/v1/folders/{folder_id}/commits/{commit_id}`
 
 Retrieves the details of a specific commit, including its file changes.  
-Also available at `/api/v1/workspace/{workspace_id}/commits/{commit_id}`.
+Also available at:
+- `/api/v1/workspace/{workspace_id}/commits/{commit_id}`
+- `/api/v1/datasets/{dataset_id}/commits/{commit_id}`
 
 #### Request
 
@@ -7768,7 +7772,9 @@ Failure:
 **GET** `/api/v1/folders/{folder_id}/commits/{commit_id}/files`
 
 Lists the file changes associated with a specific commit.  
-Also available at `/api/v1/workspace/{workspace_id}/commits/{commit_id}/files`.
+Also available at:
+- `/api/v1/workspace/{workspace_id}/commits/{commit_id}/files`
+- `/api/v1/datasets/{dataset_id}/commits/{commit_id}/files`
 
 #### Request
 
@@ -7815,7 +7821,9 @@ Success:
 **GET** `/api/v1/folders/{folder_id}/commits/diff?from={commit_id}&to={commit_id}`
 
 Compares two commits and returns the differences.  
-Also available at `/api/v1/workspace/{workspace_id}/commits/diff?from=...&to=...`.
+Also available at:
+- `/api/v1/workspace/{workspace_id}/commits/diff?from=...&to=...`
+- `/api/v1/datasets/{dataset_id}/commits/diff?from=...&to=...`
 
 #### Request
 
@@ -7881,7 +7889,9 @@ Failure:
 **GET** `/api/v1/folders/{folder_id}/changes`
 
 Returns the uncommitted changes for the specified folder (similar to `git status`).  
-Also available at `/api/v1/workspace/{workspace_id}/changes`.
+Also available at:
+- `/api/v1/workspace/{workspace_id}/changes`
+- `/api/v1/datasets/{dataset_id}/changes`
 
 #### Request
 
@@ -7932,7 +7942,9 @@ Success:
 **GET** `/api/v1/folders/{folder_id}/commits/{commit_id}/tree`
 
 Retrieves the full folder tree snapshot as it existed at a specific commit.  
-Also available at `/api/v1/workspace/{workspace_id}/commits/{commit_id}/tree`.
+Also available at:
+- `/api/v1/workspace/{workspace_id}/commits/{commit_id}/tree`
+- `/api/v1/datasets/{dataset_id}/commits/{commit_id}/tree`
 
 #### Request
 
@@ -7975,7 +7987,9 @@ Success:
 **GET** `/api/v1/folders/{folder_id}/commits/{commit_id}/files/{file_id}/content`
 
 Retrieves the file content as it existed at a specific commit.  
-Also available at `/api/v1/workspace/{workspace_id}/commits/{commit_id}/files/{file_id}/content`.
+Also available at:
+- `/api/v1/workspace/{workspace_id}/commits/{commit_id}/files/{file_id}/content`
+- `/api/v1/datasets/{dataset_id}/commits/{commit_id}/files/{file_id}/content`
 
 #### Request
 
