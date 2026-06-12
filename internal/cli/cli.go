@@ -1209,6 +1209,12 @@ func (c *CLI) handleMetaCommand(cmd *Command) error {
 		c.running = false
 	case "?", "h", "help":
 		c.printHelp()
+	case "pwd":
+		dir, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("get working directory: %w", err)
+		}
+		fmt.Println(dir)
 	default:
 		return fmt.Errorf("unknown meta command: \\%s", command)
 	}
