@@ -738,6 +738,20 @@ def test_detail_download_success_and_exception(monkeypatch):
 
 
 @pytest.mark.p2
+def test_assert_mcp_url_is_safe_hides_guard_details(monkeypatch, caplog):
+    module = _load_mcp_api(monkeypatch)
+    _stub_url_safety(monkeypatch, module, {"http://unsafe"})
+
+    with caplog.at_level("WARNING", logger=module.logger.name):
+        hostname, resolved_ip, error = module._assert_mcp_url_is_safe("http://unsafe")
+
+    assert hostname == ""
+    assert resolved_ip == ""
+    assert error == "Invalid url."
+    assert "blocked unsafe url" in caplog.text
+
+
+@pytest.mark.p2
 def test_test_mcp_route_matrix_unit(monkeypatch):
     module = _load_mcp_api(monkeypatch)
     _stub_url_safety(monkeypatch, module)

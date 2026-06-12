@@ -60,6 +60,7 @@ def _export_mcp_servers(mcp_ids: list[str]) -> dict | None:
 
 
 def _assert_mcp_url_is_safe(url, invalid_message: str = "Invalid url.") -> tuple[str, str, str | None]:
+    """Validate MCP URLs without leaking SSRF guard internals to API clients."""
     if not isinstance(url, str) or not url:
         return "", "", invalid_message
     try:
