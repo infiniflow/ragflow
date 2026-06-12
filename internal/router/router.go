@@ -46,6 +46,7 @@ type Router struct {
 	difyRetrievalHandler *handler.DifyRetrievalHandler
 	pluginHandler        *handler.PluginHandler
 	modelHandler         *handler.ModelHandler
+	fileCommitHandler    *handler.FileCommitHandler
 }
 
 // NewRouter create router
@@ -73,6 +74,7 @@ func NewRouter(
 	difyRetrievalHandler *handler.DifyRetrievalHandler,
 	pluginHandler *handler.PluginHandler,
 	modelHandler *handler.ModelHandler,
+	fileCommitHandler *handler.FileCommitHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -98,6 +100,7 @@ func NewRouter(
 		difyRetrievalHandler: difyRetrievalHandler,
 		pluginHandler:        pluginHandler,
 		modelHandler:         modelHandler,
+		fileCommitHandler:    fileCommitHandler,
 	}
 }
 
@@ -301,6 +304,20 @@ func (r *Router) Setup(engine *gin.Engine) {
 				file.GET("/:id/ancestors", r.fileHandler.GetFileAncestors)
 				file.GET("/:id/parent", r.fileHandler.GetParentFolder)
 				file.GET("/:id", r.fileHandler.Download)
+				file.GET("/:file_id/versions", r.fileCommitHandler.GetFileVersionHistory)
+
+				// File commit routes
+				workspace := v1.Group("/workspaces")
+				{
+					workspace.POST("/:folder_id/commits", r.fileCommitHandler.CreateCommit)
+					workspace.GET("/:folder_id/commits", r.fileCommitHandler.ListCommits)
+					workspace.GET("/:folder_id/commits/diff", r.fileCommitHandler.DiffCommits)
+					workspace.GET("/:folder_id/commits/:commit_id", r.fileCommitHandler.GetCommit)
+					workspace.GET("/:folder_id/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
+					workspace.GET("/:folder_id/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
+					workspace.GET("/:folder_id/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
+					workspace.GET("/:folder_id/changes", r.fileCommitHandler.GetUncommittedChanges)
+				}
 			}
 
 			// Author routes
