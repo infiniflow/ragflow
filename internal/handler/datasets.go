@@ -34,8 +34,8 @@ import (
 
 // DatasetsHandler handles the RESTful dataset endpoints.
 type DatasetsHandler struct {
-	datasetsService  *service.DatasetService
-	metadataService  *service.MetadataService
+	datasetsService *service.DatasetService
+	metadataService *service.MetadataService
 }
 
 type listDatasetsExt struct {
@@ -47,8 +47,8 @@ type listDatasetsExt struct {
 // NewDatasetsHandler creates a new datasets handler.
 func NewDatasetsHandler(datasetsService *service.DatasetService, metadataService *service.MetadataService) *DatasetsHandler {
 	return &DatasetsHandler{
-		datasetsService:  datasetsService,
-		metadataService:  metadataService,
+		datasetsService: datasetsService,
+		metadataService: metadataService,
 	}
 }
 
@@ -169,6 +169,137 @@ func (h *DatasetsHandler) GetDataset(c *gin.Context) {
 		"code": common.CodeSuccess,
 		"data": result,
 	})
+}
+
+func (h *DatasetsHandler) GetMetadataConfig(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := c.Param("dataset_id")
+	result, code, err := h.datasetsService.GetMetadataConfig(datasetID, user.ID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": common.CodeSuccess,
+		"data": result,
+	})
+}
+
+func (h *DatasetsHandler) UpdateMetadataConfig(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := c.Param("dataset_id")
+	var req service.MetadataConfigRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	result, code, err := h.datasetsService.UpdateMetadataConfig(datasetID, user.ID, &req)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": common.CodeSuccess,
+		"data": result,
+	})
+}
+
+// GetIngestionSummary handles GET /api/v1/datasets/:dataset_id/ingestions/summary.
+func (h *DatasetsHandler) GetIngestionSummary(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := c.Param("dataset_id")
+	result, code, err := h.datasetsService.GetIngestionSummary(datasetID, user.ID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, result, "success")
+}
+
+// ListIngestionLogs handles GET /api/v1/datasets/:dataset_id/ingestions.
+func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := c.Param("dataset_id")
+
+	page := 0
+	if pageStr := c.Query("page"); pageStr != "" {
+		p, err := strconv.Atoi(pageStr)
+		if err != nil {
+			jsonError(c, common.CodeArgumentError, "page must be an integer")
+			return
+		}
+		page = p
+	}
+
+	pageSize := 0
+	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
+		ps, err := strconv.Atoi(pageSizeStr)
+		if err != nil {
+			jsonError(c, common.CodeArgumentError, "page_size must be an integer")
+			return
+		}
+		pageSize = ps
+	}
+
+	orderby := c.DefaultQuery("orderby", "create_time")
+	// desc defaults to true and is only disabled by the literal value "false".
+	desc := strings.ToLower(c.DefaultQuery("desc", "true")) != "false"
+	operationStatus := c.QueryArray("operation_status")
+	createDateFrom := c.Query("create_date_from")
+	createDateTo := c.Query("create_date_to")
+	logType := c.DefaultQuery("log_type", "dataset")
+	keywords := c.Query("keywords")
+
+	result, code, err := h.datasetsService.ListIngestionLogs(datasetID, user.ID, page, pageSize, orderby, desc, operationStatus, createDateFrom, createDateTo, logType, keywords)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, result, "success")
+}
+
+// GetIngestionLog handles GET /api/v1/datasets/:dataset_id/ingestions/:log_id.
+func (h *DatasetsHandler) GetIngestionLog(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := c.Param("dataset_id")
+	logID := c.Param("log_id")
+	result, code, err := h.datasetsService.GetIngestionLog(datasetID, user.ID, logID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, result, "success")
 }
 
 // DeleteDatasets handles DELETE /api/v1/datasets.
@@ -469,6 +600,128 @@ func (h *DatasetsHandler) ListMetadataFlattened(c *gin.Context) {
 	}
 
 	jsonResponse(c, common.CodeSuccess, flattenedMeta, "success")
+}
+
+func (h *DatasetsHandler) UpdateDocumentMetadataConfig(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := strings.TrimSpace(c.Param("dataset_id"))
+	if datasetID == "" {
+		jsonError(c, common.CodeArgumentError, "dataset_id is required")
+		return
+	}
+	documentID := strings.TrimSpace(c.Param("document_id"))
+	if documentID == "" {
+		jsonError(c, common.CodeArgumentError, "document_id is required")
+		return
+	}
+	userID := strings.TrimSpace(user.ID)
+	if userID == "" {
+		jsonError(c, common.CodeArgumentError, "user_id is required")
+		return
+	}
+
+	var req map[string]interface{}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	data, code, err := h.datasetsService.UpdateDocumentMetadataConfig(userID, datasetID, documentID, req)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    code,
+		"data":    data,
+		"message": "success",
+	})
+}
+
+// SearchDatasets searches chunks across datasets based on a question
+// @Summary Search Datasets
+// @Description Search for relevant chunks across one or more datasets based on a question
+// @Tags datasets
+// @Accept json
+// @Produce json
+// @Param request body service.SearchDatasetsRequest true "search parameters"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/datasets/search [post]
+func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req service.SearchDatasetsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	if req.Page == nil {
+		defaultPage := 1
+		req.Page = &defaultPage
+	}
+	if req.Size == nil {
+		defaultSize := 30
+		req.Size = &defaultSize
+	}
+	if req.TopK == nil {
+		defaultTopK := 1024
+		req.TopK = &defaultTopK
+	}
+	if req.UseKG == nil {
+		defaultUseKG := false
+		req.UseKG = &defaultUseKG
+	}
+
+	if req.Question == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "question is required",
+		})
+		return
+	}
+	if req.DatasetIDs == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "kb_id is required",
+		})
+		return
+	}
+
+	if len(req.DatasetIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "kb_id array cannot be empty",
+		})
+		return
+	}
+
+	resp, err := h.datasetsService.SearchDatasets(&req, user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": resp,
+	})
 }
 
 func firstStringValue(value interface{}) string {

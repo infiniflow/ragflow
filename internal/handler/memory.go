@@ -20,6 +20,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"os"
 	"strconv"
@@ -549,8 +550,8 @@ func (h *MemoryHandler) AddMessage(c *gin.Context) {
 	})
 }
 
-// ForgetMessage handles DELETE request for forgetting messages
-// API Path: DELETE /api/v1/messages/:memory_id/:message_id
+// ForgetMessage handles DELETE request for forgetting messages.
+// API Path: DELETE /api/v1/messages/{memory_id}:{message_id}
 //
 // Function:
 //   - Soft-deletes the specified message (sets forget_at timestamp)
@@ -559,14 +560,80 @@ func (h *MemoryHandler) AddMessage(c *gin.Context) {
 // Parameter Format:
 //   - memory_id: Memory ID
 //   - message_id: Message ID (integer)
-//
-// TODO: Implementation pending - depends on embedding engine
 func (h *MemoryHandler) ForgetMessage(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	memoryID, messageID, err := parseMemoryMessagePath(c.Param("memory_message"))
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeArgumentError,
+			"message": err.Error(),
+			"data":    nil,
+		})
+		return
+	}
+
+	if err := h.memoryService.ForgetMessage(c.Request.Context(), user.ID, memoryID, messageID); err != nil {
+		errMsg := err.Error()
+		if isMemoryServiceNotFound(err) {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeNotFound,
+				"message": errMsg,
+				"data":    nil,
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": "Internal server error",
+			"data":    nil,
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeServerError,
-		"message": "ForgetMessage not implemented - pending embedding engine dependency",
+		"code":    common.CodeSuccess,
+		"message": true,
 		"data":    nil,
 	})
+}
+
+func isMemoryServiceNotFound(err error) bool {
+	var notFoundErr *service.ResourceNotFoundError
+	return errors.As(err, &notFoundErr) && notFoundErr.Resource == "Memory"
+}
+
+func parseMemoryMessagePath(memoryMessage string) (string, int64, error) {
+	memoryMessage = strings.TrimSpace(memoryMessage)
+	if memoryMessage == "" {
+		return "", 0, errors.New("memory_id and message_id are required")
+	}
+
+	parts := strings.Split(memoryMessage, ":")
+	if len(parts) != 2 {
+		return "", 0, errors.New("message path must be formatted as memory_id:message_id")
+	}
+
+	memoryID := strings.TrimSpace(parts[0])
+	messageIDText := strings.TrimSpace(parts[1])
+	if memoryID == "" {
+		return "", 0, errors.New("memory_id is required")
+	}
+	if messageIDText == "" {
+		return "", 0, errors.New("message_id is required")
+	}
+
+	messageID, err := strconv.ParseInt(messageIDText, 10, 64)
+	if err != nil || messageID < 0 {
+		return "", 0, errors.New("message_id must be a non-negative integer")
+	}
+
+	return memoryID, messageID, nil
 }
 
 // UpdateMessage handles PUT request for updating message status

@@ -17,7 +17,6 @@
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -25,82 +24,46 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 )
 
 // HunyuanModel implements ModelDriver for Tencent Hunyuan
-// To further enhance the user experience of large-scale model services, relevant features of Tencent Hunyuan Large Model
-// will be gradually migrated to TokenHub. Following the migration, the original platform will no longer introduce new model
-// capabilities and will cease to support the purchase of new model services. Model services already purchased by users may
-// continue to be used and will not be affected for the time being. If you wish to activate new model services or utilise additional
-// model capabilities, please visit TokenHub.
 type HunyuanModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 // NewHunyuanModel creates a new Hunyuan model instance.
-//
-// Same transport convention as the other Go drivers in this package:
-// clone http.DefaultTransport to keep ProxyFromEnvironment, DialContext,
-// HTTP/2, and TLS defaults, and only override the connection-pool
-// fields. No client-level Timeout so SSE streams aren't capped mid-flight.
 func NewHunyuanModel(baseURL map[string]string, urlSuffix URLSuffix) *HunyuanModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-	transport.ResponseHeaderTimeout = 60 * time.Second
-
 	return &HunyuanModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
 
-func (a *HunyuanModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewHunyuanModel(baseURL, a.URLSuffix)
+func (h *HunyuanModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return NewHunyuanModel(baseURL, h.baseModel.URLSuffix)
 }
 
-func (a *HunyuanModel) Name() string {
+func (h *HunyuanModel) Name() string {
 	return "hunyuan"
 }
 
-func (a *HunyuanModel) baseURLForRegion(region string) (string, error) {
-	base, ok := a.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("hunyuan: no base URL configured for region %q", region)
-	}
-	return strings.TrimSuffix(base, "/"), nil
-}
-
-// ChatWithMessages sends a non-streaming chat request and returns the
-// full response. Forwards documented OpenAI-shaped parameters when the
-// caller supplies them; reasoning_content is surfaced separately so the
-// visible Answer is never polluted by chain-of-thought.
-func (a *HunyuanModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+func (h *HunyuanModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := a.baseURLForRegion(region)
+	baseURL, err := h.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, a.URLSuffix.Chat)
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, h.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -146,7 +109,7 @@ func (a *HunyuanModel) ChatWithMessages(modelName string, messages []Message, ap
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := h.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -185,10 +148,6 @@ func (a *HunyuanModel) ChatWithMessages(modelName string, messages []Message, ap
 		return nil, fmt.Errorf("invalid content format")
 	}
 
-	// Reasoning models (deepseek-r1 / kimi / glm-thinking) put
-	// chain-of-thought in a separate `reasoning_content` field with
-	// `content` already cleaned. Absent or non-string means no reasoning
-	// was emitted; leave it empty rather than synthesizing one.
 	reasonContent := ""
 	if r, ok := messageMap["reasoning_content"].(string); ok {
 		reasonContent = r
@@ -200,31 +159,25 @@ func (a *HunyuanModel) ChatWithMessages(modelName string, messages []Message, ap
 	}, nil
 }
 
-// ChatStreamlyWithSender opens the SSE chat-completions endpoint and
-// forwards each delta through the supplied sender. Reasoning chunks go
-// to the sender's second argument, content chunks to the first; the
-// stream is terminated by either `[DONE]` or a delta with finish_reason.
-func (a *HunyuanModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+// ChatStreamlyWithSender opens the SSE chat-completions
+func (h *HunyuanModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
-	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := a.baseURLForRegion(region)
+	baseURL, err := h.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, a.URLSuffix.Chat)
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, h.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -241,9 +194,6 @@ func (a *HunyuanModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	}
 
 	if chatModelConfig != nil {
-		// Guard against the caller asking for stream=false on a code path
-		// that only knows how to read SSE. Without this, a non-SSE JSON
-		// body would parse as zero chunks and look like a silent timeout.
 		if chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
 			return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 		}
@@ -266,8 +216,6 @@ func (a *HunyuanModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// SSE is long-lived; rely on the transport's ResponseHeaderTimeout
-	// to cap connection-establishment instead of a hard deadline.
 	req, err := http.NewRequestWithContext(context.Background(), "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -275,7 +223,7 @@ func (a *HunyuanModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := h.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -286,47 +234,20 @@ func (a *HunyuanModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	sawTerminal := false
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-		data := strings.TrimSpace(line[5:])
-		if data == "[DONE]" {
-			sawTerminal = true
-			break
-		}
-
-		var event map[string]interface{}
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			// A malformed frame usually means a truncated event or an
-			// upstream incident. Surface it instead of silently producing
-			// partial output.
-			return fmt.Errorf("hunyuan: invalid SSE event: %w", err)
-		}
-
-		// Hunyuan can emit a terminal `{"error": ...}` frame when the
-		// upstream model rejects mid-stream (rate limit, content policy).
-		// Surface it verbatim instead of falling through to "no choices".
+	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		if apiErr, ok := event["error"]; ok {
 			return fmt.Errorf("hunyuan: upstream stream error: %v", apiErr)
 		}
 
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
-			continue
+			return nil
 		}
 		firstChoice, ok := choices[0].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
-		// Reasoning first, content second — matches the wire ordering
-		// for reasoning models and lets UIs render the chain-of-thought
-		// before the visible token. A terminal frame may carry
-		// finish_reason without a delta, so don't skip when delta is absent.
 		if delta, ok := firstChoice["delta"].(map[string]interface{}); ok {
 			if r, ok := delta["reasoning_content"].(string); ok && r != "" {
 				rr := r
@@ -343,14 +264,13 @@ func (a *HunyuanModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		}
 		if finish, ok := firstChoice["finish_reason"].(string); ok && finish != "" {
 			sawTerminal = true
-			break
 		}
-	}
-
-	if err := scanner.Err(); err != nil {
+		return nil
+	})
+	if err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
-	if !sawTerminal {
+	if !done && !sawTerminal {
 		return fmt.Errorf("hunyuan: stream ended before [DONE] or finish_reason")
 	}
 
@@ -361,24 +281,17 @@ func (a *HunyuanModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	return nil
 }
 
-// ListModels returns the model ids visible to the API key by calling
-// /v1/models. Used by Add-Provider's connection check and by the UI's
-// model picker.
-func (a *HunyuanModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+func (h *HunyuanModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := a.baseURLForRegion(region)
+	baseURL, err := h.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, a.URLSuffix.Models)
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, h.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -389,7 +302,7 @@ func (a *HunyuanModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := h.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -403,50 +316,41 @@ func (a *HunyuanModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
+	// Parse response
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	data, ok := result["data"].([]interface{})
-	if !ok {
+	if modelList.Models == nil {
 		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	models := make([]string, 0, len(data))
-	for _, m := range data {
-		modelMap, ok := m.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		id, ok := modelMap["id"].(string)
-		if !ok {
-			continue
-		}
-		models = append(models, id)
-	}
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
-// CheckConnection verifies the API key by calling ListModels. The /v1/models
-// endpoint is the documented lightweight way to validate credentials on
-// OpenAI-compatible gateways without burning chat-completion quota.
-func (a *HunyuanModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := a.ListModels(apiConfig)
+func (h *HunyuanModel) CheckConnection(apiConfig *APIConfig) error {
+	_, err := h.ListModels(apiConfig)
 	return err
 }
 
-func (a *HunyuanModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (h *HunyuanModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
 	}
 
-	url := fmt.Sprintf("%s/%s", a.BaseURL[region], a.URLSuffix.Embedding)
+	baseURL, err := h.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, h.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -458,7 +362,10 @@ func (a *HunyuanModel) Embed(modelName *string, texts []string, apiConfig *APICo
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -466,7 +373,7 @@ func (a *HunyuanModel) Embed(modelName *string, texts []string, apiConfig *APICo
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := h.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -496,7 +403,7 @@ func (a *HunyuanModel) Embed(modelName *string, texts []string, apiConfig *APICo
 		return nil, fmt.Errorf("hunyuan embedding response contains no data: %s", string(body))
 	}
 
-	var embeddings []EmbeddingData
+	embeddings := make([]EmbeddingData, 0, len(parsedResponse.Data))
 	for _, dataElem := range parsedResponse.Data {
 		embeddings = append(embeddings, EmbeddingData{
 			Embedding: dataElem.Embedding,
@@ -507,42 +414,42 @@ func (a *HunyuanModel) Embed(modelName *string, texts []string, apiConfig *APICo
 	return embeddings, nil
 }
 
-func (a *HunyuanModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+func (h *HunyuanModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", h.Name())
 }
 
-func (a *HunyuanModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+func (h *HunyuanModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("%s, no such method", h.Name())
 }
 
-func (a *HunyuanModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+func (h *HunyuanModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", h.Name())
 }
 
-func (a *HunyuanModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", a.Name())
+func (h *HunyuanModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", h.Name())
 }
 
-func (a *HunyuanModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+func (h *HunyuanModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", h.Name())
 }
 
-func (a *HunyuanModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", a.Name())
+func (h *HunyuanModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", h.Name())
 }
 
-func (a *HunyuanModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+func (h *HunyuanModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", h.Name())
 }
 
-func (a *HunyuanModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+func (h *HunyuanModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", h.Name())
 }
 
-func (a *HunyuanModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+func (h *HunyuanModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", h.Name())
 }
 
-func (a *HunyuanModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+func (h *HunyuanModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", h.Name())
 }

@@ -17,7 +17,6 @@
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -30,25 +29,11 @@ import (
 )
 
 // modelscopeStreamIdleTimeout bounds how long a stream can go without
-// receiving any SSE line. Self-hosted ModelScope deployments can be slow,
-// but a stream that stays silent for a full minute is more useful as a
-// surfaced error than as a stuck goroutine.
 var modelscopeStreamIdleTimeout = 60 * time.Second
 
 // ModelScopeModel implements ModelDriver for ModelScope chat models.
-//
-// ModelScope exposes an OpenAI-compatible API under <endpoint>/v1.
-// The tenant supplies the deployment endpoint (no default — matches the
-// Python ModelScopeChat at rag/llm/chat_model.py which raises on a
-// missing base URL). Both the root endpoint and the OpenAI-compatible
-// endpoint (.../v1) are accepted; the driver normalizes both to the root
-// before appending URLSuffix values like v1/chat/completions.
-// Authentication is optional: deployments without auth ignore API keys,
-// while auth-enabled deployments require Authorization: Bearer <api_key>.
 type ModelScopeModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 type modelscopeChatChoice struct {
@@ -65,45 +50,27 @@ type modelscopeChatResponse struct {
 }
 
 type modelscopeModelListResponse struct {
-	Data []struct {
-		ID string `json:"id"`
-	} `json:"data"`
+	Data []DSModel `json:"data"`
 }
 
 // NewModelScopeModel creates a new ModelScope model instance.
 func NewModelScopeModel(baseURL map[string]string, urlSuffix URLSuffix) *ModelScopeModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-	transport.ResponseHeaderTimeout = 60 * time.Second
-
 	return &ModelScopeModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:          baseURL,
+			URLSuffix:        urlSuffix,
+			AllowEmptyAPIKey: true,
+			httpClient:       NewDriverHTTPClient(),
 		},
 	}
 }
 
 func (m *ModelScopeModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewModelScopeModel(baseURL, m.URLSuffix)
+	return NewModelScopeModel(baseURL, m.baseModel.URLSuffix)
 }
 
 func (m *ModelScopeModel) Name() string {
 	return "modelscope"
-}
-
-func (m *ModelScopeModel) baseURLForRegion(region string) (string, error) {
-	if base, ok := m.BaseURL[region]; ok && strings.TrimSpace(base) != "" {
-		return normalizeModelScopeBaseURL(base), nil
-	}
-	if base, ok := m.BaseURL["default"]; ok && strings.TrimSpace(base) != "" {
-		return normalizeModelScopeBaseURL(base), nil
-	}
-	return "", fmt.Errorf("modelscope: missing base URL, configure the ModelScope endpoint (e.g., http://127.0.0.1:8000 or http://127.0.0.1:8000/v1)")
 }
 
 func normalizeModelScopeBaseURL(base string) string {
@@ -115,20 +82,6 @@ func normalizeModelScopeBaseURL(base string) string {
 		return strings.TrimSuffix(trimmed, "/v1")
 	}
 	return trimmed
-}
-
-func setModelScopeAuth(req *http.Request, apiConfig *APIConfig) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return
-	}
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-}
-
-func modelscopeRegion(apiConfig *APIConfig) string {
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		return *apiConfig.Region
-	}
-	return "default"
 }
 
 func modelscopeReasoningFromStrings(reasoningContent string, reasoning string, thinking string) string {
@@ -188,15 +141,20 @@ func buildModelScopeChatBody(modelName string, messages []Message, stream bool, 
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
 func (m *ModelScopeModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := m.baseURLForRegion(modelscopeRegion(apiConfig))
+	baseURL, err := m.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, m.URLSuffix.Chat)
+	baseURL = normalizeModelScopeBaseURL(baseURL)
+	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Chat)
 
 	reqBody := buildModelScopeChatBody(modelName, messages, false, chatModelConfig)
 	jsonData, err := json.Marshal(reqBody)
@@ -212,9 +170,11 @@ func (m *ModelScopeModel) ChatWithMessages(modelName string, messages []Message,
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	setModelScopeAuth(req, apiConfig)
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -251,6 +211,10 @@ func (m *ModelScopeModel) ChatWithMessages(modelName string, messages []Message,
 
 // ChatStreamlyWithSender sends messages and streams response via sender.
 func (m *ModelScopeModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
@@ -261,11 +225,12 @@ func (m *ModelScopeModel) ChatStreamlyWithSender(modelName string, messages []Me
 		return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 	}
 
-	baseURL, err := m.baseURLForRegion(modelscopeRegion(apiConfig))
+	baseURL, err := m.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, m.URLSuffix.Chat)
+	baseURL = normalizeModelScopeBaseURL(baseURL)
+	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Chat)
 
 	reqBody := buildModelScopeChatBody(modelName, messages, true, chatModelConfig)
 	jsonData, err := json.Marshal(reqBody)
@@ -281,9 +246,11 @@ func (m *ModelScopeModel) ChatStreamlyWithSender(modelName string, messages []Me
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	setModelScopeAuth(req, apiConfig)
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -316,36 +283,19 @@ func (m *ModelScopeModel) ChatStreamlyWithSender(modelName string, messages []Me
 		}
 	}()
 
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	sawTerminal := false
-	for scanner.Scan() {
+	streamDone, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		lastActiveMu.Lock()
 		lastActive = time.Now()
 		lastActiveMu.Unlock()
 
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-		data := strings.TrimSpace(line[5:])
-		if data == "[DONE]" {
-			sawTerminal = true
-			break
-		}
-
-		var event map[string]interface{}
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			continue
-		}
-
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
-			continue
+			return nil
 		}
 		firstChoice, ok := choices[0].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		if delta, ok := firstChoice["delta"].(map[string]interface{}); ok {
@@ -363,17 +313,16 @@ func (m *ModelScopeModel) ChatStreamlyWithSender(modelName string, messages []Me
 
 		if finishReason, ok := firstChoice["finish_reason"].(string); ok && finishReason != "" {
 			sawTerminal = true
-			break
 		}
-	}
-
-	if err := scanner.Err(); err != nil {
+		return nil
+	})
+	if err != nil {
 		if ctx.Err() != nil {
 			return fmt.Errorf("modelscope: stream idle for more than %s, aborted", modelscopeStreamIdleTimeout)
 		}
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
-	if !sawTerminal {
+	if !streamDone && !sawTerminal {
 		return fmt.Errorf("modelscope: stream ended before [DONE] or finish_reason")
 	}
 
@@ -415,12 +364,17 @@ func (m *ModelScopeModel) ParseFile(modelName *string, content []byte, url *stri
 
 // ListModels returns the model IDs exposed by ModelScope's OpenAI-compatible
 // /v1/models endpoint.
-func (m *ModelScopeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	baseURL, err := m.baseURLForRegion(modelscopeRegion(apiConfig))
+func (m *ModelScopeModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
+	baseURL, err := m.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, m.URLSuffix.Models)
+	baseURL = normalizeModelScopeBaseURL(baseURL)
+	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -429,9 +383,13 @@ func (m *ModelScopeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	setModelScopeAuth(req, apiConfig)
 
-	resp, err := m.httpClient.Do(req)
+	req.Header.Set("Content-Type", "application/json")
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
+
+	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -450,13 +408,7 @@ func (m *ModelScopeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]string, 0, len(result.Data))
-	for _, model := range result.Data {
-		if model.ID != "" {
-			models = append(models, model.ID)
-		}
-	}
-	return models, nil
+	return ParseListModel(ModelList{Models: result.Data}), nil
 }
 
 func (m *ModelScopeModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

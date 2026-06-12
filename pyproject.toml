@@ -1,6 +1,6 @@
 [project]
 name = "ragflow"
-version = "0.25.6"
+version = "0.26.0"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license-files = ["LICENSE"]
@@ -28,7 +28,7 @@ dependencies = [
     "chardet>=5.2.0,<6.0.0",
     "cn2an==0.5.22",
     "cohere==5.6.2",
-    "Crawl4AI>=0.4.0,<1.0.0",
+    "crawl4ai>=0.8.0",
     "dashscope==1.25.11",
     "deepl==1.18.0",
     "debugpy>=1.8.13",
@@ -155,7 +155,11 @@ dependencies = [
     #    "xxhash>=3.5.0,<4.0.0",
     #    "trio>=0.17.0,<0.29.0",
     #    "click>=8.1.8",
-    "litellm~=1.82.0,!=1.82.7,!=1.82.8",
+    # 1.82.6 has an internal ImportError loading add_system_prompt_to_messages
+    # from litellm_core_utils.prompt_templates.common_utils, which breaks
+    # `import litellm` at module load and tanks the whole server (#15916).
+    # 1.82.7 / 1.82.8 were already excluded for security in #13768.
+    "litellm~=1.82.0,!=1.82.6,!=1.82.7,!=1.82.8",
     #    "pip>=25.2",
     #    "imageio-ffmpeg>=0.6.0",
     #    "cryptography==46.0.3",

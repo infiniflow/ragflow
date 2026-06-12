@@ -141,6 +141,25 @@ jobs:
             sudo docker rm -f -v "${BUILDER_CONTAINER}"
           fi
 
+#      - name: Prepare test resources
+#        run: |
+#          RESOURCE_REPO=https://github.com/infiniflow/resource.git
+#          RESOURCE_REF=549feaaf998954d65b668667f009125bc84a9c5e
+#          rm -rf /tmp/resource
+#          git clone "${RESOURCE_REPO}" /tmp/resource
+#          git -C /tmp/resource checkout "${RESOURCE_REF}"
+#          sudo mkdir -p /usr/share/infinity
+#          sudo ln -sf /tmp/resource /usr/share/infinity/resource
+#          mkdir -p resource
+#          ln -sf /tmp/resource/wordnet resource/wordnet
+#
+#      - name: Test Go packages
+#        run: |
+#          set -euo pipefail
+#          packages=$(go list ./internal/... | grep -vE '/storage(/|$)')
+#          CGO_ENABLED=1 GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
+#            go test -count=1 ${packages}
+
       - name: Build ragflow:nightly
         run: |
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
@@ -171,9 +190,46 @@ jobs:
                RUNNER_NUM=$(sudo docker inspect $(hostname) --format '{{index .Config.Labels "com.docker.compose.container-number"}}' 2>/dev/null || true)
                RUNNER_NUM=${RUNNER_NUM:-1}
 
-          # Per-runner base plus per-workflow-run offset avoids port clashes when
-          # multiple CI jobs share the same self-hosted runner concurrently.
-               PORT_OFFSET=$(( (GITHUB_RUN_ID % 400) + RUNNER_NUM * 10 ))
+          # Per-runner seed plus per-workflow-run offset avoids most clashes when
+          # multiple CI jobs share the same self-hosted runner concurrently. Probe
+          # the final host ports too, because stale compose projects can still hold
+          # a deterministic port from a previous run.
+               PORT_BASES=(1200 1201 23817 23820 5432 5455 9000 9001 6379 6380 6601 9380 9381 9382 9384 9383 9385 80 443)
+               MAX_PORT_OFFSET=$((65000 - 23820))
+               PORT_OFFSET=$(( (GITHUB_RUN_ID % 4000) + RUNNER_NUM * 1000 ))
+               OFFSET_FOUND=false
+
+               port_offset_available() {
+                 local offset=$1
+                 local base port
+                 for base in "${PORT_BASES[@]}"; do
+                   port=$((base + offset))
+                   if ss -ltnH "sport = :${port}" | grep -q .; then
+                     return 1
+                   fi
+                 done
+                 return 0
+               }
+
+               for ATTEMPT in $(seq 0 9); do
+                 CANDIDATE_OFFSET=$(( (PORT_OFFSET + ATTEMPT * 4000) % MAX_PORT_OFFSET ))
+                 if [ "${CANDIDATE_OFFSET}" -lt 1000 ]; then
+                   CANDIDATE_OFFSET=$((CANDIDATE_OFFSET + 1000))
+                 fi
+
+                 if port_offset_available "${CANDIDATE_OFFSET}"; then
+                   PORT_OFFSET=${CANDIDATE_OFFSET}
+                   OFFSET_FOUND=true
+                   break
+                 fi
+               done
+
+               if [ "${OFFSET_FOUND}" != "true" ]; then
+                 echo "Failed to find a free host port range for docker compose" >&2
+                 exit 1
+               fi
+
+               echo "Using host port offset ${PORT_OFFSET}"
                ES_PORT=$((1200 + PORT_OFFSET))
                OS_PORT=$((1201 + PORT_OFFSET))
                INFINITY_THRIFT_PORT=$((23817 + PORT_OFFSET))
@@ -243,7 +299,7 @@ jobs:
               svc_ready=1
               break
             fi
-            echo "Waiting for service to be available... ($i/120)"
+            echo "Waiting for service to be available... ($i/60)"
             sleep 5
           done
           if [ "$svc_ready" -ne 1 ]; then
@@ -263,7 +319,7 @@ jobs:
               svc_ready=1
               break
             fi
-            echo "Waiting for service to be available... ($i/120)"
+            echo "Waiting for service to be available... ($i/60)"
             sleep 5
           done
           if [ "$svc_ready" -ne 1 ]; then
@@ -339,7 +395,7 @@ jobs:
               svc_ready=1
               break
             fi
-            echo "Waiting for service to be available... ($i/120)"
+            echo "Waiting for service to be available... ($i/60)"
             sleep 5
           done
           if [ "$svc_ready" -ne 1 ]; then
@@ -459,7 +515,7 @@ jobs:
               svc_ready=1
               break
             fi
-            echo "Waiting for service to be available... ($i/120)"
+            echo "Waiting for service to be available... ($i/60)"
             sleep 5
           done
           if [ "$svc_ready" -ne 1 ]; then
@@ -479,7 +535,7 @@ jobs:
               svc_ready=1
               break
             fi
-            echo "Waiting for service to be available... ($i/120)"
+            echo "Waiting for service to be available... ($i/60)"
             sleep 5
           done
           if [ "$svc_ready" -ne 1 ]; then
@@ -555,7 +611,7 @@ jobs:
               svc_ready=1
               break
             fi
-            echo "Waiting for service to be available... ($i/120)"
+            echo "Waiting for service to be available... ($i/60)"
             sleep 5
           done
           if [ "$svc_ready" -ne 1 ]; then

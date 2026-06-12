@@ -187,7 +187,7 @@ async def async_completion(tenant_id, chat_id, question, name="New session", ses
 
     if stream:
         try:
-            async for ans in async_chat(dia, msg, True, **kwargs):
+            async for ans in async_chat(dia, msg, True, session_id=session_id, **kwargs):
                 ans = structure_answer(conv, ans, message_id, session_id)
                 yield "data:" + json.dumps({"code": 0, "data": ans}, ensure_ascii=False) + "\n\n"
             ConversationService.update_by_id(conv.id, conv.to_dict())
@@ -199,7 +199,7 @@ async def async_completion(tenant_id, chat_id, question, name="New session", ses
 
     else:
         answer = None
-        async for ans in async_chat(dia, msg, False, **kwargs):
+        async for ans in async_chat(dia, msg, False, session_id=session_id, **kwargs):
             answer = structure_answer(conv, ans, message_id, session_id)
             ConversationService.update_by_id(conv.id, conv.to_dict())
             break
@@ -275,7 +275,7 @@ async def async_iframe_completion(dialog_id, question, session_id=None, stream=T
 
     if stream:
         try:
-            async for ans in async_chat(dia, msg, True, **kwargs):
+            async for ans in async_chat(dia, msg, True, session_id=session_id, **kwargs):
                 ans = structure_answer(conv, ans, message_id, session_id)
                 yield "data:" + json.dumps({"code": 0, "message": "", "data": ans},
                                            ensure_ascii=False) + "\n\n"
@@ -288,7 +288,7 @@ async def async_iframe_completion(dialog_id, question, session_id=None, stream=T
 
     else:
         answer = None
-        async for ans in async_chat(dia, msg, False, **kwargs):
+        async for ans in async_chat(dia, msg, False, session_id=session_id, **kwargs):
             answer = structure_answer(conv, ans, message_id, session_id)
             API4ConversationService.append_message(conv.id, conv.to_dict())
             break

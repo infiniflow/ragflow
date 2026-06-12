@@ -79,6 +79,20 @@ func TestModelScopeFactoryRoute(t *testing.T) {
 	}
 }
 
+func TestModelScopeNewModelWithCustomDefaultTransport(t *testing.T) {
+	original := http.DefaultTransport
+	http.DefaultTransport = roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return nil, nil
+	})
+	t.Cleanup(func() {
+		http.DefaultTransport = original
+	})
+
+	if model := NewModelScopeModel(map[string]string{"default": "http://unused"}, URLSuffix{}); model == nil {
+		t.Fatal("NewModelScopeModel returned nil")
+	}
+}
+
 func TestModelScopeChatHappyPathNormalizesBaseURLAndOmitsEmptyAuth(t *testing.T) {
 	var seen map[string]interface{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -294,7 +308,7 @@ func TestModelScopeListModelsAndCheckConnection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if strings.Join(models, ",") != "Qwen/Qwen2.5-7B-Instruct,Qwen/Qwen3-8B" {
+	if joinModelNames(models, ",") != "Qwen/Qwen2.5-7B-Instruct,Qwen/Qwen3-8B" {
 		t.Errorf("models=%v", models)
 	}
 	if err := m.CheckConnection(apiConfig); err != nil {
@@ -307,7 +321,7 @@ func TestModelScopeMissingBaseURLFailsClearly(t *testing.T) {
 	_, err := m.ChatWithMessages("Qwen/Qwen2.5-7B-Instruct",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{}, nil)
-	if err == nil || !strings.Contains(err.Error(), "missing base URL") {
+	if err == nil || !strings.Contains(err.Error(), "base URL") {
 		t.Errorf("expected missing-base-URL error, got %v", err)
 	}
 }
