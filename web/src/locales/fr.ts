@@ -1201,6 +1201,43 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
         'Utilisateurs internationaux uniquement : utilisez https://api.minimax.io/v1.',
       minimaxBaseUrlPlaceholder:
         '(Utilisateurs internationaux uniquement, renseignez https://api.minimax.io/v1)',
+      openaiBaseUrlPlaceholder: 'https://api.openai.com/v1',
+      anthropicBaseUrlPlaceholder: 'https://api.anthropic.com/v1',
+      siliconflowBaseUrlPlaceholder: 'https://api.siliconflow.cn/v1',
+      groupId: 'ID du groupe',
+      providerOrder: 'Ordre des fournisseurs',
+      paddleocrApiUrl: "URL de l'API PaddleOCR",
+      paddleocrApiUrlMessage: "Veuillez saisir l'URL de l'API PaddleOCR !",
+      paddleocrApiUrlPlaceholder:
+        'Ex. : https://paddleocr-server.com/layout-parsing',
+      paddleocrAccessToken: "Jeton d'accès AI Studio",
+      paddleocrAccessTokenMessage:
+        "Jeton d'accès à l'API PaddleOCR (optionnel)",
+      paddleocrAccessTokenPlaceholder: 'Votre jeton AI Studio (optionnel)',
+      paddleocrAlgorithm: 'Algorithme PaddleOCR',
+      paddleocrAlgorithmMessage:
+        'Veuillez sélectionner un algorithme PaddleOCR',
+      mineruApiserver: 'Serveur API MinerU',
+      mineruApiserverMessage: "Veuillez saisir l'URL du serveur API MinerU !",
+      mineruApiserverPlaceholder: 'Ex. : http://host.docker.internal:9987',
+      mineruOutputDir: 'Répertoire de sortie MinerU',
+      mineruOutputDirMessage:
+        'Veuillez saisir le répertoire de sortie MinerU !',
+      mineruOutputDirPlaceholder: '/tmp/mineru',
+      mineruBackend: 'Backend MinerU',
+      mineruBackendMessage: 'Veuillez sélectionner un backend MinerU !',
+      mineruSelectBackend: 'Sélectionner le backend de traitement',
+      mineruServerUrl: 'URL du serveur MinerU',
+      mineruServerUrlMessage: "Veuillez saisir l'URL du serveur MinerU !",
+      mineruServerUrlPlaceholder: 'Ex. : http://votre-serveur-vllm:30000',
+      mineruDeleteOutput: 'Supprimer les fichiers de sortie',
+      mineruDeleteOutputMessage:
+        'Valeur invalide pour la suppression des fichiers de sortie',
+      opendataloaderApiserver: 'Serveur API OpenDataLoader',
+      opendataloaderApiserverMessage:
+        'Veuillez saisir le serveur API OpenDataLoader !',
+      opendataloaderApiserverPlaceholder:
+        'http://votre-service-opendataloader:9383',
       modify: 'Modifier',
       systemModelSettings: 'Définir les modèles par défaut',
       chatModel: 'Modèle de chat',
@@ -1226,6 +1263,10 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       addLlmTitle: 'Ajouter LLM',
       editLlmTitle: 'Modifier le modèle {{name}}',
       editModel: 'Modifier le modèle',
+      instanceName: "Nom de l'instance",
+      instanceNameMessage: "Veuillez saisir le nom de l'instance !",
+      instanceNameTip:
+        "Nom unique permettant d'identifier cette instance de fournisseur au sein d'une même fabrique.",
       modelName: 'Nom du modèle',
       modelID: 'ID du modèle',
       modelUid: 'UID du modèle',
@@ -1428,6 +1469,20 @@ Exemple : Virtual Hosted Style`,
         "Téléversez le JSON OAuth généré depuis Google Console. S'il ne contient que des identifiants client, exécutez une fois la vérification en navigateur pour créer des jetons de rafraîchissement à longue durée de vie.",
       dropboxDescription:
         'Connectez votre Dropbox pour synchroniser les fichiers et dossiers depuis un compte choisi.',
+      teamsDescription:
+        'Connectez Microsoft Teams via Microsoft Graph pour synchroniser les publications et réponses des canaux.',
+      teamsTenantIdTip:
+        'ID de locataire Azure AD. Nécessite une application avec les permissions applicatives Team.ReadBasic.All et ChannelMessage.Read.All (consentement administrateur).',
+      slackDescription:
+        'Connectez votre espace de travail Slack pour synchroniser les messages et fils de canaux.',
+      slackBotTokenTip:
+        "Jeton OAuth de l'utilisateur bot Slack (commence par xoxb-). L'application nécessite les portées channels:read, channels:history et users:read.",
+      slackChannelsTip:
+        'Optionnel : noms de canaux à synchroniser (ex. : general). Laissez vide pour synchroniser tous les canaux accessibles.',
+      sharepointDescription:
+        'Connectez un site SharePoint via Microsoft Graph pour synchroniser ses bibliothèques de documents.',
+      sharepointSiteUrlTip:
+        'URL complète du site SharePoint à indexer, ex. : https://contoso.sharepoint.com/sites/MonSite. Nécessite une application Azure AD avec les permissions applicatives Sites.Read.All et Files.Read.All (consentement administrateur).',
       bitbucketDescription:
         'Connectez Bitbucket pour synchroniser le contenu des PR.',
       bitbucketTopWorkspaceTip:
@@ -1563,6 +1618,58 @@ Exemple : Virtual Hosted Style`,
         'Colonne datetime/timestamp pour la synchronisation incrémentale. Seules les lignes modifiées après la dernière synchronisation seront récupérées.',
       rest_apiDescription:
         "Connectez n'importe quel point de terminaison REST API comme source de données via un connecteur flexible et configurable.",
+      onedriveDescription:
+        'Connectez OneDrive ou OneDrive Entreprise pour indexer les fichiers et dossiers via les requêtes delta Microsoft Graph.',
+      onedriveTenantIdTip:
+        "ID de locataire Azure Active Directory (ID de répertoire) de l'organisation Microsoft 365.",
+      onedriveClientIdTip:
+        "ID d'application (client) de l'enregistrement d'application Azure AD avec la permission Files.Read.All.",
+      onedriveClientSecretTip:
+        "Valeur du secret client généré dans l'enregistrement d'application Azure AD.",
+      onedriveFolderPathTip:
+        "Chemin de sous-dossier optionnel pour limiter l'indexation (ex. : /Documents/Rapports). Laissez vide pour indexer l'intégralité du lecteur.",
+      outlookDescription:
+        'Connectez les boîtes aux lettres Outlook / Microsoft 365 et indexez les messages via les requêtes delta Microsoft Graph.',
+      outlookTenantIdTip:
+        "ID de locataire Azure Active Directory (ID de répertoire) de l'organisation Microsoft 365.",
+      outlookClientIdTip:
+        "ID d'application (client) de l'enregistrement d'application Azure AD avec la permission Mail.Read.",
+      outlookClientSecretTip:
+        "Valeur du secret client généré dans l'enregistrement d'application Azure AD.",
+      outlookFolderTip:
+        'Dossier de messagerie à synchroniser (ex. : inbox, sentitems, archive). Par défaut : inbox.',
+      outlookUserIdsTip:
+        'UPN ou ID objet séparés par des virgules des boîtes aux lettres à synchroniser. Laissez vide pour synchroniser toutes les boîtes aux lettres du locataire (nécessite User.Read.All).',
+      salesforceDescription:
+        'Connectez une organisation Salesforce et indexez les enregistrements CRM (Comptes, Contacts, Opportunités, Dossiers, articles Knowledge) via SOQL avec synchronisation incrémentale.',
+      salesforceInstanceUrlTip:
+        "URL de l'organisation Salesforce, ex. : https://votre-domaine.my.salesforce.com (sans barre oblique finale).",
+      salesforceClientIdTip:
+        "Clé consommateur d'une application connectée avec le flux Client Credentials activé et la portée api.",
+      salesforceClientSecretTip:
+        "Secret consommateur de l'application connectée utilisé pour l'authentification par client credentials.",
+      salesforceObjectsTip:
+        "Noms d'API SObject séparés par des virgules à indexer. Par défaut : Account, Contact, Opportunity, Case, Knowledge__kav.",
+      salesforceApiVersionTip:
+        "Version de l'API REST Salesforce (ex. : v59.0). Utilisez la version supportée par votre organisation.",
+      azure_blobDescription:
+        "Indexez les blobs d'un conteneur Azure Blob Storage dans une base de connaissances. Prend en charge l'authentification par clé de compte, chaîne de connexion et jeton SAS. Les blobs inchangés sont ignorés via l'empreinte ETag.",
+      azureBlobAuthModeTip:
+        "Choisissez la méthode d'authentification. Clé de compte et Chaîne de connexion nécessitent container_name ; Jeton SAS nécessite container_url + sas_token.",
+      azureBlobAccountNameTip:
+        "Nom du compte de stockage Azure (ex. : moncomptedesockage). Requis pour l'authentification par clé de compte.",
+      azureBlobAccountKeyTip:
+        "Clé d'accès du compte de stockage (encodée en Base64). Requise pour l'authentification par clé de compte.",
+      azureBlobConnectionStringTip:
+        "Chaîne de connexion Azure Storage complète (DefaultEndpointsProtocol=https;AccountName=...;...). Requise pour l'authentification par chaîne de connexion.",
+      azureBlobContainerUrlTip:
+        "URL HTTPS complète du conteneur (ex. : https://compte.blob.core.windows.net/conteneur). Requise pour l'authentification par jeton SAS.",
+      azureBlobSasTokenTip:
+        'Chaîne de requête SAS (sans le "?" initial). Requise pour l\'authentification par jeton SAS.',
+      azureBlobContainerNameTip:
+        "Nom du conteneur à indexer. Requis pour l'authentification par clé de compte et par chaîne de connexion.",
+      azureBlobPrefixTip:
+        "Préfixe de nom de blob optionnel pour limiter l'indexation à un dossier virtuel (ex. : documents/rapports/). Laissez vide pour indexer l'intégralité du conteneur.",
       restApiQueryParamsTip:
         "Paires clé=valeur (une par ligne) envoyées comme paramètres de requête URL. Utilisez ceci plutôt qu'intégrer les paramètres dans l'URL.",
       restApiHeadersTip:
@@ -1642,6 +1749,24 @@ Exemple : Virtual Hosted Style`,
       },
       showToc: 'Afficher le contenu',
       hideToc: 'Masquer le contenu',
+      listModels: 'Lister les modèles',
+      allModels: 'Tous les modèles',
+      listModelsSearchPlaceholder: 'Rechercher des modèles…',
+      listModelsEmpty: 'Aucun modèle disponible',
+      listModelsLoading: 'Chargement des modèles…',
+      selectModelBeforeVerify:
+        'Veuillez sélectionner au moins un modèle avant la vérification.',
+      addCustomModel: 'Ajouter un modèle personnalisé',
+      addCustomModelTitle: 'Ajouter un modèle personnalisé',
+      modelMaxTokens: 'Tokens maximum',
+      modelFeatures: 'Fonctionnalités du modèle',
+      modelFeatureToolCall: "Appel d'outil",
+      modelFeatureFunctionCall: 'Appel de fonction',
+      modelNameRequired: 'Le nom du modèle est requis',
+      modelNameDuplicate: 'Ce nom de modèle existe déjà',
+      modelTypeRequired: 'Veuillez sélectionner au moins un type de modèle',
+      modelMaxTokensMessage: 'Les tokens maximum doivent être un nombre',
+      modelMaxTokensMinMessage: 'Les tokens maximum doivent être au moins 0',
     },
     message: {
       registered: 'Enregistré !',
