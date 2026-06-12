@@ -245,6 +245,20 @@ wheels = [
 ]
 
 [[package]]
+name = "alembic"
+version = "1.18.4"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
+dependencies = [
+    { name = "mako" },
+    { name = "sqlalchemy" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/94/13/8b084e0f2efb0275a1d534838844926f798bd766566b1375174e2448cd31/alembic-1.18.4.tar.gz", hash = "sha256:cb6e1fd84b6174ab8dbb2329f86d631ba9559dd78df550b57804d607672cedbc" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/d2/29/6533c317b74f707ea28f8d633734dbda2119bbadfc61b2f3640ba835d0f7/alembic-1.18.4-py3-none-any.whl", hash = "sha256:a5ed4adcf6d8a4cb575f3d759f071b03cd6e5c7618eb796cb52497be25bfe19a" },
+]
+
+[[package]]
 name = "alibabacloud-agentrun20250910"
 version = "5.5.2"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
@@ -3834,6 +3848,18 @@ wheels = [
     { url = "https://mirrors.aliyun.com/pypi/packages/f7/da/137ddeea14c2cb86864838277b2607d09f8253f152156a07f84e11768a28/lz4-4.4.5-cp314-cp314-win32.whl", hash = "sha256:bd85d118316b53ed73956435bee1997bd06cc66dd2fa74073e3b1322bd520a67" },
     { url = "https://mirrors.aliyun.com/pypi/packages/18/2c/8332080fd293f8337779a440b3a143f85e374311705d243439a3349b81ad/lz4-4.4.5-cp314-cp314-win_amd64.whl", hash = "sha256:92159782a4502858a21e0079d77cdcaade23e8a5d252ddf46b0652604300d7be" },
     { url = "https://mirrors.aliyun.com/pypi/packages/ca/28/2635a8141c9a4f4bc23f5135a92bbcf48d928d8ca094088c962df1879d64/lz4-4.4.5-cp314-cp314-win_arm64.whl", hash = "sha256:d994b87abaa7a88ceb7a37c90f547b8284ff9da694e6afcfaa8568d739faf3f7" },
+]
+
+[[package]]
+name = "mako"
+version = "1.3.12"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
+dependencies = [
+    { name = "markupsafe" },
+]
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/00/62/791b31e69ae182791ec67f04850f2f062716bbd205483d63a215f3e062d3/mako-1.3.12.tar.gz", hash = "sha256:9f778e93289bd410bb35daadeb4fc66d95a746f0b75777b942088b7fd7af550a" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/bc/b1/a0ec7a5a9db730a08daef1fdfb8090435b82465abbf758a596f0ea88727e/mako-1.3.12-py3-none-any.whl", hash = "sha256:8f61569480282dbf557145ce441e4ba888be453c30989f879f0d652e39f53ea9" },
 ]
 
 [[package]]
@@ -8937,6 +8963,7 @@ dependencies = [
     { name = "agentrun-sdk" },
     { name = "aiosmtplib" },
     { name = "akshare" },
+    { name = "alembic" },
     { name = "alibabacloud-dingtalk" },
     { name = "anthropic" },
     { name = "arxiv" },
@@ -9044,6 +9071,7 @@ dependencies = [
     { name = "slack-sdk" },
     { name = "socksio" },
     { name = "spacy" },
+    { name = "sqlalchemy" },
     { name = "sqlglotrs" },
     { name = "tavily-python" },
     { name = "tencentcloud-sdk-python" },
@@ -9085,6 +9113,7 @@ requires-dist = [
     { name = "agentrun-sdk", specifier = ">=0.0.16,<1.0.0" },
     { name = "aiosmtplib", specifier = ">=5.0.0" },
     { name = "akshare", specifier = ">=1.15.78,<2.0.0" },
+    { name = "alembic", specifier = ">=1.13,<2.0" },
     { name = "alibabacloud-dingtalk", specifier = ">=2.0.0" },
     { name = "anthropic", specifier = "==0.76.0" },
     { name = "arxiv", specifier = "==2.1.3" },
@@ -9192,6 +9221,7 @@ requires-dist = [
     { name = "slack-sdk", specifier = "==3.37.0" },
     { name = "socksio", specifier = "==1.0.0" },
     { name = "spacy", specifier = "==3.8.14" },
+    { name = "sqlalchemy", specifier = ">=2.0,<3.0" },
     { name = "sqlglotrs", specifier = "==0.9.0" },
     { name = "tavily-python", specifier = "==0.5.1" },
     { name = "tencentcloud-sdk-python", specifier = "==3.0.1478" },
