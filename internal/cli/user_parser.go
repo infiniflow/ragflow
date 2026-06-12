@@ -3896,7 +3896,7 @@ optionsLoop:
 			if err != nil {
 				return nil, err
 			}
-			cmd.Params["embed_model"] = embedModel
+			cmd.Params["embedding_model"] = embedModel
 			p.nextToken()
 		case TokenDocParse:
 			p.nextToken()

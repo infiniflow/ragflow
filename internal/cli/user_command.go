@@ -3461,6 +3461,7 @@ func (c *CLI) ChunkCommand(cmd *Command) (ResponseIf, error) {
 	if explain {
 		fmt.Printf("Explain chunk file: %s, DSL: %s\n", filename, dsl)
 	} else {
+		// TODO: not implemented
 		fmt.Printf("Chunk file: %s, DSL: %s\n", filename, dsl)
 	}
 
