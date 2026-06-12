@@ -168,7 +168,7 @@ export enum FileMimeType {
   Mdx = 'text/markdown',
 }
 
-export const Domain = 'cloud.ragflow.io';
+export const Domain = 'cloud.metagross.ai';
 
 //#region file preview
 export const Images = [

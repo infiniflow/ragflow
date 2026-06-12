@@ -63,7 +63,7 @@ export function Header({
           to={Routes.Root}
           aria-current={pathname === Routes.Root ? 'page' : undefined}
         >
-          <img src={'/logo.svg'} alt="RAGFlow logo" className="size-10" />
+          <img src={'/logo.png'} alt="MetaGross-AI logo" className="size-10" />
         </Link>
       </div>
 
@@ -85,10 +85,7 @@ export function Header({
         <a
           className="p-2 text-text-secondary hover:text-text-primary focus-visible:text-text-primary"
           target="_blank"
-          href="https://github.com/infiniflow/ragflow"
-          rel="noreferrer noopener"
-        >
-          <IconFontFill name="GitHub" />
+          href="https://github.com/MetaGross-AI/MetaGross-AI" >
         </a>
 
         <DropdownMenu>
@@ -115,7 +112,7 @@ export function Header({
           asLink
           variant="ghost"
           size="icon"
-          to="https://ragflow.io/docs/dev/category/user-guides"
+          to="https://metagross.ai/docs/dev/category/user-guides"
           target="_blank"
           rel="noreferrer noopener"
         >

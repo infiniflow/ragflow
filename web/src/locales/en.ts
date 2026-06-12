@@ -98,7 +98,7 @@ export default {
       nicknamePlaceholder: 'Please input nickname',
       register: 'Create an account',
       continue: 'Continue',
-      title: 'A leading RAG engine for LLM context',
+      title: 'RAG engine',
       start: "Let's get started",
       description:
         'Sign up for free to explore top RAG technology. Create datasets and AIs to empower your business.',

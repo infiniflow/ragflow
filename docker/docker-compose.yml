@@ -44,6 +44,7 @@ services:
       # - ./nginx/nginx.conf:/etc/nginx/nginx.conf
       - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
       - ./entrypoint.sh:/ragflow/entrypoint.sh
+      - ../tools:/ragflow/tools
     env_file: .env
     networks:
       - ragflow
@@ -107,7 +108,6 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-
 
   # executor:
   #   depends_on:

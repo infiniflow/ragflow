@@ -28,7 +28,6 @@ import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
-import { BgSvg } from './bg';
 import FlipCard3D, { FlipFaceContext } from './card';
 import './index.less';
 
@@ -63,12 +62,12 @@ function LoginFormContent({
   const isActiveFace = isLoginPage ? face === 'front' : face === 'back';
 
   return (
-    <div className="flex flex-col items-center justify-center w-full">
-      <div className="text-center mb-8">
-        <h2 className="text-xl font-semibold text-text-primary">
+    <div className="flex flex-col items-center justify-center w-full ">
+      {/* <div className="text-center mb-8">
+         <h2 className="text-xl font-semibold text-text-primary">
           {title === 'login' ? t('loginTitle') : t('signUpTitle')}
-        </h2>
-      </div>
+        </h2> 
+      </div> */}
       <div className=" w-full max-w-[540px] bg-bg-component backdrop-blur-sm rounded-2xl shadow-xl pt-14 pl-10 pr-10 pb-2 border border-border-button ">
         {!disablePasswordLogin && (
           <Form {...form}>
@@ -344,55 +343,52 @@ const Login = () => {
   return (
     <>
       <Spotlight opcity={0.4} coverage={60} color={'rgb(128, 255, 248)'} />
-      <Spotlight
-        opcity={0.3}
-        coverage={12}
-        X={'10%'}
-        Y={'-10%'}
-        color={'rgb(128, 255, 248)'}
-      />
-      <Spotlight
-        opcity={0.3}
-        coverage={12}
-        X={'90%'}
-        Y={'-10%'}
-        color={'rgb(128, 255, 248)'}
-      />
-      <div className=" h-[inherit] relative overflow-auto">
-        <BgSvg isPaused />
 
-        <div className="z-20 absolute top-3 flex flex-col items-center mb-12 w-full text-text-primary">
-          <div className="flex items-center mb-4 w-full pl-10 pt-10 ">
-            <div className="w-12 h-12 p-2 rounded-lg flex items-center justify-center mr-3">
-              <img
-                src={'/logo.svg'}
-                alt="logo"
-                className="size-8 mr-[12] cursor-pointer"
-              />
+      <div className="relative min-h-screen overflow-hidden">
+        <div className="relative z-10 mx-auto flex min-h-screen max-w-[1300px] flex-col justify-center px-4 py-8 sm:px-6 lg:flex-row lg:items-center lg:space-x-12">
+          <div className="hidden w-full max-w-[540px] flex-1 min-h-[640px] flex-col justify-center rounded-[2rem] border border-white/10 bg-white/5 p-8 text-text-primary shadow-2xl shadow-cyan-500/10 backdrop-blur-xl lg:flex">
+            <div className="flex items-center gap-4 mb-8">
+              <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-cyan-500/10 shadow-lg shadow-cyan-500/10">
+                <img
+                  src="/logo.png"
+                  alt="MetaGross-AI logo"
+                  className="h-14 w-14"
+                />
+              </div>
+              <div>
+                <div className="text-2xl font-semibold">MetaGross-AI</div>
+              </div>
             </div>
-            <div className="text-xl font-bold self-center">RAGFlow</div>
+            <h2 className="text-3xl font-semibold text-text-primary">
+              Web access for AI-powered workflows
+            </h2>
+            <p className="mt-4 text-sm leading-7 text-text-secondary">
+              Use the MetaGross-AI web portal to launch agents, explore
+              workflows, and manage your AI workspace from any browser.
+            </p>
+            <p className="mt-6 text-sm leading-7 text-text-secondary">
+              Trusted performance, fast collaboration, and a clean interface for
+              everything your team builds online.
+            </p>
           </div>
-          <h1 className="text-[36px] font-medium  text-center mb-2">
-            {t('title')}
-          </h1>
-        </div>
-        <div className="relative z-10 flex flex-col items-center justify-center min-h-[1050px] px-4 sm:px-6 lg:px-8">
-          {/* Login Form */}
-          <FlipCard3D isLoginPage={isLoginPage}>
-            <LoginFormContent
-              isLoginPage={isLoginPage}
-              title={title}
-              form={form}
-              loading={loading}
-              onCheck={onCheck}
-              changeTitle={changeTitle}
-              registerEnabled={registerEnabled}
-              channels={channels || []}
-              handleLoginWithChannel={handleLoginWithChannel}
-              t={t}
-              disablePasswordLogin={!!config?.disablePasswordLogin}
-            />
-          </FlipCard3D>
+
+          <div className="w-full max-w-[540px] flex-1 min-h-[640px]">
+            <FlipCard3D isLoginPage={isLoginPage}>
+              <LoginFormContent
+                isLoginPage={isLoginPage}
+                title={title}
+                form={form}
+                loading={loading}
+                onCheck={onCheck}
+                changeTitle={changeTitle}
+                registerEnabled={registerEnabled}
+                channels={channels || []}
+                handleLoginWithChannel={handleLoginWithChannel}
+                t={t}
+                disablePasswordLogin={!!config?.disablePasswordLogin}
+              />
+            </FlipCard3D>
+          </div>
         </div>
       </div>
     </>

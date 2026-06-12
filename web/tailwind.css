@@ -43,13 +43,13 @@
     --colors-background-neutral-standard: white;
     --colors-background-neutral-strong: rgba(226, 223, 246, 1);
 
-    --button-blue-text: rgb(22, 119, 255);
+    --button-blue-text: rgb(56, 211, 255);
 
-    --colors-outline-sentiment-primary: rgba(127, 105, 255, 1);
+    --colors-outline-sentiment-primary: rgba(181, 97, 255, 1);
     --colors-outline-neutral-strong: rgba(112, 107, 107, 0.15);
     --colors-outline-neutral-standard: rgba(53, 51, 65, 0.1);
 
-    --colors-text-core-standard: rgba(127, 105, 255, 1);
+    --colors-text-core-standard: rgba(171, 99, 255, 1);
     --colors-text-neutral-strong: rgba(17, 16, 23, 1);
     --colors-text-neutral-standard: rgba(152, 148, 176, 1);
     --colors-text-neutral-weak: rgba(170, 160, 197, 1);
@@ -62,10 +62,10 @@
     --sidebar-foreground: 240 5.3% 26.1%;
     --sidebar-primary: 240 5.9% 10%;
     --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent: 218 78.4% 95.9%;
     --sidebar-accent-foreground: 240 5.9% 10%;
     --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-ring: 269 96.5% 63.5%;
 
     --background-inverse-strong: rgba(255, 255, 255, 0.15);
 
@@ -82,7 +82,7 @@
 
     --background-note: rgba(22, 22, 24, 0.1);
 
-    --background-highlight: rgba(76, 164, 231, 0.1);
+    --background-highlight: rgba(56, 211, 255, 0.14);
 
     --input-border: rgba(22, 22, 24, 0.2);
 
@@ -112,9 +112,9 @@
     --border-accent: #000000;
     --border-button: rgba(0, 0, 0, 0.1);
     /* Regulators, parsing, switches, variables */
-    --accent-primary: 0 190 180;
+    --accent-primary: 68 215 255;
     /* Output Variables Box */
-    --bg-accent: rgba(76, 164, 231, 0.05);
+    --bg-accent: rgba(68, 215, 255, 0.08);
 
     /* --state-success: #3ba05c; */
     --state-success: 59 160 92;
@@ -231,20 +231,20 @@
     --bg-title: #38383a;
     /* design colors */
 
-    --bg-base: #161618;
-    --bg-card: rgba(255, 255, 255, 0.05);
-    --bg-component: #202025;
-    --bg-input: rgba(255, 255, 255, 0.05);
-    --bg-canvas: 0 0 0;
-    --bg-list: 56 56 58;
+    --bg-base: #071124;
+    --bg-card: rgba(13, 22, 40, 0.9);
+    --bg-component: #0f1c37;
+    --bg-input: rgba(15, 26, 46, 0.85);
+    --bg-canvas: 11 17 30;
+    --bg-list: 12 20 36;
 
     /* #f6f6f7 */
     --text-primary: 246 246 247;
     --text-secondary: 178 181 183;
     --text-disabled: #75787a;
     --text-input-tip: #75787a;
-    --border-default: rgba(255, 255, 255, 0.2);
-    --border-accent: #ffffff;
+    --border-default: rgba(255, 255, 255, 0.12);
+    --border-accent: rgba(68, 215, 255, 0.8);
     --border-button: rgba(255, 255, 255, 0.1);
 
     /* *-inverse: colors in light mode */

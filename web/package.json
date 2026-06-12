@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "private": true,
-  "description": "RAGFlow Web Frontend migrated to Vite",
+  "description": "MetaGross-AI Web Frontend migrated to Vite",
   "author": "bill",
   "type": "module",
   "scripts": {

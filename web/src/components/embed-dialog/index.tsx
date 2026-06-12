@@ -435,13 +435,13 @@ window.addEventListener('message',e=>{
                       name="widgetFooterText"
                       label="Footer text"
                     >
-                      <Input placeholder="Powered by RAGFlow"></Input>
+                      <Input placeholder="Powered by MetaGross-AI"></Input>
                     </RAGFlowFormItem>
                     <RAGFlowFormItem
                       name="widgetFooterLink"
                       label="Footer redirect link"
                     >
-                      <Input placeholder="https://ragflow.io"></Input>
+                      <Input placeholder="https://metagross-ai.io"></Input>
                     </RAGFlowFormItem>
                     <FormField
                       control={form.control}
@@ -616,8 +616,8 @@ window.addEventListener('message',e=>{
             className="cursor-pointer text-accent-primary inline-block"
             href={
               isAgent
-                ? 'https://ragflow.io/docs/dev/http_api_reference#create-session-with-agent'
-                : 'https://ragflow.io/docs/dev/http_api_reference#create-session-with-chat-assistant'
+                ? 'https://metagross.ai/docs/dev/http_api_reference#create-session-with-agent'
+                : 'https://metagross.ai/docs/dev/http_api_reference#create-session-with-chat-assistant'
             }
             target="_blank"
             rel="noreferrer"
