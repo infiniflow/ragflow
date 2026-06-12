@@ -315,6 +315,26 @@ class MarkdownElementExtractor:
                 stripped = section_content.strip()
                 return bool(re.match(r"^#{1,6}\s+\S", stripped)) and "\n" not in stripped
 
+            def _is_attachable_body(section_content):
+                """True when the following chunk is prose body, not code/table/list/etc."""
+                stripped = section_content.strip()
+                if not stripped:
+                    return False
+                first_line = stripped.split("\n", 1)[0]
+                if self._get_fence_marker(first_line):
+                    return False
+                if first_line.lstrip().startswith("|"):
+                    return False
+                if re.match(r"^\S+\s*\|", first_line):
+                    return False
+                if first_line.lstrip().startswith("<"):
+                    return False
+                if re.match(r"^\s*[-*+]\s+", first_line) or re.match(r"^\s*\d+\.\s+", first_line):
+                    return False
+                if first_line.lstrip().startswith(">"):
+                    return False
+                return True
+
             merged = []
             merged_header_count = 0
             i = 0
@@ -331,18 +351,19 @@ class MarkdownElementExtractor:
                         j += 1
                     if j < len(sections):
                         body_content = sections[j]["content"] if include_meta else sections[j]
-                        combined = "\n".join(header_parts) + "\n" + body_content
-                        if include_meta:
-                            merged.append({
-                                **sections[i],
-                                "content": combined,
-                                "end_line": sections[j]["end_line"],
-                            })
-                        else:
-                            merged.append(combined)
-                        merged_header_count += len(header_parts)
-                        i = j + 1
-                        continue
+                        if _is_attachable_body(body_content):
+                            combined = "\n".join(header_parts) + "\n" + body_content
+                            if include_meta:
+                                merged.append({
+                                    **sections[i],
+                                    "content": combined,
+                                    "end_line": sections[j]["end_line"],
+                                })
+                            else:
+                                merged.append(combined)
+                            merged_header_count += len(header_parts)
+                            i = j + 1
+                            continue
                     for k in range(i, j):
                         merged.append(sections[k])
                     i = j
