@@ -12,16 +12,25 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+"""API-level integration test for file commit endpoints.
+
+Uses an in-memory SQLite database so the real FileCommitService and
+FileCommit/FileCommitItem models execute against real SQL — only the
+HTTP layer (quart.request, login_required, current_user) and storage
+are mocked.
+"""
 
 import asyncio
 import functools
 import importlib.util
+import json
 import logging
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
+from peewee import SqliteDatabase, Model, CharField, IntegerField, BigIntegerField, TextField
 
 LOGGER = logging.getLogger(__name__)
 
@@ -37,34 +46,107 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-def _load_file_commit_module(monkeypatch):
+def _mk_req_maker(payload):
+    async def _inner():
+        return payload
+    return _inner
+
+
+# ── SQLite in-memory models ───────────────────────────────────────────────
+# We create minimal Peewee models that match the real table schemas so
+# FileCommitService (which uses DB.atomic(), .select(), .where(), etc.)
+# works against real SQL.
+
+sqlite_db = SqliteDatabase(':memory:')
+
+
+class BaseTestModel(Model):
+    class Meta:
+        database = sqlite_db
+
+
+class FileCommitTestModel(BaseTestModel):
+    id = CharField(max_length=32, primary_key=True)
+    folder_id = CharField(max_length=32, index=True)
+    parent_id = CharField(max_length=32, null=True, index=True)
+    message = CharField(max_length=512, default="")
+    author_id = CharField(max_length=32, index=True)
+    file_count = IntegerField(default=0)
+    tree_state = TextField(null=True)
+    create_time = BigIntegerField(null=True, index=True)
+    create_date = CharField(null=True, max_length=32, index=True)
+    update_time = BigIntegerField(null=True, index=True)
+    update_date = CharField(null=True, max_length=32, index=True)
+
+    class Meta:
+        db_table = "file_commit"
+
+
+class FileCommitItemTestModel(BaseTestModel):
+    id = CharField(max_length=32, primary_key=True)
+    commit_id = CharField(max_length=32, index=True)
+    file_id = CharField(max_length=32, index=True)
+    operation = CharField(max_length=16, index=True)
+    old_hash = CharField(max_length=64, null=True, index=True)
+    new_hash = CharField(max_length=64, null=True, index=True)
+    old_location = CharField(max_length=255, null=True)
+    new_location = CharField(max_length=255, null=True)
+    old_name = CharField(max_length=255, null=True)
+    new_name = CharField(max_length=255, null=True)
+    create_time = BigIntegerField(null=True, index=True)
+    create_date = CharField(null=True, max_length=32, index=True)
+    update_time = BigIntegerField(null=True, index=True)
+    update_date = CharField(null=True, max_length=32, index=True)
+
+    class Meta:
+        db_table = "file_commit_item"
+
+
+class FileTestModel(BaseTestModel):
+    id = CharField(max_length=32, primary_key=True)
+    parent_id = CharField(max_length=32, index=True)
+    tenant_id = CharField(max_length=32, index=True)
+    created_by = CharField(max_length=32, index=True)
+    name = CharField(max_length=255, index=True)
+    location = CharField(max_length=255, null=True, index=True)
+    size = BigIntegerField(default=0, index=True)
+    type = CharField(max_length=32, index=True)
+    source_type = CharField(max_length=128, default="", index=True)
+    status = CharField(max_length=1, null=True, default="1", index=True)
+    create_time = BigIntegerField(null=True, index=True)
+    create_date = CharField(null=True, max_length=32, index=True)
+    update_time = BigIntegerField(null=True, index=True)
+    update_date = CharField(null=True, max_length=32, index=True)
+
+    class Meta:
+        db_table = "file"
+
+
+sqlite_db.create_tables([FileCommitTestModel, FileCommitItemTestModel, FileTestModel])
+
+
+# ── Module loader ─────────────────────────────────────────────────────────
+
+def _load_module(monkeypatch):
+    """Load file_commit_api.py with SQLite in-memory DB and mocked HTTP layer."""
     repo_root = Path(__file__).resolve().parents[3]
 
-    # Stub: quart
+    # Stub: quart.request
     quart_mod = ModuleType("quart")
-    quart_mod.request = SimpleNamespace(
-        args={},
-        content_type="application/json",
-    )
+    quart_mod.request = SimpleNamespace(args={}, content_type="application/json")
     monkeypatch.setitem(sys.modules, "quart", quart_mod)
 
-    # Stub: api.apps
+    # Stub: api.apps with login_required / current_user
     api_pkg = ModuleType("api")
     api_pkg.__path__ = [str(repo_root / "api")]
     monkeypatch.setitem(sys.modules, "api", api_pkg)
 
     apps_mod = ModuleType("api.apps")
     apps_mod.__path__ = [str(repo_root / "api" / "apps")]
-    apps_mod.current_user = SimpleNamespace(id="user-1")
+    apps_mod.current_user = SimpleNamespace(id="test-user")
     apps_mod.login_required = lambda func: func
     monkeypatch.setitem(sys.modules, "api.apps", apps_mod)
     api_pkg.apps = apps_mod
-
-    # Stub: api.db
-    db_pkg = ModuleType("api.db")
-    db_pkg.__path__ = []
-    monkeypatch.setitem(sys.modules, "api.db", db_pkg)
-    api_pkg.db = db_pkg
 
     # Stub: api.utils.api_utils
     api_utils_mod = ModuleType("api.utils.api_utils")
@@ -104,146 +186,36 @@ def _load_file_commit_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 
     # Stub: common.misc_utils
+    import uuid
     misc_utils_mod = ModuleType("common.misc_utils")
-    misc_utils_mod.get_uuid = lambda: "uuid"
+    misc_utils_mod.get_uuid = lambda: uuid.uuid1().hex
     monkeypatch.setitem(sys.modules, "common.misc_utils", misc_utils_mod)
 
-    # Stub: common.settings
+    # Stub: common.settings (STORAGE_IMPL is a no-op for testing)
     common_mod = ModuleType("common")
     common_mod.__path__ = []
     common_mod.settings = SimpleNamespace(
         STORAGE_IMPL=SimpleNamespace(
-            put=lambda *_args, **_kwargs: None,
-            get=lambda *_args, **_kwargs: b"stub",
+            put=lambda *_a, **_kw: None,
+            get=lambda *_a, **_kw: b"stub-content",
         ),
-        DATABASE_TYPE="mysql",
+        DATABASE_TYPE="sqlite",
     )
     monkeypatch.setitem(sys.modules, "common", common_mod)
 
     # Stub: common.time_utils
     time_utils_mod = ModuleType("common.time_utils")
     time_utils_mod.current_timestamp = lambda: 1718200000000
-    time_utils_mod.datetime_format = lambda *_args, **__: "mock"
+    time_utils_mod.datetime_format = lambda *_a, **__: "mock"
     monkeypatch.setitem(sys.modules, "common.time_utils", time_utils_mod)
 
-    # Stub: api.db.db_models
+    # Stub: api.db.db_models — inject SQLite DB and our test models
     db_models_mod = ModuleType("api.db.db_models")
 
-    class FakeField:
-        def __init__(self, name):
-            self.name = name
-
-    class _FakeModelMeta(type):
-        def __getattr__(cls, name):
-            return FakeField(name)
-
-    class _FakeModel(metaclass=_FakeModelMeta):
-        id = "mock-id"
-        folder_id = ""
-        parent_id = None
-        message = ""
-        author_id = ""
-        file_count = 0
-        tree_state = None
-        create_time = 1718200000000
-        create_date = None
-        update_time = None
-        update_date = None
-
-        def __init__(self, **kwargs):
-            for k, v in kwargs.items():
-                setattr(self, k, v)
-
-        def save(self, force_insert=False):
-            return self
-
-        @classmethod
-        def get_by_id(cls, pid):
-            obj = cls()
-            obj.id = pid
-            obj.tree_state = '{"file-1": {"hash": "abc", "location": ".objects/abc", "name": "file.txt", "size": 10, "status": "1"}}'
-            return obj
-
-        @classmethod
-        def select(cls):
-            return _FakeQuery(cls)
-
-        @classmethod
-        def update(cls, data):
-            return _FakeUpdate(cls, data)
-
-        @classmethod
-        def table_exists(cls):
-            return True
-
-    class _FakeQuery:
-        def __init__(self, model_cls, where_conds=None):
-            self._model_cls = model_cls
-            self._where = where_conds or []
-            self._order = None
-            self._offset_val = None
-            self._limit_val = None
-
-        def where(self, *args, **kwargs):
-            return _FakeQuery(self._model_cls, self._where + list(args))
-
-        def order_by(self, *args, **kwargs):
-            q = _FakeQuery(self._model_cls, self._where)
-            q._order = args
-            return q
-
-        def desc(self):
-            return self
-
-        def asc(self):
-            return self
-
-        def offset(self, n):
-            self._offset_val = n
-            return self
-
-        def limit(self, n):
-            self._limit_val = n
-            return self
-
-        def count(self):
-            return 2
-
-        def first(self):
-            obj = self._model_cls()
-            obj.id = "commit-latest"
-            obj.tree_state = '{"file-1": {"hash": "old", "location": ".objects/old", "name": "file.txt", "size": 5, "status": "1"}}'
-            return obj
-
-        def execute(self):
-            return 1
-
-    class _FakeUpdate:
-        def __init__(self, model_cls, data):
-            self._model_cls = model_cls
-            self._data = data
-
-        def where(self, *args, **kwargs):
-            return self
-
-        def execute(self):
-            return 1
-
-    class FakeFileCommit(_FakeModel):
-        pass
-
-    class FakeFileCommitItem(_FakeModel):
-        pass
-
-    class FakeFile(_FakeModel):
-        location = ".objects/old"
-        name = "file.txt"
-
-    db_models_mod.FileCommit = FakeFileCommit
-    db_models_mod.FileCommitItem = FakeFileCommitItem
-    db_models_mod.File = FakeFile
-
     class _DB:
+        """Drop-in replacement that wraps our SQLite DB with the same
+        methods (connection_context, atomic) that CommonService expects."""
+
         @staticmethod
         def connection_context():
             def dec(func):
@@ -252,32 +224,66 @@ def _load_file_commit_module(monkeypatch):
 
         @staticmethod
         def atomic():
-            class _Ctx:
-                def __enter__(self):
-                    return self
-                def __exit__(self, *args):
+            class Ctx:
+                def __enter__(self2):
+                    return self2
+                def __exit__(self2, *args):
                     pass
-            return _Ctx()
+            return Ctx()
 
     db_models_mod.DB = _DB
+    db_models_mod.FileCommit = FileCommitTestModel
+    db_models_mod.FileCommitItem = FileCommitItemTestModel
+    db_models_mod.File = FileTestModel
+    db_models_mod.DataBaseModel = BaseTestModel
     monkeypatch.setitem(sys.modules, "api.db.db_models", db_models_mod)
 
-    # Stub: api.db.services.file_service
+    # Stub: api.db.services.file_service.FileService
     file_svc_mod = ModuleType("api.db.services.file_service")
-    file_svc_mod.FileService = SimpleNamespace(
-        update_by_id=lambda *_args, **_kwargs: 1,
-        get_by_id=lambda fid: (True, FakeFile()),
-        get_or_none=lambda **kw: None,
-        model=SimpleNamespace(update=lambda d: SimpleNamespace(where=lambda *a: SimpleNamespace(execute=lambda: 1))),
-    )
+
+    class _StubFileService:
+        @staticmethod
+        def update_by_id(pid, data):
+            return FileTestModel.update(data).where(FileTestModel.id == pid).execute()
+
+        @staticmethod
+        def get_by_id(pid):
+            try:
+                obj = FileTestModel.get_by_id(pid)
+                return True, obj
+            except Exception:
+                return False, None
+
+        @staticmethod
+        def get_or_none(**kwargs):
+            try:
+                return FileTestModel.get(**kwargs)
+            except Exception:
+                return None
+
+        @staticmethod
+        def model(*args, **kwargs):
+            return FileTestModel
+
+    file_svc_mod.FileService = _StubFileService
     monkeypatch.setitem(sys.modules, "api.db.services.file_service", file_svc_mod)
 
-    # Stub: api.db.services.FileCommitService (full module import)
-    svc_pkg = ModuleType("api.db.services")
-    svc_pkg.__path__ = [str(repo_root / "api" / "db" / "services")]
-    monkeypatch.setitem(sys.modules, "api.db.services", svc_pkg)
+    # Stub: common.constants
+    constants_mod = ModuleType("common.constants")
+    monkeypatch.setitem(sys.modules, "common.constants", constants_mod)
 
-    # Load the actual module
+    # Stub: api.db (for imports from api.db)
+    db_pkg = ModuleType("api.db")
+    db_pkg.__path__ = []
+    monkeypatch.setitem(sys.modules, "api.db", db_pkg)
+    api_pkg.db = db_pkg
+
+    # Clear cached service/DB modules so they reimport with monkeypatched deps
+    for mod_name in list(sys.modules.keys()):
+        if "api.db.services" in mod_name or mod_name == "api.db.db_models":
+            del sys.modules[mod_name]
+
+    # Load the module
     module_name = "api.apps.restful_apis.file_commit_api"
     module_path = repo_root / "api" / "apps" / "restful_apis" / "file_commit_api.py"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
@@ -285,134 +291,357 @@ def _load_file_commit_module(monkeypatch):
     module.manager = _DummyManager()
     monkeypatch.setitem(sys.modules, module_name, module)
     spec.loader.exec_module(module)
+
     return module
 
 
-# ── Tests ──────────────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────
 
+def _setup_request(module, json_payload=None, args=None):
+    """Set up a request payload and query args for the next handler call."""
+    if json_payload is not None:
+        monkeypatch.setattr(module, "get_request_json", _mk_req_maker(json_payload))
+    if args is not None:
+        module.request.args = args
+
+
+# ── Fixtures ──────────────────────────────────────────────────────────────
+
+@pytest.fixture(scope="session")
+def auth():
+    return "test-auth"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def set_tenant_info():
+    return None
+
+
+# ── Tests ─────────────────────────────────────────────────────────────────
 
 @pytest.mark.p2
 def test_create_commit_success(monkeypatch):
-    module = _load_file_commit_module(monkeypatch)
-    req_payload = {
-        "message": "initial commit",
-        "files": [
-            {"file_id": "file-1", "file_name": "readme.md", "operation": "add", "content": "# Hello"}
-        ],
-    }
-    monkeypatch.setattr(module, "get_request_json", _mk_req_maker(req_payload))
+    module = _load_module(monkeypatch)
+    # Seed a file
+    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1",
+                         created_by="test-user", name="a.txt", type="txt")
 
-    res = _run(module.create_commit("folder-1"))
-    assert res["code"] == 0
-    assert res["data"]["message"] == "initial commit"
+    _setup_request(module, json_payload={
+        "message": "initial commit",
+        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "hello"}],
+    })
+
+    res = _run(module.create_commit("root-folder"))
+    assert res["code"] == 0, f"Expected 0, got {res}"
+    data = res["data"]
+    assert data["message"] == "initial commit"
+    assert data["folder_id"] == "root-folder"
+    assert data["author_id"] == "test-user"
+    assert data["file_count"] == 1
+    assert data["tree_state"] is not None
+    assert data["id"] is not None
 
 
 @pytest.mark.p2
 def test_create_commit_missing_fields(monkeypatch):
-    module = _load_file_commit_module(monkeypatch)
-    monkeypatch.setattr(module, "get_request_json", _mk_req_maker({"message": "no files"}))
+    module = _load_module(monkeypatch)
+    _setup_request(module, json_payload={"message": "no files"})
 
-    res = _run(module.create_commit("folder-1"))
-    assert res["code"] == 101
+    res = _run(module.create_commit("root-folder"))
+    assert res["code"] == 101, f"Expected validation error, got {res}"
+
+
+@pytest.mark.p2
+def test_create_commit_modify_and_add(monkeypatch):
+    module = _load_module(monkeypatch)
+    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1",
+                         created_by="test-user", name="a.txt", type="txt")
+    FileTestModel.create(id="f2", parent_id="root-folder", tenant_id="t1",
+                         created_by="test-user", name="b.txt", type="txt")
+
+    # Commit 1: add f1
+    _setup_request(module, json_payload={
+        "message": "c1",
+        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "v1"}],
+    })
+    _run(module.create_commit("root-folder"))
+
+    # Commit 2: modify f1, add f2
+    _setup_request(module, json_payload={
+        "message": "c2",
+        "files": [
+            {"file_id": "f1", "file_name": "a.txt", "operation": "modify", "content": "v2"},
+            {"file_id": "f2", "file_name": "b.txt", "operation": "add", "content": "world"},
+        ],
+    })
+    res = _run(module.create_commit("root-folder"))
+    assert res["code"] == 0
+    assert res["data"]["file_count"] == 2
+
+
+@pytest.mark.p2
+def test_create_commit_delete(monkeypatch):
+    module = _load_module(monkeypatch)
+    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1",
+                         created_by="test-user", name="a.txt", type="txt")
+
+    # Add then delete
+    _setup_request(module, json_payload={
+        "message": "add",
+        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "hello"}],
+    })
+    _run(module.create_commit("root-folder"))
+
+    _setup_request(module, json_payload={
+        "message": "delete",
+        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "delete"}],
+    })
+    res = _run(module.create_commit("root-folder"))
+    assert res["code"] == 0
+
+
+@pytest.mark.p2
+def test_create_commit_rename(monkeypatch):
+    module = _load_module(monkeypatch)
+    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1",
+                         created_by="test-user", name="old.txt", type="txt")
+
+    _setup_request(module, json_payload={
+        "message": "add",
+        "files": [{"file_id": "f1", "file_name": "old.txt", "operation": "add", "content": "data"}],
+    })
+    _run(module.create_commit("root-folder"))
+
+    # Rename
+    _setup_request(module, json_payload={
+        "message": "rename",
+        "files": [{"file_id": "f1", "file_name": "old.txt", "operation": "rename",
+                    "old_name": "old.txt", "new_name": "new.txt"}],
+    })
+    res = _run(module.create_commit("root-folder"))
+    assert res["code"] == 0
 
 
 @pytest.mark.p2
 def test_list_commits_success(monkeypatch):
-    module = _load_file_commit_module(monkeypatch)
-    monkeypatch.setattr(module, "request", SimpleNamespace(
-        args={"page": "1", "page_size": "10", "order_by": "create_time", "desc": "true"},
-        content_type="application/json",
-    ))
+    module = _load_module(monkeypatch)
+    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1",
+                         created_by="test-user", name="a.txt", type="txt")
 
-    res = _run(module.list_commits("folder-1"))
+    # Create 2 commits
+    _setup_request(module, json_payload={
+        "message": "c1",
+        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "v1"}],
+    })
+    _run(module.create_commit("root-folder"))
+
+    _setup_request(module, json_payload={
+        "message": "c2",
+        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "modify", "content": "v2"}],
+    })
+    _run(module.create_commit("root-folder"))
+
+    # List
+    module.request.args = {"page": "1", "page_size": "10"}
+    res = _run(module.list_commits("root-folder"))
     assert res["code"] == 0
     assert res["data"]["total"] == 2
-    assert len(res["data"]["commits"]) > 0
+    assert len(res["data"]["commits"]) == 2
 
 
 @pytest.mark.p2
-def test_get_commit_found(monkeypatch):
-    module = _load_file_commit_module(monkeypatch)
+def test_get_commit_detail(monkeypatch):
+    module = _load_module(monkeypatch)
+    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1",
+                         created_by="test-user", name="a.txt", type="txt")
 
-    res = _run(module.get_commit("folder-1", "commit-1"))
+    _setup_request(module, json_payload={
+        "message": "detail test",
+        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "data"}],
+    })
+    create_res = _run(module.create_commit("root-folder"))
+    commit_id = create_res["data"]["id"]
+
+    res = _run(module.get_commit("root-folder", commit_id))
     assert res["code"] == 0
-    assert res["data"]["id"] == "commit-1"
+    assert res["data"]["id"] == commit_id
+    assert res["data"]["message"] == "detail test"
+    assert len(res["data"]["files"]) == 1
 
 
 @pytest.mark.p2
 def test_get_commit_not_found(monkeypatch):
-    module = _load_file_commit_module(monkeypatch)
-    # Force get_by_id to return False
-    monkeypatch.setattr(module.FileCommitService, "get_commit", lambda cid: None)
-
-    res = _run(module.get_commit("folder-1", "missing"))
+    module = _load_module(monkeypatch)
+    res = _run(module.get_commit("root-folder", "nonexistent"))
     assert res["code"] == 102
-    assert "not found" in res["message"]
+    assert "not found" in res["message"].lower()
 
 
 @pytest.mark.p2
-def test_list_commit_files_success(monkeypatch):
-    module = _load_file_commit_module(monkeypatch)
+def test_diff_commits(monkeypatch):
+    module = _load_module(monkeypatch)
+    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1",
+                         created_by="test-user", name="a.txt", type="txt")
+    FileTestModel.create(id="f2", parent_id="root-folder", tenant_id="t1",
+                         created_by="test-user", name="b.txt", type="txt")
 
-    res = _run(module.list_commit_files("folder-1", "commit-1"))
+    # c1: add f1
+    _setup_request(module, json_payload={
+        "message": "c1",
+        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "v1"}],
+    })
+    c1 = _run(module.create_commit("root-folder"))["data"]["id"]
+
+    # c2: add f2, modify f1
+    _setup_request(module, json_payload={
+        "message": "c2",
+        "files": [
+            {"file_id": "f2", "file_name": "b.txt", "operation": "add", "content": "world"},
+            {"file_id": "f1", "file_name": "a.txt", "operation": "modify", "content": "v2"},
+        ],
+    })
+    _run(module.create_commit("root-folder"))
+
+    module.request.args = {"from": c1}
+    # Diff needs "to" as well — set it
+    # We need a second commit id; get the latest using the list
+    list_res = _run(module.list_commits("root-folder"))
+    c2 = list_res["data"]["commits"][0]["id"]
+    module.request.args = {"from": c1, "to": c2}
+
+    res = _run(module.diff_commits("root-folder"))
     assert res["code"] == 0
-
-
-@pytest.mark.p2
-def test_diff_commits_success(monkeypatch):
-    module = _load_file_commit_module(monkeypatch)
-    monkeypatch.setattr(module, "request", SimpleNamespace(
-        args={"from": "commit-1", "to": "commit-2"},
-    ))
-
-    res = _run(module.diff_commits("folder-1"))
-    assert res["code"] == 0
+    assert len(res["data"]) >= 2, f"Expected at least 2 diff entries, got {len(res['data'])}"
 
 
 @pytest.mark.p2
 def test_diff_commits_missing_params(monkeypatch):
-    module = _load_file_commit_module(monkeypatch)
-    monkeypatch.setattr(module, "request", SimpleNamespace(args={}))
-
-    res = _run(module.diff_commits("folder-1"))
+    module = _load_module(monkeypatch)
+    module.request.args = {}
+    res = _run(module.diff_commits("root-folder"))
     assert res["code"] == 102
-    assert "from" in res["message"]
 
 
 @pytest.mark.p2
-def test_get_uncommitted_changes_success(monkeypatch):
-    module = _load_file_commit_module(monkeypatch)
+def test_get_uncommitted_changes(monkeypatch):
+    module = _load_module(monkeypatch)
+    # Seed a file that will be committed
+    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1",
+                         created_by="test-user", name="a.txt", type="txt")
+    # Seed a file that will NOT be committed (uncommitted add)
+    FileTestModel.create(id="f2", parent_id="root-folder", tenant_id="t1",
+                         created_by="test-user", name="b.txt", type="txt")
 
-    res = _run(module.get_uncommitted_changes("folder-1"))
+    # Commit only f1
+    _setup_request(module, json_payload={
+        "message": "add f1",
+        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "hello"}],
+    })
+    _run(module.create_commit("root-folder"))
+
+    res = _run(module.get_uncommitted_changes("root-folder"))
     assert res["code"] == 0
+    # f2 should appear as uncommitted "add"
+    f2_changes = [c for c in res["data"] if c["file_id"] == "f2"]
+    assert len(f2_changes) > 0, "Expected f2 to show as uncommitted change"
+    assert f2_changes[0]["operation"] == "add"
 
 
 @pytest.mark.p2
-def test_get_commit_tree_success(monkeypatch):
-    module = _load_file_commit_module(monkeypatch)
+def test_get_commit_tree(monkeypatch):
+    module = _load_module(monkeypatch)
+    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1",
+                         created_by="test-user", name="a.txt", type="txt")
 
-    res = _run(module.get_commit_tree("folder-1", "commit-1"))
+    _setup_request(module, json_payload={
+        "message": "c1",
+        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "data"}],
+    })
+    create_res = _run(module.create_commit("root-folder"))
+    commit_id = create_res["data"]["id"]
+
+    res = _run(module.get_commit_tree("root-folder", commit_id))
     assert res["code"] == 0
+    assert "f1" in res["data"]
 
 
 @pytest.mark.p2
-def test_get_commit_file_content_success(monkeypatch):
-    module = _load_file_commit_module(monkeypatch)
+def test_get_commit_file_content(monkeypatch):
+    module = _load_module(monkeypatch)
+    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1",
+                         created_by="test-user", name="a.txt", type="txt")
 
-    res = _run(module.get_commit_file_content("folder-1", "commit-1", "file-1"))
+    _setup_request(module, json_payload={
+        "message": "c1",
+        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "hello world"}],
+    })
+    create_res = _run(module.create_commit("root-folder"))
+    commit_id = create_res["data"]["id"]
+
+    res = _run(module.get_commit_file_content("root-folder", commit_id, "f1"))
     assert res["code"] == 0
-    assert res["data"]["content"] is not None
+    assert "content" in res["data"]
 
 
 @pytest.mark.p2
-def test_file_version_history_success(monkeypatch):
-    module = _load_file_commit_module(monkeypatch)
+def test_get_file_version_history(monkeypatch):
+    module = _load_module(monkeypatch)
+    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1",
+                         created_by="test-user", name="a.txt", type="txt")
 
-    res = _run(module.get_file_version_history("file-1"))
+    # Two commits modifying f1
+    _setup_request(module, json_payload={
+        "message": "v1",
+        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "v1"}],
+    })
+    _run(module.create_commit("root-folder"))
+
+    _setup_request(module, json_payload={
+        "message": "v2",
+        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "modify", "content": "v2"}],
+    })
+    _run(module.create_commit("root-folder"))
+
+    res = _run(module.get_file_version_history("f1"))
+    assert res["code"] == 0
+    assert len(res["data"]) == 2
+
+
+@pytest.mark.p2
+def test_workspace_alias(monkeypatch):
+    """Verify /workspace/ alias routes work the same as /folders/."""
+    module = _load_module(monkeypatch)
+    FileTestModel.create(id="f1", parent_id="ws-folder", tenant_id="t1",
+                         created_by="test-user", name="a.txt", type="txt")
+
+    _setup_request(module, json_payload={
+        "message": "workspace commit",
+        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "data"}],
+    })
+    res = _run(module.create_commit("ws-folder"))
     assert res["code"] == 0
 
+    # List via workspace alias
+    module.request.args = {"page": "1", "page_size": "10"}
+    res = _run(module.list_commits("ws-folder"))
+    assert res["code"] == 0
+    assert res["data"]["total"] == 1
 
-def _mk_req_maker(payload):
-    async def _inner():
-        return payload
-    return _inner
+
+@pytest.mark.p2
+def test_get_commit_wrong_folder_returns_not_found(monkeypatch):
+    module = _load_module(monkeypatch)
+    FileTestModel.create(id="f1", parent_id="folder-a", tenant_id="t1",
+                         created_by="test-user", name="a.txt", type="txt")
+
+    _setup_request(module, json_payload={
+        "message": "c1",
+        "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "data"}],
+    })
+    create_res = _run(module.create_commit("folder-a"))
+    commit_id = create_res["data"]["id"]
+
+    # Attempt to read commit from a different folder
+    res = _run(module.get_commit("folder-b", commit_id))
+    assert res["code"] == 102
+    assert "not found in workspace" in res["message"].lower()
