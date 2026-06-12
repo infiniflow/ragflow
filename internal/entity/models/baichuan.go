@@ -425,6 +425,14 @@ func (b *BaichuanModel) OCRFile(modelName *string, content []byte, url *string, 
 func (b *BaichuanModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
+func (b *BaichuanModel) DLA(modelName *string, content []byte, apiConfig *APIConfig) (*DLAResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", b.Name())
+}
+
+func (b *BaichuanModel) TSR(modelName *string, content []byte, apiConfig *APIConfig) (*TSRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", b.Name())
+}
+
 
 func (b *BaichuanModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	return nil, fmt.Errorf("no such method")

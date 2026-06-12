@@ -688,6 +688,14 @@ func (m *MinimaxModel) OCRFile(modelName *string, content []byte, url *string, a
 func (m *MinimaxModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
 }
+func (m *MinimaxModel) DLA(modelName *string, content []byte, apiConfig *APIConfig) (*DLAResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", m.Name())
+}
+
+func (m *MinimaxModel) TSR(modelName *string, content []byte, apiConfig *APIConfig) (*TSRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", m.Name())
+}
+
 
 func (m *MinimaxModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())

@@ -652,6 +652,14 @@ func (m *MistralModel) OCRFile(modelName *string, content []byte, urls *string, 
 func (m *MistralModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
 }
+func (m *MistralModel) DLA(modelName *string, content []byte, apiConfig *APIConfig) (*DLAResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", m.Name())
+}
+
+func (m *MistralModel) TSR(modelName *string, content []byte, apiConfig *APIConfig) (*TSRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", m.Name())
+}
+
 
 func (m *MistralModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())

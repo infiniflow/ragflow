@@ -888,6 +888,14 @@ func (r *ReplicateModel) OCRFile(modelName *string, content []byte, url *string,
 func (r *ReplicateModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", r.Name())
 }
+func (r *ReplicateModel) DLA(modelName *string, content []byte, apiConfig *APIConfig) (*DLAResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", r.Name())
+}
+
+func (r *ReplicateModel) TSR(modelName *string, content []byte, apiConfig *APIConfig) (*TSRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", r.Name())
+}
+
 
 func (r *ReplicateModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", r.Name())

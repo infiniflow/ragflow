@@ -544,6 +544,14 @@ func (j *JieKouAIModel) OCRFile(modelName *string, content []byte, url *string, 
 func (j *JieKouAIModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", j.Name())
 }
+func (j *JieKouAIModel) DLA(modelName *string, content []byte, apiConfig *APIConfig) (*DLAResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", j.Name())
+}
+
+func (j *JieKouAIModel) TSR(modelName *string, content []byte, apiConfig *APIConfig) (*TSRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", j.Name())
+}
+
 
 func (j *JieKouAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {

@@ -444,6 +444,14 @@ func (q *QiniuModel) OCRFile(modelName *string, content []byte, url *string, api
 func (q *QiniuModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", q.Name())
 }
+func (q *QiniuModel) DLA(modelName *string, content []byte, apiConfig *APIConfig) (*DLAResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", q.Name())
+}
+
+func (q *QiniuModel) TSR(modelName *string, content []byte, apiConfig *APIConfig) (*TSRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", q.Name())
+}
+
 
 func (q *QiniuModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := q.baseModel.APIConfigCheck(apiConfig); err != nil {

@@ -572,6 +572,14 @@ func (a *AliyunModel) OCRFile(modelName *string, content []byte, url *string, ap
 func (a *AliyunModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
+func (a *AliyunModel) DLA(modelName *string, content []byte, apiConfig *APIConfig) (*DLAResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", a.Name())
+}
+
+func (a *AliyunModel) TSR(modelName *string, content []byte, apiConfig *APIConfig) (*TSRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", a.Name())
+}
+
 
 type AliyunModelItem struct {
 	ModelName    string `json:"model_name"`

@@ -189,6 +189,14 @@ func (p *PaddleOCRLocalModel) OCRFile(modelName *string, content []byte, fileURL
 func (p *PaddleOCRLocalModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s no such method", p.Name())
 }
+func (p *PaddleOCRLocalModel) DLA(modelName *string, content []byte, apiConfig *APIConfig) (*DLAResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", p.Name())
+}
+
+func (p *PaddleOCRLocalModel) TSR(modelName *string, content []byte, apiConfig *APIConfig) (*TSRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", p.Name())
+}
+
 
 func (p *PaddleOCRLocalModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	return nil, fmt.Errorf("%s no such method", p.Name())

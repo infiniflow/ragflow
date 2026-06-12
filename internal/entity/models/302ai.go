@@ -876,6 +876,14 @@ func (a *AI302Model) ParseFile(modelName *string, content []byte, documentURL *s
 		TaskID: taskResp.Data.TaskID,
 	}, nil
 }
+func (a *AI302Model) DLA(modelName *string, content []byte, apiConfig *APIConfig) (*DLAResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", a.Name())
+}
+
+func (a *AI302Model) TSR(modelName *string, content []byte, apiConfig *APIConfig) (*TSRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", a.Name())
+}
+
 
 func (a *AI302Model) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {

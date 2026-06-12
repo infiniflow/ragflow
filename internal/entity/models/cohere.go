@@ -649,6 +649,14 @@ func (c *CoHereModel) OCRFile(modelName *string, content []byte, url *string, ap
 func (c *CoHereModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", c.Name())
 }
+func (c *CoHereModel) DLA(modelName *string, content []byte, apiConfig *APIConfig) (*DLAResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", c.Name())
+}
+
+func (c *CoHereModel) TSR(modelName *string, content []byte, apiConfig *APIConfig) (*TSRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", c.Name())
+}
+
 
 func (c *CoHereModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {

@@ -399,6 +399,14 @@ func (f *FuturMixModel) OCRFile(modelName *string, content []byte, url *string, 
 func (f *FuturMixModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
+func (f *FuturMixModel) DLA(modelName *string, content []byte, apiConfig *APIConfig) (*DLAResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", f.Name())
+}
+
+func (f *FuturMixModel) TSR(modelName *string, content []byte, apiConfig *APIConfig) (*TSRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", f.Name())
+}
+
 
 // ListTasks is not exposed by the FuturMix API per the docs.
 func (f *FuturMixModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {

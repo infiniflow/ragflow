@@ -183,6 +183,14 @@ func (m *MinerUModel) ParseFile(modelName *string, content []byte, documentURL *
 		TaskID: taskResp.Data.TaskID,
 	}, nil
 }
+func (m *MinerUModel) DLA(modelName *string, content []byte, apiConfig *APIConfig) (*DLAResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", m.Name())
+}
+
+func (m *MinerUModel) TSR(modelName *string, content []byte, apiConfig *APIConfig) (*TSRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", m.Name())
+}
+
 
 func (m *MinerUModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s no such method", m.Name())

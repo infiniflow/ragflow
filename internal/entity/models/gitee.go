@@ -792,6 +792,14 @@ func (g *GiteeModel) ParseFile(modelName *string, content []byte, documentURL *s
 
 	return &parseFileResponse, nil
 }
+func (g *GiteeModel) DLA(modelName *string, content []byte, apiConfig *APIConfig) (*DLAResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", g.Name())
+}
+
+func (g *GiteeModel) TSR(modelName *string, content []byte, apiConfig *APIConfig) (*TSRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", g.Name())
+}
+
 
 type giteeGetParseFileResponse struct {
 }

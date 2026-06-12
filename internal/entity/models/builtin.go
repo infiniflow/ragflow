@@ -150,6 +150,14 @@ func (b *BuiltinModel) ParseFile(modelName *string, content []byte, url *string,
 	return nil, fmt.Errorf("builtin model does not support parse file")
 }
 
+func (b *BuiltinModel) DLA(modelName *string, content []byte, apiConfig *APIConfig) (*DLAResponse, error) {
+	return nil, fmt.Errorf("builtin model does not support DLA")
+}
+
+func (b *BuiltinModel) TSR(modelName *string, content []byte, apiConfig *APIConfig) (*TSRResponse, error) {
+	return nil, fmt.Errorf("builtin model does not support TSR")
+}
+
 func (b *BuiltinModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	return []ListModelResponse{
 		{

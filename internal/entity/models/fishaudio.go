@@ -351,6 +351,14 @@ func (f *FishAudioModel) OCRFile(modelName *string, content []byte, url *string,
 func (f *FishAudioModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
+func (f *FishAudioModel) DLA(modelName *string, content []byte, apiConfig *APIConfig) (*DLAResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", f.Name())
+}
+
+func (f *FishAudioModel) TSR(modelName *string, content []byte, apiConfig *APIConfig) (*TSRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", f.Name())
+}
+
 
 func (f *FishAudioModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := f.baseModel.APIConfigCheck(apiConfig); err != nil {

@@ -35,6 +35,10 @@ type ModelDriver interface {
 	OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error)
 	// ParseFile parse file
 	ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error)
+	// DLA analyses a rendered page image and returns detected layout regions.
+	DLA(modelName *string, content []byte, apiConfig *APIConfig) (*DLAResponse, error)
+	// TSR recognises table structure from a cropped table image and returns cell bounding boxes.
+	TSR(modelName *string, content []byte, apiConfig *APIConfig) (*TSRResponse, error)
 	// ListModels List supported models
 	ListModels(apiConfig *APIConfig) ([]ListModelResponse, error)
 
@@ -76,6 +80,35 @@ type TTSResponse struct {
 
 type OCRFileResponse struct {
 	Text *string `json:"text"`
+}
+
+// DLARegionItem represents one detected layout region from DLA.
+type DLARegionItem struct {
+	X0         float64 `json:"x0"`
+	Y0         float64 `json:"y0"`
+	X1         float64 `json:"x1"`
+	Y1         float64 `json:"y1"`
+	Confidence float64 `json:"confidence"`
+	Label      string  `json:"label"`
+}
+
+// DLAResponse wraps DLA output with a list of detected regions.
+type DLAResponse struct {
+	Regions []DLARegionItem `json:"regions"`
+}
+
+// TSRCellItem represents one table cell from TSR.
+type TSRCellItem struct {
+	X0         float64 `json:"x0"`
+	Y0         float64 `json:"y0"`
+	X1         float64 `json:"x1"`
+	Y1         float64 `json:"y1"`
+	Confidence float64 `json:"confidence"`
+}
+
+// TSRResponse wraps TSR output with a list of detected cells.
+type TSRResponse struct {
+	Cells []TSRCellItem `json:"cells"`
 }
 
 type ListModelResponse struct {

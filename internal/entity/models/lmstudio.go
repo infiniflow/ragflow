@@ -498,6 +498,14 @@ func (l *LmStudioModel) OCRFile(modelName *string, content []byte, url *string, 
 func (l *LmStudioModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", l.Name())
 }
+func (l *LmStudioModel) DLA(modelName *string, content []byte, apiConfig *APIConfig) (*DLAResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", l.Name())
+}
+
+func (l *LmStudioModel) TSR(modelName *string, content []byte, apiConfig *APIConfig) (*TSRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", l.Name())
+}
+
 
 // ListModels list supported models
 func (l *LmStudioModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {

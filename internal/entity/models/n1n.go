@@ -616,6 +616,14 @@ func (n *N1NModel) OCRFile(modelName *string, content []byte, url *string, apiCo
 func (n *N1NModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
+func (n *N1NModel) DLA(modelName *string, content []byte, apiConfig *APIConfig) (*DLAResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
+}
+
+func (n *N1NModel) TSR(modelName *string, content []byte, apiConfig *APIConfig) (*TSRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
+}
+
 
 // ListTasks: n1n.ai has /v1/contents/generations/tasks
 func (n *N1NModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {

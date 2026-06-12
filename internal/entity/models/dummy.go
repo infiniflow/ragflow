@@ -103,6 +103,14 @@ func (d *DummyModel) ParseFile(modelName *string, content []byte, url *string, a
 	return nil, fmt.Errorf("%s, no such method", d.Name())
 }
 
+func (d *DummyModel) DLA(modelName *string, content []byte, apiConfig *APIConfig) (*DLAResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", d.Name())
+}
+
+func (d *DummyModel) TSR(modelName *string, content []byte, apiConfig *APIConfig) (*TSRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", d.Name())
+}
+
 func (d *DummyModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", d.Name())
 }

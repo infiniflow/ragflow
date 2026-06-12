@@ -465,6 +465,14 @@ func (o *OllamaModel) OCRFile(modelName *string, content []byte, url *string, ap
 func (o *OllamaModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", o.Name())
 }
+func (o *OllamaModel) DLA(modelName *string, content []byte, apiConfig *APIConfig) (*DLAResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
+}
+
+func (o *OllamaModel) TSR(modelName *string, content []byte, apiConfig *APIConfig) (*TSRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
+}
+
 
 func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 

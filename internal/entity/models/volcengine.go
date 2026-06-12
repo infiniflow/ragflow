@@ -563,6 +563,14 @@ func (v *VolcEngine) ParseFile(modelName *string, content []byte, url *string, a
 	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
 
+func (v *VolcEngine) DLA(modelName *string, content []byte, apiConfig *APIConfig) (*DLAResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", v.Name())
+}
+
+func (v *VolcEngine) TSR(modelName *string, content []byte, apiConfig *APIConfig) (*TSRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", v.Name())
+}
+
 func (v *VolcEngine) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err

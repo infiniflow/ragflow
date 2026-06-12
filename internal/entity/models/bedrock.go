@@ -1067,6 +1067,14 @@ func (b *BedrockModel) OCRFile(modelName *string, content []byte, url *string, a
 func (b *BedrockModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
+func (b *BedrockModel) DLA(modelName *string, content []byte, apiConfig *APIConfig) (*DLAResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", b.Name())
+}
+
+func (b *BedrockModel) TSR(modelName *string, content []byte, apiConfig *APIConfig) (*TSRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", b.Name())
+}
+
 
 // ListTasks is not exposed by Bedrock through the Converse API.
 func (b *BedrockModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {

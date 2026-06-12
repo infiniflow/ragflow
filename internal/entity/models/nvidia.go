@@ -586,6 +586,14 @@ func (n *NvidiaModel) OCRFile(modelName *string, content []byte, url *string, ap
 func (n *NvidiaModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
+func (n *NvidiaModel) DLA(modelName *string, content []byte, apiConfig *APIConfig) (*DLAResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
+}
+
+func (n *NvidiaModel) TSR(modelName *string, content []byte, apiConfig *APIConfig) (*TSRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
+}
+
 
 // ListModels calls /v1/models on the configured NVIDIA NIM base URL
 // and returns the list of available model ids. The endpoint is

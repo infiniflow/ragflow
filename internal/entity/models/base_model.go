@@ -54,6 +54,16 @@ func BearerAuth(apiConfig *APIConfig) string {
 	return fmt.Sprintf("Bearer %s", key)
 }
 
+// DLA returns a "not supported" error by default.
+func (b *BaseModel) DLA(modelName *string, content []byte, apiConfig *APIConfig) (*DLAResponse, error) {
+	return nil, fmt.Errorf("DLA not supported")
+}
+
+// TSR returns a "not supported" error by default.
+func (b *BaseModel) TSR(modelName *string, content []byte, apiConfig *APIConfig) (*TSRResponse, error) {
+	return nil, fmt.Errorf("TSR not supported")
+}
+
 func (b *BaseModel) GetBaseURL(apiConfig *APIConfig) (string, error) {
 	if apiConfig != nil && apiConfig.BaseURL != nil && *apiConfig.BaseURL != "" {
 		return strings.TrimSuffix(*apiConfig.BaseURL, "/"), nil
