@@ -42,7 +42,7 @@ type fakeLangfuseService struct {
 	deleteErr  error
 }
 
-func (f *fakeLangfuseService) SetAPIKey(_ string, _ *service.SetAPIKeyRequest) (map[string]interface{}, error) {
+func (f *fakeLangfuseService) SetAPIKey(_ string, _ *service.SetLangfuseAPIKeyRequest) (map[string]interface{}, error) {
 	return f.setData, f.setErr
 }
 

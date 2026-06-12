@@ -122,12 +122,12 @@ func TestLangfuseService_SetAPIKey_EmptyFields(t *testing.T) {
 
 	cases := []struct {
 		name string
-		req  SetAPIKeyRequest
+		req  SetLangfuseAPIKeyRequest
 	}{
-		{"empty secret_key", SetAPIKeyRequest{SecretKey: "", PublicKey: "pk", Host: "https://h.example.com"}},
-		{"empty public_key", SetAPIKeyRequest{SecretKey: "sk", PublicKey: "", Host: "https://h.example.com"}},
-		{"empty host", SetAPIKeyRequest{SecretKey: "sk", PublicKey: "pk", Host: ""}},
-		{"whitespace secret_key", SetAPIKeyRequest{SecretKey: "   ", PublicKey: "pk", Host: "https://h.example.com"}},
+		{"empty secret_key", SetLangfuseAPIKeyRequest{SecretKey: "", PublicKey: "pk", Host: "https://h.example.com"}},
+		{"empty public_key", SetLangfuseAPIKeyRequest{SecretKey: "sk", PublicKey: "", Host: "https://h.example.com"}},
+		{"empty host", SetLangfuseAPIKeyRequest{SecretKey: "sk", PublicKey: "pk", Host: ""}},
+		{"whitespace secret_key", SetLangfuseAPIKeyRequest{SecretKey: "   ", PublicKey: "pk", Host: "https://h.example.com"}},
 	}
 
 	for _, tc := range cases {

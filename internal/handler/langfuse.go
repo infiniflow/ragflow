@@ -27,7 +27,7 @@ import (
 
 // langfuseServiceIface defines the LangfuseService methods used by LangfuseHandler.
 type langfuseServiceIface interface {
-	SetAPIKey(tenantID string, req *service.SetAPIKeyRequest) (map[string]interface{}, error)
+	SetAPIKey(tenantID string, req *service.SetLangfuseAPIKeyRequest) (map[string]interface{}, error)
 	GetAPIKey(tenantID string) (map[string]interface{}, error)
 	DeleteAPIKey(tenantID string) (bool, error)
 }
@@ -50,7 +50,7 @@ func NewLangfuseHandler() *LangfuseHandler {
 // @Tags langfuse
 // @Accept json
 // @Produce json
-// @Param request body service.SetAPIKeyRequest true "Langfuse credentials"
+// @Param request body service.SetLangfuseAPIKeyRequest true "Langfuse credentials"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/langfuse/api-key [post]
 func (h *LangfuseHandler) SetAPIKey(c *gin.Context) {
@@ -60,7 +60,7 @@ func (h *LangfuseHandler) SetAPIKey(c *gin.Context) {
 		return
 	}
 
-	var req service.SetAPIKeyRequest
+	var req service.SetLangfuseAPIKeyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": err.Error()})
 		return

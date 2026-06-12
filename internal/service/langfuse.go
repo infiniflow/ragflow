@@ -50,8 +50,8 @@ func NewLangfuseService() *LangfuseService {
 	return &LangfuseService{langfuseDAO: dao.NewLangfuseDAO()}
 }
 
-// SetAPIKeyRequest is the body for POST/PUT /langfuse/api-key.
-type SetAPIKeyRequest struct {
+// SetLangfuseAPIKeyRequest is the body for POST/PUT /langfuse/api-key.
+type SetLangfuseAPIKeyRequest struct {
 	SecretKey string `json:"secret_key" binding:"required"`
 	PublicKey string `json:"public_key" binding:"required"`
 	Host      string `json:"host"       binding:"required"`
@@ -65,7 +65,7 @@ type LangfuseProject struct {
 
 // SetAPIKey validates credentials against Langfuse, then upserts the record.
 // Mirrors Python set_api_key.
-func (s *LangfuseService) SetAPIKey(tenantID string, req *SetAPIKeyRequest) (map[string]interface{}, error) {
+func (s *LangfuseService) SetAPIKey(tenantID string, req *SetLangfuseAPIKeyRequest) (map[string]interface{}, error) {
 	if strings.TrimSpace(req.SecretKey) == "" ||
 		strings.TrimSpace(req.PublicKey) == "" ||
 		strings.TrimSpace(req.Host) == "" {
