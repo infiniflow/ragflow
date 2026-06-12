@@ -23,9 +23,8 @@ from api.apps import login_required, current_user
 from api.utils.api_utils import get_json_result, get_data_error_result, get_request_json, server_error_response, validate_request
 
 # manager is injected dynamically by api.apps.register_page() before this
-# module is exec'd. The assignment below exists solely to pacify static
-# checkers (F821); at runtime register_page overwrites it with a Blueprint.
-manager = None  # type: ignore[assignment]
+# module is exec'd. DO NOT assign manager = None here — it would overwrite
+# the Blueprint that register_page set on the module.
 from api.db.services.file_commit_service import FileCommitService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.file_service import FileService
@@ -34,6 +33,10 @@ from common.constants import FileSource
 logger = logging.getLogger(__name__)
 
 _ENTITY_RESOLVERS = {}
+
+# Counter to give each generated route function a unique name,
+# preventing Quart Blueprint endpoint name collisions.
+_route_suffix = [0]
 
 
 def _register_resolver(entity_type):
@@ -86,6 +89,9 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
         param_name: The URL parameter name (e.g. 'folder_id', 'dataset_id')
         resolver_type: If set, resolve param_name → folder_id before calling logic
     """
+    # Unique suffix for this call to prevent Blueprint endpoint name collisions
+    _route_suffix[0] += 1
+    _n = _route_suffix[0]
 
     def _resolve(entity_id):
         if resolver_type is None:
@@ -96,7 +102,7 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
         return folder_id
 
     # ── Create commit ──────────────────────────────────────────────────────
-    @manager.route(f'{prefix}/commits', methods=['POST'])
+    @manager.route(f'{prefix}/commits', methods=['POST'], endpoint=f'create_commit_{_n}')
     @login_required
     @validate_request("message", "files")
     async def create_commit(entity_id):
@@ -123,7 +129,7 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
             return server_error_response(e)
 
     # ── List commits ───────────────────────────────────────────────────────
-    @manager.route(f'{prefix}/commits', methods=['GET'])
+    @manager.route(f'{prefix}/commits', methods=['GET'], endpoint=f'list_commits_{_n}')
     @login_required
     async def list_commits(entity_id):
         folder_id = _resolve(entity_id)
@@ -151,7 +157,7 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
             return server_error_response(e)
 
     # ── Get commit ─────────────────────────────────────────────────────────
-    @manager.route(f'{prefix}/commits/<commit_id>', methods=['GET'])
+    @manager.route(f'{prefix}/commits/<commit_id>', methods=['GET'], endpoint=f'get_commit_{_n}')
     @login_required
     async def get_commit(entity_id, commit_id):
         folder_id = _resolve(entity_id)
@@ -183,7 +189,7 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
             return server_error_response(e)
 
     # ── List commit files ──────────────────────────────────────────────────
-    @manager.route(f'{prefix}/commits/<commit_id>/files', methods=['GET'])
+    @manager.route(f'{prefix}/commits/<commit_id>/files', methods=['GET'], endpoint=f'list_commit_files_{_n}')
     @login_required
     async def list_commit_files(entity_id, commit_id):
         folder_id = _resolve(entity_id)
@@ -209,7 +215,7 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
             return server_error_response(e)
 
     # ── Diff commits ───────────────────────────────────────────────────────
-    @manager.route(f'{prefix}/commits/diff', methods=['GET'])
+    @manager.route(f'{prefix}/commits/diff', methods=['GET'], endpoint=f'diff_commits_{_n}')
     @login_required
     async def diff_commits(entity_id):
         folder_id = _resolve(entity_id)
@@ -230,7 +236,7 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
             return server_error_response(e)
 
     # ── Get uncommitted changes ────────────────────────────────────────────
-    @manager.route(f'{prefix}/changes', methods=['GET'])
+    @manager.route(f'{prefix}/changes', methods=['GET'], endpoint=f'get_uncommitted_changes_{_n}')
     @login_required
     async def get_uncommitted_changes(entity_id):
         folder_id = _resolve(entity_id)
@@ -241,7 +247,7 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
             return server_error_response(e)
 
     # ── Get commit tree ────────────────────────────────────────────────────
-    @manager.route(f'{prefix}/commits/<commit_id>/tree', methods=['GET'])
+    @manager.route(f'{prefix}/commits/<commit_id>/tree', methods=['GET'], endpoint=f'get_commit_tree_{_n}')
     @login_required
     async def get_commit_tree(entity_id, commit_id):
         folder_id = _resolve(entity_id)
@@ -257,7 +263,7 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
             return server_error_response(e)
 
     # ── Get commit file content ────────────────────────────────────────────
-    @manager.route(f'{prefix}/commits/<commit_id>/files/<file_id>/content', methods=['GET'])
+    @manager.route(f'{prefix}/commits/<commit_id>/files/<file_id>/content', methods=['GET'], endpoint=f'get_commit_file_content_{_n}')
     @login_required
     async def get_commit_file_content(entity_id, commit_id, file_id):
         folder_id = _resolve(entity_id)
