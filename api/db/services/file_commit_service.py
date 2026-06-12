@@ -72,7 +72,6 @@ class FileCommitService(CommonService):
         with DB.atomic():
             # 3. Insert commit record
             FileCommit(**commit_data).save(force_insert=True)
-            commit = FileCommit.get_by_id(commit_id)
 
             # 4. Build new tree state and process each file change
             tree_state = {}

@@ -17,8 +17,10 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"strconv"
 
@@ -41,13 +43,67 @@ type fileCommitService interface {
 // FileCommitHandler file commit handler
 type FileCommitHandler struct {
 	commitService fileCommitService
+	kbDAO         *dao.KnowledgebaseDAO
+	fileDAO       *dao.FileDAO
 }
 
 // NewFileCommitHandler create file commit handler
 func NewFileCommitHandler(commitService fileCommitService) *FileCommitHandler {
 	return &FileCommitHandler{
 		commitService: commitService,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		fileDAO:       dao.NewFileDAO(),
 	}
+}
+
+// ResolveFolderID resolves a resource ID (dataset/memory/skill) to its folder_id.
+// entityType is the plural resource name (e.g. "datasets", "memories", "skills").
+func (h *FileCommitHandler) ResolveFolderID(entityType, entityID string) (string, error) {
+	switch entityType {
+	case "datasets":
+		return h.resolveDatasetFolderID(entityID)
+	default:
+		return "", fmt.Errorf("unsupported entity type: %s", entityType)
+	}
+}
+
+// CommitFolderResolver returns a Gin middleware that resolves an entity ID
+// (e.g. dataset_id, memory_id, skill_id) to a folder_id and injects it into
+// c.Params so that the standard commit handlers can read it via c.Param("folder_id").
+//
+// entityType must match the key used in ResolveFolderID (e.g. "datasets").
+// urlParam is the gin URL param name (e.g. "dataset_id").
+func CommitFolderResolver(h *FileCommitHandler, entityType, urlParam string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id := c.Param(urlParam)
+		if id == "" {
+			jsonError(c, common.CodeParamError, fmt.Sprintf("%s is required", urlParam))
+			c.Abort()
+			return
+		}
+		folderID, err := h.ResolveFolderID(entityType, id)
+		if err != nil {
+			jsonError(c, common.CodeNotFound, fmt.Sprintf("%s folder not found", entityType))
+			c.Abort()
+			return
+		}
+		c.Params = append(c.Params, gin.Param{Key: "folder_id", Value: folderID})
+		c.Next()
+	}
+}
+
+func (h *FileCommitHandler) resolveDatasetFolderID(datasetID string) (string, error) {
+	kb, err := h.kbDAO.GetByID(datasetID)
+	if err != nil {
+		return "", err
+	}
+	files := h.fileDAO.Query(kb.Name, "")
+	for _, f := range files {
+		if f.SourceType == string(entity.FileSourceKnowledgebase) && f.Type == "folder" && f.TenantID == kb.TenantID {
+			return f.ID, nil
+		}
+	}
+	return "", common.ErrNotFound
 }
 
 // CreateCommitRequest represents the request body for creating a commit

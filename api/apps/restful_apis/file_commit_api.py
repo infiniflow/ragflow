@@ -15,134 +15,171 @@
 #
 
 import logging
+from functools import wraps
 
 from quart import request
 
 from api.apps import login_required, current_user
 from api.utils.api_utils import get_json_result, get_data_error_result, get_request_json, server_error_response, validate_request
+
+# manager is injected dynamically by api.apps.register_page() before this
+# module is exec'd. The assignment below exists solely to pacify static
+# checkers (F821); at runtime register_page overwrites it with a Blueprint.
+manager = None  # type: ignore[assignment]
 from api.db.services.file_commit_service import FileCommitService
+from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.file_service import FileService
+from api.db import KNOWLEDGEBASE_FOLDER_NAME, FileSource
 
 logger = logging.getLogger(__name__)
 
+_ENTITY_RESOLVERS = {}
 
-@manager.route('/workspaces/<folder_id>/commits', methods=['POST'])
-@login_required
-@validate_request("message", "files")
-async def create_commit(folder_id):
-    """Create a new commit for a workspace folder.
 
-    Request body:
-    {
-        "message": "commit message",
-        "files": [
-            {
-                "file_id": "...",
-                "file_name": "...",
-                "operation": "add|modify|delete|rename",
-                "content": "..." (for add/modify),
-                "old_name": "..." (for rename),
-                "new_name": "..." (for rename)
-            }
-        ]
-    }
+def _register_resolver(entity_type):
+    """Decorator that registers a folder_id resolver for an entity type.
+
+    The decorated function receives (entity_id) and must return a folder_id
+    or None if the entity has no corresponding folder.
     """
-    req = await get_request_json()
-    try:
-        commit = FileCommitService.create_commit(
-            folder_id=folder_id,
-            author_id=current_user.id,
-            message=req["message"],
-            file_changes=req["files"],
-        )
-        return get_json_result(data={
-            "id": commit.id,
-            "folder_id": commit.folder_id,
-            "parent_id": commit.parent_id,
-            "message": commit.message,
-            "author_id": commit.author_id,
-            "file_count": commit.file_count,
-            "tree_state": commit.tree_state,
-            "create_time": commit.create_time,
-        })
-    except Exception as e:
-        return server_error_response(e)
+    def decorator(func):
+        _ENTITY_RESOLVERS[entity_type] = func
+        @wraps(func)
+        def wrapper(entity_id):
+            return func(entity_id)
+        return wrapper
+    return decorator
 
 
-@manager.route('/workspaces/<folder_id>/commits', methods=['GET'])
-@login_required
-async def list_commits(folder_id):
-    """List all commits for a workspace folder (paginated)."""
-    try:
-        page = int(request.args.get("page", 1))
-        page_size = int(request.args.get("page_size", 15))
-        order_by = request.args.get("order_by", "create_time")
-        desc = request.args.get("desc", "true").lower() != "false"
+def _resolve_folder_id(entity_type, entity_id):
+    """Resolve an entity (dataset/memory/skill) to its folder_id."""
+    resolver = _ENTITY_RESOLVERS.get(entity_type)
+    if resolver is None:
+        return None
+    return resolver(entity_id)
 
-        commits, total = FileCommitService.list_commits(folder_id, page, page_size, order_by, desc)
 
-        commit_list = []
-        for c in commits:
-            commit_list.append({
-                "id": c.id,
-                "folder_id": c.folder_id,
-                "parent_id": c.parent_id,
-                "message": c.message,
-                "author_id": c.author_id,
-                "file_count": c.file_count,
-                "create_time": c.create_time,
+@_register_resolver("datasets")
+def _resolve_dataset_folder(dataset_id):
+    kb = KnowledgebaseService.get_by_id(dataset_id)
+    if not kb:
+        return None
+    kb = kb[1] if isinstance(kb, tuple) else kb
+    # Find the folder under .knowledgebase/ with matching name
+    folder = FileService.get_by_name(kb.tenant_id, kb.name, source_type=FileSource.KNOWLEDGEBASE.value if hasattr(FileSource, 'value') else "knowledgebase")
+    return folder.id if folder else None
+
+
+# ── Route registration helper ─────────────────────────────────────────────
+
+def _register_commit_routes(prefix, param_name, resolver_type=None):
+    """Register all 8 commit endpoints for a given URL prefix.
+
+    Args:
+        prefix: URL prefix like '/folders/<folder_id>'
+        param_name: The URL parameter name (e.g. 'folder_id', 'dataset_id')
+        resolver_type: If set, resolve param_name → folder_id before calling logic
+    """
+
+    def _resolve(entity_id):
+        if resolver_type is None:
+            return entity_id  # already a folder_id
+        folder_id = _resolve_folder_id(resolver_type, entity_id)
+        if folder_id is None:
+            raise ValueError(f"Could not resolve {resolver_type} '{entity_id}' to a folder")
+        return folder_id
+
+    # ── Create commit ──────────────────────────────────────────────────────
+    @manager.route(f'{prefix}/commits', methods=['POST'])
+    @login_required
+    @validate_request("message", "files")
+    async def create_commit(entity_id):
+        folder_id = _resolve(entity_id)
+        req = await get_request_json()
+        try:
+            commit = FileCommitService.create_commit(
+                folder_id=folder_id,
+                author_id=current_user.id,
+                message=req["message"],
+                file_changes=req["files"],
+            )
+            return get_json_result(data={
+                "id": commit.id,
+                "folder_id": commit.folder_id,
+                "parent_id": commit.parent_id,
+                "message": commit.message,
+                "author_id": commit.author_id,
+                "file_count": commit.file_count,
+                "tree_state": commit.tree_state,
+                "create_time": commit.create_time,
             })
+        except Exception as e:
+            return server_error_response(e)
 
-        return get_json_result(data={
-            "total": total,
-            "page": page,
-            "page_size": page_size,
-            "commits": commit_list,
-        })
-    except Exception as e:
-        return server_error_response(e)
+    # ── List commits ───────────────────────────────────────────────────────
+    @manager.route(f'{prefix}/commits', methods=['GET'])
+    @login_required
+    async def list_commits(entity_id):
+        folder_id = _resolve(entity_id)
+        try:
+            page = int(request.args.get("page", 1))
+            page_size = int(request.args.get("page_size", 15))
+            order_by = request.args.get("order_by", "create_time")
+            desc = request.args.get("desc", "true").lower() != "false"
+            commits, total = FileCommitService.list_commits(folder_id, page, page_size, order_by, desc)
+            return get_json_result(data={
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+                "commits": [{
+                    "id": c.id,
+                    "folder_id": c.folder_id,
+                    "parent_id": c.parent_id,
+                    "message": c.message,
+                    "author_id": c.author_id,
+                    "file_count": c.file_count,
+                    "create_time": c.create_time,
+                } for c in commits],
+            })
+        except Exception as e:
+            return server_error_response(e)
 
-
-@manager.route('/workspaces/<folder_id>/commits/<commit_id>', methods=['GET'])
-@login_required
-async def get_commit(folder_id, commit_id):
-    """Get details of a single commit."""
-    try:
-        commit = FileCommitService.get_commit(commit_id)
-        if not commit:
-            return get_data_error_result("Commit not found")
-        items = FileCommitService.list_commit_files(commit_id)
-        return get_json_result(data={
-            "id": commit.id,
-            "folder_id": commit.folder_id,
-            "parent_id": commit.parent_id,
-            "message": commit.message,
-            "author_id": commit.author_id,
-            "file_count": commit.file_count,
-            "create_time": commit.create_time,
-            "files": [
-                {
+    # ── Get commit ─────────────────────────────────────────────────────────
+    @manager.route(f'{prefix}/commits/<commit_id>', methods=['GET'])
+    @login_required
+    async def get_commit(entity_id, commit_id):
+        try:
+            commit = FileCommitService.get_commit(commit_id)
+            if not commit:
+                return get_data_error_result("Commit not found")
+            items = FileCommitService.list_commit_files(commit_id)
+            return get_json_result(data={
+                "id": commit.id,
+                "folder_id": commit.folder_id,
+                "parent_id": commit.parent_id,
+                "message": commit.message,
+                "author_id": commit.author_id,
+                "file_count": commit.file_count,
+                "create_time": commit.create_time,
+                "files": [{
                     "file_id": item.file_id,
                     "operation": item.operation,
                     "old_hash": item.old_hash,
                     "new_hash": item.new_hash,
                     "old_name": item.old_name,
                     "new_name": item.new_name,
-                }
-                for item in items
-            ],
-        })
-    except Exception as e:
-        return server_error_response(e)
+                } for item in items],
+            })
+        except Exception as e:
+            return server_error_response(e)
 
-
-@manager.route('/workspaces/<folder_id>/commits/<commit_id>/files', methods=['GET'])
-@login_required
-async def list_commit_files(folder_id, commit_id):
-    """List all file changes in a commit."""
-    try:
-        items = FileCommitService.list_commit_files(commit_id)
-        return get_json_result(data=[
-            {
+    # ── List commit files ──────────────────────────────────────────────────
+    @manager.route(f'{prefix}/commits/<commit_id>/files', methods=['GET'])
+    @login_required
+    async def list_commit_files(entity_id, commit_id):
+        try:
+            items = FileCommitService.list_commit_files(commit_id)
+            return get_json_result(data=[{
                 "id": item.id,
                 "file_id": item.file_id,
                 "operation": item.operation,
@@ -152,71 +189,73 @@ async def list_commit_files(folder_id, commit_id):
                 "new_location": item.new_location,
                 "old_name": item.old_name,
                 "new_name": item.new_name,
-            }
-            for item in items
-        ])
-    except Exception as e:
-        return server_error_response(e)
+            } for item in items])
+        except Exception as e:
+            return server_error_response(e)
+
+    # ── Diff commits ───────────────────────────────────────────────────────
+    @manager.route(f'{prefix}/commits/diff', methods=['GET'])
+    @login_required
+    async def diff_commits(entity_id):
+        from_id = request.args.get("from")
+        to_id = request.args.get("to")
+        if not from_id or not to_id:
+            return get_data_error_result("'from' and 'to' parameters are required")
+        try:
+            diff = FileCommitService.diff_commits(from_id, to_id)
+            return get_json_result(data=diff)
+        except Exception as e:
+            return server_error_response(e)
+
+    # ── Get uncommitted changes ────────────────────────────────────────────
+    @manager.route(f'{prefix}/changes', methods=['GET'])
+    @login_required
+    async def get_uncommitted_changes(entity_id):
+        folder_id = _resolve(entity_id)
+        try:
+            changes = FileCommitService.get_uncommitted_changes(folder_id)
+            return get_json_result(data=changes)
+        except Exception as e:
+            return server_error_response(e)
+
+    # ── Get commit tree ────────────────────────────────────────────────────
+    @manager.route(f'{prefix}/commits/<commit_id>/tree', methods=['GET'])
+    @login_required
+    async def get_commit_tree(entity_id, commit_id):
+        try:
+            tree = FileCommitService.get_commit_tree(commit_id)
+            return get_json_result(data=tree)
+        except Exception as e:
+            return server_error_response(e)
+
+    # ── Get commit file content ────────────────────────────────────────────
+    @manager.route(f'{prefix}/commits/<commit_id>/files/<file_id>/content', methods=['GET'])
+    @login_required
+    async def get_commit_file_content(entity_id, commit_id, file_id):
+        folder_id = _resolve(entity_id)
+        try:
+            content = FileCommitService.get_commit_file_content(folder_id, commit_id, file_id)
+            if content is None:
+                return get_data_error_result("File not found in this commit")
+            return get_json_result(data={"content": content.decode("utf-8", errors="replace")})
+        except Exception as e:
+            return server_error_response(e)
 
 
-@manager.route('/workspaces/<folder_id>/commits/diff', methods=['GET'])
-@login_required
-async def diff_commits(folder_id):
-    """Compare two commits.
-
-    Query params: from (commit_id), to (commit_id)
-    """
-    from_id = request.args.get("from")
-    to_id = request.args.get("to")
-    if not from_id or not to_id:
-        return get_data_error_result("'from' and 'to' parameters are required")
-
-    try:
-        diff = FileCommitService.diff_commits(from_id, to_id)
-        return get_json_result(data=diff)
-    except Exception as e:
-        return server_error_response(e)
+# ── Register routes for all entity types ──────────────────────────────────
+# All URL patterns use <entity_id> as the consistent param name.
+# For /folders/ entity_id IS the folder_id directly.
+# For other entity types entity_id is resolved via _resolve_folder_id().
+_register_commit_routes('/folders/<entity_id>', 'entity_id')  # direct — entity_id == folder_id
+_register_commit_routes('/datasets/<entity_id>', 'entity_id', resolver_type='datasets')
+_register_commit_routes('/memories/<entity_id>', 'entity_id', resolver_type='memories')
+_register_commit_routes('/skills/<entity_id>', 'entity_id', resolver_type='skills')
 
 
-@manager.route('/workspaces/<folder_id>/changes', methods=['GET'])
-@login_required
-async def get_uncommitted_changes(folder_id):
-    """Get uncommitted changes (like git status)."""
-    try:
-        changes = FileCommitService.get_uncommitted_changes(folder_id)
-        return get_json_result(data=changes)
-    except Exception as e:
-        return server_error_response(e)
-
-
-@manager.route('/workspaces/<folder_id>/commits/<commit_id>/tree', methods=['GET'])
-@login_required
-async def get_commit_tree(folder_id, commit_id):
-    """Get the folder tree snapshot for a commit."""
-    try:
-        tree = FileCommitService.get_commit_tree(commit_id)
-        return get_json_result(data=tree)
-    except Exception as e:
-        return server_error_response(e)
-
-
-@manager.route('/workspaces/<folder_id>/commits/<commit_id>/files/<file_id>/content', methods=['GET'])
-@login_required
-async def get_commit_file_content(folder_id, commit_id, file_id):
-    """Get file content as it existed in a specific commit."""
-    try:
-        content = FileCommitService.get_commit_file_content(folder_id, commit_id, file_id)
-        if content is None:
-            return get_data_error_result("File not found in this commit")
-        return get_json_result(data={"content": content.decode("utf-8", errors="replace")})
-    except Exception as e:
-        return server_error_response(e)
-
-
+# ── File version history (shared across all entity types) ─────────────────
 @manager.route('/files/<file_id>/versions', methods=['GET'])
 @login_required
 async def get_file_version_history(file_id):
-    """Get version history for a specific file."""
     try:
         versions = FileCommitService.get_file_version_history(file_id)
         return get_json_result(data=versions)

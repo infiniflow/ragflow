@@ -305,20 +305,62 @@ func (r *Router) Setup(engine *gin.Engine) {
 				file.GET("/:id/parent", r.fileHandler.GetParentFolder)
 				file.GET("/:id", r.fileHandler.Download)
 				file.GET("/:file_id/versions", r.fileCommitHandler.GetFileVersionHistory)
-
-				// File commit routes
-				workspace := v1.Group("/workspaces")
-				{
-					workspace.POST("/:folder_id/commits", r.fileCommitHandler.CreateCommit)
-					workspace.GET("/:folder_id/commits", r.fileCommitHandler.ListCommits)
-					workspace.GET("/:folder_id/commits/diff", r.fileCommitHandler.DiffCommits)
-					workspace.GET("/:folder_id/commits/:commit_id", r.fileCommitHandler.GetCommit)
-					workspace.GET("/:folder_id/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
-					workspace.GET("/:folder_id/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
-					workspace.GET("/:folder_id/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
-					workspace.GET("/:folder_id/changes", r.fileCommitHandler.GetUncommittedChanges)
-				}
 			}
+
+			// File commit routes — /folders/ takes folder_id directly
+			commitFolders := v1.Group("/folders")
+			{
+				commitFolders.POST("/:folder_id/commits", r.fileCommitHandler.CreateCommit)
+				commitFolders.GET("/:folder_id/commits", r.fileCommitHandler.ListCommits)
+				commitFolders.GET("/:folder_id/commits/diff", r.fileCommitHandler.DiffCommits)
+				commitFolders.GET("/:folder_id/commits/:commit_id", r.fileCommitHandler.GetCommit)
+				commitFolders.GET("/:folder_id/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
+				commitFolders.GET("/:folder_id/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
+				commitFolders.GET("/:folder_id/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
+				commitFolders.GET("/:folder_id/changes", r.fileCommitHandler.GetUncommittedChanges)
+			}
+
+		// /datasets/{dataset_id}/commits — resolve dataset_id → folder_id via middleware
+		commitDatasets := v1.Group("/datasets/:dataset_id")
+		commitDatasets.Use(handler.CommitFolderResolver(r.fileCommitHandler, "datasets", "dataset_id"))
+		{
+			commitDatasets.POST("/commits", r.fileCommitHandler.CreateCommit)
+			commitDatasets.GET("/commits", r.fileCommitHandler.ListCommits)
+			commitDatasets.GET("/commits/diff", r.fileCommitHandler.DiffCommits)
+			commitDatasets.GET("/commits/:commit_id", r.fileCommitHandler.GetCommit)
+			commitDatasets.GET("/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
+			commitDatasets.GET("/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
+			commitDatasets.GET("/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
+			commitDatasets.GET("/changes", r.fileCommitHandler.GetUncommittedChanges)
+		}
+
+		// /memories/{memory_id}/commits — resolve memory_id → folder_id
+		commitMemories := v1.Group("/memories/:memory_id")
+		commitMemories.Use(handler.CommitFolderResolver(r.fileCommitHandler, "memories", "memory_id"))
+		{
+			commitMemories.POST("/commits", r.fileCommitHandler.CreateCommit)
+			commitMemories.GET("/commits", r.fileCommitHandler.ListCommits)
+			commitMemories.GET("/commits/diff", r.fileCommitHandler.DiffCommits)
+			commitMemories.GET("/commits/:commit_id", r.fileCommitHandler.GetCommit)
+			commitMemories.GET("/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
+			commitMemories.GET("/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
+			commitMemories.GET("/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
+			commitMemories.GET("/changes", r.fileCommitHandler.GetUncommittedChanges)
+		}
+
+		// /skills/{skill_id}/commits — resolve skill_id → folder_id
+		commitSkills := v1.Group("/skills/:skill_id")
+		commitSkills.Use(handler.CommitFolderResolver(r.fileCommitHandler, "skills", "skill_id"))
+		{
+			commitSkills.POST("/commits", r.fileCommitHandler.CreateCommit)
+			commitSkills.GET("/commits", r.fileCommitHandler.ListCommits)
+			commitSkills.GET("/commits/diff", r.fileCommitHandler.DiffCommits)
+			commitSkills.GET("/commits/:commit_id", r.fileCommitHandler.GetCommit)
+			commitSkills.GET("/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
+			commitSkills.GET("/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
+			commitSkills.GET("/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
+			commitSkills.GET("/changes", r.fileCommitHandler.GetUncommittedChanges)
+		}
 
 			// Author routes
 			authors := v1.Group("/authors")

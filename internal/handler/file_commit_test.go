@@ -135,14 +135,14 @@ func setupFileCommitTest(userID string) (*gin.Engine, *mockFileCommitSvc) {
 	r.Use(func(c *gin.Context) {
 		c.Set("user", &entity.User{ID: userID})
 	})
-	r.POST("/api/v1/workspaces/:folder_id/commits", h.CreateCommit)
-	r.GET("/api/v1/workspaces/:folder_id/commits", h.ListCommits)
-	r.GET("/api/v1/workspaces/:folder_id/commits/:commit_id", h.GetCommit)
-	r.GET("/api/v1/workspaces/:folder_id/commits/:commit_id/files", h.ListCommitFiles)
-	r.GET("/api/v1/workspaces/:folder_id/commits/diff", h.DiffCommits)
-	r.GET("/api/v1/workspaces/:folder_id/changes", h.GetUncommittedChanges)
-	r.GET("/api/v1/workspaces/:folder_id/commits/:commit_id/tree", h.GetCommitTree)
-	r.GET("/api/v1/workspaces/:folder_id/commits/:commit_id/files/:file_id/content", h.GetCommitFileContent)
+	r.POST("/api/v1/folders/:folder_id/commits", h.CreateCommit)
+	r.GET("/api/v1/folders/:folder_id/commits", h.ListCommits)
+	r.GET("/api/v1/folders/:folder_id/commits/:commit_id", h.GetCommit)
+	r.GET("/api/v1/folders/:folder_id/commits/:commit_id/files", h.ListCommitFiles)
+	r.GET("/api/v1/folders/:folder_id/commits/diff", h.DiffCommits)
+	r.GET("/api/v1/folders/:folder_id/changes", h.GetUncommittedChanges)
+	r.GET("/api/v1/folders/:folder_id/commits/:commit_id/tree", h.GetCommitTree)
+	r.GET("/api/v1/folders/:folder_id/commits/:commit_id/files/:file_id/content", h.GetCommitFileContent)
 	r.GET("/api/v1/files/:file_id/versions", h.GetFileVersionHistory)
 	return r, mock
 }
@@ -151,7 +151,7 @@ func setupFileCommitTestNoAuth() *gin.Engine {
 	h := &FileCommitHandler{}
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	r.POST("/api/v1/workspaces/:folder_id/commits", h.CreateCommit)
+	r.POST("/api/v1/folders/:folder_id/commits", h.CreateCommit)
 	return r
 }
 
@@ -182,7 +182,7 @@ func TestFileCommit_CreateCommit_Success(t *testing.T) {
 
 	body := `{"message": "initial commit", "files": [{"file_id": "f1", "file_name": "test.txt", "operation": "add", "content": "hello"}]}`
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/workspaces/folder-1/commits", strings.NewReader(body))
+	req, _ := http.NewRequest("POST", "/api/v1/folders/folder-1/commits", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
 
@@ -209,7 +209,7 @@ func TestFileCommit_CreateCommit_NoAuth(t *testing.T) {
 	r := setupFileCommitTestNoAuth()
 	body := `{"message": "test", "files": [{"file_id": "f1", "file_name": "t.txt", "operation": "add"}]}`
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/workspaces/folder-1/commits", strings.NewReader(body))
+	req, _ := http.NewRequest("POST", "/api/v1/folders/folder-1/commits", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
 
@@ -228,7 +228,7 @@ func TestFileCommit_CreateCommit_InvalidJSON(t *testing.T) {
 	r, _ := setupFileCommitTest("user-1")
 	body := `{invalid json`
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/workspaces/folder-1/commits", strings.NewReader(body))
+	req, _ := http.NewRequest("POST", "/api/v1/folders/folder-1/commits", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
 
@@ -255,7 +255,7 @@ func TestFileCommit_ListCommits_Success(t *testing.T) {
 	}
 
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/api/v1/workspaces/folder-1/commits?page=1&page_size=10", nil)
+	req, _ := http.NewRequest("GET", "/api/v1/folders/folder-1/commits?page=1&page_size=10", nil)
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
@@ -276,7 +276,7 @@ func TestFileCommit_GetCommit_Success(t *testing.T) {
 	r, _ := setupFileCommitTest("user-1")
 
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/api/v1/workspaces/folder-1/commits/commit-1", nil)
+	req, _ := http.NewRequest("GET", "/api/v1/folders/folder-1/commits/commit-1", nil)
 	r.ServeHTTP(w, req)
 
 	var resp map[string]interface{}
@@ -297,7 +297,7 @@ func TestFileCommit_GetCommit_NotFound(t *testing.T) {
 	}
 
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/api/v1/workspaces/folder-1/commits/missing", nil)
+	req, _ := http.NewRequest("GET", "/api/v1/folders/folder-1/commits/missing", nil)
 	r.ServeHTTP(w, req)
 
 	var resp map[string]interface{}
@@ -311,7 +311,7 @@ func TestFileCommit_ListCommitFiles_Success(t *testing.T) {
 	r, _ := setupFileCommitTest("user-1")
 
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/api/v1/workspaces/folder-1/commits/commit-1/files", nil)
+	req, _ := http.NewRequest("GET", "/api/v1/folders/folder-1/commits/commit-1/files", nil)
 	r.ServeHTTP(w, req)
 
 	var resp map[string]interface{}
@@ -325,7 +325,7 @@ func TestFileCommit_DiffCommits_Success(t *testing.T) {
 	r, _ := setupFileCommitTest("user-1")
 
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/api/v1/workspaces/folder-1/commits/diff?from=c1&to=c2", nil)
+	req, _ := http.NewRequest("GET", "/api/v1/folders/folder-1/commits/diff?from=c1&to=c2", nil)
 	r.ServeHTTP(w, req)
 
 	var resp map[string]interface{}
@@ -339,7 +339,7 @@ func TestFileCommit_DiffCommits_MissingParams(t *testing.T) {
 	r, _ := setupFileCommitTest("user-1")
 
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/api/v1/workspaces/folder-1/commits/diff", nil)
+	req, _ := http.NewRequest("GET", "/api/v1/folders/folder-1/commits/diff", nil)
 	r.ServeHTTP(w, req)
 
 	var resp map[string]interface{}
@@ -353,7 +353,7 @@ func TestFileCommit_GetUncommittedChanges_Success(t *testing.T) {
 	r, _ := setupFileCommitTest("user-1")
 
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/api/v1/workspaces/folder-1/changes", nil)
+	req, _ := http.NewRequest("GET", "/api/v1/folders/folder-1/changes", nil)
 	r.ServeHTTP(w, req)
 
 	var resp map[string]interface{}
@@ -367,7 +367,7 @@ func TestFileCommit_GetCommitTree_Success(t *testing.T) {
 	r, _ := setupFileCommitTest("user-1")
 
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/api/v1/workspaces/folder-1/commits/commit-1/tree", nil)
+	req, _ := http.NewRequest("GET", "/api/v1/folders/folder-1/commits/commit-1/tree", nil)
 	r.ServeHTTP(w, req)
 
 	var resp map[string]interface{}
@@ -384,7 +384,7 @@ func TestFileCommit_GetCommitFileContent_Success(t *testing.T) {
 	}
 
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/api/v1/workspaces/folder-1/commits/commit-1/files/f1/content", nil)
+	req, _ := http.NewRequest("GET", "/api/v1/folders/folder-1/commits/commit-1/files/f1/content", nil)
 	r.ServeHTTP(w, req)
 
 	var resp map[string]interface{}
