@@ -445,13 +445,18 @@ func (s *SkillSpaceService) asyncDeleteSpace(spaceID, folderID, tenantID string,
 	}
 
 	// Step 2: Delete folder and storage via Go FileService
+	// Use a fresh background context with timeout, NOT the incoming ctx (which
+	// is the HTTP request context canceled when the handler returns and the
+	// goroutine starts executing).
 	common.Info("Async deleting space folder via Go FileService", zap.String("folderID", folderID), zap.String("spaceID", spaceID))
-	success, msg := s.fileService.DeleteFiles(ctx, tenantID, []string{folderID})
+	ctxFS, cancelFS := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancelFS()
+	success, msg := s.fileService.DeleteFiles(ctxFS, tenantID, []string{folderID})
 	if !success {
 		common.Error(fmt.Sprintf("Failed to delete space folder via Go FileService during async delete, spaceID=%s, msg=%s", spaceID, msg), nil)
-		// Retry once with a delay
+		// Retry once with a delay (same ctxFS, still valid)
 		time.Sleep(5 * time.Second)
-		if retrySuccess, retryMsg := s.fileService.DeleteFiles(ctx, tenantID, []string{folderID}); !retrySuccess {
+		if retrySuccess, retryMsg := s.fileService.DeleteFiles(ctxFS, tenantID, []string{folderID}); !retrySuccess {
 			common.Error(fmt.Sprintf("Retry failed to delete space folder, marking space as deleted anyway, spaceID=%s, msg=%s", spaceID, retryMsg), nil)
 			// Mark as deleted even if folder deletion fails - orphaned folders can be cleaned up later
 		} else {
