@@ -87,6 +87,7 @@ Try our cloud service at [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
 ## 🔥 Latest Updates
 
+- 2026-06-15 Support multiple chat channels such as Feishu, Discord, Telegram, Line, etc.
 - 2026-04-24 Supports DeepSeek v4.
 - 2026-03-24 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — Provides an official skill for accessing RAGFlow datasets via OpenClaw.
 - 2025-12-26 Supports 'Memory' for AI agent.
@@ -97,7 +98,6 @@ Try our cloud service at [https://cloud.ragflow.io](https://cloud.ragflow.io).
 - 2025-08-08 Supports OpenAI's latest GPT-5 series models.
 - 2025-08-01 Supports agentic workflow and MCP.
 - 2025-05-23 Adds a Python/JavaScript code executor component to Agent.
-- 2025-05-05 Supports cross-language query.
 - 2025-03-19 Supports using a multi-modal model to make sense of images within PDF or DOCX files.
 
 ## 🎉 Stay Tuned

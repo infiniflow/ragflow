@@ -155,11 +155,7 @@ dependencies = [
     #    "xxhash>=3.5.0,<4.0.0",
     #    "trio>=0.17.0,<0.29.0",
     #    "click>=8.1.8",
-    # 1.82.6 has an internal ImportError loading add_system_prompt_to_messages
-    # from litellm_core_utils.prompt_templates.common_utils, which breaks
-    # `import litellm` at module load and tanks the whole server (#15916).
-    # 1.82.7 / 1.82.8 were already excluded for security in #13768.
-    "litellm~=1.82.0,!=1.82.6,!=1.82.7,!=1.82.8",
+    "litellm==1.88.0",
     #    "pip>=25.2",
     #    "imageio-ffmpeg>=0.6.0",
     #    "cryptography==46.0.3",
@@ -170,6 +166,12 @@ dependencies = [
     "python-gitlab>=7.0.0",
     "alibabacloud-dingtalk>=2.0.0",
     "quart-schema==0.23.0",
+    "lark-oapi>=1.2.0",
+    "discord.py>=2.3.0",
+    "python-telegram-bot>=21.0",
+    "line-bot-sdk>=3.0.0",
+    "wechatpy>=1.8.18",
+    "aiohttp>=3.9.0",
 ]
 
 [dependency-groups]
