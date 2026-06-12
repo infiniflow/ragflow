@@ -1215,6 +1215,22 @@ class Connector2Kb(DataBaseModel):
         db_table = "connector2kb"
 
 
+class ChatChannel(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    name = CharField(max_length=128, null=False, help_text="Bot name", index=False)
+    channel = CharField(max_length=128, null=False, help_text="Chat channel type", index=True)
+    config = JSONField(null=False, default={}, help_text="Channel credential & settings")
+    dialog_id = CharField(max_length=32, null=True, default=None, help_text="connected dialog id", index=True)
+    status = CharField(max_length=16, null=True, help_text="1: valid, 0: invalid", default="1", index=True)
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        db_table = "chat_channel"
+
+
 class DateTimeTzField(CharField):
     field_type = 'VARCHAR'
 
@@ -1693,6 +1709,7 @@ def migrate_db():
     alter_db_add_column(migrator, "canvas_template", "canvas_category", CharField(max_length=32, null=False, default="agent_canvas", help_text="agent_canvas|dataflow_canvas", index=True))
     alter_db_add_column(migrator, "canvas_template", "canvas_types", ListField(null=True, default=list, help_text="Canvas types"))
     alter_db_add_column(migrator, "knowledgebase", "pipeline_id", CharField(max_length=32, null=True, help_text="Pipeline ID", index=True))
+    alter_db_add_column(migrator, "chat_channel", "dialog_id", CharField(max_length=32, null=True, help_text="connected dialog id", index=True))
     alter_db_add_column(migrator, "document", "pipeline_id", CharField(max_length=32, null=True, help_text="Pipeline ID", index=True))
     alter_db_add_column(migrator, "knowledgebase", "graphrag_task_id", CharField(max_length=32, null=True, help_text="Gragh RAG task ID", index=True))
     alter_db_add_column(migrator, "knowledgebase", "raptor_task_id", CharField(max_length=32, null=True, help_text="RAPTOR task ID", index=True))
@@ -1728,7 +1745,20 @@ def migrate_db():
     alter_db_column_type(migrator, "document", "size", BigIntegerField(default=0, index=True))
     alter_db_column_type(migrator, "file", "size", BigIntegerField(default=0, index=True))
     alter_db_add_column(migrator, "tenant", "ocr_id", CharField(max_length=128, null=True, help_text="default ocr model ID", index=True))
-    for table_name, index_name in [("tenant_model_instance", "idx_api_key_provider_id"), ("tenant_model", "idx_provider_model_instance")]:
+    # Drop both the explicit "idx_*" name from later migrations AND the
+    # Peewee-auto-derived "<table-as-classname>_<col1>_<col2>" name from the
+    # original TenantModelInstance definition (commit dc4b82523). Databases
+    # created before #15460 dropped the model's `indexes = ((...,), True)`
+    # tuple still carry the auto-named compound unique index, which makes a
+    # second instance with an empty api_key (e.g. Ollama) fail with
+    # "Duplicate entry ... for key 'tenantmodelinstance_api_key_provider_id'"
+    # — see #15699.
+    legacy_indexes = [
+        ("tenant_model_instance", "idx_api_key_provider_id"),
+        ("tenant_model_instance", "tenantmodelinstance_api_key_provider_id"),
+        ("tenant_model", "idx_provider_model_instance"),
+    ]
+    for table_name, index_name in legacy_indexes:
         try:
             migrate(migrator.drop_index(table_name, index_name))
         except (OperationalError, ProgrammingError) as ex:

@@ -23,6 +23,8 @@ import (
 	"os"
 	"os/signal"
 	"ragflow/internal/ingestion"
+	"ragflow/internal/server/local"
+	"ragflow/internal/service"
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
@@ -129,6 +131,10 @@ func main() {
 		common.Fatal("Failed to initialize storage factory", zap.Error(err))
 	}
 
+	if err := engine.InitMessageQueueEngine(config.TaskExecutor.MessageQueueType); err != nil {
+		common.Fatal(fmt.Sprintf("Failed to initialize message queue engine: %w", err))
+	}
+
 	// Initialize server variables (runtime variables from Redis)
 	if err := server.InitVariables(cache.Get()); err != nil {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
@@ -150,11 +156,13 @@ func main() {
 
 	ingestor := ingestion.NewIngestor(name, 2, []string{"pdf", "docx", "txt"})
 
-	// Connect to the admin server
-	serverAddress := fmt.Sprintf("%s:%d", config.Admin.Host, config.Admin.IngestionManagerPort)
-	if err := ingestor.Connect(serverAddress); err != nil {
-		common.Fatal(fmt.Sprintf("Error: %s", err.Error()))
-	}
+	go func() {
+		err := ingestor.Start()
+		if err != nil {
+			common.Error("Failed to initialize ingestor", err)
+			return
+		}
+	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGUSR2)
@@ -169,7 +177,37 @@ func main() {
 		"          /____/\n")
 
 	// Print RAGFlow version
-	common.Info(fmt.Sprintf("RAGFlow admin version: %s", utility.GetRAGFlowVersion()))
+	common.Info(fmt.Sprintf("RAGFlow ingestion service version: %s", utility.GetRAGFlowVersion()))
+
+	// Get local IP address for heartbeat reporting
+	localIP, err := utility.GetLocalIP()
+	if err != nil {
+		common.Fatal("fail to get local ip address")
+	}
+
+	// Initialize and start heartbeat reporter to admin server
+	service.AdminServiceClient = service.NewAdminClient(
+		common.Logger,
+		common.ServerTypeIngestion,
+		fmt.Sprintf("ingestor-%s", ingestor.ID()),
+		localIP,
+		-1,
+	)
+	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
+		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
+	} else {
+		// Start heartbeat reporter with 30 seconds interval
+		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", 3*time.Second, func() {
+			if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
+				local.SetAdminStatus(0, "")
+			} else {
+				local.SetAdminStatus(1, err.Error())
+				//logger.Warn(fmt.Sprintf(err.Error()))
+			}
+		})
+		heartbeatReporter.Start()
+		defer heartbeatReporter.Stop()
+	}
 
 	// Wait for either an OS signal or a shutdown command from the admin
 	select {
