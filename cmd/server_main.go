@@ -1,3 +1,4 @@
+//go:build ignore
 //
 //  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
@@ -36,6 +37,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/cache"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -244,8 +246,24 @@ func startServer(config *server.Config) {
 		docEngine,
 	)
 
+	// Phase 6 per-tenant canvas-runtime override. The selector is backed by
+	// the existing Redis client and the global logger. The handler is
+	// ALWAYS constructed, even when Redis is briefly unavailable at startup,
+	// so the POST /api/v1/admin/canvas-runtime/:tenant_id endpoint stays
+	// registered and returns the explicit ErrSelectorNotConfigured (HTTP 500)
+	// path until Redis recovers. The previous behaviour — skipping handler
+	// construction when rdb == nil — silently removed the route until the
+	// next process restart, so a transient Redis blip at boot stranded
+	// canary operators with a 404 they could not diagnose from the client
+	// side. Review follow-up: keep the route hot.
+	var adminRuntimeSelector *runtime.Selector
+	if rdb := cache.Get().GetClient(); rdb != nil {
+		adminRuntimeSelector = runtime.NewSelector(rdb, common.Logger)
+	}
+	adminRuntimeHandler := handler.NewAdminRuntimeHandler(adminRuntimeSelector)
+
 	// Initialize router
-	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler, fileCommitHandler)
+	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler, fileCommitHandler, adminRuntimeHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()

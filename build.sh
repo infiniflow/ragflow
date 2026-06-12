@@ -14,15 +14,65 @@ PROJECT_ROOT="$SCRIPT_DIR"
 # Build directories
 CPP_DIR="$PROJECT_ROOT/internal/cpp"
 BUILD_DIR="$CPP_DIR/cmake-build-release"
-RAGFLOW_SERVER_BINARY="$PROJECT_ROOT/bin/server_main"
+RAGFLOW_SERVER_BINARY="$PROJECT_ROOT/bin/ragflow_server"
 ADMIN_SERVER_BINARY="$PROJECT_ROOT/bin/admin_server"
 RAGFLOW_CLI_BINARY="$PROJECT_ROOT/bin/ragflow_cli"
+
+# office_oxide native library settings
+OFFICE_OXIDE_PREFIX="${HOME}/.office_oxide"
+OFFICE_OXIDE_VERSION="0.1.2"
 
 echo -e "${GREEN}=== RAGFlow Go Server Build Script ===${NC}"
 
 # Function to print section headers
 print_section() {
     echo -e "\n${YELLOW}>>> $1${NC}"
+}
+
+# Detect the package-install command for pcre2 development files.
+# Outputs the command on stdout; empty string if no supported manager is found.
+detect_pcre2_install_cmd() {
+    if [ "$(uname)" = "Darwin" ]; then
+        echo "brew install pcre2"
+    elif command -v apt-get >/dev/null 2>&1; then
+        echo "sudo apt-get install -y libpcre2-dev"
+    elif command -v zypper >/dev/null 2>&1; then
+        echo "sudo zypper install -y pcre2-devel"
+    elif command -v dnf >/dev/null 2>&1; then
+        echo "sudo dnf install -y pcre2-devel"
+    elif command -v pacman >/dev/null 2>&1; then
+        echo "sudo pacman -S --noconfirm pcre2"
+    else
+        echo ""
+    fi
+}
+
+# Check whether libpcre2-8 is available (static or shared).
+check_pcre2() {
+    # Prefer pkg-config when available — works across distros.
+    if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists libpcre2-8; then
+        return 0
+    fi
+    # Fall back to known library paths:
+    #   Debian/Ubuntu  -> /usr/lib/x86_64-linux-gnu
+    #   openSUSE/RHEL  -> /usr/lib64
+    #   generic Linux  -> /usr/lib, /usr/local/lib
+    #   macOS Homebrew -> /opt/homebrew/lib (Apple Silicon), /usr/local/lib (Intel)
+    for p in \
+        /usr/lib/x86_64-linux-gnu/libpcre2-8.a \
+        /usr/lib/x86_64-linux-gnu/libpcre2-8.so \
+        /usr/lib64/libpcre2-8.a \
+        /usr/lib64/libpcre2-8.so \
+        /usr/lib/libpcre2-8.a \
+        /usr/lib/libpcre2-8.so \
+        /usr/local/lib/libpcre2-8.a \
+        /usr/local/lib/libpcre2-8.so \
+        /usr/local/lib/libpcre2-8.dylib \
+        /opt/homebrew/lib/libpcre2-8.a \
+        /opt/homebrew/lib/libpcre2-8.dylib; do
+        [ -f "$p" ] && return 0
+    done
+    return 1
 }
 
 # Check dependencies
@@ -32,15 +82,16 @@ check_cpp_deps() {
     command -v cmake >/dev/null 2>&1 || { echo -e "${RED}Error: cmake is required but not installed.${NC}"; exit 1; }
     command -v g++ >/dev/null 2>&1 || { echo -e "${RED}Error: g++ is required but not installed.${NC}"; exit 1; }
 
-    # Check for pcre2 library (static .a or shared .so; -lpcre2-8 finds either)
-    if [ -f "/usr/lib/x86_64-linux-gnu/libpcre2-8.a" ] \
-       || [ -f "/usr/lib/x86_64-linux-gnu/libpcre2-8.so" ] \
-       || [ -f "/usr/local/lib/libpcre2-8.a" ] \
-       || [ -f "/usr/local/lib/libpcre2-8.so" ]; then
+    if check_pcre2; then
         echo "✓ pcre2 library found"
     else
-        echo -e "${YELLOW}Warning: libpcre2-8 not found. You may need to install libpcre2-dev:${NC}"
-        echo "  sudo apt-get install libpcre2-dev"
+        install_cmd="$(detect_pcre2_install_cmd)"
+        echo -e "${YELLOW}Warning: libpcre2-8 not found. You may need to install it:${NC}"
+        if [ -n "$install_cmd" ]; then
+            echo "  $install_cmd"
+        else
+            echo "  (No supported package manager detected — install pcre2 development files manually)"
+        fi
     fi
 
     echo "✓ Required tools are available"
@@ -52,6 +103,79 @@ check_go_deps() {
     command -v go >/dev/null 2>&1 || { echo -e "${RED}Error: go is required but not installed.${NC}"; exit 1; }
 
     echo "✓ Required tools are available"
+}
+
+# Download and extract a tar.gz from a URL to a target directory
+_download_and_extract() {
+    local url="$1" target_dir="$2"
+    echo "Downloading ${url} ..."
+    local tmpfile
+    tmpfile="$(mktemp)"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "$url" -o "$tmpfile"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q "$url" -O "$tmpfile"
+    else
+        echo -e "${RED}Error: need curl or wget to download office_oxide${NC}"
+        exit 1
+    fi
+    tar xzf "$tmpfile" -C "$target_dir"
+    rm -f "$tmpfile"
+}
+
+# Check / install office_oxide native library (Rust → C FFI library)
+check_office_oxide_deps() {
+    print_section "Checking office_oxide native library"
+
+    local lib_file header_path
+    case "$(uname -s)" in
+        Linux)  lib_file="liboffice_oxide.so" ;;
+        Darwin) lib_file="liboffice_oxide.dylib" ;;
+        *)      echo -e "${RED}Unsupported OS for office_oxide${NC}"; exit 1 ;;
+    esac
+
+    local lib_path="${OFFICE_OXIDE_PREFIX}/lib/${lib_file}"
+    local header_path="${OFFICE_OXIDE_PREFIX}/include/office_oxide_c/office_oxide.h"
+
+    if [ -f "$lib_path" ] && [ -f "$header_path" ]; then
+        echo "✓ office_oxide native library found at ${OFFICE_OXIDE_PREFIX}"
+        return 0
+    fi
+
+    echo "office_oxide native library not found. Installing..."
+
+    # Map platform to the release asset name. Note: the GitHub release archives
+    # omit the version number from the native-* asset filenames.
+    local asset_name
+    case "$(uname -s)" in
+        Linux)
+            case "$(uname -m)" in
+                x86_64)  asset_name="native-linux-x86_64" ;;
+                aarch64|arm64) asset_name="native-linux-aarch64" ;;
+                *) echo -e "${RED}Unsupported arch: $(uname -m)${NC}"; exit 1 ;;
+            esac
+            ;;
+        Darwin)
+            case "$(uname -m)" in
+                x86_64)  asset_name="native-macos-x86_64" ;;
+                aarch64|arm64) asset_name="native-macos-aarch64" ;;
+                *) echo -e "${RED}Unsupported arch: $(uname -m)${NC}"; exit 1 ;;
+            esac
+            ;;
+    esac
+
+    local release_url="https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VERSION}/${asset_name}.tar.gz"
+
+    mkdir -p "${OFFICE_OXIDE_PREFIX}"
+    _download_and_extract "$release_url" "${OFFICE_OXIDE_PREFIX}"
+
+    if [ ! -f "$lib_path" ]; then
+        echo -e "${RED}Error: Failed to install office_oxide native library (missing ${lib_path})${NC}"
+        echo "  Try: curl -fsSL ${release_url} | tar xzf - -C ${OFFICE_OXIDE_PREFIX}"
+        exit 1
+    fi
+
+    echo -e "${GREEN}✓ office_oxide native library installed${NC}"
 }
 
 # Build C++ static library
@@ -87,27 +211,42 @@ build_go() {
         exit 1
     fi
 
-    # Check for pcre2 library — known Linux paths + macOS Homebrew (Apple Silicon
-    # at /opt/homebrew, Intel Macs at /usr/local). Checks both .a and .so.
-    if [ -f "/usr/lib/x86_64-linux-gnu/libpcre2-8.a" ] \
-       || [ -f "/usr/lib/x86_64-linux-gnu/libpcre2-8.so" ] \
-       || [ -f "/usr/local/lib/libpcre2-8.a" ] \
-       || [ -f "/usr/local/lib/libpcre2-8.so" ] \
-       || [ -f "/opt/homebrew/lib/libpcre2-8.a" ]; then
+    if check_pcre2; then
         echo "✓ pcre2 library found"
     else
-        if [ "$(uname)" = "Darwin" ]; then
-            echo -e "${RED}Error: libpcre2-8 not found. Install with: brew install pcre2${NC}"
+        install_cmd="$(detect_pcre2_install_cmd)"
+        if [ -z "$install_cmd" ]; then
+            echo -e "${RED}Error: libpcre2-8 not found and no supported package manager detected.${NC}"
+            echo "Please install pcre2 development files manually."
             exit 1
         fi
-        echo -e "${YELLOW}Warning: libpcre2-8 not found. You may need to install libpcre2-dev:${NC}"
-        sudo apt -y install libpcre2-dev
+        if [ "$(uname)" = "Darwin" ]; then
+            echo -e "${RED}Error: libpcre2-8 not found. Install with: $install_cmd${NC}"
+            exit 1
+        fi
+        echo -e "${YELLOW}Warning: libpcre2-8 not found. Installing with: $install_cmd${NC}"
+        eval "$install_cmd"
     fi
-    
+
+    # Check / install office_oxide native library
+    check_office_oxide_deps
+
+    # Export CGO flags so go build can find office_oxide headers and library
+    export CGO_CFLAGS="-I${OFFICE_OXIDE_PREFIX}/include/office_oxide_c${CGO_CFLAGS:+ $CGO_CFLAGS}"
+    echo "Exporting CGO_CFLAGS: $CGO_CFLAGS"
+    export CGO_LDFLAGS="-L${OFFICE_OXIDE_PREFIX}/lib -loffice_oxide -Wl,-rpath,${OFFICE_OXIDE_PREFIX}/lib${CGO_LDFLAGS:+ $CGO_LDFLAGS}"
+    echo "Exporting CGO_LDFLAGS: $CGO_LDFLAGS"
+
     echo "Building RAGFlow binary: $RAGFLOW_SERVER_BINARY, $ADMIN_SERVER_BINARY, and $RAGFLOW_CLI_BINARY"
-    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 go build -o "$RAGFLOW_SERVER_BINARY" cmd/server_main.go
-    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 go build -o "$ADMIN_SERVER_BINARY" cmd/admin_server.go
-    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 go build -o "$RAGFLOW_CLI_BINARY" cmd/ragflow_cli.go
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
+        CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
+        go build -o "$RAGFLOW_SERVER_BINARY" cmd/server_main.go
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
+        CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
+        go build -o "$ADMIN_SERVER_BINARY" cmd/admin_server.go
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
+        CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
+        go build -o "$RAGFLOW_CLI_BINARY" cmd/ragflow_cli.go
 
     if [ ! -f "$RAGFLOW_SERVER_BINARY" ]; then
         echo -e "${RED}Error: Failed to build RAGFlow server binary${NC}"
@@ -138,22 +277,29 @@ clean() {
 # Run the server
 run() {
     if [ ! -f "$ADMIN_SERVER_BINARY" ]; then
-        echo -e "${RED}Error: Binary not found. Build first with --all or --go${NC}"
+        echo -e "${RED}Error: $ADMIN_SERVER_BINARY not found. Build first with --all or --go${NC}"
         exit 1
     fi
-
-    print_section "Starting ADMIN server"
-    cd "$PROJECT_ROOT"
-    ./admin_server
-
     if [ ! -f "$RAGFLOW_SERVER_BINARY" ]; then
-        echo -e "${RED}Error: Binary not found. Build first with --all or --go${NC}"
+        echo -e "${RED}Error: $RAGFLOW_SERVER_BINARY not found. Build first with --all or --go${NC}"
         exit 1
     fi
-    
-    print_section "Starting server"
+
     cd "$PROJECT_ROOT"
-    ./server_main
+
+    # admin_server must be running before ragflow_server, otherwise ragflow_server's
+    # heartbeats to admin will error out (see internal/development.md).
+    print_section "Starting admin server (background)"
+    "$ADMIN_SERVER_BINARY" &
+    ADMIN_PID=$!
+    trap 'kill "$ADMIN_PID" 2>/dev/null || true' EXIT INT TERM
+
+    # Give admin_server a moment to bind its listening port (9383) before
+    # ragflow_server starts sending heartbeats to it.
+    sleep 1
+
+    print_section "Starting RAGFlow server (foreground)"
+    "$RAGFLOW_SERVER_BINARY"
 }
 
 # Show help
@@ -182,7 +328,11 @@ DEPENDENCIES:
     - cmake >= 4.0
     - go >= 1.24
     - g++ with C++17/23 support
-    - libpcre2-dev
+    - office_oxide native library (auto-downloaded on first build)
+    - pcre2 development files
+        - Debian/Ubuntu: libpcre2-dev
+        - openSUSE/RHEL/Fedora: pcre2-devel
+        - macOS (Homebrew): pcre2
 EOF
 }
 
