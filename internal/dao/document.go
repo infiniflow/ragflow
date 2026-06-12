@@ -43,6 +43,17 @@ func (dao *DocumentDAO) GetByID(id string) (*entity.Document, error) {
 	return &document, nil
 }
 
+// ListNamesByKbID returns every document name in a dataset, used to compute a
+// non-colliding upload filename (mirrors Python duplicate_name).
+func (dao *DocumentDAO) ListNamesByKbID(kbID string) ([]string, error) {
+	var names []string
+	err := DB.Model(&entity.Document{}).Where("kb_id = ?", kbID).Pluck("name", &names).Error
+	if err != nil {
+		return nil, err
+	}
+	return names, nil
+}
+
 // GetByAuthorID get documents by author ID
 func (dao *DocumentDAO) GetByAuthorID(authorID string, offset, limit int) ([]*entity.Document, int64, error) {
 	var documents []*entity.Document

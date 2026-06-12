@@ -96,6 +96,27 @@ func FilenameType(filename string) string {
 	return FileTypeOTHER
 }
 
+// GetParser derives the parser_id for a document, mirroring Python
+// FileService.get_parser: visual/aural file types and ppt/pages/eml/msg
+// extensions force a dedicated parser; everything else keeps the dataset
+// default.
+func GetParser(docType, filename, defaultParserID string) string {
+	switch docType {
+	case FileTypeVISUAL:
+		return "picture"
+	case FileTypeAURAL:
+		return "audio"
+	}
+	lower := strings.ToLower(filename)
+	if strings.HasSuffix(lower, ".ppt") || strings.HasSuffix(lower, ".pptx") || strings.HasSuffix(lower, ".pages") {
+		return "presentation"
+	}
+	if strings.HasSuffix(lower, ".msg") || strings.HasSuffix(lower, ".eml") {
+		return "email"
+	}
+	return defaultParserID
+}
+
 func SanitizeFilename(filename string) string {
 	if filename == "" {
 		return ""
@@ -216,7 +237,7 @@ var FORCE_ATTACHMENT_CONTENT_TYPES = map[string]bool{
 	"image/svg+xml":         true,
 	"application/xhtml+xml": true,
 	"text/xml":              true,
-	"application/xml":        true,
+	"application/xml":       true,
 	"multipart/related":     true,
 }
 

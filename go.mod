@@ -26,6 +26,7 @@ require (
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/siongui/gojianfan v0.0.0-20210926212422-2f175ac615de
 	github.com/spf13/viper v1.18.2
+	github.com/zeebo/xxh3 v1.0.2
 	go.uber.org/zap v1.27.1
 	golang.org/x/crypto v0.49.0
 	golang.org/x/net v0.51.0

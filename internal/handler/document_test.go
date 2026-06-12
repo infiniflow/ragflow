@@ -36,10 +36,20 @@ import (
 
 // fakeDocumentService implements documentServiceIface for handler tests.
 type fakeDocumentService struct {
-	deleted         int
-	err             error
-	stopResult      map[string]interface{}
-	stopErr         error
+	deleted    int
+	err        error
+	stopResult map[string]interface{}
+	stopErr    error
+
+	uploadLocalData []map[string]interface{}
+	uploadLocalErrs []string
+	uploadEmptyData map[string]interface{}
+	uploadEmptyCode common.ErrorCode
+	uploadEmptyErr  error
+	uploadWebData   map[string]interface{}
+	uploadWebCode   common.ErrorCode
+	uploadWebErr    error
+
 	metadataSummary map[string]interface{}
 	metadataErr     error
 	metadataKBID    string
