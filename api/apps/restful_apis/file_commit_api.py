@@ -280,6 +280,7 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
 # For /folders/ entity_id IS the folder_id directly.
 # For other entity types entity_id is resolved via _resolve_folder_id().
 _register_commit_routes('/folders/<entity_id>', 'entity_id')  # direct — entity_id == folder_id
+_register_commit_routes('/workspace/<entity_id>', 'entity_id')  # alias — workspace_id == folder_id
 _register_commit_routes('/datasets/<entity_id>', 'entity_id', resolver_type='datasets')
 # /memories and /skills routes are not mounted until resolvers are implemented.
 

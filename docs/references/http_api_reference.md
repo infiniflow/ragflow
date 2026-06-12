@@ -7549,7 +7549,9 @@ or
 **POST** `/api/v1/folders/{folder_id}/commits`
 
 Creates a new snapshot commit for the specified folder.  
-This endpoint also supports `/api/v1/datasets/{dataset_id}/commits` which resolves to the dataset's underlying folder.
+This endpoint also supports:
+- `/api/v1/workspace/{workspace_id}/commits` (alias, workspace_id == folder_id)
+- `/api/v1/datasets/{dataset_id}/commits` (resolves dataset to its folder)
 
 #### Request
 
@@ -7630,7 +7632,8 @@ Failure:
 
 **GET** `/api/v1/folders/{folder_id}/commits`
 
-Lists all commits for the specified folder with pagination.
+Lists all commits for the specified folder with pagination.  
+Also available at `/api/v1/workspace/{workspace_id}/commits`.
 
 #### Request
 
@@ -7695,7 +7698,8 @@ Success:
 
 **GET** `/api/v1/folders/{folder_id}/commits/{commit_id}`
 
-Retrieves the details of a specific commit, including its file changes.
+Retrieves the details of a specific commit, including its file changes.  
+Also available at `/api/v1/workspace/{workspace_id}/commits/{commit_id}`.
 
 #### Request
 
@@ -7763,7 +7767,8 @@ Failure:
 
 **GET** `/api/v1/folders/{folder_id}/commits/{commit_id}/files`
 
-Lists the file changes associated with a specific commit.
+Lists the file changes associated with a specific commit.  
+Also available at `/api/v1/workspace/{workspace_id}/commits/{commit_id}/files`.
 
 #### Request
 
@@ -7809,7 +7814,8 @@ Success:
 
 **GET** `/api/v1/folders/{folder_id}/commits/diff?from={commit_id}&to={commit_id}`
 
-Compares two commits and returns the differences.
+Compares two commits and returns the differences.  
+Also available at `/api/v1/workspace/{workspace_id}/commits/diff?from=...&to=...`.
 
 #### Request
 
@@ -7874,7 +7880,8 @@ Failure:
 
 **GET** `/api/v1/folders/{folder_id}/changes`
 
-Returns the uncommitted changes for the specified folder (similar to `git status`).
+Returns the uncommitted changes for the specified folder (similar to `git status`).  
+Also available at `/api/v1/workspace/{workspace_id}/changes`.
 
 #### Request
 
@@ -7924,7 +7931,8 @@ Success:
 
 **GET** `/api/v1/folders/{folder_id}/commits/{commit_id}/tree`
 
-Retrieves the full folder tree snapshot as it existed at a specific commit.
+Retrieves the full folder tree snapshot as it existed at a specific commit.  
+Also available at `/api/v1/workspace/{workspace_id}/commits/{commit_id}/tree`.
 
 #### Request
 
@@ -7966,7 +7974,8 @@ Success:
 
 **GET** `/api/v1/folders/{folder_id}/commits/{commit_id}/files/{file_id}/content`
 
-Retrieves the file content as it existed at a specific commit.
+Retrieves the file content as it existed at a specific commit.  
+Also available at `/api/v1/workspace/{workspace_id}/commits/{commit_id}/files/{file_id}/content`.
 
 #### Request
 
