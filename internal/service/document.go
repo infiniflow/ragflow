@@ -36,38 +36,36 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 
-	"ragflow/internal/server"
-
-	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"ragflow/internal/server"
 )
 
 // DocumentService document service
 type DocumentService struct {
-	documentDAO      *dao.DocumentDAO
-	kbDAO            *dao.KnowledgebaseDAO
-	ingestionTaskDAO *dao.IngestionDAO
-	ingestionLogDAO  *dao.IngestionLogDAO
-	docEngine        engine.DocEngine
-	engineType       server.EngineType
-	metadataSvc      *MetadataService
-	taskDAO          *dao.TaskDAO
-	file2DocumentDAO *dao.File2DocumentDAO
+	documentDAO         *dao.DocumentDAO
+	kbDAO               *dao.KnowledgebaseDAO
+	ingestionTaskDAO    *dao.IngestionTaskDAO
+	ingestionTaskLogDAO *dao.IngestionTaskLogDAO
+	docEngine           engine.DocEngine
+	engineType          server.EngineType
+	metadataSvc         *MetadataService
+	taskDAO             *dao.TaskDAO
+	file2DocumentDAO    *dao.File2DocumentDAO
 }
 
 // NewDocumentService create document service
 func NewDocumentService() *DocumentService {
 	cfg := server.GetConfig()
 	return &DocumentService{
-		documentDAO:      dao.NewDocumentDAO(),
-		ingestionTaskDAO: dao.NewIngestionDAO(),
-		ingestionLogDAO:  dao.NewIngestionLogDAO(),
-		kbDAO:            dao.NewKnowledgebaseDAO(),
-		docEngine:        engine.Get(),
-		engineType:       cfg.DocEngine.Type,
-		metadataSvc:      NewMetadataService(),
-		taskDAO:          dao.NewTaskDAO(),
-		file2DocumentDAO: dao.NewFile2DocumentDAO(),
+		documentDAO:         dao.NewDocumentDAO(),
+		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
+		ingestionTaskLogDAO: dao.NewIngestionTaskLogDAO(),
+		kbDAO:               dao.NewKnowledgebaseDAO(),
+		docEngine:           engine.Get(),
+		engineType:          cfg.DocEngine.Type,
+		metadataSvc:         NewMetadataService(),
+		taskDAO:             dao.NewTaskDAO(),
+		file2DocumentDAO:    dao.NewFile2DocumentDAO(),
 	}
 }
 
@@ -492,6 +490,50 @@ func (s *DocumentService) deleteDocumentFull(docID string) error {
 	return nil
 }
 
+// RemoveDocumentKeepFile removes a document's chunks/metadata and the document
+// row, decrementing the KB counters (doc_num/chunk_num/token_num), WITHOUT
+// deleting the underlying file record, its storage blob, or its file2document
+// mappings. Mirrors Python DocumentService.remove_document — the caller is
+// responsible for cleaning up the file2document mappings separately.
+func (s *DocumentService) RemoveDocumentKeepFile(docID string) error {
+	doc, kb, err := s.resolveDocAndKB(docID)
+	if err != nil {
+		return err
+	}
+	if _, delErr := s.taskDAO.DeleteByDocIDs([]string{docID}); delErr != nil {
+		common.Logger.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to delete tasks for %s: %v", docID, delErr))
+	}
+	s.deleteDocEngineData(docID, kb.TenantID, doc.KbID)
+	return s.deleteDocRecordWithCounters(doc, kb.ID)
+}
+
+// InsertDocument creates a document row and increments the owning KB's doc_num
+// counter in a single transaction. Mirrors Python DocumentService.insert, which
+// updates dataset/document counters on insert. The document's ID and timestamps
+// are populated by the caller / model hooks before insertion.
+func (s *DocumentService) InsertDocument(doc *entity.Document) error {
+	return dao.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(doc).Error; err != nil {
+			return fmt.Errorf("failed to create document: %w", err)
+		}
+		// Guard the counter bump with RowsAffected: documents.kb_id has no DB-level
+		// FK, so Create can succeed against a non-existent KB and the Update would
+		// then report a nil error with 0 rows touched, silently desyncing doc_num.
+		// Roll the whole transaction back in that case (mirrors the counter checks
+		// in deleteDocRecordWithCounters).
+		result := tx.Model(&entity.Knowledgebase{}).
+			Where("id = ?", doc.KbID).
+			Update("doc_num", gorm.Expr("doc_num + 1"))
+		if result.Error != nil {
+			return fmt.Errorf("failed to increment doc_num for KB %s: %w", doc.KbID, result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("knowledgebase %s not found", doc.KbID)
+		}
+		return nil
+	})
+}
+
 // resolveDocAndKB loads the document and its knowledgebase, returning both or
 // an error.
 func (s *DocumentService) resolveDocAndKB(docID string) (*entity.Document, *entity.Knowledgebase, error) {
@@ -671,9 +713,136 @@ func (s *DocumentService) GetDocumentsByAuthorID(authorID, page, pageSize int) (
 	return responses, total, nil
 }
 
+func (s *DocumentService) ListIngestionTasks(userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
+	offset := (page - 1) * pageSize
+
+	var tasks []*entity.IngestionTask
+	var err error
+	if datasetID == nil {
+		tasks, err = s.ingestionTaskDAO.ListByUserID(userID, offset, pageSize)
+	} else {
+		tasks, err = s.ingestionTaskDAO.ListByUserIDAndDatasetID(userID, *datasetID, offset, pageSize)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return tasks, nil
+}
+
 type ParseDocumentResponse struct {
-	DocumentID string  `json:"document_id"`
-	Result     *string `json:"result"`
+	DocumentID string `json:"document_id"`
+	Result     string `json:"result"`
+}
+
+func (s *DocumentService) IngestDocuments(datasetID, userID string, docIDs []string) ([]*ParseDocumentResponse, error) {
+	// deduplicate the document id
+	uniqueDocIDs := common.Deduplicate(docIDs)
+	if uniqueDocIDs == nil || len(uniqueDocIDs) == 0 {
+		return nil, fmt.Errorf("no documents to parse")
+	}
+
+	var responses []*ParseDocumentResponse
+
+	// query database, if the document ids are valid
+	for _, docID := range uniqueDocIDs {
+		doc, err := s.documentDAO.GetByID(docID)
+
+		if err != nil {
+			errorMessage := err.Error()
+			responses = append(responses, &ParseDocumentResponse{
+				DocumentID: docID,
+				Result:     errorMessage,
+			})
+			continue
+		}
+
+		if doc == nil {
+			errorMessage := "no such document"
+			responses = append(responses, &ParseDocumentResponse{
+				DocumentID: docID,
+				Result:     errorMessage,
+			})
+			continue
+		}
+
+		task := &entity.IngestionTask{
+			DocumentID: docID,
+			UserID:     userID,
+			DatasetID:  datasetID,
+			Schema:     nil,
+			Status:     common.CREATED,
+		}
+
+		// save the task to database
+		task, err = s.ingestionTaskDAO.CheckAndCreate(task)
+		if err != nil {
+			errorMessage := err.Error()
+			responses = append(responses, &ParseDocumentResponse{
+				DocumentID: docID,
+				Result:     errorMessage,
+			})
+			continue
+		}
+
+		msgQueueEngine := engine.GetMessageQueueEngine()
+
+		taskMessage := common.TaskMessage{
+			TaskID:   task.ID,
+			TaskType: common.TaskTypeIngestionTask,
+		}
+
+		// convert task
+		taskMessageStr, err := json.Marshal(taskMessage)
+		if err != nil {
+			return nil, err
+		}
+
+		err = msgQueueEngine.PublishTask("tasks.RAGFLOW", taskMessageStr)
+		if err != nil {
+			return nil, err
+		}
+
+		responses = append(responses, &ParseDocumentResponse{
+			DocumentID: docID,
+			Result:     fmt.Sprintf("task_id: %s", task.ID),
+		})
+	}
+
+	common.Info(fmt.Sprintf("parse documents, dataset: %s, documents: %v", datasetID, docIDs))
+	return responses, nil
+}
+
+func (s *DocumentService) StopIngestionTasks(tasks []string, userID string) ([]*entity.IngestionTask, error) {
+
+	var taskResponses []*entity.IngestionTask
+	for _, taskID := range tasks {
+		task, err := s.ingestionTaskDAO.SetStoppingByAPIServer(taskID)
+		if err != nil {
+			return nil, err
+		}
+		taskResponses = append(taskResponses, task)
+	}
+	return taskResponses, nil
+}
+
+func (s *DocumentService) RemoveIngestionTasks(tasks []string, userID string) ([]map[string]string, error) {
+
+	var deletedTasks []map[string]string
+	for _, taskID := range tasks {
+		taskRecord := map[string]string{
+			"task_id": taskID,
+		}
+		_, err := s.ingestionTaskDAO.RemoveByAPIServerOrAdminServer(taskID, &userID)
+		if err != nil {
+			taskRecord["remove"] = fmt.Sprintf("fail: %s", err.Error())
+		} else {
+			taskRecord["remove"] = "success"
+		}
+		deletedTasks = append(deletedTasks, taskRecord)
+	}
+	return deletedTasks, nil
 }
 
 func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []string) ([]*ParseDocumentResponse, error) {
@@ -696,7 +865,7 @@ func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []stri
 			errorMessage := err.Error()
 			responses = append(responses, &ParseDocumentResponse{
 				DocumentID: docID,
-				Result:     &errorMessage,
+				Result:     errorMessage,
 			})
 			continue
 		}
@@ -704,7 +873,7 @@ func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []stri
 			errorMessage := "no such document"
 			responses = append(responses, &ParseDocumentResponse{
 				DocumentID: docID,
-				Result:     &errorMessage,
+				Result:     errorMessage,
 			})
 			continue
 		}
@@ -713,30 +882,28 @@ func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []stri
 			errorMessage := fmt.Sprintf("document %s is already parsed", docID)
 			responses = append(responses, &ParseDocumentResponse{
 				DocumentID: docID,
-				Result:     &errorMessage,
+				Result:     errorMessage,
 			})
 			continue
 		}
 
 		// create task for each document
-		task := &entity.IngestionTask{
-			ID:         uuid.New().String(),
-			DocumentID: docID,
-			UserID:     userID,
-			Config:     nil,
-			TryCount:   1,
-		}
+		//task := &entity.IngestionTask{
+		//	ID:         utility.GenerateToken(),
+		//	DocumentID: docID,
+		//	UserID:     userID,
+		//}
 
 		// save the task to database
-		err = s.ingestionTaskDAO.Create(task)
-		if err != nil {
-			errorMessage := err.Error()
-			responses = append(responses, &ParseDocumentResponse{
-				DocumentID: docID,
-				Result:     &errorMessage,
-			})
-			continue
-		}
+		//err = s.ingestionTaskDAO.Create(task)
+		//if err != nil {
+		//	errorMessage := err.Error()
+		//	responses = append(responses, &ParseDocumentResponse{
+		//		DocumentID: docID,
+		//		Result:     &errorMessage,
+		//	})
+		//	continue
+		//}
 
 		// Send task to message queue
 

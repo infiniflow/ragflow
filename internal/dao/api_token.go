@@ -17,6 +17,8 @@
 package dao
 
 import (
+	"errors"
+
 	"ragflow/internal/entity"
 )
 
@@ -90,6 +92,18 @@ type ConversationStatsRow struct {
 	ThumbUp  int64   `gorm:"column:thumb_up"`
 }
 
+// Create inserts a new api_4_conversation row. The caller is responsible
+// for setting ID, DialogID, UserID and the BaseModel time fields; the
+// DAO does not assign defaults because session creation paths in the
+// Python agent API generate a uuid + tenant timestamp and rely on the
+// round-trip shape being byte-identical.
+func (dao *API4ConversationDAO) Create(conv *entity.API4Conversation) error {
+	if conv == nil {
+		return errors.New("api4 conversation: nil row")
+	}
+	return DB.Create(conv).Error
+}
+
 // Stats returns daily conversation aggregates for a tenant.
 func (dao *API4ConversationDAO) Stats(tenantID, fromDate, toDate string, source *string) ([]ConversationStatsRow, error) {
 	var rows []ConversationStatsRow
@@ -129,6 +143,13 @@ func (dao *API4ConversationDAO) GetBySessionID(sessionID, agentID string) (*enti
 		return nil, nil
 	}
 	return &result, nil
+}
+
+// ListIDsByAgentID lists conversation IDs for one agent.
+func (dao *API4ConversationDAO) ListIDsByAgentID(agentID string) ([]string, error) {
+	var ids []string
+	err := DB.Model(&entity.API4Conversation{}).Where("dialog_id = ?", agentID).Pluck("id", &ids).Error
+	return ids, err
 }
 
 // DeleteBySessionIDAndAgentID deletes API4Conversations by sessionID and agentID

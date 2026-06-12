@@ -59,7 +59,12 @@ redis:
   db: 1
   username: ''
   password: 'infini_rag_flow'
-  host: 'redis:6379'
+  host: 'redis:6379'          # Keep from feature branch (Docker service name)
+nats:
+  host: "0.0.0.0"
+  port: 4222
+task_executor:
+  message_queue_type: 'nats'
 user_default_llm:
   default_models:
     embedding_model:

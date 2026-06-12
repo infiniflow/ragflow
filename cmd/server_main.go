@@ -1,3 +1,4 @@
+//go:build ignore
 //
 //  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
@@ -36,12 +37,14 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/cache"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/handler"
 	"ragflow/internal/router"
 	"ragflow/internal/service"
+	"ragflow/internal/service/chunk"
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/tokenizer"
 )
@@ -130,6 +133,10 @@ func main() {
 		common.Fatal("Failed to initialize storage factory", zap.Error(err))
 	}
 
+	if err := engine.InitMessageQueueEngine(config.TaskExecutor.MessageQueueType); err != nil {
+		common.Error("Failed to initialize message queue engine", err)
+	}
+
 	// Initialize server variables (runtime variables that can change during operation)
 	// This must be done after Cache is initialized
 	if err := server.InitVariables(cache.Get()); err != nil {
@@ -178,7 +185,7 @@ func startServer(config *server.Config) {
 	datasetsService := service.NewDatasetService()
 	knowledgebaseService := service.NewKnowledgebaseService()
 	metadataService := service.NewMetadataService()
-	chunkService := service.NewChunkService()
+	chunkService := chunk.NewChunkService()
 	llmService := service.NewLLMService()
 	tenantService := service.NewTenantService()
 	chatService := service.NewChatService()
@@ -214,12 +221,15 @@ func startServer(config *server.Config) {
 	skillSearchHandler := handler.NewSkillSearchHandler(docEngine)
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
 	agentHandler := handler.NewAgentHandler(service.NewAgentService(), fileService)
+	searchBotLLM := &handler.SearchBotRealLLM{Svc: modelProviderService}
 	searchBotHandler := handler.NewSearchBotHandler(
 		searchService,
 		tenantService,
-		&handler.SearchBotRealLLM{Svc: modelProviderService},
+		searchBotLLM,
 		chunkService,
 	)
+	searchBotHandler.SetStreamLLM(searchBotLLM)
+	searchBotHandler.SetAskService(service.NewAskService(chunkService, nil, 0, 0))
 	pluginHandler := handler.NewPluginHandler(service.NewPluginService())
 	modelHandler := handler.NewModelHandler(service.NewModelProviderService())
 
@@ -235,8 +245,24 @@ func startServer(config *server.Config) {
 		docEngine,
 	)
 
+	// Phase 6 per-tenant canvas-runtime override. The selector is backed by
+	// the existing Redis client and the global logger. The handler is
+	// ALWAYS constructed, even when Redis is briefly unavailable at startup,
+	// so the POST /api/v1/admin/canvas-runtime/:tenant_id endpoint stays
+	// registered and returns the explicit ErrSelectorNotConfigured (HTTP 500)
+	// path until Redis recovers. The previous behaviour — skipping handler
+	// construction when rdb == nil — silently removed the route until the
+	// next process restart, so a transient Redis blip at boot stranded
+	// canary operators with a 404 they could not diagnose from the client
+	// side. Review follow-up: keep the route hot.
+	var adminRuntimeSelector *runtime.Selector
+	if rdb := cache.Get().GetClient(); rdb != nil {
+		adminRuntimeSelector = runtime.NewSelector(rdb, common.Logger)
+	}
+	adminRuntimeHandler := handler.NewAdminRuntimeHandler(adminRuntimeSelector)
+
 	// Initialize router
-	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler)
+	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler, adminRuntimeHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()
@@ -284,19 +310,19 @@ func startServer(config *server.Config) {
 	}
 
 	// Initialize and start heartbeat reporter to admin server
-	heartbeatService := service.NewHeartbeatSender(
+	service.AdminServiceClient = service.NewAdminClient(
 		common.Logger,
 		common.ServerTypeAPI,
 		fmt.Sprintf("ragflow-server-%d", config.Server.Port),
 		localIP,
 		config.Server.Port,
 	)
-	if err = heartbeatService.InitHTTPClient(); err != nil {
+	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
 		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
 	} else {
 		// Start heartbeat reporter with 30 seconds interval
 		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", 3*time.Second, func() {
-			if err = heartbeatService.SendHeartbeat(); err == nil {
+			if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
 				local.SetAdminStatus(0, "")
 			} else {
 				local.SetAdminStatus(1, err.Error())

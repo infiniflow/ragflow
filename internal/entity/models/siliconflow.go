@@ -17,7 +17,6 @@
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -30,7 +29,6 @@ import (
 	"ragflow/internal/common"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // SiliconflowModel implements ModelDriver for Siliconflow
@@ -42,16 +40,9 @@ type SiliconflowModel struct {
 func NewSiliconflowModel(baseURL map[string]string, urlSuffix URLSuffix) *SiliconflowModel {
 	return &SiliconflowModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
-			httpClient: &http.Client{
-				Transport: &http.Transport{
-					MaxIdleConns:        100,
-					MaxIdleConnsPerHost: 10,
-					IdleConnTimeout:     90 * time.Second,
-					DisableCompression:  false,
-				},
-			},
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
@@ -324,44 +315,23 @@ func (s *SiliconflowModel) ChatStreamlyWithSender(modelName string, messages []M
 	}
 
 	// SSE parsing: read line by line
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		common.Info(line)
-
-		// SSE data line starts with "data:"
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-
-		// Extract JSON after "data:"
-		data := strings.TrimSpace(line[5:])
-
-		// [DONE] marks the end of stream
-		if data == "[DONE]" {
-			break
-		}
-
-		// Parse the JSON event
-		var event map[string]interface{}
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			continue
-		}
+	sawTerminal := false
+	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
+		common.Info(fmt.Sprintf("%v", event))
 
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
-			continue
+			return nil
 		}
 
 		firstChoice, ok := choices[0].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		delta, ok := firstChoice["delta"].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
@@ -380,8 +350,16 @@ func (s *SiliconflowModel) ChatStreamlyWithSender(modelName string, messages []M
 
 		finishReason, ok := firstChoice["finish_reason"].(string)
 		if ok && finishReason != "" {
-			break
+			sawTerminal = true
 		}
+
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to scan response body: %w", err)
+	}
+	if !done && !sawTerminal {
+		return fmt.Errorf("siliconflow: stream ended before [DONE] or finish_reason")
 	}
 
 	// Send [DONE] marker for OpenAI compatibility
@@ -390,7 +368,7 @@ func (s *SiliconflowModel) ChatStreamlyWithSender(modelName string, messages []M
 		return err
 	}
 
-	return scanner.Err()
+	return nil
 }
 
 type siliconflowEmbeddingResponse struct {
@@ -443,6 +421,9 @@ func (s *SiliconflowModel) Embed(modelName *string, texts []string, apiConfig *A
 	reqBody := map[string]interface{}{
 		"model": modelName,
 		"input": texts,
+	}
+	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
+		reqBody["dimensions"] = embeddingConfig.Dimension
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -541,21 +522,12 @@ func (s *SiliconflowModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse
 	}
 
 	// Parse response
-	var modelList DSModelList
+	var modelList ModelList
 	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	var models []ListModelResponse
-	for _, model := range modelList.Models {
-		modelName := model.ID
-		if model.OwnedBy != "" {
-			modelName = model.ID + "@" + model.OwnedBy
-		}
-		models = append(models, ListModelResponse{Name: modelName})
-	}
-
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 type siliconflowBalanceResponse struct {
