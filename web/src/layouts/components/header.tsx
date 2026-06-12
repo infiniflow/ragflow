@@ -201,15 +201,15 @@ export function Header({
         </div>
         <div
           ref={expandedRightMeasureRef}
-          className="inline-flex items-center gap-4"
+          className="inline-flex shrink-0 items-center justify-end gap-4 text-text-badge"
         >
-          <span className="p-2">
+          <a className="inline-flex p-2">
             <IconFontFill name="a-DiscordIconSVGVectorIcon" />
-          </span>
-          <span className="p-2">
+          </a>
+          <a className="inline-flex p-2">
             <IconFontFill name="GitHub" />
-          </span>
-          <Button variant="ghost" className="gap-1">
+          </a>
+          <Button variant="ghost" className="size-auto gap-1 px-4">
             {currentLanguage?.displayName}
             <LucideChevronDown className="size-[1em]" />
           </Button>
@@ -218,7 +218,14 @@ export function Header({
           </Button>
           <ThemeButton className="!size-8" />
           {hasNotification && <BellButton className="!size-8" />}
-          <div className="ms-3 size-10" />
+          <div className="relative ms-3 flex size-10 shrink-0 items-center justify-center">
+            <RAGFlowAvatar
+              name={nickname}
+              avatar={avatar}
+              isPerson
+              className="size-8"
+            />
+          </div>
         </div>
       </div>
     </>

@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 function FooterDivider() {
   return <span className="text-border-button select-none">|</span>;
 }
@@ -33,6 +35,8 @@ type MobileMenuFooterProps = {
 };
 
 export function MobileMenuFooter({ onClose }: MobileMenuFooterProps) {
+  const { t } = useTranslation();
+
   return (
     <div className="shrink-0 border-t border-border-button px-4 py-4">
       <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-sm">
@@ -42,7 +46,7 @@ export function MobileMenuFooter({ onClose }: MobileMenuFooterProps) {
           rel="noreferrer noopener"
           onClick={onClose}
         >
-          Discord
+          {t('header.discord')}
         </FooterLink>
         <FooterDivider />
         <FooterLink
@@ -51,7 +55,7 @@ export function MobileMenuFooter({ onClose }: MobileMenuFooterProps) {
           rel="noreferrer noopener"
           onClick={onClose}
         >
-          GitHub
+          {t('header.github')}
         </FooterLink>
         <FooterDivider />
         <FooterLink
@@ -60,7 +64,7 @@ export function MobileMenuFooter({ onClose }: MobileMenuFooterProps) {
           rel="noreferrer noopener"
           onClick={onClose}
         >
-          Help
+          {t('header.help')}
         </FooterLink>
       </div>
     </div>
