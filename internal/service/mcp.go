@@ -402,6 +402,21 @@ func buildExportedMCPServer(server *entity.MCPServer) *ExportedMCPServers {
 	}
 }
 
+func normalizeMCPServer(server *entity.MCPServer) {
+	if server == nil {
+		return
+	}
+	if server.Variables == nil {
+		server.Variables = entity.JSONMap{}
+	}
+	if server.Headers == nil {
+		server.Headers = entity.JSONMap{}
+	}
+	if tools, ok := server.Variables["tools"]; !ok || tools == nil {
+		server.Variables["tools"] = map[string]interface{}{}
+	}
+}
+
 // DeleteMCPServer deletes an MCP server owned by a tenant.
 func (s *MCPService) DeleteMCPServer(tenantID, mcpID string) (bool, common.ErrorCode, error) {
 	server, err := s.mcpServerDAO.GetByID(mcpID)
