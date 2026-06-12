@@ -36,7 +36,7 @@ from common.token_utils import num_tokens_from_string, total_token_count_from_re
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
 from rag.llm.tool_decorator import FunctionToolSession, is_tool
 from rag.nlp import is_chinese, is_english
-
+from rag.utils.url_utils import ensure_v1
 
 class LLMErrorCode(StrEnum):
     ERROR_RATE_LIMIT = "RATE_LIMIT_EXCEEDED"
@@ -160,8 +160,9 @@ def _apply_model_family_policies(
 class Base(ABC):
     def __init__(self, key, model_name, base_url, **kwargs):
         timeout = int(os.environ.get("LLM_TIMEOUT_SECONDS", 600))
-        self.client = OpenAI(api_key=key, base_url=base_url, timeout=timeout)
-        self.async_client = AsyncOpenAI(api_key=key, base_url=base_url, timeout=timeout)
+        self.base_url = ensure_v1(base_url)
+        self.client = OpenAI(api_key=key, base_url=self.base_url, timeout=timeout)
+        self.async_client = AsyncOpenAI(api_key=key, base_url=self.base_url, timeout=timeout)
         self.model_name = model_name
         # Configure retry parameters
         self.max_retries = kwargs.get("max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5)))
@@ -655,7 +656,6 @@ class XinferenceChat(Base):
     def __init__(self, key=None, model_name="", base_url="", **kwargs):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
-        base_url = urljoin(base_url, "v1")
         super().__init__(key, model_name, base_url, **kwargs)
 
 
@@ -665,7 +665,6 @@ class HuggingFaceChat(Base):
     def __init__(self, key=None, model_name="", base_url="", **kwargs):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
-        base_url = urljoin(base_url, "v1")
         super().__init__(key, model_name.split("___")[0], base_url, **kwargs)
 
 
@@ -675,7 +674,6 @@ class ModelScopeChat(Base):
     def __init__(self, key=None, model_name="", base_url="", **kwargs):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
-        base_url = urljoin(base_url, "v1")
         super().__init__(key, model_name.split("___")[0], base_url, **kwargs)
 
 
@@ -766,7 +764,6 @@ class LocalAIChat(Base):
 
         if not base_url:
             raise ValueError("Local llm url cannot be None")
-        base_url = urljoin(base_url, "v1")
         self.client = OpenAI(api_key="empty", base_url=base_url)
         self.model_name = model_name.split("___")[0]
 
@@ -904,7 +901,6 @@ class LmStudioChat(Base):
     def __init__(self, key, model_name, base_url, **kwargs):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
-        base_url = urljoin(base_url, "v1")
         super().__init__(key, model_name, base_url, **kwargs)
         self.client = OpenAI(api_key="lm-studio", base_url=base_url)
         self.model_name = model_name
@@ -1388,7 +1384,7 @@ class LiteLLMBase(ABC):
         self.prefix = LITELLM_PROVIDER_PREFIX.get(self.provider, "")
         self.model_name = f"{self.prefix}{model_name}"
         self.api_key = key
-        self.base_url = (base_url or FACTORY_DEFAULT_BASE_URL.get(self.provider, "")).rstrip("/")
+        self.base_url = ensure_v1((base_url or FACTORY_DEFAULT_BASE_URL.get(self.provider, "")).rstrip("/"))
         # Configure retry parameters
         self.max_retries = kwargs.get("max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5)))
         self.base_delay = kwargs.get("retry_interval", float(os.environ.get("LLM_BASE_DELAY", 2.0)))
