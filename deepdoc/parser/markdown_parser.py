@@ -322,15 +322,12 @@ class MarkdownElementExtractor:
                 content = sections[i]["content"] if include_meta else sections[i]
                 if _is_lone_header(content):
                     header_parts = [content.strip()]
-                    end_line = sections[i]["end_line"] if include_meta else None
                     j = i + 1
                     while j < len(sections):
                         next_content = sections[j]["content"] if include_meta else sections[j]
                         if not _is_lone_header(next_content):
                             break
                         header_parts.append(next_content.strip())
-                        if include_meta:
-                            end_line = sections[j]["end_line"]
                         j += 1
                     if j < len(sections):
                         body_content = sections[j]["content"] if include_meta else sections[j]
