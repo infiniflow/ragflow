@@ -31,6 +31,7 @@ import (
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // FileCommitService file commit service
@@ -80,37 +81,70 @@ func (s *FileCommitService) CreateCommit(folderID, authorID, message string, cha
 		commit.ParentID = &parentID
 	}
 
-	// Save commit (BaseModel hook sets timestamps)
-	if err := s.commitDAO.Create(commit); err != nil {
-		return nil, fmt.Errorf("failed to create commit: %w", err)
-	}
-
-	// 4. Process each file change
-	storageImpl := storage.GetStorageFactory().GetStorage()
-
-	for _, change := range changes {
-		item := &entity.FileCommitItem{
-			ID:        generateCommitUUID(),
-			CommitID:  commitID,
-			FileID:    change.FileID,
-			Operation: change.Operation,
+	// All DB operations run inside a single transaction.
+	var treeStr string
+	if err := dao.DB.Transaction(func(tx *gorm.DB) error {
+		// Save commit
+		if err := tx.Create(commit).Error; err != nil {
+			return fmt.Errorf("failed to create commit: %w", err)
 		}
 
-		switch change.Operation {
-		case "add", "modify":
-			contentBytes := []byte(change.Content)
-			hash := sha256.Sum256(contentBytes)
-			hashHex := hex.EncodeToString(hash[:])
-			objKey := ".objects/" + hashHex
+		storageImpl := storage.GetStorageFactory().GetStorage()
 
-			if storageImpl != nil {
-				if err := storageImpl.Put(folderID, objKey, contentBytes); err != nil {
-					common.Warn("failed to store object", zap.Error(err))
-				}
+		for _, change := range changes {
+			item := &entity.FileCommitItem{
+				ID:        generateCommitUUID(),
+				CommitID:  commitID,
+				FileID:    change.FileID,
+				Operation: change.Operation,
 			}
 
-			// Record old hash for modify
-			if change.Operation == "modify" {
+			switch change.Operation {
+			case "add", "modify":
+				contentBytes := []byte(change.Content)
+				hash := sha256.Sum256(contentBytes)
+				hashHex := hex.EncodeToString(hash[:])
+				objKey := ".objects/" + hashHex
+
+				if storageImpl != nil {
+					if err := storageImpl.Put(folderID, objKey, contentBytes); err != nil {
+						return fmt.Errorf("failed to store object: %w", err)
+					}
+				}
+
+				if change.Operation == "modify" {
+					if oldEntry, ok := treeState[change.FileID]; ok {
+						if oldMap, ok := oldEntry.(map[string]interface{}); ok {
+							if oldHash, ok := oldMap["hash"].(string); ok {
+								item.OldHash = &oldHash
+							}
+							if oldLoc, ok := oldMap["location"].(string); ok {
+								item.OldLocation = &oldLoc
+							}
+						}
+					}
+				}
+
+				item.NewHash = &hashHex
+				item.NewLocation = &objKey
+
+				fSize := int64(len(contentBytes))
+				if err := tx.Model(&entity.File{}).Where("id = ?", change.FileID).Updates(map[string]interface{}{
+					"location": objKey,
+					"size":     fSize,
+				}).Error; err != nil {
+					return fmt.Errorf("failed to update file record: %w", err)
+				}
+
+				treeState[change.FileID] = map[string]interface{}{
+					"hash":     hashHex,
+					"location": objKey,
+					"name":     change.FileName,
+					"size":     fSize,
+					"status":   "1",
+				}
+
+			case "delete":
 				if oldEntry, ok := treeState[change.FileID]; ok {
 					if oldMap, ok := oldEntry.(map[string]interface{}); ok {
 						if oldHash, ok := oldMap["hash"].(string); ok {
@@ -121,90 +155,56 @@ func (s *FileCommitService) CreateCommit(folderID, authorID, message string, cha
 						}
 					}
 				}
-			}
 
-			item.NewHash = &hashHex
-			item.NewLocation = &objKey
+				if err := tx.Model(&entity.File{}).Where("id = ?", change.FileID).Update("status", "0").Error; err != nil {
+					return fmt.Errorf("failed to soft-delete file: %w", err)
+				}
 
-			// Update file record in DB
-			fSize := int64(len(contentBytes))
-			updates := map[string]interface{}{
-				"location": objKey,
-				"size":     fSize,
-			}
-			if err := s.fileDAO.UpdateByID(change.FileID, updates); err != nil {
-				common.Warn("failed to update file record", zap.Error(err))
-			}
-
-			// Update tree state
-			treeState[change.FileID] = map[string]interface{}{
-				"hash":     hashHex,
-				"location": objKey,
-				"name":     change.FileName,
-				"size":     fSize,
-				"status":   "1",
-			}
-
-		case "delete":
-			if oldEntry, ok := treeState[change.FileID]; ok {
-				if oldMap, ok := oldEntry.(map[string]interface{}); ok {
-					if oldHash, ok := oldMap["hash"].(string); ok {
-						item.OldHash = &oldHash
+				if entry, ok := treeState[change.FileID]; ok {
+					if entryMap, ok := entry.(map[string]interface{}); ok {
+						entryMap["status"] = "0"
 					}
-					if oldLoc, ok := oldMap["location"].(string); ok {
-						item.OldLocation = &oldLoc
+				}
+
+			case "rename":
+				item.OldName = &change.OldName
+				item.NewName = &change.NewName
+
+				if err := tx.Model(&entity.File{}).Where("id = ?", change.FileID).Update("name", change.NewName).Error; err != nil {
+					return fmt.Errorf("failed to rename file: %w", err)
+				}
+
+				if entry, ok := treeState[change.FileID]; ok {
+					if entryMap, ok := entry.(map[string]interface{}); ok {
+						entryMap["name"] = change.NewName
+					}
+				} else {
+					treeState[change.FileID] = map[string]interface{}{
+						"name":   change.NewName,
+						"status": "1",
 					}
 				}
 			}
 
-			// Soft-delete the file
-			if err := s.fileDAO.UpdateByID(change.FileID, map[string]interface{}{"status": "0"}); err != nil {
-				common.Warn("failed to soft-delete file", zap.Error(err))
-			}
-
-			// Mark as deleted in tree state
-			if entry, ok := treeState[change.FileID]; ok {
-				if entryMap, ok := entry.(map[string]interface{}); ok {
-					entryMap["status"] = "0"
-				}
-			}
-
-		case "rename":
-			item.OldName = &change.OldName
-			item.NewName = &change.NewName
-
-			// Update file record name
-			if err := s.fileDAO.UpdateByID(change.FileID, map[string]interface{}{"name": change.NewName}); err != nil {
-				common.Warn("failed to rename file", zap.Error(err))
-			}
-
-			// Update tree state name
-			if entry, ok := treeState[change.FileID]; ok {
-				if entryMap, ok := entry.(map[string]interface{}); ok {
-					entryMap["name"] = change.NewName
-				}
-			} else {
-				treeState[change.FileID] = map[string]interface{}{
-					"name":   change.NewName,
-					"status": "1",
-				}
+			// Save commit item
+			if err := tx.Create(item).Error; err != nil {
+				return fmt.Errorf("failed to create commit item: %w", err)
 			}
 		}
 
-		// Save commit item
-		if err := s.commitItemDAO.Create(item); err != nil {
-			return nil, fmt.Errorf("failed to create commit item: %w", err)
+		// Serialize and save tree state
+		treeJSON, err := json.Marshal(treeState)
+		if err != nil {
+			return fmt.Errorf("failed to marshal tree state: %w", err)
 		}
-	}
+		if err := tx.Model(&entity.FileCommit{}).Where("id = ?", commitID).Update("tree_state", string(treeJSON)).Error; err != nil {
+			return fmt.Errorf("failed to update tree state: %w", err)
+		}
+		treeStr = string(treeJSON)
 
-	// 5. Serialize and save tree state
-	treeJSON, err := json.Marshal(treeState)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal tree state: %w", err)
-	}
-	treeStr := string(treeJSON)
-	if err := s.commitDAO.UpdateTreeState(commitID, treeStr); err != nil {
-		return nil, fmt.Errorf("failed to update tree state: %w", err)
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
 	commit.TreeState = &treeStr

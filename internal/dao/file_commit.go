@@ -63,6 +63,15 @@ func (dao *FileCommitDAO) GetLatestByFolderID(folderID string) (*entity.FileComm
 	return &commit, nil
 }
 
+// allowedFileCommitSorts is the whitelist of safe column names for
+// ListByFolderID's orderBy parameter to prevent SQL injection.
+var allowedFileCommitSorts = map[string]string{
+	"create_time": "create_time",
+	"create_date": "create_date",
+	"update_time": "update_time",
+	"update_date": "update_date",
+}
+
 // ListByFolderID lists commits for a folder with pagination
 func (dao *FileCommitDAO) ListByFolderID(folderID string, page, pageSize int, orderBy string, desc bool) ([]*entity.FileCommit, int64, error) {
 	var commits []*entity.FileCommit
@@ -74,18 +83,26 @@ func (dao *FileCommitDAO) ListByFolderID(folderID string, page, pageSize int, or
 		return nil, 0, err
 	}
 
+	// Sanitize orderBy against whitelist; fall back to create_time.
+	safeCol, ok := allowedFileCommitSorts[orderBy]
+	if !ok {
+		safeCol = "create_time"
+	}
+
 	orderDirection := "DESC"
 	if !desc {
 		orderDirection = "ASC"
 	}
 
+	orderClause := safeCol + " " + orderDirection
+
 	if page > 0 && pageSize > 0 {
 		offset := (page - 1) * pageSize
-		if err := query.Order(orderBy+" "+orderDirection).Offset(offset).Limit(pageSize).Find(&commits).Error; err != nil {
+		if err := query.Order(orderClause).Offset(offset).Limit(pageSize).Find(&commits).Error; err != nil {
 			return nil, 0, err
 		}
 	} else {
-		if err := query.Order(orderBy+" "+orderDirection).Find(&commits).Error; err != nil {
+		if err := query.Order(orderClause).Find(&commits).Error; err != nil {
 			return nil, 0, err
 		}
 	}

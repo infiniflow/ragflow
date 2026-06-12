@@ -81,10 +81,17 @@ def _load_file_commit_module(monkeypatch):
     def server_error_response(err):
         return {"code": 500, "data": None, "message": str(err)}
 
-    def validate_request(*_keys):
+    def validate_request(*required_keys):
         def _decorator(func):
             @functools.wraps(func)
             async def _wrapper(*args, **kwargs):
+                payload = await get_request_json()
+                missing = [k for k in required_keys if k not in payload]
+                if missing:
+                    return get_json_result(
+                        code=101, data=None,
+                        message="required argument are missing: " + ", ".join(missing)
+                    )
                 return await func(*args, **kwargs)
             return _wrapper
         return _decorator
@@ -306,7 +313,7 @@ def test_create_commit_missing_fields(monkeypatch):
     monkeypatch.setattr(module, "get_request_json", _mk_req_maker({"message": "no files"}))
 
     res = _run(module.create_commit("folder-1"))
-    assert res["code"] == 500
+    assert res["code"] == 101
 
 
 @pytest.mark.p2

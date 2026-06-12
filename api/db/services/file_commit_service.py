@@ -201,7 +201,8 @@ class FileCommitService(CommonService):
             tree_json = json.dumps(tree_state, ensure_ascii=False)
             cls.model.update(tree_state=tree_json).where(cls.model.id == commit_id).execute()
 
-        return cls.get_by_id(commit_id)
+        _, commit = cls.get_by_id(commit_id)
+        return commit
 
     @classmethod
     @DB.connection_context()
@@ -251,64 +252,115 @@ class FileCommitService(CommonService):
     def diff_commits(cls, from_id, to_id):
         """Compare two commits and return the diff.
 
+        Compares tree_state snapshots (full file inventories), not commit
+        items (which only capture per-commit deltas).  Falls back to
+        FileCommitItem records for supplementary metadata (hash/location).
+
         Returns list of dicts with fields:
             file_id, file_name, operation, old_hash, new_hash, old_location, new_location
         """
-        from_items = {item.file_id: item for item in FileCommitItem.select().where(
-            FileCommitItem.commit_id == from_id)}
-        to_items = {item.file_id: item for item in FileCommitItem.select().where(
-            FileCommitItem.commit_id == to_id)}
-
-        # Get latest tree_state for file names (use the 'to' commit)
+        _, from_commit = cls.get_by_id(from_id)
         _, to_commit = cls.get_by_id(to_id)
-        tree_state = {}
+
+        from_tree = {}
+        to_tree = {}
+        if from_commit and from_commit.tree_state:
+            try:
+                from_tree = json.loads(from_commit.tree_state)
+            except Exception:
+                pass
         if to_commit and to_commit.tree_state:
             try:
-                tree_state = json.loads(to_commit.tree_state)
+                to_tree = json.loads(to_commit.tree_state)
             except Exception:
                 pass
 
+        # Supplement with commit_item metadata for operations not captured
+        # by tree_state alone (rename).
+        from_items = {}
+        try:
+            for item in FileCommitItem.select().where(FileCommitItem.commit_id == from_id):
+                from_items[item.file_id] = item
+        except Exception:
+            pass
+        to_items = {}
+        try:
+            for item in FileCommitItem.select().where(FileCommitItem.commit_id == to_id):
+                to_items[item.file_id] = item
+        except Exception:
+            pass
+
+        all_file_ids = set(from_tree.keys()) | set(to_tree.keys())
+
         diff = []
-        all_file_ids = set(from_items.keys()) | set(to_items.keys())
-        for fid in all_file_ids:
+        for fid in sorted(all_file_ids):
+            from_entry = from_tree.get(fid)
+            to_entry = to_tree.get(fid)
+
             from_item = from_items.get(fid)
             to_item = to_items.get(fid)
 
-            if from_item and not to_item:
-                # File deleted between from and to (present in from, absent in to)
-                # But it may have been deleted in an intermediate commit
-                # Let's check: if it's in from_items but not in to_items, it was deleted
+            from_hash = from_entry.get("hash", "") if isinstance(from_entry, dict) else ""
+            to_hash = to_entry.get("hash", "") if isinstance(to_entry, dict) else ""
+            from_status = from_entry.get("status", "1") if isinstance(from_entry, dict) else "1"
+            to_status = to_entry.get("status", "1") if isinstance(to_entry, dict) else "1"
+            from_name = from_entry.get("name", "") if isinstance(from_entry, dict) else ""
+            to_name = to_entry.get("name", "") if isinstance(to_entry, dict) else ""
+
+            if from_entry is not None and to_entry is None:
+                # Present in from, absent in to → deleted
                 diff.append({
                     "file_id": fid,
-                    "file_name": tree_state.get(fid, {}).get("name", ""),
+                    "file_name": from_name,
                     "operation": "delete",
-                    "old_hash": from_item.new_hash,
-                    "old_location": from_item.new_location,
+                    "old_hash": from_hash or (from_item.new_hash if from_item else None),
+                    "old_location": from_entry.get("location", "") if isinstance(from_entry, dict) else None,
                     "new_hash": None,
                     "new_location": None,
                 })
-            elif not from_item and to_item:
-                # File added
+
+            elif from_entry is None and to_entry is not None:
+                # Present in to, absent in from → added
                 diff.append({
                     "file_id": fid,
-                    "file_name": tree_state.get(fid, {}).get("name", ""),
+                    "file_name": to_name,
                     "operation": "add",
                     "old_hash": None,
                     "old_location": None,
-                    "new_hash": to_item.new_hash,
-                    "new_location": to_item.new_location,
+                    "new_hash": to_hash or (to_item.new_hash if to_item else None),
+                    "new_location": to_entry.get("location", "") if isinstance(to_entry, dict) else None,
                 })
+
             else:
-                # Both exist - compare hashes
-                if from_item.new_hash != to_item.new_hash or from_item.operation != to_item.operation:
+                # Both exist — check for changes
+                changed = False
+                operation = "modify"
+
+                # Hash change
+                if from_hash != to_hash:
+                    changed = True
+
+                # Status change (active ↔ deleted or vice versa in same entry)
+                if from_status != to_status:
+                    changed = True
+                    operation = "delete" if to_status == "0" else "add"
+
+                # Name change (rename)
+                if from_name != to_name:
+                    changed = True
+                    operation = "rename"
+
+                if changed:
+                    old_loc = from_entry.get("location", "") if isinstance(from_entry, dict) else None
+                    new_loc = to_entry.get("location", "") if isinstance(to_entry, dict) else None
                     diff.append({
                         "file_id": fid,
-                        "file_name": tree_state.get(fid, {}).get("name", ""),
-                        "operation": to_item.operation if to_item else "modify",
-                        "old_hash": from_item.new_hash,
-                        "old_location": from_item.new_location,
-                        "new_hash": to_item.new_hash if to_item else None,
-                        "new_location": to_item.new_location if to_item else None,
+                        "file_name": to_name or from_name,
+                        "operation": operation,
+                        "old_hash": from_hash or (from_item.new_hash if from_item else None),
+                        "old_location": old_loc or (from_item.new_location if from_item else None),
+                        "new_hash": to_hash or (to_item.new_hash if to_item else None),
+                        "new_location": new_loc or (to_item.new_location if to_item else None),
                     })
 
         return diff
@@ -397,29 +449,54 @@ class FileCommitService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_commit_file_content(cls, folder_id, commit_id, file_id):
-        """Get file content as it existed in a given commit."""
+        """Get file content as it existed in a given commit.
+
+        Resolves the file's stored hash from the commit's tree_state first;
+        if absent (file unchanged in this commit), walks the parent commit
+        chain via parent_id until a FileCommitItem for the file is found.
+        """
         success, commit = cls.get_by_id(commit_id)
         if not success:
             return None
 
-        # Read from commit item
-        item = FileCommitItem.select().where(
-            FileCommitItem.commit_id == commit_id,
-            FileCommitItem.file_id == file_id,
-        ).first()
-        if not item:
-            return None
+        # 1. Try tree_state — the full snapshot at this commit
+        if commit.tree_state:
+            try:
+                tree = json.loads(commit.tree_state)
+                entry = tree.get(file_id)
+                if isinstance(entry, dict):
+                    h = entry.get("hash")
+                    if h:
+                        obj_path = f".objects/{h}"
+                        storage_impl = settings.STORAGE_IMPL
+                        if storage_impl:
+                            return storage_impl.get(folder_id, obj_path)
+            except Exception:
+                pass
 
-        obj_key = item.new_hash
-        if not obj_key:
-            return None
+        # 2. Walk parent commits via parent_id until we find a
+        #    FileCommitItem for this file_id.
+        current_id = commit_id
+        visited = set()
+        while current_id and current_id not in visited:
+            visited.add(current_id)
+            item = FileCommitItem.select().where(
+                FileCommitItem.commit_id == current_id,
+                FileCommitItem.file_id == file_id,
+            ).first()
+            if item and item.new_hash:
+                obj_path = f".objects/{item.new_hash}"
+                storage_impl = settings.STORAGE_IMPL
+                if storage_impl:
+                    return storage_impl.get(folder_id, obj_path)
+            # Move to parent
+            parent_commit = cls.get_commit(current_id)
+            if parent_commit and parent_commit.parent_id:
+                current_id = parent_commit.parent_id
+            else:
+                break
 
-        obj_path = f".objects/{obj_key}"
-        storage_impl = settings.STORAGE_IMPL
-        if not storage_impl:
-            return None
-
-        return storage_impl.get(folder_id, obj_path)
+        return None
 
     @classmethod
     @DB.connection_context()

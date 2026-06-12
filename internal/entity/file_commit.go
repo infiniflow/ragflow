@@ -36,8 +36,8 @@ func (FileCommit) TableName() string {
 // FileCommitItem represents a single file change within a commit.
 type FileCommitItem struct {
 	ID          string  `gorm:"column:id;primaryKey;size:32" json:"id"`
-	CommitID    string  `gorm:"column:commit_id;size:32;not null;index" json:"commit_id"`
-	FileID      string  `gorm:"column:file_id;size:32;not null;index" json:"file_id"`
+	CommitID    string  `gorm:"column:commit_id;size:32;not null;uniqueIndex:idx_commit_file" json:"commit_id"`
+	FileID      string  `gorm:"column:file_id;size:32;not null;uniqueIndex:idx_commit_file" json:"file_id"`
 	Operation   string  `gorm:"column:operation;size:16;not null;index" json:"operation"`
 	OldHash     *string `gorm:"column:old_hash;size:64;index" json:"old_hash,omitempty"`
 	NewHash     *string `gorm:"column:new_hash;size:64;index" json:"new_hash,omitempty"`

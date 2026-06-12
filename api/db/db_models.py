@@ -983,6 +983,9 @@ class FileCommitItem(DataBaseModel):
 
     class Meta:
         db_table = "file_commit_item"
+        indexes = (
+            (("commit_id", "file_id"), True),  # unique composite index
+        )
 
 
 class Task(DataBaseModel):

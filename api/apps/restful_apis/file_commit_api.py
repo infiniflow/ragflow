@@ -29,7 +29,6 @@ manager = None  # type: ignore[assignment]
 from api.db.services.file_commit_service import FileCommitService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.file_service import FileService
-from api.db import KNOWLEDGEBASE_FOLDER_NAME
 from common.constants import FileSource
 
 logger = logging.getLogger(__name__)
@@ -155,10 +154,13 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
     @manager.route(f'{prefix}/commits/<commit_id>', methods=['GET'])
     @login_required
     async def get_commit(entity_id, commit_id):
+        folder_id = _resolve(entity_id)
         try:
             commit = FileCommitService.get_commit(commit_id)
             if not commit:
                 return get_data_error_result("Commit not found")
+            if commit.folder_id != folder_id:
+                return get_data_error_result("Commit not found in workspace")
             items = FileCommitService.list_commit_files(commit_id)
             return get_json_result(data={
                 "id": commit.id,
@@ -184,7 +186,13 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
     @manager.route(f'{prefix}/commits/<commit_id>/files', methods=['GET'])
     @login_required
     async def list_commit_files(entity_id, commit_id):
+        folder_id = _resolve(entity_id)
         try:
+            commit = FileCommitService.get_commit(commit_id)
+            if not commit:
+                return get_data_error_result("Commit not found")
+            if commit.folder_id != folder_id:
+                return get_data_error_result("Commit not found in workspace")
             items = FileCommitService.list_commit_files(commit_id)
             return get_json_result(data=[{
                 "id": item.id,
@@ -204,11 +212,18 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
     @manager.route(f'{prefix}/commits/diff', methods=['GET'])
     @login_required
     async def diff_commits(entity_id):
+        folder_id = _resolve(entity_id)
         from_id = request.args.get("from")
         to_id = request.args.get("to")
         if not from_id or not to_id:
             return get_data_error_result("'from' and 'to' parameters are required")
         try:
+            from_commit = FileCommitService.get_commit(from_id)
+            to_commit = FileCommitService.get_commit(to_id)
+            if not from_commit or not to_commit:
+                return get_data_error_result("Commit not found")
+            if from_commit.folder_id != folder_id or to_commit.folder_id != folder_id:
+                return get_data_error_result("Commit not found in workspace")
             diff = FileCommitService.diff_commits(from_id, to_id)
             return get_json_result(data=diff)
         except Exception as e:
@@ -229,7 +244,13 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
     @manager.route(f'{prefix}/commits/<commit_id>/tree', methods=['GET'])
     @login_required
     async def get_commit_tree(entity_id, commit_id):
+        folder_id = _resolve(entity_id)
         try:
+            commit = FileCommitService.get_commit(commit_id)
+            if not commit:
+                return get_data_error_result("Commit not found")
+            if commit.folder_id != folder_id:
+                return get_data_error_result("Commit not found in workspace")
             tree = FileCommitService.get_commit_tree(commit_id)
             return get_json_result(data=tree)
         except Exception as e:
@@ -241,6 +262,11 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
     async def get_commit_file_content(entity_id, commit_id, file_id):
         folder_id = _resolve(entity_id)
         try:
+            commit = FileCommitService.get_commit(commit_id)
+            if not commit:
+                return get_data_error_result("Commit not found")
+            if commit.folder_id != folder_id:
+                return get_data_error_result("Commit not found in workspace")
             content = FileCommitService.get_commit_file_content(folder_id, commit_id, file_id)
             if content is None:
                 return get_data_error_result("File not found in this commit")
