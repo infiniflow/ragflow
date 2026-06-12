@@ -47,6 +47,7 @@ from .imap_connector import ImapConnector
 from .zendesk_connector import ZendeskConnector
 from .seafile_connector import SeaFileConnector
 from .rdbms_connector import RDBMSConnector
+from .bigquery_connector import BigQueryConnector
 from .webdav_connector import WebDAVConnector
 from .rest_api_connector import RestAPIConnector
 from .config import BlobType, DocumentSource
@@ -94,6 +95,7 @@ __all__ = [
     "ZendeskConnector",
     "SeaFileConnector",
     "RDBMSConnector",
+    "BigQueryConnector",
     "WebDAVConnector",
     "DingTalkAITableConnector",
     "RestAPIConnector",

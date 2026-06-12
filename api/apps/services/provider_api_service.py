@@ -316,9 +316,13 @@ async def create_provider_instance(tenant_id: str, provider_name: str, instance_
         same_key_instance = TenantModelInstanceService.get_by_provider_id_and_api_key(provider_obj.id, api_key_str)
         if same_key_instance:
             return False, f"Already exist instance: {same_key_instance.instance_name} with api_key {api_key}"
-    success, msg = await verify_api_key(provider_name, api_key, base_url, region, model_info)
-    if not success:
-        return False, msg
+    # Only verify when there are models to probe. Generic providers such as
+    # "OpenAI-API-Compatible" may start empty and receive custom models later.
+    factory_entry = next((f for f in FACTORY_LLM_INFOS if f["name"] == provider_name), None)
+    if (factory_entry and factory_entry.get("llm")) or model_info:
+        success, msg = await verify_api_key(provider_name, api_key, base_url, region, model_info)
+        if not success:
+            return False, msg
 
     extra_fields = {}
     if base_url:
