@@ -1464,12 +1464,7 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
         if not text:
             return None
         if section == "think":
-            state.think_buffer += text
-            if num_tokens_from_string(state.think_buffer) >= min_tokens:
-                out = state.think_buffer
-                state.think_buffer = ""
-                return out
-            return None
+            return text
         state.answer_buffer += text
         if num_tokens_from_string(state.answer_buffer) >= min_tokens:
             out = state.answer_buffer
@@ -1605,6 +1600,14 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     include_reference_metadata, metadata_fields = _resolve_reference_metadata(search_config)
 
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
+    if not kbs:
+        if not kb_ids:
+            error = "**ERROR**: No KB selected"
+        else:
+            error = "**ERROR**: The selected KB is not valid"
+        yield {"answer": error, "reference": {}, "final": True}
+        return
+
     embedding_list = list(set([kb.embd_id for kb in kbs]))
 
     is_knowledge_graph = all([kb.parser_id == ParserType.KG for kb in kbs])

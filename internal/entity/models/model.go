@@ -160,7 +160,8 @@ type Model struct {
 	ModelTypes   []string       `json:"model_types"`
 	Thinking     *ModelThinking `json:"thinking"`
 	Class        *string        `json:"class"`
-	Dimension    *int           `json:"dimension"` // used by embedding models
+	MaxDimension *int           `json:"max_dimension"` // used by embedding models
+	Dimensions   []int          `json:"dimensions"`
 	Alias        []string       `json:"alias"`
 	ModelTypeMap map[string]bool
 }
@@ -312,10 +313,14 @@ func InitProviderManager(dirPath string) error {
 	alias2ModelIndex := make(map[string]int)
 	for idx, model := range allModels.Models {
 		if model.Alias == nil {
-			alias2ModelIndex[model.Name] = idx
+			alias2ModelIndex[strings.ToLower(model.Name)] = idx
 		} else {
 			for _, alias := range model.Alias {
-				alias2ModelIndex[alias] = idx
+				lowerAlias := strings.ToLower(alias)
+				if existingIdx, ok := alias2ModelIndex[lowerAlias]; ok && existingIdx != idx {
+					return fmt.Errorf("duplicate alias %q for models %q and %q", alias, allModels.Models[existingIdx].Name, model.Name)
+				}
+				alias2ModelIndex[lowerAlias] = idx
 			}
 		}
 	}
@@ -382,6 +387,12 @@ func (pm *ProviderManager) ListAllModels() ([]map[string]interface{}, error) {
 		if model.MaxTokens != nil {
 			modelData["max_tokens"] = *model.MaxTokens
 		}
+		if model.MaxDimension != nil {
+			modelData["max_dimension"] = *model.MaxDimension
+		}
+		if len(model.Dimensions) > 0 {
+			modelData["dimensions"] = model.Dimensions
+		}
 		modelList = append(modelList, modelData)
 	}
 
@@ -432,6 +443,12 @@ func (pm *ProviderManager) ListModels(providerName string) ([]map[string]interfa
 			"name":        model.Name,
 			"max_tokens":  model.MaxTokens,
 			"model_types": model.ModelTypes,
+		}
+		if model.MaxDimension != nil {
+			modelData["max_dimension"] = *model.MaxDimension
+		}
+		if len(model.Dimensions) > 0 {
+			modelData["dimensions"] = model.Dimensions
 		}
 		modelList = append(modelList, modelData)
 	}

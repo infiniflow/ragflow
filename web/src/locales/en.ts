@@ -14,6 +14,7 @@ export default {
       yes: 'Yes',
       no: 'No',
       total: 'Total',
+      top: 'Top {{top}}',
       rename: 'Rename',
       name: 'Name',
       save: 'Save',
@@ -914,6 +915,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       theDocumentBeingParsedCannotBeDeleted:
         'The document being parsed cannot be deleted',
       lastWeek: 'from last week',
+      top: 'Top',
     },
     chunk: {
       type: 'Type',
@@ -1774,6 +1776,8 @@ Example: Virtual Hosted Style`,
       listModelsSearchPlaceholder: 'Search models…',
       listModelsEmpty: 'No models available',
       listModelsLoading: 'Loading models…',
+      selectModelBeforeVerify:
+        'Please select at least one model before verification.',
       addCustomModel: 'Add custom model',
       addCustomModelTitle: 'Add custom model',
       modelMaxTokens: 'Max tokens',

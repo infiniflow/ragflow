@@ -14,6 +14,7 @@ export default {
       yes: '是',
       no: '否',
       total: '总共',
+      top: '前 {{top}} 条',
       rename: '重命名',
       name: '名称',
       save: '保存',
@@ -826,6 +827,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       community: '社区报告生成',
       communityTip:
         '区块被聚集成层次化的社区，实体和关系通过更高抽象层次将每个部分连接起来。然后，我们使用 LLM 生成每个社区的摘要，称为社区报告。更多信息：https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
+      top: '前n条',
     },
     chunk: {
       chunk: '解析块',
@@ -1249,7 +1251,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       confirmPasswordMessage: '请确认新密码',
       confirmPasswordNonMatchMessage: '您输入的新密码不匹配！',
       cancel: '取消',
-      addedModels: '添加了的模型',
+      addedModels: '已添加的模型',
       modelsToBeAdded: '待添加的模型',
       addTheModel: '添加',
       apiKey: 'API-Key',
@@ -1462,6 +1464,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       listModelsSearchPlaceholder: '搜索模型…',
       listModelsEmpty: '暂无可用模型',
       listModelsLoading: '正在加载模型…',
+      selectModelBeforeVerify: '请至少选择一个模型后再验证。',
       addCustomModel: '添加自定义模型',
       addCustomModelTitle: '添加自定义模型',
       modelMaxTokens: '最大 Token 数',
