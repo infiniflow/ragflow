@@ -17,7 +17,6 @@
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -44,7 +43,7 @@ func NewCoHereModel(baseURL map[string]string, urlSuffix URLSuffix) *CoHereModel
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: &http.Client{},
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
@@ -286,45 +285,30 @@ func (c *CoHereModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		return fmt.Errorf("Cohere stream API error %d: %s", resp.StatusCode, string(body))
 	}
 
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		data := strings.TrimSpace(line)
-
-		if strings.HasPrefix(data, "data:") {
-			data = strings.TrimSpace(data[5:])
-		}
-
-		if data == "" || data == "[DONE]" {
-			continue
-		}
-
-		var event map[string]interface{}
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			continue
-		}
+	sawTerminal := false
+	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		eventType, ok := event["type"].(string)
 		if !ok {
-			continue
+			return nil
 		}
 
 		if eventType == "message-end" {
-			break
+			sawTerminal = true
+			return nil
 		}
 
 		if eventType == "content-delta" {
 			delta, ok := event["delta"].(map[string]interface{})
 			if !ok {
-				continue
+				return nil
 			}
 			msg, ok := delta["message"].(map[string]interface{})
 			if !ok {
-				continue
+				return nil
 			}
 			content, ok := msg["content"].(map[string]interface{})
 			if !ok {
-				continue
+				return nil
 			}
 
 			if thinking, ok := content["thinking"].(string); ok && thinking != "" {
@@ -339,14 +323,17 @@ func (c *CoHereModel) ChatStreamlyWithSender(modelName string, messages []Messag
 				}
 			}
 		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to scan response body: %w", err)
+	}
+	if !done && !sawTerminal {
+		return fmt.Errorf("Cohere: stream ended before [DONE] or finish_reason")
 	}
 
 	endOfStream := "[DONE]"
-	if err = sender(&endOfStream, nil); err != nil {
-		return err
-	}
-
-	return scanner.Err()
+	return sender(&endOfStream, nil)
 }
 
 func (c *CoHereModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
@@ -371,6 +358,10 @@ func (c *CoHereModel) Embed(modelName *string, texts []string, apiConfig *APICon
 		"texts":           texts,
 		"input_type":      "search_document",
 		"embedding_types": []string{"float"},
+	}
+	// This is only available for embed-v4 and newer models. Possible values are 256, 512, 1024, and 1536. The default is 1536.
+	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
+		reqBody["output_dimension"] = embeddingConfig.Dimension
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -650,7 +641,7 @@ func (c *CoHereModel) ParseFile(modelName *string, content []byte, url *string, 
 	return nil, fmt.Errorf("%s, no such method", c.Name())
 }
 
-func (c *CoHereModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (c *CoHereModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -687,25 +678,27 @@ func (c *CoHereModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("Cohere API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result map[string]interface{}
+	// Parse response
+	var result struct {
+		Models []struct {
+			ModelName string `json:"name"`
+		} `json:"models"`
+	}
 	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
-	models := make([]string, 0)
-	if modelsRaw, ok := result["models"].([]interface{}); ok {
-		for _, model := range modelsRaw {
-			if modelMap, ok := model.(map[string]interface{}); ok {
-				if modelName, ok := modelMap["name"].(string); ok {
-					models = append(models, modelName)
-				}
-			}
+	models := make([]DSModel, 0, len(result.Models))
+	for _, model := range result.Models {
+		if model.ModelName != "" {
+			models = append(models, DSModel{
+				ID:      model.ModelName,
+				OwnedBy: c.Name(),
+			})
 		}
-	} else {
-		return nil, fmt.Errorf("failed to find 'models' array in response")
 	}
 
-	return models, nil
+	return ParseListModel(ModelList{Models: models}), nil
 }
 
 func (c *CoHereModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

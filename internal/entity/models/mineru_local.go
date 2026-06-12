@@ -24,7 +24,6 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"time"
 )
 
 type MinerULocalModel struct {
@@ -34,16 +33,10 @@ type MinerULocalModel struct {
 func NewMinerLocalUModel(baseURL map[string]string, urlSuffix URLSuffix) *MinerULocalModel {
 	return &MinerULocalModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
-			httpClient: &http.Client{
-				Transport: &http.Transport{
-					MaxIdleConns:        10,
-					MaxIdleConnsPerHost: 100,
-					IdleConnTimeout:     time.Second * 90,
-					DisableCompression:  false,
-				},
-			},
+			BaseURL:          baseURL,
+			URLSuffix:        urlSuffix,
+			AllowEmptyAPIKey: true,
+			httpClient:       NewDriverHTTPClient(),
 		},
 	}
 }
@@ -92,7 +85,7 @@ func (m *MinerULocalModel) OCRFile(modelName *string, content []byte, url *strin
 	return nil, fmt.Errorf("%s no such method", m.Name())
 }
 
-func (m *MinerULocalModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (m *MinerULocalModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	return nil, fmt.Errorf("%s no such method", m.Name())
 }
 
@@ -151,7 +144,9 @@ func (m *MinerULocalModel) ParseFile(modelName *string, content []byte, document
 
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -217,7 +212,9 @@ func (m *MinerULocalModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskR
 		return nil, fmt.Errorf("failed to create status request: %w", err)
 	}
 
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {

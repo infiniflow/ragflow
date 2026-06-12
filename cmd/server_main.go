@@ -42,6 +42,7 @@ import (
 	"ragflow/internal/handler"
 	"ragflow/internal/router"
 	"ragflow/internal/service"
+	"ragflow/internal/service/chunk"
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/tokenizer"
 )
@@ -71,7 +72,7 @@ func main() {
 
 	// Initialize logger with default level
 	// logger.Init("info"); // set debug log level
-	if err := common.Init("info"); err != nil {
+	if err := common.Init("info", "server_main.log"); err != nil {
 		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
 	}
 
@@ -92,10 +93,12 @@ func main() {
 	}
 
 	// Reinitialize logger with configured level if different
-	if config.Log.Level != "" && config.Log.Level != "info" {
-		if err := common.Init(config.Log.Level); err != nil {
-			common.Error("Failed to reinitialize logger with configured level", err)
-		}
+	level := config.Log.Level
+	if level == "" {
+		level = "info"
+	}
+	if err := common.Init(level, "server_main.log"); err != nil {
+		common.Error("Failed to reinitialize logger", err)
 	}
 	server.SetLogger(common.Logger)
 	if config.Log.Level == "" {
@@ -126,6 +129,10 @@ func main() {
 
 	if err := storage.InitStorageFactory(); err != nil {
 		common.Fatal("Failed to initialize storage factory", zap.Error(err))
+	}
+
+	if err := engine.InitMessageQueueEngine(config.TaskExecutor.MessageQueueType); err != nil {
+		common.Error("Failed to initialize message queue engine", err)
 	}
 
 	// Initialize server variables (runtime variables that can change during operation)
@@ -176,7 +183,7 @@ func startServer(config *server.Config) {
 	datasetsService := service.NewDatasetService()
 	knowledgebaseService := service.NewKnowledgebaseService()
 	metadataService := service.NewMetadataService()
-	chunkService := service.NewChunkService()
+	chunkService := chunk.NewChunkService()
 	llmService := service.NewLLMService()
 	tenantService := service.NewTenantService()
 	chatService := service.NewChatService()
@@ -212,11 +219,17 @@ func startServer(config *server.Config) {
 	skillSearchHandler := handler.NewSkillSearchHandler(docEngine)
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
 	agentHandler := handler.NewAgentHandler(service.NewAgentService(), fileService)
-	relatedQuestionsHandler := handler.NewSearchbotHandler(
+	searchBotLLM := &handler.SearchBotRealLLM{Svc: modelProviderService}
+	searchBotHandler := handler.NewSearchBotHandler(
 		searchService,
 		tenantService,
-		&handler.SearchbotRealLLM{Svc: modelProviderService},
+		searchBotLLM,
+		chunkService,
 	)
+	searchBotHandler.SetStreamLLM(searchBotLLM)
+	searchBotHandler.SetAskService(service.NewAskService(chunkService, nil, 0, 0))
+	pluginHandler := handler.NewPluginHandler(service.NewPluginService())
+	modelHandler := handler.NewModelHandler(service.NewModelProviderService())
 
 	// Dify retrieval handler
 	docDAO := dao.NewDocumentDAO()
@@ -231,7 +244,7 @@ func startServer(config *server.Config) {
 	)
 
 	// Initialize router
-	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, relatedQuestionsHandler, difyRetrievalHandler)
+	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()
@@ -279,19 +292,19 @@ func startServer(config *server.Config) {
 	}
 
 	// Initialize and start heartbeat reporter to admin server
-	heartbeatService := service.NewHeartbeatSender(
+	service.AdminServiceClient = service.NewAdminClient(
 		common.Logger,
 		common.ServerTypeAPI,
 		fmt.Sprintf("ragflow-server-%d", config.Server.Port),
 		localIP,
 		config.Server.Port,
 	)
-	if err = heartbeatService.InitHTTPClient(); err != nil {
+	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
 		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
 	} else {
 		// Start heartbeat reporter with 30 seconds interval
 		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", 3*time.Second, func() {
-			if err = heartbeatService.SendHeartbeat(); err == nil {
+			if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
 				local.SetAdminStatus(0, "")
 			} else {
 				local.SetAdminStatus(1, err.Error())

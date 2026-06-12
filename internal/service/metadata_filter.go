@@ -22,7 +22,9 @@ import (
 	"fmt"
 	"os"
 	"ragflow/internal/common"
+	"ragflow/internal/engine"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,9 +35,9 @@ import (
 
 // MetaFilterCondition represents a single filter condition
 type MetaFilterCondition struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
-	Op    string `json:"op"`
+	Key   string      `json:"key"`
+	Value interface{} `json:"value"`
+	Op    string      `json:"op"`
 }
 
 // MetaFilterResult represents the result of LLM-generated filter
@@ -44,8 +46,45 @@ type MetaFilterResult struct {
 	Logic      string                `json:"logic"`
 }
 
+// compareValues compares two metadata values for relational operators
+// (>, <, >=, <=). It attempts numeric comparison first so that
+// lexicographic ordering like "10" < "2" or "100" < "20" no longer
+// produces wrong results for years, prices, counts, etc. If either
+// operand is not a valid number, it falls back to lexicographic string
+// comparison so non-numeric metadata (names, tags, etc.) still works.
+func compareValues(val1, val2, op string) bool {
+	if f1, err1 := strconv.ParseFloat(val1, 64); err1 == nil {
+		if f2, err2 := strconv.ParseFloat(val2, 64); err2 == nil {
+			switch op {
+			case ">":
+				return f1 > f2
+			case "<":
+				return f1 < f2
+			case ">=":
+				return f1 >= f2
+			case "<=":
+				return f1 <= f2
+			}
+		}
+	}
+	switch op {
+	case ">":
+		return val1 > val2
+	case "<":
+		return val1 < val2
+	case ">=":
+		return val1 >= val2
+	case "<=":
+		return val1 <= val2
+	}
+	return false
+}
+
 // ManualValueResolver is a callback function to transform manual filter values
 type ManualValueResolver func(map[string]interface{}) map[string]interface{}
+
+// NoMatchDocIDSentinel forces retrieval to return no documents when filters match nothing.
+const NoMatchDocIDSentinel = "-999"
 
 // metaFilterTemplateCache caches the template content
 var metaFilterTemplateCache string
@@ -166,8 +205,8 @@ func GenMetaFilter(ctx context.Context, chatModel *modelModule.ChatModel, metaDa
 	if err != nil {
 		common.Warn("ChatWithMessages failed for GenMetaFilter",
 			zap.String("model",
-                 
-                 *chatModel.ModelName),
+
+				*chatModel.ModelName),
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to generate meta filter: %w", err)
 	}
@@ -179,19 +218,20 @@ func GenMetaFilter(ctx context.Context, chatModel *modelModule.ChatModel, metaDa
 	// Clean up response
 	responseStr := strings.TrimSpace(*response.Answer)
 	responseStr = thinkBlockRE.ReplaceAllString(responseStr, "")
+	responseStr = jsonFenceRE.ReplaceAllString(responseStr, "")
 	responseStr = strings.TrimSpace(responseStr)
 
-	// Remove markdown code blocks if present
-	responseStr = strings.TrimPrefix(responseStr, "```json")
-	responseStr = strings.TrimPrefix(responseStr, "```")
-	responseStr = strings.TrimSuffix(responseStr, "```")
-	responseStr = strings.TrimSpace(responseStr)
-
-	// Parse JSON
+	// Parse JSON with repair — try standard parsing first, then attempt repairs
 	var result MetaFilterResult
 	if err := json.Unmarshal([]byte(responseStr), &result); err != nil {
-		common.Warn("Failed to parse meta filter response, returning empty conditions", zap.Error(err))
-		return &MetaFilterResult{Conditions: []MetaFilterCondition{}, Logic: "and"}, nil
+		// Attempt JSON repair for common LLM output issues
+		repaired := repairJSON(responseStr)
+		if err2 := json.Unmarshal([]byte(repaired), &result); err2 != nil {
+			common.Warn("Failed to parse meta filter response after repair",
+				zap.String("raw", responseStr[:min(len(responseStr), 200)]),
+				zap.Error(err))
+			return &MetaFilterResult{Conditions: []MetaFilterCondition{}, Logic: "and"}, nil
+		}
 	}
 
 	common.Info("GenMetaFilter result", zap.Any("conditions", result.Conditions), zap.String("logic", result.Logic))
@@ -227,7 +267,8 @@ func ApplyMetaFilter(metaData common.MetaData, filters []MetaFilterCondition, lo
 //   - "==" = "="    "!=" = "≠"
 //   - ">=" = "≥"    "<=" = "≤"
 //   - "is" = "="    "not is" = "≠"
-//   (see common.metadata_utils.operatorMapping for the full list)
+//     (see common.metadata_utils.operatorMapping for the full list)
+//
 // Value conversion:
 //   - "in" / "not in": comma-separated string → []interface{} (as expected by common.MetaFilter)
 //   - all other operators: passed through as-is (string)
@@ -239,22 +280,305 @@ func convertToMetaCondition(f MetaFilterCondition) common.MetaCondition {
 	}
 	switch f.Op {
 	case "in", "not in":
-		parts := strings.Split(f.Value, ",")
+		strVal, _ := f.Value.(string)
+		parts := strings.Split(strVal, ",")
 		arr := make([]interface{}, 0, len(parts))
 		for _, p := range parts {
-			if trimmed := strings.TrimSpace(p); trimmed != "" { arr = append(arr, trimmed) }
+			if trimmed := strings.TrimSpace(p); trimmed != "" {
+				arr = append(arr, trimmed)
+			}
 		}
 		mc.Value = arr
 	}
 	return mc
 }
 
+// applySingleCondition applies a single filter condition and returns matching doc IDs
+func applySingleCondition(metaData map[string]interface{}, condition MetaFilterCondition) []string {
+	key := condition.Key
+	rawValue := condition.Value
+	op := condition.Op
+
+	// For most operators, value is a single string; only "in" / "not in" accept lists.
+	strValue := fmt.Sprintf("%v", rawValue)
+
+	valueMap, ok := metaData[key].(map[string]interface{})
+	if !ok {
+		return []string{}
+	}
+
+	var result []string
+
+	switch op {
+	case "=", "==":
+		if docIDs, exists := valueMap[strValue]; exists {
+			switch v := docIDs.(type) {
+			case []interface{}:
+				for _, id := range v {
+					if idStr, ok := id.(string); ok {
+						result = append(result, idStr)
+					}
+				}
+			case []string:
+				result = append(result, v...)
+			}
+		}
+	case "!=", "≠":
+		for val, docIDs := range valueMap {
+			if strings.EqualFold(val, strValue) {
+				continue
+			}
+			switch v := docIDs.(type) {
+			case []interface{}:
+				for _, id := range v {
+					if idStr, ok := id.(string); ok {
+						result = append(result, idStr)
+					}
+				}
+			case []string:
+				result = append(result, v...)
+			}
+		}
+	case "contains":
+		for val, docIDs := range valueMap {
+			if strings.Contains(strings.ToLower(val), strings.ToLower(strValue)) {
+				switch v := docIDs.(type) {
+				case []interface{}:
+					for _, id := range v {
+						if idStr, ok := id.(string); ok {
+							result = append(result, idStr)
+						}
+					}
+				case []string:
+					result = append(result, v...)
+				}
+			}
+		}
+	case "not contains":
+		for val, docIDs := range valueMap {
+			if !strings.Contains(strings.ToLower(val), strings.ToLower(strValue)) {
+				switch v := docIDs.(type) {
+				case []interface{}:
+					for _, id := range v {
+						if idStr, ok := id.(string); ok {
+							result = append(result, idStr)
+						}
+					}
+				case []string:
+					result = append(result, v...)
+				}
+			}
+		}
+	case "in":
+		inValues := metaFilterValues(rawValue)
+		for _, v := range inValues {
+			if docIDs, exists := valueMap[v]; exists {
+				switch ids := docIDs.(type) {
+				case []interface{}:
+					for _, id := range ids {
+						if idStr, ok := id.(string); ok {
+							result = append(result, idStr)
+						}
+					}
+				case []string:
+					result = append(result, ids...)
+				}
+			}
+		}
+	case "not in":
+		excludeValues := make(map[string]bool)
+		for _, v := range metaFilterValues(rawValue) {
+			excludeValues[strings.ToLower(v)] = true
+		}
+		for val, docIDs := range valueMap {
+			if !excludeValues[strings.ToLower(val)] {
+				switch v := docIDs.(type) {
+				case []interface{}:
+					for _, id := range v {
+						if idStr, ok := id.(string); ok {
+							result = append(result, idStr)
+						}
+					}
+				case []string:
+					result = append(result, v...)
+				}
+			}
+		}
+	case "start with":
+		for val, docIDs := range valueMap {
+			if strings.HasPrefix(strings.ToLower(val), strings.ToLower(strValue)) {
+				switch v := docIDs.(type) {
+				case []interface{}:
+					for _, id := range v {
+						if idStr, ok := id.(string); ok {
+							result = append(result, idStr)
+						}
+					}
+				case []string:
+					result = append(result, v...)
+				}
+			}
+		}
+	case "end with":
+		for val, docIDs := range valueMap {
+			if strings.HasSuffix(strings.ToLower(val), strings.ToLower(strValue)) {
+				switch v := docIDs.(type) {
+				case []interface{}:
+					for _, id := range v {
+						if idStr, ok := id.(string); ok {
+							result = append(result, idStr)
+						}
+					}
+				case []string:
+					result = append(result, v...)
+				}
+			}
+		}
+	case "empty":
+		if len(valueMap) == 0 {
+			return []string{}
+		}
+	case "not empty":
+		if len(valueMap) > 0 {
+			for _, docIDs := range valueMap {
+				switch v := docIDs.(type) {
+				case []interface{}:
+					for _, id := range v {
+						if idStr, ok := id.(string); ok {
+							result = append(result, idStr)
+						}
+					}
+				case []string:
+					result = append(result, v...)
+				}
+			}
+		}
+	case ">":
+		for val, docIDs := range valueMap {
+			if compareValues(val, strValue, ">") {
+				switch v := docIDs.(type) {
+				case []interface{}:
+					for _, id := range v {
+						if idStr, ok := id.(string); ok {
+							result = append(result, idStr)
+						}
+					}
+				case []string:
+					result = append(result, v...)
+				}
+			}
+		}
+	case "<":
+		for val, docIDs := range valueMap {
+			if compareValues(val, strValue, "<") {
+				switch v := docIDs.(type) {
+				case []interface{}:
+					for _, id := range v {
+						if idStr, ok := id.(string); ok {
+							result = append(result, idStr)
+						}
+					}
+				case []string:
+					result = append(result, v...)
+				}
+			}
+		}
+	case ">=":
+		for val, docIDs := range valueMap {
+			if compareValues(val, strValue, ">=") {
+				switch v := docIDs.(type) {
+				case []interface{}:
+					for _, id := range v {
+						if idStr, ok := id.(string); ok {
+							result = append(result, idStr)
+						}
+					}
+				case []string:
+					result = append(result, v...)
+				}
+			}
+		}
+	case "<=":
+		for val, docIDs := range valueMap {
+			if compareValues(val, strValue, "<=") {
+				switch v := docIDs.(type) {
+				case []interface{}:
+					for _, id := range v {
+						if idStr, ok := id.(string); ok {
+							result = append(result, idStr)
+						}
+					}
+				case []string:
+					result = append(result, v...)
+				}
+			}
+		}
+	default:
+		// Default to equality check
+		if docIDs, exists := valueMap[strValue]; exists {
+			switch v := docIDs.(type) {
+			case []interface{}:
+				for _, id := range v {
+					if idStr, ok := id.(string); ok {
+						result = append(result, idStr)
+					}
+				}
+			case []string:
+				result = append(result, v...)
+			}
+		}
+	}
+	return result
+}
+
+// metaFilterValues extracts string values from a MetaFilterCondition Value which can
+// be a single string, a []string, or a []interface{} (used by "in" / "not in" operators).
+func metaFilterValues(value interface{}) []string {
+	switch v := value.(type) {
+	case string:
+		parts := strings.Split(v, ",")
+		result := make([]string, 0, len(parts))
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				result = append(result, p)
+			}
+		}
+		return result
+	case []interface{}:
+		result := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				s = strings.TrimSpace(s)
+				if s != "" {
+					result = append(result, s)
+				}
+			}
+		}
+		return result
+	case []string:
+		result := make([]string, 0, len(v))
+		for _, s := range v {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				result = append(result, s)
+			}
+		}
+		return result
+	default:
+		return []string{fmt.Sprintf("%v", v)}
+	}
+}
 
 // ApplyMetaDataFilter applies metadata filtering rules and returns filtered doc_ids
 // Supports three modes:
 // - auto: generate filter conditions via LLM
 // - semi_auto: generate conditions using selected metadata keys only via LLM
 // - manual: directly filter based on provided conditions
+//
+// When kbIDs is supplied, metadata filters are pushed down to the doc metadata
+// index (ES/Infinity) via FilterDocIdsByMetaPushdown instead of being evaluated
+// in-memory. The in-memory meta_filter path remains the fallback.
 func ApplyMetaDataFilter(
 	ctx context.Context,
 	metaDataFilter map[string]interface{},
@@ -262,29 +586,63 @@ func ApplyMetaDataFilter(
 	question string,
 	chatModel *modelModule.ChatModel,
 	baseDocIDs []string,
+	kbIDs []string,
 	manualValueResolver ...ManualValueResolver,
 ) ([]string, bool) {
 	if metaDataFilter == nil {
 		return baseDocIDs, false
 	}
 
-	docIDs := make([]string, len(baseDocIDs))
-	copy(docIDs, baseDocIDs)
-
 	method, _ := metaDataFilter["method"].(string)
+
+	// Helper to run metadata filter with push-down fallback
+	// runMetadataFilter executes filter conditions via push-down (ES/Infinity)
+	// when possible, falling back to in-memory filtering when push-down is not
+	// viable or fails.
+	//
+	// The nil-vs-empty-slice convention (matching Python):
+	//   nil        -> push-down was not viable / errored -> fall back to in-memory
+	//   []string{} -> push-down succeeded but found 0 matching docs -> definitive,
+	//                 do NOT fall back to in-memory (empty result is authoritative)
+	runMetadataFilter := func(conditions []MetaFilterCondition, logic string) []string {
+		// Try ES/Infinity push-down first
+		if len(conditions) > 0 && len(kbIDs) > 0 {
+			docEngine := engine.Get()
+			if docEngine != nil {
+				// Convert []MetaFilterCondition to []map[string]interface{}
+				condMaps := make([]map[string]interface{}, len(conditions))
+				for i, c := range conditions {
+					condMaps[i] = map[string]interface{}{
+						"key":   c.Key,
+						"op":    c.Op,
+						"value": c.Value,
+					}
+				}
+				pushdownIDs := docEngine.FilterDocIdsByMetaPushdown(ctx, kbIDs, condMaps, logic)
+				// nil  = push-down not viable / errored -> fall back to in-memory
+				// non-nil (including empty slice) = push-down definitive -> use as-is
+				if pushdownIDs != nil {
+					return pushdownIDs
+				}
+			}
+		}
+		// Fall back to in-memory filter
+		return ApplyMetaFilter(metaData, conditions, logic)
+	}
 
 	switch method {
 	case "auto":
 		filters, err := GenMetaFilter(ctx, chatModel, metaData, question, nil)
 		if err != nil {
 			common.Warn("Failed to generate meta filter", zap.Error(err))
-			return docIDs, false
+			return baseDocIDs, false
 		}
-		filteredIDs := ApplyMetaFilter(metaData, filters.Conditions, filters.Logic)
-		docIDs = append(docIDs, filteredIDs...)
+		filteredIDs := runMetadataFilter(filters.Conditions, filters.Logic)
+		docIDs := constrainDocIDs(baseDocIDs, filteredIDs)
 		if len(docIDs) == 0 {
 			return nil, true // Return nil to indicate auto filter returned empty
 		}
+		return docIDs, false
 
 	case "semi_auto":
 		selectedKeys := []string{}
@@ -319,13 +677,14 @@ func ApplyMetaDataFilter(
 				filters, err := GenMetaFilter(ctx, chatModel, filteredMeta, question, constraints)
 				if err != nil {
 					common.Warn("Failed to generate meta filter", zap.Error(err))
-					return docIDs, false
+					return baseDocIDs, false
 				}
-				filteredIDs := ApplyMetaFilter(metaData, filters.Conditions, filters.Logic)
-				docIDs = append(docIDs, filteredIDs...)
+				filteredIDs := runMetadataFilter(filters.Conditions, filters.Logic)
+				docIDs := constrainDocIDs(baseDocIDs, filteredIDs)
 				if len(docIDs) == 0 {
 					return nil, true
 				}
+				return docIDs, false
 			}
 		}
 
@@ -334,6 +693,9 @@ func ApplyMetaDataFilter(
 		logic := "and"
 		if logicVal, ok := metaDataFilter["logic"].(string); ok {
 			logic = logicVal
+		}
+		if len(manualFilters) == 0 {
+			return baseDocIDs, false
 		}
 
 		// Apply manual_value_resolver callback if provided
@@ -355,7 +717,7 @@ func ApplyMetaDataFilter(
 				if key, ok := cond["key"].(string); ok {
 					condition.Key = key
 				}
-				if value, ok := cond["value"].(string); ok {
+				if value, exists := cond["value"]; exists {
 					condition.Value = value
 				}
 				if op, ok := cond["op"].(string); ok {
@@ -365,12 +727,87 @@ func ApplyMetaDataFilter(
 			}
 		}
 
-		filteredIDs := ApplyMetaFilter(metaData, conditions, logic)
-		docIDs = append(docIDs, filteredIDs...)
+		filteredIDs := runMetadataFilter(conditions, logic)
+		docIDs := constrainDocIDs(baseDocIDs, filteredIDs)
 		if len(manualFilters) > 0 && len(docIDs) == 0 {
-			return []string{"-999"}, false
+			return []string{NoMatchDocIDSentinel}, false
 		}
+		return docIDs, false
 	}
 
-	return docIDs, false
+	return baseDocIDs, false
+}
+
+func constrainDocIDs(baseDocIDs, filteredDocIDs []string) []string {
+	filteredDocIDs = common.Deduplicate(filteredDocIDs)
+	if len(baseDocIDs) == 0 {
+		return filteredDocIDs
+	}
+	if len(filteredDocIDs) == 0 {
+		return []string{}
+	}
+
+	filteredSet := make(map[string]struct{}, len(filteredDocIDs))
+	for _, docID := range filteredDocIDs {
+		filteredSet[docID] = struct{}{}
+	}
+	result := make([]string, 0, min(len(baseDocIDs), len(filteredSet)))
+	seen := make(map[string]struct{}, len(baseDocIDs))
+	for _, docID := range baseDocIDs {
+		if _, allowed := filteredSet[docID]; !allowed {
+			continue
+		}
+		if _, exists := seen[docID]; exists {
+			continue
+		}
+		seen[docID] = struct{}{}
+		result = append(result, docID)
+	}
+	return result
+}
+
+// repairJSON attempts to fix common JSON formatting issues in LLM output.
+// This mirrors Python's json_repair.loads() behavior for the most common issues:
+// - Trailing commas in arrays/objects
+// - Unquoted or single-quoted keys
+// - Extra content after closing brace
+func repairJSON(s string) string {
+	s = strings.TrimSpace(s)
+
+	// Find the outermost JSON object { ... }
+	start := strings.Index(s, "{")
+	end := strings.LastIndex(s, "}")
+	if start == -1 || end == -1 || end <= start {
+		return s
+	}
+	s = s[start : end+1]
+
+	// Remove trailing commas before ] or }
+	s = removeTrailingCommas(s)
+
+	// Fix single-quoted keys and values: 'key' -> "key"
+	// This is a simplification — only handles the outermost level
+	s = fixQuotes(s)
+
+	return s
+}
+
+// removeTrailingCommas removes commas that appear immediately before ] or }
+func removeTrailingCommas(s string) string {
+	// Remove , followed by optional whitespace and then ] or }
+	re := regexp.MustCompile(`,(\s*[}\]])`)
+	return re.ReplaceAllString(s, "$1")
+}
+
+// fixQuotes converts single quotes to double quotes for JSON keys.
+// Only handles simple cases: 'word' -> "word"
+func fixQuotes(s string) string {
+	// Replace single-quoted keys: 'key': -> "key":
+	re := regexp.MustCompile(`'(\w+)'(\s*):`)
+	s = re.ReplaceAllString(s, `"$1"$2:`)
+	// Replace single-quoted string values: : 'value' -> : "value"
+	// (only when preceded by colon and optional whitespace)
+	re2 := regexp.MustCompile(`:\s*'([^']*)'(\s*[,}\]])`)
+	s = re2.ReplaceAllString(s, `: "$1"$2`)
+	return s
 }

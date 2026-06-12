@@ -17,7 +17,6 @@
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -30,7 +29,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // CometAPIModel implements ModelDriver for CometAPI AI.
@@ -40,20 +38,11 @@ type CometAPIModel struct {
 
 // NewCometAPIModel creates a new CometAPI model instance.
 func NewCometAPIModel(baseURL map[string]string, urlSuffix URLSuffix) *CometAPIModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-	transport.ResponseHeaderTimeout = 60 * time.Second
-
 	return &CometAPIModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
-			httpClient: &http.Client{
-				Transport: transport,
-			},
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
@@ -244,21 +233,6 @@ type cometapiModelCatalogItem struct {
 	ID string `json:"id"`
 }
 
-func parseCometAPIModelCatalog(body []byte) ([]string, error) {
-	var parsed cometapiModelCatalogResponse
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	models := make([]string, 0, len(parsed.Data))
-	for _, model := range parsed.Data {
-		if model.ID != "" {
-			models = append(models, model.ID)
-		}
-	}
-	return models, nil
-}
-
 // ChatWithMessages sends multiple messages with roles and returns the response.
 func (c *CometAPIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
@@ -349,27 +323,14 @@ func (c *CometAPIModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	sawTerminal := false
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if !strings.HasPrefix(line, "data:") {
-			continue
+	done, err := ParseSSEStream[cometapiChatResponsePayload](resp.Body, func(event cometapiChatResponsePayload) error {
+		if len(event.Choices) == 0 {
+			return nil
 		}
-
-		data := strings.TrimSpace(line[5:])
-
-		if data == "[DONE]" {
-			sawTerminal = true
-			break
-		}
-
-		content, reasoningContent, terminal, ok := parseCometAPIStreamEvent(data)
-		if !ok {
-			continue
-		}
+		choice := event.Choices[0]
+		reasoningContent := choice.Delta.ReasoningContent
+		content := choice.Delta.Content
 
 		if reasoningContent != "" {
 			if err := sender(nil, &reasoningContent); err != nil {
@@ -383,16 +344,15 @@ func (c *CometAPIModel) ChatStreamlyWithSender(modelName string, messages []Mess
 			}
 		}
 
-		if terminal {
+		if choice.FinishReason != "" {
 			sawTerminal = true
-			break
 		}
-	}
-
-	if err := scanner.Err(); err != nil {
+		return nil
+	})
+	if err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
-	if !sawTerminal {
+	if !done && !sawTerminal {
 		return fmt.Errorf("cometapi: stream ended before [DONE] or finish_reason")
 	}
 
@@ -498,7 +458,7 @@ func (c *CometAPIModel) Embed(modelName *string, texts []string, apiConfig *APIC
 }
 
 // ListModels returns the public CometAPI model catalog.
-func (c *CometAPIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (c *CometAPIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	url, err := c.endpointURL(cometapiRegion(apiConfig), c.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
@@ -520,7 +480,13 @@ func (c *CometAPIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(resp.Body))
 	}
-	return parseCometAPIModelCatalog(resp.Body)
+
+	// Parse response
+	var modelList ModelList
+	if err = json.Unmarshal(resp.Body, &modelList); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	return ParseListModel(modelList), nil
 }
 
 // Balance queries CometAPI's quota service.

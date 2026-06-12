@@ -45,7 +45,7 @@ func main() {
 	flag.Parse()
 
 	// Initialize logger
-	if err := common.Init("info"); err != nil {
+	if err := common.Init("info", "admin_server.log"); err != nil {
 		panic("failed to initialize logger: " + err.Error())
 	}
 
@@ -59,7 +59,7 @@ func main() {
 
 	// Reinitialize logger with configured level if different
 	if cfg.Log.Level != "" && cfg.Log.Level != "info" {
-		if err := common.Init(cfg.Log.Level); err != nil {
+		if err := common.Init(cfg.Log.Level, "admin_server.log"); err != nil {
 			common.Error("Failed to reinitialize logger with configured level", err)
 		}
 	}
@@ -93,6 +93,10 @@ func main() {
 		common.Fatal("Failed to initialize Redis", zap.Error(err))
 	}
 	defer cache.Close()
+
+	if err := engine.InitMessageQueueEngine(cfg.TaskExecutor.MessageQueueType); err != nil {
+		common.Error("Failed to initialize message queue engine", err)
+	}
 
 	// Initialize server variables (runtime variables that can change during operation)
 	// This must be done after Cache is initialized
@@ -149,16 +153,6 @@ func main() {
 	// Print RAGFlow version
 	common.Info(fmt.Sprintf("RAGFlow admin version: %s", utility.GetRAGFlowVersion()))
 
-	// Start ingestion manager (gRPC) in a goroutine
-	ingestionMgr := admin.NewAdminServer()
-	go func() {
-		addr = fmt.Sprintf(":%d", cfg.Admin.IngestionManagerPort)
-		common.Info(fmt.Sprintf("Starting RAGFlow ingestion manager on port: %d", cfg.Admin.IngestionManagerPort))
-		if err := ingestionMgr.Start(addr); err != nil {
-			common.Fatal("Failed to start RAGFlow ingestion manager", zap.Error(err))
-		}
-	}()
-
 	// Start HTTP server in a goroutine
 	go func() {
 		common.Info(fmt.Sprintf("Starting RAGFlow admin HTTP server on port: %d", cfg.Admin.Port))
@@ -185,7 +179,4 @@ func main() {
 	}
 
 	common.Info("Admin HTTP server exited")
-
-	// Stop ingestion manager
-	ingestionMgr.Stop()
 }
