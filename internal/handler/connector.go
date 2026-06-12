@@ -17,34 +17,33 @@
 package handler
 
 import (
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/json"
+	"errors"
 	"net/http"
-	"net/url"
-	"os"
-	"ragflow/internal/common"
-	"ragflow/internal/cache"
-	"ragflow/internal/entity"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/gin-gonic/gin"
 
+	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
 
-type connectorService interface {
+type connectorServiceIface interface {
 	ListConnectors(userID string) (*service.ListConnectorsResponse, error)
 	CreateConnector(userID string, req *service.CreateConnectorRequest) (*entity.Connector, error)
-	GetConnector(connectorID string, userID string) (*entity.Connector, common.ErrorCode, error)
+	GetConnector(connectorID, userID string) (*entity.Connector, common.ErrorCode, error)
+	ListLog(connectorID, userID string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error)
+	DeleteConnector(connectorID, userID string) (bool, common.ErrorCode, error)
+	RebuildConnector(connectorID, userID, kbID string) (bool, common.ErrorCode, error)
+	TestConnector(connectorID, userID string) error
 }
 
 // ConnectorHandler connector handler
 type ConnectorHandler struct {
-	connectorService connectorService
+	connectorService connectorServiceIface
 	userService      *service.UserService
 }
 
@@ -96,6 +95,25 @@ func (h *ConnectorHandler) ListConnectors(c *gin.Context) {
 	})
 }
 
+// connectorErrorResponse maps service sentinel errors to the response codes used
+// by the Python connector_api, and writes the JSON response. It returns true when
+// the error was handled.
+func connectorErrorResponse(c *gin.Context, err error) bool {
+	switch {
+	case err == nil:
+		return false
+	case errors.Is(err, service.ErrConnectorNoAuth):
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeAuthenticationError, "data": false, "message": "No authorization."})
+	case errors.Is(err, service.ErrConnectorNotFound):
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": nil, "message": "Can't find this Connector!"})
+	case errors.Is(err, service.ErrConnectorTestUnsupported):
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeArgumentError, "data": false, "message": err.Error()})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"code": common.CodeServerError, "data": nil, "message": err.Error()})
+	}
+	return true
+}
+
 // GetConnector get connector
 // @Summary Get Connector
 // @Description Get connector details for the current user
@@ -120,6 +138,54 @@ func (h *ConnectorHandler) GetConnector(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
 		"data":    connector,
+		"message": "success",
+	})
+}
+
+// ListLogs list connector sync logs.
+// @Summary List Connector Logs
+// @Description List sync logs for a connector the current user can access
+// @Tags connector
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/connectors/{connector_id}/logs [get]
+func (h *ConnectorHandler) ListLogs(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	page := 1
+	if rawPage := strings.TrimSpace(c.DefaultQuery("page", "1")); rawPage != "" {
+		parsedPage, err := strconv.Atoi(rawPage)
+		if err != nil {
+			jsonError(c, common.CodeArgumentError, "page must be an integer")
+			return
+		}
+		page = parsedPage
+	}
+
+	pageSize := 15
+	if rawPageSize := strings.TrimSpace(c.DefaultQuery("page_size", "15")); rawPageSize != "" {
+		parsedPageSize, err := strconv.Atoi(rawPageSize)
+		if err != nil {
+			jsonError(c, common.CodeArgumentError, "page_size must be an integer")
+			return
+		}
+		pageSize = parsedPageSize
+	}
+
+	logs, total, code, err := h.connectorService.ListLog(c.Param("connector_id"), user.ID, page, pageSize)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    gin.H{"total": total, "logs": logs},
 		"message": "success",
 	})
 }
@@ -191,211 +257,114 @@ func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
 	})
 }
 
-func getGoogleScopes(source string) []string {
-	if source == "gmail" {
-		return []string{
-			"https://www.googleapis.com/auth/gmail.readonly",
-			"https://www.googleapis.com/auth/admin.directory.user.readonly",
-			"https://www.googleapis.com/auth/admin.directory.group.readonly",
-		}
-	}
-	return []string{
-		"https://www.googleapis.com/auth/drive.readonly",
-		"https://www.googleapis.com/auth/drive.metadata.readonly",
-		"https://www.googleapis.com/auth/admin.directory.group.readonly",
-		"https://www.googleapis.com/auth/admin.directory.user.readonly",
-	}
-}
-
-func getDefaultGoogleRedirectURI(source string) string {
-	if source == "gmail" {
-		if v := strings.TrimSpace(os.Getenv("GMAIL_WEB_OAUTH_REDIRECT_URI")); v != "" {
-			return v
-		}
-		return defaultGmailWebRedirectURI
-	}
-	if v := strings.TrimSpace(os.Getenv("GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI")); v != "" {
-		return v
-	}
-	return defaultGoogleDriveWebRedirectURI
-}
-
-func buildOAuthCodeVerifier() (string, error) {
-	buf := make([]byte, 32)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(buf), nil
-}
-
-func buildOAuthCodeChallenge(verifier string) string {
-	sum := sha256.Sum256([]byte(verifier))
-	return base64.RawURLEncoding.EncodeToString(sum[:])
-}
-
-func googleWebStateCacheKey(flowID, source string) string {
-	return source + "_web_flow_state:" + flowID
-}
-
-// StartGoogleWebOAuth handles POST /api/v1/connectors/google/oauth/web/start.
-func (h *ConnectorHandler) StartGoogleWebOAuth(c *gin.Context) {
+// TestConnector validates an accessible connector's stored credentials.
+// @Summary Test Connector
+// @Description Validate connector credentials / connection (equivalent to Python's test_connector)
+// @Tags connector
+// @Produce json
+// @Param connector_id path string true "connector ID"
+// @Router /api/v1/connectors/{connector_id}/test [post]
+func (h *ConnectorHandler) TestConnector(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
-	source := c.DefaultQuery("type", "google-drive")
-	if source != "google-drive" && source != "gmail" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": "Invalid Google OAuth type.",
-			"data":    nil,
-		})
+	connectorID := c.Param("connector_id")
+	if connectorID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "connector_id is required"})
 		return
 	}
 
-	var req map[string]interface{}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": "Invalid request body: " + err.Error(),
-			"data":    nil,
-		})
+	err := h.connectorService.TestConnector(connectorID, user.ID)
+	if errors.Is(err, service.ErrConnectorTestUnsupported) {
+		connectorErrorResponse(c, err)
+		return
+	}
+	if err != nil && !errors.Is(err, service.ErrConnectorNoAuth) && !errors.Is(err, service.ErrConnectorNotFound) {
+		// Validation failure (e.g. missing credentials): mirror Python's DATA_ERROR with data=false.
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": err.Error()})
+		return
+	}
+	if connectorErrorResponse(c, err) {
 		return
 	}
 
-	rawCredentials, ok := req["credentials"]
-	if !ok {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": "required argument is missing: credentials",
-			"data":    nil,
-		})
+	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": true, "message": "success"})
+}
+
+// DeleteConnector delete connector
+// @Description Detele Connector
+// @Tags connector
+// @Accept json
+// @Produce json
+func (h *ConnectorHandler) DeleteConnector(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
-	redirectURI := getDefaultGoogleRedirectURI(source)
-	if rawRedirectURI, ok := req["redirect_uri"].(string); ok && strings.TrimSpace(rawRedirectURI) != "" {
-		redirectURI = strings.TrimSpace(rawRedirectURI)
-	}
-	if redirectURI == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": "Google OAuth redirect URI is not configured on the server.",
-			"data":    nil,
-		})
-		return
-	}
-
-	var credentials map[string]interface{}
-	switch v := rawCredentials.(type) {
-	case string:
-		if err := json.Unmarshal([]byte(v), &credentials); err != nil {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeArgumentError,
-				"message": "Invalid Google credentials JSON.",
-				"data":    nil,
-			})
-			return
-		}
-	case map[string]interface{}:
-		credentials = v
-	default:
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": "Invalid Google credentials JSON.",
-			"data":    nil,
-		})
-		return
-	}
-
-	if _, hasRefreshToken := credentials["refresh_token"]; hasRefreshToken {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": "Uploaded credentials already include a refresh token.",
-			"data":    nil,
-		})
-		return
-	}
-
-	webSection, ok := credentials["web"].(map[string]interface{})
-	if !ok {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": "Google OAuth JSON must include a 'web' client configuration to use browser-based authorization.",
-			"data":    nil,
-		})
-		return
-	}
-	clientID, _ := webSection["client_id"].(string)
-	if strings.TrimSpace(clientID) == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": "Google OAuth JSON must include web.client_id.",
-			"data":    nil,
-		})
-		return
-	}
-
-	flowID := uuid.New().String()
-	codeVerifier, err := buildOAuthCodeVerifier()
+	ok, code, err := h.connectorService.DeleteConnector(c.Param("connector_id"), user.ID)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": "Failed to initialize Google OAuth flow. Please verify the uploaded client configuration.",
-			"data":    nil,
-		})
-		return
-	}
-	codeChallenge := buildOAuthCodeChallenge(codeVerifier)
-
-	params := url.Values{}
-	params.Set("response_type", "code")
-	params.Set("client_id", clientID)
-	params.Set("redirect_uri", redirectURI)
-	params.Set("scope", strings.Join(getGoogleScopes(source), " "))
-	params.Set("access_type", "offline")
-	params.Set("include_granted_scopes", "true")
-	params.Set("prompt", "consent")
-	params.Set("state", flowID)
-	params.Set("code_challenge", codeChallenge)
-	params.Set("code_challenge_method", "S256")
-	authorizationURL := googleOAuthAuthorizationURL + "?" + params.Encode()
-
-	redisClient := cache.Get()
-	if redisClient == nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": "Failed to initialize Google OAuth flow. Please retry.",
-			"data":    nil,
-		})
-		return
-	}
-
-	cachePayload := map[string]interface{}{
-		"user_id":       user.ID,
-		"client_config": map[string]interface{}{"web": webSection},
-		"redirect_uri":  redirectURI,
-		"code_verifier": codeVerifier,
-		"created_at":    time.Now().Unix(),
-	}
-	if ok := redisClient.SetObj(googleWebStateCacheKey(flowID, source), cachePayload, webFlowTTLSeconds*time.Second); !ok {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"message": "Failed to initialize Google OAuth flow. Please retry.",
-			"data":    nil,
-		})
+		jsonError(c, code, err.Error())
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
+		"data":    ok,
 		"message": "success",
-		"data": gin.H{
-			"flow_id":           flowID,
-			"authorization_url": authorizationURL,
-			"expires_in":        webFlowTTLSeconds,
-		},
+	})
+}
+
+// RebuildConnector rebuild connector
+// @Summary Rebuild Connector
+// @Description Trigger a rebuild for an accessible connector and knowledge base
+// @Tags connector
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /connector/:connector_id/rebuild [post]
+func (h *ConnectorHandler) RebuildConnector(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	// Parse request body to get kb_id
+	var req struct {
+		KbID string `json:"kb_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"data":    nil,
+			"message": "required argument is missing: kb_id",
+		})
+		return
+	}
+
+	if strings.TrimSpace(req.KbID) == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"data":    nil,
+			"message": "kb_id cannot be empty",
+		})
+		return
+	}
+
+	ok, code, err := h.connectorService.RebuildConnector(c.Param("connector_id"), user.ID, req.KbID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    ok,
+		"message": "success",
 	})
 }

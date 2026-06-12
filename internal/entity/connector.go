@@ -107,6 +107,7 @@ func (Connector2Kb) TableName() string {
 type SyncLogs struct {
 	ID                   string     `gorm:"column:id;primaryKey;size:32" json:"id"`
 	ConnectorID          string     `gorm:"column:connector_id;size:32;index" json:"connector_id"`
+	TaskType             string     `gorm:"column:task_type;size:32;not null;default:sync;index" json:"task_type"`
 	Status               string     `gorm:"column:status;size:128;not null;index" json:"status"`
 	FromBeginning        *string    `gorm:"column:from_beginning;size:1" json:"from_beginning,omitempty"`
 	NewDocsIndexed       int64      `gorm:"column:new_docs_indexed;default:0" json:"new_docs_indexed"`
@@ -125,4 +126,70 @@ type SyncLogs struct {
 // TableName specify table name
 func (SyncLogs) TableName() string {
 	return "sync_logs"
+}
+
+// ConnectorSyncLog is the API projection used by the connector logs endpoint.
+type ConnectorSyncLog struct {
+	ID                   string     `gorm:"column:id" json:"id"`
+	ConnectorID          string     `gorm:"column:connector_id" json:"connector_id"`
+	TaskType             string     `gorm:"column:task_type" json:"task_type"`
+	KbID                 string     `gorm:"column:kb_id" json:"kb_id"`
+	UpdateDate           *time.Time `gorm:"column:update_date" json:"update_date,omitempty"`
+	NewDocsIndexed       int64      `gorm:"column:new_docs_indexed" json:"new_docs_indexed"`
+	TotalDocsIndexed     int64      `gorm:"column:total_docs_indexed" json:"total_docs_indexed"`
+	DocsRemovedFromIndex int64      `gorm:"column:docs_removed_from_index" json:"docs_removed_from_index"`
+	ErrorMsg             string     `gorm:"column:error_msg" json:"error_msg"`
+	ErrorCount           int64      `gorm:"column:error_count" json:"error_count"`
+	TimeStarted          *time.Time `gorm:"column:time_started" json:"time_started,omitempty"`
+	RefreshFreq          int64      `gorm:"column:refresh_freq" json:"refresh_freq"`
+	PruneFreq            int64      `gorm:"column:prune_freq" json:"prune_freq"`
+	KbName               string     `gorm:"column:kb_name" json:"kb_name"`
+	Status               string     `gorm:"column:status" json:"status"`
+}
+
+// MarshalJSON formats datetime fields to match the Python API encoder.
+func (c ConnectorSyncLog) MarshalJSON() ([]byte, error) {
+	type connectorSyncLogJSON struct {
+		ID                   string  `json:"id"`
+		ConnectorID          string  `json:"connector_id"`
+		TaskType             string  `json:"task_type"`
+		KbID                 string  `json:"kb_id"`
+		UpdateDate           *string `json:"update_date,omitempty"`
+		NewDocsIndexed       int64   `json:"new_docs_indexed"`
+		TotalDocsIndexed     int64   `json:"total_docs_indexed"`
+		DocsRemovedFromIndex int64   `json:"docs_removed_from_index"`
+		ErrorMsg             string  `json:"error_msg"`
+		ErrorCount           int64   `json:"error_count"`
+		TimeStarted          *string `json:"time_started,omitempty"`
+		RefreshFreq          int64   `json:"refresh_freq"`
+		PruneFreq            int64   `json:"prune_freq"`
+		KbName               string  `json:"kb_name"`
+		Status               string  `json:"status"`
+	}
+
+	return json.Marshal(connectorSyncLogJSON{
+		ID:                   c.ID,
+		ConnectorID:          c.ConnectorID,
+		TaskType:             c.TaskType,
+		KbID:                 c.KbID,
+		UpdateDate:           formatConnectorLogTime(c.UpdateDate),
+		NewDocsIndexed:       c.NewDocsIndexed,
+		TotalDocsIndexed:     c.TotalDocsIndexed,
+		DocsRemovedFromIndex: c.DocsRemovedFromIndex,
+		ErrorMsg:             c.ErrorMsg,
+		ErrorCount:           c.ErrorCount,
+		TimeStarted:          formatConnectorLogTime(c.TimeStarted),
+		RefreshFreq:          c.RefreshFreq,
+		PruneFreq:            c.PruneFreq,
+		KbName:               c.KbName,
+		Status:               c.Status,
+	})
+}
+
+func formatConnectorLogTime(value *time.Time) *string {
+	if value == nil {
+		return nil
+	}
+	formatted := value.Format("2006-01-02 15:04:05")
+	return &formatted
 }
