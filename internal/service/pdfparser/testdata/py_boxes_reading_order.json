@@ -1,0 +1,50 @@
+[
+  {
+    "x0": 198.43200000000002,
+    "x1": 413.56800000000004,
+    "top": 70.51200000000006,
+    "bottom": 86.51200000000006,
+    "text": "PDF 1: Purpose of RAGFlow",
+    "page_number": 0,
+    "layout_type": "text",
+    "layoutno": "1",
+    "col_id": 0,
+    "R": ""
+  },
+  {
+    "x0": 67.2,
+    "x1": 544.800004,
+    "top": 103.47700000000009,
+    "bottom": 156.4770000000001,
+    "text": "RAGFlow is an open source Retrieval-Augmented Generation (RAG) engine designed to turn raw documents into reliable context for large language models. Its purpose is to make it practical to build an AI assistant that can answer questions using your private files, while staying grounded in the source material.",
+    "page_number": 0,
+    "layout_type": "text",
+    "layoutno": "1",
+    "col_id": 0,
+    "R": ""
+  },
+  {
+    "x0": 67.2,
+    "x1": 544.8000039999997,
+    "top": 181.4770000000001,
+    "bottom": 234.4770000000001,
+    "text": "In a typical workflow, you ingest documents into a dataset, the system parses and cleans them, then chunks and indexes the content for search. At question time, RAGFlow retrieves the most relevant passages and sends them to the model as context. This reduces hallucinations and improves traceability because answers can be tied back to specific excerpts, often with citations.",
+    "page_number": 0,
+    "layout_type": "text",
+    "layoutno": "1",
+    "col_id": 0,
+    "R": ""
+  },
+  {
+    "x0": 67.2,
+    "x1": 544.8000050000002,
+    "top": 259.4770000000001,
+    "bottom": 340.477,
+    "text": "RAGFlow focuses on deep document understanding, so it can handle complex formats beyond plain text, such as PDFs with tables, images, and mixed layouts. It provides an end-to-end pipeline: data ingestion, retrieval, chat, and agent style orchestration. It also exposes user interfaces and APIs so teams can experiment quickly, then operationalize the same flows in production. For a parsing test, the key idea is that the platform converts heterogeneous files into structured text chunks that are ready for retrieval, ranking, and quoting.",
+    "page_number": 0,
+    "layout_type": "text",
+    "layoutno": "1",
+    "col_id": 0,
+    "R": ""
+  }
+]
