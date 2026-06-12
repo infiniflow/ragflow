@@ -203,7 +203,7 @@ type ListChatSessionsRequest struct {
 
 // ListChatSessionsResponse list chat sessions response
 type ListChatSessionsResponse struct {
-	Sessions []*entity.ChatSession
+	Sessions []map[string]interface{}
 }
 
 // ListChatSessions lists chat sessions for a dialog
@@ -250,7 +250,15 @@ func (s *ChatSessionService) ListChatSessions(userID string, chatID string) (*Li
 		return nil, err
 	}
 
-	return &ListChatSessionsResponse{Sessions: sessions}, nil
+	// Map each session through buildSessionResponseMap so the response matches
+	// Python _build_session_response (chat_id instead of dialog_id, messages as a
+	// JSON array instead of raw DB bytes).
+	mapped := make([]map[string]interface{}, 0, len(sessions))
+	for _, sess := range sessions {
+		mapped = append(mapped, buildSessionResponseMap(sess))
+	}
+
+	return &ListChatSessionsResponse{Sessions: mapped}, nil
 }
 
 // Completion performs chat completion with full RAG support
