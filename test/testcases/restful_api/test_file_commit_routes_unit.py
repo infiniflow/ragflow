@@ -274,8 +274,9 @@ def _load_module(monkeypatch):
     file_svc_mod.FileService = _StubFileService
     monkeypatch.setitem(sys.modules, "api.db.services.file_service", file_svc_mod)
 
-    # Stub: common.constants
+    # Stub: common.constants with FileSource for resolver
     constants_mod = ModuleType("common.constants")
+    constants_mod.FileSource = type("FileSource", (), {"KNOWLEDGEBASE": "knowledgebase"})
     monkeypatch.setitem(sys.modules, "common.constants", constants_mod)
 
     # Stub: api.db with real filesystem path so sub-packages like
