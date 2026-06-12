@@ -280,14 +280,26 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
         except Exception as e:
             return server_error_response(e)
 
+    # Expose handlers at module level for direct testing.
+    _g = globals()
+    _g['create_commit'] = create_commit
+    _g['list_commits'] = list_commits
+    _g['get_commit'] = get_commit
+    _g['list_commit_files'] = list_commit_files
+    _g['diff_commits'] = diff_commits
+    _g['get_uncommitted_changes'] = get_uncommitted_changes
+    _g['get_commit_tree'] = get_commit_tree
+    _g['get_commit_file_content'] = get_commit_file_content
 
 # ── Register routes for all entity types ──────────────────────────────────
 # All URL patterns use <entity_id> as the consistent param name.
 # For /folders/ entity_id IS the folder_id directly.
 # For other entity types entity_id is resolved via _resolve_folder_id().
-_register_commit_routes('/folders/<entity_id>', 'entity_id')  # direct — entity_id == folder_id
-_register_commit_routes('/workspace/<entity_id>', 'entity_id')  # alias — workspace_id == folder_id
+# Register datasets first, workspace second, folders last —
+# the last call's handlers overwrite module-level names for test access.
 _register_commit_routes('/datasets/<entity_id>', 'entity_id', resolver_type='datasets')
+_register_commit_routes('/workspace/<entity_id>', 'entity_id')  # alias — workspace_id == folder_id
+_register_commit_routes('/folders/<entity_id>', 'entity_id')  # direct — entity_id == folder_id (wins)
 # /memories and /skills routes are not mounted until resolvers are implemented.
 
 
