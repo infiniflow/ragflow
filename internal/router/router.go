@@ -156,6 +156,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// Google redirects here after Gmail / Google Drive web OAuth completes.
 		apiNoAuth.GET("/connectors/gmail/oauth/web/callback", r.connectorHandler.GmailWebOAuthCallback)
 		apiNoAuth.GET("/connectors/google-drive/oauth/web/callback", r.connectorHandler.GoogleDriveWebOAuthCallback)
+		// Forgot-password flow (fixes #15282).
+		// Routes are intentionally registered before any auth middleware:
+		// a user who has forgotten their password is, by definition,
+		// unauthenticated.
+		apiNoAuth.POST("/auth/password/forgot/captcha", r.userHandler.ForgotCaptcha)
+		apiNoAuth.POST("/auth/password/forgot/otp", r.userHandler.ForgotSendOTP)
+		apiNoAuth.POST("/auth/password/forgot/otp/verify", r.userHandler.ForgotVerifyOTP)
+		apiNoAuth.POST("/auth/password/reset", r.userHandler.ForgotResetPassword)
 	}
 
 	// Protected routes
@@ -263,8 +271,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 				// Dataset document chunk
 				datasets.GET("/:dataset_id/documents/:document_id/chunks/:chunk_id", r.chunkHandler.Get)
-				datasets.POST("/:dataset_id/documents/parse", r.documentHandler.ParseDocuments)
-				datasets.POST("/:dataset_id/documents/stop", r.documentHandler.StopParseDocuments)
+				datasets.POST("/:dataset_id/documents/parse", r.documentHandler.StartIngestionTask)
+				datasets.GET("/ingestion/tasks", r.documentHandler.ListIngestionTasks)
+				datasets.PUT("/ingestion/tasks", r.documentHandler.StopIngestionTasks)
+				datasets.DELETE("/ingestion/tasks", r.documentHandler.RemoveIngestionTasks)
+				//datasets.POST("/:dataset_id/documents/parse", r.documentHandler.ParseDocuments)
+				//datasets.POST("/:dataset_id/documents/stop", r.documentHandler.StopParseDocuments)
 				datasets.DELETE("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.RemoveChunks)
 				datasets.PUT("/:dataset_id/documents/:document_id/metadata/config", r.datasetsHandler.UpdateDocumentMetadataConfig)
 			}
@@ -308,16 +320,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 				memory.GET("/:memory_id", r.memoryHandler.GetMemoryMessages)
 			}
 
-			// TODO: Message routes - Implementation pending - depends on CanvasService, TaskService and embedding engine
-			// message := v1.Group("/messages")
-			// {
-			// 	message.POST("", r.memoryHandler.AddMessage)
-			// 	message.DELETE("/:memory_id/:message_id", r.memoryHandler.ForgetMessage)
-			// 	message.PUT("/:memory_id/:message_id", r.memoryHandler.UpdateMessage)
-			// 	message.GET("/search", r.memoryHandler.SearchMessage)
-			// 	message.GET("", r.memoryHandler.GetMessages)
-			// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
-			// }
+			// Message routes
+			message := v1.Group("/messages")
+			{
+				message.DELETE("/:memory_message", r.memoryHandler.ForgetMessage)
+			}
 
 			// Skill search routes
 			skills := v1.Group("/skills")

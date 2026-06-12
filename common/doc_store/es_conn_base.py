@@ -21,7 +21,7 @@ import time
 import os
 from abc import abstractmethod
 
-from elasticsearch import NotFoundError
+from elasticsearch import BadRequestError, NotFoundError
 from elasticsearch_dsl import Index
 from elastic_transport import ConnectionTimeout
 from elasticsearch.client import IndicesClient
@@ -395,6 +395,14 @@ class ESConnectionBase(DocStoreConnection):
                 time.sleep(3)
                 self._connect()
                 continue
+            except BadRequestError as e:
+                # LLM-generated SQL routinely references columns that don't exist
+                # (e.g. unknown_column / verification_exception). The caller in
+                # api/db/services/dialog_service.py:use_sql catches this and either
+                # re-prompts the LLM with the error or falls back to vector search,
+                # so a full ERROR-level traceback is misleading — see #15409.
+                self.logger.warning(f"ESConnection.sql rejected by ES (likely invalid LLM-generated SQL). SQL:\n{sql}\nError: {e}")
+                raise Exception(f"SQL error: {e}\n\nSQL: {sql}")
             except Exception as e:
                 self.logger.exception(f"ESConnection.sql got exception. SQL:\n{sql}")
                 raise Exception(f"SQL error: {e}\n\nSQL: {sql}")
