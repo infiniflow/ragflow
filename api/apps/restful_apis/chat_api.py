@@ -1242,7 +1242,7 @@ async def session_completion(chat_id_in_arg=""):
             """Yield SSE-formatted chunks from the async chat generator."""
             nonlocal dia, msg, req, conv
             try:
-                async for ans in async_chat(dia, msg, True, **req):
+                async for ans in async_chat(dia, msg, True, session_id=session_id, **req):
                     ans = _format_answer(ans)
                     payload = _sanitize_json_floats({"code": 0, "message": "", "data": ans})
                     yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
@@ -1262,7 +1262,7 @@ async def session_completion(chat_id_in_arg=""):
             return resp
 
         answer = None
-        async for ans in async_chat(dia, msg, False, **req):
+        async for ans in async_chat(dia, msg, False, session_id=session_id, **req):
             answer = _format_answer(ans)
             if conv is not None:
                 await thread_pool_exec(ConversationService.update_by_id, conv.id, conv.to_dict())

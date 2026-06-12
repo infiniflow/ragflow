@@ -160,7 +160,8 @@ type Model struct {
 	ModelTypes   []string       `json:"model_types"`
 	Thinking     *ModelThinking `json:"thinking"`
 	Class        *string        `json:"class"`
-	Dimension    *int           `json:"dimension"` // used by embedding models
+	MaxDimension *int           `json:"max_dimension"` // used by embedding models
+	Dimensions   []int          `json:"dimensions"`
 	Alias        []string       `json:"alias"`
 	ModelTypeMap map[string]bool
 }
@@ -386,6 +387,12 @@ func (pm *ProviderManager) ListAllModels() ([]map[string]interface{}, error) {
 		if model.MaxTokens != nil {
 			modelData["max_tokens"] = *model.MaxTokens
 		}
+		if model.MaxDimension != nil {
+			modelData["max_dimension"] = *model.MaxDimension
+		}
+		if len(model.Dimensions) > 0 {
+			modelData["dimensions"] = model.Dimensions
+		}
 		modelList = append(modelList, modelData)
 	}
 
@@ -436,6 +443,12 @@ func (pm *ProviderManager) ListModels(providerName string) ([]map[string]interfa
 			"name":        model.Name,
 			"max_tokens":  model.MaxTokens,
 			"model_types": model.ModelTypes,
+		}
+		if model.MaxDimension != nil {
+			modelData["max_dimension"] = *model.MaxDimension
+		}
+		if len(model.Dimensions) > 0 {
+			modelData["dimensions"] = model.Dimensions
 		}
 		modelList = append(modelList, modelData)
 	}
