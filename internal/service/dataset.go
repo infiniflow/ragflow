@@ -107,6 +107,48 @@ func NewDatasetService() *DatasetService {
 	}
 }
 
+func (s *DatasetService) UpdateDocumentMetadataConfig(userID, datasetID, documentID string, req map[string]interface{}) (*entity.Document, common.ErrorCode, error) {
+	if _, err := s.kbDAO.GetByIDAndTenantID(datasetID, userID); err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, errors.New("You don't own the dataset.")
+		}
+		return nil, common.CodeServerError, errors.New("Database operation failed")
+	}
+
+	doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(documentID, datasetID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, fmt.Errorf("Document %s not found in dataset %s", documentID, datasetID)
+		}
+		return nil, common.CodeServerError, err
+	}
+
+	metadata, ok := req["metadata"]
+	if !ok {
+		return nil, common.CodeArgumentError, errors.New("metadata is required")
+	}
+
+	parserConfig := doc.ParserConfig
+	if parserConfig == nil {
+		parserConfig = entity.JSONMap{}
+	}
+	parserConfig["metadata"] = metadata
+
+	if err := s.documentDAO.UpdateByID(doc.ID, map[string]interface{}{"parser_config": parserConfig}); err != nil {
+		return nil, common.CodeExceptionError, err
+	}
+
+	updatedDoc, err := s.documentDAO.GetByID(doc.ID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, errors.New("Document not found!")
+		}
+		return nil, common.CodeExceptionError, err
+	}
+
+	return updatedDoc, common.CodeSuccess, nil
+}
+
 // SearchDatasetsRequest is the request structure for searching chunks across datasets.
 type SearchDatasetsRequest struct {
 	DatasetIDs             []string               `json:"dataset_ids" binding:"required"`
@@ -205,7 +247,7 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 		"    keyword=%v\n"+
 		"    similarityThreshold=%v, vectorSimilarityWeight=%v",
 		datasetIDs, req.Question,
-		ptrString(req.Page), ptrString(req.Size), req.DocIDs,
+		common.PtrString(req.Page), common.PtrString(req.Size), req.DocIDs,
 		useKG, topK, crossLanguages, searchID,
 		metadataFilter,
 		rerankID,
@@ -487,29 +529,6 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 	}, nil
 }
 
-// Helper functions
-
-// ptrString converts a pointer to a formatted string
-func ptrString[T any](p *T) string {
-	if p == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *p)
-}
-
-func getPageNum(page *int, defaultVal int) int {
-	if page != nil && *page > 0 {
-		return *page
-	}
-	return defaultVal
-}
-
-func getPageSize(size *int, defaultVal int) int {
-	if size != nil && *size > 0 {
-		return *size
-	}
-	return defaultVal
-}
 
 // AutoMetadataField mirrors the REST dataset auto metadata field schema.
 type AutoMetadataField struct {

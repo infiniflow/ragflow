@@ -64,6 +64,12 @@ if __name__ == "__main__":
 
     urls = get_urls(args.china_mirrors)
 
+    # Some mirrors (e.g. archive.ubuntu.com) reject the default urllib
+    # User-Agent with HTTP 403, so install an opener with a browser-like UA.
+    opener = urllib.request.build_opener()
+    opener.addheaders = [("User-Agent", "Mozilla/5.0")]
+    urllib.request.install_opener(opener)
+
     for url in urls:
         download_url = url[0] if isinstance(url, list) else url
         filename = url[1] if isinstance(url, list) else url.split("/")[-1]

@@ -5,13 +5,13 @@ import { FileIcon } from '@/components/icon-font';
 import { ImageWithPopover } from '@/components/image';
 import { Input } from '@/components/originui/input';
 import { SkeletonCard } from '@/components/skeleton-card';
+import { TopSelect } from '@/components/top-select';
 import { Button } from '@/components/ui/button';
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { IReference } from '@/interfaces/database/chat';
 import { cn } from '@/lib/utils';
 import { isEmpty } from 'lodash';
@@ -61,8 +61,8 @@ export default function SearchingView({
   chunks,
   total,
   handleSearch,
-  pagination,
-  onChange,
+  pageSize,
+  handleTopChange,
   showEmbedLogo,
 }: ISearchReturnProps & {
   setIsSearching?: Dispatch<SetStateAction<boolean>>;
@@ -183,8 +183,8 @@ export default function SearchingView({
             )}
             {/* retrieval documents */}
             {!isSearchStrEmpty && !sendingLoading && (
-              <>
-                <div className=" mt-3 w-44 ">
+              <section className="flex justify-start items-center gap-4">
+                <div className="w-44 ">
                   <RetrievalDocuments
                     selectedDocumentIds={selectedDocumentIds}
                     setSelectedDocumentIds={setSelectedDocumentIds}
@@ -194,8 +194,16 @@ export default function SearchingView({
                     }}
                   ></RetrievalDocuments>
                 </div>
-                {/* <div className="w-full border-b border-border-default/80 my-6"></div> */}
-              </>
+                <div className="w-44">
+                  <TopSelect
+                    value={pageSize}
+                    onChange={handleTopChange}
+                  ></TopSelect>
+                </div>
+                <span className="ml-auto text-sm text-text-secondary pr-2">
+                  {t('common.total')}: {total}
+                </span>
+              </section>
             )}
             <div className="mt-3 ">
               {chunks?.length > 0 && (
@@ -292,17 +300,6 @@ export default function SearchingView({
                 </div>
               )}
           </div>
-
-          {total > 0 && (
-            <div className="mt-8 px-8 pb-8 text-base">
-              <RAGFlowPagination
-                current={pagination.current}
-                pageSize={pagination.pageSize}
-                total={total}
-                onChange={onChange}
-              ></RAGFlowPagination>
-            </div>
-          )}
 
           {!mindMapVisible &&
             !isFirstRender &&

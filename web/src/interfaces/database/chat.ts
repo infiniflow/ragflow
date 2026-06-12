@@ -202,6 +202,7 @@ export interface IExternalChatInfo {
   title: string;
   prologue?: string;
   has_tavily_key?: boolean;
+  llm_id?: string;
 }
 
 export interface IMessage extends Message {

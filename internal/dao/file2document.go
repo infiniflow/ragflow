@@ -28,11 +28,6 @@ func NewFile2DocumentDAO() *File2DocumentDAO {
 	return &File2DocumentDAO{}
 }
 
-// Create inserts a new file2document mapping row.
-func (dao *File2DocumentDAO) Create(mapping *entity.File2Document) error {
-	return DB.Create(mapping).Error
-}
-
 // GetKBInfoByFileID gets knowledge base info by file ID
 func (dao *File2DocumentDAO) GetKBInfoByFileID(fileID string) ([]map[string]interface{}, error) {
 	var results []map[string]interface{}
@@ -86,4 +81,9 @@ func (dao *File2DocumentDAO) GetByDocumentID(docID string) ([]*entity.File2Docum
 // DeleteByDocumentID deletes file2document mappings by document ID
 func (dao *File2DocumentDAO) DeleteByDocumentID(docID string) error {
 	return DB.Unscoped().Where("document_id = ?", docID).Delete(&entity.File2Document{}).Error
+}
+
+// Create inserts a new file2document mapping record.
+func (dao *File2DocumentDAO) Create(mapping *entity.File2Document) error {
+	return DB.Create(mapping).Error
 }

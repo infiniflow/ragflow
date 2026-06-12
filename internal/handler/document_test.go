@@ -49,6 +49,11 @@ type fakeDocumentService struct {
 	uploadWebData   map[string]interface{}
 	uploadWebCode   common.ErrorCode
 	uploadWebErr    error
+
+	metadataSummary map[string]interface{}
+	metadataErr     error
+	metadataKBID    string
+	metadataDocIDs  []string
 }
 
 func (f *fakeDocumentService) GetDocumentArtifact(filename string) (*service.ArtifactResponse, error) {
@@ -122,7 +127,9 @@ func (f *fakeDocumentService) GetDocumentsByAuthorID(authorID, page, pageSize in
 	return nil, 0, nil
 }
 func (f *fakeDocumentService) GetMetadataSummary(kbID string, docIDs []string) (map[string]interface{}, error) {
-	return nil, nil
+	f.metadataKBID = kbID
+	f.metadataDocIDs = docIDs
+	return f.metadataSummary, f.metadataErr
 }
 func (f *fakeDocumentService) SetDocumentMetadata(docID string, meta map[string]interface{}) error {
 	return nil
@@ -483,6 +490,59 @@ func TestStopParseDocumentsHandler_NotAccessible(t *testing.T) {
 	code, _ := resp["code"].(float64)
 	if code == float64(common.CodeSuccess) {
 		t.Fatal("expected error for no authorization")
+	}
+}
+
+func TestMetadataSummaryByDataset_Success(t *testing.T) {
+	db := setupHandlerAccessDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	gin.SetMode(gin.TestMode)
+
+	fake := &fakeDocumentService{
+		metadataSummary: map[string]interface{}{
+			"author": map[string]interface{}{
+				"type": "string",
+				"values": []interface{}{
+					[]interface{}{"alice", 2},
+				},
+			},
+		},
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  service.NewDatasetService(),
+	}
+
+	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/metadata/summary?doc_ids=doc-1,doc-2", "")
+	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+
+	h.MetadataSummaryByDataset(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if fake.metadataKBID != "ds-1" {
+		t.Fatalf("expected kbID ds-1, got %q", fake.metadataKBID)
+	}
+	if len(fake.metadataDocIDs) != 2 || fake.metadataDocIDs[0] != "doc-1" || fake.metadataDocIDs[1] != "doc-2" {
+		t.Fatalf("unexpected docIDs: %#v", fake.metadataDocIDs)
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected code 0, got %v: %v", resp["code"], resp)
+	}
+	data := resp["data"].(map[string]interface{})
+	summary := data["summary"].(map[string]interface{})
+	author := summary["author"].(map[string]interface{})
+	if author["type"] != "string" {
+		t.Fatalf("expected author type string, got %v", author["type"])
 	}
 }
 
