@@ -313,6 +313,10 @@ func InitProviderManager(dirPath string) error {
 	alias2ModelIndex := make(map[string]int)
 	for idx, model := range allModels.Models {
 		addModelAlias := func(alias string) error {
+			alias = strings.TrimSpace(alias)
+			if alias == "" {
+				return nil
+			}
 			lowerAlias := strings.ToLower(alias)
 			if existingIdx, ok := alias2ModelIndex[lowerAlias]; ok && existingIdx != idx {
 				return fmt.Errorf("duplicate alias %q for models %q and %q", alias, allModels.Models[existingIdx].Name, model.Name)
@@ -320,11 +324,11 @@ func InitProviderManager(dirPath string) error {
 			alias2ModelIndex[lowerAlias] = idx
 			return nil
 		}
-		if err := addModelAlias(model.Name); err != nil {
+		if err = addModelAlias(model.Name); err != nil {
 			return err
 		}
 		for _, alias := range model.Alias {
-			if err := addModelAlias(alias); err != nil {
+			if err = addModelAlias(alias); err != nil {
 				return err
 			}
 		}
