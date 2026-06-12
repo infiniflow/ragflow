@@ -7,7 +7,7 @@ docker compose -f docker/docker-compose-base.yml up -d
 ```
 
 ## 2. Build Go Version RAGFlow
-- First build (includes C++ dependencies):
+- First build (includes C++ dependencies and office_oxide native library):
 
 ```bash
 ./build.sh --cpp
@@ -18,6 +18,13 @@ docker compose -f docker/docker-compose-base.yml up -d
 ```bash
 ./build.sh --go
 ```
+
+> **Note**: If you use IDEs like GoLand to run/debug directly (via Run/Debug buttons), or run `go build` / `go run` from command line, you must set the following two CGO environment variables in your run configuration or shell:
+>
+> ```bash
+> export CGO_CFLAGS="-I${HOME}/.office_oxide/include/office_oxide_c"
+> export CGO_LDFLAGS="-L${HOME}/.office_oxide/lib -loffice_oxide -Wl,-rpath,${HOME}/.office_oxide/lib"
+> ```
 
 ## 3. Run Go Version RAGFlow
 Note: admin_server must be started first; otherwise, ragflow_server will encounter errors when sending heartbeats.

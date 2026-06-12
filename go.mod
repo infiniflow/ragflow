@@ -26,6 +26,8 @@ require (
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/siongui/gojianfan v0.0.0-20210926212422-2f175ac615de
 	github.com/spf13/viper v1.18.2
+	github.com/yfedoseev/office_oxide/go v0.1.2
+	github.com/yfedoseev/pdf_oxide/go v0.3.63
 	go.uber.org/zap v1.27.1
 	golang.org/x/crypto v0.49.0
 	golang.org/x/net v0.51.0
@@ -58,6 +60,7 @@ require (
 	github.com/chenzhuoyu/base64x v0.0.0-20221115062448-fe3a3abad311 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/ebitengine/purego v0.10.1 // indirect
 	github.com/elastic/elastic-transport-go/v8 v8.8.0 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.2 // indirect
