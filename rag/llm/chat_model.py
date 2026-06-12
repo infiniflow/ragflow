@@ -893,7 +893,7 @@ class LocalAIChat(Base):
 
         if not base_url:
             raise ValueError("Local llm url cannot be None")
-        self.client = OpenAI(api_key="empty", base_url=base_url)
+        self.client = OpenAI(api_key="empty", base_url=self.base_url)
         self.model_name = model_name.split("___")[0]
 
 
@@ -1031,7 +1031,7 @@ class LmStudioChat(Base):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
         super().__init__(key, model_name, base_url, **kwargs)
-        self.client = OpenAI(api_key="lm-studio", base_url=base_url)
+        self.client = OpenAI(api_key="lm-studio", base_url=self.base_url)
         self.model_name = model_name
 
 
@@ -1583,7 +1583,7 @@ class LiteLLMBase(ABC):
         self.prefix = LITELLM_PROVIDER_PREFIX.get(self.provider, "")
         self.model_name = f"{self.prefix}{model_name}"
         self.api_key = key
-        self.base_url = ensure_v1((base_url or FACTORY_DEFAULT_BASE_URL.get(self.provider, "")).rstrip("/"))
+        self.base_url = (base_url or FACTORY_DEFAULT_BASE_URL.get(self.provider, "")).rstrip("/")
         # Configure retry parameters
         self.max_retries = kwargs.get("max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5)))
         self.base_delay = kwargs.get("retry_interval", float(os.environ.get("LLM_BASE_DELAY", 2.0)))
