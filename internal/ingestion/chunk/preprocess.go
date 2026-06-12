@@ -23,9 +23,10 @@ import (
 )
 
 type PreprocessOperator struct {
-	normalizeNewlines bool
-	stripWhitespace   bool
-	removeEmptyLines  bool
+	normalizeNewlines    bool
+	stripWhitespace      bool
+	removeEmptyLines     bool
+	softLineBreakMerging bool
 }
 
 func NewPreprocessOperator(config map[string]interface{}) (*PreprocessOperator, error) {
@@ -46,6 +47,12 @@ func NewPreprocessOperator(config map[string]interface{}) (*PreprocessOperator, 
 		operator.removeEmptyLines, ok = v.(bool)
 		if !ok {
 			return nil, fmt.Errorf("preprocess: remove_empty_lines must be bool")
+		}
+	}
+	if v, ok := config["soft_line_break_merging"]; ok {
+		operator.softLineBreakMerging, ok = v.(bool)
+		if !ok {
+			return nil, fmt.Errorf("preprocess: soft_line_break_merging must be bool")
 		}
 	}
 	return operator, nil
@@ -85,6 +92,27 @@ func (o *PreprocessOperator) Execute(chunkCtx *ChunkContext) error {
 			}
 		}
 		text = strings.Join(filtered, "\n")
+	}
+
+	if o.softLineBreakMerging {
+		lines := strings.Split(text, "\n")
+		var merged []string
+		var current strings.Builder
+
+		sentenceEnd := regexp.MustCompile(`[.!?][\s]*$`)
+
+		for i, line := range lines {
+			if current.Len() > 0 {
+				current.WriteString(" ")
+			}
+			current.WriteString(line)
+
+			if i == len(lines)-1 || sentenceEnd.MatchString(line) {
+				merged = append(merged, current.String())
+				current.Reset()
+			}
+		}
+		text = strings.Join(merged, "\n")
 	}
 
 	chunkCtx.TextAfterPreprocess = text

@@ -183,6 +183,7 @@ func (o *PostprocessOperator) Execute(chunkCtx *ChunkContext) error {
 	// Re-index
 	for i := range chunks {
 		chunks[i].Index = i
+		chunks[i].Size = len(chunks[i].GetContent())
 	}
 
 	chunkCtx.ResultChunks = chunks

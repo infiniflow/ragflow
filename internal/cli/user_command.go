@@ -3300,12 +3300,13 @@ func (c *CLI) ChunkCommand(cmd *Command) (ResponseIf, error) {
 		explain = false
 	}
 
+	engine := ingestion.NewChunkEngine()
+	plan, err := engine.Compile(string(dsl))
+	if err != nil {
+		return nil, fmt.Errorf("compile failed: %w", err)
+	}
+
 	if explain {
-		engine := ingestion.NewChunkEngine()
-		plan, err := engine.Compile(string(dsl))
-		if err != nil {
-			return nil, fmt.Errorf("compile failed: %w", err)
-		}
 
 		explanation, err := engine.Explain(plan)
 		if err != nil {
@@ -3314,7 +3315,21 @@ func (c *CLI) ChunkCommand(cmd *Command) (ResponseIf, error) {
 
 		result.Message = explanation
 	} else {
-		fmt.Printf("Chunk file: %s, DSL: %s\n", filename, dsl)
+		fileToChunking, err := os.ReadFile(filename)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read file: %w", err)
+		}
+
+		chunkContext, err := engine.Execute(plan, string(fileToChunking))
+		if err != nil {
+			return nil, fmt.Errorf("chunking error: %w", err)
+		}
+
+		for _, resultChunk := range chunkContext.ResultChunks {
+			fmt.Printf("Chunk index: %d\n", resultChunk.Index)
+			fmt.Printf("Chunk size: %d\n", resultChunk.Size)
+			fmt.Printf("Chunk content: \n%s\n", resultChunk.Content)
+		}
 	}
 
 	result.Duration = time.Since(start).Seconds()
