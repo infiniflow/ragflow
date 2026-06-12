@@ -21,18 +21,19 @@ import (
 	"errors"
 	"fmt"
 	"mime"
+	"mime/multipart"
 	"net/http"
 	"path/filepath"
-	"ragflow/internal/common"
-	"ragflow/internal/entity"
-	"ragflow/internal/utility"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/service"
+	"ragflow/internal/utility"
 )
 
 var IMG_BASE64_PREFIX = "data:image/png;base64,"
@@ -59,12 +60,14 @@ type documentServiceIface interface {
 	GetDocumentArtifact(filename string) (*service.ArtifactResponse, error)
 	GetDocumentPreview(docID string) (*service.DocumentPreview, error)
 	DownloadDocument(datasetID, docID string) (*service.DownloadDocumentResp, error)
+	BatchUpdateDocumentMetadata(datasetID string, req *service.BatchUpdateMetadataRequest) (*service.BatchUpdateMetadataResult, error)
 }
 
 // DocumentHandler document handler
 type DocumentHandler struct {
 	documentService documentServiceIface
 	datasetService  *service.DatasetService
+	fileService     *service.FileService
 }
 
 // NewDocumentHandler create document handler
@@ -72,6 +75,7 @@ func NewDocumentHandler(documentService *service.DocumentService, datasetService
 	return &DocumentHandler{
 		documentService: documentService,
 		datasetService:  datasetService,
+		fileService:     service.NewFileService(),
 	}
 }
 
@@ -987,6 +991,195 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 	})
 }
 
+// UploadInfo uploads one or more files (or a URL) and returns file metadata.
+// Mirrors Python POST /api/v1/documents/upload (upload_info).
+// @Summary Upload document info
+// @Description Upload files via multipart form or supply ?url=... to fetch remotely.
+// @Tags documents
+// @Accept multipart/form-data
+// @Produce json
+// @Param file formData file false "File(s) to upload"
+// @Param url query string false "Remote URL to fetch"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/documents/upload [post]
+func (h *DocumentHandler) UploadInfo(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	url := c.Query("url")
+
+	// Distinguish "request isn't multipart" (benign — e.g. the ?url= path) from a
+	// malformed multipart body, which is a client error worth surfacing.
+	form, formErr := c.MultipartForm()
+	if formErr != nil && !errors.Is(formErr, http.ErrNotMultipart) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeArgumentError,
+			"data":    false,
+			"message": "invalid multipart form: " + formErr.Error(),
+		})
+		return
+	}
+	var files []*multipart.FileHeader
+	if form != nil && form.File != nil {
+		files = form.File["file"]
+	}
+
+	if len(files) > 0 && url != "" {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeArgumentError, "data": false,
+			"message": "Provide either multipart file(s) or ?url=..., not both."})
+		return
+	}
+	if len(files) == 0 && url == "" {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeArgumentError, "data": false,
+			"message": "Missing input: provide multipart file(s) or url"})
+		return
+	}
+
+	if url != "" {
+		// URL upload path — delegate to file service.
+		data, err := h.fileService.UploadFromURL(user.ID, url)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": data, "message": "success"})
+		return
+	}
+
+	// Multipart file(s).
+	uploaded, err := h.fileService.UploadFile(user.ID, "", files)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": err.Error()})
+		return
+	}
+
+	if len(files) == 1 {
+		if len(uploaded) > 0 {
+			c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": uploaded[0], "message": "success"})
+		} else {
+			c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": "upload failed"})
+		}
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": uploaded, "message": "success"})
+}
+
+// batchMetadataUpdate is the shared implementation for both bulk-metadata endpoints.
+func (h *DocumentHandler) batchMetadataUpdate(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := c.Param("dataset_id")
+	if datasetID == "" {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": "dataset_id is required"})
+		return
+	}
+
+	if !h.datasetService.Accessible(datasetID, user.ID) {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false,
+			"message": fmt.Sprintf("You don't own the dataset %s.", datasetID)})
+		return
+	}
+
+	var body struct {
+		Selector map[string]interface{}   `json:"selector"`
+		Updates  []map[string]interface{} `json:"updates"`
+		Deletes  []map[string]interface{} `json:"deletes"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": err.Error()})
+		return
+	}
+
+	// Validate updates.
+	updates := make([]service.MetadataUpdate, 0, len(body.Updates))
+	for _, u := range body.Updates {
+		key, hasKey := u["key"].(string)
+		_, hasVal := u["value"]
+		if !hasKey || key == "" || !hasVal {
+			c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": "Each update requires key and value."})
+			return
+		}
+		updates = append(updates, service.MetadataUpdate{Key: key, Value: u["value"]})
+	}
+
+	// Validate deletes.
+	deletes := make([]service.MetadataDelete, 0, len(body.Deletes))
+	for _, d := range body.Deletes {
+		key, ok := d["key"].(string)
+		if !ok || key == "" {
+			c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": "Each delete requires key."})
+			return
+		}
+		deletes = append(deletes, service.MetadataDelete{Key: key})
+	}
+
+	// Build selector.
+	selector := service.MetadataSelector{}
+	if body.Selector != nil {
+		if ids, ok := body.Selector["document_ids"].([]interface{}); ok {
+			for _, id := range ids {
+				if s, ok := id.(string); ok {
+					selector.DocumentIDs = append(selector.DocumentIDs, s)
+				}
+			}
+		}
+		if mc, ok := body.Selector["metadata_condition"].(map[string]interface{}); ok {
+			selector.MetadataCondition = mc
+		}
+	}
+
+	req := &service.BatchUpdateMetadataRequest{
+		Selector: selector,
+		Updates:  updates,
+		Deletes:  deletes,
+	}
+
+	result, err := h.documentService.BatchUpdateDocumentMetadata(datasetID, req)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": result, "message": "success"})
+}
+
+// UpdateDocumentMetadatas handles PATCH /api/v1/datasets/:dataset_id/documents/metadatas.
+// Mirrors Python PATCH /datasets/<dataset_id>/documents/metadatas (update_metadata).
+// @Summary Bulk update document metadata
+// @Description Bulk-set or bulk-delete metadata fields on documents in a dataset.
+// @Tags documents
+// @Accept json
+// @Produce json
+// @Param dataset_id path string true "Dataset ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/datasets/{dataset_id}/documents/metadatas [patch]
+func (h *DocumentHandler) UpdateDocumentMetadatas(c *gin.Context) {
+	h.batchMetadataUpdate(c)
+}
+
+// MetadataBatchUpdate handles POST /api/v1/datasets/:dataset_id/metadata/update.
+// Mirrors Python POST /datasets/<dataset_id>/metadata/update (metadata_batch_update).
+// @Summary Batch update document metadata (POST variant)
+// @Description Batch-apply updates and deletes to document metadata via selector.
+// @Tags documents
+// @Accept json
+// @Produce json
+// @Param dataset_id path string true "Dataset ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/datasets/{dataset_id}/metadata/update [post]
+func (h *DocumentHandler) MetadataBatchUpdate(c *gin.Context) {
+	h.batchMetadataUpdate(c)
+}
+
+// MetadataSummaryByDataset handles GET /api/v1/datasets/:dataset_id/documents/metadata/summary.
+// Returns the aggregated metadata field summary for the dataset's documents.
 func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {

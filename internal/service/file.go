@@ -21,18 +21,22 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
-	"strings"
-	"time"
-
-	"github.com/google/uuid"
 )
 
 // FileService file service
@@ -153,6 +157,25 @@ const DatasetFolderName = ".knowledgebase"
 
 // FileSourceDataset represents dataset as file source
 const FileSourceDataset = "knowledgebase"
+
+// toUploadInfoResponse converts a newly-uploaded file record to the shape
+// Python's upload_info endpoint returns.
+func (s *FileService) toUploadInfoResponse(file *entity.File, mimeType string) map[string]interface{} {
+	ext := ""
+	if idx := strings.LastIndex(file.Name, "."); idx >= 0 {
+		ext = strings.ToLower(file.Name[idx+1:])
+	}
+	return map[string]interface{}{
+		"id":          file.ID,
+		"name":        file.Name,
+		"size":        file.Size,
+		"extension":   ext,
+		"mime_type":   mimeType,
+		"created_by":  file.CreatedBy,
+		"created_at":  float64(time.Now().UnixMilli()) / 1000.0,
+		"preview_url": nil,
+	}
+}
 
 // toFileResponse converts file model to response format
 func (s *FileService) toFileResponse(file *entity.File) map[string]interface{} {
@@ -383,7 +406,8 @@ func (s *FileService) UploadFile(tenantID, parentID string, files []*multipart.F
 			return nil, fmt.Errorf("failed to insert file record: %w", err)
 		}
 
-		result = append(result, s.toFileResponse(fileRecord))
+		mimeType := fileHeader.Header.Get("Content-Type")
+		result = append(result, s.toUploadInfoResponse(fileRecord, mimeType))
 	}
 
 	return result, nil
@@ -990,6 +1014,206 @@ func (s *FileService) GetStorageAddress(fileID string) (*StorageAddress, error) 
 		Bucket: doc.KbID,
 		Name:   *doc.Location,
 	}, nil
+}
+
+// maxRemoteFileSize bounds the body of a ?url= upload (100 MB).
+const maxRemoteFileSize = 100 << 20
+
+// UploadFromURL fetches a remote URL, saves the content to the tenant's root
+// folder, and returns the file metadata map — mirroring Python
+// FileService.upload_info(tenant_id, None, url).
+//
+// The remote fetch is SSRF-guarded (mirrors Python's assert_url_is_safe): the
+// scheme must be http/https and every address the host resolves to must be
+// globally routable; the validated IP is pinned for the actual connection — and
+// re-validated on each redirect hop — to defeat DNS-rebinding. The HTTP client
+// carries connect and overall timeouts, and the response body is bounded with
+// truncation detection so an oversized file is rejected rather than silently
+// clipped.
+func (s *FileService) UploadFromURL(tenantID, rawURL string) (map[string]interface{}, error) {
+	if rawURL == "" {
+		return nil, fmt.Errorf("url is required")
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" {
+		return nil, fmt.Errorf("invalid or unsafe URL")
+	}
+
+	data, err := fetchRemoteFileSafely(rawURL, maxRemoteFileSize)
+	if err != nil {
+		return nil, err
+	}
+
+	// Derive and sanitize the filename from the URL path.
+	filename := sanitizeFilename(filepath.Base(parsed.Path))
+
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, fmt.Errorf("storage not initialized")
+	}
+
+	rootFolder, err := s.fileDAO.GetRootFolder(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get root folder: %w", err)
+	}
+
+	location := filename
+	for storageImpl.ObjExist(rootFolder.ID, location) {
+		location += "_"
+	}
+	if err := storageImpl.Put(rootFolder.ID, location, data); err != nil {
+		return nil, fmt.Errorf("failed to store file: %w", err)
+	}
+
+	uniqueName := s.getUniqueFilename(filename, rootFolder.ID)
+	fileType := utility.FilenameType(filename)
+	fileRecord := &entity.File{
+		ID:        s.generateUUID(),
+		ParentID:  rootFolder.ID,
+		TenantID:  tenantID,
+		CreatedBy: tenantID,
+		Name:      uniqueName,
+		Location:  &location,
+		Size:      int64(len(data)),
+		Type:      fileType,
+	}
+	if err := s.fileDAO.Insert(fileRecord); err != nil {
+		return nil, fmt.Errorf("failed to insert file record: %w", err)
+	}
+	mimeType := http.DetectContentType(data)
+	return s.toUploadInfoResponse(fileRecord, mimeType), nil
+}
+
+// fetchRemoteFileSafely downloads rawURL with SSRF protection, connect/overall
+// timeouts, and a hard size cap that rejects (rather than truncates) oversized
+// bodies.
+func fetchRemoteFileSafely(rawURL string, maxSize int64) ([]byte, error) {
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	transport := &http.Transport{
+		// DialContext resolves the host, rejects any non-public IP, and dials a
+		// validated, pinned address. Because it runs for every connection it
+		// also re-validates the target of each redirect hop.
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
+			if err != nil {
+				return nil, fmt.Errorf("could not resolve host %q: %w", host, err)
+			}
+			var pinned net.IP
+			for _, ip := range ips {
+				if !isPublicIP(ip) {
+					return nil, fmt.Errorf("URL resolves to a non-public address (%s)", ip)
+				}
+				if pinned == nil {
+					pinned = ip
+				}
+			}
+			if pinned == nil {
+				return nil, fmt.Errorf("host %q resolved to no addresses", host)
+			}
+			return dialer.DialContext(ctx, network, net.JoinHostPort(pinned.String(), port))
+		},
+	}
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   30 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return fmt.Errorf("stopped after too many redirects")
+			}
+			if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+				return fmt.Errorf("disallowed redirect scheme %q", req.URL.Scheme)
+			}
+			return nil
+		},
+	}
+
+	resp, err := client.Get(rawURL) // #nosec G107 — scheme validated, IP resolved/validated/pinned in DialContext
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch URL: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("remote URL returned HTTP %d", resp.StatusCode)
+	}
+
+	// Read one byte past the cap so an oversized body is detected and rejected
+	// rather than silently truncated by io.LimitReader.
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxSize+1))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read remote content: %w", err)
+	}
+	if int64(len(data)) > maxSize {
+		return nil, fmt.Errorf("remote file exceeds the maximum allowed size of %d bytes", maxSize)
+	}
+	return data, nil
+}
+
+// isPublicIP reports whether ip is a globally routable address. It mirrors the
+// allowlist intent of Python's assert_url_is_safe (which requires ip.is_global)
+// by rejecting loopback, private, link-local, multicast, unspecified, and
+// carrier-grade NAT ranges. IPv4-mapped IPv6 addresses are handled by the
+// stdlib predicates.
+func isPublicIP(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() ||
+		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsMulticast() || ip.IsInterfaceLocalMulticast() {
+		return false
+	}
+	// Carrier-grade NAT 100.64.0.0/10 (RFC 6598) — not covered by IsPrivate.
+	if ip4 := ip.To4(); ip4 != nil && ip4[0] == 100 && ip4[1]&0xc0 == 0x40 {
+		return false
+	}
+	return true
+}
+
+// reservedDeviceNames are Windows reserved filenames that must never be used.
+var reservedDeviceNames = map[string]bool{
+	"CON": true, "PRN": true, "AUX": true, "NUL": true,
+	"COM1": true, "COM2": true, "COM3": true, "COM4": true, "COM5": true,
+	"COM6": true, "COM7": true, "COM8": true, "COM9": true,
+	"LPT1": true, "LPT2": true, "LPT3": true, "LPT4": true, "LPT5": true,
+	"LPT6": true, "LPT7": true, "LPT8": true, "LPT9": true,
+}
+
+// sanitizeFilename produces a safe, filesystem-friendly filename from an
+// arbitrary URL path segment: it strips directory components, replaces unsafe /
+// control characters, rejects reserved names, bounds the length, and falls back
+// to "download".
+func sanitizeFilename(name string) string {
+	name = filepath.Base(name)
+	name = strings.TrimSpace(name)
+
+	name = strings.Map(func(r rune) rune {
+		switch r {
+		case '/', '\\', ':', '*', '?', '"', '<', '>', '|', 0:
+			return '_'
+		}
+		if r < 0x20 { // control characters
+			return '_'
+		}
+		return r
+	}, name)
+
+	// Strip leading/trailing dots and spaces to avoid hidden or reserved forms.
+	name = strings.Trim(name, ". ")
+
+	if name == "" || name == "." || name == ".." {
+		return "download"
+	}
+	if stem := strings.SplitN(strings.ToUpper(name), ".", 2)[0]; reservedDeviceNames[stem] {
+		return "download"
+	}
+	if len(name) > 255 {
+		name = name[:255]
+	}
+	return name
 }
 
 // DownloadAgentFile downloads an agent-generated file directly from MinIO without querying the database.

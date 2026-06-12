@@ -23,23 +23,23 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"ragflow/internal/common"
-	"ragflow/internal/entity"
-	"ragflow/internal/storage"
-	"ragflow/internal/utility"
 	"regexp"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+	"go.uber.org/zap"
+	"gorm.io/gorm"
+
 	"ragflow/internal/cache"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
-
+	"ragflow/internal/entity"
 	"ragflow/internal/server"
-
-	"github.com/google/uuid"
-	"gorm.io/gorm"
+	"ragflow/internal/storage"
+	"ragflow/internal/utility"
 )
 
 // DocumentService document service
@@ -58,13 +58,17 @@ type DocumentService struct {
 // NewDocumentService create document service
 func NewDocumentService() *DocumentService {
 	cfg := server.GetConfig()
+	var engineType server.EngineType
+	if cfg != nil {
+		engineType = cfg.DocEngine.Type
+	}
 	return &DocumentService{
 		documentDAO:      dao.NewDocumentDAO(),
 		ingestionTaskDAO: dao.NewIngestionDAO(),
 		ingestionLogDAO:  dao.NewIngestionLogDAO(),
 		kbDAO:            dao.NewKnowledgebaseDAO(),
 		docEngine:        engine.Get(),
-		engineType:       cfg.DocEngine.Type,
+		engineType:       engineType,
 		metadataSvc:      NewMetadataService(),
 		taskDAO:          dao.NewTaskDAO(),
 		file2DocumentDAO: dao.NewFile2DocumentDAO(),
@@ -1419,3 +1423,148 @@ func isTimeString(s string) bool {
 	matched, _ := regexp.MatchString(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$`, s)
 	return matched
 }
+
+// ── batch metadata update ─────────────────────────────────────────────────────
+
+// MetadataUpdate is one update item: set key to value.
+type MetadataUpdate struct {
+	Key   string      `json:"key"`
+	Value interface{} `json:"value"`
+}
+
+// MetadataDelete is one delete item: remove key.
+type MetadataDelete struct {
+	Key string `json:"key"`
+}
+
+// MetadataSelector selects which documents to target.
+type MetadataSelector struct {
+	DocumentIDs       []string               `json:"document_ids"`
+	MetadataCondition map[string]interface{} `json:"metadata_condition"`
+}
+
+// BatchUpdateMetadataRequest is the shared body for both bulk-metadata endpoints.
+type BatchUpdateMetadataRequest struct {
+	Selector MetadataSelector `json:"selector"`
+	Updates  []MetadataUpdate `json:"updates"`
+	Deletes  []MetadataDelete `json:"deletes"`
+}
+
+// BatchUpdateMetadataResult summarises the operation.
+type BatchUpdateMetadataResult struct {
+	Updated     int `json:"updated"`
+	MatchedDocs int `json:"matched_docs"`
+}
+
+// BatchUpdateDocumentMetadata implements the shared logic for
+// PATCH /datasets/:dataset_id/documents/metadatas  and
+// POST  /datasets/:dataset_id/metadata/update.
+//
+// Steps (mirrors Python):
+//  1. Validate document_ids belong to the dataset.
+//  2. Apply metadata_condition filter if provided.
+//  3. Set / delete metadata for each target document.
+func (s *DocumentService) BatchUpdateDocumentMetadata(datasetID string, req *BatchUpdateMetadataRequest) (*BatchUpdateMetadataResult, error) {
+	// Resolve which document IDs to target.
+	targetDocIDs := make(map[string]struct{})
+
+	if len(req.Selector.DocumentIDs) > 0 {
+		// Validate that supplied IDs actually belong to this dataset.
+		allRows, err := s.documentDAO.GetAllDocIDsByKBIDs([]string{datasetID})
+		if err != nil {
+			return nil, fmt.Errorf("failed to list dataset documents: %w", err)
+		}
+		kbDocIDSet := make(map[string]struct{}, len(allRows))
+		for _, row := range allRows {
+			kbDocIDSet[row["id"]] = struct{}{}
+		}
+		var invalidIDs []string
+		for _, id := range req.Selector.DocumentIDs {
+			if _, ok := kbDocIDSet[id]; !ok {
+				invalidIDs = append(invalidIDs, id)
+			}
+		}
+		if len(invalidIDs) > 0 {
+			return nil, fmt.Errorf("these documents do not belong to dataset %s: %s",
+				datasetID, strings.Join(invalidIDs, ", "))
+		}
+		for _, id := range req.Selector.DocumentIDs {
+			targetDocIDs[id] = struct{}{}
+		}
+	}
+
+	// Apply metadata_condition filter.
+	if len(req.Selector.MetadataCondition) > 0 {
+		flattedMeta, err := s.metadataSvc.GetFlattedMetaByKBs([]string{datasetID})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get flattened metadata: %w", err)
+		}
+
+		// ParseAndConvert mirrors Python convert_conditions: conditions arrive as
+		// {name, comparison_operator, value}, the operator is normalised, and the
+		// (possibly non-string) value is preserved. MetaFilter then matches against
+		// the common.MetaData returned by GetFlattedMetaByKBs.
+		filterInput := common.ParseAndConvert(req.Selector.MetadataCondition)
+		filteredIDs := common.MetaFilter(flattedMeta, filterInput)
+
+		filteredSet := make(map[string]struct{}, len(filteredIDs))
+		for _, id := range filteredIDs {
+			filteredSet[id] = struct{}{}
+		}
+
+		if len(targetDocIDs) > 0 {
+			// Intersect with the document_ids restriction.
+			for id := range targetDocIDs {
+				if _, ok := filteredSet[id]; !ok {
+					delete(targetDocIDs, id)
+				}
+			}
+		} else {
+			targetDocIDs = filteredSet
+		}
+
+		// Early-exit when conditions given but nothing matched.
+		rawConds, _ := req.Selector.MetadataCondition["conditions"]
+		if rawConds != nil && len(targetDocIDs) == 0 {
+			return &BatchUpdateMetadataResult{Updated: 0, MatchedDocs: 0}, nil
+		}
+	}
+
+	ids := make([]string, 0, len(targetDocIDs))
+	for id := range targetDocIDs {
+		ids = append(ids, id)
+	}
+
+	// Apply updates and deletes per document.
+	updated := 0
+	for _, docID := range ids {
+		if len(req.Updates) > 0 {
+			meta := make(map[string]interface{}, len(req.Updates))
+			for _, u := range req.Updates {
+				meta[u.Key] = u.Value
+			}
+			if err := s.SetDocumentMetadata(docID, meta); err != nil {
+				common.Warn("BatchUpdateDocumentMetadata: set metadata failed",
+					zap.String("docID", docID), zap.Error(err))
+				continue
+			}
+		}
+		if len(req.Deletes) > 0 {
+			keys := make([]string, 0, len(req.Deletes))
+			for _, d := range req.Deletes {
+				keys = append(keys, d.Key)
+			}
+			if err := s.DeleteDocumentMetadata(docID, keys); err != nil {
+				common.Warn("BatchUpdateDocumentMetadata: delete metadata failed",
+					zap.String("docID", docID), zap.Error(err))
+				// Only count a document as updated when every requested
+				// operation (updates AND deletes) succeeded.
+				continue
+			}
+		}
+		updated++
+	}
+
+	return &BatchUpdateMetadataResult{Updated: updated, MatchedDocs: len(ids)}, nil
+}
+
