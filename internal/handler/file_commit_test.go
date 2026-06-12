@@ -70,7 +70,7 @@ func (m *mockFileCommitSvc) GetCommit(commitID string) (*entity.FileCommit, erro
 	if m.getCommitFn != nil {
 		return m.getCommitFn(commitID)
 	}
-	return &entity.FileCommit{ID: commitID, Message: "test commit", AuthorID: "u1", FileCount: 1}, nil
+	return &entity.FileCommit{ID: commitID, FolderID: "folder-1", Message: "test commit", AuthorID: "u1", FileCount: 1}, nil
 }
 
 func (m *mockFileCommitSvc) ListCommitFiles(commitID string) ([]*entity.FileCommitItem, error) {

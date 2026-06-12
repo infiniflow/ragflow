@@ -281,8 +281,7 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
 # For other entity types entity_id is resolved via _resolve_folder_id().
 _register_commit_routes('/folders/<entity_id>', 'entity_id')  # direct — entity_id == folder_id
 _register_commit_routes('/datasets/<entity_id>', 'entity_id', resolver_type='datasets')
-_register_commit_routes('/memories/<entity_id>', 'entity_id', resolver_type='memories')
-_register_commit_routes('/skills/<entity_id>', 'entity_id', resolver_type='skills')
+# /memories and /skills routes are not mounted until resolvers are implemented.
 
 
 # ── File version history (shared across all entity types) ─────────────────

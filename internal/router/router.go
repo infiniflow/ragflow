@@ -334,33 +334,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			commitDatasets.GET("/changes", r.fileCommitHandler.GetUncommittedChanges)
 		}
 
-		// /memories/{memory_id}/commits — resolve memory_id → folder_id
-		commitMemories := v1.Group("/memories/:memory_id")
-		commitMemories.Use(handler.CommitFolderResolver(r.fileCommitHandler, "memories", "memory_id"))
-		{
-			commitMemories.POST("/commits", r.fileCommitHandler.CreateCommit)
-			commitMemories.GET("/commits", r.fileCommitHandler.ListCommits)
-			commitMemories.GET("/commits/diff", r.fileCommitHandler.DiffCommits)
-			commitMemories.GET("/commits/:commit_id", r.fileCommitHandler.GetCommit)
-			commitMemories.GET("/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
-			commitMemories.GET("/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
-			commitMemories.GET("/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
-			commitMemories.GET("/changes", r.fileCommitHandler.GetUncommittedChanges)
-		}
 
-		// /skills/{skill_id}/commits — resolve skill_id → folder_id
-		commitSkills := v1.Group("/skills/:skill_id")
-		commitSkills.Use(handler.CommitFolderResolver(r.fileCommitHandler, "skills", "skill_id"))
-		{
-			commitSkills.POST("/commits", r.fileCommitHandler.CreateCommit)
-			commitSkills.GET("/commits", r.fileCommitHandler.ListCommits)
-			commitSkills.GET("/commits/diff", r.fileCommitHandler.DiffCommits)
-			commitSkills.GET("/commits/:commit_id", r.fileCommitHandler.GetCommit)
-			commitSkills.GET("/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
-			commitSkills.GET("/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
-			commitSkills.GET("/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
-			commitSkills.GET("/changes", r.fileCommitHandler.GetUncommittedChanges)
-		}
 
 			// Author routes
 			authors := v1.Group("/authors")

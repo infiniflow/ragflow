@@ -230,6 +230,7 @@ func startServer(config *server.Config) {
 	searchBotHandler.SetAskService(service.NewAskService(chunkService, nil, 0, 0))
 	pluginHandler := handler.NewPluginHandler(service.NewPluginService())
 	modelHandler := handler.NewModelHandler(service.NewModelProviderService())
+	fileCommitHandler := handler.NewFileCommitHandler(service.NewFileCommitService())
 
 	// Dify retrieval handler
 	docDAO := dao.NewDocumentDAO()
@@ -244,7 +245,7 @@ func startServer(config *server.Config) {
 	)
 
 	// Initialize router
-	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler)
+	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler, fileCommitHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()
