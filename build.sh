@@ -18,6 +18,10 @@ RAGFLOW_SERVER_BINARY="$PROJECT_ROOT/bin/server_main"
 ADMIN_SERVER_BINARY="$PROJECT_ROOT/bin/admin_server"
 RAGFLOW_CLI_BINARY="$PROJECT_ROOT/bin/ragflow_cli"
 
+# office_oxide native library settings
+OFFICE_OXIDE_PREFIX="${HOME}/.office_oxide"
+OFFICE_OXIDE_VERSION="0.1.2"
+
 echo -e "${GREEN}=== RAGFlow Go Server Build Script ===${NC}"
 
 # Function to print section headers
@@ -52,6 +56,79 @@ check_go_deps() {
     command -v go >/dev/null 2>&1 || { echo -e "${RED}Error: go is required but not installed.${NC}"; exit 1; }
 
     echo "✓ Required tools are available"
+}
+
+# Download and extract a tar.gz from a URL to a target directory
+_download_and_extract() {
+    local url="$1" target_dir="$2"
+    echo "Downloading ${url} ..."
+    local tmpfile
+    tmpfile="$(mktemp)"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "$url" -o "$tmpfile"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q "$url" -O "$tmpfile"
+    else
+        echo -e "${RED}Error: need curl or wget to download office_oxide${NC}"
+        exit 1
+    fi
+    tar xzf "$tmpfile" -C "$target_dir"
+    rm -f "$tmpfile"
+}
+
+# Check / install office_oxide native library (Rust → C FFI library)
+check_office_oxide_deps() {
+    print_section "Checking office_oxide native library"
+
+    local lib_file header_path
+    case "$(uname -s)" in
+        Linux)  lib_file="liboffice_oxide.so" ;;
+        Darwin) lib_file="liboffice_oxide.dylib" ;;
+        *)      echo -e "${RED}Unsupported OS for office_oxide${NC}"; exit 1 ;;
+    esac
+
+    local lib_path="${OFFICE_OXIDE_PREFIX}/lib/${lib_file}"
+    local header_path="${OFFICE_OXIDE_PREFIX}/include/office_oxide_c/office_oxide.h"
+
+    if [ -f "$lib_path" ] && [ -f "$header_path" ]; then
+        echo "✓ office_oxide native library found at ${OFFICE_OXIDE_PREFIX}"
+        return 0
+    fi
+
+    echo "office_oxide native library not found. Installing..."
+
+    # Map platform to the release asset name. Note: the GitHub release archives
+    # omit the version number from the native-* asset filenames.
+    local asset_name
+    case "$(uname -s)" in
+        Linux)
+            case "$(uname -m)" in
+                x86_64)  asset_name="native-linux-x86_64" ;;
+                aarch64|arm64) asset_name="native-linux-aarch64" ;;
+                *) echo -e "${RED}Unsupported arch: $(uname -m)${NC}"; exit 1 ;;
+            esac
+            ;;
+        Darwin)
+            case "$(uname -m)" in
+                x86_64)  asset_name="native-macos-x86_64" ;;
+                aarch64|arm64) asset_name="native-macos-aarch64" ;;
+                *) echo -e "${RED}Unsupported arch: $(uname -m)${NC}"; exit 1 ;;
+            esac
+            ;;
+    esac
+
+    local release_url="https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VERSION}/${asset_name}.tar.gz"
+
+    mkdir -p "${OFFICE_OXIDE_PREFIX}"
+    _download_and_extract "$release_url" "${OFFICE_OXIDE_PREFIX}"
+
+    if [ ! -f "$lib_path" ]; then
+        echo -e "${RED}Error: Failed to install office_oxide native library (missing ${lib_path})${NC}"
+        echo "  Try: curl -fsSL ${release_url} | tar xzf - -C ${OFFICE_OXIDE_PREFIX}"
+        exit 1
+    fi
+
+    echo -e "${GREEN}✓ office_oxide native library installed${NC}"
 }
 
 # Build C++ static library
@@ -103,11 +180,26 @@ build_go() {
         echo -e "${YELLOW}Warning: libpcre2-8 not found. You may need to install libpcre2-dev:${NC}"
         sudo apt -y install libpcre2-dev
     fi
-    
+
+    # Check / install office_oxide native library
+    check_office_oxide_deps
+
+    # Export CGO flags so go build can find office_oxide headers and library
+    export CGO_CFLAGS="-I${OFFICE_OXIDE_PREFIX}/include/office_oxide_c${CGO_CFLAGS:+ $CGO_CFLAGS}"
+    echo "Exporting CGO_CFLAGS: $CGO_CFLAGS"
+    export CGO_LDFLAGS="-L${OFFICE_OXIDE_PREFIX}/lib -loffice_oxide -Wl,-rpath,${OFFICE_OXIDE_PREFIX}/lib${CGO_LDFLAGS:+ $CGO_LDFLAGS}"
+    echo "Exporting CGO_LDFLAGS: $CGO_LDFLAGS"
+
     echo "Building RAGFlow binary: $RAGFLOW_SERVER_BINARY, $ADMIN_SERVER_BINARY, and $RAGFLOW_CLI_BINARY"
-    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 go build -o "$RAGFLOW_SERVER_BINARY" cmd/server_main.go
-    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 go build -o "$ADMIN_SERVER_BINARY" cmd/admin_server.go
-    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 go build -o "$RAGFLOW_CLI_BINARY" cmd/ragflow_cli.go
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
+        CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
+        go build -o "$RAGFLOW_SERVER_BINARY" cmd/server_main.go
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
+        CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
+        go build -o "$ADMIN_SERVER_BINARY" cmd/admin_server.go
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
+        CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
+        go build -o "$RAGFLOW_CLI_BINARY" cmd/ragflow_cli.go
 
     if [ ! -f "$RAGFLOW_SERVER_BINARY" ]; then
         echo -e "${RED}Error: Failed to build RAGFlow server binary${NC}"
@@ -183,6 +275,7 @@ DEPENDENCIES:
     - go >= 1.24
     - g++ with C++17/23 support
     - libpcre2-dev
+    - office_oxide native library (auto-downloaded on first build)
 EOF
 }
 

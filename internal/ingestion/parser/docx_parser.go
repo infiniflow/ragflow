@@ -55,7 +55,7 @@ func (p *DOCXParser) Parse(filename string, data []byte) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(md)
+	fmt.Println("Document Markdown:", md)
 	return nil
 }
 
