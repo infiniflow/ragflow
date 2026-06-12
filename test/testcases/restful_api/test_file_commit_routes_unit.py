@@ -23,7 +23,6 @@ are mocked.
 import asyncio
 import functools
 import importlib.util
-import json
 import logging
 import sys
 from pathlib import Path
@@ -122,7 +121,14 @@ class FileTestModel(BaseTestModel):
         db_table = "file"
 
 
-sqlite_db.create_tables([FileCommitTestModel, FileCommitItemTestModel, FileTestModel])
+_TABLES = [FileCommitTestModel, FileCommitItemTestModel, FileTestModel]
+sqlite_db.create_tables(_TABLES)
+
+
+def _clear_db():
+    """Delete all rows from every test table so each test starts clean."""
+    for model in _TABLES:
+        model.delete().execute()
 
 
 # ── Module loader ─────────────────────────────────────────────────────────
@@ -300,7 +306,7 @@ def _load_module(monkeypatch):
 def _setup_request(module, json_payload=None, args=None):
     """Set up a request payload and query args for the next handler call."""
     if json_payload is not None:
-        monkeypatch.setattr(module, "get_request_json", _mk_req_maker(json_payload))
+        module.get_request_json = _mk_req_maker(json_payload)
     if args is not None:
         module.request.args = args
 
@@ -315,6 +321,12 @@ def auth():
 @pytest.fixture(scope="session", autouse=True)
 def set_tenant_info():
     return None
+
+
+@pytest.fixture(autouse=True)
+def reset_db():
+    """Clear all rows before each test to prevent order-dependent failures."""
+    _clear_db()
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────
