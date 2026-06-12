@@ -29,7 +29,8 @@ manager = None  # type: ignore[assignment]
 from api.db.services.file_commit_service import FileCommitService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.file_service import FileService
-from api.db import KNOWLEDGEBASE_FOLDER_NAME, FileSource
+from api.db import KNOWLEDGEBASE_FOLDER_NAME
+from common.constants import FileSource
 
 logger = logging.getLogger(__name__)
 
@@ -61,13 +62,19 @@ def _resolve_folder_id(entity_type, entity_id):
 
 @_register_resolver("datasets")
 def _resolve_dataset_folder(dataset_id):
-    kb = KnowledgebaseService.get_by_id(dataset_id)
-    if not kb:
+    success, kb = KnowledgebaseService.get_by_id(dataset_id)
+    if not success:
         return None
-    kb = kb[1] if isinstance(kb, tuple) else kb
-    # Find the folder under .knowledgebase/ with matching name
-    folder = FileService.get_by_name(kb.tenant_id, kb.name, source_type=FileSource.KNOWLEDGEBASE.value if hasattr(FileSource, 'value') else "knowledgebase")
-    return folder.id if folder else None
+    # Find the folder with matching name, source_type, and tenant_id
+    folders = FileService.query(
+        name=kb.name,
+        source_type=FileSource.KNOWLEDGEBASE.value,
+        type="folder",
+        tenant_id=kb.tenant_id,
+    )
+    if folders:
+        return folders[0].id
+    return None
 
 
 # ── Route registration helper ─────────────────────────────────────────────
