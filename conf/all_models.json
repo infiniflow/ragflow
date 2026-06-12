@@ -6714,6 +6714,4118 @@
       "model_types": [
         "ocr"
       ]
+    },
+    {
+      "name": "baichuan-inc/baichuan-m3-235b-q4_k_m-gguf",
+      "alias": [
+        "baichuan-inc/Baichuan-M3-235B-Q4_K_M-GGUF",
+        "Baichuan-M3-235B-Q4_K_M-GGUF",
+        "baichuan-m3-235b-q4_k_m-gguf"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "baichuan-inc/baichuan-m2-32b-q4_k_m-gguf",
+      "alias": [
+        "baichuan-inc/Baichuan-M2-32B-Q4_K_M-GGUF",
+        "Baichuan-M2-32B-Q4_K_M-GGUF",
+        "baichuan-m2-32b-q4_k_m-gguf"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "baichuan-inc/baichuan-m3-235b-gptq-int4",
+      "alias": [
+        "baichuan-inc/Baichuan-M3-235B-GPTQ-INT4",
+        "Baichuan-M3-235B-GPTQ-INT4",
+        "baichuan-m3-235b-gptq-int4"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "baichuan-inc/baichuan-m3-235b-fp8",
+      "alias": [
+        "baichuan-inc/Baichuan-M3-235B-FP8",
+        "Baichuan-M3-235B-FP8",
+        "baichuan-m3-235b-fp8"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "baichuan-inc/baichuan-m3-235b",
+      "alias": [
+        "baichuan-inc/Baichuan-M3-235B",
+        "Baichuan-M3-235B",
+        "baichuan-m3-235b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "baichuan-inc/baichuan-m2-32b",
+      "alias": [
+        "baichuan-inc/Baichuan-M2-32B",
+        "Baichuan-M2-32B",
+        "baichuan-m2-32b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "baichuan-inc/baichuan-m2-32b-gptq-int4",
+      "alias": [
+        "baichuan-inc/Baichuan-M2-32B-GPTQ-Int4",
+        "Baichuan-M2-32B-GPTQ-Int4",
+        "baichuan-m2-32b-gptq-int4"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "baichuan-inc/baichuanmed-ocr-7b",
+      "alias": [
+        "baichuan-inc/BaichuanMed-OCR-7B",
+        "BaichuanMed-OCR-7B",
+        "baichuanmed-ocr-7b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "ocr",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "baichuan-inc/baichuanmed-ocr-72b",
+      "alias": [
+        "baichuan-inc/BaichuanMed-OCR-72B",
+        "BaichuanMed-OCR-72B",
+        "baichuanmed-ocr-72b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "ocr",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "baichuan-inc/baichuan-audio-base",
+      "alias": [
+        "baichuan-inc/Baichuan-Audio-Base",
+        "Baichuan-Audio-Base",
+        "baichuan-audio-base"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "audio",
+        "asr",
+        "tts"
+      ]
+    },
+    {
+      "name": "baichuan-inc/baichuan-audio-instruct",
+      "alias": [
+        "baichuan-inc/Baichuan-Audio-Instruct",
+        "Baichuan-Audio-Instruct",
+        "baichuan-audio-instruct"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "audio",
+        "asr",
+        "tts",
+        "chat"
+      ]
+    },
+    {
+      "name": "baichuan-inc/baichuan-m1-14b-instruct",
+      "alias": [
+        "baichuan-inc/Baichuan-M1-14B-Instruct",
+        "Baichuan-M1-14B-Instruct",
+        "baichuan-m1-14b-instruct"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baichuan-inc/baichuan-m1-14b-base",
+      "alias": [
+        "baichuan-inc/Baichuan-M1-14B-Base",
+        "Baichuan-M1-14B-Base",
+        "baichuan-m1-14b-base"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baichuan-inc/baichuan-omni-1d5-base",
+      "alias": [
+        "baichuan-inc/Baichuan-Omni-1d5-Base",
+        "Baichuan-Omni-1d5-Base",
+        "baichuan-omni-1d5-base",
+        "Baichuan-Omni-1.5-Base"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat",
+        "vision",
+        "image2text",
+        "audio",
+        "asr",
+        "tts",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "baichuan-inc/baichuan-omni-1d5",
+      "alias": [
+        "baichuan-inc/Baichuan-Omni-1d5",
+        "Baichuan-Omni-1d5",
+        "baichuan-omni-1d5",
+        "Baichuan-Omni-1.5"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat",
+        "vision",
+        "image2text",
+        "audio",
+        "asr",
+        "tts",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "baichuan-inc/baichuan2-13b-chat",
+      "alias": [
+        "baichuan-inc/Baichuan2-13B-Chat",
+        "Baichuan2-13B-Chat",
+        "baichuan2-13b-chat"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baichuan-inc/baichuan2-7b-chat",
+      "alias": [
+        "baichuan-inc/Baichuan2-7B-Chat",
+        "Baichuan2-7B-Chat",
+        "baichuan2-7b-chat"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baichuan-inc/baichuan2-7b-base",
+      "alias": [
+        "baichuan-inc/Baichuan2-7B-Base",
+        "Baichuan2-7B-Base",
+        "baichuan2-7b-base"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baichuan-inc/baichuan-13b-chat",
+      "alias": [
+        "baichuan-inc/Baichuan-13B-Chat",
+        "Baichuan-13B-Chat",
+        "baichuan-13b-chat"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baichuan-inc/baichuan-7b",
+      "alias": [
+        "baichuan-inc/Baichuan-7B",
+        "Baichuan-7B",
+        "baichuan-7b"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baichuan-inc/baichuan2-13b-chat-4bits",
+      "alias": [
+        "baichuan-inc/Baichuan2-13B-Chat-4bits",
+        "Baichuan2-13B-Chat-4bits",
+        "baichuan2-13b-chat-4bits"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baichuan-inc/baichuan2-7b-chat-4bits",
+      "alias": [
+        "baichuan-inc/Baichuan2-7B-Chat-4bits",
+        "Baichuan2-7B-Chat-4bits",
+        "baichuan2-7b-chat-4bits"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baichuan-inc/baichuan2-13b-base",
+      "alias": [
+        "baichuan-inc/Baichuan2-13B-Base",
+        "Baichuan2-13B-Base",
+        "baichuan2-13b-base"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baichuan-inc/baichuan2-7b-intermediate-checkpoints",
+      "alias": [
+        "baichuan-inc/Baichuan2-7B-Intermediate-Checkpoints",
+        "Baichuan2-7B-Intermediate-Checkpoints",
+        "baichuan2-7b-intermediate-checkpoints"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baichuan-inc/baichuan-13b-base",
+      "alias": [
+        "baichuan-inc/Baichuan-13B-Base",
+        "Baichuan-13B-Base",
+        "baichuan-13b-base"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baidu/nava",
+      "alias": [
+        "baidu/nava",
+        "baidu/NAVA",
+        "nava"
+      ],
+      "model_types": [
+        "video_generation"
+      ]
+    },
+    {
+      "name": "baidu/ernie-image-aes",
+      "alias": [
+        "baidu/ernie-image-aes",
+        "baidu/ERNIE-Image-Aes",
+        "ernie-image-aes"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "baidu/ernie-image-turbo",
+      "alias": [
+        "baidu/ernie-image-turbo",
+        "baidu/ERNIE-Image-Turbo",
+        "ernie-image-turbo"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "baidu/ernie-image",
+      "alias": [
+        "baidu/ernie-image",
+        "baidu/ERNIE-Image",
+        "ernie-image"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "baidu/qianfan-ocr",
+      "alias": [
+        "baidu/qianfan-ocr",
+        "baidu/Qianfan-OCR",
+        "qianfan-ocr"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "ocr",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "baidu/qianfan-vl-70b",
+      "alias": [
+        "baidu/qianfan-vl-70b",
+        "baidu/Qianfan-VL-70B",
+        "qianfan-vl-70b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "baidu/qianfan-vl-8b",
+      "alias": [
+        "baidu/qianfan-vl-8b",
+        "baidu/Qianfan-VL-8B",
+        "qianfan-vl-8b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "baidu/qianfan-vl-3b",
+      "alias": [
+        "baidu/qianfan-vl-3b",
+        "baidu/Qianfan-VL-3B",
+        "qianfan-vl-3b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "baidu/ernie-4.5-vl-28b-a3b-pt",
+      "alias": [
+        "baidu/ernie-4.5-vl-28b-a3b-pt",
+        "baidu/ERNIE-4.5-VL-28B-A3B-PT",
+        "ernie-4.5-vl-28b-a3b-pt"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "baidu/ernie-4.5-vl-28b-a3b-thinking",
+      "alias": [
+        "baidu/ernie-4.5-vl-28b-a3b-thinking",
+        "baidu/ERNIE-4.5-VL-28B-A3B-Thinking",
+        "ernie-4.5-vl-28b-a3b-thinking"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "baidu/ernie-4.5-vl-28b-a3b-base-pt",
+      "alias": [
+        "baidu/ernie-4.5-vl-28b-a3b-base-pt",
+        "baidu/ERNIE-4.5-VL-28B-A3B-Base-PT",
+        "ernie-4.5-vl-28b-a3b-base-pt"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "baidu/ernie-4.5-vl-424b-a47b-pt",
+      "alias": [
+        "baidu/ernie-4.5-vl-424b-a47b-pt",
+        "baidu/ERNIE-4.5-VL-424B-A47B-PT",
+        "ernie-4.5-vl-424b-a47b-pt"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "baidu/ernie-4.5-vl-424b-a47b-base-pt",
+      "alias": [
+        "baidu/ernie-4.5-vl-424b-a47b-base-pt",
+        "baidu/ERNIE-4.5-VL-424B-A47B-Base-PT",
+        "ernie-4.5-vl-424b-a47b-base-pt"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "baidu/ernie-4.5-21b-a3b-base-pt",
+      "alias": [
+        "baidu/ernie-4.5-21b-a3b-base-pt",
+        "baidu/ERNIE-4.5-21B-A3B-Base-PT",
+        "ernie-4.5-21b-a3b-base-pt"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baidu/ernie-4.5-300b-a47b-base-pt",
+      "alias": [
+        "baidu/ernie-4.5-300b-a47b-base-pt",
+        "baidu/ERNIE-4.5-300B-A47B-Base-PT",
+        "ernie-4.5-300b-a47b-base-pt"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baidu/ernie-4.5-21b-a3b-thinking",
+      "alias": [
+        "baidu/ernie-4.5-21b-a3b-thinking",
+        "baidu/ERNIE-4.5-21B-A3B-Thinking",
+        "ernie-4.5-21b-a3b-thinking"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "baidu/ernie-4.5-21b-a3b-pt",
+      "alias": [
+        "baidu/ernie-4.5-21b-a3b-pt",
+        "baidu/ERNIE-4.5-21B-A3B-PT",
+        "ernie-4.5-21b-a3b-pt"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baidu/ernie-4.5-300b-a47b-pt",
+      "alias": [
+        "baidu/ernie-4.5-300b-a47b-pt",
+        "baidu/ERNIE-4.5-300B-A47B-PT",
+        "ernie-4.5-300b-a47b-pt"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baidu/ernie-4.5-300b-a47b-2bits-paddle",
+      "alias": [
+        "baidu/ernie-4.5-300b-a47b-2bits-paddle",
+        "baidu/ERNIE-4.5-300B-A47B-2Bits-Paddle",
+        "ernie-4.5-300b-a47b-2bits-paddle"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baidu/ernie-4.5-300b-a47b-2bits-tp4-paddle",
+      "alias": [
+        "baidu/ernie-4.5-300b-a47b-2bits-tp4-paddle",
+        "baidu/ERNIE-4.5-300B-A47B-2Bits-TP4-Paddle",
+        "ernie-4.5-300b-a47b-2bits-tp4-paddle"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baidu/ernie-4.5-300b-a47b-2bits-tp2-paddle",
+      "alias": [
+        "baidu/ernie-4.5-300b-a47b-2bits-tp2-paddle",
+        "baidu/ERNIE-4.5-300B-A47B-2Bits-TP2-Paddle",
+        "ernie-4.5-300b-a47b-2bits-tp2-paddle"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baidu/ernie-4.5-21b-a3b-paddle",
+      "alias": [
+        "baidu/ernie-4.5-21b-a3b-paddle",
+        "baidu/ERNIE-4.5-21B-A3B-Paddle",
+        "ernie-4.5-21b-a3b-paddle"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baidu/ernie-4.5-300b-a47b-paddle",
+      "alias": [
+        "baidu/ernie-4.5-300b-a47b-paddle",
+        "baidu/ERNIE-4.5-300B-A47B-Paddle",
+        "ernie-4.5-300b-a47b-paddle"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baidu/ernie-4.5-300b-a47b-base-paddle",
+      "alias": [
+        "baidu/ernie-4.5-300b-a47b-base-paddle",
+        "baidu/ERNIE-4.5-300B-A47B-Base-Paddle",
+        "ernie-4.5-300b-a47b-base-paddle"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baidu/ernie-4.5-300b-a47b-fp8-paddle",
+      "alias": [
+        "baidu/ernie-4.5-300b-a47b-fp8-paddle",
+        "baidu/ERNIE-4.5-300B-A47B-FP8-Paddle",
+        "ernie-4.5-300b-a47b-fp8-paddle"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baidu/ernie-4.5-300b-a47b-w4a8c8-tp4-paddle",
+      "alias": [
+        "baidu/ernie-4.5-300b-a47b-w4a8c8-tp4-paddle",
+        "baidu/ERNIE-4.5-300B-A47B-W4A8C8-TP4-Paddle",
+        "ernie-4.5-300b-a47b-w4a8c8-tp4-paddle"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baidu/ernie-4.5-0.3b-base-pt",
+      "alias": [
+        "baidu/ernie-4.5-0.3b-base-pt",
+        "baidu/ERNIE-4.5-0.3B-Base-PT",
+        "ernie-4.5-0.3b-base-pt"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baidu/ernie-4.5-0.3b-pt",
+      "alias": [
+        "baidu/ernie-4.5-0.3b-pt",
+        "baidu/ERNIE-4.5-0.3B-PT",
+        "ernie-4.5-0.3b-pt"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baidu/ernie-4.5-vl-424b-a47b-paddle",
+      "alias": [
+        "baidu/ernie-4.5-vl-424b-a47b-paddle",
+        "baidu/ERNIE-4.5-VL-424B-A47B-Paddle",
+        "ernie-4.5-vl-424b-a47b-paddle"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "baidu/ernie-4.5-vl-28b-a3b-base-paddle",
+      "alias": [
+        "baidu/ernie-4.5-vl-28b-a3b-base-paddle",
+        "baidu/ERNIE-4.5-VL-28B-A3B-Base-Paddle",
+        "ernie-4.5-vl-28b-a3b-base-paddle"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "baidu/ernie-4.5-21b-a3b-base-paddle",
+      "alias": [
+        "baidu/ernie-4.5-21b-a3b-base-paddle",
+        "baidu/ERNIE-4.5-21B-A3B-Base-Paddle",
+        "ernie-4.5-21b-a3b-base-paddle"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baidu/ernie-4.5-vl-28b-a3b-paddle",
+      "alias": [
+        "baidu/ernie-4.5-vl-28b-a3b-paddle",
+        "baidu/ERNIE-4.5-VL-28B-A3B-Paddle",
+        "ernie-4.5-vl-28b-a3b-paddle"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "baidu/ernie-4.5-0.3b-base-paddle",
+      "alias": [
+        "baidu/ernie-4.5-0.3b-base-paddle",
+        "baidu/ERNIE-4.5-0.3B-Base-Paddle",
+        "ernie-4.5-0.3b-base-paddle"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baidu/ernie-4.5-0.3b-paddle",
+      "alias": [
+        "baidu/ernie-4.5-0.3b-paddle",
+        "baidu/ERNIE-4.5-0.3B-Paddle",
+        "ernie-4.5-0.3b-paddle"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "baidu/ernie-4.5-vl-424b-a47b-base-paddle",
+      "alias": [
+        "baidu/ernie-4.5-vl-424b-a47b-base-paddle",
+        "baidu/ERNIE-4.5-VL-424B-A47B-Base-Paddle",
+        "ernie-4.5-vl-424b-a47b-base-paddle"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "mimo-v2.5-pro",
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "mimo-v2.5",
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "mimo-v2.5-asr",
+      "max_tokens": 8192,
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "mimo-v2.5-tts",
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "mimo-v2-tts",
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "meituan-longcat/longcat-video-avatar-1.5",
+      "alias": [
+        "meituan-longcat/LongCat-Video-Avatar-1.5",
+        "LongCat-Video-Avatar-1.5",
+        "longcat-video-avatar-1.5"
+      ],
+      "model_types": [
+        "video_generation"
+      ]
+    },
+    {
+      "name": "meituan-longcat/wbench-weights",
+      "alias": [
+        "meituan-longcat/WBench-weights",
+        "WBench-weights",
+        "wbench-weights"
+      ],
+      "model_types": [
+        "other"
+      ]
+    },
+    {
+      "name": "meituan-longcat/longcat-next",
+      "alias": [
+        "meituan-longcat/LongCat-Next",
+        "LongCat-Next",
+        "longcat-next"
+      ],
+      "model_types": [
+        "chat",
+        "vision",
+        "image2text",
+        "audio",
+        "asr",
+        "tts",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "meituan-longcat/longcat-audiodit-1b",
+      "alias": [
+        "meituan-longcat/LongCat-AudioDiT-1B",
+        "LongCat-AudioDiT-1B",
+        "longcat-audiodit-1b"
+      ],
+      "model_types": [
+        "audio_generation"
+      ]
+    },
+    {
+      "name": "meituan-longcat/longcat-audiodit-3.5b",
+      "alias": [
+        "meituan-longcat/LongCat-AudioDiT-3.5B",
+        "LongCat-AudioDiT-3.5B",
+        "longcat-audiodit-3.5b"
+      ],
+      "model_types": [
+        "audio_generation"
+      ]
+    },
+    {
+      "name": "meituan-longcat/longcat-flash-prover",
+      "alias": [
+        "meituan-longcat/LongCat-Flash-Prover",
+        "LongCat-Flash-Prover",
+        "longcat-flash-prover"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "meituan-longcat/longcat-flash-lite-fp8",
+      "alias": [
+        "meituan-longcat/LongCat-Flash-Lite-FP8",
+        "LongCat-Flash-Lite-FP8",
+        "longcat-flash-lite-fp8"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "meituan-longcat/longcat-flash-lite",
+      "alias": [
+        "meituan-longcat/LongCat-Flash-Lite",
+        "LongCat-Flash-Lite",
+        "longcat-flash-lite"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "meituan-longcat/longcat-image-edit-turbo",
+      "alias": [
+        "meituan-longcat/LongCat-Image-Edit-Turbo",
+        "LongCat-Image-Edit-Turbo",
+        "longcat-image-edit-turbo"
+      ],
+      "model_types": [
+        "image_edit"
+      ]
+    },
+    {
+      "name": "meituan-longcat/longcat-flash-thinking-zigzag",
+      "alias": [
+        "meituan-longcat/LongCat-Flash-Thinking-ZigZag",
+        "LongCat-Flash-Thinking-ZigZag",
+        "longcat-flash-thinking-zigzag"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "meituan-longcat/longcat-flash-thinking-2601-fp8",
+      "alias": [
+        "meituan-longcat/LongCat-Flash-Thinking-2601-FP8",
+        "LongCat-Flash-Thinking-2601-FP8",
+        "longcat-flash-thinking-2601-fp8"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "meituan-longcat/longcat-flash-thinking-2601",
+      "alias": [
+        "meituan-longcat/LongCat-Flash-Thinking-2601",
+        "LongCat-Flash-Thinking-2601",
+        "longcat-flash-thinking-2601"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "meituan-longcat/longcat-heavymode-summary",
+      "alias": [
+        "meituan-longcat/LongCat-HeavyMode-Summary",
+        "LongCat-HeavyMode-Summary",
+        "longcat-heavymode-summary"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "meituan-longcat/longcat-video-avatar",
+      "alias": [
+        "meituan-longcat/LongCat-Video-Avatar",
+        "LongCat-Video-Avatar",
+        "longcat-video-avatar"
+      ],
+      "model_types": [
+        "video_generation"
+      ]
+    },
+    {
+      "name": "meituan-longcat/longcat-image",
+      "alias": [
+        "meituan-longcat/LongCat-Image",
+        "LongCat-Image",
+        "longcat-image"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "meituan-longcat/longcat-image-edit",
+      "alias": [
+        "meituan-longcat/LongCat-Image-Edit",
+        "LongCat-Image-Edit",
+        "longcat-image-edit"
+      ],
+      "model_types": [
+        "image_edit"
+      ]
+    },
+    {
+      "name": "meituan-longcat/longcat-image-dev",
+      "alias": [
+        "meituan-longcat/LongCat-Image-Dev",
+        "LongCat-Image-Dev",
+        "longcat-image-dev"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "meituan-longcat/longcat-flash-omni",
+      "alias": [
+        "meituan-longcat/LongCat-Flash-Omni",
+        "LongCat-Flash-Omni",
+        "longcat-flash-omni"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat",
+        "vision",
+        "image2text",
+        "audio",
+        "asr",
+        "tts",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "meituan-longcat/longcat-flash-omni-fp8",
+      "alias": [
+        "meituan-longcat/LongCat-Flash-Omni-FP8",
+        "LongCat-Flash-Omni-FP8",
+        "longcat-flash-omni-fp8"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat",
+        "vision",
+        "image2text",
+        "audio",
+        "asr",
+        "tts",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "meituan-longcat/longcat-video",
+      "alias": [
+        "meituan-longcat/LongCat-Video",
+        "LongCat-Video",
+        "longcat-video"
+      ],
+      "model_types": [
+        "video_generation"
+      ]
+    },
+    {
+      "name": "meituan-longcat/longcat-audio-codec",
+      "alias": [
+        "meituan-longcat/LongCat-Audio-Codec",
+        "LongCat-Audio-Codec",
+        "longcat-audio-codec"
+      ],
+      "model_types": [
+        "audio_codec"
+      ]
+    },
+    {
+      "name": "meituan-longcat/longcat-flash-thinking-fp8",
+      "alias": [
+        "meituan-longcat/LongCat-Flash-Thinking-FP8",
+        "LongCat-Flash-Thinking-FP8",
+        "longcat-flash-thinking-fp8"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "meituan-longcat/longcat-flash-thinking",
+      "alias": [
+        "meituan-longcat/LongCat-Flash-Thinking",
+        "LongCat-Flash-Thinking",
+        "longcat-flash-thinking"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "meituan-longcat/longcat-flash-chat-fp8",
+      "alias": [
+        "meituan-longcat/LongCat-Flash-Chat-FP8",
+        "LongCat-Flash-Chat-FP8",
+        "longcat-flash-chat-fp8"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "meituan-longcat/longcat-flash-chat",
+      "alias": [
+        "meituan-longcat/LongCat-Flash-Chat",
+        "LongCat-Flash-Chat",
+        "longcat-flash-chat"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-omni-small-text-matching",
+      "alias": [
+        "jinaai/jina-embeddings-v5-omni-small-text-matching",
+        "jina-embeddings-v5-omni-small-text-matching"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision",
+        "audio",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-omni-nano-retrieval",
+      "alias": [
+        "jinaai/jina-embeddings-v5-omni-nano-retrieval",
+        "jina-embeddings-v5-omni-nano-retrieval"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision",
+        "audio",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-omni-nano-classification",
+      "alias": [
+        "jinaai/jina-embeddings-v5-omni-nano-classification",
+        "jina-embeddings-v5-omni-nano-classification"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision",
+        "audio",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-omni-nano-clustering",
+      "alias": [
+        "jinaai/jina-embeddings-v5-omni-nano-clustering",
+        "jina-embeddings-v5-omni-nano-clustering"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision",
+        "audio",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-omni-nano-text-matching",
+      "alias": [
+        "jinaai/jina-embeddings-v5-omni-nano-text-matching",
+        "jina-embeddings-v5-omni-nano-text-matching"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision",
+        "audio",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-omni-nano",
+      "alias": [
+        "jinaai/jina-embeddings-v5-omni-nano",
+        "jina-embeddings-v5-omni-nano"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision",
+        "audio",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-omni-small-retrieval",
+      "alias": [
+        "jinaai/jina-embeddings-v5-omni-small-retrieval",
+        "jina-embeddings-v5-omni-small-retrieval"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision",
+        "audio",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-omni-small-classification",
+      "alias": [
+        "jinaai/jina-embeddings-v5-omni-small-classification",
+        "jina-embeddings-v5-omni-small-classification"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision",
+        "audio",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-omni-small-clustering",
+      "alias": [
+        "jinaai/jina-embeddings-v5-omni-small-clustering",
+        "jina-embeddings-v5-omni-small-clustering"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision",
+        "audio",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-omni-small",
+      "alias": [
+        "jinaai/jina-embeddings-v5-omni-small",
+        "jina-embeddings-v5-omni-small"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision",
+        "audio",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-omni-nano-mlx",
+      "alias": [
+        "jinaai/jina-embeddings-v5-omni-nano-mlx",
+        "jina-embeddings-v5-omni-nano-mlx"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision",
+        "audio",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-omni-small-mlx",
+      "alias": [
+        "jinaai/jina-embeddings-v5-omni-small-mlx",
+        "jina-embeddings-v5-omni-small-mlx"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision",
+        "audio",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-omni-small-text-matching-gguf",
+      "alias": [
+        "jinaai/jina-embeddings-v5-omni-small-text-matching-gguf",
+        "jinaai/jina-embeddings-v5-omni-small-text-matching-GGUF",
+        "jina-embeddings-v5-omni-small-text-matching-GGUF",
+        "jina-embeddings-v5-omni-small-text-matching-gguf"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision",
+        "audio",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-omni-small-clustering-gguf",
+      "alias": [
+        "jinaai/jina-embeddings-v5-omni-small-clustering-gguf",
+        "jinaai/jina-embeddings-v5-omni-small-clustering-GGUF",
+        "jina-embeddings-v5-omni-small-clustering-GGUF",
+        "jina-embeddings-v5-omni-small-clustering-gguf"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision",
+        "audio",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-omni-small-classification-gguf",
+      "alias": [
+        "jinaai/jina-embeddings-v5-omni-small-classification-gguf",
+        "jinaai/jina-embeddings-v5-omni-small-classification-GGUF",
+        "jina-embeddings-v5-omni-small-classification-GGUF",
+        "jina-embeddings-v5-omni-small-classification-gguf"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision",
+        "audio",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-omni-small-retrieval-gguf",
+      "alias": [
+        "jinaai/jina-embeddings-v5-omni-small-retrieval-gguf",
+        "jinaai/jina-embeddings-v5-omni-small-retrieval-GGUF",
+        "jina-embeddings-v5-omni-small-retrieval-GGUF",
+        "jina-embeddings-v5-omni-small-retrieval-gguf"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision",
+        "audio",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-omni-nano-text-matching-gguf",
+      "alias": [
+        "jinaai/jina-embeddings-v5-omni-nano-text-matching-gguf",
+        "jinaai/jina-embeddings-v5-omni-nano-text-matching-GGUF",
+        "jina-embeddings-v5-omni-nano-text-matching-GGUF",
+        "jina-embeddings-v5-omni-nano-text-matching-gguf"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision",
+        "audio",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-omni-nano-clustering-gguf",
+      "alias": [
+        "jinaai/jina-embeddings-v5-omni-nano-clustering-gguf",
+        "jinaai/jina-embeddings-v5-omni-nano-clustering-GGUF",
+        "jina-embeddings-v5-omni-nano-clustering-GGUF",
+        "jina-embeddings-v5-omni-nano-clustering-gguf"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision",
+        "audio",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-omni-nano-classification-gguf",
+      "alias": [
+        "jinaai/jina-embeddings-v5-omni-nano-classification-gguf",
+        "jinaai/jina-embeddings-v5-omni-nano-classification-GGUF",
+        "jina-embeddings-v5-omni-nano-classification-GGUF",
+        "jina-embeddings-v5-omni-nano-classification-gguf"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision",
+        "audio",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-omni-nano-retrieval-gguf",
+      "alias": [
+        "jinaai/jina-embeddings-v5-omni-nano-retrieval-gguf",
+        "jinaai/jina-embeddings-v5-omni-nano-retrieval-GGUF",
+        "jina-embeddings-v5-omni-nano-retrieval-GGUF",
+        "jina-embeddings-v5-omni-nano-retrieval-gguf"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision",
+        "audio",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-omni-small-text-matching-mlx",
+      "alias": [
+        "jinaai/jina-embeddings-v5-omni-small-text-matching-mlx",
+        "jina-embeddings-v5-omni-small-text-matching-mlx"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision",
+        "audio",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-omni-small-clustering-mlx",
+      "alias": [
+        "jinaai/jina-embeddings-v5-omni-small-clustering-mlx",
+        "jina-embeddings-v5-omni-small-clustering-mlx"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision",
+        "audio",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-omni-small-classification-mlx",
+      "alias": [
+        "jinaai/jina-embeddings-v5-omni-small-classification-mlx",
+        "jina-embeddings-v5-omni-small-classification-mlx"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision",
+        "audio",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-omni-small-retrieval-mlx",
+      "alias": [
+        "jinaai/jina-embeddings-v5-omni-small-retrieval-mlx",
+        "jina-embeddings-v5-omni-small-retrieval-mlx"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision",
+        "audio",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-omni-nano-text-matching-mlx",
+      "alias": [
+        "jinaai/jina-embeddings-v5-omni-nano-text-matching-mlx",
+        "jina-embeddings-v5-omni-nano-text-matching-mlx"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision",
+        "audio",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-omni-nano-clustering-mlx",
+      "alias": [
+        "jinaai/jina-embeddings-v5-omni-nano-clustering-mlx",
+        "jina-embeddings-v5-omni-nano-clustering-mlx"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision",
+        "audio",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-omni-nano-classification-mlx",
+      "alias": [
+        "jinaai/jina-embeddings-v5-omni-nano-classification-mlx",
+        "jina-embeddings-v5-omni-nano-classification-mlx"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision",
+        "audio",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-omni-nano-retrieval-mlx",
+      "alias": [
+        "jinaai/jina-embeddings-v5-omni-nano-retrieval-mlx",
+        "jina-embeddings-v5-omni-nano-retrieval-mlx"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision",
+        "audio",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-text-small-text-matching",
+      "alias": [
+        "jinaai/jina-embeddings-v5-text-small-text-matching",
+        "jina-embeddings-v5-text-small-text-matching"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-text-small-classification",
+      "alias": [
+        "jinaai/jina-embeddings-v5-text-small-classification",
+        "jina-embeddings-v5-text-small-classification"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-text-small-clustering",
+      "alias": [
+        "jinaai/jina-embeddings-v5-text-small-clustering",
+        "jina-embeddings-v5-text-small-clustering"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-text-small-retrieval",
+      "alias": [
+        "jinaai/jina-embeddings-v5-text-small-retrieval",
+        "jina-embeddings-v5-text-small-retrieval"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-text-nano-classification",
+      "alias": [
+        "jinaai/jina-embeddings-v5-text-nano-classification",
+        "jina-embeddings-v5-text-nano-classification"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-text-nano-clustering",
+      "alias": [
+        "jinaai/jina-embeddings-v5-text-nano-clustering",
+        "jina-embeddings-v5-text-nano-clustering"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-text-nano-text-matching",
+      "alias": [
+        "jinaai/jina-embeddings-v5-text-nano-text-matching",
+        "jina-embeddings-v5-text-nano-text-matching"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-text-nano-retrieval",
+      "alias": [
+        "jinaai/jina-embeddings-v5-text-nano-retrieval",
+        "jina-embeddings-v5-text-nano-retrieval"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-text-nano",
+      "alias": [
+        "jinaai/jina-embeddings-v5-text-nano",
+        "jina-embeddings-v5-text-nano"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-text-small",
+      "alias": [
+        "jinaai/jina-embeddings-v5-text-small",
+        "jina-embeddings-v5-text-small"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-reranker-m0",
+      "alias": [
+        "jinaai/jina-reranker-m0",
+        "jina-reranker-m0"
+      ],
+      "model_types": [
+        "rerank"
+      ],
+      "max_tokens": 8192
+    },
+    {
+      "name": "jinaai/jina-embeddings-v4",
+      "alias": [
+        "jinaai/jina-embeddings-v4",
+        "jina-embeddings-v4"
+      ],
+      "dimension": 2048,
+      "dimensions": [
+        128,
+        256,
+        512,
+        1024,
+        2048
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v3-hf",
+      "alias": [
+        "jinaai/jina-embeddings-v3-hf",
+        "jina-embeddings-v3-hf"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v3",
+      "alias": [
+        "jinaai/jina-embeddings-v3",
+        "jina-embeddings-v3"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-clip-v1",
+      "alias": [
+        "jinaai/jina-clip-v1",
+        "jina-clip-v1"
+      ],
+      "dimension": 768,
+      "dimensions": [
+        64,
+        128,
+        256,
+        512,
+        768
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding",
+        "vision"
+      ]
+    },
+    {
+      "name": "jinaai/jina-clip-v2",
+      "alias": [
+        "jinaai/jina-clip-v2",
+        "jina-clip-v2"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding",
+        "vision"
+      ]
+    },
+    {
+      "name": "jinaai/jina-vlm",
+      "alias": [
+        "jinaai/jina-vlm",
+        "jina-vlm"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat",
+        "vision",
+        "image2text"
+      ]
+    },
+    {
+      "name": "jinaai/jina-reranker-v3",
+      "alias": [
+        "jinaai/jina-reranker-v3",
+        "jina-reranker-v3"
+      ],
+      "model_types": [
+        "rerank"
+      ],
+      "max_tokens": 8192
+    },
+    {
+      "name": "jinaai/jina-embeddings-v4-mlx-8bit",
+      "alias": [
+        "jinaai/jina-embeddings-v4-mlx-8bit",
+        "jina-embeddings-v4-mlx-8bit"
+      ],
+      "dimension": 2048,
+      "dimensions": [
+        128,
+        256,
+        512,
+        1024,
+        2048
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision"
+      ]
+    },
+    {
+      "name": "jinaai/xlm-roberta-flash-implementation",
+      "alias": [
+        "jinaai/xlm-roberta-flash-implementation",
+        "xlm-roberta-flash-implementation"
+      ],
+      "model_types": [
+        "other"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-text-nano-classification-gguf",
+      "alias": [
+        "jinaai/jina-embeddings-v5-text-nano-classification-gguf",
+        "jinaai/jina-embeddings-v5-text-nano-classification-GGUF",
+        "jina-embeddings-v5-text-nano-classification-GGUF",
+        "jina-embeddings-v5-text-nano-classification-gguf"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-text-nano-clustering-gguf",
+      "alias": [
+        "jinaai/jina-embeddings-v5-text-nano-clustering-gguf",
+        "jinaai/jina-embeddings-v5-text-nano-clustering-GGUF",
+        "jina-embeddings-v5-text-nano-clustering-GGUF",
+        "jina-embeddings-v5-text-nano-clustering-gguf"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-text-nano-retrieval-gguf",
+      "alias": [
+        "jinaai/jina-embeddings-v5-text-nano-retrieval-gguf",
+        "jinaai/jina-embeddings-v5-text-nano-retrieval-GGUF",
+        "jina-embeddings-v5-text-nano-retrieval-GGUF",
+        "jina-embeddings-v5-text-nano-retrieval-gguf"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-text-nano-text-matching-gguf",
+      "alias": [
+        "jinaai/jina-embeddings-v5-text-nano-text-matching-gguf",
+        "jinaai/jina-embeddings-v5-text-nano-text-matching-GGUF",
+        "jina-embeddings-v5-text-nano-text-matching-GGUF",
+        "jina-embeddings-v5-text-nano-text-matching-gguf"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-text-nano-mlx",
+      "alias": [
+        "jinaai/jina-embeddings-v5-text-nano-mlx",
+        "jina-embeddings-v5-text-nano-mlx"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-text-small-mlx",
+      "alias": [
+        "jinaai/jina-embeddings-v5-text-small-mlx",
+        "jina-embeddings-v5-text-small-mlx"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-text-nano-classification-mlx",
+      "alias": [
+        "jinaai/jina-embeddings-v5-text-nano-classification-mlx",
+        "jina-embeddings-v5-text-nano-classification-mlx"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-text-nano-clustering-mlx",
+      "alias": [
+        "jinaai/jina-embeddings-v5-text-nano-clustering-mlx",
+        "jina-embeddings-v5-text-nano-clustering-mlx"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-text-nano-text-matching-mlx",
+      "alias": [
+        "jinaai/jina-embeddings-v5-text-nano-text-matching-mlx",
+        "jina-embeddings-v5-text-nano-text-matching-mlx"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-text-nano-retrieval-mlx",
+      "alias": [
+        "jinaai/jina-embeddings-v5-text-nano-retrieval-mlx",
+        "jina-embeddings-v5-text-nano-retrieval-mlx"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-text-small-classification-mlx",
+      "alias": [
+        "jinaai/jina-embeddings-v5-text-small-classification-mlx",
+        "jina-embeddings-v5-text-small-classification-mlx"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-text-small-clustering-mlx",
+      "alias": [
+        "jinaai/jina-embeddings-v5-text-small-clustering-mlx",
+        "jina-embeddings-v5-text-small-clustering-mlx"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-text-small-text-matching-mlx",
+      "alias": [
+        "jinaai/jina-embeddings-v5-text-small-text-matching-mlx",
+        "jina-embeddings-v5-text-small-text-matching-mlx"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-text-small-retrieval-mlx",
+      "alias": [
+        "jinaai/jina-embeddings-v5-text-small-retrieval-mlx",
+        "jina-embeddings-v5-text-small-retrieval-mlx"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-code-embeddings-1.5b-mlx",
+      "alias": [
+        "jinaai/jina-code-embeddings-1.5b-mlx",
+        "jina-code-embeddings-1.5b-mlx"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-code-embeddings-0.5b-mlx",
+      "alias": [
+        "jinaai/jina-code-embeddings-0.5b-mlx",
+        "jina-code-embeddings-0.5b-mlx"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-text-small-retrieval-gguf",
+      "alias": [
+        "jinaai/jina-embeddings-v5-text-small-retrieval-gguf",
+        "jinaai/jina-embeddings-v5-text-small-retrieval-GGUF",
+        "jina-embeddings-v5-text-small-retrieval-GGUF",
+        "jina-embeddings-v5-text-small-retrieval-gguf"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-text-small-classification-gguf",
+      "alias": [
+        "jinaai/jina-embeddings-v5-text-small-classification-gguf",
+        "jinaai/jina-embeddings-v5-text-small-classification-GGUF",
+        "jina-embeddings-v5-text-small-classification-GGUF",
+        "jina-embeddings-v5-text-small-classification-gguf"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-text-small-clustering-gguf",
+      "alias": [
+        "jinaai/jina-embeddings-v5-text-small-clustering-gguf",
+        "jinaai/jina-embeddings-v5-text-small-clustering-GGUF",
+        "jina-embeddings-v5-text-small-clustering-GGUF",
+        "jina-embeddings-v5-text-small-clustering-gguf"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v5-text-small-text-matching-gguf",
+      "alias": [
+        "jinaai/jina-embeddings-v5-text-small-text-matching-gguf",
+        "jinaai/jina-embeddings-v5-text-small-text-matching-GGUF",
+        "jina-embeddings-v5-text-small-text-matching-GGUF",
+        "jina-embeddings-v5-text-small-text-matching-gguf"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-vlm-mlx",
+      "alias": [
+        "jinaai/jina-vlm-mlx",
+        "jina-vlm-mlx"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat",
+        "vision",
+        "image2text"
+      ]
+    },
+    {
+      "name": "jinaai/jina-reranker-v2-base-multilingual",
+      "alias": [
+        "jinaai/jina-reranker-v2-base-multilingual",
+        "jina-reranker-v2-base-multilingual"
+      ],
+      "model_types": [
+        "rerank"
+      ],
+      "max_tokens": 8192
+    },
+    {
+      "name": "jinaai/jina-reranker-v3-gguf",
+      "alias": [
+        "jinaai/jina-reranker-v3-gguf",
+        "jinaai/jina-reranker-v3-GGUF",
+        "jina-reranker-v3-GGUF",
+        "jina-reranker-v3-gguf"
+      ],
+      "model_types": [
+        "rerank"
+      ],
+      "max_tokens": 8192
+    },
+    {
+      "name": "jinaai/jina-reranker-v3-mlx",
+      "alias": [
+        "jinaai/jina-reranker-v3-mlx",
+        "jina-reranker-v3-mlx"
+      ],
+      "model_types": [
+        "rerank"
+      ],
+      "max_tokens": 8192
+    },
+    {
+      "name": "jinaai/jina-code-embeddings-0.5b",
+      "alias": [
+        "jinaai/jina-code-embeddings-0.5b",
+        "jina-code-embeddings-0.5b"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-code-embeddings-1.5b",
+      "alias": [
+        "jinaai/jina-code-embeddings-1.5b",
+        "jina-code-embeddings-1.5b"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v4-text-matching-gguf",
+      "alias": [
+        "jinaai/jina-embeddings-v4-text-matching-gguf",
+        "jinaai/jina-embeddings-v4-text-matching-GGUF",
+        "jina-embeddings-v4-text-matching-GGUF",
+        "jina-embeddings-v4-text-matching-gguf"
+      ],
+      "dimension": 2048,
+      "dimensions": [
+        128,
+        256,
+        512,
+        1024,
+        2048
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v4-text-code-gguf",
+      "alias": [
+        "jinaai/jina-embeddings-v4-text-code-gguf",
+        "jinaai/jina-embeddings-v4-text-code-GGUF",
+        "jina-embeddings-v4-text-code-GGUF",
+        "jina-embeddings-v4-text-code-gguf"
+      ],
+      "dimension": 2048,
+      "dimensions": [
+        128,
+        256,
+        512,
+        1024,
+        2048
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v4-text-retrieval-gguf",
+      "alias": [
+        "jinaai/jina-embeddings-v4-text-retrieval-gguf",
+        "jinaai/jina-embeddings-v4-text-retrieval-GGUF",
+        "jina-embeddings-v4-text-retrieval-GGUF",
+        "jina-embeddings-v4-text-retrieval-gguf"
+      ],
+      "dimension": 2048,
+      "dimensions": [
+        128,
+        256,
+        512,
+        1024,
+        2048
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v4-vllm-retrieval",
+      "alias": [
+        "jinaai/jina-embeddings-v4-vllm-retrieval",
+        "jina-embeddings-v4-vllm-retrieval"
+      ],
+      "dimension": 2048,
+      "dimensions": [
+        128,
+        256,
+        512,
+        1024,
+        2048
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision"
+      ]
+    },
+    {
+      "name": "jinaai/jina-reranker-v1-tiny-en",
+      "alias": [
+        "jinaai/jina-reranker-v1-tiny-en",
+        "jina-reranker-v1-tiny-en"
+      ],
+      "model_types": [
+        "rerank"
+      ],
+      "max_tokens": 512
+    },
+    {
+      "name": "jinaai/jina-reranker-v1-turbo-en",
+      "alias": [
+        "jinaai/jina-reranker-v1-turbo-en",
+        "jina-reranker-v1-turbo-en"
+      ],
+      "model_types": [
+        "rerank"
+      ],
+      "max_tokens": 512
+    },
+    {
+      "name": "jinaai/jina-code-embeddings-1.5b-gguf",
+      "alias": [
+        "jinaai/jina-code-embeddings-1.5b-gguf",
+        "jinaai/jina-code-embeddings-1.5b-GGUF",
+        "jina-code-embeddings-1.5b-GGUF",
+        "jina-code-embeddings-1.5b-gguf"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-code-embeddings-0.5b-gguf",
+      "alias": [
+        "jinaai/jina-code-embeddings-0.5b-gguf",
+        "jinaai/jina-code-embeddings-0.5b-GGUF",
+        "jina-code-embeddings-0.5b-GGUF",
+        "jina-code-embeddings-0.5b-gguf"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v4-vllm-code",
+      "alias": [
+        "jinaai/jina-embeddings-v4-vllm-code",
+        "jina-embeddings-v4-vllm-code"
+      ],
+      "dimension": 2048,
+      "dimensions": [
+        128,
+        256,
+        512,
+        1024,
+        2048
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v4-vllm-text-matching",
+      "alias": [
+        "jinaai/jina-embeddings-v4-vllm-text-matching",
+        "jina-embeddings-v4-vllm-text-matching"
+      ],
+      "dimension": 2048,
+      "dimensions": [
+        128,
+        256,
+        512,
+        1024,
+        2048
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding",
+        "vision"
+      ]
+    },
+    {
+      "name": "jinaai/jina-reranker-m0-gguf",
+      "alias": [
+        "jinaai/jina-reranker-m0-gguf",
+        "jinaai/jina-reranker-m0-GGUF",
+        "jina-reranker-m0-GGUF",
+        "jina-reranker-m0-gguf"
+      ],
+      "model_types": [
+        "rerank"
+      ],
+      "max_tokens": 8192
+    },
+    {
+      "name": "jinaai/jina-clip-implementation",
+      "alias": [
+        "jinaai/jina-clip-implementation",
+        "jina-clip-implementation"
+      ],
+      "model_types": [
+        "other"
+      ]
+    },
+    {
+      "name": "jinaai/jina-reranker-m0-debug",
+      "alias": [
+        "jinaai/jina-reranker-m0-debug",
+        "jina-reranker-m0-debug"
+      ],
+      "model_types": [
+        "rerank"
+      ],
+      "max_tokens": 8192
+    },
+    {
+      "name": "jinaai/readerlm-v2",
+      "alias": [
+        "jinaai/readerlm-v2",
+        "jinaai/ReaderLM-v2",
+        "ReaderLM-v2",
+        "readerlm-v2"
+      ],
+      "max_tokens": 256000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "jinaai/jina-colbert-v2",
+      "alias": [
+        "jinaai/jina-colbert-v2",
+        "jina-colbert-v2"
+      ],
+      "dimension": 128,
+      "dimensions": [
+        128
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/reader-lm-1.5b",
+      "alias": [
+        "jinaai/reader-lm-1.5b",
+        "reader-lm-1.5b"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embedding-s-en-v1",
+      "alias": [
+        "jinaai/jina-embedding-s-en-v1",
+        "jina-embedding-s-en-v1"
+      ],
+      "dimension": 512,
+      "dimensions": [
+        512
+      ],
+      "max_tokens": 512,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embedding-b-en-v1",
+      "alias": [
+        "jinaai/jina-embedding-b-en-v1",
+        "jina-embedding-b-en-v1"
+      ],
+      "dimension": 768,
+      "dimensions": [
+        768
+      ],
+      "max_tokens": 512,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embedding-l-en-v1",
+      "alias": [
+        "jinaai/jina-embedding-l-en-v1",
+        "jina-embedding-l-en-v1"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        1024
+      ],
+      "max_tokens": 512,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v2-base-code",
+      "alias": [
+        "jinaai/jina-embeddings-v2-base-code",
+        "jina-embeddings-v2-base-code"
+      ],
+      "dimension": 768,
+      "dimensions": [
+        768
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v2-base-es",
+      "alias": [
+        "jinaai/jina-embeddings-v2-base-es",
+        "jina-embeddings-v2-base-es"
+      ],
+      "dimension": 768,
+      "dimensions": [
+        768
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v2-base-de",
+      "alias": [
+        "jinaai/jina-embeddings-v2-base-de",
+        "jina-embeddings-v2-base-de"
+      ],
+      "dimension": 768,
+      "dimensions": [
+        768
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v2-small-en",
+      "alias": [
+        "jinaai/jina-embeddings-v2-small-en",
+        "jina-embeddings-v2-small-en"
+      ],
+      "dimension": 512,
+      "dimensions": [
+        512
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v2-base-zh",
+      "alias": [
+        "jinaai/jina-embeddings-v2-base-zh",
+        "jina-embeddings-v2-base-zh"
+      ],
+      "dimension": 768,
+      "dimensions": [
+        768
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v2-base-en",
+      "alias": [
+        "jinaai/jina-embeddings-v2-base-en",
+        "jina-embeddings-v2-base-en"
+      ],
+      "dimension": 768,
+      "dimensions": [
+        768
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-colbert-v1-en",
+      "alias": [
+        "jinaai/jina-colbert-v1-en",
+        "jina-colbert-v1-en"
+      ],
+      "dimension": 128,
+      "dimensions": [
+        128
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-colbert-v2-64",
+      "alias": [
+        "jinaai/jina-colbert-v2-64",
+        "jina-colbert-v2-64"
+      ],
+      "dimension": 64,
+      "dimensions": [
+        64
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/reader-lm-0.5b",
+      "alias": [
+        "jinaai/reader-lm-0.5b",
+        "reader-lm-0.5b"
+      ],
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "jinaai/text-seg-lm-qwen2-0.5b",
+      "alias": [
+        "jinaai/text-seg-lm-qwen2-0.5b",
+        "text-seg-lm-qwen2-0.5b"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "jinaai/text-seg-lm-qwen2-0.5b-summary-chunking",
+      "alias": [
+        "jinaai/text-seg-lm-qwen2-0.5b-summary-chunking",
+        "text-seg-lm-qwen2-0.5b-summary-chunking"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "jinaai/text-seg-lm-qwen2-0.5b-cot-topic-chunking",
+      "alias": [
+        "jinaai/text-seg-lm-qwen2-0.5b-cot-topic-chunking",
+        "text-seg-lm-qwen2-0.5b-cot-topic-chunking"
+      ],
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "jinaai/xlm-roberta-flash-implementation-onnx",
+      "alias": [
+        "jinaai/xlm-roberta-flash-implementation-onnx",
+        "xlm-roberta-flash-implementation-onnx"
+      ],
+      "model_types": [
+        "other"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embeddings-v3-small-ci",
+      "alias": [
+        "jinaai/jina-embeddings-v3-small-ci",
+        "jina-embeddings-v3-small-ci"
+      ],
+      "dimension": 1024,
+      "dimensions": [
+        32,
+        64,
+        128,
+        256,
+        512,
+        768,
+        1024
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/jina-bert-flash-implementation",
+      "alias": [
+        "jinaai/jina-bert-flash-implementation",
+        "jina-bert-flash-implementation"
+      ],
+      "model_types": [
+        "other"
+      ]
+    },
+    {
+      "name": "jinaai/phi-3-tiny-untrained",
+      "alias": [
+        "jinaai/phi-3-tiny-untrained",
+        "jinaai/Phi-3-tiny-untrained",
+        "Phi-3-tiny-untrained",
+        "phi-3-tiny-untrained"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "jinaai/jina-bert-v2-qk-post-norm",
+      "alias": [
+        "jinaai/jina-bert-v2-qk-post-norm",
+        "jina-bert-v2-qk-post-norm"
+      ],
+      "model_types": [
+        "other"
+      ]
+    },
+    {
+      "name": "jinaai/jina-bert-v2-qk-devlin-norm-1e-2",
+      "alias": [
+        "jinaai/jina-bert-v2-qk-devlin-norm-1e-2",
+        "jina-bert-v2-qk-devlin-norm-1e-2"
+      ],
+      "model_types": [
+        "other"
+      ]
+    },
+    {
+      "name": "jinaai/jina-bert-implementation",
+      "alias": [
+        "jinaai/jina-bert-implementation",
+        "jina-bert-implementation"
+      ],
+      "model_types": [
+        "other"
+      ]
+    },
+    {
+      "name": "jinaai/clip-models",
+      "alias": [
+        "jinaai/clip-models",
+        "clip-models"
+      ],
+      "model_types": [
+        "other"
+      ]
+    },
+    {
+      "name": "jinaai/jina-embedding-t-en-v1",
+      "alias": [
+        "jinaai/jina-embedding-t-en-v1",
+        "jina-embedding-t-en-v1"
+      ],
+      "dimension": 312,
+      "dimensions": [
+        312
+      ],
+      "max_tokens": 512,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jinaai/starcoder-1b-textbook",
+      "alias": [
+        "jinaai/starcoder-1b-textbook",
+        "starcoder-1b-textbook"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "jinaai/flat-2d-animerge",
+      "alias": [
+        "jinaai/flat-2d-animerge",
+        "flat-2d-animerge"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "jinaai/falcon-7b-code-alpaca-lora",
+      "alias": [
+        "jinaai/falcon-7b-code-alpaca-lora",
+        "falcon-7b-code-alpaca-lora"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "jinaai/falcon-40b-code-alpaca",
+      "alias": [
+        "jinaai/falcon-40b-code-alpaca",
+        "falcon-40b-code-alpaca"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "jinaai/falcon-40b-code-alpaca-lora",
+      "alias": [
+        "jinaai/falcon-40b-code-alpaca-lora",
+        "falcon-40b-code-alpaca-lora"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "jinaai/falcon-7b-code-alpaca",
+      "alias": [
+        "jinaai/falcon-7b-code-alpaca",
+        "falcon-7b-code-alpaca"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "openai/privacy-filter",
+      "alias": [
+        "openai/privacy-filter",
+        "privacy-filter"
+      ],
+      "max_tokens": 4096,
+      "model_types": [
+        "other"
+      ]
+    },
+    {
+      "name": "openai/gpt-oss-safeguard-20b",
+      "alias": [
+        "openai/gpt-oss-safeguard-20b",
+        "gpt-oss-safeguard-20b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "openai/circuit-sparsity",
+      "alias": [
+        "openai/circuit-sparsity",
+        "circuit-sparsity"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "openai/gpt-oss-safeguard-120b",
+      "alias": [
+        "openai/gpt-oss-safeguard-120b",
+        "gpt-oss-safeguard-120b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "openai/gpt-oss-20b",
+      "alias": [
+        "openai/gpt-oss-20b",
+        "gpt-oss-20b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "openai/gpt-oss-120b",
+      "alias": [
+        "openai/gpt-oss-120b",
+        "gpt-oss-120b"
+      ],
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "openai/whisper-large-v3-turbo",
+      "alias": [
+        "openai/whisper-large-v3-turbo",
+        "whisper-large-v3-turbo"
+      ],
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "openai/whisper-large-v3",
+      "alias": [
+        "openai/whisper-large-v3",
+        "whisper-large-v3"
+      ],
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "openai/whisper-large-v2",
+      "alias": [
+        "openai/whisper-large-v2",
+        "whisper-large-v2"
+      ],
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "openai/whisper-large",
+      "alias": [
+        "openai/whisper-large",
+        "whisper-large"
+      ],
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "openai/whisper-medium",
+      "alias": [
+        "openai/whisper-medium",
+        "whisper-medium"
+      ],
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "openai/whisper-small",
+      "alias": [
+        "openai/whisper-small",
+        "whisper-small"
+      ],
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "openai/whisper-tiny",
+      "alias": [
+        "openai/whisper-tiny",
+        "whisper-tiny"
+      ],
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "openai/whisper-base",
+      "alias": [
+        "openai/whisper-base",
+        "whisper-base"
+      ],
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "openai/clip-vit-base-patch32",
+      "alias": [
+        "openai/clip-vit-base-patch32",
+        "clip-vit-base-patch32"
+      ],
+      "dimension": 512,
+      "dimensions": [
+        512
+      ],
+      "model_types": [
+        "embedding",
+        "vision"
+      ]
+    },
+    {
+      "name": "openai/whisper-medium.en",
+      "alias": [
+        "openai/whisper-medium.en",
+        "whisper-medium.en"
+      ],
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "openai/whisper-small.en",
+      "alias": [
+        "openai/whisper-small.en",
+        "whisper-small.en"
+      ],
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "openai/whisper-tiny.en",
+      "alias": [
+        "openai/whisper-tiny.en",
+        "whisper-tiny.en"
+      ],
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "openai/whisper-base.en",
+      "alias": [
+        "openai/whisper-base.en",
+        "whisper-base.en"
+      ],
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "openai/shap-e",
+      "alias": [
+        "openai/shap-e",
+        "shap-e"
+      ],
+      "model_types": [
+        "3d_generation"
+      ]
+    },
+    {
+      "name": "openai/consistency-decoder",
+      "alias": [
+        "openai/consistency-decoder",
+        "consistency-decoder"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "openai/diffusers-ct_imagenet64",
+      "alias": [
+        "openai/diffusers-ct_imagenet64",
+        "diffusers-ct_imagenet64"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "openai/diffusers-cd_imagenet64_lpips",
+      "alias": [
+        "openai/diffusers-cd_imagenet64_lpips",
+        "diffusers-cd_imagenet64_lpips"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "openai/diffusers-cd_imagenet64_l2",
+      "alias": [
+        "openai/diffusers-cd_imagenet64_l2",
+        "diffusers-cd_imagenet64_l2"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "openai/clip-vit-large-patch14",
+      "alias": [
+        "openai/clip-vit-large-patch14",
+        "clip-vit-large-patch14"
+      ],
+      "dimension": 768,
+      "dimensions": [
+        768
+      ],
+      "model_types": [
+        "embedding",
+        "vision"
+      ]
+    },
+    {
+      "name": "openai/shap-e-img2img",
+      "alias": [
+        "openai/shap-e-img2img",
+        "shap-e-img2img"
+      ],
+      "model_types": [
+        "image2image",
+        "3d_generation"
+      ]
+    },
+    {
+      "name": "openai/diffusers-cd_cat256_lpips",
+      "alias": [
+        "openai/diffusers-cd_cat256_lpips",
+        "diffusers-cd_cat256_lpips"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "openai/diffusers-cd_cat256_l2",
+      "alias": [
+        "openai/diffusers-cd_cat256_l2",
+        "diffusers-cd_cat256_l2"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "openai/diffusers-cd_bedroom256_l2",
+      "alias": [
+        "openai/diffusers-cd_bedroom256_l2",
+        "diffusers-cd_bedroom256_l2"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "openai/diffusers-ct_bedroom256",
+      "alias": [
+        "openai/diffusers-ct_bedroom256",
+        "diffusers-ct_bedroom256"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "openai/diffusers-cd_bedroom256_lpips",
+      "alias": [
+        "openai/diffusers-cd_bedroom256_lpips",
+        "diffusers-cd_bedroom256_lpips"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "openai/diffusers-ct_cat256",
+      "alias": [
+        "openai/diffusers-ct_cat256",
+        "diffusers-ct_cat256"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "openai/imagegpt-small",
+      "alias": [
+        "openai/imagegpt-small",
+        "imagegpt-small"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "openai/imagegpt-medium",
+      "alias": [
+        "openai/imagegpt-medium",
+        "imagegpt-medium"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "openai/imagegpt-large",
+      "alias": [
+        "openai/imagegpt-large",
+        "imagegpt-large"
+      ],
+      "model_types": [
+        "image"
+      ]
+    },
+    {
+      "name": "openai/jukebox-5b-lyrics",
+      "alias": [
+        "openai/jukebox-5b-lyrics",
+        "jukebox-5b-lyrics"
+      ],
+      "model_types": [
+        "audio_generation"
+      ]
+    },
+    {
+      "name": "openai/jukebox-1b-lyrics",
+      "alias": [
+        "openai/jukebox-1b-lyrics",
+        "jukebox-1b-lyrics"
+      ],
+      "model_types": [
+        "audio_generation"
+      ]
+    },
+    {
+      "name": "openai/clip-vit-base-patch16",
+      "alias": [
+        "openai/clip-vit-base-patch16",
+        "clip-vit-base-patch16"
+      ],
+      "dimension": 512,
+      "dimensions": [
+        512
+      ],
+      "model_types": [
+        "embedding",
+        "vision"
+      ]
+    },
+    {
+      "name": "openai/clip-vit-large-patch14-336",
+      "alias": [
+        "openai/clip-vit-large-patch14-336",
+        "clip-vit-large-patch14-336"
+      ],
+      "dimension": 768,
+      "dimensions": [
+        768
+      ],
+      "model_types": [
+        "embedding",
+        "vision"
+      ]
+    },
+    {
+      "name": "gpt-5.4",
+      "alias": [
+        "gpt-5.4"
+      ],
+      "max_tokens": 1050000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-image-2",
+      "alias": [
+        "gpt-image-2"
+      ],
+      "model_types": [
+        "image",
+        "image_edit"
+      ]
+    },
+    {
+      "name": "gpt-5.1",
+      "alias": [
+        "gpt-5.1"
+      ],
+      "max_tokens": 400000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-5.2",
+      "alias": [
+        "gpt-5.2"
+      ],
+      "max_tokens": 400000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-5.4-mini",
+      "alias": [
+        "gpt-5.4-mini"
+      ],
+      "max_tokens": 400000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-5",
+      "alias": [
+        "gpt-5"
+      ],
+      "max_tokens": 400000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-5-codex",
+      "alias": [
+        "gpt-5-codex"
+      ],
+      "max_tokens": 400000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-5.3-codex",
+      "alias": [
+        "gpt-5.3-codex"
+      ],
+      "max_tokens": 400000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-5.1-codex",
+      "alias": [
+        "gpt-5.1-codex"
+      ],
+      "max_tokens": 400000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-5.3-codex-spark",
+      "alias": [
+        "gpt-5.3-codex-spark"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-5-codex-mini",
+      "alias": [
+        "gpt-5-codex-mini"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-5.1-codex-max",
+      "alias": [
+        "gpt-5.1-codex-max"
+      ],
+      "max_tokens": 400000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-5.5",
+      "alias": [
+        "gpt-5.5"
+      ],
+      "max_tokens": 1050000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-5.1-codex-mini",
+      "alias": [
+        "gpt-5.1-codex-mini"
+      ],
+      "max_tokens": 400000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-5.2-codex",
+      "alias": [
+        "gpt-5.2-codex"
+      ],
+      "max_tokens": 400000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "claude-fable-5",
+      "alias": [
+        "claude-fable-5",
+        "anthropic.claude-fable-5"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "claude-mythos-5",
+      "alias": [
+        "claude-mythos-5"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "claude-opus-4-8",
+      "alias": [
+        "claude-opus-4-8",
+        "anthropic.claude-opus-4-8"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "claude-sonnet-4-7",
+      "alias": [
+        "claude-sonnet-4-7",
+        "anthropic.claude-sonnet-4-7"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "claude-sonnet-4-6",
+      "alias": [
+        "claude-sonnet-4-6",
+        "anthropic.claude-sonnet-4-6"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "claude-sonnet-4-5",
+      "alias": [
+        "claude-sonnet-4-5",
+        "anthropic.claude-sonnet-4-5"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "claude-haiku-4-5-20251001",
+      "alias": [
+        "claude-haiku-4-5-20251001",
+        "claude-haiku-4-5",
+        "anthropic.claude-haiku-4-5-20251001-v1:0"
+      ],
+      "max_tokens": 200000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     }
   ]
 }
