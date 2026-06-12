@@ -3,7 +3,6 @@
     {
       "name": "zai-org/embedding-3",
       "alias": [
-        "zai-org/embedding-3",
         "embedding-3",
         "Embedding-3"
       ],
@@ -22,7 +21,6 @@
     {
       "name": "zai-org/embedding-2",
       "alias": [
-        "zai-org/embedding-2",
         "embedding-2",
         "Embedding-2"
       ],
@@ -35,7 +33,6 @@
     {
       "name": "zai-org/rerank",
       "alias": [
-        "zai-org/rerank",
         "rerank"
       ],
       "max_chars": 4096,
@@ -47,7 +44,6 @@
     {
       "name": "zai-org/scail-2",
       "alias": [
-        "zai-org/scail-2",
         "zai-org/SCAIL-2",
         "SCAIL-2",
         "scail-2"
@@ -59,7 +55,6 @@
     {
       "name": "zai-org/glm-5.1-fp8",
       "alias": [
-        "zai-org/glm-5.1-fp8",
         "zai-org/GLM-5.1-FP8",
         "GLM-5.1-FP8",
         "glm-5.1-fp8"
@@ -76,7 +71,6 @@
     {
       "name": "zai-org/glm-5.1",
       "alias": [
-        "zai-org/glm-5.1",
         "zai-org/GLM-5.1",
         "GLM-5.1",
         "glm-5.1",
@@ -97,7 +91,6 @@
     {
       "name": "zai-org/glm-5",
       "alias": [
-        "zai-org/glm-5",
         "zai-org/GLM-5",
         "GLM-5",
         "glm-5",
@@ -116,7 +109,6 @@
     {
       "name": "zai-org/glm-5-fp8",
       "alias": [
-        "zai-org/glm-5-fp8",
         "zai-org/GLM-5-FP8",
         "GLM-5-FP8",
         "glm-5-fp8"
@@ -133,7 +125,6 @@
     {
       "name": "zai-org/glm-ocr",
       "alias": [
-        "zai-org/glm-ocr",
         "zai-org/GLM-OCR",
         "GLM-OCR",
         "glm-ocr"
@@ -148,7 +139,6 @@
     {
       "name": "zai-org/glm-4.7-flash",
       "alias": [
-        "zai-org/glm-4.7-flash",
         "zai-org/GLM-4.7-Flash",
         "GLM-4.7-Flash",
         "glm-4.7-flash",
@@ -166,7 +156,6 @@
     {
       "name": "zai-org/glm-image",
       "alias": [
-        "zai-org/glm-image",
         "zai-org/GLM-Image",
         "GLM-Image",
         "glm-image"
@@ -179,7 +168,6 @@
     {
       "name": "zai-org/glm-4.7-fp8",
       "alias": [
-        "zai-org/glm-4.7-fp8",
         "zai-org/GLM-4.7-FP8",
         "GLM-4.7-FP8",
         "glm-4.7-fp8"
@@ -196,7 +184,6 @@
     {
       "name": "zai-org/glm-4.7",
       "alias": [
-        "zai-org/glm-4.7",
         "zai-org/GLM-4.7",
         "GLM-4.7",
         "glm-4.7",
@@ -216,7 +203,6 @@
     {
       "name": "zai-org/realvideo",
       "alias": [
-        "zai-org/realvideo",
         "zai-org/RealVideo",
         "RealVideo",
         "realvideo"
@@ -228,7 +214,6 @@
     {
       "name": "zai-org/glm-tts",
       "alias": [
-        "zai-org/glm-tts",
         "zai-org/GLM-TTS",
         "GLM-TTS",
         "glm-tts"
@@ -240,7 +225,6 @@
     {
       "name": "zai-org/glm-asr-nano-2512",
       "alias": [
-        "zai-org/glm-asr-nano-2512",
         "zai-org/GLM-ASR-Nano-2512",
         "GLM-ASR-Nano-2512",
         "glm-asr-nano-2512"
@@ -254,7 +238,6 @@
     {
       "name": "zai-org/autoglm-phone-9b-multilingual",
       "alias": [
-        "zai-org/autoglm-phone-9b-multilingual",
         "zai-org/AutoGLM-Phone-9B-Multilingual",
         "AutoGLM-Phone-9B-Multilingual",
         "autoglm-phone-9b-multilingual"
@@ -269,7 +252,6 @@
     {
       "name": "zai-org/scail-preview",
       "alias": [
-        "zai-org/scail-preview",
         "zai-org/SCAIL-Preview",
         "SCAIL-Preview",
         "scail-preview"
@@ -281,7 +263,6 @@
     {
       "name": "zai-org/autoglm-phone-9b",
       "alias": [
-        "zai-org/autoglm-phone-9b",
         "zai-org/AutoGLM-Phone-9B",
         "AutoGLM-Phone-9B",
         "autoglm-phone-9b"
@@ -296,7 +277,6 @@
     {
       "name": "zai-org/glm-4.6v-fp8",
       "alias": [
-        "zai-org/glm-4.6v-fp8",
         "zai-org/GLM-4.6V-FP8",
         "GLM-4.6V-FP8",
         "glm-4.6v-fp8"
@@ -315,7 +295,6 @@
     {
       "name": "zai-org/glm-4.6v",
       "alias": [
-        "zai-org/glm-4.6v",
         "zai-org/GLM-4.6V",
         "GLM-4.6V",
         "glm-4.6v",
@@ -335,7 +314,6 @@
     {
       "name": "zai-org/glm-4.6v-flash",
       "alias": [
-        "zai-org/glm-4.6v-flash",
         "zai-org/GLM-4.6V-Flash",
         "GLM-4.6V-Flash",
         "glm-4.6v-flash"
@@ -354,7 +332,6 @@
     {
       "name": "zai-org/ssvae",
       "alias": [
-        "zai-org/ssvae",
         "zai-org/SSVAE",
         "SSVAE",
         "ssvae"
@@ -366,7 +343,6 @@
     {
       "name": "zai-org/webvia-agent",
       "alias": [
-        "zai-org/webvia-agent",
         "zai-org/WebVIA-Agent",
         "WebVIA-Agent",
         "webvia-agent"
@@ -381,7 +357,6 @@
     {
       "name": "zai-org/ui2code_n",
       "alias": [
-        "zai-org/ui2code_n",
         "zai-org/UI2Code_N",
         "UI2Code_N",
         "ui2code_n"
@@ -396,7 +371,6 @@
     {
       "name": "zai-org/kaleido-14b-s2v",
       "alias": [
-        "zai-org/kaleido-14b-s2v",
         "zai-org/Kaleido-14B-S2V",
         "Kaleido-14B-S2V",
         "kaleido-14b-s2v"
@@ -408,7 +382,6 @@
     {
       "name": "zai-org/glyph",
       "alias": [
-        "zai-org/glyph",
         "zai-org/Glyph",
         "Glyph",
         "glyph"
@@ -423,7 +396,6 @@
     {
       "name": "zai-org/glm-4.6",
       "alias": [
-        "zai-org/glm-4.6",
         "zai-org/GLM-4.6",
         "GLM-4.6",
         "glm-4.6",
@@ -442,7 +414,6 @@
     {
       "name": "zai-org/glm-4.6-fp8",
       "alias": [
-        "zai-org/glm-4.6-fp8",
         "zai-org/GLM-4.6-FP8",
         "GLM-4.6-FP8",
         "glm-4.6-fp8"
@@ -459,7 +430,6 @@
     {
       "name": "zai-org/glm-4.5v",
       "alias": [
-        "zai-org/glm-4.5v",
         "zai-org/GLM-4.5V",
         "GLM-4.5V",
         "glm-4.5v",
@@ -479,7 +449,6 @@
     {
       "name": "zai-org/glm-4.5v-fp8",
       "alias": [
-        "zai-org/glm-4.5v-fp8",
         "zai-org/GLM-4.5V-FP8",
         "GLM-4.5V-FP8",
         "glm-4.5v-fp8"
@@ -498,7 +467,6 @@
     {
       "name": "zai-org/glm-4.5-base",
       "alias": [
-        "zai-org/glm-4.5-base",
         "zai-org/GLM-4.5-Base",
         "GLM-4.5-Base",
         "glm-4.5-base"
@@ -515,7 +483,6 @@
     {
       "name": "zai-org/glm-4.5-air-fp8",
       "alias": [
-        "zai-org/glm-4.5-air-fp8",
         "zai-org/GLM-4.5-Air-FP8",
         "GLM-4.5-Air-FP8",
         "glm-4.5-air-fp8"
@@ -532,7 +499,6 @@
     {
       "name": "zai-org/glm-4.5-fp8",
       "alias": [
-        "zai-org/glm-4.5-fp8",
         "zai-org/GLM-4.5-FP8",
         "GLM-4.5-FP8",
         "glm-4.5-fp8"
@@ -549,7 +515,6 @@
     {
       "name": "zai-org/glm-4.5-air",
       "alias": [
-        "zai-org/glm-4.5-air",
         "zai-org/GLM-4.5-Air",
         "GLM-4.5-Air",
         "glm-4.5-air",
@@ -569,7 +534,6 @@
     {
       "name": "zai-org/glm-4.5",
       "alias": [
-        "zai-org/glm-4.5",
         "zai-org/GLM-4.5",
         "GLM-4.5",
         "glm-4.5",
@@ -588,7 +552,6 @@
     {
       "name": "zai-org/glm-4.5-air-base",
       "alias": [
-        "zai-org/glm-4.5-air-base",
         "zai-org/GLM-4.5-Air-Base",
         "GLM-4.5-Air-Base",
         "glm-4.5-air-base"
@@ -605,7 +568,6 @@
     {
       "name": "zai-org/glm-4.1v-9b-thinking",
       "alias": [
-        "zai-org/glm-4.1v-9b-thinking",
         "zai-org/GLM-4.1V-9B-Thinking",
         "GLM-4.1V-9B-Thinking",
         "glm-4.1v-9b-thinking"
@@ -624,7 +586,6 @@
     {
       "name": "zai-org/glm-4.1v-9b-base",
       "alias": [
-        "zai-org/glm-4.1v-9b-base",
         "zai-org/GLM-4.1V-9B-Base",
         "GLM-4.1V-9B-Base",
         "glm-4.1v-9b-base"
@@ -639,7 +600,6 @@
     {
       "name": "zai-org/androidgen-llama-3-70b",
       "alias": [
-        "zai-org/androidgen-llama-3-70b",
         "androidgen-llama-3-70b"
       ],
       "max_tokens": 16384,
@@ -650,7 +610,6 @@
     {
       "name": "zai-org/androidgen-glm-4-9b",
       "alias": [
-        "zai-org/androidgen-glm-4-9b",
         "androidgen-glm-4-9b"
       ],
       "max_tokens": 128000,
@@ -661,7 +620,6 @@
     {
       "name": "zai-org/glm-z1-rumination-32b-0414",
       "alias": [
-        "zai-org/glm-z1-rumination-32b-0414",
         "zai-org/GLM-Z1-Rumination-32B-0414",
         "GLM-Z1-Rumination-32B-0414",
         "glm-z1-rumination-32b-0414"
@@ -678,7 +636,6 @@
     {
       "name": "zai-org/glm-z1-32b-0414",
       "alias": [
-        "zai-org/glm-z1-32b-0414",
         "zai-org/GLM-Z1-32B-0414",
         "GLM-Z1-32B-0414",
         "glm-z1-32b-0414"
@@ -695,7 +652,6 @@
     {
       "name": "zai-org/glm-z1-9b-0414",
       "alias": [
-        "zai-org/glm-z1-9b-0414",
         "zai-org/GLM-Z1-9B-0414",
         "GLM-Z1-9B-0414",
         "glm-z1-9b-0414",
@@ -713,7 +669,6 @@
     {
       "name": "zai-org/glm-4-32b-base-0414",
       "alias": [
-        "zai-org/glm-4-32b-base-0414",
         "zai-org/GLM-4-32B-Base-0414",
         "GLM-4-32B-Base-0414",
         "glm-4-32b-base-0414"
@@ -726,7 +681,6 @@
     {
       "name": "zai-org/glm-4-32b-0414",
       "alias": [
-        "zai-org/glm-4-32b-0414",
         "zai-org/GLM-4-32B-0414",
         "GLM-4-32B-0414",
         "glm-4-32b-0414",
@@ -740,7 +694,6 @@
     {
       "name": "zai-org/glm-4-9b-0414",
       "alias": [
-        "zai-org/glm-4-9b-0414",
         "zai-org/GLM-4-9B-0414",
         "GLM-4-9B-0414",
         "glm-4-9b-0414"
@@ -753,7 +706,6 @@
     {
       "name": "zai-org/swe-dev-9b",
       "alias": [
-        "zai-org/swe-dev-9b",
         "zai-org/SWE-Dev-9B",
         "SWE-Dev-9B",
         "swe-dev-9b"
@@ -766,7 +718,6 @@
     {
       "name": "zai-org/swe-dev-32b",
       "alias": [
-        "zai-org/swe-dev-32b",
         "zai-org/SWE-Dev-32B",
         "SWE-Dev-32B",
         "swe-dev-32b"
@@ -779,7 +730,6 @@
     {
       "name": "zai-org/swe-dev-7b",
       "alias": [
-        "zai-org/swe-dev-7b",
         "zai-org/SWE-Dev-7B",
         "SWE-Dev-7B",
         "swe-dev-7b"
@@ -792,7 +742,6 @@
     {
       "name": "zai-org/cogview4-6b",
       "alias": [
-        "zai-org/cogview4-6b",
         "zai-org/CogView4-6B",
         "CogView4-6B",
         "cogview4-6b"
@@ -805,7 +754,6 @@
     {
       "name": "zai-org/visionreward-image-bf16",
       "alias": [
-        "zai-org/visionreward-image-bf16",
         "zai-org/VisionReward-Image-bf16",
         "VisionReward-Image-bf16",
         "visionreward-image-bf16"
@@ -819,7 +767,6 @@
     {
       "name": "zai-org/glm-4-9b-hf",
       "alias": [
-        "zai-org/glm-4-9b-hf",
         "glm-4-9b-hf"
       ],
       "max_tokens": 8000,
@@ -830,7 +777,6 @@
     {
       "name": "zai-org/cogagent-9b-20241220",
       "alias": [
-        "zai-org/cogagent-9b-20241220",
         "cogagent-9b-20241220"
       ],
       "max_tokens": 8192,
@@ -843,7 +789,6 @@
     {
       "name": "zai-org/visionreward-image",
       "alias": [
-        "zai-org/visionreward-image",
         "zai-org/VisionReward-Image",
         "VisionReward-Image",
         "visionreward-image"
@@ -857,7 +802,6 @@
     {
       "name": "zai-org/visionreward-video",
       "alias": [
-        "zai-org/visionreward-video",
         "zai-org/VisionReward-Video",
         "VisionReward-Video",
         "visionreward-video"
@@ -873,7 +817,6 @@
     {
       "name": "zai-org/webrl-orm-llama-3.1-8b",
       "alias": [
-        "zai-org/webrl-orm-llama-3.1-8b",
         "webrl-orm-llama-3.1-8b"
       ],
       "max_tokens": 131072,
@@ -884,7 +827,6 @@
     {
       "name": "zai-org/mathglm-vision-19b",
       "alias": [
-        "zai-org/mathglm-vision-19b",
         "zai-org/MathGLM-Vision-19B",
         "MathGLM-Vision-19B",
         "mathglm-vision-19b"
@@ -896,7 +838,6 @@
     {
       "name": "zai-org/mathglm-vision",
       "alias": [
-        "zai-org/mathglm-vision",
         "zai-org/MathGLM-Vision",
         "MathGLM-Vision",
         "mathglm-vision"
@@ -908,7 +849,6 @@
     {
       "name": "zai-org/glm-edge-4b-chat-gguf",
       "alias": [
-        "zai-org/glm-edge-4b-chat-gguf",
         "glm-edge-4b-chat-gguf"
       ],
       "max_tokens": 8192,
@@ -919,7 +859,6 @@
     {
       "name": "zai-org/glm-edge-1.5b-chat-gguf",
       "alias": [
-        "zai-org/glm-edge-1.5b-chat-gguf",
         "glm-edge-1.5b-chat-gguf"
       ],
       "max_tokens": 8192,
@@ -930,7 +869,6 @@
     {
       "name": "zai-org/glm-edge-v-2b-gguf",
       "alias": [
-        "zai-org/glm-edge-v-2b-gguf",
         "glm-edge-v-2b-gguf"
       ],
       "max_tokens": 8192,
@@ -943,7 +881,6 @@
     {
       "name": "zai-org/glm-edge-v-5b-gguf",
       "alias": [
-        "zai-org/glm-edge-v-5b-gguf",
         "glm-edge-v-5b-gguf"
       ],
       "max_tokens": 8192,
@@ -956,7 +893,6 @@
     {
       "name": "zai-org/glm-edge-v-5b",
       "alias": [
-        "zai-org/glm-edge-v-5b",
         "glm-edge-v-5b"
       ],
       "max_tokens": 8192,
@@ -969,7 +905,6 @@
     {
       "name": "zai-org/glm-edge-v-2b",
       "alias": [
-        "zai-org/glm-edge-v-2b",
         "glm-edge-v-2b"
       ],
       "max_tokens": 8192,
@@ -982,7 +917,6 @@
     {
       "name": "zai-org/glm-edge-4b-chat",
       "alias": [
-        "zai-org/glm-edge-4b-chat",
         "glm-edge-4b-chat"
       ],
       "max_tokens": 8192,
@@ -993,7 +927,6 @@
     {
       "name": "zai-org/glm-edge-1.5b-chat",
       "alias": [
-        "zai-org/glm-edge-1.5b-chat",
         "glm-edge-1.5b-chat"
       ],
       "max_tokens": 8192,
@@ -1004,7 +937,6 @@
     {
       "name": "zai-org/webrl-llama-3.1-70b",
       "alias": [
-        "zai-org/webrl-llama-3.1-70b",
         "webrl-llama-3.1-70b"
       ],
       "max_tokens": 131072,
@@ -1015,7 +947,6 @@
     {
       "name": "zai-org/webrl-llama-3.1-8b",
       "alias": [
-        "zai-org/webrl-llama-3.1-8b",
         "webrl-llama-3.1-8b"
       ],
       "max_tokens": 131072,
@@ -1026,7 +957,6 @@
     {
       "name": "zai-org/webrl-glm-4-9b",
       "alias": [
-        "zai-org/webrl-glm-4-9b",
         "webrl-glm-4-9b"
       ],
       "max_tokens": 8000,
@@ -1037,7 +967,6 @@
     {
       "name": "zai-org/cogvideox1.5-5b-sat",
       "alias": [
-        "zai-org/cogvideox1.5-5b-sat",
         "zai-org/CogVideoX1.5-5B-SAT",
         "CogVideoX1.5-5B-SAT",
         "cogvideox1.5-5b-sat"
@@ -1049,7 +978,6 @@
     {
       "name": "zai-org/cogvideox1.5-5b-i2v",
       "alias": [
-        "zai-org/cogvideox1.5-5b-i2v",
         "zai-org/CogVideoX1.5-5B-I2V",
         "CogVideoX1.5-5B-I2V",
         "cogvideox1.5-5b-i2v"
@@ -1061,7 +989,6 @@
     {
       "name": "zai-org/cogvideox1.5-5b",
       "alias": [
-        "zai-org/cogvideox1.5-5b",
         "zai-org/CogVideoX1.5-5B",
         "CogVideoX1.5-5B",
         "cogvideox1.5-5b"
@@ -1073,7 +1000,6 @@
     {
       "name": "zai-org/longreward-glm4-9b-dpo",
       "alias": [
-        "zai-org/longreward-glm4-9b-dpo",
         "zai-org/LongReward-glm4-9b-DPO",
         "LongReward-glm4-9b-DPO",
         "longreward-glm4-9b-dpo"
@@ -1086,7 +1012,6 @@
     {
       "name": "zai-org/glm-4-voice-9b",
       "alias": [
-        "zai-org/glm-4-voice-9b",
         "glm-4-voice-9b"
       ],
       "max_tokens": 128000,
@@ -1097,7 +1022,6 @@
     {
       "name": "zai-org/glm-4-voice-tokenizer",
       "alias": [
-        "zai-org/glm-4-voice-tokenizer",
         "glm-4-voice-tokenizer"
       ],
       "model_types": [
@@ -1107,7 +1031,6 @@
     {
       "name": "zai-org/glm-4-voice-decoder",
       "alias": [
-        "zai-org/glm-4-voice-decoder",
         "glm-4-voice-decoder"
       ],
       "model_types": [
@@ -1117,7 +1040,6 @@
     {
       "name": "zai-org/glm-4-9b-chat-1m-hf",
       "alias": [
-        "zai-org/glm-4-9b-chat-1m-hf",
         "glm-4-9b-chat-1m-hf"
       ],
       "max_tokens": 1024000,
@@ -1128,7 +1050,6 @@
     {
       "name": "zai-org/glm-4-9b-chat-hf",
       "alias": [
-        "zai-org/glm-4-9b-chat-hf",
         "glm-4-9b-chat-hf"
       ],
       "max_tokens": 128000,
@@ -1139,7 +1060,6 @@
     {
       "name": "zai-org/longreward-llama3.1-8b-dpo",
       "alias": [
-        "zai-org/longreward-llama3.1-8b-dpo",
         "zai-org/LongReward-llama3.1-8b-DPO",
         "LongReward-llama3.1-8b-DPO",
         "longreward-llama3.1-8b-dpo"
@@ -1152,7 +1072,6 @@
     {
       "name": "zai-org/cogview3-plus-3b",
       "alias": [
-        "zai-org/cogview3-plus-3b",
         "zai-org/CogView3-Plus-3B",
         "CogView3-Plus-3B",
         "cogview3-plus-3b"
@@ -1165,7 +1084,6 @@
     {
       "name": "zai-org/cogvlm2-llama3-caption",
       "alias": [
-        "zai-org/cogvlm2-llama3-caption",
         "cogvlm2-llama3-caption"
       ],
       "max_tokens": 2048,
@@ -1178,7 +1096,6 @@
     {
       "name": "zai-org/cogvideox-5b-i2v",
       "alias": [
-        "zai-org/cogvideox-5b-i2v",
         "zai-org/CogVideoX-5b-I2V",
         "CogVideoX-5b-I2V",
         "cogvideox-5b-i2v"
@@ -1190,7 +1107,6 @@
     {
       "name": "zai-org/longcite-llama3.1-8b",
       "alias": [
-        "zai-org/longcite-llama3.1-8b",
         "zai-org/LongCite-llama3.1-8b",
         "LongCite-llama3.1-8b",
         "longcite-llama3.1-8b"
@@ -1203,7 +1119,6 @@
     {
       "name": "zai-org/longcite-glm4-9b",
       "alias": [
-        "zai-org/longcite-glm4-9b",
         "zai-org/LongCite-glm4-9b",
         "LongCite-glm4-9b",
         "longcite-glm4-9b"
@@ -1216,7 +1131,6 @@
     {
       "name": "zai-org/cogvideox-5b",
       "alias": [
-        "zai-org/cogvideox-5b",
         "zai-org/CogVideoX-5b",
         "CogVideoX-5b",
         "cogvideox-5b"
@@ -1228,7 +1142,6 @@
     {
       "name": "zai-org/longwriter-glm4-9b",
       "alias": [
-        "zai-org/longwriter-glm4-9b",
         "zai-org/LongWriter-glm4-9b",
         "LongWriter-glm4-9b",
         "longwriter-glm4-9b"
@@ -1241,7 +1154,6 @@
     {
       "name": "zai-org/longwriter-llama3.1-8b",
       "alias": [
-        "zai-org/longwriter-llama3.1-8b",
         "zai-org/LongWriter-llama3.1-8b",
         "LongWriter-llama3.1-8b",
         "longwriter-llama3.1-8b"
@@ -1254,7 +1166,6 @@
     {
       "name": "zai-org/cogvideox-2b",
       "alias": [
-        "zai-org/cogvideox-2b",
         "zai-org/CogVideoX-2b",
         "CogVideoX-2b",
         "cogvideox-2b"
@@ -1266,7 +1177,6 @@
     {
       "name": "zai-org/apar-13b",
       "alias": [
-        "zai-org/apar-13b",
         "apar-13b"
       ],
       "max_tokens": 2048,
@@ -1277,7 +1187,6 @@
     {
       "name": "zai-org/apar-7b",
       "alias": [
-        "zai-org/apar-7b",
         "apar-7b"
       ],
       "max_tokens": 2048,
@@ -1288,7 +1197,6 @@
     {
       "name": "zai-org/codegeex4-all-9b-gguf",
       "alias": [
-        "zai-org/codegeex4-all-9b-gguf",
         "zai-org/codegeex4-all-9b-GGUF",
         "codegeex4-all-9b-GGUF",
         "codegeex4-all-9b-gguf"
@@ -1301,7 +1209,6 @@
     {
       "name": "zai-org/codegeex4-all-9b",
       "alias": [
-        "zai-org/codegeex4-all-9b",
         "codegeex4-all-9b"
       ],
       "max_tokens": 131072,
@@ -1312,7 +1219,6 @@
     {
       "name": "zai-org/cogvlm2-video-llama3-base",
       "alias": [
-        "zai-org/cogvlm2-video-llama3-base",
         "cogvlm2-video-llama3-base"
       ],
       "max_tokens": 2048,
@@ -1326,7 +1232,6 @@
     {
       "name": "zai-org/cogvlm2-video-llama3-chat",
       "alias": [
-        "zai-org/cogvlm2-video-llama3-chat",
         "cogvlm2-video-llama3-chat"
       ],
       "max_tokens": 2048,
@@ -1340,7 +1245,6 @@
     {
       "name": "zai-org/msagpt",
       "alias": [
-        "zai-org/msagpt",
         "zai-org/MSAGPT",
         "MSAGPT",
         "msagpt"
@@ -1352,7 +1256,6 @@
     {
       "name": "zai-org/cogvlm2-llama3-chat-19b-tgi",
       "alias": [
-        "zai-org/cogvlm2-llama3-chat-19b-tgi",
         "zai-org/cogvlm2-llama3-chat-19B-tgi",
         "cogvlm2-llama3-chat-19B-tgi",
         "cogvlm2-llama3-chat-19b-tgi"
@@ -1367,7 +1270,6 @@
     {
       "name": "zai-org/cogvlm2-llama3-chinese-chat-19b-tgi",
       "alias": [
-        "zai-org/cogvlm2-llama3-chinese-chat-19b-tgi",
         "zai-org/cogvlm2-llama3-chinese-chat-19B-tgi",
         "cogvlm2-llama3-chinese-chat-19B-tgi",
         "cogvlm2-llama3-chinese-chat-19b-tgi"
@@ -1382,7 +1284,6 @@
     {
       "name": "zai-org/glm-4-9b-chat-1m",
       "alias": [
-        "zai-org/glm-4-9b-chat-1m",
         "glm-4-9b-chat-1m"
       ],
       "max_tokens": 1024000,
@@ -1393,7 +1294,6 @@
     {
       "name": "zai-org/glm-4-9b-chat",
       "alias": [
-        "zai-org/glm-4-9b-chat",
         "glm-4-9b-chat"
       ],
       "max_tokens": 128000,
@@ -1404,7 +1304,6 @@
     {
       "name": "zai-org/glm-4-9b",
       "alias": [
-        "zai-org/glm-4-9b",
         "glm-4-9b"
       ],
       "max_tokens": 8000,
@@ -1415,7 +1314,6 @@
     {
       "name": "zai-org/glm-4v-9b",
       "alias": [
-        "zai-org/glm-4v-9b",
         "glm-4v-9b"
       ],
       "max_tokens": 8192,
@@ -1426,7 +1324,6 @@
     {
       "name": "zai-org/cogvlm2-llama3-chinese-chat-19b-int4",
       "alias": [
-        "zai-org/cogvlm2-llama3-chinese-chat-19b-int4",
         "zai-org/cogvlm2-llama3-chinese-chat-19B-int4",
         "cogvlm2-llama3-chinese-chat-19B-int4",
         "cogvlm2-llama3-chinese-chat-19b-int4"
@@ -1441,7 +1338,6 @@
     {
       "name": "zai-org/cogvlm2-llama3-chat-19b-int4",
       "alias": [
-        "zai-org/cogvlm2-llama3-chat-19b-int4",
         "zai-org/cogvlm2-llama3-chat-19B-int4",
         "cogvlm2-llama3-chat-19B-int4",
         "cogvlm2-llama3-chat-19b-int4"
@@ -1456,7 +1352,6 @@
     {
       "name": "zai-org/cogvlm2-llama3-chinese-chat-19b",
       "alias": [
-        "zai-org/cogvlm2-llama3-chinese-chat-19b",
         "zai-org/cogvlm2-llama3-chinese-chat-19B",
         "cogvlm2-llama3-chinese-chat-19B",
         "cogvlm2-llama3-chinese-chat-19b"
@@ -1471,7 +1366,6 @@
     {
       "name": "zai-org/cogvlm2-llama3-chat-19b",
       "alias": [
-        "zai-org/cogvlm2-llama3-chat-19b",
         "zai-org/cogvlm2-llama3-chat-19B",
         "cogvlm2-llama3-chat-19B",
         "cogvlm2-llama3-chat-19b"
@@ -1486,7 +1380,6 @@
     {
       "name": "zai-org/chatglm3-6b-128k",
       "alias": [
-        "zai-org/chatglm3-6b-128k",
         "chatglm3-6b-128k"
       ],
       "max_tokens": 131072,
@@ -1497,7 +1390,6 @@
     {
       "name": "zai-org/longalign-13b-64k-base",
       "alias": [
-        "zai-org/longalign-13b-64k-base",
         "zai-org/LongAlign-13B-64k-base",
         "LongAlign-13B-64k-base",
         "longalign-13b-64k-base"
@@ -1510,7 +1402,6 @@
     {
       "name": "zai-org/longalign-7b-64k-base",
       "alias": [
-        "zai-org/longalign-7b-64k-base",
         "zai-org/LongAlign-7B-64k-base",
         "LongAlign-7B-64k-base",
         "longalign-7b-64k-base"
@@ -1523,7 +1414,6 @@
     {
       "name": "zai-org/longalign-6b-64k-base",
       "alias": [
-        "zai-org/longalign-6b-64k-base",
         "zai-org/LongAlign-6B-64k-base",
         "LongAlign-6B-64k-base",
         "longalign-6b-64k-base"
@@ -1536,7 +1426,6 @@
     {
       "name": "zai-org/longalign-13b-64k",
       "alias": [
-        "zai-org/longalign-13b-64k",
         "zai-org/LongAlign-13B-64k",
         "LongAlign-13B-64k",
         "longalign-13b-64k"
@@ -1549,7 +1438,6 @@
     {
       "name": "zai-org/longalign-6b-64k",
       "alias": [
-        "zai-org/longalign-6b-64k",
         "zai-org/LongAlign-6B-64k",
         "LongAlign-6B-64k",
         "longalign-6b-64k"
@@ -1562,7 +1450,6 @@
     {
       "name": "zai-org/longalign-7b-64k",
       "alias": [
-        "zai-org/longalign-7b-64k",
         "zai-org/LongAlign-7B-64k",
         "LongAlign-7B-64k",
         "longalign-7b-64k"
@@ -1575,7 +1462,6 @@
     {
       "name": "zai-org/cogagent-vqa-hf",
       "alias": [
-        "zai-org/cogagent-vqa-hf",
         "cogagent-vqa-hf"
       ],
       "max_tokens": 2048,
@@ -1586,7 +1472,6 @@
     {
       "name": "zai-org/cogagent",
       "alias": [
-        "zai-org/cogagent",
         "zai-org/CogAgent",
         "CogAgent",
         "cogagent"
@@ -1598,7 +1483,6 @@
     {
       "name": "zai-org/cogagent-chat-hf",
       "alias": [
-        "zai-org/cogagent-chat-hf",
         "cogagent-chat-hf"
       ],
       "max_tokens": 2048,
@@ -1609,7 +1493,6 @@
     {
       "name": "zai-org/bpo",
       "alias": [
-        "zai-org/bpo",
         "zai-org/BPO",
         "BPO",
         "bpo"
@@ -1622,7 +1505,6 @@
     {
       "name": "zai-org/cogvlm-grounding-generalist-hf",
       "alias": [
-        "zai-org/cogvlm-grounding-generalist-hf",
         "cogvlm-grounding-generalist-hf"
       ],
       "max_tokens": 2048,
@@ -1633,7 +1515,6 @@
     {
       "name": "zai-org/cogvlm-grounding-base-hf",
       "alias": [
-        "zai-org/cogvlm-grounding-base-hf",
         "cogvlm-grounding-base-hf"
       ],
       "max_tokens": 2048,
@@ -1644,7 +1525,6 @@
     {
       "name": "zai-org/cogvlm-base-490-hf",
       "alias": [
-        "zai-org/cogvlm-base-490-hf",
         "cogvlm-base-490-hf"
       ],
       "max_tokens": 2048,
@@ -1655,7 +1535,6 @@
     {
       "name": "zai-org/cogvlm-base-224-hf",
       "alias": [
-        "zai-org/cogvlm-base-224-hf",
         "cogvlm-base-224-hf"
       ],
       "max_tokens": 2048,
@@ -1666,7 +1545,6 @@
     {
       "name": "zai-org/cogvlm-chat-hf",
       "alias": [
-        "zai-org/cogvlm-chat-hf",
         "cogvlm-chat-hf"
       ],
       "max_tokens": 2048,
@@ -1677,7 +1555,6 @@
     {
       "name": "zai-org/chatglm3-6b-32k",
       "alias": [
-        "zai-org/chatglm3-6b-32k",
         "chatglm3-6b-32k"
       ],
       "max_tokens": 32768,
@@ -1688,7 +1565,6 @@
     {
       "name": "zai-org/chatglm3-6b-base",
       "alias": [
-        "zai-org/chatglm3-6b-base",
         "chatglm3-6b-base"
       ],
       "max_tokens": 32768,
@@ -1699,7 +1575,6 @@
     {
       "name": "zai-org/chatglm3-6b",
       "alias": [
-        "zai-org/chatglm3-6b",
         "chatglm3-6b"
       ],
       "max_tokens": 8192,
@@ -1710,7 +1585,6 @@
     {
       "name": "zai-org/agentlm-7b",
       "alias": [
-        "zai-org/agentlm-7b",
         "agentlm-7b"
       ],
       "max_tokens": 4096,
@@ -1721,7 +1595,6 @@
     {
       "name": "zai-org/cogvlm",
       "alias": [
-        "zai-org/cogvlm",
         "zai-org/CogVLM",
         "CogVLM",
         "cogvlm"
@@ -1733,7 +1606,6 @@
     {
       "name": "zai-org/agentlm-70b",
       "alias": [
-        "zai-org/agentlm-70b",
         "agentlm-70b"
       ],
       "max_tokens": 4096,
@@ -1744,7 +1616,6 @@
     {
       "name": "zai-org/agentlm-13b",
       "alias": [
-        "zai-org/agentlm-13b",
         "agentlm-13b"
       ],
       "max_tokens": 4096,
@@ -1755,7 +1626,6 @@
     {
       "name": "zai-org/mathglm",
       "alias": [
-        "zai-org/mathglm",
         "zai-org/MathGLM",
         "MathGLM",
         "mathglm"
@@ -1767,7 +1637,6 @@
     {
       "name": "zai-org/chatglm2-6b-32k-int4",
       "alias": [
-        "zai-org/chatglm2-6b-32k-int4",
         "chatglm2-6b-32k-int4"
       ],
       "max_tokens": 32768,
@@ -1778,7 +1647,6 @@
     {
       "name": "zai-org/chatglm2-6b-32k",
       "alias": [
-        "zai-org/chatglm2-6b-32k",
         "chatglm2-6b-32k"
       ],
       "max_tokens": 32768,
@@ -1789,7 +1657,6 @@
     {
       "name": "zai-org/codegeex2-6b-int4",
       "alias": [
-        "zai-org/codegeex2-6b-int4",
         "codegeex2-6b-int4"
       ],
       "max_tokens": 8192,
@@ -1800,7 +1667,6 @@
     {
       "name": "zai-org/codegeex2-6b",
       "alias": [
-        "zai-org/codegeex2-6b",
         "codegeex2-6b"
       ],
       "max_tokens": 8192,
@@ -1811,7 +1677,6 @@
     {
       "name": "zai-org/chatglm2-6b-int4",
       "alias": [
-        "zai-org/chatglm2-6b-int4",
         "chatglm2-6b-int4"
       ],
       "max_tokens": 32768,
@@ -1822,7 +1687,6 @@
     {
       "name": "zai-org/chatglm2-6b",
       "alias": [
-        "zai-org/chatglm2-6b",
         "chatglm2-6b"
       ],
       "max_tokens": 32768,
@@ -1833,7 +1697,6 @@
     {
       "name": "zai-org/webglm-2b",
       "alias": [
-        "zai-org/webglm-2b",
         "zai-org/WebGLM-2B",
         "WebGLM-2B",
         "webglm-2b"
@@ -1846,7 +1709,6 @@
     {
       "name": "zai-org/webglm",
       "alias": [
-        "zai-org/webglm",
         "zai-org/WebGLM",
         "WebGLM",
         "webglm"
@@ -1859,7 +1721,6 @@
     {
       "name": "zai-org/visualglm-6b",
       "alias": [
-        "zai-org/visualglm-6b",
         "visualglm-6b"
       ],
       "max_tokens": 2048,
@@ -1872,7 +1733,6 @@
     {
       "name": "zai-org/chatglm-6b-int8",
       "alias": [
-        "zai-org/chatglm-6b-int8",
         "chatglm-6b-int8"
       ],
       "max_tokens": 2048,
@@ -1883,7 +1743,6 @@
     {
       "name": "zai-org/imagereward",
       "alias": [
-        "zai-org/imagereward",
         "zai-org/ImageReward",
         "ImageReward",
         "imagereward"
@@ -1896,7 +1755,6 @@
     {
       "name": "zai-org/chatglm-6b-int4-qe",
       "alias": [
-        "zai-org/chatglm-6b-int4-qe",
         "chatglm-6b-int4-qe"
       ],
       "max_tokens": 2048,
@@ -1907,7 +1765,6 @@
     {
       "name": "zai-org/chatglm-6b-int4",
       "alias": [
-        "zai-org/chatglm-6b-int4",
         "chatglm-6b-int4"
       ],
       "max_tokens": 2048,
@@ -1918,7 +1775,6 @@
     {
       "name": "zai-org/chatglm-6b",
       "alias": [
-        "zai-org/chatglm-6b",
         "chatglm-6b"
       ],
       "max_tokens": 2048,
@@ -1929,7 +1785,6 @@
     {
       "name": "zai-org/glm-roberta-large",
       "alias": [
-        "zai-org/glm-roberta-large",
         "glm-roberta-large"
       ],
       "max_tokens": 512,
@@ -1940,7 +1795,6 @@
     {
       "name": "zai-org/glm-large-chinese",
       "alias": [
-        "zai-org/glm-large-chinese",
         "glm-large-chinese"
       ],
       "max_tokens": 1024,
@@ -1951,7 +1805,6 @@
     {
       "name": "zai-org/glm-2b",
       "alias": [
-        "zai-org/glm-2b",
         "glm-2b"
       ],
       "max_tokens": 1024,
@@ -1962,7 +1815,6 @@
     {
       "name": "zai-org/glm-10b",
       "alias": [
-        "zai-org/glm-10b",
         "glm-10b"
       ],
       "max_tokens": 1024,
@@ -1973,7 +1825,6 @@
     {
       "name": "zai-org/glm-10b-chinese",
       "alias": [
-        "zai-org/glm-10b-chinese",
         "glm-10b-chinese"
       ],
       "max_tokens": 1024,
@@ -1984,7 +1835,6 @@
     {
       "name": "zai-org/cogvideo",
       "alias": [
-        "zai-org/cogvideo",
         "zai-org/CogVideo",
         "CogVideo",
         "cogvideo"
@@ -1996,7 +1846,6 @@
     {
       "name": "zai-org/cogview2",
       "alias": [
-        "zai-org/cogview2",
         "zai-org/CogView2",
         "CogView2",
         "cogview2"
@@ -2008,7 +1857,6 @@
     {
       "name": "deepseek-v4-flash",
       "alias": [
-        "deepseek-v4-flash",
         "deepseek-chat",
         "deepseek-ai/DeepSeek-V4-Flash",
         "deepseek-ai/deepseek-v4-flash",
@@ -2027,7 +1875,6 @@
     {
       "name": "deepseek-v4-flash-base",
       "alias": [
-        "deepseek-v4-flash-base",
         "deepseek/deepseek-v4-flash-base",
         "deepseek-ai/DeepSeek-V4-Flash-Base",
         "deepseek-ai/deepseek-v4-flash-base"
@@ -2040,7 +1887,6 @@
     {
       "name": "deepseek-v4-pro",
       "alias": [
-        "deepseek-v4-pro",
         "deepseek-ai/DeepSeek-V4-Pro",
         "deepseek-ai/deepseek-v4-pro",
         "deepseek/deepseek-v4-pro",
@@ -2058,7 +1904,6 @@
     {
       "name": "deepseek-v4-pro-base",
       "alias": [
-        "deepseek-v4-pro-base",
         "deepseek/deepseek-v4-pro-base",
         "deepseek-ai/DeepSeek-V4-Pro-Base",
         "deepseek-ai/deepseek-v4-pro-base"
@@ -2071,7 +1916,6 @@
     {
       "name": "deepseek-ocr-2",
       "alias": [
-        "deepseek-ocr-2",
         "deepseek-ai/DeepSeek-OCR-2",
         "deepseek-ai/deepseek-ocr-2"
       ],
@@ -2083,7 +1927,6 @@
     {
       "name": "deepseek-v3.2",
       "alias": [
-        "deepseek-v3.2",
         "deepseek-ai/DeepSeek-V3.2",
         "deepseek-ai/deepseek-v3.2",
         "deepseek/deepseek-v3.2",
@@ -2099,7 +1942,6 @@
     {
       "name": "deepseek-v3.2-speciale",
       "alias": [
-        "deepseek-v3.2-speciale",
         "deepseek-ai/DeepSeek-V3.2-Speciale",
         "deepseek-ai/deepseek-v3.2-speciale"
       ],
@@ -2111,7 +1953,6 @@
     {
       "name": "deepseek-math-v2",
       "alias": [
-        "deepseek-math-v2",
         "deepseek-ai/DeepSeek-Math-V2",
         "deepseek-ai/deepseek-math-v2",
         "deepseek/deepseek-math-v2"
@@ -2124,7 +1965,6 @@
     {
       "name": "deepseek-ocr",
       "alias": [
-        "deepseek-ocr",
         "deepseek-ai/DeepSeek-OCR",
         "deepseek-ai/deepseek-ocr"
       ],
@@ -2136,7 +1976,6 @@
     {
       "name": "deepseek-v3.2-exp",
       "alias": [
-        "deepseek-v3.2-exp",
         "deepseek-ai/DeepSeek-V3.2-Exp",
         "deepseek-ai/deepseek-v3.2-exp",
         "deepseek/deepseek-v3.2-exp",
@@ -2150,7 +1989,6 @@
     {
       "name": "deepseek-v3.2-exp-base",
       "alias": [
-        "deepseek-v3.2-exp-base",
         "deepseek-ai/DeepSeek-V3.2-Exp-Base",
         "deepseek-ai/deepseek-v3.2-exp-base"
       ],
@@ -2162,7 +2000,6 @@
     {
       "name": "deepseek-v3.1-terminus",
       "alias": [
-        "deepseek-v3.1-terminus",
         "deepseek-ai/DeepSeek-V3.1-Terminus",
         "deepseek-ai/deepseek-v3.1-terminus",
         "deepseek/deepseek-v3.1-terminus",
@@ -2177,7 +2014,6 @@
     {
       "name": "deepseek-v3.1",
       "alias": [
-        "deepseek-v3.1",
         "deepseek-ai/DeepSeek-V3.1",
         "deepseek-ai/deepseek-v3.1",
         "deepseek/deepseek-chat-v3.1",
@@ -2191,7 +2027,6 @@
     {
       "name": "deepseek-v3.1-base",
       "alias": [
-        "deepseek-v3.1-base",
         "deepseek-ai/DeepSeek-V3.1-Base",
         "deepseek-ai/deepseek-v3.1-base"
       ],
@@ -2203,7 +2038,6 @@
     {
       "name": "deepseek-r1-0528-qwen3-8b",
       "alias": [
-        "deepseek-r1-0528-qwen3-8b",
         "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
         "deepseek-ai/deepseek-r1-0528-qwen3-8b"
       ],
@@ -2215,7 +2049,6 @@
     {
       "name": "deepseek-r1-0528",
       "alias": [
-        "deepseek-r1-0528",
         "deepseek-ai/DeepSeek-R1-0528",
         "deepseek-ai/deepseek-r1-0528",
         "deepseek/deepseek-r1-0528",
@@ -2230,7 +2063,6 @@
     {
       "name": "deepseek-prover-v2-671b",
       "alias": [
-        "deepseek-prover-v2-671b",
         "deepseek-ai/DeepSeek-Prover-V2-671B",
         "deepseek-ai/deepseek-prover-v2-671b"
       ],
@@ -2242,7 +2074,6 @@
     {
       "name": "deepseek-prover-v2-7b",
       "alias": [
-        "deepseek-prover-v2-7b",
         "deepseek-ai/DeepSeek-Prover-V2-7B",
         "deepseek-ai/deepseek-prover-v2-7b"
       ],
@@ -2254,7 +2085,6 @@
     {
       "name": "deepseek-v3-0324",
       "alias": [
-        "deepseek-v3-0324",
         "deepseek-ai/DeepSeek-V3-0324",
         "deepseek-ai/deepseek-v3-0324",
         "deepseek/deepseek-chat-v3-0324",
@@ -2269,7 +2099,6 @@
     {
       "name": "deepseek-r1",
       "alias": [
-        "deepseek-r1",
         "deepseek-ai/DeepSeek-R1",
         "deepseek-ai/deepseek-r1",
         "deepseek/deepseek-r1",
@@ -2285,7 +2114,6 @@
     {
       "name": "deepseek-r1-distill-llama-70b",
       "alias": [
-        "deepseek-r1-distill-llama-70b",
         "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         "deepseek-ai/deepseek-r1-distill-llama-70b",
         "deepseek/deepseek-r1-distill-llama-70b"
@@ -2298,7 +2126,6 @@
     {
       "name": "deepseek-r1-distill-llama-8b",
       "alias": [
-        "deepseek-r1-distill-llama-8b",
         "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
         "deepseek-ai/deepseek-r1-distill-llama-8b"
       ],
@@ -2310,7 +2137,6 @@
     {
       "name": "deepseek-r1-distill-qwen-1.5b",
       "alias": [
-        "deepseek-r1-distill-qwen-1.5b",
         "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
         "deepseek-ai/deepseek-r1-distill-qwen-1.5b"
       ],
@@ -2322,7 +2148,6 @@
     {
       "name": "deepseek-r1-distill-qwen-14b",
       "alias": [
-        "deepseek-r1-distill-qwen-14b",
         "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
         "deepseek-ai/deepseek-r1-distill-qwen-14b"
       ],
@@ -2334,7 +2159,6 @@
     {
       "name": "deepseek-r1-distill-qwen-32b",
       "alias": [
-        "deepseek-r1-distill-qwen-32b",
         "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
         "deepseek-ai/deepseek-r1-distill-qwen-32b",
         "deepseek/deepseek-r1-distill-qwen-32b",
@@ -2348,7 +2172,6 @@
     {
       "name": "deepseek-r1-distill-qwen-7b",
       "alias": [
-        "deepseek-r1-distill-qwen-7b",
         "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
         "deepseek-ai/deepseek-r1-distill-qwen-7b",
         "deepseek-r1-distill-qwen-7b-250120"
@@ -2361,7 +2184,6 @@
     {
       "name": "deepseek-r1-zero",
       "alias": [
-        "deepseek-r1-zero",
         "deepseek-ai/DeepSeek-R1-Zero",
         "deepseek-ai/deepseek-r1-zero"
       ],
@@ -2373,7 +2195,6 @@
     {
       "name": "deepseek-v3",
       "alias": [
-        "deepseek-v3",
         "deepseek-ai/DeepSeek-V3",
         "deepseek-ai/deepseek-v3",
         "deepseek/deepseek-chat",
@@ -2387,7 +2208,6 @@
     {
       "name": "deepseek-v3-base",
       "alias": [
-        "deepseek-v3-base",
         "deepseek-ai/DeepSeek-V3-Base",
         "deepseek-ai/deepseek-v3-base"
       ],
@@ -2399,7 +2219,6 @@
     {
       "name": "deepseek-vl2",
       "alias": [
-        "deepseek-vl2",
         "deepseek-ai/deepseek-vl2"
       ],
       "max_tokens": 4096,
@@ -2410,7 +2229,6 @@
     {
       "name": "deepseek-vl2-small",
       "alias": [
-        "deepseek-vl2-small",
         "deepseek-ai/deepseek-vl2-small"
       ],
       "max_tokens": 4096,
@@ -2421,7 +2239,6 @@
     {
       "name": "deepseek-vl2-tiny",
       "alias": [
-        "deepseek-vl2-tiny",
         "deepseek-ai/deepseek-vl2-tiny"
       ],
       "max_tokens": 4096,
@@ -2432,7 +2249,6 @@
     {
       "name": "deepseek-v2.5-1210",
       "alias": [
-        "deepseek-v2.5-1210",
         "deepseek-ai/DeepSeek-V2.5-1210",
         "deepseek-ai/deepseek-v2.5-1210"
       ],
@@ -2444,7 +2260,6 @@
     {
       "name": "deepseek-coder-v2-instruct-0724",
       "alias": [
-        "deepseek-coder-v2-instruct-0724",
         "deepseek-ai/DeepSeek-Coder-V2-Instruct-0724",
         "deepseek-ai/deepseek-coder-v2-instruct-0724"
       ],
@@ -2456,7 +2271,6 @@
     {
       "name": "deepseek-v2.5",
       "alias": [
-        "deepseek-v2.5",
         "deepseek-ai/DeepSeek-V2.5",
         "deepseek-ai/deepseek-v2.5"
       ],
@@ -2468,7 +2282,6 @@
     {
       "name": "deepseek-prover-v1",
       "alias": [
-        "deepseek-prover-v1",
         "deepseek-ai/DeepSeek-Prover-V1",
         "deepseek-ai/deepseek-prover-v1"
       ],
@@ -2480,7 +2293,6 @@
     {
       "name": "deepseek-prover-v1.5-base",
       "alias": [
-        "deepseek-prover-v1.5-base",
         "deepseek-ai/DeepSeek-Prover-V1.5-Base",
         "deepseek-ai/deepseek-prover-v1.5-base"
       ],
@@ -2492,7 +2304,6 @@
     {
       "name": "deepseek-prover-v1.5-rl",
       "alias": [
-        "deepseek-prover-v1.5-rl",
         "deepseek-ai/DeepSeek-Prover-V1.5-RL",
         "deepseek-ai/deepseek-prover-v1.5-rl"
       ],
@@ -2504,7 +2315,6 @@
     {
       "name": "deepseek-prover-v1.5-sft",
       "alias": [
-        "deepseek-prover-v1.5-sft",
         "deepseek-ai/DeepSeek-Prover-V1.5-SFT",
         "deepseek-ai/deepseek-prover-v1.5-sft"
       ],
@@ -2516,7 +2326,6 @@
     {
       "name": "deepseek-v2-chat-0628",
       "alias": [
-        "deepseek-v2-chat-0628",
         "deepseek-ai/DeepSeek-V2-Chat-0628",
         "deepseek-ai/deepseek-v2-chat-0628"
       ],
@@ -2528,7 +2337,6 @@
     {
       "name": "deepseek-coder-v2-base",
       "alias": [
-        "deepseek-coder-v2-base",
         "deepseek-ai/DeepSeek-Coder-V2-Base",
         "deepseek-ai/deepseek-coder-v2-base"
       ],
@@ -2540,7 +2348,6 @@
     {
       "name": "deepseek-coder-v2-instruct",
       "alias": [
-        "deepseek-coder-v2-instruct",
         "deepseek-ai/DeepSeek-Coder-V2-Instruct",
         "deepseek-ai/deepseek-coder-v2-instruct"
       ],
@@ -2552,7 +2359,6 @@
     {
       "name": "deepseek-coder-v2-lite-base",
       "alias": [
-        "deepseek-coder-v2-lite-base",
         "deepseek-ai/DeepSeek-Coder-V2-Lite-Base",
         "deepseek-ai/deepseek-coder-v2-lite-base"
       ],
@@ -2564,7 +2370,6 @@
     {
       "name": "deepseek-coder-v2-lite-instruct",
       "alias": [
-        "deepseek-coder-v2-lite-instruct",
         "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct",
         "deepseek-ai/deepseek-coder-v2-lite-instruct"
       ],
@@ -2576,7 +2381,6 @@
     {
       "name": "deepseek-v2-lite",
       "alias": [
-        "deepseek-v2-lite",
         "deepseek-ai/DeepSeek-V2-Lite",
         "deepseek-ai/deepseek-v2-lite"
       ],
@@ -2588,7 +2392,6 @@
     {
       "name": "deepseek-v2-lite-chat",
       "alias": [
-        "deepseek-v2-lite-chat",
         "deepseek-ai/DeepSeek-V2-Lite-Chat",
         "deepseek-ai/deepseek-v2-lite-chat"
       ],
@@ -2600,7 +2403,6 @@
     {
       "name": "deepseek-v2-chat",
       "alias": [
-        "deepseek-v2-chat",
         "deepseek-ai/DeepSeek-V2-Chat",
         "deepseek-ai/deepseek-v2-chat"
       ],
@@ -2612,7 +2414,6 @@
     {
       "name": "deepseek-v2",
       "alias": [
-        "deepseek-v2",
         "deepseek-ai/DeepSeek-V2",
         "deepseek-ai/deepseek-v2"
       ],
@@ -2624,7 +2425,6 @@
     {
       "name": "deepseek-vl-1.3b-base",
       "alias": [
-        "deepseek-vl-1.3b-base",
         "deepseek-ai/deepseek-vl-1.3b-base"
       ],
       "max_tokens": 16384,
@@ -2635,7 +2435,6 @@
     {
       "name": "deepseek-vl-1.3b-chat",
       "alias": [
-        "deepseek-vl-1.3b-chat",
         "deepseek-ai/deepseek-vl-1.3b-chat"
       ],
       "max_tokens": 16384,
@@ -2646,7 +2445,6 @@
     {
       "name": "deepseek-vl-7b-base",
       "alias": [
-        "deepseek-vl-7b-base",
         "deepseek-ai/deepseek-vl-7b-base"
       ],
       "max_tokens": 16384,
@@ -2657,7 +2455,6 @@
     {
       "name": "deepseek-vl-7b-chat",
       "alias": [
-        "deepseek-vl-7b-chat",
         "deepseek-ai/deepseek-vl-7b-chat"
       ],
       "max_tokens": 16384,
@@ -2668,7 +2465,6 @@
     {
       "name": "deepseek-math-7b-base",
       "alias": [
-        "deepseek-math-7b-base",
         "deepseek-ai/deepseek-math-7b-base"
       ],
       "max_tokens": 4096,
@@ -2679,7 +2475,6 @@
     {
       "name": "deepseek-math-7b-instruct",
       "alias": [
-        "deepseek-math-7b-instruct",
         "deepseek-ai/deepseek-math-7b-instruct"
       ],
       "max_tokens": 4096,
@@ -2690,7 +2485,6 @@
     {
       "name": "deepseek-math-7b-rl",
       "alias": [
-        "deepseek-math-7b-rl",
         "deepseek-ai/deepseek-math-7b-rl"
       ],
       "max_tokens": 4096,
@@ -2701,7 +2495,6 @@
     {
       "name": "deepseek-coder-7b-base-v1.5",
       "alias": [
-        "deepseek-coder-7b-base-v1.5",
         "deepseek-ai/deepseek-coder-7b-base-v1.5"
       ],
       "max_tokens": 4096,
@@ -2712,7 +2505,6 @@
     {
       "name": "deepseek-coder-7b-instruct-v1.5",
       "alias": [
-        "deepseek-coder-7b-instruct-v1.5",
         "deepseek-ai/deepseek-coder-7b-instruct-v1.5"
       ],
       "max_tokens": 4096,
@@ -2723,7 +2515,6 @@
     {
       "name": "deepseek-moe-16b-chat",
       "alias": [
-        "deepseek-moe-16b-chat",
         "deepseek-ai/deepseek-moe-16b-chat"
       ],
       "max_tokens": 4096,
@@ -2734,7 +2525,6 @@
     {
       "name": "deepseek-moe-16b-base",
       "alias": [
-        "deepseek-moe-16b-base",
         "deepseek-ai/deepseek-moe-16b-base"
       ],
       "max_tokens": 4096,
@@ -2745,7 +2535,6 @@
     {
       "name": "deepseek-llm-67b-base",
       "alias": [
-        "deepseek-llm-67b-base",
         "deepseek-ai/deepseek-llm-67b-base"
       ],
       "max_tokens": 4096,
@@ -2756,7 +2545,6 @@
     {
       "name": "deepseek-llm-67b-chat",
       "alias": [
-        "deepseek-llm-67b-chat",
         "deepseek-ai/deepseek-llm-67b-chat"
       ],
       "max_tokens": 4096,
@@ -2767,7 +2555,6 @@
     {
       "name": "deepseek-llm-7b-base",
       "alias": [
-        "deepseek-llm-7b-base",
         "deepseek-ai/deepseek-llm-7b-base"
       ],
       "max_tokens": 4096,
@@ -2778,7 +2565,6 @@
     {
       "name": "deepseek-llm-7b-chat",
       "alias": [
-        "deepseek-llm-7b-chat",
         "deepseek-ai/deepseek-llm-7b-chat"
       ],
       "max_tokens": 4096,
@@ -2789,7 +2575,6 @@
     {
       "name": "deepseek-coder-33b-instruct",
       "alias": [
-        "deepseek-coder-33b-instruct",
         "deepseek-ai/deepseek-coder-33b-instruct"
       ],
       "max_tokens": 16384,
@@ -2800,7 +2585,6 @@
     {
       "name": "deepseek-coder-5.7bmqa-base",
       "alias": [
-        "deepseek-coder-5.7bmqa-base",
         "deepseek-ai/deepseek-coder-5.7bmqa-base"
       ],
       "max_tokens": 16384,
@@ -2811,7 +2595,6 @@
     {
       "name": "deepseek-coder-1.3b-instruct",
       "alias": [
-        "deepseek-coder-1.3b-instruct",
         "deepseek-ai/deepseek-coder-1.3b-instruct"
       ],
       "max_tokens": 16384,
@@ -2822,7 +2605,6 @@
     {
       "name": "deepseek-coder-6.7b-instruct",
       "alias": [
-        "deepseek-coder-6.7b-instruct",
         "deepseek-ai/deepseek-coder-6.7b-instruct"
       ],
       "max_tokens": 16384,
@@ -2833,7 +2615,6 @@
     {
       "name": "deepseek-coder-1.3b-base",
       "alias": [
-        "deepseek-coder-1.3b-base",
         "deepseek-ai/deepseek-coder-1.3b-base"
       ],
       "max_tokens": 16384,
@@ -2844,7 +2625,6 @@
     {
       "name": "deepseek-coder-33b-base",
       "alias": [
-        "deepseek-coder-33b-base",
         "deepseek-ai/deepseek-coder-33b-base"
       ],
       "max_tokens": 16384,
@@ -2855,7 +2635,6 @@
     {
       "name": "deepseek-coder-6.7b-base",
       "alias": [
-        "deepseek-coder-6.7b-base",
         "deepseek-ai/deepseek-coder-6.7b-base"
       ],
       "max_tokens": 16384,
@@ -2901,9 +2680,2102 @@
       ]
     },
     {
+      "name": "qwen/qwen3.7-max",
+      "alias": [
+        "qwen3.7-max",
+        "qwen3.7-max-latest"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.7-max-2026-06-08",
+      "alias": [
+        "qwen3.7-max-2026-06-08"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.7-max-2026-05-20",
+      "alias": [
+        "qwen3.7-max-2026-05-20",
+        "qwen/qwen3.7-max-20260520"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.7-max-preview",
+      "alias": [
+        "qwen3.7-max-preview"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.6-max-preview",
+      "alias": [
+        "qwen3.6-max-preview",
+        "qwen/qwen3.6-max-preview-20260420"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-max",
+      "alias": [
+        "qwen3-max"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-max-2026-01-23",
+      "alias": [
+        "qwen3-max-2026-01-23"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-max-2025-09-23",
+      "alias": [
+        "qwen3-max-2025-09-23"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-max-preview",
+      "alias": [
+        "qwen3-max-preview"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-max-thinking",
+      "alias": [
+        "qwen3-max-thinking",
+        "qwen/qwen3-max-thinking-20260123"
+      ],
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen2.5-max",
+      "alias": [
+        "qwen2.5-max"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-max",
+      "alias": [
+        "qwen-max",
+        "qwen-max-latest"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-max-2025-03-25",
+      "alias": [
+        "qwen-max-2025-03-25"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-max-2025-01-25",
+      "alias": [
+        "qwen-max-2025-01-25",
+        "qwen-max-0125"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-max-2024-09-19",
+      "alias": [
+        "qwen-max-2024-09-19",
+        "qwen-max-0919"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-max-intl-sp",
+      "alias": [
+        "qwen-max-intl-sp"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3.7-plus",
+      "alias": [
+        "qwen3.7-plus",
+        "qwen3.7-plus-latest",
+        "qwen/qwen3.7-plus-20260602"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.7-plus-2026-05-26",
+      "alias": [
+        "qwen3.7-plus-2026-05-26"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.6-plus",
+      "alias": [
+        "qwen3.6-plus"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.6-plus-2026-04-02",
+      "alias": [
+        "qwen3.6-plus-2026-04-02",
+        "qwen/qwen3.6-plus-04-02",
+        "qwen/qwen3.6-plus-04-02:free"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-plus",
+      "alias": [
+        "qwen3.5-plus"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-plus-2026-02-15",
+      "alias": [
+        "qwen3.5-plus-2026-02-15",
+        "qwen/qwen3.5-plus-02-15",
+        "qwen/qwen3.5-plus-20260216"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen-plus",
+      "alias": [
+        "qwen-plus",
+        "qwen-plus-latest"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen-plus-2025-12-01",
+      "alias": [
+        "qwen-plus-2025-12-01"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-plus-2025-09-11",
+      "alias": [
+        "qwen-plus-2025-09-11"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-plus-2025-07-28",
+      "alias": [
+        "qwen-plus-2025-07-28",
+        "qwen-plus-0728",
+        "qwen/qwen-plus-2025-07-28:thinking"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-plus-2025-07-14",
+      "alias": [
+        "qwen-plus-2025-07-14",
+        "qwen-plus-0714"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-plus-2025-05-15",
+      "alias": [
+        "qwen-plus-2025-05-15"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-plus-2025-04-28",
+      "alias": [
+        "qwen-plus-2025-04-28",
+        "qwen-plus-0428"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen-plus-2025-01-25",
+      "alias": [
+        "qwen-plus-2025-01-25",
+        "qwen-plus-0125"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-plus-2025-01-12",
+      "alias": [
+        "qwen-plus-2025-01-12",
+        "qwen-plus-0112"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-plus-2024-12-20",
+      "alias": [
+        "qwen-plus-2024-12-20",
+        "qwen-plus-1220"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-plus-2024-11-27",
+      "alias": [
+        "qwen-plus-2024-11-27"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-plus-2024-11-25",
+      "alias": [
+        "qwen-plus-2024-11-25"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-plus-2024-09-19",
+      "alias": [
+        "qwen-plus-2024-09-19"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-plus-2024-08-06",
+      "alias": [
+        "qwen-plus-2024-08-06"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-plus-us",
+      "alias": [
+        "qwen-plus-us"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-plus-2025-12-01-us",
+      "alias": [
+        "qwen-plus-2025-12-01-us"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3.6-flash",
+      "alias": [
+        "qwen3.6-flash"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.6-flash-2026-04-16",
+      "alias": [
+        "qwen3.6-flash-2026-04-16"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-flash",
+      "alias": [
+        "qwen3.5-flash"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-flash-2026-02-23",
+      "alias": [
+        "qwen3.5-flash-2026-02-23",
+        "qwen/qwen3.5-flash-02-23",
+        "qwen/qwen3.5-flash-20260224"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen-flash",
+      "alias": [
+        "qwen-flash"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-flash-2025-07-28",
+      "alias": [
+        "qwen-flash-2025-07-28"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-flash-us",
+      "alias": [
+        "qwen-flash-us"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-flash-2025-07-28-us",
+      "alias": [
+        "qwen-flash-2025-07-28-us"
+      ],
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-turbo",
+      "alias": [
+        "qwen-turbo",
+        "qwen-turbo-latest"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen-turbo-2025-07-15",
+      "alias": [
+        "qwen-turbo-2025-07-15",
+        "qwen-turbo-0715"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-turbo-2025-04-28",
+      "alias": [
+        "qwen-turbo-2025-04-28",
+        "qwen-turbo-0428"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen-turbo-2024-11-01",
+      "alias": [
+        "qwen-turbo-2024-11-01",
+        "qwen-turbo-1101"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-turbo-2024-09-19",
+      "alias": [
+        "qwen-turbo-2024-09-19"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-long",
+      "alias": [
+        "qwen-long",
+        "qwen-long-latest"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-long-2025-01-25",
+      "alias": [
+        "qwen-long-2025-01-25",
+        "qwen-long-0125"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-coder-plus",
+      "alias": [
+        "qwen3-coder-plus"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 1000000
+    },
+    {
+      "name": "qwen/qwen3-coder-plus-2025-09-23",
+      "alias": [
+        "qwen3-coder-plus-2025-09-23"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 1000000
+    },
+    {
+      "name": "qwen/qwen3-coder-plus-2025-07-22",
+      "alias": [
+        "qwen3-coder-plus-2025-07-22"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 1000000
+    },
+    {
+      "name": "qwen/qwen3-coder-flash",
+      "alias": [
+        "qwen3-coder-flash"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 1000000
+    },
+    {
+      "name": "qwen/qwen3-coder-flash-2025-07-28",
+      "alias": [
+        "qwen3-coder-flash-2025-07-28"
+      ],
+      "model_types": [
+        "chat"
+      ],
+      "max_tokens": 1000000
+    },
+    {
+      "name": "qwen/qwen-coder-plus",
+      "alias": [
+        "qwen-coder-plus",
+        "qwen-coder-plus-latest"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-coder-plus-2024-11-06",
+      "alias": [
+        "qwen-coder-plus-2024-11-06",
+        "qwen-coder-plus-1106"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-coder-turbo",
+      "alias": [
+        "qwen-coder-turbo",
+        "qwen-coder-turbo-latest"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-coder-turbo-2024-09-19",
+      "alias": [
+        "qwen-coder-turbo-2024-09-19",
+        "qwen-coder-turbo-0919"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-math-plus",
+      "alias": [
+        "qwen-math-plus",
+        "qwen-math-plus-latest"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-math-plus-2024-09-19",
+      "alias": [
+        "qwen-math-plus-2024-09-19",
+        "qwen-math-plus-0919"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-math-plus-2024-08-16",
+      "alias": [
+        "qwen-math-plus-2024-08-16",
+        "qwen-math-plus-0816"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-math-turbo",
+      "alias": [
+        "qwen-math-turbo",
+        "qwen-math-turbo-latest"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-math-turbo-2024-09-19",
+      "alias": [
+        "qwen-math-turbo-2024-09-19",
+        "qwen-math-turbo-0919"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-vl-plus",
+      "alias": [
+        "qwen3-vl-plus"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-vl-plus-2025-12-19",
+      "alias": [
+        "qwen3-vl-plus-2025-12-19"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-vl-plus-2025-09-23",
+      "alias": [
+        "qwen3-vl-plus-2025-09-23"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-vl-flash",
+      "alias": [
+        "qwen3-vl-flash"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-vl-flash-2026-01-22",
+      "alias": [
+        "qwen3-vl-flash-2026-01-22"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-vl-flash-2026-01-22-us",
+      "alias": [
+        "qwen3-vl-flash-2026-01-22-us"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-vl-flash-2025-10-15",
+      "alias": [
+        "qwen3-vl-flash-2025-10-15"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-vl-flash-2025-10-15-us",
+      "alias": [
+        "qwen3-vl-flash-2025-10-15-us"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-vl-flash-us",
+      "alias": [
+        "qwen3-vl-flash-us"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen-vl-max",
+      "alias": [
+        "qwen-vl-max",
+        "qwen-vl-max-latest"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-vl-max-2025-08-13",
+      "alias": [
+        "qwen-vl-max-2025-08-13",
+        "qwen-vl-max-0813"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-vl-max-2025-04-08",
+      "alias": [
+        "qwen-vl-max-2025-04-08",
+        "qwen-vl-max-0408"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-vl-max-2025-04-02",
+      "alias": [
+        "qwen-vl-max-2025-04-02",
+        "qwen-vl-max-0402"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-vl-max-2025-01-25",
+      "alias": [
+        "qwen-vl-max-2025-01-25",
+        "qwen-vl-max-0125"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-vl-max-2024-12-30",
+      "alias": [
+        "qwen-vl-max-2024-12-30",
+        "qwen-vl-max-1230"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-vl-max-2024-11-19",
+      "alias": [
+        "qwen-vl-max-2024-11-19",
+        "qwen-vl-max-1119"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-vl-max-2024-10-30",
+      "alias": [
+        "qwen-vl-max-2024-10-30"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-vl-max-2024-08-09",
+      "alias": [
+        "qwen-vl-max-2024-08-09"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-vl-plus",
+      "alias": [
+        "qwen-vl-plus",
+        "qwen-vl-plus-latest"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-vl-plus-2025-08-15",
+      "alias": [
+        "qwen-vl-plus-2025-08-15",
+        "qwen-vl-plus-0815"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-vl-plus-2025-07-10",
+      "alias": [
+        "qwen-vl-plus-2025-07-10",
+        "qwen-vl-plus-0710"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-vl-plus-2025-05-07",
+      "alias": [
+        "qwen-vl-plus-2025-05-07",
+        "qwen-vl-plus-0507"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-vl-plus-2025-01-25",
+      "alias": [
+        "qwen-vl-plus-2025-01-25",
+        "qwen-vl-plus-0125"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-vl-plus-2025-01-02",
+      "alias": [
+        "qwen-vl-plus-2025-01-02",
+        "qwen-vl-plus-0102"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-vl-plus-2024-08-09",
+      "alias": [
+        "qwen-vl-plus-2024-08-09"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-vl-ocr",
+      "alias": [
+        "qwen-vl-ocr",
+        "qwen-vl-ocr-latest"
+      ],
+      "model_types": [
+        "ocr",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "qwen/qwen-vl-ocr-2025-11-20",
+      "alias": [
+        "qwen-vl-ocr-2025-11-20",
+        "qwen-vl-ocr-1120"
+      ],
+      "model_types": [
+        "ocr",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "qwen/qwen-vl-ocr-2025-08-28",
+      "alias": [
+        "qwen-vl-ocr-2025-08-28",
+        "qwen-vl-ocr-0828"
+      ],
+      "model_types": [
+        "ocr",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "qwen/qwen-vl-ocr-2025-04-13",
+      "alias": [
+        "qwen-vl-ocr-2025-04-13",
+        "qwen-vl-ocr-0413"
+      ],
+      "model_types": [
+        "ocr",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "qwen/qwen-vl-ocr-2024-10-28",
+      "alias": [
+        "qwen-vl-ocr-2024-10-28",
+        "qwen-vl-ocr-1028"
+      ],
+      "model_types": [
+        "ocr",
+        "image2text",
+        "vision"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-vl-embedding",
+      "alias": [
+        "qwen3-vl-embedding"
+      ],
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ],
+      "dimension": 2560,
+      "dimensions": [
+        2560,
+        2048,
+        1536,
+        1024,
+        768,
+        512,
+        256
+      ]
+    },
+    {
+      "name": "qwen/qwen3-vl-rerank",
+      "alias": [
+        "qwen3-vl-rerank"
+      ],
+      "max_tokens": 30000,
+      "model_types": [
+        "rerank"
+      ],
+      "max_documents": 500
+    },
+    {
+      "name": "qwen/qwen3.5-omni-plus",
+      "alias": [
+        "qwen3.5-omni-plus"
+      ],
+      "model_types": [
+        "chat",
+        "omni",
+        "image2text",
+        "vision",
+        "video_understanding",
+        "audio2text",
+        "speech2text",
+        "audio_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-omni-plus-2026-03-15",
+      "alias": [
+        "qwen3.5-omni-plus-2026-03-15"
+      ],
+      "model_types": [
+        "chat",
+        "omni",
+        "image2text",
+        "vision",
+        "video_understanding",
+        "audio2text",
+        "speech2text",
+        "audio_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-omni-flash",
+      "alias": [
+        "qwen3.5-omni-flash"
+      ],
+      "model_types": [
+        "chat",
+        "omni",
+        "image2text",
+        "vision",
+        "video_understanding",
+        "audio2text",
+        "speech2text",
+        "audio_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-omni-flash-2026-03-15",
+      "alias": [
+        "qwen3.5-omni-flash-2026-03-15"
+      ],
+      "model_types": [
+        "chat",
+        "omni",
+        "image2text",
+        "vision",
+        "video_understanding",
+        "audio2text",
+        "speech2text",
+        "audio_understanding"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-omni-flash",
+      "alias": [
+        "qwen3-omni-flash"
+      ],
+      "model_types": [
+        "chat",
+        "omni",
+        "image2text",
+        "vision",
+        "video_understanding",
+        "audio2text",
+        "speech2text",
+        "audio_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-omni-flash-2025-12-01",
+      "alias": [
+        "qwen3-omni-flash-2025-12-01"
+      ],
+      "model_types": [
+        "chat",
+        "omni",
+        "image2text",
+        "vision",
+        "video_understanding",
+        "audio2text",
+        "speech2text",
+        "audio_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-omni-flash-2025-09-15",
+      "alias": [
+        "qwen3-omni-flash-2025-09-15",
+        "qwen3-omni-flash-0915"
+      ],
+      "model_types": [
+        "chat",
+        "omni",
+        "image2text",
+        "vision",
+        "video_understanding",
+        "audio2text",
+        "speech2text",
+        "audio_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-omni-flash-realtime",
+      "alias": [
+        "qwen3-omni-flash-realtime"
+      ],
+      "model_types": [
+        "chat",
+        "omni",
+        "image2text",
+        "vision",
+        "video_understanding",
+        "audio2text",
+        "speech2text",
+        "audio_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-omni-flash-realtime-2025-12-01",
+      "alias": [
+        "qwen3-omni-flash-realtime-2025-12-01"
+      ],
+      "model_types": [
+        "chat",
+        "omni",
+        "image2text",
+        "vision",
+        "video_understanding",
+        "audio2text",
+        "speech2text",
+        "audio_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-omni-flash-realtime-2025-09-15",
+      "alias": [
+        "qwen3-omni-flash-realtime-2025-09-15"
+      ],
+      "model_types": [
+        "chat",
+        "omni",
+        "image2text",
+        "vision",
+        "video_understanding",
+        "audio2text",
+        "speech2text",
+        "audio_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-omni-captioner",
+      "alias": [
+        "qwen3-omni-captioner"
+      ],
+      "model_types": [
+        "audio_caption",
+        "audio2text",
+        "audio_understanding",
+        "caption"
+      ]
+    },
+    {
+      "name": "qwen/qwen-omni-turbo",
+      "alias": [
+        "qwen-omni-turbo",
+        "qwen-omni-turbo-latest"
+      ],
+      "model_types": [
+        "chat",
+        "omni",
+        "image2text",
+        "vision",
+        "video_understanding",
+        "audio2text",
+        "speech2text",
+        "audio_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-omni-turbo-2025-05-08",
+      "alias": [
+        "qwen-omni-turbo-2025-05-08"
+      ],
+      "model_types": [
+        "chat",
+        "omni",
+        "image2text",
+        "vision",
+        "video_understanding",
+        "audio2text",
+        "speech2text",
+        "audio_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-omni-turbo-2025-03-26",
+      "alias": [
+        "qwen-omni-turbo-2025-03-26",
+        "qwen-omni-turbo-0326"
+      ],
+      "model_types": [
+        "chat",
+        "omni",
+        "image2text",
+        "vision",
+        "video_understanding",
+        "audio2text",
+        "speech2text",
+        "audio_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-omni-turbo-2025-01-19",
+      "alias": [
+        "qwen-omni-turbo-2025-01-19",
+        "qwen-omni-turbo-0119"
+      ],
+      "model_types": [
+        "chat",
+        "omni",
+        "image2text",
+        "vision",
+        "video_understanding",
+        "audio2text",
+        "speech2text",
+        "audio_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-omni-turbo-realtime",
+      "alias": [
+        "qwen-omni-turbo-realtime",
+        "qwen-omni-turbo-realtime-latest"
+      ],
+      "model_types": [
+        "chat",
+        "omni",
+        "image2text",
+        "vision",
+        "video_understanding",
+        "audio2text",
+        "speech2text",
+        "audio_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-omni-turbo-realtime-2025-05-08",
+      "alias": [
+        "qwen-omni-turbo-realtime-2025-05-08"
+      ],
+      "model_types": [
+        "chat",
+        "omni",
+        "image2text",
+        "vision",
+        "video_understanding",
+        "audio2text",
+        "speech2text",
+        "audio_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-asr-flash",
+      "alias": [
+        "qwen3-asr-flash"
+      ],
+      "model_types": [
+        "asr",
+        "speech2text",
+        "audio2text"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-asr-flash-2026-02-10",
+      "alias": [
+        "qwen3-asr-flash-2026-02-10"
+      ],
+      "model_types": [
+        "asr",
+        "speech2text",
+        "audio2text"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-asr-flash-2025-09-08",
+      "alias": [
+        "qwen3-asr-flash-2025-09-08"
+      ],
+      "model_types": [
+        "asr",
+        "speech2text",
+        "audio2text"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-asr-flash-us",
+      "alias": [
+        "qwen3-asr-flash-us"
+      ],
+      "model_types": [
+        "asr",
+        "speech2text",
+        "audio2text"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-asr-flash-2025-09-08-us",
+      "alias": [
+        "qwen3-asr-flash-2025-09-08-us"
+      ],
+      "model_types": [
+        "asr",
+        "speech2text",
+        "audio2text"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-asr-flash-filetrans",
+      "alias": [
+        "qwen3-asr-flash-filetrans"
+      ],
+      "model_types": [
+        "asr",
+        "speech2text",
+        "audio2text"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-asr-flash-filetrans-2025-11-17",
+      "alias": [
+        "qwen3-asr-flash-filetrans-2025-11-17"
+      ],
+      "model_types": [
+        "asr",
+        "speech2text",
+        "audio2text"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-asr-flash-realtime",
+      "alias": [
+        "qwen3-asr-flash-realtime"
+      ],
+      "model_types": [
+        "asr",
+        "speech2text",
+        "audio2text"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-asr-flash-realtime-2026-02-10",
+      "alias": [
+        "qwen3-asr-flash-realtime-2026-02-10"
+      ],
+      "model_types": [
+        "asr",
+        "speech2text",
+        "audio2text"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-asr-flash-realtime-2025-10-27",
+      "alias": [
+        "qwen3-asr-flash-realtime-2025-10-27"
+      ],
+      "model_types": [
+        "asr",
+        "speech2text",
+        "audio2text"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-tts-flash",
+      "alias": [
+        "qwen3-tts-flash"
+      ],
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-tts-flash-2025-11-27",
+      "alias": [
+        "qwen3-tts-flash-2025-11-27"
+      ],
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-tts-flash-2025-09-18",
+      "alias": [
+        "qwen3-tts-flash-2025-09-18"
+      ],
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-tts-flash-realtime",
+      "alias": [
+        "qwen3-tts-flash-realtime"
+      ],
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-tts-flash-realtime-2025-11-27",
+      "alias": [
+        "qwen3-tts-flash-realtime-2025-11-27"
+      ],
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-tts-flash-realtime-2025-09-18",
+      "alias": [
+        "qwen3-tts-flash-realtime-2025-09-18"
+      ],
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-tts-instruct-flash",
+      "alias": [
+        "qwen3-tts-instruct-flash"
+      ],
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-tts-instruct-flash-2026-01-26",
+      "alias": [
+        "qwen3-tts-instruct-flash-2026-01-26"
+      ],
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-tts-instruct-flash-realtime",
+      "alias": [
+        "qwen3-tts-instruct-flash-realtime"
+      ],
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-tts-instruct-flash-realtime-2026-01-22",
+      "alias": [
+        "qwen3-tts-instruct-flash-realtime-2026-01-22"
+      ],
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-tts-vc-2026-01-22",
+      "alias": [
+        "qwen3-tts-vc-2026-01-22"
+      ],
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-tts-vc-realtime-2026-01-15",
+      "alias": [
+        "qwen3-tts-vc-realtime-2026-01-15"
+      ],
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-tts-vc-realtime-2025-11-27",
+      "alias": [
+        "qwen3-tts-vc-realtime-2025-11-27"
+      ],
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-tts-vd-2026-01-26",
+      "alias": [
+        "qwen3-tts-vd-2026-01-26"
+      ],
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-tts-vd-realtime-2026-01-15",
+      "alias": [
+        "qwen3-tts-vd-realtime-2026-01-15"
+      ],
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-tts-vd-realtime-2025-12-16",
+      "alias": [
+        "qwen3-tts-vd-realtime-2025-12-16"
+      ],
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen-tts",
+      "alias": [
+        "qwen-tts",
+        "qwen-tts-latest"
+      ],
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen-tts-2025-05-22",
+      "alias": [
+        "qwen-tts-2025-05-22"
+      ],
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen-tts-2025-04-10",
+      "alias": [
+        "qwen-tts-2025-04-10"
+      ],
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen-tts-realtime",
+      "alias": [
+        "qwen-tts-realtime",
+        "qwen-tts-realtime-latest"
+      ],
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen-tts-realtime-2025-07-15",
+      "alias": [
+        "qwen-tts-realtime-2025-07-15"
+      ],
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-livetranslate-flash",
+      "alias": [
+        "qwen3-livetranslate-flash"
+      ],
+      "model_types": [
+        "speech_translation",
+        "audio2text",
+        "speech2text"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-livetranslate-flash-2025-12-01",
+      "alias": [
+        "qwen3-livetranslate-flash-2025-12-01"
+      ],
+      "model_types": [
+        "speech_translation",
+        "audio2text",
+        "speech2text"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-livetranslate-flash-realtime",
+      "alias": [
+        "qwen3-livetranslate-flash-realtime"
+      ],
+      "model_types": [
+        "speech_translation",
+        "audio2text",
+        "speech2text"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-livetranslate-flash-realtime-2025-09-22",
+      "alias": [
+        "qwen3-livetranslate-flash-realtime-2025-09-22"
+      ],
+      "model_types": [
+        "speech_translation",
+        "audio2text",
+        "speech2text"
+      ]
+    },
+    {
+      "name": "qwen/qwen-mt-plus",
+      "alias": [
+        "qwen-mt-plus"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-mt-turbo",
+      "alias": [
+        "qwen-mt-turbo"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-mt-flash",
+      "alias": [
+        "qwen-mt-flash"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-mt-lite",
+      "alias": [
+        "qwen-mt-lite"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-mt-image",
+      "alias": [
+        "qwen-mt-image"
+      ],
+      "model_types": [
+        "chat",
+        "image2text",
+        "vision",
+        "video_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-image-2.0-pro",
+      "alias": [
+        "qwen-image-2.0-pro"
+      ],
+      "model_types": [
+        "text-to-image",
+        "image_generation"
+      ]
+    },
+    {
+      "name": "qwen/qwen-image-2.0-pro-2026-03-03",
+      "alias": [
+        "qwen-image-2.0-pro-2026-03-03"
+      ],
+      "model_types": [
+        "text-to-image",
+        "image_generation"
+      ]
+    },
+    {
+      "name": "qwen/qwen-image-2.0",
+      "alias": [
+        "qwen-image-2.0"
+      ],
+      "model_types": [
+        "text-to-image",
+        "image_generation"
+      ]
+    },
+    {
+      "name": "qwen/qwen-image-2.0-2026-03-03",
+      "alias": [
+        "qwen-image-2.0-2026-03-03"
+      ],
+      "model_types": [
+        "text-to-image",
+        "image_generation"
+      ]
+    },
+    {
+      "name": "qwen/qwen-image-max",
+      "alias": [
+        "qwen-image-max"
+      ],
+      "model_types": [
+        "text-to-image",
+        "image_generation"
+      ]
+    },
+    {
+      "name": "qwen/qwen-image-max-2025-12-30",
+      "alias": [
+        "qwen-image-max-2025-12-30"
+      ],
+      "model_types": [
+        "text-to-image",
+        "image_generation"
+      ]
+    },
+    {
+      "name": "qwen/qwen-image-plus",
+      "alias": [
+        "qwen-image-plus"
+      ],
+      "model_types": [
+        "text-to-image",
+        "image_generation"
+      ]
+    },
+    {
+      "name": "qwen/qwen-image-plus-2026-01-09",
+      "alias": [
+        "qwen-image-plus-2026-01-09"
+      ],
+      "model_types": [
+        "text-to-image",
+        "image_generation"
+      ]
+    },
+    {
+      "name": "qwen/qwen-image-edit-max",
+      "alias": [
+        "qwen-image-edit-max"
+      ],
+      "model_types": [
+        "image_edit",
+        "image_generation",
+        "image_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-image-edit-max-2026-01-16",
+      "alias": [
+        "qwen-image-edit-max-2026-01-16"
+      ],
+      "model_types": [
+        "image_edit",
+        "image_generation",
+        "image_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-image-edit-plus",
+      "alias": [
+        "qwen-image-edit-plus"
+      ],
+      "model_types": [
+        "image_edit",
+        "image_generation",
+        "image_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-image-edit-plus-2025-12-15",
+      "alias": [
+        "qwen-image-edit-plus-2025-12-15"
+      ],
+      "model_types": [
+        "image_edit",
+        "image_generation",
+        "image_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-image-edit-plus-2025-10-30",
+      "alias": [
+        "qwen-image-edit-plus-2025-10-30"
+      ],
+      "model_types": [
+        "image_edit",
+        "image_generation",
+        "image_understanding"
+      ]
+    },
+    {
+      "name": "qwen/qwen-deep-research",
+      "alias": [
+        "qwen-deep-research"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-doc-turbo",
+      "alias": [
+        "qwen-doc-turbo"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-plus-character",
+      "alias": [
+        "qwen-plus-character"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen-plus-character-ja",
+      "alias": [
+        "qwen-plus-character-ja"
+      ],
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
       "name": "qwen/sae-res-qwen3.5-35b-a3b-base-w128k-l0_100",
       "alias": [
-        "qwen/sae-res-qwen3.5-35b-a3b-base-w128k-l0_100",
         "Qwen/SAE-Res-Qwen3.5-35B-A3B-Base-W128K-L0_100",
         "sae-res-qwen3.5-35b-a3b-base-w128k-l0_100"
       ],
@@ -2914,7 +4786,6 @@
     {
       "name": "qwen/sae-res-qwen3.5-35b-a3b-base-w32k-l0_50",
       "alias": [
-        "qwen/sae-res-qwen3.5-35b-a3b-base-w32k-l0_50",
         "Qwen/SAE-Res-Qwen3.5-35B-A3B-Base-W32K-L0_50",
         "sae-res-qwen3.5-35b-a3b-base-w32k-l0_50"
       ],
@@ -2925,7 +4796,6 @@
     {
       "name": "qwen/sae-res-qwen3-30b-a3b-base-w128k-l0_100",
       "alias": [
-        "qwen/sae-res-qwen3-30b-a3b-base-w128k-l0_100",
         "Qwen/SAE-Res-Qwen3-30B-A3B-Base-W128K-L0_100",
         "sae-res-qwen3-30b-a3b-base-w128k-l0_100"
       ],
@@ -2936,7 +4806,6 @@
     {
       "name": "qwen/sae-res-qwen3-30b-a3b-base-w32k-l0_50",
       "alias": [
-        "qwen/sae-res-qwen3-30b-a3b-base-w32k-l0_50",
         "Qwen/SAE-Res-Qwen3-30B-A3B-Base-W32K-L0_50",
         "sae-res-qwen3-30b-a3b-base-w32k-l0_50"
       ],
@@ -2947,7 +4816,6 @@
     {
       "name": "qwen/sae-res-qwen3.5-27b-w80k-l0_100",
       "alias": [
-        "qwen/sae-res-qwen3.5-27b-w80k-l0_100",
         "Qwen/SAE-Res-Qwen3.5-27B-W80K-L0_100",
         "sae-res-qwen3.5-27b-w80k-l0_100"
       ],
@@ -2958,7 +4826,6 @@
     {
       "name": "qwen/sae-res-qwen3.5-27b-w80k-l0_50",
       "alias": [
-        "qwen/sae-res-qwen3.5-27b-w80k-l0_50",
         "Qwen/SAE-Res-Qwen3.5-27B-W80K-L0_50",
         "sae-res-qwen3.5-27b-w80k-l0_50"
       ],
@@ -2969,7 +4836,6 @@
     {
       "name": "qwen/sae-res-qwen3.5-9b-base-w64k-l0_100",
       "alias": [
-        "qwen/sae-res-qwen3.5-9b-base-w64k-l0_100",
         "Qwen/SAE-Res-Qwen3.5-9B-Base-W64K-L0_100",
         "sae-res-qwen3.5-9b-base-w64k-l0_100"
       ],
@@ -2980,7 +4846,6 @@
     {
       "name": "qwen/sae-res-qwen3.5-2b-base-w32k-l0_100",
       "alias": [
-        "qwen/sae-res-qwen3.5-2b-base-w32k-l0_100",
         "Qwen/SAE-Res-Qwen3.5-2B-Base-W32K-L0_100",
         "sae-res-qwen3.5-2b-base-w32k-l0_100"
       ],
@@ -2991,7 +4856,6 @@
     {
       "name": "qwen/sae-res-qwen3.5-9b-base-w64k-l0_50",
       "alias": [
-        "qwen/sae-res-qwen3.5-9b-base-w64k-l0_50",
         "Qwen/SAE-Res-Qwen3.5-9B-Base-W64K-L0_50",
         "sae-res-qwen3.5-9b-base-w64k-l0_50"
       ],
@@ -3002,7 +4866,6 @@
     {
       "name": "qwen/sae-res-qwen3.5-2b-base-w32k-l0_50",
       "alias": [
-        "qwen/sae-res-qwen3.5-2b-base-w32k-l0_50",
         "Qwen/SAE-Res-Qwen3.5-2B-Base-W32K-L0_50",
         "sae-res-qwen3.5-2b-base-w32k-l0_50"
       ],
@@ -3013,7 +4876,6 @@
     {
       "name": "qwen/sae-res-qwen3-8b-base-w64k-l0_100",
       "alias": [
-        "qwen/sae-res-qwen3-8b-base-w64k-l0_100",
         "Qwen/SAE-Res-Qwen3-8B-Base-W64K-L0_100",
         "sae-res-qwen3-8b-base-w64k-l0_100"
       ],
@@ -3024,7 +4886,6 @@
     {
       "name": "qwen/sae-res-qwen3-8b-base-w64k-l0_50",
       "alias": [
-        "qwen/sae-res-qwen3-8b-base-w64k-l0_50",
         "Qwen/SAE-Res-Qwen3-8B-Base-W64K-L0_50",
         "sae-res-qwen3-8b-base-w64k-l0_50"
       ],
@@ -3035,7 +4896,6 @@
     {
       "name": "qwen/sae-res-qwen3-1.7b-base-w32k-l0_100",
       "alias": [
-        "qwen/sae-res-qwen3-1.7b-base-w32k-l0_100",
         "Qwen/SAE-Res-Qwen3-1.7B-Base-W32K-L0_100",
         "sae-res-qwen3-1.7b-base-w32k-l0_100"
       ],
@@ -3046,7 +4906,6 @@
     {
       "name": "qwen/sae-res-qwen3-1.7b-base-w32k-l0_50",
       "alias": [
-        "qwen/sae-res-qwen3-1.7b-base-w32k-l0_50",
         "Qwen/SAE-Res-Qwen3-1.7B-Base-W32K-L0_50",
         "sae-res-qwen3-1.7b-base-w32k-l0_50"
       ],
@@ -3057,7 +4916,6 @@
     {
       "name": "qwen/qwen3.6-27b-fp8",
       "alias": [
-        "qwen/qwen3.6-27b-fp8",
         "Qwen/Qwen3.6-27B-FP8",
         "qwen3.6-27b-fp8"
       ],
@@ -3076,9 +4934,9 @@
     {
       "name": "qwen/qwen3.6-27b",
       "alias": [
-        "qwen/qwen3.6-27b",
         "Qwen/Qwen3.6-27B",
-        "qwen3.6-27b"
+        "qwen3.6-27b",
+        "qwen/qwen3.6-27b-20260422"
       ],
       "max_tokens": 262144,
       "model_types": [
@@ -3095,7 +4953,6 @@
     {
       "name": "qwen/qwen3.6-35b-a3b-fp8",
       "alias": [
-        "qwen/qwen3.6-35b-a3b-fp8",
         "Qwen/Qwen3.6-35B-A3B-FP8",
         "qwen3.6-35b-a3b-fp8"
       ],
@@ -3114,9 +4971,9 @@
     {
       "name": "qwen/qwen3.6-35b-a3b",
       "alias": [
-        "qwen/qwen3.6-35b-a3b",
         "Qwen/Qwen3.6-35B-A3B",
-        "qwen3.6-35b-a3b"
+        "qwen3.6-35b-a3b",
+        "qwen/qwen3.6-35b-a3b-20260415"
       ],
       "max_tokens": 262144,
       "model_types": [
@@ -3133,7 +4990,6 @@
     {
       "name": "qwen/qwen3.5-35b-a3b-gptq-int4",
       "alias": [
-        "qwen/qwen3.5-35b-a3b-gptq-int4",
         "Qwen/Qwen3.5-35B-A3B-GPTQ-Int4",
         "qwen3.5-35b-a3b-gptq-int4"
       ],
@@ -3152,7 +5008,6 @@
     {
       "name": "qwen/qwen3.5-27b-gptq-int4",
       "alias": [
-        "qwen/qwen3.5-27b-gptq-int4",
         "Qwen/Qwen3.5-27B-GPTQ-Int4",
         "qwen3.5-27b-gptq-int4"
       ],
@@ -3171,7 +5026,6 @@
     {
       "name": "qwen/qwen3.5-397b-a17b-gptq-int4",
       "alias": [
-        "qwen/qwen3.5-397b-a17b-gptq-int4",
         "Qwen/Qwen3.5-397B-A17B-GPTQ-Int4",
         "qwen3.5-397b-a17b-gptq-int4"
       ],
@@ -3190,7 +5044,6 @@
     {
       "name": "qwen/qwen3.5-122b-a10b-gptq-int4",
       "alias": [
-        "qwen/qwen3.5-122b-a10b-gptq-int4",
         "Qwen/Qwen3.5-122B-A10B-GPTQ-Int4",
         "qwen3.5-122b-a10b-gptq-int4"
       ],
@@ -3209,7 +5062,6 @@
     {
       "name": "qwen/qwen3.5-0.8b-base",
       "alias": [
-        "qwen/qwen3.5-0.8b-base",
         "Qwen/Qwen3.5-0.8B-Base",
         "qwen3.5-0.8b-base"
       ],
@@ -3219,12 +5071,15 @@
         "image2text",
         "vision",
         "video_understanding"
-      ]
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     },
     {
       "name": "qwen/qwen3.5-2b-base",
       "alias": [
-        "qwen/qwen3.5-2b-base",
         "Qwen/Qwen3.5-2B-Base",
         "qwen3.5-2b-base"
       ],
@@ -3234,12 +5089,15 @@
         "image2text",
         "vision",
         "video_understanding"
-      ]
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     },
     {
       "name": "qwen/qwen3.5-0.8b",
       "alias": [
-        "qwen/qwen3.5-0.8b",
         "Qwen/Qwen3.5-0.8B",
         "qwen3.5-0.8b"
       ],
@@ -3258,7 +5116,6 @@
     {
       "name": "qwen/qwen3.5-2b",
       "alias": [
-        "qwen/qwen3.5-2b",
         "Qwen/Qwen3.5-2B",
         "qwen3.5-2b"
       ],
@@ -3277,7 +5134,6 @@
     {
       "name": "qwen/qwen3.5-4b",
       "alias": [
-        "qwen/qwen3.5-4b",
         "Qwen/Qwen3.5-4B",
         "qwen3.5-4b"
       ],
@@ -3296,7 +5152,6 @@
     {
       "name": "qwen/qwen3.5-4b-base",
       "alias": [
-        "qwen/qwen3.5-4b-base",
         "Qwen/Qwen3.5-4B-Base",
         "qwen3.5-4b-base"
       ],
@@ -3306,14 +5161,18 @@
         "image2text",
         "vision",
         "video_understanding"
-      ]
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     },
     {
       "name": "qwen/qwen3.5-9b",
       "alias": [
-        "qwen/qwen3.5-9b",
         "Qwen/Qwen3.5-9B",
-        "qwen3.5-9b"
+        "qwen3.5-9b",
+        "qwen/qwen3.5-9b-20260310"
       ],
       "max_tokens": 262144,
       "model_types": [
@@ -3330,7 +5189,6 @@
     {
       "name": "qwen/qwen3.5-9b-base",
       "alias": [
-        "qwen/qwen3.5-9b-base",
         "Qwen/Qwen3.5-9B-Base",
         "qwen3.5-9b-base"
       ],
@@ -3340,12 +5198,15 @@
         "image2text",
         "vision",
         "video_understanding"
-      ]
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     },
     {
       "name": "qwen/qwen3.5-35b-a3b-fp8",
       "alias": [
-        "qwen/qwen3.5-35b-a3b-fp8",
         "Qwen/Qwen3.5-35B-A3B-FP8",
         "qwen3.5-35b-a3b-fp8"
       ],
@@ -3364,7 +5225,6 @@
     {
       "name": "qwen/qwen3.5-27b-fp8",
       "alias": [
-        "qwen/qwen3.5-27b-fp8",
         "Qwen/Qwen3.5-27B-FP8",
         "qwen3.5-27b-fp8"
       ],
@@ -3383,7 +5243,6 @@
     {
       "name": "qwen/qwen3.5-122b-a10b-fp8",
       "alias": [
-        "qwen/qwen3.5-122b-a10b-fp8",
         "Qwen/Qwen3.5-122B-A10B-FP8",
         "qwen3.5-122b-a10b-fp8"
       ],
@@ -3402,9 +5261,9 @@
     {
       "name": "qwen/qwen3.5-122b-a10b",
       "alias": [
-        "qwen/qwen3.5-122b-a10b",
         "Qwen/Qwen3.5-122B-A10B",
-        "qwen3.5-122b-a10b"
+        "qwen3.5-122b-a10b",
+        "qwen/qwen3.5-122b-a10b-20260224"
       ],
       "max_tokens": 262144,
       "model_types": [
@@ -3421,7 +5280,6 @@
     {
       "name": "qwen/qwen3.5-35b-a3b-base",
       "alias": [
-        "qwen/qwen3.5-35b-a3b-base",
         "Qwen/Qwen3.5-35B-A3B-Base",
         "qwen3.5-35b-a3b-base"
       ],
@@ -3431,14 +5289,18 @@
         "image2text",
         "vision",
         "video_understanding"
-      ]
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     },
     {
       "name": "qwen/qwen3.5-27b",
       "alias": [
-        "qwen/qwen3.5-27b",
         "Qwen/Qwen3.5-27B",
-        "qwen3.5-27b"
+        "qwen3.5-27b",
+        "qwen/qwen3.5-27b-20260224"
       ],
       "max_tokens": 262144,
       "model_types": [
@@ -3455,9 +5317,9 @@
     {
       "name": "qwen/qwen3.5-35b-a3b",
       "alias": [
-        "qwen/qwen3.5-35b-a3b",
         "Qwen/Qwen3.5-35B-A3B",
-        "qwen3.5-35b-a3b"
+        "qwen3.5-35b-a3b",
+        "qwen/qwen3.5-35b-a3b-20260224"
       ],
       "max_tokens": 262144,
       "model_types": [
@@ -3474,7 +5336,6 @@
     {
       "name": "qwen/qwen3.5-397b-a17b-fp8",
       "alias": [
-        "qwen/qwen3.5-397b-a17b-fp8",
         "Qwen/Qwen3.5-397B-A17B-FP8",
         "qwen3.5-397b-a17b-fp8"
       ],
@@ -3493,9 +5354,9 @@
     {
       "name": "qwen/qwen3.5-397b-a17b",
       "alias": [
-        "qwen/qwen3.5-397b-a17b",
         "Qwen/Qwen3.5-397B-A17B",
-        "qwen3.5-397b-a17b"
+        "qwen3.5-397b-a17b",
+        "qwen/qwen3.5-397b-a17b-20260216"
       ],
       "max_tokens": 262144,
       "model_types": [
@@ -3512,7 +5373,6 @@
     {
       "name": "qwen/webworld-32b",
       "alias": [
-        "qwen/webworld-32b",
         "Qwen/WebWorld-32B",
         "webworld-32b"
       ],
@@ -3524,7 +5384,6 @@
     {
       "name": "qwen/webworld-14b",
       "alias": [
-        "qwen/webworld-14b",
         "Qwen/WebWorld-14B",
         "webworld-14b"
       ],
@@ -3536,7 +5395,6 @@
     {
       "name": "qwen/webworld-8b",
       "alias": [
-        "qwen/webworld-8b",
         "Qwen/WebWorld-8B",
         "webworld-8b"
       ],
@@ -3548,7 +5406,6 @@
     {
       "name": "qwen/qwen3-coder-next-gguf",
       "alias": [
-        "qwen/qwen3-coder-next-gguf",
         "Qwen/Qwen3-Coder-Next-GGUF",
         "qwen3-coder-next-gguf"
       ],
@@ -3560,7 +5417,6 @@
     {
       "name": "qwen/qwen3-coder-next-base",
       "alias": [
-        "qwen/qwen3-coder-next-base",
         "Qwen/Qwen3-Coder-Next-Base",
         "qwen3-coder-next-base"
       ],
@@ -3572,7 +5428,6 @@
     {
       "name": "qwen/qwen3-coder-next-fp8",
       "alias": [
-        "qwen/qwen3-coder-next-fp8",
         "Qwen/Qwen3-Coder-Next-FP8",
         "qwen3-coder-next-fp8"
       ],
@@ -3584,9 +5439,9 @@
     {
       "name": "qwen/qwen3-coder-next",
       "alias": [
-        "qwen/qwen3-coder-next",
         "Qwen/Qwen3-Coder-Next",
-        "qwen3-coder-next"
+        "qwen3-coder-next",
+        "qwen/qwen3-coder-next-2025-02-03"
       ],
       "max_tokens": 262144,
       "model_types": [
@@ -3596,7 +5451,6 @@
     {
       "name": "qwen/qwen3-forcedaligner-0.6b",
       "alias": [
-        "qwen/qwen3-forcedaligner-0.6b",
         "Qwen/Qwen3-ForcedAligner-0.6B",
         "qwen3-forcedaligner-0.6b"
       ],
@@ -3608,7 +5462,6 @@
     {
       "name": "qwen/qwen3-asr-1.7b",
       "alias": [
-        "qwen/qwen3-asr-1.7b",
         "Qwen/Qwen3-ASR-1.7B",
         "qwen3-asr-1.7b"
       ],
@@ -3620,7 +5473,6 @@
     {
       "name": "qwen/qwen3-asr-0.6b",
       "alias": [
-        "qwen/qwen3-asr-0.6b",
         "Qwen/Qwen3-ASR-0.6B",
         "qwen3-asr-0.6b"
       ],
@@ -3632,7 +5484,6 @@
     {
       "name": "qwen/qwen3-tts-12hz-0.6b-base",
       "alias": [
-        "qwen/qwen3-tts-12hz-0.6b-base",
         "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
         "qwen3-tts-12hz-0.6b-base"
       ],
@@ -3644,7 +5495,6 @@
     {
       "name": "qwen/qwen3-tts-12hz-0.6b-customvoice",
       "alias": [
-        "qwen/qwen3-tts-12hz-0.6b-customvoice",
         "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
         "qwen3-tts-12hz-0.6b-customvoice"
       ],
@@ -3656,7 +5506,6 @@
     {
       "name": "qwen/qwen3-tts-12hz-1.7b-base",
       "alias": [
-        "qwen/qwen3-tts-12hz-1.7b-base",
         "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
         "qwen3-tts-12hz-1.7b-base"
       ],
@@ -3668,7 +5517,6 @@
     {
       "name": "qwen/qwen3-tts-12hz-1.7b-customvoice",
       "alias": [
-        "qwen/qwen3-tts-12hz-1.7b-customvoice",
         "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
         "qwen3-tts-12hz-1.7b-customvoice"
       ],
@@ -3680,7 +5528,6 @@
     {
       "name": "qwen/qwen3-tts-tokenizer-12hz",
       "alias": [
-        "qwen/qwen3-tts-tokenizer-12hz",
         "Qwen/Qwen3-TTS-Tokenizer-12Hz",
         "qwen3-tts-tokenizer-12hz"
       ],
@@ -3692,7 +5539,6 @@
     {
       "name": "qwen/qwen3-tts-12hz-1.7b-voicedesign",
       "alias": [
-        "qwen/qwen3-tts-12hz-1.7b-voicedesign",
         "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
         "qwen3-tts-12hz-1.7b-voicedesign"
       ],
@@ -3704,7 +5550,6 @@
     {
       "name": "qwen/qwen3-vl-reranker-8b",
       "alias": [
-        "qwen/qwen3-vl-reranker-8b",
         "Qwen/Qwen3-VL-Reranker-8B",
         "qwen3-vl-reranker-8b"
       ],
@@ -3716,7 +5561,6 @@
     {
       "name": "qwen/qwen3-vl-reranker-2b",
       "alias": [
-        "qwen/qwen3-vl-reranker-2b",
         "Qwen/Qwen3-VL-Reranker-2B",
         "qwen3-vl-reranker-2b"
       ],
@@ -3728,7 +5572,6 @@
     {
       "name": "qwen/qwen3-vl-embedding-2b",
       "alias": [
-        "qwen/qwen3-vl-embedding-2b",
         "Qwen/Qwen3-VL-Embedding-2B",
         "qwen3-vl-embedding-2b"
       ],
@@ -3741,7 +5584,6 @@
     {
       "name": "qwen/qwen3-vl-embedding-8b",
       "alias": [
-        "qwen/qwen3-vl-embedding-8b",
         "Qwen/Qwen3-VL-Embedding-8B",
         "qwen3-vl-embedding-8b"
       ],
@@ -3754,7 +5596,6 @@
     {
       "name": "qwen/qwen-image-2512",
       "alias": [
-        "qwen/qwen-image-2512",
         "Qwen/Qwen-Image-2512",
         "qwen-image-2512"
       ],
@@ -3768,7 +5609,6 @@
     {
       "name": "qwen/qwen-image-layered",
       "alias": [
-        "qwen/qwen-image-layered",
         "Qwen/Qwen-Image-Layered",
         "qwen-image-layered"
       ],
@@ -3781,7 +5621,6 @@
     {
       "name": "qwen/qwen-image-edit-2511",
       "alias": [
-        "qwen/qwen-image-edit-2511",
         "Qwen/Qwen-Image-Edit-2511",
         "qwen-image-edit-2511"
       ],
@@ -3794,7 +5633,6 @@
     {
       "name": "qwen/qwen3-next-80b-a3b-thinking-gguf",
       "alias": [
-        "qwen/qwen3-next-80b-a3b-thinking-gguf",
         "Qwen/Qwen3-Next-80B-A3B-Thinking-GGUF",
         "qwen3-next-80b-a3b-thinking-gguf"
       ],
@@ -3809,7 +5647,6 @@
     {
       "name": "qwen/qwen3-next-80b-a3b-instruct-gguf",
       "alias": [
-        "qwen/qwen3-next-80b-a3b-instruct-gguf",
         "Qwen/Qwen3-Next-80B-A3B-Instruct-GGUF",
         "qwen3-next-80b-a3b-instruct-gguf"
       ],
@@ -3820,7 +5657,6 @@
     {
       "name": "qwen/qwen3-vl-235b-a22b-thinking-gguf",
       "alias": [
-        "qwen/qwen3-vl-235b-a22b-thinking-gguf",
         "Qwen/Qwen3-VL-235B-A22B-Thinking-GGUF",
         "qwen3-vl-235b-a22b-thinking-gguf"
       ],
@@ -3836,7 +5672,6 @@
     {
       "name": "qwen/qwen3-vl-30b-a3b-thinking-gguf",
       "alias": [
-        "qwen/qwen3-vl-30b-a3b-thinking-gguf",
         "Qwen/Qwen3-VL-30B-A3B-Thinking-GGUF",
         "qwen3-vl-30b-a3b-thinking-gguf"
       ],
@@ -3852,31 +5687,36 @@
     {
       "name": "qwen/qwen3-vl-235b-a22b-instruct-gguf",
       "alias": [
-        "qwen/qwen3-vl-235b-a22b-instruct-gguf",
         "Qwen/Qwen3-VL-235B-A22B-Instruct-GGUF",
         "qwen3-vl-235b-a22b-instruct-gguf"
       ],
       "model_types": [
         "chat"
       ],
-      "max_tokens": 262144
+      "max_tokens": 262144,
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     },
     {
       "name": "qwen/qwen3-vl-30b-a3b-instruct-gguf",
       "alias": [
-        "qwen/qwen3-vl-30b-a3b-instruct-gguf",
         "Qwen/Qwen3-VL-30B-A3B-Instruct-GGUF",
         "qwen3-vl-30b-a3b-instruct-gguf"
       ],
       "model_types": [
         "chat"
       ],
-      "max_tokens": 262144
+      "max_tokens": 262144,
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     },
     {
       "name": "qwen/qwen3-vl-2b-thinking-gguf",
       "alias": [
-        "qwen/qwen3-vl-2b-thinking-gguf",
         "Qwen/Qwen3-VL-2B-Thinking-GGUF",
         "qwen3-vl-2b-thinking-gguf"
       ],
@@ -3892,7 +5732,6 @@
     {
       "name": "qwen/qwen3-vl-4b-thinking-gguf",
       "alias": [
-        "qwen/qwen3-vl-4b-thinking-gguf",
         "Qwen/Qwen3-VL-4B-Thinking-GGUF",
         "qwen3-vl-4b-thinking-gguf"
       ],
@@ -3908,7 +5747,6 @@
     {
       "name": "qwen/qwen3-vl-8b-thinking-gguf",
       "alias": [
-        "qwen/qwen3-vl-8b-thinking-gguf",
         "Qwen/Qwen3-VL-8B-Thinking-GGUF",
         "qwen3-vl-8b-thinking-gguf"
       ],
@@ -3924,7 +5762,6 @@
     {
       "name": "qwen/qwen3-vl-32b-thinking-gguf",
       "alias": [
-        "qwen/qwen3-vl-32b-thinking-gguf",
         "Qwen/Qwen3-VL-32B-Thinking-GGUF",
         "qwen3-vl-32b-thinking-gguf"
       ],
@@ -3940,55 +5777,66 @@
     {
       "name": "qwen/qwen3-vl-32b-instruct-gguf",
       "alias": [
-        "qwen/qwen3-vl-32b-instruct-gguf",
         "Qwen/Qwen3-VL-32B-Instruct-GGUF",
         "qwen3-vl-32b-instruct-gguf"
       ],
       "model_types": [
         "chat"
       ],
-      "max_tokens": 262144
+      "max_tokens": 262144,
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     },
     {
       "name": "qwen/qwen3-vl-8b-instruct-gguf",
       "alias": [
-        "qwen/qwen3-vl-8b-instruct-gguf",
         "Qwen/Qwen3-VL-8B-Instruct-GGUF",
         "qwen3-vl-8b-instruct-gguf"
       ],
       "model_types": [
         "chat"
       ],
-      "max_tokens": 262144
+      "max_tokens": 262144,
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     },
     {
       "name": "qwen/qwen3-vl-4b-instruct-gguf",
       "alias": [
-        "qwen/qwen3-vl-4b-instruct-gguf",
         "Qwen/Qwen3-VL-4B-Instruct-GGUF",
         "qwen3-vl-4b-instruct-gguf"
       ],
       "model_types": [
         "chat"
       ],
-      "max_tokens": 262144
+      "max_tokens": 262144,
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     },
     {
       "name": "qwen/qwen3-vl-2b-instruct-gguf",
       "alias": [
-        "qwen/qwen3-vl-2b-instruct-gguf",
         "Qwen/Qwen3-VL-2B-Instruct-GGUF",
         "qwen3-vl-2b-instruct-gguf"
       ],
       "model_types": [
         "chat"
       ],
-      "max_tokens": 262144
+      "max_tokens": 262144,
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     },
     {
       "name": "qwen/qwen3-vl-2b-thinking-fp8",
       "alias": [
-        "qwen/qwen3-vl-2b-thinking-fp8",
         "Qwen/Qwen3-VL-2B-Thinking-FP8",
         "qwen3-vl-2b-thinking-fp8"
       ],
@@ -4004,7 +5852,6 @@
     {
       "name": "qwen/qwen3-vl-2b-thinking",
       "alias": [
-        "qwen/qwen3-vl-2b-thinking",
         "Qwen/Qwen3-VL-2B-Thinking",
         "qwen3-vl-2b-thinking"
       ],
@@ -4020,43 +5867,51 @@
     {
       "name": "qwen/qwen3-vl-2b-instruct-fp8",
       "alias": [
-        "qwen/qwen3-vl-2b-instruct-fp8",
         "Qwen/Qwen3-VL-2B-Instruct-FP8",
         "qwen3-vl-2b-instruct-fp8"
       ],
       "max_tokens": 262144,
       "model_types": [
         "chat"
-      ]
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     },
     {
       "name": "qwen/qwen3-vl-2b-instruct",
       "alias": [
-        "qwen/qwen3-vl-2b-instruct",
         "Qwen/Qwen3-VL-2B-Instruct",
         "qwen3-vl-2b-instruct"
       ],
       "max_tokens": 262144,
       "model_types": [
         "chat"
-      ]
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     },
     {
       "name": "qwen/qwen3-vl-32b-instruct-fp8",
       "alias": [
-        "qwen/qwen3-vl-32b-instruct-fp8",
         "Qwen/Qwen3-VL-32B-Instruct-FP8",
         "qwen3-vl-32b-instruct-fp8"
       ],
       "max_tokens": 262144,
       "model_types": [
         "chat"
-      ]
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     },
     {
       "name": "qwen/qwen3-vl-32b-thinking-fp8",
       "alias": [
-        "qwen/qwen3-vl-32b-thinking-fp8",
         "Qwen/Qwen3-VL-32B-Thinking-FP8",
         "qwen3-vl-32b-thinking-fp8"
       ],
@@ -4072,7 +5927,6 @@
     {
       "name": "qwen/qwen3-vl-32b-thinking",
       "alias": [
-        "qwen/qwen3-vl-32b-thinking",
         "Qwen/Qwen3-VL-32B-Thinking",
         "qwen3-vl-32b-thinking"
       ],
@@ -4088,31 +5942,36 @@
     {
       "name": "qwen/qwen3-vl-32b-instruct",
       "alias": [
-        "qwen/qwen3-vl-32b-instruct",
         "Qwen/Qwen3-VL-32B-Instruct",
         "qwen3-vl-32b-instruct"
       ],
       "max_tokens": 262144,
       "model_types": [
         "chat"
-      ]
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     },
     {
       "name": "qwen/qwen3-vl-8b-instruct-fp8",
       "alias": [
-        "qwen/qwen3-vl-8b-instruct-fp8",
         "Qwen/Qwen3-VL-8B-Instruct-FP8",
         "qwen3-vl-8b-instruct-fp8"
       ],
       "max_tokens": 262144,
       "model_types": [
         "chat"
-      ]
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     },
     {
       "name": "qwen/qwen3-vl-8b-thinking-fp8",
       "alias": [
-        "qwen/qwen3-vl-8b-thinking-fp8",
         "Qwen/Qwen3-VL-8B-Thinking-FP8",
         "qwen3-vl-8b-thinking-fp8"
       ],
@@ -4128,7 +5987,6 @@
     {
       "name": "qwen/qwen3-vl-4b-thinking-fp8",
       "alias": [
-        "qwen/qwen3-vl-4b-thinking-fp8",
         "Qwen/Qwen3-VL-4B-Thinking-FP8",
         "qwen3-vl-4b-thinking-fp8"
       ],
@@ -4144,19 +6002,21 @@
     {
       "name": "qwen/qwen3-vl-4b-instruct-fp8",
       "alias": [
-        "qwen/qwen3-vl-4b-instruct-fp8",
         "Qwen/Qwen3-VL-4B-Instruct-FP8",
         "qwen3-vl-4b-instruct-fp8"
       ],
       "max_tokens": 262144,
       "model_types": [
         "chat"
-      ]
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     },
     {
       "name": "qwen/qwen3-vl-8b-thinking",
       "alias": [
-        "qwen/qwen3-vl-8b-thinking",
         "Qwen/Qwen3-VL-8B-Thinking",
         "qwen3-vl-8b-thinking"
       ],
@@ -4172,7 +6032,6 @@
     {
       "name": "qwen/qwen3-vl-4b-thinking",
       "alias": [
-        "qwen/qwen3-vl-4b-thinking",
         "Qwen/Qwen3-VL-4B-Thinking",
         "qwen3-vl-4b-thinking"
       ],
@@ -4188,31 +6047,36 @@
     {
       "name": "qwen/qwen3-vl-8b-instruct",
       "alias": [
-        "qwen/qwen3-vl-8b-instruct",
         "Qwen/Qwen3-VL-8B-Instruct",
         "qwen3-vl-8b-instruct"
       ],
       "max_tokens": 262144,
       "model_types": [
         "chat"
-      ]
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     },
     {
       "name": "qwen/qwen3-vl-4b-instruct",
       "alias": [
-        "qwen/qwen3-vl-4b-instruct",
         "Qwen/Qwen3-VL-4B-Instruct",
         "qwen3-vl-4b-instruct"
       ],
       "max_tokens": 262144,
       "model_types": [
         "chat"
-      ]
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     },
     {
       "name": "qwen/qwen3-vl-30b-a3b-thinking-fp8",
       "alias": [
-        "qwen/qwen3-vl-30b-a3b-thinking-fp8",
         "Qwen/Qwen3-VL-30B-A3B-Thinking-FP8",
         "qwen3-vl-30b-a3b-thinking-fp8"
       ],
@@ -4228,19 +6092,21 @@
     {
       "name": "qwen/qwen3-vl-30b-a3b-instruct-fp8",
       "alias": [
-        "qwen/qwen3-vl-30b-a3b-instruct-fp8",
         "Qwen/Qwen3-VL-30B-A3B-Instruct-FP8",
         "qwen3-vl-30b-a3b-instruct-fp8"
       ],
       "max_tokens": 262144,
       "model_types": [
         "chat"
-      ]
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     },
     {
       "name": "qwen/qwen3-vl-235b-a22b-thinking-fp8",
       "alias": [
-        "qwen/qwen3-vl-235b-a22b-thinking-fp8",
         "Qwen/Qwen3-VL-235B-A22B-Thinking-FP8",
         "qwen3-vl-235b-a22b-thinking-fp8"
       ],
@@ -4256,19 +6122,21 @@
     {
       "name": "qwen/qwen3-vl-235b-a22b-instruct-fp8",
       "alias": [
-        "qwen/qwen3-vl-235b-a22b-instruct-fp8",
         "Qwen/Qwen3-VL-235B-A22B-Instruct-FP8",
         "qwen3-vl-235b-a22b-instruct-fp8"
       ],
       "max_tokens": 262144,
       "model_types": [
         "chat"
-      ]
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     },
     {
       "name": "qwen/qwen3-vl-30b-a3b-thinking",
       "alias": [
-        "qwen/qwen3-vl-30b-a3b-thinking",
         "Qwen/Qwen3-VL-30B-A3B-Thinking",
         "qwen3-vl-30b-a3b-thinking"
       ],
@@ -4284,19 +6152,21 @@
     {
       "name": "qwen/qwen3-vl-30b-a3b-instruct",
       "alias": [
-        "qwen/qwen3-vl-30b-a3b-instruct",
         "Qwen/Qwen3-VL-30B-A3B-Instruct",
         "qwen3-vl-30b-a3b-instruct"
       ],
       "max_tokens": 262144,
       "model_types": [
         "chat"
-      ]
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     },
     {
       "name": "qwen/qwen3-4b-saferl",
       "alias": [
-        "qwen/qwen3-4b-saferl",
         "Qwen/Qwen3-4B-SafeRL",
         "qwen3-4b-saferl"
       ],
@@ -4308,7 +6178,6 @@
     {
       "name": "qwen/qwen3guard-stream-8b",
       "alias": [
-        "qwen/qwen3guard-stream-8b",
         "Qwen/Qwen3Guard-Stream-8B",
         "qwen3guard-stream-8b"
       ],
@@ -4320,7 +6189,6 @@
     {
       "name": "qwen/qwen3guard-stream-4b",
       "alias": [
-        "qwen/qwen3guard-stream-4b",
         "Qwen/Qwen3Guard-Stream-4B",
         "qwen3guard-stream-4b"
       ],
@@ -4332,7 +6200,6 @@
     {
       "name": "qwen/qwen3guard-stream-0.6b",
       "alias": [
-        "qwen/qwen3guard-stream-0.6b",
         "Qwen/Qwen3Guard-Stream-0.6B",
         "qwen3guard-stream-0.6b"
       ],
@@ -4344,7 +6211,6 @@
     {
       "name": "qwen/qwen3guard-gen-8b",
       "alias": [
-        "qwen/qwen3guard-gen-8b",
         "Qwen/Qwen3Guard-Gen-8B",
         "qwen3guard-gen-8b"
       ],
@@ -4356,7 +6222,6 @@
     {
       "name": "qwen/qwen3guard-gen-4b",
       "alias": [
-        "qwen/qwen3guard-gen-4b",
         "Qwen/Qwen3Guard-Gen-4B",
         "qwen3guard-gen-4b"
       ],
@@ -4368,7 +6233,6 @@
     {
       "name": "qwen/qwen3guard-gen-0.6b",
       "alias": [
-        "qwen/qwen3guard-gen-0.6b",
         "Qwen/Qwen3Guard-Gen-0.6B",
         "qwen3guard-gen-0.6b"
       ],
@@ -4380,7 +6244,6 @@
     {
       "name": "qwen/qwen-image-edit-2509",
       "alias": [
-        "qwen/qwen-image-edit-2509",
         "Qwen/Qwen-Image-Edit-2509",
         "qwen-image-edit-2509"
       ],
@@ -4393,7 +6256,6 @@
     {
       "name": "qwen/qwen3-vl-235b-a22b-thinking",
       "alias": [
-        "qwen/qwen3-vl-235b-a22b-thinking",
         "Qwen/Qwen3-VL-235B-A22B-Thinking",
         "qwen3-vl-235b-a22b-thinking"
       ],
@@ -4409,19 +6271,21 @@
     {
       "name": "qwen/qwen3-vl-235b-a22b-instruct",
       "alias": [
-        "qwen/qwen3-vl-235b-a22b-instruct",
         "Qwen/Qwen3-VL-235B-A22B-Instruct",
         "qwen3-vl-235b-a22b-instruct"
       ],
       "max_tokens": 262144,
       "model_types": [
         "chat"
-      ]
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     },
     {
       "name": "qwen/qwen3-next-80b-a3b-thinking-fp8",
       "alias": [
-        "qwen/qwen3-next-80b-a3b-thinking-fp8",
         "Qwen/Qwen3-Next-80B-A3B-Thinking-FP8",
         "qwen3-next-80b-a3b-thinking-fp8"
       ],
@@ -4437,7 +6301,6 @@
     {
       "name": "qwen/qwen3-next-80b-a3b-instruct-fp8",
       "alias": [
-        "qwen/qwen3-next-80b-a3b-instruct-fp8",
         "Qwen/Qwen3-Next-80B-A3B-Instruct-FP8",
         "qwen3-next-80b-a3b-instruct-fp8"
       ],
@@ -4449,7 +6312,6 @@
     {
       "name": "qwen/qwen3-omni-30b-a3b-instruct",
       "alias": [
-        "qwen/qwen3-omni-30b-a3b-instruct",
         "Qwen/Qwen3-Omni-30B-A3B-Instruct",
         "qwen3-omni-30b-a3b-instruct"
       ],
@@ -4469,7 +6331,6 @@
     {
       "name": "qwen/qwen3-omni-30b-a3b-thinking",
       "alias": [
-        "qwen/qwen3-omni-30b-a3b-thinking",
         "Qwen/Qwen3-Omni-30B-A3B-Thinking",
         "qwen3-omni-30b-a3b-thinking"
       ],
@@ -4492,7 +6353,6 @@
     {
       "name": "qwen/qwen3-omni-30b-a3b-captioner",
       "alias": [
-        "qwen/qwen3-omni-30b-a3b-captioner",
         "Qwen/Qwen3-Omni-30B-A3B-Captioner",
         "qwen3-omni-30b-a3b-captioner"
       ],
@@ -4507,9 +6367,9 @@
     {
       "name": "qwen/qwen3-next-80b-a3b-thinking",
       "alias": [
-        "qwen/qwen3-next-80b-a3b-thinking",
         "Qwen/Qwen3-Next-80B-A3B-Thinking",
-        "qwen3-next-80b-a3b-thinking"
+        "qwen3-next-80b-a3b-thinking",
+        "qwen/qwen3-next-80b-a3b-thinking-2509"
       ],
       "max_tokens": 262144,
       "model_types": [
@@ -4523,9 +6383,11 @@
     {
       "name": "qwen/qwen3-next-80b-a3b-instruct",
       "alias": [
-        "qwen/qwen3-next-80b-a3b-instruct",
         "Qwen/Qwen3-Next-80B-A3B-Instruct",
-        "qwen3-next-80b-a3b-instruct"
+        "qwen3-next-80b-a3b-instruct",
+        "qwen/qwen3-next-80b-a3b-instruct-2509",
+        "qwen/qwen3-next-80b-a3b-instruct-2509:free",
+        "qwen/qwen3-next-80b-a3b-instruct:free"
       ],
       "max_tokens": 262144,
       "model_types": [
@@ -4535,7 +6397,6 @@
     {
       "name": "qwen/qwen-image-bench",
       "alias": [
-        "qwen/qwen-image-bench",
         "Qwen/Qwen-Image-Bench",
         "qwen-image-bench"
       ],
@@ -4549,7 +6410,6 @@
     {
       "name": "qwen/qwen-image-edit",
       "alias": [
-        "qwen/qwen-image-edit",
         "Qwen/Qwen-Image-Edit",
         "qwen-image-edit"
       ],
@@ -4562,7 +6422,6 @@
     {
       "name": "qwen/qwen3-4b-instruct-2507-fp8",
       "alias": [
-        "qwen/qwen3-4b-instruct-2507-fp8",
         "Qwen/Qwen3-4B-Instruct-2507-FP8",
         "qwen3-4b-instruct-2507-fp8"
       ],
@@ -4574,7 +6433,6 @@
     {
       "name": "qwen/qwen3-4b-thinking-2507-fp8",
       "alias": [
-        "qwen/qwen3-4b-thinking-2507-fp8",
         "Qwen/Qwen3-4B-Thinking-2507-FP8",
         "qwen3-4b-thinking-2507-fp8"
       ],
@@ -4590,7 +6448,6 @@
     {
       "name": "qwen/qwen3-4b-thinking-2507",
       "alias": [
-        "qwen/qwen3-4b-thinking-2507",
         "Qwen/Qwen3-4B-Thinking-2507",
         "qwen3-4b-thinking-2507"
       ],
@@ -4606,7 +6463,6 @@
     {
       "name": "qwen/qwen3-4b-instruct-2507",
       "alias": [
-        "qwen/qwen3-4b-instruct-2507",
         "Qwen/Qwen3-4B-Instruct-2507",
         "qwen3-4b-instruct-2507"
       ],
@@ -4618,7 +6474,6 @@
     {
       "name": "qwen/qwen-image",
       "alias": [
-        "qwen/qwen-image",
         "Qwen/Qwen-Image",
         "qwen-image"
       ],
@@ -4632,7 +6487,6 @@
     {
       "name": "qwen/qwen3-coder-30b-a3b-instruct-fp8",
       "alias": [
-        "qwen/qwen3-coder-30b-a3b-instruct-fp8",
         "Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8",
         "qwen3-coder-30b-a3b-instruct-fp8"
       ],
@@ -4644,7 +6498,6 @@
     {
       "name": "qwen/qwen3-coder-30b-a3b-instruct",
       "alias": [
-        "qwen/qwen3-coder-30b-a3b-instruct",
         "Qwen/Qwen3-Coder-30B-A3B-Instruct",
         "qwen3-coder-30b-a3b-instruct"
       ],
@@ -4656,7 +6509,6 @@
     {
       "name": "qwen/qwen3-30b-a3b-thinking-2507-fp8",
       "alias": [
-        "qwen/qwen3-30b-a3b-thinking-2507-fp8",
         "Qwen/Qwen3-30B-A3B-Thinking-2507-FP8",
         "qwen3-30b-a3b-thinking-2507-fp8"
       ],
@@ -4672,7 +6524,6 @@
     {
       "name": "qwen/qwen3-30b-a3b-thinking-2507",
       "alias": [
-        "qwen/qwen3-30b-a3b-thinking-2507",
         "Qwen/Qwen3-30B-A3B-Thinking-2507",
         "qwen3-30b-a3b-thinking-2507"
       ],
@@ -4688,7 +6539,6 @@
     {
       "name": "qwen/qwen3-30b-a3b-instruct-2507-fp8",
       "alias": [
-        "qwen/qwen3-30b-a3b-instruct-2507-fp8",
         "Qwen/Qwen3-30B-A3B-Instruct-2507-FP8",
         "qwen3-30b-a3b-instruct-2507-fp8"
       ],
@@ -4700,7 +6550,6 @@
     {
       "name": "qwen/qwen3-30b-a3b-instruct-2507",
       "alias": [
-        "qwen/qwen3-30b-a3b-instruct-2507",
         "Qwen/Qwen3-30B-A3B-Instruct-2507",
         "qwen3-30b-a3b-instruct-2507"
       ],
@@ -4712,7 +6561,6 @@
     {
       "name": "qwen/qwen3-235b-a22b-thinking-2507-fp8",
       "alias": [
-        "qwen/qwen3-235b-a22b-thinking-2507-fp8",
         "Qwen/Qwen3-235B-A22B-Thinking-2507-FP8",
         "qwen3-235b-a22b-thinking-2507-fp8"
       ],
@@ -4728,7 +6576,6 @@
     {
       "name": "qwen/qwen3-235b-a22b-thinking-2507",
       "alias": [
-        "qwen/qwen3-235b-a22b-thinking-2507",
         "Qwen/Qwen3-235B-A22B-Thinking-2507",
         "qwen3-235b-a22b-thinking-2507"
       ],
@@ -4744,7 +6591,6 @@
     {
       "name": "qwen/qwen3-coder-480b-a35b-instruct-fp8",
       "alias": [
-        "qwen/qwen3-coder-480b-a35b-instruct-fp8",
         "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
         "qwen3-coder-480b-a35b-instruct-fp8"
       ],
@@ -4756,10 +6602,16 @@
     {
       "name": "qwen/qwen3-coder-480b-a35b-instruct",
       "alias": [
-        "qwen/qwen3-coder-480b-a35b-instruct",
         "Qwen/Qwen3-Coder-480B-A35B-Instruct",
         "qwen3-coder-480b-a35b-instruct",
-        "qwen3-coder-480b"
+        "qwen3-coder-480b",
+        "qwen/qwen3-coder",
+        "qwen/qwen3-coder:free",
+        "qwen/qwen3-coder-480b-a35b-07-25",
+        "qwen/qwen3-coder-480b-a35b-07-25:free",
+        "qwen/qwen3-coder-480b-a35b-instruct-maas",
+        "qwen.qwen3-coder-480b-a35b-instruct",
+        "qwen.qwen3-coder-480b-a35b-v1:0"
       ],
       "max_tokens": 262144,
       "model_types": [
@@ -4769,7 +6621,6 @@
     {
       "name": "qwen/qwen3-235b-a22b-instruct-2507-fp8",
       "alias": [
-        "qwen/qwen3-235b-a22b-instruct-2507-fp8",
         "Qwen/Qwen3-235B-A22B-Instruct-2507-FP8",
         "qwen3-235b-a22b-instruct-2507-fp8"
       ],
@@ -4781,9 +6632,12 @@
     {
       "name": "qwen/qwen3-235b-a22b-instruct-2507",
       "alias": [
-        "qwen/qwen3-235b-a22b-instruct-2507",
         "Qwen/Qwen3-235B-A22B-Instruct-2507",
-        "qwen3-235b-a22b-instruct-2507"
+        "qwen3-235b-a22b-instruct-2507",
+        "qwen/qwen3-235b-a22b-07-25",
+        "qwen/qwen3-235b-a22b-2507",
+        "qwen.qwen3-235b-a22b-2507",
+        "qwen.qwen3-235b-a22b-2507-v1:0"
       ],
       "max_tokens": 262144,
       "model_types": [
@@ -4793,7 +6647,6 @@
     {
       "name": "qwen/qwen3-14b-mlx-bf16",
       "alias": [
-        "qwen/qwen3-14b-mlx-bf16",
         "Qwen/Qwen3-14B-MLX-bf16",
         "qwen3-14b-mlx-bf16"
       ],
@@ -4805,7 +6658,6 @@
     {
       "name": "qwen/qwen3-235b-a22b-mlx-8bit",
       "alias": [
-        "qwen/qwen3-235b-a22b-mlx-8bit",
         "Qwen/Qwen3-235B-A22B-MLX-8bit",
         "qwen3-235b-a22b-mlx-8bit"
       ],
@@ -4817,7 +6669,6 @@
     {
       "name": "qwen/qwen3-235b-a22b-mlx-6bit",
       "alias": [
-        "qwen/qwen3-235b-a22b-mlx-6bit",
         "Qwen/Qwen3-235B-A22B-MLX-6bit",
         "qwen3-235b-a22b-mlx-6bit"
       ],
@@ -4829,7 +6680,6 @@
     {
       "name": "qwen/qwen3-235b-a22b-mlx-4bit",
       "alias": [
-        "qwen/qwen3-235b-a22b-mlx-4bit",
         "Qwen/Qwen3-235B-A22B-MLX-4bit",
         "qwen3-235b-a22b-mlx-4bit"
       ],
@@ -4841,7 +6691,6 @@
     {
       "name": "qwen/qwen3-235b-a22b-mlx-bf16",
       "alias": [
-        "qwen/qwen3-235b-a22b-mlx-bf16",
         "Qwen/Qwen3-235B-A22B-MLX-bf16",
         "qwen3-235b-a22b-mlx-bf16"
       ],
@@ -4853,7 +6702,6 @@
     {
       "name": "qwen/qwen3-30b-a3b-mlx-4bit",
       "alias": [
-        "qwen/qwen3-30b-a3b-mlx-4bit",
         "Qwen/Qwen3-30B-A3B-MLX-4bit",
         "qwen3-30b-a3b-mlx-4bit"
       ],
@@ -4865,7 +6713,6 @@
     {
       "name": "qwen/qwen3-30b-a3b-mlx-6bit",
       "alias": [
-        "qwen/qwen3-30b-a3b-mlx-6bit",
         "Qwen/Qwen3-30B-A3B-MLX-6bit",
         "qwen3-30b-a3b-mlx-6bit"
       ],
@@ -4877,7 +6724,6 @@
     {
       "name": "qwen/qwen3-30b-a3b-mlx-8bit",
       "alias": [
-        "qwen/qwen3-30b-a3b-mlx-8bit",
         "Qwen/Qwen3-30B-A3B-MLX-8bit",
         "qwen3-30b-a3b-mlx-8bit"
       ],
@@ -4889,7 +6735,6 @@
     {
       "name": "qwen/qwen3-30b-a3b-mlx-bf16",
       "alias": [
-        "qwen/qwen3-30b-a3b-mlx-bf16",
         "Qwen/Qwen3-30B-A3B-MLX-bf16",
         "qwen3-30b-a3b-mlx-bf16"
       ],
@@ -4901,7 +6746,6 @@
     {
       "name": "qwen/qwen3-32b-mlx-4bit",
       "alias": [
-        "qwen/qwen3-32b-mlx-4bit",
         "Qwen/Qwen3-32B-MLX-4bit",
         "qwen3-32b-mlx-4bit"
       ],
@@ -4913,7 +6757,6 @@
     {
       "name": "qwen/qwen3-32b-mlx-6bit",
       "alias": [
-        "qwen/qwen3-32b-mlx-6bit",
         "Qwen/Qwen3-32B-MLX-6bit",
         "qwen3-32b-mlx-6bit"
       ],
@@ -4925,7 +6768,6 @@
     {
       "name": "qwen/qwen3-32b-mlx-8bit",
       "alias": [
-        "qwen/qwen3-32b-mlx-8bit",
         "Qwen/Qwen3-32B-MLX-8bit",
         "qwen3-32b-mlx-8bit"
       ],
@@ -4937,7 +6779,6 @@
     {
       "name": "qwen/qwen3-32b-mlx-bf16",
       "alias": [
-        "qwen/qwen3-32b-mlx-bf16",
         "Qwen/Qwen3-32B-MLX-bf16",
         "qwen3-32b-mlx-bf16"
       ],
@@ -4949,7 +6790,6 @@
     {
       "name": "qwen/qwen3-embedding-0.6b-gguf",
       "alias": [
-        "qwen/qwen3-embedding-0.6b-gguf",
         "Qwen/Qwen3-Embedding-0.6B-GGUF",
         "qwen3-embedding-0.6b-gguf"
       ],
@@ -4962,7 +6802,6 @@
     {
       "name": "qwen/qwen3-embedding-4b-gguf",
       "alias": [
-        "qwen/qwen3-embedding-4b-gguf",
         "Qwen/Qwen3-Embedding-4B-GGUF",
         "qwen3-embedding-4b-gguf"
       ],
@@ -4975,7 +6814,6 @@
     {
       "name": "qwen/qwen3-embedding-8b-gguf",
       "alias": [
-        "qwen/qwen3-embedding-8b-gguf",
         "Qwen/Qwen3-Embedding-8B-GGUF",
         "qwen3-embedding-8b-gguf"
       ],
@@ -4988,7 +6826,6 @@
     {
       "name": "qwen/qwen3-reranker-4b",
       "alias": [
-        "qwen/qwen3-reranker-4b",
         "Qwen/Qwen3-Reranker-4B",
         "qwen3-reranker-4b",
         "Qwen3-Reranker-4B"
@@ -5001,7 +6838,6 @@
     {
       "name": "qwen/qwen3-embedding-8b",
       "alias": [
-        "qwen/qwen3-embedding-8b",
         "Qwen/Qwen3-Embedding-8B",
         "qwen3-embedding-8b",
         "Qwen3-Embedding-8B"
@@ -5015,7 +6851,6 @@
     {
       "name": "qwen/qwen3-embedding-4b",
       "alias": [
-        "qwen/qwen3-embedding-4b",
         "Qwen/Qwen3-Embedding-4B",
         "qwen3-embedding-4b",
         "Qwen3-Embedding-4B"
@@ -5029,7 +6864,6 @@
     {
       "name": "qwen/qwen3-embedding-0.6b",
       "alias": [
-        "qwen/qwen3-embedding-0.6b",
         "Qwen/Qwen3-Embedding-0.6B",
         "qwen3-embedding-0.6b",
         "Qwen3-Embedding-0.6B"
@@ -5043,7 +6877,6 @@
     {
       "name": "qwen/qwen3-reranker-0.6b",
       "alias": [
-        "qwen/qwen3-reranker-0.6b",
         "Qwen/Qwen3-Reranker-0.6B",
         "qwen3-reranker-0.6b",
         "Qwen3-Reranker-0.6B"
@@ -5056,7 +6889,6 @@
     {
       "name": "qwen/qwen3-reranker-8b",
       "alias": [
-        "qwen/qwen3-reranker-8b",
         "Qwen/Qwen3-Reranker-8B",
         "qwen3-reranker-8b",
         "Qwen3-Reranker-8B"
@@ -5069,7 +6901,6 @@
     {
       "name": "qwen/qwen3-14b-mlx-4bit",
       "alias": [
-        "qwen/qwen3-14b-mlx-4bit",
         "Qwen/Qwen3-14B-MLX-4bit",
         "qwen3-14b-mlx-4bit"
       ],
@@ -5081,7 +6912,6 @@
     {
       "name": "qwen/qwen3-4b-mlx-4bit",
       "alias": [
-        "qwen/qwen3-4b-mlx-4bit",
         "Qwen/Qwen3-4B-MLX-4bit",
         "qwen3-4b-mlx-4bit"
       ],
@@ -5093,7 +6923,6 @@
     {
       "name": "qwen/qwen3-4b-mlx-6bit",
       "alias": [
-        "qwen/qwen3-4b-mlx-6bit",
         "Qwen/Qwen3-4B-MLX-6bit",
         "qwen3-4b-mlx-6bit"
       ],
@@ -5105,7 +6934,6 @@
     {
       "name": "qwen/qwen3-14b-mlx-6bit",
       "alias": [
-        "qwen/qwen3-14b-mlx-6bit",
         "Qwen/Qwen3-14B-MLX-6bit",
         "qwen3-14b-mlx-6bit"
       ],
@@ -5117,7 +6945,6 @@
     {
       "name": "qwen/qwen3-4b-mlx-8bit",
       "alias": [
-        "qwen/qwen3-4b-mlx-8bit",
         "Qwen/Qwen3-4B-MLX-8bit",
         "qwen3-4b-mlx-8bit"
       ],
@@ -5129,7 +6956,6 @@
     {
       "name": "qwen/qwen3-14b-mlx-8bit",
       "alias": [
-        "qwen/qwen3-14b-mlx-8bit",
         "Qwen/Qwen3-14B-MLX-8bit",
         "qwen3-14b-mlx-8bit"
       ],
@@ -5141,7 +6967,6 @@
     {
       "name": "qwen/qwen3-4b-mlx-bf16",
       "alias": [
-        "qwen/qwen3-4b-mlx-bf16",
         "Qwen/Qwen3-4B-MLX-bf16",
         "qwen3-4b-mlx-bf16"
       ],
@@ -5153,7 +6978,6 @@
     {
       "name": "qwen/qwen3-8b-mlx-bf16",
       "alias": [
-        "qwen/qwen3-8b-mlx-bf16",
         "Qwen/Qwen3-8B-MLX-bf16",
         "qwen3-8b-mlx-bf16"
       ],
@@ -5165,7 +6989,6 @@
     {
       "name": "qwen/qwen3-8b-mlx-8bit",
       "alias": [
-        "qwen/qwen3-8b-mlx-8bit",
         "Qwen/Qwen3-8B-MLX-8bit",
         "qwen3-8b-mlx-8bit"
       ],
@@ -5177,7 +7000,6 @@
     {
       "name": "qwen/qwen3-8b-mlx-4bit",
       "alias": [
-        "qwen/qwen3-8b-mlx-4bit",
         "Qwen/Qwen3-8B-MLX-4bit",
         "qwen3-8b-mlx-4bit"
       ],
@@ -5189,7 +7011,6 @@
     {
       "name": "qwen/qwen3-1.7b-mlx-4bit",
       "alias": [
-        "qwen/qwen3-1.7b-mlx-4bit",
         "Qwen/Qwen3-1.7B-MLX-4bit",
         "qwen3-1.7b-mlx-4bit"
       ],
@@ -5201,7 +7022,6 @@
     {
       "name": "qwen/qwen3-1.7b-mlx-8bit",
       "alias": [
-        "qwen/qwen3-1.7b-mlx-8bit",
         "Qwen/Qwen3-1.7B-MLX-8bit",
         "qwen3-1.7b-mlx-8bit"
       ],
@@ -5213,7 +7033,6 @@
     {
       "name": "qwen/qwen3-1.7b-mlx-6bit",
       "alias": [
-        "qwen/qwen3-1.7b-mlx-6bit",
         "Qwen/Qwen3-1.7B-MLX-6bit",
         "qwen3-1.7b-mlx-6bit"
       ],
@@ -5225,7 +7044,6 @@
     {
       "name": "qwen/qwen3-8b-mlx-6bit",
       "alias": [
-        "qwen/qwen3-8b-mlx-6bit",
         "Qwen/Qwen3-8B-MLX-6bit",
         "qwen3-8b-mlx-6bit"
       ],
@@ -5237,7 +7055,6 @@
     {
       "name": "qwen/qwen3-1.7b-mlx-bf16",
       "alias": [
-        "qwen/qwen3-1.7b-mlx-bf16",
         "Qwen/Qwen3-1.7B-MLX-bf16",
         "qwen3-1.7b-mlx-bf16"
       ],
@@ -5249,7 +7066,6 @@
     {
       "name": "qwen/qwen3-0.6b-mlx-8bit",
       "alias": [
-        "qwen/qwen3-0.6b-mlx-8bit",
         "Qwen/Qwen3-0.6B-MLX-8bit",
         "qwen3-0.6b-mlx-8bit"
       ],
@@ -5261,7 +7077,6 @@
     {
       "name": "qwen/qwen3-0.6b-mlx-bf16",
       "alias": [
-        "qwen/qwen3-0.6b-mlx-bf16",
         "Qwen/Qwen3-0.6B-MLX-bf16",
         "qwen3-0.6b-mlx-bf16"
       ],
@@ -5273,7 +7088,6 @@
     {
       "name": "qwen/qwen3-0.6b-mlx-6bit",
       "alias": [
-        "qwen/qwen3-0.6b-mlx-6bit",
         "Qwen/Qwen3-0.6B-MLX-6bit",
         "qwen3-0.6b-mlx-6bit"
       ],
@@ -5285,7 +7099,6 @@
     {
       "name": "qwen/qwen3-0.6b-mlx-4bit",
       "alias": [
-        "qwen/qwen3-0.6b-mlx-4bit",
         "Qwen/Qwen3-0.6B-MLX-4bit",
         "qwen3-0.6b-mlx-4bit"
       ],
@@ -5297,7 +7110,6 @@
     {
       "name": "qwen/worldpm-72b-rlhflow",
       "alias": [
-        "qwen/worldpm-72b-rlhflow",
         "Qwen/WorldPM-72B-RLHFLow",
         "worldpm-72b-rlhflow"
       ],
@@ -5308,7 +7120,6 @@
     {
       "name": "qwen/worldpm-72b-ultrafeedback",
       "alias": [
-        "qwen/worldpm-72b-ultrafeedback",
         "Qwen/WorldPM-72B-UltraFeedback",
         "worldpm-72b-ultrafeedback"
       ],
@@ -5320,7 +7131,6 @@
     {
       "name": "qwen/worldpm-72b-helpsteer2",
       "alias": [
-        "qwen/worldpm-72b-helpsteer2",
         "Qwen/WorldPM-72B-HelpSteer2",
         "worldpm-72b-helpsteer2"
       ],
@@ -5332,7 +7142,6 @@
     {
       "name": "qwen/worldpm-72b",
       "alias": [
-        "qwen/worldpm-72b",
         "Qwen/WorldPM-72B",
         "worldpm-72b"
       ],
@@ -5344,7 +7153,6 @@
     {
       "name": "qwen/qwen2.5-omni-7b-gptq-int4",
       "alias": [
-        "qwen/qwen2.5-omni-7b-gptq-int4",
         "Qwen/Qwen2.5-Omni-7B-GPTQ-Int4",
         "qwen2.5-omni-7b-gptq-int4"
       ],
@@ -5364,7 +7172,6 @@
     {
       "name": "qwen/qwen2.5-omni-7b-awq",
       "alias": [
-        "qwen/qwen2.5-omni-7b-awq",
         "Qwen/Qwen2.5-Omni-7B-AWQ",
         "qwen2.5-omni-7b-awq"
       ],
@@ -5384,7 +7191,6 @@
     {
       "name": "qwen/qwen3-235b-a22b-gguf",
       "alias": [
-        "qwen/qwen3-235b-a22b-gguf",
         "Qwen/Qwen3-235B-A22B-GGUF",
         "qwen3-235b-a22b-gguf"
       ],
@@ -5396,7 +7202,6 @@
     {
       "name": "qwen/qwen3-235b-a22b-gptq-int4",
       "alias": [
-        "qwen/qwen3-235b-a22b-gptq-int4",
         "Qwen/Qwen3-235B-A22B-GPTQ-Int4",
         "qwen3-235b-a22b-gptq-int4"
       ],
@@ -5408,7 +7213,6 @@
     {
       "name": "qwen/qwen3-0.6b-gptq-int8",
       "alias": [
-        "qwen/qwen3-0.6b-gptq-int8",
         "Qwen/Qwen3-0.6B-GPTQ-Int8",
         "qwen3-0.6b-gptq-int8"
       ],
@@ -5420,7 +7224,6 @@
     {
       "name": "qwen/qwen3-1.7b-gptq-int8",
       "alias": [
-        "qwen/qwen3-1.7b-gptq-int8",
         "Qwen/Qwen3-1.7B-GPTQ-Int8",
         "qwen3-1.7b-gptq-int8"
       ],
@@ -5432,7 +7235,6 @@
     {
       "name": "qwen/qwen3-4b-awq",
       "alias": [
-        "qwen/qwen3-4b-awq",
         "Qwen/Qwen3-4B-AWQ",
         "qwen3-4b-awq"
       ],
@@ -5444,7 +7246,6 @@
     {
       "name": "qwen/qwen3-0.6b-gguf",
       "alias": [
-        "qwen/qwen3-0.6b-gguf",
         "Qwen/Qwen3-0.6B-GGUF",
         "qwen3-0.6b-gguf"
       ],
@@ -5456,7 +7257,6 @@
     {
       "name": "qwen/qwen3-1.7b-gguf",
       "alias": [
-        "qwen/qwen3-1.7b-gguf",
         "Qwen/Qwen3-1.7B-GGUF",
         "qwen3-1.7b-gguf"
       ],
@@ -5468,7 +7268,6 @@
     {
       "name": "qwen/qwen3-30b-a3b-gptq-int4",
       "alias": [
-        "qwen/qwen3-30b-a3b-gptq-int4",
         "Qwen/Qwen3-30B-A3B-GPTQ-Int4",
         "qwen3-30b-a3b-gptq-int4"
       ],
@@ -5480,7 +7279,6 @@
     {
       "name": "qwen/qwen3-4b-gguf",
       "alias": [
-        "qwen/qwen3-4b-gguf",
         "Qwen/Qwen3-4B-GGUF",
         "qwen3-4b-gguf"
       ],
@@ -5492,7 +7290,6 @@
     {
       "name": "qwen/qwen3-30b-a3b-gguf",
       "alias": [
-        "qwen/qwen3-30b-a3b-gguf",
         "Qwen/Qwen3-30B-A3B-GGUF",
         "qwen3-30b-a3b-gguf"
       ],
@@ -5504,7 +7301,6 @@
     {
       "name": "qwen/qwen3-8b-gguf",
       "alias": [
-        "qwen/qwen3-8b-gguf",
         "Qwen/Qwen3-8B-GGUF",
         "qwen3-8b-gguf"
       ],
@@ -5516,7 +7312,6 @@
     {
       "name": "qwen/qwen3-8b-awq",
       "alias": [
-        "qwen/qwen3-8b-awq",
         "Qwen/Qwen3-8B-AWQ",
         "qwen3-8b-awq"
       ],
@@ -5528,7 +7323,6 @@
     {
       "name": "qwen/qwen3-14b-awq",
       "alias": [
-        "qwen/qwen3-14b-awq",
         "Qwen/Qwen3-14B-AWQ",
         "qwen3-14b-awq"
       ],
@@ -5540,7 +7334,6 @@
     {
       "name": "qwen/qwen3-32b-awq",
       "alias": [
-        "qwen/qwen3-32b-awq",
         "Qwen/Qwen3-32B-AWQ",
         "qwen3-32b-awq"
       ],
@@ -5552,7 +7345,6 @@
     {
       "name": "qwen/qwen3-14b-gguf",
       "alias": [
-        "qwen/qwen3-14b-gguf",
         "Qwen/Qwen3-14B-GGUF",
         "qwen3-14b-gguf"
       ],
@@ -5564,7 +7356,6 @@
     {
       "name": "qwen/qwen3-32b-gguf",
       "alias": [
-        "qwen/qwen3-32b-gguf",
         "Qwen/Qwen3-32B-GGUF",
         "qwen3-32b-gguf"
       ],
@@ -5576,7 +7367,6 @@
     {
       "name": "qwen/qwen2.5-omni-3b",
       "alias": [
-        "qwen/qwen2.5-omni-3b",
         "Qwen/Qwen2.5-Omni-3B",
         "qwen2.5-omni-3b"
       ],
@@ -5596,7 +7386,6 @@
     {
       "name": "qwen/qwen3-235b-a22b-fp8",
       "alias": [
-        "qwen/qwen3-235b-a22b-fp8",
         "Qwen/Qwen3-235B-A22B-FP8",
         "qwen3-235b-a22b-fp8"
       ],
@@ -5608,7 +7397,6 @@
     {
       "name": "qwen/qwen3-30b-a3b-fp8",
       "alias": [
-        "qwen/qwen3-30b-a3b-fp8",
         "Qwen/Qwen3-30B-A3B-FP8",
         "qwen3-30b-a3b-fp8"
       ],
@@ -5620,7 +7408,6 @@
     {
       "name": "qwen/qwen3-32b-fp8",
       "alias": [
-        "qwen/qwen3-32b-fp8",
         "Qwen/Qwen3-32B-FP8",
         "qwen3-32b-fp8"
       ],
@@ -5632,7 +7419,6 @@
     {
       "name": "qwen/qwen3-14b-fp8",
       "alias": [
-        "qwen/qwen3-14b-fp8",
         "Qwen/Qwen3-14B-FP8",
         "qwen3-14b-fp8"
       ],
@@ -5644,7 +7430,6 @@
     {
       "name": "qwen/qwen3-8b-fp8",
       "alias": [
-        "qwen/qwen3-8b-fp8",
         "Qwen/Qwen3-8B-FP8",
         "qwen3-8b-fp8"
       ],
@@ -5656,7 +7441,6 @@
     {
       "name": "qwen/qwen3-4b-fp8",
       "alias": [
-        "qwen/qwen3-4b-fp8",
         "Qwen/Qwen3-4B-FP8",
         "qwen3-4b-fp8"
       ],
@@ -5668,7 +7452,6 @@
     {
       "name": "qwen/qwen3-1.7b-fp8",
       "alias": [
-        "qwen/qwen3-1.7b-fp8",
         "Qwen/Qwen3-1.7B-FP8",
         "qwen3-1.7b-fp8"
       ],
@@ -5680,7 +7463,6 @@
     {
       "name": "qwen/qwen3-0.6b-fp8",
       "alias": [
-        "qwen/qwen3-0.6b-fp8",
         "Qwen/Qwen3-0.6B-FP8",
         "qwen3-0.6b-fp8"
       ],
@@ -5692,7 +7474,6 @@
     {
       "name": "qwen/qwen3-0.6b-base",
       "alias": [
-        "qwen/qwen3-0.6b-base",
         "Qwen/Qwen3-0.6B-Base",
         "qwen3-0.6b-base"
       ],
@@ -5704,7 +7485,6 @@
     {
       "name": "qwen/qwen3-14b-base",
       "alias": [
-        "qwen/qwen3-14b-base",
         "Qwen/Qwen3-14B-Base",
         "qwen3-14b-base"
       ],
@@ -5716,7 +7496,6 @@
     {
       "name": "qwen/qwen3-1.7b-base",
       "alias": [
-        "qwen/qwen3-1.7b-base",
         "Qwen/Qwen3-1.7B-Base",
         "qwen3-1.7b-base"
       ],
@@ -5728,7 +7507,6 @@
     {
       "name": "qwen/qwen3-4b-base",
       "alias": [
-        "qwen/qwen3-4b-base",
         "Qwen/Qwen3-4B-Base",
         "qwen3-4b-base"
       ],
@@ -5740,7 +7518,6 @@
     {
       "name": "qwen/qwen3-8b-base",
       "alias": [
-        "qwen/qwen3-8b-base",
         "Qwen/Qwen3-8B-Base",
         "qwen3-8b-base"
       ],
@@ -5752,7 +7529,6 @@
     {
       "name": "qwen/qwen3-30b-a3b-base",
       "alias": [
-        "qwen/qwen3-30b-a3b-base",
         "Qwen/Qwen3-30B-A3B-Base",
         "qwen3-30b-a3b-base"
       ],
@@ -5764,7 +7540,6 @@
     {
       "name": "qwen/qwen3-235b-a22b",
       "alias": [
-        "qwen/qwen3-235b-a22b",
         "Qwen/Qwen3-235B-A22B",
         "qwen3-235b-a22b",
         "Qwen3-235B-A22B"
@@ -5777,10 +7552,11 @@
     {
       "name": "qwen/qwen3-32b",
       "alias": [
-        "qwen/qwen3-32b",
         "Qwen/Qwen3-32B",
         "qwen3-32b",
-        "Qwen3-32B"
+        "Qwen3-32B",
+        "qwen.qwen3-32b",
+        "qwen.qwen3-32b-v1:0"
       ],
       "max_tokens": 32768,
       "model_types": [
@@ -5790,7 +7566,6 @@
     {
       "name": "qwen/qwen3-30b-a3b",
       "alias": [
-        "qwen/qwen3-30b-a3b",
         "Qwen/Qwen3-30B-A3B",
         "qwen3-30b-a3b",
         "Qwen3-30B-A3B"
@@ -5803,7 +7578,6 @@
     {
       "name": "qwen/qwen3-14b",
       "alias": [
-        "qwen/qwen3-14b",
         "Qwen/Qwen3-14B",
         "qwen3-14b",
         "Qwen3-14B"
@@ -5816,7 +7590,6 @@
     {
       "name": "qwen/qwen3-8b",
       "alias": [
-        "qwen/qwen3-8b",
         "Qwen/Qwen3-8B",
         "qwen3-8b",
         "Qwen3-8B"
@@ -5829,7 +7602,6 @@
     {
       "name": "qwen/qwen3-4b",
       "alias": [
-        "qwen/qwen3-4b",
         "Qwen/Qwen3-4B",
         "qwen3-4b",
         "Qwen3-4B"
@@ -5842,7 +7614,6 @@
     {
       "name": "qwen/qwen3-1.7b",
       "alias": [
-        "qwen/qwen3-1.7b",
         "Qwen/Qwen3-1.7B",
         "qwen3-1.7b"
       ],
@@ -5854,7 +7625,6 @@
     {
       "name": "qwen/qwen3-0.6b",
       "alias": [
-        "qwen/qwen3-0.6b",
         "Qwen/Qwen3-0.6B",
         "qwen3-0.6b",
         "Qwen3-0.6B"
@@ -5867,7 +7637,6 @@
     {
       "name": "qwen/qwen2.5-vl-32b-instruct-awq",
       "alias": [
-        "qwen/qwen2.5-vl-32b-instruct-awq",
         "Qwen/Qwen2.5-VL-32B-Instruct-AWQ",
         "qwen2.5-vl-32b-instruct-awq"
       ],
@@ -5879,7 +7648,6 @@
     {
       "name": "qwen/qwen2.5-omni-7b",
       "alias": [
-        "qwen/qwen2.5-omni-7b",
         "Qwen/Qwen2.5-Omni-7B",
         "qwen2.5-omni-7b"
       ],
@@ -5899,7 +7667,6 @@
     {
       "name": "qwen/qwen2.5-vl-32b-instruct",
       "alias": [
-        "qwen/qwen2.5-vl-32b-instruct",
         "Qwen/Qwen2.5-VL-32B-Instruct",
         "qwen2.5-vl-32b-instruct",
         "Qwen2.5-VL-32B",
@@ -5913,7 +7680,6 @@
     {
       "name": "qwen/qwq-32b-gguf",
       "alias": [
-        "qwen/qwq-32b-gguf",
         "Qwen/QwQ-32B-GGUF",
         "qwq-32b-gguf"
       ],
@@ -5929,7 +7695,6 @@
     {
       "name": "qwen/qwq-32b",
       "alias": [
-        "qwen/qwq-32b",
         "Qwen/QwQ-32B",
         "qwq-32b",
         "QwQ-32B"
@@ -5946,7 +7711,6 @@
     {
       "name": "qwen/qwq-32b-awq",
       "alias": [
-        "qwen/qwq-32b-awq",
         "Qwen/QwQ-32B-AWQ",
         "qwq-32b-awq"
       ],
@@ -5962,7 +7726,6 @@
     {
       "name": "qwen/qwen2.5-vl-7b-instruct-awq",
       "alias": [
-        "qwen/qwen2.5-vl-7b-instruct-awq",
         "Qwen/Qwen2.5-VL-7B-Instruct-AWQ",
         "qwen2.5-vl-7b-instruct-awq"
       ],
@@ -5974,7 +7737,6 @@
     {
       "name": "qwen/qwen2.5-vl-72b-instruct-awq",
       "alias": [
-        "qwen/qwen2.5-vl-72b-instruct-awq",
         "Qwen/Qwen2.5-VL-72B-Instruct-AWQ",
         "qwen2.5-vl-72b-instruct-awq"
       ],
@@ -5986,7 +7748,6 @@
     {
       "name": "qwen/qwen2.5-vl-3b-instruct-awq",
       "alias": [
-        "qwen/qwen2.5-vl-3b-instruct-awq",
         "Qwen/Qwen2.5-VL-3B-Instruct-AWQ",
         "qwen2.5-vl-3b-instruct-awq"
       ],
@@ -5998,7 +7759,6 @@
     {
       "name": "qwen/qwen2.5-vl-72b-instruct",
       "alias": [
-        "qwen/qwen2.5-vl-72b-instruct",
         "Qwen/Qwen2.5-VL-72B-Instruct",
         "qwen2.5-vl-72b-instruct",
         "qwen-2.5-vl-72b-instruct",
@@ -6013,7 +7773,6 @@
     {
       "name": "qwen/qwen2.5-vl-7b-instruct",
       "alias": [
-        "qwen/qwen2.5-vl-7b-instruct",
         "Qwen/Qwen2.5-VL-7B-Instruct",
         "qwen2.5-vl-7b-instruct",
         "qwen-2.5-vl-7b-instruct"
@@ -6026,7 +7785,6 @@
     {
       "name": "qwen/qwen2.5-vl-3b-instruct",
       "alias": [
-        "qwen/qwen2.5-vl-3b-instruct",
         "Qwen/Qwen2.5-VL-3B-Instruct",
         "qwen2.5-vl-3b-instruct"
       ],
@@ -6038,7 +7796,6 @@
     {
       "name": "qwen/qwen2.5-7b-instruct-1m",
       "alias": [
-        "qwen/qwen2.5-7b-instruct-1m",
         "Qwen/Qwen2.5-7B-Instruct-1M",
         "qwen2.5-7b-instruct-1m"
       ],
@@ -6050,7 +7807,6 @@
     {
       "name": "qwen/qwen2.5-14b-instruct-1m",
       "alias": [
-        "qwen/qwen2.5-14b-instruct-1m",
         "Qwen/Qwen2.5-14B-Instruct-1M",
         "qwen2.5-14b-instruct-1m"
       ],
@@ -6062,7 +7818,6 @@
     {
       "name": "qwen/qwen2.5-math-prm-7b",
       "alias": [
-        "qwen/qwen2.5-math-prm-7b",
         "Qwen/Qwen2.5-Math-PRM-7B",
         "qwen2.5-math-prm-7b"
       ],
@@ -6074,7 +7829,6 @@
     {
       "name": "qwen/qwen2.5-math-prm-72b",
       "alias": [
-        "qwen/qwen2.5-math-prm-72b",
         "Qwen/Qwen2.5-Math-PRM-72B",
         "qwen2.5-math-prm-72b"
       ],
@@ -6086,7 +7840,6 @@
     {
       "name": "qwen/qwen2.5-math-7b-prm800k",
       "alias": [
-        "qwen/qwen2.5-math-7b-prm800k",
         "Qwen/Qwen2.5-Math-7B-PRM800K",
         "qwen2.5-math-7b-prm800k"
       ],
@@ -6098,7 +7851,6 @@
     {
       "name": "qwen/qvq-72b-preview",
       "alias": [
-        "qwen/qvq-72b-preview",
         "Qwen/QVQ-72B-Preview",
         "qvq-72b-preview"
       ],
@@ -6110,7 +7862,6 @@
     {
       "name": "qwen/qwen2-vl-72b",
       "alias": [
-        "qwen/qwen2-vl-72b",
         "Qwen/Qwen2-VL-72B",
         "qwen2-vl-72b"
       ],
@@ -6122,7 +7873,6 @@
     {
       "name": "qwen/qwq-32b-preview",
       "alias": [
-        "qwen/qwq-32b-preview",
         "Qwen/QwQ-32B-Preview",
         "qwq-32b-preview"
       ],
@@ -6138,7 +7888,6 @@
     {
       "name": "qwen/qwen2.5-coder-0.5b-instruct-gguf",
       "alias": [
-        "qwen/qwen2.5-coder-0.5b-instruct-gguf",
         "Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF",
         "qwen2.5-coder-0.5b-instruct-gguf"
       ],
@@ -6149,7 +7898,6 @@
     {
       "name": "qwen/qwen2.5-coder-0.5b-instruct-awq",
       "alias": [
-        "qwen/qwen2.5-coder-0.5b-instruct-awq",
         "Qwen/Qwen2.5-Coder-0.5B-Instruct-AWQ",
         "qwen2.5-coder-0.5b-instruct-awq"
       ],
@@ -6161,7 +7909,6 @@
     {
       "name": "qwen/qwen2.5-coder-3b-instruct-gguf",
       "alias": [
-        "qwen/qwen2.5-coder-3b-instruct-gguf",
         "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF",
         "qwen2.5-coder-3b-instruct-gguf"
       ],
@@ -6172,7 +7919,6 @@
     {
       "name": "qwen/qwen2.5-coder-3b-instruct-awq",
       "alias": [
-        "qwen/qwen2.5-coder-3b-instruct-awq",
         "Qwen/Qwen2.5-Coder-3B-Instruct-AWQ",
         "qwen2.5-coder-3b-instruct-awq"
       ],
@@ -6184,7 +7930,6 @@
     {
       "name": "qwen/qwen2.5-coder-14b-instruct-gguf",
       "alias": [
-        "qwen/qwen2.5-coder-14b-instruct-gguf",
         "Qwen/Qwen2.5-Coder-14B-Instruct-GGUF",
         "qwen2.5-coder-14b-instruct-gguf"
       ],
@@ -6195,7 +7940,6 @@
     {
       "name": "qwen/qwen2.5-coder-14b-instruct-awq",
       "alias": [
-        "qwen/qwen2.5-coder-14b-instruct-awq",
         "Qwen/Qwen2.5-Coder-14B-Instruct-AWQ",
         "qwen2.5-coder-14b-instruct-awq"
       ],
@@ -6207,7 +7951,6 @@
     {
       "name": "qwen/qwen2.5-coder-32b-instruct-gguf",
       "alias": [
-        "qwen/qwen2.5-coder-32b-instruct-gguf",
         "Qwen/Qwen2.5-Coder-32B-Instruct-GGUF",
         "qwen2.5-coder-32b-instruct-gguf"
       ],
@@ -6218,7 +7961,6 @@
     {
       "name": "qwen/qwen2.5-coder-32b-instruct-awq",
       "alias": [
-        "qwen/qwen2.5-coder-32b-instruct-awq",
         "Qwen/Qwen2.5-Coder-32B-Instruct-AWQ",
         "qwen2.5-coder-32b-instruct-awq"
       ],
@@ -6230,7 +7972,6 @@
     {
       "name": "qwen/qwen2.5-coder-32b-instruct-gptq-int4",
       "alias": [
-        "qwen/qwen2.5-coder-32b-instruct-gptq-int4",
         "Qwen/Qwen2.5-Coder-32B-Instruct-GPTQ-Int4",
         "qwen2.5-coder-32b-instruct-gptq-int4"
       ],
@@ -6242,7 +7983,6 @@
     {
       "name": "qwen/qwen2.5-coder-32b-instruct-gptq-int8",
       "alias": [
-        "qwen/qwen2.5-coder-32b-instruct-gptq-int8",
         "Qwen/Qwen2.5-Coder-32B-Instruct-GPTQ-Int8",
         "qwen2.5-coder-32b-instruct-gptq-int8"
       ],
@@ -6254,7 +7994,6 @@
     {
       "name": "qwen/qwen2.5-coder-14b-instruct-gptq-int4",
       "alias": [
-        "qwen/qwen2.5-coder-14b-instruct-gptq-int4",
         "Qwen/Qwen2.5-Coder-14B-Instruct-GPTQ-Int4",
         "qwen2.5-coder-14b-instruct-gptq-int4"
       ],
@@ -6266,7 +8005,6 @@
     {
       "name": "qwen/qwen2.5-coder-14b-instruct-gptq-int8",
       "alias": [
-        "qwen/qwen2.5-coder-14b-instruct-gptq-int8",
         "Qwen/Qwen2.5-Coder-14B-Instruct-GPTQ-Int8",
         "qwen2.5-coder-14b-instruct-gptq-int8"
       ],
@@ -6278,7 +8016,6 @@
     {
       "name": "qwen/qwen2.5-coder-3b-instruct-gptq-int4",
       "alias": [
-        "qwen/qwen2.5-coder-3b-instruct-gptq-int4",
         "Qwen/Qwen2.5-Coder-3B-Instruct-GPTQ-Int4",
         "qwen2.5-coder-3b-instruct-gptq-int4"
       ],
@@ -6290,7 +8027,6 @@
     {
       "name": "qwen/qwen2.5-coder-3b-instruct-gptq-int8",
       "alias": [
-        "qwen/qwen2.5-coder-3b-instruct-gptq-int8",
         "Qwen/Qwen2.5-Coder-3B-Instruct-GPTQ-Int8",
         "qwen2.5-coder-3b-instruct-gptq-int8"
       ],
@@ -6302,7 +8038,6 @@
     {
       "name": "qwen/qwen2.5-coder-0.5b-instruct-gptq-int4",
       "alias": [
-        "qwen/qwen2.5-coder-0.5b-instruct-gptq-int4",
         "Qwen/Qwen2.5-Coder-0.5B-Instruct-GPTQ-Int4",
         "qwen2.5-coder-0.5b-instruct-gptq-int4"
       ],
@@ -6314,7 +8049,6 @@
     {
       "name": "qwen/qwen2.5-coder-0.5b-instruct-gptq-int8",
       "alias": [
-        "qwen/qwen2.5-coder-0.5b-instruct-gptq-int8",
         "Qwen/Qwen2.5-Coder-0.5B-Instruct-GPTQ-Int8",
         "qwen2.5-coder-0.5b-instruct-gptq-int8"
       ],
@@ -6326,7 +8060,6 @@
     {
       "name": "qwen/qwen2.5-coder-32b",
       "alias": [
-        "qwen/qwen2.5-coder-32b",
         "Qwen/Qwen2.5-Coder-32B",
         "qwen2.5-coder-32b"
       ],
@@ -6338,7 +8071,6 @@
     {
       "name": "qwen/qwen2.5-coder-14b",
       "alias": [
-        "qwen/qwen2.5-coder-14b",
         "Qwen/Qwen2.5-Coder-14B",
         "qwen2.5-coder-14b"
       ],
@@ -6350,7 +8082,6 @@
     {
       "name": "qwen/qwen2.5-coder-3b",
       "alias": [
-        "qwen/qwen2.5-coder-3b",
         "Qwen/Qwen2.5-Coder-3B",
         "qwen2.5-coder-3b"
       ],
@@ -6362,7 +8093,6 @@
     {
       "name": "qwen/qwen2.5-coder-0.5b",
       "alias": [
-        "qwen/qwen2.5-coder-0.5b",
         "Qwen/Qwen2.5-Coder-0.5B",
         "qwen2.5-coder-0.5b"
       ],
@@ -6374,7 +8104,6 @@
     {
       "name": "qwen/qwen2.5-coder-32b-instruct",
       "alias": [
-        "qwen/qwen2.5-coder-32b-instruct",
         "Qwen/Qwen2.5-Coder-32B-Instruct",
         "qwen2.5-coder-32b-instruct"
       ],
@@ -6386,7 +8115,6 @@
     {
       "name": "qwen/qwen2.5-coder-14b-instruct",
       "alias": [
-        "qwen/qwen2.5-coder-14b-instruct",
         "Qwen/Qwen2.5-Coder-14B-Instruct",
         "qwen2.5-coder-14b-instruct"
       ],
@@ -6398,7 +8126,6 @@
     {
       "name": "qwen/qwen2.5-coder-3b-instruct",
       "alias": [
-        "qwen/qwen2.5-coder-3b-instruct",
         "Qwen/Qwen2.5-Coder-3B-Instruct",
         "qwen2.5-coder-3b-instruct"
       ],
@@ -6410,7 +8137,6 @@
     {
       "name": "qwen/qwen2.5-coder-0.5b-instruct",
       "alias": [
-        "qwen/qwen2.5-coder-0.5b-instruct",
         "Qwen/Qwen2.5-Coder-0.5B-Instruct",
         "qwen2.5-coder-0.5b-instruct"
       ],
@@ -6422,7 +8148,6 @@
     {
       "name": "qwen/qwen2.5-coder-1.5b-instruct-awq",
       "alias": [
-        "qwen/qwen2.5-coder-1.5b-instruct-awq",
         "Qwen/Qwen2.5-Coder-1.5B-Instruct-AWQ",
         "qwen2.5-coder-1.5b-instruct-awq"
       ],
@@ -6434,7 +8159,6 @@
     {
       "name": "qwen/qwen2.5-coder-7b-instruct-awq",
       "alias": [
-        "qwen/qwen2.5-coder-7b-instruct-awq",
         "Qwen/Qwen2.5-Coder-7B-Instruct-AWQ",
         "qwen2.5-coder-7b-instruct-awq"
       ],
@@ -6446,7 +8170,6 @@
     {
       "name": "qwen/qwen2.5-coder-7b-instruct-gptq-int8",
       "alias": [
-        "qwen/qwen2.5-coder-7b-instruct-gptq-int8",
         "Qwen/Qwen2.5-Coder-7B-Instruct-GPTQ-Int8",
         "qwen2.5-coder-7b-instruct-gptq-int8"
       ],
@@ -6458,7 +8181,6 @@
     {
       "name": "qwen/qwen2.5-coder-7b-instruct-gptq-int4",
       "alias": [
-        "qwen/qwen2.5-coder-7b-instruct-gptq-int4",
         "Qwen/Qwen2.5-Coder-7B-Instruct-GPTQ-Int4",
         "qwen2.5-coder-7b-instruct-gptq-int4"
       ],
@@ -6470,7 +8192,6 @@
     {
       "name": "qwen/qwen2.5-coder-1.5b-instruct-gptq-int8",
       "alias": [
-        "qwen/qwen2.5-coder-1.5b-instruct-gptq-int8",
         "Qwen/Qwen2.5-Coder-1.5B-Instruct-GPTQ-Int8",
         "qwen2.5-coder-1.5b-instruct-gptq-int8"
       ],
@@ -6482,7 +8203,6 @@
     {
       "name": "qwen/qwen2.5-coder-1.5b-instruct-gptq-int4",
       "alias": [
-        "qwen/qwen2.5-coder-1.5b-instruct-gptq-int4",
         "Qwen/Qwen2.5-Coder-1.5B-Instruct-GPTQ-Int4",
         "qwen2.5-coder-1.5b-instruct-gptq-int4"
       ],
@@ -6494,7 +8214,6 @@
     {
       "name": "qwen/qwen2.5-math-7b-instruct",
       "alias": [
-        "qwen/qwen2.5-math-7b-instruct",
         "Qwen/Qwen2.5-Math-7B-Instruct",
         "qwen2.5-math-7b-instruct"
       ],
@@ -6506,7 +8225,6 @@
     {
       "name": "qwen/qwen2.5-coder-1.5b-instruct-gguf",
       "alias": [
-        "qwen/qwen2.5-coder-1.5b-instruct-gguf",
         "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF",
         "qwen2.5-coder-1.5b-instruct-gguf"
       ],
@@ -6517,7 +8235,6 @@
     {
       "name": "qwen/qwen2.5-coder-7b-instruct-gguf",
       "alias": [
-        "qwen/qwen2.5-coder-7b-instruct-gguf",
         "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
         "qwen2.5-coder-7b-instruct-gguf"
       ],
@@ -6528,7 +8245,6 @@
     {
       "name": "qwen/qwen2.5-coder-1.5b-instruct",
       "alias": [
-        "qwen/qwen2.5-coder-1.5b-instruct",
         "Qwen/Qwen2.5-Coder-1.5B-Instruct",
         "qwen2.5-coder-1.5b-instruct"
       ],
@@ -6540,7 +8256,6 @@
     {
       "name": "qwen/qwen2.5-coder-1.5b",
       "alias": [
-        "qwen/qwen2.5-coder-1.5b",
         "Qwen/Qwen2.5-Coder-1.5B",
         "qwen2.5-coder-1.5b"
       ],
@@ -6552,7 +8267,6 @@
     {
       "name": "qwen/qwen2-7b-instruct-mlx",
       "alias": [
-        "qwen/qwen2-7b-instruct-mlx",
         "Qwen/Qwen2-7B-Instruct-MLX",
         "qwen2-7b-instruct-mlx"
       ],
@@ -6564,7 +8278,6 @@
     {
       "name": "qwen/qwen2.5-1.5b-instruct",
       "alias": [
-        "qwen/qwen2.5-1.5b-instruct",
         "Qwen/Qwen2.5-1.5B-Instruct",
         "qwen2.5-1.5b-instruct"
       ],
@@ -6576,7 +8289,6 @@
     {
       "name": "qwen/qwen2.5-3b-instruct",
       "alias": [
-        "qwen/qwen2.5-3b-instruct",
         "Qwen/Qwen2.5-3B-Instruct",
         "qwen2.5-3b-instruct"
       ],
@@ -6588,7 +8300,6 @@
     {
       "name": "qwen/qwen2.5-72b-instruct-gguf",
       "alias": [
-        "qwen/qwen2.5-72b-instruct-gguf",
         "Qwen/Qwen2.5-72B-Instruct-GGUF",
         "qwen2.5-72b-instruct-gguf"
       ],
@@ -6600,7 +8311,6 @@
     {
       "name": "qwen/qwen2.5-32b-instruct-gguf",
       "alias": [
-        "qwen/qwen2.5-32b-instruct-gguf",
         "Qwen/Qwen2.5-32B-Instruct-GGUF",
         "qwen2.5-32b-instruct-gguf"
       ],
@@ -6612,7 +8322,6 @@
     {
       "name": "qwen/qwen2.5-14b-instruct-gguf",
       "alias": [
-        "qwen/qwen2.5-14b-instruct-gguf",
         "Qwen/Qwen2.5-14B-Instruct-GGUF",
         "qwen2.5-14b-instruct-gguf"
       ],
@@ -6624,7 +8333,6 @@
     {
       "name": "qwen/qwen2.5-7b-instruct-gguf",
       "alias": [
-        "qwen/qwen2.5-7b-instruct-gguf",
         "Qwen/Qwen2.5-7B-Instruct-GGUF",
         "qwen2.5-7b-instruct-gguf"
       ],
@@ -6636,7 +8344,6 @@
     {
       "name": "qwen/qwen2.5-3b-instruct-gguf",
       "alias": [
-        "qwen/qwen2.5-3b-instruct-gguf",
         "Qwen/Qwen2.5-3B-Instruct-GGUF",
         "qwen2.5-3b-instruct-gguf"
       ],
@@ -6647,7 +8354,6 @@
     {
       "name": "qwen/qwen2.5-1.5b-instruct-gguf",
       "alias": [
-        "qwen/qwen2.5-1.5b-instruct-gguf",
         "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
         "qwen2.5-1.5b-instruct-gguf"
       ],
@@ -6658,7 +8364,6 @@
     {
       "name": "qwen/qwen2.5-0.5b-instruct-gguf",
       "alias": [
-        "qwen/qwen2.5-0.5b-instruct-gguf",
         "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
         "qwen2.5-0.5b-instruct-gguf"
       ],
@@ -6669,7 +8374,6 @@
     {
       "name": "qwen/qwen2.5-72b-instruct-awq",
       "alias": [
-        "qwen/qwen2.5-72b-instruct-awq",
         "Qwen/Qwen2.5-72B-Instruct-AWQ",
         "qwen2.5-72b-instruct-awq"
       ],
@@ -6681,7 +8385,6 @@
     {
       "name": "qwen/qwen2.5-32b-instruct-awq",
       "alias": [
-        "qwen/qwen2.5-32b-instruct-awq",
         "Qwen/Qwen2.5-32B-Instruct-AWQ",
         "qwen2.5-32b-instruct-awq"
       ],
@@ -6693,7 +8396,6 @@
     {
       "name": "qwen/qwen2.5-14b-instruct-awq",
       "alias": [
-        "qwen/qwen2.5-14b-instruct-awq",
         "Qwen/Qwen2.5-14B-Instruct-AWQ",
         "qwen2.5-14b-instruct-awq"
       ],
@@ -6705,7 +8407,6 @@
     {
       "name": "qwen/qwen2.5-7b-instruct-awq",
       "alias": [
-        "qwen/qwen2.5-7b-instruct-awq",
         "Qwen/Qwen2.5-7B-Instruct-AWQ",
         "qwen2.5-7b-instruct-awq"
       ],
@@ -6717,7 +8418,6 @@
     {
       "name": "qwen/qwen2.5-3b-instruct-awq",
       "alias": [
-        "qwen/qwen2.5-3b-instruct-awq",
         "Qwen/Qwen2.5-3B-Instruct-AWQ",
         "qwen2.5-3b-instruct-awq"
       ],
@@ -6729,7 +8429,6 @@
     {
       "name": "qwen/qwen2.5-1.5b-instruct-awq",
       "alias": [
-        "qwen/qwen2.5-1.5b-instruct-awq",
         "Qwen/Qwen2.5-1.5B-Instruct-AWQ",
         "qwen2.5-1.5b-instruct-awq"
       ],
@@ -6741,7 +8440,6 @@
     {
       "name": "qwen/qwen2.5-0.5b-instruct-awq",
       "alias": [
-        "qwen/qwen2.5-0.5b-instruct-awq",
         "Qwen/Qwen2.5-0.5B-Instruct-AWQ",
         "qwen2.5-0.5b-instruct-awq"
       ],
@@ -6753,7 +8451,6 @@
     {
       "name": "qwen/qwen2.5-coder-7b-instruct",
       "alias": [
-        "qwen/qwen2.5-coder-7b-instruct",
         "Qwen/Qwen2.5-Coder-7B-Instruct",
         "qwen2.5-coder-7b-instruct"
       ],
@@ -6765,7 +8462,6 @@
     {
       "name": "qwen/qwen2.5-72b-instruct-gptq-int8",
       "alias": [
-        "qwen/qwen2.5-72b-instruct-gptq-int8",
         "Qwen/Qwen2.5-72B-Instruct-GPTQ-Int8",
         "qwen2.5-72b-instruct-gptq-int8"
       ],
@@ -6777,7 +8473,6 @@
     {
       "name": "qwen/qwen2.5-72b-instruct-gptq-int4",
       "alias": [
-        "qwen/qwen2.5-72b-instruct-gptq-int4",
         "Qwen/Qwen2.5-72B-Instruct-GPTQ-Int4",
         "qwen2.5-72b-instruct-gptq-int4"
       ],
@@ -6789,7 +8484,6 @@
     {
       "name": "qwen/qwen2.5-32b-instruct-gptq-int8",
       "alias": [
-        "qwen/qwen2.5-32b-instruct-gptq-int8",
         "Qwen/Qwen2.5-32B-Instruct-GPTQ-Int8",
         "qwen2.5-32b-instruct-gptq-int8"
       ],
@@ -6801,7 +8495,6 @@
     {
       "name": "qwen/qwen2.5-32b-instruct-gptq-int4",
       "alias": [
-        "qwen/qwen2.5-32b-instruct-gptq-int4",
         "Qwen/Qwen2.5-32B-Instruct-GPTQ-Int4",
         "qwen2.5-32b-instruct-gptq-int4"
       ],
@@ -6813,7 +8506,6 @@
     {
       "name": "qwen/qwen2.5-14b-instruct-gptq-int8",
       "alias": [
-        "qwen/qwen2.5-14b-instruct-gptq-int8",
         "Qwen/Qwen2.5-14B-Instruct-GPTQ-Int8",
         "qwen2.5-14b-instruct-gptq-int8"
       ],
@@ -6825,7 +8517,6 @@
     {
       "name": "qwen/qwen2.5-14b-instruct-gptq-int4",
       "alias": [
-        "qwen/qwen2.5-14b-instruct-gptq-int4",
         "Qwen/Qwen2.5-14B-Instruct-GPTQ-Int4",
         "qwen2.5-14b-instruct-gptq-int4"
       ],
@@ -6837,7 +8528,6 @@
     {
       "name": "qwen/qwen2.5-7b-instruct-gptq-int8",
       "alias": [
-        "qwen/qwen2.5-7b-instruct-gptq-int8",
         "Qwen/Qwen2.5-7B-Instruct-GPTQ-Int8",
         "qwen2.5-7b-instruct-gptq-int8"
       ],
@@ -6849,7 +8539,6 @@
     {
       "name": "qwen/qwen2.5-7b-instruct-gptq-int4",
       "alias": [
-        "qwen/qwen2.5-7b-instruct-gptq-int4",
         "Qwen/Qwen2.5-7B-Instruct-GPTQ-Int4",
         "qwen2.5-7b-instruct-gptq-int4"
       ],
@@ -6861,7 +8550,6 @@
     {
       "name": "qwen/qwen2.5-3b-instruct-gptq-int8",
       "alias": [
-        "qwen/qwen2.5-3b-instruct-gptq-int8",
         "Qwen/Qwen2.5-3B-Instruct-GPTQ-Int8",
         "qwen2.5-3b-instruct-gptq-int8"
       ],
@@ -6873,7 +8561,6 @@
     {
       "name": "qwen/qwen2.5-3b-instruct-gptq-int4",
       "alias": [
-        "qwen/qwen2.5-3b-instruct-gptq-int4",
         "Qwen/Qwen2.5-3B-Instruct-GPTQ-Int4",
         "qwen2.5-3b-instruct-gptq-int4"
       ],
@@ -6885,7 +8572,6 @@
     {
       "name": "qwen/qwen2.5-1.5b-instruct-gptq-int8",
       "alias": [
-        "qwen/qwen2.5-1.5b-instruct-gptq-int8",
         "Qwen/Qwen2.5-1.5B-Instruct-GPTQ-Int8",
         "qwen2.5-1.5b-instruct-gptq-int8"
       ],
@@ -6897,7 +8583,6 @@
     {
       "name": "qwen/qwen2.5-1.5b-instruct-gptq-int4",
       "alias": [
-        "qwen/qwen2.5-1.5b-instruct-gptq-int4",
         "Qwen/Qwen2.5-1.5B-Instruct-GPTQ-Int4",
         "qwen2.5-1.5b-instruct-gptq-int4"
       ],
@@ -6909,7 +8594,6 @@
     {
       "name": "qwen/qwen2.5-0.5b-instruct-gptq-int8",
       "alias": [
-        "qwen/qwen2.5-0.5b-instruct-gptq-int8",
         "Qwen/Qwen2.5-0.5B-Instruct-GPTQ-Int8",
         "qwen2.5-0.5b-instruct-gptq-int8"
       ],
@@ -6921,7 +8605,6 @@
     {
       "name": "qwen/qwen2.5-0.5b-instruct-gptq-int4",
       "alias": [
-        "qwen/qwen2.5-0.5b-instruct-gptq-int4",
         "Qwen/Qwen2.5-0.5B-Instruct-GPTQ-Int4",
         "qwen2.5-0.5b-instruct-gptq-int4"
       ],
@@ -6933,7 +8616,6 @@
     {
       "name": "qwen/qwen2-math-rm-72b",
       "alias": [
-        "qwen/qwen2-math-rm-72b",
         "Qwen/Qwen2-Math-RM-72B",
         "qwen2-math-rm-72b"
       ],
@@ -6945,7 +8627,6 @@
     {
       "name": "qwen/qwen2.5-math-rm-72b",
       "alias": [
-        "qwen/qwen2.5-math-rm-72b",
         "Qwen/Qwen2.5-Math-RM-72B",
         "qwen2.5-math-rm-72b"
       ],
@@ -6957,7 +8638,6 @@
     {
       "name": "qwen/qwen2-vl-72b-instruct-gptq-int8",
       "alias": [
-        "qwen/qwen2-vl-72b-instruct-gptq-int8",
         "Qwen/Qwen2-VL-72B-Instruct-GPTQ-Int8",
         "qwen2-vl-72b-instruct-gptq-int8"
       ],
@@ -6969,7 +8649,6 @@
     {
       "name": "qwen/qwen2-vl-72b-instruct-gptq-int4",
       "alias": [
-        "qwen/qwen2-vl-72b-instruct-gptq-int4",
         "Qwen/Qwen2-VL-72B-Instruct-GPTQ-Int4",
         "qwen2-vl-72b-instruct-gptq-int4"
       ],
@@ -6981,7 +8660,6 @@
     {
       "name": "qwen/qwen2-vl-72b-instruct-awq",
       "alias": [
-        "qwen/qwen2-vl-72b-instruct-awq",
         "Qwen/Qwen2-VL-72B-Instruct-AWQ",
         "qwen2-vl-72b-instruct-awq"
       ],
@@ -6993,7 +8671,6 @@
     {
       "name": "qwen/qwen2-vl-72b-instruct",
       "alias": [
-        "qwen/qwen2-vl-72b-instruct",
         "Qwen/Qwen2-VL-72B-Instruct",
         "qwen2-vl-72b-instruct",
         "qwen/qwen-2-vl-72b-instruct"
@@ -7006,7 +8683,6 @@
     {
       "name": "qwen/qwen2.5-32b-instruct",
       "alias": [
-        "qwen/qwen2.5-32b-instruct",
         "Qwen/Qwen2.5-32B-Instruct",
         "qwen2.5-32b-instruct",
         "Qwen2.5-32B-Instruct"
@@ -7019,7 +8695,6 @@
     {
       "name": "qwen/qwen2.5-math-72b-instruct",
       "alias": [
-        "qwen/qwen2.5-math-72b-instruct",
         "Qwen/Qwen2.5-Math-72B-Instruct",
         "qwen2.5-math-72b-instruct"
       ],
@@ -7031,7 +8706,6 @@
     {
       "name": "qwen/qwen2.5-math-72b",
       "alias": [
-        "qwen/qwen2.5-math-72b",
         "Qwen/Qwen2.5-Math-72B",
         "qwen2.5-math-72b"
       ],
@@ -7043,7 +8717,6 @@
     {
       "name": "qwen/qwen2.5-math-7b",
       "alias": [
-        "qwen/qwen2.5-math-7b",
         "Qwen/Qwen2.5-Math-7B",
         "qwen2.5-math-7b"
       ],
@@ -7055,7 +8728,6 @@
     {
       "name": "qwen/qwen2.5-math-1.5b-instruct",
       "alias": [
-        "qwen/qwen2.5-math-1.5b-instruct",
         "Qwen/Qwen2.5-Math-1.5B-Instruct",
         "qwen2.5-math-1.5b-instruct"
       ],
@@ -7067,7 +8739,6 @@
     {
       "name": "qwen/qwen2.5-math-1.5b",
       "alias": [
-        "qwen/qwen2.5-math-1.5b",
         "Qwen/Qwen2.5-Math-1.5B",
         "qwen2.5-math-1.5b"
       ],
@@ -7079,7 +8750,6 @@
     {
       "name": "qwen/qwen2.5-coder-7b",
       "alias": [
-        "qwen/qwen2.5-coder-7b",
         "Qwen/Qwen2.5-Coder-7B",
         "qwen2.5-coder-7b"
       ],
@@ -7091,7 +8761,6 @@
     {
       "name": "qwen/qwen2.5-72b-instruct",
       "alias": [
-        "qwen/qwen2.5-72b-instruct",
         "Qwen/Qwen2.5-72B-Instruct",
         "qwen2.5-72b-instruct",
         "qwen/qwen-2.5-72b-instruct",
@@ -7105,7 +8774,6 @@
     {
       "name": "qwen/qwen2.5-14b-instruct",
       "alias": [
-        "qwen/qwen2.5-14b-instruct",
         "Qwen/Qwen2.5-14B-Instruct",
         "qwen2.5-14b-instruct",
         "Qwen2.5-14B-Instruct"
@@ -7118,7 +8786,6 @@
     {
       "name": "qwen/qwen2.5-7b-instruct",
       "alias": [
-        "qwen/qwen2.5-7b-instruct",
         "Qwen/Qwen2.5-7B-Instruct",
         "qwen2.5-7b-instruct",
         "Qwen2.5-7B-Instruct"
@@ -7131,7 +8798,6 @@
     {
       "name": "qwen/qwen2.5-0.5b-instruct",
       "alias": [
-        "qwen/qwen2.5-0.5b-instruct",
         "Qwen/Qwen2.5-0.5B-Instruct",
         "qwen2.5-0.5b-instruct"
       ],
@@ -7143,7 +8809,6 @@
     {
       "name": "qwen/qwen2.5-72b",
       "alias": [
-        "qwen/qwen2.5-72b",
         "Qwen/Qwen2.5-72B",
         "qwen2.5-72b",
         "Qwen2.5-72B"
@@ -7156,7 +8821,6 @@
     {
       "name": "qwen/qwen2.5-32b",
       "alias": [
-        "qwen/qwen2.5-32b",
         "Qwen/Qwen2.5-32B",
         "qwen2.5-32b"
       ],
@@ -7168,7 +8832,6 @@
     {
       "name": "qwen/qwen2.5-14b",
       "alias": [
-        "qwen/qwen2.5-14b",
         "Qwen/Qwen2.5-14B",
         "qwen2.5-14b"
       ],
@@ -7180,7 +8843,6 @@
     {
       "name": "qwen/qwen2.5-7b",
       "alias": [
-        "qwen/qwen2.5-7b",
         "Qwen/Qwen2.5-7B",
         "qwen2.5-7b"
       ],
@@ -7192,7 +8854,6 @@
     {
       "name": "qwen/qwen2.5-3b",
       "alias": [
-        "qwen/qwen2.5-3b",
         "Qwen/Qwen2.5-3B",
         "qwen2.5-3b"
       ],
@@ -7204,7 +8865,6 @@
     {
       "name": "qwen/qwen2.5-1.5b",
       "alias": [
-        "qwen/qwen2.5-1.5b",
         "Qwen/Qwen2.5-1.5B",
         "qwen2.5-1.5b"
       ],
@@ -7216,7 +8876,6 @@
     {
       "name": "qwen/qwen2.5-0.5b",
       "alias": [
-        "qwen/qwen2.5-0.5b",
         "Qwen/Qwen2.5-0.5B",
         "qwen2.5-0.5b"
       ],
@@ -7228,7 +8887,6 @@
     {
       "name": "qwen/qwen2-vl-7b",
       "alias": [
-        "qwen/qwen2-vl-7b",
         "Qwen/Qwen2-VL-7B",
         "qwen2-vl-7b"
       ],
@@ -7240,7 +8898,6 @@
     {
       "name": "qwen/qwen2-vl-2b",
       "alias": [
-        "qwen/qwen2-vl-2b",
         "Qwen/Qwen2-VL-2B",
         "qwen2-vl-2b"
       ],
@@ -7252,7 +8909,6 @@
     {
       "name": "qwen/qwen2-vl-2b-instruct-gptq-int8",
       "alias": [
-        "qwen/qwen2-vl-2b-instruct-gptq-int8",
         "Qwen/Qwen2-VL-2B-Instruct-GPTQ-Int8",
         "qwen2-vl-2b-instruct-gptq-int8"
       ],
@@ -7264,7 +8920,6 @@
     {
       "name": "qwen/qwen2-vl-2b-instruct-gptq-int4",
       "alias": [
-        "qwen/qwen2-vl-2b-instruct-gptq-int4",
         "Qwen/Qwen2-VL-2B-Instruct-GPTQ-Int4",
         "qwen2-vl-2b-instruct-gptq-int4"
       ],
@@ -7276,7 +8931,6 @@
     {
       "name": "qwen/qwen2-vl-2b-instruct-awq",
       "alias": [
-        "qwen/qwen2-vl-2b-instruct-awq",
         "Qwen/Qwen2-VL-2B-Instruct-AWQ",
         "qwen2-vl-2b-instruct-awq"
       ],
@@ -7288,7 +8942,6 @@
     {
       "name": "qwen/qwen2-vl-7b-instruct-gptq-int8",
       "alias": [
-        "qwen/qwen2-vl-7b-instruct-gptq-int8",
         "Qwen/Qwen2-VL-7B-Instruct-GPTQ-Int8",
         "qwen2-vl-7b-instruct-gptq-int8"
       ],
@@ -7300,7 +8953,6 @@
     {
       "name": "qwen/qwen2-vl-7b-instruct-gptq-int4",
       "alias": [
-        "qwen/qwen2-vl-7b-instruct-gptq-int4",
         "Qwen/Qwen2-VL-7B-Instruct-GPTQ-Int4",
         "qwen2-vl-7b-instruct-gptq-int4"
       ],
@@ -7312,7 +8964,6 @@
     {
       "name": "qwen/qwen2-vl-7b-instruct-awq",
       "alias": [
-        "qwen/qwen2-vl-7b-instruct-awq",
         "Qwen/Qwen2-VL-7B-Instruct-AWQ",
         "qwen2-vl-7b-instruct-awq"
       ],
@@ -7324,7 +8975,6 @@
     {
       "name": "qwen/qwen2-vl-7b-instruct",
       "alias": [
-        "qwen/qwen2-vl-7b-instruct",
         "Qwen/Qwen2-VL-7B-Instruct",
         "qwen2-vl-7b-instruct"
       ],
@@ -7336,7 +8986,6 @@
     {
       "name": "qwen/qwen2-vl-2b-instruct",
       "alias": [
-        "qwen/qwen2-vl-2b-instruct",
         "Qwen/Qwen2-VL-2B-Instruct",
         "qwen2-vl-2b-instruct"
       ],
@@ -7348,7 +8997,6 @@
     {
       "name": "qwen/qwen2-math-1.5b",
       "alias": [
-        "qwen/qwen2-math-1.5b",
         "Qwen/Qwen2-Math-1.5B",
         "qwen2-math-1.5b"
       ],
@@ -7360,7 +9008,6 @@
     {
       "name": "qwen/qwen2-math-7b",
       "alias": [
-        "qwen/qwen2-math-7b",
         "Qwen/Qwen2-Math-7B",
         "qwen2-math-7b"
       ],
@@ -7372,7 +9019,6 @@
     {
       "name": "qwen/qwen2-math-72b",
       "alias": [
-        "qwen/qwen2-math-72b",
         "Qwen/Qwen2-Math-72B",
         "qwen2-math-72b"
       ],
@@ -7384,7 +9030,6 @@
     {
       "name": "qwen/qwen2-math-1.5b-instruct",
       "alias": [
-        "qwen/qwen2-math-1.5b-instruct",
         "Qwen/Qwen2-Math-1.5B-Instruct",
         "qwen2-math-1.5b-instruct"
       ],
@@ -7396,7 +9041,6 @@
     {
       "name": "qwen/qwen2-math-7b-instruct",
       "alias": [
-        "qwen/qwen2-math-7b-instruct",
         "Qwen/Qwen2-Math-7B-Instruct",
         "qwen2-math-7b-instruct"
       ],
@@ -7408,7 +9052,6 @@
     {
       "name": "qwen/qwen2-math-72b-instruct",
       "alias": [
-        "qwen/qwen2-math-72b-instruct",
         "Qwen/Qwen2-Math-72B-Instruct",
         "qwen2-math-72b-instruct"
       ],
@@ -7420,7 +9063,6 @@
     {
       "name": "qwen/qwen2-audio-7b-instruct",
       "alias": [
-        "qwen/qwen2-audio-7b-instruct",
         "Qwen/Qwen2-Audio-7B-Instruct",
         "qwen2-audio-7b-instruct",
         "Qwen2-Audio-7B-Instruct"
@@ -7436,7 +9078,6 @@
     {
       "name": "qwen/qwen2-audio-7b",
       "alias": [
-        "qwen/qwen2-audio-7b",
         "Qwen/Qwen2-Audio-7B",
         "qwen2-audio-7b"
       ],
@@ -7450,7 +9091,6 @@
     {
       "name": "qwen/qwen2-57b-a14b-instruct-gguf",
       "alias": [
-        "qwen/qwen2-57b-a14b-instruct-gguf",
         "Qwen/Qwen2-57B-A14B-Instruct-GGUF",
         "qwen2-57b-a14b-instruct-gguf"
       ],
@@ -7461,7 +9101,6 @@
     {
       "name": "qwen/qwen2-1.5b-instruct-gguf",
       "alias": [
-        "qwen/qwen2-1.5b-instruct-gguf",
         "Qwen/Qwen2-1.5B-Instruct-GGUF",
         "qwen2-1.5b-instruct-gguf"
       ],
@@ -7472,7 +9111,6 @@
     {
       "name": "qwen/qwen2-7b-instruct-gguf",
       "alias": [
-        "qwen/qwen2-7b-instruct-gguf",
         "Qwen/Qwen2-7B-Instruct-GGUF",
         "qwen2-7b-instruct-gguf"
       ],
@@ -7483,7 +9121,6 @@
     {
       "name": "qwen/qwen2-72b-instruct-gguf",
       "alias": [
-        "qwen/qwen2-72b-instruct-gguf",
         "Qwen/Qwen2-72B-Instruct-GGUF",
         "qwen2-72b-instruct-gguf"
       ],
@@ -7494,7 +9131,6 @@
     {
       "name": "qwen/qwen2-1.5b-instruct-mlx",
       "alias": [
-        "qwen/qwen2-1.5b-instruct-mlx",
         "Qwen/Qwen2-1.5B-Instruct-MLX",
         "qwen2-1.5b-instruct-mlx"
       ],
@@ -7506,7 +9142,6 @@
     {
       "name": "qwen/qwen2-0.5b-instruct-gguf",
       "alias": [
-        "qwen/qwen2-0.5b-instruct-gguf",
         "Qwen/Qwen2-0.5B-Instruct-GGUF",
         "qwen2-0.5b-instruct-gguf"
       ],
@@ -7517,7 +9152,6 @@
     {
       "name": "qwen/qwen2-0.5b-instruct-mlx",
       "alias": [
-        "qwen/qwen2-0.5b-instruct-mlx",
         "Qwen/Qwen2-0.5B-Instruct-MLX",
         "qwen2-0.5b-instruct-mlx"
       ],
@@ -7529,7 +9163,6 @@
     {
       "name": "qwen/qwen2-0.5b-instruct-awq",
       "alias": [
-        "qwen/qwen2-0.5b-instruct-awq",
         "Qwen/Qwen2-0.5B-Instruct-AWQ",
         "qwen2-0.5b-instruct-awq"
       ],
@@ -7541,7 +9174,6 @@
     {
       "name": "qwen/qwen2-0.5b-instruct-gptq-int8",
       "alias": [
-        "qwen/qwen2-0.5b-instruct-gptq-int8",
         "Qwen/Qwen2-0.5B-Instruct-GPTQ-Int8",
         "qwen2-0.5b-instruct-gptq-int8"
       ],
@@ -7553,7 +9185,6 @@
     {
       "name": "qwen/qwen2-0.5b-instruct-gptq-int4",
       "alias": [
-        "qwen/qwen2-0.5b-instruct-gptq-int4",
         "Qwen/Qwen2-0.5B-Instruct-GPTQ-Int4",
         "qwen2-0.5b-instruct-gptq-int4"
       ],
@@ -7565,7 +9196,6 @@
     {
       "name": "qwen/qwen2-7b-instruct-awq",
       "alias": [
-        "qwen/qwen2-7b-instruct-awq",
         "Qwen/Qwen2-7B-Instruct-AWQ",
         "qwen2-7b-instruct-awq"
       ],
@@ -7577,7 +9207,6 @@
     {
       "name": "qwen/qwen2-7b-instruct-gptq-int8",
       "alias": [
-        "qwen/qwen2-7b-instruct-gptq-int8",
         "Qwen/Qwen2-7B-Instruct-GPTQ-Int8",
         "qwen2-7b-instruct-gptq-int8"
       ],
@@ -7589,7 +9218,6 @@
     {
       "name": "qwen/qwen2-7b-instruct-gptq-int4",
       "alias": [
-        "qwen/qwen2-7b-instruct-gptq-int4",
         "Qwen/Qwen2-7B-Instruct-GPTQ-Int4",
         "qwen2-7b-instruct-gptq-int4"
       ],
@@ -7601,7 +9229,6 @@
     {
       "name": "qwen/qwen2-1.5b-instruct-awq",
       "alias": [
-        "qwen/qwen2-1.5b-instruct-awq",
         "Qwen/Qwen2-1.5B-Instruct-AWQ",
         "qwen2-1.5b-instruct-awq"
       ],
@@ -7613,7 +9240,6 @@
     {
       "name": "qwen/qwen2-1.5b-instruct-gptq-int8",
       "alias": [
-        "qwen/qwen2-1.5b-instruct-gptq-int8",
         "Qwen/Qwen2-1.5B-Instruct-GPTQ-Int8",
         "qwen2-1.5b-instruct-gptq-int8"
       ],
@@ -7625,7 +9251,6 @@
     {
       "name": "qwen/qwen2-1.5b-instruct-gptq-int4",
       "alias": [
-        "qwen/qwen2-1.5b-instruct-gptq-int4",
         "Qwen/Qwen2-1.5B-Instruct-GPTQ-Int4",
         "qwen2-1.5b-instruct-gptq-int4"
       ],
@@ -7637,7 +9262,6 @@
     {
       "name": "qwen/qwen2-57b-a14b-instruct-gptq-int4",
       "alias": [
-        "qwen/qwen2-57b-a14b-instruct-gptq-int4",
         "Qwen/Qwen2-57B-A14B-Instruct-GPTQ-Int4",
         "qwen2-57b-a14b-instruct-gptq-int4"
       ],
@@ -7649,7 +9273,6 @@
     {
       "name": "qwen/qwen2-7b",
       "alias": [
-        "qwen/qwen2-7b",
         "Qwen/Qwen2-7B",
         "qwen2-7b"
       ],
@@ -7661,7 +9284,6 @@
     {
       "name": "qwen/qwen2-7b-instruct",
       "alias": [
-        "qwen/qwen2-7b-instruct",
         "Qwen/Qwen2-7B-Instruct",
         "qwen2-7b-instruct",
         "qwen/qwen-2-7b-instruct",
@@ -7675,7 +9297,6 @@
     {
       "name": "qwen/qwen2-57b-a14b-instruct",
       "alias": [
-        "qwen/qwen2-57b-a14b-instruct",
         "Qwen/Qwen2-57B-A14B-Instruct",
         "qwen2-57b-a14b-instruct"
       ],
@@ -7687,7 +9308,6 @@
     {
       "name": "qwen/qwen2-72b-instruct-awq",
       "alias": [
-        "qwen/qwen2-72b-instruct-awq",
         "Qwen/Qwen2-72B-Instruct-AWQ",
         "qwen2-72b-instruct-awq"
       ],
@@ -7699,7 +9319,6 @@
     {
       "name": "qwen/qwen2-72b-instruct-gptq-int8",
       "alias": [
-        "qwen/qwen2-72b-instruct-gptq-int8",
         "Qwen/Qwen2-72B-Instruct-GPTQ-Int8",
         "qwen2-72b-instruct-gptq-int8"
       ],
@@ -7711,7 +9330,6 @@
     {
       "name": "qwen/qwen2-72b-instruct-gptq-int4",
       "alias": [
-        "qwen/qwen2-72b-instruct-gptq-int4",
         "Qwen/Qwen2-72B-Instruct-GPTQ-Int4",
         "qwen2-72b-instruct-gptq-int4"
       ],
@@ -7723,7 +9341,6 @@
     {
       "name": "qwen/qwen2-1.5b-instruct",
       "alias": [
-        "qwen/qwen2-1.5b-instruct",
         "Qwen/Qwen2-1.5B-Instruct",
         "qwen2-1.5b-instruct"
       ],
@@ -7735,7 +9352,6 @@
     {
       "name": "qwen/qwen2-0.5b-instruct",
       "alias": [
-        "qwen/qwen2-0.5b-instruct",
         "Qwen/Qwen2-0.5B-Instruct",
         "qwen2-0.5b-instruct"
       ],
@@ -7747,7 +9363,6 @@
     {
       "name": "qwen/qwen2-1.5b",
       "alias": [
-        "qwen/qwen2-1.5b",
         "Qwen/Qwen2-1.5B",
         "qwen2-1.5b"
       ],
@@ -7759,7 +9374,6 @@
     {
       "name": "qwen/qwen2-0.5b",
       "alias": [
-        "qwen/qwen2-0.5b",
         "Qwen/Qwen2-0.5B",
         "qwen2-0.5b"
       ],
@@ -7771,7 +9385,6 @@
     {
       "name": "qwen/qwen2-72b-instruct",
       "alias": [
-        "qwen/qwen2-72b-instruct",
         "Qwen/Qwen2-72B-Instruct",
         "qwen2-72b-instruct",
         "Qwen2-72B-Instruct"
@@ -7784,7 +9397,6 @@
     {
       "name": "qwen/qwen2-57b-a14b",
       "alias": [
-        "qwen/qwen2-57b-a14b",
         "Qwen/Qwen2-57B-A14B",
         "qwen2-57b-a14b"
       ],
@@ -7796,7 +9408,6 @@
     {
       "name": "qwen/qwen2-72b",
       "alias": [
-        "qwen/qwen2-72b",
         "Qwen/Qwen2-72B",
         "qwen2-72b"
       ],
@@ -7808,7 +9419,6 @@
     {
       "name": "qwen/qwen1.5-110b-chat-gguf",
       "alias": [
-        "qwen/qwen1.5-110b-chat-gguf",
         "Qwen/Qwen1.5-110B-Chat-GGUF",
         "qwen1.5-110b-chat-gguf"
       ],
@@ -7819,7 +9429,6 @@
     {
       "name": "qwen/qwen1.5-110b-chat-awq",
       "alias": [
-        "qwen/qwen1.5-110b-chat-awq",
         "Qwen/Qwen1.5-110B-Chat-AWQ",
         "qwen1.5-110b-chat-awq"
       ],
@@ -7831,7 +9440,6 @@
     {
       "name": "qwen/qwen1.5-110b-chat-gptq-int4",
       "alias": [
-        "qwen/qwen1.5-110b-chat-gptq-int4",
         "Qwen/Qwen1.5-110B-Chat-GPTQ-Int4",
         "qwen1.5-110b-chat-gptq-int4"
       ],
@@ -7843,7 +9451,6 @@
     {
       "name": "qwen/qwen1.5-110b-chat",
       "alias": [
-        "qwen/qwen1.5-110b-chat",
         "Qwen/Qwen1.5-110B-Chat",
         "qwen1.5-110b-chat"
       ],
@@ -7855,7 +9462,6 @@
     {
       "name": "qwen/qwen1.5-110b",
       "alias": [
-        "qwen/qwen1.5-110b",
         "Qwen/Qwen1.5-110B",
         "qwen1.5-110b"
       ],
@@ -7867,7 +9473,6 @@
     {
       "name": "qwen/codeqwen1.5-7b-awq",
       "alias": [
-        "qwen/codeqwen1.5-7b-awq",
         "Qwen/CodeQwen1.5-7B-AWQ",
         "codeqwen1.5-7b-awq"
       ],
@@ -7879,7 +9484,6 @@
     {
       "name": "qwen/codeqwen1.5-7b-chat-gguf",
       "alias": [
-        "qwen/codeqwen1.5-7b-chat-gguf",
         "Qwen/CodeQwen1.5-7B-Chat-GGUF",
         "codeqwen1.5-7b-chat-gguf"
       ],
@@ -7890,7 +9494,6 @@
     {
       "name": "qwen/codeqwen1.5-7b-chat-awq",
       "alias": [
-        "qwen/codeqwen1.5-7b-chat-awq",
         "Qwen/CodeQwen1.5-7B-Chat-AWQ",
         "codeqwen1.5-7b-chat-awq"
       ],
@@ -7902,7 +9505,6 @@
     {
       "name": "qwen/codeqwen1.5-7b-chat",
       "alias": [
-        "qwen/codeqwen1.5-7b-chat",
         "Qwen/CodeQwen1.5-7B-Chat",
         "codeqwen1.5-7b-chat"
       ],
@@ -7914,7 +9516,6 @@
     {
       "name": "qwen/codeqwen1.5-7b",
       "alias": [
-        "qwen/codeqwen1.5-7b",
         "Qwen/CodeQwen1.5-7B",
         "codeqwen1.5-7b"
       ],
@@ -7926,7 +9527,6 @@
     {
       "name": "qwen/qwen1.5-32b-chat-awq",
       "alias": [
-        "qwen/qwen1.5-32b-chat-awq",
         "Qwen/Qwen1.5-32B-Chat-AWQ",
         "qwen1.5-32b-chat-awq"
       ],
@@ -7938,7 +9538,6 @@
     {
       "name": "qwen/qwen1.5-32b-chat-gguf",
       "alias": [
-        "qwen/qwen1.5-32b-chat-gguf",
         "Qwen/Qwen1.5-32B-Chat-GGUF",
         "qwen1.5-32b-chat-gguf"
       ],
@@ -7949,7 +9548,6 @@
     {
       "name": "qwen/qwen1.5-32b-chat",
       "alias": [
-        "qwen/qwen1.5-32b-chat",
         "Qwen/Qwen1.5-32B-Chat",
         "qwen1.5-32b-chat"
       ],
@@ -7961,7 +9559,6 @@
     {
       "name": "qwen/qwen1.5-32b-chat-gptq-int4",
       "alias": [
-        "qwen/qwen1.5-32b-chat-gptq-int4",
         "Qwen/Qwen1.5-32B-Chat-GPTQ-Int4",
         "qwen1.5-32b-chat-gptq-int4"
       ],
@@ -7973,7 +9570,6 @@
     {
       "name": "qwen/qwen1.5-32b",
       "alias": [
-        "qwen/qwen1.5-32b",
         "Qwen/Qwen1.5-32B",
         "qwen1.5-32b"
       ],
@@ -7985,7 +9581,6 @@
     {
       "name": "qwen/qwen1.5-moe-a2.7b-chat-gptq-int4",
       "alias": [
-        "qwen/qwen1.5-moe-a2.7b-chat-gptq-int4",
         "Qwen/Qwen1.5-MoE-A2.7B-Chat-GPTQ-Int4",
         "qwen1.5-moe-a2.7b-chat-gptq-int4"
       ],
@@ -7997,7 +9592,6 @@
     {
       "name": "qwen/qwen1.5-moe-a2.7b-chat",
       "alias": [
-        "qwen/qwen1.5-moe-a2.7b-chat",
         "Qwen/Qwen1.5-MoE-A2.7B-Chat",
         "qwen1.5-moe-a2.7b-chat"
       ],
@@ -8009,7 +9603,6 @@
     {
       "name": "qwen/qwen1.5-moe-a2.7b",
       "alias": [
-        "qwen/qwen1.5-moe-a2.7b",
         "Qwen/Qwen1.5-MoE-A2.7B",
         "qwen1.5-moe-a2.7b"
       ],
@@ -8021,7 +9614,6 @@
     {
       "name": "qwen/qwen1.5-0.5b-chat-gptq-int8",
       "alias": [
-        "qwen/qwen1.5-0.5b-chat-gptq-int8",
         "Qwen/Qwen1.5-0.5B-Chat-GPTQ-Int8",
         "qwen1.5-0.5b-chat-gptq-int8"
       ],
@@ -8033,7 +9625,6 @@
     {
       "name": "qwen/qwen1.5-0.5b-chat-gptq-int4",
       "alias": [
-        "qwen/qwen1.5-0.5b-chat-gptq-int4",
         "Qwen/Qwen1.5-0.5B-Chat-GPTQ-Int4",
         "qwen1.5-0.5b-chat-gptq-int4"
       ],
@@ -8045,7 +9636,6 @@
     {
       "name": "qwen/qwen1.5-1.8b-chat-gptq-int4",
       "alias": [
-        "qwen/qwen1.5-1.8b-chat-gptq-int4",
         "Qwen/Qwen1.5-1.8B-Chat-GPTQ-Int4",
         "qwen1.5-1.8b-chat-gptq-int4"
       ],
@@ -8057,7 +9647,6 @@
     {
       "name": "qwen/qwen1.5-1.8b-chat-gptq-int8",
       "alias": [
-        "qwen/qwen1.5-1.8b-chat-gptq-int8",
         "Qwen/Qwen1.5-1.8B-Chat-GPTQ-Int8",
         "qwen1.5-1.8b-chat-gptq-int8"
       ],
@@ -8069,7 +9658,6 @@
     {
       "name": "qwen/qwen1.5-4b-chat-gptq-int4",
       "alias": [
-        "qwen/qwen1.5-4b-chat-gptq-int4",
         "Qwen/Qwen1.5-4B-Chat-GPTQ-Int4",
         "qwen1.5-4b-chat-gptq-int4"
       ],
@@ -8081,7 +9669,6 @@
     {
       "name": "qwen/qwen1.5-4b-chat-gptq-int8",
       "alias": [
-        "qwen/qwen1.5-4b-chat-gptq-int8",
         "Qwen/Qwen1.5-4B-Chat-GPTQ-Int8",
         "qwen1.5-4b-chat-gptq-int8"
       ],
@@ -8093,7 +9680,6 @@
     {
       "name": "qwen/qwen1.5-7b-chat-gptq-int4",
       "alias": [
-        "qwen/qwen1.5-7b-chat-gptq-int4",
         "Qwen/Qwen1.5-7B-Chat-GPTQ-Int4",
         "qwen1.5-7b-chat-gptq-int4"
       ],
@@ -8105,7 +9691,6 @@
     {
       "name": "qwen/qwen1.5-7b-chat-gptq-int8",
       "alias": [
-        "qwen/qwen1.5-7b-chat-gptq-int8",
         "Qwen/Qwen1.5-7B-Chat-GPTQ-Int8",
         "qwen1.5-7b-chat-gptq-int8"
       ],
@@ -8117,7 +9702,6 @@
     {
       "name": "qwen/qwen1.5-14b-chat-gptq-int4",
       "alias": [
-        "qwen/qwen1.5-14b-chat-gptq-int4",
         "Qwen/Qwen1.5-14B-Chat-GPTQ-Int4",
         "qwen1.5-14b-chat-gptq-int4"
       ],
@@ -8129,7 +9713,6 @@
     {
       "name": "qwen/qwen1.5-14b-chat-gptq-int8",
       "alias": [
-        "qwen/qwen1.5-14b-chat-gptq-int8",
         "Qwen/Qwen1.5-14B-Chat-GPTQ-Int8",
         "qwen1.5-14b-chat-gptq-int8"
       ],
@@ -8141,7 +9724,6 @@
     {
       "name": "qwen/qwen1.5-72b-chat-gptq-int4",
       "alias": [
-        "qwen/qwen1.5-72b-chat-gptq-int4",
         "Qwen/Qwen1.5-72B-Chat-GPTQ-Int4",
         "qwen1.5-72b-chat-gptq-int4"
       ],
@@ -8153,7 +9735,6 @@
     {
       "name": "qwen/qwen1.5-72b-chat-gptq-int8",
       "alias": [
-        "qwen/qwen1.5-72b-chat-gptq-int8",
         "Qwen/Qwen1.5-72B-Chat-GPTQ-Int8",
         "qwen1.5-72b-chat-gptq-int8"
       ],
@@ -8165,7 +9746,6 @@
     {
       "name": "qwen/qwen1.5-4b-chat-gguf",
       "alias": [
-        "qwen/qwen1.5-4b-chat-gguf",
         "Qwen/Qwen1.5-4B-Chat-GGUF",
         "qwen1.5-4b-chat-gguf"
       ],
@@ -8176,7 +9756,6 @@
     {
       "name": "qwen/qwen1.5-1.8b-chat-gguf",
       "alias": [
-        "qwen/qwen1.5-1.8b-chat-gguf",
         "Qwen/Qwen1.5-1.8B-Chat-GGUF",
         "qwen1.5-1.8b-chat-gguf"
       ],
@@ -8187,7 +9766,6 @@
     {
       "name": "qwen/qwen1.5-0.5b-chat-gguf",
       "alias": [
-        "qwen/qwen1.5-0.5b-chat-gguf",
         "Qwen/Qwen1.5-0.5B-Chat-GGUF",
         "qwen1.5-0.5b-chat-gguf"
       ],
@@ -8198,7 +9776,6 @@
     {
       "name": "qwen/qwen1.5-14b-chat-gguf",
       "alias": [
-        "qwen/qwen1.5-14b-chat-gguf",
         "Qwen/Qwen1.5-14B-Chat-GGUF",
         "qwen1.5-14b-chat-gguf"
       ],
@@ -8209,7 +9786,6 @@
     {
       "name": "qwen/qwen1.5-7b-chat-gguf",
       "alias": [
-        "qwen/qwen1.5-7b-chat-gguf",
         "Qwen/Qwen1.5-7B-Chat-GGUF",
         "qwen1.5-7b-chat-gguf"
       ],
@@ -8220,7 +9796,6 @@
     {
       "name": "qwen/qwen1.5-72b-chat-gguf",
       "alias": [
-        "qwen/qwen1.5-72b-chat-gguf",
         "Qwen/Qwen1.5-72B-Chat-GGUF",
         "qwen1.5-72b-chat-gguf"
       ],
@@ -8231,7 +9806,6 @@
     {
       "name": "qwen/qwen1.5-0.5b-chat-awq",
       "alias": [
-        "qwen/qwen1.5-0.5b-chat-awq",
         "Qwen/Qwen1.5-0.5B-Chat-AWQ",
         "qwen1.5-0.5b-chat-awq"
       ],
@@ -8243,7 +9817,6 @@
     {
       "name": "qwen/qwen1.5-1.8b-chat-awq",
       "alias": [
-        "qwen/qwen1.5-1.8b-chat-awq",
         "Qwen/Qwen1.5-1.8B-Chat-AWQ",
         "qwen1.5-1.8b-chat-awq"
       ],
@@ -8255,7 +9828,6 @@
     {
       "name": "qwen/qwen1.5-4b-chat-awq",
       "alias": [
-        "qwen/qwen1.5-4b-chat-awq",
         "Qwen/Qwen1.5-4B-Chat-AWQ",
         "qwen1.5-4b-chat-awq"
       ],
@@ -8267,7 +9839,6 @@
     {
       "name": "qwen/qwen1.5-7b-chat-awq",
       "alias": [
-        "qwen/qwen1.5-7b-chat-awq",
         "Qwen/Qwen1.5-7B-Chat-AWQ",
         "qwen1.5-7b-chat-awq"
       ],
@@ -8279,7 +9850,6 @@
     {
       "name": "qwen/qwen1.5-14b-chat-awq",
       "alias": [
-        "qwen/qwen1.5-14b-chat-awq",
         "Qwen/Qwen1.5-14B-Chat-AWQ",
         "qwen1.5-14b-chat-awq"
       ],
@@ -8291,7 +9861,6 @@
     {
       "name": "qwen/qwen1.5-72b-chat-awq",
       "alias": [
-        "qwen/qwen1.5-72b-chat-awq",
         "Qwen/Qwen1.5-72B-Chat-AWQ",
         "qwen1.5-72b-chat-awq"
       ],
@@ -8303,7 +9872,6 @@
     {
       "name": "qwen/qwen1.5-0.5b-chat",
       "alias": [
-        "qwen/qwen1.5-0.5b-chat",
         "Qwen/Qwen1.5-0.5B-Chat",
         "qwen1.5-0.5b-chat"
       ],
@@ -8315,7 +9883,6 @@
     {
       "name": "qwen/qwen1.5-72b-chat",
       "alias": [
-        "qwen/qwen1.5-72b-chat",
         "Qwen/Qwen1.5-72B-Chat",
         "qwen1.5-72b-chat"
       ],
@@ -8327,7 +9894,6 @@
     {
       "name": "qwen/qwen1.5-14b-chat",
       "alias": [
-        "qwen/qwen1.5-14b-chat",
         "Qwen/Qwen1.5-14B-Chat",
         "qwen1.5-14b-chat"
       ],
@@ -8339,7 +9905,6 @@
     {
       "name": "qwen/qwen1.5-7b-chat",
       "alias": [
-        "qwen/qwen1.5-7b-chat",
         "Qwen/Qwen1.5-7B-Chat",
         "qwen1.5-7b-chat"
       ],
@@ -8351,7 +9916,6 @@
     {
       "name": "qwen/qwen1.5-4b-chat",
       "alias": [
-        "qwen/qwen1.5-4b-chat",
         "Qwen/Qwen1.5-4B-Chat",
         "qwen1.5-4b-chat"
       ],
@@ -8363,7 +9927,6 @@
     {
       "name": "qwen/qwen1.5-1.8b-chat",
       "alias": [
-        "qwen/qwen1.5-1.8b-chat",
         "Qwen/Qwen1.5-1.8B-Chat",
         "qwen1.5-1.8b-chat"
       ],
@@ -8375,7 +9938,6 @@
     {
       "name": "qwen/qwen1.5-72b",
       "alias": [
-        "qwen/qwen1.5-72b",
         "Qwen/Qwen1.5-72B",
         "qwen1.5-72b"
       ],
@@ -8387,7 +9949,6 @@
     {
       "name": "qwen/qwen1.5-14b",
       "alias": [
-        "qwen/qwen1.5-14b",
         "Qwen/Qwen1.5-14B",
         "qwen1.5-14b"
       ],
@@ -8399,7 +9960,6 @@
     {
       "name": "qwen/qwen1.5-7b",
       "alias": [
-        "qwen/qwen1.5-7b",
         "Qwen/Qwen1.5-7B",
         "qwen1.5-7b"
       ],
@@ -8411,7 +9971,6 @@
     {
       "name": "qwen/qwen1.5-4b",
       "alias": [
-        "qwen/qwen1.5-4b",
         "Qwen/Qwen1.5-4B",
         "qwen1.5-4b"
       ],
@@ -8423,7 +9982,6 @@
     {
       "name": "qwen/qwen1.5-1.8b",
       "alias": [
-        "qwen/qwen1.5-1.8b",
         "Qwen/Qwen1.5-1.8B",
         "qwen1.5-1.8b"
       ],
@@ -8435,7 +9993,6 @@
     {
       "name": "qwen/qwen1.5-0.5b",
       "alias": [
-        "qwen/qwen1.5-0.5b",
         "Qwen/Qwen1.5-0.5B",
         "qwen1.5-0.5b"
       ],
@@ -8447,7 +10004,6 @@
     {
       "name": "qwen/qwen-audio-chat",
       "alias": [
-        "qwen/qwen-audio-chat",
         "Qwen/Qwen-Audio-Chat",
         "qwen-audio-chat"
       ],
@@ -8462,7 +10018,6 @@
     {
       "name": "qwen/qwen-audio",
       "alias": [
-        "qwen/qwen-audio",
         "Qwen/Qwen-Audio",
         "qwen-audio"
       ],
@@ -8476,7 +10031,6 @@
     {
       "name": "qwen/qwen-72b-chat-int8",
       "alias": [
-        "qwen/qwen-72b-chat-int8",
         "Qwen/Qwen-72B-Chat-Int8",
         "qwen-72b-chat-int8"
       ],
@@ -8488,7 +10042,6 @@
     {
       "name": "qwen/qwen-72b-chat-int4",
       "alias": [
-        "qwen/qwen-72b-chat-int4",
         "Qwen/Qwen-72B-Chat-Int4",
         "qwen-72b-chat-int4"
       ],
@@ -8500,7 +10053,6 @@
     {
       "name": "qwen/qwen-1_8b-chat-int4",
       "alias": [
-        "qwen/qwen-1_8b-chat-int4",
         "Qwen/Qwen-1_8B-Chat-Int4",
         "qwen-1_8b-chat-int4"
       ],
@@ -8512,7 +10064,6 @@
     {
       "name": "qwen/qwen-1_8b-chat-int8",
       "alias": [
-        "qwen/qwen-1_8b-chat-int8",
         "Qwen/Qwen-1_8B-Chat-Int8",
         "qwen-1_8b-chat-int8"
       ],
@@ -8524,7 +10075,6 @@
     {
       "name": "qwen/qwen-1_8b",
       "alias": [
-        "qwen/qwen-1_8b",
         "Qwen/Qwen-1_8B",
         "qwen-1_8b"
       ],
@@ -8536,7 +10086,6 @@
     {
       "name": "qwen/qwen-72b-chat",
       "alias": [
-        "qwen/qwen-72b-chat",
         "Qwen/Qwen-72B-Chat",
         "qwen-72b-chat"
       ],
@@ -8548,7 +10097,6 @@
     {
       "name": "qwen/qwen-72b",
       "alias": [
-        "qwen/qwen-72b",
         "Qwen/Qwen-72B",
         "qwen-72b"
       ],
@@ -8560,7 +10108,6 @@
     {
       "name": "qwen/qwen-14b-chat-int8",
       "alias": [
-        "qwen/qwen-14b-chat-int8",
         "Qwen/Qwen-14B-Chat-Int8",
         "qwen-14b-chat-int8"
       ],
@@ -8572,7 +10119,6 @@
     {
       "name": "qwen/qwen-7b-chat-int8",
       "alias": [
-        "qwen/qwen-7b-chat-int8",
         "Qwen/Qwen-7B-Chat-Int8",
         "qwen-7b-chat-int8"
       ],
@@ -8584,7 +10130,6 @@
     {
       "name": "qwen/qwen-14b",
       "alias": [
-        "qwen/qwen-14b",
         "Qwen/Qwen-14B",
         "qwen-14b"
       ],
@@ -8596,7 +10141,6 @@
     {
       "name": "qwen/qwen-14b-chat",
       "alias": [
-        "qwen/qwen-14b-chat",
         "Qwen/Qwen-14B-Chat",
         "qwen-14b-chat"
       ],
@@ -8608,7 +10152,6 @@
     {
       "name": "qwen/qwen-14b-chat-int4",
       "alias": [
-        "qwen/qwen-14b-chat-int4",
         "Qwen/Qwen-14B-Chat-Int4",
         "qwen-14b-chat-int4"
       ],
@@ -8620,7 +10163,6 @@
     {
       "name": "qwen/qwen-vl-chat-int4",
       "alias": [
-        "qwen/qwen-vl-chat-int4",
         "Qwen/Qwen-VL-Chat-Int4",
         "qwen-vl-chat-int4"
       ],
@@ -8632,7 +10174,6 @@
     {
       "name": "qwen/qwen-7b-chat-int4",
       "alias": [
-        "qwen/qwen-7b-chat-int4",
         "Qwen/Qwen-7B-Chat-Int4",
         "qwen-7b-chat-int4"
       ],
@@ -8644,7 +10185,6 @@
     {
       "name": "qwen/qwen-vl-chat",
       "alias": [
-        "qwen/qwen-vl-chat",
         "Qwen/Qwen-VL-Chat",
         "qwen-vl-chat"
       ],
@@ -8656,7 +10196,6 @@
     {
       "name": "qwen/qwen-vl",
       "alias": [
-        "qwen/qwen-vl",
         "Qwen/Qwen-VL",
         "qwen-vl"
       ],
@@ -8668,7 +10207,6 @@
     {
       "name": "qwen/qwen-7b-chat",
       "alias": [
-        "qwen/qwen-7b-chat",
         "Qwen/Qwen-7B-Chat",
         "qwen-7b-chat"
       ],
@@ -8680,7 +10218,6 @@
     {
       "name": "qwen/qwen-7b",
       "alias": [
-        "qwen/qwen-7b",
         "Qwen/Qwen-7B",
         "qwen-7b"
       ],
@@ -8692,7 +10229,6 @@
     {
       "name": "qwen/qwen-tokenizer",
       "alias": [
-        "qwen/qwen-tokenizer",
         "Qwen/Qwen-tokenizer",
         "qwen-tokenizer"
       ],
