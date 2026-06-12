@@ -79,11 +79,12 @@ type OCRFileResponse struct {
 }
 
 type ListModelResponse struct {
-	Name       string         `json:"name"`
-	MaxTokens  *int           `json:"max_tokens"`
-	ModelTypes []string       `json:"model_types"`
-	Thinking   *ModelThinking `json:"thinking"`
-	Dimension  *int           `json:"dimension"` // used by embedding models
+	Name         string         `json:"name"`
+	MaxTokens    *int           `json:"max_tokens"`
+	ModelTypes   []string       `json:"model_types"`
+	Thinking     *ModelThinking `json:"thinking"`
+	MaxDimension *int           `json:"max_dimension"` // used by embedding models
+	Dimensions   []int          `json:"dimensions"`
 }
 
 type ParseFileResponse struct {

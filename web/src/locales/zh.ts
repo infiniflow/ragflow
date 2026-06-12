@@ -14,6 +14,7 @@ export default {
       yes: '是',
       no: '否',
       total: '总共',
+      top: '前 {{top}} 条',
       rename: '重命名',
       name: '名称',
       save: '保存',
@@ -826,6 +827,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       community: '社区报告生成',
       communityTip:
         '区块被聚集成层次化的社区，实体和关系通过更高抽象层次将每个部分连接起来。然后，我们使用 LLM 生成每个社区的摘要，称为社区报告。更多信息：https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
+      top: '前n条',
     },
     chunk: {
       chunk: '解析块',
@@ -1227,6 +1229,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       api: 'API',
       username: '用户名',
       usernameMessage: '请输入用户名',
+      usernameMaxLength: '名称最多 {{max}} 个字符。',
+      usernameInvalidCharacters:
+        "名称只能包含字母、数字、空格以及 . _ ' - 字符。",
       photo: '头像',
       photoDescription: '这将显示在您的个人资料上。',
       colorSchema: '主题',
