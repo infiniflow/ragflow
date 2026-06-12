@@ -23,7 +23,6 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
-	"ragflow/internal/utility"
 	"strconv"
 	"strings"
 
@@ -34,6 +33,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
+	"ragflow/internal/utility"
 )
 
 // AgentHandler agent handler
@@ -251,11 +251,12 @@ func (h *AgentHandler) GetAgentSession(c *gin.Context) {
 
 	data, code, err := h.agentService.GetAgentSession(userID, agentID, sessionID)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    code,
-			"data":    nil,
-			"message": err.Error(),
-		})
+		msg := err.Error()
+		if code == common.CodeServerError {
+			common.Warn("get agent session failed", zap.String("session_id", sessionID), zap.Error(err))
+			msg = "Internal server error"
+		}
+		c.JSON(http.StatusOK, gin.H{"code": code, "data": nil, "message": msg})
 		return
 	}
 
@@ -300,11 +301,12 @@ func (h *AgentHandler) DeleteAgentSessionItem(c *gin.Context) {
 
 	ok, code, err := h.agentService.DeleteAgentSessionItem(userID, agentID, sessionID)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    code,
-			"data":    false,
-			"message": err.Error(),
-		})
+		msg := err.Error()
+		if code == common.CodeServerError {
+			common.Warn("delete agent session failed", zap.String("session_id", sessionID), zap.Error(err))
+			msg = "Internal server error"
+		}
+		c.JSON(http.StatusOK, gin.H{"code": code, "data": false, "message": msg})
 		return
 	}
 
@@ -424,12 +426,13 @@ func (h *AgentHandler) ListAgentVersions(c *gin.Context) {
 	}
 
 	ok, err := h.agentService.CheckCanvasAccess(user.ID, agentID)
-	if err != nil || !ok {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeOperatingError,
-			"data":    nil,
-			"message": "Agent not found or no permission.",
-		})
+	if err != nil {
+		common.Warn("check canvas access failed", zap.String("agent_id", agentID), zap.Error(err))
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeServerError, "data": false, "message": "Internal server error"})
+		return
+	}
+	if !ok {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeOperatingError, "data": nil, "message": "Agent not found or no permission."})
 		return
 	}
 
@@ -513,12 +516,13 @@ func (h *AgentHandler) GetAgentVersion(c *gin.Context) {
 	}
 
 	ok, err := h.agentService.CheckCanvasAccess(user.ID, agentID)
-	if err != nil || !ok {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeOperatingError,
-			"data":    nil,
-			"message": "Agent not found or no permission.",
-		})
+	if err != nil {
+		common.Warn("check canvas access failed", zap.String("agent_id", agentID), zap.Error(err))
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeServerError, "data": false, "message": "Internal server error"})
+		return
+	}
+	if !ok {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeOperatingError, "data": nil, "message": "Agent not found or no permission."})
 		return
 	}
 
@@ -575,12 +579,13 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 	}
 
 	ok, err := h.agentService.CheckCanvasAccess(user.ID, agentID)
-	if err != nil || !ok {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeOperatingError,
-			"data":    nil,
-			"message": "Agent not found or no permission.",
-		})
+	if err != nil {
+		common.Warn("check canvas access failed", zap.String("agent_id", agentID), zap.Error(err))
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeServerError, "data": false, "message": "Internal server error"})
+		return
+	}
+	if !ok {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeOperatingError, "data": nil, "message": "Agent not found or no permission."})
 		return
 	}
 
@@ -628,6 +633,15 @@ type updateAgentTagsRequest struct {
 	Tags interface{} `json:"tags"`
 }
 
+// UpdateAgentTags updates the tag set on an agent canvas.
+// @Summary Update Agent Tags
+// @Description Replace the tags on an agent canvas (owner / team access required).
+// @Tags agents
+// @Accept json
+// @Produce json
+// @Param agent_id path string true "Agent ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/agents/{agent_id}/tags [put]
 func (h *AgentHandler) UpdateAgentTags(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -740,4 +754,169 @@ func (h *AgentHandler) GetPrompts(c *gin.Context) {
 		},
 		"message": "success",
 	})
+}
+
+// GetAgent returns a single agent canvas with ownership validation.
+// @Summary Get Agent
+// @Description Retrieve a single agent canvas by ID (access check included).
+// @Tags agents
+// @Produce json
+// @Param agent_id path string true "Agent ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/agents/{agent_id} [get]
+func (h *AgentHandler) GetAgent(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	agentID := c.Param("agent_id")
+	if agentID == "" {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeArgumentError, "data": nil, "message": "agent_id is required"})
+		return
+	}
+
+	canvas, err := h.agentService.GetAgent(user.ID, agentID)
+	if err != nil {
+		if errors.Is(err, service.ErrAgentNotFound) || errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusOK, gin.H{"code": common.CodeOperatingError, "data": false, "message": "Agent not found."})
+		} else {
+			common.Warn("get agent failed", zap.String("agent_id", agentID), zap.Error(err))
+			c.JSON(http.StatusOK, gin.H{"code": common.CodeServerError, "data": false, "message": "Internal server error"})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": canvas, "message": ""})
+}
+
+// GetAgentLogs retrieves execution logs for a session message from Redis.
+// @Summary Get Agent Logs
+// @Description Retrieve agent execution logs for a specific message ID from Redis.
+// @Tags agents
+// @Produce json
+// @Param agent_id path string true "Agent ID"
+// @Param message_id path string true "Message ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/agents/{agent_id}/logs/{message_id} [get]
+func (h *AgentHandler) GetAgentLogs(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	agentID := c.Param("agent_id")
+	messageID := c.Param("message_id")
+	if agentID == "" || messageID == "" {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeArgumentError, "data": nil, "message": "agent_id and message_id are required"})
+		return
+	}
+
+	ok, err := h.agentService.CheckCanvasAccess(user.ID, agentID)
+	if err != nil {
+		common.Warn("check canvas access failed", zap.String("agent_id", agentID), zap.Error(err))
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeServerError, "data": false, "message": "Internal server error"})
+		return
+	}
+	if !ok {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeOperatingError, "data": false, "message": "Make sure you have permission to access the agent."})
+		return
+	}
+
+	logs, err := h.agentService.GetAgentLogs(agentID, messageID)
+	if err != nil {
+		common.Warn("get agent logs failed", zap.String("agent_id", agentID), zap.String("message_id", messageID), zap.Error(err))
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeServerError, "data": false, "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": logs, "message": "success"})
+}
+
+// DownloadAgentFile downloads a file blob associated with an agent.
+// @Summary Download Agent File
+// @Description Download a file by its ID. The file must belong to the caller's tenant.
+// @Tags agents
+// @Produce application/octet-stream
+// @Param id query string true "File ID"
+// @Success 200 {file} binary
+// @Router /api/v1/agents/download [get]
+func (h *AgentHandler) DownloadAgentFile(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	fileID := c.Query("id")
+	if fileID == "" {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeArgumentError, "data": nil, "message": "id is required"})
+		return
+	}
+
+	blob, fileName, err := h.agentService.DownloadAgentFile(user.ID, fileID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeOperatingError, "data": false, "message": err.Error()})
+		return
+	}
+
+	ext := utility.GetFileExtension(fileName)
+	contentType := utility.GetContentType(ext, "")
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	if utility.ShouldForceAttachment(ext, contentType) {
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+url.QueryEscape(fileName))
+	}
+	c.Data(http.StatusOK, contentType, blob)
+}
+
+// DownloadAttachment streams an attachment file to the caller.
+// @Summary Download Attachment
+// @Description Download an attachment by storage object name. The caller's tenant ID is used as the bucket.
+// @Tags agents
+// @Produce application/octet-stream
+// @Param attachment_id path string true "Attachment object name"
+// @Param ext query string false "File extension hint for content-type (default: markdown)"
+// @Success 200 {file} binary
+// @Router /api/v1/agents/attachments/{attachment_id}/download [get]
+func (h *AgentHandler) DownloadAttachment(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	attachmentID := c.Param("attachment_id")
+	if attachmentID == "" {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeArgumentError, "data": nil, "message": "attachment_id is required"})
+		return
+	}
+
+	// Intentional deviation from Python: Python uses the caller-supplied `ext`
+	// query parameter to set Content-Type, which allows MIME spoofing. Go
+	// derives the extension from the storage object name instead, and the
+	// Content-Disposition header forces a download so the browser never renders
+	// the blob inline. This is a deliberate, safer behaviour change.
+	ext := utility.GetFileExtension(attachmentID)
+	if ext == "" {
+		ext = "markdown"
+	}
+
+	blob, err := h.agentService.DownloadAttachment(user.ID, attachmentID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeServerError, "data": false, "message": err.Error()})
+		return
+	}
+
+	contentType := utility.GetContentType(ext, "")
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+url.QueryEscape(attachmentID))
+	c.Data(http.StatusOK, contentType, blob)
 }

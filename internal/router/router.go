@@ -391,10 +391,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 			agents := v1.Group("/agents")
 			{
 				agents.GET("", r.agentHandler.ListAgents)
+				// Static-path routes must be registered before parameterised routes
+				// so gin's radix tree resolves them with priority.
 				agents.GET("/prompts", r.agentHandler.GetPrompts)
 				agents.GET("/templates", r.agentHandler.ListTemplates)
 				agents.GET("/download", r.agentHandler.DownloadAgentFile)
+				agents.GET("/attachments/:attachment_id/download", r.agentHandler.DownloadAttachment)
 				agents.POST("/test_db_connection", r.agentHandler.TestDBConnection)
+				agents.GET("/:agent_id", r.agentHandler.GetAgent)
 				agents.GET("/:agent_id/versions", r.agentHandler.ListAgentVersions)
 				agents.GET("/:agent_id/versions/:version_id", r.agentHandler.GetAgentVersion)
 				agents.POST("/:agent_id/upload", r.agentHandler.UploadAgentFile)
@@ -402,6 +406,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				agents.GET("/:agent_id/sessions", r.agentHandler.ListAgentSessions)
 				agents.GET("/:agent_id/sessions/:session_id", r.agentHandler.GetAgentSession)
 				agents.DELETE("/:agent_id/sessions/:session_id", r.agentHandler.DeleteAgentSessionItem)
+				agents.GET("/:agent_id/logs/:message_id", r.agentHandler.GetAgentLogs)
 				agents.DELETE("/:agent_id/sessions", r.agentHandler.DeleteAgentSessions)
 			}
 

@@ -31,16 +31,24 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
+	"ragflow/internal/cache"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/storage"
 )
 
 const (
 	agentTagsFieldMax = 512
 	agentTagMaxLen    = 64
 )
+
+// ErrAgentNotFound is returned by GetAgent when the canvas does not exist or
+// the caller has no permission to view it (both cases surface the same message
+// to avoid leaking existence information).
+var ErrAgentNotFound = errors.New("agent not found")
 
 // AgentService agent service
 type AgentService struct {
@@ -49,6 +57,8 @@ type AgentService struct {
 	userCanvasVersionDAO *dao.UserCanvasVersionDAO
 	canvasTemplateDAO    *dao.CanvasTemplateDAO
 	api4ConversationDAO  *dao.API4ConversationDAO
+	fileDAO              *dao.FileDAO
+	kbDAO                *dao.KnowledgebaseDAO
 }
 
 // NewAgentService create agent service
@@ -59,6 +69,8 @@ func NewAgentService() *AgentService {
 		userCanvasVersionDAO: dao.NewUserCanvasVersionDAO(),
 		api4ConversationDAO:  dao.NewAPI4ConversationDAO(),
 		canvasTemplateDAO:    dao.NewCanvasTemplateDAO(),
+		fileDAO:              dao.NewFileDAO(),
+		kbDAO:                dao.NewKnowledgebaseDAO(),
 	}
 }
 
@@ -954,4 +966,145 @@ func (s *AgentService) GetVersion(canvasID, versionID string) (*entity.UserCanva
 		return nil, fmt.Errorf("version not found")
 	}
 	return version, nil
+}
+
+// AgentDatasetItem is the minimal dataset representation added to DataFlow agents,
+// matching Python's {"id", "name", "avatar"} projection.
+type AgentDatasetItem struct {
+	ID     string  `json:"id"`
+	Name   string  `json:"name"`
+	Avatar *string `json:"avatar,omitempty"`
+}
+
+// AgentDetail augments the raw UserCanvas with computed fields that Python
+// derives at read time: last_publish_time and, for DataFlow canvases, datasets.
+// normalize_chunker_dsl and CanvasReplicaService.bootstrap are not yet ported
+// to Go; they are no-ops in this layer.
+type AgentDetail struct {
+	*entity.UserCanvas
+	LastPublishTime *int64             `json:"last_publish_time"`
+	Datasets        []AgentDatasetItem `json:"datasets,omitempty"`
+}
+
+// GetAgent returns a single agent canvas after verifying the caller has access.
+// Mirrors Python's get_agent: computes last_publish_time from released versions
+// and, for DataFlow canvases, appends the linked datasets.
+func (s *AgentService) GetAgent(userID, agentID string) (*AgentDetail, error) {
+	canvas, err := s.canvasDAO.GetByID(agentID)
+	if err != nil {
+		return nil, err
+	}
+	// Verify access: owner always OK; team permission requires joined-tenant check.
+	if canvas.UserID != userID {
+		if canvas.Permission != string(entity.TenantPermissionTeam) {
+			return nil, ErrAgentNotFound
+		}
+		tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
+		if err != nil {
+			return nil, err
+		}
+		found := false
+		for _, tid := range tenantIDs {
+			if canvas.UserID == tid {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, ErrAgentNotFound
+		}
+	}
+
+	detail := &AgentDetail{UserCanvas: canvas}
+
+	// Compute last_publish_time from the most recently updated released version.
+	versions, err := s.userCanvasVersionDAO.ListByCanvasID(agentID)
+	if err == nil {
+		var latestPublish *int64
+		for _, v := range versions {
+			if !v.Release || v.UpdateTime == nil {
+				continue
+			}
+			t := *v.UpdateTime
+			if latestPublish == nil || t > *latestPublish {
+				latestPublish = &t
+			}
+		}
+		detail.LastPublishTime = latestPublish
+	}
+
+	// For DataFlow canvases, add the linked datasets (mirrors Python's canvas["datasets"]).
+	if canvas.CanvasCategory == "dataflow_canvas" {
+		kbs, err := s.kbDAO.Query(map[string]interface{}{"pipeline_id": agentID})
+		if err == nil {
+			items := make([]AgentDatasetItem, 0, len(kbs))
+			for _, kb := range kbs {
+				items = append(items, AgentDatasetItem{
+					ID:     kb.ID,
+					Name:   kb.Name,
+					Avatar: kb.Avatar,
+				})
+			}
+			detail.Datasets = items
+		}
+	}
+
+	return detail, nil
+}
+
+// GetAgentLogs retrieves execution logs for a given message from Redis.
+// Key format mirrors Python: "{agent_id}-{message_id}-logs".
+func (s *AgentService) GetAgentLogs(agentID, messageID string) (interface{}, error) {
+	redisClient := cache.Get()
+	if redisClient == nil {
+		return map[string]interface{}{}, nil
+	}
+	key := fmt.Sprintf("%s-%s-logs", agentID, messageID)
+	raw, err := redisClient.Get(key)
+	if err != nil || raw == "" {
+		return map[string]interface{}{}, nil
+	}
+	var payload interface{}
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return map[string]interface{}{}, nil
+	}
+	return payload, nil
+}
+
+// DownloadAgentFile retrieves the raw bytes for a file owned by the given tenant.
+// Returns the blob and the file name (for content-type inference).
+func (s *AgentService) DownloadAgentFile(tenantID, fileID string) ([]byte, string, error) {
+	file, err := s.fileDAO.GetByID(fileID)
+	if err != nil {
+		return nil, "", fmt.Errorf("file not found")
+	}
+	if file.TenantID != tenantID {
+		return nil, "", fmt.Errorf("file not found")
+	}
+	if file.Location == nil || *file.Location == "" {
+		return nil, "", fmt.Errorf("file has no storage location")
+	}
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, "", fmt.Errorf("storage not initialized")
+	}
+	blob, err := storageImpl.Get(file.ParentID, *file.Location)
+	if err != nil {
+		return nil, "", err
+	}
+	return blob, file.Name, nil
+}
+
+// DownloadAttachment retrieves raw bytes for an attachment stored under the tenant's bucket.
+// attachmentID is the object name (storage key), tenantID is the bucket.
+func (s *AgentService) DownloadAttachment(tenantID, attachmentID string) ([]byte, error) {
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, fmt.Errorf("storage not initialized")
+	}
+	blob, err := storageImpl.Get(tenantID, attachmentID)
+	if err != nil {
+		return nil, err
+	}
+	return blob, nil
 }

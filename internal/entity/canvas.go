@@ -61,6 +61,7 @@ type UserCanvasVersion struct {
 	Title        *string `gorm:"column:title;size:255" json:"title,omitempty"`
 	Description  *string `gorm:"column:description;type:longtext" json:"description,omitempty"`
 	DSL          JSONMap `gorm:"column:dsl;type:longtext" json:"dsl,omitempty"`
+	Release      bool    `gorm:"column:release;not null;default:false;index" json:"release"`
 	BaseModel
 }
 
