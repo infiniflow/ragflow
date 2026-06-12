@@ -58,7 +58,7 @@ type DocumentService struct {
 // NewDocumentService create document service
 func NewDocumentService() *DocumentService {
 	cfg := server.GetConfig()
-	engineType := ""
+	var engineType server.EngineType
 	if cfg != nil {
 		engineType = cfg.DocEngine.Type
 	}
