@@ -18,12 +18,15 @@ package elasticsearch
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"reflect"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -40,6 +43,14 @@ import (
 var jsonIterator = jsoniter.Config{
 	SortMapKeys: false,
 }.Froze()
+
+var (
+	elasticsearchHighlightEmTagRE     = regexp.MustCompile(`<em>[^<>]+</em>`)
+	elasticsearchHighlightNewlineRE   = regexp.MustCompile(`[\r\n]`)
+	elasticsearchHighlightDelimiterRE = regexp.MustCompile(`[.?!;\n]`)
+	elasticsearchLetterRE             = regexp.MustCompile(`\pL`)
+	elasticsearchEnglishLetterRE      = regexp.MustCompile(`[A-Za-z]`)
+)
 
 // CreateChunkStore creates an index
 func (e *elasticsearchEngine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID string) error {
@@ -271,22 +282,22 @@ func (e *elasticsearchEngine) updateSingleChunk(ctx context.Context, indexName, 
 
 	hits, ok := searchResult["hits"].(map[string]interface{})
 	if !ok {
-		return fmt.Errorf("elasticsearch update error: 404 Not Found")
+		return fmt.Errorf("%w: %s", types.ErrDocumentNotFound, chunkID)
 	}
 
 	hitList, ok := hits["hits"].([]interface{})
 	if !ok || len(hitList) == 0 {
-		return fmt.Errorf("elasticsearch update error: 404 Not Found")
+		return fmt.Errorf("%w: %s", types.ErrDocumentNotFound, chunkID)
 	}
 
 	firstHit, ok := hitList[0].(map[string]interface{})
 	if !ok {
-		return fmt.Errorf("elasticsearch update error: 404 Not Found")
+		return fmt.Errorf("%w: %s", types.ErrDocumentNotFound, chunkID)
 	}
 
 	actualID, ok := firstHit["_id"].(string)
 	if !ok {
-		return fmt.Errorf("elasticsearch update error: 404 Not Found")
+		return fmt.Errorf("%w: %s", types.ErrDocumentNotFound, chunkID)
 	}
 
 	doc := copyFields(newValue)
@@ -392,6 +403,9 @@ func (e *elasticsearchEngine) updateSingleChunk(ctx context.Context, indexName, 
 		}
 		defer res.Body.Close()
 		if res.IsError() {
+			if res.StatusCode == http.StatusNotFound {
+				return fmt.Errorf("%w: %s", types.ErrDocumentNotFound, chunkID)
+			}
 			return fmt.Errorf("elasticsearch update error: %s", res.Status())
 		}
 	}
@@ -712,11 +726,12 @@ type SearchResponse struct {
 			Value int64 `json:"value"`
 		} `json:"total"`
 		Hits []struct {
-			ID     string                 `json:"_id"`
-			Index  string                 `json:"_index"`
-			Score  float64                `json:"_score"`
-			Source map[string]interface{} `json:"_source"`
-			Fields map[string]interface{} `json:"fields"` // ES 9.x stores dense_vector here
+			ID        string                 `json:"_id"`
+			Index     string                 `json:"_index"`
+			Score     float64                `json:"_score"`
+			Source    map[string]interface{} `json:"_source"`
+			Fields    map[string]interface{} `json:"fields"` // ES 9.x stores dense_vector here
+			Highlight map[string]interface{} `json:"highlight,omitempty"`
 			// Sort is populated when the request body specifies a `sort`
 			// clause. The last hit's Sort is the cursor for the next
 			// search_after request — without it, deep pagination can't
@@ -1581,9 +1596,12 @@ func (e *elasticsearchEngine) GetFields(chunks []map[string]interface{}, fields 
 	}
 
 	for _, chunk := range chunks {
-		docID, ok := chunk["_id"].(string)
+		docID, ok := elasticsearchChunkID(chunk)
 		if !ok {
 			continue
+		}
+		if id, ok := chunk["id"].(string); !ok || id == "" {
+			chunk["id"] = docID
 		}
 
 		m := make(map[string]interface{})
@@ -1647,23 +1665,56 @@ func (e *elasticsearchEngine) GetAggregation(chunks []map[string]interface{}, fi
 		return []map[string]interface{}{}
 	}
 
-	counts := make(map[string]int)
+	tagCounts := make(map[string]int)
 	for _, chunk := range chunks {
-		if val, ok := chunk[fieldName]; ok && val != nil {
-			key := fmt.Sprintf("%v", val)
-			if key != "" {
-				counts[key]++
+		value, ok := chunk[fieldName]
+		if !ok || value == nil {
+			continue
+		}
+
+		if valueStr, ok := value.(string); ok {
+			if valueStr == "" {
+				continue
+			}
+			separator := ","
+			if fieldName == "tag_kwd" && strings.Contains(valueStr, "###") {
+				separator = "###"
+			}
+			for _, tag := range strings.Split(valueStr, separator) {
+				countElasticsearchAggregationTag(tagCounts, tag)
+			}
+			continue
+		}
+
+		if valueList, ok := value.([]interface{}); ok {
+			for _, item := range valueList {
+				if itemStr, ok := item.(string); ok {
+					countElasticsearchAggregationTag(tagCounts, itemStr)
+				}
 			}
 		}
 	}
 
-	result := make([]map[string]interface{}, 0, len(counts))
-	for key, count := range counts {
-		result = append(result, map[string]interface{}{
-			"key":   key,
-			"count": count,
-		})
+	if len(tagCounts) == 0 {
+		return []map[string]interface{}{}
 	}
+
+	tags := make([]string, 0, len(tagCounts))
+	for tag := range tagCounts {
+		tags = append(tags, tag)
+	}
+	slices.SortFunc(tags, func(a, b string) int {
+		if byCount := cmp.Compare(tagCounts[b], tagCounts[a]); byCount != 0 {
+			return byCount
+		}
+		return cmp.Compare(a, b)
+	})
+
+	result := make([]map[string]interface{}, len(tags))
+	for i, tag := range tags {
+		result[i] = map[string]interface{}{"key": tag, "count": tagCounts[tag]}
+	}
+
 	return result
 }
 
@@ -1672,7 +1723,7 @@ func (e *elasticsearchEngine) GetAggregation(chunks []map[string]interface{}, fi
 func (e *elasticsearchEngine) GetChunkIDs(chunks []map[string]interface{}) []string {
 	ids := make([]string, 0, len(chunks))
 	for _, chunk := range chunks {
-		if id, ok := chunk["_id"].(string); ok {
+		if id, ok := elasticsearchChunkID(chunk); ok {
 			ids = append(ids, id)
 		}
 	}
@@ -1686,33 +1737,133 @@ func (e *elasticsearchEngine) GetHighlight(chunks []map[string]interface{}, keyw
 		return result
 	}
 
+	normalizedKeywords := normalizeElasticsearchHighlightKeywords(keywords)
+	englishPatterns := compileElasticsearchHighlightPatterns(normalizedKeywords)
+	nonEnglishPattern := compileElasticsearchNonEnglishHighlightPattern(normalizedKeywords)
+
 	for _, chunk := range chunks {
-		docID, ok := chunk["_id"].(string)
+		docID, ok := elasticsearchChunkID(chunk)
 		if !ok {
 			continue
 		}
 
-		highlight, ok := chunk["highlight"].(map[string]interface{})
-		if !ok || len(highlight) == 0 {
+		if highlightText := firstElasticsearchHighlight(chunk); highlightText != "" {
+			result[docID] = highlightText
 			continue
 		}
 
-		// Get first highlight entry
-		var highlightText string
-		for _, vals := range highlight {
-			if arr, ok := vals.([]interface{}); ok && len(arr) > 0 {
-				if str, ok := arr[0].(string); ok {
-					highlightText = str
+		txt, ok := chunk[fieldName].(string)
+		if fieldName == "content_with_weight" && (!ok || txt == "") {
+			txt, ok = chunk["content"].(string)
+		}
+		if !ok || txt == "" {
+			continue
+		}
+
+		if elasticsearchHighlightEmTagRE.MatchString(txt) {
+			result[docID] = txt
+			continue
+		}
+
+		txt = elasticsearchHighlightNewlineRE.ReplaceAllString(txt, " ")
+		segments := elasticsearchHighlightDelimiterRE.Split(txt, -1)
+
+		var highlightedSegments []string
+		for _, segment := range segments {
+			segmentToCheck := segment
+			if isMostlyEnglishElasticsearchSegment(segment) {
+				for _, pattern := range englishPatterns {
+					segmentToCheck = pattern.ReplaceAllString(segmentToCheck, "$1<em>$2</em>$3")
 				}
-				break
+			} else if nonEnglishPattern != nil {
+				segmentToCheck = nonEnglishPattern.ReplaceAllStringFunc(segmentToCheck, func(match string) string {
+					return "<em>" + match + "</em>"
+				})
+			}
+			if segmentToCheck != segment {
+				highlightedSegments = append(highlightedSegments, strings.TrimSpace(segmentToCheck))
 			}
 		}
 
-		if highlightText != "" {
-			result[docID] = highlightText
+		if len(highlightedSegments) > 0 {
+			result[docID] = strings.Join(highlightedSegments, "... ")
 		}
 	}
 	return result
+}
+
+func elasticsearchChunkID(chunk map[string]interface{}) (string, bool) {
+	if id, ok := chunk["id"].(string); ok && id != "" {
+		return id, true
+	}
+	if id, ok := chunk["_id"].(string); ok && id != "" {
+		return id, true
+	}
+	return "", false
+}
+
+func firstElasticsearchHighlight(chunk map[string]interface{}) string {
+	highlight, ok := chunk["highlight"].(map[string]interface{})
+	if !ok || len(highlight) == 0 {
+		return ""
+	}
+
+	for _, vals := range highlight {
+		if arr, ok := vals.([]interface{}); ok && len(arr) > 0 {
+			if str, ok := arr[0].(string); ok {
+				return str
+			}
+		}
+	}
+	return ""
+}
+
+func countElasticsearchAggregationTag(counts map[string]int, tag string) {
+	if tag = strings.TrimSpace(tag); tag != "" {
+		counts[tag]++
+	}
+}
+
+func isMostlyEnglishElasticsearchSegment(segment string) bool {
+	totalCount := len(elasticsearchLetterRE.FindAllString(segment, -1))
+	return totalCount > 0 && float64(len(elasticsearchEnglishLetterRE.FindAllString(segment, -1)))/float64(totalCount) > 0.5
+}
+
+func compileElasticsearchHighlightPatterns(keywords []string) []*regexp.Regexp {
+	patterns := make([]*regexp.Regexp, 0, len(keywords))
+	for _, kw := range keywords {
+		patterns = append(patterns, regexp.MustCompile(`(?i)(^|[ .?/'\"\(\)!,:;-])(`+regexp.QuoteMeta(kw)+`)([ .?/'\"\(\)!,:;-]|$)`))
+	}
+	return patterns
+}
+
+func compileElasticsearchNonEnglishHighlightPattern(keywords []string) *regexp.Regexp {
+	if len(keywords) == 0 {
+		return nil
+	}
+	parts := make([]string, 0, len(keywords))
+	for _, kw := range keywords {
+		parts = append(parts, regexp.QuoteMeta(kw))
+	}
+	return regexp.MustCompile(strings.Join(parts, "|"))
+}
+
+func normalizeElasticsearchHighlightKeywords(keywords []string) []string {
+	seen := make(map[string]struct{}, len(keywords))
+	normalized := make([]string, 0, len(keywords))
+	for _, kw := range keywords {
+		if kw == "" {
+			continue
+		}
+		if _, ok := seen[kw]; !ok {
+			seen[kw] = struct{}{}
+			normalized = append(normalized, kw)
+		}
+	}
+	slices.SortStableFunc(normalized, func(a, b string) int {
+		return cmp.Compare(len(b), len(a))
+	})
+	return normalized
 }
 
 // DropChunkStore deletes a chunk index
@@ -2031,6 +2182,32 @@ func getDefaultSkillMapping() map[string]interface{} {
 	}
 }
 
+// rerankWindow returns the candidate-window size shared by retrieval's
+// block fetch and slice. Mirrors Dealer._rerank_window in rag/nlp/search.py.
+//
+// `size` is the per-page size; the window MUST be an exact multiple of it,
+// otherwise the block fetched (offset // window) and the in-block page slice
+// (offset % window) drift apart and deep pagination silently drops results.
+//
+// The window targets a provider-friendly pool of ~64 candidates, bounded by
+// `topK` when given (i.e. when an external reranker is active), and is always
+// rounded UP to a whole number of pages to preserve the alignment invariant.
+func rerankWindow(size, topK int) int {
+	if size <= 1 {
+		if topK > 0 {
+			return min(30, topK)
+		}
+		return 30
+	}
+	window := ((64 + size - 1) / size) * size // ceil(64/size) * size
+	if topK > 0 {
+		if aligned := ((topK + size - 1) / size) * size; window > aligned {
+			window = aligned
+		}
+	}
+	return window
+}
+
 // calculatePagination calculates offset and limit based on page, size and topK
 func calculatePagination(page, size, topK int) (int, int) {
 	if page < 1 {
@@ -2043,99 +2220,14 @@ func calculatePagination(page, size, topK int) (int, int) {
 		topK = 1024
 	}
 
-	RERANK_LIMIT := max(30, (64/size)*size)
-	if RERANK_LIMIT < size {
-		RERANK_LIMIT = size
-	}
-	if RERANK_LIMIT > topK {
-		RERANK_LIMIT = topK
-	}
+	window := rerankWindow(size, topK)
 
-	offset := (page - 1) * RERANK_LIMIT
+	offset := (page - 1) * window
 	if offset < 0 {
 		offset = 0
 	}
 
-	return offset, RERANK_LIMIT
-}
-
-// buildFilterClauses builds ES filter clauses from kb_ids and available_int
-// Reference: rag/utils/es_conn.py L60-L78
-// When available=0: available_int < 1
-// When available!=0: NOT (available_int < 1)
-func buildFilterClauses(datasetIDs []string, available int) []map[string]interface{} {
-	var filters []map[string]interface{}
-
-	if len(datasetIDs) > 0 {
-		filters = append(filters, map[string]interface{}{
-			"terms": map[string]interface{}{"kb_id": datasetIDs},
-		})
-	}
-
-	// Add available_int filter
-	// Reference: rag/utils/es_conn.py L63-L68
-	if available == 0 {
-		// available_int < 1
-		filters = append(filters, map[string]interface{}{
-			"range": map[string]interface{}{
-				"available_int": map[string]interface{}{
-					"lt": 1,
-				},
-			},
-		})
-	} else {
-		// must_not: available_int < 1 (i.e., available_int >= 1)
-		filters = append(filters, map[string]interface{}{
-			"bool": map[string]interface{}{
-				"must_not": []map[string]interface{}{
-					{
-						"range": map[string]interface{}{
-							"available_int": map[string]interface{}{
-								"lt": 1,
-							},
-						},
-					},
-				},
-			},
-		})
-	}
-
-	return filters
-}
-
-// buildSkillFilterClauses builds ES filter clauses for skill index
-// Skill index uses 'status' field instead of 'available_int'
-func buildSkillFilterClauses() []map[string]interface{} {
-	// Filter for active skills (status = "1")
-	return []map[string]interface{}{
-		{
-			"term": map[string]interface{}{
-				"status": "1",
-			},
-		},
-	}
-}
-
-// buildFilterFromMap converts a generic filter map to ES filter clauses
-func buildFilterFromMap(filter map[string]interface{}) []map[string]interface{} {
-	var filters []map[string]interface{}
-	for field, value := range filter {
-		switch v := value.(type) {
-		case []string:
-			filters = append(filters, map[string]interface{}{
-				"terms": map[string]interface{}{field: v},
-			})
-		case []interface{}:
-			filters = append(filters, map[string]interface{}{
-				"terms": map[string]interface{}{field: v},
-			})
-		default:
-			filters = append(filters, map[string]interface{}{
-				"term": map[string]interface{}{field: v},
-			})
-		}
-	}
-	return filters
+	return offset, window
 }
 
 // convertESResponse converts ES SearchResponse to unified chunks format
@@ -2147,9 +2239,15 @@ func convertESResponse(esResp *SearchResponse, vectorFieldName string) []map[str
 	chunks := make([]map[string]interface{}, len(esResp.Hits.Hits))
 	for i, hit := range esResp.Hits.Hits {
 		chunks[i] = hit.Source
+		if chunks[i] == nil {
+			chunks[i] = make(map[string]interface{})
+		}
 		chunks[i]["_score"] = hit.Score
 		chunks[i]["_id"] = hit.ID
 		chunks[i]["_index"] = hit.Index
+		if len(hit.Highlight) > 0 {
+			chunks[i]["highlight"] = hit.Highlight
+		}
 	}
 	return chunks
 }

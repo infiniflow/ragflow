@@ -98,32 +98,12 @@ type BedrockModel struct {
 }
 
 // NewBedrockModel creates a new Bedrock model instance.
-//
-// We clone http.DefaultTransport to keep Go's defaults for
-// ProxyFromEnvironment, DialContext (with KeepAlive), HTTP/2,
-// TLSHandshakeTimeout, and ExpectContinueTimeout, and only override
-// the connection-pool fields we care about.
-//
-// The Client itself has no overall Timeout because Bedrock
-// Converse-Stream is long-lived. http.Client.Timeout would also cap
-// time spent reading the response body, cutting off mid-stream.
-// Non-streaming callers wrap each request in context.WithTimeout
-// instead, and ResponseHeaderTimeout still caps connection setup.
 func NewBedrockModel(baseURL map[string]string, urlSuffix URLSuffix) *BedrockModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-	transport.ResponseHeaderTimeout = 60 * time.Second
-
 	return &BedrockModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
-			httpClient: &http.Client{
-				Transport: transport,
-			},
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
@@ -777,7 +757,7 @@ type bedrockListModelsResponse struct {
 // configured credentials. The control plane lives at
 // bedrock.{region}.amazonaws.com (not bedrock-runtime), signs against
 // the "bedrock" service, and is GET-only.
-func (b *BedrockModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (b *BedrockModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -805,7 +785,7 @@ func (b *BedrockModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("bedrock: build request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
-	if err := signBedrockRequest(ctx, req, nil, creds, bedrockControlService, region); err != nil {
+	if err = signBedrockRequest(ctx, req, nil, creds, bedrockControlService, region); err != nil {
 		return nil, err
 	}
 
@@ -824,15 +804,17 @@ func (b *BedrockModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	var parsed bedrockListModelsResponse
-	if err := json.Unmarshal(respBody, &parsed); err != nil {
+	if err = json.Unmarshal(respBody, &parsed); err != nil {
 		return nil, fmt.Errorf("bedrock: parse ListModels response: %w", err)
 	}
-	models := make([]string, 0, len(parsed.ModelSummaries))
+	models := make([]ListModelResponse, 0, len(parsed.ModelSummaries))
 	for _, m := range parsed.ModelSummaries {
 		if m.ModelID == "" {
 			continue
 		}
-		models = append(models, m.ModelID)
+		models = append(models, ListModelResponse{
+			Name: m.ModelID,
+		})
 	}
 	return models, nil
 }

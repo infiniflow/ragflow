@@ -25,7 +25,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 )
 
 // OllamaModel implements ModelDriver for Ollama AI
@@ -33,20 +32,34 @@ type OllamaModel struct {
 	baseModel BaseModel
 }
 
+// contentToText extracts a plain-text string from a Message.Content value.
+// Content may be a raw string or an OpenAI-style multimodal array
+// ([]interface{} where each element is {"type": "text", "text": "..."}).
+// The first non-empty "text" value found is returned; empty string on no match.
+func contentToText(content interface{}) string {
+	switch c := content.(type) {
+	case string:
+		return c
+	case []interface{}:
+		for _, item := range c {
+			if part, ok := item.(map[string]interface{}); ok {
+				if text, ok := part["text"].(string); ok && text != "" {
+					return text
+				}
+			}
+		}
+	}
+	return ""
+}
+
 // NewOllamaModel creates a new Ollama AI model instance
 func NewOllamaModel(baseURL map[string]string, urlSuffix URLSuffix) *OllamaModel {
 	return &OllamaModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
-			httpClient: &http.Client{
-				Transport: &http.Transport{
-					MaxIdleConns:        100,
-					MaxIdleConnsPerHost: 10,
-					IdleConnTimeout:     90 * time.Second,
-					DisableCompression:  false,
-				},
-			},
+			BaseURL:          baseURL,
+			URLSuffix:        urlSuffix,
+			AllowEmptyAPIKey: true,
+			httpClient:       NewDriverHTTPClient(),
 		},
 	}
 }
@@ -79,15 +92,9 @@ func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, api
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
-		arr, _ := msg.Content.([]interface{})
-
-		first, _ := arr[0].(map[string]interface{})
-
-		text, _ := first["text"].(string)
-
 		apiMessages[i] = map[string]interface{}{
 			"role":    msg.Role,
-			"content": text,
+			"content": contentToText(msg.Content),
 		}
 	}
 
@@ -177,10 +184,7 @@ func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, api
 		return nil, fmt.Errorf("failed to parse response: content not found")
 	}
 
-	reasonContent, ok := message["thinking"].(string)
-	if !ok {
-		return nil, fmt.Errorf("failed to parse response: thinking not found")
-	}
+	reasonContent, _ := message["thinking"].(string)
 
 	chatResponse := &ChatResponse{
 		Answer:        &content,
@@ -208,15 +212,9 @@ func (o *OllamaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	// Convert messages to API format (supporting multimodal content)
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
-		arr, _ := msg.Content.([]interface{})
-
-		first, _ := arr[0].(map[string]interface{})
-
-		text, _ := first["text"].(string)
-
 		apiMessages[i] = map[string]interface{}{
 			"role":    msg.Role,
-			"content": text,
+			"content": contentToText(msg.Content),
 		}
 	}
 
@@ -380,7 +378,9 @@ func (o *OllamaModel) Embed(modelName *string, texts []string, apiConfig *APICon
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -458,7 +458,7 @@ func (o *OllamaModel) ParseFile(modelName *string, content []byte, url *string, 
 	return nil, fmt.Errorf("%s, no such method", o.Name())
 }
 
-func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 
 	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -512,11 +512,11 @@ func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	// convert result["data"] to []map[string]interface{}
-	models := make([]string, 0)
+	models := make([]ListModelResponse, 0)
 	for _, model := range result["models"].([]interface{}) {
 		modelMap := model.(map[string]interface{})
 		modelName := modelMap["name"].(string)
-		models = append(models, modelName)
+		models = append(models, ListModelResponse{Name: modelName})
 	}
 
 	return models, nil

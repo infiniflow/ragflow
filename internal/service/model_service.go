@@ -184,7 +184,7 @@ func (m *ModelProviderService) DeleteModelProvider(providerName, userID string) 
 	return common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) ListSupportedModels(providerName, instanceName, userID string) ([]string, error) {
+func (m *ModelProviderService) ListSupportedModels(providerName, instanceName, userID string) ([]map[string]interface{}, error) {
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -239,7 +239,34 @@ func (m *ModelProviderService) ListSupportedModels(providerName, instanceName, u
 		}
 	}
 
-	return driver.ListModels(apiConfig)
+	modelList, err := driver.ListModels(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	var result []map[string]interface{}
+	for _, model := range modelList {
+		result = append(result, map[string]interface{}{
+			"name":          model.Name,
+			"max_dimension": model.MaxDimension,
+			"dimensions":    model.Dimensions,
+			"max_tokens":    model.MaxTokens,
+			"model_types":   model.ModelTypes,
+			"thinking":      model.Thinking,
+		})
+		modelData := map[string]interface{}{
+			"name":        model.Name,
+			"dimension":   model.MaxDimension,
+			"max_tokens":  model.MaxTokens,
+			"model_types": model.ModelTypes,
+			"thinking":    model.Thinking,
+		}
+		if len(model.Dimensions) > 0 {
+			modelData["dimensions"] = model.Dimensions
+		}
+		result = append(result, modelData)
+	}
+	return result, nil
 }
 
 func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName, apiKey, baseURL, region, userID string) (common.ErrorCode, error) {
@@ -848,7 +875,7 @@ func (m *ModelProviderService) UpdateModelStatus(providerName, instanceName, mod
 			return common.CodeServerError, errors.New("fail to get UUID")
 		}
 
-		var modelSchema *entity.Model
+		var modelSchema *modelModule.Model
 		modelSchema, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 		if err != nil {
 			return common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
@@ -920,7 +947,7 @@ func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceNam
 			return nil, common.CodeNotFound, errors.New("provider not found")
 		}
 
-		var model *entity.Model = nil
+		var model *modelModule.Model = nil
 		model, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 		if err != nil {
 			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
@@ -1028,7 +1055,7 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 			return common.CodeNotFound, err
 		}
 
-		var model *entity.Model = nil
+		var model *modelModule.Model = nil
 		model, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 		if err != nil {
 			return common.CodeNotFound, err
@@ -1093,6 +1120,36 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 	return common.CodeServerError, errors.New("model is disabled")
 }
 
+func validateEmbeddingDimension(model *modelModule.Model, requested int) error {
+	if requested <= 0 || model == nil {
+		return nil
+	}
+
+	if len(model.Dimensions) > 0 {
+		for _, dim := range model.Dimensions {
+			if dim == requested {
+				return nil
+			}
+		}
+		return fmt.Errorf(
+			"dimension %d is not supported by model %s, supported dimensions: %v",
+			requested,
+			model.Name,
+			model.Dimensions,
+		)
+	}
+	if model.MaxDimension != nil && requested > *model.MaxDimension {
+		return fmt.Errorf(
+			"dimension %d is not supported by model %s, max dimension: %d",
+			requested,
+			model.Name,
+			*model.MaxDimension,
+		)
+	}
+
+	return nil
+}
+
 // EmbedText sends texts to the embedding model
 func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, userID string, texts []string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.EmbeddingConfig) ([]modelModule.EmbeddingData, common.ErrorCode, error) {
 	if apiConfig == nil {
@@ -1132,7 +1189,7 @@ func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, 
 			return nil, common.CodeNotFound, errors.New("provider not found")
 		}
 
-		var model *entity.Model = nil
+		var model *modelModule.Model = nil
 		model, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 		if err != nil {
 			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
@@ -1151,6 +1208,10 @@ func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, 
 		region := extra["region"]
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
+
+		if err := validateEmbeddingDimension(model, modelConfig.Dimension); err != nil {
+			return nil, common.CodeBadRequest, err
+		}
 
 		var response []modelModule.EmbeddingData
 		response, err = providerInfo.ModelDriver.Embed(&modelName, texts, apiConfig, modelConfig)
@@ -1187,6 +1248,11 @@ func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, 
 		newProviderInfo, err := newModelDriverForBaseURL(providerInfo.ModelDriver, providerName, region, extra["base_url"])
 		if err != nil {
 			return nil, common.CodeServerError, err
+		}
+
+		modelSchema, _ := dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+		if err := validateEmbeddingDimension(modelSchema, modelConfig.Dimension); err != nil {
+			return nil, common.CodeBadRequest, err
 		}
 
 		var response []modelModule.EmbeddingData
@@ -1243,7 +1309,7 @@ func (m *ModelProviderService) RerankDocument(providerName, instanceName, modelN
 			return nil, common.CodeNotFound, errors.New("provider not found")
 		}
 
-		var model *entity.Model = nil
+		var model *modelModule.Model = nil
 		model, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 		if err != nil {
 			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
@@ -1348,7 +1414,7 @@ func (m *ModelProviderService) TranscribeAudio(providerName, instanceName, model
 			return nil, common.CodeNotFound, errors.New("provider not found")
 		}
 
-		var model *entity.Model = nil
+		var model *modelModule.Model = nil
 		model, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 		if err != nil {
 			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
@@ -1452,7 +1518,7 @@ func (m *ModelProviderService) TranscribeAudioStream(providerName, instanceName,
 			return common.CodeNotFound, err
 		}
 
-		var model *entity.Model = nil
+		var model *modelModule.Model = nil
 		model, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 		if err != nil {
 			return common.CodeNotFound, err
@@ -1553,7 +1619,7 @@ func (m *ModelProviderService) AudioSpeech(providerName, instanceName, modelName
 			return nil, common.CodeNotFound, errors.New("provider not found")
 		}
 
-		var model *entity.Model = nil
+		var model *modelModule.Model = nil
 		model, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 		if err != nil {
 			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
@@ -1656,7 +1722,7 @@ func (m *ModelProviderService) AudioSpeechStream(providerName, instanceName, mod
 			return common.CodeNotFound, err
 		}
 
-		var model *entity.Model = nil
+		var model *modelModule.Model = nil
 		model, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 		if err != nil {
 			return common.CodeNotFound, err
@@ -1757,7 +1823,7 @@ func (m *ModelProviderService) OCRFile(providerName, instanceName, modelName, us
 			return nil, common.CodeNotFound, errors.New("provider not found")
 		}
 
-		var model *entity.Model = nil
+		var model *modelModule.Model = nil
 		model, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 		if err != nil {
 			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
@@ -1867,7 +1933,7 @@ func (m *ModelProviderService) ParseFile(providerName, instanceName, modelName, 
 			return nil, common.CodeNotFound, errors.New("provider not found")
 		}
 
-		var model *entity.Model = nil
+		var model *modelModule.Model = nil
 		model, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 		if err != nil {
 			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
@@ -1955,6 +2021,15 @@ func (m *ModelProviderService) GetChatModel(tenantID, compositeModelName string)
 		return nil, err
 	}
 	return modelModule.NewChatModel(driver, &modelName, apiConfig), nil
+}
+
+// GetRerankModel returns a RerankModel wrapper for the given tenant
+func (m *ModelProviderService) GetRerankModel(tenantID, compositeModelName string) (*modelModule.RerankModel, error) {
+	driver, modelName, apiConfig, _, err := m.getModelConfig(tenantID, compositeModelName)
+	if err != nil {
+		return nil, err
+	}
+	return modelModule.NewRerankModel(driver, &modelName, apiConfig), nil
 }
 
 type AddModelRequest struct {
@@ -2115,7 +2190,7 @@ func (m *ModelProviderService) AddModel(request *AddModelRequest, userID string)
 		}
 		seen[duplicateKey] = struct{}{}
 
-		_, err := m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
+		_, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
 		if err == nil {
 			return common.CodeConflict, fmt.Errorf("model already exists: %s", modelName)
 		}
@@ -2123,7 +2198,8 @@ func (m *ModelProviderService) AddModel(request *AddModelRequest, userID string)
 			return common.CodeServerError, err
 		}
 
-		modelID, err := utility.GenerateUUID1()
+		var modelID string
+		modelID, err = utility.GenerateUUID1()
 		if err != nil {
 			return common.CodeServerError, errors.New("fail to get UUID")
 		}
@@ -2136,7 +2212,8 @@ func (m *ModelProviderService) AddModel(request *AddModelRequest, userID string)
 			extra["thinking"] = *model.Thinking
 		}
 
-		extraByte, err := json.Marshal(extra)
+		var extraByte []byte
+		extraByte, err = json.Marshal(extra)
 		if err != nil {
 			return common.CodeServerError, errors.New("fail to marshal extra")
 		}
@@ -2152,7 +2229,7 @@ func (m *ModelProviderService) AddModel(request *AddModelRequest, userID string)
 		})
 	}
 
-	if err := m.modelDAO.CreateBatch(models); err != nil {
+	if err = m.modelDAO.CreateBatch(models); err != nil {
 		return common.CodeServerError, err
 	}
 
@@ -2216,7 +2293,11 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(tenantID strin
 		apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region}
 		maxTokens := 0
 		if mi, _ := dao.GetModelProviderManager().GetModelByName("Builtin", pureModelName); mi != nil {
-			maxTokens = mi.MaxTokens
+			if mi.MaxTokens == nil {
+				maxTokens = 0
+			} else {
+				maxTokens = *mi.MaxTokens
+			}
 		}
 		return builtinDriver, pureModelName, apiConfig, maxTokens, nil
 	}
@@ -2273,7 +2354,11 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(tenantID strin
 		}
 		maxTokens := 0
 		if mi, _ := dao.GetModelProviderManager().GetModelByName(providerName, pureModelName); mi != nil {
-			maxTokens = mi.MaxTokens
+			if mi.MaxTokens == nil {
+				maxTokens = 0
+			} else {
+				maxTokens = *mi.MaxTokens
+			}
 		}
 		apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
 		return driver, modelObj.ModelName, apiConfig, maxTokens, nil
@@ -2307,7 +2392,7 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(tenantID strin
 	if targetProvider == nil {
 		return nil, "", nil, 0, fmt.Errorf("model provider config not found: %s", providerName)
 	}
-	var llmInfo *entity.Model
+	var llmInfo *modelModule.Model
 	for i := range targetProvider.Models {
 		if strings.EqualFold(targetProvider.Models[i].Name, pureModelName) {
 			llmInfo = targetProvider.Models[i]
@@ -2322,7 +2407,11 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(tenantID strin
 		return nil, "", nil, 0, driverErr
 	}
 	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
-	return driver, llmInfo.Name, apiConfig, llmInfo.MaxTokens, nil
+	maxTokens := 0
+	if llmInfo.MaxTokens != nil {
+		maxTokens = *llmInfo.MaxTokens
+	}
+	return driver, llmInfo.Name, apiConfig, maxTokens, nil
 }
 
 // getModelConfig returns the model driver, model name, API config, and max tokens for a model
@@ -2379,7 +2468,11 @@ func (m *ModelProviderService) getModelConfig(tenantID, compositeModelName strin
 	modelInfo, err := dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 	maxTokens := 0
 	if err == nil && modelInfo != nil {
-		maxTokens = modelInfo.MaxTokens
+		if modelInfo.MaxTokens == nil {
+			maxTokens = 0
+		} else {
+			maxTokens = *modelInfo.MaxTokens
+		}
 	}
 
 	// For Builtin provider, use empty APIKey and skip tenant_model lookup
@@ -2407,4 +2500,20 @@ func (m *ModelProviderService) getModelConfig(tenantID, compositeModelName strin
 
 	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region}
 	return providerInfo.ModelDriver, modelName, apiConfig, maxTokens, nil
+}
+
+// getModelConfig returns the model driver, model name, API config, and max tokens for a model
+func (m *ModelProviderService) ListAllModels(pageIndex, pageSize int) ([]map[string]interface{}, error) {
+	models, err := dao.GetModelProviderManager().ListAllModels()
+	if err != nil {
+		return nil, err
+	}
+	if pageSize > 0 && pageIndex >= 0 && pageIndex*pageSize < len(models) {
+		return models[pageIndex*pageSize : (pageIndex+1)*pageSize], nil
+	}
+	return models, nil
+}
+
+func (m *ModelProviderService) ShowModel(modelName string) (*modelModule.Model, error) {
+	return dao.GetModelProviderManager().GetModelByNameOrAlias(modelName), nil
 }

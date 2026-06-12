@@ -1436,12 +1436,12 @@ class _ThinkStreamState:
     def __init__(self) -> None:
         self.full_text = ""
         self.last_idx = 0
-        self.endswith_think = False
-        self.last_full = ""
         self.last_model_full = ""
         self.in_think = False
-        self.buffer = ""
-        self.post_think_text = ""
+        self.close_pending = False
+        self.pending_after_close = ""
+        self.think_buffer = ""
+        self.answer_buffer = ""
 
 
 def _extract_visible_answer(text: str) -> str:
@@ -1457,38 +1457,35 @@ def _extract_visible_answer(text: str) -> str:
     return f"<think>{thought}</think>{answer}"
 
 
-def _next_think_delta(state: _ThinkStreamState) -> str:
-    full_text = state.full_text
-    if full_text == state.last_full:
-        return ""
-    state.last_full = full_text
-    delta_ans = full_text[state.last_idx :]
-
-    if delta_ans.find("<think>") == 0:
-        state.last_idx += len("<think>")
-        return "<think>"
-    if delta_ans.find("<think>") > 0:
-        delta_text = full_text[state.last_idx : state.last_idx + delta_ans.find("<think>")]
-        state.last_idx += delta_ans.find("<think>")
-        return delta_text
-    if delta_ans.endswith("</think>"):
-        state.endswith_think = True
-    elif state.endswith_think:
-        state.endswith_think = False
-        remainder = delta_ans[len("</think>") :]
-        if remainder:
-            state.post_think_text = remainder
-        state.last_idx = len(full_text)
-        return "</think>"
-
-    state.last_idx = len(full_text)
-    if full_text.endswith("</think>"):
-        state.last_idx -= len("</think>")
-    return re.sub(r"(<think>|</think>)", "", delta_ans)
-
-
 async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
     state = _ThinkStreamState()
+
+    def _emit_text(section: str, text: str):
+        if not text:
+            return None
+        if section == "think":
+            return text
+        state.answer_buffer += text
+        if num_tokens_from_string(state.answer_buffer) >= min_tokens:
+            out = state.answer_buffer
+            state.answer_buffer = ""
+            return out
+        return None
+
+    def _flush_think_buffer():
+        if not state.think_buffer:
+            return None
+        out = state.think_buffer
+        state.think_buffer = ""
+        return out
+
+    def _flush_answer_buffer():
+        if not state.answer_buffer:
+            return None
+        out = state.answer_buffer
+        state.answer_buffer = ""
+        return out
+
     async for chunk in stream_iter:
         if not chunk:
             continue
@@ -1501,40 +1498,96 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
         if not new_part:
             continue
         state.full_text += new_part
-        delta = _next_think_delta(state)
-        if not delta:
-            continue
-        if delta in ("<think>", "</think>"):
-            if delta == "<think>" and state.in_think:
-                continue
-            if delta == "</think>" and not state.in_think:
-                continue
-            if state.buffer:
-                yield ("text", state.buffer, state)
-                state.buffer = ""
-            state.in_think = delta == "<think>"
-            yield ("marker", delta, state)
-            if delta == "</think>" and state.post_think_text:
-                state.buffer += state.post_think_text
-                state.post_think_text = ""
-                if num_tokens_from_string(state.buffer) >= min_tokens:
-                    yield ("text", state.buffer, state)
-                    state.buffer = ""
-            continue
-        state.buffer += delta
-        if num_tokens_from_string(state.buffer) < min_tokens:
-            continue
-        yield ("text", state.buffer, state)
-        state.buffer = ""
+        pending = new_part
 
-    if state.buffer:
-        yield ("text", state.buffer, state)
-        state.buffer = ""
-    if state.post_think_text:
-        yield ("text", state.post_think_text, state)
-        state.post_think_text = ""
-    if state.endswith_think:
+        if state.close_pending and "</think>" not in pending:
+            state.close_pending = False
+            think_piece = _flush_think_buffer()
+            if think_piece is not None:
+                yield ("text", think_piece, state)
+            state.in_think = False
+            yield ("marker", "</think>", state)
+            if state.pending_after_close:
+                answer_piece = state.pending_after_close
+                state.pending_after_close = ""
+                out = _emit_text("answer", answer_piece)
+                if out is not None:
+                    yield ("text", out, state)
+            answer_piece = re.sub(r"</?think>", "", pending or "")
+            if answer_piece:
+                out = _emit_text("answer", answer_piece)
+                if out is not None:
+                    yield ("text", out, state)
+            continue
+
+        while pending:
+            open_idx = pending.find("<think>")
+            close_idx = pending.find("</think>")
+
+            if open_idx == -1 and close_idx == -1:
+                piece = re.sub(r"</?think>", "", pending or "")
+                if piece:
+                    section = "think" if state.in_think else "answer"
+                    out = _emit_text(section, piece)
+                    if out is not None:
+                        yield ("text", out, state)
+                break
+
+            if open_idx != -1 and (close_idx == -1 or open_idx < close_idx):
+                before = pending[:open_idx]
+                if before:
+                    piece = re.sub(r"</?think>", "", before or "")
+                    section = "think" if state.in_think else "answer"
+                    out = _emit_text(section, piece)
+                    if out is not None:
+                        yield ("text", out, state)
+                pending = pending[open_idx + len("<think>") :]
+                if not state.in_think:
+                    answer_piece = _flush_answer_buffer()
+                    if answer_piece is not None:
+                        yield ("text", answer_piece, state)
+                    think_piece = _flush_think_buffer()
+                    if think_piece is not None:
+                        yield ("text", think_piece, state)
+                    state.in_think = True
+                    yield ("marker", "<think>", state)
+                continue
+
+            before = pending[:close_idx]
+            after = pending[close_idx + len("</think>") :]
+            if before:
+                piece = re.sub(r"</?think>", "", before or "")
+                section = "think" if state.in_think else "answer"
+                out = _emit_text(section, piece)
+                if out is not None:
+                    yield ("text", out, state)
+            after_visible = re.sub(r"</?think>", "", after or "")
+            if after_visible.strip():
+                think_piece = _flush_think_buffer()
+                if think_piece is not None:
+                    yield ("text", think_piece, state)
+                state.in_think = False
+                yield ("marker", "</think>", state)
+                pending = after_visible
+                continue
+            state.close_pending = True
+            if after_visible:
+                state.pending_after_close += after_visible
+            pending = ""
+            break
+
+    if state.think_buffer:
+        yield ("text", state.think_buffer, state)
+        state.think_buffer = ""
+    if state.close_pending:
+        state.in_think = False
         yield ("marker", "</think>", state)
+    if state.answer_buffer:
+        yield ("text", state.answer_buffer, state)
+        state.answer_buffer = ""
+    if state.pending_after_close:
+        yield ("text", state.pending_after_close, state)
+        state.pending_after_close = ""
 
 
 async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}, search_id=None):
@@ -1547,6 +1600,14 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     include_reference_metadata, metadata_fields = _resolve_reference_metadata(search_config)
 
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
+    if not kbs:
+        if not kb_ids:
+            error = "**ERROR**: No KB selected"
+        else:
+            error = "**ERROR**: The selected KB is not valid"
+        yield {"answer": error, "reference": {}, "final": True}
+        return
+
     embedding_list = list(set([kb.embd_id for kb in kbs]))
 
     is_knowledge_graph = all([kb.parser_id == ParserType.KG for kb in kbs])
