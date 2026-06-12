@@ -48,8 +48,11 @@ redis:
   username: ''
   password: 'infini_rag_flow'
   host: 'localhost:6379'
+nats:
+  host: "0.0.0.0"
+  port: 4222
 task_executor:
-  message_queue_type: 'redis'
+  message_queue_type: 'nats'
 user_default_llm:
   default_models:
     embedding_model:

@@ -139,3 +139,14 @@ func PairwiseSum(xs []float64) float64 {
 	}
 	return xs[0]
 }
+
+func GetInt(value interface{}) (int, bool) {
+	switch v := value.(type) {
+	case int:
+		return v, true
+	case float64:
+		return int(v), true
+	default:
+		return 0, false
+	}
+}

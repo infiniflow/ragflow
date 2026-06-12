@@ -40,9 +40,9 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/handler"
-	"ragflow/internal/service/chunk"
 	"ragflow/internal/router"
 	"ragflow/internal/service"
+	"ragflow/internal/service/chunk"
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/tokenizer"
 )
@@ -129,6 +129,10 @@ func main() {
 
 	if err := storage.InitStorageFactory(); err != nil {
 		common.Fatal("Failed to initialize storage factory", zap.Error(err))
+	}
+
+	if err := engine.InitMessageQueueEngine(config.TaskExecutor.MessageQueueType); err != nil {
+		common.Error("Failed to initialize message queue engine", err)
 	}
 
 	// Initialize server variables (runtime variables that can change during operation)
@@ -288,19 +292,19 @@ func startServer(config *server.Config) {
 	}
 
 	// Initialize and start heartbeat reporter to admin server
-	heartbeatService := service.NewHeartbeatSender(
+	service.AdminServiceClient = service.NewAdminClient(
 		common.Logger,
 		common.ServerTypeAPI,
 		fmt.Sprintf("ragflow-server-%d", config.Server.Port),
 		localIP,
 		config.Server.Port,
 	)
-	if err = heartbeatService.InitHTTPClient(); err != nil {
+	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
 		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
 	} else {
 		// Start heartbeat reporter with 30 seconds interval
 		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", 3*time.Second, func() {
-			if err = heartbeatService.SendHeartbeat(); err == nil {
+			if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
 				local.SetAdminStatus(0, "")
 			} else {
 				local.SetAdminStatus(1, err.Error())

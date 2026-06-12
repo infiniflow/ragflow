@@ -119,6 +119,20 @@ func (m *BaseModel) BeforeUpdate(tx *gorm.DB) error {
 	return nil
 }
 
+func (m *BaseModel) UpdateCreateDateAndTime() error {
+	timestamp, dateTime := autoModelTime()
+	m.CreateTime = &timestamp
+	m.UpdateDate = &dateTime
+	return nil
+}
+
+func (m *BaseModel) UpdateUpdateDateAndTime() error {
+	timestamp, dateTime := autoModelTime()
+	m.UpdateTime = &timestamp
+	m.UpdateDate = &dateTime
+	return nil
+}
+
 // JSONMap is a map type that can store JSON data
 type JSONMap map[string]interface{}
 
