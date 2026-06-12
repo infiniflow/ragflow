@@ -155,7 +155,7 @@ dependencies = [
     #    "xxhash>=3.5.0,<4.0.0",
     #    "trio>=0.17.0,<0.29.0",
     #    "click>=8.1.8",
-    "litellm~=1.88.1,!=1.82.7,!=1.82.8",
+    "litellm==1.88.0",
     #    "pip>=25.2",
     #    "imageio-ffmpeg>=0.6.0",
     #    "cryptography==46.0.3",
