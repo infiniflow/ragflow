@@ -23,7 +23,7 @@ from common.connection_utils import timeout
 try:
     from scholarly import scholarly
     _SCHOLARLY_IMPORT_ERROR = None
-except Exception as e:  # pragma: no cover - depends on third-party package compatibility
+except ImportError as e:  # pragma: no cover - depends on installed optional dependency state
     scholarly = None
     _SCHOLARLY_IMPORT_ERROR = e
 
@@ -73,7 +73,8 @@ class GoogleScholar(ToolBase, ABC):
     def _require_scholarly():
         if scholarly is None:
             raise ImportError(
-                "scholarly is unavailable or incompatible with the current environment."
+                "scholarly is unavailable or incompatible with the current environment. "
+                "Please install a compatible scholarly version."
             ) from _SCHOLARLY_IMPORT_ERROR
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12)))
