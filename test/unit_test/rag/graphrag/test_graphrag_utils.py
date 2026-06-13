@@ -15,7 +15,6 @@
 #
 
 import json
-from types import SimpleNamespace
 
 import networkx as nx
 import numpy as np
@@ -573,49 +572,92 @@ class TestNNeighbor:
 
 @pytest.mark.p1
 class TestGraphNodeToChunk:
-    """Tests for graph_node_to_chunk field population.
+    """Tests for build_node_chunk field population.
 
     Regression coverage for the dropped ranking fields: the entity chunk must
     carry ``rank_flt`` (pagerank) and ``n_hop_with_weight`` so KGSearch's
     ``pagerank * sim`` ranking and n-hop enrichment are not permanently dead.
+    The vector is filled separately by embed_graph_chunks, so the builder must
+    not embed.
     """
 
-    @pytest.fixture
-    def fake_embd(self, monkeypatch):
-        # Skip the real encode/Redis path by returning a cached embedding.
-        monkeypatch.setattr(graphrag_utils, "get_embed_cache", lambda *_a, **_k: np.array([0.1, 0.2, 0.3]))
-        return graphrag_utils
-
-    @pytest.mark.asyncio
-    async def test_writes_rank_flt_from_pagerank(self, fake_embd):
-        chunks = []
+    def test_writes_rank_flt_from_pagerank(self):
         meta = {"entity_type": "PERSON", "description": "desc", "source_id": ["s1"], "pagerank": 0.42}
-        await fake_embd.graph_node_to_chunk("kb1", SimpleNamespace(llm_name="m"), "ALICE", meta, chunks)
-        assert len(chunks) == 1
-        assert chunks[0]["rank_flt"] == pytest.approx(0.42)
+        chunk, cache_key, embed_text = graphrag_utils.build_node_chunk("kb1", "ALICE", meta)
+        assert chunk["rank_flt"] == pytest.approx(0.42)
+        assert cache_key == "ALICE"
+        assert embed_text == "ALICE"
 
-    @pytest.mark.asyncio
-    async def test_rank_flt_defaults_to_zero_without_pagerank(self, fake_embd):
-        chunks = []
+    def test_rank_flt_defaults_to_zero_without_pagerank(self):
         meta = {"entity_type": "PERSON", "description": "desc", "source_id": ["s1"]}
-        await fake_embd.graph_node_to_chunk("kb1", SimpleNamespace(llm_name="m"), "ALICE", meta, chunks)
-        assert chunks[0]["rank_flt"] == 0.0
+        chunk, _, _ = graphrag_utils.build_node_chunk("kb1", "ALICE", meta)
+        assert chunk["rank_flt"] == 0.0
 
-    @pytest.mark.asyncio
-    async def test_writes_n_hop_with_weight(self, fake_embd):
-        chunks = []
+    def test_writes_n_hop_with_weight(self):
         meta = {"entity_type": "PERSON", "description": "desc", "source_id": ["s1"], "pagerank": 0.1}
         nhop = [{"path": ("ALICE", "BOB"), "weights": [3]}]
-        await fake_embd.graph_node_to_chunk("kb1", SimpleNamespace(llm_name="m"), "ALICE", meta, chunks, nhop)
-        stored = json.loads(chunks[0]["n_hop_with_weight"])
+        chunk, _, _ = graphrag_utils.build_node_chunk("kb1", "ALICE", meta, nhop)
+        stored = json.loads(chunk["n_hop_with_weight"])
         assert stored == [{"path": ["ALICE", "BOB"], "weights": [3]}]
 
-    @pytest.mark.asyncio
-    async def test_n_hop_defaults_to_empty_list(self, fake_embd):
-        chunks = []
+    def test_n_hop_defaults_to_empty_list(self):
         meta = {"entity_type": "PERSON", "description": "desc", "source_id": ["s1"]}
-        await fake_embd.graph_node_to_chunk("kb1", SimpleNamespace(llm_name="m"), "ALICE", meta, chunks)
-        assert json.loads(chunks[0]["n_hop_with_weight"]) == []
+        chunk, _, _ = graphrag_utils.build_node_chunk("kb1", "ALICE", meta)
+        assert json.loads(chunk["n_hop_with_weight"]) == []
+
+    def test_builder_does_not_embed(self):
+        meta = {"entity_type": "PERSON", "description": "desc", "source_id": ["s1"]}
+        chunk, _, _ = graphrag_utils.build_node_chunk("kb1", "ALICE", meta)
+        assert not any(k.startswith("q_") and k.endswith("_vec") for k in chunk)
+
+
+@pytest.mark.p1
+class TestEmbedGraphChunks:
+    """embed_graph_chunks must batch encode() calls (one per group, not one per
+    item), honor the embedding cache, and map each vector back to its own chunk
+    (issue #15921)."""
+
+    class _FakeEmbd:
+        llm_name = "m"
+
+        def __init__(self):
+            self.calls = []
+
+        def encode(self, texts):
+            self.calls.append(list(texts))
+            # 2-dim vector per text; first component encodes the text length so
+            # we can assert each vector lands on the right chunk.
+            return np.array([[float(len(t)), 0.0] for t in texts]), len(texts)
+
+    @pytest.mark.asyncio
+    async def test_batches_encode_calls(self, monkeypatch):
+        monkeypatch.setattr(graphrag_utils, "get_embed_cache", lambda *_a, **_k: None)
+        monkeypatch.setattr(graphrag_utils, "set_embed_cache", lambda *_a, **_k: None)
+        embd = self._FakeEmbd()
+
+        chunks = [{"id": str(i)} for i in range(5)]
+        pending = [(chunks[i], f"k{i}", f"text{i}") for i in range(5)]
+        await graphrag_utils.embed_graph_chunks(embd, pending, batch_size=2)
+
+        # 5 misses at batch_size 2 -> 3 encode calls (2, 2, 1), not 5.
+        assert [len(c) for c in embd.calls] == [2, 2, 1]
+        for i, ch in enumerate(chunks):
+            assert ch["q_2_vec"][0] == pytest.approx(float(len(f"text{i}")))
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_skips_encode(self, monkeypatch):
+        cached = {"k0": np.array([9.0, 9.0])}
+        monkeypatch.setattr(graphrag_utils, "get_embed_cache", lambda _n, key: cached.get(key))
+        monkeypatch.setattr(graphrag_utils, "set_embed_cache", lambda *_a, **_k: None)
+        embd = self._FakeEmbd()
+
+        chunks = [{"id": "0"}, {"id": "1"}]
+        pending = [(chunks[0], "k0", "text0"), (chunks[1], "k1", "text1")]
+        await graphrag_utils.embed_graph_chunks(embd, pending, batch_size=8)
+
+        assert embd.calls == [["text1"]]  # only the cache miss is encoded
+        assert chunks[0]["q_2_vec"][0] == pytest.approx(9.0)  # from cache
+        assert chunks[1]["q_2_vec"][0] == pytest.approx(float(len("text1")))  # from encode
 
 
 class TestFlatUniqList:
