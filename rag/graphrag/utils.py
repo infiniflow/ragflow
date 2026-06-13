@@ -460,7 +460,6 @@ async def embed_graph_chunks(embd_mdl, pending, callback=None, label="", batch_s
     so a batch-capable backend makes one ``encode`` call per group instead of one
     per node/edge. Mutates the chunk dicts in place.
     """
-    global chat_limiter
     enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
 
     misses = []
