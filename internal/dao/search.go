@@ -49,12 +49,13 @@ func (dao *SearchDAO) ListByTenantIDs(tenantIDs []string, userID string, page, p
 		query = query.Where("LOWER(search.name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
 	}
 
-	// Apply ordering
+	// Apply ordering (allowlist only; qualify columns for user JOIN)
 	orderDirection := "ASC"
 	if desc {
 		orderDirection = "DESC"
 	}
-	query = query.Order(orderby + " " + orderDirection)
+	orderCol := sanitizeSearchListOrderBy(orderby)
+	query = query.Order(orderCol + " " + orderDirection)
 
 	// Count total
 	if err := query.Count(&total).Error; err != nil {
@@ -98,12 +99,13 @@ func (dao *SearchDAO) ListByOwnerIDs(ownerIDs []string, userID string, orderby s
 	// Filter by owner IDs (additional filter to ensure tenant_id is in ownerIDs)
 	query = query.Where("search.tenant_id IN ?", ownerIDs)
 
-	// Apply ordering
+	// Apply ordering (allowlist only; qualify columns for user JOIN)
 	orderDirection := "ASC"
 	if desc {
 		orderDirection = "DESC"
 	}
-	query = query.Order(orderby + " " + orderDirection)
+	orderCol := sanitizeSearchListOrderBy(orderby)
+	query = query.Order(orderCol + " " + orderDirection)
 
 	// Get all matching records
 	if err := query.Find(&searches).Error; err != nil {

@@ -59,12 +59,13 @@ func (dao *FileDAO) GetByPfID(tenantID, pfID string, page, pageSize int, orderby
 		return nil, 0, err
 	}
 
-	// Apply ordering
+	// Apply ordering (allowlist only; never concatenate raw user input)
 	orderDirection := "ASC"
 	if desc {
 		orderDirection = "DESC"
 	}
-	query = query.Order(orderby + " " + orderDirection)
+	orderCol := sanitizeFileListOrderBy(orderby)
+	query = query.Order(orderCol + " " + orderDirection)
 
 	// Apply pagination
 	if page > 0 && pageSize > 0 {
