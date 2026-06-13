@@ -38,6 +38,9 @@ class VariableAssignerParam(ComponentParamBase):
             }
         }
 
+_OPERATORS_WITHOUT_PARAMETER = {"clear", "remove_first", "remove_last"}
+
+
 class VariableAssigner(ComponentBase,ABC):
     component_name = "VariableAssigner"
 
@@ -47,11 +50,14 @@ class VariableAssigner(ComponentBase,ABC):
             return
         else:
             for item in self._param.variables:
-                if any([not item.get("variable"), not item.get("operator"), not item.get("parameter")]):
+                if not item.get("variable") or not item.get("operator"):
+                    raise ValueError("Variable is not complete.")
+                operator = item.get("operator")
+                if operator not in _OPERATORS_WITHOUT_PARAMETER and item.get("parameter") is None:
                     raise ValueError("Variable is not complete.")
                 variable=item["variable"]
                 operator=item["operator"]
-                parameter=item["parameter"]
+                parameter=item.get("parameter")
                 variable_value=self._canvas.get_variable_value(variable)
                 new_variable=self._operate(variable_value,operator,parameter)
                 self._canvas.set_variable_value(variable, new_variable)
