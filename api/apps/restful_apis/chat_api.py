@@ -460,6 +460,29 @@ async def list_chats():
         items_per_page = validate_rest_api_page_size(int(request.args.get("page_size", 0)))
 
         if owner_ids:
+            # Authorize: every requested owner_id must be a tenant the current
+            # user belongs to (or the user's own personal tenant). Without this
+            # check the SQL ORs ``tenant_id IN owner_ids`` with the user's id
+            # and the Python filter keeps only the requested tenants, so a
+            # client can enumerate any tenant's chats just by guessing its id.
+            # Restores the access control from #14775, which was reverted in
+            # #15698 — see #15741.
+            tenants = await thread_pool_exec(
+                TenantService.get_joined_tenants_by_user_id, current_user.id
+            )
+            authorized_owner_ids = {member["tenant_id"] for member in tenants}
+            authorized_owner_ids.add(current_user.id)
+            unauthorized = set(owner_ids) - authorized_owner_ids
+            if unauthorized:
+                logging.warning(
+                    "Rejected list_chats: user=%s unauthorized owner_ids=%s",
+                    current_user.id, sorted(unauthorized),
+                )
+                return get_json_result(
+                    data=False,
+                    message="Only authorized owner_ids can be queried.",
+                    code=RetCode.OPERATING_ERROR,
+                )
             chats, total = await thread_pool_exec(
                 DialogService.get_by_tenant_ids,
                 owner_ids, current_user.id, 0, 0, orderby, desc, keywords, **exact_filters,
