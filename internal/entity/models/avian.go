@@ -321,7 +321,14 @@ func (a *AvianModel) CheckConnection(apiConfig *APIConfig) error {
 	return err
 }
 
-func (a *AvianModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+// Embed is unsupported: Avian documents only chat completions at
+// https://avian.io/docs/ and POST /v1/embeddings returns HTTP 404.
+func (a *AvianModel) Embed(
+	modelName *string,
+	texts []string,
+	apiConfig *APIConfig,
+	embeddingConfig *EmbeddingConfig,
+) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
