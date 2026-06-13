@@ -13,21 +13,29 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+from api.exceptions import RAGFlowError, NotFoundError, ValidationError, RetryableError  # noqa: F401 — re-exported for callers
+
+
 class TaskCanceledException(Exception):
     def __init__(self, msg):
         self.msg = msg
 
 
-class ArgumentException(Exception):
+class ArgumentException(ValidationError):
     def __init__(self, msg):
+        super().__init__(msg)
         self.msg = msg
 
 
-class NotFoundException(Exception):
+class NotFoundException(NotFoundError):
     def __init__(self, msg):
+        super().__init__(msg)
         self.msg = msg
 
-class ModelException(Exception):
+
+class ModelException(RAGFlowError):
+    http_status = 503
+
     def __init__(self, msg, retryable=False):
         super().__init__(msg)
         self.msg = msg

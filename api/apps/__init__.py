@@ -32,8 +32,9 @@ from quart_auth import Unauthorized as QuartAuthUnauthorized
 from werkzeug.exceptions import Unauthorized as WerkzeugUnauthorized
 from quart_schema import QuartSchema
 from common import settings
-from api.utils.api_utils import server_error_response, get_json_result
+from api.utils.api_utils import server_error_response, get_result, get_json_result
 from api.constants import API_VERSION
+from api.exceptions import RAGFlowError
 from common.exceptions import ModelException
 from common.misc_utils import get_uuid
 
@@ -396,28 +397,34 @@ async def not_found(error):
     return jsonify(response), RetCode.NOT_FOUND
 
 
+@app.errorhandler(RAGFlowError)
+async def handle_ragflow_error(error: RAGFlowError):
+    logging.error("RAGFlowError: %s", error, exc_info=error)
+    return get_result(code=error.http_status, message=str(error)), error.http_status
+
+
 @app.errorhandler(401)
 async def unauthorized(error):
     logging.warning("Unauthorized request")
-    return get_json_result(code=RetCode.UNAUTHORIZED, message=_unauthorized_message(error)), RetCode.UNAUTHORIZED
+    return get_result(code=RetCode.UNAUTHORIZED, message=_unauthorized_message(error)), RetCode.UNAUTHORIZED
 
 
 @app.errorhandler(QuartAuthUnauthorized)
 async def unauthorized_quart_auth(error):
     logging.warning("Unauthorized request (quart_auth)")
-    return get_json_result(code=RetCode.UNAUTHORIZED, message=repr(error)), RetCode.UNAUTHORIZED
+    return get_result(code=RetCode.UNAUTHORIZED, message=repr(error)), RetCode.UNAUTHORIZED
 
 
 @app.errorhandler(WerkzeugUnauthorized)
 async def unauthorized_werkzeug(error):
     logging.warning("Unauthorized request (werkzeug)")
-    return get_json_result(code=error.code, message=error.description), RetCode.UNAUTHORIZED
+    return get_result(code=error.code, message=error.description), RetCode.UNAUTHORIZED
 
 
 @app.errorhandler(ModelException)
 async def handle_model_exception(error):
-    logging.warning("Forbidden request")
-    return get_json_result(code=RetCode.BAD_REQUEST, message=repr(error)), 200
+    logging.warning("ModelException: %s", error)
+    return get_result(code=RetCode.BAD_REQUEST, message=repr(error)), 200
 
 
 @app.teardown_request

@@ -30,6 +30,7 @@ from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, TaskService
 from common.constants import PipelineTaskType, TaskStatus
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, datetime_format
+from api.exceptions import NotFoundError, RAGFlowError
 
 
 class PipelineOperationLogService(CommonService):
@@ -124,14 +125,14 @@ class PipelineOperationLogService(CommonService):
         if pipeline_id:
             ok, user_pipeline = UserCanvasService.get_by_id(pipeline_id)
             if not ok:
-                raise RuntimeError(f"Pipeline {pipeline_id} not found")
+                raise NotFoundError(f"Pipeline {pipeline_id} not found")
             tenant_id = user_pipeline.user_id
             title = user_pipeline.title
             avatar = user_pipeline.avatar
         else:
             ok, kb_info = KnowledgebaseService.get_by_id(document.kb_id)
             if not ok:
-                raise RuntimeError(f"Cannot find dataset {document.kb_id} for referred_document {referred_document_id}")
+                raise NotFoundError(f"Cannot find dataset {document.kb_id} for referred_document {referred_document_id}")
             tenant_id = kb_info.tenant_id
 
         if task_type not in VALID_PIPELINE_TASK_TYPES:
@@ -141,7 +142,7 @@ class PipelineOperationLogService(CommonService):
             # query task to get progress information from task
             ok, task = TaskService.get_by_id(task_id)
             if not ok:
-                raise RuntimeError(f"Task not found for dataset {document.kb_id}")
+                raise NotFoundError(f"Task not found for dataset {document.kb_id}")
             title = task_type
             document_name = task_type
             operation_status = TaskStatus.DONE if task.progress == 1 else TaskStatus.FAIL

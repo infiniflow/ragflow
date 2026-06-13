@@ -36,6 +36,7 @@ from common.time_utils import current_timestamp, get_format_time
 
 from rag.nlp import search
 from rag.utils.redis_conn import REDIS_CONN
+from api.exceptions import NotFoundError, ServiceUnavailableError, ValidationError
 
 
 class DocumentService(CommonService):
@@ -116,9 +117,9 @@ class DocumentService(CommonService):
 
         MAX_FILE_NUM_PER_USER = int(os.environ.get("MAX_FILE_NUM_PER_USER", 0))
         if 0 < MAX_FILE_NUM_PER_USER <= DocumentService.get_doc_count(tenant_id):
-            raise RuntimeError("Exceed the maximum file number of a free user!")
+            raise ValidationError("Exceed the maximum file number of a free user!")
         if len(filename.encode("utf-8")) > FILE_NAME_LEN_LIMIT:
-            raise RuntimeError("Exceed the maximum length of file name!")
+            raise ValidationError("Exceed the maximum length of file name!")
         return True
 
     @classmethod
@@ -439,9 +440,9 @@ class DocumentService(CommonService):
     @DB.connection_context()
     def insert(cls, doc):
         if not cls.save(**doc):
-            raise RuntimeError("Database error (Document)!")
+            raise ServiceUnavailableError("Database error (Document)!")
         if not KnowledgebaseService.atomic_increase_doc_num_by_id(doc["kb_id"]):
-            raise RuntimeError("Database error (Knowledgebase)!")
+            raise ServiceUnavailableError("Database error (Knowledgebase)!")
         return Document(**doc)
 
     @classmethod

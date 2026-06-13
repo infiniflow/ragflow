@@ -31,6 +31,7 @@ from common import settings
 from common.metadata_utils import dedupe_list
 from api.db.db_models import Knowledgebase
 from common.doc_store.doc_store_base import OrderByExpr
+from api.exceptions import NotFoundError
 
 
 def _es_response_total(response: Any) -> Optional[int]:
@@ -637,7 +638,7 @@ class DocMetadataService:
             try:
                 count_value = count_idx(index_name) if callable(count_idx) else -1
                 if count_value < 0:
-                    raise RuntimeError("native count_idx unavailable or failed")
+                    raise NotFoundError("native count_idx unavailable or failed")
                 logging.debug(f"[DROP EMPTY TABLE] count_idx API result: {count_value} documents")
                 is_empty = (count_value == 0)
             except Exception as e:

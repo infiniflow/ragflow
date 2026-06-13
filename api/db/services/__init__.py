@@ -17,6 +17,7 @@ import re
 from pathlib import PurePath
 
 from .user_service import UserService as UserService
+from api.exceptions import ValidationError
 
 
 def _split_name_counter(filename: str) -> tuple[str, int | None]:
@@ -97,4 +98,4 @@ def duplicate_name(query_func, name_field: str="name", **kwargs) -> str:
         current_name = new_name
         retries += 1
 
-    raise RuntimeError(f"Failed to generate unique name within {MAX_RETRIES} attempts. Original: {original_name}")
+    raise ValidationError(f"Failed to generate unique name within {MAX_RETRIES} attempts. Original: {original_name}")

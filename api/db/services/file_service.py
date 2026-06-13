@@ -42,6 +42,7 @@ from api.db.services.task_service import TaskService
 from api.utils.file_utils import filename_type, read_potential_broken_pdf, thumbnail_img, sanitize_path
 from rag.llm.cv_model import GptV4
 from common import settings
+from api.exceptions import NotFoundError, ServiceUnavailableError, ValidationError
 
 
 class FileService(CommonService):
@@ -130,7 +131,7 @@ class FileService(CommonService):
         if file.count():
             e, file = cls.get_by_id(file[0].id)
             if not e:
-                raise RuntimeError("Database error (File retrieval)!")
+                raise NotFoundError("Database error (File retrieval)!")
             return file
         return None
 
@@ -344,9 +345,9 @@ class FileService(CommonService):
         if file.count():
             e, file = cls.get_by_id(file[0].parent_id)
             if not e:
-                raise RuntimeError("Database error (File retrieval)!")
+                raise ServiceUnavailableError("Database error (File retrieval)!")
         else:
-            raise RuntimeError("Database error (File doesn't exist)!")
+            raise NotFoundError("Database error (File doesn't exist)!")
         return file
 
     @classmethod
@@ -378,7 +379,7 @@ class FileService(CommonService):
         # Returns:
         #     Created file object
         if not cls.save(**file):
-            raise RuntimeError("Database error (File)!")
+            raise ServiceUnavailableError("Database error (File)!")
         return File(**file)
 
     @classmethod
@@ -402,7 +403,7 @@ class FileService(CommonService):
             return (cls.model.delete().where((cls.model.tenant_id == user_id) & (cls.model.id == folder_id)).execute(),)
         except Exception:
             logging.exception("delete_folder_by_pf_id")
-            raise RuntimeError("Database error (File retrieval)!")
+            raise ServiceUnavailableError("Database error (File retrieval)!")
 
     @classmethod
     @DB.connection_context()
@@ -451,7 +452,7 @@ class FileService(CommonService):
             cls.filter_update((cls.model.id << file_ids,), {"parent_id": folder_id})
         except Exception:
             logging.exception("move_file")
-            raise RuntimeError("Database error (File move)!")
+            raise ServiceUnavailableError("Database error (File move)!")
 
     @classmethod
     @DB.connection_context()
@@ -512,7 +513,7 @@ class FileService(CommonService):
                 filename = duplicate_name(DocumentService.query, name=file.filename, kb_id=kb.id)
                 filetype = filename_type(filename)
                 if filetype == FileType.OTHER.value:
-                    raise RuntimeError("This type of file has not been supported yet!")
+                    raise ValidationError("This type of file has not been supported yet!")
 
                 location = filename if not safe_parent_path else f"{safe_parent_path}/{filename}"
                 while settings.STORAGE_IMPL.obj_exist(kb.id, location):
@@ -564,7 +565,7 @@ class FileService(CommonService):
             return list(files)
         except Exception:
             logging.exception("list_by_parent_id failed")
-            raise RuntimeError("Database error (list_by_parent_id)!")
+            raise ServiceUnavailableError("Database error (list_by_parent_id)!")
 
     @staticmethod
     def parse_docs(file_objs, user_id):
