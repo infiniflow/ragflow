@@ -13,11 +13,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from abc import ABC
 import os
 import numbers
 from agent.component.base import ComponentBase, ComponentParamBase
 from api.utils.api_utils import timeout
+
+logger = logging.getLogger(__name__)
 
 class VariableAssignerParam(ComponentParamBase):
     """
@@ -40,6 +43,10 @@ class VariableAssignerParam(ComponentParamBase):
 
 class VariableAssigner(ComponentBase,ABC):
     component_name = "VariableAssigner"
+    _SUPPORTED_OPERATORS = {
+        "overwrite", "clear", "set", "append", "extend",
+        "remove_first", "remove_last", "+=", "-=", "*=", "/="
+    }
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
     def _invoke(self, **kwargs):
@@ -47,16 +54,33 @@ class VariableAssigner(ComponentBase,ABC):
             return
         else:
             for item in self._param.variables:
-                if any([not item.get("variable"), not item.get("operator"), not item.get("parameter")]):
+                if not item.get("variable") or not item.get("operator"):
+                    raise ValueError("Variable is not complete.")
+                operator = item.get("operator")
+                if operator not in self._SUPPORTED_OPERATORS:
+                    raise ValueError(f"Unsupported operator: {operator}")
+                # parameter can be 0 or empty string, so check explicitly for None
+                if item.get("parameter") is None and operator not in ["clear", "remove_first", "remove_last"]:
                     raise ValueError("Variable is not complete.")
                 variable=item["variable"]
-                operator=item["operator"]
-                parameter=item["parameter"]
+                parameter=item.get("parameter")
+                if operator not in self._SUPPORTED_OPERATORS:
+                    raise ValueError(f"Unsupported operator: {operator}")
+                if parameter is None and operator in ["clear", "remove_first", "remove_last"]:
+                    logger.debug(
+                        "Executing parameterless operator '%s' on variable '%s'.",
+                        operator,
+                        variable,
+                    )
                 variable_value=self._canvas.get_variable_value(variable)
                 new_variable=self._operate(variable_value,operator,parameter)
+                if new_variable is None and operator not in ["clear", "remove_first", "remove_last"]:
+                    raise ValueError(f"Operator '{operator}' produced no result.")
                 self._canvas.set_variable_value(variable, new_variable)
 
     def _operate(self,variable,operator,parameter):
+        if operator not in self._SUPPORTED_OPERATORS:
+            raise ValueError(f"Unsupported operator: {operator}")
         if operator == "overwrite":
             return self._overwrite(parameter)
         elif operator == "clear":
@@ -80,7 +104,7 @@ class VariableAssigner(ComponentBase,ABC):
         elif operator == "/=":
             return self._divide(variable,parameter)
         else:
-            return
+            raise ValueError(f"Unsupported operator: {operator}")
     
     def _overwrite(self,parameter):
         return self._canvas.get_variable_value(parameter)
