@@ -9,10 +9,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useDeleteAgent } from '@/hooks/use-agent-request';
+import { useDeleteAgent, useDuplicateAgent } from '@/hooks/use-agent-request';
 import { IFlow } from '@/interfaces/database/agent';
-import { PenLine, Tag, Trash2 } from 'lucide-react';
 import { MouseEventHandler, PropsWithChildren, useCallback, useState } from 'react';
+import { PenLine, Tag, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { AgentTagEditor } from './agent-tag-editor';
 import { useRenameAgent } from './use-rename-agent';
