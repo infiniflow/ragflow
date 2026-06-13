@@ -751,7 +751,7 @@ def list_docs(dataset_id, tenant_id):
     renamed_doc_list = [map_doc_keys(doc) for doc in payload]
     for doc_item in renamed_doc_list:
         if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
-            doc_item["thumbnail"] = f"/api/v1/documents/images/{dataset_id}-{doc_item['thumbnail']}"
+            doc_item["thumbnail"] = f"/api/v1/documents/{doc_item['id']}/thumbnail"
         if doc_item.get("source_type"):
             doc_item["source_type"] = doc_item["source_type"].split("/")[0]
         if doc_item["parser_config"].get("metadata"):
@@ -1191,24 +1191,33 @@ async def update_metadata_config(tenant_id, dataset_id, document_id):
 
 
 @manager.route("/thumbnails", methods=["GET"])  # noqa: F821
-@login_required(auth_types=[AUTH_JWT, AUTH_API, AUTH_BETA])
+@login_required
 def list_thumbnails():
     """
-    Get thumbnails for documents.
+    Get thumbnails for documents the caller can access.
     ---
     tags:
       - Documents
+    security:
+      - ApiKeyAuth: []
     parameters:
       - in: query
         name: doc_ids
         type: array
         required: true
         description: List of document IDs to get thumbnails for.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
     responses:
       200:
-        description: Successfully retrieved thumbnails
+        description: Successfully retrieved thumbnails. Inaccessible IDs are
+                     silently filtered out so the response cannot be used to
+                     enumerate cross-tenant document IDs.
       400:
-        description: Missing document IDs
+        description: Missing document IDs.
     """
     from api.constants import IMG_BASE64_PREFIX
     from api.db.services.document_service import DocumentService
@@ -1218,11 +1227,15 @@ def list_thumbnails():
         return get_json_result(data=False, message='Lack of "Document ID"', code=RetCode.ARGUMENT_ERROR)
 
     try:
-        docs = DocumentService.get_thumbnails(doc_ids)
+        accessible_ids = [doc_id for doc_id in doc_ids if DocumentService.accessible(doc_id, current_user.id)]
+        if not accessible_ids:
+            return get_json_result(data={})
+
+        docs = DocumentService.get_thumbnails(accessible_ids)
 
         for doc_item in docs:
             if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
-                doc_item["thumbnail"] = f"/api/v1/documents/images/{doc_item['kb_id']}-{doc_item['thumbnail']}"
+                doc_item["thumbnail"] = f"/api/v1/documents/{doc_item['id']}/thumbnail"
 
         return get_json_result(data={d["id"]: d["thumbnail"] for d in docs})
     except Exception as e:
@@ -1652,23 +1665,11 @@ async def stop_parse_documents(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
-def _parse_document_image_id(image_id: str) -> tuple[str, str] | None:
-    """Split a composite document image ID into storage bucket and object key.
-
-    Thumbnail URLs use ``{dataset_id}-{thumbnail}``. Only the first hyphen
-    separates the dataset/kb id (bucket) from the object key, which may
-    contain additional hyphens (e.g. ``page-1.png``).
-
-    Args:
-        image_id: Path segment from ``GET /documents/images/<image_id>``.
-
-    Returns:
-        ``(bucket, object_key)`` when valid, otherwise ``None``.
-    """
-    parts = image_id.split("-", 1)
-    if len(parts) != 2 or not parts[0] or not parts[1]:
-        return None
-    return parts[0], parts[1]
+# Chunk image keys are xxhash64 hex digests (16 chars) generated in
+# rag/svr/task_executor.py. Restricting the storage key to this shape
+# prevents the endpoint from being coerced into serving arbitrary objects
+# (e.g. raw documents) that happen to share the bucket.
+_CHUNK_IMAGE_KEY_RE = re.compile(r"^[0-9a-f]{16}$")
 
 
 def _detect_image_content_type_from_bytes(data):
@@ -1698,20 +1699,22 @@ def _content_type_for_document_image(object_name, data):
 
 
 @manager.route("/documents/images/<image_id>", methods=["GET"])  # noqa: F821
-@login_required(auth_types=[AUTH_JWT, AUTH_API, AUTH_BETA])
+@login_required
 async def get_document_image(image_id):
     """
-    Get a document image by ID.
+    Get a chunk reference image by ID.
     ---
     tags:
       - Documents
+    security:
+      - ApiKeyAuth: []
     parameters:
       - name: image_id
         in: path
         required: true
         schema:
           type: string
-        description: Composite ID ``{dataset_id}-{thumbnail_object_key}`` (split on first hyphen only)
+        description: The chunk image ID (format: kb_id-chunk_xxhash, key must be a 16-char hex digest)
     responses:
       200:
         description: Image file
@@ -1722,18 +1725,69 @@ async def get_document_image(image_id):
               format: binary
     """
     try:
-        parsed = _parse_document_image_id(image_id)
-        if not parsed:
+        kb_id, sep, key = image_id.rpartition("-")
+        if not sep or not kb_id:
+            logging.warning("get_document_image: malformed image_id=%r user_id=%s", image_id, current_user.id)
             return get_data_error_result(message="Image not found.")
-        bkt, nm = parsed
-        data = await thread_pool_exec(settings.STORAGE_IMPL.get, bkt, nm)
-        if not data:
+        if not _CHUNK_IMAGE_KEY_RE.match(key):
+            logging.warning("get_document_image: invalid key shape image_id=%s user_id=%s", image_id, current_user.id)
             return get_data_error_result(message="Image not found.")
-        content_type = _content_type_for_document_image(nm, data)
+        if not KnowledgebaseService.accessible(kb_id, current_user.id):
+            logging.warning("get_document_image: access denied image_id=%s user_id=%s", image_id, current_user.id)
+            return get_data_error_result(message="No authorization.")
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, kb_id, key)
         response = await make_response(data)
-        response.headers.set("Content-Type", content_type)
+        response.headers.set("Content-Type", "image/JPEG")
         return response
     except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/documents/<doc_id>/thumbnail", methods=["GET"])  # noqa: F821
+@login_required
+async def get_document_thumbnail(doc_id):
+    """
+    Get a document's thumbnail image.
+    ---
+    tags:
+      - Documents
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - name: doc_id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: The document ID.
+    responses:
+      200:
+        description: Thumbnail image
+        content:
+          image/png:
+            schema:
+              type: string
+              format: binary
+    """
+    try:
+        if not DocumentService.accessible(doc_id, current_user.id):
+            logging.warning("get_document_thumbnail: access denied doc_id=%s user_id=%s", doc_id, current_user.id)
+            return get_data_error_result(message="No authorization.")
+        e, doc = DocumentService.get_by_id(doc_id)
+        if not e:
+            logging.warning("get_document_thumbnail: document not found doc_id=%s", doc_id)
+            return get_data_error_result(message="Document not found.")
+        # Storage key shape mirrors the producer in api/db/services/file_service.py.
+        thumbnail_key = f"thumbnail_{doc.id}.png"
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, doc.kb_id, thumbnail_key)
+        if not data:
+            logging.info("get_document_thumbnail: missing thumbnail doc_id=%s key=%s", doc.id, thumbnail_key)
+            return get_data_error_result(message="Thumbnail not found.")
+        response = await make_response(data)
+        response.headers.set("Content-Type", "image/png")
+        return response
+    except Exception as e:
+        logging.exception("get_document_thumbnail failed doc_id=%s", doc_id)
         return server_error_response(e)
 
 
