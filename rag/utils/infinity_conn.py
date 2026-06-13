@@ -448,7 +448,11 @@ class InfinityConnection(InfinityConnectionBase):
                         # both dict and JSON-string. Other backends (OceanBase JSON
                         # column, ES/OpenSearch) keep dict shape — this is Infinity-only.
                         if isinstance(v, dict):
-                            d[k] = json.dumps(v)
+                            try:
+                                d[k] = json.dumps(v)
+                            except (TypeError, ValueError) as exc:
+                                self.logger.warning("Failed to serialize 'extra' field for chunk %s (type=%s): %s; storing empty string", d.get("id", "<unknown>"), type(v).__name__, exc)
+                                d[k] = ""
                         else:
                             d[k] = v if v else ""
                     elif k == "kb_id":
