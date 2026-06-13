@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"ragflow/internal/common"
 	"ragflow/internal/ingestion"
 	"ragflow/internal/ingestion/parser"
 	"ragflow/internal/utility"
@@ -1632,16 +1633,14 @@ func (c *CLI) ChatToModel(cmd *Command) (ResponseIf, error) {
 	}
 
 	var providerName, instanceName, modelName string
+	var err error
 
 	// Check if composite_model_name is provided in command
 	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
-		names := strings.Split(compositeModelName, "@")
-		if len(names) != 3 {
-			return nil, fmt.Errorf("model name must be in format 'model@instance@provider'")
+		modelName, instanceName, providerName, err = common.ExtractCompositeName(compositeModelName)
+		if err != nil {
+			return nil, err
 		}
-		providerName = names[2]
-		instanceName = names[1]
-		modelName = names[0]
 	} else if c.CurrentModel != nil {
 		// Use current model if set
 		providerName = c.CurrentModel.Provider
@@ -1889,16 +1888,14 @@ func (c *CLI) EmbedUserText(cmd *Command) (ResponseIf, error) {
 	}
 
 	var providerName, instanceName, modelName string
+	var err error
 
 	// Check if composite_model_name is provided in command
 	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
-		names := strings.Split(compositeModelName, "@")
-		if len(names) != 3 {
-			return nil, fmt.Errorf("model name must be in format 'model@instance@provider'")
+		modelName, instanceName, providerName, err = common.ExtractCompositeName(compositeModelName)
+		if err != nil {
+			return nil, err
 		}
-		providerName = names[2]
-		instanceName = names[1]
-		modelName = names[0]
 	} else if c.CurrentModel != nil {
 		// Use current model if set
 		providerName = c.CurrentModel.Provider
@@ -1956,16 +1953,14 @@ func (c *CLI) RerankUserDocument(cmd *Command) (ResponseIf, error) {
 	}
 
 	var providerName, instanceName, modelName string
+	var err error
 
 	// Check if composite_model_name is provided in command
 	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
-		names := strings.Split(compositeModelName, "@")
-		if len(names) != 3 {
-			return nil, fmt.Errorf("model name must be in format 'model@instance@provider'")
+		modelName, instanceName, providerName, err = common.ExtractCompositeName(compositeModelName)
+		if err != nil {
+			return nil, err
 		}
-		providerName = names[2]
-		instanceName = names[1]
-		modelName = names[0]
 	} else if c.CurrentModel != nil {
 		// Use current model if set
 		providerName = c.CurrentModel.Provider
@@ -2029,16 +2024,14 @@ func (c *CLI) TTSUserCommand(cmd *Command) (ResponseIf, error) {
 	}
 
 	var providerName, instanceName, modelName string
+	var err error
 
 	// Check if composite_model_name is provided in command
 	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
-		names := strings.Split(compositeModelName, "@")
-		if len(names) != 3 {
-			return nil, fmt.Errorf("model name must be in format 'model@instance@provider'")
+		modelName, instanceName, providerName, err = common.ExtractCompositeName(compositeModelName)
+		if err != nil {
+			return nil, err
 		}
-		providerName = names[2]
-		instanceName = names[1]
-		modelName = names[0]
 	} else if c.CurrentModel != nil {
 		// Use current model if set
 		providerName = c.CurrentModel.Provider
@@ -2221,16 +2214,14 @@ func (c *CLI) ASRUserCommand(cmd *Command) (ResponseIf, error) {
 	}
 
 	var providerName, instanceName, modelName string
+	var err error
 
 	// Check if composite_model_name is provided in command
 	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
-		names := strings.Split(compositeModelName, "@")
-		if len(names) != 3 {
-			return nil, fmt.Errorf("model name must be in format 'model@instance@provider'")
+		modelName, instanceName, providerName, err = common.ExtractCompositeName(compositeModelName)
+		if err != nil {
+			return nil, err
 		}
-		providerName = names[2]
-		instanceName = names[1]
-		modelName = names[0]
 	} else if c.CurrentModel != nil {
 		// Use current model if set
 		providerName = c.CurrentModel.Provider
@@ -2308,16 +2299,14 @@ func (c *CLI) OCRUserCommand(cmd *Command) (ResponseIf, error) {
 	}
 
 	var providerName, instanceName, modelName string
+	var err error
 
 	// Check if composite_model_name is provided in command
 	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
-		names := strings.Split(compositeModelName, "@")
-		if len(names) != 3 {
-			return nil, fmt.Errorf("model name must be in format 'model@instance@provider'")
+		modelName, instanceName, providerName, err = common.ExtractCompositeName(compositeModelName)
+		if err != nil {
+			return nil, err
 		}
-		providerName = names[2]
-		instanceName = names[1]
-		modelName = names[0]
 	} else if c.CurrentModel != nil {
 		// Use current model if set
 		providerName = c.CurrentModel.Provider
@@ -2390,16 +2379,14 @@ func (c *CLI) ParseFileUserCommand(cmd *Command) (ResponseIf, error) {
 	}
 
 	var providerName, instanceName, modelName string
+	var err error
 
 	// Check if composite_model_name is provided in command
 	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
-		names := strings.Split(compositeModelName, "@")
-		if len(names) != 3 {
-			return nil, fmt.Errorf("model name must be in format 'model@instance@provider'")
+		modelName, instanceName, providerName, err = common.ExtractCompositeName(compositeModelName)
+		if err != nil {
+			return nil, err
 		}
-		providerName = names[2]
-		instanceName = names[1]
-		modelName = names[0]
 	} else if c.CurrentModel != nil {
 		// Use current model if set
 		providerName = c.CurrentModel.Provider
@@ -2669,15 +2656,17 @@ func (c *CLI) UseModel(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("model identifier not provided")
 	}
 
-	names := strings.Split(compositeModelName, "@")
-	if len(names) != 3 {
-		return nil, fmt.Errorf("model identifier must be in format 'model@instance@provider'")
+	var modelName, instanceName, providerName string
+	var err error
+	modelName, instanceName, providerName, err = common.ExtractCompositeName(compositeModelName)
+	if err != nil {
+		return nil, err
 	}
 
 	c.CurrentModel = &CurrentModel{
-		Provider: names[2],
-		Instance: names[1],
-		Model:    names[0],
+		Provider: providerName,
+		Instance: instanceName,
+		Model:    modelName,
 	}
 
 	var result SimpleResponse
