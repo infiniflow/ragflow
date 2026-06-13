@@ -10,7 +10,7 @@ import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
 import { TOCEnhanceFormField } from '@/components/toc-enhance-form-field';
-import { TopNFormField } from '@/components/top-n-item';
+import { DEFAULT_TOP_N_MAX, TopNFormField } from '@/components/top-n-item';
 import {
   Form,
   FormControl,
@@ -44,7 +44,7 @@ import { useValues } from './use-values';
 export const RetrievalPartialSchema = {
   similarity_threshold: z.coerce.number(),
   keywords_similarity_weight: z.coerce.number(),
-  top_n: z.coerce.number(),
+  top_n: z.coerce.number().max(DEFAULT_TOP_N_MAX),
   top_k: z.coerce.number(),
   dataset_ids: z.array(z.string()),
   rerank_id: z.string(),

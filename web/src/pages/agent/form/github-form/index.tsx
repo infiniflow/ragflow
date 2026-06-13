@@ -1,5 +1,5 @@
 import { FormContainer } from '@/components/form-container';
-import { TopNFormField } from '@/components/top-n-item';
+import { createTopNSchema, TopNFormField } from '@/components/top-n-item';
 import { Form } from '@/components/ui/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo } from 'react';
@@ -16,7 +16,7 @@ import { QueryVariable } from '../components/query-variable';
 
 export const FormSchema = z.object({
   query: z.string(),
-  top_n: z.number(),
+  top_n: createTopNSchema().top_n.unwrap(),
 });
 
 const outputList = buildOutputList(initialGithubValues.outputs);
