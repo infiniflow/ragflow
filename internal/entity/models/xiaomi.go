@@ -802,7 +802,47 @@ func (x *XiaomiModel) ParseFile(modelName *string, content []byte, url *string, 
 }
 
 func (x *XiaomiModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
-	return nil, fmt.Errorf("no such method %s", x.Name())
+	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
+	resolvedBaseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), x.baseModel.URLSuffix.Models)
+
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	// Xiaomi authenticates with an "api-key" header (see ChatWithMessages), not Bearer.
+	req.Header.Set("api-key", strings.TrimSpace(*apiConfig.ApiKey))
+
+	resp, err := x.baseModel.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return ParseListModel(modelList), nil
 }
 
 func (x *XiaomiModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
