@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import os
 
 from common.asyncio_utils import LoopLocalSemaphore
@@ -20,6 +21,23 @@ from common.asyncio_utils import LoopLocalSemaphore
 MAX_CONCURRENT_TASKS = int(os.environ.get("MAX_CONCURRENT_TASKS", "5"))
 MAX_CONCURRENT_CHUNK_BUILDERS = int(os.environ.get("MAX_CONCURRENT_CHUNK_BUILDERS", "1"))
 MAX_CONCURRENT_MINIO = int(os.environ.get("MAX_CONCURRENT_MINIO", "10"))
+
+# Validate semaphore limits are positive to prevent indefinite blocking
+for var_name, value in [
+    ("MAX_CONCURRENT_TASKS", MAX_CONCURRENT_TASKS),
+    ("MAX_CONCURRENT_CHUNK_BUILDERS", MAX_CONCURRENT_CHUNK_BUILDERS),
+    ("MAX_CONCURRENT_MINIO", MAX_CONCURRENT_MINIO),
+]:
+    if value <= 0:
+        logging.error(
+            "Invalid concurrency configuration: %s must be a positive integer, got %s.",
+            var_name,
+            value,
+        )
+        raise ValueError(
+            f"{var_name} must be a positive integer, got {value}. "
+            f"Check your environment configuration."
+        )
 
 task_limiter = LoopLocalSemaphore(MAX_CONCURRENT_TASKS)
 chunk_limiter = LoopLocalSemaphore(MAX_CONCURRENT_CHUNK_BUILDERS)
