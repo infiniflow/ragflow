@@ -21,7 +21,7 @@ from quart import Response, jsonify
 
 from api.apps import current_user, login_required
 from api.apps.restful_apis._generation_params import extract_generation_config, merge_generation_config
-from api.db.services.dialog_service import DialogService, async_chat
+from api.db.services.dialog_service import DialogService, async_chat, validate_runtime_kb_ids
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_api_key
 from api.utils.api_utils import get_error_data_result, get_request_json, validate_request
@@ -281,6 +281,19 @@ async def openai_chat_completions(chat_id):
         if not get_api_key(tenant_id=dia.tenant_id, model_name=requested_model):
             return get_error_data_result(message=f"Cannot use specified model {requested_model}.")
     merge_generation_config(dia, extract_generation_config(req))
+
+    runtime_kb_ids = req.pop("kb_ids", None)
+    if runtime_kb_ids is None:
+        runtime_kb_ids = req.pop("dataset_ids", None)
+    if runtime_kb_ids is None:
+        runtime_kb_ids = extra_body.pop("kb_ids", None)
+    if runtime_kb_ids is None:
+        runtime_kb_ids = extra_body.pop("dataset_ids", None)
+    if runtime_kb_ids is not None:
+        validated = validate_runtime_kb_ids(runtime_kb_ids, current_user.id)
+        if isinstance(validated, str):
+            return get_error_data_result(message=validated, code=RetCode.ARGUMENT_ERROR)
+        dia.kb_ids = validated
 
     metadata_condition = extra_body.get("metadata_condition") or {}
     if metadata_condition and not isinstance(metadata_condition, dict):

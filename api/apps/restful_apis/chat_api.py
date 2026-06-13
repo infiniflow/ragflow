@@ -32,7 +32,7 @@ from api.db.joint_services.tenant_model_service import (
 )
 from api.db.services.chunk_feedback_service import ChunkFeedbackService
 from api.db.services.conversation_service import ConversationService, structure_answer
-from api.db.services.dialog_service import DialogService, async_chat, gen_mindmap
+from api.db.services.dialog_service import DialogService, async_chat, gen_mindmap, validate_runtime_kb_ids
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.search_service import SearchService
@@ -324,27 +324,33 @@ async def _validate_rerank_id(rerank_id, tenant_id):
 async def _validate_dataset_ids(dataset_ids, tenant_id):
     if dataset_ids is None:
         return []
-    if not isinstance(dataset_ids, list):
-        return "`dataset_ids` should be a list."
+    result = await thread_pool_exec(validate_runtime_kb_ids, dataset_ids, tenant_id)
+    if isinstance(result, str):
+        return result.replace("`kb_ids`", "`dataset_ids`")
+    return result
 
-    normalized_ids = [dataset_id for dataset_id in dataset_ids if dataset_id]
-    kbs = []
-    for dataset_id in normalized_ids:
-        if not await thread_pool_exec(KnowledgebaseService.accessible, kb_id=dataset_id, user_id=tenant_id):
-            return f"You don't own the dataset {dataset_id}"
-        matches = await thread_pool_exec(KnowledgebaseService.query, id=dataset_id)
-        if not matches:
-            return f"You don't own the dataset {dataset_id}"
-        kb = matches[0]
-        if kb.chunk_num == 0:
-            return f"The dataset {dataset_id} doesn't own parsed file"
-        kbs.append(kb)
 
-    embd_ids = [split_model_name(kb.embd_id)[0] for kb in kbs]
-    if len(set(embd_ids)) > 1:
-        return f'Datasets use different embedding models: {[kb.embd_id for kb in kbs]}'
+_RUNTIME_KB_IDS_NOT_PROVIDED = object()
 
-    return normalized_ids
+
+def _pop_runtime_kb_ids(req):
+    if "kb_ids" in req:
+        return req.pop("kb_ids")
+    if "dataset_ids" in req:
+        return req.pop("dataset_ids")
+    return _RUNTIME_KB_IDS_NOT_PROVIDED
+
+
+async def _apply_runtime_kb_ids(req, dia, user_id):
+    runtime_kb_ids = _pop_runtime_kb_ids(req)
+    if runtime_kb_ids is _RUNTIME_KB_IDS_NOT_PROVIDED:
+        return None
+
+    validated = await thread_pool_exec(validate_runtime_kb_ids, runtime_kb_ids, user_id)
+    if isinstance(validated, str):
+        return validated
+    dia.kb_ids = validated
+    return None
 
 
 def _apply_prompt_defaults(req):
@@ -1228,6 +1234,10 @@ async def session_completion(chat_id_in_arg=""):
                 raise LookupError("No default chat model for tenant.")
             dia.llm_id = tenant_info.llm_id
             merge_generation_config(dia, chat_model_config)
+
+        kb_ids_error = await _apply_runtime_kb_ids(req, dia, current_user.id)
+        if kb_ids_error:
+            return get_data_error_result(message=kb_ids_error)
 
         stream_mode = req.pop("stream", True)
 

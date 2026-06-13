@@ -2319,6 +2319,9 @@ def _load_chat_api_module(monkeypatch):
     )
     dialog_svc_mod.async_chat = lambda *_a, **_k: None
     dialog_svc_mod.gen_mindmap = lambda *_a, **_k: None
+    dialog_svc_mod.validate_runtime_kb_ids = lambda kb_ids, _user_id: (
+        kb_ids if isinstance(kb_ids, list) else "`kb_ids` should be a list."
+    )
     monkeypatch.setitem(sys.modules, "api.db.services.dialog_service", dialog_svc_mod)
 
     kb_svc_mod = ModuleType("api.db.services.knowledgebase_service")
@@ -2719,3 +2722,63 @@ def test_session_completion_accepts_question_payload(monkeypatch):
     assert res["code"] == 0, res
     assert [message["content"] for message in captured_messages[0]] == ["latest question"]
     assert conv.message[-1]["content"] == "latest question"
+
+
+@pytest.mark.p2
+def test_session_completion_overrides_runtime_kb_ids(monkeypatch):
+    """Runtime kb_ids in the request should override the chat assistant's saved datasets."""
+    module = _load_chat_api_module(monkeypatch)
+
+    captured = {}
+
+    async def _fake_async_chat(dia, _messages, stream=True, **_kwargs):
+        captured["kb_ids"] = list(dia.kb_ids)
+        captured["kwargs"] = dict(_kwargs)
+        yield {"answer": "ok", "reference": {}}
+
+    monkeypatch.setattr(module, "async_chat", _fake_async_chat)
+    monkeypatch.setattr(module, "structure_answer", lambda _conv, ans, _message_id, _session_id: ans)
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({
+            "chat_id": "chat-1",
+            "session_id": "session-1",
+            "stream": False,
+            "messages": [{"role": "user", "content": "latest question"}],
+            "kb_ids": ["runtime-kb-1", "runtime-kb-2"],
+        }),
+    )
+
+    res = _run(inspect.unwrap(module.session_completion)())
+
+    assert res["code"] == 0, res
+    assert captured["kb_ids"] == ["runtime-kb-1", "runtime-kb-2"]
+    assert "kb_ids" not in captured["kwargs"]
+
+
+@pytest.mark.p2
+def test_session_completion_rejects_invalid_runtime_kb_ids(monkeypatch):
+    module = _load_chat_api_module(monkeypatch)
+
+    monkeypatch.setattr(
+        module,
+        "validate_runtime_kb_ids",
+        lambda _kb_ids, _user_id: "You don't own the dataset runtime-kb-1",
+    )
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({
+            "chat_id": "chat-1",
+            "session_id": "session-1",
+            "stream": False,
+            "messages": [{"role": "user", "content": "latest question"}],
+            "kb_ids": ["runtime-kb-1"],
+        }),
+    )
+
+    res = _run(inspect.unwrap(module.session_completion)())
+
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert "You don't own the dataset runtime-kb-1" in res["message"]
