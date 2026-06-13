@@ -15,8 +15,6 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Generator, Iterable, List, Mapping, Optional
 from urllib.parse import parse_qs, urlparse, urlunparse
 
-import ipaddress
-import socket
 import requests
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, ValidationError, field_validator
 
@@ -28,6 +26,7 @@ from common.data_source.exceptions import (
     ConnectorMissingCredentialError,
     ConnectorValidationError,
 )
+from common.ssrf_guard import assert_url_is_safe, pin_dns
 from common.data_source.interfaces import (
     LoadConnector,
     PollConnector,
@@ -171,64 +170,27 @@ class RestAPIConnector(LoadConnector, PollConnector):
     """
 
     @staticmethod
-    def _validate_url_for_ssrf(url: str) -> None:
-        """Validate that the URL does not point to localhost or private/internal networks.
+    def _validate_url_for_ssrf(url: str) -> tuple[str, str]:
+        """Validate that *url* is safe to fetch, returning the resolved ``(hostname, ip)``.
+
+        Delegates to :func:`common.ssrf_guard.assert_url_is_safe`, which performs
+        the same allowlist (only globally-routable unicast addresses) and also
+        normalises IPv4-mapped IPv6 addresses (e.g. ``::ffff:127.0.0.1``) before
+        the check. Returning the validated IP lets the caller pin DNS to that
+        address with :func:`common.ssrf_guard.pin_dns` so the actual HTTP
+        request cannot be redirected to a different IP between validation and
+        connect (DNS rebinding / TOCTOU).
 
         Raises:
             ConnectorValidationError: If the URL is considered unsafe.
         """
-        parsed = urlparse(str(url))
-
-        if parsed.scheme not in ("http", "https"):
-            msg = f"Unsupported URL scheme for REST API connector: {parsed.scheme!r}. Only http/https are allowed."
-            logger.warning(msg)
-            raise ConnectorValidationError(msg)
-
-        hostname = parsed.hostname
-        if not hostname:
-            msg = "REST API connector URL must include a hostname."
-            logger.warning(msg)
-            raise ConnectorValidationError(msg)
-
-        # Quick checks for obvious localhost-style hostnames.
-        lower_host = hostname.lower()
-        if lower_host in ("localhost",):
-            msg = f"REST API connector URL hostname {hostname!r} is not allowed (localhost is blocked)."
-            logger.warning(msg)
-            raise ConnectorValidationError(msg)
-
         try:
-            addrinfo_list = socket.getaddrinfo(hostname, None)
-        except OSError as exc:
-            # If resolution fails, log and let higher-level validation (if any) decide.
-            # We do not treat this as an SSRF condition by itself.
-            logger.info("DNS resolution failed for REST API connector URL %r: %s", url, exc)
-            return
-
-        for family, _, _, _, sockaddr in addrinfo_list:
-            ip_str = sockaddr[0]
-            try:
-                ip_obj = ipaddress.ip_address(ip_str)
-            except ValueError:
-                # Not an IP address we understand; skip.
-                logger.debug("Skipping non-IP address resolved from %r: %r", hostname, ip_str)
-                continue
-
-            if (
-                ip_obj.is_loopback
-                or ip_obj.is_private
-                or ip_obj.is_link_local
-                or ip_obj.is_reserved
-                or ip_obj.is_multicast
-            ):
-                msg = (
-                    f"REST API connector URL {url!r} resolves to disallowed address {ip_str} "
-                    "(localhost, private, link-local, reserved, or multicast addresses are blocked)."
-                )
-                logger.warning(msg)
-                raise ConnectorValidationError(msg)
-
-        logger.debug("REST API connector URL %r passed SSRF safety validation.", url)
+            return assert_url_is_safe(str(url))
+        except ValueError as exc:
+            logger.warning("REST API connector URL %r failed SSRF safety check: %s", url, exc)
+            raise ConnectorValidationError(
+                f"REST API connector URL {url!r} is not safe to fetch: {exc}"
+            ) from exc
 
     def __init__(
         self,
@@ -253,7 +215,10 @@ class RestAPIConnector(LoadConnector, PollConnector):
         field_default_values: Optional[Dict[str, Any]] = None,
         content_template: Optional[str] = None,
     ) -> None:
-        # Validate URL against SSRF-style targets (localhost, private/internal ranges, etc.)
+        # Validate URL against SSRF-style targets (localhost, private/internal ranges, etc.).
+        # We re-validate (and re-pin) on every fetch in :meth:`_fetch_page` to close
+        # the DNS rebinding / TOCTOU window between this validation and the actual
+        # socket connect, so we discard the resolved IP here.
         self._validate_url_for_ssrf(url)
 
         parsed = urlparse(str(url))
@@ -603,15 +568,22 @@ class RestAPIConnector(LoadConnector, PollConnector):
             {k: ("***" if k.lower() in sensitive else v) for k, v in headers.items()},
         )
 
-        if self.method == "GET":
-            resp = rl_requests.get(url, headers=headers, params=query_params, auth=self._basic_auth, timeout=60)
-        elif self.method == "POST":
-            resp = rl_requests.post(
-                url, headers=headers, params=query_params,
-                json=self._static_request_body or {}, auth=self._basic_auth, timeout=60,
-            )
-        else:
-            raise ConnectorValidationError(f"Unsupported HTTP method: {self.method}")
+        # Re-validate the built URL (its host could differ from the originally
+        # validated one if templated) and pin DNS to the resolved IP for the
+        # duration of the request. This closes the TOCTOU / DNS-rebinding
+        # window between SSRF validation and the actual socket connect.
+        hostname, resolved_ip = self._validate_url_for_ssrf(url)
+
+        with pin_dns(hostname, resolved_ip):
+            if self.method == "GET":
+                resp = rl_requests.get(url, headers=headers, params=query_params, auth=self._basic_auth, timeout=60)
+            elif self.method == "POST":
+                resp = rl_requests.post(
+                    url, headers=headers, params=query_params,
+                    json=self._static_request_body or {}, auth=self._basic_auth, timeout=60,
+                )
+            else:
+                raise ConnectorValidationError(f"Unsupported HTTP method: {self.method}")
 
         try:
             resp.raise_for_status()
