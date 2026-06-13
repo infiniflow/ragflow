@@ -17,11 +17,13 @@
 package service
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 )
@@ -72,6 +74,7 @@ func testDocumentService(t *testing.T) *DocumentService {
 		kbDAO:            dao.NewKnowledgebaseDAO(),
 		taskDAO:          dao.NewTaskDAO(),
 		file2DocumentDAO: dao.NewFile2DocumentDAO(),
+		fileDAO:          dao.NewFileDAO(),
 		docEngine:        nil,
 		metadataSvc:      nil, // nil engine → metadata ops skipped
 	}
@@ -83,16 +86,16 @@ func sptr(s string) *string { return &s }
 func insertTestKB(t *testing.T, id, tenantID string, docNum, tokenNum, chunkNum int64) {
 	t.Helper()
 	kb := &entity.Knowledgebase{
-		ID:       id,
-		TenantID: tenantID,
-		Name:     "test-kb",
-		EmbdID:   "embd-1",
-		CreatedBy: "user-1",
+		ID:         id,
+		TenantID:   tenantID,
+		Name:       "test-kb",
+		EmbdID:     "embd-1",
+		CreatedBy:  "user-1",
 		Permission: string(entity.TenantPermissionTeam),
-		DocNum:   docNum,
-		TokenNum: tokenNum,
-		ChunkNum: chunkNum,
-		Status:   sptr(string(entity.StatusValid)),
+		DocNum:     docNum,
+		TokenNum:   tokenNum,
+		ChunkNum:   chunkNum,
+		Status:     sptr(string(entity.StatusValid)),
 	}
 	if err := dao.DB.Create(kb).Error; err != nil {
 		t.Fatalf("insert test kb: %v", err)
@@ -917,5 +920,214 @@ func TestDownloadDocument_WrongDataset(t *testing.T) {
 	_, err := svc.DownloadDocument("wrong-ds", "doc-1")
 	if err == nil {
 		t.Error("expected error for wrong dataset")
+	}
+}
+
+func TestUpdateDatasetDocumentRejectsNonOwner(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+	svc := testDocumentService(t)
+	_, code, err := svc.UpdateDatasetDocument("tenant-2", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{}, map[string]bool{})
+	if err == nil {
+		t.Fatal("expected ownership error")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("code = %v, want %v", code, common.CodeDataError)
+	}
+	if err.Error() != "You don't own the dataset." {
+		t.Fatalf("err = %q", err.Error())
+	}
+}
+
+func TestUpdateDatasetDocumentRejectsCounterMutation(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+
+	chunkCount := int64(6)
+	svc := testDocumentService(t)
+	_, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+		ChunkCount: &chunkCount,
+	}, map[string]bool{"chunk_count": true})
+	if err == nil {
+		t.Fatal("expected chunk_count mutation error")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("code = %v, want %v", code, common.CodeDataError)
+	}
+	if err.Error() != "Can't change `chunk_count`." {
+		t.Fatalf("err = %q", err.Error())
+	}
+}
+
+func TestUpdateDatasetDocumentAllowsZeroCounterLikePythonTruthyCheck(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+
+	chunkCount := int64(0)
+	svc := testDocumentService(t)
+	_, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+		ChunkCount: &chunkCount,
+	}, map[string]bool{"chunk_count": true})
+	if err != nil {
+		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
+	}
+}
+
+func TestUpdateDatasetDocumentRejectsUnsupportedParserIDForVisualDoc(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "image.png", 0, 0)
+	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("type", "visual").Error; err != nil {
+		t.Fatalf("update doc type: %v", err)
+	}
+
+	parserID := "naive"
+	svc := testDocumentService(t)
+	_, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+		ParserID: &parserID,
+	}, map[string]bool{"parser_id": true})
+	if err == nil {
+		t.Fatal("expected parser_id visual error")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("code = %v, want %v", code, common.CodeDataError)
+	}
+	if err.Error() != "Not supported yet!" {
+		t.Fatalf("err = %q", err.Error())
+	}
+}
+
+func TestUpdateDatasetDocumentRenameUpdatesDocumentAndFile(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "old.pdf", 0, 0)
+	insertTestFile(t, "file-1", "folder-1", "old.pdf", sptr("old.pdf"))
+	insertTestFile2Document(t, "f2d-1", "file-1", "doc-1")
+
+	newName := "new.pdf"
+	svc := testDocumentService(t)
+	resp, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+		Name: &newName,
+	}, map[string]bool{"name": true})
+	if err != nil {
+		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
+	}
+	if resp == nil || resp.Name == nil || *resp.Name != newName {
+		t.Fatalf("response name = %#v, want %q", resp, newName)
+	}
+
+	doc, _ := dao.NewDocumentDAO().GetByID("doc-1")
+	if doc.Name == nil || *doc.Name != newName {
+		t.Fatalf("document name = %v, want %q", doc.Name, newName)
+	}
+	file, _ := dao.NewFileDAO().GetByID("file-1")
+	if file.Name != newName {
+		t.Fatalf("file name = %q, want %q", file.Name, newName)
+	}
+}
+
+func TestUpdateDatasetDocumentChunkMethodResetsForReparse(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
+
+	chunkMethod := "manual"
+	svc := testDocumentService(t)
+	resp, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+		ChunkMethod: &chunkMethod,
+	}, map[string]bool{"chunk_method": true})
+	if err != nil {
+		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
+	}
+	if resp.ChunkMethod != chunkMethod || resp.Run != "UNSTART" || resp.TokenCount != 0 || resp.ChunkCount != 0 {
+		t.Fatalf("response = %+v, want method=%s run=UNSTART counts=0", resp, chunkMethod)
+	}
+
+	doc, _ := dao.NewDocumentDAO().GetByID("doc-1")
+	if doc.ParserID != chunkMethod {
+		t.Fatalf("parser_id = %q, want %q", doc.ParserID, chunkMethod)
+	}
+	if doc.TokenNum != 0 || doc.ChunkNum != 0 || doc.Progress != 0 {
+		t.Fatalf("doc counters/progress = token:%d chunk:%d progress:%f, want zero", doc.TokenNum, doc.ChunkNum, doc.Progress)
+	}
+	kb, _ := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	if kb.TokenNum != 0 || kb.ChunkNum != 0 {
+		t.Fatalf("kb counters = token:%d chunk:%d, want zero", kb.TokenNum, kb.ChunkNum)
+	}
+}
+
+func TestUpdateDatasetDocumentPipelineIDTakesPrecedenceOverChunkMethod(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
+
+	pipelineID := "1234567890abcdef1234567890abcdef"
+	chunkMethod := "manual"
+	svc := testDocumentService(t)
+	resp, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+		PipelineID:  &pipelineID,
+		ChunkMethod: &chunkMethod,
+	}, map[string]bool{"pipeline_id": true, "chunk_method": true})
+	if err != nil {
+		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
+	}
+	if resp.PipelineID == nil || *resp.PipelineID != pipelineID {
+		t.Fatalf("pipeline_id = %v, want %q", resp.PipelineID, pipelineID)
+	}
+	if resp.ChunkMethod != "naive" {
+		t.Fatalf("chunk_method = %q, want original naive", resp.ChunkMethod)
+	}
+}
+
+func TestUpdateDatasetDocumentEnabledUpdatesStatus(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+	enabled := 0
+	svc := testDocumentService(t)
+	resp, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+		Enabled: &enabled,
+	}, map[string]bool{"enabled": true})
+	if err != nil {
+		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
+	}
+	if resp.Status == nil || *resp.Status != "0" {
+		t.Fatalf("status = %v, want 0", resp.Status)
+	}
+}
+
+func insertNamedTestDoc(t *testing.T, id, kbID, name string, tokenNum, chunkNum int64) {
+	t.Helper()
+	doc := &entity.Document{
+		ID:           id,
+		KbID:         kbID,
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		TokenNum:     tokenNum,
+		ChunkNum:     chunkNum,
+		Progress:     0.75,
+		Name:         sptr(name),
+		Type:         "doc",
+		SourceType:   "local",
+		CreatedBy:    "tenant-1",
+		Suffix:       filepath.Ext(name),
+		Status:       sptr("1"),
+		Run:          sptr(string(entity.TaskStatusDone)),
+	}
+	if err := dao.DB.Create(doc).Error; err != nil {
+		t.Fatalf("insert named test doc: %v", err)
 	}
 }
