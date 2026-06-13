@@ -68,7 +68,7 @@ export interface FormFieldConfig {
   hidden?: boolean;
   required?: boolean;
   placeholder?: string;
-  options?: { label: string; value: string }[];
+  options?: { label: string; value: string | boolean | number }[];
   defaultValue?: any;
   validation?: {
     pattern?: RegExp;
@@ -149,8 +149,8 @@ export const generateSchema = (fields: FormFieldConfig[]): ZodSchema<any> => {
           }
           break;
         case FormFieldType.Segmented:
-          fieldSchema = z.string();
-          break;
+            fieldSchema = z.union([z.string(), z.number(), z.boolean()]);
+            break;
         case FormFieldType.Number:
           fieldSchema = z.coerce.number();
           if (field.validation?.min !== undefined) {
@@ -197,6 +197,14 @@ export const generateSchema = (fields: FormFieldConfig[]): ZodSchema<any> => {
         fieldSchema = (fieldSchema as z.ZodArray<z.ZodString>).min(1, {
           message: requiredMessage,
         });
+      } else if (field.type === FormFieldType.Segmented) {
+        fieldSchema = fieldSchema.refine(
+          (val) => 
+            val !== undefined && 
+            val !== null && 
+            (typeof val !== 'string' || val.trim().length > 0),
+          {message : requiredMessage},
+        );
       } else {
         fieldSchema = (fieldSchema as z.ZodString).min(1, {
           message: requiredMessage,
@@ -215,6 +223,7 @@ export const generateSchema = (fields: FormFieldConfig[]): ZodSchema<any> => {
       field.type !== FormFieldType.Switch &&
       field.type !== FormFieldType.Custom &&
       field.type !== FormFieldType.Tag &&
+      field.type !== FormFieldType.Segmented &&
       field.required
     ) {
       fieldSchema = fieldSchema as z.ZodString;
