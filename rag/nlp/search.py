@@ -149,7 +149,7 @@ class Dealer:
         src = req.get("fields",
                       ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd", "position_int",
                        "doc_id", "chunk_order_int", "page_num_int", "top_int", "create_timestamp_flt", "knowledge_graph_kwd",
-                       "question_kwd", "question_tks", "doc_type_kwd",
+                       "question_kwd", "question_tks", "doc_type_kwd", "start_time_flt", "end_time_flt",
                        "available_int", "content_with_weight", "mom_id", PAGERANK_FLD, TAG_FLD, "row_id()"])
         kwds = set([])
 
@@ -734,6 +734,8 @@ class Dealer:
                 "vector": chunk.get(vector_column, zero_vector),
                 "positions": position_int,
                 "doc_type_kwd": chunk.get("doc_type_kwd", ""),
+                "start_time_flt": chunk.get("start_time_flt"),
+                "end_time_flt": chunk.get("end_time_flt"),
                 "mom_id": chunk.get("mom_id", ""),
                 "row_id": chunk.get("row_id()"),
             }
@@ -914,7 +916,9 @@ class Dealer:
                 "term_similarity": sim,
                 "vector": [0.0] * vector_size,
                 "positions": chunk.get("position_int", []),
-                "doc_type_kwd": chunk.get("doc_type_kwd", "")
+                "doc_type_kwd": chunk.get("doc_type_kwd", ""),
+                "start_time_flt": chunk.get("start_time_flt"),
+                "end_time_flt": chunk.get("end_time_flt"),
             }
             for k in chunk.keys():
                 if k[-4:] == "_vec":
@@ -969,7 +973,9 @@ class Dealer:
                 "term_similarity": np.mean([ck["similarity"] for ck in cks]),
                 "vector": [0.0] * vector_size,
                 "positions": chunk.get("position_int", []),
-                "doc_type_kwd": chunk.get("doc_type_kwd", "")
+                "doc_type_kwd": chunk.get("doc_type_kwd", ""),
+                "start_time_flt": chunk.get("start_time_flt"),
+                "end_time_flt": chunk.get("end_time_flt"),
             }
             for k in cks[0].keys():
                 if k[-4:] == "_vec":
