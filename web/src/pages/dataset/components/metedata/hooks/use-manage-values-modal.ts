@@ -114,38 +114,16 @@ export const useManageValues = (props: IManageValuesProps) => {
   }, [hideModal]);
 
   const handleSave = useCallback(() => {
-    if (type === MetadataType.Setting && valueError.field) {
+    if (valueError.field) {
       return;
     }
-    // const supportsEnum = isMetadataValueTypeWithEnum(metaData.valueType);
-    // if (!supportsEnum) {
-    // onSave({
-    //   ...metaData,
-    //   values: [],
-    //   restrictDefinedValues: false,
-    // });
-    // handleHideModal();
-    // return;
-    // }
     if (isAddValueMode) {
-      addUpdateValue(
-        metaData.field,
-        undefined,
-        metaData.values,
-        metaData.valueType,
-      );
+      // tempValues, not metaData.values: the latter only syncs on input blur,
+      // so a Confirm click that races the blur would queue the pre-blur [''].
+      addUpdateValue(metaData.field, undefined, tempValues, metaData.valueType);
     }
-    // onSave(metaData);
     setShouldSave(true);
-  }, [
-    metaData,
-    // onSave,
-    // handleHideModal,
-    type,
-    valueError,
-    isAddValueMode,
-    addUpdateValue,
-  ]);
+  }, [metaData, tempValues, valueError, isAddValueMode, addUpdateValue]);
 
   useEffect(() => {
     if (shouldSave) {
