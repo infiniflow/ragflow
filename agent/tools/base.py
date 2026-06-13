@@ -159,9 +159,14 @@ class ToolBase(ComponentBase):
         try:
             res = self._invoke(**kwargs)
         except Exception as e:
-            self._param.outputs["_ERROR"] = {"value": str(e)}
             logging.exception(e)
-            res = str(e)
+            if self.get_exception_default_value():
+                self.set_output("_EXCEPTION", str(e))
+                self.set_exception_default_value()
+                res = self.get_exception_default_value()
+            else:
+                self.set_output("_ERROR", str(e))
+                res = str(e)
         self._param.debug_inputs = []
 
         self.set_output("_elapsed_time", time.perf_counter() - self.output("_created_time"))
@@ -186,9 +191,14 @@ class ToolBase(ComponentBase):
             else:
                 res = await thread_pool_exec(self._invoke, **kwargs)
         except Exception as e:
-            self._param.outputs["_ERROR"] = {"value": str(e)}
             logging.exception(e)
-            res = str(e)
+            if self.get_exception_default_value():
+                self.set_output("_EXCEPTION", str(e))
+                self.set_exception_default_value()
+                res = self.get_exception_default_value()
+            else:
+                self.set_output("_ERROR", str(e))
+                res = str(e)
         self._param.debug_inputs = []
 
         self.set_output("_elapsed_time", time.perf_counter() - self.output("_created_time"))
