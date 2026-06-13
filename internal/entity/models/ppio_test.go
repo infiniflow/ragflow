@@ -40,7 +40,7 @@ func newPPIOServer(t *testing.T, handler func(t *testing.T, r *http.Request, bod
 func newPPIOForTest(baseURL string) *PPIOModel {
 	return NewPPIOModel(
 		map[string]string{"default": baseURL},
-		URLSuffix{Chat: "chat/completions", Models: "models"},
+		URLSuffix{Chat: "chat/completions", Models: "models", Embedding: "embeddings", Rerank: "rerank"},
 	)
 }
 
@@ -469,14 +469,173 @@ func TestPPIOMissingRegionBaseURL(t *testing.T) {
 	}
 }
 
+// TestPPIOEmbedHappyPath verifies request shape and index-based reordering of results.
+func TestPPIOEmbedHappyPath(t *testing.T) {
+	srv := newPPIOServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method=%s", r.Method)
+		}
+		if r.URL.Path != "/embeddings" {
+			t.Errorf("path=%s", r.URL.Path)
+		}
+		if body["model"] != "BAAI/bge-m3" {
+			t.Errorf("model=%v", body["model"])
+		}
+		if input, ok := body["input"].([]interface{}); !ok || len(input) != 2 || input[0] != "a" || input[1] != "b" {
+			t.Errorf("input=%#v", body["input"])
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{
+				{"embedding": []float64{0.2}, "index": 1},
+				{"embedding": []float64{0.1}, "index": 0},
+			},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "BAAI/bge-m3"
+	vecs, err := newPPIOForTest(srv.URL).Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if len(vecs) != 2 {
+		t.Fatalf("len(vecs)=%d, want 2", len(vecs))
+	}
+	if vecs[0].Index != 0 || vecs[0].Embedding[0] != 0.1 || vecs[1].Index != 1 || vecs[1].Embedding[0] != 0.2 {
+		t.Errorf("vecs=%+v", vecs)
+	}
+}
+
+// TestPPIOEmbedRequiresAPIKey rejects requests without an API key.
+func TestPPIOEmbedRequiresAPIKey(t *testing.T) {
+	model := "BAAI/bge-m3"
+	_, err := newPPIOForTest("http://unused").Embed(&model, []string{"a"}, &APIConfig{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "api key is required") {
+		t.Errorf("expected api-key error, got %v", err)
+	}
+}
+
+// TestPPIOEmbedPropagatesUpstreamError surfaces JSON error payloads from PPIO.
+func TestPPIOEmbedPropagatesUpstreamError(t *testing.T) {
+	srv := newPPIOServer(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
+		if r.URL.Path != "/embeddings" {
+			t.Errorf("path=%s", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"error":{"message":"bad model"}}`))
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "missing"
+	_, err := newPPIOForTest(srv.URL).Embed(&model, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "upstream error") {
+		t.Errorf("expected upstream error, got %v", err)
+	}
+}
+
+// TestPPIOEmbedRejectsMissingIndex errors when the response omits index fields.
+func TestPPIOEmbedRejectsMissingIndex(t *testing.T) {
+	srv := newPPIOServer(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{
+				{"embedding": []float64{0.1}},
+			},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "BAAI/bge-m3"
+	_, err := newPPIOForTest(srv.URL).Embed(&model, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "missing embedding index") {
+		t.Errorf("expected missing-index error, got %v", err)
+	}
+}
+
+// TestPPIORerankHappyPath verifies request shape and maps results by index.
+func TestPPIORerankHappyPath(t *testing.T) {
+	srv := newPPIOServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method=%s", r.Method)
+		}
+		if r.URL.Path != "/rerank" {
+			t.Errorf("path=%s", r.URL.Path)
+		}
+		if body["model"] != "baai/bge-reranker-v2-m3" {
+			t.Errorf("model=%v", body["model"])
+		}
+		if body["query"] != "capital of France?" {
+			t.Errorf("query=%v", body["query"])
+		}
+		if docs, ok := body["documents"].([]interface{}); !ok || len(docs) != 2 {
+			t.Errorf("documents=%#v", body["documents"])
+		}
+		if body["top_n"] != float64(2) {
+			t.Errorf("top_n=%v, want 2", body["top_n"])
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"results": []map[string]interface{}{
+				{"index": 1, "relevance_score": 0.2},
+				{"index": 0, "relevance_score": 0.9},
+			},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "baai/bge-reranker-v2-m3"
+	resp, err := newPPIOForTest(srv.URL).Rerank(
+		&model,
+		"capital of France?",
+		[]string{"Paris is the capital.", "Berlin is the capital."},
+		&APIConfig{ApiKey: &apiKey},
+		&RerankConfig{TopN: 2},
+	)
+	if err != nil {
+		t.Fatalf("Rerank: %v", err)
+	}
+	if len(resp.Data) != 2 {
+		t.Fatalf("len(resp.Data)=%d, want 2", len(resp.Data))
+	}
+	if resp.Data[0].Index != 0 || resp.Data[0].RelevanceScore != 0.9 {
+		t.Errorf("result[0]=%+v", resp.Data[0])
+	}
+	if resp.Data[1].Index != 1 || resp.Data[1].RelevanceScore != 0.2 {
+		t.Errorf("result[1]=%+v", resp.Data[1])
+	}
+}
+
+// TestPPIORerankRequiresAPIKey rejects requests without an API key.
+func TestPPIORerankRequiresAPIKey(t *testing.T) {
+	model := "baai/bge-reranker-v2-m3"
+	_, err := newPPIOForTest("http://unused").Rerank(&model, "q", []string{"a"}, &APIConfig{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "api key is required") {
+		t.Errorf("expected api-key error, got %v", err)
+	}
+}
+
+// TestPPIORerankPropagatesUpstreamError surfaces JSON error payloads from PPIO.
+func TestPPIORerankPropagatesUpstreamError(t *testing.T) {
+	srv := newPPIOServer(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
+		if r.URL.Path != "/rerank" {
+			t.Errorf("path=%s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"error":{"message":"bad model"}}`))
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "missing"
+	_, err := newPPIOForTest(srv.URL).Rerank(&model, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "upstream error") {
+		t.Errorf("expected upstream error, got %v", err)
+	}
+}
+
 func TestPPIOUnsupportedMethods(t *testing.T) {
 	m := newPPIOForTest("http://unused")
-	if _, err := m.Embed(nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("Embed error=%v", err)
-	}
-	if _, err := m.Rerank(nil, "", nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("Rerank error=%v", err)
-	}
 	if _, err := m.Balance(nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Balance error=%v", err)
 	}

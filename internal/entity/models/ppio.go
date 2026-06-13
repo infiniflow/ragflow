@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 )
 
@@ -328,12 +329,224 @@ func (p *PPIOModel) CheckConnection(apiConfig *APIConfig) error {
 	return err
 }
 
-func (p *PPIOModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	return nil, fmt.Errorf("%s, no such method", p.Name())
+// ppioEmbeddingData is one element in a PPIO /embeddings response.
+type ppioEmbeddingData struct {
+	Embedding []float64 `json:"embedding"`
+	Index     *int      `json:"index"`
 }
 
-func (p *PPIOModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", p.Name())
+// ppioEmbeddingResponse is the JSON body returned by PPIO embeddings API.
+type ppioEmbeddingResponse struct {
+	Data  []ppioEmbeddingData `json:"data"`
+	Error interface{}         `json:"error,omitempty"`
+}
+
+// Embed requests embedding vectors via the PPIO OpenAI-compatible /embeddings endpoint.
+func (p *PPIOModel) Embed(
+	modelName *string,
+	texts []string,
+	apiConfig *APIConfig,
+	embeddingConfig *EmbeddingConfig,
+) ([]EmbeddingData, error) {
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
+	}
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+	if p.URLSuffix.Embedding == "" {
+		return nil, fmt.Errorf("ppio: embedding URL suffix is not configured")
+	}
+
+	url, err := p.endpoint(apiConfig, p.URLSuffix.Embedding)
+	if err != nil {
+		return nil, err
+	}
+
+	reqBody := map[string]interface{}{
+		"model": *modelName,
+		"input": texts,
+	}
+	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
+		reqBody["dimensions"] = embeddingConfig.Dimension
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ppio embeddings API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed ppioEmbeddingResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	if parsed.Error != nil {
+		return nil, fmt.Errorf("ppio: upstream error: %v", parsed.Error)
+	}
+
+	embeddings := make([]EmbeddingData, len(texts))
+	filled := make([]bool, len(texts))
+	for _, item := range parsed.Data {
+		if item.Index == nil {
+			return nil, fmt.Errorf("ppio: missing embedding index in response item")
+		}
+		idx := *item.Index
+		if idx < 0 || idx >= len(texts) {
+			return nil, fmt.Errorf("ppio: embedding response index %d out of range for %d inputs", idx, len(texts))
+		}
+		if filled[idx] {
+			return nil, fmt.Errorf("ppio: duplicate embedding index %d in response", idx)
+		}
+		embeddings[idx] = EmbeddingData{
+			Embedding: item.Embedding,
+			Index:     idx,
+		}
+		filled[idx] = true
+	}
+	for i, ok := range filled {
+		if !ok {
+			return nil, fmt.Errorf("ppio: missing embedding for input index %d", i)
+		}
+	}
+	return embeddings, nil
+}
+
+// ppioRerankResult is one scored document in a PPIO /rerank response.
+type ppioRerankResult struct {
+	Index          int     `json:"index"`
+	RelevanceScore float64 `json:"relevance_score"`
+}
+
+// ppioRerankResponse is the JSON body returned by PPIO rerank API.
+type ppioRerankResponse struct {
+	Results []ppioRerankResult `json:"results"`
+	Error   interface{}        `json:"error,omitempty"`
+}
+
+// Rerank scores documents against a query via PPIO's OpenAI-compatible
+// POST /v1/rerank endpoint (see https://ppio.com/docs/models/reference-llm-create-rerank).
+func (p *PPIOModel) Rerank(
+	modelName *string,
+	query string,
+	documents []string,
+	apiConfig *APIConfig,
+	rerankConfig *RerankConfig,
+) (*RerankResponse, error) {
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
+	}
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+	if p.URLSuffix.Rerank == "" {
+		return nil, fmt.Errorf("ppio: rerank URL suffix is not configured")
+	}
+
+	url, err := p.endpoint(apiConfig, p.URLSuffix.Rerank)
+	if err != nil {
+		return nil, err
+	}
+
+	topN := len(documents)
+	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
+		topN = rerankConfig.TopN
+	}
+
+	reqBody := map[string]interface{}{
+		"model":     *modelName,
+		"query":     query,
+		"documents": documents,
+		"top_n":     topN,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ppio rerank API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed ppioRerankResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	if parsed.Error != nil {
+		return nil, fmt.Errorf("ppio: upstream error: %v", parsed.Error)
+	}
+
+	rerankResponse := RerankResponse{Data: make([]RerankResult, 0, len(parsed.Results))}
+	seen := make([]bool, len(documents))
+	for _, item := range parsed.Results {
+		if item.Index < 0 || item.Index >= len(documents) {
+			return nil, fmt.Errorf("ppio: rerank index %d out of range for %d inputs", item.Index, len(documents))
+		}
+		if seen[item.Index] {
+			return nil, fmt.Errorf("ppio: duplicate rerank index %d in response", item.Index)
+		}
+		rerankResponse.Data = append(rerankResponse.Data, RerankResult{
+			Index:          item.Index,
+			RelevanceScore: item.RelevanceScore,
+		})
+		seen[item.Index] = true
+	}
+	// Normalize output by input index so the mapping is deterministic
+	// regardless of the order PPIO returns scored results in.
+	sort.Slice(rerankResponse.Data, func(i, j int) bool {
+		return rerankResponse.Data[i].Index < rerankResponse.Data[j].Index
+	})
+	return &rerankResponse, nil
 }
 
 func (p *PPIOModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
