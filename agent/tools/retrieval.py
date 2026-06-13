@@ -68,7 +68,9 @@ class RetrievalParam(ToolParamBase):
         self.use_kg = False
         self.cross_languages = []
         self.toc_enhance = False
-        self.meta_data_filter={}
+        self.meta_data_filter = {}
+        self.include_federated = False
+        self.federated_kb_ids = []
 
     def check(self):
         self.check_decimal_float(self.similarity_threshold, "[Retrieval] Similarity threshold")
@@ -198,6 +200,7 @@ class Retrieval(ToolBase, ABC):
 
         if kbs:
             query = re.sub(r"^user[:：\s]*", "", query, flags=re.IGNORECASE)
+            _requesting_tenant_id = self._canvas.get_tenant_id() if hasattr(self._canvas, "get_tenant_id") else None
             kbinfos = await settings.retriever.retrieval(
                 query,
                 embd_mdl,
@@ -212,6 +215,8 @@ class Retrieval(ToolBase, ABC):
                 aggs=True,
                 rerank_mdl=rerank_mdl,
                 rank_feature=label_question(query, kbs),
+                include_federated=self._param.include_federated,
+                requesting_tenant_id=_requesting_tenant_id,
             )
             if self.check_if_canceled("Retrieval processing"):
                 return

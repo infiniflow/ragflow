@@ -571,6 +571,10 @@ class OBConnection(OBConnectionBase):
                         elif vector_similarity_weight >= 1.0:
                             match_expressions = [m for m in match_expressions if isinstance(m, MatchDenseExpr)]
 
+        extra_filters = kwargs.get("extra_filters")
+        if extra_filters:
+            condition = {**condition, **extra_filters}
+
         result: SearchResult = SearchResult(
             total=0,
             chunks=[],
