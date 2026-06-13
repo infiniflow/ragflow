@@ -1,4 +1,5 @@
 {{- if eq .Values.env.DOC_ENGINE "elasticsearch" -}}
+{{- if .Values.elasticsearch.enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -14,4 +15,5 @@ data:
   cluster.routing.allocation.disk.watermark.high: 3gb
   cluster.routing.allocation.disk.watermark.flood_stage: 2gb
   TZ: {{ .Values.env.TZ }}
+{{- end }}
 {{- end -}}

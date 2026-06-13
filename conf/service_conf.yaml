@@ -23,6 +23,7 @@ es:
   hosts: 'http://localhost:1200'
   username: 'elastic'
   password: 'infini_rag_flow'
+  api_key: ''
 os:
   hosts: 'http://localhost:1201'
   username: 'admin'
