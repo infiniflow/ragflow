@@ -51,6 +51,81 @@ func (v *VolcEngine) Name() string {
 	return "volcengine"
 }
 
+type volcEngineThinkingRequest struct {
+	thinkingType       string
+	reasoningEffort    string
+	hasReasoningEffort bool
+}
+
+func volcEngineThinkingRequestFromConfig(chatModelConfig *ChatConfig, allowCustomEffort bool) (*volcEngineThinkingRequest, error) {
+	if chatModelConfig == nil || chatModelConfig.Thinking == nil {
+		return nil, nil
+	}
+
+	if !*chatModelConfig.Thinking {
+		return &volcEngineThinkingRequest{thinkingType: "disabled"}, nil
+	}
+
+	effort := "medium"
+	if chatModelConfig.Effort != nil {
+		effort = *chatModelConfig.Effort
+	}
+
+	switch effort {
+	case "none", "minimal":
+		return &volcEngineThinkingRequest{
+			thinkingType:       "disabled",
+			reasoningEffort:    "minimal",
+			hasReasoningEffort: true,
+		}, nil
+	case "low":
+		return &volcEngineThinkingRequest{
+			thinkingType:       "enabled",
+			reasoningEffort:    "low",
+			hasReasoningEffort: true,
+		}, nil
+	case "medium", "auto", "default":
+		return &volcEngineThinkingRequest{
+			thinkingType:       "enabled",
+			reasoningEffort:    "medium",
+			hasReasoningEffort: true,
+		}, nil
+	case "high":
+		return &volcEngineThinkingRequest{
+			thinkingType:       "enabled",
+			reasoningEffort:    "high",
+			hasReasoningEffort: true,
+		}, nil
+	default:
+		if !allowCustomEffort {
+			return nil, fmt.Errorf("invalid effort level")
+		}
+		return &volcEngineThinkingRequest{
+			thinkingType:       "enabled",
+			reasoningEffort:    effort,
+			hasReasoningEffort: true,
+		}, nil
+	}
+}
+
+func applyVolcEngineThinkingConfig(reqBody map[string]interface{}, chatModelConfig *ChatConfig, allowCustomEffort bool) (bool, error) {
+	thinkingReq, err := volcEngineThinkingRequestFromConfig(chatModelConfig, allowCustomEffort)
+	if err != nil {
+		return false, err
+	}
+	if thinkingReq == nil {
+		return false, nil
+	}
+
+	if thinkingReq.hasReasoningEffort {
+		reqBody["reasoning_effort"] = thinkingReq.reasoningEffort
+	}
+	reqBody["thinking"] = map[string]interface{}{
+		"type": thinkingReq.thinkingType,
+	}
+	return thinkingReq.thinkingType == "enabled", nil
+}
+
 // ChatWithMessages sends multiple messages with roles and returns response
 func (v *VolcEngine) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
@@ -100,43 +175,11 @@ func (v *VolcEngine) ChatWithMessages(modelName string, messages []Message, apiC
 		if chatModelConfig.TopP != nil {
 			reqBody["top_p"] = *chatModelConfig.TopP
 		}
+	}
 
-		if chatModelConfig.Thinking != nil {
-			if *chatModelConfig.Thinking {
-				var thinkingFlag string
-				effort := "medium"
-				if chatModelConfig.Effort != nil {
-					effort = *chatModelConfig.Effort
-				}
-				switch effort {
-				case "none", "minimal":
-					thinkingFlag = "disabled"
-					reqBody["reasoning_effort"] = "minimal"
-				case "low":
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = "low"
-				case "medium":
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = "medium"
-				case "auto", "default":
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = "medium"
-				case "high":
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = "high"
-				default:
-					thinkingFlag = "enabled"
-					reqBody["reasoning_effort"] = effort
-				}
-				reqBody["thinking"] = map[string]interface{}{
-					"type": thinkingFlag,
-				}
-			} else {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "disabled",
-				}
-			}
-		}
+	expectReasoning, err := applyVolcEngineThinkingConfig(reqBody, chatModelConfig, true)
+	if err != nil {
+		return nil, err
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -197,7 +240,7 @@ func (v *VolcEngine) ChatWithMessages(modelName string, messages []Message, apiC
 	}
 
 	var reasonContent string
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
+	if expectReasoning {
 		reasonContent, ok = messageMap["reasoning_content"].(string)
 		if !ok {
 			return nil, fmt.Errorf("invalid reasonContent format")
@@ -276,46 +319,8 @@ func (v *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message
 		reqBody["stop"] = *modelConfig.Stop
 	}
 
-	// TODO VolcEngine has `auto` mode
-	if modelConfig.Thinking != nil {
-		if *modelConfig.Thinking {
-			var thinkingFlag string
-			effort := "medium"
-			if modelConfig.Effort != nil {
-				effort = *modelConfig.Effort
-			}
-			switch effort {
-			case "none", "minimal":
-				thinkingFlag = "disabled"
-				reqBody["reasoning_effort"] = "minimal"
-				break
-			case "low":
-				thinkingFlag = "enabled"
-				reqBody["reasoning_effort"] = "low"
-				break
-			case "medium":
-				thinkingFlag = "enabled"
-				reqBody["reasoning_effort"] = "medium"
-				break
-			case "auto", "default":
-				thinkingFlag = "enabled"
-				reqBody["reasoning_effort"] = "medium"
-				break
-			case "high":
-				thinkingFlag = "enabled"
-				reqBody["reasoning_effort"] = "high"
-				break
-			default:
-				return fmt.Errorf("invalid effort level")
-			}
-			reqBody["thinking"] = map[string]interface{}{
-				"type": thinkingFlag,
-			}
-		} else {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "disabled",
-			}
-		}
+	if _, err := applyVolcEngineThinkingConfig(reqBody, modelConfig, false); err != nil {
+		return err
 	}
 
 	jsonData, err := json.Marshal(reqBody)
