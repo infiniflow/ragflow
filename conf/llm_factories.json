@@ -1258,7 +1258,8 @@
                     "max_tokens": 512,
                     "model_type": "embedding"
                 }
-            ]
+            ],
+            "url": "https://api.baichuan-ai.com/v1"
         },
         {
             "name": "Jina",
@@ -1891,7 +1892,8 @@
                     "model_type": "speech2text",
                     "is_tools": false
                 }
-            ]
+            ],
+            "url": "https://api.stepfun.com/v1"
         },
         {
             "name": "NVIDIA",
@@ -2836,7 +2838,8 @@
                     "max_tokens": 4000,
                     "model_type": "embedding"
                 }
-            ]
+            ],
+            "url": "https://api.upstage.ai/v1/solar"
         },
         {
             "name": "NovitaAI",
@@ -2963,7 +2966,8 @@
                     "max_tokens": 8192,
                     "model_type": "embedding"
                 }
-            ]
+            ],
+            "url": "https://api.novita.ai/v3/openai"
         },
         {
             "name": "SILICONFLOW",
@@ -4090,7 +4094,8 @@
                     "max_tokens": 32768,
                     "model_type": "chat"
                 }
-            ]
+            ],
+            "url": "https://api.ppinfra.com/v3/openai"
         },
         {
             "name": "Replicate",
@@ -4253,7 +4258,8 @@
                         "thinking"
                     ]
                 }
-            ]
+            ],
+            "url": "https://spark-api-open.xf-yun.com/v1"
         },
         {
             "name": "BaiduYiyan",
@@ -5449,7 +5455,8 @@
                     "model_type": "rerank",
                     "is_tools": false
                 }
-            ]
+            ],
+            "url": "https://api.302.ai/v1"
         },
         {
             "name": "CometAPI",
@@ -5743,7 +5750,8 @@
                     "model_type": "tts",
                     "is_tools": false
                 }
-            ]
+            ],
+            "url": "https://api.cometapi.com/v1"
         },
         {
             "name": "LongCat",
@@ -6060,7 +6068,8 @@
                     "model_type": "tts",
                     "is_tools": false
                 }
-            ]
+            ],
+            "url": "https://api.deerapi.com/v1"
         },
         {
             "name": "Jiekou.AI",
@@ -6714,7 +6723,8 @@
                     "max_tokens": 32768,
                     "model_type": "rerank"
                 }
-            ]
+            ],
+            "url": "https://api.jiekou.ai/openai"
         },
         {
             "name": "MinerU",
@@ -7237,14 +7247,16 @@
                     "model_type": "chat",
                     "is_tools": true
                 }
-            ]
+            ],
+            "url": "https://api.avian.io/v1"
         },
         {
             "name": "RAGcon",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,TTS,TEXT RE-RANK,SPEECH2TEXT,IMAGE2TEXT",
             "status": "1",
-            "llm": []
+            "llm": [],
+            "url": "https://connect.ragcon.com/v1"
         },
         {
             "name": "Xiaomi",
