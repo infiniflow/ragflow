@@ -546,7 +546,7 @@ async def _iter_session_completion_events(tenant_id, agent_id, req, return_trace
             yield ans
             continue
 
-        if event in ["message", "message_end"]:
+        if event in ["message", "message_end", "user_inputs", "workflow_finished"]:
             yield ans
 
 

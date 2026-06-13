@@ -1,5 +1,6 @@
 import { FileUploadProps } from '@/components/file-upload';
 import { NextMessageInput } from '@/components/message-input/next';
+import MarkdownContent from '@/components/next-markdown-content';
 import MessageItem from '@/components/next-message-item';
 import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
@@ -8,11 +9,14 @@ import { useUploadAgentFileWithProgress } from '@/hooks/use-agent-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { IAgentLogResponse } from '@/interfaces/database/agent';
 import { IMessage } from '@/interfaces/database/chat';
+import DebugContent from '@/pages/agent/debug-content';
+import { useAwaitCompentData } from '@/pages/agent/hooks/use-chat-logic';
 import { BeginQuery } from '@/pages/agent/interface';
 import { ParameterDialog } from '@/pages/agent/share/parameter-dialog';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router';
 import { useExploreUrlParams } from '../hooks/use-explore-url-params';
 import { useSendSessionMessage } from '../hooks/use-send-session-message';
 
@@ -25,6 +29,7 @@ export function SessionChat({ session }: SessionChatProps) {
   const { data: userInfo } = useFetchUserInfo();
   const { sessionId, isNew } = useExploreUrlParams();
   const hasLocalMessageRef = useRef(false);
+  const { id: canvasId } = useParams();
 
   const sessionLoading = false;
 
@@ -37,6 +42,7 @@ export function SessionChat({ session }: SessionChatProps) {
     handleInputChange,
     handlePressEnter,
     stopOutputMessage,
+    sendFormMessage,
     canvasInfo,
     findReferenceByMessageId,
     appendUploadResponseList,
@@ -47,6 +53,12 @@ export function SessionChat({ session }: SessionChatProps) {
     shouldShowParameterDialog,
     setDerivedMessages,
   } = useSendSessionMessage();
+
+  const { buildInputList, handleOk, isWaitting } = useAwaitCompentData({
+    derivedMessages,
+    sendFormMessage,
+    canvasId: canvasId as string,
+  });
   const hasActiveSession = Boolean(
     sessionId || isNew || hasLocalMessageRef.current,
   );
@@ -140,7 +152,30 @@ export function SessionChat({ session }: SessionChatProps) {
                     showLikeButton={false}
                     sendLoading={sendLoading}
                     showLog={false}
-                  />
+                  >
+                    {message.role === MessageType.Assistant &&
+                      derivedMessages.length - 1 === i && (
+                        <DebugContent
+                          parameters={buildInputList(message)}
+                          message={message}
+                          ok={handleOk(message)}
+                          isNext={false}
+                          btnText={'Submit'}
+                        ></DebugContent>
+                      )}
+                    {message.role === MessageType.Assistant &&
+                      derivedMessages.length - 1 !== i && (
+                        <div>
+                          <MarkdownContent
+                            content={message?.data?.tips}
+                            loading={false}
+                          ></MarkdownContent>
+                          <div>
+                            {buildInputList(message)?.map((item) => item.value)}
+                          </div>
+                        </div>
+                      )}
+                  </MessageItem>
                 ))}
               </div>
             )}
@@ -151,9 +186,9 @@ export function SessionChat({ session }: SessionChatProps) {
           <NextMessageInput
             value={value}
             sendLoading={sendLoading}
-            disabled={false}
-            sendDisabled={sendLoading}
-            isUploading={isUploading}
+            disabled={isWaitting}
+            sendDisabled={sendLoading || isWaitting}
+            isUploading={isUploading || isWaitting}
             onPressEnter={handleSessionPressEnter}
             onInputChange={handleInputChange}
             stopOutputMessage={stopOutputMessage}
