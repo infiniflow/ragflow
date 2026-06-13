@@ -514,7 +514,7 @@ async def get_graph(tenant_id, kb_id, exclude_rebuild=None):
     return result
 
 
-async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, change: GraphChange, callback):
+async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, change: GraphChange, callback, persist_subgraphs: bool = True):
     global chat_limiter
     start = asyncio.get_running_loop().time()
 
@@ -535,22 +535,23 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
     ]
 
     # generate updated subgraphs
-    for source in graph.graph["source_id"]:
-        subgraph = graph.subgraph([n for n in graph.nodes if source in graph.nodes[n]["source_id"]]).copy()
-        subgraph.graph["source_id"] = [source]
-        for n in subgraph.nodes:
-            subgraph.nodes[n]["source_id"] = [source]
-        chunks.append(
-            {
-                "id": get_uuid(),
-                "content_with_weight": json.dumps(nx.node_link_data(subgraph, edges="edges"), ensure_ascii=False),
-                "knowledge_graph_kwd": "subgraph",
-                "kb_id": kb_id,
-                "source_id": [source],
-                "available_int": 0,
-                "removed_kwd": "N",
-            }
-        )
+    if persist_subgraphs:
+        for source in graph.graph["source_id"]:
+            subgraph = graph.subgraph([n for n in graph.nodes if source in graph.nodes[n]["source_id"]]).copy()
+            subgraph.graph["source_id"] = [source]
+            for n in subgraph.nodes:
+                subgraph.nodes[n]["source_id"] = [source]
+            chunks.append(
+                {
+                    "id": get_uuid(),
+                    "content_with_weight": json.dumps(nx.node_link_data(subgraph, edges="edges"), ensure_ascii=False),
+                    "knowledge_graph_kwd": "subgraph",
+                    "kb_id": kb_id,
+                    "source_id": [source],
+                    "available_int": 0,
+                    "removed_kwd": "N",
+                }
+            )
 
     tasks = []
     for ii, node in enumerate(change.added_updated_nodes):
