@@ -602,6 +602,8 @@ class Base(ABC):
         assert False, "Shouldn't be here."
 
     async def _async_chat(self, history, gen_conf, **kwargs):
+        kwargs.pop("images", None)
+        kwargs.pop("chat_template_kwargs", None)
         logging.info("[HISTORY]" + json.dumps(history, ensure_ascii=False, indent=2))
         if self.model_name.lower().find("qwq") >= 0:
             logging.info(f"[INFO] {self.model_name} detected as reasoning model, using async_chat_streamly")
@@ -1498,6 +1500,8 @@ class LiteLLMBase(ABC):
         return self.provider == SupportedLiteLLMProvider.DeepSeek
 
     async def async_chat(self, system, history, gen_conf, **kwargs):
+        kwargs.pop("images", None)
+        kwargs.pop("chat_template_kwargs", None)
         hist = list(history) if history else []
         if system:
             if not hist or hist[0].get("role") != "system":

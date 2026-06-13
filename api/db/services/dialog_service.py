@@ -39,7 +39,12 @@ from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
     resolve_reference_metadata_preferences,
 )
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance, get_model_type_by_name
+from api.db.joint_services.tenant_model_service import (
+    get_model_config_from_provider_instance,
+    get_model_type_by_name,
+    get_tenant_default_model_by_type,
+    split_model_name,
+)
 from common.time_utils import current_timestamp, datetime_format
 from common.text_utils import normalize_arabic_digits
 from rag.graphrag.general.mind_map_extractor import MindMapExtractor
@@ -335,6 +340,34 @@ async def async_chat_solo(dialog, messages, stream=True, session_id=None):
         user_content = msg[-1].get("content", "[content not available]")
         logging.debug("User: {}|Assistant: {}".format(user_content, answer))
         yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, answer), "prompt": "", "created_at": time.time()}
+
+
+def validate_runtime_kb_ids(kb_ids, user_id):
+    """Validate runtime kb_ids override for chat completions.
+
+    Returns a normalized kb id list on success, or an error message string.
+    """
+    if not isinstance(kb_ids, list):
+        return "`kb_ids` should be a list."
+
+    normalized_ids = [dataset_id for dataset_id in kb_ids if dataset_id]
+    kbs = []
+    for dataset_id in normalized_ids:
+        if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=user_id):
+            return f"You don't own the dataset {dataset_id}"
+        matches = KnowledgebaseService.query(id=dataset_id)
+        if not matches:
+            return f"You don't own the dataset {dataset_id}"
+        kb = matches[0]
+        if kb.chunk_num == 0:
+            return f"The dataset {dataset_id} doesn't own parsed file"
+        kbs.append(kb)
+
+    embd_ids = [split_model_name(kb.embd_id)[0] for kb in kbs]
+    if len(set(embd_ids)) > 1:
+        return f"Datasets use different embedding models: {[kb.embd_id for kb in kbs]}"
+
+    return normalized_ids
 
 
 def get_models(dialog, trace_context=None, langfuse_session_id=None):

@@ -21,7 +21,7 @@ from common.constants import StatusEnum
 from api.db.db_models import Conversation, DB
 from api.db.services.api_service import API4ConversationService
 from api.db.services.common_service import CommonService
-from api.db.services.dialog_service import DialogService, async_chat
+from api.db.services.dialog_service import DialogService, async_chat, validate_runtime_kb_ids
 from common.misc_utils import get_uuid
 import json
 
@@ -202,8 +202,11 @@ async def async_completion(tenant_id, chat_id, question, name="New session", ses
     message_id = msg[-1].get("id")
     e, dia = DialogService.get_by_id(conv.dialog_id)
 
-    kb_ids = kwargs.get("kb_ids",[])
-    dia.kb_ids = list(set(dia.kb_ids + kb_ids))
+    if "kb_ids" in kwargs:
+        validated = validate_runtime_kb_ids(kwargs.pop("kb_ids"), tenant_id)
+        if isinstance(validated, str):
+            raise ValueError(validated)
+        dia.kb_ids = validated
     if not conv.reference:
         conv.reference = []
     conv.message.append({"role": "assistant", "content": "", "id": message_id})
@@ -296,6 +299,13 @@ async def async_iframe_completion(dialog_id, question, session_id=None, stream=T
     if not conv.reference:
         conv.reference = []
     conv.reference.append({"chunks": [], "doc_aggs": []})
+
+    if "kb_ids" in kwargs:
+        user_id = kwargs.get("user_id") or dia.tenant_id
+        validated = validate_runtime_kb_ids(kwargs.pop("kb_ids"), user_id)
+        if isinstance(validated, str):
+            raise ValueError(validated)
+        dia.kb_ids = validated
 
     if stream:
         try:
