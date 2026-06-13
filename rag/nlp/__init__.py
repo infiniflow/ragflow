@@ -851,7 +851,14 @@ def add_source_positions(d, poss):
     position_int = []
     top_int = []
     for pn, left, right, top, bottom in poss:
-        page_no = max(1, int(pn))
+        page_no = int(pn)
+        if page_no <= 0:
+            logging.warning(
+                "Clamping non-positive source page number %s to 1 for source position %s",
+                pn,
+                (pn, left, right, top, bottom),
+            )
+            page_no = 1
         page_num_int.append(page_no)
         top_int.append(int(top))
         position_int.append((page_no, int(left), int(right), int(top), int(bottom)))
