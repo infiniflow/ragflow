@@ -363,7 +363,7 @@ def validate_runtime_kb_ids(kb_ids, user_id):
             return f"The dataset {dataset_id} doesn't own parsed file"
         kbs.append(kb)
 
-    embd_ids = [split_model_name(kb.embd_id)[0] for kb in kbs]
+    embd_ids = [kb.embd_id for kb in kbs]
     if len(set(embd_ids)) > 1:
         return f"Datasets use different embedding models: {[kb.embd_id for kb in kbs]}"
 

@@ -301,8 +301,8 @@ async def async_iframe_completion(dialog_id, question, session_id=None, stream=T
     conv.reference.append({"chunks": [], "doc_aggs": []})
 
     if "kb_ids" in kwargs:
-        user_id = kwargs.get("user_id") or dia.tenant_id
-        validated = validate_runtime_kb_ids(kwargs.pop("kb_ids"), user_id)
+        owner_id = tenant_id or dia.tenant_id
+        validated = validate_runtime_kb_ids(kwargs.pop("kb_ids"), owner_id)
         if isinstance(validated, str):
             raise ValueError(validated)
         dia.kb_ids = validated
