@@ -92,6 +92,16 @@ class RAGFlowS3:
 
             if config_kwargs:
                 s3_params['config'] = Config(**config_kwargs)
+            else:
+                s3_params['config'] = Config()
+
+            # --- FIX: Disable checksum calculation for Tencent COS compatibility ---
+            # This prevents the "MissingContentLength" error when uploading large files.
+            s3_params['config'] = s3_params['config'].merge(Config(
+                request_checksum_calculation='WHEN_REQUIRED',
+                response_checksum_validation='WHEN_REQUIRED'
+            ))
+            # --------------------------------------------------------------------
 
             self.conn = [boto3.client('s3', **s3_params)]
         except Exception:
