@@ -345,6 +345,8 @@ async def build_chunks(task, progress_callback):
         progress_callback(-1, "Internal server error while chunking: %s" % str(e).replace("'", ""))
         logging.exception("Chunking {}/{} got exception".format(task["location"], task["name"]))
         raise
+    finally:
+        del binary
 
     # Record raw chunks for comparison
     get_recording_context().record("raw_chunks", cks)
@@ -371,8 +373,7 @@ async def build_chunks(task, progress_callback):
     @timeout(60)
     async def upload_to_minio(document, chunk):
         try:
-            d = copy.deepcopy(document)
-            d.update(chunk)
+            d = {**document, **chunk}
             d["id"] = xxhash.xxh64((chunk["content_with_weight"] + str(d["doc_id"])).encode("utf-8", "surrogatepass")).hexdigest()
             d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
             d["create_timestamp_flt"] = datetime.now().timestamp()
@@ -1745,6 +1746,10 @@ async def handle_task():
                 document_id=task["doc_id"], pipeline_id="", task_type=pipeline_task_type, task_id=task_id, referred_document_id=referred_document_id
             )
             get_recording_context().save_func_return_value("PipelineOperationLogService.record_pipeline_operation", ret)
+        # Free recording context memory after each task
+        ctx = get_recording_context()
+        if hasattr(ctx, 'clear'):
+            ctx.clear()
 
     redis_msg.ack()
 
