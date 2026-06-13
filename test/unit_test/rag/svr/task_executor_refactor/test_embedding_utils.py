@@ -18,6 +18,7 @@ Unit tests for EmbeddingUtils module.
 """
 
 import numpy as np
+import pytest
 from unittest.mock import patch
 from rag.svr.task_executor_refactor.embedding_utils import EmbeddingUtils
 
@@ -220,6 +221,22 @@ class TestEmbeddingUtilsAttachVectors:
 
         assert id(docs) == original_id
 
+    @pytest.mark.p1
+    def test_attach_vectors_stamps_modality_kwd(self):
+        """attach_vectors infers modality_kwd when absent and preserves existing values."""
+        docs = [
+            {"doc_type_kwd": "audio", "content_with_weight": "transcript"},
+            {"content_with_weight": "plain text"},
+            {"modality_kwd": "image", "content_with_weight": "caption"},
+        ]
+        vectors = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+
+        EmbeddingUtils.attach_vectors(docs, vectors)
+
+        assert docs[0]["modality_kwd"] == "audio"
+        assert docs[1]["modality_kwd"] == "text"
+        assert docs[2]["modality_kwd"] == "image"
+
 
 class TestEmbeddingUtilsCombineVectors:
     """Tests for combine_title_content_vectors class method."""
@@ -274,6 +291,46 @@ class TestEmbeddingUtilsCombineVectors:
         # Should use default weight of 0.1
         expected = 0.1 * title_vecs + 0.9 * content_vecs
         np.testing.assert_array_almost_equal(result, expected)
+
+
+class TestEmbeddingUtilsInferModality:
+    """Tests for _infer_modality class method."""
+
+    @pytest.mark.p1
+    def test_infer_modality_from_doc_type_table(self):
+        """Table chunks stamped by parsers keep table modality after HTML flattening."""
+        doc = {"doc_type_kwd": "table", "content_with_weight": "Cell data"}
+        assert EmbeddingUtils._infer_modality(doc) == "table"
+
+    @pytest.mark.p1
+    def test_infer_modality_from_doc_type_audio(self):
+        """Audio chunks with doc_type_kwd set by the parser keep audio modality."""
+        doc = {"doc_type_kwd": "audio", "content_with_weight": "transcript"}
+        assert EmbeddingUtils._infer_modality(doc) == "audio"
+
+    @pytest.mark.p1
+    def test_infer_modality_from_doc_type_image(self):
+        """Image chunks with doc_type_kwd set by the parser keep image modality."""
+        doc = {"doc_type_kwd": "image", "content_with_weight": "caption"}
+        assert EmbeddingUtils._infer_modality(doc) == "image"
+
+    @pytest.mark.p1
+    def test_infer_modality_from_doc_type_video(self):
+        """Video chunks with doc_type_kwd set by the parser keep video modality."""
+        doc = {"doc_type_kwd": "video", "content_with_weight": "transcript"}
+        assert EmbeddingUtils._infer_modality(doc) == "video"
+
+    @pytest.mark.p1
+    def test_infer_modality_from_html_table_markup(self):
+        """HTML table markup in content infers table modality when doc_type_kwd is absent."""
+        doc = {"content_with_weight": "<table><tr><td>Cell</td></tr></table>"}
+        assert EmbeddingUtils._infer_modality(doc) == "table"
+
+    @pytest.mark.p1
+    def test_infer_modality_defaults_to_text(self):
+        """Plain text content without doc_type_kwd defaults to text modality."""
+        doc = {"content_with_weight": "plain text"}
+        assert EmbeddingUtils._infer_modality(doc) == "text"
 
 
 class TestEmbeddingUtilsInternals:

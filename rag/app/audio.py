@@ -27,6 +27,7 @@ from rag.nlp import rag_tokenizer, tokenize
 def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
     doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
+    doc["doc_type_kwd"] = "audio"
 
     # is it English
     is_english = lang.lower() == "english"  # is_english(sections)
@@ -51,7 +52,23 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
         ans = seq2txt_mdl.transcription(tmp_path)
         callback(0.8, "Sequence2Txt LLM respond: %s ..." % ans[:32])
 
-        tokenize(doc, ans, is_english)
+        # Whisper-compatible models may return a list of timed segments:
+        # [{"start": float, "end": float, "text": str}, ...].
+        # Preserve timestamps so playback can seek to the right offset.
+        if isinstance(ans, list):
+            if ans and isinstance(ans[0], dict):
+                chunks = []
+                for seg in ans:
+                    seg_doc = doc.copy()
+                    seg_doc["audio_start_flt"] = float(seg.get("start", 0.0))
+                    seg_doc["audio_end_flt"] = float(seg.get("end", 0.0))
+                    tokenize(seg_doc, seg.get("text", ""), is_english)
+                    chunks.append(seg_doc)
+                return chunks
+            tokenize(doc, "" if not ans else str(ans), is_english)
+            return [doc]
+
+        tokenize(doc, ans if isinstance(ans, str) else str(ans), is_english)
         return [doc]
     except Exception as e:
         callback(prog=-1, msg=str(e))
