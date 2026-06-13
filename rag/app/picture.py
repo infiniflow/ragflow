@@ -16,14 +16,16 @@
 
 import asyncio
 import io
+import logging
 import re
 
 import numpy as np
 from PIL import Image
 
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_by_type_and_name
 from common.constants import LLMType
+from common.parser_config_utils import normalize_layout_recognizer
 from common.string_utils import clean_markdown_block
 from deepdoc.vision import OCR
 from rag.nlp import attach_media_context, rag_tokenizer, tokenize
@@ -32,6 +34,32 @@ ocr = OCR()
 
 # Gemini supported MIME types
 VIDEO_EXTS = [".mp4", ".mov", ".avi", ".flv", ".mpeg", ".mpg", ".webm", ".wmv", ".3gp", ".3gpp", ".mkv"]
+
+
+def _ocr_by_paddleocr(filename, binary, tenant_id, lang, callback, paddleocr_llm_name=None):
+    """Use PaddleOCR API to extract text from an image."""
+    if not paddleocr_llm_name:
+        try:
+            from api.db.services.tenant_llm_service import TenantLLMService
+
+            TenantLLMService.ensure_paddleocr_from_env(tenant_id)
+            candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="PaddleOCR", model_type=LLMType.OCR.value)
+            if candidates:
+                paddleocr_llm_name = candidates[0].llm_name
+        except Exception as e:
+            logging.warning(f"fallback to env paddleocr: {e}")
+
+    if not paddleocr_llm_name:
+        return None
+
+    try:
+        ocr_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.OCR, paddleocr_llm_name)
+        ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
+        txt = ocr_model.mdl.parse_image(filepath=filename, binary=binary, callback=callback)
+        return txt
+    except Exception as e:
+        logging.error(f"Failed to parse image via PaddleOCR ({paddleocr_llm_name}): {e}")
+        return None
 
 
 def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
@@ -70,8 +98,19 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
                 "doc_type_kwd": "image",
             }
         )
-        bxs = ocr(np.array(img))
-        txt = "\n".join([t[0] for _, t in bxs if t[0]])
+
+        # Check if PaddleOCR is selected for OCR
+        layout_recognizer_raw = parser_config.get("layout_recognize", "")
+        layout_recognizer, parser_model_name = normalize_layout_recognizer(layout_recognizer_raw)
+
+        txt = None
+        if layout_recognizer and layout_recognizer.lower() == "paddleocr":
+            txt = _ocr_by_paddleocr(filename, binary, tenant_id, lang, callback, paddleocr_llm_name=parser_model_name)
+
+        if txt is None:
+            # Default: use built-in deepdoc OCR
+            bxs = ocr(np.array(img))
+            txt = "\n".join([t[0] for _, t in bxs if t[0]])
         callback(0.4, "Finish OCR: (%s ...)" % txt[:12])
         if (eng and len(txt.split()) > 32) or len(txt) > 32:
             tokenize(doc, txt, eng)
