@@ -160,6 +160,9 @@ async def chatbots_inputs(dialog_id, tenant_id=None):
 async def agent_bot_completions(agent_id, tenant_id=None):
     req = await get_request_json()
 
+    if not await thread_pool_exec(UserCanvasService.accessible, agent_id, tenant_id):
+        return get_error_data_result(message=f"Can't find agent by ID: {agent_id}")
+
     if req.get("stream", True):
         async def stream():
             try:
@@ -240,6 +243,9 @@ async def agent_bot_completions(agent_id, tenant_id=None):
 @login_required(auth_types=AUTH_BETA)
 @add_tenant_id_to_kwargs
 async def begin_inputs(agent_id, tenant_id=None):
+    if not await thread_pool_exec(UserCanvasService.accessible, agent_id, tenant_id):
+        return get_error_data_result(f"Can't find agent by ID: {agent_id}")
+
     e, cvs = await thread_pool_exec(UserCanvasService.get_by_id, agent_id)
     if not e:
         return get_error_data_result(f"Can't find agent by ID: {agent_id}")
