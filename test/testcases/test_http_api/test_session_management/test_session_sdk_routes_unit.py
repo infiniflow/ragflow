@@ -2608,6 +2608,139 @@ def test_session_completion_merges_generation_params_for_existing_chat(monkeypat
 
 
 @pytest.mark.p2
+def test_session_completion_keeps_dialog_settings_without_overrides(monkeypatch):
+    module = _load_chat_api_module(monkeypatch)
+
+    base_llm_setting = {"temperature": 0.7, "top_p": 0.3, "custom": "keep"}
+    dia = SimpleNamespace(
+        id="chat-1",
+        tenant_id="tenant-1",
+        llm_id="model",
+        llm_setting=base_llm_setting,
+        prompt_config={"prologue": ""},
+        kb_ids=[],
+    )
+    conv = SimpleNamespace(
+        id="session-1",
+        dialog_id="chat-1",
+        message=[],
+        reference=[],
+        user_id="authenticated-user",
+        name="test",
+    )
+    conv.to_dict = lambda: {
+        "id": conv.id,
+        "dialog_id": conv.dialog_id,
+        "message": conv.message,
+        "reference": conv.reference,
+        "user_id": conv.user_id,
+        "name": conv.name,
+    }
+    captured = {}
+
+    async def _fake_async_chat(captured_dia, _messages, stream=True, **_kwargs):
+        captured["llm_setting"] = dict(captured_dia.llm_setting)
+        yield {"answer": "ok", "reference": {}}
+
+    monkeypatch.setattr(module.DialogService, "get_by_id", lambda _dialog_id: (True, dia))
+    monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (True, conv))
+    monkeypatch.setattr(module.ConversationService, "update_by_id", lambda *_a, **_k: True, raising=False)
+    monkeypatch.setattr(module, "async_chat", _fake_async_chat)
+    monkeypatch.setattr(module, "structure_answer", lambda _conv, ans, _message_id, _session_id: ans)
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({
+            "chat_id": "chat-1",
+            "session_id": "session-1",
+            "stream": False,
+            "messages": [{"role": "user", "content": "latest question"}],
+        }),
+    )
+
+    res = _run(inspect.unwrap(module.session_completion)())
+
+    assert res["code"] == 0, res
+    # No per-request generation params were sent, so the merge is a no-op and the
+    # dialog's stored settings must be passed through untouched.
+    assert captured["llm_setting"] == {"temperature": 0.7, "top_p": 0.3, "custom": "keep"}
+    assert base_llm_setting == {"temperature": 0.7, "top_p": 0.3, "custom": "keep"}
+
+
+@pytest.mark.p2
+def test_session_completion_assigns_default_model_then_merges_for_existing_chat(monkeypatch):
+    module = _load_chat_api_module(monkeypatch)
+
+    base_llm_setting = {"top_p": 0.3, "custom": "keep"}
+    dia = SimpleNamespace(
+        id="chat-1",
+        tenant_id="tenant-1",
+        llm_id="",
+        llm_setting=base_llm_setting,
+        prompt_config={"prologue": ""},
+        kb_ids=[],
+    )
+    conv = SimpleNamespace(
+        id="session-1",
+        dialog_id="chat-1",
+        message=[],
+        reference=[],
+        user_id="authenticated-user",
+        name="test",
+    )
+    conv.to_dict = lambda: {
+        "id": conv.id,
+        "dialog_id": conv.dialog_id,
+        "message": conv.message,
+        "reference": conv.reference,
+        "user_id": conv.user_id,
+        "name": conv.name,
+    }
+    captured = {}
+
+    async def _fake_async_chat(captured_dia, _messages, stream=True, **_kwargs):
+        captured["llm_id"] = captured_dia.llm_id
+        captured["llm_setting"] = dict(captured_dia.llm_setting)
+        yield {"answer": "ok", "reference": {}}
+
+    monkeypatch.setattr(module.DialogService, "get_by_id", lambda _dialog_id: (True, dia))
+    monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (True, conv))
+    monkeypatch.setattr(module.ConversationService, "update_by_id", lambda *_a, **_k: True, raising=False)
+    monkeypatch.setattr(
+        module.TenantService,
+        "get_by_id",
+        lambda _tenant_id: (True, SimpleNamespace(llm_id="tenant-default")),
+    )
+    monkeypatch.setattr(module, "async_chat", _fake_async_chat)
+    monkeypatch.setattr(module, "structure_answer", lambda _conv, ans, _message_id, _session_id: ans)
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({
+            "chat_id": "chat-1",
+            "session_id": "session-1",
+            "stream": False,
+            "messages": [{"role": "user", "content": "latest question"}],
+            "temperature": 0,
+            "presence_penalty": 0,
+        }),
+    )
+
+    res = _run(inspect.unwrap(module.session_completion)())
+
+    assert res["code"] == 0, res
+    # Dialog had no model yet: fall back to the tenant default and still merge the
+    # caller's per-request overrides onto the stored settings.
+    assert captured["llm_id"] == "tenant-default"
+    assert captured["llm_setting"] == {
+        "top_p": 0.3,
+        "custom": "keep",
+        "temperature": 0,
+        "presence_penalty": 0,
+    }
+
+
+@pytest.mark.p2
 def test_session_completion_can_use_submitted_full_history(monkeypatch):
     """The UI opt-in flag should preserve the previous full-history request behavior."""
     module = _load_chat_api_module(monkeypatch)
