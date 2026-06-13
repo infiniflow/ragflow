@@ -113,6 +113,22 @@ _DEFAULT_DIRECT_CHAT_PROMPT_CONFIG = {
 _DEFAULT_RERANK_MODELS = {"BAAI/bge-reranker-v2-m3", "maidalun1020/bce-reranker-base_v1"}
 _READONLY_FIELDS = {"id", "tenant_id", "created_by", "create_time", "create_date", "update_time", "update_date"}
 _PERSISTED_FIELDS = set(DialogService.model._meta.fields)
+_SESSION_FALLBACK_FIELDS = {
+    "id",
+    "dialog_id",
+    "user_id",
+    "name",
+    "message",
+    "reference",
+    "create_time",
+    "create_date",
+    "update_time",
+    "update_date",
+}
+
+
+def _session_persisted_fields():
+    return set(getattr(getattr(ConversationService, "model", None), "_meta", SimpleNamespace(fields=_SESSION_FALLBACK_FIELDS)).fields)
 
 
 def _build_chat_response(chat):
@@ -851,6 +867,10 @@ async def update_session(chat_id, session_id):
             if not isinstance(name, str) or not name.strip():
                 return get_data_error_result(message="`name` can not be empty.")
             req["name"] = name.strip()[:255]
+        unknown_fields = set(req) - _session_persisted_fields() - {"chat_id"} - _READONLY_FIELDS
+        if unknown_fields:
+            field = sorted(unknown_fields)[0]
+            return get_json_result(code=RetCode.EXCEPTION_ERROR, message=f'Unrecognized field name: "{field}"')
         update_fields = {k: v for k, v in req.items() if k not in {"id", "dialog_id", "chat_id", "user_id"}}
         if not ConversationService.update_by_id(session_id, update_fields):
             return get_data_error_result(message="Session not found!")
