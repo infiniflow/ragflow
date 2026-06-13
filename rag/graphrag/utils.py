@@ -474,12 +474,19 @@ async def embed_graph_chunks(embd_mdl, pending, callback=None, label="", batch_s
     for start in range(0, len(misses), batch_size):
         batch = misses[start:start + batch_size]
         texts = [embed_text for _, _, embed_text in batch]
-        async with chat_limiter:
-            timeout = 3 if enable_timeout_assertion else 30000000
-            embeddings, _ = await asyncio.wait_for(
-                thread_pool_exec(embd_mdl.encode, texts),
-                timeout=timeout,
+        try:
+            async with chat_limiter:
+                timeout = 3 if enable_timeout_assertion else 30000000
+                embeddings, _ = await asyncio.wait_for(
+                    thread_pool_exec(embd_mdl.encode, texts),
+                    timeout=timeout,
+                )
+        except Exception:
+            logging.exception(
+                "embed_graph_chunks(%s): failed encoding batch %d-%d of %d misses",
+                label, start, start + len(batch), len(misses),
             )
+            raise
         for (chunk, cache_key, _), ebd in zip(batch, embeddings):
             assert ebd is not None
             set_embed_cache(embd_mdl.llm_name, cache_key, ebd)
