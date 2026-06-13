@@ -253,7 +253,34 @@ func (v *VoyageModel) Rerank(modelName *string, query string, documents []string
 }
 
 func (v *VoyageModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", v.Name())
+	// Voyage AI exposes no live model-list endpoint — its public API only has
+	// /v1/embeddings and /v1/rerank — so "list models" returns the statically
+	// configured catalog from the loaded provider definition, enriched with each
+	// model's metadata (max_tokens, model_types, dimensions). Issue #15853.
+	pm := GetProviderManager()
+	if pm == nil {
+		return nil, fmt.Errorf("voyage: provider manager not initialized")
+	}
+	provider := pm.FindProvider(v.Name())
+	if provider == nil {
+		return nil, fmt.Errorf("voyage: provider definition not found")
+	}
+
+	models := make([]ListModelResponse, 0, len(provider.Models))
+	for _, m := range provider.Models {
+		if m == nil || m.Name == "" {
+			continue
+		}
+		models = append(models, ListModelResponse{
+			Name:         m.Name,
+			MaxTokens:    m.MaxTokens,
+			ModelTypes:   m.ModelTypes,
+			Thinking:     m.Thinking,
+			MaxDimension: m.MaxDimension,
+			Dimensions:   m.Dimensions,
+		})
+	}
+	return models, nil
 }
 
 func (v *VoyageModel) CheckConnection(apiConfig *APIConfig) error {

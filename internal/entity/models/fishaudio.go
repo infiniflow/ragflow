@@ -379,14 +379,23 @@ func (f *FishAudioModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, 
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]ListModelResponse, 0, len(result.Items))
+	// Fish Audio's /model returns voice models as {items:[{_id,title}]}. Surface
+	// the human-readable title as the model name (matching prior behaviour),
+	// falling back to _id when a title is blank, and run the result through the
+	// shared ParseListModel helper for consistency (issue #15853).
+	modelList := ModelList{Object: "list"}
 	for _, item := range result.Items {
-		models = append(models, ListModelResponse{
-			Name: item.Title,
-		})
+		name := strings.TrimSpace(item.Title)
+		if name == "" {
+			name = strings.TrimSpace(item.ID)
+		}
+		if name == "" {
+			continue
+		}
+		modelList.Models = append(modelList.Models, DSModel{ID: name})
 	}
 
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 func (f *FishAudioModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
