@@ -23,14 +23,31 @@ import (
 )
 
 type DOCParser struct {
+	libType string
 }
 
-func NewDOCParser() *DOCParser {
-	return &DOCParser{}
+func NewDOCParser(libType string) (*DOCParser, error) {
+	switch libType {
+	case OfficeOxide:
+		return &DOCParser{
+			libType: OfficeOxide,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported DOC library type: %s", libType)
+	}
 }
 
 func (p *DOCParser) Parse(filename string, data []byte) error {
 	fmt.Printf("Parsing DOC file: %s\n", filename)
+	switch p.libType {
+	case OfficeOxide:
+		return p.OfficeOxideParse(data)
+	default:
+		return fmt.Errorf("unsupported DOC library type: %s", p.libType)
+	}
+}
+
+func (p *DOCParser) OfficeOxideParse(data []byte) error {
 	doc, err := officeOxide.OpenFromBytes(data, "doc")
 	if err != nil {
 		return err

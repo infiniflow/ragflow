@@ -19,6 +19,9 @@ package parser
 import "fmt"
 
 type PDFParser struct {
+	ParserType string // DeepDoc, PaddleOCR, MinerU
+	Model      string // DeepDoc@buildin@ragflow
+	LibType    string // pdf_oxide, used by DeepDoc
 }
 
 func NewPDFParser() *PDFParser {
