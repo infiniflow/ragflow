@@ -69,10 +69,13 @@ func (h *ChunkHandler) RetrievalTest(c *gin.Context) {
 	// Bind JSON request
 	var req service.RetrievalTestRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		// Don't leak service-layer parse details to the client — see
+		// #15743 / #15744. Log internally instead.
+		common.Warn("dataset search bind failed", zap.String("error", err.Error()))
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    common.CodeArgumentError,
 			"data":    nil,
-			"message": err.Error(),
+			"message": "invalid request body",
 		})
 		return
 	}
@@ -137,23 +140,9 @@ func (h *ChunkHandler) RetrievalTest(c *gin.Context) {
 		return
 	}
 
-	// Call service with user ID for permission checks
-	resp, err := h.chunkService.RetrievalTest(&req, user.ID)
-	if err != nil {
-		common.Warn("dataset search failed", zap.String("error", err.Error()))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    common.CodeServerError,
-			"data":    nil,
-			"message": "dataset search failed",
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"code":    int(common.CodeSuccess),
-		"data":    resp,
-		"message": "success",
-	})
+	// Call service with user ID for permission checks. Shared helper preserves
+	// the existing HTTP 500 + CodeServerError shape — see #15744.
+	runRetrievalTest(c, h.chunkService, &req, user.ID, "dataset search")
 }
 
 // Get retrieves a chunk by ID.
