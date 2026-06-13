@@ -214,6 +214,7 @@ type PromptConfig struct {
 	Parameters      []ParameterConfig `json:"parameters"`
 	EmptyResponse   string            `json:"empty_response"`
 	TavilyAPIKey    string            `json:"tavily_api_key,omitempty"`
+	CrossLanguages  []string          `json:"cross_languages,omitempty"`
 	Keyword         bool              `json:"keyword,omitempty"`
 	Quote           bool              `json:"quote,omitempty"`
 	Reasoning       bool              `json:"reasoning,omitempty"`
@@ -415,6 +416,7 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 		"system":           promptConfig.System,
 		"prologue":         promptConfig.Prologue,
 		"empty_response":   promptConfig.EmptyResponse,
+		"cross_languages":  promptConfig.CrossLanguages,
 		"keyword":          promptConfig.Keyword,
 		"quote":            promptConfig.Quote,
 		"reasoning":        promptConfig.Reasoning,
