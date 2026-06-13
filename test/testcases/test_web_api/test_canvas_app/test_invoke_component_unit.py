@@ -81,6 +81,11 @@ def _load_invoke_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "common.misc_utils", misc_mod)
     misc_spec.loader.exec_module(misc_mod)
 
+    ssrf_spec = importlib.util.spec_from_file_location("common.ssrf_guard", repo_root / "common" / "ssrf_guard.py")
+    ssrf_mod = importlib.util.module_from_spec(ssrf_spec)
+    monkeypatch.setitem(sys.modules, "common.ssrf_guard", ssrf_mod)
+    ssrf_spec.loader.exec_module(ssrf_mod)
+
     # -- agent package (bare stubs to skip __init__ auto-import) -------------
 
     agent_pkg = ModuleType("agent")
@@ -271,3 +276,59 @@ def test_header_variable_with_put(monkeypatch):
     monkeypatch.setattr(module.requests, "put", mock_put)
     invoke._invoke()
     assert mock_put.call_args[1]["headers"]["Authorization"] == "Bearer put_token"
+
+
+@pytest.mark.p2
+def test_invoke_blocks_loopback_url(monkeypatch):
+    module = _load_invoke_module(monkeypatch)
+    invoke = _make_invoke(module, url="http://127.0.0.1:9380/")
+    mock_get = MagicMock(return_value=SimpleNamespace(text="should not run"))
+    monkeypatch.setattr(module.requests, "get", mock_get)
+    result = invoke._invoke()
+    mock_get.assert_not_called()
+    assert result == "Http request error: URL not valid"
+    assert invoke.output("_ERROR") == "URL not valid"
+
+
+@pytest.mark.p2
+def test_invoke_blocks_metadata_ip(monkeypatch):
+    module = _load_invoke_module(monkeypatch)
+    invoke = _make_invoke(module, url="http://169.254.169.254/latest/meta-data/")
+    mock_get = MagicMock(return_value=SimpleNamespace(text="should not run"))
+    monkeypatch.setattr(module.requests, "get", mock_get)
+    result = invoke._invoke()
+    mock_get.assert_not_called()
+    assert "URL not valid" in result
+
+
+@pytest.mark.p2
+def test_invoke_url_without_scheme_gets_scheme_then_validated(monkeypatch):
+    """Bare hostnames are prefixed with http:// before SSRF validation."""
+    module = _load_invoke_module(monkeypatch)
+    invoke = _make_invoke(module, url="127.0.0.1:9380/")
+    mock_get = MagicMock(return_value=SimpleNamespace(text="should not run"))
+    monkeypatch.setattr(module.requests, "get", mock_get)
+    result = invoke._invoke()
+    mock_get.assert_not_called()
+    assert "URL not valid" in result
+
+
+@pytest.mark.p2
+def test_invoke_blocks_loopback_proxy(monkeypatch):
+    module = _load_invoke_module(monkeypatch)
+    invoke = _make_invoke(module, url="http://example.com", proxy="http://127.0.0.1:8080")
+    mock_get = MagicMock(return_value=SimpleNamespace(text="should not run"))
+    monkeypatch.setattr(module.requests, "get", mock_get)
+    result = invoke._invoke()
+    mock_get.assert_not_called()
+    assert "URL not valid" in result
+
+
+@pytest.mark.p2
+def test_invoke_disables_redirect_following(monkeypatch):
+    module = _load_invoke_module(monkeypatch)
+    invoke = _make_invoke(module, url="http://example.com")
+    mock_get = MagicMock(return_value=SimpleNamespace(text="ok"))
+    monkeypatch.setattr(module.requests, "get", mock_get)
+    invoke._invoke()
+    assert mock_get.call_args[1]["allow_redirects"] is False
