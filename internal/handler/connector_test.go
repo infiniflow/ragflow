@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"ragflow/internal/cache"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
@@ -322,4 +324,57 @@ func TestConnectorHandlerListLogs(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConnectorHandlerStartGoogleWebOAuth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &ConnectorHandler{}
+
+	t.Run("invalid_type", func(t *testing.T) {
+		router := gin.New()
+		router.POST("/api/v1/connectors/google/oauth/web/start", func(c *gin.Context) {
+			c.Set("user", &entity.User{ID: "tenant-1"})
+			h.StartGoogleWebOAuth(c)
+		})
+
+		resp := httptest.NewRecorder()
+		body := strings.NewReader(`{"credentials":{"web":{"client_id":"cid"}}}`)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/connectors/google/oauth/web/start?type=bad", body)
+		req.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(resp, req)
+
+		var got map[string]interface{}
+		_ = json.Unmarshal(resp.Body.Bytes(), &got)
+		if got["code"] != float64(common.CodeArgumentError) {
+			t.Fatalf("expected argument error, got=%v body=%s", got["code"], resp.Body.String())
+		}
+	})
+
+	t.Run("fail_when_redis_unavailable", func(t *testing.T) {
+		restore := cache.SwapGlobalClientForTest(nil)
+		defer restore()
+
+		router := gin.New()
+		router.POST("/api/v1/connectors/google/oauth/web/start", func(c *gin.Context) {
+			c.Set("user", &entity.User{ID: "tenant-1"})
+			h.StartGoogleWebOAuth(c)
+		})
+
+		resp := httptest.NewRecorder()
+		body := strings.NewReader(`{"credentials":{"web":{"client_id":"client-123"}}}`)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/connectors/google/oauth/web/start", body)
+		req.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(resp, req)
+
+		var got map[string]interface{}
+		if err := json.Unmarshal(resp.Body.Bytes(), &got); err != nil {
+			t.Fatalf("unmarshal response: %v", err)
+		}
+		if got["code"] != float64(common.CodeServerError) {
+			t.Fatalf("expected server error, got=%v body=%s", got["code"], resp.Body.String())
+		}
+		if got["message"] != "Failed to initialize Google OAuth flow. Please retry." {
+			t.Fatalf("unexpected message=%v body=%s", got["message"], resp.Body.String())
+		}
+	})
 }

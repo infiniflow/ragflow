@@ -50,6 +50,13 @@ type ConnectorHandler struct {
 	userService      *service.UserService
 }
 
+const (
+	webFlowTTLSeconds                = 15 * 60
+	googleOAuthAuthorizationURL      = "https://accounts.google.com/o/oauth2/v2/auth"
+	defaultGoogleDriveWebRedirectURI = "http://localhost:9380/v1/connector/google-drive/oauth/web/callback"
+	defaultGmailWebRedirectURI       = "http://localhost:9380/v1/connector/gmail/oauth/web/callback"
+)
+
 // NewConnectorHandler create connector handler
 func NewConnectorHandler(connectorService *service.ConnectorService, userService *service.UserService) *ConnectorHandler {
 	return &ConnectorHandler{
