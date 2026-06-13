@@ -37,7 +37,7 @@ class InfinityConnection(InfinityConnectionBase):
         # Treat "*_kwd" tag-like columns as keyword lists except knowledge_graph_kwd; source_id is also keyword-like.
         if field_name == "source_id" or (
                 field_name.endswith("_kwd") and field_name not in ["knowledge_graph_kwd", "docnm_kwd", "important_kwd",
-                                                                   "question_kwd"]):
+                                                                   "question_kwd", "chunk_metadata_kwd"]):
             return True
         return False
 
@@ -448,8 +448,30 @@ class InfinityConnection(InfinityConnectionBase):
                         # both dict and JSON-string. Other backends (OceanBase JSON
                         # column, ES/OpenSearch) keep dict shape — this is Infinity-only.
                         if isinstance(v, dict):
-                            d[k] = json.dumps(v)
+                            try:
+                                d[k] = json.dumps(v)
+                            except (TypeError, ValueError) as e:
+                                self.logger.warning(
+                                    f"extra serialization failed for chunk {d.get('id', 'unknown')}: {e}; value: {v!r}"
+                                )
+                                d[k] = ""
                         else:
+                            d[k] = v if v else ""
+                    elif k == "chunk_metadata_kwd":
+                        # chunk_metadata_kwd is a varchar column; serialize dicts to JSON.
+                        if isinstance(v, dict):
+                            try:
+                                d[k] = json.dumps(v, ensure_ascii=False)
+                            except (TypeError, ValueError) as e:
+                                self.logger.warning(
+                                    f"chunk_metadata_kwd serialization failed for chunk {d.get('id', 'unknown')}: {e}; value: {v!r}"
+                                )
+                                d[k] = ""
+                        else:
+                            if v and not isinstance(v, str):
+                                self.logger.warning(
+                                    f"chunk_metadata_kwd has unexpected type {type(v).__name__} for chunk {d.get('id', 'unknown')}; using as-is"
+                                )
                             d[k] = v if v else ""
                     elif k == "kb_id":
                         if isinstance(d[k], list):

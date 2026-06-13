@@ -173,6 +173,7 @@ export interface IChunk {
   tag_kwd?: string[];
   positions: number[][];
   tag_feas?: Record<string, number>;
+  chunk_metadata?: Record<string, unknown>;
 }
 
 export interface ITestingChunk {
