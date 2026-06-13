@@ -175,6 +175,26 @@ type ListChunksResponse struct {
 	Total  int64                    `json:"total"`
 }
 
+// AddChunkRequest mirrors the Python add_chunk body.
+type AddChunkRequest struct {
+	Content           string                 `json:"content"`
+	ImportantKeywords []string               `json:"important_keywords"`
+	Questions         []string               `json:"questions"`
+	TagKwd            []string               `json:"tag_kwd"`
+	TagFeas           map[string]interface{} `json:"tag_feas"`
+}
+
+// UpdateChunkRESTRequest mirrors the Python PATCH body.
+type UpdateChunkRESTRequest struct {
+	Content           *string                `json:"content"`
+	ImportantKeywords []string               `json:"important_keywords"`
+	Questions         []string               `json:"questions"`
+	Available         *bool                  `json:"available"`
+	Positions         []interface{}          `json:"positions"`
+	TagKwd            []string               `json:"tag_kwd"`
+	TagFeas           map[string]interface{} `json:"tag_feas"`
+}
+
 // List retrieves chunks for a document
 func (s *ChunkService) List(req *ListChunksRequest, userID string) (*ListChunksResponse, error) {
 	if s.docEngine == nil {
