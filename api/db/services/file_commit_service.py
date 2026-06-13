@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import datetime
 import hashlib
 import json
 import logging
@@ -32,7 +33,6 @@ class FileCommitService(CommonService):
     model = FileCommit
 
     @classmethod
-    @DB.connection_context()
     def create_commit(cls, folder_id, author_id, message, file_changes):
         """Create a new commit for a workspace folder.
 
@@ -48,28 +48,28 @@ class FileCommitService(CommonService):
         Returns:
             The created FileCommit instance
         """
-        # 1. Get the latest (chain head) commit for this folder
-        latest_commit = cls._get_latest_commit(folder_id)
-
-        # 2. Begin creating the commit record
         commit_id = get_uuid()
         now_ts = current_timestamp()
-        now_dt = datetime_format()
-
-        commit_data = {
-            "id": commit_id,
-            "folder_id": folder_id,
-            "parent_id": latest_commit.id if latest_commit else None,
-            "message": message,
-            "author_id": author_id,
-            "file_count": len(file_changes),
-            "create_time": now_ts,
-            "create_date": now_dt,
-            "update_time": now_ts,
-            "update_date": now_dt,
-        }
+        now_dt = datetime_format(date_time=datetime.datetime.now())
 
         with DB.atomic():
+            # 1. Get the latest (chain head) commit for this folder
+            latest_commit = cls._get_latest_commit(folder_id)
+
+            # 2. Begin creating the commit record
+            commit_data = {
+                "id": commit_id,
+                "folder_id": folder_id,
+                "parent_id": latest_commit.id if latest_commit else None,
+                "message": message,
+                "author_id": author_id,
+                "file_count": len(file_changes),
+                "create_time": now_ts,
+                "create_date": now_dt,
+                "update_time": now_ts,
+                "update_date": now_dt,
+            }
+
             # 3. Insert commit record
             FileCommit(**commit_data).save(force_insert=True)
 
@@ -113,10 +113,11 @@ class FileCommitService(CommonService):
                     item["new_location"] = obj_key
 
                     # Update file record in DB
-                    FileService.update_by_id(file_id, {
+                    File.update({
                         "location": obj_key,
                         "size": len(content_bytes),
-                    })
+                        "update_time": current_timestamp(),
+                    }).where(File.id == file_id).execute()
 
                     # Update tree state
                     tree_state[file_id] = {
@@ -150,10 +151,11 @@ class FileCommitService(CommonService):
                     item["new_location"] = obj_key
 
                     # Update file record
-                    FileService.update_by_id(file_id, {
+                    File.update({
                         "location": obj_key,
                         "size": len(content_bytes),
-                    })
+                        "update_time": current_timestamp(),
+                    }).where(File.id == file_id).execute()
 
                     # Update tree state
                     tree_state[file_id] = {
@@ -173,8 +175,8 @@ class FileCommitService(CommonService):
                         item["old_location"] = old_location
 
                     # Soft-delete the file record
-                    FileService.model.update(status="0").where(
-                        FileService.model.id == file_id
+                    File.update(status="0", update_time=current_timestamp()).where(
+                        File.id == file_id
                     ).execute()
 
                     # Remove from tree state (mark deleted)
@@ -188,7 +190,9 @@ class FileCommitService(CommonService):
                     item["new_name"] = new_name
 
                     # Update the file record name
-                    FileService.update_by_id(file_id, {"name": new_name})
+                    File.update(name=new_name, update_time=current_timestamp()).where(
+                        File.id == file_id
+                    ).execute()
 
                     # Update tree state
                     if file_id in tree_state:
@@ -205,7 +209,6 @@ class FileCommitService(CommonService):
         return commit
 
     @classmethod
-    @DB.connection_context()
     def _get_latest_commit(cls, folder_id):
         """Get the latest (chain head) commit for a folder."""
         try:
