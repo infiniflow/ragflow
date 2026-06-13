@@ -21,6 +21,7 @@ from quart import Response, jsonify
 
 from api.apps import current_user, login_required
 from api.apps.restful_apis._generation_params import extract_generation_config, merge_generation_config
+from api.apps.restful_apis._validators import validate_llm_id
 from api.db.services.dialog_service import DialogService, async_chat
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_api_key
@@ -31,24 +32,6 @@ from common.token_utils import num_tokens_from_string
 from rag.prompts.generator import chunks_format
 
 
-def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
-    if not llm_id:
-        return None
-
-    model_type = (llm_setting or {}).get("model_type")
-    if model_type not in {"chat", "image2text"}:
-        model_type = "chat"
-
-    try:
-        get_model_config_from_provider_instance(
-            tenant_id=tenant_id,
-            model_name=llm_id,
-            model_type=model_type,
-        )
-    except Exception as e:
-        logging.error(f"Fail to get model config for {llm_id}: {e}")
-        return f"`llm_id` {llm_id} doesn't exist"
-    return None
 
 
 import logging
@@ -274,7 +257,7 @@ async def openai_chat_completions(chat_id):
     if using_placeholder_model:
         requested_model = dia.llm_id or requested_model
     else:
-        llm_id_error = _validate_llm_id(requested_model, current_user.id, {"model_type": "chat"})
+        llm_id_error = await validate_llm_id(requested_model, current_user.id, {"model_type": "chat"})
         if llm_id_error:
             return get_error_data_result(message=llm_id_error, code=RetCode.ARGUMENT_ERROR)
         dia.llm_id = requested_model
