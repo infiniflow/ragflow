@@ -845,6 +845,7 @@ def add_positions(d, poss):
 
 
 def add_source_positions(d, poss):
+    """Copy source coordinates that already use public one-based page numbers."""
     if not poss:
         return
     page_num_int = []
