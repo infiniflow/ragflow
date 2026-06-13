@@ -844,6 +844,22 @@ def add_positions(d, poss):
     d["top_int"] = top_int
 
 
+def add_source_positions(d, poss):
+    if not poss:
+        return
+    page_num_int = []
+    position_int = []
+    top_int = []
+    for pn, left, right, top, bottom in poss:
+        page_no = max(1, int(pn))
+        page_num_int.append(page_no)
+        top_int.append(int(top))
+        position_int.append((page_no, int(left), int(right), int(top), int(bottom)))
+    d["page_num_int"] = page_num_int
+    d["position_int"] = position_int
+    d["top_int"] = top_int
+
+
 def remove_contents_table(sections, eng=False):
     i = 0
     while i < len(sections):
