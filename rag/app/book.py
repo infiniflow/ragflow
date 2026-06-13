@@ -83,7 +83,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             sections.append((text, image))
             tbls.append(((None, html), ""))
 
-        remove_contents_table(sections, eng=is_english(random_choices([t for t, _ in sections], k=200)))
+        remove_contents_table(sections, eng=is_english(random_choices([s[0] for s in sections], k=200)))
 
         tbls = vision_figure_parser_docx_wrapper(sections=sections, tbls=tbls, callback=callback, **kwargs)
         # tbls = [((None, lns), None) for lns in tbls]
@@ -124,20 +124,27 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         if name in ["tcadp", "docling", "mineru", "paddleocr"]:
             parser_config["chunk_token_num"] = 0
 
+        # Normalize sections to 2-tuples: (text, position_tag)
+        sections = [
+            (s[0], s[-1] if len(s) >= 2 else "")
+            for s in sections
+            if isinstance(s, (tuple, list)) and len(s) > 0 and s[0]
+        ]
+
         callback(0.8, "Finish parsing.")
     elif re.search(r"\.txt$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
         sections = txt.split("\n")
         sections = [(line, "") for line in sections if line]
-        remove_contents_table(sections, eng=is_english(random_choices([t for t, _ in sections], k=200)))
+        remove_contents_table(sections, eng=is_english(random_choices([s[0] for s in sections], k=200)))
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(htm|html)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections = HtmlParser()(filename, binary)
         sections = [(line, "") for line in sections if line]
-        remove_contents_table(sections, eng=is_english(random_choices([t for t, _ in sections], k=200)))
+        remove_contents_table(sections, eng=is_english(random_choices([s[0] for s in sections], k=200)))
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.doc$", filename, re.IGNORECASE):
@@ -154,7 +161,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         if doc_parsed.get("content", None) is not None:
             sections = doc_parsed["content"].split("\n")
             sections = [(line, "") for line in sections if line]
-            remove_contents_table(sections, eng=is_english(random_choices([t for t, _ in sections], k=200)))
+            remove_contents_table(sections, eng=is_english(random_choices([s[0] for s in sections], k=200)))
             callback(0.8, "Finish parsing.")
 
     else:

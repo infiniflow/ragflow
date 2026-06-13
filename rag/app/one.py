@@ -122,7 +122,22 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             if not rows:
                 continue
             sections.append((rows if isinstance(rows, str) else rows[0], [(p[0] + 1 - from_page, p[1], p[2], p[3], p[4]) for p in poss]))
-        sections = [s for s, _ in sections if s]
+        normalized_sections = []
+        dropped = 0
+        for s in sections:
+            if isinstance(s, str):
+                if s:
+                    normalized_sections.append(s)
+                else:
+                    dropped += 1
+                continue
+            if not isinstance(s, (tuple, list)) or len(s) == 0 or not s[0]:
+                dropped += 1
+                continue
+            normalized_sections.append(s[0])
+        if dropped:
+            logging.debug("Dropped %d malformed/empty PDF sections", dropped)
+        sections = normalized_sections
 
     elif re.search(r"\.xlsx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
