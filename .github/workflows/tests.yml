@@ -141,6 +141,17 @@ jobs:
             sudo docker rm -f -v "${BUILDER_CONTAINER}"
           fi
 
+      - name: Compile go test files
+        run: |
+          # `go build` (above) never compiles _test.go files, so missing imports
+          # or type errors in test code slip through CI. `-run=^$` compiles every
+          # test package but runs no tests, which catches those compile-time
+          # errors without failing on pre-existing test failures (tracked and
+          # being fixed separately). Switch to running the suite once it's green.
+          # CGO_ENABLED=1 + the C++ static library built in the step above are
+          # required to link the tokenizer bindings, same as the build.
+          GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 go test -run='^$' ./internal/...
+
 #      - name: Prepare test resources
 #        run: |
 #          RESOURCE_REPO=https://github.com/infiniflow/resource.git
