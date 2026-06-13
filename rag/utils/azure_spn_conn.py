@@ -63,8 +63,8 @@ class RAGFlowAzureSpnBlob:
         self.conn = None
 
     def health(self):
-        _bucket, fnm, binary = "txtxtxtxt1", "txtxtxtxt1", b"_t@@@1"
-        f = self.conn.create_file(f"{_bucket}/{fnm}")
+        bucket, fnm, binary = "txtxtxtxt1", "txtxtxtxt1", b"_t@@@1"
+        f = self.conn.create_file(f"{bucket}/{fnm}")
         f.append_data(binary, offset=0, length=len(binary))
         return f.flush_data(len(binary))
 
@@ -72,7 +72,7 @@ class RAGFlowAzureSpnBlob:
         blob = f"{bucket}/{fnm}"
         for _ in range(3):
             try:
-                f = self.conn.create_file(f"{blob}")
+                f = self.conn.create_file(blob)
                 f.append_data(binary, offset=0, length=len(binary))
                 return f.flush_data(len(binary))
             except Exception:
@@ -85,7 +85,7 @@ class RAGFlowAzureSpnBlob:
     def rm(self, bucket, fnm):
         blob = f"{bucket}/{fnm}"
         try:
-            self.conn.delete_file(f"{blob}")
+            self.conn.delete_file(blob)
         except Exception:
             logging.exception(f"Fail rm {blob}")
 
@@ -93,7 +93,7 @@ class RAGFlowAzureSpnBlob:
         blob = f"{bucket}/{fnm}"
         for _ in range(1):
             try:
-                client = self.conn.get_file_client(f"{blob}")
+                client = self.conn.get_file_client(blob)
                 r = client.download_file()
                 return r.read()
             except Exception:
@@ -105,17 +105,18 @@ class RAGFlowAzureSpnBlob:
     def obj_exist(self, bucket, fnm):
         blob = f"{bucket}/{fnm}"
         try:
-            client = self.conn.get_blob_client(f"{blob}")
+            client = self.conn.get_file_client(blob)
             return client.exists()
         except Exception:
             logging.exception(f"Fail put {blob}")
         return False
 
     def get_presigned_url(self, bucket, fnm, expires):
-        f_path = f"{bucket}/{fnm}"
+        blob = f"{bucket}/{fnm}"
         for _ in range(10):
             try:
-                return self.conn.get_presigned_url("GET", bucket, f_path, expires)
+                client = self.conn.get_file_client(blob)
+                return client.url
             except Exception:
                 logging.exception(f"fail get {bucket}/{fnm}")
                 self.__open__()
