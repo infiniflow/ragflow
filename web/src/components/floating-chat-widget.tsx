@@ -148,12 +148,18 @@ const FloatingChatWidget = () => {
   } = hookResult;
   const findReferenceByMessageId = (hookResult as any).findReferenceByMessageId;
 
-  // Sync our local input with the hook's value when needed
+  // Sync our local input with the hook's value when needed.
+  // Only react to hookValue changes (external sources e.g. send-clears) —
+  // do NOT depend on inputValue: that re-fires the effect on every keystroke
+  // and races handleInputChange's async hook update, reverting the textarea
+  // to the stale hookValue and causing focus to drop after every character
+  // (issue #14408). Use the functional setter so we still compare against
+  // the latest local value without listing it as a dep.
   useEffect(() => {
-    if (hookValue && hookValue !== inputValue) {
-      setInputValue(hookValue);
-    }
-  }, [hookValue, inputValue]);
+    setInputValue((prev) =>
+      hookValue && hookValue !== prev ? hookValue : prev,
+    );
+  }, [hookValue]);
 
   const { data } = (
     isFromAgent ? useFetchExternalAgentInputs : useFetchExternalChatInfo
