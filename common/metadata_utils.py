@@ -185,10 +185,13 @@ async def apply_meta_data_filter(
     """
     Apply metadata filtering rules and return the filtered doc_ids.
 
-    meta_data_filter supports three modes:
-    - auto: generate filter conditions via LLM (gen_meta_filter)
-    - semi_auto: generate conditions using selected metadata keys only
-    - manual: directly filter based on provided conditions
+    meta_data_filter supports four modes:
+
+    - ``disabled``: skip all metadata filtering; ``base_doc_ids`` is returned
+      unchanged (including the empty list and ``None`` cases).
+    - ``auto``: generate filter conditions via LLM (gen_meta_filter).
+    - ``semi_auto``: generate conditions using selected metadata keys only.
+    - ``manual``: directly filter based on provided conditions.
 
     When ``kb_ids`` is supplied, metadata filters are pushed down to the doc metadata
     index (ES/Infinity) via ``DocMetadataService.filter_doc_ids_by_metadata`` instead
@@ -204,8 +207,9 @@ async def apply_meta_data_filter(
     ``get_flatted_meta_by_kbs`` round-trip entirely.
 
     Returns:
-        list of doc_ids, ["-999"] when manual filters yield no result, or None
-        when auto/semi_auto filters return empty.
+        list of doc_ids, ``["-999"]`` when manual filters yield no result,
+        ``None`` when auto/semi_auto filters return empty, or ``base_doc_ids``
+        as-is when method is ``disabled``.
     """
     from rag.prompts.generator import gen_meta_filter  # move from the top of the file to avoid circular import
 
@@ -305,6 +309,48 @@ def _try_meta_pushdown(
     except Exception as e:
         logging.warning(f"[apply_meta_data_filter] push-down errored, falling back: {e}")
         return None
+
+
+def derive_prompt_meta_fields(meta_data_filter: dict | None) -> set[str] | None:
+    """
+    Decide which document metadata fields should be exposed in the LLM prompt
+    based on the conversation-level ``meta_data_filter`` config.
+
+    Returns:
+        - ``None`` when every metadata field should be included
+          (no filter configured, or ``method == "auto"`` where the LLM is
+          free to pick any field at retrieval time, so we surface them all).
+        - empty ``set()`` when no metadata field should appear in the prompt
+          (``method == "disabled"``).
+        - non-empty ``set[str]`` of field names for ``manual`` and
+          ``semi_auto`` modes (only the fields the user actually filtered on
+          are surfaced — this keeps the prompt token-efficient).
+    """
+    if not meta_data_filter:
+        return None
+    method = meta_data_filter.get("method")
+    if method == "disabled":
+        return set()
+    if method == "manual":
+        keys: set[str] = set()
+        for cond in meta_data_filter.get("manual", []) or []:
+            if isinstance(cond, dict):
+                key = cond.get("key") or cond.get("name")
+                if isinstance(key, str) and key:
+                    keys.add(key)
+        return keys
+    if method == "semi_auto":
+        keys = set()
+        for item in meta_data_filter.get("semi_auto", []) or []:
+            if isinstance(item, str):
+                keys.add(item)
+            elif isinstance(item, dict):
+                key = item.get("key")
+                if isinstance(key, str) and key:
+                    keys.add(key)
+        return keys
+    # method == "auto" or unknown — let everything through.
+    return None
 
 
 def dedupe_list(values: list) -> list:
