@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import copy
+import hashlib
 import json
 import re
 
@@ -248,6 +249,54 @@ async def begin_inputs(agent_id, tenant_id=None):
     return get_result(
         data={"title": cvs.title, "avatar": cvs.avatar, "inputs": canvas.get_component_input_form("begin"),
               "prologue": canvas.get_prologue(), "mode": canvas.get_mode()})
+
+
+@manager.route("/agentbots/<shared_id>/logs/<message_id>", methods=["GET"])  # noqa: F821
+async def agent_bot_logs(shared_id, message_id):
+    # Beta-token sibling of /agents/<agent_id>/logs/<message_id>.
+    # Used by the shared/embedded chat page's "Thinking" button (fixes #14985).
+    # The <shared_id> path segment is just the value the client passed in the
+    # URL (it equals the beta token in the share flow); authentication comes
+    # from the Authorization header and the real agent_id is read from the
+    # looked-up APIToken so we never trust client-supplied identifiers.
+    from rag.utils.redis_conn import REDIS_CONN
+
+    token = _get_sdk_authorization_token()
+    if not token:
+        logger.warning(
+            "agent_bot_logs: missing Authorization header (shared_id=%s message_id=%s)",
+            shared_id, message_id,
+        )
+        return get_error_data_result(message='Authorization is not valid!')
+    # Non-reversible fingerprint of the share token: lets operators correlate
+    # auth-failure log lines for the same token without leaking a guessable
+    # substring of the secret itself.
+    token_fp = hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
+    objs = await thread_pool_exec(APIToken.query, beta=token)
+    if not objs:
+        logger.warning(
+            "agent_bot_logs: invalid beta token (fingerprint=%s shared_id=%s)",
+            token_fp, shared_id,
+        )
+        return get_error_data_result(message='Authentication error: API key is invalid!"')
+
+    agent_id = objs[0].dialog_id
+    if not agent_id:
+        logger.warning(
+            "agent_bot_logs: APIToken has no dialog_id (tenant_id=%s fingerprint=%s)",
+            objs[0].tenant_id, token_fp,
+        )
+        return get_error_data_result(message='API token is not bound to an agent.')
+
+    try:
+        binary = await thread_pool_exec(REDIS_CONN.get, f"{agent_id}-{message_id}-logs")
+        if not binary:
+            return get_json_result(data={})
+        payload = binary.decode("utf-8") if isinstance(binary, bytes) else binary
+        return get_json_result(data=json.loads(payload))
+    except Exception as exc:
+        logging.exception(exc)
+        return server_error_response(exc)
 
 
 @manager.route("/searchbots/ask", methods=["POST"])  # noqa: F821
