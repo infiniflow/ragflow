@@ -40,9 +40,12 @@ from rag.graphrag.phase_markers import (
     PHASE_COMMUNITY,
     PHASE_RESOLUTION,
     clear_phase_markers,
+    clear_dirty_documents,
     has_phase_marker,
     set_phase_marker,
 )
+from rag.graphrag.incremental.delta import compute_graph_delta
+from rag.graphrag.incremental.merge import apply_delta
 from rag.graphrag.utils import (
     GraphChange,
     chunk_id,
@@ -266,7 +269,18 @@ async def run_graphrag_for_kb(
     with_resolution: bool = True,
     with_community: bool = True,
     max_parallel_docs: int = 4,
+    dirty_doc_ids: list[str] | None = None,
 ) -> dict:
+    """Run GraphRAG for a knowledge base.
+
+    Parameters
+    ----------
+    dirty_doc_ids:
+        When provided (incremental run), only documents in this set are
+        re-extracted.  Documents already in the global graph but *not* in
+        dirty_doc_ids keep their existing subgraphs.  When None (full run),
+        all ``doc_ids`` are processed.
+    """
     tenant_id, kb_id = row["tenant_id"], row["kb_id"]
     task_id = row["id"]
     start = asyncio.get_running_loop().time()
@@ -315,6 +329,19 @@ async def run_graphrag_for_kb(
         doc_ids = [doc["id"] for doc in docs]
 
     doc_ids = list(dict.fromkeys(doc_ids))
+
+    # Incremental mode: filter doc_ids to only those that are dirty.
+    incremental_mode = dirty_doc_ids is not None
+    if incremental_mode:
+        dirty_set = set(dirty_doc_ids)
+        skipped = [d for d in doc_ids if d not in dirty_set]
+        doc_ids = [d for d in doc_ids if d in dirty_set]
+        if skipped:
+            callback(msg=f"[GraphRAG] incremental: skipping {len(skipped)} unchanged documents.")
+        callback(msg=f"[GraphRAG] incremental: processing {len(doc_ids)} dirty documents.")
+    else:
+        dirty_set = None
+
     if not doc_ids:
         callback(msg=f"[GraphRAG] dataset:{kb_id} has no processable doc_id.")
         return {"ok_docs": [], "failed_docs": [], "total_docs": 0, "total_chunks": 0, "seconds": 0.0}
@@ -375,11 +402,14 @@ async def run_graphrag_for_kb(
         async with semaphore:
             # CHECKPOINT: bounded by semaphore so doc-store lookups respect max_parallel_docs
             _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before loading checkpoint for doc {doc_id}.", callback)
-            existing_sg = await load_subgraph_from_store(tenant_id, kb_id, doc_id)
-            if existing_sg:
-                subgraphs[doc_id] = existing_sg
-                callback(msg=f"[GraphRAG] doc:{doc_id} subgraph found in store, skipping LLM extraction.")
-                return
+            # Dirty docs must NOT reuse a stale cached subgraph — their content has changed.
+            is_dirty = dirty_set is not None and doc_id in dirty_set
+            if not is_dirty:
+                existing_sg = await load_subgraph_from_store(tenant_id, kb_id, doc_id)
+                if existing_sg:
+                    subgraphs[doc_id] = existing_sg
+                    callback(msg=f"[GraphRAG] doc:{doc_id} subgraph found in store, skipping LLM extraction.")
+                    return
             try:
                 _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before loading chunks for doc {doc_id}.", callback)
                 chunks = load_doc_chunks(doc_id)
@@ -399,10 +429,12 @@ async def run_graphrag_for_kb(
                 _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before subgraph generation for doc {doc_id}.", callback)
                 try:
                     async def build_subgraph_attempt():
-                        checkpoint_sg = await load_subgraph_from_store(tenant_id, kb_id, doc_id)
-                        if checkpoint_sg:
-                            callback(msg=f"[GraphRAG] doc:{doc_id} subgraph found in store during retry, skipping LLM extraction.")
-                            return checkpoint_sg
+                        # Only check checkpoint during retry if the doc is not dirty.
+                        if not is_dirty:
+                            checkpoint_sg = await load_subgraph_from_store(tenant_id, kb_id, doc_id)
+                            if checkpoint_sg:
+                                callback(msg=f"[GraphRAG] doc:{doc_id} subgraph found in store during retry, skipping LLM extraction.")
+                                return checkpoint_sg
                         return await generate_subgraph(
                             kg_extractor,
                             tenant_id,
@@ -492,30 +524,67 @@ async def run_graphrag_for_kb(
             union_nodes.update(set(sg.nodes()))
 
             try:
-                async def merge_subgraph_attempt():
-                    current_graph = await get_graph(tenant_id, kb_id)
-                    if current_graph and doc_id in current_graph.graph.get("source_id", []):
-                        callback(msg=f"[GraphRAG] merge_subgraph doc:{doc_id} already merged, skipping retry.")
+                if incremental_mode:
+                    # In incremental mode: load the old subgraph to compute
+                    # delta, then apply it to the patched global graph.
+                    async def merge_subgraph_attempt_incremental():
+                        old_sg = await load_subgraph_from_store(tenant_id, kb_id, doc_id)
+                        delta = compute_graph_delta(old_sg, sg, doc_id)
+                        if delta.is_empty:
+                            callback(msg=f"[GraphRAG] incremental doc:{doc_id} delta is empty, no changes.")
+                            return await get_graph(tenant_id, kb_id)
+                        current_graph = await get_graph(tenant_id, kb_id)
+                        if current_graph is None:
+                            # No global graph yet – fall back to regular merge.
+                            return await merge_subgraph(tenant_id, kb_id, doc_id, sg, embedding_model, callback)
+                        dirty_comms = apply_delta(current_graph, sg, delta, old_subgraph=old_sg)
+                        from rag.graphrag.utils import GraphChange
+                        change = GraphChange(
+                            added_updated_nodes=delta.added_nodes | delta.updated_nodes,
+                            removed_nodes=delta.removed_nodes,
+                            added_updated_edges=delta.added_edges | delta.updated_edges,
+                            removed_edges=delta.removed_edges,
+                        )
+                        await set_graph(tenant_id, kb_id, embedding_model, current_graph, change, callback)
+                        if dirty_comms:
+                            callback(msg=f"[GraphRAG] incremental doc:{doc_id} {len(dirty_comms)} communities need re-extraction.")
                         return current_graph
-                    return await merge_subgraph(
-                        tenant_id,
-                        kb_id,
-                        doc_id,
-                        sg,
-                        embedding_model,
-                        callback,
-                    )
 
-                new_graph = await _run_with_retry(
-                    f"merge_subgraph doc:{doc_id}",
-                    merge_subgraph_attempt,
-                    attempts=merge_retry_attempts,
-                    timeout_seconds=merge_timeout_seconds,
-                    backoff_seconds=retry_backoff_seconds,
-                    backoff_max_seconds=retry_backoff_max_seconds,
-                    callback=callback,
-                    task_id=task_id,
-                )
+                    new_graph = await _run_with_retry(
+                        f"merge_subgraph_incremental doc:{doc_id}",
+                        merge_subgraph_attempt_incremental,
+                        attempts=merge_retry_attempts,
+                        timeout_seconds=merge_timeout_seconds,
+                        backoff_seconds=retry_backoff_seconds,
+                        backoff_max_seconds=retry_backoff_max_seconds,
+                        callback=callback,
+                        task_id=task_id,
+                    )
+                else:
+                    async def merge_subgraph_attempt():
+                        current_graph = await get_graph(tenant_id, kb_id)
+                        if current_graph and doc_id in current_graph.graph.get("source_id", []):
+                            callback(msg=f"[GraphRAG] merge_subgraph doc:{doc_id} already merged, skipping retry.")
+                            return current_graph
+                        return await merge_subgraph(
+                            tenant_id,
+                            kb_id,
+                            doc_id,
+                            sg,
+                            embedding_model,
+                            callback,
+                        )
+
+                    new_graph = await _run_with_retry(
+                        f"merge_subgraph doc:{doc_id}",
+                        merge_subgraph_attempt,
+                        attempts=merge_retry_attempts,
+                        timeout_seconds=merge_timeout_seconds,
+                        backoff_seconds=retry_backoff_seconds,
+                        backoff_max_seconds=retry_backoff_max_seconds,
+                        callback=callback,
+                        task_id=task_id,
+                    )
             except TaskCanceledException:
                 raise
             except Exception as e:
@@ -536,6 +605,12 @@ async def run_graphrag_for_kb(
             resolution_pending = with_resolution
             community_pending = with_community
             callback(msg=f"[GraphRAG] dataset:{kb_id} cleared phase markers after merge.")
+            if incremental_mode and ok_docs:
+                # Successfully processed: remove these docs from the dirty set
+                # so a crash before the resolution/community phase doesn't
+                # re-trigger subgraph re-extraction on the next run.
+                clear_dirty_documents(kb_id, ok_docs)
+                callback(msg=f"[GraphRAG] incremental: cleared {len(ok_docs)} dirty doc(s) after merge.")
     finally:
         kb_lock.release()
 

@@ -46,9 +46,17 @@ ALL_PHASES = (PHASE_RESOLUTION, PHASE_COMMUNITY)
 # and keeps stale markers self-pruning if invalidation paths are missed.
 _DEFAULT_TTL_SECONDS = 7 * 24 * 3600
 
+# Dirty-document set TTL: 30 days, much longer than a single run, so a crash
+# mid-delta never silently forgets which docs still need processing.
+_DIRTY_TTL_SECONDS = 30 * 24 * 3600
+
 
 def _phase_key(kb_id: str, phase: str) -> str:
     return f"graphrag:phase:{kb_id}:{phase}"
+
+
+def _dirty_key(kb_id: str) -> str:
+    return f"graphrag:dirty:{kb_id}"
 
 
 def has_phase_marker(kb_id: str, phase: str) -> bool:
@@ -83,3 +91,77 @@ def clear_phase_markers(kb_id: str, phases: tuple[str, ...] = ALL_PHASES) -> Non
             REDIS_CONN.delete(_phase_key(kb_id, phase))
         except Exception:
             logging.exception("clear_phase_markers(%s, %s) failed", kb_id, phase)
+
+
+# ---------------------------------------------------------------------------
+# Dirty-document tracking
+#
+# A document is "dirty" when it has been added or re-parsed since the last
+# successful GraphRAG run on the KB.  The set is stored as a JSON list in
+# Redis under graphrag:dirty:{kb_id}.  Callers must:
+#   1. mark_document_dirty() whenever a document content changes.
+#   2. clear_dirty_documents() after a successful incremental run to remove
+#      exactly the docs that were processed.
+# ---------------------------------------------------------------------------
+
+def mark_document_dirty(kb_id: str, doc_id: str) -> bool:
+    """Add doc_id to the dirty set for kb_id.  Safe to call multiple times.
+
+    Uses a native Redis Set (SADD) so concurrent callers never overwrite each
+    other — no read-modify-write race.
+    """
+    if not kb_id or not doc_id:
+        return False
+    key = _dirty_key(kb_id)
+    try:
+        ok = REDIS_CONN.sadd(key, doc_id)
+        # Refresh TTL on every write so the set outlives any single run.
+        try:
+            REDIS_CONN.REDIS.expire(key, _DIRTY_TTL_SECONDS)
+        except Exception:
+            logging.warning("mark_document_dirty: failed to refresh TTL for %s", key, exc_info=True)
+        return bool(ok)
+    except Exception:
+        logging.exception("mark_document_dirty(%s, %s) failed", kb_id, doc_id)
+        return False
+
+
+def get_dirty_documents(kb_id: str) -> list[str]:
+    """Return the list of dirty doc_ids for kb_id (empty list on miss/error)."""
+    if not kb_id:
+        return []
+    try:
+        members = REDIS_CONN.smembers(_dirty_key(kb_id))
+        if not members:
+            return []
+        return [m.decode() if isinstance(m, bytes) else m for m in members]
+    except Exception:
+        logging.exception("get_dirty_documents(%s) failed", kb_id)
+        return []
+
+
+def clear_dirty_documents(kb_id: str, doc_ids: list[str] | None = None) -> bool:
+    """Remove doc_ids from the dirty set.  If doc_ids is None, wipe the whole set.
+
+    Uses SREM for targeted removal (atomic, no race) and DEL for a full wipe.
+    """
+    if not kb_id:
+        return False
+    key = _dirty_key(kb_id)
+    try:
+        if doc_ids is None:
+            REDIS_CONN.delete(key)
+            return True
+        if doc_ids:
+            REDIS_CONN.REDIS.srem(key, *doc_ids)
+        # Refresh TTL if the set still has members so future incremental runs
+        # don't lose track of remaining dirty docs after a partial clear.
+        try:
+            if REDIS_CONN.REDIS.exists(key):
+                REDIS_CONN.REDIS.expire(key, _DIRTY_TTL_SECONDS)
+        except Exception:
+            logging.warning("clear_dirty_documents: failed to refresh TTL for %s", key, exc_info=True)
+        return True
+    except Exception:
+        logging.exception("clear_dirty_documents(%s) failed", kb_id)
+        return False

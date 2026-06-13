@@ -523,6 +523,14 @@ def run_index(dataset_id: str, tenant_id: str, index_type: str):
     sample_document = documents[0]
     document_ids = [document["id"] for document in documents]
 
+    # Mark every document in this KB as dirty before enqueueing so that a
+    # subsequent document update (before the run completes) can still be
+    # detected as incremental.
+    if index_type == "graph":
+        from rag.graphrag.phase_markers import mark_document_dirty
+        for did in document_ids:
+            mark_document_dirty(dataset_id, did)
+
     task_id = queue_raptor_o_graphrag_tasks(sample_doc=sample_document, ty=task_type, priority=0, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=list(document_ids))
 
     if not KnowledgebaseService.update_by_id(kb.id, {task_id_field: task_id}):
