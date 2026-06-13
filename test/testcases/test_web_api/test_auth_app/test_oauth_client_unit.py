@@ -158,6 +158,22 @@ def test_oauth_client_sync_matrix_unit(monkeypatch):
     )
     assert normalized.to_dict()["avatar_url"] == "direct-avatar"
 
+    enterprise_email = client.normalize_user_info({"enterprise_email": "enterprise@example.com", "name": "Enterprise User"})
+    assert enterprise_email.to_dict() == {
+        "email": "enterprise@example.com",
+        "username": "enterprise",
+        "nickname": "Enterprise User",
+        "avatar_url": "",
+    }
+
+    nested_enterprise_email = client.normalize_user_info({"data": {"enterprise_email": "nested@example.com", "name": "Nested User"}})
+    assert nested_enterprise_email.to_dict() == {
+        "email": "nested@example.com",
+        "username": "nested",
+        "nickname": "Nested User",
+        "avatar_url": "",
+    }
+
     monkeypatch.setattr(oauth_module, "sync_request", lambda *_args, **_kwargs: _FakeResponse(err=RuntimeError("status boom")))
     with pytest.raises(ValueError, match="Failed to exchange authorization code for token: status boom"):
         client.exchange_code_for_token("code-2")
