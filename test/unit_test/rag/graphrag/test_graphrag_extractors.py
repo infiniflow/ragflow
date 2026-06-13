@@ -21,6 +21,7 @@ import networkx as nx
 import pytest
 
 import rag.graphrag.general.community_reports_extractor as community_reports_module
+import rag.graphrag.ner.graph_extractor as ner_module
 from rag.graphrag.general.community_reports_extractor import CommunityReportsExtractor
 from rag.graphrag.general.graph_extractor import GraphExtractor
 
@@ -49,6 +50,17 @@ class TestGraphExtractor:
         await extractor._process_single_content(("chunk-1", "alpha beta"), 0, 1, out_results, task_id="task-123")
 
         assert seen_task_ids == ["task-123", "task-123", "task-123"]
+
+
+class TestNerGraphExtractor:
+    @pytest.mark.p2
+    def test_resolve_spacy_model_uses_language_specific_model(self):
+        assert ner_module._resolve_spacy_model("Chinese") == "zh_core_web_sm"
+        assert ner_module._resolve_spacy_model("zh_CN") == "zh_core_web_sm"
+        assert ner_module._resolve_spacy_model("English") == "en_core_web_sm"
+        assert ner_module._resolve_spacy_model("French") == "fr_core_news_sm"
+        assert ner_module._resolve_spacy_model("Klingon") == "xx_ent_wiki_sm"
+        assert ner_module._resolve_spacy_model("Chinese", "custom_model") == "custom_model"
 
 
 class TestCommunityReportsExtractor:

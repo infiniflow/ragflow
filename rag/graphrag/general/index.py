@@ -724,7 +724,7 @@ async def generate_subgraph(
     return subgraph
 
 
-@timeout(60 * 3)
+# @timeout(60 * 3)
 async def merge_subgraph(
     tenant_id: str,
     kb_id: str,
