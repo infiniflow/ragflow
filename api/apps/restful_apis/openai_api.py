@@ -282,15 +282,13 @@ async def openai_chat_completions(chat_id):
             return get_error_data_result(message=f"Cannot use specified model {requested_model}.")
     merge_generation_config(dia, extract_generation_config(req))
 
-    runtime_kb_ids = None
-    if "kb_ids" in req:
-        runtime_kb_ids = req.pop("kb_ids")
-    elif "dataset_ids" in req:
-        runtime_kb_ids = req.pop("dataset_ids")
-    elif "kb_ids" in extra_body:
-        runtime_kb_ids = extra_body.pop("kb_ids")
-    elif "dataset_ids" in extra_body:
-        runtime_kb_ids = extra_body.pop("dataset_ids")
+    runtime_kb_ids = req.pop("kb_ids", None)
+    if runtime_kb_ids is None:
+        runtime_kb_ids = req.pop("dataset_ids", None)
+    if runtime_kb_ids is None:
+        runtime_kb_ids = extra_body.pop("kb_ids", None)
+    if runtime_kb_ids is None:
+        runtime_kb_ids = extra_body.pop("dataset_ids", None)
     if runtime_kb_ids is not None:
         validated = validate_runtime_kb_ids(runtime_kb_ids, current_user.id)
         if isinstance(validated, str):
