@@ -1186,6 +1186,11 @@ async def session_completion(chat_id_in_arg=""):
             e, dia = await thread_pool_exec(DialogService.get_by_id, chat_id)
             if not e:
                 return get_data_error_result(message="Chat not found!")
+
+            kb_ids_error = await _apply_runtime_kb_ids(req, dia, current_user.id)
+            if kb_ids_error:
+                return get_data_error_result(message=kb_ids_error)
+
             if session_id:
                 e, conv = await thread_pool_exec(ConversationService.get_by_id, session_id)
                 if not e:
@@ -1212,6 +1217,9 @@ async def session_completion(chat_id_in_arg=""):
                     msg.append(m)
         else:
             dia = _build_default_completion_dialog()
+            kb_ids_error = await _apply_runtime_kb_ids(req, dia, current_user.id)
+            if kb_ids_error:
+                return get_data_error_result(message=kb_ids_error)
 
         req.pop("messages", None)
         req.pop("question", None)
@@ -1234,10 +1242,6 @@ async def session_completion(chat_id_in_arg=""):
                 raise LookupError("No default chat model for tenant.")
             dia.llm_id = tenant_info.llm_id
             merge_generation_config(dia, chat_model_config)
-
-        kb_ids_error = await _apply_runtime_kb_ids(req, dia, current_user.id)
-        if kb_ids_error:
-            return get_data_error_result(message=kb_ids_error)
 
         stream_mode = req.pop("stream", True)
 
