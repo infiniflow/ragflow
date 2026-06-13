@@ -73,7 +73,16 @@ class OSConnection(DocStoreConnection):
                     http_auth=(settings.OS["username"], settings.OS[
                         "password"]) if "username" in settings.OS and "password" in settings.OS else None,
                     verify_certs=False,
-                    timeout=600
+                    timeout=600,
+                    # opensearch-py leaves pool_maxsize unset, so the underlying
+                    # urllib3 HTTPConnectionPool falls back to maxsize=1.
+                    # OSConnection is a @singleton shared by every request thread,
+                    # so concurrent searches and the cluster.health() probe contend
+                    # on a single HTTP connection ("Connection pool is full,
+                    # discarding connection ... pool size: 1"), serializing requests
+                    # behind fresh TLS handshakes. Widen the pool to match the
+                    # multi-connection default elasticsearch-py already uses.
+                    pool_maxsize=10,
                 )
                 if self.os:
                     self.info = self.os.info()
