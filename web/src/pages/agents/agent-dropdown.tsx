@@ -11,10 +11,16 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useDeleteAgent } from '@/hooks/use-agent-request';
 import { IFlow } from '@/interfaces/database/agent';
-import { PenLine, Tag, Trash2 } from 'lucide-react';
-import { MouseEventHandler, PropsWithChildren, useCallback, useState } from 'react';
+import { Copy, PenLine, Tag, Trash2 } from 'lucide-react';
+import {
+  MouseEventHandler,
+  PropsWithChildren,
+  useCallback,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { AgentTagEditor } from './agent-tag-editor';
+import { useDuplicateAgent } from './use-duplicate-agent';
 import { useRenameAgent } from './use-rename-agent';
 
 export function AgentDropdown({
@@ -27,6 +33,7 @@ export function AgentDropdown({
   }) {
   const { t } = useTranslation();
   const { deleteAgent } = useDeleteAgent();
+  const { duplicateAgent, loading: duplicating } = useDuplicateAgent();
   const [tagEditorOpen, setTagEditorOpen] = useState(false);
 
   const handleShowAgentRenameModal: MouseEventHandler<HTMLDivElement> =
@@ -37,6 +44,18 @@ export function AgentDropdown({
       },
       [agent, showAgentRenameModal],
     );
+
+  const handleDuplicate: MouseEventHandler<HTMLDivElement> = useCallback(
+    (e) => {
+      e.stopPropagation();
+      duplicateAgent({
+        id: agent.id,
+        title: agent.title,
+        canvas_category: agent.canvas_category,
+      });
+    },
+    [agent.id, agent.title, agent.canvas_category, duplicateAgent],
+  );
 
   const handleEditTags: MouseEventHandler<HTMLDivElement> = useCallback((e) => {
     e.stopPropagation();
@@ -54,6 +73,13 @@ export function AgentDropdown({
         <DropdownMenuContent>
           <DropdownMenuItem onClick={handleShowAgentRenameModal}>
             {t('common.rename')} <PenLine />
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={handleDuplicate}
+            disabled={duplicating}
+            data-testid="agent-duplicate"
+          >
+            {t('flow.duplicate')} <Copy />
           </DropdownMenuItem>
           <DropdownMenuItem onClick={handleEditTags}>
             {t('flow.editTags')} <Tag />
