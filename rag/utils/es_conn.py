@@ -31,6 +31,25 @@ ATTEMPT_TIME = 2
 MAX_RESULT_WINDOW = 10000
 SEARCH_AFTER_BATCH_SIZE = 1000
 
+# Transient ES failures worth retrying. status 503 with "search_phase_execution_exception"
+# and "NoShardAvailableActionException" are typically seen when shards are recovering,
+# relocating, or the index was just created (see issue #14830). 429 is backpressure.
+_TRANSIENT_ES_STATUS = {429, 502, 503, 504}
+_TRANSIENT_ES_HINTS = (
+    "search_phase_execution_exception",
+    "unavailable_shards_exception",
+    "no_shard_available_action_exception",
+    "noshardavailableactionexception",
+)
+
+
+def _is_transient_es_error(e: Exception) -> bool:
+    status = getattr(e, "status_code", None) or getattr(e, "status", None)
+    if isinstance(status, int) and status in _TRANSIENT_ES_STATUS:
+        return True
+    msg = str(e).lower()
+    return any(hint in msg for hint in _TRANSIENT_ES_HINTS)
+
 # Single-document atomic pagerank_fea adjust (chunk feedback). Clamps using params.min_w / max_w;
 # removes field at zero for rank_feature compatibility.
 _PAGERANK_FEA_ADJUST_SCRIPT = """
@@ -297,8 +316,15 @@ class ESConnection(ESConnectionBase):
                 # Only log debug for NotFoundError(accepted when metadata index doesn't exist)
                 if 'NotFound' in str(e):
                     self.logger.debug(f"ESConnection.search {str(index_names)} query: " + str(q) + " - " + str(e))
-                else:
-                    self.logger.exception(f"ESConnection.search {str(index_names)} query: " + str(q) + str(e))
+                    raise e
+                if _is_transient_es_error(e) and i < ATTEMPT_TIME - 1:
+                    self.logger.warning(
+                        f"ESConnection.search transient error on {str(index_names)}, retrying: {e}"
+                    )
+                    time.sleep(3)
+                    self._connect()
+                    continue
+                self.logger.exception(f"ESConnection.search {str(index_names)} query: " + str(q) + str(e))
                 raise e
 
         self.logger.error(f"ESConnection.search timeout for {ATTEMPT_TIME} times!")
@@ -319,7 +345,7 @@ class ESConnection(ESConnectionBase):
             operations.append(d_copy)
 
         res = []
-        for _ in range(ATTEMPT_TIME):
+        for i in range(ATTEMPT_TIME):
             try:
                 res = []
                 r = self.es.bulk(index=index_name, operations=operations,
@@ -332,12 +358,22 @@ class ESConnection(ESConnectionBase):
                         if action in item and "error" in item[action]:
                             res.append(str(item[action]["_id"]) + ":" + str(item[action]["error"]))
                 return res
-            except ConnectionTimeout:
+            except ConnectionTimeout as e:
                 self.logger.exception("ES request timeout")
-                time.sleep(3)
-                self._connect()
-                continue
+                if i < ATTEMPT_TIME - 1:
+                    time.sleep(3)
+                    self._connect()
+                    continue
+                # last attempt: surface the failure so callers see a non-empty res
+                res.append(str(e))
             except Exception as e:
+                if _is_transient_es_error(e) and i < ATTEMPT_TIME - 1:
+                    self.logger.warning(
+                        "ESConnection.insert transient error, retrying: " + str(e)
+                    )
+                    time.sleep(3)
+                    self._connect()
+                    continue
                 res.append(str(e))
                 self.logger.warning("ESConnection.insert got exception: " + str(e))
 
