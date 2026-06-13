@@ -17,9 +17,15 @@ import logging
 import os
 import time
 from abc import ABC
-from scholarly import scholarly
 from agent.tools.base import ToolMeta, ToolParamBase, ToolBase
 from common.connection_utils import timeout
+
+try:
+    from scholarly import scholarly
+    _SCHOLARLY_IMPORT_ERROR = None
+except ImportError as e:  # pragma: no cover - depends on installed optional dependency state
+    scholarly = None
+    _SCHOLARLY_IMPORT_ERROR = e
 
 
 class GoogleScholarParam(ToolParamBase):
@@ -63,8 +69,17 @@ class GoogleScholarParam(ToolParamBase):
 class GoogleScholar(ToolBase, ABC):
     component_name = "GoogleScholar"
 
+    @staticmethod
+    def _require_scholarly():
+        if scholarly is None:
+            raise ImportError(
+                "scholarly is unavailable or incompatible with the current environment. "
+                "Please install a compatible scholarly version."
+            ) from _SCHOLARLY_IMPORT_ERROR
+
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12)))
     def _invoke(self, **kwargs):
+        self._require_scholarly()
         if self.check_if_canceled("GoogleScholar processing"):
             return
 
