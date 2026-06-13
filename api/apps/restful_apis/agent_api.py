@@ -2365,6 +2365,15 @@ async def download_attachment(tenant_id=None, attachment_id=None):
         # pass `attachment_id` instead of the route parameter name.
         ext = request.args.get("ext", "markdown")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, attachment_id)
+        if not data:
+            # Storage object missing or empty (orphaned DB metadata, tenant
+            # mismatch). Without this guard `make_response(None)` raises
+            # `TypeError: response value cannot be None` and the caller
+            # sees HTTP 500 — same bug class as #15365 on document
+            # preview. Return the same "Document not found!" shape used
+            # by the preview route's missing-record path so byte-streaming
+            # endpoints respond consistently on a not-found.
+            return get_data_error_result(message="Document not found!")
         response = await make_response(data)
         content_type = CONTENT_TYPE_MAP.get(ext, f"application/{ext}")
         apply_safe_file_response_headers(response, content_type, ext)
