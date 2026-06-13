@@ -60,6 +60,7 @@ from common.data_source import (
     SeaFileConnector,
     RDBMSConnector,
     DingTalkAITableConnector,
+    FeishuDriveConnector,
     RestAPIConnector,
     OneDriveConnector,
     OutlookConnector,
@@ -793,6 +794,28 @@ class Dropbox(SyncBase):
             _begin_info = f"from {poll_start}"
 
         self.log_connection("Dropbox", "workspace", task)
+        return document_generator
+
+
+class FeishuDrive(SyncBase):
+    SOURCE_NAME: str = FileSource.FEISHU_DRIVE
+
+    async def _generate(self, task: dict):
+        self.connector = FeishuDriveConnector(
+            folder_token=self.conf.get("folder_token", ""),
+            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+        )
+        self.connector.load_credentials(self.conf["credentials"])
+        poll_start = task["poll_range_start"]
+        if task["reindex"] == "1" or not poll_start:
+            document_generator = self.connector.load_from_state()
+            _begin_info = "totally"
+        else:
+            end_time = datetime.now(timezone.utc).timestamp()
+            document_generator = self.connector.poll_source(poll_start.timestamp(), end_time)
+            _begin_info = f"from {poll_start}"
+
+        self.log_connection("FeishuDrive", self.conf.get("folder_token", "") or "workspace", task)
         return document_generator
 
 
@@ -2171,6 +2194,7 @@ func_factory = {
     FileSource.MYSQL: MySQL,
     FileSource.POSTGRESQL: PostgreSQL,
     FileSource.DINGTALK_AI_TABLE: DingTalkAITable,
+    FileSource.FEISHU_DRIVE: FeishuDrive,
     FileSource.REST_API: REST_API,
 }
 
