@@ -564,7 +564,7 @@ func (h *FileCommitHandler) GetFileVersionHistory(c *gin.Context) {
 		return
 	}
 
-	fileID := c.Param("file_id")
+	fileID := c.Param("id")
 	if fileID == "" {
 		jsonError(c, common.CodeParamError, "file_id is required")
 		return

@@ -143,7 +143,7 @@ func setupFileCommitTest(userID string) (*gin.Engine, *mockFileCommitSvc) {
 	r.GET("/api/v1/folders/:folder_id/changes", h.GetUncommittedChanges)
 	r.GET("/api/v1/folders/:folder_id/commits/:commit_id/tree", h.GetCommitTree)
 	r.GET("/api/v1/folders/:folder_id/commits/:commit_id/files/:file_id/content", h.GetCommitFileContent)
-	r.GET("/api/v1/files/:file_id/versions", h.GetFileVersionHistory)
+	r.GET("/api/v1/files/:id/versions", h.GetFileVersionHistory)
 	return r, mock
 }
 

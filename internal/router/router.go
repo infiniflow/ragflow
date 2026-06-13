@@ -307,7 +307,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				file.GET("/:id/ancestors", r.fileHandler.GetFileAncestors)
 				file.GET("/:id/parent", r.fileHandler.GetParentFolder)
 				file.GET("/:id", r.fileHandler.Download)
-				file.GET("/:file_id/versions", r.fileCommitHandler.GetFileVersionHistory)
+				file.GET("/:id/versions", r.fileCommitHandler.GetFileVersionHistory)
 			}
 
 			// File commit routes — /folders/ takes folder_id directly
