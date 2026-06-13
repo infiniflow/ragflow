@@ -36,8 +36,8 @@ func setupKBTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	// Migrate knowledgebase table
-	if err := db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
+	// Migrate tables needed by KB access checks.
+	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.UserTenant{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 
@@ -47,19 +47,37 @@ func setupKBTestDB(t *testing.T) *gorm.DB {
 func testKnowledgebase(t *testing.T, db *gorm.DB, id string, docNum, tokenNum, chunkNum int64) *entity.Knowledgebase {
 	t.Helper()
 	kb := &entity.Knowledgebase{
-		ID:       id,
-		TenantID: "tenant-1",
-		Name:     "test-kb-" + id,
-		EmbdID:   "embd-1",
-		DocNum:   docNum,
-		TokenNum: tokenNum,
-		ChunkNum: chunkNum,
-		Status:   stringPtr(string(entity.StatusValid)),
+		ID:         id,
+		TenantID:   "tenant-1",
+		Name:       "test-kb-" + id,
+		EmbdID:     "embd-1",
+		CreatedBy:  "tenant-1",
+		Permission: string(entity.TenantPermissionMe),
+		DocNum:     docNum,
+		TokenNum:   tokenNum,
+		ChunkNum:   chunkNum,
+		Status:     stringPtr(string(entity.StatusValid)),
 	}
 	if err := db.Create(kb).Error; err != nil {
 		t.Fatalf("failed to create test kb: %v", err)
 	}
 	return kb
+}
+
+func testUserTenant(t *testing.T, db *gorm.DB, id, userID, tenantID string) {
+	t.Helper()
+	status := string(entity.StatusValid)
+	userTenant := &entity.UserTenant{
+		ID:        id,
+		UserID:    userID,
+		TenantID:  tenantID,
+		Role:      "normal",
+		InvitedBy: tenantID,
+		Status:    &status,
+	}
+	if err := db.Create(userTenant).Error; err != nil {
+		t.Fatalf("failed to create test user_tenant: %v", err)
+	}
 }
 
 func stringPtr(s string) *string {
@@ -117,5 +135,109 @@ func TestKnowledgebaseDAO_DecreaseDocumentNum_ZeroDecrement(t *testing.T) {
 	}
 	if kb.ChunkNum != 15 {
 		t.Fatalf("chunk_num should be unchanged: expected 15, got %d", kb.ChunkNum)
+	}
+}
+
+func TestKnowledgebaseDAO_AccessibleAllowsOwnerForPrivateKnowledgebase(t *testing.T) {
+	db := setupKBTestDB(t)
+	pushDB(t, db)
+	dao := NewKnowledgebaseDAO()
+
+	testKnowledgebase(t, db, "kb-private", 0, 0, 0)
+
+	if !dao.Accessible("kb-private", "tenant-1") {
+		t.Fatal("owner should access a private knowledgebase")
+	}
+}
+
+func TestKnowledgebaseDAO_AccessibleRejectsTenantMemberForPrivateKnowledgebase(t *testing.T) {
+	db := setupKBTestDB(t)
+	pushDB(t, db)
+	dao := NewKnowledgebaseDAO()
+
+	testKnowledgebase(t, db, "kb-private", 0, 0, 0)
+	testUserTenant(t, db, "ut-1", "member-1", "tenant-1")
+
+	if dao.Accessible("kb-private", "member-1") {
+		t.Fatal("tenant member should not access a private knowledgebase")
+	}
+}
+
+func TestKnowledgebaseDAO_AccessibleRejectsTenantIDMatchWhenNotCreatorForPrivateKnowledgebase(t *testing.T) {
+	db := setupKBTestDB(t)
+	pushDB(t, db)
+	dao := NewKnowledgebaseDAO()
+
+	kb := testKnowledgebase(t, db, "kb-private-tenant-match", 0, 0, 0)
+	kb.CreatedBy = "member-creator"
+	kb.Permission = string(entity.TenantPermissionMe)
+	if err := db.Save(kb).Error; err != nil {
+		t.Fatalf("failed to update test kb creator: %v", err)
+	}
+
+	if dao.Accessible("kb-private-tenant-match", "tenant-1") {
+		t.Fatal("non-creator should not access private knowledgebase even when tenant_id matches requester")
+	}
+}
+
+func TestKnowledgebaseDAO_AccessibleAllowsTenantMemberForTeamKnowledgebase(t *testing.T) {
+	db := setupKBTestDB(t)
+	pushDB(t, db)
+	dao := NewKnowledgebaseDAO()
+
+	kb := testKnowledgebase(t, db, "kb-team", 0, 0, 0)
+	kb.Permission = string(entity.TenantPermissionTeam)
+	if err := db.Save(kb).Error; err != nil {
+		t.Fatalf("failed to update test kb permission: %v", err)
+	}
+	testUserTenant(t, db, "ut-1", "member-1", "tenant-1")
+
+	if !dao.Accessible("kb-team", "member-1") {
+		t.Fatal("tenant member should access a team knowledgebase")
+	}
+}
+
+func TestKnowledgebaseDAO_AccessibleRejectsRevokedTenantMemberForTeamKnowledgebase(t *testing.T) {
+	db := setupKBTestDB(t)
+	pushDB(t, db)
+	dao := NewKnowledgebaseDAO()
+
+	kb := testKnowledgebase(t, db, "kb-team", 0, 0, 0)
+	kb.Permission = string(entity.TenantPermissionTeam)
+	if err := db.Save(kb).Error; err != nil {
+		t.Fatalf("failed to update test kb permission: %v", err)
+	}
+
+	invalidStatus := string(entity.StatusInvalid)
+	revokedMembership := &entity.UserTenant{
+		ID:        "ut-revoked",
+		UserID:    "revoked-member",
+		TenantID:  "tenant-1",
+		Role:      "normal",
+		InvitedBy: "tenant-1",
+		Status:    &invalidStatus,
+	}
+	if err := db.Create(revokedMembership).Error; err != nil {
+		t.Fatalf("failed to create revoked user_tenant: %v", err)
+	}
+
+	if dao.Accessible("kb-team", "revoked-member") {
+		t.Fatal("revoked tenant member should not access a team knowledgebase")
+	}
+}
+
+func TestKnowledgebaseDAO_AccessibleRejectsUnrelatedUserForTeamKnowledgebase(t *testing.T) {
+	db := setupKBTestDB(t)
+	pushDB(t, db)
+	dao := NewKnowledgebaseDAO()
+
+	kb := testKnowledgebase(t, db, "kb-team", 0, 0, 0)
+	kb.Permission = string(entity.TenantPermissionTeam)
+	if err := db.Save(kb).Error; err != nil {
+		t.Fatalf("failed to update test kb permission: %v", err)
+	}
+
+	if dao.Accessible("kb-team", "stranger-1") {
+		t.Fatal("unrelated user should not access a team knowledgebase")
 	}
 }

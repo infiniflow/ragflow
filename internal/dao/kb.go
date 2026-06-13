@@ -253,32 +253,16 @@ func (dao *KnowledgebaseDAO) GetDetail(kbID string) (*entity.KnowledgebaseDetail
 	return &detail, nil
 }
 
-// Accessible checks if a knowledge base is accessible by a user.
-// This matches the Python accessible method:
-// 1. KB must exist and be VALID
-// 2. If user is the owner tenant, return true
-// 3. If permission is "me", only owner tenant can access
-// 4. If permission is "team", user must be a member of the tenant
+// Accessible checks if a knowledge base is accessible by a user
+// This matches the Python accessible method
 func (dao *KnowledgebaseDAO) Accessible(kbID, userID string) bool {
-	var kb entity.Knowledgebase
-	err := DB.Where("id = ? AND status = ?", kbID, string(entity.StatusValid)).First(&kb).Error
-	if err != nil {
-		return false
-	}
-
-	// User is the owner tenant itself
-	if kb.TenantID == userID {
-		return true
-	}
-
-	// If permission is "me", only the owner can access
-	if kb.Permission == string(entity.TenantPermissionMe) {
-		return false
-	}
-
 	var count int64
-	err = DB.Table("user_tenant").
-		Where("tenant_id = ? AND user_id = ?", kb.TenantID, userID).
+	err := DB.Table("knowledgebase").
+		Joins("LEFT JOIN user_tenant ON user_tenant.tenant_id = knowledgebase.tenant_id AND user_tenant.user_id = ? AND user_tenant.status = ?", userID, string(entity.StatusValid)).
+		Where(`knowledgebase.id = ? AND knowledgebase.status = ? AND (
+			knowledgebase.created_by = ? OR
+			(knowledgebase.permission = ? AND user_tenant.user_id IS NOT NULL)
+		)`, kbID, string(entity.StatusValid), userID, string(entity.TenantPermissionTeam)).
 		Count(&count).Error
 
 	if err != nil {
