@@ -13,7 +13,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+import logging
+
+import pytest
+
 from rag.nlp import add_positions, add_source_positions
+
+pytestmark = pytest.mark.p2
 
 
 def test_add_source_positions_keeps_public_one_based_page_numbers():
@@ -26,14 +32,16 @@ def test_add_source_positions_keeps_public_one_based_page_numbers():
     assert chunk["top_int"] == [30]
 
 
-def test_add_source_positions_normalizes_legacy_zero_page_number():
+def test_add_source_positions_normalizes_legacy_zero_page_number(caplog):
     chunk = {}
 
-    add_source_positions(chunk, [[0, 10, 20, 30, 40]])
+    with caplog.at_level(logging.WARNING):
+        add_source_positions(chunk, [[0, 10, 20, 30, 40]])
 
     assert chunk["page_num_int"] == [1]
     assert chunk["position_int"] == [(1, 10, 20, 30, 40)]
     assert chunk["top_int"] == [30]
+    assert caplog.records[0].args == (0, (0, 10, 20, 30, 40))
 
 
 def test_add_positions_still_offsets_parser_zero_based_page_numbers():
