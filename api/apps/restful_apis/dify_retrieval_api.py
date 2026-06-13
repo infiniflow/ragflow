@@ -52,13 +52,18 @@ async def _read_retrieval_request():
         use_kg = str(query_args.get("use_kg", "")).lower() in {"1", "true", "yes", "on"}
         top_k = query_args.get("top_k")
         score_threshold = query_args.get("score_threshold")
+        vector_similarity_weight = query_args.get("vector_similarity_weight")
         try:
             if top_k not in (None, ""):
                 retrieval_setting["top_k"] = int(top_k)
             if score_threshold not in (None, ""):
                 retrieval_setting["score_threshold"] = float(score_threshold)
+            if vector_similarity_weight not in (None, ""):
+                retrieval_setting["vector_similarity_weight"] = float(vector_similarity_weight)
         except (TypeError, ValueError):
-            raise ValueError("top_k must be integer and score_threshold must be numeric")
+            raise ValueError(
+                "top_k must be integer and score_threshold / vector_similarity_weight must be numeric"
+            )
         safe_query = f"len={len(query)}" if isinstance(query, str) else "len=0"
         logger.debug(
             "Dify retrieval GET normalization: knowledge_id=%s query=%s use_kg=%s top_k=%s score_threshold=%s",
@@ -95,17 +100,41 @@ async def _read_retrieval_request():
     return req
 
 
-def _parse_retrieval_options(retrieval_setting):
+def _parse_retrieval_setting(retrieval_setting):
     if retrieval_setting is None:
         retrieval_setting = {}
     if not isinstance(retrieval_setting, dict):
         raise ValueError("retrieval_setting must be an object")
     try:
-        similarity_threshold = float(retrieval_setting.get("score_threshold", 0.0))
         top = int(retrieval_setting.get("top_k", 1024))
     except (TypeError, ValueError):
         raise ValueError("top_k must be integer and score_threshold must be numeric")
-    return retrieval_setting, similarity_threshold, top
+    return retrieval_setting, top
+
+
+def _resolve_retrieval_params(retrieval_setting, kb):
+    """Use request overrides when present; otherwise dataset settings on the KB."""
+    try:
+        if "score_threshold" in retrieval_setting:
+            similarity_threshold = float(retrieval_setting["score_threshold"])
+        else:
+            similarity_threshold = float(kb.similarity_threshold)
+        if "vector_similarity_weight" in retrieval_setting:
+            vector_similarity_weight = float(retrieval_setting["vector_similarity_weight"])
+        else:
+            vector_similarity_weight = float(kb.vector_similarity_weight)
+    except (TypeError, ValueError):
+        raise ValueError("top_k must be integer and score_threshold must be numeric")
+    return similarity_threshold, vector_similarity_weight
+
+
+def _build_rerank_model(req, kb):
+    if req.get("rerank_id"):
+        rerank_model_config = get_model_config_from_provider_instance(
+            kb.tenant_id, LLMType.RERANK, req["rerank_id"]
+        )
+        return LLMBundle(kb.tenant_id, rerank_model_config)
+    return None
 
 
 @manager.route('/dify/retrieval', methods=['POST', 'GET'])  # noqa: F821
@@ -144,7 +173,12 @@ async def retrieval(tenant_id):
         name: score_threshold
         required: false
         type: number
-        description: Similarity threshold (for GET requests)
+        description: Similarity threshold (for GET requests; defaults to dataset setting when omitted)
+      - in: query
+        name: vector_similarity_weight
+        required: false
+        type: number
+        description: Hybrid vector weight (for GET requests; defaults to dataset setting when omitted)
       - in: body
         name: body
         required: false
@@ -170,12 +204,17 @@ async def retrieval(tenant_id):
               properties:
                 score_threshold:
                   type: number
-                  description: Similarity threshold
-                  default: 0.0
+                  description: Similarity threshold (defaults to dataset setting when omitted)
+                vector_similarity_weight:
+                  type: number
+                  description: Hybrid vector weight (defaults to dataset setting when omitted)
                 top_k:
                   type: integer
                   description: Number of results to return
                   default: 1024
+            rerank_id:
+              type: string
+              description: Rerank model name (optional)
             metadata_condition:
               type: object
               description: Metadata filter condition
@@ -240,7 +279,7 @@ async def retrieval(tenant_id):
     kb_id = req["knowledge_id"]
     use_kg = req.get("use_kg", False)
     try:
-        _, similarity_threshold, top = _parse_retrieval_options(req.get("retrieval_setting", {}))
+        retrieval_setting, top = _parse_retrieval_setting(req.get("retrieval_setting", {}))
     except ValueError as e:
         return build_error_result(
             message=f"invalid or malformed arguments: {str(e)}; ",
@@ -262,7 +301,19 @@ async def retrieval(tenant_id):
                 kb_id,
             )
             return build_error_result(message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
-        model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+        try:
+            similarity_threshold, vector_similarity_weight = _resolve_retrieval_params(
+                retrieval_setting, kb
+            )
+        except ValueError as e:
+            return build_error_result(
+                message=f"invalid or malformed arguments: {str(e)}; ",
+                code=RetCode.ARGUMENT_ERROR,
+            )
+        rerank_mdl = _build_rerank_model(req, kb)
+        model_config = get_model_config_from_provider_instance(
+            kb.tenant_id, LLMType.EMBEDDING, kb.embd_id
+        )
         embd_mdl = LLMBundle(kb.tenant_id, model_config)
         if metadata_condition:
             doc_ids.extend(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
@@ -276,10 +327,11 @@ async def retrieval(tenant_id):
             page=1,
             page_size=top,
             similarity_threshold=similarity_threshold,
-            vector_similarity_weight=0.3,
+            vector_similarity_weight=vector_similarity_weight,
             top=top,
             doc_ids=doc_ids,
-            rank_feature=label_question(question, [kb])
+            rerank_mdl=rerank_mdl,
+            rank_feature=label_question(question, [kb]),
         )
         ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], [tenant_id])
 
