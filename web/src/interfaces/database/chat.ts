@@ -69,6 +69,8 @@ export interface IDialog {
   prompt_type: string;
   status: string;
   tenant_id: string;
+  tenant_avatar?: string;
+  nickname?: string;
   update_date: string;
   update_time: number;
   vector_similarity_weight: number;
