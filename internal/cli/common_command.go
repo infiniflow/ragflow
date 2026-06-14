@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"ragflow/internal/common"
 	"strings"
 	"time"
 
@@ -464,13 +465,11 @@ func (c *CLI) SetDefaultModel(cmd *Command) (ResponseIf, error) {
 	}
 
 	var providerName, instanceName, modelName string
-	names := strings.Split(compositeModelName, "/")
-	if len(names) != 3 {
-		return nil, fmt.Errorf("model name must be in format 'provider/instance/model'")
+	var err error
+	modelName, instanceName, providerName, err = common.ExtractCompositeName(compositeModelName)
+	if err != nil {
+		return nil, err
 	}
-	providerName = names[0]
-	instanceName = names[1]
-	modelName = names[2]
 
 	payload := map[string]interface{}{
 		"model_type":     modelType,
@@ -480,7 +479,6 @@ func (c *CLI) SetDefaultModel(cmd *Command) (ResponseIf, error) {
 	}
 
 	var resp *Response
-	var err error
 	switch c.Config.CLIMode {
 	case AdminMode:
 		resp, err = c.AdminServerClient.Request("PATCH", "/admin/models", "web", nil, payload)
