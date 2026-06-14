@@ -88,7 +88,7 @@ class DocumentService(CommonService):
             docs = docs.where(cls.model.name == name)
         if keywords:
             docs = docs.where(fn.LOWER(cls.model.name).contains(keywords.lower()))
-        if doc_ids:
+        if doc_ids is not None:
             docs = docs.where(cls.model.id.in_(doc_ids))
         if suffix:
             docs = docs.where(cls.model.suffix.in_(suffix))
@@ -143,7 +143,7 @@ class DocumentService(CommonService):
                 .join(User, on=(cls.model.created_by == User.id), join_type=JOIN.LEFT_OUTER)
                 .where(cls.model.kb_id == kb_id)
             )
-        if doc_ids:
+        if doc_ids is not None:
             docs = docs.where(cls.model.id.in_(doc_ids))
         if run_status:
             docs = docs.where(cls.model.run.in_(run_status))
@@ -591,27 +591,84 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def increment_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duration):
-        num = (
-            cls.model.update(token_num=cls.model.token_num + token_num, chunk_num=cls.model.chunk_num + chunk_num, process_duration=cls.model.process_duration + duration)
-            .where(cls.model.id == doc_id)
-            .execute()
-        )
-        if num == 0:
-            logging.warning("Document not found which is supposed to be there")
-        num = Knowledgebase.update(token_num=Knowledgebase.token_num + token_num, chunk_num=Knowledgebase.chunk_num + chunk_num).where(Knowledgebase.id == kb_id).execute()
+        """Atomically add chunk/token counters on the document and its knowledge base."""
+        with DB.atomic():
+            num = (
+                cls.model.update(
+                    token_num=cls.model.token_num + token_num,
+                    chunk_num=cls.model.chunk_num + chunk_num,
+                    process_duration=cls.model.process_duration + duration,
+                )
+                .where((cls.model.id == doc_id) & (cls.model.kb_id == kb_id))
+                .execute()
+            )
+            if num == 0:
+                logging.error(
+                    "increment_chunk_num: no document matched doc_id=%s kb_id=%s "
+                    "token_num=%s chunk_num=%s duration=%s",
+                    doc_id,
+                    kb_id,
+                    token_num,
+                    chunk_num,
+                    duration,
+                )
+                raise LookupError("Document not found which is supposed to be there")
+            num = (
+                Knowledgebase.update(
+                    token_num=Knowledgebase.token_num + token_num,
+                    chunk_num=Knowledgebase.chunk_num + chunk_num,
+                )
+                .where(Knowledgebase.id == kb_id)
+                .execute()
+            )
+            if num == 0:
+                logging.error(
+                    "increment_chunk_num: no knowledgebase matched kb_id=%s for doc_id=%s "
+                    "token_num=%s chunk_num=%s duration=%s",
+                    kb_id,
+                    doc_id,
+                    token_num,
+                    chunk_num,
+                    duration,
+                )
+                raise LookupError("Knowledgebase not found which is supposed to be there")
         return num
 
     @classmethod
     @DB.connection_context()
     def decrement_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duration):
-        num = (
-            cls.model.update(token_num=cls.model.token_num - token_num, chunk_num=cls.model.chunk_num - chunk_num, process_duration=cls.model.process_duration + duration)
-            .where(cls.model.id == doc_id)
-            .execute()
-        )
-        if num == 0:
-            raise LookupError("Document not found which is supposed to be there")
-        num = Knowledgebase.update(token_num=Knowledgebase.token_num - token_num, chunk_num=Knowledgebase.chunk_num - chunk_num).where(Knowledgebase.id == kb_id).execute()
+        """Atomically subtract chunk/token counters on the document and its knowledge base."""
+        with DB.atomic():
+            num = (
+                cls.model.update(
+                    token_num=cls.model.token_num - token_num,
+                    chunk_num=cls.model.chunk_num - chunk_num,
+                    process_duration=cls.model.process_duration + duration,
+                )
+                .where((cls.model.id == doc_id) & (cls.model.kb_id == kb_id))
+                .execute()
+            )
+            if num == 0:
+                raise LookupError("Document not found which is supposed to be there")
+            num = (
+                Knowledgebase.update(
+                    token_num=Knowledgebase.token_num - token_num,
+                    chunk_num=Knowledgebase.chunk_num - chunk_num,
+                )
+                .where(Knowledgebase.id == kb_id)
+                .execute()
+            )
+            if num == 0:
+                logging.error(
+                    "decrement_chunk_num: no knowledgebase matched kb_id=%s for doc_id=%s "
+                    "token_num=%s chunk_num=%s duration=%s",
+                    kb_id,
+                    doc_id,
+                    token_num,
+                    chunk_num,
+                    duration,
+                )
+                raise LookupError("Knowledgebase not found which is supposed to be there")
         return num
 
     @classmethod
@@ -652,7 +709,7 @@ class DocumentService(CommonService):
     def clear_chunk_num(cls, doc_id):
         """Deprecated: use delete_document_and_update_kb_counts instead."""
         doc = cls.model.get_by_id(doc_id)
-        assert doc, "Can't fine document in database."
+        assert doc, "Can't find document in database."
 
         num = (
             Knowledgebase.update(token_num=Knowledgebase.token_num - doc.token_num, chunk_num=Knowledgebase.chunk_num - doc.chunk_num, doc_num=Knowledgebase.doc_num - 1)
@@ -665,7 +722,7 @@ class DocumentService(CommonService):
     @DB.connection_context()
     def clear_chunk_num_when_rerun(cls, doc_id):
         doc = cls.model.get_by_id(doc_id)
-        assert doc, "Can't fine document in database."
+        assert doc, "Can't find document in database."
 
         num = (
             Knowledgebase.update(
@@ -1007,11 +1064,13 @@ class DocumentService(CommonService):
             queue_tasks(doc, bucket, name, 0)
 
 
-def queue_raptor_o_graphrag_tasks(sample_doc, ty, priority, fake_doc_id="", doc_ids=[]):
+def queue_raptor_o_graphrag_tasks(sample_doc, ty, priority, fake_doc_id="", doc_ids=None):
     """
     You can provide a fake_doc_id to bypass the restriction of tasks at the knowledgebase level.
     Optionally, specify a list of doc_ids to determine which documents participate in the task.
     """
+    if doc_ids is None:
+        doc_ids = []
     assert ty in ["graphrag", "raptor", "mindmap"], "type should be graphrag, raptor or mindmap"
 
     chunking_config = DocumentService.get_chunking_config(sample_doc["id"])
@@ -1039,12 +1098,12 @@ def queue_raptor_o_graphrag_tasks(sample_doc, ty, priority, fake_doc_id="", doc_
 
     task["doc_ids"] = doc_ids
     DocumentService.begin2parse(task["doc_id"], keep_progress=True)
-    assert REDIS_CONN.queue_product(settings.get_svr_queue_name(priority), message=task), "Can't access Redis. Please check the Redis' status."
+    assert REDIS_CONN.queue_product(settings.get_svr_queue_name(priority, ty), message=task), "Can't access Redis. Please check the Redis' status."
     return task["id"]
 
 
-def get_queue_length(priority):
-    group_info = REDIS_CONN.queue_info(settings.get_svr_queue_name(priority), SVR_CONSUMER_GROUP_NAME)
+def get_queue_length(priority, suffix="common"):
+    group_info = REDIS_CONN.queue_info(settings.get_svr_queue_name(priority, suffix), SVR_CONSUMER_GROUP_NAME)
     if not group_info:
         return 0
     return int(group_info.get("lag", 0) or 0)

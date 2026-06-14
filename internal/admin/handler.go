@@ -17,12 +17,14 @@
 package admin
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"ragflow/internal/cache"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/server"
 	"ragflow/internal/service"
 	"ragflow/internal/utility"
@@ -31,11 +33,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-)
-
-// Common errors
-var (
-	ErrUserNotFound = errors.New("user not found")
 )
 
 // Handler admin handler
@@ -208,15 +205,6 @@ func (h *Handler) AuthCheck(c *gin.Context) {
 	successNoData(c, "Admin is authorized")
 }
 
-// ListTasks handle list tasks
-func (h *Handler) ListTasks(c *gin.Context) {
-	tasks, err := h.service.ListTasks()
-	if err != nil {
-		errorResponse(c, err.Error(), 500)
-	}
-	success(c, tasks, "Get all tasks")
-}
-
 // ListUsers handle list users
 func (h *Handler) ListUsers(c *gin.Context) {
 	users, err := h.service.ListUsers()
@@ -266,7 +254,7 @@ func (h *Handler) GetUser(c *gin.Context) {
 
 	userDetails, err := h.service.GetUserDetails(username)
 	if err != nil {
-		if errors.Is(err, ErrUserNotFound) {
+		if errors.Is(err, common.ErrUserNotFound) {
 			errorResponse(c, "User not found", 404)
 			return
 		}
@@ -1259,6 +1247,229 @@ func (h *Handler) SetLogLevel(c *gin.Context) {
 	}
 
 	success(c, gin.H{"level": req.Level}, "Log level updated successfully")
+}
+
+func (h *Handler) ListMessagesFromQueue(c *gin.Context) {
+
+	msgQueueEngine := engine.GetMessageQueueEngine()
+	messages, err := msgQueueEngine.ListMessages("ingestion", false)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
+	var result []map[string]string
+	for _, message := range messages {
+		var taskMessage common.TaskMessage
+		err = json.Unmarshal([]byte(message["message"]), &taskMessage)
+		if err != nil {
+			return
+		}
+		result = append(result, map[string]string{
+			"subject": message["subject"],
+			"id":      taskMessage.TaskID,
+			"type":    taskMessage.TaskType,
+		})
+	}
+
+	success(c, result, "List messages from queue successfully")
+}
+
+type PublishMessageToQueueRequest struct {
+	Message string `json:"message" binding:"required"`
+}
+
+func (h *Handler) PublishMessageToQueue(c *gin.Context) {
+	var req PublishMessageToQueueRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errorResponse(c, "message is required", 400)
+		return
+	}
+
+	taskMessage := common.TaskMessage{
+		TaskID:   req.Message,
+		TaskType: common.TaskTypeIngestionTest,
+	}
+
+	// convert task
+	taskMessageStr, err := json.Marshal(taskMessage)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
+
+	msgQueueEngine := engine.GetMessageQueueEngine()
+	err = msgQueueEngine.PublishTask("tasks.RAGFLOW", taskMessageStr)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
+
+	success(c, nil, "Publish message successfully")
+}
+
+type PullMessageFromQueueRequest struct {
+	MessageCount int    `json:"message_count" binding:"required"`
+	AckPolicy    string `json:"ack_policy" binding:"required"`
+}
+
+func (h *Handler) PullMessageFromQueue(c *gin.Context) {
+	var req PullMessageFromQueueRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errorResponse(c, fmt.Sprintf("message count and ack_policy are required, error: %s", err.Error()), 400)
+		return
+	}
+
+	msgQueueEngine := engine.GetMessageQueueEngine()
+	err := msgQueueEngine.InitConsumer("tasks.RAGFLOW")
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
+	messages, err := msgQueueEngine.GetMessages(req.MessageCount)
+	var result []map[string]string
+	if req.AckPolicy == "ACK" {
+		for _, message := range messages {
+			taskMessage := message.GetMessage()
+			resultMessage := map[string]string{
+				"id":   taskMessage.TaskID,
+				"type": taskMessage.TaskType,
+			}
+			err = message.Ack()
+			if err == nil {
+				resultMessage["ack"] = "true"
+			} else {
+				resultMessage["ack"] = "false"
+			}
+			result = append(result, resultMessage)
+		}
+	} else {
+		for _, message := range messages {
+			taskMessage := message.GetMessage()
+			resultMessage := map[string]string{
+				"id":   taskMessage.TaskID,
+				"type": taskMessage.TaskType,
+			}
+			if err == nil {
+				resultMessage["nack"] = "true"
+			} else {
+				resultMessage["nack"] = "false"
+			}
+			result = append(result, resultMessage)
+		}
+	}
+
+	success(c, result, "Pull messages from queue successfully")
+}
+
+func (h *Handler) ShowMessageQueue(c *gin.Context) {
+
+	msgQueueEngine := engine.GetMessageQueueEngine()
+	result, err := msgQueueEngine.ShowMessageQueue()
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
+
+	success(c, result, "show message queue successfully")
+}
+
+type RemoveIngestionTaskRequest struct {
+	Tasks []string `json:"tasks" binding:"required"`
+}
+
+func (h *Handler) RemoveIngestionTasks(c *gin.Context) {
+	var req RemoveIngestionTaskRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errorResponse(c, "task id is required", 400)
+		return
+	}
+
+	tasks, err := h.service.RemoveIngestionTasks(req.Tasks)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
+
+	success(c, tasks, "Remove tasks successfully")
+}
+
+type StopIngestionTaskRequest struct {
+	Tasks []string `json:"tasks" binding:"required"`
+}
+
+func (h *Handler) StopIngestionTasks(c *gin.Context) {
+	var req StopIngestionTaskRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errorResponse(c, "task id and from is required", 400)
+		return
+	}
+
+	tasks, err := h.service.StopIngestionTasks(req.Tasks)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
+
+	var result []map[string]string
+	for _, task := range tasks {
+		result = append(result, map[string]string{
+			"task_id": task.ID,
+			"status":  task.Status,
+		})
+	}
+
+	success(c, result, "Stop tasks successfully")
+}
+
+// ListIngestionTasks
+func (h *Handler) ListIngestionTasks(c *gin.Context) {
+	tasks, err := h.service.ListIngestionTasks()
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+	}
+	success(c, tasks, "Get all tasks")
+}
+
+func (h *Handler) ListIngestors(c *gin.Context) {
+	serverList := GlobalServerStore.ListInfos()
+	var ingestorResults []map[string]string
+	now := time.Now()
+	for _, ingestorServer := range serverList {
+		if ingestorServer.ServerType == common.ServerTypeIngestion {
+			ingestorResult := map[string]string{}
+			ingestorResult["name"] = ingestorServer.ServerName
+			ingestorResult["host"] = ingestorServer.Host
+			ingestorResult["status"] = ingestorServer.Version
+			if now.Sub(ingestorServer.Timestamp) < 30*time.Second {
+				ingestorResult["status"] = "alive"
+			} else {
+				ingestorResult["status"] = "timeout"
+			}
+			ingestorResults = append(ingestorResults, ingestorResult)
+		}
+	}
+	success(c, ingestorResults, "Get all tasks")
+}
+
+type ShutdownIngestorRequest struct {
+	IngestorID string `json:"ingestor_name" binding:"required"`
+}
+
+func (h *Handler) ShutdownIngestor(c *gin.Context) {
+	var req ShutdownIngestorRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errorResponse(c, "file uri is required", 400)
+		return
+	}
+
+	taskID := common.GenerateUUID()
+	//ingestionManager.SubmitTask(&common.TaskAssignment{
+	//	TaskId:     taskID,
+	//	TaskType:   "SHUTDOWN",
+	//	AssignedTo: req.IngestorID,
+	//})
+
+	success(c, gin.H{"task_id": taskID, "ingestor_id": req.IngestorID}, "Shutdown ingestor")
 }
 
 // Reports handle heartbeat reports from servers

@@ -15,9 +15,9 @@ const (
 type ServerType string
 
 const (
-	ServerTypeAPI       ServerType = "api_server"     // API server
-	ServerTypeWorker    ServerType = "ingestor"       // Ingestion server
-	ServerTypeScheduler ServerType = "data_collector" // Data collection server
+	ServerTypeAPI           ServerType = "api_server"     // API server
+	ServerTypeIngestion     ServerType = "ingestor"       // Ingestion server
+	ServerTypeDataCollector ServerType = "data_collector" // Data collection server
 )
 
 type BaseMessage struct {
@@ -30,4 +30,11 @@ type BaseMessage struct {
 	Version     string      `json:"version"`
 	Timestamp   time.Time   `json:"timestamp"`
 	Ext         interface{} `json:"ext,omitempty"`
+}
+
+type StartIngestionRequest struct {
+	TaskID   string `json:"task_id" binding:"required"`
+	TaskType string `json:"task_type" binding:"required"`
+	From     string `json:"from" binding:"required"`
+	UserID   string `json:"user_id" binding:"required"`
 }

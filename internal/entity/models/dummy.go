@@ -22,25 +22,21 @@ import (
 
 // DummyModel implements ModelDriver for Dummy AI
 type DummyModel struct {
-	BaseURL   map[string]string
-	URLSuffix URLSuffix
-}
-
-func (d *DummyModel) ParseFile() {
-	//TODO implement me
-	panic("implement me")
+	baseModel BaseModel
 }
 
 // NewDummyModel creates a new Dummy AI model instance
 func NewDummyModel(baseURL map[string]string, urlSuffix URLSuffix) *DummyModel {
 	return &DummyModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+		},
 	}
 }
 
 func (d *DummyModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return nil
+	return NewDummyModel(baseURL, d.baseModel.URLSuffix)
 }
 
 func (d *DummyModel) Name() string {
@@ -62,7 +58,7 @@ func (d *DummyModel) Embed(modelName *string, texts []string, apiConfig *APIConf
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (d *DummyModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (d *DummyModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -84,20 +80,33 @@ func (d *DummyModel) TranscribeAudio(modelName *string, file *string, apiConfig 
 	return nil, fmt.Errorf("%s, no such method", d.Name())
 }
 
-func (z *DummyModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (d *DummyModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", d.Name())
 }
 
-// AudioSpeech convert audio to text
-func (d *DummyModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+// AudioSpeech convert text to audio
+func (d *DummyModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", d.Name())
 }
 
-func (z *DummyModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (d *DummyModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", d.Name())
 }
 
 // OCRFile OCR file
-func (d *DummyModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (d *DummyModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", d.Name())
+}
+
+// ParseFile parse file
+func (d *DummyModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", d.Name())
+}
+
+func (d *DummyModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", d.Name())
+}
+
+func (d *DummyModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", d.Name())
 }

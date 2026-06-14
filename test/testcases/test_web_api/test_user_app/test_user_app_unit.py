@@ -344,10 +344,6 @@ def _load_user_app(monkeypatch):
     api_utils_mod.validate_request = _validate_request
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 
-    tenant_utils_mod = ModuleType("api.utils.tenant_utils")
-    tenant_utils_mod.ensure_tenant_model_id_for_params = lambda _tenant_id, params: params
-    monkeypatch.setitem(sys.modules, "api.utils.tenant_utils", tenant_utils_mod)
-
     crypt_mod = ModuleType("api.utils.crypt")
     crypt_mod.decrypt = lambda value: value
     monkeypatch.setitem(sys.modules, "api.utils.crypt", crypt_mod)
@@ -711,6 +707,11 @@ def test_logout_setting_profile_matrix_unit(monkeypatch):
     res = _run(module.setting_user())
     assert res["code"] == module.RetCode.AUTHENTICATION_ERROR
     assert "Password error" in res["message"]
+
+    _set_request_json(monkeypatch, module, {"nickname": "carh!@#$%^&*()_+WFAGD"})
+    res = _run(module.setting_user())
+    assert res["code"] == module.RetCode.ARGUMENT_ERROR
+    assert "invalid characters" in res["message"]
 
     _set_request_json(
         monkeypatch,

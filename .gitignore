@@ -21,6 +21,7 @@ Cargo.lock
 
 .idea/
 .vscode/
+.cursor/settings.json
 
 # Exclude Mac generated files
 .DS_Store
@@ -232,3 +233,5 @@ internal/cpp/cmake-build-debug/
 bin/*
 !bin/.gitkeep
 .claude/settings.local.json
+
+.run/

@@ -6,44 +6,62 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It's a full-stack application with:
 
-- Python backend (Flask-based API server)
+- Python backend (Quart-based async API server — Quart is the async reimplementation of Flask)
 - React/TypeScript frontend (built with vitejs)
-- Microservices architecture with Docker deployment
-- Multiple data stores (MySQL, Elasticsearch/Infinity, Redis, MinIO)
+- Background task executor workers (separate Python processes, Redis-queue-driven)
+- Peewee ORM for database models (not SQLAlchemy)
+- Multiple data stores (MySQL/PostgreSQL, Elasticsearch/Infinity/OpenSearch/OceanBase, Redis, MinIO)
 
 ## Architecture
 
-### Backend (`/api/`)
+### Runtime Architecture
 
-- **Main Server**: `api/ragflow_server.py` - Flask application entry point
-- **Apps**: Modular Flask blueprints in `api/apps/` for different functionalities:
-  - `kb_app.py` - Knowledge base management
-  - `dialog_app.py` - Chat/conversation handling
-  - `document_app.py` - Document processing
-  - `canvas_app.py` - Agent workflow canvas
-  - `file_app.py` - File upload/management
-- **Services**: Business logic in `api/db/services/`
-- **Models**: Database models in `api/db/db_models.py`
+RAGFlow runs as **two separate Python process types**, orchestrated by `docker/launch_backend_service.sh`:
+
+- **API Server** (`api/ragflow_server.py`): Quart-based async HTTP server
+- **Task Executors** (`rag/svr/task_executor.py`): Background workers processing documents from Redis streams. Multiple instances run in parallel (controlled by `WS` env var). Each consumes from priority-ordered Redis streams (`te.1.common`, `te.0.common`), using consumer groups for load distribution.
+
+Key consequence: task executors import a different code surface than the API server, so always check which process a module is meant for.
+
+### Backend API (`/api/`)
+
+- **App factory**: `api/apps/__init__.py` — creates the Quart app, configures auth (`login_required` decorator, JWT + API token + session fallback), and dynamically discovers/registers blueprints
+- **Two API coexisting patterns**:
+  - **RESTful APIs** in `api/apps/restful_apis/` — newer pattern with Pydantic request validation, service layer in `api/apps/services/`, routes registered under `/api/v1`
+  - **Legacy APIs** in `api/apps/*_app.py` — older pattern using `@validate_request()`, routes registered under `/v1/<page_name>`
+  - **SDK APIs** in `api/apps/sdk/` — registered under `/v1/`
+- **Services**: `api/db/services/` — business logic wrapping Peewee model operations. `api/apps/services/` — service layer for the RESTful APIs
+- **Models**: `api/db/db_models.py` — Peewee ORM models with pooled MySQL/PostgreSQL connections, custom `JSONField`/`ListField` types, retry logic on connection loss
 
 ### Core Processing (`/rag/`)
 
-- **Document Processing**: `deepdoc/` - PDF parsing, OCR, layout analysis
-- **LLM Integration**: `rag/llm/` - Model abstractions for chat, embedding, reranking
-- **RAG Pipeline**: `rag/flow/` - Chunking, parsing, tokenization
-- **Graph RAG**: `rag/graphrag/` - Knowledge graph construction and querying
+- **Document ingestion pipeline**: `rag/flow/pipeline.py` — `Pipeline` (extends `agent.canvas.Graph`) orchestrates the ingestion DAG. Components: File (fetches binary from storage), Parser (dispatches to `deepdoc.parser` based on file type), TokenChunker/TitleChunker (splits into chunks), Tokenizer (computes full-text tokens + embedding vectors), Extractor (LLM-based extraction). Data flows via Pydantic `*FromUpstream` schemas.
+- **Document parsing**: `deepdoc/` — PDF parsing (vision-based OCR, layout analysis, table structure recognition) and format-specific parsers (DOCX, XLSX, PPT, Markdown, HTML, images). All parsers normalize to a common structure (list of bbox dicts for PDFs, `{text, doc_type_kwd}` for others).
+- **LLM Integration**: `rag/llm/` — factory pattern with runtime class discovery. `chat_model.py` (30+ providers via OpenAI SDK and LiteLLM wrappers), `embedding_model.py`, `rerank_model.py`, `cv_model.py` (image-to-text), `sequence2txt_model.py` (ASR), `tts_model.py`. Use `LLMBundle` (from `api.db.services.llm_service`) as the unified interface.
+- **Graph RAG**: `rag/graphrag/` — multi-phase pipeline: per-document subgraph extraction (LLM or spaCy NER), Leiden community detection, entity resolution, community summarization. Entities/relations/reports are indexed as chunks alongside regular text chunks, differentiated by `knowledge_graph_kwd`.
+- **Search**: `rag/nlp/search.py` — `Dealer` class combines vector similarity + BM25 + re-ranking. `KGSearch` extends it for graph-aware retrieval (entity resolution, n-hop enrichment).
 
 ### Agent System (`/agent/`)
 
-- **Components**: Modular workflow components (LLM, retrieval, categorize, etc.)
-- **Templates**: Pre-built agent workflows in `agent/templates/`
-- **Tools**: External API integrations (Tavily, Wikipedia, SQL execution, etc.)
+- **Execution engine**: `agent/canvas.py` — `Canvas` (extends `Graph`) executes the DAG. Components are run in topological order via `_run_batch`, each receiving upstream outputs as kwargs. Control-flow components (`Categorize`, `Switch`, `Iteration`, `Loop`) dynamically modify the execution path.
+- **Component base**: `agent/component/base.py` — `ComponentBase` with `invoke(**kwargs)` / `invoke_async(**kwargs)` lifecycle. Variable references (`{component_id@output_var}` or `{sys.query}`) are resolved from the canvas graph at runtime.
+- **Components**: Modular workflow components in `agent/component/` — Begin, LLM, Agent (tool-calling LLM), Categorize, Switch, Iteration, Loop, Message, Invoke (HTTP), and data manipulation nodes. Auto-discovered by `__init__.py`.
+- **Templates**: Pre-built agent workflows as JSON DSL files in `agent/templates/`. Each contains a complete `components` DAG, `path`, and `globals`.
+- **Tools**: `agent/tools/` — Retrieval, web search (DuckDuckGo, Google, Tavily, SearXNG), academic search (ArXiv, PubMed, Google Scholar, Wikipedia), code execution, SQL execution, email, GitHub, finance data, translation, weather. Tools implement `ToolBase` (extends `ComponentBase`) and produce OpenAI-compatible function descriptors.
+- **Plugins**: `agent/plugin/` — plugin system using `pluginlib` for loading external LLM tool plugins from `embedded_plugins/`.
 
 ### Frontend (`/web/`)
 
 - React/TypeScript with vitejs framework
-- shadcn/ui components
-- State management with Zustand
-- Tailwind CSS for styling
+- shadcn/ui components (Radix UI primitives + Tailwind CSS)
+- `@tanstack/react-query` for server state (cache keys, mutations, invalidation)
+- Zustand for local state (primarily agent canvas graph store)
+- `react-router` v7 with lazy-loaded pages
+- `react-i18next` for i18n (17 languages)
+- Axios for HTTP with a layered pattern: endpoint definitions (`utils/api.ts`) → HTTP client (`utils/next-request.ts`) → service layer (`services/`) → query hooks (`hooks/use-*-request.ts`) → components
+- `@xyflow/react` for the agent workflow canvas
+- `react-hook-form` + `zod` for form validation
+- Two API proxy prefixes: `webAPI = '/v1'` (legacy) and `restAPIv1 = '/api/v1'` (RESTful)
 
 ## Common Development Commands
 
@@ -51,7 +69,7 @@ RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on d
 
 ```bash
 # Install Python dependencies
-uv sync --python 3.12 --all-extras
+uv sync --python 3.13 --all-extras
 uv run python3 download_deps.py
 pre-commit install
 
@@ -118,7 +136,7 @@ RAGFlow supports switching between Elasticsearch (default) and Infinity:
 
 ## Development Environment Requirements
 
-- Python 3.10-3.12
+- Python 3.10-3.13
 - Node.js >=18.20.4
 - Docker & Docker Compose
 - uv package manager

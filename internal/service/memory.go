@@ -17,6 +17,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"ragflow/internal/common"
@@ -26,6 +27,8 @@ import (
 	"time"
 
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
+	enginetypes "ragflow/internal/engine/types"
 )
 
 const (
@@ -70,6 +73,16 @@ const (
 // validForgettingPolicies defines which forgetting policies are valid
 var validForgettingPolicies = map[ForgettingPolicy]bool{
 	ForgettingPolicyFIFO: true,
+}
+
+// ResourceNotFoundError marks client-visible missing memory/message resources.
+type ResourceNotFoundError struct {
+	Resource string
+	ID       string
+}
+
+func (e *ResourceNotFoundError) Error() string {
+	return fmt.Sprintf("%s '%s' not found.", e.Resource, e.ID)
 }
 
 //
@@ -226,6 +239,7 @@ func generateOutputFormat(typesToExtract []string) string {
 // It provides methods for creating, updating, deleting, and querying memories
 type MemoryService struct {
 	memoryDAO *dao.MemoryDAO
+	docEngine engine.DocEngine
 }
 
 // NewMemoryService creates a new MemoryService instance
@@ -235,6 +249,7 @@ type MemoryService struct {
 func NewMemoryService() *MemoryService {
 	return &MemoryService{
 		memoryDAO: dao.NewMemoryDAO(),
+		docEngine: engine.Get(),
 	}
 }
 
@@ -370,8 +385,6 @@ func (s *MemoryService) CreateMemory(tenantID string, req *CreateMemoryRequest) 
 	}
 
 	memoryTypeInt := dao.CalculateMemoryType(uniqueMemoryTypes)
-	timestamp := time.Now().UnixMilli()
-
 	systemPrompt := PromptAssembler{}.AssembleSystemPrompt(uniqueMemoryTypes)
 
 	newID := common.GenerateUUID()
@@ -402,9 +415,6 @@ func (s *MemoryService) CreateMemory(tenantID string, req *CreateMemoryRequest) 
 			memory.TenantLLMID = &llmID
 		}
 	}
-	memory.CreateTime = &timestamp
-	memory.UpdateTime = &timestamp
-
 	if err := s.memoryDAO.Create(memory); err != nil {
 		return nil, errors.New("could not create new memory")
 	}
@@ -504,7 +514,7 @@ func (s *MemoryService) UpdateMemory(tenantID string, memoryID string, req *Upda
 	}
 
 	if req.ForgettingPolicy != nil {
-		fp := ForgettingPolicy(strings.ToLower(*req.ForgettingPolicy))
+		fp := ForgettingPolicy(strings.ToUpper(strings.TrimSpace(*req.ForgettingPolicy)))
 		if !validForgettingPolicies[fp] {
 			return nil, fmt.Errorf("forgetting policy '%s' is not supported", *req.ForgettingPolicy)
 		}
@@ -549,6 +559,108 @@ func (s *MemoryService) UpdateMemory(tenantID string, memoryID string, req *Upda
 		return formatRetDataFromMemory(currentMemory), nil
 	}
 
+	currentMemoryTypes := dao.GetMemoryTypeHuman(currentMemory.MemoryType)
+	normalizedCurrentMemoryTypes := normalizeMemoryTypes(currentMemoryTypes)
+
+	filteredUpdateDict := make(map[string]interface{}, len(updateDict))
+	for field, value := range updateDict {
+		switch field {
+		case "name":
+			currentName := strings.TrimSpace(currentMemory.Name)
+			requestName := strings.TrimSpace(fmt.Sprint(value))
+			if currentName != requestName {
+				filteredUpdateDict[field] = value
+			}
+		case "permissions":
+			currentPermissions := strings.ToLower(strings.TrimSpace(currentMemory.Permissions))
+			requestPermissions := strings.ToLower(strings.TrimSpace(fmt.Sprint(value)))
+			if currentPermissions != requestPermissions {
+				filteredUpdateDict[field] = value
+			}
+		case "llm_id":
+			currentLLMID := strings.TrimSpace(currentMemory.LLMID)
+			requestLLMID := strings.TrimSpace(fmt.Sprint(value))
+			if currentLLMID != requestLLMID {
+				filteredUpdateDict[field] = value
+			}
+		case "embd_id":
+			currentEmbdID := strings.TrimSpace(currentMemory.EmbdID)
+			requestEmbdID := strings.TrimSpace(fmt.Sprint(value))
+			if currentEmbdID != requestEmbdID {
+				filteredUpdateDict[field] = value
+			}
+		case "tenant_llm_id":
+			if currentMemory.TenantLLMID == nil || *currentMemory.TenantLLMID != value.(int64) {
+				filteredUpdateDict[field] = value
+			}
+		case "tenant_embd_id":
+			if currentMemory.TenantEmbdID == nil || *currentMemory.TenantEmbdID != value.(int64) {
+				filteredUpdateDict[field] = value
+			}
+		case "memory_type":
+			if types, ok := value.([]string); ok {
+				if !sameStringSet(normalizedCurrentMemoryTypes, normalizeMemoryTypes(types)) {
+					filteredUpdateDict[field] = value
+				}
+			} else {
+				filteredUpdateDict[field] = value
+			}
+		case "memory_size":
+			if currentMemory.MemorySize != value.(int64) {
+				filteredUpdateDict[field] = value
+			}
+		case "forgetting_policy":
+			currentForgettingPolicy := strings.ToUpper(strings.TrimSpace(currentMemory.ForgettingPolicy))
+			requestForgettingPolicy := strings.ToUpper(strings.TrimSpace(fmt.Sprint(value)))
+			if currentForgettingPolicy != requestForgettingPolicy {
+				filteredUpdateDict[field] = value
+			}
+		case "temperature":
+			if currentMemory.Temperature != value.(float64) {
+				filteredUpdateDict[field] = value
+			}
+		case "avatar":
+			currentAvatar := ""
+			if currentMemory.Avatar != nil {
+				currentAvatar = *currentMemory.Avatar
+			}
+			if currentAvatar != fmt.Sprint(value) {
+				filteredUpdateDict[field] = value
+			}
+		case "description":
+			currentDescription := ""
+			if currentMemory.Description != nil {
+				currentDescription = *currentMemory.Description
+			}
+			if currentDescription != fmt.Sprint(value) {
+				filteredUpdateDict[field] = value
+			}
+		case "system_prompt":
+			currentSystemPrompt := ""
+			if currentMemory.SystemPrompt != nil {
+				currentSystemPrompt = *currentMemory.SystemPrompt
+			}
+			if currentSystemPrompt != fmt.Sprint(value) {
+				filteredUpdateDict[field] = value
+			}
+		case "user_prompt":
+			currentUserPrompt := ""
+			if currentMemory.UserPrompt != nil {
+				currentUserPrompt = *currentMemory.UserPrompt
+			}
+			if currentUserPrompt != fmt.Sprint(value) {
+				filteredUpdateDict[field] = value
+			}
+		default:
+			filteredUpdateDict[field] = value
+		}
+	}
+	updateDict = filteredUpdateDict
+
+	if len(updateDict) == 0 {
+		return formatRetDataFromMemory(currentMemory), nil
+	}
+
 	memorySize := currentMemory.MemorySize
 	notAllowedUpdate := []string{}
 	for _, f := range []string{"tenant_embd_id", "embd_id", "memory_type"} {
@@ -586,6 +698,45 @@ func (s *MemoryService) UpdateMemory(tenantID string, memoryID string, req *Upda
 	return formatRetDataFromMemory(updatedMemory), nil
 }
 
+func normalizeMemoryTypes(memoryTypes []string) []string {
+	normalized := make([]string, 0, len(memoryTypes))
+	seen := make(map[string]struct{}, len(memoryTypes))
+	for _, mt := range memoryTypes {
+		mt = strings.ToLower(strings.TrimSpace(mt))
+		if mt == "" {
+			continue
+		}
+		if _, exists := seen[mt]; exists {
+			continue
+		}
+		seen[mt] = struct{}{}
+		normalized = append(normalized, mt)
+	}
+	return normalized
+}
+
+func sameStringSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	counts := make(map[string]int, len(a))
+	for _, item := range a {
+		counts[item]++
+	}
+	for _, item := range b {
+		counts[item]--
+		if counts[item] < 0 {
+			return false
+		}
+	}
+	for _, count := range counts {
+		if count != 0 {
+			return false
+		}
+	}
+	return true
+}
+
 // DeleteMemory deletes a memory by ID
 // It also deletes associated message indexes before removing the memory record
 //
@@ -617,6 +768,82 @@ func (s *MemoryService) DeleteMemory(memoryID string) error {
 	}
 
 	return nil
+}
+
+// ForgetMessage marks a memory message as forgotten by setting forget_at.
+// This mirrors Python memory_api_service.forget_message and keeps the message
+// record for retention/cleanup policies instead of deleting it immediately.
+func (s *MemoryService) ForgetMessage(ctx context.Context, userID string, memoryID string, messageID int64) error {
+	memory, err := s.requireMemoryAccess(ctx, userID, memoryID)
+	if err != nil {
+		return err
+	}
+
+	if s.docEngine == nil {
+		return errors.New("message store is not initialized")
+	}
+
+	now := time.Now().UTC()
+	forgetTime := now.Format("2006-01-02 15:04:05")
+	messageDocID := fmt.Sprintf("%s_%d", memoryID, messageID)
+	updates := map[string]interface{}{
+		"forget_at":     forgetTime,
+		"forget_at_flt": now.UnixMilli(),
+	}
+	condition := map[string]interface{}{
+		"id": messageDocID,
+	}
+	indexName := fmt.Sprintf("memory_%s", memory.TenantID)
+
+	if err := s.docEngine.UpdateChunks(ctx, condition, updates, indexName, memoryID); err != nil {
+		if isMessageDocumentNotFound(err) {
+			// Match Python delete-by-query behavior: forgetting an already-missing
+			// message document is idempotent and still considered successful.
+			return nil
+		}
+		return fmt.Errorf("failed to forget message '%d' in memory '%s': %w", messageID, memoryID, err)
+	}
+
+	return nil
+}
+
+func isMessageDocumentNotFound(err error) bool {
+	return errors.Is(err, enginetypes.ErrDocumentNotFound)
+}
+
+func (s *MemoryService) requireMemoryAccess(ctx context.Context, userID string, memoryID string) (*entity.Memory, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	memory, err := s.memoryDAO.GetByIDWithContext(ctx, memoryID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, &ResourceNotFoundError{Resource: "Memory", ID: memoryID}
+		}
+		return nil, fmt.Errorf("failed to get memory '%s': %w", memoryID, err)
+	}
+	if memory.TenantID == userID {
+		return memory, nil
+	}
+	if memory.Permissions != string(TenantPermissionTeam) {
+		return nil, &ResourceNotFoundError{Resource: "Memory", ID: memoryID}
+	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	userTenantService := NewUserTenantService()
+	userTenants, err := userTenantService.GetUserTenantRelationByUserIDWithContext(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	for _, tenant := range userTenants {
+		if tenant.TenantID == memory.TenantID {
+			return memory, nil
+		}
+	}
+
+	return nil, &ResourceNotFoundError{Resource: "Memory", ID: memoryID}
 }
 
 // ListMemories retrieves a paginated list of memories with optional filters
@@ -714,9 +941,6 @@ func (s *MemoryService) GetMemoryConfig(memoryID string) (*CreateMemoryResponse,
 
 // TODO: AddMessage - Implementation pending - depends on embedding engine
 // func (s *MemoryService) AddMessage(memoryIDs []string, messageDict map[string]interface{}) (bool, string, error) { ... }
-
-// TODO: ForgetMessage - Implementation pending - depends on embedding engine
-// func (s *MemoryService) ForgetMessage(memoryID string, messageID int) (bool, error) { ... }
 
 // TODO: UpdateMessageStatus - Implementation pending - depends on embedding engine
 // func (s *MemoryService) UpdateMessageStatus(memoryID string, messageID int, status bool) (bool, error) { ... }

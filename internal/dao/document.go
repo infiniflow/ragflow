@@ -67,9 +67,10 @@ func (dao *DocumentDAO) UpdateByID(id string, updates map[string]interface{}) er
 	return DB.Model(&entity.Document{}).Where("id = ?", id).Updates(updates).Error
 }
 
-// Delete delete document
-func (dao *DocumentDAO) Delete(id string) error {
-	return DB.Delete(&entity.Document{}, "id = ?", id).Error
+// Delete hard-deletes document by ID. Returns rows affected.
+func (dao *DocumentDAO) Delete(id string) (int64, error) {
+	result := DB.Where("id = ?", id).Delete(&entity.Document{})
+	return result.RowsAffected, result.Error
 }
 
 // List list documents
@@ -86,15 +87,25 @@ func (dao *DocumentDAO) List(offset, limit int) ([]*entity.Document, int64, erro
 }
 
 // ListByKBID list documents by knowledge base ID
-func (dao *DocumentDAO) ListByKBID(kbID string, offset, limit int) ([]*entity.Document, int64, error) {
-	var documents []*entity.Document
+func (dao *DocumentDAO) ListByKBID(kbID string, offset, limit int) ([]*entity.DocumentListItem, int64, error) {
+	var documents []*entity.DocumentListItem
 	var total int64
 
 	if err := DB.Model(&entity.Document{}).Where("kb_id = ?", kbID).Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	err := DB.Where("kb_id = ?", kbID).Offset(offset).Limit(limit).Find(&documents).Error
+	err := DB.Table("document").
+		Select(`document.*, user_canvas.title as pipeline_name, user.nickname`).
+		Joins("JOIN file2document ON file2document.document_id = document.id").
+		Joins("JOIN file ON file.id = file2document.file_id").
+		Joins("LEFT JOIN user_canvas ON document.pipeline_id = user_canvas.id").
+		Joins("LEFT JOIN user ON document.created_by = user.id").
+		Where("document.kb_id = ?", kbID).
+		Order("document.create_time DESC").
+		Offset(offset).
+		Limit(limit).
+		Scan(&documents).Error
 	return documents, total, err
 }
 
@@ -124,12 +135,22 @@ func (dao *DocumentDAO) GetAllDocIDsByKBIDs(kbIDs []string) ([]map[string]string
 
 // GetByIDs retrieves documents by multiple IDs
 func (dao *DocumentDAO) GetByIDs(ids []string) ([]*entity.Document, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
 	var documents []*entity.Document
 	err := DB.Where("id IN ?", ids).Find(&documents).Error
 	if err != nil {
 		return nil, err
 	}
 	return documents, nil
+}
+
+// GetByDocumentIDAndDatasetID retrieves a document by document ID and dataset/KB ID.
+func (dao *DocumentDAO) GetByDocumentIDAndDatasetID(documentID, datasetID string) (*entity.Document, error) {
+	var document entity.Document
+	err := DB.Where("id = ? AND kb_id = ?", documentID, datasetID).First(&document).Error
+	return &document, err
 }
 
 // CountByTenantID counts documents by tenant ID
@@ -147,4 +168,46 @@ func (dao *DocumentDAO) SumSizeByDatasetID(datasetID string) (int64, error) {
 		Where("kb_id = ?", datasetID).
 		Scan(&total).Error
 	return total, err
+}
+
+// GetParsingStatusByKBID aggregates document parsing status counts for a
+// dataset, mirroring DocumentService.get_parsing_status_by_kb_ids in Python.
+func (dao *DocumentDAO) GetParsingStatusByKBID(kbID string) (map[string]int64, error) {
+	result := map[string]int64{
+		"unstart_count": 0,
+		"running_count": 0,
+		"cancel_count":  0,
+		"done_count":    0,
+		"fail_count":    0,
+	}
+
+	var rows []struct {
+		Run *string `gorm:"column:run"`
+		Cnt int64   `gorm:"column:cnt"`
+	}
+	err := DB.Model(&entity.Document{}).
+		Select("run, COUNT(id) as cnt").
+		Where("kb_id = ?", kbID).
+		Group("run").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	statusFieldMap := map[string]string{
+		string(entity.TaskStatusUnstart): "unstart_count",
+		string(entity.TaskStatusRunning): "running_count",
+		string(entity.TaskStatusCancel):  "cancel_count",
+		string(entity.TaskStatusDone):    "done_count",
+		string(entity.TaskStatusFail):    "fail_count",
+	}
+	for _, row := range rows {
+		if row.Run == nil {
+			continue
+		}
+		if field, ok := statusFieldMap[*row.Run]; ok {
+			result[field] = row.Cnt
+		}
+	}
+	return result, nil
 }

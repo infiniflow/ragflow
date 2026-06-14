@@ -1258,6 +1258,7 @@ export default {
       bulgarian: 'Tiếng Bulgaria',
       arabic: 'Tiếng Ả Rập',
       turkish: 'Tiếng Thổ Nhĩ Kỳ',
+      korean: 'Tiếng Hàn',
     },
   },
 };

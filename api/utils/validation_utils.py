@@ -29,6 +29,7 @@ from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 
 from api.constants import DATASET_NAME_LIMIT, FILE_NAME_LEN_LIMIT
 from api.db import FileType
+from api.utils.pagination_utils import validate_rest_api_page_size
 from common.constants import RetCode
 
 
@@ -362,6 +363,16 @@ class GraphragConfig(Base):
     method: Annotated[Literal["light", "general", "ner"], Field(default="light")]
     community: Annotated[bool, Field(default=False)]
     resolution: Annotated[bool, Field(default=False)]
+    batch_chunk_token_size: Annotated[int, Field(default=4096, ge=512, le=8196)]
+    retry_attempts: Annotated[int, Field(default=2, ge=1, le=10)]
+    retry_backoff_seconds: Annotated[float, Field(default=2.0, ge=0.0, le=600.0)]
+    retry_backoff_max_seconds: Annotated[float, Field(default=60.0, ge=0.0, le=3600.0)]
+    build_subgraph_timeout_per_chunk_seconds: Annotated[int, Field(default=300, ge=1, le=86400)]
+    build_subgraph_min_timeout_seconds: Annotated[int, Field(default=600, ge=1, le=86400)]
+    merge_timeout_seconds: Annotated[int, Field(default=180, ge=0, le=86400)]
+    resolution_timeout_seconds: Annotated[int, Field(default=1800, ge=0, le=86400)]
+    community_timeout_seconds: Annotated[int, Field(default=1800, ge=0, le=86400)]
+    lock_acquire_timeout_seconds: Annotated[int, Field(default=600, ge=0, le=86400)]
 
 
 class ParentChildConfig(Base):
@@ -547,7 +558,7 @@ class CreateDatasetReq(Base):
             CreateDatasetReq(avatar="data:video/mp4;base64,...")  # Unsupported MIME type
             ```
         """
-        if v is None:
+        if not v: # cover both None and empty string
             return v
 
         if "," in v:
@@ -950,6 +961,11 @@ class BaseListReq(BaseModel):
         """Validate and normalize an optional list filter id."""
         return validate_uuid1_hex(v)
 
+    @field_validator("page_size")
+    @classmethod
+    def validate_page_size(cls, v: int) -> int:
+        return validate_rest_api_page_size(v)
+
 
 class ListDatasetReq(BaseListReq):
     """Request model for listing datasets."""
@@ -1000,9 +1016,14 @@ class ListFileReq(BaseModel):
     parent_id: Annotated[str | None, Field(default=None)]
     keywords: Annotated[str, Field(default="")]
     page: Annotated[int, Field(default=1, ge=1)]
-    page_size: Annotated[int, Field(default=15, ge=1, le=100)]
+    page_size: Annotated[int, Field(default=15, ge=1)]
     orderby: Annotated[str, Field(default="create_time")]
     desc: Annotated[bool, Field(default=True)]
+
+    @field_validator("page_size")
+    @classmethod
+    def validate_page_size(cls, v: int) -> int:
+        return validate_rest_api_page_size(v)
 
 
 def validate_immutable_fields(update_doc_req: UpdateDocumentReq, doc):

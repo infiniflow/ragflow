@@ -27,12 +27,11 @@ import json_repair
 
 from agent.component.llm import LLM, LLMParam
 from agent.tools.base import LLMToolPluginCallSession, ToolBase, ToolMeta, ToolParamBase
-from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name
+from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_model_type_by_name
 from api.db.services.llm_service import LLMBundle
 from api.db.services.mcp_server_service import MCPServerService
-from api.db.services.tenant_llm_service import TenantLLMService
 from common.connection_utils import timeout
-from common.mcp_tool_call_conn import MCPToolCallSession, mcp_tool_metadata_to_openai_tool
+from common.mcp_tool_call_conn import MCPToolBinding, MCPToolCallSession, mcp_tool_metadata_to_openai_tool
 from rag.prompts.generator import citation_plus, citation_prompt, full_question, kb_prompt, message_fit_in, structured_output_prompt
 
 
@@ -81,7 +80,9 @@ class Agent(LLM, ToolBase):
             original_name = cpn.get_meta()["function"]["name"]
             indexed_name = f"{original_name}_{idx}"
             self.tools[indexed_name] = cpn
-        chat_model_config = get_model_config_by_type_and_name(self._canvas.get_tenant_id(), TenantLLMService.llm_id2llm_type(self._param.llm_id), self._param.llm_id)
+        model_types = get_model_type_by_name(self._canvas.get_tenant_id(), self._param.llm_id)
+        model_type = "chat" if "chat" in model_types else model_types[0]
+        chat_model_config = get_model_config_from_provider_instance(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
         self.chat_mdl = LLMBundle(
             self._canvas.get_tenant_id(),
             chat_model_config,
@@ -97,13 +98,16 @@ class Agent(LLM, ToolBase):
             indexed_meta["function"]["name"] = indexed_name
             self.tool_meta.append(indexed_meta)
 
+        tool_idx = len(self.tools)
         for mcp in self._param.mcp:
             _, mcp_server = MCPServerService.get_by_id(mcp["mcp_id"])
             custom_header = self._param.custom_header
             tool_call_session = MCPToolCallSession(mcp_server, mcp_server.variables, custom_header)
             for tnm, meta in mcp["tools"].items():
-                self.tool_meta.append(mcp_tool_metadata_to_openai_tool(meta))
-                self.tools[tnm] = tool_call_session
+                indexed_name = f"{tnm}_{tool_idx}"
+                tool_idx += 1
+                self.tool_meta.append(mcp_tool_metadata_to_openai_tool(meta, function_name=indexed_name))
+                self.tools[indexed_name] = MCPToolBinding(tool_call_session, tnm)
         self.callback = partial(self._canvas.tool_use_callback, id)
         self.toolcall_session = LLMToolPluginCallSession(self.tools, self.callback)
         if self.tool_meta:

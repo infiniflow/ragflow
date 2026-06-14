@@ -17,6 +17,8 @@ import logging
 import json
 import os
 import re
+
+from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance
 from common.constants import PAGERANK_FLD
 from common import settings
 from api.db.db_models import File
@@ -27,7 +29,6 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.connector_service import Connector2KbService
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, TaskService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
-from api.db.services.tenant_llm_service import TenantLLMService
 from common.constants import FileSource, StatusEnum
 from api.utils.api_utils import deep_merge, get_parser_config, remap_dictionary_keys, verify_embedding_availability
 
@@ -142,12 +143,23 @@ async def delete_datasets(tenant_id: str, ids: list = None, delete_all: bool = F
                 errors.append(f"Remove document '{doc.id}' error for dataset '{kb_id}'")
                 continue
             f2d = File2DocumentService.get_by_document_id(doc.id)
-            FileService.filter_delete(
-                [
-                    File.source_type == FileSource.KNOWLEDGEBASE,
-                    File.id == f2d[0].file_id,
-                ]
-            )
+            if f2d:
+                FileService.filter_delete(
+                    [
+                        File.source_type == FileSource.KNOWLEDGEBASE,
+                        File.id == f2d[0].file_id,
+                    ]
+                )
+            else:
+                # Normal uploads create a File2Document row via FileService.add_file_from_kb.
+                # A missing row usually means stale/partial data (e.g. link removed earlier,
+                # failed post-insert file linkage, or legacy rows). Deletion still proceeds.
+                logging.warning(
+                    "delete_datasets: document %s in dataset %s has no File2Document row; "
+                    "skipping linked file delete",
+                    doc.id,
+                    kb_id,
+                )
             File2DocumentService.delete_by_document_id(doc.id)
         FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kb.name])
 
@@ -598,9 +610,8 @@ def aggregate_tags(dataset_ids: list[str], tenant_id: str):
 
     merged = {}
     for kb_tenant_id, kb_ids in dataset_ids_by_tenant.items():
-        for bucket in settings.retriever.all_tags(kb_tenant_id, kb_ids):
-            tag = bucket["value"]
-            merged[tag] = merged.get(tag, 0) + bucket["count"]
+        for tag, count in settings.retriever.all_tags(kb_tenant_id, kb_ids):
+            merged[tag] = merged.get(tag, 0) + count
 
     return True, [{"value": tag, "count": count} for tag, count in merged.items()]
 
@@ -913,11 +924,7 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
     :param req: search request
     :return: (success, result) or (success, error_message)
     """
-    from api.db.joint_services.tenant_model_service import (
-        get_model_config_by_id,
-        get_model_config_by_type_and_name,
-        get_tenant_default_model_by_type,
-    )
+    from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
     from api.db.services.doc_metadata_service import DocMetadataService
     from api.db.services.llm_service import LLMBundle
     from api.db.services.search_service import SearchService
@@ -939,6 +946,8 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
     question = req.get("question", "")
     doc_ids = req.get("doc_ids", [])
     use_kg = req.get("use_kg", False)
+    similarity_threshold = float(req.get("similarity_threshold", 0.0))
+    vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     top = max(1, min(int(req.get("top_k", 1024)), 2048))
     langs = req.get("cross_languages", [])
 
@@ -956,18 +965,35 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
     local_doc_ids = list(doc_ids) if doc_ids else []
 
     meta_data_filter = {}
+    search_id = req.get("search_id", "")
+    search_config = {}
     chat_mdl = None
-    if req.get("search_id", ""):
-        search_detail = SearchService.get_detail(req.get("search_id", ""))
+    if search_id:
+        search_detail = SearchService.get_detail(search_id)
         if not search_detail:
-            logging.warning("search config not found: search_id=%s", req.get("search_id", ""))
+            logging.warning("search config not found: search_id=%s", search_id)
             return False, "Invalid search_id"
         search_config = search_detail.get("search_config", {})
         meta_data_filter = search_config.get("meta_data_filter", {})
+        similarity_threshold = float(search_config.get("similarity_threshold", similarity_threshold))
+        vector_similarity_weight = float(search_config.get("vector_similarity_weight", vector_similarity_weight))
+        top = max(1, min(int(search_config.get("top_k", top)), 2048))
+        use_kg = search_config.get("use_kg", use_kg)
+        langs = search_config.get("cross_languages", langs)
+        logging.debug(
+            "Dataset search loaded Search config: search_id=%s dataset_id=%s "
+            "vector_similarity_weight=%s full_text_weight=%s similarity_threshold=%s top_k=%s",
+            search_id,
+            dataset_id,
+            vector_similarity_weight,
+            1 - vector_similarity_weight,
+            similarity_threshold,
+            top,
+        )
         if meta_data_filter.get("method") in ["auto", "semi_auto"]:
             chat_id = search_config.get("chat_id", "")
             if chat_id:
-                chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, search_config["chat_id"])
+                chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT, search_config["chat_id"])
             else:
                 chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
             chat_mdl = LLMBundle(tenant_id, chat_model_config)
@@ -1000,28 +1026,19 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
     _question = question
     if langs:
         _question = await cross_languages(kb.tenant_id, None, _question, langs)
-    if kb.tenant_embd_id:
-        embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
-    elif kb.embd_id:
-        embd_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+    if kb.embd_id:
+        embd_model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
     else:
         embd_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.EMBEDDING)
     embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
     rerank_mdl = None
-    if req.get("tenant_rerank_id"):
-        allowed_rerank_tenant_ids = {tenant_id, kb.tenant_id}
-        rerank_model_config = get_model_config_by_id(
-            req["tenant_rerank_id"],
-            allowed_tenant_ids=allowed_rerank_tenant_ids,
-            requester_tenant_id=tenant_id,
-        )
-        rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
-    elif req.get("rerank_id"):
-        rerank_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.RERANK.value, req["rerank_id"])
+    rerank_id = search_config.get("rerank_id") or req.get("rerank_id")
+    if rerank_id:
+        rerank_model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.RERANK.value, rerank_id)
         rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
 
-    if req.get("keyword", False):
+    if search_config.get("keyword", req.get("keyword", False)):
         default_chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
         chat_mdl = LLMBundle(kb.tenant_id, default_chat_model_config)
         _question += await keyword_extraction(chat_mdl, _question)
@@ -1034,12 +1051,13 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
         [dataset_id],
         page,
         size,
-        float(req.get("similarity_threshold", 0.0)),
-        float(req.get("vector_similarity_weight", 0.3)),
+        similarity_threshold,
+        vector_similarity_weight,
         doc_ids=local_doc_ids,
         top=top,
         rerank_mdl=rerank_mdl,
         rank_feature=labels,
+        trace_id=search_id,
     )
 
     if use_kg:
@@ -1050,9 +1068,8 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
                 ranks["chunks"].insert(0, ck)
         except Exception:
             logging.warning("search KG retrieval failed: dataset=%s tenant=%s", dataset_id, tenant_id, exc_info=True)
-    total = ranks.get("total", 0)
     ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], tenant_ids)
-    ranks["total"] = total
+    ranks["total"] = len(ranks["chunks"])
 
     for c in ranks["chunks"]:
         c.pop("vector", None)
@@ -1078,9 +1095,6 @@ def check_embedding(dataset_id: str, tenant_id: str, req: dict):
     from common.doc_store.doc_store_base import OrderByExpr
     from rag.nlp import search
 
-    from api.db.joint_services.tenant_model_service import (
-        get_model_config_by_type_and_name,
-    )
     from api.db.services.llm_service import LLMBundle
     from common.constants import LLMType
 
@@ -1193,7 +1207,7 @@ def check_embedding(dataset_id: str, tenant_id: str, req: dict):
     if not ok:
         return False, err
 
-    embd_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, embd_id)
+    embd_model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.EMBEDDING, embd_id)
     emb_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
     n = int(req.get("check_num", 5))
@@ -1272,11 +1286,7 @@ async def search_datasets(tenant_id: str, req: dict):
     :param req: search request containing dataset_ids and other params
     :return: (success, result) or (success, error_message)
     """
-    from api.db.joint_services.tenant_model_service import (
-        get_model_config_by_id,
-        get_model_config_by_type_and_name,
-        get_tenant_default_model_by_type,
-    )
+    from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, split_model_name
     from api.db.services.doc_metadata_service import DocMetadataService
     from api.db.services.llm_service import LLMBundle
     from api.db.services.search_service import SearchService
@@ -1292,6 +1302,8 @@ async def search_datasets(tenant_id: str, req: dict):
     question = req.get("question", "")
     doc_ids = req.get("doc_ids", [])
     use_kg = req.get("use_kg", False)
+    similarity_threshold = float(req.get("similarity_threshold", 0.0))
+    vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     top = max(1, min(int(req.get("top_k", 1024)), 2048))
     langs = req.get("cross_languages", [])
 
@@ -1313,7 +1325,7 @@ async def search_datasets(tenant_id: str, req: dict):
         return False, "Datasets not found!"
 
     # All datasets must use the same embedding model
-    embd_nms = list(set([TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]))
+    embd_nms = list(set([split_model_name(kb.embd_id)[0] for kb in kbs]))
     if len(embd_nms) != 1:
         return False, "Datasets use different embedding models."
 
@@ -1322,18 +1334,35 @@ async def search_datasets(tenant_id: str, req: dict):
     local_doc_ids = list(doc_ids) if doc_ids else []
 
     meta_data_filter = {}
+    search_id = req.get("search_id", "")
+    search_config = {}
     chat_mdl = None
-    if req.get("search_id", ""):
-        search_detail = SearchService.get_detail(req.get("search_id", ""))
+    if search_id:
+        search_detail = SearchService.get_detail(search_id)
         if not search_detail:
-            logging.warning("search config not found: search_id=%s", req.get("search_id", ""))
+            logging.warning("search config not found: search_id=%s", search_id)
             return False, "Invalid search_id"
         search_config = search_detail.get("search_config", {})
         meta_data_filter = search_config.get("meta_data_filter", {})
+        similarity_threshold = float(search_config.get("similarity_threshold", similarity_threshold))
+        vector_similarity_weight = float(search_config.get("vector_similarity_weight", vector_similarity_weight))
+        top = max(1, min(int(search_config.get("top_k", top)), 2048))
+        use_kg = search_config.get("use_kg", use_kg)
+        langs = search_config.get("cross_languages", langs)
+        logging.debug(
+            "Dataset search loaded Search config: search_id=%s dataset_ids=%s "
+            "vector_similarity_weight=%s full_text_weight=%s similarity_threshold=%s top_k=%s",
+            search_id,
+            kb_ids,
+            vector_similarity_weight,
+            1 - vector_similarity_weight,
+            similarity_threshold,
+            top,
+        )
         if meta_data_filter.get("method") in ["auto", "semi_auto"]:
             chat_id = search_config.get("chat_id", "")
             if chat_id:
-                chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, search_config["chat_id"])
+                chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT, search_config["chat_id"])
             else:
                 chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
             chat_mdl = LLMBundle(tenant_id, chat_model_config)
@@ -1344,6 +1373,7 @@ async def search_datasets(tenant_id: str, req: dict):
             chat_mdl = LLMBundle(tenant_id, chat_model_config)
 
     if meta_data_filter:
+        logging.debug(f"Metadata filter: {meta_data_filter}, question: {question}, chat_mdl={'None' if chat_mdl is None else chat_mdl.llm_name}")
         local_doc_ids = await apply_meta_data_filter(
             meta_data_filter,
             None,
@@ -1367,28 +1397,19 @@ async def search_datasets(tenant_id: str, req: dict):
     _question = question
     if langs:
         _question = await cross_languages(kb.tenant_id, None, _question, langs)
-    if kb.tenant_embd_id:
-        embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
-    elif kb.embd_id:
-        embd_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+    if kb.embd_id:
+        embd_model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
     else:
         embd_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.EMBEDDING)
     embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
     rerank_mdl = None
-    if req.get("tenant_rerank_id"):
-        allowed_rerank_tenant_ids = {tenant_id, *[dataset.tenant_id for dataset in kbs]}
-        rerank_model_config = get_model_config_by_id(
-            req["tenant_rerank_id"],
-            allowed_tenant_ids=allowed_rerank_tenant_ids,
-            requester_tenant_id=tenant_id,
-        )
-        rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
-    elif req.get("rerank_id"):
-        rerank_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.RERANK.value, req["rerank_id"])
+    rerank_id = search_config.get("rerank_id") or req.get("rerank_id")
+    if rerank_id:
+        rerank_model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.RERANK.value, rerank_id)
         rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
 
-    if req.get("keyword", False):
+    if search_config.get("keyword", req.get("keyword", False)):
         default_chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
         chat_mdl = LLMBundle(kb.tenant_id, default_chat_model_config)
         _question += await keyword_extraction(chat_mdl, _question)
@@ -1401,12 +1422,13 @@ async def search_datasets(tenant_id: str, req: dict):
         kb_ids,
         page,
         size,
-        float(req.get("similarity_threshold", 0.0)),
-        float(req.get("vector_similarity_weight", 0.3)),
+        similarity_threshold,
+        vector_similarity_weight,
         doc_ids=local_doc_ids,
         top=top,
         rerank_mdl=rerank_mdl,
         rank_feature=labels,
+        trace_id=search_id,
     )
 
     if use_kg:
@@ -1417,9 +1439,8 @@ async def search_datasets(tenant_id: str, req: dict):
                 ranks["chunks"].insert(0, ck)
         except Exception:
             logging.warning("search_datasets KG retrieval failed: datasets=%s tenant=%s", kb_ids, tenant_id, exc_info=True)
-    total = ranks.get("total", 0)
     ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], tenant_ids)
-    ranks["total"] = total
+    ranks["total"] = len(ranks["chunks"])
 
     for c in ranks["chunks"]:
         c.pop("vector", None)
