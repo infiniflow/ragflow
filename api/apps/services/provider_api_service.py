@@ -383,6 +383,8 @@ def list_provider_instances(tenant_id: str, provider_id_or_name: str):
             "id": instance_obj.id,
             "instance_name": instance_obj.instance_name,
             "provider_id": provider_id,
+            "api_key": instance_obj.api_key,
+            "base_url": extra_fields.get("base_url", ""),
             "region": extra_fields.get("region", ""),
             "status": instance_obj.status,
         })
@@ -597,6 +599,8 @@ def show_provider_instance(tenant_id: str, provider_id_or_name: str, instance_id
         "id": instance_obj.id,
         "instance_name": instance_obj.instance_name,
         "provider_id": provider_id,
+        "api_key": instance_obj.api_key,
+        "base_url": extra_fields.get("base_url", ""),
         "region": extra_fields.get("region", ""),
         "status": instance_obj.status
     }
@@ -793,7 +797,7 @@ def add_model_to_instance(tenant_id: str, provider_id_or_name: str, instance_id_
         return False, f"No instance found for provider '{provider_id_or_name}' and instance '{instance_id_or_name}'"
     model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(provider_obj.id, instance_obj.id, model_name)
     if model_obj:
-        return False, f"Model '{model_name}' already exists for provider '{provider_id_or_name}' and instance '{instance_id_or_name}'"
+        return True, "skipped"
     factory_info = [f for f in FACTORY_LLM_INFOS if f["name"] == provider_obj.provider_name]
     if not factory_info:
         return False, f"Provider '{provider_id_or_name}' not found"
