@@ -1947,12 +1947,15 @@ func (c *CLI) EmbedUserText(cmd *Command) (ResponseIf, error) {
 	}
 
 	payload := map[string]interface{}{
-		"provider_name": providerName,
-		"instance_name": instanceName,
-		"model_name":    modelName,
-		"model_id":      modelID,
-		"texts":         texts,
-		"dimension":     dimension,
+		"texts":     texts,
+		"dimension": dimension,
+	}
+	if modelID == "" {
+		payload["provider_name"] = providerName
+		payload["instance_name"] = instanceName
+		payload["model_name"] = modelName
+	} else {
+		payload["model_id"] = modelID
 	}
 
 	url := "/embeddings"

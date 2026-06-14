@@ -1320,6 +1320,9 @@ func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceNam
 	var modelDriver modelModule.ModelDriver
 
 	if info.ModelEntity == nil {
+		if !info.ModelInfo.ModelTypeMap["chat"] && !info.ModelInfo.ModelTypeMap["vision"] {
+			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is a chat or multimodal model", *modelName, *providerName))
+		}
 		modelDriver = info.ProviderInfo.ModelDriver
 	} else {
 		// model entity exists
@@ -1430,122 +1433,63 @@ func validateEmbeddingDimension(model *modelModule.Model, requested int) error {
 
 // EmbedText sends texts to the embedding model
 func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, modelID *string, userID string, texts []string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.EmbeddingConfig) ([]modelModule.EmbeddingData, common.ErrorCode, error) {
-	if apiConfig == nil {
-		apiConfig = &modelModule.APIConfig{}
+
+	var err error
+	var info *ModelInstanceAndProviderInfo
+
+	if modelID != nil {
+		info, err = m.getModelInstanceAndProviderByID(modelID, userID, apiConfig)
+		if err != nil || info == nil {
+			return nil, common.CodeNotFound, err
+		}
+	} else {
+		info, err = m.getModelInstanceAndProviderByName(providerName, instanceName, modelName, userID, apiConfig)
+		if err != nil || info == nil {
+			return nil, common.CodeNotFound, err
+		}
 	}
+
 	if modelConfig == nil {
 		modelConfig = &modelModule.EmbeddingConfig{}
 	}
 
-	// Get tenant ID from user
-	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	var modelDriver modelModule.ModelDriver
+
+	if info.ModelEntity == nil {
+		if !info.ModelInfo.ModelTypeMap["embedding"] {
+			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is an embedding model", *modelName, *providerName))
+		}
+		modelDriver = info.ProviderInfo.ModelDriver
+	} else {
+		// model entity exists
+		if info.ModelEntity.Status == "active" {
+			if info.ModelEntity.ModelType != "embedding" {
+				return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is an embedding model", *modelName, *providerName))
+			}
+
+			modelDriver, err = newModelDriverForBaseURL(info.ProviderInfo.ModelDriver, *providerName, *info.APIConfig.Region, *info.APIConfig.BaseURL)
+			if err != nil {
+				return nil, common.CodeServerError, err
+			}
+		} else {
+			return nil, common.CodeServerError, errors.New("model is inactive")
+		}
+	}
+
+	if err = validateEmbeddingDimension(info.ModelInfo, modelConfig.Dimension); err != nil {
+		return nil, common.CodeBadRequest, err
+	}
+
+	var response []modelModule.EmbeddingData
+	response, err = modelDriver.Embed(modelName, texts, apiConfig, modelConfig)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
-
-	if len(tenants) == 0 {
-		return nil, common.CodeNotFound, errors.New("user has no tenants")
+	if response == nil || len(response) == 0 {
+		return nil, common.CodeServerError, errors.New("empty embed response")
 	}
 
-	tenantID := tenants[0].TenantID
-
-	// Check if provider exists
-	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, *providerName)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-
-	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, *instanceName)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-
-	modelInfo, err := m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, *modelName)
-	if err != nil {
-		providerInfo := dao.GetModelProviderManager().FindProvider(*providerName)
-		if providerInfo == nil {
-			return nil, common.CodeNotFound, errors.New("provider not found")
-		}
-
-		var model *modelModule.Model = nil
-		model, err = dao.GetModelProviderManager().GetModelByName(*providerName, *modelName)
-		if err != nil {
-			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", *providerName, *modelName))
-		}
-
-		if !model.ModelTypeMap["embedding"] {
-			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s is not an embedding model", *providerName, *modelName))
-		}
-
-		var extra map[string]string
-		err = json.Unmarshal([]byte(instance.Extra), &extra)
-		if err != nil {
-			return nil, common.CodeServerError, err
-		}
-
-		region := extra["region"]
-		apiConfig.Region = &region
-		apiConfig.ApiKey = &instance.APIKey
-
-		if err := validateEmbeddingDimension(model, modelConfig.Dimension); err != nil {
-			return nil, common.CodeBadRequest, err
-		}
-
-		var response []modelModule.EmbeddingData
-		response, err = providerInfo.ModelDriver.Embed(modelName, texts, apiConfig, modelConfig)
-		if err != nil {
-			return nil, common.CodeServerError, err
-		}
-		if response == nil || len(response) == 0 {
-			return nil, common.CodeServerError, errors.New("empty embed response")
-		}
-
-		return response, common.CodeSuccess, nil
-	}
-
-	if modelInfo.Status == "active" {
-		if modelInfo.ModelType != "embedding" {
-			return nil, common.CodeServerError, errors.New(fmt.Sprintf("expect model %s@%s is an embedding model", *modelName, *providerName))
-		}
-		// For local deployed models
-		providerInfo := dao.GetModelProviderManager().FindProvider(*providerName)
-		if providerInfo == nil {
-			return nil, common.CodeNotFound, errors.New("provider not found")
-		}
-
-		var extra map[string]string
-		err = json.Unmarshal([]byte(instance.Extra), &extra)
-		if err != nil {
-			return nil, common.CodeServerError, err
-		}
-
-		region := extra["region"]
-		apiConfig.Region = &region
-		apiConfig.ApiKey = &instance.APIKey
-
-		newProviderInfo, err := newModelDriverForBaseURL(providerInfo.ModelDriver, *providerName, region, extra["base_url"])
-		if err != nil {
-			return nil, common.CodeServerError, err
-		}
-
-		modelSchema, _ := dao.GetModelProviderManager().GetModelByName(*providerName, *modelName)
-		if err := validateEmbeddingDimension(modelSchema, modelConfig.Dimension); err != nil {
-			return nil, common.CodeBadRequest, err
-		}
-
-		var response []modelModule.EmbeddingData
-		response, err = newProviderInfo.Embed(modelName, texts, apiConfig, modelConfig)
-		if err != nil {
-			return nil, common.CodeServerError, err
-		}
-		if response == nil || len(response) == 0 {
-			return nil, common.CodeServerError, errors.New("empty embed response")
-		}
-
-		return response, common.CodeSuccess, nil
-	}
-
-	return nil, common.CodeServerError, errors.New("model is disabled")
+	return response, common.CodeSuccess, nil
 }
 
 // RerankDocument sends texts to the embedding model
