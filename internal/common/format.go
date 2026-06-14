@@ -18,6 +18,7 @@ package common
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -42,6 +43,18 @@ func IsCompositeModelName(modelName string) bool {
 		}
 	}
 	return true
+}
+
+func IsUUID(uuid string) bool {
+	// only lower case letters and numbers, length is 32
+	if len(uuid) != 32 {
+		return false
+	}
+	uuidRegex := regexp.MustCompile(`^[a-z0-9]+$`)
+	if uuidRegex.MatchString(uuid) {
+		return true
+	}
+	return false
 }
 
 // ExtractCompositeName splits a composite model name into three parts.
