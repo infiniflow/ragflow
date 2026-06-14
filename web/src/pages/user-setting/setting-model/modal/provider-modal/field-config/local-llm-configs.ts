@@ -134,6 +134,15 @@ export const LocalLlmConfigs: Record<string, ProviderConfig> = {
     undefined,
     'https://docs.vllm.ai/en/latest/',
   ),
+  [LLMFactory.NewAPI]: buildLocalConfig(
+    LLMFactory.NewAPI,
+    'New API',
+    ['chat', 'embedding', 'rerank', 'image2text', 'tts', 'speech2text'],
+    undefined,
+    false,
+    undefined,
+    'https://github.com/QuantumNous/new-api',
+  ),
   // [LLMFactory.TokenPony]: buildLocalConfig(
   //   LLMFactory.TokenPony,
   //   'TokenPony',

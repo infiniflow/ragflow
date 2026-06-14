@@ -623,3 +623,37 @@ class RAGconRerank(Base):
         except Exception as _e:
             log_exception(_e, res)
         return rank, token_count
+
+
+class NewAPIRerank(Base):
+    _FACTORY_NAME = "New API"
+
+    def __init__(self, key, model_name, base_url):
+        normalized_base_url = (base_url or "").strip()
+        if "/rerank" in normalized_base_url:
+            self.base_url = normalized_base_url.rstrip("/")
+        else:
+            self.base_url = urljoin(f"{normalized_base_url.rstrip('/')}/", "rerank").rstrip("/")
+        self.headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {key}",
+        }
+        self.model_name = model_name.split("___")[0]
+
+    def _compute_rank(self, query: str, texts: list):
+        texts = [truncate(t, 500) for t in texts]
+        data = {
+            "model": self.model_name,
+            "query": query,
+            "documents": texts,
+            "top_n": len(texts),
+        }
+        token_count = sum(num_tokens_from_string(t) for t in texts)
+        res = requests.post(self.base_url, headers=self.headers, json=data).json()
+        rank = np.zeros(len(texts), dtype=float)
+        try:
+            for d in res["results"]:
+                rank[d["index"]] = d["relevance_score"]
+        except Exception as _e:
+            log_exception(_e, res)
+        return rank, token_count
