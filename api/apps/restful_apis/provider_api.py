@@ -219,6 +219,21 @@ async def list_provider_models(provider_id_or_name: str, tenant_id: str = None):
         type: string
         required: true
         description: Bearer token for authentication.
+      - in: query
+        name: api_key
+        type: string
+        required: false
+        description: API key (used when creating a new instance).
+      - in: query
+        name: base_url
+        type: string
+        required: false
+        description: Base URL (used when creating a new instance).
+      - in: query
+        name: instance_name
+        type: string
+        required: false
+        description: Instance name for server-side credential lookup (alternative to api_key/base_url).
     responses:
       200:
         description: List of models for the provider.
