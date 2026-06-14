@@ -103,6 +103,11 @@ def _make_chat_handler(ch):
     from common.misc_utils import get_uuid
 
     async def handle(msg: IncomingMessage) -> None:
+        """Process an incoming message and send a RAG completion response.
+
+        Args:
+            msg: The incoming message from the channel.
+        """
         if not (msg.text or "").strip():
             return
 
@@ -167,6 +172,12 @@ def _make_chat_handler(ch):
 
 
 async def _stop_channel(running: dict, account_id: str) -> None:
+    """Stop a running channel and remove it from the running dict.
+
+    Args:
+        running: Dictionary of running channels keyed by account_id.
+        account_id: The channel ID to stop.
+    """
     entry = running.pop(account_id, None)
     if not entry:
         return

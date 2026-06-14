@@ -1,3 +1,7 @@
+"""Telegram channel integration using long-polling.
+
+This module provides the Telegram channel implementation for RAGFlow.
+"""
 from __future__ import annotations
 
 import logging
@@ -15,11 +19,25 @@ LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class TelegramAccount:
+    """Telegram bot account configuration.
+
+    Attributes:
+        account_id: The account ID for this bot.
+        token: The Telegram bot token.
+    """
     account_id: str
     token: str
 
 
 def _chat_type(chat) -> str:
+    """Convert Telegram chat type to internal channel type.
+
+    Args:
+        chat: The Telegram chat object.
+
+    Returns:
+        One of "p2p", "group", "channel", or "unknown".
+    """
     t = getattr(chat, "type", "")
     if t == "private":
         return "p2p"
@@ -31,15 +49,22 @@ def _chat_type(chat) -> str:
 
 
 class TelegramChannel(Channel):
+    """Telegram channel using long-polling to receive updates."""
     channel_id = "telegram"
 
     def __init__(self, account: TelegramAccount) -> None:
+        """Initialize the Telegram channel.
+
+        Args:
+            account: The Telegram account configuration.
+        """
         super().__init__()
         self.account = account
         self.account_id = account.account_id
         self._app: Optional[Application] = None
 
     async def start(self) -> None:
+        """Start the Telegram long-polling client."""
         self._app = Application.builder().token(self.account.token).build()
         self._app.add_handler(MessageHandler(filters.ALL, self._on_update))
         LOGGER.info("[telegram:%s] starting long-poll", self.account_id)
@@ -48,6 +73,7 @@ class TelegramChannel(Channel):
         await self._app.updater.start_polling(drop_pending_updates=True)
 
     async def stop(self) -> None:
+        """Stop the Telegram client and clean up resources."""
         if self._app is None:
             return
         try:
@@ -61,6 +87,11 @@ class TelegramChannel(Channel):
             self._app = None
 
     async def send(self, message: OutgoingMessage) -> None:
+        """Send a message to the Telegram chat.
+
+        Args:
+            message: The outgoing message to send.
+        """
         if self._app is None:
             return
         try:
@@ -88,6 +119,12 @@ class TelegramChannel(Channel):
             LOGGER.error("[telegram:%s] send failed", self.account_id, exc_info=True)
 
     async def _on_update(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle incoming Telegram update.
+
+        Args:
+            update: The Telegram update object.
+            _ctx: The context object (unused).
+        """
         try:
             msg = update.effective_message
             if msg is None or msg.from_user is None or msg.from_user.is_bot:
@@ -109,6 +146,18 @@ class TelegramChannel(Channel):
 
 
 def _build(account_id: str, cfg: dict) -> Channel:
+    """Build a TelegramChannel instance from configuration.
+
+    Args:
+        account_id: The account ID.
+        cfg: Configuration dict containing the token.
+
+    Returns:
+        A TelegramChannel instance.
+
+    Raises:
+        ValueError: If token is missing.
+    """
     token = cfg.get("token")
     if not token:
         raise ValueError(f"telegram account '{account_id}' is missing token")

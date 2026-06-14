@@ -14,6 +14,11 @@
 #  limitations under the License.
 #
 
+"""Feishu (Lark) channel integration using webhook callbacks.
+
+This module provides the Feishu channel implementation for RAGFlow.
+"""
+
 import hashlib
 import hmac
 import json
@@ -43,6 +48,15 @@ class FeishuChannel(Channel):
     """
 
     def __init__(self, tenant_id: str, config: dict):
+        """Initialize the Feishu channel with credentials and dialog ID.
+
+        Args:
+            tenant_id: The tenant ID for this channel.
+            config: Configuration dict with app_id, app_secret, encrypt_key, and dialog_id.
+
+        Raises:
+            ValueError: If dialog_id is empty.
+        """
         super().__init__(tenant_id, config)
         self._app_id: str = config.get("app_id", "")
         self._app_secret: str = config.get("app_secret", "")
@@ -56,10 +70,12 @@ class FeishuChannel(Channel):
         self._sessions: dict[str, str] = {}
 
     async def start(self):
+        """Start the Feishu channel by initializing the HTTP session."""
         self._session = aiohttp.ClientSession()
         logger.info("FeishuChannel started for tenant=%s dialog=%s", self.tenant_id, self._dialog_id)
 
     async def stop(self):
+        """Stop the Feishu channel by closing the HTTP session."""
         if self._session:
             await self._session.close()
             self._session = None
@@ -137,7 +153,11 @@ class FeishuChannel(Channel):
         )
 
     async def send(self, outgoing: OutgoingMessage):
-        """Post a text message to the Feishu open platform."""
+        """Post a text message to the Feishu open platform.
+
+        Args:
+            outgoing: The message to send.
+        """
         token = await self._get_tenant_access_token()
         if not token:
             logger.error("FeishuChannel.send: could not obtain access token")

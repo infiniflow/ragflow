@@ -1,3 +1,7 @@
+"""WeCom (WeChat Work) channel integration using webhook callbacks.
+
+This module provides the WeCom channel implementation for RAGFlow.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -22,6 +26,18 @@ WECOM_API_BASE = "https://qyapi.weixin.qq.com/cgi-bin"
 
 @dataclass
 class WeComAccount:
+    """WeCom bot account configuration.
+
+    Attributes:
+        account_id: The account ID for this bot.
+        corp_id: The WeCom corporation ID.
+        agent_id: The WeCom agent ID.
+        secret: The WeCom app secret.
+        token: The webhook token.
+        aes_key: The encoding AES key for message encryption.
+        webhook_host: The webhook host (default: "0.0.0.0").
+        webhook_port: The webhook port (default: 3002).
+    """
     account_id: str
     corp_id: str
     agent_id: int
@@ -33,9 +49,19 @@ class WeComAccount:
 
 
 class _SharedWebhookServer:
-    """Single aiohttp server shared by all WeComChannel instances."""
+    """Single aiohttp server shared by all WeComChannel instances.
+
+    Multiple WeCom channels can share the same webhook server if they use
+    the same host and port.
+    """
 
     def __init__(self, host: str, port: int) -> None:
+        """Initialize the webhook server.
+
+        Args:
+            host: The host to bind to.
+            port: The port to bind to.
+        """
         self.host = host
         self.port = port
         self.app = web.Application()
@@ -46,6 +72,7 @@ class _SharedWebhookServer:
         self.channels: Dict[str, "WeComChannel"] = {}
 
     async def start(self) -> None:
+        """Start the webhook server."""
         if self.runner is not None:
             return
         self.runner = web.AppRunner(self.app)
@@ -59,6 +86,7 @@ class _SharedWebhookServer:
         )
 
     async def stop(self) -> None:
+        """Stop the webhook server and clean up resources."""
         if self.site is not None:
             await self.site.stop()
         if self.runner is not None:
@@ -67,6 +95,14 @@ class _SharedWebhookServer:
         self.site = None
 
     async def _handle_request(self, request: web.Request) -> web.Response:
+        """Handle incoming webhook request from WeCom.
+
+        Args:
+            request: The aiohttp request object.
+
+        Returns:
+            A web response with status 200, 403, or 404.
+        """
         account_id = request.match_info.get("account_id", "")
         try:
             channel = self.channels.get(account_id)
@@ -115,6 +151,15 @@ _active_per_server: Dict[Tuple[str, int], int] = {}
 
 
 async def _acquire_server(host: str, port: int) -> _SharedWebhookServer:
+    """Acquire or create a shared webhook server for the given host/port.
+
+    Args:
+        host: The host to bind to.
+        port: The port to bind to.
+
+    Returns:
+        The shared webhook server instance.
+    """
     key = (host, port)
     server = _servers.get(key)
     if server is None:
@@ -126,6 +171,12 @@ async def _acquire_server(host: str, port: int) -> _SharedWebhookServer:
 
 
 async def _release_server(host: str, port: int) -> None:
+    """Release a shared webhook server, stopping it if no longer needed.
+
+    Args:
+        host: The host the server is bound to.
+        port: The port the server is bound to.
+    """
     key = (host, port)
     remaining = _active_per_server.get(key, 0) - 1
     _active_per_server[key] = remaining
@@ -137,9 +188,15 @@ async def _release_server(host: str, port: int) -> None:
 
 
 class WeComChannel(Channel):
+    """WeCom channel using webhook callbacks to receive events."""
     channel_id = "wecom"
 
     def __init__(self, account: WeComAccount) -> None:
+        """Initialize the WeCom channel.
+
+        Args:
+            account: The WeCom account configuration.
+        """
         super().__init__()
         self.account = account
         self.account_id = account.account_id
@@ -152,6 +209,7 @@ class WeComChannel(Channel):
         self._access_token_lock = asyncio.Lock()
 
     async def start(self) -> None:
+        """Start the WeCom channel by registering with the shared webhook server."""
         self._server = await _acquire_server(
             self.account.webhook_host, self.account.webhook_port
         )
@@ -164,6 +222,7 @@ class WeComChannel(Channel):
         )
 
     async def stop(self) -> None:
+        """Stop the WeCom channel and release the shared webhook server."""
         if self._server is not None:
             self._server.channels.pop(self.account_id, None)
             await _release_server(
@@ -172,6 +231,11 @@ class WeComChannel(Channel):
             self._server = None
 
     async def handle_decrypted_message(self, msg) -> None:
+        """Handle a decrypted WeCom message.
+
+        Args:
+            msg: The parsed WeCom message object.
+        """
         try:
             # Only handle plain text events; ignore image/voice/event etc.
             if getattr(msg, "type", "") != "text":
@@ -194,6 +258,14 @@ class WeComChannel(Channel):
             LOGGER.error("[wecom:%s] inbound message handling error", self.account_id, exc_info=True)
 
     async def _get_access_token(self) -> str:
+        """Get a cached or fresh WeCom access token.
+
+        Returns:
+            The access token.
+
+        Raises:
+            RuntimeError: If token fetch fails.
+        """
         async with self._access_token_lock:
             now = time.time()
             if self._access_token and now < self._access_token_expires_at:
@@ -217,6 +289,11 @@ class WeComChannel(Channel):
             return self._access_token
 
     async def send(self, message: OutgoingMessage) -> None:
+        """Send a message to the WeCom user.
+
+        Args:
+            message: The outgoing message to send.
+        """
         if not message.chat_id:
             LOGGER.error("[wecom:%s] missing chat_id; cannot send", self.account_id)
             return
@@ -254,6 +331,19 @@ class WeComChannel(Channel):
 
 
 def _build(account_id: str, cfg: dict) -> Channel:
+    """Build a WeComChannel instance from configuration.
+
+    Args:
+        account_id: The account ID.
+        cfg: Configuration dict containing corp_id, agent_id, secret, token, aes_key,
+            and optionally webhook_host and webhook_port.
+
+    Returns:
+        A WeComChannel instance.
+
+    Raises:
+        ValueError: If required fields are missing or invalid.
+    """
     required = ("corp_id", "agent_id", "secret", "token", "aes_key")
     missing = [k for k in required if not cfg.get(k)]
     if missing:

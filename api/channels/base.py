@@ -14,6 +14,12 @@
 #  limitations under the License.
 #
 
+"""Legacy channel abstraction for messaging platform integrations.
+
+This module provides the base classes for channel implementations.
+Note: New code should use api/channels/core/base.py instead.
+"""
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
@@ -41,6 +47,12 @@ class Channel(ABC):
     """Abstract base class for all messaging channel integrations."""
 
     def __init__(self, tenant_id: str, config: dict):
+        """Initialize the channel with tenant ID and configuration.
+
+        Args:
+            tenant_id: The tenant ID for this channel instance.
+            config: Channel-specific configuration dictionary.
+        """
         self.tenant_id = tenant_id
         self.config = config
 

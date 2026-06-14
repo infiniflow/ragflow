@@ -14,6 +14,11 @@
 #  limitations under the License.
 #
 
+"""Slack channel integration using Socket Mode.
+
+This module provides the Slack channel implementation for RAGFlow.
+"""
+
 import asyncio
 import logging
 
@@ -35,6 +40,15 @@ class SlackChannel(Channel):
     """
 
     def __init__(self, tenant_id: str, config: dict):
+        """Initialize the Slack channel with tokens and dialog ID.
+
+        Args:
+            tenant_id: The tenant ID for this channel.
+            config: Configuration dict with bot_token, app_token, and dialog_id.
+
+        Raises:
+            ValueError: If dialog_id is empty.
+        """
         super().__init__(tenant_id, config)
         self._bot_token: str = config.get("bot_token", "")
         self._app_token: str = config.get("app_token", "")
@@ -60,6 +74,12 @@ class SlackChannel(Channel):
         )
 
         async def _handle_event(client, req):
+            """Handle incoming Slack Socket Mode events.
+
+            Args:
+                client: The Socket Mode client.
+                req: The socket mode request.
+            """
             if req.type == "events_api":
                 payload = req.payload
                 event = payload.get("event", {})
@@ -135,7 +155,11 @@ class SlackChannel(Channel):
         )
 
     async def send(self, outgoing: OutgoingMessage):
-        """Post a message to the originating Slack channel."""
+        """Post a message to the originating Slack channel.
+
+        Args:
+            outgoing: The message to send.
+        """
         if not self._web_client:
             logger.error("SlackChannel.send called before start()")
             return

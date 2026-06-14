@@ -1,3 +1,7 @@
+"""Discord channel integration using gateway connection.
+
+This module provides the Discord channel implementation for RAGFlow.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -15,11 +19,25 @@ LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class DiscordAccount:
+    """Discord bot account configuration.
+
+    Attributes:
+        account_id: The account ID for this bot.
+        token: The Discord bot token.
+    """
     account_id: str
     token: str
 
 
 def _chat_type(channel: discord.abc.Messageable) -> str:
+    """Convert Discord channel type to internal channel type.
+
+    Args:
+        channel: The Discord channel object.
+
+    Returns:
+        One of "p2p", "thread", "group", or the class name.
+    """
     if isinstance(channel, discord.DMChannel):
         return "p2p"
     if isinstance(channel, discord.Thread):
@@ -30,9 +48,15 @@ def _chat_type(channel: discord.abc.Messageable) -> str:
 
 
 class DiscordChannel(Channel):
+    """Discord channel using gateway connection to receive events."""
     channel_id = "discord"
 
     def __init__(self, account: DiscordAccount) -> None:
+        """Initialize the Discord channel.
+
+        Args:
+            account: The Discord account configuration.
+        """
         super().__init__()
         self.account = account
         self.account_id = account.account_id
@@ -45,8 +69,10 @@ class DiscordChannel(Channel):
         self._register_handlers()
 
     def _register_handlers(self) -> None:
+        """Register Discord event handlers."""
         @self._client.event
         async def on_ready() -> None:
+            """Called when the bot is ready."""
             try:
                 user = self._client.user
                 LOGGER.info(
@@ -60,6 +86,7 @@ class DiscordChannel(Channel):
 
         @self._client.event
         async def on_message(message: discord.Message) -> None:
+            """Called when a message is received."""
             try:
                 if message.author.bot:
                     return
@@ -81,10 +108,12 @@ class DiscordChannel(Channel):
                 LOGGER.error("[discord:%s] inbound message handling error", self.account_id, exc_info=True)
 
     async def start(self) -> None:
+        """Start the Discord gateway client."""
         LOGGER.info("[discord:%s] starting gateway client", self.account_id)
         self._run_task = asyncio.create_task(self._client.start(self.account.token))
 
     async def stop(self) -> None:
+        """Stop the Discord client and clean up resources."""
         if not self._client.is_closed():
             await self._client.close()
         if self._run_task and not self._run_task.done():
@@ -94,6 +123,11 @@ class DiscordChannel(Channel):
                 pass
 
     async def send(self, message: OutgoingMessage) -> None:
+        """Send a message to the Discord channel.
+
+        Args:
+            message: The outgoing message to send.
+        """
         try:
             channel_id = int(message.chat_id)
         except (TypeError, ValueError):
@@ -126,6 +160,18 @@ class DiscordChannel(Channel):
 
 
 def _build(account_id: str, cfg: dict) -> Channel:
+    """Build a DiscordChannel instance from configuration.
+
+    Args:
+        account_id: The account ID.
+        cfg: Configuration dict containing the token.
+
+    Returns:
+        A DiscordChannel instance.
+
+    Raises:
+        ValueError: If token is missing.
+    """
     token = cfg.get("token")
     if not token:
         raise ValueError(f"discord account '{account_id}' is missing token")

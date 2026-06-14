@@ -14,6 +14,13 @@
 #  limitations under the License.
 #
 
+"""Legacy channel registry for channel type registration.
+
+This module provides a registry pattern for registering and retrieving
+channel implementations by type name. Note: New code should use
+api/channels/core/registry.py instead.
+"""
+
 from typing import Type
 
 from api.channels.base import Channel
@@ -37,7 +44,14 @@ def get_channel(channel_type: str) -> Type[Channel]:
 
 
 def channel(channel_type: str):
-    """Class decorator that registers the decorated Channel subclass."""
+    """Class decorator that registers the decorated Channel subclass.
+
+    Args:
+        channel_type: The channel type identifier to register under.
+
+    Returns:
+        A decorator function that registers the class.
+    """
     def decorator(cls: Type[Channel]) -> Type[Channel]:
         register_channel(channel_type, cls)
         return cls

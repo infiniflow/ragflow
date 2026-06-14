@@ -14,6 +14,12 @@
 #  limitations under the License.
 #
 
+"""REST API endpoints for managing chat channels.
+
+This module provides CRUD operations for channel configurations,
+including listing, creating, updating, and deleting channels.
+"""
+
 import logging
 
 from quart import request
@@ -51,12 +57,28 @@ _CHANNEL_INFO: dict[str, list[dict]] = {
 
 
 def _row_to_dict(row: ChatChannel) -> dict:
+    """Convert a ChatChannel row to a dict, excluding the config field.
+
+    Args:
+        row: ChatChannel database row.
+
+    Returns:
+        Dictionary representation of the row without the config field.
+    """
     d = row.to_dict()
     d.pop("config", None)
     return d
 
 
 def _owns(row: ChatChannel) -> bool:
+    """Check if the current user owns the given channel.
+
+    Args:
+        row: ChatChannel database row.
+
+    Returns:
+        True if the channel belongs to the current user, False otherwise.
+    """
     return row.tenant_id == current_user.id
 
 
@@ -67,6 +89,11 @@ def _owns(row: ChatChannel) -> bool:
 @manager.route("/channels", methods=["GET"])  # noqa: F821
 @login_required
 async def list_channels():
+    """List all channels belonging to the current user.
+
+    Returns:
+        JSON response with a list of channel configurations.
+    """
     rows = ChatChannel.select().where(
         ChatChannel.tenant_id == current_user.id
     ).order_by(ChatChannel.create_time.desc())
@@ -76,6 +103,14 @@ async def list_channels():
 @manager.route("/channels/info", methods=["GET"])  # noqa: F821
 @login_required
 async def channel_info():
+    """Get the configuration schema for a specific channel type.
+
+    Query Parameters:
+        type: The channel type (e.g., "slack", "feishu").
+
+    Returns:
+        JSON response with the field definitions for the channel type.
+    """
     channel_type = request.args.get("type", "")
     if not channel_type:
         return get_error_data_result(message="`type` query parameter is required")
@@ -91,6 +126,18 @@ async def channel_info():
 @manager.route("/channels", methods=["POST"])  # noqa: F821
 @login_required
 async def create_channel():
+    """Create a new channel configuration.
+
+    Request Body:
+        name: Display name for the channel.
+        channel: Channel type (e.g., "slack", "feishu").
+        dialog_id: ID of the assistant/dialog to use.
+        config: Channel-specific configuration.
+        status: Optional status (default: "enabled").
+
+    Returns:
+        JSON response with the created channel configuration.
+    """
     req = await get_request_json()
     if not req:
         return get_error_data_result(message="Request body is required")
@@ -127,6 +174,21 @@ async def create_channel():
 @manager.route("/channels/<channel_id>", methods=["PUT"])  # noqa: F821
 @login_required
 async def update_channel(channel_id):
+    """Update an existing channel configuration.
+
+    Path Parameters:
+        channel_id: ID of the channel to update.
+
+    Request Body:
+        name: Optional new display name.
+        channel: Optional new channel type.
+        dialog_id: Optional new dialog ID.
+        config: Optional new configuration.
+        status: Optional new status.
+
+    Returns:
+        JSON response with the updated channel configuration.
+    """
     try:
         row = ChatChannel.get_by_id(channel_id)
     except ChatChannel.DoesNotExist:
@@ -153,6 +215,16 @@ async def update_channel(channel_id):
 @manager.route("/channels/<channel_id>", methods=["DELETE"])  # noqa: F821
 @login_required
 async def delete_channel(channel_id):
+    """Delete a channel configuration.
+
+    Stops any running instance before deletion.
+
+    Path Parameters:
+        channel_id: ID of the channel to delete.
+
+    Returns:
+        JSON response confirming deletion.
+    """
     try:
         row = ChatChannel.get_by_id(channel_id)
     except ChatChannel.DoesNotExist:
