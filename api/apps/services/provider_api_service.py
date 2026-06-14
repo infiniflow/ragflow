@@ -198,15 +198,30 @@ def show_provider(provider_name: str):
     }
 
 
-async def list_provider_models(provider_name: str, api_key: str = None, base_url: str = None):
+async def list_provider_models(provider_name: str, api_key: str = None, base_url: str = None,
+                               tenant_id: str = None, instance_name: str = None):
     """
     List all models for a provider from the LLM dictionary.
 
     :param provider_name: provider/factory name
-    :param api_key: api key
-    :param base_url: base url
+    :param api_key: api key (used when creating a new instance)
+    :param base_url: base url (used when creating a new instance)
+    :param tenant_id: tenant id (for server-side credential lookup)
+    :param instance_name: instance name (when provided with tenant_id,
+        credentials are looked up from the database instead of requiring
+        api_key/base_url in the request)
     :return: (success, result_or_error_message)
     """
+    if instance_name and not api_key and tenant_id:
+        provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
+        if provider_obj:
+            inst = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
+            if inst:
+                api_key = inst.api_key
+                if not base_url:
+                    extra = json.loads(inst.extra) if inst.extra else {}
+                    base_url = extra.get("base_url", "")
+
     factory_info = [f for f in FACTORY_LLM_INFOS if f["name"]==provider_name]
     if not factory_info:
         return False, f"Provider '{provider_name}' not found"
@@ -360,7 +375,6 @@ def list_provider_instances(tenant_id: str, provider_name: str):
             "id": instance_obj.id,
             "instance_name": instance_obj.instance_name,
             "provider_id": provider_id,
-            "api_key": instance_obj.api_key,
             "base_url": extra_fields.get("base_url", ""),
             "region": extra_fields.get("region", ""),
             "status": instance_obj.status,
@@ -562,7 +576,6 @@ def show_provider_instance(tenant_id: str, provider_name: str, instance_name: st
         "id": instance_obj.id,
         "instance_name": instance_obj.instance_name,
         "provider_id": provider_id,
-        "api_key": instance_obj.api_key,
         "base_url": extra_fields.get("base_url", ""),
         "region": extra_fields.get("region", ""),
         "status": instance_obj.status
