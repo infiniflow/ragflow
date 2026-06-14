@@ -23,14 +23,31 @@ import (
 )
 
 type XLSParser struct {
+	libType string
 }
 
-func NewXLSParser() *XLSParser {
-	return &XLSParser{}
+func NewXLSParser(libType string) (*XLSParser, error) {
+	switch libType {
+	case OfficeOxide:
+		return &XLSParser{
+			libType: OfficeOxide,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported XLS library type: %s", libType)
+	}
 }
 
 func (p *XLSParser) Parse(filename string, data []byte) error {
 	fmt.Printf("Parsing XLS file: %s\n", filename)
+	switch p.libType {
+	case OfficeOxide:
+		return p.OfficeOxideParse(data)
+	default:
+		return fmt.Errorf("unsupported XLS library type: %s", p.libType)
+	}
+}
+
+func (p *XLSParser) OfficeOxideParse(data []byte) error {
 	doc, err := officeOxide.OpenFromBytes(data, "xls")
 	if err != nil {
 		return err
