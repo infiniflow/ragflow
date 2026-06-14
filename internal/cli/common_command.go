@@ -558,7 +558,7 @@ func (c *CLI) ListDefaultModels(cmd *Command) (ResponseIf, error) {
 	case AdminMode:
 		resp, err = c.AdminServerClient.Request("GET", "/admin/models", "web", nil, nil)
 	case APIMode:
-		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", "/models", "web", nil, nil)
+		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", "/models/default", "web", nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
@@ -571,7 +571,7 @@ func (c *CLI) ListDefaultModels(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list default models: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonResponse
+	var result ModelsResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("failed to list default models: invalid JSON (%w)", err)
 	}

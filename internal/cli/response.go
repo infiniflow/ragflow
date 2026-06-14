@@ -57,6 +57,36 @@ func (r *CommonResponse) PrintOut() {
 	}
 }
 
+type ModelsResponse struct {
+	Code         int                                 `json:"code"`
+	Data         map[string][]map[string]interface{} `json:"data"`
+	Message      string                              `json:"message"`
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *ModelsResponse) Type() string {
+	return "models"
+}
+
+func (r *ModelsResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *ModelsResponse) SetOutputFormat(format OutputFormat) {
+	r.OutputFormat = format
+}
+
+func (r *ModelsResponse) PrintOut() {
+	if r.Code == 0 {
+		models := r.Data["models"]
+		PrintTableSimpleByFormat(models, r.OutputFormat)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
 type CommonDataResponse struct {
 	Code         int                    `json:"code"`
 	Data         map[string]interface{} `json:"data"`
