@@ -1350,99 +1350,52 @@ func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceNam
 
 // ChatToModelStreamWithSender streams chat response directly via sender function ( the best performance, no channel)
 func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanceName, modelName, modelID *string, userID string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, sender func(*string, *string) error) (common.ErrorCode, error) {
-	// Get tenant ID from user
-	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
-	if err != nil {
-		return common.CodeServerError, err
-	}
 
-	if len(tenants) == 0 {
-		return common.CodeNotFound, errors.New("user has no tenants")
-	}
+	var err error
+	var info *ModelInstanceAndProviderInfo
 
-	tenantID := tenants[0].TenantID
-
-	// Check if provider exists
-	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, *providerName)
-	if err != nil {
-		return common.CodeServerError, err
-	}
-
-	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, *instanceName)
-	if err != nil {
-		return common.CodeServerError, err
-	}
-
-	modelInfo, err := m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, *modelName)
-	if err != nil {
-		providerInfo := dao.GetModelProviderManager().FindProvider(*providerName)
-		if providerInfo == nil {
+	if modelID != nil {
+		info, err = m.getModelInstanceAndProviderByID(modelID, userID, apiConfig)
+		if err != nil || info == nil {
 			return common.CodeNotFound, err
 		}
-
-		var model *modelModule.Model = nil
-		model, err = dao.GetModelProviderManager().GetModelByName(*providerName, *modelName)
-		if err != nil {
+	} else {
+		info, err = m.getModelInstanceAndProviderByName(providerName, instanceName, modelName, userID, apiConfig)
+		if err != nil || info == nil {
 			return common.CodeNotFound, err
 		}
-
-		if !model.ModelTypeMap["chat"] && !model.ModelTypeMap["vision"] {
-			return common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is a chat or multimodal model", *modelName, *providerName))
-		}
-
-		var extra map[string]string
-		err = json.Unmarshal([]byte(instance.Extra), &extra)
-		if err != nil {
-			return common.CodeServerError, err
-		}
-
-		region := extra["region"]
-		apiConfig.Region = &region
-		apiConfig.ApiKey = &instance.APIKey
-
-		err = providerInfo.ModelDriver.ChatStreamlyWithSender(*modelName, messages, apiConfig, modelConfig, sender)
-		if err != nil {
-			return common.CodeServerError, err
-		}
-
-		return common.CodeSuccess, nil
 	}
 
-	if modelInfo.Status == "active" {
-		if modelInfo.ModelType != "chat" && modelInfo.ModelType != "vision" {
-			return common.CodeServerError, errors.New(fmt.Sprintf("expect model %s@%s is a chat or multimodal model", *modelName, *providerName))
-		}
-		// For local deployed models
-		providerInfo := dao.GetModelProviderManager().FindProvider(*providerName)
-		if providerInfo == nil {
-			return common.CodeNotFound, errors.New("provider not found")
-		}
+	if modelConfig == nil {
+		modelConfig = &modelModule.ChatConfig{}
+	}
+	modelConfig.ModelClass = info.ModelInfo.Class
 
-		var extra map[string]string
-		err = json.Unmarshal([]byte(instance.Extra), &extra)
-		if err != nil {
-			return common.CodeServerError, err
+	var modelDriver modelModule.ModelDriver
+
+	if info.ModelEntity == nil {
+		modelDriver = info.ProviderInfo.ModelDriver
+	} else {
+		// model entity exists
+		if info.ModelEntity.Status == "active" {
+			if info.ModelEntity.ModelType != "chat" && info.ModelEntity.ModelType != "vision" {
+				return common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is a chat or multimodal model", *modelName, *providerName))
+			}
+
+			modelDriver, err = newModelDriverForBaseURL(info.ProviderInfo.ModelDriver, *providerName, *info.APIConfig.Region, *info.APIConfig.BaseURL)
+			if err != nil {
+				return common.CodeServerError, err
+			}
+		} else {
+			return common.CodeServerError, errors.New("model is inactive")
 		}
-
-		region := extra["region"]
-		apiConfig.Region = &region
-		apiConfig.ApiKey = &instance.APIKey
-
-		modelConfig.ModelClass = &providerInfo.Class
-
-		newProviderInfo, err := newModelDriverForBaseURL(providerInfo.ModelDriver, *providerName, region, extra["base_url"])
-		if err != nil {
-			return common.CodeServerError, err
-		}
-
-		err = newProviderInfo.ChatStreamlyWithSender(*modelName, messages, apiConfig, modelConfig, sender)
-		if err != nil {
-			return common.CodeServerError, err
-		}
-		return common.CodeSuccess, nil
 	}
 
-	return common.CodeServerError, errors.New("model is disabled")
+	err = modelDriver.ChatStreamlyWithSender(*modelName, messages, apiConfig, modelConfig, sender)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+	return common.CodeSuccess, nil
 }
 
 func validateEmbeddingDimension(model *modelModule.Model, requested int) error {
