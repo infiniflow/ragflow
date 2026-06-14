@@ -1785,13 +1785,16 @@ func (c *CLI) ChatToModel(cmd *Command) (ResponseIf, error) {
 	url := "/chat/completions"
 
 	payload := map[string]interface{}{
-		"provider_name": providerName,
-		"instance_name": instanceName,
-		"model_name":    modelName,
-		"model_id":      modelID,
-		"messages":      formattedMessages,
-		"stream":        stream,
-		"thinking":      thinking,
+		"messages": formattedMessages,
+		"stream":   stream,
+		"thinking": thinking,
+	}
+	if modelID == "" {
+		payload["provider_name"] = providerName
+		payload["instance_name"] = instanceName
+		payload["model_name"] = modelName
+	} else {
+		payload["model_id"] = modelID
 	}
 
 	if thinking {
@@ -1877,12 +1880,12 @@ func (c *CLI) ChatToModel(cmd *Command) (ResponseIf, error) {
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list instance models: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to chat model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	var result NonStreamResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("failed to list instance models: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("failed to chat model: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
