@@ -485,20 +485,22 @@ class TenantLLMService(CommonService):
     def llm_id2llm_type(llm_id: str) -> str | None:
         from api.db.services.llm_service import LLMService
 
-        llm_id, *_ = TenantLLMService.split_model_name_and_factory(llm_id)
+        llm_name, llm_factory_name = TenantLLMService.split_model_name_and_factory(llm_id)
         llm_factories = settings.FACTORY_LLM_INFOS
         for llm_factory in llm_factories:
+            if llm_factory_name and llm_factory["name"] != llm_factory_name:
+                continue
             for llm in llm_factory["llm"]:
-                if llm_id == llm["llm_name"]:
+                if llm_name == llm["llm_name"]:
                     return llm["model_type"].split(",")[-1]
 
-        for llm in LLMService.query(llm_name=llm_id):
+        for llm in LLMService.query(llm_name=llm_name):
             return llm.model_type
 
-        llm = TenantLLMService.get_or_none(llm_name=llm_id)
+        llm = TenantLLMService.get_or_none(llm_name=llm_name)
         if llm:
             return llm.model_type
-        for llm in TenantLLMService.query(llm_name=llm_id):
+        for llm in TenantLLMService.query(llm_name=llm_name):
             return llm.model_type
         return None
 
