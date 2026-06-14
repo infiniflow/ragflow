@@ -2035,13 +2035,16 @@ func (c *CLI) RerankUserDocument(cmd *Command) (ResponseIf, error) {
 	}
 
 	payload := map[string]interface{}{
-		"provider_name": providerName,
-		"instance_name": instanceName,
-		"model_name":    modelName,
-		"model_id":      modelID,
-		"query":         query,
-		"documents":     documents,
-		"top_n":         topN,
+		"query":     query,
+		"documents": documents,
+		"top_n":     topN,
+	}
+	if modelID == "" {
+		payload["provider_name"] = providerName
+		payload["instance_name"] = instanceName
+		payload["model_name"] = modelName
+	} else {
+		payload["model_id"] = modelID
 	}
 
 	url := "/rerank"
