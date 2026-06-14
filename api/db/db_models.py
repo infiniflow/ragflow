@@ -1359,6 +1359,19 @@ class Memory(DataBaseModel):
     class Meta:
         db_table = "memory"
 
+class ChatChannel(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, index=True, help_text="owning tenant ID")
+    name = CharField(max_length=255, null=False, index=True, help_text="human-readable channel name")
+    channel = CharField(max_length=64, null=False, index=True, help_text="channel type, e.g. 'slack' or 'feishu'")
+    config = JSONField(null=False, help_text="credential dict and other channel config")
+    dialog_id = CharField(max_length=32, null=False, index=True, help_text="FK to dialog table")
+    status = CharField(max_length=16, null=False, default="enabled", index=True, help_text="enabled|disabled")
+
+    class Meta:
+        db_table = "chat_channel"
+
+
 class SystemSettings(DataBaseModel):
     name = CharField(max_length=128, primary_key=True)
     source = CharField(max_length=32, null=False, index=False)
