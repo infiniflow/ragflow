@@ -23,6 +23,7 @@ pytestmark = pytest.mark.p2
 
 
 def test_add_source_positions_keeps_public_one_based_page_numbers():
+    """Verify source positions keep their public one-based page number."""
     chunk = {}
 
     add_source_positions(chunk, [[1, 10, 20, 30, 40]])
@@ -33,6 +34,7 @@ def test_add_source_positions_keeps_public_one_based_page_numbers():
 
 
 def test_add_source_positions_normalizes_legacy_zero_page_number(caplog):
+    """Verify legacy zero page numbers are clamped and logged."""
     chunk = {}
 
     with caplog.at_level(logging.WARNING):
@@ -45,6 +47,7 @@ def test_add_source_positions_normalizes_legacy_zero_page_number(caplog):
 
 
 def test_add_positions_still_offsets_parser_zero_based_page_numbers():
+    """Verify parser-local positions still receive the legacy page offset."""
     chunk = {}
 
     add_positions(chunk, [[1, 10, 20, 30, 40]])
