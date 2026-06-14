@@ -23,6 +23,7 @@ export const LIST_MODEL_PROVIDERS = new Set<string>([
   LLMFactory.Xinference,
   LLMFactory.LocalAI,
   LLMFactory.BaiduYiYan,
+  LLMFactory.NewAPI,
 
   // LLMFactory.HuggingFace,
   // LLMFactory.GoogleCloud,

@@ -154,15 +154,16 @@ export const useListModelsPicker = ({
       if (models.length > 0 || listLoading) return;
       setListLoading(true);
       try {
-        const values = (formRef.current?.getValues() || {}) as Record<
+        const rawValues = (formRef.current?.getValues() || {}) as Record<
           string,
           any
         >;
-        // Reuse the verifyTransform to build the request payload — it
-        // already knows how to flatten provider-specific auth (api_key,
-        // base_url, region, model_info). Pass the current modelInfoList
-        // (empty on first load, populated on re-opens) so the backend
-        // sees an array shape consistent with the verify/submit payloads.
+        // In viewMode, api_key and base_url fields are hidden by
+        // hideWhenInstanceExists — merge initialValues so the API call
+        // has the required credentials.
+        const values = viewMode && initialValues
+          ? { ...initialValues, ...rawValues }
+          : rawValues;
         const verifyArgs = config.verifyTransform
           ? config.verifyTransform({
               ...values,
@@ -287,6 +288,30 @@ export const useListModelsPicker = ({
     [],
   );
 
+  // --- Model editing ---
+  const [editingModel, setEditingModel] =
+    useState<IProviderModelItem | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+
+  const handleEditModel = useCallback((model: IProviderModelItem) => {
+    setEditingModel(model);
+    setEditDialogOpen(true);
+  }, []);
+
+  const handleSaveEditedModel = useCallback(
+    (updated: IProviderModelItem) => {
+      const oldName = editingModel?.name;
+      if (!oldName) return;
+      const replace = (items: IProviderModelItem[]) =>
+        items.map((m) => (m.name === oldName ? updated : m));
+      setModelsState(replace);
+      setSelectedModelItemsState(replace);
+      setEditDialogOpen(false);
+      setEditingModel(null);
+    },
+    [editingModel],
+  );
+
   return {
     models,
     listLoading,
@@ -298,5 +323,10 @@ export const useListModelsPicker = ({
     handleToggleAll,
     setModels,
     setSelectedModelItems,
+    editingModel,
+    editDialogOpen,
+    setEditDialogOpen,
+    handleEditModel,
+    handleSaveEditedModel,
   };
 };
