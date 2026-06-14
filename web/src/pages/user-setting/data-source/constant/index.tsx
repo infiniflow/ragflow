@@ -1013,6 +1013,14 @@ export const DataSourceFormFields = {
       placeholder: 'updated_at',
       tooltip: t('setting.mysqlTimestampColumnTip'),
     },
+    {
+      label: 'File Extension',
+      name: 'config.file_extension',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: '.txt',
+      tooltip: t('setting.mysqlFileExtensionTip'),
+    },
   ],
   [DataSourceKey.POSTGRESQL]: [
     {
@@ -1086,6 +1094,14 @@ export const DataSourceFormFields = {
       required: false,
       placeholder: 'updated_at',
       tooltip: t('setting.postgresqlTimestampColumnTip'),
+    },
+    {
+      label: 'File Extension',
+      name: 'config.file_extension',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: '.txt',
+      tooltip: t('setting.postgresqlFileExtensionTip'),
     },
   ],
   [DataSourceKey.REST_API]: [
