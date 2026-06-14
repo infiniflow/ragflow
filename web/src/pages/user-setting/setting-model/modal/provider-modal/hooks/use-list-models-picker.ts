@@ -211,6 +211,8 @@ export const useListModelsPicker = ({
       llmFactory,
       modelInfoList,
       formRef,
+      viewMode,
+      initialValues,
     ],
   );
 

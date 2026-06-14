@@ -298,7 +298,9 @@ const ProviderModal = ({
           onSubmit={handleSaveEditedModel}
           submitText={tc('ok')}
           cancelText={tc('cancel')}
-          existingNames={[]}
+          existingNames={existingNames.filter(
+            (n) => n !== editingModel.name,
+          )}
         />
       )}
     </Modal>

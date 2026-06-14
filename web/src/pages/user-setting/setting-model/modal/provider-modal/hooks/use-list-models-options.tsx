@@ -67,6 +67,8 @@ export const useListModelsOptions = ({
               {onEditModel && (
                 <button
                   type="button"
+                  aria-label="Edit model"
+                  title="Edit model"
                   className="p-1 rounded hover:bg-bg-card text-text-secondary"
                   onClick={(e) => {
                     e.stopPropagation();

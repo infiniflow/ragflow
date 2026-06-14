@@ -640,7 +640,7 @@ class NewAPIRerank(Base):
         }
         self.model_name = model_name.split("___")[0]
 
-    def similarity(self, query: str, texts: list):
+    def _compute_rank(self, query: str, texts: list):
         texts = [truncate(t, 500) for t in texts]
         data = {
             "model": self.model_name,
@@ -656,5 +656,4 @@ class NewAPIRerank(Base):
                 rank[d["index"]] = d["relevance_score"]
         except Exception as _e:
             log_exception(_e, res)
-        rank = Base._normalize_rank(rank)
         return rank, token_count
