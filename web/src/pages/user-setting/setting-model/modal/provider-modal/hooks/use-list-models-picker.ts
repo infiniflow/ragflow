@@ -158,9 +158,9 @@ export const useListModelsPicker = ({
           string,
           any
         >;
-        // In viewMode, api_key and base_url fields are hidden by
-        // hideWhenInstanceExists — merge initialValues so the API call
-        // has the required credentials.
+        // In viewMode, pass instance_name so the backend looks up
+        // stored credentials server-side (avoids exposing api_key).
+        // For new-instance mode, pass api_key/base_url from the form.
         const values = viewMode && initialValues
           ? { ...initialValues, ...rawValues }
           : rawValues;
@@ -172,10 +172,13 @@ export const useListModelsPicker = ({
           : { apiKey: values.api_key ?? '', baseUrl: values.base_url };
         const res = await listProviderModels({
           provider_name: llmFactory,
-          api_key: (verifyArgs as any).apiKey ?? '',
-          base_url: (verifyArgs as any).baseUrl,
+          api_key: viewMode ? '' : ((verifyArgs as any).apiKey ?? ''),
+          base_url: viewMode ? '' : ((verifyArgs as any).baseUrl ?? ''),
           region: (verifyArgs as any).region,
           model_info: (verifyArgs as any).modelInfo ?? modelInfoList,
+          ...(viewMode && initialValues?.instance_name
+            ? { instance_name: initialValues.instance_name }
+            : {}),
         });
         if (res?.code === 0 && Array.isArray(res.data)) {
           setModelsState(res.data);
