@@ -214,13 +214,15 @@ async def list_provider_models(provider_name: str, api_key: str = None, base_url
     """
     if instance_name and not api_key and tenant_id:
         provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
-        if provider_obj:
-            inst = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
-            if inst:
-                api_key = inst.api_key
-                if not base_url:
-                    extra = json.loads(inst.extra) if inst.extra else {}
-                    base_url = extra.get("base_url", "")
+        if not provider_obj:
+            return False, f"Provider '{provider_name}' not found for this tenant"
+        inst = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
+        if not inst:
+            return False, f"Instance '{instance_name}' not found for provider '{provider_name}'"
+        api_key = inst.api_key
+        if not base_url:
+            extra = json.loads(inst.extra) if inst.extra else {}
+            base_url = extra.get("base_url", "")
 
     factory_info = [f for f in FACTORY_LLM_INFOS if f["name"]==provider_name]
     if not factory_info:
