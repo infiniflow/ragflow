@@ -2119,11 +2119,14 @@ func (c *CLI) TTSUserCommand(cmd *Command) (ResponseIf, error) {
 	//}
 
 	payload := map[string]interface{}{
-		"provider_name": providerName,
-		"instance_name": instanceName,
-		"model_name":    modelName,
-		"model_id":      modelID,
-		"text":          text,
+		"text": text,
+	}
+	if modelID == "" {
+		payload["provider_name"] = providerName
+		payload["instance_name"] = instanceName
+		payload["model_name"] = modelName
+	} else {
+		payload["model_id"] = modelID
 	}
 
 	ttsConfigPayload := make(map[string]interface{})
@@ -2319,11 +2322,15 @@ func (c *CLI) ASRUserCommand(cmd *Command) (ResponseIf, error) {
 	}
 
 	payload := map[string]interface{}{
-		"provider_name": providerName,
-		"instance_name": instanceName,
-		"model_name":    modelName,
-		"model_id":      modelID,
-		"file":          audioFile,
+		"file": audioFile,
+	}
+
+	if modelID == "" {
+		payload["provider_name"] = providerName
+		payload["instance_name"] = instanceName
+		payload["model_name"] = modelName
+	} else {
+		payload["model_id"] = modelID
 	}
 
 	asrConfigPayload := make(map[string]interface{})
@@ -2431,11 +2438,14 @@ func (c *CLI) OCRUserCommand(cmd *Command) (ResponseIf, error) {
 		}
 	}
 
-	payload := map[string]interface{}{
-		"provider_name": providerName,
-		"instance_name": instanceName,
-		"model_name":    modelName,
-		"model_id":      modelID,
+	payload := map[string]interface{}{}
+
+	if modelID == "" {
+		payload["provider_name"] = providerName
+		payload["instance_name"] = instanceName
+		payload["model_name"] = modelName
+	} else {
+		payload["model_id"] = modelID
 	}
 
 	if fileContent != nil {
@@ -2530,11 +2540,14 @@ func (c *CLI) ParseFileUserCommand(cmd *Command) (ResponseIf, error) {
 		}
 	}
 
-	payload := map[string]interface{}{
-		"provider_name": providerName,
-		"instance_name": instanceName,
-		"model_name":    modelName,
-		"model_id":      modelID,
+	payload := map[string]interface{}{}
+
+	if modelID == "" {
+		payload["provider_name"] = providerName
+		payload["instance_name"] = instanceName
+		payload["model_name"] = modelName
+	} else {
+		payload["model_id"] = modelID
 	}
 
 	if fileContent != nil {

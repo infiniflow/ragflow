@@ -1161,28 +1161,38 @@ func (h *ProviderHandler) RerankDocument(c *gin.Context) {
 		return
 	}
 
-	if req.ProviderName == nil || *req.ProviderName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Provider name is required",
-		})
-		return
-	}
+	if req.ModelID == nil {
+		if req.ProviderName == nil || *req.ProviderName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "Provider name is required",
+			})
+			return
+		}
 
-	if req.InstanceName == nil || *req.InstanceName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Instance name is required",
-		})
-		return
-	}
+		if req.InstanceName == nil || *req.InstanceName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "Instance name is required",
+			})
+			return
+		}
 
-	if req.ModelName == nil || *req.ModelName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Model name is required",
-		})
-		return
+		if req.ModelName == nil || *req.ModelName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "Model name is required",
+			})
+			return
+		}
+	} else {
+		if *req.ModelID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "Model ID is empty",
+			})
+			return
+		}
 	}
 
 	userID := c.GetString("user_id")
@@ -1240,28 +1250,38 @@ func (h *ProviderHandler) TranscribeAudio(c *gin.Context) {
 		return
 	}
 
-	if req.ProviderName == nil || *req.ProviderName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Provider name is required",
-		})
-		return
-	}
+	if req.ModelID == nil {
+		if req.ProviderName == nil || *req.ProviderName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "Provider name is required",
+			})
+			return
+		}
 
-	if req.InstanceName == nil || *req.InstanceName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Instance name is required",
-		})
-		return
-	}
+		if req.InstanceName == nil || *req.InstanceName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "Instance name is required",
+			})
+			return
+		}
 
-	if req.ModelName == nil || *req.ModelName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Model name is required",
-		})
-		return
+		if req.ModelName == nil || *req.ModelName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "Model name is required",
+			})
+			return
+		}
+	} else {
+		if *req.ModelID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "Model ID is empty",
+			})
+			return
+		}
 	}
 
 	userID := c.GetString("user_id")
@@ -1359,28 +1379,38 @@ func (h *ProviderHandler) AudioSpeech(c *gin.Context) {
 		return
 	}
 
-	if req.ProviderName == nil || *req.ProviderName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Provider name is required",
-		})
-		return
-	}
+	if req.ModelID == nil {
+		if req.ProviderName == nil || *req.ProviderName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "Provider name is required",
+			})
+			return
+		}
 
-	if req.InstanceName == nil || *req.InstanceName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Instance name is required",
-		})
-		return
-	}
+		if req.InstanceName == nil || *req.InstanceName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "Instance name is required",
+			})
+			return
+		}
 
-	if req.ModelName == nil || *req.ModelName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Model name is required",
-		})
-		return
+		if req.ModelName == nil || *req.ModelName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "Model name is required",
+			})
+			return
+		}
+	} else {
+		if *req.ModelID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "Model ID is empty",
+			})
+			return
+		}
 	}
 
 	userID := c.GetString("user_id")
@@ -1477,28 +1507,38 @@ func (h *ProviderHandler) OCRFile(c *gin.Context) {
 		return
 	}
 
-	if req.ProviderName == nil || *req.ProviderName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Provider name is required",
-		})
-		return
-	}
+	if req.ModelID == nil {
+		if req.ProviderName == nil || *req.ProviderName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "Provider name is required",
+			})
+			return
+		}
 
-	if req.InstanceName == nil || *req.InstanceName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Instance name is required",
-		})
-		return
-	}
+		if req.InstanceName == nil || *req.InstanceName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "Instance name is required",
+			})
+			return
+		}
 
-	if req.ModelName == nil || *req.ModelName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Model name is required",
-		})
-		return
+		if req.ModelName == nil || *req.ModelName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "Model name is required",
+			})
+			return
+		}
+	} else {
+		if *req.ModelID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "Model ID is empty",
+			})
+			return
+		}
 	}
 
 	userID := c.GetString("user_id")
@@ -1551,28 +1591,38 @@ func (h *ProviderHandler) ParseFile(c *gin.Context) {
 		return
 	}
 
-	if req.ProviderName == nil || *req.ProviderName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Provider name is required",
-		})
-		return
-	}
+	if req.ModelID == nil {
+		if req.ProviderName == nil || *req.ProviderName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "Provider name is required",
+			})
+			return
+		}
 
-	if req.InstanceName == nil || *req.InstanceName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Instance name is required",
-		})
-		return
-	}
+		if req.InstanceName == nil || *req.InstanceName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "Instance name is required",
+			})
+			return
+		}
 
-	if req.ModelName == nil || *req.ModelName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Model name is required",
-		})
-		return
+		if req.ModelName == nil || *req.ModelName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "Model name is required",
+			})
+			return
+		}
+	} else {
+		if *req.ModelID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "Model ID is empty",
+			})
+			return
+		}
 	}
 
 	userID := c.GetString("user_id")
