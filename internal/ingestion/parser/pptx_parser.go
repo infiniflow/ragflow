@@ -26,14 +26,14 @@ type PPTXParser struct {
 	libType string
 }
 
-func NewPPTXParser(libType string) (*PPTXParser, error) {
-	switch libType {
+func NewPPTXParser(config *ParserConfig) (*PPTXParser, error) {
+	switch config.LibType {
 	case OfficeOxide:
 		return &PPTXParser{
 			libType: OfficeOxide,
 		}, nil
 	default:
-		return nil, fmt.Errorf("unsupported PPTX library type: %s", libType)
+		return nil, fmt.Errorf("unsupported PPTX library type: %s", config.LibType)
 	}
 }
 

@@ -1,5 +1,7 @@
 package models
 
+import "ragflow/internal/entity"
+
 // Message represents a chat message with role and content
 //
 // Content is interface{} to support different formats:
@@ -225,4 +227,13 @@ func NewChatModel(driver ModelDriver, modelName *string, apiConfig *APIConfig) *
 		ModelName:   modelName,
 		APIConfig:   apiConfig,
 	}
+}
+
+type ModelInstanceAndProviderInfo struct {
+	ProviderEntity *entity.TenantModelProvider
+	ProviderInfo   *Provider
+	InstanceEntity *entity.TenantModelInstance
+	ModelEntity    *entity.TenantModel
+	ModelInfo      *Model
+	APIConfig      *APIConfig
 }

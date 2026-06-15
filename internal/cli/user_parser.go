@@ -3934,7 +3934,15 @@ optionsLoop:
 			if err != nil {
 				return nil, err
 			}
-			cmd.Params["vision_model"] = visionModel
+
+			if common.IsCompositeModelName(visionModel) {
+				cmd.Params["vision_model_name"] = visionModel
+			} else if common.IsUUID(visionModel) {
+				cmd.Params["vision_model_id"] = visionModel
+			} else {
+				return nil, fmt.Errorf("invalid format of vision model name or ID: %s", visionModel)
+			}
+
 			p.nextToken()
 		case TokenASR:
 			p.nextToken()
@@ -3943,7 +3951,15 @@ optionsLoop:
 			if err != nil {
 				return nil, err
 			}
-			cmd.Params["asr_model"] = asrModel
+
+			if common.IsCompositeModelName(asrModel) {
+				cmd.Params["asr_model_name"] = asrModel
+			} else if common.IsUUID(asrModel) {
+				cmd.Params["asr_model_id"] = asrModel
+			} else {
+				return nil, fmt.Errorf("invalid format of ASR model name or ID: %s", asrModel)
+			}
+
 			p.nextToken()
 
 		case TokenOCR:
@@ -3953,7 +3969,15 @@ optionsLoop:
 			if err != nil {
 				return nil, err
 			}
-			cmd.Params["ocr_model"] = ocrModel
+
+			if common.IsCompositeModelName(ocrModel) {
+				cmd.Params["ocr_model_name"] = ocrModel
+			} else if common.IsUUID(ocrModel) {
+				cmd.Params["ocr_model_id"] = ocrModel
+			} else {
+				return nil, fmt.Errorf("invalid format of OCR model name or ID: %s", ocrModel)
+			}
+
 			p.nextToken()
 		case TokenChat:
 			p.nextToken()
@@ -3962,7 +3986,15 @@ optionsLoop:
 			if err != nil {
 				return nil, err
 			}
-			cmd.Params["chat_model"] = chatModel
+
+			if common.IsCompositeModelName(chatModel) {
+				cmd.Params["chat_model_name"] = chatModel
+			} else if common.IsUUID(chatModel) {
+				cmd.Params["chat_model_id"] = chatModel
+			} else {
+				return nil, fmt.Errorf("invalid format of chat model name or ID: %s", chatModel)
+			}
+
 			p.nextToken()
 		case TokenEmbed:
 			p.nextToken()
@@ -3971,7 +4003,15 @@ optionsLoop:
 			if err != nil {
 				return nil, err
 			}
-			cmd.Params["embedding_model"] = embedModel
+
+			if common.IsCompositeModelName(embedModel) {
+				cmd.Params["embedding_model_name"] = embedModel
+			} else if common.IsUUID(embedModel) {
+				cmd.Params["embedding_model_id"] = embedModel
+			} else {
+				return nil, fmt.Errorf("invalid format of embedding model name or ID: %s", embedModel)
+			}
+
 			p.nextToken()
 		case TokenDocParse:
 			p.nextToken()
@@ -3980,7 +4020,15 @@ optionsLoop:
 			if err != nil {
 				return nil, err
 			}
-			cmd.Params["doc_parse_model"] = docParseModel
+
+			if common.IsCompositeModelName(docParseModel) {
+				cmd.Params["doc_parse_model_name"] = docParseModel
+			} else if common.IsUUID(docParseModel) {
+				cmd.Params["doc_parse_model_id"] = docParseModel
+			} else {
+				return nil, fmt.Errorf("invalid format of document parse model name or ID: %s", docParseModel)
+			}
+
 			p.nextToken()
 		case TokenSemicolon:
 			p.nextToken()

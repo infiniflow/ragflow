@@ -3346,34 +3346,62 @@ func (c *CLI) UserParseLocalFile(cmd *Command) (ResponseIf, error) {
 	if !ok {
 		return nil, fmt.Errorf("filename not provided")
 	}
-	visionModel, ok := cmd.Params["vision_model"].(string)
-	if !ok {
-		visionModel = ""
-	}
-	chatModel, ok := cmd.Params["chat_model"].(string)
-	if !ok {
-		chatModel = ""
-	}
-	asrModel, ok := cmd.Params["asr_model"].(string)
-	if !ok {
-		asrModel = ""
-	}
-	ocrModel, ok := cmd.Params["ocr_model"].(string)
-	if !ok {
-		ocrModel = ""
-	}
-	embeddingModel, ok := cmd.Params["embedding_model"].(string)
-	if !ok {
-		embeddingModel = ""
-	}
-	docParseModel, ok := cmd.Params["doc_parse_model"].(string)
-	if !ok {
-		docParseModel = ""
-	}
+
+	//var visionModelName, chatModelName, asrModelName, ocrModelName, embeddingModelName, docParseModelName *string
+	//var visionModelID, chatModelID, asrModelID, ocrModelID, embeddingModelID, docParseModelID *string
+	//
+	//visionModelName, ok = cmd.Params["vision_model_name"].(*string)
+	//if !ok {
+	//	visionModelName = nil
+	//	visionModelID, ok = cmd.Params["vision_model_id"].(*string)
+	//	if !ok {
+	//		visionModelID = nil
+	//	}
+	//}
+	//chatModelName, ok = cmd.Params["chat_model_name"].(*string)
+	//if !ok {
+	//	chatModelName = nil
+	//	chatModelID, ok = cmd.Params["chat_model_id"].(*string)
+	//	if !ok {
+	//		chatModelID = nil
+	//	}
+	//}
+	//asrModelName, ok = cmd.Params["asr_model_name"].(*string)
+	//if !ok {
+	//	asrModelName = nil
+	//	asrModelID, ok = cmd.Params["asr_model_id"].(*string)
+	//	if !ok {
+	//		asrModelID = nil
+	//	}
+	//}
+	//ocrModelName, ok = cmd.Params["ocr_model_name"].(*string)
+	//if !ok {
+	//	ocrModelName = nil
+	//	ocrModelID, ok = cmd.Params["ocr_model_id"].(*string)
+	//	if !ok {
+	//		ocrModelID = nil
+	//	}
+	//}
+	//embeddingModelName, ok = cmd.Params["embedding_model_name"].(*string)
+	//if !ok {
+	//	embeddingModelName = nil
+	//	embeddingModelID, ok = cmd.Params["embedding_model_id"].(*string)
+	//	if !ok {
+	//		embeddingModelID = nil
+	//	}
+	//}
+	//docParseModelName, ok = cmd.Params["doc_parse_model_name"].(*string)
+	//if !ok {
+	//	docParseModelName = nil
+	//	docParseModelID, ok = cmd.Params["doc_parse_model_id"].(*string)
+	//	if !ok {
+	//		docParseModelID = nil
+	//	}
+	//}
 
 	fileType := utility.GetFileType(filename)
-	config := map[string]string{
-		"lib_type": "office_oxide",
+	config := &parser.ParserConfig{
+		LibType: "office_oxide",
 	}
 	fileParser, err := parser.GetParser(fileType, config)
 	if err != nil {
@@ -3391,7 +3419,7 @@ func (c *CLI) UserParseLocalFile(cmd *Command) (ResponseIf, error) {
 
 	var result SimpleResponse
 	result.Code = 0
-	result.Message = fmt.Sprintf("Success to parse local file %q, vision: %v, chat: %v, asr: %v, ocr: %v, embedding: %v, doc_parse: %v", filename, visionModel, chatModel, asrModel, ocrModel, embeddingModel, docParseModel)
+	result.Message = fmt.Sprintf("Success to parse local file %q", filename)
 	fmt.Println(result.Message)
 	return &result, nil
 }

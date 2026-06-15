@@ -24,8 +24,8 @@ type PDFParser struct {
 	LibType    string // pdf_oxide, used by DeepDoc
 }
 
-func NewPDFParser() *PDFParser {
-	return &PDFParser{}
+func NewPDFParser(config *ParserConfig) (*PDFParser, error) {
+	return &PDFParser{}, nil
 }
 
 func (p *PDFParser) Parse(filename string, data []byte) error {
