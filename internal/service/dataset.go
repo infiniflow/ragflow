@@ -529,7 +529,6 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 	}, nil
 }
 
-
 // AutoMetadataField mirrors the REST dataset auto metadata field schema.
 type AutoMetadataField struct {
 	Name           string      `json:"name"`
@@ -857,10 +856,7 @@ func (s *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 		embdID = embeddingModel
 	}
 
-	kbID, err := utility.GenerateUUID1()
-	if err != nil {
-		return nil, common.CodeServerError, errors.New("Internal server error")
-	}
+	kbID := utility.GenerateToken()
 
 	status := string(entity.StatusValid)
 	// Deduplicate name within tenant
