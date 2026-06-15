@@ -471,8 +471,6 @@ type CheckpointManager struct {
 	mu          sync.RWMutex
 	checkpoints map[string][]*Checkpoint // threadID -> checkpoints
 	maxVersions int // Maximum versions to keep per thread
-	// Track active writes for conflict detection
-	activeWrites map[string]*PutWrites // checkpointID -> PutWrites
 }
 
 // NewCheckpointManager creates a new checkpoint manager.
@@ -482,9 +480,8 @@ func NewCheckpointManager(maxVersions int) *CheckpointManager {
 	}
 
 	return &CheckpointManager{
-		checkpoints:  make(map[string][]*Checkpoint),
-		maxVersions:  maxVersions,
-		activeWrites: make(map[string]*PutWrites),
+		checkpoints: make(map[string][]*Checkpoint),
+		maxVersions: maxVersions,
 	}
 }
 
@@ -534,7 +531,10 @@ func (cm *CheckpointManager) Save(ctx context.Context, checkpoint *Checkpoint) e
 	return nil
 }
 
-// PutWrites applies writes to a checkpoint with conflict detection.
+// PutWrites applies writes to a checkpoint with version-chain conflict detection.
+// Uses a monotonic checkpoint version chain instead of a transient activeWrites map
+// to avoid the TOCTOU race (activeWrites is cleared on success, allowing a stale
+// concurrent writer to slip past undetected).
 func (cm *CheckpointManager) PutWrites(ctx context.Context, config *types.RunnableConfig, writes []PendingWrite, taskID string) error {
 	threadID := config.ThreadID
 	if threadID == "" {
@@ -552,13 +552,14 @@ func (cm *CheckpointManager) PutWrites(ctx context.Context, config *types.Runnab
 
 	current := checkpoints[len(checkpoints)-1]
 
-	// Check if there are conflicting active writes
-	if existingWrites, exists := cm.activeWrites[current.ID]; exists && existingWrites.TaskID != taskID {
-		return fmt.Errorf("conflicting writes detected for checkpoint %s from task %s", current.ID, existingWrites.TaskID)
+	// Version-chain conflict detection:
+	// The caller provides the checkpoint_id they loaded (via config).
+	// If it doesn't match the actual latest checkpoint, another writer
+	// has already committed and this is a stale write — reject it.
+	if callerID := config.GetOrEmpty("checkpoint_id"); callerID != "" && callerID != current.ID {
+		return fmt.Errorf("conflict: caller expected parent checkpoint %s but latest is %s for thread %s",
+			callerID, current.ID, threadID)
 	}
-
-	// Record active writes
-	cm.activeWrites[current.ID] = NewPutWrites(config, writes, taskID)
 
 	// Create a new checkpoint with the writes applied
 	newCheckpoint := current.Clone()
@@ -573,9 +574,6 @@ func (cm *CheckpointManager) PutWrites(ctx context.Context, config *types.Runnab
 
 	// Save the new checkpoint
 	cm.checkpoints[threadID] = append(cm.checkpoints[threadID], newCheckpoint)
-
-	// Clear active writes
-	delete(cm.activeWrites, current.ID)
 
 	return nil
 }

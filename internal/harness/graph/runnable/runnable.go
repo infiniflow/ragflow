@@ -198,14 +198,18 @@ func (s *RunnableSeq) Batch(ctx context.Context, inputs []interface{}) ([]interf
 }
 
 // Stream returns a stream of outputs.
+// On error, sends a StreamError value instead of silently dropping.
+// Callers can type-assert: if se, ok := val.(StreamError); ok { /* handle err */ }
 func (s *RunnableSeq) Stream(ctx context.Context, input interface{}) <-chan interface{} {
 	ch := make(chan interface{}, 1)
 	go func() {
 		defer close(ch)
 		output, err := s.Invoke(ctx, input)
-		if err == nil {
-			ch <- output
+		if err != nil {
+			ch <- StreamError{Err: err}
+			return
 		}
+		ch <- output
 	}()
 	return ch
 }
@@ -274,14 +278,17 @@ func (p *RunnableParallel) Batch(ctx context.Context, inputs []interface{}) ([]i
 }
 
 // Stream returns a stream of outputs.
+// On error, sends a StreamError value instead of silently dropping.
 func (p *RunnableParallel) Stream(ctx context.Context, input interface{}) <-chan interface{} {
 	ch := make(chan interface{}, 1)
 	go func() {
 		defer close(ch)
 		output, err := p.Invoke(ctx, input)
-		if err == nil {
-			ch <- output
+		if err != nil {
+			ch <- StreamError{Err: err}
+			return
 		}
+		ch <- output
 	}()
 	return ch
 }
@@ -354,14 +361,17 @@ func (m *RunnableMap) Batch(ctx context.Context, inputs []interface{}) ([]interf
 }
 
 // Stream returns a stream of outputs.
+// On error, sends a StreamError value instead of silently dropping.
 func (m *RunnableMap) Stream(ctx context.Context, input interface{}) <-chan interface{} {
 	ch := make(chan interface{}, 1)
 	go func() {
 		defer close(ch)
 		output, err := m.Invoke(ctx, input)
-		if err == nil {
-			ch <- output
+		if err != nil {
+			ch <- StreamError{Err: err}
+			return
 		}
+		ch <- output
 	}()
 	return ch
 }
@@ -477,6 +487,20 @@ func coerceFuncToRunnable(fn interface{}, fnType reflect.Type) (Runnable[any, an
 	}
 	
 	return NewRunnableFunc(wrapper), nil
+}
+
+// StreamError wraps an error for stream channels.
+// Stream implementations send this instead of silently dropping errors.
+// Callers type-assert: if se, ok := val.(runnable.StreamError); ok { handle(se.Err) }.
+type StreamError struct {
+	Err error
+}
+
+func (e StreamError) Error() string {
+	if e.Err == nil {
+		return "<nil error>"
+	}
+	return e.Err.Error()
 }
 
 // RunnableError represents a runnable-related error.
