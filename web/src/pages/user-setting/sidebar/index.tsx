@@ -13,8 +13,8 @@ import { Routes } from '@/routes';
 import { TFunction } from 'i18next';
 import {
   LucideBox,
-  LucideLogOut,
   LucideMessagesSquare,
+  LucideLogOut,
   LucideServer,
   LucideUnplug,
   LucideUser,
