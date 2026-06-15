@@ -87,6 +87,7 @@ Bulut hizmetimizi [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinde
 
 ## 🔥 Son Güncellemeler
 
+- 2026-06-15 Feishu, Discord, Telegram, Line vb. gibi birden fazla sohbet kanalını destekleyin.
 - 2026-04-24 DeepSeek v4 desteği.
 - 2026-03-24 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — OpenClaw üzerinden RAGFlow veri setlerine erişmek için resmi bir skill sağlar.
 - 2025-12-26 Yapay zeka ajanı için 'Bellek' desteği eklendi.
@@ -97,7 +98,6 @@ Bulut hizmetimizi [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinde
 - 2025-08-08 OpenAI'ın en yeni GPT-5 serisi modelleri için destek eklendi.
 - 2025-08-01 Ajanlı iş akışı ve MCP desteği eklendi.
 - 2025-05-23 Ajana Python/JavaScript kod çalıştırıcı bileşeni eklendi.
-- 2025-05-05 Diller arası sorgu desteği eklendi.
 - 2025-03-19 PDF veya DOCX dosyalarındaki görselleri yorumlamak için çok modlu model desteği eklendi.
 
 ## 🎉 Bizi Takip Edin

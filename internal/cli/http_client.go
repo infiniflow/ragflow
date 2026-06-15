@@ -374,6 +374,7 @@ type CurrentModel struct {
 	Provider string
 	Instance string
 	Model    string
+	ModelID  string
 }
 
 // httpClientAdapter adapts HTTPClient to ce.HTTPClientInterface

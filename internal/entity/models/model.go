@@ -312,15 +312,24 @@ func InitProviderManager(dirPath string) error {
 
 	alias2ModelIndex := make(map[string]int)
 	for idx, model := range allModels.Models {
-		if model.Alias == nil {
-			alias2ModelIndex[strings.ToLower(model.Name)] = idx
-		} else {
-			for _, alias := range model.Alias {
-				lowerAlias := strings.ToLower(alias)
-				if existingIdx, ok := alias2ModelIndex[lowerAlias]; ok && existingIdx != idx {
-					return fmt.Errorf("duplicate alias %q for models %q and %q", alias, allModels.Models[existingIdx].Name, model.Name)
-				}
-				alias2ModelIndex[lowerAlias] = idx
+		addModelAlias := func(alias string) error {
+			alias = strings.TrimSpace(alias)
+			if alias == "" {
+				return nil
+			}
+			lowerAlias := strings.ToLower(alias)
+			if existingIdx, ok := alias2ModelIndex[lowerAlias]; ok && existingIdx != idx {
+				return fmt.Errorf("duplicate alias %q for models %q and %q", alias, allModels.Models[existingIdx].Name, model.Name)
+			}
+			alias2ModelIndex[lowerAlias] = idx
+			return nil
+		}
+		if err = addModelAlias(model.Name); err != nil {
+			return err
+		}
+		for _, alias := range model.Alias {
+			if err = addModelAlias(alias); err != nil {
+				return err
 			}
 		}
 	}
@@ -347,7 +356,11 @@ func (pm *ProviderManager) ListProviders() ([]map[string]interface{}, error) {
 			}
 		}
 
-		var modelTypes []string
+		// Always emit a non-nil slice. Python's provider_api_service.list_providers
+		// returns `[]` for empty model_types; clients (e.g. AvailableModels in
+		// web/src/pages/user-setting/setting-model/components/un-add-model.tsx)
+		// call .some() / .forEach() on this field, which crashes on null.
+		modelTypes := make([]string, 0, len(modelTypeSet))
 		for modelType := range modelTypeSet {
 			modelTypes = append(modelTypes, modelType)
 		}
@@ -439,16 +452,26 @@ func (pm *ProviderManager) ListModels(providerName string) ([]map[string]interfa
 
 	modelList := []map[string]interface{}{}
 	for _, model := range provider.Models {
+		// Field name "model_type" (singular) matches the IInstanceModel
+		// contract in web/src/interfaces/database/llm.ts:75 and Python's
+		// LLM.to_dict() (api/db/db_models.py). The Go port previously
+		// emitted the plural "model_types", which broke used-model.tsx
+		// — the view rendered empty because the "model_type" key was
+		// undefined. IAvailableProvider.model_types (plural) is the
+		// other interface used by un-add-model.tsx and continues to
+		// receive the plural form from the dedicated /api/v1/providers/
+		// handler.
+		//
+		// `max_dimension` and `dimensions` are always emitted (nil → null,
+		// empty slice → null in JSON) to match Python's LLM.to_dict() and
+		// keep the response shape stable for clients that destructure
+		// the object.
 		modelData := map[string]interface{}{
-			"name":        model.Name,
-			"max_tokens":  model.MaxTokens,
-			"model_types": model.ModelTypes,
-		}
-		if model.MaxDimension != nil {
-			modelData["max_dimension"] = *model.MaxDimension
-		}
-		if len(model.Dimensions) > 0 {
-			modelData["dimensions"] = model.Dimensions
+			"name":          model.Name,
+			"max_tokens":    model.MaxTokens,
+			"model_type":    model.ModelTypes,
+			"max_dimension": model.MaxDimension,
+			"dimensions":    model.Dimensions,
 		}
 		modelList = append(modelList, modelData)
 	}
