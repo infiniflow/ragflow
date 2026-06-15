@@ -81,8 +81,15 @@ const Chunk = () => {
   }, [data]);
 
   useEffect(() => {
-    const hasGraph =
-      structureGraph.entities.length > 0 || structureGraph.relations.length > 0;
+    // The structure-graph payload is now a list of per-template graphs.
+    // "Has graph" is true if *any* template carries data (entities OR
+    // relations); the legacy single-graph shape is coerced upstream so
+    // we can treat both the same way here.
+    const hasGraph = (structureGraph.templates ?? []).some(
+      (t) =>
+        (Array.isArray(t.entities) && t.entities.length > 0) ||
+        (Array.isArray(t.relations) && t.relations.length > 0),
+    );
     if (!structureGraphLoading && hasGraph && !structureGraphAutoOpened) {
       setStructureGraphVisible(true);
       setStructureGraphAutoOpened(true);

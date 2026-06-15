@@ -54,6 +54,12 @@ class _PsiTreeNode:
     embedding: np.ndarray | None = None
     children: list["_PsiTreeNode"] = field(default_factory=list)
     parent: "_PsiTreeNode | None" = None
+    # Original (leaf-level) chunk ids that contributed to this node. On
+    # a leaf this is a single-element list with the leaf's own id; on an
+    # internal node it's the order-preserving deduped union of its
+    # children's lists. Carried up through the merge tree so each
+    # produced summary knows which source chunks it covers.
+    source_chunk_ids: list[str] = field(default_factory=list)
 
 
 class _PsiUnionFind:
@@ -554,10 +560,21 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         return self._build_bucketed_psi_structure(nodes, next_index, task_id)
 
     def _build_psi_structure(self, chunks, task_id: str = "") -> tuple[_PsiTreeNode, list[_PsiTreeNode]]:
-        """Build the Psi merge tree from original chunk embeddings."""
+        """Build the Psi merge tree from original chunk embeddings.
+
+        ``chunks`` is expected in the normalized 3-tuple shape
+        ``(text, vec, source_chunk_ids)`` — leaves are seeded with
+        their own source ids, internal nodes get their ids set during
+        layer materialization in ``_build_psi_layers``.
+        """
         leaves = [
-            _PsiTreeNode(index=i, text=text, embedding=np.asarray(embd))
-            for i, (text, embd) in enumerate(chunks)
+            _PsiTreeNode(
+                index=i,
+                text=text,
+                embedding=np.asarray(embd),
+                source_chunk_ids=list(src or []),
+            )
+            for i, (text, embd, src) in enumerate(chunks)
         ]
         if len(leaves) == 1:
             return leaves[0], leaves
@@ -597,7 +614,16 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             layer_start = len(chunks)
 
             async def summarize_node(node: _PsiTreeNode):
-                """Summarize one Psi internal node if its children have text."""
+                """Summarize one Psi internal node if its children have text.
+
+                Also propagates leaf provenance: the node's
+                ``source_chunk_ids`` becomes the order-preserving deduped
+                union of every child's ``source_chunk_ids``. Because
+                children at this layer have already been processed (leaves
+                first, then bottom-up), each child carries the full set
+                of leaf ids underneath it — so the union here is the
+                complete leaf set this summary covers.
+                """
                 texts = [child.text for child in node.children if child.text]
                 if not texts:
                     logging.warning("RAPTOR Psi node %s skipped because it has no child text to summarize", node.index)
@@ -607,6 +633,14 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                     logging.warning("RAPTOR Psi node %s skipped because summarization failed", node.index)
                     return None
                 node.text, node.embedding = result
+                merged_ids: list[str] = []
+                seen: set[str] = set()
+                for child in node.children:
+                    for src in child.source_chunk_ids:
+                        if src and src not in seen:
+                            seen.add(src)
+                            merged_ids.append(src)
+                node.source_chunk_ids = merged_ids
                 return node
 
             tasks = [asyncio.create_task(summarize_node(node)) for node in nodes]
@@ -621,7 +655,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
 
             summarized_nodes = [node for node in summarized_nodes if node is not None]
             for node in summarized_nodes:
-                chunks.append((node.text, node.embedding))
+                chunks.append((node.text, node.embedding, list(node.source_chunk_ids)))
 
             if len(chunks) > layer_start:
                 layers.append((layer_start, len(chunks)))
@@ -640,12 +674,42 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         return chunks, layers
 
     async def __call__(self, chunks, random_state, callback=None, task_id: str = ""):
-        """Build summary chunks and layer boundaries for RAPTOR retrieval."""
+        """Build summary chunks and layer boundaries for RAPTOR retrieval.
+
+        ``chunks`` accepts either the legacy 2-tuple shape
+        ``(text, vec)`` or the provenance-carrying 3-tuple shape
+        ``(text, vec, source_chunk_ids)`` where ``source_chunk_ids`` is
+        the list of original chunk ids that produced this entry. Output
+        always uses the 3-tuple shape so every appended summary carries
+        its leaves' ids. ``[]`` is left in the slot for a leaf whose id
+        was missing — see the caller for the normalization rules.
+        """
         if len(chunks) <= 1:
             return [], []
-        chunks = [(s, a) for s, a in chunks if s and a is not None and len(a) > 0]
-        if len(chunks) <= 1:
-            return chunks, [(0, len(chunks))]
+
+        # Normalize input to the 3-tuple shape. Reject empties / bad
+        # vectors at the same time the legacy path used to.
+        def _normalize(item):
+            if len(item) >= 3:
+                text, vec, src = item[0], item[1], item[2]
+            else:
+                text, vec = item[0], item[1]
+                src = []
+            if not text or vec is None or len(vec) <= 0:
+                return None
+            # Defensive: a leaf should carry a list of strings. Drop
+            # falsy entries so we don't propagate empty ids upward.
+            if isinstance(src, (list, tuple)):
+                src = [s for s in src if s]
+            else:
+                src = [src] if src else []
+            return (text, vec, list(src))
+
+        normalized = [t for t in (_normalize(c) for c in chunks) if t is not None]
+        if len(normalized) <= 1:
+            return normalized, [(0, len(normalized))]
+        chunks = normalized
+
         if self._tree_builder == PSI_TREE_BUILDER:
             logging.info("RAPTOR: using %s tree builder for %d chunks", self._tree_builder, len(chunks))
             return await self._build_psi_layers(chunks, callback, task_id)
@@ -655,13 +719,30 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
 
         @timeout(60 * 20)
         async def summarize(ck_idx: list[int]):
-            """Summarize one classic RAPTOR cluster into the chunk list."""
+            """Summarize one classic RAPTOR cluster into the chunk list.
+
+            On success appends ``(summary_text, summary_vec, src_ids)``
+            where ``src_ids`` is the order-preserving deduped union of
+            the ``source_chunk_ids`` of every chunk indexed in
+            ``ck_idx`` — i.e. the full leaf set that contributed to
+            the cluster, even through nested summaries.
+            """
             nonlocal chunks
 
             texts = [chunks[i][0] for i in ck_idx]
             result = await self._summarize_texts(texts, callback, task_id)
             if result is not None:
-                chunks.append(result)
+                # ``dict.fromkeys`` is the cheapest way to de-dup a
+                # list of strings while preserving first-seen order.
+                merged_ids: list[str] = []
+                seen: set[str] = set()
+                for i in ck_idx:
+                    for src in chunks[i][2]:
+                        if src and src not in seen:
+                            seen.add(src)
+                            merged_ids.append(src)
+                summary_text, summary_vec = result
+                chunks.append((summary_text, summary_vec, merged_ids))
 
         while end - start > 1:
             self._check_task_canceled(task_id, "layer processing")

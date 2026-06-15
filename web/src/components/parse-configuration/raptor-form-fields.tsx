@@ -1,11 +1,7 @@
 import { FormLayout } from '@/constants/form';
 import { DocumentParserType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
-import {
-  GenerateLogButton,
-  GenerateType,
-  IGenerateLogButtonProps,
-} from '@/pages/dataset/dataset/generate-button/generate';
+import { IGenerateLogButtonProps } from '@/pages/dataset/dataset/generate-button/generate';
 import random from 'lodash/random';
 import { Shuffle } from 'lucide-react';
 import { useCallback, useEffect, useMemo } from 'react';
@@ -20,6 +16,7 @@ import {
 } from '../ui/form';
 import { ExpandedInput } from '../ui/input';
 import { Radio } from '../ui/radio';
+import { Switch } from '../ui/switch';
 import { Textarea } from '../ui/textarea';
 
 export const excludedParseMethods = [
@@ -53,17 +50,32 @@ const RandomSeedField = 'parser_config.raptor.random_seed';
 const ClusteringMethodField = 'parser_config.raptor.clustering_method';
 const ClusteringMethodExtField = 'parser_config.raptor.ext.clustering_method';
 const TreeBuilderField = 'parser_config.raptor.tree_builder';
+const ScopeField = 'parser_config.raptor.scope';
 const MaxClusterMax = 1024;
+/**
+ * Generation scope is hard-coded to "file": RAPTOR now always runs per
+ * document. The Radio that used to expose dataset / file is gone, but
+ * the field is still kept on the form so the value flows through to
+ * the backend exactly like before.
+ */
+const FIXED_SCOPE = 'file';
 
 // The three types "table", "resume" and "one" do not display this configuration.
 
 const RaptorFormFields = ({
-  data,
-  onDelete,
+  data: _data,
+  onDelete: _onDelete,
 }: {
   data: IGenerateLogButtonProps;
   onDelete: () => void;
 }) => {
+  // ``data`` / ``onDelete`` are kept on the prop signature for
+  // call-site compatibility but no longer used — the "RAPTOR: Not
+  // generated" log stub they fed has been dropped. The "Use RAPTOR"
+  // control is now a real Switch (defaults to off) and the rest of
+  // the configuration only renders when it's toggled on.
+  void _data;
+  void _onDelete;
   const form = useFormContext();
   const { t } = useTranslate('knowledgeConfiguration');
   const useRaptor = useWatch({ name: UseRaptorField });
@@ -103,17 +115,38 @@ const RaptorFormFields = ({
     }
   }, [clusteringMethod, extClusteringMethod, handleClusteringMethodChange]);
 
+  // Force-pin the (now invisible) generation scope to "file" the first
+  // time this form mounts. Without this the field stays undefined and
+  // the backend's default branch kicks in instead.
+  useEffect(() => {
+    if (form.getValues(ScopeField) !== FIXED_SCOPE) {
+      form.setValue(ScopeField, FIXED_SCOPE, {
+        shouldDirty: false,
+        shouldValidate: false,
+      });
+    }
+    // Seed ``use_raptor`` to an explicit ``false`` when it's missing
+    // entirely — i.e. only on first mount for docs that have no prior
+    // raptor block. The ``=== undefined`` guard means we leave a
+    // stored ``true`` (or an already-set ``false``) untouched, so
+    // toggling later doesn't snap back to the default.
+    if (form.getValues(UseRaptorField) === undefined) {
+      form.setValue(UseRaptorField, false, {
+        shouldDirty: false,
+        shouldValidate: false,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <>
       <FormField
         control={form.control}
         name={UseRaptorField}
-        render={() => {
+        render={({ field }) => {
           return (
-            <FormItem
-              defaultChecked={false}
-              className="items-center space-y-0 "
-            >
+            <FormItem className="items-center space-y-0 ">
               <div className="flex items-center gap-1">
                 <FormLabel
                   tooltip={t('useRaptorTip')}
@@ -123,12 +156,13 @@ const RaptorFormFields = ({
                 </FormLabel>
                 <div className="w-3/4">
                   <FormControl>
-                    <GenerateLogButton
-                      {...data}
-                      onDelete={onDelete}
-                      className="w-full text-text-secondary"
-                      status={1}
-                      type={GenerateType.Raptor}
+                    {/* Default-off Switch. The detailed RAPTOR config
+                        (prompt, max token, …) renders only when this
+                        is toggled on — see the gated block below. */}
+                    <Switch
+                      checked={!!field.value}
+                      onCheckedChange={field.onChange}
+                      data-testid="ds-settings-raptor-use-raptor-switch"
                     />
                   </FormControl>
                 </div>
@@ -141,48 +175,9 @@ const RaptorFormFields = ({
           );
         }}
       />
-      <FormField
-        control={form.control}
-        name={'parser_config.raptor.scope'}
-        render={({ field }) => {
-          return (
-            <FormItem className=" items-center space-y-0 ">
-              <div className="flex items-start">
-                <FormLabel
-                  tooltip={t('generationScopeTip')}
-                  className="text-sm  whitespace-nowrap w-1/4"
-                >
-                  {t('generationScope')}
-                </FormLabel>
-                <div className="w-3/4">
-                  <FormControl>
-                    <Radio.Group {...field} disabled={!!data?.finish_at}>
-                      <div className={'flex gap-4 w-full text-text-secondary '}>
-                        <Radio
-                          value="dataset"
-                          testId="ds-settings-raptor-generation-scope-option-dataset"
-                        >
-                          {t('scopeDataset')}
-                        </Radio>
-                        <Radio
-                          value="file"
-                          testId="ds-settings-raptor-generation-scope-option-document"
-                        >
-                          {t('scopeSingleFile')}
-                        </Radio>
-                      </div>
-                    </Radio.Group>
-                  </FormControl>
-                </div>
-              </div>
-              <div className="flex pt-1">
-                <div className="w-1/4"></div>
-                <FormMessage />
-              </div>
-            </FormItem>
-          );
-        }}
-      />
+      {/* Generation scope is hard-coded to "file" — no Radio surface.
+          The field is still on the form via useEffect above so the
+          value flows to the backend on submit. */}
       {useRaptor && (
         <div className="space-y-3">
           <FormField

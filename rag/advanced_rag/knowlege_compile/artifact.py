@@ -2805,7 +2805,7 @@ async def artifact_refine_from_plan(
     # pages" list with duplicates.
     sorted_spec = sorted(
         [p for p in pages_spec if isinstance(p, dict) and p.get("slug")],
-        key=lambda p: p.get("priority", 99),
+        key=lambda p: float(p.get("priority", 99)),
     )
     seen_slugs: set[str] = set()
     pages_spec = []

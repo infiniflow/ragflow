@@ -192,9 +192,11 @@ type GenerateProps = {
 const Generate: React.FC<GenerateProps> = (props) => {
   const { disabled = false } = props;
   const [open, setOpen] = useState(false);
-  const { graphRunData, raptorRunData, artifactRunData } = useTraceGenerate({
-    open,
-  });
+  // ``raptorRunData`` is still fetched by useTraceGenerate (raptor
+  // tasks may exist on the KB from before the per-doc move) but it's
+  // no longer surfaced in this dropdown — the RAPTOR menu item was
+  // removed. Drop it from the destructure to keep lint happy.
+  const { graphRunData, artifactRunData } = useTraceGenerate({ open });
   const { runGenerate, pauseGenerate } = useDatasetGenerate();
   const handleOpenChange = (isOpen: boolean) => {
     setOpen(isOpen);
@@ -227,25 +229,31 @@ const Generate: React.FC<GenerateProps> = (props) => {
         </div>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-[380px] p-5 flex flex-col gap-2 ">
-        {Object.values(GenerateType).map((name) => {
-          const data = (
-            name === GenerateType.KnowledgeGraph
-              ? graphRunData
-              : name === GenerateType.Artifact
-                ? artifactRunData
-                : raptorRunData
-          ) as ITraceInfo;
-          return (
-            <div key={name}>
-              <MenuItem
-                name={name}
-                runGenerate={runGenerate}
-                data={data}
-                pauseGenerate={pauseGenerate}
-              />
-            </div>
-          );
-        })}
+        {/* RAPTOR is intentionally omitted: its configuration now lives
+            on the per-document "Chunking method" panel (copied from
+            kb.parser_config.raptor) and runs as part of standard
+            chunking — no manual trigger needed. The GenerateType.Raptor
+            enum value is kept because raptor-form-fields.tsx still
+            references it for the in-form Generate-log button. */}
+        {Object.values(GenerateType)
+          .filter((name) => name !== GenerateType.Raptor)
+          .map((name) => {
+            const data = (
+              name === GenerateType.KnowledgeGraph
+                ? graphRunData
+                : artifactRunData
+            ) as ITraceInfo;
+            return (
+              <div key={name}>
+                <MenuItem
+                  name={name}
+                  runGenerate={runGenerate}
+                  data={data}
+                  pauseGenerate={pauseGenerate}
+                />
+              </div>
+            );
+          })}
       </DropdownMenuContent>
     </DropdownMenu>
   );

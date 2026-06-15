@@ -251,6 +251,13 @@ async def collect():
 
     task_type = msg.get("task_type", "")
     task["task_type"] = task_type
+    # Per-doc fan-out task types (today: doc-scoped raptor) carry their
+    # participating doc id list on the Redis message but not on the DB
+    # row. The KB-scoped branch above already does this for FAKE doc
+    # tasks; mirror here so ``ctx.doc_ids`` is populated for the
+    # per-doc path too.
+    if "doc_ids" in msg and not task.get("doc_ids"):
+        task["doc_ids"] = msg.get("doc_ids", []) or []
     if task_type[:8] == "dataflow":
         task["tenant_id"] = msg["tenant_id"]
         task["dataflow_id"] = msg["dataflow_id"]

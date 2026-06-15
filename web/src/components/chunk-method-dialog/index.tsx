@@ -45,6 +45,9 @@ import { ExcelToHtmlFormField } from '../excel-to-html-form-field';
 import { LayoutRecognizeFormField } from '../layout-recognize-form-field';
 import { MaxTokenNumberFormField } from '../max-token-number-from-field';
 import { MinerUOptionsFormField } from '../mineru-options-form-field';
+import RaptorFormFields, {
+  showRaptorParseConfiguration,
+} from '../parse-configuration/raptor-form-fields';
 import { Button, ButtonLoading } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
 import {
@@ -349,6 +352,23 @@ export function ChunkMethodDialog({
     if (visible) {
       const pages =
         parserConfig?.pages?.map((x) => ({ from: x[0], to: x[1] })) ?? [];
+      // RAPTOR config is now owned at the KB level. When opening the
+      // per-doc chunk-method dialog, copy the KB's
+      // ``parser_config.raptor`` down to the doc unless the doc
+      // already has its own block (e.g. user edited it previously).
+      // The block is force-scoped to "file" — RAPTOR per-doc.
+      const docRaptor = (parserConfig as any)?.raptor;
+      const kbRaptor = knowledgeDetails.parser_config?.raptor;
+      const inheritedRaptor =
+        docRaptor && Object.keys(docRaptor).length > 0
+          ? docRaptor
+          : kbRaptor
+            ? { ...kbRaptor }
+            : undefined;
+      const raptorWithScope = inheritedRaptor
+        ? { ...inheritedRaptor, scope: 'file' }
+        : undefined;
+
       form.reset({
         parser_id: parserId || '',
         pipeline_id: pipelineId || '',
@@ -365,6 +385,7 @@ export function ChunkMethodDialog({
             parserConfig?.image_table_context_window ??
             parserConfig?.image_context_size ??
             parserConfig?.table_context_size,
+          ...(raptorWithScope ? { raptor: raptorWithScope } : {}),
           // graphrag: {
           //   use_graphrag: get(
           //     parserConfig,
@@ -491,6 +512,26 @@ export function ChunkMethodDialog({
                 <div className="space-y-6 border-t-0.5 border-border-button pt-6 empty:hidden">
                   {showEntityTypes && <EntityTypesFormField />}
                 </div>
+
+                {/* RAPTOR configuration: surfaces the per-doc RAPTOR
+                    block that was copied down from the KB on dialog
+                    open. Hidden for parsers where RAPTOR doesn't make
+                    sense (Table, Resume, One, Picture, KnowledgeGraph,
+                    Qa, Tag). ``data`` is a placeholder — there's no
+                    per-doc generate-log to wire here; the run is
+                    triggered as part of standard chunking. */}
+                {showRaptorParseConfiguration(selectedTag) && (
+                  <div className="space-y-6 border-t-0.5 border-border-button pt-6">
+                    <RaptorFormFields
+                      data={{ finish_at: '', task_id: '' }}
+                      onDelete={() => {
+                        /* no per-doc delete action; RAPTOR config is
+                           edited inline and persists with the doc's
+                           parser_config on dialog submit. */
+                      }}
+                    />
+                  </div>
+                )}
               </>
             )}
 

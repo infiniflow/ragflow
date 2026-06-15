@@ -89,7 +89,12 @@ export default function DatasetSettings() {
         mineru_table_enable: true,
         mineru_lang: 'English',
         raptor: {
-          use_raptor: true,
+          // Default off — the Switch in RaptorFormFields shows enabled
+          // state, and a stored ``true`` from a previously-saved KB
+          // still wins through the form reset that overlays
+          // knowledgeDetails.parser_config on top of these initial
+          // values.
+          use_raptor: false,
           max_token: 256,
           threshold: 0.1,
           max_cluster: 64,

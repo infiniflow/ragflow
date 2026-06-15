@@ -70,6 +70,14 @@ const findCombo = (communities: string[]) => {
 };
 
 export const buildNodesAndCombos = (nodes: any[]) => {
+  // Caller may hand us undefined when the upstream payload hasn't
+  // resolved yet (initial render with React Query's initialData, or a
+  // partial backend response). Defaulting to an empty list keeps the
+  // function total and avoids "Cannot read properties of undefined
+  // (reading 'forEach')" in the consuming useMemo.
+  if (!Array.isArray(nodes)) {
+    nodes = [];
+  }
   const combos: any[] = [];
   nodes.forEach((x) => {
     const combo = findCombo(x?.communities);

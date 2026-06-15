@@ -1644,38 +1644,43 @@ async def get_artifact_page(
     }
 
 
-# All five row types the artifact pipeline writes. Listed in dependency
+# All six row types the artifact pipeline writes. Listed in dependency
 # order so partial failures of earlier deletes don't leave behind state
-# that downstream phases would silently reuse.
+# that downstream phases would silently reuse. ``artifact_page_graph``
+# is the materialized canvas graph derived from the refined pages —
+# the dataset Artifact tab's graph view reads exactly this row.
 _ARTIFACT_COMPILE_KWDS = (
     "artifact_map_extract",
     "artifact_reduce_result",
     "artifact_compilation_plan",
     "artifact_page_draft",
     "artifact_page",
+    "artifact_page_graph",
 )
 
-_ARTIFACT_REDUCE_KWD = "artifact_reduce_result"
+_ARTIFACT_PAGE_GRAPH_KWD = "artifact_page_graph"
 
 
 async def get_artifact_graph(dataset_id: str, tenant_id: str):
-    """Load the REDUCE result for this KB and return the entity graph.
+    """Load the materialized page-derived graph for this KB.
 
-    The artifact pipeline's REDUCE phase persists a single non-searchable
-    ES row with ``compile_kwd="artifact_reduce_result"`` whose
-    ``content_with_weight`` is the JSON of ``{entities, concepts, claims,
-    relations, …}``. This helper fetches that row and surfaces only the
-    pieces the canvas needs:
+    After REFINE persists the final artifact pages, the task handler
+    projects them onto the canvas graph shape and writes a single
+    non-searchable ES row with ``compile_kwd="artifact_page_graph"``.
+    The row's ``content_with_weight`` is the JSON of the canvas
+    payload — already in the exact shape the frontend ``ForceGraph``
+    adapter consumes:
 
-      - ``entities``   — the graph nodes
-      - ``relations``  — entity-to-entity edges
+        {
+          "entities":  [{slug, name, aliases, description, type}, ...],
+          "relations": [{from: <slug>, to: <slug>}, ...]
+        }
 
-    ``concepts`` and ``claims`` are intentionally NOT returned (they
-    aren't part of the entity-relation canvas), and ``chunk_ids``
-    source-attribution fields are stripped from every surviving item.
+    No field-shape coercion happens here — the writer produced the
+    final shape, so this helper just deserializes and forwards.
 
-    Returns ``(True, graph_dict)`` on success or ``(False, str)`` on auth
-    failure.
+    Returns ``(True, graph_dict)`` on success or ``(False, str)`` on
+    auth failure.
     """
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
         return False, "No authorization."
@@ -1695,7 +1700,7 @@ async def get_artifact_graph(dataset_id: str, tenant_id: str):
         res = await thread_pool_exec(
             settings.docStoreConn.search,
             select_fields, [],
-            {"compile_kwd": [_ARTIFACT_REDUCE_KWD]},
+            {"compile_kwd": [_ARTIFACT_PAGE_GRAPH_KWD]},
             [], OrderByExpr(),
             0, 1, index_nm, [dataset_id],
         )
@@ -1724,17 +1729,9 @@ async def get_artifact_graph(dataset_id: str, tenant_id: str):
     if not isinstance(data, dict):
         return True, empty
 
-    def _strip_chunk_ids(items):
-        out = []
-        for it in items or []:
-            if not isinstance(it, dict):
-                continue
-            out.append({k: v for k, v in it.items() if k != "chunk_ids"})
-        return out
-
     return True, {
-        "entities": _strip_chunk_ids(data.get("entities")),
-        "relations": _strip_chunk_ids(data.get("relations")),
+        "entities": data.get("entities") or [],
+        "relations": data.get("relations") or [],
     }
 
 

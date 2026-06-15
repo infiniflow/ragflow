@@ -1102,6 +1102,50 @@ def queue_raptor_o_graphrag_tasks(sample_doc, ty, priority, fake_doc_id="", doc_
     return task["id"]
 
 
+def queue_per_doc_raptor_task(doc, priority):
+    """Queue a doc-scoped RAPTOR task.
+
+    Distinct from :func:`queue_raptor_o_graphrag_tasks` (which is KB-scoped
+    and uses ``GRAPH_RAPTOR_FAKE_DOC_ID`` as the task's ``doc_id`` so it
+    fans out across the dataset). Here the task's ``doc_id`` is the real
+    document id, so ``TaskHandler._run_raptor`` runs only on this doc's
+    chunks and the RAPTOR summaries it produces are scoped to this doc.
+
+    Triggered automatically at the tail of standard chunking when the
+    doc's ``parser_config["raptor"]["use_raptor"]`` is true. No
+    cross-task dedup — within one chunking-task execution this helper is
+    called at most once, which is the only invariant the caller needs.
+    """
+    chunking_config = DocumentService.get_chunking_config(doc["id"])
+    hasher = xxhash.xxh64()
+    for field in sorted(chunking_config.keys()):
+        hasher.update(str(chunking_config[field]).encode("utf-8"))
+
+    task = {
+        "id": get_uuid(),
+        "doc_id": doc["id"],
+        "from_page": MAXIMUM_TASK_PAGE_NUMBER,
+        "to_page": MAXIMUM_TASK_PAGE_NUMBER,
+        "task_type": "raptor",
+        "progress_msg": datetime.now().strftime("%H:%M:%S") + " created task raptor",
+        "begin_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    for field in ["doc_id", "from_page", "to_page"]:
+        hasher.update(str(task[field]).encode("utf-8"))
+    hasher.update(b"raptor")
+    task["digest"] = hasher.hexdigest()
+    bulk_insert_into_db(Task, [task], True)
+
+    # Redis message carries ``doc_ids`` for downstream consumers
+    # (TaskHandler._run_raptor reads it). Identical to the fake-doc
+    # path's convention so we don't have to special-case the executor.
+    task["doc_ids"] = [doc["id"]]
+    assert REDIS_CONN.queue_product(
+        settings.get_svr_queue_name(priority, "raptor"), message=task,
+    ), "Can't access Redis. Please check the Redis' status."
+    return task["id"]
+
+
 def get_queue_length(priority, suffix="common"):
     group_info = REDIS_CONN.queue_info(settings.get_svr_queue_name(priority, suffix), SVR_CONSUMER_GROUP_NAME)
     if not group_info:

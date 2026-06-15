@@ -21,12 +21,14 @@ Provides [`RaptorService`](rag/svr/task_executor_refactor/raptor_service.py:48) 
 """
 
 import copy
+import json
 import logging
 import os
 from datetime import datetime
 from typing import Dict, List, Optional, Set, Tuple
 
 import numpy as np
+import xxhash
 
 from api.db.services.document_service import DocumentService
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID
@@ -297,13 +299,22 @@ class RaptorService:
             return True
         return False
 
-    def _load_doc_chunks(self, doc_id: str, vctr_nm: str) -> List[Tuple[str, np.ndarray]]:
-        """Load chunks for a single document."""
+    def _load_doc_chunks(self, doc_id: str, vctr_nm: str) -> List[Tuple[str, np.ndarray, str]]:
+        """Load chunks for a single document.
+
+        Returns ``(content, vector, chunk_id)`` triples so downstream
+        RAPTOR can attach ``source_chunk_ids`` provenance onto every
+        summary it produces. ``chunk_id`` may be an empty string if the
+        retriever didn't surface one — defensive against legacy rows.
+        """
         ctx = self._task_context
-        chunks = []
+        chunks: List[Tuple[str, np.ndarray, str]] = []
         skipped_chunks = 0
 
-        fields = ["content_with_weight", vctr_nm]
+        # ``id`` is included so the source-chunk provenance survives
+        # through summarization; the retriever otherwise drops it when
+        # ``fields`` is provided.
+        fields = ["id", "content_with_weight", vctr_nm]
         for d in settings.retriever.chunk_list(
             doc_id, ctx.tenant_id, [str(ctx.kb_id)],
             fields=fields,
@@ -313,7 +324,7 @@ class RaptorService:
                 skipped_chunks += 1
                 logging.warning(f"RAPTOR: Chunk missing vector field '{vctr_nm}' in doc {doc_id}, skipping")
                 continue
-            chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
+            chunks.append((d["content_with_weight"], np.array(d[vctr_nm]), str(d.get("id") or "")))
 
         if skipped_chunks > 0:
             self._task_context.progress_cb(
@@ -327,13 +338,15 @@ class RaptorService:
 
     def _load_all_doc_chunks(
         self, doc_ids: List[str], vctr_nm: str, skipped_doc_ids: Set[str]
-    ) -> List[Tuple[str, np.ndarray]]:
-        """Load chunks for all documents."""
+    ) -> List[Tuple[str, np.ndarray, str]]:
+        """Load chunks for all documents — returns provenance-carrying
+        ``(content, vector, chunk_id)`` triples. See ``_load_doc_chunks``
+        for the per-doc variant."""
         ctx = self._task_context
-        chunks = []
+        chunks: List[Tuple[str, np.ndarray, str]] = []
         skipped_chunks = 0
 
-        fields = ["content_with_weight", vctr_nm]
+        fields = ["id", "content_with_weight", vctr_nm]
         for doc_id in doc_ids:
             if doc_id in skipped_doc_ids:
                 continue
@@ -346,7 +359,7 @@ class RaptorService:
                     skipped_chunks += 1
                     logging.warning(f"RAPTOR: Chunk missing vector field '{vctr_nm}' in doc {doc_id}, skipping")
                     continue
-                chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
+                chunks.append((d["content_with_weight"], np.array(d[vctr_nm]), str(d.get("id") or "")))
 
         if skipped_chunks > 0:
             self._task_context.progress_cb(
@@ -357,7 +370,7 @@ class RaptorService:
 
     async def _generate_raptor(
         self,
-        chunks: List[Tuple[str, np.ndarray]],
+        chunks: List[Tuple[str, np.ndarray, str]],
         doc_id: str,
         raptor_config: Dict,
         chat_mdl,
@@ -367,7 +380,15 @@ class RaptorService:
         max_errors: int,
         doc_info_by_id: Dict,
     ) -> Tuple[List[Dict], int]:
-        """Run RAPTOR and generate summary chunks."""
+        """Run RAPTOR and generate summary chunks.
+
+        ``chunks`` is the provenance-carrying triple shape produced by
+        ``_load_doc_chunks`` / ``_load_all_doc_chunks``:
+        ``(content, vector, chunk_id)``. Each leaf is wrapped into the
+        ``(text, vec, [chunk_id])`` shape RAPTOR expects so every
+        summary it produces carries the order-preserving deduped union
+        of the leaf ids underneath it.
+        """
         ctx = self._task_context
         from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
 
@@ -389,9 +410,17 @@ class RaptorService:
             psi_bucket_size=raptor_ext_config.get("psi_bucket_size", 1024),
         )
 
-        original_length = len(chunks)
+        # Seed each leaf with its own id as the start of its
+        # ``source_chunk_ids`` provenance trail. The id may be empty
+        # for malformed retriever rows; ``Raptor.__call__`` filters
+        # those out of the union on the inbound normalize step.
+        raptor_input = [
+            (content, vctr, [chunk_id] if chunk_id else [])
+            for content, vctr, chunk_id in chunks
+        ]
+        original_length = len(raptor_input)
         processed_chunks, layers = await raptor(
-            chunks, raptor_config["random_seed"], self._task_context.progress_cb, ctx.id
+            raptor_input, raptor_config["random_seed"], self._task_context.progress_cb, ctx.id
         )
 
         effective_doc_name = ctx.name if doc_id == GRAPH_RAPTOR_FAKE_DOC_ID else doc_info_by_id.get(doc_id, {}).get("name") or ctx.name
@@ -417,7 +446,15 @@ class RaptorService:
 
         res = []
         tk_count = 0
-        for idx, (content, vctr) in enumerate(processed_chunks[original_length:], start=original_length):
+        for idx, item in enumerate(processed_chunks[original_length:], start=original_length):
+            # Backward-compat unpack: RAPTOR returns the 3-tuple shape
+            # ``(text, vec, source_chunk_ids)`` for any input that came
+            # in 3-tuple shape, but defensive against future changes.
+            if len(item) >= 3:
+                content, vctr, source_chunk_ids = item[0], item[1], item[2] or []
+            else:
+                content, vctr = item[0], item[1]
+                source_chunk_ids = []
             d = copy.deepcopy(doc)
             d["id"] = make_raptor_summary_chunk_id(content, doc_id)
             d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
@@ -427,6 +464,14 @@ class RaptorService:
             d["content_ltks"] = rag_tokenizer.tokenize(content)
             d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
             d["raptor_layer_int"] = chunk_layer.get(idx, 1)
+            # Provenance: the original (leaf-level) chunk ids that
+            # contributed to this summary. RAPTOR has already done the
+            # order-preserving de-dup during the cluster merges, so we
+            # just persist whatever it produced. The list may be empty
+            # only if every leaf in the cluster had a missing id —
+            # legacy / defensive corner only.
+            if source_chunk_ids:
+                d["source_chunk_ids"] = list(source_chunk_ids)
             res.append(d)
             tk_count += num_tokens_from_string(content)
 
@@ -469,3 +514,166 @@ class RaptorService:
         except Exception:
             logging.exception("Failed to check RAPTOR chunks for doc %s", doc_id)
             raise
+
+    @staticmethod
+    def _build_raptor_graph(rows: List[Dict]) -> Dict:
+        """Project loaded RAPTOR summary rows onto the canvas graph shape.
+
+        Each row contributes one entity::
+
+            {
+              "id":          xxh128(content)           # 32-char hex
+              "name":        first 16 whitespace tokens
+              "description": content_with_weight
+              "source_chunk_ids": []
+            }
+
+        Relations: full bipartite layer-by-layer fan-out — every node at
+        layer K gets an edge to every node at layer K-1 (because we only
+        loaded ``content_with_weight`` + ``raptor_layer_int`` we don't
+        have the specific parent linkage). Self-edges and dangling
+        targets are dropped (the latter only matters if the layer-int
+        values are non-contiguous).
+        """
+        # Build entities. Dedup by id so two identical-content summaries
+        # collapse to one node — the canvas can't render multiple nodes
+        # at the same id anyway, and identical content is a defensible
+        # collapse.
+        by_id: Dict[str, Dict] = {}
+        by_layer: Dict[int, List[str]] = {}
+
+        for row in rows:
+            content = row.get("content_with_weight")
+            if not isinstance(content, str) or not content.strip():
+                continue
+            try:
+                layer = int(row.get("raptor_layer_int") or 0)
+            except (TypeError, ValueError):
+                layer = 0
+            if layer <= 0:
+                # Layer 0 would be the original leaf chunks; RAPTOR
+                # summaries start at layer 1. Anything claiming layer 0
+                # here is malformed; skip.
+                continue
+
+            name = " ".join(content.split()[:16])
+            nid = xxhash.xxh128(
+                content.encode("utf-8", "surrogatepass"),
+            ).hexdigest()  # 32-char hex
+            if nid in by_id:
+                continue
+            by_id[nid] = {
+                "id": nid,
+                "name": name,
+                "description": content,
+                "source_chunk_ids": [],
+            }
+            by_layer.setdefault(layer, []).append(nid)
+
+        # Layered fan-out from parent (higher layer) → child (lower layer).
+        relations: List[Dict] = []
+        layers_sorted = sorted(by_layer.keys())
+        for layer in layers_sorted:
+            child_layer = layer - 1
+            if child_layer not in by_layer:
+                continue
+            for parent in by_layer[layer]:
+                for child in by_layer[child_layer]:
+                    if parent == child:
+                        continue
+                    relations.append({"from": parent, "to": child})
+
+        return {"entities": list(by_id.values()), "relations": relations}
+
+    async def _persist_raptor_graph_to_es(self, doc_id: str) -> None:
+        """Load the just-inserted RAPTOR summaries for ``doc_id`` and
+        persist a single graph row that the dataset structure-graph
+        endpoint can surface as a tree.
+
+        Loads only ``content_with_weight`` + ``raptor_layer_int`` (per
+        the smallest-payload contract) and writes one row with::
+
+            compile_kwd:                  "raptor_graph"
+            compilation_template_kind_kwd:"raptor"
+            doc_id:                       <doc_id>
+
+        The row id is deterministic per ``(kb_id, doc_id)`` so re-runs
+        delete-and-replace cleanly through the same primary key.
+        ``knowledge_graph_kwd`` is intentionally NOT set — that field
+        belongs to the KG feature; this row is identified via
+        ``compile_kwd`` so the two paths stay semantically distinct.
+        """
+        from common.doc_store.doc_store_base import OrderByExpr
+
+        ctx = self._task_context
+        tenant_id = ctx.tenant_id
+        kb_id_str = str(ctx.kb_id)
+        index_nm = search.index_name(tenant_id)
+
+        select_fields = ["content_with_weight", "raptor_layer_int"]
+        try:
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                select_fields, [],
+                {"raptor_kwd": ["raptor"], "doc_id": [doc_id]},
+                [], OrderByExpr(),
+                0, 10000, index_nm, [kb_id_str],
+            )
+            field_map = settings.docStoreConn.get_fields(res, select_fields)
+        except Exception:
+            logging.exception(
+                "raptor_graph: load failed for kb=%s doc=%s", kb_id_str, doc_id,
+            )
+            return
+
+        rows = list((field_map or {}).values())
+        if not rows:
+            logging.info(
+                "raptor_graph: no summaries to render for kb=%s doc=%s",
+                kb_id_str, doc_id,
+            )
+            return
+
+        graph = self._build_raptor_graph(rows)
+        if not graph["entities"]:
+            logging.info(
+                "raptor_graph: projection produced no entities for kb=%s doc=%s",
+                kb_id_str, doc_id,
+            )
+            return
+
+        row_id = xxhash.xxh64(
+            f"raptor_graph:{kb_id_str}:{doc_id}".encode("utf-8", "surrogatepass"),
+        ).hexdigest()
+        row = {
+            "id": row_id,
+            "kb_id": kb_id_str,
+            "doc_id": doc_id,
+            "compile_kwd": "raptor_graph",
+            "compilation_template_kind_kwd": "raptor",
+            "content_with_weight": json.dumps(graph, ensure_ascii=False),
+            "available_int": 0,
+        }
+        try:
+            await thread_pool_exec(
+                settings.docStoreConn.delete,
+                {"compile_kwd": "raptor_graph", "doc_id": [doc_id]},
+                index_nm, ctx.kb_id,
+            )
+        except Exception:
+            logging.debug(
+                "raptor_graph: prior delete failed for kb=%s doc=%s; relying on id-upsert",
+                kb_id_str, doc_id,
+            )
+        try:
+            await thread_pool_exec(
+                settings.docStoreConn.insert, [row], index_nm, ctx.kb_id,
+            )
+            logging.info(
+                "raptor_graph: stored %d entities / %d relations for kb=%s doc=%s",
+                len(graph["entities"]), len(graph["relations"]), kb_id_str, doc_id,
+            )
+        except Exception:
+            logging.exception(
+                "raptor_graph: insert failed for kb=%s doc=%s", kb_id_str, doc_id,
+            )

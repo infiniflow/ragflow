@@ -26,25 +26,35 @@ export interface IChunkListResult {
   dataUpdatedAt?: number; // Timestamp when data was last updated - useful for cache busting
 }
 
+export interface IDocumentStructureGraphEntity {
+  aliases?: string[];
+  mention_count?: number;
+  name: string;
+  type?: string;
+  discription?: string;
+  description?: string;
+}
+
+export interface IDocumentStructureGraphRelation {
+  from: string;
+  to: string;
+  type?: string;
+}
+
+export interface IDocumentStructureTemplate {
+  template_id: string;
+  template_name: string;
+  kind: string;
+  entities: IDocumentStructureGraphEntity[];
+  relations: IDocumentStructureGraphRelation[];
+}
+
 export interface IDocumentStructureGraph {
-  entities: Array<{
-    aliases?: string[];
-    mention_count?: number;
-    name: string;
-    type?: string;
-    discription?: string;
-    description?: string;
-  }>;
-  relations: Array<{
-    from: string;
-    to: string;
-    type?: string;
-  }>;
+  templates: IDocumentStructureTemplate[];
 }
 
 const EMPTY_DOCUMENT_STRUCTURE_GRAPH: IDocumentStructureGraph = {
-  entities: [],
-  relations: [],
+  templates: [],
 };
 
 export const useSelectChunkList = () => {
@@ -143,7 +153,7 @@ export const useFetchChunk = (
 
 export const useFetchDocumentStructureGraph = (enabled: boolean) => {
   const { knowledgeId, documentId } = useGetKnowledgeSearchParams();
-  const { data, isFetching: loading } = useQuery({
+  const { data, isFetching: loading } = useQuery<IDocumentStructureGraph>({
     queryKey: ['fetchDocumentStructureGraph', knowledgeId, documentId],
     enabled: enabled && !!knowledgeId && !!documentId,
     initialData: EMPTY_DOCUMENT_STRUCTURE_GRAPH,
@@ -153,8 +163,28 @@ export const useFetchDocumentStructureGraph = (enabled: boolean) => {
         kb_id: knowledgeId,
         doc_id: documentId,
       });
-
-      return data?.data ?? EMPTY_DOCUMENT_STRUCTURE_GRAPH;
+      const payload = data?.data as
+        | Partial<IDocumentStructureGraph>
+        | undefined;
+      // Backend may still be on the legacy shape during a rolling
+      // upgrade; coerce ``{entities, relations}`` into a single-element
+      // ``templates`` list so the UI doesn't care.
+      if (payload && Array.isArray((payload as any).entities)) {
+        return {
+          templates: [
+            {
+              template_id: 'legacy',
+              template_name: 'Legacy',
+              kind: '',
+              entities: (payload as any).entities ?? [],
+              relations: (payload as any).relations ?? [],
+            },
+          ],
+        };
+      }
+      return {
+        templates: Array.isArray(payload?.templates) ? payload.templates : [],
+      };
     },
   });
 

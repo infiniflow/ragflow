@@ -30,7 +30,7 @@ import xxhash
 from timeit import default_timer as timer
 from typing import Callable, Dict, List, Optional
 
-from api.db.services.document_service import DocumentService
+from api.db.services.document_service import DocumentService, queue_per_doc_raptor_task
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.compilation_template_service import CompilationTemplateService
 from api.db.joint_services.memory_message_service import handle_save_to_memory_task
@@ -187,9 +187,7 @@ class TaskHandler:
                 return
 
             # Route to appropriate handler
-            if task_type == "raptor":
-                await self._run_raptor(embedding_model, vector_size)
-            elif task_type == "graphrag":
+            if task_type == "graphrag":
                 await self._run_graphrag(embedding_model)
             elif task_type == "mindmap":
                 ctx.progress_cb(1, "place holder")
@@ -346,6 +344,27 @@ class TaskHandler:
 
                 if cleaned_chunks:
                     ctx.progress_cb(msg=f"Cleaned up {cleaned_chunks} stale RAPTOR chunks.")
+
+                # Build the per-doc RAPTOR tree graph from the just-
+                # inserted summaries. Each chunk in ``chunks`` carries
+                # the doc_id it was written under (real doc id for
+                # scope="file"; GRAPH_RAPTOR_FAKE_DOC_ID for the
+                # dataset-scope path). We materialize one graph row per
+                # distinct doc_id so the dataset structure-graph
+                # endpoint can surface a RAPTOR tab per document.
+                # Failure here is best-effort — the summaries are
+                # already persisted; the tab just won't render.
+                raptor_doc_ids = {
+                    str(c.get("doc_id")) for c in chunks if c.get("doc_id")
+                }
+                for raptor_doc_id in raptor_doc_ids:
+                    try:
+                        await raptor_service._persist_raptor_graph_to_es(raptor_doc_id)
+                    except Exception:
+                        logging.exception(
+                            "raptor_graph: build failed for kb=%s doc=%s",
+                            task_dataset_id, raptor_doc_id,
+                        )
 
                 # Update document stats
                 if ctx.write_interceptor:
@@ -533,6 +552,27 @@ class TaskHandler:
 
         await self._run_document_structure_compile(chunks, embedding_model)
 
+        # Per-doc RAPTOR auto-trigger. Reads ``parser_config.raptor.use_raptor``
+        # which is set via the chunk-method dialog (default off). Queues
+        # a doc-scoped raptor task so the executor picks it up and runs
+        # ``_run_raptor`` against just this document's chunks.
+        # Best-effort — a queue failure doesn't fail the chunking task.
+        raptor_cfg = (ctx.parser_config or {}).get("raptor") or {}
+        if raptor_cfg.get("use_raptor"):
+            try:
+                ok_doc, doc_obj = DocumentService.get_by_id(task_doc_id)
+                if ok_doc and doc_obj is not None:
+                    ctx.progress_cb(msg="Starting RAPTOR task.")
+                    await self._run_raptor(embedding_model, vector_size)
+                else:
+                    logging.warning(
+                        "raptor: cannot resolve doc %s to queue per-doc task", task_doc_id,
+                    )
+            except Exception:
+                logging.exception(
+                    "raptor: failed to queue per-doc task for doc %s", task_doc_id,
+                )
+
         if ctx.has_canceled_func(task_id):
             ctx.progress_cb(-1, msg="Task has been canceled.")
             return
@@ -598,6 +638,7 @@ class TaskHandler:
                 ctx.doc_id,
                 language=ctx.language,
                 callback=progress_cb,
+                compilation_template_id=template_id,
             )
             info = await merge_compiled_structures(
                 docs,
@@ -605,6 +646,7 @@ class TaskHandler:
                 embedding_model,
                 ctx.tenant_id,
                 ctx.kb_id,
+                compilation_template_id=template_id,
             )
             ctx.recording_context.record(f"document_structure_compile:{template_id}", info)
             progress_cb(msg=f"Document knowledge compilation done ({idx + 1}/{total}): {info}")
@@ -784,7 +826,14 @@ class TaskHandler:
         except Exception:
             logging.exception("artifact: ES persist failed for kb %s", ctx.kb_id)
 
-        progress(1.0, f"Artifact compiled 鈥?{len(pages or [])} page(s).")
+        # 7. Materialize the canvas graph from the refined pages.
+        # This is what the dataset Artifact tab's graph view reads.
+        try:
+            await self._persist_artifact_page_graph_to_es(ctx, pages or [])
+        except Exception:
+            logging.exception("artifact: page-graph persist failed for kb %s", ctx.kb_id)
+
+        progress(1.0, f"Artifact compiled {len(pages or [])} page(s).")
 
     @staticmethod
     async def _load_chunks_for_doc(tenant_id: str, kb_id: str, doc_id: str) -> List[Dict]:
@@ -963,6 +1012,121 @@ class TaskHandler:
             logging.exception(
                 "artifact_persist: bulk insert failed for kb=%s (rows=%d)",
                 kb_id_str, len(rows),
+            )
+
+    @staticmethod
+    def _build_artifact_page_graph(pages: List[Dict], kb_id: str) -> Dict:
+        """Project the REFINE-emitted page list onto the canvas graph shape.
+
+        Graph schema (what the frontend ``ForceGraph`` adapter consumes)::
+
+            {
+              "entities": [
+                {
+                  "slug":        "<page.slug>",       # stable id; UI uses for deep-link
+                  "name":        "<page.title>",      # human-readable label
+                  "aliases":     [<page.entity_names>],
+                  "description": "<page.summary>",
+                  "type":        "<page.page_type>",
+                },
+                ...
+              ],
+              "relations": [
+                {"from": "<src_slug>", "to": "<dst_slug>"},
+                ...
+              ]
+            }
+
+        Dangling outlinks (a slug not present as a node in this KB) are
+        dropped — they'd render as orphan edges otherwise. ``kb_id`` is
+        accepted for symmetry with future per-KB metadata but not
+        emitted on the graph; the persistence row carries it.
+        """
+        del kb_id  # currently unused on the graph blob itself
+        by_slug: Dict[str, Dict] = {}
+        for p in pages or []:
+            slug = (p.get("slug") or "").strip()
+            if not slug:
+                continue
+            outlinks_raw = p.get("outlinks") or []
+            # ``weight`` is the page's outlink count — i.e. how many
+            # other artifact pages this one points at. Drives node size
+            # / importance on the canvas. Computed on the raw outlink
+            # list (before dangling-target filtering) so visual weight
+            # reflects what the writer actually emitted on this page,
+            # not the post-filter graph topology.
+            weight = len(outlinks_raw) if isinstance(outlinks_raw, list) else 0
+            by_slug[slug] = {
+                "slug": slug,
+                "name": p.get("title") or slug,
+                "aliases": list(p.get("entity_names") or []),
+                "description": p.get("summary") or "",
+                "type": p.get("page_type") or "concept",
+                "weight": weight,
+            }
+
+        relations: List[Dict] = []
+        for p in pages or []:
+            src = (p.get("slug") or "").strip()
+            if not src or src not in by_slug:
+                continue
+            for raw_target in (p.get("outlinks") or []):
+                if isinstance(raw_target, str):
+                    tgt = raw_target.strip()
+                elif isinstance(raw_target, dict):
+                    tgt = str(raw_target.get("slug") or "").strip()
+                else:
+                    tgt = ""
+                if not tgt or tgt == src or tgt not in by_slug:
+                    continue
+                relations.append({"from": src, "to": tgt})
+
+        return {"entities": list(by_slug.values()), "relations": relations}
+
+    async def _persist_artifact_page_graph_to_es(
+        self, ctx: TaskContext, pages: List[Dict],
+    ) -> None:
+        """Materialize and store the canvas graph derived from artifact pages.
+
+        Writes a single non-searchable row with ``compile_kwd="artifact_page_graph"``
+        whose ``content_with_weight`` is the JSON-serialized graph. The row id is
+        deterministic per KB, so re-runs replace cleanly via delete-then-insert.
+
+        ``dataset_api_service.get_artifact_graph`` reads exactly this row.
+        """
+        kb_id_str = str(ctx.kb_id)
+        graph = self._build_artifact_page_graph(pages or [], kb_id_str)
+
+        index = search.index_name(ctx.tenant_id)
+        row_id = xxhash.xxh64(
+            f"artifact_page_graph:{kb_id_str}".encode("utf-8", "surrogatepass"),
+        ).hexdigest()
+        row = {
+            "id": row_id,
+            "kb_id": kb_id_str,
+            "doc_id": kb_id_str,  # sentinel: KB-scoped row, not a real document
+            "compile_kwd": "artifact_page_graph",
+            "source_id": [kb_id_str],
+            "content_with_weight": json.dumps(graph, ensure_ascii=False),
+            "available_int": 0,
+        }
+        try:
+            await thread_pool_exec(
+                settings.docStoreConn.delete,
+                {"compile_kwd": "artifact_page_graph"},
+                index, ctx.kb_id,
+            )
+        except Exception:
+            logging.debug(
+                "artifact_page_graph: prior delete failed; relying on id-upsert",
+            )
+        try:
+            await thread_pool_exec(
+                settings.docStoreConn.insert, [row], index, ctx.kb_id,
+            )
+        except Exception:
+            logging.exception(
+                "artifact_page_graph: insert failed for kb=%s", kb_id_str,
             )
 
     @classmethod

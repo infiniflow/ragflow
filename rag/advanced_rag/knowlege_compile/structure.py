@@ -66,7 +66,6 @@ import xxhash
 
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string
-from rag.nlp import rag_tokenizer
 from rag.prompts.generator import gen_json
 
 from ._common import (
@@ -488,6 +487,8 @@ def _struct_to_es_doc(
     kind: str,
     src_field: str | None = None,
     target_field: str | None = None,
+    compilation_template_id: str | None = None,
+    compilation_template_kind: str | None = None,
 ) -> dict:
     """Build one ES doc for an extracted entity or relation.
 
@@ -496,6 +497,13 @@ def _struct_to_es_doc(
         src_field / target_field: when ``kind == "relation"`` and these field
             names exist on the payload, the resolved values are written to
             ``from_entity_kwd`` / ``to_entity_kwd``.
+        compilation_template_id / compilation_template_kind: stamped onto
+            every row so the document-structure endpoint can group by
+            template id and the UI can render one tab per template. The
+            id is stored as a single-element list under
+            ``compilation_template_ids`` because the same logical entity
+            *could* later be claimed by multiple templates during a
+            cross-template merge (rare, but the schema is forward-compat).
     """
     content_with_weight = json.dumps(payload, ensure_ascii=False)
     if hasattr(vec, "tolist"):
@@ -503,9 +511,18 @@ def _struct_to_es_doc(
     else:
         vec_list = list(vec)
     doc_id_str = str(doc_id)
+    template_id_str = (
+        str(compilation_template_id).strip() if compilation_template_id else ""
+    )
 
     description = _struct_payload_description(payload)
     content_ltks, content_sm_ltks = _tokenize_for_search(description)
+
+    # Mix the template id into the stable row id so two templates with the
+    # same compile_kwd don't collide on identical payloads (e.g. two
+    # different list-kind templates that each extract "headline X").
+    row_seed_extras = [template_id_str] if template_id_str else []
+    row_id = _stable_row_id(content_with_weight, doc_id_str, *row_seed_extras)
 
     doc = {
         "content_with_weight": content_with_weight,
@@ -516,8 +533,12 @@ def _struct_to_es_doc(
         "content_ltks": content_ltks,
         "content_sm_ltks": content_sm_ltks,
         f"q_{len(vec_list)}_vec": vec_list,
-        "id": _stable_row_id(content_with_weight, doc_id_str),
+        "id": row_id,
     }
+    if template_id_str:
+        doc["compilation_template_ids"] = [template_id_str]
+    if compilation_template_kind:
+        doc["compilation_template_kind_kwd"] = str(compilation_template_kind)
 
     if kind == "relation":
         if src_field:
@@ -544,6 +565,8 @@ async def _struct_process_batch(
     language: str,
     callback,
     semaphore,
+    compilation_template_id: str | None = None,
+    compilation_template_kind: str | None = None,
 ) -> list[dict]:
     """Process one packed batch end-to-end (extract → embed → ES docs).
 
@@ -601,6 +624,8 @@ async def _struct_process_batch(
             _struct_to_es_doc(
                 payload, autotype, doc_id, batch_ids, vec, kind,
                 src_field=src_field, target_field=target_field,
+                compilation_template_id=compilation_template_id,
+                compilation_template_kind=compilation_template_kind,
             )
             for payload, vec, kind in zip(payloads, embeddings, kinds)
         ]
@@ -625,6 +650,7 @@ async def compile_structure_from_text(
     language: str = "en",
     callback=None,
     max_workers: int = 10,
+    compilation_template_id: str | None = None,
 ) -> list[dict]:
     """Extract list/set/hypergraph structures from text chunks and prepare ES docs.
 
@@ -713,6 +739,14 @@ async def compile_structure_from_text(
     node_prompt, edge_prompt = _struct_hypergraph_prompts(parser_config, language)
     prompt_overhead = max(num_tokens_from_string(node_prompt), num_tokens_from_string(edge_prompt))
 
+    # ``kind`` for the row stamp follows the template's ``kind`` field if
+    # present (e.g. "timeline", "page_index"); we fall back to the
+    # inferred autotype ("list" / "set" / "hypergraph") so legacy
+    # configs without a kind still get a sensible label on the UI tab.
+    template_kind = parser_config.get("kind") if isinstance(parser_config, dict) else None
+    if not isinstance(template_kind, str) or not template_kind.strip():
+        template_kind = autotype
+
     packed_batches, _info = _build_chunk_batches(
         chunks,
         chat_mdl,
@@ -735,6 +769,8 @@ async def compile_structure_from_text(
             language=language,
             callback=callback,
             semaphore=None,
+            compilation_template_id=compilation_template_id,
+            compilation_template_kind=template_kind,
         )
 
     def _flatten(per_batch: list) -> list[dict]:
@@ -798,13 +834,32 @@ Return ONLY a JSON object with this exact structure (no markdown fences, no comm
 }"""
 
 
+def _struct_doc_template_id(doc: dict) -> str | None:
+    """Pull the (single) compilation_template_id out of an ES row.
+
+    Stored as a list to leave room for future cross-template merges; this
+    helper just returns the first non-empty entry, or None.
+    """
+    raw = doc.get("compilation_template_ids")
+    if isinstance(raw, list):
+        for v in raw:
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return None
+
+
 def _struct_filter_key(doc: dict) -> tuple:
-    """Bucket key for dedup candidates."""
+    """Bucket key for dedup candidates. Includes the template id so two
+    templates that emit a relation with the same (from, to) endpoints
+    don't merge across template boundaries."""
     return (
         doc.get("doc_id"),
         doc.get("compile_kwd"),
         doc.get("from_entity_kwd"),
         doc.get("to_entity_kwd"),
+        _struct_doc_template_id(doc),
     )
 
 
@@ -1016,6 +1071,12 @@ async def _struct_es_dedup_one(
         condition["from_entity_kwd"] = [doc["from_entity_kwd"]]
     if doc.get("to_entity_kwd"):
         condition["to_entity_kwd"] = [doc["to_entity_kwd"]]
+    # KNN dedup must stay within the same template — two templates can
+    # produce identical-looking entities (e.g. two "list" kinds extracting
+    # the same headline) but they live on independent tabs in the UI.
+    incoming_template = _struct_doc_template_id(doc)
+    if incoming_template:
+        condition["compilation_template_ids"] = [incoming_template]
 
     vec_field, vec = _struct_doc_vec(doc)
     if not vec_field or vec is None:
@@ -1082,8 +1143,18 @@ async def _struct_es_dedup_one(
         return "skipped"
 
 
-def _struct_graph_row_id(doc_id: str, compile_kwd: str) -> str:
-    return xxhash.xxh64(f"{doc_id}:structure_graph:{compile_kwd}".encode("utf-8", "surrogatepass")).hexdigest()
+def _struct_graph_row_id(
+    doc_id: str, compile_kwd: str, compilation_template_id: str | None = None,
+) -> str:
+    """Stable id per (doc, compile_kwd, template). Without the template
+    suffix, two templates sharing a compile_kwd (e.g. both ``list``)
+    would overwrite each other's per-doc graph JSON row."""
+    tpl_part = compilation_template_id or ""
+    return xxhash.xxh64(
+        f"{doc_id}:structure_graph:{compile_kwd}:{tpl_part}".encode(
+            "utf-8", "surrogatepass",
+        ),
+    ).hexdigest()
 
 
 async def _struct_rebuild_graph_json(
@@ -1091,6 +1162,7 @@ async def _struct_rebuild_graph_json(
     kb_id: str,
     doc_id: str,
     compile_kwd: str,
+    compilation_template_id: str | None = None,
 ) -> dict:
     from common import settings
     from rag.nlp import search as _rag_search
@@ -1098,15 +1170,18 @@ async def _struct_rebuild_graph_json(
 
     index = _rag_search.index_name(tenant_id)
     fields = ["content_with_weight", "knowledge_graph_kwd"]
+    condition: dict = {
+        "doc_id": [doc_id],
+        "compile_kwd": [compile_kwd],
+        "knowledge_graph_kwd": ["entity", "relation"],
+    }
+    if compilation_template_id:
+        condition["compilation_template_ids"] = [compilation_template_id]
     res = await thread_pool_exec(
         settings.docStoreConn.search,
         fields,
         [],
-        {
-            "doc_id": [doc_id],
-            "compile_kwd": [compile_kwd],
-            "knowledge_graph_kwd": ["entity", "relation"],
-        },
+        condition,
         [],
         OrderByExpr(),
         0,
@@ -1140,12 +1215,13 @@ async def _struct_upsert_graph_json(
     kb_id: str,
     doc_id: str,
     compile_kwd: str,
+    compilation_template_id: str | None = None,
 ) -> None:
     from common import settings
     from rag.nlp import search as _rag_search
 
     index = _rag_search.index_name(tenant_id)
-    row_id = _struct_graph_row_id(doc_id, compile_kwd)
+    row_id = _struct_graph_row_id(doc_id, compile_kwd, compilation_template_id)
     row = {
         "id": row_id,
         "content_with_weight": json.dumps(graph, ensure_ascii=False),
@@ -1155,6 +1231,8 @@ async def _struct_upsert_graph_json(
         "kb_id": kb_id,
         "available_int": 0,
     }
+    if compilation_template_id:
+        row["compilation_template_ids"] = [compilation_template_id]
     old = await thread_pool_exec(settings.docStoreConn.get, row_id, index, [kb_id])
     if old:
         await thread_pool_exec(
@@ -1173,10 +1251,16 @@ async def rebuild_structure_graph_json(
     kb_id: str,
     doc_id: str,
     compile_kwd: str,
+    compilation_template_id: str | None = None,
 ) -> dict:
-    """Rebuild and persist the compact document-scoped structure graph."""
-    graph = await _struct_rebuild_graph_json(tenant_id, kb_id, doc_id, compile_kwd)
-    await _struct_upsert_graph_json(graph, tenant_id, kb_id, doc_id, compile_kwd)
+    """Rebuild and persist the compact document-scoped structure graph,
+    scoped to one (doc, compile_kwd, template_id) triple."""
+    graph = await _struct_rebuild_graph_json(
+        tenant_id, kb_id, doc_id, compile_kwd, compilation_template_id,
+    )
+    await _struct_upsert_graph_json(
+        graph, tenant_id, kb_id, doc_id, compile_kwd, compilation_template_id,
+    )
     return graph
 
 
@@ -1187,6 +1271,7 @@ async def merge_compiled_structures(
     tenant_id: str,
     kb_id: str,
     similarity_threshold: float = 0.9,
+    compilation_template_id: str | None = None,
 ) -> dict:
     """Merge ``docs`` (the output of ``compile_structure_from_text``) before
     inserting them into ES.
@@ -1226,7 +1311,11 @@ async def merge_compiled_structures(
     )
 
     graph_keys = {
-        (str(d.get("doc_id")), str(d.get("compile_kwd")))
+        (
+            str(d.get("doc_id")),
+            str(d.get("compile_kwd")),
+            _struct_doc_template_id(d) or compilation_template_id or "",
+        )
         for d in deduped
         if d.get("doc_id") and d.get("compile_kwd") and d.get("knowledge_graph_kwd") in ("entity", "relation")
     }
@@ -1247,14 +1336,17 @@ async def merge_compiled_structures(
             updated += 1
 
     graphs = 0
-    for doc_id, compile_kwd in graph_keys:
+    for doc_id, compile_kwd, template_id in graph_keys:
         try:
-            await rebuild_structure_graph_json(tenant_id, kb_id, doc_id, compile_kwd)
+            await rebuild_structure_graph_json(
+                tenant_id, kb_id, doc_id, compile_kwd,
+                compilation_template_id=template_id or None,
+            )
             graphs += 1
         except Exception:
             logging.exception(
-                "merge_compiled_structures: graph rebuild failed for doc=%s compile_kwd=%s",
-                doc_id, compile_kwd,
+                "merge_compiled_structures: graph rebuild failed for doc=%s compile_kwd=%s template=%s",
+                doc_id, compile_kwd, template_id,
             )
 
     return {

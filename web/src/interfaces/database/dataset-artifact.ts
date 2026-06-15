@@ -35,19 +35,35 @@ export interface HasAnyArtifactResponse {
 }
 
 /**
- * REDUCE-phase graph payload — entity-centric only. The backend trims
- * concepts/claims and ``chunk_ids`` source attribution before
- * returning, so the canvas just gets nodes + edges to render.
+ * Page-derived graph payload. Materialized by the task handler at the
+ * end of ``_run_artifact`` and stored as a single ES row under
+ * ``compile_kwd="artifact_page_graph"``. Each entity is one artifact
+ * page; relations are slug-to-slug edges derived from ``outlinks``.
  */
 export interface ArtifactGraphEntity {
+  /** Stable id (``<page_type>/<tail>``). Used as the node id. */
+  slug: string;
+  /** Human-readable label (the page title). */
   name: string;
+  /** Page type (``entity`` | ``concept`` | ``topic``). */
   type?: string;
+  /** Page summary — shown in the node tooltip. */
+  description?: string;
+  /** Entity names covered by the page. */
   aliases?: string[];
+  /**
+   * Outlink count for this page — set by the backend writer.
+   * Drives node visual size on the canvas.
+   */
+  weight?: number;
+  /** Carried for legacy payloads; the new schema doesn't use it. */
   mention_count?: number;
 }
 
 export interface ArtifactGraphRelation {
+  /** Source slug. */
   from: string;
+  /** Target slug. */
   to: string;
   type?: string;
 }
