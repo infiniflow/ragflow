@@ -18,6 +18,7 @@ package cli
 
 import (
 	"fmt"
+	"ragflow/internal/common"
 	"strings"
 )
 
@@ -1301,14 +1302,20 @@ func (p *Parser) parseAdminSetDefault() (*Command, error) {
 	}
 
 	p.nextToken()
-	compositeModelName, err := p.parseQuotedString()
+	modelNameOrID, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 
 	cmd := NewCommand("set_default_model")
 	cmd.Params["model_type"] = modelType
-	cmd.Params["composite_model_name"] = compositeModelName
+	if common.IsCompositeModelName(modelNameOrID) {
+		cmd.Params["composite_model_name"] = modelNameOrID
+	} else if common.IsUUID(modelNameOrID) {
+		cmd.Params["model_id"] = modelNameOrID
+	} else {
+		return nil, fmt.Errorf("invalid format of model name or ID: %s", modelNameOrID)
+	}
 
 	p.nextToken()
 	// Semicolon is optional for UNSET TOKEN

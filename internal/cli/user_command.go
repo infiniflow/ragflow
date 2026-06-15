@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"ragflow/internal/common"
 	"ragflow/internal/ingestion"
 	"ragflow/internal/ingestion/parser"
 	"ragflow/internal/utility"
@@ -1632,23 +1633,34 @@ func (c *CLI) ChatToModel(cmd *Command) (ResponseIf, error) {
 	}
 
 	var providerName, instanceName, modelName string
+	var err error
 
-	// Check if composite_model_name is provided in command
-	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
-		names := strings.Split(compositeModelName, "@")
-		if len(names) != 3 {
-			return nil, fmt.Errorf("model name must be in format 'model@instance@provider'")
+	compositeModelName, ok := cmd.Params["composite_model_name"].(string)
+	if ok {
+		modelName, instanceName, providerName, err = common.ExtractCompositeName(compositeModelName)
+		if err != nil {
+			return nil, err
 		}
-		providerName = names[2]
-		instanceName = names[1]
-		modelName = names[0]
-	} else if c.CurrentModel != nil {
+	}
+
+	modelID, ok := cmd.Params["model_id"].(string)
+	if !ok {
+		modelID = ""
+	}
+
+	if modelID == "" && compositeModelName == "" {
+		if c.CurrentModel == nil {
+			return nil, fmt.Errorf("model name or ID not provided and no current model set. Use 'use model' command first")
+		}
+
 		// Use current model if set
-		providerName = c.CurrentModel.Provider
-		instanceName = c.CurrentModel.Instance
-		modelName = c.CurrentModel.Model
-	} else {
-		return nil, fmt.Errorf("model name not provided and no current model set. Use 'use model' command first")
+		if c.CurrentModel.ModelID != "" {
+			modelID = c.CurrentModel.ModelID
+		} else {
+			providerName = c.CurrentModel.Provider
+			instanceName = c.CurrentModel.Instance
+			modelName = c.CurrentModel.Model
+		}
 	}
 
 	formattedMessages := []map[string]interface{}{}
@@ -1773,12 +1785,16 @@ func (c *CLI) ChatToModel(cmd *Command) (ResponseIf, error) {
 	url := "/chat/completions"
 
 	payload := map[string]interface{}{
-		"provider_name": providerName,
-		"instance_name": instanceName,
-		"model_name":    modelName,
-		"messages":      formattedMessages,
-		"stream":        stream,
-		"thinking":      thinking,
+		"messages": formattedMessages,
+		"stream":   stream,
+		"thinking": thinking,
+	}
+	if modelID == "" {
+		payload["provider_name"] = providerName
+		payload["instance_name"] = instanceName
+		payload["model_name"] = modelName
+	} else {
+		payload["model_id"] = modelID
 	}
 
 	if thinking {
@@ -1864,12 +1880,12 @@ func (c *CLI) ChatToModel(cmd *Command) (ResponseIf, error) {
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list instance models: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to chat model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	var result NonStreamResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("failed to list instance models: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("failed to chat model: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
@@ -1889,23 +1905,35 @@ func (c *CLI) EmbedUserText(cmd *Command) (ResponseIf, error) {
 	}
 
 	var providerName, instanceName, modelName string
+	var err error
 
 	// Check if composite_model_name is provided in command
-	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
-		names := strings.Split(compositeModelName, "@")
-		if len(names) != 3 {
-			return nil, fmt.Errorf("model name must be in format 'model@instance@provider'")
+	compositeModelName, ok := cmd.Params["composite_model_name"].(string)
+	if ok {
+		modelName, instanceName, providerName, err = common.ExtractCompositeName(compositeModelName)
+		if err != nil {
+			return nil, err
 		}
-		providerName = names[2]
-		instanceName = names[1]
-		modelName = names[0]
-	} else if c.CurrentModel != nil {
+	}
+
+	modelID, ok := cmd.Params["model_id"].(string)
+	if !ok {
+		modelID = ""
+	}
+
+	if modelID == "" && compositeModelName == "" {
+		if c.CurrentModel == nil {
+			return nil, fmt.Errorf("model name or ID not provided and no current model set. Use 'use model' command first")
+		}
+
 		// Use current model if set
-		providerName = c.CurrentModel.Provider
-		instanceName = c.CurrentModel.Instance
-		modelName = c.CurrentModel.Model
-	} else {
-		return nil, fmt.Errorf("model name not provided and no current model set. Use 'use model' command first")
+		if c.CurrentModel.ModelID != "" {
+			modelID = c.CurrentModel.ModelID
+		} else {
+			providerName = c.CurrentModel.Provider
+			instanceName = c.CurrentModel.Instance
+			modelName = c.CurrentModel.Model
+		}
 	}
 
 	texts, ok := cmd.Params["texts"].([]string)
@@ -1919,11 +1947,15 @@ func (c *CLI) EmbedUserText(cmd *Command) (ResponseIf, error) {
 	}
 
 	payload := map[string]interface{}{
-		"provider_name": providerName,
-		"instance_name": instanceName,
-		"model_name":    modelName,
-		"texts":         texts,
-		"dimension":     dimension,
+		"texts":     texts,
+		"dimension": dimension,
+	}
+	if modelID == "" {
+		payload["provider_name"] = providerName
+		payload["instance_name"] = instanceName
+		payload["model_name"] = modelName
+	} else {
+		payload["model_id"] = modelID
 	}
 
 	url := "/embeddings"
@@ -1956,23 +1988,35 @@ func (c *CLI) RerankUserDocument(cmd *Command) (ResponseIf, error) {
 	}
 
 	var providerName, instanceName, modelName string
+	var err error
 
 	// Check if composite_model_name is provided in command
-	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
-		names := strings.Split(compositeModelName, "@")
-		if len(names) != 3 {
-			return nil, fmt.Errorf("model name must be in format 'model@instance@provider'")
+	compositeModelName, ok := cmd.Params["composite_model_name"].(string)
+	if ok {
+		modelName, instanceName, providerName, err = common.ExtractCompositeName(compositeModelName)
+		if err != nil {
+			return nil, err
 		}
-		providerName = names[2]
-		instanceName = names[1]
-		modelName = names[0]
-	} else if c.CurrentModel != nil {
+	}
+
+	modelID, ok := cmd.Params["model_id"].(string)
+	if !ok {
+		modelID = ""
+	}
+
+	if modelID == "" && compositeModelName == "" {
+		if c.CurrentModel == nil {
+			return nil, fmt.Errorf("model name or ID not provided and no current model set. Use 'use model' command first")
+		}
+
 		// Use current model if set
-		providerName = c.CurrentModel.Provider
-		instanceName = c.CurrentModel.Instance
-		modelName = c.CurrentModel.Model
-	} else {
-		return nil, fmt.Errorf("model name not provided and no current model set. Use 'use model' command first")
+		if c.CurrentModel.ModelID != "" {
+			modelID = c.CurrentModel.ModelID
+		} else {
+			providerName = c.CurrentModel.Provider
+			instanceName = c.CurrentModel.Instance
+			modelName = c.CurrentModel.Model
+		}
 	}
 
 	query, ok := cmd.Params["query"].(string)
@@ -1991,12 +2035,16 @@ func (c *CLI) RerankUserDocument(cmd *Command) (ResponseIf, error) {
 	}
 
 	payload := map[string]interface{}{
-		"provider_name": providerName,
-		"instance_name": instanceName,
-		"model_name":    modelName,
-		"query":         query,
-		"documents":     documents,
-		"top_n":         topN,
+		"query":     query,
+		"documents": documents,
+		"top_n":     topN,
+	}
+	if modelID == "" {
+		payload["provider_name"] = providerName
+		payload["instance_name"] = instanceName
+		payload["model_name"] = modelName
+	} else {
+		payload["model_id"] = modelID
 	}
 
 	url := "/rerank"
@@ -2029,23 +2077,35 @@ func (c *CLI) TTSUserCommand(cmd *Command) (ResponseIf, error) {
 	}
 
 	var providerName, instanceName, modelName string
+	var err error
 
 	// Check if composite_model_name is provided in command
-	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
-		names := strings.Split(compositeModelName, "@")
-		if len(names) != 3 {
-			return nil, fmt.Errorf("model name must be in format 'model@instance@provider'")
+	compositeModelName, ok := cmd.Params["composite_model_name"].(string)
+	if ok {
+		modelName, instanceName, providerName, err = common.ExtractCompositeName(compositeModelName)
+		if err != nil {
+			return nil, err
 		}
-		providerName = names[2]
-		instanceName = names[1]
-		modelName = names[0]
-	} else if c.CurrentModel != nil {
+	}
+
+	modelID, ok := cmd.Params["model_id"].(string)
+	if !ok {
+		modelID = ""
+	}
+
+	if modelID == "" && compositeModelName == "" {
+		if c.CurrentModel == nil {
+			return nil, fmt.Errorf("model name or ID not provided and no current model set. Use 'use model' command first")
+		}
+
 		// Use current model if set
-		providerName = c.CurrentModel.Provider
-		instanceName = c.CurrentModel.Instance
-		modelName = c.CurrentModel.Model
-	} else {
-		return nil, fmt.Errorf("model name not provided and no current model set. Use 'use model' command first")
+		if c.CurrentModel.ModelID != "" {
+			modelID = c.CurrentModel.ModelID
+		} else {
+			providerName = c.CurrentModel.Provider
+			instanceName = c.CurrentModel.Instance
+			modelName = c.CurrentModel.Model
+		}
 	}
 
 	text, ok := cmd.Params["text"].(string)
@@ -2059,10 +2119,14 @@ func (c *CLI) TTSUserCommand(cmd *Command) (ResponseIf, error) {
 	//}
 
 	payload := map[string]interface{}{
-		"provider_name": providerName,
-		"instance_name": instanceName,
-		"model_name":    modelName,
-		"text":          text,
+		"text": text,
+	}
+	if modelID == "" {
+		payload["provider_name"] = providerName
+		payload["instance_name"] = instanceName
+		payload["model_name"] = modelName
+	} else {
+		payload["model_id"] = modelID
 	}
 
 	ttsConfigPayload := make(map[string]interface{})
@@ -2221,23 +2285,35 @@ func (c *CLI) ASRUserCommand(cmd *Command) (ResponseIf, error) {
 	}
 
 	var providerName, instanceName, modelName string
+	var err error
 
 	// Check if composite_model_name is provided in command
-	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
-		names := strings.Split(compositeModelName, "@")
-		if len(names) != 3 {
-			return nil, fmt.Errorf("model name must be in format 'model@instance@provider'")
+	compositeModelName, ok := cmd.Params["composite_model_name"].(string)
+	if ok {
+		modelName, instanceName, providerName, err = common.ExtractCompositeName(compositeModelName)
+		if err != nil {
+			return nil, err
 		}
-		providerName = names[2]
-		instanceName = names[1]
-		modelName = names[0]
-	} else if c.CurrentModel != nil {
+	}
+
+	modelID, ok := cmd.Params["model_id"].(string)
+	if !ok {
+		modelID = ""
+	}
+
+	if modelID == "" && compositeModelName == "" {
+		if c.CurrentModel == nil {
+			return nil, fmt.Errorf("model name or ID not provided and no current model set. Use 'use model' command first")
+		}
+
 		// Use current model if set
-		providerName = c.CurrentModel.Provider
-		instanceName = c.CurrentModel.Instance
-		modelName = c.CurrentModel.Model
-	} else {
-		return nil, fmt.Errorf("model name not provided and no current model set. Use 'use model' command first")
+		if c.CurrentModel.ModelID != "" {
+			modelID = c.CurrentModel.ModelID
+		} else {
+			providerName = c.CurrentModel.Provider
+			instanceName = c.CurrentModel.Instance
+			modelName = c.CurrentModel.Model
+		}
 	}
 
 	audioFile, ok := cmd.Params["audio_file"].(string)
@@ -2246,10 +2322,15 @@ func (c *CLI) ASRUserCommand(cmd *Command) (ResponseIf, error) {
 	}
 
 	payload := map[string]interface{}{
-		"provider_name": providerName,
-		"instance_name": instanceName,
-		"model_name":    modelName,
-		"file":          audioFile,
+		"file": audioFile,
+	}
+
+	if modelID == "" {
+		payload["provider_name"] = providerName
+		payload["instance_name"] = instanceName
+		payload["model_name"] = modelName
+	} else {
+		payload["model_id"] = modelID
 	}
 
 	asrConfigPayload := make(map[string]interface{})
@@ -2308,28 +2389,38 @@ func (c *CLI) OCRUserCommand(cmd *Command) (ResponseIf, error) {
 	}
 
 	var providerName, instanceName, modelName string
+	var err error
 
 	// Check if composite_model_name is provided in command
-	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
-		names := strings.Split(compositeModelName, "@")
-		if len(names) != 3 {
-			return nil, fmt.Errorf("model name must be in format 'model@instance@provider'")
+	compositeModelName, ok := cmd.Params["composite_model_name"].(string)
+	if ok {
+		modelName, instanceName, providerName, err = common.ExtractCompositeName(compositeModelName)
+		if err != nil {
+			return nil, err
 		}
-		providerName = names[2]
-		instanceName = names[1]
-		modelName = names[0]
-	} else if c.CurrentModel != nil {
-		// Use current model if set
-		providerName = c.CurrentModel.Provider
-		instanceName = c.CurrentModel.Instance
-		modelName = c.CurrentModel.Model
-	} else {
-		return nil, fmt.Errorf("model name not provided and no current model set. Use 'use model' command first")
 	}
 
+	modelID, ok := cmd.Params["model_id"].(string)
+	if !ok {
+		modelID = ""
+	}
+
+	if modelID == "" && compositeModelName == "" {
+		if c.CurrentModel == nil {
+			return nil, fmt.Errorf("model name or ID not provided and no current model set. Use 'use model' command first")
+		}
+
+		// Use current model if set
+		if c.CurrentModel.ModelID != "" {
+			modelID = c.CurrentModel.ModelID
+		} else {
+			providerName = c.CurrentModel.Provider
+			instanceName = c.CurrentModel.Instance
+			modelName = c.CurrentModel.Model
+		}
+	}
 	var filename string
 	var fileURL string
-	var ok bool
 	var fileContent []byte
 
 	filename, ok = cmd.Params["file"].(string)
@@ -2347,10 +2438,14 @@ func (c *CLI) OCRUserCommand(cmd *Command) (ResponseIf, error) {
 		}
 	}
 
-	payload := map[string]interface{}{
-		"provider_name": providerName,
-		"instance_name": instanceName,
-		"model_name":    modelName,
+	payload := map[string]interface{}{}
+
+	if modelID == "" {
+		payload["provider_name"] = providerName
+		payload["instance_name"] = instanceName
+		payload["model_name"] = modelName
+	} else {
+		payload["model_id"] = modelID
 	}
 
 	if fileContent != nil {
@@ -2390,28 +2485,39 @@ func (c *CLI) ParseFileUserCommand(cmd *Command) (ResponseIf, error) {
 	}
 
 	var providerName, instanceName, modelName string
+	var err error
 
 	// Check if composite_model_name is provided in command
-	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
-		names := strings.Split(compositeModelName, "@")
-		if len(names) != 3 {
-			return nil, fmt.Errorf("model name must be in format 'model@instance@provider'")
+	compositeModelName, ok := cmd.Params["composite_model_name"].(string)
+	if ok {
+		modelName, instanceName, providerName, err = common.ExtractCompositeName(compositeModelName)
+		if err != nil {
+			return nil, err
 		}
-		providerName = names[2]
-		instanceName = names[1]
-		modelName = names[0]
-	} else if c.CurrentModel != nil {
+	}
+
+	modelID, ok := cmd.Params["model_id"].(string)
+	if !ok {
+		modelID = ""
+	}
+
+	if modelID == "" && compositeModelName == "" {
+		if c.CurrentModel == nil {
+			return nil, fmt.Errorf("model name or ID not provided and no current model set. Use 'use model' command first")
+		}
+
 		// Use current model if set
-		providerName = c.CurrentModel.Provider
-		instanceName = c.CurrentModel.Instance
-		modelName = c.CurrentModel.Model
-	} else {
-		return nil, fmt.Errorf("model name not provided and no current model set. Use 'use model' command first")
+		if c.CurrentModel.ModelID != "" {
+			modelID = c.CurrentModel.ModelID
+		} else {
+			providerName = c.CurrentModel.Provider
+			instanceName = c.CurrentModel.Instance
+			modelName = c.CurrentModel.Model
+		}
 	}
 
 	var filename string
 	var fileURL string
-	var ok bool
 	var fileContent []byte
 
 	filename, ok = cmd.Params["file"].(string)
@@ -2434,10 +2540,14 @@ func (c *CLI) ParseFileUserCommand(cmd *Command) (ResponseIf, error) {
 		}
 	}
 
-	payload := map[string]interface{}{
-		"provider_name": providerName,
-		"instance_name": instanceName,
-		"model_name":    modelName,
+	payload := map[string]interface{}{}
+
+	if modelID == "" {
+		payload["provider_name"] = providerName
+		payload["instance_name"] = instanceName
+		payload["model_name"] = modelName
+	} else {
+		payload["model_id"] = modelID
 	}
 
 	if fileContent != nil {
@@ -2664,20 +2774,30 @@ func (c *CLI) UseModel(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
+	var modelName, instanceName, providerName string
+	var err error
 	compositeModelName, ok := cmd.Params["composite_model_name"].(string)
-	if !ok || compositeModelName == "" {
-		return nil, fmt.Errorf("model identifier not provided")
+	if ok {
+		modelName, instanceName, providerName, err = common.ExtractCompositeName(compositeModelName)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	names := strings.Split(compositeModelName, "@")
-	if len(names) != 3 {
-		return nil, fmt.Errorf("model identifier must be in format 'model@instance@provider'")
+	modelID, ok := cmd.Params["model_id"].(string)
+	if !ok {
+		modelID = ""
+	}
+
+	if modelID == "" && compositeModelName == "" {
+		return nil, fmt.Errorf("model name or ID not provided and no current model set. Use 'use model' command first")
 	}
 
 	c.CurrentModel = &CurrentModel{
-		Provider: names[2],
-		Instance: names[1],
-		Model:    names[0],
+		Provider: providerName,
+		Instance: instanceName,
+		Model:    modelName,
+		ModelID:  modelID,
 	}
 
 	var result SimpleResponse

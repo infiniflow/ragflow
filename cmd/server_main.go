@@ -1,4 +1,5 @@
 //go:build ignore
+
 //
 //  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
@@ -26,6 +27,7 @@ import (
 	"os"
 	"os/signal"
 	"ragflow/internal/common"
+	"ragflow/internal/engine/redis"
 	"ragflow/internal/server"
 	"ragflow/internal/server/local"
 	"ragflow/internal/storage"
@@ -38,7 +40,6 @@ import (
 	"go.uber.org/zap"
 
 	"ragflow/internal/agent/runtime"
-	"ragflow/internal/cache"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/handler"
@@ -124,10 +125,10 @@ func main() {
 	defer engine.Close()
 
 	// Initialize Redis cache
-	if err := cache.Init(&config.Redis); err != nil {
+	if err := redis.Init(&config.Redis); err != nil {
 		common.Fatal("Failed to initialize Redis", zap.Error(err))
 	}
-	defer cache.Close()
+	defer redis.Close()
 
 	if err := storage.InitStorageFactory(); err != nil {
 		common.Fatal("Failed to initialize storage factory", zap.Error(err))
@@ -139,7 +140,7 @@ func main() {
 
 	// Initialize server variables (runtime variables that can change during operation)
 	// This must be done after Cache is initialized
-	if err := server.InitVariables(cache.Get()); err != nil {
+	if err := server.InitVariables(redis.Get()); err != nil {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
 
@@ -232,6 +233,7 @@ func startServer(config *server.Config) {
 	searchBotHandler.SetAskService(service.NewAskService(chunkService, nil, 0, 0))
 	pluginHandler := handler.NewPluginHandler(service.NewPluginService())
 	modelHandler := handler.NewModelHandler(service.NewModelProviderService())
+	fileCommitHandler := handler.NewFileCommitHandler(service.NewFileCommitService())
 
 	// Dify retrieval handler
 	docDAO := dao.NewDocumentDAO()
@@ -256,13 +258,13 @@ func startServer(config *server.Config) {
 	// canary operators with a 404 they could not diagnose from the client
 	// side. Review follow-up: keep the route hot.
 	var adminRuntimeSelector *runtime.Selector
-	if rdb := cache.Get().GetClient(); rdb != nil {
+	if rdb := redis.Get().GetClient(); rdb != nil {
 		adminRuntimeSelector = runtime.NewSelector(rdb, common.Logger)
 	}
 	adminRuntimeHandler := handler.NewAdminRuntimeHandler(adminRuntimeSelector)
 
 	// Initialize router
-	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler, adminRuntimeHandler)
+	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler, fileCommitHandler, adminRuntimeHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()
