@@ -155,6 +155,8 @@ func TestGraphIntegration_FieldMapping(t *testing.T) {
 		return s, nil
 	})
 	sg.AddEdge(constants.Start, "lookup")
+	// DataEdge requires a matching control-flow edge for reachability.
+	sg.AddEdge("lookup", "format")
 	sg.AddDataEdge("lookup", "format", FieldMapping{From: "query", To: "query"})
 	sg.AddEdge("format", constants.End)
 

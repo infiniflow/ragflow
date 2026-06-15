@@ -72,9 +72,6 @@ func TestAddEdge(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error for non-existent node")
 	}
-	if err == nil {
-		t.Error("Expected error for non-existent node")
-	}
 
 	// Edge from non-existent node should error
 	err = builder.AddEdge("nonexistent", "node_b")

@@ -5,8 +5,8 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
+	"github.com/google/uuid"
 	"ragflow/internal/harness/graph/constants"
 	"ragflow/internal/harness/graph/types"
 )
@@ -164,12 +164,6 @@ func (c *CompiledStateGraph) MigrateCheckpoint(
 	subgraph.checkpointMap[newCheckpointID] = checkpointID
 	c.checkpointMap[checkpointID] = newCheckpointID
 
-	// Build task path
-	taskPath := buildTaskPath(c.namespace, toSubgraph)
-
-	// Update config with subgraph namespace
-	_ = taskPath
-
 	return newCheckpointID, nil
 }
 
@@ -225,5 +219,5 @@ func buildTaskPath(namespace, subgraphName string) string {
 
 // generateCheckpointID generates a new checkpoint ID.
 func generateCheckpointID() string {
-	return fmt.Sprintf("cp_%d", time.Now().UnixNano())
+	return "cp_" + uuid.New().String()
 }

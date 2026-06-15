@@ -160,8 +160,9 @@ func NewMessageGraph() *MessageGraph {
 
 	g := NewStateGraph(stateSchema)
 
-	// Create messages channel with add_messages reducer
+	// Register the messages channel so GetMessages works
 	messagesChannel := "messages"
+	g.AddChannel(messagesChannel, channels.NewLastValue([]*Message{}))
 
 	return &MessageGraph{
 		graph:           g,
@@ -185,8 +186,8 @@ func (g *MessageGraph) AddConditionalEdge(source string, condition types.EdgeFun
 }
 
 // SetEntryPoint sets the entry point node.
-func (g *MessageGraph) SetEntryPoint(node string) {
-	g.graph.SetEntryPoint(node)
+func (g *MessageGraph) SetEntryPoint(node string) error {
+	return g.graph.SetEntryPoint(node)
 }
 
 // Build returns a compiled message graph.
