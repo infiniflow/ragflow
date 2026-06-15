@@ -153,6 +153,8 @@ func InitDB() error {
 		&entity.IngestionTaskLog{},
 		&entity.IngestionTasklet{},
 		&entity.IngestionTaskletLog{},
+		&entity.FileCommit{},
+		&entity.FileCommitItem{},
 	}
 
 	for _, m := range dataModels {

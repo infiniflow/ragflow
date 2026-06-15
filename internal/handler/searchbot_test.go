@@ -21,17 +21,22 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/service"
 
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 )
 
 // mockChunkService implements ChunkRetriever for testing.
@@ -637,11 +642,33 @@ func TestAskHandler_MissingKbIDs(t *testing.T) {
 type fakeStreamingLLM struct {
 	chunks []string
 	err    error
+	delay  time.Duration
 }
 
-func (f *fakeStreamingLLM) ChatStream(_ context.Context, tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, error) {
+func (f *fakeStreamingLLM) ChatStream(ctx context.Context, tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, error) {
 	if f.err != nil {
 		return nil, f.err
+	}
+	if f.delay > 0 {
+		ch := make(chan string)
+		go func() {
+			defer close(ch)
+			for i, chunk := range f.chunks {
+				if i > 0 {
+					select {
+					case <-time.After(f.delay):
+					case <-ctx.Done():
+						return
+					}
+				}
+				select {
+				case ch <- chunk:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+		return ch, nil
 	}
 	ch := make(chan string, len(f.chunks)+1)
 	for _, c := range f.chunks {
@@ -680,6 +707,108 @@ func (w *bufferSSEWriter) Write(_ *gin.Context, data string) {
 }
 
 func (w *bufferSSEWriter) String() string { return w.buf.String() }
+
+func setupAskHandlerTenantDB(t *testing.T) {
+	t.Helper()
+
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{
+		TranslateError: true,
+	})
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to get sqlite db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+
+	if err := db.AutoMigrate(&entity.Tenant{}); err != nil {
+		t.Fatalf("failed to migrate tenant table: %v", err)
+	}
+
+	status := "1"
+	name := "Test Tenant"
+	if err := db.Create(&entity.Tenant{
+		ID:        "user-1",
+		Name:      &name,
+		LLMID:     "test-model",
+		EmbdID:    "test-embedding",
+		ASRID:     "test-asr",
+		Img2TxtID: "test-image",
+		RerankID:  "test-rerank",
+		ParserIDs: "naive",
+		Status:    &status,
+	}).Error; err != nil {
+		t.Fatalf("failed to create tenant: %v", err)
+	}
+
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() {
+		dao.DB = orig
+		_ = sqlDB.Close()
+	})
+}
+
+func TestAskHandler_DisablesWriteDeadlineForSSE(t *testing.T) {
+	setupAskHandlerTenantDB(t)
+	gin.SetMode(gin.TestMode)
+
+	ret := &fakeChunkRetriever{result: &service.RetrievalTestResponse{
+		Chunks: []map[string]interface{}{
+			{"id": "c1", "content_with_weight": "test chunk", "docnm_kwd": "Doc", "kb_id": "kb1", "doc_id": "d1"},
+		},
+		DocAggs: []map[string]interface{}{{"doc_id": "d1", "count": 1}},
+	}}
+	llm := &fakeStreamingLLM{
+		chunks: []string{"first response chunk", "second response chunk"},
+		delay:  120 * time.Millisecond,
+	}
+	h := NewSearchBotHandler(nil, service.NewTenantService(), nil, ret)
+	h.SetStreamLLM(llm)
+	h.SetAskService(service.NewAskService(ret, nil, 0, 1))
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("user", &entity.User{ID: "user-1"})
+	})
+	router.POST("/api/v1/searchbots/ask", h.Ask)
+
+	server := httptest.NewUnstartedServer(router)
+	server.Config.WriteTimeout = 30 * time.Millisecond
+	server.Start()
+	defer server.Close()
+
+	client := server.Client()
+	client.Timeout = time.Second
+	resp, err := client.Post(server.URL+"/api/v1/searchbots/ask", "application/json",
+		strings.NewReader(`{"question": "test", "kb_ids": ["kb1"]}`))
+	if err != nil {
+		t.Fatalf("post ask stream: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+	if contentType := resp.Header.Get("Content-Type"); !strings.Contains(contentType, "text/event-stream") {
+		t.Fatalf("expected SSE content type, got %q", contentType)
+	}
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read ask stream body: %v", err)
+	}
+
+	body := string(bodyBytes)
+	for _, want := range []string{"first response chunk", "second response chunk"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("stream body missing %q: %q", want, body)
+		}
+	}
+}
+
 // ---- Ask handler tests ----
 
 func TestAskHandler_EmptyQuestion(t *testing.T) {
