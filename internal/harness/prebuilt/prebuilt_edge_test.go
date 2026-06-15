@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"ragflow/internal/harness/graphengine/runnable"
+	"ragflow/internal/harness/graph/runnable"
 )
 
 // testLLM implements the LLM interface for testing

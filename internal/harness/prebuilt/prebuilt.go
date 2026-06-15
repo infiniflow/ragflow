@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 
-	"ragflow/internal/harness/graphengine/runnable"
+	"ragflow/internal/harness/graph/runnable"
 )
 
 // ReactAgentConfig holds configuration for a ReAct agent.

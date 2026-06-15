@@ -15,7 +15,7 @@
 //	import (
 //	    "context"
 //	    "ragflow/internal/harness"
-//	    "ragflow/internal/harness/graphengine/channels"
+//	    "ragflow/internal/harness/graph/channels"
 //	)
 //
 //	// Define state schema
@@ -57,16 +57,16 @@ package harness
 import (
 	"context"
 
-	"ragflow/internal/harness/agentcore"
-	"ragflow/internal/harness/graphengine/channels"
-	"ragflow/internal/harness/graphengine/checkpoint"
-	"ragflow/internal/harness/graphengine/constants"
-	"ragflow/internal/harness/graphengine/errors"
-	"ragflow/internal/harness/graphengine/graph"
-	"ragflow/internal/harness/graphengine/interrupt"
+	"ragflow/internal/harness/core"
+	"ragflow/internal/harness/graph/channels"
+	"ragflow/internal/harness/graph/checkpoint"
+	"ragflow/internal/harness/graph/constants"
+	"ragflow/internal/harness/graph/errors"
+	"ragflow/internal/harness/graph/graph"
+	"ragflow/internal/harness/graph/interrupt"
 	"ragflow/internal/harness/prebuilt"
-	"ragflow/internal/harness/graphengine/pregel"
-	"ragflow/internal/harness/graphengine/types"
+	"ragflow/internal/harness/graph/pregel"
+	"ragflow/internal/harness/graph/types"
 )
 
 // Re-export main types for convenience.
@@ -172,111 +172,111 @@ type (
 // Generic types like Model[M] and RunnerConfig[M] must be imported directly.
 type (
 	// Agent is the core agent interface (Message type).
-	Agent = agentcore.Agent
+	Agent = core.Agent
 	// ResumableAgent supports interrupt/resume.
-	ResumableAgent = agentcore.ResumableAgent
+	ResumableAgent = core.ResumableAgent
 	// Runner executes agents.
-	Runner = agentcore.Runner
+	Runner = core.Runner
 	// AgentEvent represents an event during agent execution.
-	AgentEvent = agentcore.AgentEvent
+	AgentEvent = core.AgentEvent
 	// AgentAction represents actions an agent can emit.
-	AgentAction = agentcore.AgentAction
+	AgentAction = core.AgentAction
 	// AgentInput is the input to an agent.
-	AgentInput = agentcore.AgentInput
+	AgentInput = core.AgentInput
 	// AgentOutput is the output from an agent event.
-	AgentOutput = agentcore.AgentOutput
+	AgentOutput = core.AgentOutput
 	// RunOption configures agent execution.
-	RunOption = agentcore.RunOption
+	RunOption = core.RunOption
 	// InterruptInfo holds interrupt metadata.
-	InterruptInfo = agentcore.InterruptInfo
+	InterruptInfo = core.InterruptInfo
 	// InterruptCtx provides structured interrupt context.
-	InterruptCtx = agentcore.InterruptCtx
+	InterruptCtx = core.InterruptCtx
 	// InterruptSignal is the internal interrupt signal.
-	InterruptSignal = agentcore.InterruptSignal
+	InterruptSignal = core.InterruptSignal
 	// CancelMode defines when an agent should be canceled.
-	CancelMode = agentcore.CancelMode
+	CancelMode = core.CancelMode
 	// CancelError indicates an agent was canceled.
-	CancelError = agentcore.CancelError
+	CancelError = core.CancelError
 	// CancelHandle allows waiting for cancel completion.
-	CancelHandle = agentcore.CancelHandle
+	CancelHandle = core.CancelHandle
 	// AgentCancelFunc cancels a running agent.
-	AgentCancelFunc = agentcore.AgentCancelFunc
+	AgentCancelFunc = core.AgentCancelFunc
 	// BaseTool provides a simple Tool implementation.
-	BaseTool = agentcore.BaseTool
+	BaseTool = core.BaseTool
 	// ToolContext provides tool metadata.
-	ToolContext = agentcore.ToolContext
+	ToolContext = core.ToolContext
 	// ReActAgentState holds agent state for middlewares.
-	ReActAgentState = agentcore.ReActAgentState
+	ReActAgentState = core.ReActAgentState
 	// ReActAgentContext is passed to BeforeAgent middlewares.
-	ReActAgentContext = agentcore.ReActAgentContext
+	ReActAgentContext = core.ReActAgentContext
 	// ModelContext wraps model call context.
-	ModelContext = agentcore.ModelContext
+	ModelContext = core.ModelContext
 	// CheckPointStore persists execution checkpoints.
-	CheckPointStore = agentcore.CheckPointStore
+	CheckPointStore = core.CheckPointStore
 	// ReActMiddleware allows customizing agent behavior.
-	ReActMiddleware = agentcore.ReActMiddleware
+	ReActMiddleware = core.ReActMiddleware
 	// Workflow types
-	SequentialConfig = agentcore.SequentialConfig
-	ParallelConfig   = agentcore.ParallelConfig
-	LoopConfig       = agentcore.LoopConfig
+	SequentialConfig = core.SequentialConfig
+	ParallelConfig   = core.ParallelConfig
+	LoopConfig       = core.LoopConfig
 )
 
 // Cancel constants.
 const (
-	CancelImmediate      = agentcore.CancelImmediate
-	CancelAfterChatModel = agentcore.CancelAfterChatModel
-	CancelAfterToolCalls = agentcore.CancelAfterToolCalls
+	CancelImmediate      = core.CancelImmediate
+	CancelAfterChatModel = core.CancelAfterChatModel
+	CancelAfterToolCalls = core.CancelAfterToolCalls
 )
 
 // AgentCore functions.
 var (
 	// NewRunner creates an agent Runner (Message type).
-	NewRunner = agentcore.NewRunner
+	NewRunner = core.NewRunner
 	// NewAgentTool wraps an Agent as a Tool.
-	NewAgentTool = agentcore.NewAgentTool
+	NewAgentTool = core.NewAgentTool
 	// NewSequential creates a sequential workflow agent.
-	NewSequential = agentcore.NewSequential
+	NewSequential = core.NewSequential
 	// NewParallel creates a parallel workflow agent.
-	NewParallel = agentcore.NewParallel
+	NewParallel = core.NewParallel
 	// NewLoop creates a loop workflow agent.
-	NewLoop = agentcore.NewLoop
+	NewLoop = core.NewLoop
 	// SetSubAgents configures sub-agents.
-	SetSubAgents = agentcore.SetSubAgents
+	SetSubAgents = core.SetSubAgents
 	// WithCancel creates a cancel option and cancel function.
-	WithCancel = agentcore.WithCancel
+	WithCancel = core.WithCancel
 
 	// Run option constructors
-	WithSessionValues       = agentcore.WithSessionValues
-	WithCheckPointID        = agentcore.WithCheckPointID
-	WithSkipTransferMessages = agentcore.WithSkipTransferMessages
-	WithCallbacks            = agentcore.WithCallbacks
-	WithAgentNames           = agentcore.WithAgentNames
-	WithSharedParentSession  = agentcore.WithSharedParentSession
-	WithChatModelOptions     = agentcore.WithChatModelOptions
-	WithToolOptions          = agentcore.WithToolOptions
-	WithAgentToolOptions     = agentcore.WithAgentToolOptions
-	WithHistoryModifier      = agentcore.WithHistoryModifier
-	WithCancelMode           = agentcore.WithCancelMode
-	WithCancelTimeout        = agentcore.WithCancelTimeout
-	WithRecursiveCancel      = agentcore.WithRecursiveCancel
+	WithSessionValues       = core.WithSessionValues
+	WithCheckPointID        = core.WithCheckPointID
+	WithSkipTransferMessages = core.WithSkipTransferMessages
+	WithCallbacks            = core.WithCallbacks
+	WithAgentNames           = core.WithAgentNames
+	WithSharedParentSession  = core.WithSharedParentSession
+	WithChatModelOptions     = core.WithChatModelOptions
+	WithToolOptions          = core.WithToolOptions
+	WithAgentToolOptions     = core.WithAgentToolOptions
+	WithHistoryModifier      = core.WithHistoryModifier
+	WithCancelMode           = core.WithCancelMode
+	WithCancelTimeout        = core.WithCancelTimeout
+	WithRecursiveCancel      = core.WithRecursiveCancel
 
 	// Event helpers
-	StatefulInterrupt   = agentcore.StatefulInterrupt
-	CompositeInterrupt  = agentcore.CompositeInterrupt
-	SendEvent           = agentcore.SendEvent
-	SetRunLocalValue    = agentcore.SetRunLocalValue
-	GetRunLocalValue    = agentcore.GetRunLocalValue
-	DeleteRunLocalValue = agentcore.DeleteRunLocalValue
+	StatefulInterrupt   = core.StatefulInterrupt
+	CompositeInterrupt  = core.CompositeInterrupt
+	SendEvent           = core.SendEvent
+	SetRunLocalValue    = core.SetRunLocalValue
+	GetRunLocalValue    = core.GetRunLocalValue
+	DeleteRunLocalValue = core.DeleteRunLocalValue
 
 	// Transfer and middleware
-	AgentWithOptions           = agentcore.AgentWithOptions
-	AgentWithDeterministicTransfer = agentcore.AgentWithDeterministicTransfer
-	SetLanguage                = agentcore.SetLanguage
+	AgentWithOptions           = core.AgentWithOptions
+	AgentWithDeterministicTransfer = core.AgentWithDeterministicTransfer
+	SetLanguage                = core.SetLanguage
 
 	// Errors
-	ErrCancelTimeout  = agentcore.ErrCancelTimeout
-	ErrExecutionEnded = agentcore.ErrExecutionEnded
-	ErrStreamCanceled = agentcore.ErrStreamCanceled
+	ErrCancelTimeout  = core.ErrCancelTimeout
+	ErrExecutionEnded = core.ErrExecutionEnded
+	ErrStreamCanceled = core.ErrStreamCanceled
 
 )
 
