@@ -30,8 +30,8 @@ import (
 	"fmt"
 	"hash"
 	"os"
-	"ragflow/internal/cache"
 	"ragflow/internal/common"
+	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	"ragflow/internal/server"
 	"regexp"
@@ -732,7 +732,7 @@ func defaultUserLanguage() string {
 // using itsdangerous URLSafeTimedSerializer to get the actual access_token
 func (s *UserService) GetUserByToken(authorization string) (*entity.User, common.ErrorCode, error) {
 	// Get secret key from config
-	secretKey, err := server.GetSecretKey(cache.Get())
+	secretKey, err := server.GetSecretKey(redis.Get())
 	if err != nil {
 		return nil, common.CodeUnauthorized, err
 	}
@@ -1206,7 +1206,7 @@ func (s *UserService) ForgotIssueCaptcha(email string) (captchaID, imageDataURL 
 		return "", "", common.CodeServerError, err
 	}
 	captchaID = utility.GenerateToken()
-	if ok := cache.Get().Set(utility.CaptchaIDRedisKey(captchaID), text, 60*time.Second); !ok {
+	if ok := redis.Get().Set(utility.CaptchaIDRedisKey(captchaID), text, 60*time.Second); !ok {
 		return "", "", common.CodeServerError, fmt.Errorf("failed to store captcha")
 	}
 	imageDataURL = utility.RenderCaptchaPNGDataURL(text)
@@ -1226,7 +1226,7 @@ func (s *UserService) ForgotSendOTP(email, captchaID, captcha string) (common.Er
 		return common.CodeDataError, fmt.Errorf("invalid email")
 	}
 
-	rc := cache.Get()
+	rc := redis.Get()
 	captchaKey := utility.CaptchaIDRedisKey(captchaID)
 	stored, _ := rc.Get(captchaKey)
 	if stored == "" {
@@ -1325,7 +1325,7 @@ func (s *UserService) ForgotVerifyOTP(email, otp string) (common.ErrorCode, erro
 		return common.CodeDataError, fmt.Errorf("invalid email")
 	}
 
-	rc := cache.Get()
+	rc := redis.Get()
 	codeKey, attemptsKey, lastSentKey, lockKey := utility.OTPRedisKeys(email)
 
 	if locked, _ := rc.Get(lockKey); locked != "" {
@@ -1395,7 +1395,7 @@ func (s *UserService) ForgotResetPassword(req *ForgotResetPasswordRequest) (*ent
 		return nil, common.CodeArgumentError, fmt.Errorf("email and passwords are required")
 	}
 
-	rc := cache.Get()
+	rc := redis.Get()
 	verifiedKey := utility.OTPVerifiedRedisKey(req.Email)
 	if v, _ := rc.Get(verifiedKey); v != "1" {
 		return nil, common.CodeAuthenticationError, fmt.Errorf("email not verified")
