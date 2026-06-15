@@ -786,7 +786,7 @@ def update_model_status(tenant_id: str, provider_name: str, instance_name: str, 
 
     if model_obj_list:
         # Model record exists — update its status
-        TenantModelService.batch_update_model_status([m.id for m in model_obj_list], status)
+        TenantModelService.batch_update_model_status([m.id for m in model_obj_list if m.status != ActiveStatusEnum.UNSUPPORTED.value], status)
     else:
         # Model record does not exist
         if status == ActiveStatusEnum.ACTIVE.value:
