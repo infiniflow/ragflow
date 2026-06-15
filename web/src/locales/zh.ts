@@ -1884,6 +1884,13 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       pubMed: 'PubMed',
       pubMedDescription:
         '此组件用于从 https://pubmed.ncbi.nlm.nih.gov/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数。电子邮件是必填字段。',
+      bGPT: 'BGPT',
+      bGPTDescription:
+        '通过 BGPT 搜索科学论文，并返回全文提取的结构化证据：方法、样本量、局限性、利益冲突、数据可用性、研究盲点和可证伪性提示。免费额度后可选 API key。',
+      bgptApiKey: 'API key',
+      bgptApiKeyTip: '可选。留空使用免费额度（前 50 条结果）。',
+      bgptDaysBack: '天数限制',
+      bgptDaysBackTip: '可选的时效过滤（例如 365 表示最近一年）。',
       arXiv: 'ArXiv',
       arXivDescription:
         '此组件用于从 https://arxiv.org/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数量。',

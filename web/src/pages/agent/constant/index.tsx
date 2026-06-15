@@ -239,6 +239,23 @@ export const initialPubMedValues = {
   },
 };
 
+export const initialBGPTValues = {
+  top_n: 10,
+  api_key: '',
+  days_back: '',
+  query: AgentGlobals.SysQuery,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
+};
+
 export const initialArXivValues = {
   top_n: 12,
   sort_by: 'relevance',
@@ -682,6 +699,7 @@ export const RestrictedUpstreamMap = {
   [Operator.DuckDuckGo]: [Operator.Begin, Operator.Retrieval],
   [Operator.Wikipedia]: [Operator.Begin, Operator.Retrieval],
   [Operator.PubMed]: [Operator.Begin, Operator.Retrieval],
+  [Operator.BGPT]: [Operator.Begin, Operator.Retrieval],
   [Operator.ArXiv]: [Operator.Begin, Operator.Retrieval],
   [Operator.Google]: [Operator.Begin, Operator.Retrieval],
   [Operator.Bing]: [Operator.Begin, Operator.Retrieval],
@@ -734,6 +752,7 @@ export const NodeMap = {
   [Operator.DuckDuckGo]: 'ragNode',
   [Operator.Wikipedia]: 'ragNode',
   [Operator.PubMed]: 'ragNode',
+  [Operator.BGPT]: 'ragNode',
   [Operator.ArXiv]: 'ragNode',
   [Operator.Google]: 'ragNode',
   [Operator.Bing]: 'ragNode',
