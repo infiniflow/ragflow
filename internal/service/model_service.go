@@ -1142,10 +1142,11 @@ func (m *ModelProviderService) UpdateModelStatus(providerName, instanceName, mod
 	} else {
 		model, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
 		if err != nil {
-			modelID = utility.GenerateToken()
-			if err != nil {
-				return common.CodeServerError, errors.New("fail to get UUID")
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return common.CodeServerError, err
 			}
+
+			modelID = utility.GenerateToken()
 
 			var modelSchema *modelModule.Model
 			modelSchema, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
@@ -1154,6 +1155,9 @@ func (m *ModelProviderService) UpdateModelStatus(providerName, instanceName, mod
 			}
 
 			// Get model info from provider
+			if len(modelSchema.ModelTypes) == 0 {
+				return common.CodeServerError, fmt.Errorf("provider %s model %s has no model types", providerName, modelName)
+			}
 			model = &entity.TenantModel{
 				ID:         modelID,
 				ModelName:  modelName,
