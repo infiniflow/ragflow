@@ -3,7 +3,9 @@ package task
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"math"
 	"math/rand"
 	"sync"
 	"time"
@@ -19,6 +21,12 @@ type TaskDecorator struct {
 	retryPolicy *types.RetryPolicy
 	cachePolicy *types.CachePolicy
 	metadata    map[string]interface{}
+	cache       sync.Map // key -> cacheEntry for Cached() support
+}
+
+type tCacheEntry struct {
+	value     interface{}
+	expiresAt time.Time
 }
 
 // DecoratorOption configures a TaskDecorator.
@@ -76,9 +84,20 @@ func (d *TaskDecorator) Wrap(fn types.NodeFunc) types.NodeFunc {
 			Start:    time.Now(),
 		}
 
+		// Check cache if configured
+		if d.cachePolicy != nil {
+			if cached, ok := d.getCached(input); ok {
+				return cached, nil
+			}
+		}
+
 		// Execute with retry if configured
 		if d.retryPolicy != nil {
-			return d.executeWithRetry(ctx, taskCtx, fn)
+			output, err := d.executeWithRetry(ctx, taskCtx, fn)
+			if err == nil && d.cachePolicy != nil {
+				d.setCached(input, output)
+			}
+			return output, err
 		}
 
 		// Execute normally
@@ -86,8 +105,41 @@ func (d *TaskDecorator) Wrap(fn types.NodeFunc) types.NodeFunc {
 		taskCtx.End = time.Now()
 		taskCtx.Output = output
 		taskCtx.Error = err
+		if err == nil && d.cachePolicy != nil {
+			d.setCached(input, output)
+		}
 		return output, err
 	}
+}
+
+// getCached retrieves a cached value if present and not expired.
+func (d *TaskDecorator) getCached(input interface{}) (interface{}, bool) {
+	key := cacheKey(input)
+	if v, ok := d.cache.Load(key); ok {
+		if entry, ok := v.(tCacheEntry); ok {
+			if d.cachePolicy.TTL == nil || time.Now().Before(entry.expiresAt) {
+				return entry.value, true
+			}
+			d.cache.Delete(key)
+		}
+	}
+	return nil, false
+}
+
+// setCached stores a value in the cache.
+func (d *TaskDecorator) setCached(input interface{}, value interface{}) {
+	key := cacheKey(input)
+	var expiresAt time.Time
+	if d.cachePolicy.TTL != nil {
+		expiresAt = time.Now().Add(*d.cachePolicy.TTL)
+	}
+	d.cache.Store(key, tCacheEntry{value: value, expiresAt: expiresAt})
+}
+
+// cacheKey generates a deterministic cache key from an input value.
+func cacheKey(input interface{}) string {
+	h := sha256.Sum256([]byte(fmt.Sprintf("%v", input)))
+	return fmt.Sprintf("%x", h[:])
 }
 
 // executeWithRetry executes the function with retry logic.
@@ -153,7 +205,7 @@ func (tc *TaskContext) Duration() time.Duration {
 
 // calculateBackoff calculates the backoff duration.
 func calculateBackoff(attempt int, policy *types.RetryPolicy) time.Duration {
-	backoff := time.Duration(float64(policy.InitialInterval) * pow(policy.BackoffFactor, attempt-1))
+	backoff := time.Duration(float64(policy.InitialInterval) * math.Pow(policy.BackoffFactor, float64(attempt-1)))
 	if backoff > policy.MaxInterval {
 		backoff = policy.MaxInterval
 	}
@@ -163,15 +215,6 @@ func calculateBackoff(attempt int, policy *types.RetryPolicy) time.Duration {
 	}
 
 	return backoff
-}
-
-// pow calculates base^exp.
-func pow(base float64, exp int) float64 {
-	result := 1.0
-	for i := 0; i < exp; i++ {
-		result *= base
-	}
-	return result
 }
 
 // addJitter adds ±25% random jitter to a duration.
@@ -189,15 +232,16 @@ func Task(fn types.NodeFunc, opts ...DecoratorOption) types.NodeFunc {
 
 // Entrypoint marks a function as a graph entrypoint.
 type Entrypoint struct {
-	name         string
-	fn           types.NodeFunc
-	metadata     map[string]interface{}
-	checkpointer interface{}
-	store        interface{}
-	configurable map[string]interface{}
-	graph        *graph.StateGraph
-	compileOnce  sync.Once
-	compileErr   error
+	name           string
+	fn             types.NodeFunc
+	metadata       map[string]interface{}
+	checkpointer   interface{}
+	store          interface{}
+	configurable   map[string]interface{}
+	graph          *graph.StateGraph
+	compiledGraph  *graph.CompiledGraph
+	compileOnce    sync.Once
+	compileErr     error
 }
 
 // NewEntrypoint creates a new entrypoint.
@@ -286,22 +330,26 @@ func (e *Entrypoint) Compile(ctx context.Context) error {
 			return
 		}
 
-		// Set checkpointer if provided (via config)
-		if e.checkpointer != nil {
-			// Note: In a full implementation, this would set the checkpointer
-			// on the graph's configuration
+		// Collect compile options from the checkpointer if set
+		var opts []graph.CompileOption
+		if cp, ok := e.checkpointer.(graph.Checkpointer); ok {
+			opts = append(opts, graph.WithCheckpointer(cp))
 		}
 
-		// Set store if provided (via config)
-		if e.store != nil {
-			// Note: In a full implementation, this would set the store
-			// on the graph's configuration
+		// Actually compile the graph and cache the result
+		cg, err := e.graph.Compile(opts...)
+		if err != nil {
+			e.compileErr = err
+			return
 		}
+		e.compiledGraph = cg
 	})
 	return e.compileErr
 }
 
 // Invoke invokes the graph with the given input.
+// When a graph is associated via WithEntrypointGraph, it delegates to the
+// compiled graph's Invoke method instead of executing the raw function.
 func (e *Entrypoint) Invoke(ctx context.Context, input interface{}, config *types.RunnableConfig) (interface{}, error) {
 	// Compile once (thread-safe via sync.Once).
 	if err := e.Compile(ctx); err != nil {
@@ -316,33 +364,36 @@ func (e *Entrypoint) Invoke(ctx context.Context, input interface{}, config *type
 		config.Set(k, v)
 	}
 
-	// Invoke the graph
-	if e.graph == nil {
-		return e.Execute(ctx, input)
+	// Use the compiled graph when available
+	if e.compiledGraph != nil {
+		return e.compiledGraph.Invoke(ctx, input, config)
 	}
 
-	// Note: In a full implementation, this would use the graph's Invoke method
 	return e.Execute(ctx, input)
 }
 
+// InvokeAsyncResult carries the result of an asynchronous graph invocation.
+type InvokeAsyncResult struct {
+	Output interface{}
+	Err    error
+}
+
 // AInvoke invokes the graph asynchronously with the given input.
-func (e *Entrypoint) AInvoke(ctx context.Context, input interface{}, config *types.RunnableConfig) <-chan struct{} {
-	result := make(chan struct{}, 1)
+// The returned channel carries the result (output + error) when done.
+func (e *Entrypoint) AInvoke(ctx context.Context, input interface{}, config *types.RunnableConfig) <-chan InvokeAsyncResult {
+	result := make(chan InvokeAsyncResult, 1)
 
 	go func() {
-		defer close(result)
-		_, err := e.Invoke(ctx, input, config)
-		if err != nil {
-			// In a full implementation, we'd return the error
-			// For now, we just log or handle it
-			_ = err
-		}
+		output, err := e.Invoke(ctx, input, config)
+		result <- InvokeAsyncResult{Output: output, Err: err}
+		close(result)
 	}()
 
 	return result
 }
 
 // Stream streams the output of the graph execution.
+// When a graph is associated, delegates to the compiled graph's Stream method.
 func (e *Entrypoint) Stream(ctx context.Context, input interface{}, config *types.RunnableConfig, mode types.StreamMode) (<-chan interface{}, error) {
 	// Compile once (thread-safe via sync.Once)
 	if err := e.Compile(ctx); err != nil {
@@ -357,21 +408,30 @@ func (e *Entrypoint) Stream(ctx context.Context, input interface{}, config *type
 		config.Set(k, v)
 	}
 
-	// Stream from the graph
-	if e.graph == nil {
-		// If no graph, just execute the function
-		output, err := e.Execute(ctx, input)
-		if err != nil {
-			return nil, err
-		}
+	// Use the compiled graph when available.
+	// CompiledGraph.Stream returns (valueCh, errCh); merge into a single channel
+	// for the Entrypoint's simpler Stream contract.
+	if e.compiledGraph != nil {
+		outCh, errCh := e.compiledGraph.Stream(ctx, input, mode, config)
 		ch := make(chan interface{}, 1)
-		ch <- output
-		close(ch)
+		go func() {
+			defer close(ch)
+			select {
+			case v, ok := <-outCh:
+				if ok {
+					ch <- v
+				}
+			case err, ok := <-errCh:
+				if ok && err != nil {
+					ch <- err
+				}
+			case <-ctx.Done():
+			}
+		}()
 		return ch, nil
 	}
 
-	// Note: In a full implementation, this would use the graph's Stream method
-	// For now, we just execute the function
+	// Fallback: execute the function directly
 	output, err := e.Execute(ctx, input)
 	if err != nil {
 		return nil, err
@@ -402,16 +462,21 @@ func (e *Entrypoint) Batch(ctx context.Context, inputs []interface{}, config *ty
 	return results, nil
 }
 
+// BatchAsyncResult carries the result of an asynchronous batch invocation.
+type BatchAsyncResult struct {
+	Outputs []interface{}
+	Err     error
+}
+
 // ABatch invokes the graph with multiple inputs asynchronously.
-func (e *Entrypoint) ABatch(ctx context.Context, inputs []interface{}, config *types.RunnableConfig) <-chan struct{} {
-	result := make(chan struct{}, 1)
+// The returned channel carries the result (outputs + error) when done.
+func (e *Entrypoint) ABatch(ctx context.Context, inputs []interface{}, config *types.RunnableConfig) <-chan BatchAsyncResult {
+	result := make(chan BatchAsyncResult, 1)
 
 	go func() {
-		defer close(result)
-		_, err := e.Batch(ctx, inputs, config)
-		if err != nil {
-			_ = err
-		}
+		outputs, err := e.Batch(ctx, inputs, config)
+		result <- BatchAsyncResult{Outputs: outputs, Err: err}
+		close(result)
 	}()
 
 	return result
@@ -572,6 +637,7 @@ func GetWriter(ctx context.Context) interface{} {
 }
 
 // InvokeWithDependencies invokes the entrypoint with dependency injection.
+// When a graph is associated, delegates to the compiled graph's Invoke method.
 func (e *Entrypoint) InvokeWithDependencies(
 	ctx context.Context,
 	input interface{},
@@ -580,6 +646,11 @@ func (e *Entrypoint) InvokeWithDependencies(
 	store interface{},
 	writer interface{},
 ) (interface{}, error) {
+	// If a graph is available, delegate to the compiled graph
+	if e.graph != nil {
+		return e.Invoke(ctx, input, config)
+	}
+
 	// Create execution context
 	execCtx := &ExecutionContext{
 		Config:   config,

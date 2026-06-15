@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 // ManagedValue represents a value that is managed by the runtime.
@@ -19,35 +20,48 @@ type ManagedValue interface {
 	Name() string
 }
 
-// ManagedValueMapping is a collection of managed values keyed by name.
-type ManagedValueMapping map[string]ManagedValue
+// ManagedValueMapping is a concurrency-safe collection of managed values keyed by name.
+type ManagedValueMapping struct {
+	mu   sync.RWMutex
+	data map[string]ManagedValue
+}
 
 // NewManagedValueMapping creates a new managed value mapping.
-func NewManagedValueMapping() ManagedValueMapping {
-	return make(ManagedValueMapping)
+func NewManagedValueMapping() *ManagedValueMapping {
+	return &ManagedValueMapping{
+		data: make(map[string]ManagedValue),
+	}
 }
 
 // Register registers a managed value.
-func (m ManagedValueMapping) Register(name string, value ManagedValue) {
-	m[name] = value
+func (m *ManagedValueMapping) Register(name string, value ManagedValue) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.data[name] = value
 }
 
 // Get gets a managed value by name.
-func (m ManagedValueMapping) Get(name string) (ManagedValue, bool) {
-	val, ok := m[name]
+func (m *ManagedValueMapping) Get(name string) (ManagedValue, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	val, ok := m.data[name]
 	return val, ok
 }
 
 // Contains checks if a managed value exists.
-func (m ManagedValueMapping) Contains(name string) bool {
-	_, ok := m[name]
+func (m *ManagedValueMapping) Contains(name string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	_, ok := m.data[name]
 	return ok
 }
 
 // Names returns all managed value names.
-func (m ManagedValueMapping) Names() []string {
-	names := make([]string, 0, len(m))
-	for name := range m {
+func (m *ManagedValueMapping) Names() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	names := make([]string, 0, len(m.data))
+	for name := range m.data {
 		names = append(names, name)
 	}
 	return names

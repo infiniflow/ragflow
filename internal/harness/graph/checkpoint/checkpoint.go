@@ -161,8 +161,13 @@ func (c *Checkpoint) Clone() *Checkpoint {
 		clone.State[k] = deepCopy(v)
 	}
 	
-	// Copy pending writes
-	copy(clone.PendingWrites, c.PendingWrites)
+// Deep-copy pending writes — each Value must be independently copied so that
+// mutating the clone's Value never affects the original.
+clone.PendingWrites = make([]PendingWrite, len(c.PendingWrites))
+for i, pw := range c.PendingWrites {
+	clone.PendingWrites[i] = pw
+	clone.PendingWrites[i].Value = deepCopy(pw.Value)
+}
 	
 	// Copy metadata
 	for k, v := range c.Metadata.Metadata {
@@ -508,9 +513,27 @@ func (cm *CheckpointManager) Save(ctx context.Context, checkpoint *Checkpoint) e
 	threadID := checkpoint.Metadata.ThreadID
 
 	// Check for version conflict whenever a thread already has checkpoints.
+	// Two independent checks:
+	//   1. ParentID mismatch — someone else wrote to this thread since we loaded.
+	//   2. Version out of sequence — the caller's declared version doesn't follow the latest.
 	if checkpoints := cm.checkpoints[threadID]; len(checkpoints) > 0 {
 		latest := checkpoints[len(checkpoints)-1]
-		if latest.ID == checkpoint.ParentID && latest.Version != checkpoint.Version-1 {
+
+		// Check 1: ParentID must match the latest checkpoint.
+		if checkpoint.ParentID != "" && latest.ID != checkpoint.ParentID {
+			return &VersionConflictError{
+				CurrentVersion:  checkpoint.Version,
+				ExpectedVersion: latest.Version + 1,
+				CheckpointID:    checkpoint.ID,
+				ThreadID:        threadID,
+			}
+		}
+
+		// Check 2: Version must be sequential. Only enforce when the caller
+		// explicitly set a version (> 0); Version == 0 means the checkpoint
+		// was created by NewCheckpoint (which always sets Version=0) and
+		// the caller didn't intend to participate in version conflict detection.
+		if checkpoint.Version > 0 && latest.Version != checkpoint.Version-1 {
 			return &VersionConflictError{
 				CurrentVersion:  checkpoint.Version,
 				ExpectedVersion: latest.Version + 1,
@@ -553,10 +576,15 @@ func (cm *CheckpointManager) PutWrites(ctx context.Context, config *types.Runnab
 	current := checkpoints[len(checkpoints)-1]
 
 	// Version-chain conflict detection:
-	// The caller provides the checkpoint_id they loaded (via config).
+	// The caller MUST provide the checkpoint_id they loaded (via config).
+	// If missing, the write is not properly scoped and cannot be validated.
 	// If it doesn't match the actual latest checkpoint, another writer
-	// has already committed and this is a stale write — reject it.
-	if callerID := config.GetOrEmpty("checkpoint_id"); callerID != "" && callerID != current.ID {
+	// has already committed and this is a stale write — reject both cases.
+	callerID := config.GetOrEmpty("checkpoint_id")
+	if callerID == "" {
+		return fmt.Errorf("checkpoint_id is required for put_writes on thread %s", threadID)
+	}
+	if callerID != current.ID {
 		return fmt.Errorf("conflict: caller expected parent checkpoint %s but latest is %s for thread %s",
 			callerID, current.ID, threadID)
 	}
@@ -789,32 +817,34 @@ func (cm *CheckpointManager) ClearAll(ctx context.Context) error {
 }
 
 // deepCopy creates a deep copy of a value using JSON serialization.
+// Maps and slices are handled via dedicated deep-copy helpers.
+// For other types, JSON marshal/unmarshal provides a reliable deep copy
+// (converting numbers to float64 consistently).
+// On serialization failure (channels, functions, circular references),
+// returns nil rather than a shared reference that would silently
+// propagate mutations between checkpoint and its clone.
 func deepCopy(v interface{}) interface{} {
 	if v == nil {
 		return nil
 	}
 	
-	// Handle map[string]interface{}
+	// Handle common collection types with dedicated helpers
 	if m, ok := v.(map[string]interface{}); ok {
 		return deepCopyMap(m)
 	}
-	
-	// Handle []interface{}
 	if s, ok := v.([]interface{}); ok {
 		return deepCopySlice(s)
 	}
 	
-	// For other types, try JSON marshaling
+	// For all other types, JSON round-trip provides reliable deep copy.
 	data, err := json.Marshal(v)
 	if err != nil {
-		return v
+		return nil
 	}
-	
 	var result interface{}
 	if err := json.Unmarshal(data, &result); err != nil {
-		return v
+		return nil
 	}
-	
 	return result
 }
 

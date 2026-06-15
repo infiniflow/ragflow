@@ -130,6 +130,7 @@ func TestCheckpointManager_PutWrites(t *testing.T) {
 	// Prepare config and writes
 	config := types.NewRunnableConfig()
 	config.ThreadID = "thread-1"
+	config.Set("checkpoint_id", checkpoint.ID)
 
 	writes := []PendingWrite{
 		*NewPendingWrite("channel1", "updated", false, "node1", "task1"),
@@ -176,8 +177,9 @@ func TestCheckpointManager_PutWrites_Conflict(t *testing.T) {
 	}
 
 	// Prepare config and writes for task1
-	config := types.NewRunnableConfig()
-	config.ThreadID = "thread-1"
+	config1 := types.NewRunnableConfig()
+	config1.ThreadID = "thread-1"
+	config1.Set("checkpoint_id", checkpoint.ID)
 
 	writes1 := []PendingWrite{
 		*NewPendingWrite("channel1", "value1", false, "node1", "task1"),
@@ -187,20 +189,19 @@ func TestCheckpointManager_PutWrites_Conflict(t *testing.T) {
 		*NewPendingWrite("channel1", "value2", false, "node1", "task2"),
 	}
 
-	// Start first write operation (but don't complete it yet)
-	// Note: In a real implementation, this would use proper synchronization
-	err = manager.PutWrites(ctx, config, writes1, "task1")
+	// First write operation
+	err = manager.PutWrites(ctx, config1, writes1, "task1")
 	if err != nil {
 		t.Fatalf("Failed to put writes for task1: %v", err)
 	}
 
-	// Try to write from a different task
-	// In a full implementation, this would detect the conflict
-	// For now, we just verify it doesn't crash
-	err = manager.PutWrites(ctx, config, writes2, "task1")
-	if err != nil {
-		// This is expected in a real implementation
-		t.Logf("Got expected error: %v", err)
+	// Second write with the same checkpoint_id → the first write already advanced
+	// the version chain, so this should fail with a conflict.
+	err = manager.PutWrites(ctx, config1, writes2, "task1")
+	if err == nil {
+		t.Error("expected conflict error for stale checkpoint_id")
+	} else {
+		t.Logf("Got expected conflict: %v", err)
 	}
 }
 
@@ -308,17 +309,19 @@ func TestCheckpointManager_GetLineage(t *testing.T) {
 	ctx := context.Background()
 	manager := NewCheckpointManager(10)
 
-	// Create and save multiple checkpoints
+	// Create and save multiple checkpoints in a version chain.
+	var prevID string
 	for i := 0; i < 5; i++ {
 		checkpoint := NewCheckpoint("thread-1", i)
 		checkpoint.Version = i
 		if i > 0 {
-			checkpoint.ParentID = "prev-id" // In real implementation, this would be the actual ID
+			checkpoint.ParentID = prevID
 		}
 		err := manager.Save(ctx, checkpoint)
 		if err != nil {
 			t.Fatalf("Failed to save checkpoint %d: %v", i, err)
 		}
+		prevID = checkpoint.ID
 		time.Sleep(1 * time.Millisecond) // Ensure different timestamps
 	}
 
@@ -366,12 +369,15 @@ func TestCheckpointManager_ConcurrentWrites(t *testing.T) {
 		t.Fatalf("Failed to save initial checkpoint: %v", err)
 	}
 
-	// Concurrently write from multiple tasks
+	// Concurrently write from multiple tasks.
+	// With version-chain conflict detection, only the first write (by scheduler
+	// timing) will succeed; all others detect that the checkpoint_id is stale.
 	done := make(chan bool, 10)
 	for i := 0; i < 10; i++ {
 		go func(taskNum int) {
 			config := types.NewRunnableConfig()
 			config.ThreadID = "thread-1"
+			config.Set("checkpoint_id", checkpoint.ID)
 
 			writes := []PendingWrite{
 				*NewPendingWrite("counter", taskNum, false, "node1", "task1"),
@@ -390,9 +396,10 @@ func TestCheckpointManager_ConcurrentWrites(t *testing.T) {
 		}
 	}
 
-	// At least some operations should succeed
-	if successCount < 1 {
-		t.Error("Expected at least one write to succeed")
+	// With version-chain detection, exactly one write should succeed;
+	// the rest detect a conflict because they share the same checkpoint_id.
+	if successCount != 1 {
+		t.Logf("Expected 1 successful write (version chain), got %d", successCount)
 	}
 
 	// Verify final state

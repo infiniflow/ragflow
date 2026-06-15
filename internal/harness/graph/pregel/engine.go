@@ -4,6 +4,7 @@ package pregel
 import (
 	"context"
 	"fmt"
+	"log"
 	"reflect"
 	"sort"
 	"strings"
@@ -397,7 +398,7 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 					go func(cp map[string]interface{}, cpID string, s int) {
 						if err := e.saveCheckpoint(context.Background(), threadID, cpID, s, cp); err != nil {
 							// Log async error but don't fail execution
-							fmt.Printf("async checkpoint save failed: %v\n", err)
+							log.Printf("async checkpoint save failed: %v", err)
 						}
 					}(checkpoint, checkpointID, step)
 				case types.DurabilityExit:
