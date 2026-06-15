@@ -3,8 +3,10 @@ package interrupt
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"ragflow/internal/harness/graph/errors"
 	"ragflow/internal/harness/graph/types"
@@ -57,19 +59,16 @@ func Interrupt(ctx context.Context, value interface{}) (interface{}, error) {
 		ic = globalContext
 	}
 
-	// Check for resume values
-	resumeValues := ic.getResumeValues()
-	idx := ic.getInterruptIndex()
-
-	if idx < len(resumeValues) {
-		// Return the resume value
-		ic.incrementIndex()
-		return resumeValues[idx], nil
+	// Try to consume the next pending resume value under a single lock
+	// (avoids TOCTOU races between separate getResumeValues/getInterruptIndex calls).
+	if v, ok := ic.consumeNextResumeValue(); ok {
+		return v, nil
 	}
 
 	// Check for current resume value
 	v := ic.getNullResume()
 	if v != nil {
+		ic.setNullResume(nil) // consume it before appending
 		ic.appendResumeValue(v)
 		return v, nil
 	}
@@ -94,19 +93,40 @@ type interruptContext struct {
 }
 
 // Global context for backward compatibility
+// interruptIDCounter provides unique IDs across all interrupt points in the process.
+var interruptIDCounter int64
+
 var globalContext = &interruptContext{
 	resumeValues: make([]interface{}, 0),
 	index:        0,
 }
 
-// getResumeValues returns the current resume values.
+// consumeNextResumeValue atomically reads the next resume value and advances
+// the index under a single lock (avoids TOCTOU between separate lock acquisitions).
+func (ic *interruptContext) consumeNextResumeValue() (interface{}, bool) {
+	if ic == nil {
+		return nil, false
+	}
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
+	if ic.index < len(ic.resumeValues) {
+		v := ic.resumeValues[ic.index]
+		ic.index++
+		return v, true
+	}
+	return nil, false
+}
+
+// getResumeValues returns a copy of the current resume values.
 func (ic *interruptContext) getResumeValues() []interface{} {
 	if ic == nil {
 		return nil
 	}
 	ic.mu.Lock()
 	defer ic.mu.Unlock()
-	return ic.resumeValues
+	result := make([]interface{}, len(ic.resumeValues))
+	copy(result, ic.resumeValues)
+	return result
 }
 
 // getInterruptIndex returns the current interrupt index.
@@ -147,17 +167,6 @@ func (ic *interruptContext) setNullResume(v interface{}) {
 	ic.mu.Lock()
 	defer ic.mu.Unlock()
 	ic.nullResume = v
-}
-
-// incrementIndex increments the interrupt index by 1 and returns the new value.
-func (ic *interruptContext) incrementIndex() int {
-	if ic == nil {
-		return 0
-	}
-	ic.mu.Lock()
-	defer ic.mu.Unlock()
-	ic.index++
-	return ic.index
 }
 
 // setResumeValues replaces the resume values.
@@ -230,19 +239,26 @@ func GetNullResume(ctx context.Context, consume bool) interface{} {
 }
 
 // Reset clears the interrupt context.
+// When a per-request context is found, only that context is reset.
+// The global fallback context is only reset when no per-request context
+// exists, preventing concurrent requests from corrupting each other.
 func Reset(ctx context.Context) {
 	ic := GetInterruptContext(ctx)
 	if ic != nil {
 		ic.reset()
+		return
 	}
-	// Also reset global context
 	globalContext.reset()
 }
 
 // generateInterruptID generates a unique ID for an interrupt.
+// The ID combines a hash of the value with a process-unique counter so that
+// two interrupts with the same value (e.g. "Please provide input") are still
+// distinguishable.
 func generateInterruptID(value interface{}) string {
-	// In actual implementation, this would use a hash of the namespace
-	return fmt.Sprintf("%v", value)
+	h := sha256.Sum256([]byte(fmt.Sprintf("%v", value)))
+	n := atomic.AddInt64(&interruptIDCounter, 1)
+	return fmt.Sprintf("%x_%d", h[:8], n)
 }
 
 // IsInterrupt checks if an error is a GraphInterrupt.
@@ -250,13 +266,18 @@ func IsInterrupt(err error) bool {
 	return errors.IsGraphInterrupt(err)
 }
 
-// GetInterruptValue extracts the interrupt value from a GraphInterrupt error.
+// GetInterruptValue extracts the user-supplied interrupt value from a GraphInterrupt error.
+// Unlike returning the *types.Interrupt envelope directly, this unwraps to the .Value field
+// so callers get the value they originally passed to Interrupt(ctx, value).
 func GetInterruptValue(err error) (interface{}, bool) {
 	if !errors.IsGraphInterrupt(err) {
 		return nil, false
 	}
 
 	if gi, ok := err.(*errors.GraphInterrupt); ok && len(gi.Interrupts) > 0 {
+		if intr, ok := gi.Interrupts[0].(*types.Interrupt); ok {
+			return intr.Value, true
+		}
 		return gi.Interrupts[0], true
 	}
 

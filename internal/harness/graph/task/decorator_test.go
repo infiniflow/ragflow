@@ -223,7 +223,8 @@ func TestCompose(t *testing.T) {
 		}
 	}
 
-	// Compose: first addTen, then double
+	// Compose applies decorators from last to first: double wraps fn, then addTen wraps double.
+	// Execution order: base (0+1=1) → double (×2=2) → addTen (+10=12)
 	composed := Compose(addTen, double)(fn)
 	// (0 + 1) * 2 + 10 = 12
 	result, err := composed(ctx, 0)

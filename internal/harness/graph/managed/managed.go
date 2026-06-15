@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"regexp"
+	"strings"
 )
 
 // ManagedValue represents a value that is managed by the runtime.
@@ -341,6 +343,9 @@ func ExtractManagedValues(obj interface{}) []ManagedValue {
 	}
 	
 	for i := 0; i < v.NumField(); i++ {
+		if !v.Type().Field(i).IsExported() {
+			continue
+		}
 		field := v.Field(i)
 		if IsManagedValue(field.Interface()) {
 			if mv, ok := field.Interface().(ManagedValue); ok {
@@ -366,6 +371,9 @@ func ExtractManagedValueSpecs(obj interface{}) []*ManagedValueSpec {
 	}
 	
 	for i := 0; i < v.NumField(); i++ {
+		if !v.Type().Field(i).IsExported() {
+			continue
+		}
 		field := v.Field(i)
 		if IsManagedValueSpec(field.Interface()) {
 			if spec, ok := field.Interface().(*ManagedValueSpec); ok {
@@ -641,12 +649,15 @@ func cloneMap(m map[string]interface{}) map[string]interface{} {
 }
 
 // DEFAULT_RUNTIME is the default runtime instance with nil values.
+// Configurable is nil (not an empty map) so that direct mutation via Set
+// panics with nil pointer dereference rather than silently corrupting a
+// shared global. Callers must use Clone() to obtain a safe copy.
 // This corresponds to Python's DEFAULT_RUNTIME in runtime.py
 var DEFAULT_RUNTIME = &Runtime{
 	TaskID:       "",
 	NodeName:     "",
 	Step:         0,
-	Configurable: make(map[string]interface{}),
+	Configurable: nil,
 	CheckpointNS: "",
 	Context:      nil,
 	Store:        nil,
@@ -781,11 +792,13 @@ func PatchConfigurable(base map[string]interface{}, updates map[string]interface
 		return base
 	}
 	
-	// Get or create configurable section
+	// Get or create configurable section — deep copy to avoid mutating the original.
 	configurable := make(map[string]interface{})
 	if cfg, ok := base[ManagedConfigKeyConfigurable]; ok {
 		if cfgMap, ok := cfg.(map[string]interface{}); ok {
-			configurable = cfgMap
+			for k, v := range cfgMap {
+				configurable[k] = v
+			}
 		}
 	}
 	
@@ -861,9 +874,7 @@ func RecastCheckpointNS(ns string) string {
 }
 
 func splitCheckpointNS(ns string) []string {
-	// Simple implementation - split by separator
-	// In a full implementation, this would handle nested namespaces
-	return []string{ns}
+	return strings.Split(ns, "|")
 }
 
 func joinCheckpointNS(parts []string) string {
@@ -879,28 +890,10 @@ func joinCheckpointNS(parts []string) string {
 	return result
 }
 
+var uuidRE = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
 func isTaskID(s string) bool {
-	// Simple check - task IDs are usually UUIDs
-	// In a full implementation, this would be more sophisticated
-	return len(s) > 20 && (containsDash(s) || containsUnderscore(s))
-}
-
-func containsDash(s string) bool {
-	for _, c := range s {
-		if c == '-' {
-			return true
-		}
-	}
-	return false
-}
-
-func containsUnderscore(s string) bool {
-	for _, c := range s {
-		if c == '_' {
-			return true
-		}
-	}
-	return false
+	return uuidRE.MatchString(s)
 }
 
 // StreamWriter is a function that writes to the output stream.

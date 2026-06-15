@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sync"
 
 	"ragflow/internal/harness/graph/types"
 )
@@ -213,16 +214,16 @@ func (r *InjectableRunnable) buildArguments(ctx context.Context, input interface
 				injected = true
 			}
 
-		// Check runtime values
-		if !injected && r.injectionCtx.Runtime != nil {
-			for _, value := range r.injectionCtx.Runtime {
-				if value != nil && reflect.TypeOf(value).AssignableTo(paramType) {
-					args[argIndex] = reflect.ValueOf(value)
-					injected = true
-					break
+			// Check runtime values
+			if !injected && r.injectionCtx.Runtime != nil {
+				for _, value := range r.injectionCtx.Runtime {
+					if value != nil && reflect.TypeOf(value).AssignableTo(paramType) {
+						args[argIndex] = reflect.ValueOf(value)
+						injected = true
+						break
+					}
 				}
 			}
-		}
 		}
 
 		// If not injected, use input
@@ -273,11 +274,16 @@ func (r *InjectableRunnable) executeWithArgs(args []reflect.Value) (interface{},
 
 	// Two return values (output, error)
 	output := results[0].Interface()
-	if !results[1].IsNil() {
-		if err, ok := results[1].Interface().(error); ok {
-			return output, err
+	errVal := results[1]
+	// IsNil panics on non-nillable types (int, string, struct, etc.).
+	// Guard with a kind check before calling IsNil.
+	if errVal.Kind() == reflect.Interface || errVal.Kind() == reflect.Ptr {
+		if !errVal.IsNil() {
+			if err, ok := results[1].Interface().(error); ok {
+				return output, err
+			}
+			return output, fmt.Errorf("expected error, got %T", results[1].Interface())
 		}
-		return output, fmt.Errorf("expected error, got %T", results[1].Interface())
 	}
 	return output, nil
 }
@@ -314,6 +320,7 @@ func (p *ParamInjector) Inject(ctx *InjectionContext, name string) interface{} {
 
 // Tracer provides execution tracing support.
 type Tracer struct {
+	mu    sync.Mutex
 	spans []Span
 }
 
@@ -335,31 +342,45 @@ func NewTracer() *Tracer {
 }
 
 // TraceCallback returns a callback that records traces.
+// The returned Callback is safe for concurrent use.
 func (t *Tracer) TraceCallback() Callback {
+	var mu sync.Mutex
 	var currentInput interface{}
 	return &CallbackFunc{
 		OnStartFunc: func(ctx context.Context, name string, input interface{}) {
-			// Record start
+			mu.Lock()
 			currentInput = input
+			mu.Unlock()
 		},
 		OnEndFunc: func(ctx context.Context, name string, output interface{}, err error) {
+			mu.Lock()
+			inp := currentInput
+			mu.Unlock()
+			t.mu.Lock()
 			t.spans = append(t.spans, Span{
 				Name:   name,
-				Input:  currentInput,
+				Input:  inp,
 				Output: output,
 				Error:  err,
 			})
+			t.mu.Unlock()
 		},
 	}
 }
 
 // GetSpans returns all recorded spans.
 func (t *Tracer) GetSpans() []Span {
-	return t.spans
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	result := make([]Span, len(t.spans))
+	copy(result, t.spans)
+	return result
 }
 
 // Clear clears all spans.
 func (t *Tracer) Clear() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.spans = make([]Span, 0)
 }
 

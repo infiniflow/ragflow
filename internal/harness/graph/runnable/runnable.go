@@ -233,11 +233,8 @@ func NewRunnableParallel(runnables map[string]Runnable[any, any]) *RunnableParal
 	}
 }
 
-// Invoke executes all runnables in parallel.
+// Invoke executes all runnables in parallel with the same input.
 func (p *RunnableParallel) Invoke(ctx context.Context, input interface{}) (interface{}, error) {
-	// For now, input is ignored - each runnable uses its own input
-	// This is a simplified version
-
 	type result struct {
 		name   string
 		value  interface{}
@@ -247,7 +244,7 @@ func (p *RunnableParallel) Invoke(ctx context.Context, input interface{}) (inter
 	resultCh := make(chan result, len(p.runnables))
 	for name, r := range p.runnables {
 		go func(n string, rn Runnable[any, any]) {
-			value, err := rn.Invoke(ctx, nil)
+			value, err := rn.Invoke(ctx, input)
 			resultCh <- result{name: n, value: value, err: err}
 		}(name, r)
 	}

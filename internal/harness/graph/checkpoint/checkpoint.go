@@ -123,16 +123,17 @@ func NewCheckpoint(threadID string, step int) *Checkpoint {
 
 // Clone creates a deep copy of the checkpoint.
 func (c *Checkpoint) Clone() *Checkpoint {
+	newID := uuid.New().String()
 	clone := &Checkpoint{
-		ID:             uuid.New().String(),
-		Version:        c.Version,
-		ParentID:       c.ID,
+		ID:              newID,
+		Version:         c.Version,
+		ParentID:        c.ID,
 		ChannelVersions: make(map[string]int, len(c.ChannelVersions)),
-		VersionsSeen:   make(map[string]map[string]int, len(c.VersionsSeen)),
-		State:          make(map[string]interface{}, len(c.State)),
-		PendingWrites:  make([]PendingWrite, len(c.PendingWrites)),
+		VersionsSeen:    make(map[string]map[string]int, len(c.VersionsSeen)),
+		State:           make(map[string]interface{}, len(c.State)),
+		PendingWrites:   make([]PendingWrite, len(c.PendingWrites)),
 		Metadata: CheckpointMetadata{
-			ID:        uuid.New().String(),
+			ID:        newID, // same ID as the clone
 			ParentID:  c.ID,
 			ThreadID:  c.Metadata.ThreadID,
 			Step:      c.Metadata.Step,
@@ -509,17 +510,15 @@ func (cm *CheckpointManager) Save(ctx context.Context, checkpoint *Checkpoint) e
 
 	threadID := checkpoint.Metadata.ThreadID
 
-	// Check for version conflict if this is an update
-	if checkpoint.ParentID != "" {
-		if checkpoints := cm.checkpoints[threadID]; len(checkpoints) > 0 {
-			latest := checkpoints[len(checkpoints)-1]
-			if latest.ID == checkpoint.ParentID && latest.Version != checkpoint.Version-1 {
-				return &VersionConflictError{
-					CurrentVersion: checkpoint.Version,
-					ExpectedVersion: latest.Version + 1,
-					CheckpointID:    checkpoint.ID,
-					ThreadID:        threadID,
-				}
+	// Check for version conflict whenever a thread already has checkpoints.
+	if checkpoints := cm.checkpoints[threadID]; len(checkpoints) > 0 {
+		latest := checkpoints[len(checkpoints)-1]
+		if latest.ID == checkpoint.ParentID && latest.Version != checkpoint.Version-1 {
+			return &VersionConflictError{
+				CurrentVersion:  checkpoint.Version,
+				ExpectedVersion: latest.Version + 1,
+				CheckpointID:    checkpoint.ID,
+				ThreadID:        threadID,
 			}
 		}
 	}

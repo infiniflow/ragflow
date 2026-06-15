@@ -4,6 +4,8 @@ package task
 import (
 	"context"
 	"fmt"
+	"math/rand"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -172,10 +174,11 @@ func pow(base float64, exp int) float64 {
 	return result
 }
 
-// addJitter adds random jitter to a duration.
+// addJitter adds ±25% random jitter to a duration.
 func addJitter(d time.Duration) time.Duration {
-	jitter := float64(d) * 0.5 * float64(time.Now().UnixNano()%100)/100.0
-	return d - time.Duration(jitter)
+	delta := float64(d) * 0.25
+	jitter := (rand.Float64()*2 - 1) * delta
+	return d + time.Duration(jitter)
 }
 
 // Task wraps a function with the given options.
@@ -193,7 +196,8 @@ type Entrypoint struct {
 	store        interface{}
 	configurable map[string]interface{}
 	graph        *graph.StateGraph
-	compiled     bool
+	compileOnce  sync.Once
+	compileErr   error
 }
 
 // NewEntrypoint creates a new entrypoint.
@@ -207,9 +211,8 @@ func NewEntrypoint(name string, fn types.NodeFunc, metadata map[string]interface
 		metadata:     metadata,
 		checkpointer: nil,
 		store:        nil,
-		configurable:  make(map[string]interface{}),
+		configurable: make(map[string]interface{}),
 		graph:        nil,
-		compiled:     false,
 	}
 }
 
@@ -255,9 +258,8 @@ func NewEntrypointWithOptions(name string, fn types.NodeFunc, metadata map[strin
 		metadata:     metadata,
 		checkpointer: nil,
 		store:        nil,
-		configurable:  make(map[string]interface{}),
+		configurable: make(map[string]interface{}),
 		graph:        nil,
-		compiled:     false,
 	}
 	for _, opt := range opts {
 		opt(e)
@@ -276,37 +278,34 @@ func (e *Entrypoint) Execute(ctx context.Context, input interface{}) (interface{
 }
 
 // Compile compiles the graph associated with this entrypoint.
+// Safe to call concurrently — only the first invocation executes compilation.
 func (e *Entrypoint) Compile(ctx context.Context) error {
-	if e.graph == nil {
-		return fmt.Errorf("no graph associated with entrypoint")
-	}
-	if e.compiled {
-		return nil
-	}
+	e.compileOnce.Do(func() {
+		if e.graph == nil {
+			e.compileErr = fmt.Errorf("no graph associated with entrypoint")
+			return
+		}
 
-	// Set checkpointer if provided (via config)
-	if e.checkpointer != nil {
-		// Note: In a full implementation, this would set the checkpointer
-		// on the graph's configuration
-	}
+		// Set checkpointer if provided (via config)
+		if e.checkpointer != nil {
+			// Note: In a full implementation, this would set the checkpointer
+			// on the graph's configuration
+		}
 
-	// Set store if provided (via config)
-	if e.store != nil {
-		// Note: In a full implementation, this would set the store
-		// on the graph's configuration
-	}
-
-	e.compiled = true
-	return nil
+		// Set store if provided (via config)
+		if e.store != nil {
+			// Note: In a full implementation, this would set the store
+			// on the graph's configuration
+		}
+	})
+	return e.compileErr
 }
 
 // Invoke invokes the graph with the given input.
 func (e *Entrypoint) Invoke(ctx context.Context, input interface{}, config *types.RunnableConfig) (interface{}, error) {
-	// Compile if not already compiled
-	if !e.compiled {
-		if err := e.Compile(ctx); err != nil {
-			return nil, err
-		}
+	// Compile once (thread-safe via sync.Once).
+	if err := e.Compile(ctx); err != nil {
+		return nil, err
 	}
 
 	// Merge configurable values
@@ -319,12 +318,10 @@ func (e *Entrypoint) Invoke(ctx context.Context, input interface{}, config *type
 
 	// Invoke the graph
 	if e.graph == nil {
-		// If no graph, just execute the function
 		return e.Execute(ctx, input)
 	}
 
 	// Note: In a full implementation, this would use the graph's Invoke method
-	// For now, we just execute the function
 	return e.Execute(ctx, input)
 }
 
@@ -347,11 +344,9 @@ func (e *Entrypoint) AInvoke(ctx context.Context, input interface{}, config *typ
 
 // Stream streams the output of the graph execution.
 func (e *Entrypoint) Stream(ctx context.Context, input interface{}, config *types.RunnableConfig, mode types.StreamMode) (<-chan interface{}, error) {
-	// Compile if not already compiled
-	if !e.compiled {
-		if err := e.Compile(ctx); err != nil {
-			return nil, err
-		}
+	// Compile once (thread-safe via sync.Once)
+	if err := e.Compile(ctx); err != nil {
+		return nil, err
 	}
 
 	// Merge configurable values
