@@ -140,6 +140,7 @@ async def update(search_id):
     try:
         search_apps = SearchService.query(tenant_id=current_user.id, id=search_id)
         if not search_apps:
+            logging.warning("Search update target not found: search_id=%s tenant_id=%s", search_id, current_user.id)
             return get_json_result(data=False, message=f"Cannot find search {search_id}", code=RetCode.DATA_ERROR)
         search_app = search_apps[0]
 
