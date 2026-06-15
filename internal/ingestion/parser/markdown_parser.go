@@ -32,14 +32,14 @@ type MarkdownParser struct {
 	libType string
 }
 
-func NewMarkdownParser(libType string) (*MarkdownParser, error) {
-	switch libType {
+func NewMarkdownParser(config *ParserConfig) (*MarkdownParser, error) {
+	switch config.LibType {
 	case GoMarkdown:
 		return &MarkdownParser{
 			libType: GoMarkdown,
 		}, nil
 	default:
-		return nil, fmt.Errorf("unsupported Markdown library type: %s", libType)
+		return nil, fmt.Errorf("unsupported Markdown library type: %s", config.LibType)
 	}
 }
 

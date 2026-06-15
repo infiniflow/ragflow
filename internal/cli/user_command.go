@@ -3372,8 +3372,8 @@ func (c *CLI) UserParseLocalFile(cmd *Command) (ResponseIf, error) {
 	}
 
 	fileType := utility.GetFileType(filename)
-	config := map[string]string{
-		"lib_type": "office_oxide",
+	config := &parser.ParserConfig{
+		LibType: "office_oxide",
 	}
 	fileParser, err := parser.GetParser(fileType, config)
 	if err != nil {

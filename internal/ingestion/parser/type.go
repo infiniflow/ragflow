@@ -18,33 +18,33 @@ package parser
 
 import (
 	"fmt"
+	"ragflow/internal/entity"
+	"ragflow/internal/entity/models"
 	"ragflow/internal/utility"
 )
 
-func GetParser(fileType utility.FileType, config map[string]string) (FileParser, error) {
-	libType, ok := config["lib_type"]
-	if !ok {
-		return nil, fmt.Errorf("missing lib_type config")
-	}
+func GetParser(fileType utility.FileType, config *ParserConfig) (FileParser, error) {
 	switch fileType {
 	case utility.FileTypePPTX:
-		return NewPPTXParser(libType)
+		return NewPPTXParser(config)
 	case utility.FileTypePPT:
-		return NewPPTParser(libType)
+		return NewPPTParser(config)
 	case utility.FileTypeXLSX:
-		return NewXLSXParser(libType)
+		return NewXLSXParser(config)
 	case utility.FileTypeXLS:
-		return NewXLSParser(libType)
+		return NewXLSParser(config)
 	case utility.FileTypeDOCX:
-		return NewDOCXParser(libType)
+		return NewDOCXParser(config)
 	case utility.FileTypeDOC:
-		return NewDOCParser(libType)
+		return NewDOCParser(config)
 	case utility.FileTypePDF:
-		return NewPDFParser(), nil
+		return NewPDFParser(config)
 	case utility.FileTypeHTML:
-		return NewHTMLParser(Official)
+		config.LibType = Official
+		return NewHTMLParser(config)
 	case utility.FileTypeMarkdown:
-		return NewMarkdownParser(GoMarkdown)
+		config.LibType = GoMarkdown
+		return NewMarkdownParser(config)
 	default:
 		return nil, fmt.Errorf("unsupported file type: %s", fileType)
 	}
@@ -56,4 +56,44 @@ type FileParser interface {
 	Parse(filename string, data []byte) error
 
 	String() string
+}
+
+type ParserConfig struct {
+	LibType string
+
+	ProviderEntity *entity.TenantModelProvider
+	ProviderInfo   *models.Provider
+	InstanceEntity *entity.TenantModelInstance
+
+	ChatModelEntity *entity.TenantModel
+	ChatModelInfo   *models.Model
+	ChatAPIConfig   *models.APIConfig
+
+	VisionModelEntity *entity.TenantModel
+	VisionModelInfo   *models.Model
+	VisionAPIConfig   *models.APIConfig
+
+	EmbeddingModelEntity *entity.TenantModel
+	EmbeddingModelInfo   *models.Model
+	EmbeddingAPIConfig   *models.APIConfig
+
+	RerankModelEntity *entity.TenantModel
+	RerankModelInfo   *models.Model
+	RerankAPIConfig   *models.APIConfig
+
+	OCRModelEntity *entity.TenantModel
+	OCRModelInfo   *models.Model
+	OCRAPIConfig   *models.APIConfig
+
+	FileParseModelEntity *entity.TenantModel
+	FileParseModelInfo   *models.Model
+	FileParseAPIConfig   *models.APIConfig
+
+	TTSParseModelEntity *entity.TenantModel
+	TTSParseModelInfo   *models.Model
+	TTSParseAPIConfig   *models.APIConfig
+
+	ASRParseModelEntity *entity.TenantModel
+	ASRParseModelInfo   *models.Model
+	ASRParseAPIConfig   *models.APIConfig
 }

@@ -30,14 +30,14 @@ type DOCXParser struct {
 	libType string
 }
 
-func NewDOCXParser(libType string) (*DOCXParser, error) {
-	switch libType {
+func NewDOCXParser(config *ParserConfig) (*DOCXParser, error) {
+	switch config.LibType {
 	case OfficeOxide:
 		return &DOCXParser{
 			libType: OfficeOxide,
 		}, nil
 	default:
-		return nil, fmt.Errorf("unsupported DOCX library type: %s", libType)
+		return nil, fmt.Errorf("unsupported DOCX library type: %s", config.LibType)
 	}
 }
 

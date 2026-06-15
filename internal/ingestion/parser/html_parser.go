@@ -31,14 +31,14 @@ type HTMLParser struct {
 	libType string
 }
 
-func NewHTMLParser(libType string) (*HTMLParser, error) {
-	switch libType {
+func NewHTMLParser(config *ParserConfig) (*HTMLParser, error) {
+	switch config.LibType {
 	case Official:
 		return &HTMLParser{
 			libType: Official,
 		}, nil
 	default:
-		return nil, fmt.Errorf("unsupported HTML library type: %s", libType)
+		return nil, fmt.Errorf("unsupported HTML library type: %s", config.LibType)
 	}
 }
 

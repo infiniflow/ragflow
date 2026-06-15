@@ -26,14 +26,14 @@ type PPTParser struct {
 	libType string
 }
 
-func NewPPTParser(libType string) (*PPTParser, error) {
-	switch libType {
+func NewPPTParser(config *ParserConfig) (*PPTParser, error) {
+	switch config.LibType {
 	case OfficeOxide:
 		return &PPTParser{
 			libType: OfficeOxide,
 		}, nil
 	default:
-		return nil, fmt.Errorf("unsupported PPT library type: %s", libType)
+		return nil, fmt.Errorf("unsupported PPT library type: %s", config.LibType)
 	}
 }
 

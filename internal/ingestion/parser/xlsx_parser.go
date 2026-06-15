@@ -26,14 +26,14 @@ type XLSXParser struct {
 	libType string
 }
 
-func NewXLSXParser(libType string) (*XLSXParser, error) {
-	switch libType {
+func NewXLSXParser(config *ParserConfig) (*XLSXParser, error) {
+	switch config.LibType {
 	case OfficeOxide:
 		return &XLSXParser{
 			libType: OfficeOxide,
 		}, nil
 	default:
-		return nil, fmt.Errorf("unsupported XLSX library type: %s", libType)
+		return nil, fmt.Errorf("unsupported XLSX library type: %s", config.LibType)
 	}
 }
 

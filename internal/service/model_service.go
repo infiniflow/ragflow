@@ -1124,16 +1124,7 @@ func (m *ModelProviderService) UpdateModelStatus(providerName, instanceName, mod
 	return common.CodeSuccess, nil
 }
 
-type ModelInstanceAndProviderInfo struct {
-	ProviderEntity *entity.TenantModelProvider
-	ProviderInfo   *modelModule.Provider
-	InstanceEntity *entity.TenantModelInstance
-	ModelEntity    *entity.TenantModel
-	ModelInfo      *modelModule.Model
-	APIConfig      *modelModule.APIConfig
-}
-
-func (m *ModelProviderService) getModelInstanceAndProviderByName(providerName, instanceName, modelName *string, userID string, apiConfig *modelModule.APIConfig) (*ModelInstanceAndProviderInfo, error) {
+func (m *ModelProviderService) getModelInstanceAndProviderByName(providerName, instanceName, modelName *string, userID string, apiConfig *modelModule.APIConfig) (*modelModule.ModelInstanceAndProviderInfo, error) {
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
@@ -1190,7 +1181,7 @@ func (m *ModelProviderService) getModelInstanceAndProviderByName(providerName, i
 	apiConfig.BaseURL = &baseURL
 	apiConfig.Region = &region
 
-	var result = &ModelInstanceAndProviderInfo{
+	var result = &modelModule.ModelInstanceAndProviderInfo{
 		ProviderEntity: providerEntity,
 		ProviderInfo:   providerInfo,
 		InstanceEntity: instanceEntity,
@@ -1202,7 +1193,7 @@ func (m *ModelProviderService) getModelInstanceAndProviderByName(providerName, i
 	return result, nil
 }
 
-func (m *ModelProviderService) getModelInstanceAndProviderByID(modelID *string, userID string, apiConfig *modelModule.APIConfig) (*ModelInstanceAndProviderInfo, error) {
+func (m *ModelProviderService) getModelInstanceAndProviderByID(modelID *string, userID string, apiConfig *modelModule.APIConfig) (*modelModule.ModelInstanceAndProviderInfo, error) {
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
@@ -1261,7 +1252,7 @@ func (m *ModelProviderService) getModelInstanceAndProviderByID(modelID *string, 
 	apiConfig.BaseURL = &baseURL
 	apiConfig.Region = &region
 
-	var result = &ModelInstanceAndProviderInfo{
+	var result = &modelModule.ModelInstanceAndProviderInfo{
 		ProviderEntity: providerEntity,
 		ProviderInfo:   providerInfo,
 		InstanceEntity: instanceEntity,
@@ -1277,7 +1268,7 @@ func (m *ModelProviderService) getModelInstanceAndProviderByID(modelID *string, 
 func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceName, modelName, modelID *string, userID string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig) (*modelModule.ChatResponse, common.ErrorCode, error) {
 
 	var err error
-	var info *ModelInstanceAndProviderInfo
+	var info *modelModule.ModelInstanceAndProviderInfo
 
 	if modelID != nil {
 		info, err = m.getModelInstanceAndProviderByID(modelID, userID, apiConfig)
@@ -1335,7 +1326,7 @@ func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceNam
 func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanceName, modelName, modelID *string, userID string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, sender func(*string, *string) error) (common.ErrorCode, error) {
 
 	var err error
-	var info *ModelInstanceAndProviderInfo
+	var info *modelModule.ModelInstanceAndProviderInfo
 
 	if modelID != nil {
 		info, err = m.getModelInstanceAndProviderByID(modelID, userID, apiConfig)
@@ -1415,7 +1406,7 @@ func validateEmbeddingDimension(model *modelModule.Model, requested int) error {
 func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, modelID *string, userID string, texts []string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.EmbeddingConfig) ([]modelModule.EmbeddingData, common.ErrorCode, error) {
 
 	var err error
-	var info *ModelInstanceAndProviderInfo
+	var info *modelModule.ModelInstanceAndProviderInfo
 
 	if modelID != nil {
 		info, err = m.getModelInstanceAndProviderByID(modelID, userID, apiConfig)
@@ -1476,7 +1467,7 @@ func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, 
 func (m *ModelProviderService) RerankDocument(providerName, instanceName, modelName, modelID *string, userID, query string, documents []string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.RerankConfig) (*modelModule.RerankResponse, common.ErrorCode, error) {
 
 	var err error
-	var info *ModelInstanceAndProviderInfo
+	var info *modelModule.ModelInstanceAndProviderInfo
 
 	if modelID != nil {
 		info, err = m.getModelInstanceAndProviderByID(modelID, userID, apiConfig)
@@ -1530,7 +1521,7 @@ func (m *ModelProviderService) RerankDocument(providerName, instanceName, modelN
 func (m *ModelProviderService) TranscribeAudio(providerName, instanceName, modelName, modelID *string, userID string, audioFile *string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ASRConfig) (*modelModule.ASRResponse, common.ErrorCode, error) {
 
 	var err error
-	var info *ModelInstanceAndProviderInfo
+	var info *modelModule.ModelInstanceAndProviderInfo
 
 	if modelID != nil {
 		info, err = m.getModelInstanceAndProviderByID(modelID, userID, apiConfig)
@@ -1587,7 +1578,7 @@ func (m *ModelProviderService) TranscribeAudio(providerName, instanceName, model
 func (m *ModelProviderService) TranscribeAudioStream(providerName, instanceName, modelName, modelID *string, userID string, audioFile *string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ASRConfig, sender func(*string, *string) error) (common.ErrorCode, error) {
 
 	var err error
-	var info *ModelInstanceAndProviderInfo
+	var info *modelModule.ModelInstanceAndProviderInfo
 
 	if modelID != nil {
 		info, err = m.getModelInstanceAndProviderByID(modelID, userID, apiConfig)
@@ -1640,7 +1631,7 @@ func (m *ModelProviderService) TranscribeAudioStream(providerName, instanceName,
 func (m *ModelProviderService) AudioSpeech(providerName, instanceName, modelName, modelID *string, userID string, audioContent *string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.TTSConfig) (*modelModule.TTSResponse, common.ErrorCode, error) {
 
 	var err error
-	var info *ModelInstanceAndProviderInfo
+	var info *modelModule.ModelInstanceAndProviderInfo
 
 	if modelID != nil {
 		info, err = m.getModelInstanceAndProviderByID(modelID, userID, apiConfig)
@@ -1696,7 +1687,7 @@ func (m *ModelProviderService) AudioSpeech(providerName, instanceName, modelName
 func (m *ModelProviderService) AudioSpeechStream(providerName, instanceName, modelName, modelID *string, userID string, audioContent *string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.TTSConfig, sender func(*string, *string) error) (common.ErrorCode, error) {
 
 	var err error
-	var info *ModelInstanceAndProviderInfo
+	var info *modelModule.ModelInstanceAndProviderInfo
 
 	if modelID != nil {
 		info, err = m.getModelInstanceAndProviderByID(modelID, userID, apiConfig)
@@ -1748,7 +1739,7 @@ func (m *ModelProviderService) AudioSpeechStream(providerName, instanceName, mod
 func (m *ModelProviderService) OCRFile(providerName, instanceName, modelName, modelID *string, userID string, content []byte, url *string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.OCRConfig) (*modelModule.OCRFileResponse, common.ErrorCode, error) {
 
 	var err error
-	var info *ModelInstanceAndProviderInfo
+	var info *modelModule.ModelInstanceAndProviderInfo
 
 	if modelID != nil {
 		info, err = m.getModelInstanceAndProviderByID(modelID, userID, apiConfig)
@@ -1804,7 +1795,7 @@ func (m *ModelProviderService) OCRFile(providerName, instanceName, modelName, mo
 func (m *ModelProviderService) ParseFile(providerName, instanceName, modelName, modelID *string, userID string, content []byte, url *string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ParseFileConfig) (*modelModule.ParseFileResponse, common.ErrorCode, error) {
 
 	var err error
-	var info *ModelInstanceAndProviderInfo
+	var info *modelModule.ModelInstanceAndProviderInfo
 
 	if modelID != nil {
 		info, err = m.getModelInstanceAndProviderByID(modelID, userID, apiConfig)
