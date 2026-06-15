@@ -127,7 +127,7 @@ def _get_model_info(tenant_id: str, default_model: str, model_type: str):
     model_entity = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(
         provider_obj.id, instance_obj.id, model_type, model_name
     )
-    enable = model_entity is None or model_entity.status != ActiveStatusEnum.INACTIVE.value
+    enable = model_entity is None or model_entity.status == ActiveStatusEnum.ACTIVE.value
 
     if not enable:
         return None
@@ -214,7 +214,7 @@ def _check_model_available(tenant_id: str, provider_name: str, instance_name: st
         provider_obj.id, instance_obj.id, model_type, model_name
     )
     if model_entity:
-        if model_entity.status == "inactive":
+        if model_entity.status != ActiveStatusEnum.ACTIVE.value:
             return False, f"Model '{model_name}' isn't available"
         return True, None
 
@@ -364,7 +364,8 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
                 manual_modified_models = model_record_map.get(model_record_key, [])
                 active_model_types = [manual_model.model_type for manual_model in manual_modified_models if manual_model.status == ActiveStatusEnum.ACTIVE.value]
                 inactive_model_types = [manual_model.model_type for manual_model in manual_modified_models if manual_model.status == ActiveStatusEnum.INACTIVE.value]
-                model_types = list(set(factory_model_types + active_model_types) - set(inactive_model_types))
+                unsupport_model_types = [manual_model.model_type for manual_model in manual_modified_models if manual_model.status == ActiveStatusEnum.UNSUPPORTED.value]
+                model_types = list(set(factory_model_types + active_model_types) - set(inactive_model_types) - set(unsupport_model_types))
                 if not model_types:
                     continue
 
