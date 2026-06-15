@@ -889,13 +889,6 @@ func (p *Parser) parseModelNames(raw string) ([]string, error) {
 	return modelNames, nil
 }
 
-type AddModelConfig struct {
-	ModelName  string
-	ModelTypes []string
-	MaxTokens  int
-	Thinking   *bool
-}
-
 // syntax: add model 'xxx' to provider 'vllm' instance 'test' with tokens 1024 chat think vision;
 func (p *Parser) parseAddModel() (*Command, error) {
 	p.nextToken() // consume MODEL
@@ -953,6 +946,8 @@ func (p *Parser) parseAddModel() (*Command, error) {
 	var modelTypes []string
 	var supportThink *bool = nil
 	maxTokens := 0
+	var maxDimension *int = nil
+	var dimensions []int = nil
 
 	models := make([]map[string]any, 0, len(modelNames))
 	if p.curToken.Type != TokenWith {
@@ -985,6 +980,25 @@ A:
 		case TokenEmbedding:
 			modelTypes = append(modelTypes, "embedding")
 			p.nextToken()
+			if p.curToken.Type == TokenInteger {
+				val, err := p.parseNumber()
+				if err != nil {
+					return nil, err
+				}
+				maxDimension = &val
+				p.nextToken()
+
+				dimensions = append(dimensions, int(val))
+
+				for p.curToken.Type == TokenQuotedString {
+					dim, err := p.parseNumber()
+					if err != nil {
+						return nil, err
+					}
+					dimensions = append(dimensions, int(dim))
+					p.nextToken()
+				}
+			}
 
 		case TokenRerank:
 			modelTypes = append(modelTypes, "rerank")
@@ -1057,12 +1071,19 @@ A:
 				model["thinking"] = *supportThink
 			}
 
+			if maxDimension != nil {
+				model["max_dimension"] = *maxDimension
+				model["dimensions"] = dimensions
+			}
+
 			models = append(models, model)
 
 			i++
 			modelTypes = nil
 			supportThink = nil
 			maxTokens = 0
+			maxDimension = nil
+			dimensions = nil
 
 			if p.curToken.Type == TokenComma {
 				p.nextToken()
