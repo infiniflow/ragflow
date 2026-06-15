@@ -3,6 +3,9 @@ package core
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/gob"
 	"errors"
 	"fmt"
@@ -143,6 +146,7 @@ type checkpointPayload struct {
 	EnableStreaming     bool
 	InterruptID2Address map[string]Address
 	InterruptID2State   map[string]InterruptState
+	TenantID            string
 }
 
 func init() {
@@ -150,14 +154,76 @@ func init() {
 	schema.RegisterType("agentcore_interrupt_state", func() any { return &InterruptState{} })
 }
 
+// ---- Checkpoint tenant isolation ----
+
+type checkpointTenantKey struct{}
+
+const DefaultCheckpointTenantKey = "tenant_id"
+
+// WithCheckpointTenant embeds a tenant ID in the context for checkpoint tenant isolation.
+// loadCheckpoint will reject checkpoints whose TenantID does not match this value.
+func WithCheckpointTenant(ctx context.Context, tenantID string) context.Context {
+	return context.WithValue(ctx, checkpointTenantKey{}, tenantID)
+}
+
+func extractCheckpointTenant(ctx context.Context) string {
+	if tid, ok := ctx.Value(checkpointTenantKey{}).(string); ok && tid != "" {
+		return tid
+	}
+	if rc := getRunCtx(ctx); rc != nil && rc.Session != nil {
+		if tid, ok := rc.Session.Values[DefaultCheckpointTenantKey].(string); ok {
+			return tid
+		}
+	}
+	return ""
+}
+
+// ---- Checkpoint integrity (HMAC) ----
+
+var checkpointHMACKey = func() []byte {
+	k := make([]byte, 32)
+	if _, err := rand.Read(k); err != nil {
+		panic("failed to generate checkpoint HMAC key: " + err.Error())
+	}
+	return k
+}()
+
+const hmacLen = 32
+
+func computeCheckpointHMAC(payload []byte) []byte {
+	mac := hmac.New(sha256.New, checkpointHMACKey)
+	mac.Write(payload)
+	return mac.Sum(nil)
+}
+
 func loadCheckpoint(store CheckPointStore, ctx context.Context, cid string) (context.Context, *runContext, *ResumeInfo, error) {
 	data, exist, err := store.Get(ctx, cid)
 	if err != nil { return nil, nil, nil, fmt.Errorf("checkpoint get: %w", err) }
 	if !exist { return nil, nil, nil, fmt.Errorf("checkpoint %s not found", cid) }
+
+	// Split: first 32 bytes = HMAC, rest = payload
+	if len(data) < hmacLen {
+		return nil, nil, nil, fmt.Errorf("checkpoint %s too short (%d bytes)", cid, len(data))
+	}
+	mac, payload := data[:hmacLen], data[hmacLen:]
+
+	// Verify HMAC
+	expected := computeCheckpointHMAC(payload)
+	if !hmac.Equal(mac, expected) {
+		return nil, nil, nil, fmt.Errorf("checkpoint %s integrity check failed", cid)
+	}
+
 	var p checkpointPayload
-	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&p); err != nil {
+	if err := gob.NewDecoder(bytes.NewReader(payload)).Decode(&p); err != nil {
 		return nil, nil, nil, fmt.Errorf("decode checkpoint: %w", err)
 	}
+
+	// Verify tenant isolation
+	currentTenant := extractCheckpointTenant(ctx)
+	if p.TenantID != "" && currentTenant != "" && p.TenantID != currentTenant {
+		return nil, nil, nil, fmt.Errorf("checkpoint %s tenant mismatch: stored=%q current=%q", cid, p.TenantID, currentTenant)
+	}
+
 	return ctx, p.RunCtx, &ResumeInfo{EnableStreaming: p.EnableStreaming, InterruptInfo: p.Info}, nil
 }
 
@@ -165,14 +231,27 @@ func saveCheckpoint(store CheckPointStore, ctx context.Context, key string, enab
 	if store == nil { return nil }
 	rc := getRunCtx(ctx)
 	id2addr, id2state := signalToMaps(is)
-	var buf bytes.Buffer
-	if err := gob.NewEncoder(&buf).Encode(checkpointPayload{
+	tenantID := extractCheckpointTenant(ctx)
+
+	// Encode payload with tenant ID
+	p := checkpointPayload{
 		RunCtx: rc, Info: info, EnableStreaming: enableStreaming,
 		InterruptID2Address: id2addr, InterruptID2State: id2state,
-	}); err != nil {
+		TenantID: tenantID,
+	}
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(p); err != nil {
 		return fmt.Errorf("encode checkpoint: %w", err)
 	}
-	return store.Set(ctx, key, buf.Bytes())
+	payload := buf.Bytes()
+
+	// Prepend HMAC for integrity verification
+	mac := computeCheckpointHMAC(payload)
+	stored := make([]byte, 0, hmacLen+len(payload))
+	stored = append(stored, mac...)
+	stored = append(stored, payload...)
+
+	return store.Set(ctx, key, stored)
 }
 
 // signalToMaps recursively walks the InterruptSignal tree (is.Children) to build
