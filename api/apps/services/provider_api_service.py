@@ -313,9 +313,6 @@ async def create_provider_instance(tenant_id: str, provider_name: str, instance_
     api_key_str = ""
     if api_key:
         api_key_str = api_key if isinstance(api_key, str) else json.dumps(api_key)
-        same_key_instance = TenantModelInstanceService.get_by_provider_id_and_api_key(provider_obj.id, api_key_str)
-        if same_key_instance:
-            return False, f"Already exist instance: {same_key_instance.instance_name} with api_key {api_key}"
     success, msg = await verify_api_key(provider_name, api_key, base_url, region, model_info)
     if not success:
         return False, msg
