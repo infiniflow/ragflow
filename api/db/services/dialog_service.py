@@ -900,6 +900,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             final = await decorate_answer(_extract_visible_answer(thought + full_answer))
             final["final"] = True
             final["audio_binary"] = None
+            final["answer"] = ""
             yield final
     else:
         if llm_model_config["model_type"] == "chat":
@@ -1446,6 +1447,7 @@ class _ThinkStreamState:
         self.pending_after_close = ""
         self.think_buffer = ""
         self.answer_buffer = ""
+        self.think_tag_started = False
 
 
 def _extract_visible_answer(text: str) -> str:
@@ -1468,7 +1470,10 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
         if not text:
             return None
         if section == "think":
-            return text
+            prefix = "<think>" if not state.think_tag_started else ""
+            state.think_tag_started = True
+            return prefix + text
+        state.think_tag_started = False
         state.answer_buffer += text
         if num_tokens_from_string(state.answer_buffer) >= min_tokens:
             out = state.answer_buffer
@@ -1509,6 +1514,9 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
             think_piece = _flush_think_buffer()
             if think_piece is not None:
                 yield ("text", think_piece, state)
+            if state.think_tag_started:
+                state.think_tag_started = False
+                yield ("text", "</think>", state)
             state.in_think = False
             yield ("marker", "</think>", state)
             if state.pending_after_close:
@@ -1570,6 +1578,9 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
                 think_piece = _flush_think_buffer()
                 if think_piece is not None:
                     yield ("text", think_piece, state)
+                if state.think_tag_started:
+                    state.think_tag_started = False
+                    yield ("text", "</think>", state)
                 state.in_think = False
                 yield ("marker", "</think>", state)
                 pending = after_visible
@@ -1584,6 +1595,9 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
         yield ("text", state.think_buffer, state)
         state.think_buffer = ""
     if state.close_pending:
+        if state.think_tag_started:
+            state.think_tag_started = False
+            yield ("text", "</think>", state)
         state.in_think = False
         yield ("marker", "</think>", state)
     if state.answer_buffer:
@@ -1715,6 +1729,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     full_answer = last_state.full_text if last_state else ""
     final = await decorate_answer(_extract_visible_answer(full_answer))
     final["final"] = True
+    final["answer"] = ""
     yield final
 
 
