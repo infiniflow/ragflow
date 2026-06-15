@@ -24,6 +24,7 @@ concurrency:
 jobs:
   release:
     runs-on: [ "self-hosted", "ragflow-release" ]
+
     steps:
       - name: Ensure workspace ownership
         run: echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}
@@ -35,6 +36,13 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}  # Use the secret as an environment variable
           fetch-depth: 0
           fetch-tags: true
+
+      # https://github.com/actions/setup-go
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
 
       - name: Prepare release body
         run: |
@@ -51,8 +59,10 @@ jobs:
             PRERELEASE=true
             echo "Workflow triggered by schedule"
           fi
+
           echo "RELEASE_TAG=${RELEASE_TAG}" >> ${GITHUB_ENV}
           echo "PRERELEASE=${PRERELEASE}" >> ${GITHUB_ENV}
+
           RELEASE_DATETIME=$(date --rfc-3339=seconds)
           echo Release ${RELEASE_TAG} created from ${GITHUB_SHA} at ${RELEASE_DATETIME} > release_body.md
 
@@ -81,6 +91,78 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           # The body field does not support environment variable substitution directly.
           body_path: release_body.md
+
+      - name: Build Go CLI release binaries
+        run: |
+          set -euo pipefail
+
+          CLI_NAME="ragflow_cli"
+
+          CLI_MAIN="./cmd/ragflow_cli"
+
+          DIST_DIR="dist/cli"
+
+          mkdir -p "${DIST_DIR}"
+
+          if [[ ! -e "${CLI_MAIN}" ]]; then
+            echo "::error::Go CLI entry does not exist: ${CLI_MAIN}"
+            echo "::error::Please update CLI_MAIN in .github/workflows/release.yml"
+            exit 1
+          fi
+
+          echo "Building Go CLI release binaries"
+          echo "CLI name: ${CLI_NAME}"
+          echo "CLI main: ${CLI_MAIN}"
+          echo "Release tag: ${RELEASE_TAG}"
+          echo "Commit: ${GITHUB_SHA}"
+
+          build_one() {
+            local goos="$1"
+            local goarch="$2"
+            local ext="$3"
+
+            local output="${DIST_DIR}/${CLI_NAME}-${RELEASE_TAG}-${goos}-${goarch}${ext}"
+
+            echo "Building ${goos}/${goarch} -> ${output}"
+
+            CGO_ENABLED=0 \
+            GOOS="${goos}" \
+            GOARCH="${goarch}" \
+            go build \
+              -trimpath \
+              -ldflags="-s -w -X main.version=${RELEASE_TAG} -X main.commit=${GITHUB_SHA}" \
+              -o "${output}" \
+              "${CLI_MAIN}"
+
+            if [[ "${goos}" != "windows" ]]; then
+              chmod +x "${output}"
+            fi
+          }
+
+          build_one linux amd64 ""
+          build_one linux arm64 ""
+          build_one darwin amd64 ""
+          build_one darwin arm64 ""
+          build_one windows amd64 ".exe"
+          build_one windows arm64 ".exe"
+
+          cd "${DIST_DIR}"
+          sha256sum * > SHA256SUMS
+          cd -
+
+          echo "Generated CLI release assets:"
+          ls -lh "${DIST_DIR}"
+
+      - name: Upload Go CLI release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          prerelease: ${{ env.PRERELEASE }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: |
+            dist/cli/*
+            install.sh
+            install.ps1
 
       - name: Build and push image
         run: |
