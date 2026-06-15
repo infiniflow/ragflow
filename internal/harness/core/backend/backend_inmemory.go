@@ -114,11 +114,20 @@ func (b *InMemoryBackend) ReadBytes(path string, offset, limit int64) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
+	if offset < 0 {
+		return nil, fmt.Errorf("negative offset %d", offset)
+	}
+	if limit < 0 {
+		return nil, fmt.Errorf("negative limit %d", limit)
+	}
 	runes := []rune(content)
 	if int(offset) >= len(runes) {
 		return nil, fmt.Errorf("offset %d beyond content length %d", offset, len(runes))
 	}
 	end := int(offset) + int(limit)
+	if end < int(offset) { // integer overflow
+		end = len(runes)
+	}
 	if end > len(runes) {
 		end = len(runes)
 	}

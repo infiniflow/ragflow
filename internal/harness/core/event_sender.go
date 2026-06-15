@@ -45,24 +45,24 @@ func HasUserEventSenderModelWrapper[M MessageType](handlers []TypedReActMiddlewa
 // ---- Tool event constructors ----
 
 // TypedToolInvokeEvent creates an event for a synchronous tool result.
-func TypedToolInvokeEvent[M MessageType](result string, tc *ToolContext) *TypedAgentEvent[M] {
+func TypedToolInvokeEvent(result string, tc *ToolContext) *TypedAgentEvent[*schema.Message] {
 	msg := schema.ToolMessage(result, tc.CallID)
-	return typedEventFromMessage(any(msg).(M), nil, schema.RoleTool, tc.Name)
+	return typedEventFromMessage(msg, nil, schema.RoleTool, tc.Name)
 }
 
 // TypedToolStreamEvent creates an event for a streaming tool result.
-func TypedToolStreamEvent[M MessageType](resultChunks []string, tc *ToolContext) *TypedAgentEvent[M] {
+func TypedToolStreamEvent(resultChunks []string, tc *ToolContext) *TypedAgentEvent[*schema.Message] {
 	content := ""
 	for _, ch := range resultChunks {
 		content += ch
 	}
 	msg := schema.ToolMessage(content, tc.CallID)
-	return typedEventFromMessage(any(msg).(M), nil, schema.RoleTool, tc.Name)
+	return typedEventFromMessage(msg, nil, schema.RoleTool, tc.Name)
 }
 
 // TypedEnhancedToolInvokeEvent creates an event for an enhanced tool result.
 // Propagates Extra metadata for multimodal support.
-func TypedEnhancedToolInvokeEvent[M MessageType](result *schema.ToolResult, tc *ToolContext) *TypedAgentEvent[M] {
+func TypedEnhancedToolInvokeEvent(result *schema.ToolResult, tc *ToolContext) *TypedAgentEvent[*schema.Message] {
 	content := result.Content
 	if content == "" {
 		content = result.Error
@@ -77,12 +77,12 @@ func TypedEnhancedToolInvokeEvent[M MessageType](result *schema.ToolResult, tc *
 			msg.Extra[k] = v
 		}
 	}
-	return typedEventFromMessage(any(msg).(M), nil, schema.RoleTool, tc.Name)
+	return typedEventFromMessage(msg, nil, schema.RoleTool, tc.Name)
 }
 
 // TypedEnhancedToolStreamEvent creates an event for a streaming enhanced tool result.
 // Propagates the last result's Extra metadata.
-func TypedEnhancedToolStreamEvent[M MessageType](results []*schema.ToolResult, tc *ToolContext) *TypedAgentEvent[M] {
+func TypedEnhancedToolStreamEvent(results []*schema.ToolResult, tc *ToolContext) *TypedAgentEvent[*schema.Message] {
 	if len(results) == 0 {
 		return nil
 	}
@@ -101,5 +101,5 @@ func TypedEnhancedToolStreamEvent[M MessageType](results []*schema.ToolResult, t
 			msg.Extra[k] = v
 		}
 	}
-	return typedEventFromMessage(any(msg).(M), nil, schema.RoleTool, tc.Name)
+	return typedEventFromMessage(msg, nil, schema.RoleTool, tc.Name)
 }

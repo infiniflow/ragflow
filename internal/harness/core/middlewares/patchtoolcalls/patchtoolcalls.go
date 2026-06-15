@@ -52,6 +52,25 @@ func New[M core.MessageType](cfg *Config) core.TypedReActMiddleware[M] {
 	return &middleware[M]{cfg: cfg}
 }
 
+func buildPatchPlaceholder[M core.MessageType](content, callID string) M {
+	var zero M
+	switch any(zero).(type) {
+	case *schema.AgenticMessage:
+		return any(&schema.AgenticMessage{
+			Role:    schema.AgenticRoleUser,
+			Content: content,
+			ContentBlocks: []schema.ContentBlock{
+				{Type: "tool_result", ToolResult: &schema.ToolResult{
+					ToolCallID: callID,
+					Content:    content,
+				}},
+			},
+		}).(M)
+	default:
+		return any(schema.ToolMessage(content, callID)).(M)
+	}
+}
+
 func (m *middleware[M]) BeforeModelRewrite(ctx context.Context, state *core.TypedReActAgentState[M], mc *core.TypedModelContext[M]) (context.Context, *core.TypedReActAgentState[M], error) {
 	// Build a new slice instead of mutating state.Messages in-place to avoid
 	// fragility from slice reallocation mid-iteration.
@@ -105,8 +124,8 @@ func (m *middleware[M]) BeforeModelRewrite(ctx context.Context, state *core.Type
 		}
 		for _, tc := range toolCalls {
 			patchContent := getPatchContent(m.cfg, tc.Name, tc.ID)
-			placeholder := schema.ToolMessage(patchContent, tc.ID)
-			patched = append(patched, any(placeholder).(M))
+			placeholder := buildPatchPlaceholder[M](patchContent, tc.ID)
+			patched = append(patched, placeholder)
 		}
 	}
 	state.Messages = patched

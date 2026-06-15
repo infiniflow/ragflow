@@ -136,19 +136,28 @@ func runFlowAgentWithIsolatedSession(ctx context.Context, fa *flowAgent, input *
 	parentRunCtx := getRunCtx(ctx)
 
 	isolatedSession := &runSession{
-		Values:   parentSession.Values,
-		valuesMx: parentSession.valuesMx,
+		Values:   make(map[string]any),
+		valuesMx: &sync.Mutex{},
 	}
-	if isolatedSession.valuesMx == nil {
-		isolatedSession.valuesMx = &sync.Mutex{}
+	if parentSession != nil {
+		isolatedSession.Values = parentSession.Values
+		isolatedSession.valuesMx = parentSession.valuesMx
 	}
-	if isolatedSession.Values == nil {
-		isolatedSession.Values = make(map[string]any)
+
+	rootInput := input
+	if parentRunCtx != nil {
+		if r, ok := parentRunCtx.RootInput.(*AgentInput); ok && r != nil {
+			rootInput = r
+		}
+	}
+	var runPath []RunStep
+	if parentRunCtx != nil {
+		runPath = parentRunCtx.getRunPath()
 	}
 
 	ctx = setRunCtx(ctx, &runContext{
-		RootInput: parentRunCtx.RootInput,
-		RunPath:   parentRunCtx.getRunPath(),
+		RootInput: rootInput,
+		RunPath:   runPath,
 		Session:   isolatedSession,
 	})
 
@@ -172,23 +181,30 @@ func resumeFlowAgentWithIsolatedSession(ctx context.Context, fa *flowAgent, info
 	parentRunCtx := getRunCtx(ctx)
 
 	isolatedSession := &runSession{
-		Values:   parentSession.Values,
-		valuesMx: parentSession.valuesMx,
+		Values:   make(map[string]any),
+		valuesMx: &sync.Mutex{},
 	}
-	if isolatedSession.valuesMx == nil {
-		isolatedSession.valuesMx = &sync.Mutex{}
-	}
-	if isolatedSession.Values == nil {
-		isolatedSession.Values = make(map[string]any)
+	if parentSession != nil {
+		isolatedSession.Values = parentSession.Values
+		isolatedSession.valuesMx = parentSession.valuesMx
 	}
 	// Restore events from deterministic transfer state
 	for _, ev := range state.EventList {
 		isolatedSession.addEvent(ev)
 	}
 
+	rootInput := any(nil)
+	if parentRunCtx != nil {
+		rootInput = parentRunCtx.RootInput
+	}
+	var runPath []RunStep
+	if parentRunCtx != nil {
+		runPath = parentRunCtx.getRunPath()
+	}
+
 	ctx = setRunCtx(ctx, &runContext{
-		RootInput: parentRunCtx.RootInput,
-		RunPath:   parentRunCtx.getRunPath(),
+		RootInput: rootInput,
+		RunPath:   runPath,
 		Session:   isolatedSession,
 	})
 

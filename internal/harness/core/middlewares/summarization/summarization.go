@@ -181,7 +181,7 @@ func (m *middleware[M]) generateSummary(ctx context.Context, msgs []M) (string, 
 				break
 			}
 		}
-		promptMsgs = []M{any(schema.UserMessage(builder.String())).(M)}
+		promptMsgs = []M{buildSummaryPrompt[M](builder.String())}
 	}
 
 	var lastErr error
@@ -276,6 +276,16 @@ func truncateText(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+func buildSummaryPrompt[M core.MessageType](content string) M {
+	var zero M
+	switch any(zero).(type) {
+	case *schema.AgenticMessage:
+		return any(schema.UserAgenticMessage(content)).(M)
+	default:
+		return any(schema.UserMessage(content)).(M)
+	}
 }
 
 func defaultTokenCounter[M core.MessageType](ctx context.Context, msgs []M) (int, error) {
