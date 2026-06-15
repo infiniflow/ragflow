@@ -16,6 +16,7 @@
 #
 
 from rag.nlp import find_codec, rag_tokenizer
+import logging
 import re
 import uuid
 import chardet
@@ -205,8 +206,19 @@ class RAGFlowHtmlParser:
         pieces = []
         current = ""
         current_tokens = 0
+        # Spaceless scripts yield many repeated single-character atoms, so cache
+        # the token count per distinct atom to avoid re-tokenizing each one.
+        token_cache = {}
+
+        def atom_token_count(atom):
+            if atom.isspace():
+                return 0
+            if atom not in token_cache:
+                token_cache[atom] = cls._token_count(atom)
+            return token_cache[atom]
+
         for atom in cls._ATOM_RE.findall(block):
-            atom_tokens = 0 if atom.isspace() else cls._token_count(atom)
+            atom_tokens = atom_token_count(atom)
             if current and current_tokens + atom_tokens > chunk_token_num:
                 pieces.append(current)
                 current = ""
@@ -214,6 +226,12 @@ class RAGFlowHtmlParser:
             if atom_tokens > chunk_token_num and not atom.isspace():
                 # A single atom longer than the budget (e.g. a very long
                 # unbroken token): fall back to fixed character windows.
+                logging.debug(
+                    "html_parser: atom of %d chars exceeds chunk_token_num=%d; "
+                    "falling back to character windows",
+                    len(atom),
+                    chunk_token_num,
+                )
                 for i in range(0, len(atom), chunk_token_num):
                     pieces.append(atom[i:i + chunk_token_num])
                 continue
@@ -221,6 +239,11 @@ class RAGFlowHtmlParser:
             current_tokens += atom_tokens
         if current:
             pieces.append(current)
+        logging.debug(
+            "html_parser: split oversized block of %d chars into %d pieces",
+            len(block),
+            len(pieces),
+        )
         return pieces
 
     @classmethod
