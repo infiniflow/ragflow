@@ -1417,6 +1417,7 @@ func setNestedField(m map[string]interface{}, path string, val interface{}) {
 		m, ok2 = sub.(map[string]interface{})
 		if !ok2 {
 			nm := make(map[string]interface{})
+			m[parts[i]] = nm
 			m = nm
 		}
 	}

@@ -229,9 +229,13 @@ func (h *StreamMessagesHandler) GetAllMessages() map[string][]*MessageChunk {
 // Close closes all streams and flushes any pending messages.
 func (h *StreamMessagesHandler) Close(ctx context.Context) error {
 	h.mu.Lock()
-	defer h.mu.Unlock()
-
+	nodes := make([]string, 0, len(h.streams))
 	for node := range h.streams {
+		nodes = append(nodes, node)
+	}
+	h.mu.Unlock()
+
+	for _, node := range nodes {
 		_ = h.OnComplete(ctx, node)
 	}
 

@@ -4,6 +4,7 @@ package interrupt
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"ragflow/internal/harness/graph/errors"
 	"ragflow/internal/harness/graph/types"
@@ -57,12 +58,12 @@ func Interrupt(ctx context.Context, value interface{}) (interface{}, error) {
 	}
 
 	// Check for resume values
-	resumeValues := ic.resumeValues
-	idx := ic.index
+	resumeValues := ic.getResumeValues()
+	idx := ic.getInterruptIndex()
 
 	if idx < len(resumeValues) {
 		// Return the resume value
-		ic.index++
+		ic.incrementIndex()
 		return resumeValues[idx], nil
 	}
 
@@ -86,6 +87,7 @@ func Interrupt(ctx context.Context, value interface{}) (interface{}, error) {
 
 // interruptContext holds the context for interrupts.
 type interruptContext struct {
+	mu           sync.Mutex
 	resumeValues []interface{}
 	index        int
 	nullResume   interface{}
@@ -102,6 +104,8 @@ func (ic *interruptContext) getResumeValues() []interface{} {
 	if ic == nil {
 		return nil
 	}
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
 	return ic.resumeValues
 }
 
@@ -110,6 +114,8 @@ func (ic *interruptContext) getInterruptIndex() int {
 	if ic == nil {
 		return 0
 	}
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
 	return ic.index
 }
 
@@ -118,21 +124,62 @@ func (ic *interruptContext) getNullResume() interface{} {
 	if ic == nil {
 		return nil
 	}
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
 	return ic.nullResume
 }
 
 // appendResumeValue appends a resume value.
 func (ic *interruptContext) appendResumeValue(v interface{}) {
-	if ic != nil {
-		ic.resumeValues = append(ic.resumeValues, v)
+	if ic == nil {
+		return
 	}
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
+	ic.resumeValues = append(ic.resumeValues, v)
 }
 
 // setNullResume sets the null resume value.
 func (ic *interruptContext) setNullResume(v interface{}) {
-	if ic != nil {
-		ic.nullResume = v
+	if ic == nil {
+		return
 	}
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
+	ic.nullResume = v
+}
+
+// incrementIndex increments the interrupt index by 1 and returns the new value.
+func (ic *interruptContext) incrementIndex() int {
+	if ic == nil {
+		return 0
+	}
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
+	ic.index++
+	return ic.index
+}
+
+// setResumeValues replaces the resume values.
+func (ic *interruptContext) setResumeValues(values []interface{}) {
+	if ic == nil {
+		return
+	}
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
+	ic.resumeValues = values
+}
+
+// reset clears all interrupt context fields.
+func (ic *interruptContext) reset() {
+	if ic == nil {
+		return
+	}
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
+	ic.resumeValues = make([]interface{}, 0)
+	ic.index = 0
+	ic.nullResume = nil
 }
 
 // GetResumeValues returns the current resume values from context.
@@ -186,14 +233,10 @@ func GetNullResume(ctx context.Context, consume bool) interface{} {
 func Reset(ctx context.Context) {
 	ic := GetInterruptContext(ctx)
 	if ic != nil {
-		ic.resumeValues = make([]interface{}, 0)
-		ic.index = 0
-		ic.nullResume = nil
+		ic.reset()
 	}
 	// Also reset global context
-	globalContext.resumeValues = make([]interface{}, 0)
-	globalContext.index = 0
-	globalContext.nullResume = nil
+	globalContext.reset()
 }
 
 // generateInterruptID generates a unique ID for an interrupt.
@@ -226,5 +269,5 @@ func SetResumeValues(ctx context.Context, values []interface{}) {
 	if ic == nil {
 		ic = globalContext
 	}
-	ic.resumeValues = values
+	ic.setResumeValues(values)
 }
