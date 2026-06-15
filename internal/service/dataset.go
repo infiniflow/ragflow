@@ -107,6 +107,48 @@ func NewDatasetService() *DatasetService {
 	}
 }
 
+func (s *DatasetService) UpdateDocumentMetadataConfig(userID, datasetID, documentID string, req map[string]interface{}) (*entity.Document, common.ErrorCode, error) {
+	if _, err := s.kbDAO.GetByIDAndTenantID(datasetID, userID); err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, errors.New("You don't own the dataset.")
+		}
+		return nil, common.CodeServerError, errors.New("Database operation failed")
+	}
+
+	doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(documentID, datasetID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, fmt.Errorf("Document %s not found in dataset %s", documentID, datasetID)
+		}
+		return nil, common.CodeServerError, err
+	}
+
+	metadata, ok := req["metadata"]
+	if !ok {
+		return nil, common.CodeArgumentError, errors.New("metadata is required")
+	}
+
+	parserConfig := doc.ParserConfig
+	if parserConfig == nil {
+		parserConfig = entity.JSONMap{}
+	}
+	parserConfig["metadata"] = metadata
+
+	if err := s.documentDAO.UpdateByID(doc.ID, map[string]interface{}{"parser_config": parserConfig}); err != nil {
+		return nil, common.CodeExceptionError, err
+	}
+
+	updatedDoc, err := s.documentDAO.GetByID(doc.ID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, errors.New("Document not found!")
+		}
+		return nil, common.CodeExceptionError, err
+	}
+
+	return updatedDoc, common.CodeSuccess, nil
+}
+
 // SearchDatasetsRequest is the request structure for searching chunks across datasets.
 type SearchDatasetsRequest struct {
 	DatasetIDs             []string               `json:"dataset_ids" binding:"required"`
@@ -487,7 +529,6 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 	}, nil
 }
 
-
 // AutoMetadataField mirrors the REST dataset auto metadata field schema.
 type AutoMetadataField struct {
 	Name           string      `json:"name"`
@@ -815,10 +856,7 @@ func (s *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 		embdID = embeddingModel
 	}
 
-	kbID, err := utility.GenerateUUID1()
-	if err != nil {
-		return nil, common.CodeServerError, errors.New("Internal server error")
-	}
+	kbID := utility.GenerateToken()
 
 	status := string(entity.StatusValid)
 	// Deduplicate name within tenant

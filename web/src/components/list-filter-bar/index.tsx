@@ -29,6 +29,7 @@ export const FilterButton = React.forwardRef<
     <Button
       variant="outline"
       size={count > 0 ? 'default' : 'icon'}
+      asChild
       {...props}
       ref={ref}
     >

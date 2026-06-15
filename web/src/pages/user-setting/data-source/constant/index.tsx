@@ -1106,7 +1106,7 @@ export const DataSourceFormFields = {
   ],
   [DataSourceKey.BOX]: [
     {
-      label: 'Box OAuth JSON',
+      label: 'Box OAuth Configuration',
       name: 'config.credentials.box_tokens',
       type: FormFieldType.Textarea,
       required: true,
