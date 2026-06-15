@@ -136,14 +136,8 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		return nil, common.CodeServerError, fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	userID, err := utility.GenerateUUID1()
-	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to generate user id: %w", err)
-	}
-	accessToken, err := utility.GenerateUUID1()
-	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to generate access token: %w", err)
-	}
+	userID := utility.GenerateToken()
+	accessToken := utility.GenerateToken()
 	status := "1"
 	loginChannel := "password"
 	isSuperuser := false
@@ -204,10 +198,7 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		ParserIDs: "naive:General,Q&A:Q&A,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
 		Status:    &status,
 	}
-	userTenantID, err := utility.GenerateUUID1()
-	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to generate user tenant id: %w", err)
-	}
+	userTenantID := utility.GenerateToken()
 	userTenant := &entity.UserTenant{
 		ID:        userTenantID,
 		UserID:    userID,
@@ -216,10 +207,7 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		InvitedBy: userID,
 		Status:    &status,
 	}
-	fileID, err := utility.GenerateUUID1()
-	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to generate file id: %w", err)
-	}
+	fileID := utility.GenerateToken()
 	file__ := ""
 	rootFile := &entity.File{
 		ID:        fileID,
