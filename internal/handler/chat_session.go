@@ -285,6 +285,7 @@ func (h *ChatSessionHandler) Completion(c *gin.Context) {
 	// Call service
 	if req.Stream != nil && *req.Stream {
 		// Streaming response
+		disableWriteDeadlineForSSE(c)
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")
 		c.Header("Connection", "keep-alive")

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"ragflow/internal/common"
 	"strconv"
 	"strings"
 )
@@ -159,6 +160,8 @@ func (p *Parser) parseListCommand() (*Command, error) {
 		return p.parseListProviders()
 	case TokenInstances:
 		return p.parseListInstances()
+	case TokenIngestion:
+		return p.parseUserListIngestionTasks()
 	case TokenDefault:
 		return p.parseListDefaultModels()
 	case TokenAvailable:
@@ -1387,6 +1390,8 @@ func (p *Parser) parseRemoveCommand() (*Command, error) {
 		return p.parseRemoveTags()
 	case TokenChunks, TokenAll:
 		return p.parseRemoveChunk()
+	case TokenIngestion:
+		return p.parseUserRemoveTask()
 	case TokenModel:
 		return p.parseRemoveInstanceModel()
 	default:
@@ -2281,7 +2286,7 @@ func (p *Parser) parseSetVariable() (*Command, error) {
 func (p *Parser) parseSetDefault() (*Command, error) {
 	p.nextToken() // consume DEFAULT
 
-	var modelType, compositeModelName string
+	var modelType, modelNameOrID string
 	var err error
 
 	switch p.curToken.Type {
@@ -2309,12 +2314,12 @@ func (p *Parser) parseSetDefault() (*Command, error) {
 	}
 	p.nextToken() // pass MODEL
 
-	// Format: 'provider/instance/model' or just 'message'
+	// Format: 'model@instance@provider' or just 'message'
 	if p.curToken.Type != TokenQuotedString {
-		return nil, fmt.Errorf("expected quoted string with format provider/instance/model")
+		return nil, fmt.Errorf("expected quoted string with format model@instance@provider")
 	}
 
-	compositeModelName, err = p.parseQuotedString()
+	modelNameOrID, err = p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
@@ -2322,7 +2327,14 @@ func (p *Parser) parseSetDefault() (*Command, error) {
 
 	cmd := NewCommand("set_default_model")
 	cmd.Params["model_type"] = modelType
-	cmd.Params["composite_model_name"] = compositeModelName
+
+	if common.IsCompositeModelName(modelNameOrID) {
+		cmd.Params["composite_model_name"] = modelNameOrID
+	} else if common.IsUUID(modelNameOrID) {
+		cmd.Params["model_id"] = modelNameOrID
+	} else {
+		return nil, fmt.Errorf("invalid format of model name or ID: %s", modelNameOrID)
+	}
 
 	p.nextToken()
 	// Semicolon is optional for UNSET TOKEN
@@ -3020,7 +3032,7 @@ func (p *Parser) parseChatCommand() (*Command, error) {
 	p.nextToken() // consume CHAT
 
 	var err error
-	var compositeModelName string = ""
+	var modelNameOrID string = ""
 	var messages []string
 	var images []string
 	var videos []string
@@ -3034,11 +3046,11 @@ optionsLoop:
 		switch p.curToken.Type {
 		case TokenWith:
 			p.nextToken()
-			// 'model@instance@provider'
-			if compositeModelName != "" {
-				return nil, fmt.Errorf("model name is already set")
+			// 'model@instance@provider' or model ID
+			if modelNameOrID != "" {
+				return nil, fmt.Errorf("model name or ID is already set")
 			}
-			compositeModelName, err = p.parseQuotedString()
+			modelNameOrID, err = p.parseQuotedString()
 			if err != nil {
 				return nil, err
 			}
@@ -3178,7 +3190,13 @@ optionsLoop:
 	}
 	cmd := NewCommand("chat_to_model")
 
-	cmd.Params["composite_model_name"] = compositeModelName
+	if common.IsCompositeModelName(modelNameOrID) {
+		cmd.Params["composite_model_name"] = modelNameOrID
+	} else if common.IsUUID(modelNameOrID) {
+		cmd.Params["model_id"] = modelNameOrID
+	} else {
+		return nil, fmt.Errorf("invalid format of model name or ID: %s", modelNameOrID)
+	}
 	cmd.Params["messages"] = messages
 	cmd.Params["images"] = images
 	cmd.Params["videos"] = videos
@@ -3272,7 +3290,7 @@ textLoop:
 	}
 	p.nextToken() // consume WITH
 
-	compositeModelName, err := p.parseQuotedString()
+	modelNameOrID, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
@@ -3302,7 +3320,13 @@ textLoop:
 	}
 
 	cmd := NewCommand("embed_user_text")
-	cmd.Params["composite_model_name"] = compositeModelName
+	if common.IsCompositeModelName(modelNameOrID) {
+		cmd.Params["composite_model_name"] = modelNameOrID
+	} else if common.IsUUID(modelNameOrID) {
+		cmd.Params["model_id"] = modelNameOrID
+	} else {
+		return nil, fmt.Errorf("invalid format of model name or ID: %s", modelNameOrID)
+	}
 	cmd.Params["texts"] = texts
 	if dimension > 0 {
 		cmd.Params["dimension"] = dimension
@@ -3352,7 +3376,7 @@ documentLoop:
 	}
 	p.nextToken() // consume WITH
 
-	compositeModelName, err := p.parseQuotedString()
+	modelNameOrID, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
@@ -3370,7 +3394,13 @@ documentLoop:
 	p.nextToken()
 
 	cmd := NewCommand("rarank_user_document")
-	cmd.Params["composite_model_name"] = compositeModelName
+	if common.IsCompositeModelName(modelNameOrID) {
+		cmd.Params["composite_model_name"] = modelNameOrID
+	} else if common.IsUUID(modelNameOrID) {
+		cmd.Params["model_id"] = modelNameOrID
+	} else {
+		return nil, fmt.Errorf("invalid format of model name or ID: %s", modelNameOrID)
+	}
 	cmd.Params["query"] = query
 	cmd.Params["documents"] = documents
 	cmd.Params["top_n"] = topN
@@ -3385,7 +3415,7 @@ func (p *Parser) parseASRCommand() (*Command, error) {
 	}
 	p.nextToken() // consume WITH
 
-	compositeModelName, err := p.parseQuotedString()
+	modelNameOrID, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
@@ -3403,7 +3433,13 @@ func (p *Parser) parseASRCommand() (*Command, error) {
 	p.nextToken()
 
 	cmd := NewCommand("asr_user_command")
-	cmd.Params["composite_model_name"] = compositeModelName
+	if common.IsCompositeModelName(modelNameOrID) {
+		cmd.Params["composite_model_name"] = modelNameOrID
+	} else if common.IsUUID(modelNameOrID) {
+		cmd.Params["model_id"] = modelNameOrID
+	} else {
+		return nil, fmt.Errorf("invalid format of model name or ID: %s", modelNameOrID)
+	}
 	cmd.Params["audio_file"] = audioFile
 
 	for p.curToken.Type != TokenEOF && p.curToken.Type != TokenSemicolon {
@@ -3441,8 +3477,17 @@ func (p *Parser) parseTTSCommand() (*Command, error) {
 	if p.curToken.Type != TokenQuotedString && p.curToken.Type != TokenIdentifier {
 		return nil, fmt.Errorf("expect model name after 'with'")
 	}
-	cmd.Params["composite_model_name"] = strings.Trim(p.curToken.Value, "\"'")
+
+	modelNameOrID := strings.Trim(p.curToken.Value, "\"'")
 	p.nextToken()
+
+	if common.IsCompositeModelName(modelNameOrID) {
+		cmd.Params["composite_model_name"] = modelNameOrID
+	} else if common.IsUUID(modelNameOrID) {
+		cmd.Params["model_id"] = modelNameOrID
+	} else {
+		return nil, fmt.Errorf("invalid format of model name or ID: %s", modelNameOrID)
+	}
 
 	if p.curToken.Type != TokenText {
 		return nil, fmt.Errorf("expect 'text' parameter")
@@ -3505,7 +3550,7 @@ func (p *Parser) parseOCRCommand() (*Command, error) {
 	}
 	p.nextToken() // consume WITH
 
-	compositeModelName, err := p.parseQuotedString()
+	modelNameOrID, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
@@ -3536,7 +3581,18 @@ func (p *Parser) parseOCRCommand() (*Command, error) {
 		return nil, fmt.Errorf("expected FILE or URL")
 	}
 
-	cmd.Params["composite_model_name"] = compositeModelName
+	if common.IsCompositeModelName(modelNameOrID) {
+		cmd.Params["composite_model_name"] = modelNameOrID
+	} else if common.IsUUID(modelNameOrID) {
+		cmd.Params["model_id"] = modelNameOrID
+	} else {
+		return nil, fmt.Errorf("invalid format of model name or ID: %s", modelNameOrID)
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
 
 	return cmd, nil
 }
@@ -3544,7 +3600,7 @@ func (p *Parser) parseOCRCommand() (*Command, error) {
 func (p *Parser) parseModelParseCommand() (*Command, error) {
 	p.nextToken() // consume WITH
 
-	compositeModelName, err := p.parseQuotedString()
+	modelNameOrID, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
@@ -3575,7 +3631,18 @@ func (p *Parser) parseModelParseCommand() (*Command, error) {
 		return nil, fmt.Errorf("expected FILE or URL")
 	}
 
-	cmd.Params["composite_model_name"] = compositeModelName
+	if common.IsCompositeModelName(modelNameOrID) {
+		cmd.Params["composite_model_name"] = modelNameOrID
+	} else if common.IsUUID(modelNameOrID) {
+		cmd.Params["model_id"] = modelNameOrID
+	} else {
+		return nil, fmt.Errorf("invalid format of model name or ID: %s", modelNameOrID)
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
 
 	return cmd, nil
 }
@@ -3707,7 +3774,7 @@ func (p *Parser) parseUseCommand() (*Command, error) {
 func (p *Parser) parseUseModel() (*Command, error) {
 	p.nextToken() // consume MODEL
 
-	compositeModelName, err := p.parseQuotedString()
+	modelNameOrID, err := p.parseQuotedString()
 	if err != nil {
 		return nil, fmt.Errorf("expected model identifier in format 'model@instance@provider': %w", err)
 	}
@@ -3719,7 +3786,19 @@ func (p *Parser) parseUseModel() (*Command, error) {
 	}
 
 	cmd := NewCommand("use_model")
-	cmd.Params["composite_model_name"] = compositeModelName
+
+	if common.IsCompositeModelName(modelNameOrID) {
+		cmd.Params["composite_model_name"] = modelNameOrID
+	} else if common.IsUUID(modelNameOrID) {
+		cmd.Params["model_id"] = modelNameOrID
+	} else {
+		return nil, fmt.Errorf("invalid format of model name or ID: %s", modelNameOrID)
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
 	return cmd, nil
 }
 
@@ -3892,7 +3971,7 @@ optionsLoop:
 			if err != nil {
 				return nil, err
 			}
-			cmd.Params["embed_model"] = embedModel
+			cmd.Params["embedding_model"] = embedModel
 			p.nextToken()
 		case TokenDocParse:
 			p.nextToken()
@@ -4474,6 +4553,42 @@ func (p *Parser) parseRemoveChunk() (*Command, error) {
 	return cmd, nil
 }
 
+func (p *Parser) parseUserStartIngestion() (*Command, error) {
+	p.nextToken() // consume Start
+
+	if p.curToken.Type != TokenIngestion {
+		return nil, fmt.Errorf("expect INGESTION")
+	}
+	p.nextToken() // consume Ingestion
+
+	documentID, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenFrom {
+		return nil, fmt.Errorf("expect FROM")
+	}
+	p.nextToken() // consume FROM
+
+	datasetID, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := NewCommand("user_start_ingestion_command")
+	cmd.Params["document_id"] = documentID
+	cmd.Params["dataset_id"] = datasetID
+	p.nextToken()
+
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
 // parseShowTask parses SHOW ADMIN SERVER
 func (p *Parser) parseUserShowAdmin() (*Command, error) {
 	p.nextToken() // consume ADMIN
@@ -4491,6 +4606,90 @@ func (p *Parser) parseUserShowAdmin() (*Command, error) {
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
+	return cmd, nil
+}
+
+func (p *Parser) parseUserStopIngestion() (*Command, error) {
+	p.nextToken() // consume Stop
+
+	if p.curToken.Type != TokenIngestion {
+		return nil, fmt.Errorf("expect INGESTION")
+	}
+	p.nextToken() // consume Ingestion
+
+	if p.curToken.Type != TokenTasks {
+		return nil, fmt.Errorf("expect TASKS")
+	}
+	p.nextToken()
+
+	taskStr, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+
+	tasks := strings.Split(taskStr, " ")
+
+	cmd := NewCommand("user_stop_ingestion_command")
+	cmd.Params["tasks"] = tasks
+	p.nextToken()
+
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+func (p *Parser) parseUserListIngestionTasks() (*Command, error) {
+	p.nextToken() // consume Ingestion
+
+	if p.curToken.Type != TokenTasks {
+		return nil, fmt.Errorf("expected TASKS")
+	}
+	p.nextToken() // consume TASKS
+
+	cmd := NewCommand("user_list_ingestion_tasks")
+
+	if p.curToken.Type == TokenFrom {
+		p.nextToken()
+		datasetID, err := p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		cmd.Params["dataset_id"] = datasetID
+	}
+
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+func (p *Parser) parseUserRemoveTask() (*Command, error) {
+	p.nextToken() // consume Ingestion
+
+	if p.curToken.Type != TokenTasks {
+		return nil, fmt.Errorf("expected TASKS")
+	}
+	p.nextToken() // consume TASKS
+
+	taskStr, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := NewCommand("user_remove_task_command")
+
+	tasks := strings.Split(taskStr, " ")
+
+	cmd.Params["tasks"] = tasks
+
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
 	return cmd, nil
 }
 

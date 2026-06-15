@@ -46,6 +46,7 @@ type Router struct {
 	difyRetrievalHandler *handler.DifyRetrievalHandler
 	pluginHandler        *handler.PluginHandler
 	modelHandler         *handler.ModelHandler
+	adminRuntimeHandler  *handler.AdminRuntimeHandler
 }
 
 // NewRouter create router
@@ -73,6 +74,7 @@ func NewRouter(
 	difyRetrievalHandler *handler.DifyRetrievalHandler,
 	pluginHandler *handler.PluginHandler,
 	modelHandler *handler.ModelHandler,
+	adminRuntimeHandler *handler.AdminRuntimeHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -98,6 +100,7 @@ func NewRouter(
 		difyRetrievalHandler: difyRetrievalHandler,
 		pluginHandler:        pluginHandler,
 		modelHandler:         modelHandler,
+		adminRuntimeHandler:  adminRuntimeHandler,
 	}
 }
 
@@ -271,8 +274,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 				// Dataset document chunk
 				datasets.GET("/:dataset_id/documents/:document_id/chunks/:chunk_id", r.chunkHandler.Get)
-				datasets.POST("/:dataset_id/documents/parse", r.documentHandler.ParseDocuments)
-				datasets.POST("/:dataset_id/documents/stop", r.documentHandler.StopParseDocuments)
+				datasets.POST("/:dataset_id/documents/parse", r.documentHandler.StartIngestionTask)
+				datasets.GET("/ingestion/tasks", r.documentHandler.ListIngestionTasks)
+				datasets.PUT("/ingestion/tasks", r.documentHandler.StopIngestionTasks)
+				datasets.DELETE("/ingestion/tasks", r.documentHandler.RemoveIngestionTasks)
+				//datasets.POST("/:dataset_id/documents/parse", r.documentHandler.ParseDocuments)
+				//datasets.POST("/:dataset_id/documents/stop", r.documentHandler.StopParseDocuments)
 				datasets.DELETE("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.RemoveChunks)
 				datasets.PUT("/:dataset_id/documents/:document_id/metadata/config", r.datasetsHandler.UpdateDocumentMetadataConfig)
 			}
@@ -358,7 +365,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.GET("/:provider_name/instances/:instance_name", r.providerHandler.ShowProviderInstance)
 				provider.GET("/:provider_name/instances/:instance_name/balance", r.providerHandler.ShowInstanceBalance)
 				provider.GET("/:provider_name/instances/:instance_name/connection", r.providerHandler.CheckInstanceConnection)
-				provider.GET("/:provider_name/connection", r.providerHandler.CheckConnection)
+				// Python's /providers/<name>/connection is POST — see
+				// api/apps/restful_apis/provider_api.py:359. The web front-end
+				// posts {api_key, base_url, region, model_info} there
+				// (web/src/services/llm-service.ts:45-48 method: 'post'). The
+				// Go handler body is already POST-shaped (ShouldBindJSON
+				// against CheckConnectionRequest), so the only thing missing
+				// was the routing method.
+				provider.POST("/:provider_name/connection", r.providerHandler.CheckConnection)
 				provider.GET("/:provider_name/instances/:instance_name/tasks", r.providerHandler.ListTasks)
 				provider.GET("/:provider_name/instances/:instance_name/tasks/:task_id", r.providerHandler.ShowTask)
 				provider.PUT("/:provider_name/instances/:instance_name", r.providerHandler.AlterProviderInstance)
@@ -378,8 +392,22 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 			model := v1.Group("/models")
 			{
-				model.GET("/", r.tenantHandler.GetModels)
+				// GET /models returns the tenant's added models across
+				// all instances, matching Python's
+				// models_api_service.list_tenant_added_models. Front-end
+				// useFetchAllAddedModels consumes this. Routed to the
+				// provider handler because that's where the
+				// modelProviderService is wired.
+				model.GET("/", r.providerHandler.ListTenantAddedModels)
+
+				// TODO: list default models?
+				//model.GET("/", r.tenantHandler.GetModels)
 				model.PATCH("/", r.tenantHandler.SetModels)
+				// Tenant default-model selection (used by the agent
+				// page's useFetchDefaultModels hook). Mirrors the
+				// Python contract at api/apps/restful_apis/models_api.py:84.
+				model.GET("/default", r.tenantHandler.GetDefaultModels)
+				model.PATCH("/default", r.tenantHandler.SetDefaultModels)
 			}
 
 			allModels := v1.Group("/all-models")
@@ -389,27 +417,19 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 			// Agent routes
 			agents := v1.Group("/agents")
-			{
-				agents.GET("", r.agentHandler.ListAgents)
-				agents.GET("/prompts", r.agentHandler.GetPrompts)
-				agents.GET("/templates", r.agentHandler.ListTemplates)
-				agents.GET("/download", r.agentHandler.DownloadAgentFile)
-				agents.POST("/test_db_connection", r.agentHandler.TestDBConnection)
-				agents.GET("/:agent_id/versions", r.agentHandler.ListAgentVersions)
-				agents.GET("/:agent_id/versions/:version_id", r.agentHandler.GetAgentVersion)
-				agents.POST("/:agent_id/upload", r.agentHandler.UploadAgentFile)
-				agents.PUT("/:agent_id/tags", r.agentHandler.UpdateAgentTags)
-				agents.GET("/:agent_id/sessions", r.agentHandler.ListAgentSessions)
-				agents.GET("/:agent_id/sessions/:session_id", r.agentHandler.GetAgentSession)
-				agents.DELETE("/:agent_id/sessions/:session_id", r.agentHandler.DeleteAgentSessionItem)
-				agents.DELETE("/:agent_id/sessions", r.agentHandler.DeleteAgentSessions)
-			}
+			RegisterAgentRoutes(agents, r.agentHandler)
 
 			// Plugin routes
 			plugin := v1.Group("/plugin")
 			{
 				plugin.GET("/tools", r.pluginHandler.ListLLMTools)
 			}
+
+			// Admin routes — Phase 6 per-tenant canvas runtime override.
+			// RegisterAdminRuntimeRoutes lives in admin_routes.go; a nil
+			// handler is tolerated and yields a no-op registration.
+			admin := v1.Group("/admin")
+			RegisterAdminRuntimeRoutes(admin, r.adminRuntimeHandler)
 
 			connector := v1.Group("/connectors")
 			{

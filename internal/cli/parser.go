@@ -124,10 +124,12 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 		return p.parseAdminShutdownCommand()
 	case TokenRestart:
 		return p.parseAdminRestartCommand()
-	case TokenStart:
-		return p.parseStartIngestion()
+	case TokenMQ:
+		return p.parseMessageQueueCommand()
+	case TokenRemove:
+		return p.parseAdminRemoveCommand()
 	case TokenStop:
-		return p.parseStopIngestion()
+		return p.parseAdminStopIngestionTasks()
 	case TokenAdd:
 		return p.parseAdminAddCommand()
 	case TokenDelete:
@@ -216,6 +218,11 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseOCRCommand()
 	case TokenCheck:
 		return p.parseCheckCommand()
+	case TokenStart:
+		return p.parseUserStartIngestion()
+	case TokenStop:
+		return p.parseUserStopIngestion()
+
 	case TokenSave:
 		return p.parseUserSaveCommand()
 	case TokenUse:
