@@ -399,6 +399,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 				// provider handler because that's where the
 				// modelProviderService is wired.
 				model.GET("/", r.providerHandler.ListTenantAddedModels)
+
+				// TODO: list default models?
+				//model.GET("/", r.tenantHandler.GetModels)
 				model.PATCH("/", r.tenantHandler.SetModels)
 				// Tenant default-model selection (used by the agent
 				// page's useFetchDefaultModels hook). Mirrors the
