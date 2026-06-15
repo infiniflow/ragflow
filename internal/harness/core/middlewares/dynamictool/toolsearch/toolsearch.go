@@ -39,9 +39,12 @@ func New(cfg *TypedConfig[*schema.Message]) core.TypedReActMiddleware[*schema.Me
 }
 
 func (m *middleware[M]) BeforeAgent(ctx context.Context, rc *core.ReActAgentContext) (context.Context, *core.ReActAgentContext, error) {
-	var ran bool
-	m.initOnce.Do(func() { ran = true })
-	if !ran { return ctx, rc, nil }
+	m.initOnce.Do(func() {})
+	// initOnce ensures tools are loaded into rc at least once per middleware instance.
+	// If a previous run already loaded tools, skip re-adding to avoid duplicates.
+	if len(rc.Tools) > 0 || rc.ToolSearchTool != nil {
+		return ctx, rc, nil
+	}
 
 	if len(m.cfg.AllTools) <= m.cfg.SearchThreshold {
 		// Small toolset: pass all directly

@@ -149,11 +149,8 @@ func TestInterrupt_TreeSerialization(t *testing.T) {
 
 	t.Run("from_interrupt_contexts_empty", func(t *testing.T) {
 		sig := FromInterruptContexts(nil)
-		if sig == nil {
-			t.Fatal("expected non-nil signal")
-		}
-		if len(sig.Children) != 0 {
-			t.Error("expected no children")
+		if sig != nil {
+			t.Error("expected nil for empty input")
 		}
 	})
 

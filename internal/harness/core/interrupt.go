@@ -48,7 +48,7 @@ const (
 	AddressSegmentTool  AddressSegmentType = "tool"
 )
 
-var allowedAddrSegTypes = []AddressSegmentType{AddressSegmentAgent, AddressSegmentTool}
+
 
 type InterruptCtx struct {
 	ID      string
@@ -80,9 +80,12 @@ func StatefulInterrupt(ctx context.Context, info, state any) *AgentEvent {
 }
 
 func TypedStatefulInterrupt[M MessageType](ctx context.Context, info, state any) *TypedAgentEvent[M] {
+	addr := captureAddress(ctx)
 	return &TypedAgentEvent[M]{Action: &AgentAction{
 		Interrupted: &InterruptInfo{Data: info},
-		internalInterrupted: &InterruptSignal{Info: info, State: state},
+		internalInterrupted: &InterruptSignal{
+			Info: info, State: state, Address: addr,
+		},
 	}}
 }
 
@@ -91,12 +94,29 @@ func CompositeInterrupt(ctx context.Context, info, state any, subs ...*Interrupt
 }
 
 func TypedCompositeInterrupt[M MessageType](ctx context.Context, info, state any, subs ...*InterruptSignal) *TypedAgentEvent[M] {
+	addr := captureAddress(ctx)
 	children := make([]*InterruptSignal, len(subs))
-	copy(children, subs)
+	for i, sub := range subs {
+		cp := *sub
+		children[i] = &cp
+	}
 	return &TypedAgentEvent[M]{Action: &AgentAction{
 		Interrupted: &InterruptInfo{Data: info},
-		internalInterrupted: &InterruptSignal{Info: info, State: state, Children: children},
+		internalInterrupted: &InterruptSignal{
+			Info: info, State: state, Address: addr, Children: children,
+		},
 	}}
+}
+
+// captureAddress copies the current address segments from context.
+func captureAddress(ctx context.Context) Address {
+	segs := getAddressSegments(ctx)
+	if len(segs) == 0 {
+		return nil
+	}
+	addr := make(Address, len(segs))
+	copy(addr, segs)
+	return addr
 }
 
 type addrSegKey struct{}
@@ -116,8 +136,10 @@ func getAddressSegments(ctx context.Context) []AddressSegment {
 	return nil
 }
 
+// FromInterruptContexts builds an InterruptSignal tree from a flat slice of
+// InterruptCtx. Returns nil when ctxs is empty.
 func FromInterruptContexts(ctxs []*InterruptCtx) *InterruptSignal {
-	if len(ctxs) == 0 { return &InterruptSignal{} }
+	if len(ctxs) == 0 { return nil }
 	root := &InterruptSignal{}
 	buildFromCtxs(ctxs, root)
 	return root
@@ -141,6 +163,10 @@ type CheckPointStore interface {
 	Set(ctx context.Context, key string, data []byte) error
 }
 
+// InterruptState wraps the opaque interrupt state for checkpoint serialization.
+// Callers MUST register the concrete type stored in State via schema.RegisterName
+// or gob.Register before saving a checkpoint; otherwise gob.Encode/Decode will
+// panic at runtime for unregistered interface types.
 type InterruptState struct{ State any }
 
 type checkpointPayload struct {
@@ -199,10 +225,10 @@ func loadCheckpointHMACKey() []byte {
 	if env := os.Getenv(envHMACKey); env != "" {
 		k, err := base64.StdEncoding.DecodeString(env)
 		if err != nil {
-			log.Fatalf("checkpoint HMAC key: invalid base64 in %s: %v", envHMACKey, err)
+			panic("checkpoint HMAC key: invalid base64 in " + envHMACKey + ": " + err.Error())
 		}
 		if len(k) != 32 {
-			log.Fatalf("checkpoint HMAC key: %s must decode to exactly 32 bytes, got %d", envHMACKey, len(k))
+			panic("checkpoint HMAC key: " + envHMACKey + " must decode to exactly 32 bytes, got " + fmt.Sprintf("%d", len(k)))
 		}
 		return k
 	}
@@ -258,7 +284,16 @@ func loadCheckpoint(store CheckPointStore, ctx context.Context, cid string) (con
 		}
 	}
 
-	return ctx, p.RunCtx, &ResumeInfo{EnableStreaming: p.EnableStreaming, InterruptInfo: p.Info}, nil
+	// Rebuild InterruptContexts from checkpoint maps
+	ics := mapsToInterruptContexts(p.InterruptID2Address, p.InterruptID2State)
+	if p.Info != nil {
+		p.Info.InterruptContexts = ics
+	}
+
+	return ctx, p.RunCtx, &ResumeInfo{
+		EnableStreaming: p.EnableStreaming,
+		InterruptInfo:  p.Info,
+	}, nil
 }
 
 func saveCheckpoint(store CheckPointStore, ctx context.Context, key string, enableStreaming bool, info *InterruptInfo, is *InterruptSignal) error {
@@ -307,6 +342,25 @@ func signalToMaps(is *InterruptSignal) (map[string]Address, map[string]Interrupt
 	return a, s
 }
 
+// mapsToInterruptContexts reconstructs a slice of InterruptCtx from checkpoint maps.
+func mapsToInterruptContexts(id2addr map[string]Address, id2state map[string]InterruptState) []*InterruptCtx {
+	if len(id2addr) == 0 {
+		return nil
+	}
+	ics := make([]*InterruptCtx, 0, len(id2addr))
+	for id, addr := range id2addr {
+		ic := &InterruptCtx{ID: id, Address: make(Address, len(addr))}
+		copy(ic.Address, addr)
+		if st, ok := id2state[id]; ok {
+			ic.State = st.State
+		}
+		ics = append(ics, ic)
+	}
+	return ics
+}
+
+// getNextResumeAgent returns the deepest (innermost) agent address segment for
+// single-agent resume routing. It scans address segments from the end.
 func getNextResumeAgent(ctx context.Context, info *ResumeInfo) (string, error) {
 	segs := getAddressSegments(ctx)
 	if len(segs) == 0 {
@@ -321,6 +375,8 @@ func getNextResumeAgent(ctx context.Context, info *ResumeInfo) (string, error) {
 	return "", errors.New("no agent address segment found for resume")
 }
 
+// getNextResumeAgents returns ALL agent address segments for multi-agent resume
+// routing (e.g., parallel branches). Returns all agent segments as a set.
 func getNextResumeAgents(ctx context.Context, info *ResumeInfo) (map[string]bool, error) {
 	segs := getAddressSegments(ctx)
 	if len(segs) == 0 {
@@ -338,11 +394,19 @@ func getNextResumeAgents(ctx context.Context, info *ResumeInfo) (map[string]bool
 	return result, nil
 }
 
+// buildResumeInfo copies all ResumeInfo fields into a new struct and appends
+// the agent address segment. IsResumeTarget and ResumeData are always copied
+// regardless of WasInterrupted — callers that set them for non-interrupted
+// resumes (e.g., initial resume of a fresh run) should have them preserved.
 func buildResumeInfo(ctx context.Context, nextID string, info *ResumeInfo) (context.Context, *ResumeInfo) {
 	ctx = AppendAddressSegment(ctx, AddressSegmentAgent, nextID)
-	ri := &ResumeInfo{EnableStreaming: info.EnableStreaming, InterruptInfo: info.InterruptInfo}
-	ri.WasInterrupted = info.WasInterrupted
-	if info.WasInterrupted { ri.IsResumeTarget = info.IsResumeTarget; ri.ResumeData = info.ResumeData }
+	ri := &ResumeInfo{
+		EnableStreaming: info.EnableStreaming,
+		InterruptInfo:   info.InterruptInfo,
+		WasInterrupted:  info.WasInterrupted,
+		IsResumeTarget:  info.IsResumeTarget,
+		ResumeData:      info.ResumeData,
+	}
 	ctx = updateRunPathOnly(ctx, nextID)
 	return ctx, ri
 }

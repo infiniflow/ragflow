@@ -7,11 +7,18 @@ import (
 )
 
 // TruncateToolResult truncates a tool result to the given max length.
+// The truncation is applied at a rune boundary to avoid splitting UTF-8.
 func TruncateToolResult(result string, maxLen int) string {
 	if maxLen <= 0 || len(result) <= maxLen {
 		return result
 	}
-	return fmt.Sprintf("%s\n...(truncated %d bytes)", result[:maxLen], len(result)-maxLen)
+	// Truncate at rune boundary ([:maxLen] may split multi-byte chars).
+	runes := []rune(result)
+	if maxLen > len(runes) {
+		return result
+	}
+	truncated := string(runes[:maxLen])
+	return fmt.Sprintf("%s\n...(truncated %d bytes)", truncated, len(result)-len(truncated))
 }
 
 // LastToolResult finds the last tool result message for a given tool name.

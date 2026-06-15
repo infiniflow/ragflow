@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"runtime/debug"
 	"sync"
 
 	"ragflow/internal/harness/core/schema"
@@ -61,7 +62,7 @@ func (a *workflowAgent) Run(ctx context.Context, _ *AgentInput, opts ...RunOptio
 	it, gen := NewAsyncIteratorPair[*AgentEvent]()
 	go func() {
 		defer func() {
-			if r := recover(); r != nil { gen.Send(&AgentEvent{Err: fmt.Errorf("panic: %v", r)}) }
+			if r := recover(); r != nil { gen.Send(&AgentEvent{Err: fmt.Errorf("panic: %v\n%s", r, debug.Stack())}) }
 			gen.Close()
 		}()
 		switch a.mode {
@@ -78,7 +79,7 @@ func (a *workflowAgent) Resume(ctx context.Context, info *ResumeInfo, opts ...Ru
 	it, gen := NewAsyncIteratorPair[*AgentEvent]()
 	go func() {
 		defer func() {
-			if r := recover(); r != nil { gen.Send(&AgentEvent{Err: fmt.Errorf("panic: %v", r)}) }
+			if r := recover(); r != nil { gen.Send(&AgentEvent{Err: fmt.Errorf("panic: %v\n%s", r, debug.Stack())}) }
 			gen.Close()
 		}()
 		st := info.InterruptState
@@ -166,6 +167,7 @@ func (a *workflowAgent) runLoop(ctx context.Context, gen *AsyncGenerator[*AgentE
 				if last.Action.BreakLoop != nil && !last.Action.BreakLoop.Done {
 					last.Action.BreakLoop.Done = true
 					last.Action.BreakLoop.CurrentIterations = i
+					gen.Send(last)
 					return nil
 				}
 				if last.Action.internalInterrupted != nil {
@@ -223,8 +225,11 @@ func (a *workflowAgent) runPar(ctx context.Context, gen *AsyncGenerator[*AgentEv
 					ri := &ResumeInfo{EnableStreaming: info.EnableStreaming}
 					if wf, _ := info.Data.(*WorkflowInterruptInfo); wf != nil { ri.InterruptInfo = wf.ParallelInfo[idx] }
 					it = ag.Resume(childCtxs[idx], ri, opts...)
-				} else if ps != nil { return }
-				it = ag.Run(childCtxs[idx], nil, opts...)
+				} else if ps != nil {
+					return
+				} else {
+					it = ag.Run(childCtxs[idx], nil, opts...)
+				}
 			} else { it = ag.Run(childCtxs[idx], nil, opts...) }
 
 			for { ev, ok := it.Next(); if !ok { break }
@@ -305,9 +310,16 @@ func newWf(ctx context.Context, name, desc string, subs []Agent, mode workflowMo
 	return fa.(*flowAgent), nil
 }
 
-func NewSequential(ctx context.Context, cfg *SequentialConfig) (ResumableAgent, error) { return newWf(ctx, cfg.Name, cfg.Description, cfg.SubAgents, workflowModeSequential, 0) }
-func NewParallel(ctx context.Context, cfg *ParallelConfig) (ResumableAgent, error)     { return newWf(ctx, cfg.Name, cfg.Description, cfg.SubAgents, workflowModeParallel, 0) }
+func NewSequential(ctx context.Context, cfg *SequentialConfig) (ResumableAgent, error) {
+	if cfg == nil { return nil, fmt.Errorf("SequentialConfig is nil") }
+	return newWf(ctx, cfg.Name, cfg.Description, cfg.SubAgents, workflowModeSequential, 0)
+}
+func NewParallel(ctx context.Context, cfg *ParallelConfig) (ResumableAgent, error) {
+	if cfg == nil { return nil, fmt.Errorf("ParallelConfig is nil") }
+	return newWf(ctx, cfg.Name, cfg.Description, cfg.SubAgents, workflowModeParallel, 0)
+}
 func NewLoop(ctx context.Context, cfg *LoopConfig) (ResumableAgent, error) {
+	if cfg == nil { return nil, fmt.Errorf("LoopConfig is nil") }
 	if cfg.MaxIterations <= 0 { cfg.MaxIterations = 10 }
 	return newWf(ctx, cfg.Name, cfg.Description, cfg.SubAgents, workflowModeLoop, cfg.MaxIterations)
 }

@@ -89,7 +89,7 @@ func (e *eventWrapEntry) GobDecode(data []byte) error {
 		// Decode into generic interface{} — gob will reconstruct registered types.
 		e.Event = new(any)
 		if err := dec.Decode(e.Event); err != nil {
-			return fmt.Errorf("gob decode event (%s): %w", typeName, err)
+			return fmt.Errorf("gob decode event: type %q may not be registered; wrap with schema.RegisterName: %w", typeName, err)
 		}
 		// Decode into interface{} wraps in a *any; unwrap.
 		if p, ok := e.Event.(*any); ok {
@@ -214,11 +214,17 @@ func (rc *runContext) appendRunPath(v RunStep) {
 
 type runContextKey struct{}
 
-func ctxWithNewTypedRunCtx[M MessageType](ctx context.Context, input *TypedAgentInput[M], sharedParentSession bool) context.Context {
+func ctxWithNewTypedRunCtx[M MessageType](ctx context.Context, input *TypedAgentInput[M], _ bool) context.Context {
+	// sharedParentSession parameter is reserved for future use.
+	// Currently a new isolated session is always created.
 	rc := &runContext{RootInput: input, RunPath: make([]RunStep, 0), Session: newRunSession()}
 	return context.WithValue(ctx, runContextKey{}, rc)
 }
 
+// initRunCtx initializes or extends a run context and appends the agent name
+// to the run path. If a run context already exists in ctx, it is reused — this
+// means nested agent calls share the same Session (Values, events) and the
+// RunPath accumulates across all agents in the call chain.
 func initRunCtx(ctx context.Context, agentName string, input *AgentInput) (context.Context, *runContext) {
 	rc := getRunCtx(ctx)
 	if rc == nil {
@@ -248,8 +254,13 @@ func forkRunCtx(ctx context.Context) context.Context {
 
 	// Create a new session for the child lane.
 	// Share committed history (Events) and values, but give the child its own BranchEvents.
+	parent.Session.mu.Lock()
+	eventsCopy := make([]*eventWrapEntry, len(parent.Session.events))
+	copy(eventsCopy, parent.Session.events)
+	parent.Session.mu.Unlock()
+
 	childSession := &runSession{
-		events:   parent.Session.events,   // Share committed history
+		events:   eventsCopy,
 		Values:   parent.Session.Values,   // Share values map
 		valuesMx: parent.Session.valuesMx,
 	}
@@ -324,13 +335,17 @@ func commitEvents(rc *runContext, entries []*eventWrapEntry) {
 	}
 }
 
-// unwindLaneEvents collects all events from the BranchEvents of the given contexts.
+// unwindLaneEvents collects all events from the BranchEvents linked list of the given
+// contexts. Traverses the full Parent chain to capture events from deeply forked lanes.
 func unwindLaneEvents(ctxs ...context.Context) []*eventWrapEntry {
 	var all []*eventWrapEntry
 	for _, ctx := range ctxs {
 		rc := getRunCtx(ctx)
-		if rc != nil && rc.Session != nil && rc.Session.BranchEvents != nil {
-			all = append(all, rc.Session.BranchEvents.Events...)
+		if rc == nil || rc.Session == nil {
+			continue
+		}
+		for lane := rc.Session.BranchEvents; lane != nil; lane = lane.Parent {
+			all = append(all, lane.Events...)
 		}
 	}
 	return all
@@ -344,9 +359,13 @@ func getSession(ctx context.Context) *runSession {
 }
 
 func AddSessionValues(ctx context.Context, values map[string]any) {
-	if rc := getRunCtx(ctx); rc != nil && rc.Session != nil && values != nil {
-		for k, v := range values {
-			rc.Session.Values[k] = v
-		}
+	rc := getRunCtx(ctx)
+	if rc == nil || rc.Session == nil || values == nil {
+		return
+	}
+	rc.Session.valuesMx.Lock()
+	defer rc.Session.valuesMx.Unlock()
+	for k, v := range values {
+		rc.Session.Values[k] = v
 	}
 }

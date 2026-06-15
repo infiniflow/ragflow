@@ -58,6 +58,9 @@ type CancelError struct {
 }
 
 func (e *CancelError) Error() string {
+	if e == nil || e.Info == nil {
+		return "agent canceled"
+	}
 	return fmt.Sprintf("agent canceled: mode=%v escalated=%v", e.Info.Mode, e.Info.Escalated)
 }
 
@@ -180,11 +183,22 @@ func (cc *cancelContext) triggerImmediate() {
 }
 func (cc *cancelContext) sendInterrupt() bool {
 	cc.mu.Lock()
-	defer cc.mu.Unlock()
 	if !atomic.CompareAndSwapInt32(&cc.interruptSent, interruptNotSent, interruptImmediate) {
+		cc.mu.Unlock()
 		return false
 	}
 	close(cc.immediateChan)
+	// Snapshot callbacks under lock, invoke outside to avoid callback-induced deadlocks.
+	funcs := append([]func(...any){}, cc.interruptFuncs...)
+	cc.mu.Unlock()
+
+	for _, fn := range funcs {
+		fn()
+	}
+
+	// Grace period for recursive cancellation with agent-tool descendants.
+	// This is best-effort; cancel() itself returns immediately, the grace wait
+	// is advisory for the sub-agent to observe the cancellation signal.
 	if cc.isRecursive() && atomic.LoadInt32(&cc.agentToolDescendant) == 1 {
 		select { case <-cc.doneChan: case <-time.After(cancelGracePeriod): }
 	}
@@ -294,7 +308,10 @@ func (cc *cancelContext) buildCancelFunc() AgentCancelFunc {
 		var needImmediate, needTimeout bool
 		if cc.getMode() == CancelImmediate { needImmediate = true
 		} else if req.Timeout != nil && *req.Timeout > 0 {
-			cc.setDeadlineUnixNano(time.Now().Add(*req.Timeout).UnixNano())
+			// Use minimum (earliest) non-zero deadline so a later cancel cannot
+			// extend an earlier timeout.
+			nextDeadline := time.Now().Add(*req.Timeout).UnixNano()
+			cc.setDeadlineMinUnixNano(nextDeadline)
 			cc.wakeTimeout()
 			needTimeout = true
 		}
@@ -350,6 +367,17 @@ func (cc *cancelContext) wakeTimeout() {
 }
 
 func (cc *cancelContext) setDeadlineUnixNano(t int64) { atomic.StoreInt64(&cc.deadlineUnixNano, t) }
+func (cc *cancelContext) setDeadlineMinUnixNano(next int64) {
+	for {
+		cur := atomic.LoadInt64(&cc.deadlineUnixNano)
+		if cur != 0 && cur <= next {
+			return
+		}
+		if atomic.CompareAndSwapInt64(&cc.deadlineUnixNano, cur, next) {
+			return
+		}
+	}
+}
 func (cc *cancelContext) agentToolSeen() bool          { return cc != nil && atomic.LoadInt32(&cc.agentToolDescendant) == 1 }
 
 // ---- Context propagation ----
@@ -372,8 +400,16 @@ func wrapIterWithCancelCtx[M MessageType](iter *AsyncIterator[*TypedAgentEvent[M
 	if cc == nil { return iter }
 	it, gen := NewAsyncIteratorPair[*TypedAgentEvent[M]]()
 	go func() {
-		defer cc.markDone()
 		defer gen.Close()
+		endedByCancel := false
+		defer func() {
+			// Only mark done on actual cancellation, not on normal completion.
+			// This prevents a shared cancelContext from being marked done by a
+			// sub-agent that finishes naturally, which would block later cancel calls.
+			if endedByCancel || cc.shouldCancel() {
+				cc.markDone()
+			}
+		}()
 		for {
 			event, ok := iter.Next()
 			if !ok { break }
@@ -382,6 +418,7 @@ func wrapIterWithCancelCtx[M MessageType](iter *AsyncIterator[*TypedAgentEvent[M
 					err.interruptSignal = event.Action.internalInterrupted
 					gen.Send(&TypedAgentEvent[M]{Err: err})
 				}
+				endedByCancel = true
 				return
 			}
 			gen.Send(event)
@@ -420,22 +457,29 @@ func wrapStreamWithCancel[T any](s *schema.StreamReader[T], cc *cancelContext) *
 		defer r.Close()
 		defer s.Close()
 		ch := make(chan struct{ Data T; Err error }, 64)
+		done := make(chan struct{})
+		defer close(done)
 		go func() {
 			defer close(ch)
 			for {
 				d, e := s.Recv()
-				ch <- struct{ Data T; Err error }{d, e}
+				select {
+				case ch <- struct{ Data T; Err error }{d, e}:
+				case <-done:
+					return
+				}
 				if e != nil { return }
 			}
 		}()
 		for {
 			select {
 			case <-cc.immediateChan:
+				s.Close()
 				var z T
 				r.Send(z, ErrStreamCanceled)
 				return
-			case v := <-ch:
-				if v.Err != nil { return }
+			case v, ok := <-ch:
+				if !ok || v.Err != nil { return }
 				r.Send(v.Data, nil)
 			}
 		}

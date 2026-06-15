@@ -94,8 +94,15 @@ func TestSubAgentNode_WithFieldMapping(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	_ = result
-	t.Log("sub-agent with field mapping completed")
+	st, ok := result.(map[string]interface{})
+	if !ok {
+		t.Fatal("expected map result")
+	}
+	resp, ok := st["response"].(string)
+	if !ok || resp == "" {
+		t.Error("expected response field to be populated (OutputMapping should project agent output to state)")
+	}
+	t.Logf("sub-agent with field mapping: response=%q", resp)
 }
 
 // TestSubAgentNode_BuilderCompile verifies SubAgentGraphBuilder compilation

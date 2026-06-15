@@ -400,7 +400,7 @@ func (rg *ReActGraph) Invoke(ctx context.Context, input *AgentInput, config *typ
 		state = rg.buildInitialState(input)
 	}
 
-	result, err := rg.compiled.Invoke(ctx, state)
+	result, err := rg.compiled.Invoke(ctx, state, config)
 	if err != nil {
 		return nil, err
 	}
@@ -416,14 +416,13 @@ func (rg *ReActGraph) Invoke(ctx context.Context, input *AgentInput, config *typ
 // including checkpoint, task start/end, values, and final state.
 func (rg *ReActGraph) Stream(ctx context.Context, input *AgentInput, config *types.RunnableConfig, mode types.StreamMode) (<-chan interface{}, <-chan error) {
 	state := rg.buildInitialState(input)
-	return rg.compiled.Stream(ctx, state, mode)
+	return rg.compiled.Stream(ctx, state, mode, config)
 }
 
 // Resume resumes a previously interrupted graph execution from its checkpoint.
 func (rg *ReActGraph) Resume(ctx context.Context, config *types.RunnableConfig) (*ReActGraphState, error) {
-	// The graph engine's Invoke with the same config (which has checkpoint_id
-	// and thread_id) will automatically restore from the checkpoint and resume.
-	result, err := rg.compiled.Invoke(ctx, nil)
+	// Pass config so Pregel engine can restore the correct checkpoint.
+	result, err := rg.compiled.Invoke(ctx, nil, config)
 	if err != nil {
 		return nil, err
 	}
@@ -436,7 +435,7 @@ func (rg *ReActGraph) Resume(ctx context.Context, config *types.RunnableConfig) 
 
 // ResumeStream resumes a previously interrupted graph with streaming.
 func (rg *ReActGraph) ResumeStream(ctx context.Context, config *types.RunnableConfig, mode types.StreamMode) (<-chan interface{}, <-chan error) {
-	return rg.compiled.Stream(ctx, nil, mode)
+	return rg.compiled.Stream(ctx, nil, mode, config)
 }
 
 // Compile returns the underlying compiled graph for direct access.

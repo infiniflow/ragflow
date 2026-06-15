@@ -100,18 +100,39 @@ func (r *ToolRegistry) ToSlice() []Tool {
 }
 
 // Merge merges another registry into this one. Conflicts are resolved by source winning.
+// Uses a snapshot-then-apply pattern to avoid deadlock: other's data is read under
+// RLock before locking r. Self-merge (r.Merge(r)) is handled as a no-op.
 func (r *ToolRegistry) Merge(other *ToolRegistry) {
+	if r == other {
+		return
+	}
+
+	// Snapshot other's data under read lock.
+	other.mu.RLock()
+	tools := make(map[string]Tool, len(other.tools))
+	for k, v := range other.tools {
+		tools[k] = v
+	}
+	aliases := make(map[string]string, len(other.aliases))
+	for k, v := range other.aliases {
+		aliases[k] = v
+	}
+	categories := make(map[string][]string, len(other.category))
+	for k, v := range other.category {
+		categories[k] = append([]string{}, v...)
+	}
+	other.mu.RUnlock()
+
+	// Apply snapshot under our write lock.
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	other.mu.Lock()
-	defer other.mu.Unlock()
-	for name, tool := range other.tools {
+	for name, tool := range tools {
 		r.tools[name] = tool
 	}
-	for alias, canonical := range other.aliases {
+	for alias, canonical := range aliases {
 		r.aliases[alias] = canonical
 	}
-	for cat, names := range other.category {
+	for cat, names := range categories {
 		r.category[cat] = append(r.category[cat], names...)
 	}
 }

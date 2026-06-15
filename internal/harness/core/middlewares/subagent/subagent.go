@@ -23,7 +23,7 @@
 //	    Model:       parentModel,
 //	    Middlewares: []core.ReActMiddleware{mw, filesystemMW},
 //	}
-//	mw.BindToConfig(cfg)  // injects sub-agent tools + forces inline dispatch
+//	mw.BindToConfig(ctx, cfg)  // injects sub-agent tools + forces inline dispatch
 //	agent := core.NewReActAgent(cfg)
 //
 // The sub-agent automatically inherits the parent's non-subagent middlewares
@@ -37,6 +37,7 @@ package subagent
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"ragflow/internal/harness/core"
 	"ragflow/internal/harness/core/schema"
@@ -134,13 +135,14 @@ type Config struct {
 // available tools.
 type SubAgentMiddleware struct {
 	core.BaseMiddleware[*schema.Message]
-	subAgentMarker // prevents self-inheritance
 
-	cfg   *Config
-	specs []SubAgentSpec
-	tools []core.Tool // AgentTool wrappers, built in ensureBuilt
-	infos []*schema.ToolInfo
-	built bool
+	cfg       *Config
+	specs     []SubAgentSpec
+	mu        sync.Mutex
+	tools     []core.Tool // AgentTool wrappers, built in ensureBuilt
+	infos     []*schema.ToolInfo
+	builtInfos []*schema.ToolInfo // only specs that were actually built
+	built     bool
 }
 
 // New creates a SubAgentMiddleware. Pass nil for cfg to use defaults.
@@ -182,25 +184,31 @@ func New(specs []SubAgentSpec, cfg *Config) *SubAgentMiddleware {
 // The ctx is used for sub-agent construction (AgentFactory calls, AgentTool wrapping).
 // Pass the parent agent's build context or context.Background() if none is available.
 func (m *SubAgentMiddleware) BindToConfig(ctx context.Context, config *core.ReActConfig[*schema.Message]) {
+	m.mu.Lock()
 	if m.built {
+		m.mu.Unlock()
 		return // idempotent
 	}
+	m.built = true
+	m.mu.Unlock()
+
 	m.ensureBuilt(ctx, config)
 	config.Tools = append(config.Tools, m.tools...)
 	config.ToolsConfig = nil
 }
 
 func (m *SubAgentMiddleware) ensureBuilt(ctx context.Context, config *core.ReActConfig[*schema.Message]) {
-	if m.built {
-		return
-	}
-	m.built = true
-
 	for _, spec := range m.specs {
 		agent := m.resolveAgent(ctx, spec, config)
 		if agent == nil {
 			continue
 		}
+
+		// Track this spec as successfully built
+		m.builtInfos = append(m.builtInfos, &schema.ToolInfo{
+			Name:        spec.Name,
+			Description: spec.Description,
+		})
 
 		var toolOpts []core.AgentToolOption
 		if m.cfg.EmitInternalEvents {
@@ -216,8 +224,13 @@ func (m *SubAgentMiddleware) ensureBuilt(ctx context.Context, config *core.ReAct
 
 // resolveAgent returns a built Agent for the spec, applying middleware
 // inheritance when requested.
+//
+// When both AgentConfig and Agent are set, AgentConfig takes precedence.
+// When using a pre-built Agent with InheritParentMiddlewares, inheritance
+// is NOT applied — middlewares are already fixed at construction time.
+// Use AgentConfig instead when inheritance is needed.
 func (m *SubAgentMiddleware) resolveAgent(ctx context.Context, spec SubAgentSpec, parentCfg *core.ReActConfig[*schema.Message]) core.Agent {
-	// 1. Build from AgentConfig (takes precedence).
+	// 1. Build from AgentConfig (takes precedence when both Agent and AgentConfig are set).
 	if spec.AgentConfig != nil {
 		cfg := m.buildConfig(spec, parentCfg)
 		return core.NewReActAgent(cfg).
@@ -226,11 +239,9 @@ func (m *SubAgentMiddleware) resolveAgent(ctx context.Context, spec SubAgentSpec
 	}
 
 	// 2. Use pre-built Agent.
+	// Note: InheritParentMiddlewares is silently ignored for pre-built agents.
+	// Middlewares are already fixed at Agent construction time.
 	if spec.Agent != nil {
-		if spec.InheritParentMiddlewares {
-			// Pre-built Agent with inheritance: middlewares are already fixed at
-			// Agent construction time. Use AgentConfig when inheritance is needed.
-		}
 		return spec.Agent
 	}
 
@@ -299,9 +310,10 @@ func (m *SubAgentMiddleware) inheritedMiddlewares(parentCfg *core.ReActConfig[*s
 }
 
 // BeforeModelRewrite injects sub-agent ToolInfo entries into state.ToolInfos
-// so the LLM sees the sub-agents as available tools.
+// so the LLM sees the sub-agents as available tools. Only tools that were
+// successfully built in ensureBuilt are advertised.
 func (m *SubAgentMiddleware) BeforeModelRewrite(ctx context.Context, state *core.ReActAgentState, mc *core.ModelContext) (context.Context, *core.ReActAgentState, error) {
-	state.ToolInfos = append(state.ToolInfos, m.infos...)
+	state.ToolInfos = append(state.ToolInfos, m.builtInfos...)
 	return ctx, state, nil
 }
 

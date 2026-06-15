@@ -164,6 +164,11 @@ func (r *typedRetryModelWrapper[M]) generateWithShouldRetry(ctx context.Context,
 		if lastErr == nil { lastErr = fmt.Errorf("model output rejected by ShouldRetry at attempt %d", attempt+1) }
 		if attempt >= r.config.MaxRetries { break }
 
+		// Emit WillRetryError event before sleeping
+		if execCtx != nil && execCtx.generator != nil {
+			willRetry := &WillRetryError{ErrStr: lastErr.Error(), RetryAttempt: attempt + 1, rejectReason: decision.RejectReason, err: lastErr}
+			execCtx.send(&TypedAgentEvent[M]{Err: any(willRetry).(error)})
+		}
 		applyRetryDecision(&currentInput, &currentOpts, decision)
 		delay := decision.Backoff
 		if delay == 0 { delay = backoff(ctx, attempt+1) }
@@ -200,18 +205,24 @@ func (r *typedRetryModelWrapper[M]) streamLegacy(ctx context.Context, input []M,
 		// Verify the stream is healthy by reading one chunk
 		chunk, streamErr := stream.Recv()
 		if streamErr == nil {
-			r := schema.NewStreamReader[M]()
+				outStream := schema.NewStreamReader[M]()
 			go func() {
-				r.Send(chunk, nil)
+				outStream.Send(chunk, nil)
 				for {
 					c, e := stream.Recv()
 					if e == io.EOF { break }
-					if e != nil { r.Send(c, e); return }
-					r.Send(c, nil)
+					if e != nil { outStream.Send(c, e); return }
+					select {
+					case <-ctx.Done():
+						outStream.Send(c, ctx.Err())
+						return
+					default:
+					}
+					outStream.Send(c, nil)
 				}
-				r.Close()
+				outStream.Close()
 			}()
-			return r, nil
+			return outStream, nil
 		}
 		stream.Close()
 		if errors.Is(streamErr, ErrStreamCanceled) { return nil, streamErr }
@@ -233,7 +244,9 @@ func (r *typedRetryModelWrapper[M]) streamWithShouldRetry(ctx context.Context, i
 	var lastErr error
 
 	sig := &retrySignal{ch: make(chan streamRetryVerdict, 1)}
-	execCtx.retrySignal = sig
+	if execCtx != nil {
+		execCtx.retrySignal = sig
+	}
 
 	for attempt := 0; attempt <= r.config.MaxRetries; attempt++ {
 		stream, err := r.inner.Stream(ctx, currentInput, currentOpts...)
@@ -250,6 +263,9 @@ func (r *typedRetryModelWrapper[M]) streamWithShouldRetry(ctx context.Context, i
 			}
 			lastErr = err
 			if attempt < r.config.MaxRetries {
+				if execCtx != nil && execCtx.generator != nil {
+					execCtx.send(&TypedAgentEvent[M]{Err: &WillRetryError{ErrStr: lastErr.Error(), RetryAttempt: attempt + 1, rejectReason: decision.RejectReason, err: lastErr}})
+				}
 				applyRetryDecision(&currentInput, &currentOpts, decision)
 				delay := decision.Backoff
 				if delay == 0 { delay = backoff(ctx, attempt+1) }
@@ -274,6 +290,9 @@ func (r *typedRetryModelWrapper[M]) streamWithShouldRetry(ctx context.Context, i
 			lastErr = streamErr
 			select { case sig.ch <- streamRetryVerdict{WillRetry: true, Err: streamErr, RejectReason: decision.RejectReason}: default: }
 			if attempt < r.config.MaxRetries {
+				if execCtx != nil && execCtx.generator != nil {
+					execCtx.send(&TypedAgentEvent[M]{Err: &WillRetryError{ErrStr: lastErr.Error(), RetryAttempt: attempt + 1, rejectReason: decision.RejectReason, err: lastErr}})
+				}
 				applyRetryDecision(&currentInput, &currentOpts, decision)
 				delay := decision.Backoff
 				if delay == 0 { delay = backoff(ctx, attempt+1) }
@@ -313,14 +332,25 @@ func (r *typedRetryModelWrapper[M]) streamWithShouldRetry(ctx context.Context, i
 
 func (r *typedRetryModelWrapper[M]) BindTools(tools []*schema.ToolInfo) error { return r.inner.BindTools(tools) }
 
+// WithModelRetry wraps a Model with retry logic.
+// When cfg.ShouldRetry is set but MaxRetries is 0, the loop runs exactly once
+// (attempt 0), so ShouldRetry returning Retry:true will immediately exhaust
+// with RetryExhaustedError{TotalRetries: 0}. Set MaxRetries >= 1 to allow
+// ShouldRetry-driven retries to actually retry.
 func WithModelRetry[M MessageType](inner Model[M], cfg *TypedModelRetryConfig[M]) Model[M] {
 	if cfg == nil || (cfg.MaxRetries <= 0 && cfg.ShouldRetry == nil) { return inner }
 	return newTypedRetryModelWrapper(inner, cfg)
 }
 
 func applyRetryDecision[M MessageType](input *[]M, opts *[]ModelOption, decision *TypedRetryDecision[M]) {
-	if decision.ModifiedInputMessages != nil {
+	if decision.ModifiedInputMessages != nil && decision.PersistModifiedInputMessages {
 		*input = decision.ModifiedInputMessages
+	} else if decision.ModifiedInputMessages != nil {
+		// Apply for the next attempt but don't persist to the original input.
+		// Caller must handle revert externally.
+		tmp := make([]M, len(decision.ModifiedInputMessages))
+		copy(tmp, decision.ModifiedInputMessages)
+		*input = tmp
 	}
 	if decision.AdditionalOptions != nil {
 		*opts = append(*opts, decision.AdditionalOptions...)

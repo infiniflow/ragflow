@@ -94,8 +94,8 @@ func TestReActGraph_StreamWithInterrupt(t *testing.T) {
 	select {
 	case e := <-errCh:
 		t.Logf("stream completed: err=%v", e)
-	default:
-		t.Log("stream timeout (expected for async pattern)")
+	case <-time.After(2 * time.Second):
+		t.Log("stream timed out (expected for async pattern)")
 	}
 }
 

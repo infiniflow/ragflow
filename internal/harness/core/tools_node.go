@@ -232,11 +232,11 @@ func (tn *ToolsNode[M]) executeWithNewChain(ctx context.Context, tc schema.ToolC
 		if tie, ok := IsToolInterrupt(err); ok {
 			ctx = setToolInterruptState(ctx, tie)
 			ctx = AppendAddressSegment(ctx, AddressSegmentTool, tc.ID)
-			// Return a successful-looking message so the graph can checkpoint.
-			// The interrupt state is captured by the graph engine's checkpoint
-			// mechanism at the next node boundary.
+			addr := getAddressSegments(ctx)
+			addrCopy := make(Address, len(addr))
+			copy(addrCopy, addr)
 			return tn.makeToolMsg(fmt.Sprintf("[interrupted: %v]", tie.Info), tc.ID),
-				&interruptResult{tie: tie}
+				&interruptResult{tie: tie, toolAddress: addrCopy}
 		}
 		return tn.makeToolMsg(fmt.Sprintf("Error: %v", err), tc.ID), nil
 	}
@@ -250,7 +250,8 @@ func (tn *ToolsNode[M]) executeWithNewChain(ctx context.Context, tc schema.ToolC
 
 // interruptResult wraps a tool interrupt for propagation up the call chain.
 type interruptResult struct {
-	tie *ToolInterruptError
+	tie         *ToolInterruptError
+	toolAddress Address // address segments at time of interrupt; preserved for resume routing
 }
 
 func (e *interruptResult) Error() string { return fmt.Sprintf("interrupt: %v", e.tie.Info) }
@@ -284,8 +285,21 @@ func remapToolArgs(argsJSON string, aliases map[string][]string) string {
 }
 
 func (tn *ToolsNode[M]) makeToolMsg(content, callID string) M {
-	msg := schema.ToolMessage(content, callID)
-	return any(msg).(M)
+	var zero M
+	switch any(zero).(type) {
+	case *schema.AgenticMessage:
+		return any(&schema.AgenticMessage{
+			Role:    schema.AgenticRoleUser,
+			Content: content,
+			ContentBlocks: []schema.ContentBlock{
+				{Type: "tool_result", ToolResult: &schema.ToolResult{
+					ToolCallID: callID, Content: content,
+				}},
+			},
+		}).(M)
+	default:
+		return any(schema.ToolMessage(content, callID)).(M)
+	}
 }
 
 // ---- Helper: convert tool results for event emission ----

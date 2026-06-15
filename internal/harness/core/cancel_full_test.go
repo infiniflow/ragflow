@@ -355,7 +355,7 @@ func TestWithCancel_SequentialAgent(t *testing.T) {
 	opt, cancel := WithCancel()
 	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("run")}}, opt)
 	cancel()
-	for { ev, ok := iter.Next(); if !ok { break }; _ = ev }
+	drainAndAssertCancelError(t, iter)
 }
 
 func TestWithCancel_LoopAgent(t *testing.T) {
@@ -369,7 +369,7 @@ func TestWithCancel_LoopAgent(t *testing.T) {
 	opt, cancel := WithCancel()
 	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("run")}}, opt)
 	cancel()
-	for { ev, ok := iter.Next(); if !ok { break }; _ = ev }
+	drainAndAssertCancelError(t, iter)
 }
 
 func TestWithCancel_ParallelAgent(t *testing.T) {
@@ -383,7 +383,7 @@ func TestWithCancel_ParallelAgent(t *testing.T) {
 	opt, cancel := WithCancel()
 	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("run")}}, opt)
 	cancel()
-	for { ev, ok := iter.Next(); if !ok { break }; _ = ev }
+	drainAndAssertCancelError(t, iter)
 }
 
 func TestCheckCancel_Sequential_BetweenSubAgents(t *testing.T) {

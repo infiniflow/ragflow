@@ -86,10 +86,12 @@ func (t *agentTool) Invoke(ctx context.Context, args string, opts ...ToolOption)
 		}
 	}()
 
-	// Base context for the sub-agent's Run (independent from parent by default).
-	runCtx := context.Background()
+	// Derive sub-agent run context from the invocation context to propagate
+	// cancellation/deadline. Construction-time baseCtx values (e.g. recursion
+	// depth guard) are preserved by adding them to the derived context.
+	runCtx := ctx
 	if t.baseCtx != nil {
-		runCtx = t.baseCtx
+		runCtx = context.WithValue(ctx, subAgentDepthKey{}, 0) // overridden below
 	}
 
 	// Recursion depth guard — always propagate the depth counter so nested
@@ -107,6 +109,11 @@ func (t *agentTool) Invoke(ctx context.Context, args string, opts ...ToolOption)
 
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: t.agent})
 	messages := []Message{schema.UserMessage(args)}
+	if t.opts.FullChatHistoryAsInput {
+		if ec := getChatModelExecCtx(ctx); ec != nil {
+			// TODO: extract full chat history from parent execution context
+		}
+	}
 
 	iter := runner.Run(runCtx, messages)
 

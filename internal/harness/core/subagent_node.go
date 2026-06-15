@@ -102,37 +102,52 @@ func NewSubAgentNode(agent Agent, opts ...SubAgentNodeOption) func(ctx context.C
 
 	return func(ctx context.Context, state interface{}) (interface{}, error) {
 		// Step 1: Extract input from graph state
-		input, err := extractInput(cfg, ctx, state)
+		input, err := subAgentExtractInput(cfg, ctx, state)
 		if err != nil {
 			return nil, fmt.Errorf("sub-agent %s: extract input: %w", cfg.NodeName, err)
 		}
 
 		// Step 2: Run the agent
-		output, err := runAgent(ctx, agent, input)
+		output, err := subAgentRunAgent(ctx, agent, input)
 		if err != nil {
 			return nil, fmt.Errorf("sub-agent %s: %w", cfg.NodeName, err)
 		}
 
 		// Step 3: Collect output back into graph state
-		return collectOutput(cfg, ctx, state, output)
+		return subAgentCollectOutput(cfg, ctx, state, output)
 	}
 }
 
-// extractInput builds the AgentInput from graph state using the configured
+// subAgentExtractInput builds the AgentInput from graph state using the configured
 // extractor or FieldMapping.
-func extractInput(cfg *SubAgentNodeConfig, ctx context.Context, state interface{}) (*AgentInput, error) {
+func subAgentExtractInput(cfg *SubAgentNodeConfig, ctx context.Context, state interface{}) (*AgentInput, error) {
 	// Custom extractor takes precedence
 	if cfg.InputExtractor != nil {
 		return cfg.InputExtractor(ctx, state)
 	}
 
-	// Default: pass state messages as agent input
 	st, ok := state.(map[string]interface{})
 	if !ok {
 		return &AgentInput{}, nil
 	}
 
-	// Collect messages from state (default field name: "Messages")
+	// FieldMapping takes precedence over default "Messages" field.
+	if len(cfg.InputMapping) > 0 {
+		input := &AgentInput{}
+		for _, m := range cfg.InputMapping {
+			if val, exists := st[m.From]; exists {
+				if str, ok := val.(string); ok && str != "" {
+					input.Messages = append(input.Messages, schema.UserMessage(str))
+				}
+			}
+		}
+		if len(input.Messages) > 0 {
+			return input, nil
+		}
+		// Fall through to default if no mapping values were found.
+	}
+
+	// Default: pass state messages as agent input
 	input := &AgentInput{}
 	if msgs, ok := st["Messages"]; ok {
 		if msgList, ok := msgs.([]*schema.Message); ok {
@@ -148,8 +163,8 @@ func extractInput(cfg *SubAgentNodeConfig, ctx context.Context, state interface{
 	return input, nil
 }
 
-// runAgent executes the agent and collects its output messages.
-func runAgent(ctx context.Context, agent Agent, input *AgentInput) ([]*schema.Message, error) {
+// subAgentRunAgent executes the agent and collects its output messages.
+func subAgentRunAgent(ctx context.Context, agent Agent, input *AgentInput) ([]*schema.Message, error) {
 	iter := agent.Run(ctx, input)
 	var messages []*schema.Message
 	for {
@@ -169,19 +184,40 @@ func runAgent(ctx context.Context, agent Agent, input *AgentInput) ([]*schema.Me
 	return messages, nil
 }
 
-// collectOutput merges agent output messages back into the graph state.
-func collectOutput(cfg *SubAgentNodeConfig, ctx context.Context, state interface{}, messages []*schema.Message) (interface{}, error) {
+// subAgentCollectOutput merges agent output messages back into the graph state.
+// NOTE: Agent output messages are stored as []interface{} (not []*schema.Message)
+// in the state map. Callers reading st["Messages"] back must handle []interface{}
+// with type assertions, or use the default extractor which already does this.
+func subAgentCollectOutput(cfg *SubAgentNodeConfig, ctx context.Context, state interface{}, messages []*schema.Message) (interface{}, error) {
 	// Custom collector takes precedence
 	if cfg.OutputCollector != nil {
 		return cfg.OutputCollector(ctx, state, messages)
 	}
 
-	// Default: append messages to state
 	st, ok := state.(map[string]interface{})
 	if !ok {
 		return state, nil
 	}
 
+	// FieldMapping: project agent output to state fields.
+	if len(cfg.OutputMapping) > 0 && len(messages) > 0 {
+		// Use the last assistant message content as the output value.
+		var lastContent string
+		for i := len(messages) - 1; i >= 0; i-- {
+			if messages[i].Role == schema.RoleAssistant {
+				lastContent = messages[i].Content
+				break
+			}
+		}
+		for _, m := range cfg.OutputMapping {
+			if lastContent != "" {
+				st[m.To] = lastContent
+			}
+		}
+		return st, nil
+	}
+
+	// Default: append messages to state
 	if len(messages) > 0 {
 		existing, _ := st["Messages"].([]interface{})
 		for _, msg := range messages {

@@ -48,6 +48,13 @@ func (s *WorkflowGraphState) AppendMessage(msg *schema.Message) {
 	s.mu.Unlock()
 }
 
+// SnapshotMessages safely returns a copy of the Messages slice.
+func (s *WorkflowGraphState) SnapshotMessages() []*schema.Message {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]*schema.Message(nil), s.Messages...)
+}
+
 // MessagesLen safely returns the length of Messages.
 func (s *WorkflowGraphState) MessagesLen() int {
 	s.mu.Lock()
@@ -69,6 +76,12 @@ type WorkflowGraph struct {
 // Each sub-agent boundary is a checkpoint point. Interrupt can be enabled
 // before any sub-agent via WithInterrupts.
 func NewSequentialGraph(ctx context.Context, cfg *SequentialConfig, cptr graph.Checkpointer, interrupts ...string) (*WorkflowGraph, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("SequentialConfig is nil")
+	}
+	if len(cfg.SubAgents) == 0 {
+		return nil, fmt.Errorf("SequentialConfig requires at least one sub-agent")
+	}
 	sg := graph.NewStateGraph(&WorkflowGraphState{})
 
 	names := make([]string, len(cfg.SubAgents))
@@ -140,6 +153,12 @@ func NewSequentialGraph(ctx context.Context, cfg *SequentialConfig, cptr graph.C
 //	                      ├→ sub_1 ─┤
 //	                      └→ sub_n ─┘
 func NewParallelGraph(ctx context.Context, cfg *ParallelConfig, cptr graph.Checkpointer, interrupts ...string) (*WorkflowGraph, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("ParallelConfig is nil")
+	}
+	if len(cfg.SubAgents) == 0 {
+		return nil, fmt.Errorf("ParallelConfig requires at least one sub-agent")
+	}
 	sg := graph.NewStateGraph(&WorkflowGraphState{})
 
 	names := make([]string, len(cfg.SubAgents))
@@ -160,9 +179,7 @@ func NewParallelGraph(ctx context.Context, cfg *ParallelConfig, cptr graph.Check
 		nodeName := fmt.Sprintf("sub_%d", i)
 		sg.AddNode(nodeName, func(ctx context.Context, state interface{}) (interface{}, error) {
 			s := state.(*WorkflowGraphState)
-			// Copy Messages slice so the sub-agent's goroutine doesn't share
-			// the underlying array with the graph's concurrent goroutines.
-			msgCopy := append([]*schema.Message(nil), s.Messages...)
+			msgCopy := s.SnapshotMessages()
 			iter := ag.Run(ctx, &AgentInput{Messages: msgCopy})
 			for {
 				ev, ok := iter.Next()
@@ -179,7 +196,7 @@ func NewParallelGraph(ctx context.Context, cfg *ParallelConfig, cptr graph.Check
 				}
 			}
 			return map[string]interface{}{
-				"Messages": s.Messages,
+				"Messages": s.SnapshotMessages(),
 			}, nil
 		})
 		sg.AddEdge("__wf_split__", nodeName)
@@ -212,6 +229,12 @@ func NewParallelGraph(ctx context.Context, cfg *ParallelConfig, cptr graph.Check
 //	start → sub_0 → sub_1 → ... → sub_n → [iter < max?] → back to sub_0
 //	                                        ↘ end
 func NewLoopGraph(ctx context.Context, cfg *LoopConfig, cptr graph.Checkpointer, interrupts ...string) (*WorkflowGraph, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("LoopConfig is nil")
+	}
+	if len(cfg.SubAgents) == 0 {
+		return nil, fmt.Errorf("LoopConfig requires at least one sub-agent")
+	}
 	sg := graph.NewStateGraph(&WorkflowGraphState{})
 
 	maxIter := cfg.MaxIterations
@@ -354,6 +377,12 @@ func mapToWorkflowGraphState(m map[string]interface{}) (*WorkflowGraphState, err
 
 // Invoke runs the workflow graph synchronously and returns the final state.
 func (wg *WorkflowGraph) Invoke(ctx context.Context, input *AgentInput) (*WorkflowGraphState, error) {
+	if wg == nil || wg.compiled == nil {
+		return nil, fmt.Errorf("workflow graph is not compiled")
+	}
+	if input == nil {
+		input = &AgentInput{}
+	}
 	state := &WorkflowGraphState{
 		Messages:    input.Messages,
 		CurrentStep: 0,
@@ -367,6 +396,9 @@ func (wg *WorkflowGraph) Invoke(ctx context.Context, input *AgentInput) (*Workfl
 
 // Stream runs the workflow graph with streaming events via Pregel.
 func (wg *WorkflowGraph) Stream(ctx context.Context, input *AgentInput, mode types.StreamMode) (<-chan interface{}, <-chan error) {
+	if input == nil {
+		input = &AgentInput{}
+	}
 	state := &WorkflowGraphState{
 		Messages:    input.Messages,
 		CurrentStep: 0,
@@ -375,6 +407,10 @@ func (wg *WorkflowGraph) Stream(ctx context.Context, input *AgentInput, mode typ
 }
 
 // Resume resumes a previously interrupted workflow.
+// Resume resumes a previously interrupted workflow graph from its checkpoint.
+// Note: this is a thin wrapper that invokes the compiled graph with an empty state.
+// For proper checkpoint resume, ensure the compiled graph was configured with a
+// checkpointer and the config has the correct ThreadID for checkpoint lookup.
 func (wg *WorkflowGraph) Resume(ctx context.Context) (*WorkflowGraphState, error) {
 	result, err := wg.compiled.Invoke(ctx, &WorkflowGraphState{})
 	if err != nil {
@@ -387,11 +423,3 @@ func (wg *WorkflowGraph) Resume(ctx context.Context) (*WorkflowGraphState, error
 func (wg *WorkflowGraph) Compile() *graph.CompiledGraph { return wg.compiled }
 
 // ---- helpers ----
-
-func makeMap(targets []string) map[string]string {
-	m := make(map[string]string, len(targets))
-	for _, t := range targets {
-		m[t] = t
-	}
-	return m
-}

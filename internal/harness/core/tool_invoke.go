@@ -198,6 +198,10 @@ func ToolToInvokeFn(tool Tool) InvokeTool {
 	return func(ctx context.Context, ictx *ToolInvocationContext) (*schema.ToolResult, error) {
 		result, err := tool.Invoke(ctx, ictx.Arguments.Arguments)
 		if err != nil {
+			// Preserve tool interrupts so ToolsNode can handle them.
+			if _, ok := IsToolInterrupt(err); ok {
+				return nil, err
+			}
 			return &schema.ToolResult{Name: ictx.Name, Error: err.Error(), ToolCallID: ictx.CallID}, nil
 		}
 		return &schema.ToolResult{Name: ictx.Name, Content: result, ToolCallID: ictx.CallID}, nil
@@ -228,8 +232,23 @@ func NewEventSenderToolMiddleware[M MessageType]() ToolInvokeMiddleware {
 				if content == "" {
 					content = result.Error
 				}
-				msg := schema.ToolMessage(content, ictx.CallID)
-				ev := typedEventFromMessage(any(msg).(M), nil, schema.RoleTool, ictx.Name)
+				var msg M
+				var zero M
+				switch any(zero).(type) {
+				case *schema.AgenticMessage:
+					msg = any(&schema.AgenticMessage{
+						Role:    schema.AgenticRoleUser,
+						Content: content,
+						ContentBlocks: []schema.ContentBlock{
+							{Type: "tool_result", ToolResult: &schema.ToolResult{
+								ToolCallID: ictx.CallID, Content: content,
+							}},
+						},
+					}).(M)
+				default:
+					msg = any(schema.ToolMessage(content, ictx.CallID)).(M)
+				}
+				ev := typedEventFromMessage(msg, nil, schema.RoleTool, ictx.Name)
 				ec.send(ev)
 			}
 			return result, nil
@@ -308,11 +327,25 @@ func NewRateLimitToolMiddleware(rate float64, burst int) ToolInvokeMiddleware {
 	rl := &rateLimiter{tokens: make(map[string]*tokenBucket)}
 	return func(next InvokeTool) InvokeTool {
 		return func(ctx context.Context, ictx *ToolInvocationContext) (*schema.ToolResult, error) {
-			rl.init(ictx.Name, rate, burst)
+			rl.initOnce(ictx.Name, rate, burst)
 			if !rl.allow(ictx.Name) {
 				return nil, fmt.Errorf("rate limit exceeded for tool '%s'", ictx.Name)
 			}
 			return next(ctx, ictx)
 		}
+	}
+}
+
+func (rl *rateLimiter) initOnce(name string, rate float64, burst int) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	if _, ok := rl.tokens[name]; ok {
+		return
+	}
+	rl.tokens[name] = &tokenBucket{
+		capacity: burst,
+		tokens:   float64(burst),
+		rate:     rate,
+		last:     time.Now(),
 	}
 }

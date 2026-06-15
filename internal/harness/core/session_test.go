@@ -98,27 +98,20 @@ func TestSessionValues_Overwrite(t *testing.T) {
 func TestSessionValues_Concurrent(t *testing.T) {
 	ctx, rc := initRunCtx(context.Background(), "test", &AgentInput{})
 
-	// Use a channel to serialize the concurrent calls to avoid the data race
-	// (AddSessionValues does not use the session's valuesMx).
-	// This test verifies that concurrent calls don't panic and that the final
-	// state is reasonable.
-	ch := make(chan struct{}, 1)
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func(n int) {
 			defer wg.Done()
 			key := string(rune('a' + n%26))
-			ch <- struct{}{}
 			AddSessionValues(ctx, map[string]any{key: n})
-			<-ch
 		}(i)
 	}
 	wg.Wait()
 
-	rc.mu.Lock()
+	rc.Session.valuesMx.Lock()
 	count := len(rc.Session.Values)
-	rc.mu.Unlock()
+	rc.Session.valuesMx.Unlock()
 	if count == 0 {
 		t.Error("expected some values after concurrent writes")
 	}

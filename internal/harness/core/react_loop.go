@@ -58,20 +58,20 @@ func (a *ReActAgent[M]) buildReActRunFunc() typedRunFunc[M] {
 			if err := a.runBeforeModelRewrite(&ctx, &state, mc, p.generator); err != nil { return }
 
 			var modelMsgs []M
-		if a.config.StateModifier != nil {
-			var err error
-			state, err = a.config.StateModifier(ctx, state)
-			if err != nil { p.generator.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("StateModifier: %w", err)}); return }
-		}
-
-		if a.config.GenModelInput != nil {
-			var err error
-			modelMsgs, err = a.config.GenModelInput(ctx, rc.Instruction, &TypedAgentInput[M]{Messages: state.Messages})
-			if err != nil {
-				p.generator.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("GenModelInput: %w", err)})
-				return
+			if a.config.StateModifier != nil {
+				var err error
+				state, err = a.config.StateModifier(ctx, state)
+				if err != nil { p.generator.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("StateModifier: %w", err)}); return }
 			}
-		} else { modelMsgs = buildModelInputFromState(state.Messages, rc.Instruction) }
+
+			if a.config.GenModelInput != nil {
+				var err error
+				modelMsgs, err = a.config.GenModelInput(ctx, rc.Instruction, &TypedAgentInput[M]{Messages: state.Messages})
+				if err != nil {
+					p.generator.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("GenModelInput: %w", err)})
+					return
+				}
+			} else { modelMsgs = buildModelInputFromState(state.Messages, rc.Instruction) }
 
 			resp, err := model.Generate(ctx, modelMsgs)
 			if err != nil { p.generator.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("model: %w", err)}); return }
@@ -81,7 +81,7 @@ func (a *ReActAgent[M]) buildReActRunFunc() typedRunFunc[M] {
 			if err := a.runAfterModelRewrite(&ctx, &state, mc, p.generator); err != nil { return }
 
 			toolCalls := extractToolCalls(resp)
-			if len(toolCalls) == 0 { break }
+			if len(toolCalls) == 0 || tn == nil { break }
 
 			var action *AgentAction
 			results, act, err := tn.Execute(ctx, resp, state, nil)
@@ -105,8 +105,5 @@ func (a *ReActAgent[M]) buildReActRunFunc() typedRunFunc[M] {
 			}
 		}
 		a.runAfterAgent(&ctx, state, p.generator)
-		if state.RemainingIterations <= 0 {
-			return
-		}
 	}
 }

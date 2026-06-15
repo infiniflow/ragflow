@@ -216,8 +216,7 @@ func (a *ReActAgent[M]) buildRunFunc(ctx context.Context) typedRunFunc[M] {
 		}
 		a.run = onceRun
 	})
-	if a.run != nil { return a.run }
-	return a.buildReActRunFunc()
+	return a.run
 }
 
 func (a *ReActAgent[M]) prepareExecContext(_ context.Context) (*execContext, error) {
@@ -249,7 +248,7 @@ func (a *ReActAgent[M]) buildNoToolsRunFunc() typedRunFunc[M] {
 			if err != nil { p.generator.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("StateModifier: %w", err)}); return }
 		}
 
-		modelMsgs := buildModelInputFromState[M](p.input.Messages, rc.Instruction)
+		modelMsgs := buildModelInputFromState[M](state.Messages, rc.Instruction)
 		resp, err := model.Generate(ctx, modelMsgs)
 		if err != nil { p.generator.Send(&TypedAgentEvent[M]{Err: err}); return }
 		p.generator.Send(typedModelOutputEvent(resp, nil))
@@ -416,6 +415,11 @@ func streamWithCancel[M MessageType](s *schema.StreamReader[M], cc *cancelContex
 				default:
 				}
 				d, e := s.Recv()
+				select {
+				case <-cc.immediateChan:
+					return
+				default:
+				}
 				select {
 				case ch <- struct{ Data M; Err error }{d, e}:
 				case <-cc.immediateChan:

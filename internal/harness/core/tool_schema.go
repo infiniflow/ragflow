@@ -71,6 +71,7 @@ func structToJSONSchema(t reflect.Type, descTag string) (map[string]interface{},
 	}
 
 	props := schema["properties"].(map[string]interface{})
+	var requiredFields []string
 
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
@@ -85,8 +86,17 @@ func structToJSONSchema(t reflect.Type, descTag string) (map[string]interface{},
 
 		propSchema := fieldToJSONSchema(field, descTag)
 		if propSchema != nil {
+			// Collect required fields into top-level array per JSON Schema spec
+			if field.Tag.Get("required") == "true" {
+				requiredFields = append(requiredFields, propName)
+			}
+			delete(propSchema, "required") // remove from per-property position
 			props[propName] = propSchema
 		}
+	}
+
+	if len(requiredFields) > 0 {
+		schema["required"] = requiredFields
 	}
 
 	return schema, nil
@@ -114,8 +124,9 @@ func fieldToJSONSchema(field reflect.StructField, descTag string) map[string]int
 		s["enum"] = strings.Split(enum, ",")
 	}
 
-	if required := field.Tag.Get("required"); required == "true" {
-		s["required"] = true
+	if field.Tag.Get("required") == "true" {
+		// Required is handled at the parent schema level (top-level array).
+		// This field tag is read in structToJSONSchema.
 	}
 
 	// Handle nested structs

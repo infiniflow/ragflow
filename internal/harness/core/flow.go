@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"strings"
 
 	"ragflow/internal/harness/core/schema"
@@ -46,7 +47,10 @@ func SetSubAgents(ctx context.Context, agent Agent, subs []Agent) (ResumableAgen
 	var fa *flowAgent
 	var ok bool
 	if fa, ok = agent.(*flowAgent); !ok {
-		fa = &flowAgent{Agent: agent, historyRewriter: defaultHistoryRewriter(agent.Name(ctx))}
+		fa = &flowAgent{Agent: agent}
+	}
+	if fa.historyRewriter == nil {
+		fa.historyRewriter = defaultHistoryRewriter(agent.Name(ctx))
 	}
 	if len(fa.subAgents) > 0 { return nil, errors.New("sub-agents already set") }
 	for _, s := range subs {
@@ -104,6 +108,12 @@ func defaultHistoryRewriter(name string) HistoryRewriter {
 }
 
 func rewriteMsg(msg Message, agentName string) Message {
+	if msg.Role == schema.RoleAssistant && msg.Content == "" && len(msg.ToolCalls) == 0 {
+		return nil
+	}
+	if msg.Role == schema.RoleTool && msg.Content == "" && msg.ToolName == "" {
+		return nil
+	}
 	var sb strings.Builder
 	sb.WriteString("For context:")
 	if msg.Role == schema.RoleAssistant {
@@ -172,19 +182,20 @@ func (a *flowAgent) Run(ctx context.Context, input *AgentInput, opts ...RunOptio
 		_ = &AgentCallbackInput{Input: input}
 		return wrapIterEnd(ctx, errorIterMsg(err))
 	}
-	subCtx := ctx
-	_ = subCtx
-	_ = initAgentCallbacks(ctx, name, getAgentType(a.Agent), filterOptions(name, opts)...)
+	ctx = initAgentCallbacks(ctx, name, getAgentType(a.Agent), filterOptions(name, opts)...)
 
-	ai := a.Agent.Run(withCancelContext(ctx, cc), pi, filterOptions(name, opts)...)
+	cancelCtx := withCancelContext(ctx, cc)
+	ai := a.Agent.Run(cancelCtx, pi, filterOptions(name, opts)...)
 	it, gen := NewAsyncIteratorPair[*AgentEvent]()
-	go a.runLoop(withCancelContext(ctx, cc), withCancelContext(ctx, cc), rc, ai, gen, filterCancelOption(opts)...)
+	go a.runLoop(cancelCtx, cancelCtx, rc, ai, gen, filterCancelOption(opts)...)
 	return wrapIterWithCancelCtx(it, cc)
 }
 
 func (a *flowAgent) runLoop(ctx, subCtx context.Context, rc *runContext, ai *AsyncIterator[*AgentEvent], gen *AsyncGenerator[*AgentEvent], opts ...RunOption) {
 	defer func() {
-		if r := recover(); r != nil { gen.Send(&AgentEvent{Err: fmt.Errorf("panic: %v", r)}) }
+		if r := recover(); r != nil {
+			gen.Send(&AgentEvent{Err: fmt.Errorf("panic: %v\n%s", r, debug.Stack())})
+		}
 		gen.Close()
 	}()
 	var lastAction *AgentAction
@@ -201,7 +212,7 @@ func (a *flowAgent) runLoop(ctx, subCtx context.Context, rc *runContext, ai *Asy
 		if pathMatch(curRunPath, ev.RunPath) { lastAction = ev.Action }
 		cp := copyTypedAgentEvent(ev)
 		setAutomaticClose(cp); setAutomaticClose(ev)
-		gen.Send(ev)
+		gen.Send(cp)
 	}
 	var dest string
 	if lastAction != nil {
@@ -221,6 +232,9 @@ func (a *flowAgent) runLoop(ctx, subCtx context.Context, rc *runContext, ai *Asy
 			se, ok := next.Run(subCtx, nil, opts...).Next()
 			if !ok { break }
 			setAutomaticClose(se)
+			if se.Action == nil || se.Action.Interrupted == nil {
+				rc.Session.addEvent(copyTypedAgentEvent(se))
+			}
 			gen.Send(se)
 		}
 	}
@@ -315,9 +329,15 @@ func (a *typedFlowAgent[M]) Run(ctx context.Context, input *TypedAgentInput[M], 
 	return wrapIterWithCancelCtx(it, cc)
 }
 
+// runLoop for typedFlowAgent drains events only. Unlike flowAgent.runLoop,
+// it does NOT handle TransferToAgent actions or route to sub-agents. This is
+// a design choice: the typed agent path currently does not support agent-to-agent
+// transfers. If transfer support is needed, add sub-agent routing logic here.
 func (a *typedFlowAgent[M]) runLoop(ctx context.Context, rc *runContext, ai *AsyncIterator[*TypedAgentEvent[M]], gen *AsyncGenerator[*TypedAgentEvent[M]]) {
 	defer func() {
-		if r := recover(); r != nil { gen.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("panic: %v", r)}) }
+		if r := recover(); r != nil {
+			gen.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("panic: %v\n%s", r, debug.Stack())})
+		}
 		gen.Close()
 	}()
 	for {
@@ -367,7 +387,16 @@ func initTypedRunCtx[M MessageType](ctx context.Context, name string, input *Typ
 }
 
 func typedWrapIterEnd[M MessageType](ctx context.Context, iter *AsyncIterator[*TypedAgentEvent[M]]) *AsyncIterator[*TypedAgentEvent[M]] {
-	return iter
+	it, gen := NewAsyncIteratorPair[*TypedAgentEvent[M]]()
+	go func() {
+		defer gen.Close()
+		for {
+			ev, ok := iter.Next()
+			if !ok { break }
+			if !gen.SendCtx(ctx, ev) { return }
+		}
+	}()
+	return it
 }
 func typedErrorIterEnd[M MessageType](ctx context.Context, err error) *AsyncIterator[*TypedAgentEvent[M]] {
 	return errorIter[M](err)
