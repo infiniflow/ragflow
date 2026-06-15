@@ -23,14 +23,31 @@ import (
 )
 
 type PPTParser struct {
+	libType string
 }
 
-func NewPPTParser() *PPTParser {
-	return &PPTParser{}
+func NewPPTParser(libType string) (*PPTParser, error) {
+	switch libType {
+	case OfficeOxide:
+		return &PPTParser{
+			libType: OfficeOxide,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported PPT library type: %s", libType)
+	}
 }
 
 func (p *PPTParser) Parse(filename string, data []byte) error {
 	fmt.Printf("Parsing PPT file: %s\n", filename)
+	switch p.libType {
+	case OfficeOxide:
+		return p.OfficeOxideParse(data)
+	default:
+		return fmt.Errorf("unsupported PPT library type: %s", p.libType)
+	}
+}
+
+func (p *PPTParser) OfficeOxideParse(data []byte) error {
 	doc, err := officeOxide.OpenFromBytes(data, "ppt")
 	if err != nil {
 		return err

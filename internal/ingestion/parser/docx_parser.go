@@ -22,16 +22,38 @@ import (
 	officeOxide "github.com/yfedoseev/office_oxide/go"
 )
 
+const (
+	OfficeOxide string = "office_oxide"
+)
+
 type DOCXParser struct {
+	libType string
 }
 
-func NewDOCXParser() *DOCXParser {
-	return &DOCXParser{}
+func NewDOCXParser(libType string) (*DOCXParser, error) {
+	switch libType {
+	case OfficeOxide:
+		return &DOCXParser{
+			libType: OfficeOxide,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported DOCX library type: %s", libType)
+	}
 }
 
 func (p *DOCXParser) Parse(filename string, data []byte) error {
 
 	fmt.Printf("Parsing DOCX file: %s\n", filename)
+	switch p.libType {
+	case OfficeOxide:
+		return p.OfficeOxideParse(data)
+	default:
+		return fmt.Errorf("unsupported DOCX library type: %s", p.libType)
+	}
+}
+
+func (p *DOCXParser) OfficeOxideParse(data []byte) error {
+
 	doc, err := officeOxide.OpenFromBytes(data, "docx")
 	if err != nil {
 		return err
