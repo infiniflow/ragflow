@@ -2759,8 +2759,22 @@ def test_session_completion_overrides_runtime_kb_ids(monkeypatch):
 
 @pytest.mark.p2
 def test_session_completion_rejects_invalid_runtime_kb_ids(monkeypatch):
+    """Invalid runtime kb_ids should be rejected before any completion side effects."""
     module = _load_chat_api_module(monkeypatch)
 
+    create_session_called = []
+    save_called = []
+
+    async def _spy_create_session(*_args, **_kwargs):
+        create_session_called.append(True)
+        raise RuntimeError("session creation should not run for invalid kb_ids")
+
+    def _spy_save(**_kwargs):
+        save_called.append(True)
+        raise RuntimeError("ConversationService.save should not run for invalid kb_ids")
+
+    monkeypatch.setattr(module, "_create_session_for_completion", _spy_create_session)
+    monkeypatch.setattr(module.ConversationService, "save", _spy_save)
     monkeypatch.setattr(
         module,
         "validate_runtime_kb_ids",
@@ -2771,7 +2785,6 @@ def test_session_completion_rejects_invalid_runtime_kb_ids(monkeypatch):
         "get_request_json",
         lambda: _AwaitableValue({
             "chat_id": "chat-1",
-            "session_id": "session-1",
             "stream": False,
             "messages": [{"role": "user", "content": "latest question"}],
             "kb_ids": ["runtime-kb-1"],
@@ -2782,3 +2795,5 @@ def test_session_completion_rejects_invalid_runtime_kb_ids(monkeypatch):
 
     assert res["code"] == module.RetCode.DATA_ERROR, res
     assert "You don't own the dataset runtime-kb-1" in res["message"]
+    assert create_session_called == []
+    assert save_called == []

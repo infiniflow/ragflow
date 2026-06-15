@@ -322,6 +322,10 @@ async def _validate_rerank_id(rerank_id, tenant_id):
 
 
 async def _validate_dataset_ids(dataset_ids, tenant_id):
+    """Validate dataset_ids for chat create/update requests.
+
+    Returns a normalized id list on success, or an error message string.
+    """
     if dataset_ids is None:
         return []
     result = await thread_pool_exec(validate_runtime_kb_ids, dataset_ids, tenant_id)
@@ -334,6 +338,10 @@ _RUNTIME_KB_IDS_NOT_PROVIDED = object()
 
 
 def _pop_runtime_kb_ids(req):
+    """Extract a runtime dataset override from the completion request body.
+
+    Returns kb_ids or dataset_ids when present, otherwise _RUNTIME_KB_IDS_NOT_PROVIDED.
+    """
     if "kb_ids" in req:
         return req.pop("kb_ids")
     if "dataset_ids" in req:
@@ -342,6 +350,10 @@ def _pop_runtime_kb_ids(req):
 
 
 async def _apply_runtime_kb_ids(req, dia, user_id):
+    """Validate and apply a runtime kb_ids override to the completion dialog.
+
+    Returns an error message string on failure, or None when no override was sent.
+    """
     runtime_kb_ids = _pop_runtime_kb_ids(req)
     if runtime_kb_ids is _RUNTIME_KB_IDS_NOT_PROVIDED:
         return None

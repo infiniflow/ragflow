@@ -139,6 +139,10 @@ def structure_answer(conv, ans, message_id, session_id):
 
 
 async def async_completion(tenant_id, chat_id, question, name="New session", session_id=None, stream=True, **kwargs):
+    """Run a tenant-scoped chat completion, creating the session when session_id is omitted.
+
+    Optional kwargs may include kb_ids to override the dialog's datasets for this request.
+    """
     assert name, "`name` can not be empty."
     dia = DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value)
     assert dia, "You do not own the chat."
@@ -233,6 +237,10 @@ async def async_completion(tenant_id, chat_id, question, name="New session", ses
         yield answer
 
 async def async_iframe_completion(dialog_id, question, session_id=None, stream=True, tenant_id=None, **kwargs):
+    """Run an iframe/embed chat completion, optionally scoped to a tenant.
+
+    Optional kwargs may include kb_ids to override the dialog's datasets for this request.
+    """
     if tenant_id:
         exists, dia = DialogService.get_by_id(dialog_id)
         if (not exists

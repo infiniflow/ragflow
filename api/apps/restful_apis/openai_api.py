@@ -236,6 +236,11 @@ def _normalize_openai_messages(messages):
 @login_required
 @validate_request("model", "messages")
 async def openai_chat_completions(chat_id):
+    """Handle OpenAI-compatible chat completions for a saved chat assistant.
+
+    Request body may include kb_ids or dataset_ids to override the assistant's
+    saved datasets for this completion only.
+    """
     req = await get_request_json()
 
     extra_body = req.get("extra_body") or {}
