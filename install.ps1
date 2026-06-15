@@ -14,14 +14,14 @@
 #  limitations under the License.
 #
 
-# Windows PowerShell installation script for RAGFlow CLI
-
 param(
     [string]$Version = "latest",
-    [string]$InstallDir = "$env:PROGRAMFILES\RAGFlow",
+    [string]$InstallDir = "$env:LOCALAPPDATA\Programs\RAGFlow",
     [string]$GitHubRepo = "infiniflow/ragflow",
     [string]$CliName = "ragflow_cli"
 )
+
+$ErrorActionPreference = "Stop"
 
 function Write-Info {
     param([string]$Message)
@@ -61,194 +61,172 @@ function Get-Platform {
     }
 }
 
-function Get-LatestVersion {
+function Get-ReleaseVersion {
     param(
-        [string]$Version,
-        [string]$GitHubRepo
+        [string]$RequestedVersion,
+        [string]$Repository
     )
 
-    if ($Version -ne "latest") {
-        Write-Info "Using specified version: $Version"
-        return $Version
+    if ($RequestedVersion -ne "latest") {
+        Write-Info "Using specified version: $RequestedVersion"
+        return $RequestedVersion
     }
 
-    Write-Info "Fetching latest release information..."
+    Write-Info "Fetching latest release information"
 
-    try {
-        $releaseUrl = "https://api.github.com/repos/${GitHubRepo}/releases/latest"
-        $response = Invoke-WebRequest -Uri $releaseUrl -UseBasicParsing -TimeoutSec 10
-        $release = ConvertFrom-Json $response.Content
-        $latestVersion = $release.tag_name
+    $releaseUrl = "https://api.github.com/repos/${Repository}/releases/latest"
+    $release = Invoke-RestMethod -Uri $releaseUrl -TimeoutSec 20
+    $latestVersion = $release.tag_name
 
-        if ([string]::IsNullOrWhiteSpace($latestVersion)) {
-            Write-ErrorMessage "Could not determine latest version"
-            exit 1
-        }
-
-        Write-Info "Latest version: $latestVersion"
-        return $latestVersion
-    }
-    catch {
-        Write-ErrorMessage "Failed to fetch release information: $_"
+    if ([string]::IsNullOrWhiteSpace($latestVersion)) {
+        Write-ErrorMessage "Could not determine latest version"
         exit 1
     }
+
+    Write-Info "Latest version: $latestVersion"
+    return $latestVersion
 }
 
-function Build-DownloadUrl {
+function Get-DownloadInfo {
     param(
-        [string]$Version,
+        [string]$ResolvedVersion,
         [string]$OS,
         [string]$Arch,
-        [string]$GitHubRepo,
-        [string]$CliName
+        [string]$Repository,
+        [string]$BinaryName
     )
 
-    $filename = "${CliName}-${Version}-${OS}-${Arch}.exe"
-    $url = "https://github.com/${GitHubRepo}/releases/download/${Version}/${filename}"
+    $fileName = "${BinaryName}-${ResolvedVersion}-${OS}-${Arch}.exe"
+    $baseUrl = "https://github.com/${Repository}/releases/download/${ResolvedVersion}"
 
-    Write-Info "Download URL: $url"
-    return $url
+    return @{
+        FileName = $fileName
+        BinaryUrl = "${baseUrl}/${fileName}"
+        ChecksumUrl = "${baseUrl}/SHA256SUMS"
+    }
 }
 
-function Download-CLI {
-    param([string]$Url)
+function Download-File {
+    param(
+        [string]$Url,
+        [string]$OutputPath
+    )
 
-    $tempFile = [System.IO.Path]::GetTempFileName()
+    Write-Info "Downloading $Url"
+    $ProgressPreference = "SilentlyContinue"
+    Invoke-WebRequest -Uri $Url -OutFile $OutputPath -TimeoutSec 120
+}
 
-    Write-Info "Downloading CLI from $Url..."
+function Test-Checksum {
+    param(
+        [string]$BinaryPath,
+        [string]$ChecksumPath,
+        [string]$FileName
+    )
 
-    try {
-        $ProgressPreference = 'SilentlyContinue'
-        Invoke-WebRequest -Uri $Url -OutFile $tempFile -TimeoutSec 60
+    $checksumLine = Get-Content $ChecksumPath | Where-Object {
+        $parts = $_ -split "\s+"
+        $parts.Count -ge 2 -and $parts[1] -eq $FileName
+    } | Select-Object -First 1
 
-        $fileSize = (Get-Item $tempFile).Length
-        if ($fileSize -lt 1MB) {
-            Write-Warn "Downloaded file seems suspiciously small ($fileSize bytes)"
-        }
-
-        return $tempFile
-    }
-    catch {
-        Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
-        Write-ErrorMessage "Failed to download CLI binary: $_"
+    if ([string]::IsNullOrWhiteSpace($checksumLine)) {
+        Write-ErrorMessage "No checksum found for $FileName in SHA256SUMS"
         exit 1
     }
+
+    $expected = ($checksumLine -split "\s+")[0].ToLowerInvariant()
+    $actual = (Get-FileHash -Algorithm SHA256 -Path $BinaryPath).Hash.ToLowerInvariant()
+
+    if ($actual -ne $expected) {
+        Write-ErrorMessage "Checksum verification failed for $FileName"
+        Write-ErrorMessage "Expected: $expected"
+        Write-ErrorMessage "Actual:   $actual"
+        exit 1
+    }
+
+    Write-Info "Checksum verified"
 }
 
 function Install-CLI {
     param(
         [string]$TempFile,
-        [string]$InstallDir,
-        [string]$CliName
+        [string]$TargetDir,
+        [string]$BinaryName
     )
 
-    if (-not (Test-Path $InstallDir)) {
-        Write-Info "Creating directory: $InstallDir"
-
-        try {
-            New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
-        }
-        catch {
-            Write-ErrorMessage "Failed to create installation directory: $_"
-            exit 1
-        }
+    if (-not (Test-Path $TargetDir)) {
+        Write-Info "Creating directory: $TargetDir"
+        New-Item -ItemType Directory -Path $TargetDir -Force | Out-Null
     }
 
-    $targetFile = Join-Path $InstallDir "${CliName}.exe"
+    $targetFile = Join-Path $TargetDir "${BinaryName}.exe"
+    Write-Info "Installing CLI to $targetFile"
 
-    Write-Info "Installing CLI to $targetFile..."
+    Stop-Process -Name $BinaryName -Force -ErrorAction SilentlyContinue
+    Copy-Item -Path $TempFile -Destination $targetFile -Force
+
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    $pathParts = @()
+    if (-not [string]::IsNullOrWhiteSpace($userPath)) {
+        $pathParts = $userPath -split ";"
+    }
+
+    if ($pathParts -notcontains $TargetDir) {
+        Write-Info "Adding $TargetDir to user PATH"
+        $newPath = if ([string]::IsNullOrWhiteSpace($userPath)) { $TargetDir } else { "$userPath;$TargetDir" }
+        [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+        Write-Warn "Restart your terminal for PATH changes to take effect"
+    }
+
+    Write-Info "CLI installed successfully at $targetFile"
+    return $targetFile
+}
+
+function Test-Installation {
+    param([string]$CliPath)
+
+    if (-not (Test-Path $CliPath)) {
+        Write-Warn "CLI not found at expected location: $CliPath"
+        return
+    }
 
     try {
-        Stop-Process -Name $CliName -Force -ErrorAction SilentlyContinue
-        Start-Sleep -Milliseconds 500
-
-        Copy-Item -Path $TempFile -Destination $targetFile -Force
-        Write-Info "CLI installed successfully at $targetFile"
-
-        $envPath = [Environment]::GetEnvironmentVariable("Path", "User")
-
-        if ($envPath -notlike "*$InstallDir*") {
-            Write-Info "Adding $InstallDir to user PATH..."
-
-            if ([string]::IsNullOrWhiteSpace($envPath)) {
-                $newPath = $InstallDir
-            }
-            else {
-                $newPath = "$envPath;$InstallDir"
-            }
-
-            [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
-            Write-Info "PATH updated. Please restart your terminal for changes to take effect."
+        & $CliPath --version
+        if ($LASTEXITCODE -eq 0) {
+            Write-Info "Installation verified successfully"
+            return
         }
     }
     catch {
-        Write-ErrorMessage "Failed to install CLI: $_"
-        exit 1
+        Write-Warn "Could not execute version check: $_"
     }
-    finally {
-        Remove-Item $TempFile -Force -ErrorAction SilentlyContinue
-    }
-}
 
-function Verify-Installation {
-    param(
-        [string]$InstallDir,
-        [string]$CliName
-    )
-
-    $cliPath = Join-Path $InstallDir "${CliName}.exe"
-
-    Write-Info "Verifying installation..."
-
-    if (Test-Path $cliPath) {
-        try {
-            & $cliPath --version 2>$null
-
-            if ($LASTEXITCODE -eq 0) {
-                Write-Info "Installation verified successfully!"
-                return
-            }
-
-            & $cliPath -h 2>$null
-
-            if ($LASTEXITCODE -eq 0) {
-                Write-Info "Installation verified successfully!"
-                return
-            }
-
-            Write-Warn "Could not verify CLI installation, but it may still work"
-        }
-        catch {
-            Write-Warn "Could not verify CLI installation, but it may still work"
-        }
-    }
-    else {
-        Write-Warn "CLI not found at expected location: $cliPath"
-    }
+    Write-Warn "Could not verify CLI execution, but the binary was installed"
 }
 
 function Main {
-    Write-Host "=========================================="
-    Write-Host "RAGFlow CLI Installer (Windows)"
-    Write-Host "=========================================="
-    Write-Host
-
     $platform = Get-Platform
-    $version = Get-LatestVersion -Version $Version -GitHubRepo $GitHubRepo
-    $downloadUrl = Build-DownloadUrl -Version $version -OS $platform.OS -Arch $platform.Arch -GitHubRepo $GitHubRepo -CliName $CliName
+    $resolvedVersion = Get-ReleaseVersion -RequestedVersion $Version -Repository $GitHubRepo
+    $downloadInfo = Get-DownloadInfo -ResolvedVersion $resolvedVersion -OS $platform.OS -Arch $platform.Arch -Repository $GitHubRepo -BinaryName $CliName
 
-    $tempFile = Download-CLI -Url $downloadUrl
-    Install-CLI -TempFile $tempFile -InstallDir $InstallDir -CliName $CliName
-    Verify-Installation -InstallDir $InstallDir -CliName $CliName
+    Write-Info "Download URL: $($downloadInfo.BinaryUrl)"
 
-    Write-Host
-    Write-Host "==========================================" -ForegroundColor Green
-    Write-Host "Installation complete! 🎉" -ForegroundColor Green
-    Write-Host "==========================================" -ForegroundColor Green
-    Write-Host
-    Write-Info "You can now use '${CliName}' command"
-    Write-Info "Installation directory: $InstallDir"
+    $tempBinary = [System.IO.Path]::GetTempFileName()
+    $tempSums = [System.IO.Path]::GetTempFileName()
+
+    try {
+        Download-File -Url $downloadInfo.BinaryUrl -OutputPath $tempBinary
+        Download-File -Url $downloadInfo.ChecksumUrl -OutputPath $tempSums
+        Test-Checksum -BinaryPath $tempBinary -ChecksumPath $tempSums -FileName $downloadInfo.FileName
+
+        $cliPath = Install-CLI -TempFile $tempBinary -TargetDir $InstallDir -BinaryName $CliName
+        Test-Installation -CliPath $cliPath
+        Write-Info "Installation complete"
+    }
+    finally {
+        Remove-Item $tempBinary -Force -ErrorAction SilentlyContinue
+        Remove-Item $tempSums -Force -ErrorAction SilentlyContinue
+    }
 }
 
-# Run main function
 Main

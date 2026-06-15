@@ -82,23 +82,13 @@ jobs:
             fi
           fi
 
-      - name: Create or overwrite a release
-        # https://github.com/actions/upload-release-asset has been replaced by https://github.com/softprops/action-gh-release
-        uses: softprops/action-gh-release@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}  # Use the secret as an environment variable
-          prerelease: ${{ env.PRERELEASE }}
-          tag_name: ${{ env.RELEASE_TAG }}
-          # The body field does not support environment variable substitution directly.
-          body_path: release_body.md
-
       - name: Build Go CLI release binaries
         run: |
           set -euo pipefail
 
           CLI_NAME="ragflow_cli"
 
-          CLI_MAIN="./cmd/ragflow_cli"
+          CLI_MAIN="./cmd/ragflow_cli.go"
 
           DIST_DIR="dist/cli"
 
@@ -146,6 +136,16 @@ jobs:
           build_one windows amd64 ".exe"
           build_one windows arm64 ".exe"
 
+          if command -v ldd >/dev/null 2>&1; then
+            if ldd "${DIST_DIR}/${CLI_NAME}-${RELEASE_TAG}-linux-amd64" 2>&1 | grep -q "not a dynamic executable"; then
+              echo "Verified linux/amd64 CLI is not dynamically linked"
+            else
+              echo "::error::linux/amd64 CLI is dynamically linked"
+              ldd "${DIST_DIR}/${CLI_NAME}-${RELEASE_TAG}-linux-amd64" || true
+              exit 1
+            fi
+          fi
+
           cd "${DIST_DIR}"
           sha256sum * > SHA256SUMS
           cd -
@@ -159,6 +159,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           prerelease: ${{ env.PRERELEASE }}
           tag_name: ${{ env.RELEASE_TAG }}
+          body_path: release_body.md
           files: |
             dist/cli/*
             install.sh
