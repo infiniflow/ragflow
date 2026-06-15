@@ -351,7 +351,7 @@ function ModelListItem({
     <li className="flex items-center border-b-[0.5px] border-border-button justify-between p-3 hover:bg-bg-card transition-colors last:border-b-0 group">
       <div className="flex items-center space-x-3">
         <span className="font-medium text-text-primary">{model.name}</span>
-        {model.model_type.map((modelType) => (
+        {model.model_type.slice(0, 3).map((modelType) => (
           <span
             className="px-2 py-1 text-xs bg-bg-card text-text-secondary rounded-md"
             key={modelType}
@@ -359,6 +359,14 @@ function ModelListItem({
             {modelType}
           </span>
         ))}
+        {model.model_type.length > 3 && (
+          <span
+            className="px-2 py-1 text-xs bg-bg-card text-text-secondary rounded-md"
+            key="ellipsis"
+          >
+            ...
+          </span>
+        )}
         <Button
           size="icon"
           variant="ghost"
