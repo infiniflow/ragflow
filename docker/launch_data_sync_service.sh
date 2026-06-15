@@ -67,79 +67,28 @@ cleanup() {
 # Trap SIGINT and SIGTERM to invoke cleanup
 trap cleanup SIGINT SIGTERM
 
-# Function to execute task_executor with retry logic
-task_exe(){
-    local task_id=$1
-    local retry_count=0
-    while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
-        echo "Starting task_executor.py for task $task_id (Attempt $((retry_count+1)))"
-        LD_PRELOAD=$JEMALLOC_PATH $PY rag/svr/task_executor.py -i "$task_id"
-        EXIT_CODE=$?
-        if [ $EXIT_CODE -eq 0 ]; then
-            echo "task_executor.py for task $task_id exited successfully."
-            break
-        else
-            echo "task_executor.py for task $task_id failed with exit code $EXIT_CODE. Retrying..." >&2
-            retry_count=$((retry_count + 1))
-            sleep 2
-        fi
-    done
-
-    if [ $retry_count -ge $MAX_RETRIES ]; then
-        echo "task_executor.py for task $task_id failed after $MAX_RETRIES attempts. Exiting..." >&2
-        cleanup
-    fi
-}
-
-# Function to execute ragflow_server with retry logic
+# Function to execute sync_data_source with retry logic
 run_server(){
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
-        echo "Starting ragflow_server.py (Attempt $((retry_count+1)))"
-        $PY api/ragflow_server.py
+        echo "Starting sync_data_source.py (Attempt $((retry_count+1)))"
+        $PY rag/svr/sync_data_source.py
         EXIT_CODE=$?
         if [ $EXIT_CODE -eq 0 ]; then
-            echo "ragflow_server.py exited successfully."
+            echo "sync_data_source.py exited successfully."
             break
         else
-            echo "ragflow_server.py failed with exit code $EXIT_CODE. Retrying..." >&2
+            echo "sync_data_source.py failed with exit code $EXIT_CODE. Retrying..." >&2
             retry_count=$((retry_count + 1))
             sleep 2
         fi
     done
 
     if [ $retry_count -ge $MAX_RETRIES ]; then
-        echo "ragflow_server.py failed after $MAX_RETRIES attempts. Exiting..." >&2
+        echo "sync_data_source.py failed after $MAX_RETRIES attempts. Exiting..." >&2
         cleanup
     fi
 }
-
-ensure_db_init() {
-    echo "Initializing database tables..."
-    "$PY" -c "from api.db.db_models import init_database_tables as init_web_db; init_web_db()"
-    echo "Database tables initialized."
-}
-
-run_mysql_migrations() {
-    echo "Running model provider table migrations..."
-    "$PY" tools/scripts/mysql_migration.py \
-        --stages tenant_model_provider,tenant_model_instance,tenant_model,model_id_config \
-        --config conf/service_conf.yaml \
-        --execute \
-        --database-version "v0.26.0" \
-        --mark-database-version-on-success
-    echo "Model provider table migrations completed."
-}
-
-ensure_db_init
-run_mysql_migrations
-
-# Start task executors
-for ((i=0;i<WS;i++))
-do
-  task_exe "$i" &
-  PIDS+=($!)
-done
 
 # Start the main server
 run_server &
