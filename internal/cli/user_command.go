@@ -29,6 +29,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"ragflow/internal/ingestion"
+	"ragflow/internal/ingestion/parser"
+	"ragflow/internal/utility"
 	"strings"
 	"time"
 )
@@ -3247,6 +3249,24 @@ func (c *CLI) UserParseLocalFile(cmd *Command) (ResponseIf, error) {
 	docParseModel, ok := cmd.Params["doc_parse_model"].(string)
 	if !ok {
 		docParseModel = ""
+	}
+
+	fileType := utility.GetFileType(filename)
+	config := map[string]string{
+		"lib_type": "office_oxide",
+	}
+	fileParser, err := parser.GetParser(fileType, config)
+	if err != nil {
+		return nil, err
+	}
+
+	fileContent, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read dsl file: %w", err)
+	}
+
+	if err = fileParser.Parse(filename, fileContent); err != nil {
+		return nil, formatRequestError("parse local file", err)
 	}
 
 	var result SimpleResponse
