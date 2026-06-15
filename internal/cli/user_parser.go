@@ -988,9 +988,8 @@ A:
 				maxDimension = &val
 				p.nextToken()
 
-				dimensions = append(dimensions, int(val))
-
-				for p.curToken.Type == TokenQuotedString {
+				dimensions = make([]int, 0)
+				for p.curToken.Type == TokenInteger {
 					dim, err := p.parseNumber()
 					if err != nil {
 						return nil, err
