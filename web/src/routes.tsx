@@ -112,6 +112,11 @@ const routeConfigOptions = [
     layout: false,
   },
   {
+    path: '/forgot-password',
+    Component: () => import('@/pages/login-next/forgot-password'),
+    layout: false,
+  },
+  {
     path: '/login-next',
     Component: () => import('@/pages/login-next'),
     layout: false,

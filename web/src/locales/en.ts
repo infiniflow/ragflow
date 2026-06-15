@@ -104,6 +104,7 @@ export default {
         'Sign up for free to explore top RAG technology. Create datasets and AIs to empower your business.',
       review: 'from 500+ reviews',
       seeAll: 'See all',
+      forget: 'Forgot Password?'
     },
     header: {
       knowledgeBase: 'Dataset',

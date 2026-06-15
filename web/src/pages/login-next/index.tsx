@@ -60,6 +60,7 @@ function LoginFormContent({
   disablePasswordLogin,
 }: LoginFormContentProps) {
   const face = useContext(FlipFaceContext);
+  const navigate = useNavigate();
   const isActiveFace = isLoginPage ? face === 'front' : face === 'back';
 
   const pageTitle =
@@ -155,6 +156,19 @@ function LoginFormContent({
                   </FormItem>
                 )}
               />
+              
+              {title === 'login' && (
+                <div className="flex justify-end -mt-4">
+                  <Button
+                    variant={'static'}
+                    type="button"
+                    onClick={() => navigate('/forgot-password')}
+                    className="!text-[var(--accent-primary)] hover:!text-[var(--accent-primary)]/90 text-sm font-medium"
+                  >
+                    {t('forget')}
+                  </Button>
+                </div>
+              )}
 
               {title === 'login' && (
                 <FormField
