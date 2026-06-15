@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"ragflow/internal/harness/core"
@@ -117,6 +118,7 @@ type anthropicModel struct {
 	temperature float64
 	maxTokens   int
 	client      httpClient
+	tools       []*schema.ToolInfo
 }
 
 // ---- Anthropic API types ----
@@ -186,7 +188,7 @@ func (m *anthropicModel) Stream(ctx context.Context, msgs []*schema.Message, opt
 }
 
 func (m *anthropicModel) BindTools(tools []*schema.ToolInfo) error {
-	// Tools are passed per-request in the request body.
+	m.tools = tools
 	return nil
 }
 
@@ -221,6 +223,7 @@ func (m *anthropicModel) buildRequest(msgs []*schema.Message) *anthropicRequest 
 			role = "user"
 			content = []contentBlock{{
 				Type: "tool_result",
+				ID:   msg.Name,
 				Text: msg.Content,
 			}}
 		}
@@ -231,8 +234,17 @@ func (m *anthropicModel) buildRequest(msgs []*schema.Message) *anthropicRequest 
 	}
 
 	if systemText != "" {
-		req.System = stringsTrimSuffix(systemText, "\n")
+		req.System = strings.TrimSuffix(systemText, "\n")
 	}
+
+	// Populate tools.
+	for _, t := range m.tools {
+		req.Tools = append(req.Tools, anthropicToolDef{
+			Name:        t.Name,
+			Description: t.Description,
+		})
+	}
+
 	return req
 }
 
@@ -326,15 +338,15 @@ type openAIModel struct {
 // ---- OpenAI API types ----
 
 type openAIMessage struct {
-	Role      string           `json:"role"`
-	Content   any              `json:"content,omitempty"` // string or []contentPart
-	ToolCalls []openAIToolCall `json:"tool_calls,omitempty"`
+	Role        string           `json:"role"`
+	Content     any              `json:"content,omitempty"` // string or []contentPart
+	ToolCalls   []openAIToolCall `json:"tool_calls,omitempty"`
+	ToolCallID  string           `json:"tool_call_id,omitempty"`
 }
 
 type contentPart struct {
-	Type     string `json:"type"`
-	Text     string `json:"text,omitempty"`
-	ToolCall *openAIToolCall `json:"-"`
+	Type string `json:"type"`
+	Text string `json:"text,omitempty"`
 }
 
 type openAIToolCall struct {
@@ -438,6 +450,7 @@ func (m *openAIModel) buildRequest(msgs []*schema.Message) *openAIRequest {
 		case schema.RoleTool:
 			om.Role = "tool"
 			om.Content = msg.Content
+			om.ToolCallID = msg.Name
 		default:
 			om.Role = "user"
 			om.Content = msg.Content
@@ -503,13 +516,6 @@ func getStringContent(content any) string {
 		b, _ := json.Marshal(v)
 		return string(b)
 	}
-}
-
-func stringsTrimSuffix(s, suffix string) string {
-	if len(s) >= len(suffix) && s[len(s)-len(suffix):] == suffix {
-		return s[:len(s)-len(suffix)]
-	}
-	return s
 }
 
 // RegisterAll is a convenience function that registers both Anthropic and OpenAI

@@ -3,6 +3,7 @@ package planexecute
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"ragflow/internal/harness/core"
@@ -41,34 +42,6 @@ func (m *mockPlanModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 }
 
 func (m *mockPlanModel) BindTools(tools []*schema.ToolInfo) error { return nil }
-
-// ============================================================
-// Helper: collect events from an iterator
-// ============================================================
-
-func collectEvents(iter *core.AsyncIterator[*core.AgentEvent]) []*core.AgentEvent {
-	var events []*core.AgentEvent
-	for {
-		ev, ok := iter.Next()
-		if !ok {
-			break
-		}
-		events = append(events, ev)
-	}
-	return events
-}
-
-func lastAssistantContent(events []*core.AgentEvent) string {
-	for i := len(events) - 1; i >= 0; i-- {
-		ev := events[i]
-		if ev.Output != nil && ev.Output.MessageOutput != nil && !ev.Output.MessageOutput.IsStreaming {
-			if msg := ev.Output.MessageOutput.Message; msg != nil && msg.Role == schema.RoleAssistant {
-				return msg.Content
-			}
-		}
-	}
-	return ""
-}
 
 // ============================================================
 // Test Plan interface
@@ -112,10 +85,9 @@ func TestDefaultPlan_JSONRoundtrip(t *testing.T) {
 }
 
 func TestNewPlan(t *testing.T) {
-	fn := defaultNewPlan
-	p := fn(context.Background())
+	p := &defaultPlan{StepList: []string{}}
 	if p == nil {
-		t.Fatal("nil plan from factory")
+		t.Fatal("nil plan")
 	}
 	if len(p.Steps()) != 0 {
 		t.Errorf("expected empty plan, got %d steps", len(p.Steps()))
@@ -284,27 +256,7 @@ func TestNew_CustomReplannerPrompt(t *testing.T) {
 // Test custom NewPlan factory
 // ============================================================
 
-func TestNew_CustomNewPlan(t *testing.T) {
-	ctx := context.Background()
-	model := &mockPlanModel{}
 
-	customFactory := func(_ context.Context) Plan {
-		return &defaultPlan{StepList: []string{"Custom step"}}
-	}
-
-	flow, err := New(ctx, &Config{
-		Planner: &PlannerConfig{
-			Model:   model,
-			NewPlan: customFactory,
-		},
-		Executor:  &ExecutorConfig{Model: model},
-		Replanner: &ReplannerConfig{Model: model},
-	})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	_ = flow
-}
 
 // ============================================================
 // Test Executor with tools
@@ -334,21 +286,66 @@ func TestNew_ExecutorWithTools(t *testing.T) {
 }
 
 // ============================================================
-// Test Prompt
+// Integration test — full Planner→Executor→Replanner pipeline
 // ============================================================
 
-func TestPrompt(t *testing.T) {
-	p := Prompt()
-	if p == "" {
-		t.Error("empty prompt")
+func TestPlanExecute_Integration(t *testing.T) {
+	ctx := context.Background()
+
+	// Planner: plan_tool → creates a plan
+	plannerModel := &mockPlanModel{responses: []mockResponse{
+		{toolCalls: []schema.ToolCall{{
+			ID: "pl_1", Type: "function",
+			Function: schema.ToolCallFunction{Name: toolPlan, Arguments: `{"steps":["Step 1"]}`},
+		}}},
+	}}
+
+	// Executor: returns text (no tool call)
+	executorModel := &mockPlanModel{responses: []mockResponse{
+		{content: "Step 1 executed"},
+	}}
+
+	// Replanner: respond_tool → signals completion
+	replannerModel := &mockPlanModel{responses: []mockResponse{
+		{toolCalls: []schema.ToolCall{{
+			ID: "rp_1", Type: "function",
+			Function: schema.ToolCallFunction{Name: toolRespond, Arguments: `{"response":"Task complete"}`},
+		}}},
+	}}
+
+	agent, err := New(ctx, &Config{
+		Planner:           &PlannerConfig{Model: plannerModel},
+		Executor:          &ExecutorConfig{Model: executorModel},
+		Replanner:         &ReplannerConfig{Model: replannerModel},
+		MaxLoopIterations: 5,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
 	}
-	if !contains(p, "planner") {
-		t.Error("prompt should mention planner")
+
+	runner := core.NewTypedRunner(core.RunnerConfig[*schema.Message]{Agent: agent})
+	iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("do something")})
+
+	var lastContent string
+	for {
+		ev, ok := iter.Next()
+		if !ok {
+			break
+		}
+		if ev.Err != nil {
+			t.Fatalf("unexpected error: %v", ev.Err)
+		}
+		if ev.Output != nil && ev.Output.MessageOutput != nil && !ev.Output.MessageOutput.IsStreaming {
+			if msg := ev.Output.MessageOutput.Message; msg != nil {
+				lastContent = msg.Content
+			}
+		}
 	}
+	if lastContent == "" {
+		t.Error("expected some output content")
+	}
+	t.Logf("integration test: final content=%q", lastContent)
 }
-
-// ============================================================
-// Test Plan JSON helpers
 // ============================================================
 
 func TestPlanJSON_Marshal(t *testing.T) {
@@ -459,7 +456,7 @@ func TestPlannerPrompt(t *testing.T) {
 	if PlannerPrompt == "" {
 		t.Error("PlannerPrompt is empty")
 	}
-	if !contains(PlannerPrompt, "plan_tool") {
+	if !strings.Contains(PlannerPrompt, "plan_tool") {
 		t.Error("PlannerPrompt should mention plan_tool")
 	}
 }
@@ -468,13 +465,13 @@ func TestExecutorPrompt(t *testing.T) {
 	if ExecutorPrompt == "" {
 		t.Error("ExecutorPrompt is empty")
 	}
-	if !contains(ExecutorPrompt, "{objective}") {
+	if !strings.Contains(ExecutorPrompt, "{objective}") {
 		t.Error("ExecutorPrompt should contain {objective}")
 	}
-	if !contains(ExecutorPrompt, "{plan}") {
+	if !strings.Contains(ExecutorPrompt, "{plan}") {
 		t.Error("ExecutorPrompt should contain {plan}")
 	}
-	if !contains(ExecutorPrompt, "{completed_steps}") {
+	if !strings.Contains(ExecutorPrompt, "{completed_steps}") {
 		t.Error("ExecutorPrompt should contain {completed_steps}")
 	}
 }
@@ -483,27 +480,12 @@ func TestReplannerPrompt(t *testing.T) {
 	if ReplannerPrompt == "" {
 		t.Error("ReplannerPrompt is empty")
 	}
-	if !contains(ReplannerPrompt, "plan_tool") {
+	if !strings.Contains(ReplannerPrompt, "plan_tool") {
 		t.Error("ReplannerPrompt should mention plan_tool")
 	}
-	if !contains(ReplannerPrompt, "respond_tool") {
+	if !strings.Contains(ReplannerPrompt, "respond_tool") {
 		t.Error("ReplannerPrompt should mention respond_tool")
 	}
 }
 
-// ============================================================
-// Helper
-// ============================================================
 
-func contains(s, sub string) bool {
-	return len(s) >= len(sub) && containsInner(s, sub)
-}
-
-func containsInner(s, sub string) bool {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
-}

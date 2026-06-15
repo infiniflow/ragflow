@@ -250,7 +250,7 @@ func NewAgent(ctx context.Context, cfg *AgentConfig) (core.Agent, error) {
 		}
 		saMW := subagent.New(cfg.SubAgentSpecs, subCfg)
 		reactCfg.Middlewares = append(reactCfg.Middlewares, saMW)
-		saMW.BindToConfig(context.Background(), reactCfg)
+		saMW.BindToConfig(ctx, reactCfg)
 	}
 
 	return core.NewReActAgent(reactCfg), nil
@@ -395,7 +395,7 @@ type descriptionOverrideTool struct {
 
 func (t *descriptionOverrideTool) Description() string { return t.newDesc }
 
-// strPtr is a helper for creating *string literals.
+// StrPtr is a helper for creating *string literals.
 func StrPtr(s string) *string { return &s }
 
 // Validate checks the AgentConfig for common errors and returns them all at once.
@@ -430,9 +430,9 @@ func ClearHarnesses() {
 // model. This matches deepagents' double-registration pattern.
 //
 // Deprecated: Use separate RegisterProvider and RegisterHarness calls instead.
-func RegisterProviderModel(provider *ProviderProfile, harnesses ...*HarnessProfile) {
+func RegisterProviderModel(provider *ProviderProfile, harnessProfiles ...*HarnessProfile) {
 	RegisterProvider(provider)
-	for _, h := range harnesses {
+	for _, h := range harnessProfiles {
 		RegisterHarness(h)
 	}
 }

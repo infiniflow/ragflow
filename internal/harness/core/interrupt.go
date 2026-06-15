@@ -6,9 +6,12 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/gob"
 	"errors"
 	"fmt"
+	"log"
+	"os"
 
 	"ragflow/internal/harness/core/schema"
 )
@@ -180,15 +183,36 @@ func extractCheckpointTenant(ctx context.Context) string {
 
 // ---- Checkpoint integrity (HMAC) ----
 
-var checkpointHMACKey = func() []byte {
+const (
+	hmacLen        = 32
+	envHMACKey     = "CHECKPOINT_HMAC_KEY"
+)
+
+// checkpointHMACKey reads the HMAC key from the CHECKPOINT_HMAC_KEY env var
+// (base64-encoded, 32 bytes). If unset, a random key is generated per startup
+// with a log warning — this is safe for single-process in-memory usage but
+// will BREAK checkpoint resume across process restarts. Production deployments
+// MUST set CHECKPOINT_HMAC_KEY to a stable base64-encoded 32-byte secret.
+var checkpointHMACKey = loadCheckpointHMACKey()
+
+func loadCheckpointHMACKey() []byte {
+	if env := os.Getenv(envHMACKey); env != "" {
+		k, err := base64.StdEncoding.DecodeString(env)
+		if err != nil {
+			log.Fatalf("checkpoint HMAC key: invalid base64 in %s: %v", envHMACKey, err)
+		}
+		if len(k) != 32 {
+			log.Fatalf("checkpoint HMAC key: %s must decode to exactly 32 bytes, got %d", envHMACKey, len(k))
+		}
+		return k
+	}
 	k := make([]byte, 32)
 	if _, err := rand.Read(k); err != nil {
 		panic("failed to generate checkpoint HMAC key: " + err.Error())
 	}
+	log.Printf("WARNING: %s not set — using random per-process key. Checkpoint resume across restarts will fail.", envHMACKey)
 	return k
-}()
-
-const hmacLen = 32
+}
 
 func computeCheckpointHMAC(payload []byte) []byte {
 	mac := hmac.New(sha256.New, checkpointHMACKey)
@@ -219,9 +243,19 @@ func loadCheckpoint(store CheckPointStore, ctx context.Context, cid string) (con
 	}
 
 	// Verify tenant isolation
+	// Policy: when EITHER side carries a TenantID, BOTH must be present and match.
+	// Empty-on-both-sides is allowed for backward compat (non-tenant deployments).
 	currentTenant := extractCheckpointTenant(ctx)
-	if p.TenantID != "" && currentTenant != "" && p.TenantID != currentTenant {
-		return nil, nil, nil, fmt.Errorf("checkpoint %s tenant mismatch: stored=%q current=%q", cid, p.TenantID, currentTenant)
+	if p.TenantID != "" || currentTenant != "" {
+		if p.TenantID == "" {
+			return nil, nil, nil, fmt.Errorf("checkpoint %s tenant mismatch: stored is empty, current=%q", cid, currentTenant)
+		}
+		if currentTenant == "" {
+			return nil, nil, nil, fmt.Errorf("checkpoint %s tenant mismatch: stored=%q, current is empty", cid, p.TenantID)
+		}
+		if p.TenantID != currentTenant {
+			return nil, nil, nil, fmt.Errorf("checkpoint %s tenant mismatch: stored=%q current=%q", cid, p.TenantID, currentTenant)
+		}
 	}
 
 	return ctx, p.RunCtx, &ResumeInfo{EnableStreaming: p.EnableStreaming, InterruptInfo: p.Info}, nil

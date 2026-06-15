@@ -6,8 +6,12 @@
 //
 // The Planner generates an initial step-by-step plan.
 // The Executor executes the first uncompleted step.
-// The Replanner evaluates progress and either replans or responds.
-// The loop repeats until the replanner emits BreakLoopAction.
+// The Replanner evaluates progress and either replans (plan_tool) or responds (respond_tool).
+// The loop repeats until MaxLoopIterations is reached. The respond_tool is configured
+// as ReturnDirectly, which causes the replanner sub-agent to return early, but does NOT
+// propagate a BreakLoopAction to the outer LoopAgent — loop termination is guaranteed
+// only by MaxLoopIterations. For custom termination, provide a RespondTool that emits
+// an Exit action or set MaxLoopIterations appropriately.
 package planexecute
 
 import (
@@ -58,13 +62,6 @@ func (p *defaultPlan) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// NewPlan is a factory function type for creating a Plan.
-type NewPlan func(ctx context.Context) Plan
-
-func defaultNewPlan(_ context.Context) Plan {
-	return &defaultPlan{StepList: make([]string, 0)}
-}
-
 // ============================================================
 // Config
 // ============================================================
@@ -73,7 +70,6 @@ func defaultNewPlan(_ context.Context) Plan {
 type PlannerConfig struct {
 	Model       core.Model[*schema.Message]
 	Instruction string // overrides default PlannerPrompt
-	NewPlan     NewPlan
 }
 
 // ExecutorConfig configures the executor agent.
@@ -125,7 +121,9 @@ var planToolDef = core.NewBaseTool(
 			return "", err
 		}
 		// Reset steps done when plan changes
-		core.SetRunLocalValue(ctx, sessionKeyStepsDone, 0)
+		if err := core.SetRunLocalValue(ctx, sessionKeyStepsDone, 0); err != nil {
+			return "", err
+		}
 		return fmt.Sprintf("Plan updated with %d steps", len(in.Steps)), nil
 	},
 )
@@ -234,10 +232,6 @@ func New(ctx context.Context, cfg *Config) (core.ResumableAgent, error) {
 	if plannerInstruction == "" {
 		plannerInstruction = PlannerPrompt
 	}
-	newPlan := cfg.Planner.NewPlan
-	if newPlan == nil {
-		newPlan = defaultNewPlan
-	}
 
 	planner := core.NewReActAgent(&core.ReActConfig[*schema.Message]{
 		Model:       cfg.Planner.Model,
@@ -324,13 +318,12 @@ func genPlannerInput(ctx context.Context, instruction string, input *core.AgentI
 	return msgs, nil
 }
 
-// genExecutorInput builds the input for the executor with plan context.
-func genExecutorInput(ctx context.Context, instruction string, input *core.AgentInput) ([]*schema.Message, error) {
+// genContextualInput builds input with plan context substituted into the instruction.
+func genContextualInput(ctx context.Context, instruction string, input *core.AgentInput) ([]*schema.Message, error) {
 	planStr := getPlanStr(ctx)
 	stepsDone := getStepsDone(ctx)
 	objective := getObjective(input.Messages)
 
-	// Build the prompt with context
 	contextStr := strings.NewReplacer(
 		"{objective}", objective,
 		"{plan}", planStr,
@@ -343,22 +336,20 @@ func genExecutorInput(ctx context.Context, instruction string, input *core.Agent
 	return msgs, nil
 }
 
-// genReplannerInput builds the input for the replanner with plan context.
+// genExecutorInput delegates to the shared helper.
+func genExecutorInput(ctx context.Context, instruction string, input *core.AgentInput) ([]*schema.Message, error) {
+	return genContextualInput(ctx, instruction, input)
+}
+
+// genReplannerInput increments the step counter, then delegates to the shared helper.
 func genReplannerInput(ctx context.Context, instruction string, input *core.AgentInput) ([]*schema.Message, error) {
-	planStr := getPlanStr(ctx)
-	stepsDone := getStepsDone(ctx)
-	objective := getObjective(input.Messages)
-
-	contextStr := strings.NewReplacer(
-		"{objective}", objective,
-		"{plan}", planStr,
-		"{completed_steps}", fmt.Sprintf("%d", stepsDone),
-	).Replace(instruction)
-
-	msgs := make([]*schema.Message, 0, len(input.Messages)+1)
-	msgs = append(msgs, schema.SystemMessage(contextStr))
-	msgs = append(msgs, input.Messages...)
-	return msgs, nil
+	// Increment steps done: each time the replanner runs, it means the executor
+	// just completed a step. The counter is reset to 0 by planTool when the plan
+	// is updated, making the next count start fresh.
+	currentSteps := getStepsDone(ctx)
+	currentSteps++
+	_ = core.SetRunLocalValue(ctx, sessionKeyStepsDone, currentSteps)
+	return genContextualInput(ctx, instruction, input)
 }
 
 // ============================================================
@@ -410,9 +401,6 @@ func getObjective(msgs []*schema.Message) string {
 	}
 	return ""
 }
-
-// Prompt returns the default planner prompt.
-func Prompt() string { return PlannerPrompt }
 
 func init() {
 	schema.RegisterName[defaultPlan]("planexecute_default_plan")

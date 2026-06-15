@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"ragflow/internal/harness/core"
@@ -469,7 +470,7 @@ func TestInitModelError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from InitModel")
 	}
-	if !errors.Is(err, expectedErr) && !stringsContains(err.Error(), expectedErr.Error()) {
+	if !errors.Is(err, expectedErr) && !strings.Contains(err.Error(), expectedErr.Error()) {
 		t.Errorf("expected error containing %q, got %q", expectedErr.Error(), err.Error())
 	}
 	t.Logf("InitModel error propagated: %v", err)
@@ -520,19 +521,6 @@ func (t *simpleTool) Invoke(ctx context.Context, args string, opts ...core.ToolO
 }
 func (t *simpleTool) Stream(ctx context.Context, args string, opts ...core.ToolOption) (*schema.StreamReader[string], error) {
 	return schema.StreamReaderFromArray([]string{"result"}), nil
-}
-
-func stringsContains(s, substr string) bool {
-	return len(s) >= len(substr) && stringsContainsInner(s, substr)
-}
-
-func stringsContainsInner(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
 
 func toFloat64(v any) (float64, bool) {
