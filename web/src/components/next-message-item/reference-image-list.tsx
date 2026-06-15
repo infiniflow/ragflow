@@ -7,10 +7,9 @@ import {
   CarouselPrevious,
 } from '@/components/ui/carousel';
 import { IReferenceChunk } from '@/interfaces/database/chat';
-import { restAPIv1 } from '@/utils/api';
 import { isPlainObject } from 'lodash';
 import { RotateCw, ZoomIn, ZoomOut } from 'lucide-react';
-import { useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { PhotoProvider, PhotoView } from 'react-photo-view';
 import { extractNumbersFromMessageContent } from './utils';
 
@@ -79,13 +78,7 @@ function ImageCarousel({ images }: { images: ImageItem[] }) {
               @2xl:basis-1/6
               "
             >
-              <PhotoView src={`${restAPIv1}/documents/images/${id}`}>
-                <Image
-                  id={id}
-                  className="h-40 w-full"
-                  label={`Fig. ${(index + 1).toString()}`}
-                />
-              </PhotoView>
+              <PreviewImage id={id} index={index} />
             </CarouselItem>
           ))}
         </CarouselContent>
@@ -93,6 +86,25 @@ function ImageCarousel({ images }: { images: ImageItem[] }) {
         <CarouselNext className={buttonVisibilityClass} />
       </Carousel>
     </PhotoProvider>
+  );
+}
+
+function PreviewImage({ id, index }: ImageItem) {
+  const [imageSrc, setImageSrc] = useState('');
+  const handleImageSrcChange = useCallback(
+    (src: string) => setImageSrc(src),
+    [],
+  );
+
+  return (
+    <PhotoView src={imageSrc}>
+      <Image
+        id={id}
+        className="h-40 w-full"
+        label={`Fig. ${(index + 1).toString()}`}
+        onImageSrcChange={handleImageSrcChange}
+      />
+    </PhotoView>
   );
 }
 
