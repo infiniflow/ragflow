@@ -1,6 +1,3533 @@
 {
   "models": [
     {
+        "name": "gemini-3.5-flash",
+        "alias": [
+            "gemini-3.5-flash",
+            "models/gemini-3.5-flash",
+            "google/gemini-3.5-flash"
+        ],
+        "max_tokens": 1048576,
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision",
+            "video_understanding",
+            "audio_understanding"
+        ],
+        "thinking": {
+            "default_value": true,
+            "clear_thinking": true
+        }
+    },
+    {
+        "name": "gemini-3-flash-preview",
+        "alias": [
+            "gemini-3-flash-preview",
+            "models/gemini-3-flash-preview",
+            "google/gemini-3-flash-preview"
+        ],
+        "max_tokens": 1048576,
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision",
+            "video_understanding",
+            "audio_understanding"
+        ],
+        "thinking": {
+            "default_value": true,
+            "clear_thinking": true
+        }
+    },
+    {
+        "name": "gemini-3.1-pro-preview",
+        "alias": [
+            "gemini-3.1-pro-preview",
+            "models/gemini-3.1-pro-preview",
+            "google/gemini-3.1-pro-preview",
+            "google/gemini-3.1-pro"
+        ],
+        "max_tokens": 1048576,
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision",
+            "video_understanding",
+            "audio_understanding"
+        ],
+        "thinking": {
+            "default_value": true,
+            "clear_thinking": true
+        }
+    },
+    {
+        "name": "gemini-3.1-pro-preview-customtools",
+        "alias": [
+            "gemini-3.1-pro-preview-customtools",
+            "models/gemini-3.1-pro-preview-customtools",
+            "google/gemini-3.1-pro-preview-customtools"
+        ],
+        "max_tokens": 1048576,
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision",
+            "video_understanding",
+            "audio_understanding"
+        ],
+        "thinking": {
+            "default_value": true,
+            "clear_thinking": true
+        }
+    },
+    {
+        "name": "gemini-3.1-flash-lite",
+        "alias": [
+            "gemini-3.1-flash-lite",
+            "models/gemini-3.1-flash-lite",
+            "google/gemini-3.1-flash-lite"
+        ],
+        "max_tokens": 1048576,
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision",
+            "video_understanding",
+            "audio_understanding"
+        ],
+        "thinking": {
+            "default_value": true,
+            "clear_thinking": true
+        }
+    },
+    {
+        "name": "gemini-3.1-flash-lite-preview",
+        "alias": [
+            "gemini-3.1-flash-lite-preview",
+            "models/gemini-3.1-flash-lite-preview",
+            "google/gemini-3.1-flash-lite-preview"
+        ],
+        "max_tokens": 1048576,
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision",
+            "video_understanding",
+            "audio_understanding"
+        ],
+        "thinking": {
+            "default_value": true,
+            "clear_thinking": true
+        }
+    },
+    {
+        "name": "gemini-3.1-flash-live-preview",
+        "alias": [
+            "gemini-3.1-flash-live-preview",
+            "models/gemini-3.1-flash-live-preview"
+        ],
+        "max_tokens": 131072,
+        "model_types": [
+            "chat",
+            "omni",
+            "audio_understanding",
+            "audio2text",
+            "tts",
+            "video_understanding"
+        ]
+    },
+    {
+        "name": "gemini-3.1-flash-tts-preview",
+        "alias": [
+            "gemini-3.1-flash-tts-preview",
+            "models/gemini-3.1-flash-tts-preview"
+        ],
+        "max_tokens": 8192,
+        "model_types": [
+            "tts",
+            "audio_generation"
+        ]
+    },
+    {
+        "name": "gemini-3.5-live-translate-preview",
+        "alias": [
+            "gemini-3.5-live-translate-preview",
+            "models/gemini-3.5-live-translate-preview"
+        ],
+        "max_tokens": 131072,
+        "model_types": [
+            "speech_translation",
+            "audio2text",
+            "tts"
+        ]
+    },
+    {
+        "name": "gemini-3.1-flash-image",
+        "alias": [
+            "gemini-3.1-flash-image",
+            "models/gemini-3.1-flash-image",
+            "google/gemini-3.1-flash-image-preview"
+        ],
+        "max_tokens": 131072,
+        "model_types": [
+            "text-to-image",
+            "image_generation",
+            "image_edit",
+            "image_understanding"
+        ]
+    },
+    {
+        "name": "gemini-3-pro-image",
+        "alias": [
+            "gemini-3-pro-image",
+            "models/gemini-3-pro-image",
+            "google/gemini-3-pro-image",
+            "google/gemini-3-pro-image-preview"
+        ],
+        "max_tokens": 65536,
+        "model_types": [
+            "text-to-image",
+            "image_generation",
+            "image_edit",
+            "image_understanding"
+        ]
+    },
+    {
+        "name": "gemini-3-pro-preview",
+        "alias": [
+            "gemini-3-pro-preview",
+            "models/gemini-3-pro-preview"
+        ],
+        "max_tokens": 1048576,
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision",
+            "video_understanding",
+            "audio_understanding"
+        ],
+        "thinking": {
+            "default_value": true,
+            "clear_thinking": true
+        }
+    },
+    {
+        "name": "gemini-2.5-pro",
+        "alias": [
+            "gemini-2.5-pro",
+            "models/gemini-2.5-pro",
+            "google/gemini-2.5-pro",
+            "google/gemini-2.5-pro-preview",
+            "google/gemini-2.5-pro-preview-05-06",
+            "google.gemini-2.5-pro"
+        ],
+        "max_tokens": 1048576,
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision",
+            "video_understanding",
+            "audio_understanding"
+        ],
+        "thinking": {
+            "default_value": true,
+            "clear_thinking": true
+        }
+    },
+    {
+        "name": "gemini-2.5-pro-preview-tts",
+        "alias": [
+            "gemini-2.5-pro-preview-tts",
+            "models/gemini-2.5-pro-preview-tts"
+        ],
+        "max_tokens": 8192,
+        "model_types": [
+            "tts",
+            "audio_generation"
+        ]
+    },
+    {
+        "name": "gemini-2.5-flash",
+        "alias": [
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-preview-09-2025",
+            "models/gemini-2.5-flash",
+            "google/gemini-2.5-flash",
+            "google.gemini-2.5-flash"
+        ],
+        "max_tokens": 1048576,
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision",
+            "video_understanding",
+            "audio_understanding"
+        ],
+        "thinking": {
+            "default_value": true,
+            "clear_thinking": true
+        }
+    },
+    {
+        "name": "gemini-2.5-flash-lite",
+        "alias": [
+            "gemini-2.5-flash-lite",
+            "gemini-2.5-flash-lite-preview-09-2025",
+            "models/gemini-2.5-flash-lite",
+            "google/gemini-2.5-flash-lite",
+            "google.gemini-2.5-flash-lite"
+        ],
+        "max_tokens": 1048576,
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision",
+            "video_understanding",
+            "audio_understanding"
+        ],
+        "thinking": {
+            "default_value": true,
+            "clear_thinking": true
+        }
+    },
+    {
+        "name": "gemini-2.5-flash-image",
+        "alias": [
+            "gemini-2.5-flash-image",
+            "gemini-2.5-flash-image-preview",
+            "models/gemini-2.5-flash-image",
+            "google/gemini-2.5-flash-image"
+        ],
+        "max_tokens": 65536,
+        "model_types": [
+            "text-to-image",
+            "image_generation",
+            "image_edit",
+            "image_understanding"
+        ]
+    },
+    {
+        "name": "gemini-2.5-flash-native-audio-preview-12-2025",
+        "alias": [
+            "gemini-2.5-flash-native-audio-preview-12-2025",
+            "models/gemini-2.5-flash-native-audio-preview-12-2025"
+        ],
+        "max_tokens": 131072,
+        "model_types": [
+            "chat",
+            "omni",
+            "audio_understanding",
+            "audio2text",
+            "tts",
+            "video_understanding"
+        ]
+    },
+    {
+        "name": "gemini-2.5-flash-preview-tts",
+        "alias": [
+            "gemini-2.5-flash-preview-tts",
+            "models/gemini-2.5-flash-preview-tts"
+        ],
+        "max_tokens": 8192,
+        "model_types": [
+            "tts",
+            "audio_generation"
+        ]
+    },
+    {
+        "name": "gemini-2.5-computer-use-preview-10-2025",
+        "alias": [
+            "gemini-2.5-computer-use-preview-10-2025",
+            "models/gemini-2.5-computer-use-preview-10-2025"
+        ],
+        "max_tokens": 128000,
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "gemini-2.0-flash",
+        "alias": [
+            "gemini-2.0-flash",
+            "gemini-2.0-flash-001",
+            "gemini-2.0-flash-exp",
+            "models/gemini-2.0-flash"
+        ],
+        "max_tokens": 1048576,
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision",
+            "video_understanding",
+            "audio_understanding"
+        ]
+    },
+    {
+        "name": "gemini-2.0-flash-lite",
+        "alias": [
+            "gemini-2.0-flash-lite",
+            "gemini-2.0-flash-lite-001",
+            "models/gemini-2.0-flash-lite"
+        ],
+        "max_tokens": 1048576,
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision",
+            "video_understanding",
+            "audio_understanding"
+        ]
+    },
+    {
+        "name": "deep-research-preview-04-2026",
+        "alias": [
+            "deep-research-preview-04-2026",
+            "models/deep-research-preview-04-2026"
+        ],
+        "max_tokens": 1048576,
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "deep-research-max-preview-04-2026",
+        "alias": [
+            "deep-research-max-preview-04-2026",
+            "models/deep-research-max-preview-04-2026"
+        ],
+        "max_tokens": 1048576,
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "antigravity-preview-05-2026",
+        "alias": [
+            "antigravity-preview-05-2026",
+            "models/antigravity-preview-05-2026"
+        ],
+        "max_tokens": 1048576,
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "gemini-robotics-er-1.6-preview",
+        "alias": [
+            "gemini-robotics-er-1.6-preview",
+            "models/gemini-robotics-er-1.6-preview"
+        ],
+        "max_tokens": 131072,
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision",
+            "robotics"
+        ]
+    },
+    {
+        "name": "gemini-embedding-2",
+        "alias": [
+            "gemini-embedding-2",
+            "models/gemini-embedding-2"
+        ],
+        "max_dimension": 3072,
+        "model_types": [
+            "embedding"
+        ]
+    },
+    {
+        "name": "gemini-embedding-001",
+        "alias": [
+            "gemini-embedding-001",
+            "models/gemini-embedding-001"
+        ],
+        "max_dimension": 3072,
+        "model_types": [
+            "embedding"
+        ]
+    },
+    {
+        "name": "imagen-4.0-ultra-generate-001",
+        "alias": [
+            "imagen-4.0-ultra-generate-001",
+            "models/imagen-4.0-ultra-generate-001"
+        ],
+        "max_tokens": 480,
+        "model_types": [
+            "text-to-image",
+            "image_generation"
+        ]
+    },
+    {
+        "name": "imagen-4.0-generate-001",
+        "alias": [
+            "imagen-4.0-generate-001",
+            "models/imagen-4.0-generate-001"
+        ],
+        "max_tokens": 480,
+        "model_types": [
+            "text-to-image",
+            "image_generation"
+        ]
+    },
+    {
+        "name": "imagen-4.0-fast-generate-001",
+        "alias": [
+            "imagen-4.0-fast-generate-001",
+            "models/imagen-4.0-fast-generate-001"
+        ],
+        "max_tokens": 480,
+        "model_types": [
+            "text-to-image",
+            "image_generation"
+        ]
+    },
+    {
+        "name": "veo-3.1-generate-preview",
+        "alias": [
+            "veo-3.1-generate-preview",
+            "models/veo-3.1-generate-preview"
+        ],
+        "model_types": [
+            "video_generation"
+        ]
+    },
+    {
+        "name": "veo-3.1-fast-generate-preview",
+        "alias": [
+            "veo-3.1-fast-generate-preview",
+            "models/veo-3.1-fast-generate-preview"
+        ],
+        "model_types": [
+            "video_generation"
+        ]
+    },
+    {
+        "name": "veo-3.1-lite-generate-preview",
+        "alias": [
+            "veo-3.1-lite-generate-preview",
+            "models/veo-3.1-lite-generate-preview"
+        ],
+        "model_types": [
+            "video_generation"
+        ]
+    },
+    {
+        "name": "lyria-3-pro-preview",
+        "alias": [
+            "lyria-3-pro-preview",
+            "models/lyria-3-pro-preview",
+            "google/lyria-3-pro-preview"
+        ],
+        "max_tokens": 131072,
+        "model_types": [
+            "audio_generation"
+        ]
+    },
+    {
+        "name": "lyria-3-clip-preview",
+        "alias": [
+            "lyria-3-clip-preview",
+            "models/lyria-3-clip-preview",
+            "google/lyria-3-clip-preview"
+        ],
+        "max_tokens": 131072,
+        "model_types": [
+            "audio_generation"
+        ]
+    },
+    {
+        "name": "lyria-realtime-exp",
+        "alias": [
+            "lyria-realtime-exp",
+            "models/lyria-realtime-exp"
+        ],
+        "model_types": [
+            "audio_generation"
+        ]
+    },
+    {
+        "name": "google/diffusiongemma-26b-a4b-it",
+        "alias": [
+            "google/diffusiongemma-26b-a4b-it",
+            "google/diffusiongemma-26B-A4B-it"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-4-12b-it-qat-w4a16-ct",
+        "alias": [
+            "google/gemma-4-12b-it-qat-w4a16-ct",
+            "google/gemma-4-12B-it-qat-w4a16-ct"
+        ],
+        "model_types": [
+            "omni"
+        ]
+    },
+    {
+        "name": "google/gemma-4-12b-it-qat-q4_0-gguf",
+        "alias": [
+            "google/gemma-4-12b-it-qat-q4_0-gguf",
+            "google/gemma-4-12B-it-qat-q4_0-gguf"
+        ],
+        "model_types": [
+            "omni"
+        ]
+    },
+    {
+        "name": "google/gemma-4-12b-it-qat-q4_0-unquantized-assistant",
+        "alias": [
+            "google/gemma-4-12b-it-qat-q4_0-unquantized-assistant",
+            "google/gemma-4-12B-it-qat-q4_0-unquantized-assistant"
+        ],
+        "model_types": [
+            "omni"
+        ]
+    },
+    {
+        "name": "google/gemma-4-31b-it-qat-w4a16-ct",
+        "alias": [
+            "google/gemma-4-31b-it-qat-w4a16-ct",
+            "google/gemma-4-31B-it-qat-w4a16-ct"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-4-e2b-it-qat-w4a16-ct",
+        "alias": [
+            "google/gemma-4-e2b-it-qat-w4a16-ct",
+            "google/gemma-4-E2B-it-qat-w4a16-ct"
+        ],
+        "model_types": [
+            "omni"
+        ]
+    },
+    {
+        "name": "google/gemma-4-e4b-it-qat-w4a16-ct",
+        "alias": [
+            "google/gemma-4-e4b-it-qat-w4a16-ct",
+            "google/gemma-4-E4B-it-qat-w4a16-ct"
+        ],
+        "model_types": [
+            "omni"
+        ]
+    },
+    {
+        "name": "google/gemma-4-12b-it-qat-q4_0-unquantized",
+        "alias": [
+            "google/gemma-4-12b-it-qat-q4_0-unquantized",
+            "google/gemma-4-12B-it-qat-q4_0-unquantized"
+        ],
+        "model_types": [
+            "omni"
+        ]
+    },
+    {
+        "name": "google/gemma-4-e4b-it-qat-mobile-transformers",
+        "alias": [
+            "google/gemma-4-e4b-it-qat-mobile-transformers",
+            "google/gemma-4-E4B-it-qat-mobile-transformers"
+        ],
+        "model_types": [
+            "omni"
+        ]
+    },
+    {
+        "name": "google/gemma-4-e2b-it-qat-mobile-transformers",
+        "alias": [
+            "google/gemma-4-e2b-it-qat-mobile-transformers",
+            "google/gemma-4-E2B-it-qat-mobile-transformers"
+        ],
+        "model_types": [
+            "omni"
+        ]
+    },
+    {
+        "name": "google/circularnet",
+        "alias": [
+            "google/circularnet",
+            "google/CircularNet"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/gemma-4-e4b-it-qat-mobile-ct",
+        "alias": [
+            "google/gemma-4-e4b-it-qat-mobile-ct",
+            "google/gemma-4-E4B-it-qat-mobile-ct"
+        ],
+        "model_types": [
+            "omni"
+        ]
+    },
+    {
+        "name": "google/gemma-4-e2b-it-qat-mobile-ct",
+        "alias": [
+            "google/gemma-4-e2b-it-qat-mobile-ct",
+            "google/gemma-4-E2B-it-qat-mobile-ct"
+        ],
+        "model_types": [
+            "omni"
+        ]
+    },
+    {
+        "name": "google/gemma-4-31b-it-qat-q4_0-unquantized-assistant",
+        "alias": [
+            "google/gemma-4-31b-it-qat-q4_0-unquantized-assistant",
+            "google/gemma-4-31B-it-qat-q4_0-unquantized-assistant"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-4-26b-a4b-it-qat-q4_0-unquantized-assistant",
+        "alias": [
+            "google/gemma-4-26b-a4b-it-qat-q4_0-unquantized-assistant",
+            "google/gemma-4-26B-A4B-it-qat-q4_0-unquantized-assistant"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-4-e4b-it-qat-q4_0-unquantized-assistant",
+        "alias": [
+            "google/gemma-4-e4b-it-qat-q4_0-unquantized-assistant",
+            "google/gemma-4-E4B-it-qat-q4_0-unquantized-assistant"
+        ],
+        "model_types": [
+            "omni"
+        ]
+    },
+    {
+        "name": "google/gemma-4-e2b-it-qat-q4_0-unquantized-assistant",
+        "alias": [
+            "google/gemma-4-e2b-it-qat-q4_0-unquantized-assistant",
+            "google/gemma-4-E2B-it-qat-q4_0-unquantized-assistant"
+        ],
+        "model_types": [
+            "omni"
+        ]
+    },
+    {
+        "name": "google/magenta-realtime-2",
+        "alias": [
+            "google/magenta-realtime-2"
+        ],
+        "model_types": [
+            "audio_generation"
+        ]
+    },
+    {
+        "name": "google/gemma-4-12b",
+        "alias": [
+            "google/gemma-4-12b",
+            "google/gemma-4-12B"
+        ],
+        "model_types": [
+            "omni"
+        ]
+    },
+    {
+        "name": "google/gemma-4-12b-it-assistant",
+        "alias": [
+            "google/gemma-4-12b-it-assistant",
+            "google/gemma-4-12B-it-assistant"
+        ],
+        "model_types": [
+            "omni"
+        ]
+    },
+    {
+        "name": "google/gemma-4-12b-it",
+        "alias": [
+            "google/gemma-4-12b-it",
+            "google/gemma-4-12B-it"
+        ],
+        "model_types": [
+            "omni"
+        ]
+    },
+    {
+        "name": "google/gemma-4-31b-it-qat-q4_0-gguf",
+        "alias": [
+            "google/gemma-4-31b-it-qat-q4_0-gguf",
+            "google/gemma-4-31B-it-qat-q4_0-gguf"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-4-26b-a4b-it-qat-q4_0-gguf",
+        "alias": [
+            "google/gemma-4-26b-a4b-it-qat-q4_0-gguf",
+            "google/gemma-4-26B-A4B-it-qat-q4_0-gguf"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-4-e4b-it-qat-q4_0-gguf",
+        "alias": [
+            "google/gemma-4-e4b-it-qat-q4_0-gguf",
+            "google/gemma-4-E4B-it-qat-q4_0-gguf"
+        ],
+        "model_types": [
+            "omni"
+        ]
+    },
+    {
+        "name": "google/gemma-4-e2b-it-qat-q4_0-gguf",
+        "alias": [
+            "google/gemma-4-e2b-it-qat-q4_0-gguf",
+            "google/gemma-4-E2B-it-qat-q4_0-gguf"
+        ],
+        "model_types": [
+            "omni"
+        ]
+    },
+    {
+        "name": "google/gemma-4-e4b-it-qat-q4_0-unquantized",
+        "alias": [
+            "google/gemma-4-e4b-it-qat-q4_0-unquantized",
+            "google/gemma-4-E4B-it-qat-q4_0-unquantized"
+        ],
+        "model_types": [
+            "omni"
+        ]
+    },
+    {
+        "name": "google/gemma-4-e2b-it-qat-q4_0-unquantized",
+        "alias": [
+            "google/gemma-4-e2b-it-qat-q4_0-unquantized",
+            "google/gemma-4-E2B-it-qat-q4_0-unquantized"
+        ],
+        "model_types": [
+            "omni"
+        ]
+    },
+    {
+        "name": "google/gemma-4-26b-a4b-it-qat-q4_0-unquantized",
+        "alias": [
+            "google/gemma-4-26b-a4b-it-qat-q4_0-unquantized",
+            "google/gemma-4-26B-A4B-it-qat-q4_0-unquantized"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-4-31b-it-qat-q4_0-unquantized",
+        "alias": [
+            "google/gemma-4-31b-it-qat-q4_0-unquantized",
+            "google/gemma-4-31B-it-qat-q4_0-unquantized"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-4-26b-a4b-it-assistant",
+        "alias": [
+            "google/gemma-4-26b-a4b-it-assistant",
+            "google/gemma-4-26B-A4B-it-assistant"
+        ],
+        "model_types": [
+            "omni"
+        ]
+    },
+    {
+        "name": "google/gemma-4-31b-it-assistant",
+        "alias": [
+            "google/gemma-4-31b-it-assistant",
+            "google/gemma-4-31B-it-assistant"
+        ],
+        "model_types": [
+            "omni"
+        ]
+    },
+    {
+        "name": "google/gemma-4-e4b-it-assistant",
+        "alias": [
+            "google/gemma-4-e4b-it-assistant",
+            "google/gemma-4-E4B-it-assistant"
+        ],
+        "model_types": [
+            "omni"
+        ]
+    },
+    {
+        "name": "google/gemma-4-e2b-it-assistant",
+        "alias": [
+            "google/gemma-4-e2b-it-assistant",
+            "google/gemma-4-E2B-it-assistant"
+        ],
+        "model_types": [
+            "omni"
+        ]
+    },
+    {
+        "name": "google/tipsv2-g14-dpt",
+        "alias": [
+            "google/tipsv2-g14-dpt"
+        ],
+        "model_types": [
+            "vision",
+            "depth_estimation"
+        ]
+    },
+    {
+        "name": "google/tipsv2-so400m14-dpt",
+        "alias": [
+            "google/tipsv2-so400m14-dpt"
+        ],
+        "model_types": [
+            "vision",
+            "depth_estimation"
+        ]
+    },
+    {
+        "name": "google/tipsv2-l14-dpt",
+        "alias": [
+            "google/tipsv2-l14-dpt"
+        ],
+        "model_types": [
+            "vision",
+            "depth_estimation"
+        ]
+    },
+    {
+        "name": "google/tipsv2-b14-dpt",
+        "alias": [
+            "google/tipsv2-b14-dpt"
+        ],
+        "model_types": [
+            "vision",
+            "depth_estimation"
+        ]
+    },
+    {
+        "name": "google/tipsv2-g14",
+        "alias": [
+            "google/tipsv2-g14"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/tipsv2-so400m14",
+        "alias": [
+            "google/tipsv2-so400m14"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/tipsv2-b14",
+        "alias": [
+            "google/tipsv2-b14"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/tipsv2-l14",
+        "alias": [
+            "google/tipsv2-l14"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-4-31b",
+        "alias": [
+            "google/gemma-4-31b",
+            "google/gemma-4-31B"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-4-26b-a4b",
+        "alias": [
+            "google/gemma-4-26b-a4b",
+            "google/gemma-4-26B-A4B"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-4-26b-a4b-it",
+        "alias": [
+            "google/gemma-4-26b-a4b-it",
+            "google/gemma-4-26B-A4B-it",
+            "google/gemma-4-26b-a4b-it:free",
+            "google.gemma-4-26b-a4b"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-4-31b-it",
+        "alias": [
+            "google/gemma-4-31b-it",
+            "google/gemma-4-31B-it",
+            "google/gemma-4-31b-it:free",
+            "google/gemma-4-31B-it-turbo",
+            "google.gemma-4-31b"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-4-e2b",
+        "alias": [
+            "google/gemma-4-e2b",
+            "google/gemma-4-E2B"
+        ],
+        "model_types": [
+            "omni"
+        ]
+    },
+    {
+        "name": "google/gemma-4-e2b-it",
+        "alias": [
+            "google/gemma-4-e2b-it",
+            "google/gemma-4-E2B-it"
+        ],
+        "model_types": [
+            "omni"
+        ]
+    },
+    {
+        "name": "google/gemma-4-e4b",
+        "alias": [
+            "google/gemma-4-e4b",
+            "google/gemma-4-E4B"
+        ],
+        "model_types": [
+            "omni"
+        ]
+    },
+    {
+        "name": "google/gemma-4-e4b-it",
+        "alias": [
+            "google/gemma-4-e4b-it",
+            "google/gemma-4-E4B-it"
+        ],
+        "model_types": [
+            "omni"
+        ]
+    },
+    {
+        "name": "google/timesfm-2.5-200m-transformers",
+        "alias": [
+            "google/timesfm-2.5-200m-transformers"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/alphagenome-fold-3",
+        "alias": [
+            "google/alphagenome-fold-3"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/alphagenome-fold-2",
+        "alias": [
+            "google/alphagenome-fold-2"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/alphagenome-fold-1",
+        "alias": [
+            "google/alphagenome-fold-1"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/alphagenome-fold-0",
+        "alias": [
+            "google/alphagenome-fold-0"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/alphagenome-all-folds",
+        "alias": [
+            "google/alphagenome-all-folds"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/translategemma-27b-it",
+        "alias": [
+            "google/translategemma-27b-it"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/translategemma-12b-it",
+        "alias": [
+            "google/translategemma-12b-it"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/translategemma-4b-it",
+        "alias": [
+            "google/translategemma-4b-it"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/medgemma-1.5-4b-it",
+        "alias": [
+            "google/medgemma-1.5-4b-it"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/medasr",
+        "alias": [
+            "google/medasr"
+        ],
+        "model_types": [
+            "asr",
+            "speech2text",
+            "audio2text"
+        ]
+    },
+    {
+        "name": "google/gemma-scope-2",
+        "alias": [
+            "google/gemma-scope-2"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/gemma-scope-2-27b-it",
+        "alias": [
+            "google/gemma-scope-2-27b-it"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/gemma-scope-2-27b-pt",
+        "alias": [
+            "google/gemma-scope-2-27b-pt"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/gemma-scope-2-12b-it",
+        "alias": [
+            "google/gemma-scope-2-12b-it"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/gemma-scope-2-12b-pt",
+        "alias": [
+            "google/gemma-scope-2-12b-pt"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/gemma-scope-2-4b-it",
+        "alias": [
+            "google/gemma-scope-2-4b-it"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/gemma-scope-2-4b-pt",
+        "alias": [
+            "google/gemma-scope-2-4b-pt"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/gemma-scope-2-1b-it",
+        "alias": [
+            "google/gemma-scope-2-1b-it"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/gemma-scope-2-1b-pt",
+        "alias": [
+            "google/gemma-scope-2-1b-pt"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/gemma-scope-2-270m-it",
+        "alias": [
+            "google/gemma-scope-2-270m-it"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/gemma-scope-2-270m-pt",
+        "alias": [
+            "google/gemma-scope-2-270m-pt"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/t5gemma-2-4b-4b",
+        "alias": [
+            "google/t5gemma-2-4b-4b"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/t5gemma-2-1b-1b",
+        "alias": [
+            "google/t5gemma-2-1b-1b"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/t5gemma-2-270m-270m",
+        "alias": [
+            "google/t5gemma-2-270m-270m"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/functiongemma-270m-it",
+        "alias": [
+            "google/functiongemma-270m-it"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/vaultgemma-1b",
+        "alias": [
+            "google/vaultgemma-1b"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/timesfm-2.5-200m-flax",
+        "alias": [
+            "google/timesfm-2.5-200m-flax"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/timesfm-2.5-200m-pytorch",
+        "alias": [
+            "google/timesfm-2.5-200m-pytorch"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/embeddinggemma-300m-qat-q8_0-unquantized",
+        "alias": [
+            "google/embeddinggemma-300m-qat-q8_0-unquantized"
+        ],
+        "max_dimension": 768,
+        "dimensions": [
+            128,
+            256,
+            512,
+            768
+        ],
+        "model_types": [
+            "embedding"
+        ]
+    },
+    {
+        "name": "google/embeddinggemma-300m-qat-q4_0-unquantized",
+        "alias": [
+            "google/embeddinggemma-300m-qat-q4_0-unquantized"
+        ],
+        "max_dimension": 768,
+        "dimensions": [
+            128,
+            256,
+            512,
+            768
+        ],
+        "model_types": [
+            "embedding"
+        ]
+    },
+    {
+        "name": "google/gemma-3-270m-it-qat-q4_0-unquantized",
+        "alias": [
+            "google/gemma-3-270m-it-qat-q4_0-unquantized"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/gemma-3-270m-qat-q4_0-unquantized",
+        "alias": [
+            "google/gemma-3-270m-qat-q4_0-unquantized"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/gemma-3-270m",
+        "alias": [
+            "google/gemma-3-270m"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/gemma-3-270m-it",
+        "alias": [
+            "google/gemma-3-270m-it"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/embeddinggemma-300m",
+        "alias": [
+            "google/embeddinggemma-300m"
+        ],
+        "max_dimension": 768,
+        "dimensions": [
+            128,
+            256,
+            512,
+            768
+        ],
+        "model_types": [
+            "embedding"
+        ]
+    },
+    {
+        "name": "google/videoprism-lvt-large-f8r288",
+        "alias": [
+            "google/videoprism-lvt-large-f8r288"
+        ],
+        "model_types": [
+            "video_understanding"
+        ]
+    },
+    {
+        "name": "google/videoprism-lvt-base-f16r288",
+        "alias": [
+            "google/videoprism-lvt-base-f16r288"
+        ],
+        "model_types": [
+            "video_understanding"
+        ]
+    },
+    {
+        "name": "google/medsiglip-448",
+        "alias": [
+            "google/medsiglip-448"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/medgemma-27b-it",
+        "alias": [
+            "google/medgemma-27b-it"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/videoprism-large-f8r288",
+        "alias": [
+            "google/videoprism-large-f8r288"
+        ],
+        "model_types": [
+            "video_understanding"
+        ]
+    },
+    {
+        "name": "google/t5gemma-xl-xl-prefixlm-it",
+        "alias": [
+            "google/t5gemma-xl-xl-prefixlm-it"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-xl-xl-ul2-it",
+        "alias": [
+            "google/t5gemma-xl-xl-ul2-it"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-xl-xl-prefixlm",
+        "alias": [
+            "google/t5gemma-xl-xl-prefixlm"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-xl-xl-ul2",
+        "alias": [
+            "google/t5gemma-xl-xl-ul2"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-ml-ml-prefixlm-it",
+        "alias": [
+            "google/t5gemma-ml-ml-prefixlm-it"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-ml-ml-ul2-it",
+        "alias": [
+            "google/t5gemma-ml-ml-ul2-it"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-ml-ml-prefixlm",
+        "alias": [
+            "google/t5gemma-ml-ml-prefixlm"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-ml-ml-ul2",
+        "alias": [
+            "google/t5gemma-ml-ml-ul2"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-l-l-prefixlm-it",
+        "alias": [
+            "google/t5gemma-l-l-prefixlm-it"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-l-l-ul2-it",
+        "alias": [
+            "google/t5gemma-l-l-ul2-it"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-l-l-prefixlm",
+        "alias": [
+            "google/t5gemma-l-l-prefixlm"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-l-l-ul2",
+        "alias": [
+            "google/t5gemma-l-l-ul2"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-b-b-prefixlm-it",
+        "alias": [
+            "google/t5gemma-b-b-prefixlm-it"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-b-b-ul2-it",
+        "alias": [
+            "google/t5gemma-b-b-ul2-it"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-b-b-prefixlm",
+        "alias": [
+            "google/t5gemma-b-b-prefixlm"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-b-b-ul2",
+        "alias": [
+            "google/t5gemma-b-b-ul2"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-s-s-prefixlm-it",
+        "alias": [
+            "google/t5gemma-s-s-prefixlm-it"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-s-s-ul2-it",
+        "alias": [
+            "google/t5gemma-s-s-ul2-it"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-s-s-prefixlm",
+        "alias": [
+            "google/t5gemma-s-s-prefixlm"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-s-s-ul2",
+        "alias": [
+            "google/t5gemma-s-s-ul2"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-9b-2b-prefixlm-it",
+        "alias": [
+            "google/t5gemma-9b-2b-prefixlm-it"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-9b-2b-ul2-it",
+        "alias": [
+            "google/t5gemma-9b-2b-ul2-it"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-9b-2b-prefixlm",
+        "alias": [
+            "google/t5gemma-9b-2b-prefixlm"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-9b-2b-ul2",
+        "alias": [
+            "google/t5gemma-9b-2b-ul2"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-9b-9b-prefixlm-it",
+        "alias": [
+            "google/t5gemma-9b-9b-prefixlm-it"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-9b-9b-ul2-it",
+        "alias": [
+            "google/t5gemma-9b-9b-ul2-it"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-9b-9b-prefixlm",
+        "alias": [
+            "google/t5gemma-9b-9b-prefixlm"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-9b-9b-ul2",
+        "alias": [
+            "google/t5gemma-9b-9b-ul2"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-2b-2b-prefixlm-it",
+        "alias": [
+            "google/t5gemma-2b-2b-prefixlm-it"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-2b-2b-ul2-it",
+        "alias": [
+            "google/t5gemma-2b-2b-ul2-it"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-2b-2b-prefixlm",
+        "alias": [
+            "google/t5gemma-2b-2b-prefixlm"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/t5gemma-2b-2b-ul2",
+        "alias": [
+            "google/t5gemma-2b-2b-ul2"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/magenta-realtime",
+        "alias": [
+            "google/magenta-realtime"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/videoprism-base-f16r288",
+        "alias": [
+            "google/videoprism-base-f16r288"
+        ],
+        "model_types": [
+            "video_understanding"
+        ]
+    },
+    {
+        "name": "google/gemma-3n-e2b-it",
+        "alias": [
+            "google/gemma-3n-e2b-it",
+            "google/gemma-3n-E2B-it"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-3n-e2b",
+        "alias": [
+            "google/gemma-3n-e2b",
+            "google/gemma-3n-E2B"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-3n-e4b-it-litert-lm",
+        "alias": [
+            "google/gemma-3n-e4b-it-litert-lm",
+            "google/gemma-3n-E4B-it-litert-lm"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/gemma-3n-e2b-it-litert-lm",
+        "alias": [
+            "google/gemma-3n-e2b-it-litert-lm",
+            "google/gemma-3n-E2B-it-litert-lm"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/gemma-3n-e4b-it",
+        "alias": [
+            "google/gemma-3n-e4b-it",
+            "google/gemma-3n-E4B-it"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-3n-e4b",
+        "alias": [
+            "google/gemma-3n-e4b",
+            "google/gemma-3n-E4B"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/svq",
+        "alias": [
+            "google/svq"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/medgemma-27b-text-it",
+        "alias": [
+            "google/medgemma-27b-text-it"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/medgemma-4b-it",
+        "alias": [
+            "google/medgemma-4b-it"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/medgemma-4b-pt",
+        "alias": [
+            "google/medgemma-4b-pt"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-3n-e4b-it-litert-preview",
+        "alias": [
+            "google/gemma-3n-e4b-it-litert-preview",
+            "google/gemma-3n-E4B-it-litert-preview"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-3n-e2b-it-litert-preview",
+        "alias": [
+            "google/gemma-3n-e2b-it-litert-preview",
+            "google/gemma-3n-E2B-it-litert-preview"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/tapnet",
+        "alias": [
+            "google/tapnet"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/gemma-3-27b-it-qat-q4_0-unquantized",
+        "alias": [
+            "google/gemma-3-27b-it-qat-q4_0-unquantized"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-3-12b-it-qat-int4-unquantized",
+        "alias": [
+            "google/gemma-3-12b-it-qat-int4-unquantized"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-3-4b-it-qat-int4-unquantized",
+        "alias": [
+            "google/gemma-3-4b-it-qat-int4-unquantized"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-3-1b-it-qat-int4-unquantized",
+        "alias": [
+            "google/gemma-3-1b-it-qat-int4-unquantized"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/hear-pytorch",
+        "alias": [
+            "google/hear-pytorch"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-3-1b-it-qat-q4_0-unquantized",
+        "alias": [
+            "google/gemma-3-1b-it-qat-q4_0-unquantized"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/gemma-3-12b-it-qat-q4_0-unquantized",
+        "alias": [
+            "google/gemma-3-12b-it-qat-q4_0-unquantized"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-3-4b-it-qat-q4_0-unquantized",
+        "alias": [
+            "google/gemma-3-4b-it-qat-q4_0-unquantized"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/txgemma-27b-predict",
+        "alias": [
+            "google/txgemma-27b-predict"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/txgemma-27b-chat",
+        "alias": [
+            "google/txgemma-27b-chat"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/txgemma-9b-chat",
+        "alias": [
+            "google/txgemma-9b-chat"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/txgemma-9b-predict",
+        "alias": [
+            "google/txgemma-9b-predict"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/txgemma-2b-predict",
+        "alias": [
+            "google/txgemma-2b-predict"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/gemma-3-27b-pt-qat-q4_0-gguf",
+        "alias": [
+            "google/gemma-3-27b-pt-qat-q4_0-gguf"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-3-27b-it-qat-q4_0-gguf",
+        "alias": [
+            "google/gemma-3-27b-it-qat-q4_0-gguf"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-3-12b-pt-qat-q4_0-gguf",
+        "alias": [
+            "google/gemma-3-12b-pt-qat-q4_0-gguf"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-3-4b-it-qat-q4_0-gguf",
+        "alias": [
+            "google/gemma-3-4b-it-qat-q4_0-gguf"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-3-4b-pt-qat-q4_0-gguf",
+        "alias": [
+            "google/gemma-3-4b-pt-qat-q4_0-gguf"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-3-12b-it-qat-q4_0-gguf",
+        "alias": [
+            "google/gemma-3-12b-it-qat-q4_0-gguf"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-3-1b-pt-qat-q4_0-gguf",
+        "alias": [
+            "google/gemma-3-1b-pt-qat-q4_0-gguf"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/gemma-3-1b-it-qat-q4_0-gguf",
+        "alias": [
+            "google/gemma-3-1b-it-qat-q4_0-gguf"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/gemma-3-1b-it",
+        "alias": [
+            "google/gemma-3-1b-it"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/shieldgemma-2-4b-it",
+        "alias": [
+            "google/shieldgemma-2-4b-it"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-3-12b-it",
+        "alias": [
+            "google/gemma-3-12b-it",
+            "google.gemma-3-12b-it"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-3-12b-pt",
+        "alias": [
+            "google/gemma-3-12b-pt"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-3-27b-it",
+        "alias": [
+            "google/gemma-3-27b-it",
+            "google.gemma-3-27b-it"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-3-27b-pt",
+        "alias": [
+            "google/gemma-3-27b-pt"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-so400m-patch16-naflex-jax",
+        "alias": [
+            "google/siglip2-so400m-patch16-naflex-jax"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-so400m-patch16-512-jax",
+        "alias": [
+            "google/siglip2-so400m-patch16-512-jax"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-so400m-patch16-384-jax",
+        "alias": [
+            "google/siglip2-so400m-patch16-384-jax"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-so400m-patch16-256-jax",
+        "alias": [
+            "google/siglip2-so400m-patch16-256-jax"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-3-1b-pt",
+        "alias": [
+            "google/gemma-3-1b-pt"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/gemma-3-4b-it",
+        "alias": [
+            "google/gemma-3-4b-it",
+            "google.gemma-3-4b-it"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-3-4b-pt",
+        "alias": [
+            "google/gemma-3-4b-pt"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-so400m-patch14-384-jax",
+        "alias": [
+            "google/siglip2-so400m-patch14-384-jax"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-so400m-patch14-224-jax",
+        "alias": [
+            "google/siglip2-so400m-patch14-224-jax"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-large-patch16-512-jax",
+        "alias": [
+            "google/siglip2-large-patch16-512-jax"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-large-patch16-384-jax",
+        "alias": [
+            "google/siglip2-large-patch16-384-jax"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-large-patch16-256-jax",
+        "alias": [
+            "google/siglip2-large-patch16-256-jax"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-giant-opt-patch16-384-jax",
+        "alias": [
+            "google/siglip2-giant-opt-patch16-384-jax"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-giant-opt-patch16-256-jax",
+        "alias": [
+            "google/siglip2-giant-opt-patch16-256-jax"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-base-patch32-256-jax",
+        "alias": [
+            "google/siglip2-base-patch32-256-jax"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-base-patch16-naflex-jax",
+        "alias": [
+            "google/siglip2-base-patch16-naflex-jax"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-base-patch16-512-jax",
+        "alias": [
+            "google/siglip2-base-patch16-512-jax"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-base-patch16-384-jax",
+        "alias": [
+            "google/siglip2-base-patch16-384-jax"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-base-patch16-256-jax",
+        "alias": [
+            "google/siglip2-base-patch16-256-jax"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-base-patch16-224-jax",
+        "alias": [
+            "google/siglip2-base-patch16-224-jax"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-so400m-patch16-naflex",
+        "alias": [
+            "google/siglip2-so400m-patch16-naflex"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-base-patch16-naflex",
+        "alias": [
+            "google/siglip2-base-patch16-naflex"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-so400m-patch16-512",
+        "alias": [
+            "google/siglip2-so400m-patch16-512"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-so400m-patch16-384",
+        "alias": [
+            "google/siglip2-so400m-patch16-384"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-so400m-patch16-256",
+        "alias": [
+            "google/siglip2-so400m-patch16-256"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-so400m-patch14-384",
+        "alias": [
+            "google/siglip2-so400m-patch14-384"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-so400m-patch14-224",
+        "alias": [
+            "google/siglip2-so400m-patch14-224"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-giant-opt-patch16-384",
+        "alias": [
+            "google/siglip2-giant-opt-patch16-384"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-giant-opt-patch16-256",
+        "alias": [
+            "google/siglip2-giant-opt-patch16-256"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-large-patch16-512",
+        "alias": [
+            "google/siglip2-large-patch16-512"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-large-patch16-384",
+        "alias": [
+            "google/siglip2-large-patch16-384"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-large-patch16-256",
+        "alias": [
+            "google/siglip2-large-patch16-256"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-base-patch16-512",
+        "alias": [
+            "google/siglip2-base-patch16-512"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-base-patch16-384",
+        "alias": [
+            "google/siglip2-base-patch16-384"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-base-patch16-256",
+        "alias": [
+            "google/siglip2-base-patch16-256"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-base-patch16-224",
+        "alias": [
+            "google/siglip2-base-patch16-224"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/siglip2-base-patch32-256",
+        "alias": [
+            "google/siglip2-base-patch32-256"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-3b-mix-224-jax",
+        "alias": [
+            "google/paligemma2-3b-mix-224-jax"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-10b-mix-448-jax",
+        "alias": [
+            "google/paligemma2-10b-mix-448-jax"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/timesfm-2.0-500m-pytorch",
+        "alias": [
+            "google/timesfm-2.0-500m-pytorch"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/timesfm-2.0-500m-jax",
+        "alias": [
+            "google/timesfm-2.0-500m-jax"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/hear",
+        "alias": [
+            "google/hear"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/metricx-24-hybrid-xxl-v2p6-bfloat16",
+        "alias": [
+            "google/metricx-24-hybrid-xxl-v2p6-bfloat16"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/metricx-24-hybrid-xl-v2p6-bfloat16",
+        "alias": [
+            "google/metricx-24-hybrid-xl-v2p6-bfloat16"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/metricx-24-hybrid-large-v2p6-bfloat16",
+        "alias": [
+            "google/metricx-24-hybrid-large-v2p6-bfloat16"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/paligemma2-28b-pt-896-keras",
+        "alias": [
+            "google/paligemma2-28b-pt-896-keras"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-28b-pt-448-keras",
+        "alias": [
+            "google/paligemma2-28b-pt-448-keras"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-28b-pt-224-keras",
+        "alias": [
+            "google/paligemma2-28b-pt-224-keras"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-10b-pt-896-keras",
+        "alias": [
+            "google/paligemma2-10b-pt-896-keras"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-10b-pt-448-keras",
+        "alias": [
+            "google/paligemma2-10b-pt-448-keras"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-10b-pt-224-keras",
+        "alias": [
+            "google/paligemma2-10b-pt-224-keras"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-3b-pt-896-keras",
+        "alias": [
+            "google/paligemma2-3b-pt-896-keras"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-3b-pt-448-keras",
+        "alias": [
+            "google/paligemma2-3b-pt-448-keras"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-3b-pt-224-keras",
+        "alias": [
+            "google/paligemma2-3b-pt-224-keras"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-28b-pt-896-jax",
+        "alias": [
+            "google/paligemma2-28b-pt-896-jax"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-28b-pt-448-jax",
+        "alias": [
+            "google/paligemma2-28b-pt-448-jax"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-28b-pt-224-jax",
+        "alias": [
+            "google/paligemma2-28b-pt-224-jax"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-28b-mix-448-jax",
+        "alias": [
+            "google/paligemma2-28b-mix-448-jax"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-28b-mix-224-jax",
+        "alias": [
+            "google/paligemma2-28b-mix-224-jax"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-28b-mix-224",
+        "alias": [
+            "google/paligemma2-28b-mix-224"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-28b-pt-896",
+        "alias": [
+            "google/paligemma2-28b-pt-896"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-28b-pt-448",
+        "alias": [
+            "google/paligemma2-28b-pt-448"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-28b-pt-224",
+        "alias": [
+            "google/paligemma2-28b-pt-224"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-28b-mix-448",
+        "alias": [
+            "google/paligemma2-28b-mix-448"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-10b-pt-896-jax",
+        "alias": [
+            "google/paligemma2-10b-pt-896-jax"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-10b-pt-448-jax",
+        "alias": [
+            "google/paligemma2-10b-pt-448-jax"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-10b-pt-224-jax",
+        "alias": [
+            "google/paligemma2-10b-pt-224-jax"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-3b-pt-896-jax",
+        "alias": [
+            "google/paligemma2-3b-pt-896-jax"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-3b-pt-448-jax",
+        "alias": [
+            "google/paligemma2-3b-pt-448-jax"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-10b-pt-896",
+        "alias": [
+            "google/paligemma2-10b-pt-896"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-3b-pt-224-jax",
+        "alias": [
+            "google/paligemma2-3b-pt-224-jax"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-10b-pt-448",
+        "alias": [
+            "google/paligemma2-10b-pt-448"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-10b-pt-224",
+        "alias": [
+            "google/paligemma2-10b-pt-224"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-3b-pt-896",
+        "alias": [
+            "google/paligemma2-3b-pt-896"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-3b-pt-448",
+        "alias": [
+            "google/paligemma2-3b-pt-448"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-3b-pt-224",
+        "alias": [
+            "google/paligemma2-3b-pt-224"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-10b-mix-448",
+        "alias": [
+            "google/paligemma2-10b-mix-448"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-10b-mix-224",
+        "alias": [
+            "google/paligemma2-10b-mix-224"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-3b-mix-448",
+        "alias": [
+            "google/paligemma2-3b-mix-448"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-10b-mix-224-jax",
+        "alias": [
+            "google/paligemma2-10b-mix-224-jax"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-10b-ft-docci-448",
+        "alias": [
+            "google/paligemma2-10b-ft-docci-448"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-3b-ft-docci-448",
+        "alias": [
+            "google/paligemma2-3b-ft-docci-448"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-3b-mix-448-jax",
+        "alias": [
+            "google/paligemma2-3b-mix-448-jax"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-3b-mix-224",
+        "alias": [
+            "google/paligemma2-3b-mix-224"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-10b-ft-docci-448-jax",
+        "alias": [
+            "google/paligemma2-10b-ft-docci-448-jax"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma2-3b-ft-docci-448-jax",
+        "alias": [
+            "google/paligemma2-3b-ft-docci-448-jax"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/derm-foundation",
+        "alias": [
+            "google/derm-foundation"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/cxr-foundation",
+        "alias": [
+            "google/cxr-foundation"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/path-foundation",
+        "alias": [
+            "google/path-foundation"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/metricx-24-hybrid-xxl-v2p6",
+        "alias": [
+            "google/metricx-24-hybrid-xxl-v2p6"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/metricx-24-hybrid-xl-v2p6",
+        "alias": [
+            "google/metricx-24-hybrid-xl-v2p6"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/metricx-24-hybrid-large-v2p6",
+        "alias": [
+            "google/metricx-24-hybrid-large-v2p6"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/siglip-so400m-patch16-256-i18n",
+        "alias": [
+            "google/siglip-so400m-patch16-256-i18n"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-2-2b-jpn-it-flax",
+        "alias": [
+            "google/gemma-2-2b-jpn-it-flax"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/gemma-2-2b-jpn-it-pytorch",
+        "alias": [
+            "google/gemma-2-2b-jpn-it-pytorch"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/gemma-2-2b-jpn-it",
+        "alias": [
+            "google/gemma-2-2b-jpn-it"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/gemma-7b-aps-it",
+        "alias": [
+            "google/gemma-7b-aps-it"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/gemma-2b-aps-it",
+        "alias": [
+            "google/gemma-2b-aps-it"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/timesfm-1.0-200m-pytorch",
+        "alias": [
+            "google/timesfm-1.0-200m-pytorch"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/datagemma-rig-27b-it",
+        "alias": [
+            "google/datagemma-rig-27b-it"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/datagemma-rag-27b-it",
+        "alias": [
+            "google/datagemma-rag-27b-it"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/siglip-so400m-patch14-224",
+        "alias": [
+            "google/siglip-so400m-patch14-224"
+        ],
+        "model_types": [
+            "vision"
+        ]
+    },
+    {
+        "name": "google/diarizationlm-8b-fisher-v2",
+        "alias": [
+            "google/diarizationlm-8b-fisher-v2",
+            "google/DiarizationLM-8b-Fisher-v2"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/gemma-scope-2b-pt-transcoders",
+        "alias": [
+            "google/gemma-scope-2b-pt-transcoders"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/gemma-scope",
+        "alias": [
+            "google/gemma-scope"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/gemma-2-2b-it-pytorch",
+        "alias": [
+            "google/gemma-2-2b-it-pytorch"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/gemma-scope-27b-pt-res",
+        "alias": [
+            "google/gemma-scope-27b-pt-res"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/gemma-2b-awq",
+        "alias": [
+            "google/gemma-2b-awq",
+            "google/gemma-2b-AWQ"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/diarizationlm-8b-fisher-v1",
+        "alias": [
+            "google/diarizationlm-8b-fisher-v1",
+            "google/DiarizationLM-8b-Fisher-v1"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/gemma-scope-9b-it-res",
+        "alias": [
+            "google/gemma-scope-9b-it-res"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/gemma-scope-9b-pt-att",
+        "alias": [
+            "google/gemma-scope-9b-pt-att"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/gemma-scope-9b-pt-mlp",
+        "alias": [
+            "google/gemma-scope-9b-pt-mlp"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/gemma-7b-awq",
+        "alias": [
+            "google/gemma-7b-awq",
+            "google/gemma-7b-AWQ"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/gemma-scope-2b-pt-mlp",
+        "alias": [
+            "google/gemma-scope-2b-pt-mlp"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/gemma-scope-2b-pt-att",
+        "alias": [
+            "google/gemma-scope-2b-pt-att"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/gemma-scope-2b-pt-res",
+        "alias": [
+            "google/gemma-scope-2b-pt-res"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/gemma-2-2b-gguf",
+        "alias": [
+            "google/gemma-2-2b-gguf",
+            "google/gemma-2-2b-GGUF"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/gemma-2-2b-it-gguf",
+        "alias": [
+            "google/gemma-2-2b-it-gguf",
+            "google/gemma-2-2b-it-GGUF"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/shieldgemma-27b",
+        "alias": [
+            "google/shieldgemma-27b"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/shieldgemma-9b",
+        "alias": [
+            "google/shieldgemma-9b"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/shieldgemma-2b",
+        "alias": [
+            "google/shieldgemma-2b"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/gemma-2-2b-it",
+        "alias": [
+            "google/gemma-2-2b-it"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/gemma-2-2b",
+        "alias": [
+            "google/gemma-2-2b"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/gemma-2-2b-pytorch",
+        "alias": [
+            "google/gemma-2-2b-pytorch"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/gemma-scope-9b-pt-res",
+        "alias": [
+            "google/gemma-scope-9b-pt-res"
+        ],
+        "model_types": [
+            "other"
+        ]
+    },
+    {
+        "name": "google/codegemma-1.1-7b-it-keras",
+        "alias": [
+            "google/codegemma-1.1-7b-it-keras"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/codegemma-1.1-2b-keras",
+        "alias": [
+            "google/codegemma-1.1-2b-keras"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/paligemma-3b-mix-448-keras",
+        "alias": [
+            "google/paligemma-3b-mix-448-keras"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma-3b-mix-224-keras",
+        "alias": [
+            "google/paligemma-3b-mix-224-keras"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma-3b-pt-896-keras",
+        "alias": [
+            "google/paligemma-3b-pt-896-keras"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma-3b-pt-448-keras",
+        "alias": [
+            "google/paligemma-3b-pt-448-keras"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/paligemma-3b-pt-224-keras",
+        "alias": [
+            "google/paligemma-3b-pt-224-keras"
+        ],
+        "model_types": [
+            "chat",
+            "image2text",
+            "vision"
+        ]
+    },
+    {
+        "name": "google/gemma-2-instruct-9b-keras",
+        "alias": [
+            "google/gemma-2-instruct-9b-keras"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/gemma-2-9b-keras",
+        "alias": [
+            "google/gemma-2-9b-keras"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/gemma-2-9b",
+        "alias": [
+            "google/gemma-2-9b"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
+        "name": "google/gemma-2-9b-it",
+        "alias": [
+            "google/gemma-2-9b-it"
+        ],
+        "model_types": [
+            "chat"
+        ]
+    },
+    {
       "name": "zai-org/embedding-3",
       "alias": [
         "embedding-3",
