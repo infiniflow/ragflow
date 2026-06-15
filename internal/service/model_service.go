@@ -959,7 +959,7 @@ func (m *ModelProviderService) DropProviderInstances(providerName, userID string
 	return common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) DropInstanceModels(providerName, instanceName, userID string, models []string) (common.ErrorCode, error) {
+func (m *ModelProviderService) DropInstanceModels(providerName, instanceName, userID string, modelIDs, models []string) (common.ErrorCode, error) {
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -985,7 +985,27 @@ func (m *ModelProviderService) DropInstanceModels(providerName, instanceName, us
 		return common.CodeServerError, err
 	}
 
+	for _, modelID := range modelIDs {
+		modelID = strings.TrimSpace(modelID)
+		if modelID == "" {
+			return common.CodeBadRequest, errors.New("model ID is required")
+		}
+		var count int64 = 0
+		count, err = m.modelDAO.DeleteByModelIDAndProviderIDAndInstanceID(modelID, provider.ID, modelInstance.ID)
+		if err != nil {
+			return common.CodeServerError, err
+		}
+
+		if count == 0 {
+			return common.CodeNotFound, fmt.Errorf("model %s not found", modelID)
+		}
+	}
+
 	for _, modelName := range models {
+		modelName = strings.TrimSpace(modelName)
+		if modelName == "" {
+			return common.CodeBadRequest, errors.New("model name is required")
+		}
 		// Delete all models of this instance
 		var count int64 = 0
 		count, err = m.modelDAO.DeleteByProviderIDAndInstanceIDAndModelName(provider.ID, modelInstance.ID, modelName)
@@ -1170,6 +1190,79 @@ type ModelInstanceAndProviderInfo struct {
 	APIConfig      *modelModule.APIConfig
 }
 
+type tenantModelExtra struct {
+	MaxTokens    *int     `json:"max_tokens"`
+	ModelTypes   []string `json:"model_types"`
+	MaxDimension *int     `json:"max_dimension"`
+	Dimensions   []int    `json:"dimensions"`
+	Thinking     *bool    `json:"thinking"`
+}
+
+func modelInfoWithTenantExtra(modelInfo *modelModule.Model, modelEntity *entity.TenantModel) (*modelModule.Model, error) {
+	if modelInfo == nil || modelEntity == nil || strings.TrimSpace(modelEntity.Extra) == "" {
+		return modelInfo, nil
+	}
+
+	var extra tenantModelExtra
+	if err := json.Unmarshal([]byte(modelEntity.Extra), &extra); err != nil {
+		return nil, err
+	}
+
+	model := *modelInfo
+	model.ModelTypes = append([]string(nil), modelInfo.ModelTypes...)
+	model.Dimensions = append([]int(nil), modelInfo.Dimensions...)
+	model.Alias = append([]string(nil), modelInfo.Alias...)
+	if modelInfo.ModelTypeMap != nil {
+		model.ModelTypeMap = make(map[string]bool, len(modelInfo.ModelTypeMap))
+		for modelType, enabled := range modelInfo.ModelTypeMap {
+			model.ModelTypeMap[modelType] = enabled
+		}
+	}
+	if modelInfo.Thinking != nil {
+		thinking := *modelInfo.Thinking
+		model.Thinking = &thinking
+	}
+
+	if extra.MaxTokens != nil && *extra.MaxTokens > 0 {
+		model.MaxTokens = extra.MaxTokens
+	}
+	if len(extra.ModelTypes) > 0 {
+		model.ModelTypes = append([]string(nil), extra.ModelTypes...)
+		model.ModelTypeMap = make(map[string]bool, len(extra.ModelTypes))
+		for _, modelType := range extra.ModelTypes {
+			model.ModelTypeMap[modelType] = true
+		}
+	}
+	if extra.MaxDimension != nil && *extra.MaxDimension > 0 {
+		model.MaxDimension = extra.MaxDimension
+	}
+	if len(extra.Dimensions) > 0 {
+		model.Dimensions = append([]int(nil), extra.Dimensions...)
+	}
+	if extra.Thinking != nil {
+		if model.Thinking == nil {
+			model.Thinking = &modelModule.ModelThinking{}
+		}
+		model.Thinking.DefaultValue = *extra.Thinking
+	}
+
+	return &model, nil
+}
+
+func maxTokensFromTenantModelExtra(modelEntity *entity.TenantModel, fallback int) (int, error) {
+	if modelEntity == nil || strings.TrimSpace(modelEntity.Extra) == "" {
+		return fallback, nil
+	}
+	var extra tenantModelExtra
+	if err := json.Unmarshal([]byte(modelEntity.Extra), &extra); err != nil {
+		return 0, err
+	}
+	if extra.MaxTokens != nil && *extra.MaxTokens > 0 {
+		return *extra.MaxTokens, nil
+	}
+	return fallback, nil
+}
+
 func (m *ModelProviderService) getModelInstanceAndProviderByName(providerName, instanceName, modelName *string, userID string, apiConfig *modelModule.APIConfig) (*ModelInstanceAndProviderInfo, error) {
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -1208,6 +1301,10 @@ func (m *ModelProviderService) getModelInstanceAndProviderByName(providerName, i
 	modelInfo, err := dao.GetModelProviderManager().GetModelByName(*providerName, *modelName)
 	if err != nil {
 		return nil, errors.New(fmt.Sprintf("provider %s model %s not found", *providerName, *modelName))
+	}
+	modelInfo, err = modelInfoWithTenantExtra(modelInfo, modelEntity)
+	if err != nil {
+		return nil, err
 	}
 
 	var extra map[string]string
@@ -1280,6 +1377,10 @@ func (m *ModelProviderService) getModelInstanceAndProviderByID(modelID *string, 
 	if err != nil {
 		return nil, errors.New(fmt.Sprintf("provider %s model %s not found", providerEntity.ProviderName, modelEntity.ModelName))
 	}
+	modelInfo, err = modelInfoWithTenantExtra(modelInfo, modelEntity)
+	if err != nil {
+		return nil, err
+	}
 
 	var extra map[string]string
 	err = json.Unmarshal([]byte(instanceEntity.Extra), &extra)
@@ -1332,23 +1433,32 @@ func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceNam
 		modelConfig = &modelModule.ChatConfig{}
 	}
 	modelConfig.ModelClass = info.ModelInfo.Class
+	if modelConfig.Thinking == nil && info.ModelInfo.Thinking != nil {
+		thinking := info.ModelInfo.Thinking.DefaultValue
+		modelConfig.Thinking = &thinking
+	}
+	resolvedModelName := info.ModelInfo.Name
+	if info.ModelEntity != nil && info.ModelEntity.ModelName != "" {
+		resolvedModelName = info.ModelEntity.ModelName
+	}
+	resolvedProviderName := info.ProviderEntity.ProviderName
 
 	var response *modelModule.ChatResponse
 	var modelDriver modelModule.ModelDriver
 
 	if info.ModelEntity == nil {
 		if !info.ModelInfo.ModelTypeMap["chat"] && !info.ModelInfo.ModelTypeMap["vision"] {
-			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is a chat or multimodal model", *modelName, *providerName))
+			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is a chat or multimodal model", resolvedModelName, resolvedProviderName))
 		}
 		modelDriver = info.ProviderInfo.ModelDriver
 	} else {
 		// model entity exists
 		if info.ModelEntity.Status == "active" {
 			if info.ModelEntity.ModelType != "chat" && info.ModelEntity.ModelType != "vision" {
-				return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is a chat or multimodal model", *modelName, *providerName))
+				return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is a chat or multimodal model", resolvedModelName, resolvedProviderName))
 			}
 
-			modelDriver, err = newModelDriverForBaseURL(info.ProviderInfo.ModelDriver, *providerName, *info.APIConfig.Region, *info.APIConfig.BaseURL)
+			modelDriver, err = newModelDriverForBaseURL(info.ProviderInfo.ModelDriver, resolvedProviderName, *info.APIConfig.Region, *info.APIConfig.BaseURL)
 			if err != nil {
 				return nil, common.CodeServerError, err
 			}
@@ -1357,7 +1467,7 @@ func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceNam
 		}
 	}
 
-	response, err = modelDriver.ChatWithMessages(*modelName, messages, info.APIConfig, modelConfig)
+	response, err = modelDriver.ChatWithMessages(resolvedModelName, messages, info.APIConfig, modelConfig)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -1390,6 +1500,15 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 		modelConfig = &modelModule.ChatConfig{}
 	}
 	modelConfig.ModelClass = info.ModelInfo.Class
+	if modelConfig.Thinking == nil && info.ModelInfo.Thinking != nil {
+		thinking := info.ModelInfo.Thinking.DefaultValue
+		modelConfig.Thinking = &thinking
+	}
+	resolvedModelName := info.ModelInfo.Name
+	if info.ModelEntity != nil && info.ModelEntity.ModelName != "" {
+		resolvedModelName = info.ModelEntity.ModelName
+	}
+	resolvedProviderName := info.ProviderEntity.ProviderName
 
 	var modelDriver modelModule.ModelDriver
 
@@ -1399,10 +1518,10 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 		// model entity exists
 		if info.ModelEntity.Status == "active" {
 			if info.ModelEntity.ModelType != "chat" && info.ModelEntity.ModelType != "vision" {
-				return common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is a chat or multimodal model", *modelName, *providerName))
+				return common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is a chat or multimodal model", resolvedModelName, resolvedProviderName))
 			}
 
-			modelDriver, err = newModelDriverForBaseURL(info.ProviderInfo.ModelDriver, *providerName, *info.APIConfig.Region, *info.APIConfig.BaseURL)
+			modelDriver, err = newModelDriverForBaseURL(info.ProviderInfo.ModelDriver, resolvedProviderName, *info.APIConfig.Region, *info.APIConfig.BaseURL)
 			if err != nil {
 				return common.CodeServerError, err
 			}
@@ -1411,7 +1530,7 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 		}
 	}
 
-	err = modelDriver.ChatStreamlyWithSender(*modelName, messages, apiConfig, modelConfig, sender)
+	err = modelDriver.ChatStreamlyWithSender(resolvedModelName, messages, info.APIConfig, modelConfig, sender)
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -1469,22 +1588,27 @@ func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, 
 	if modelConfig == nil {
 		modelConfig = &modelModule.EmbeddingConfig{}
 	}
+	resolvedModelName := info.ModelInfo.Name
+	if info.ModelEntity != nil && info.ModelEntity.ModelName != "" {
+		resolvedModelName = info.ModelEntity.ModelName
+	}
+	resolvedProviderName := info.ProviderEntity.ProviderName
 
 	var modelDriver modelModule.ModelDriver
 
 	if info.ModelEntity == nil {
 		if !info.ModelInfo.ModelTypeMap["embedding"] {
-			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is an embedding model", *modelName, *providerName))
+			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is an embedding model", resolvedModelName, resolvedProviderName))
 		}
 		modelDriver = info.ProviderInfo.ModelDriver
 	} else {
 		// model entity exists
 		if info.ModelEntity.Status == "active" {
 			if info.ModelEntity.ModelType != "embedding" {
-				return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is an embedding model", *modelName, *providerName))
+				return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is an embedding model", resolvedModelName, resolvedProviderName))
 			}
 
-			modelDriver, err = newModelDriverForBaseURL(info.ProviderInfo.ModelDriver, *providerName, *info.APIConfig.Region, *info.APIConfig.BaseURL)
+			modelDriver, err = newModelDriverForBaseURL(info.ProviderInfo.ModelDriver, resolvedProviderName, *info.APIConfig.Region, *info.APIConfig.BaseURL)
 			if err != nil {
 				return nil, common.CodeServerError, err
 			}
@@ -1498,7 +1622,7 @@ func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, 
 	}
 
 	var response []modelModule.EmbeddingData
-	response, err = modelDriver.Embed(modelName, texts, apiConfig, modelConfig)
+	response, err = modelDriver.Embed(&resolvedModelName, texts, info.APIConfig, modelConfig)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -1530,22 +1654,27 @@ func (m *ModelProviderService) RerankDocument(providerName, instanceName, modelN
 	if modelConfig == nil {
 		modelConfig = &modelModule.RerankConfig{}
 	}
+	resolvedModelName := info.ModelInfo.Name
+	if info.ModelEntity != nil && info.ModelEntity.ModelName != "" {
+		resolvedModelName = info.ModelEntity.ModelName
+	}
+	resolvedProviderName := info.ProviderEntity.ProviderName
 
 	var modelDriver modelModule.ModelDriver
 
 	if info.ModelEntity == nil {
 		if !info.ModelInfo.ModelTypeMap["rerank"] {
-			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is a rerank model", *modelName, *providerName))
+			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is a rerank model", resolvedModelName, resolvedProviderName))
 		}
 		modelDriver = info.ProviderInfo.ModelDriver
 	} else {
 		// model entity exists
 		if info.ModelEntity.Status == "active" {
 			if info.ModelEntity.ModelType != "rerank" {
-				return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is a rerank model", *modelName, *providerName))
+				return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is a rerank model", resolvedModelName, resolvedProviderName))
 			}
 
-			modelDriver, err = newModelDriverForBaseURL(info.ProviderInfo.ModelDriver, *providerName, *info.APIConfig.Region, *info.APIConfig.BaseURL)
+			modelDriver, err = newModelDriverForBaseURL(info.ProviderInfo.ModelDriver, resolvedProviderName, *info.APIConfig.Region, *info.APIConfig.BaseURL)
 			if err != nil {
 				return nil, common.CodeServerError, err
 			}
@@ -1555,7 +1684,7 @@ func (m *ModelProviderService) RerankDocument(providerName, instanceName, modelN
 	}
 
 	var response *modelModule.RerankResponse
-	response, err = modelDriver.Rerank(modelName, query, documents, apiConfig, modelConfig)
+	response, err = modelDriver.Rerank(&resolvedModelName, query, documents, info.APIConfig, modelConfig)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -2022,10 +2151,12 @@ type AddCustomModelRequest struct {
 }
 
 type ModelRequest struct {
-	ModelName  string   `json:"model_name"`
-	ModelTypes []string `json:"model_types"`
-	MaxTokens  int      `json:"max_tokens"`
-	Thinking   *bool    `json:"thinking"`
+	ModelName    string   `json:"model_name"`
+	ModelTypes   []string `json:"model_types"`
+	MaxTokens    int      `json:"max_tokens"`
+	MaxDimension int      `json:"max_dimension"`
+	Dimensions   []int    `json:"dimensions"`
+	Thinking     *bool    `json:"thinking"`
 }
 
 func (m *ModelProviderService) AddModel(request *AddModelRequest, userID string) (common.ErrorCode, error) {
@@ -2090,8 +2221,10 @@ func (m *ModelProviderService) AddModel(request *AddModelRequest, userID string)
 		modelID := utility.GenerateToken()
 
 		extra := map[string]interface{}{
-			"max_tokens":  model.MaxTokens,
-			"model_types": []string{modelType},
+			"max_tokens":    model.MaxTokens,
+			"model_types":   []string{modelType},
+			"max_dimension": model.MaxDimension,
+			"dimensions":    model.Dimensions,
 		}
 		if model.Thinking != nil {
 			extra["thinking"] = *model.Thinking
@@ -2246,6 +2379,10 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(tenantID strin
 				maxTokens = *mi.MaxTokens
 			}
 		}
+		maxTokens, driverErr = maxTokensFromTenantModelExtra(modelObj, maxTokens)
+		if driverErr != nil {
+			return nil, "", nil, 0, driverErr
+		}
 		apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
 		return driver, modelObj.ModelName, apiConfig, maxTokens, nil
 	case errors.Is(modelErr, gorm.ErrRecordNotFound):
@@ -2337,12 +2474,14 @@ func (m *ModelProviderService) getModelConfig(tenantID, compositeModelName strin
 
 	var extra map[string]string
 	var region string
+	var baseURL string
 	if instance != nil {
 		err = json.Unmarshal([]byte(instance.Extra), &extra)
 		if err != nil {
 			return nil, "", nil, 0, err
 		}
 		region = extra["region"]
+		baseURL = extra["base_url"]
 	}
 
 	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
@@ -2377,17 +2516,27 @@ func (m *ModelProviderService) getModelConfig(tenantID, compositeModelName strin
 		return builtinDriver, modelName, apiConfig, maxTokens, nil
 	}
 
-	_, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(providerID, instance.ID, modelName)
+	var modelRecord *entity.TenantModel
+	modelRecord, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(providerID, instance.ID, modelName)
 	if err != nil {
 		_, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 		if err != nil {
 			return nil, "", nil, 0, fmt.Errorf("provider %s model %s not found", providerName, modelName)
 		}
 	}
+	maxTokens, err = maxTokensFromTenantModelExtra(modelRecord, maxTokens)
+	if err != nil {
+		return nil, "", nil, 0, err
+	}
 	apiKey = instance.APIKey
 
-	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region}
-	return providerInfo.ModelDriver, modelName, apiConfig, maxTokens, nil
+	driver, err := newModelDriverForBaseURL(providerInfo.ModelDriver, providerName, region, baseURL)
+	if err != nil {
+		return nil, "", nil, 0, err
+	}
+
+	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
+	return driver, modelName, apiConfig, maxTokens, nil
 }
 
 // ListAllModels list all models
