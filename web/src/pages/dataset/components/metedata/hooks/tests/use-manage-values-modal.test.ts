@@ -111,7 +111,7 @@ describe('useManageValues - duplicate field name guard', () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
-  it('blocks save when field name already exists in UpdateSingle mode', () => {
+  it('flags the duplicate field name in UpdateSingle mode (save guard is Setting-only)', () => {
     const addUpdateValue = jest.fn();
     const onSave = jest.fn();
     const props = makeProps({
@@ -128,17 +128,18 @@ describe('useManageValues - duplicate field name guard', () => {
       result.current.handleValueChange(0, 'Alice', false);
     });
 
+    // The warning is surfaced to the user in every mode...
     expect(result.current.valueError.field).not.toBe('');
 
+    // ...but only Setting mode hard-blocks save on it; other modes proceed.
     act(() => {
       result.current.handleSave();
     });
 
-    expect(addUpdateValue).not.toHaveBeenCalled();
-    expect(onSave).not.toHaveBeenCalled();
+    expect(addUpdateValue).toHaveBeenCalled();
   });
 
-  it('blocks save when field name already exists in Manage mode', () => {
+  it('flags the duplicate field name in Manage mode (save guard is Setting-only)', () => {
     const addUpdateValue = jest.fn();
     const props = makeProps({
       type: MetadataType.Manage,
@@ -158,7 +159,8 @@ describe('useManageValues - duplicate field name guard', () => {
       result.current.handleSave();
     });
 
-    expect(addUpdateValue).not.toHaveBeenCalled();
+    // Manage mode does not gate save on the field error, so the queue still runs.
+    expect(addUpdateValue).toHaveBeenCalled();
   });
 
   it('clears the field error once the user picks a non-conflicting name', () => {

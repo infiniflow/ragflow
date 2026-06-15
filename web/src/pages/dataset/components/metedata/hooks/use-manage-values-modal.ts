@@ -114,7 +114,7 @@ export const useManageValues = (props: IManageValuesProps) => {
   }, [hideModal]);
 
   const handleSave = useCallback(() => {
-    if (valueError.field) {
+    if (type === MetadataType.Setting && valueError.field) {
       return;
     }
     if (isAddValueMode) {
@@ -123,7 +123,7 @@ export const useManageValues = (props: IManageValuesProps) => {
       addUpdateValue(metaData.field, undefined, tempValues, metaData.valueType);
     }
     setShouldSave(true);
-  }, [metaData, tempValues, valueError, isAddValueMode, addUpdateValue]);
+  }, [metaData, tempValues, type, valueError, isAddValueMode, addUpdateValue]);
 
   useEffect(() => {
     if (shouldSave) {
