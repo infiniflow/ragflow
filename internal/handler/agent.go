@@ -23,12 +23,12 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"ragflow/internal/engine/redis"
 	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
-	"ragflow/internal/cache"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -548,10 +548,10 @@ func (h *AgentHandler) Prompts(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code": common.CodeSuccess,
 		"data": gin.H{
-			"task_analysis":         "As an AI agent designer, your role is to engage users by understanding their objectives and creating effective agent designs. Begin by analyzing the user's request to determine the appropriate actions.",
-			"output_format":         "For each agent you create, detail its components and explain how they collaborate to achieve the user's goal.",
-			"citation_guidelines":   "If the agent uses external sources, cite them in the final output. Use the format: [index] document_id, which corresponds to the document identifier in the database.",
-			"few_shots_examples":    "<example/>",
+			"task_analysis":       "As an AI agent designer, your role is to engage users by understanding their objectives and creating effective agent designs. Begin by analyzing the user's request to determine the appropriate actions.",
+			"output_format":       "For each agent you create, detail its components and explain how they collaborate to achieve the user's goal.",
+			"citation_guidelines": "If the agent uses external sources, cite them in the final output. Use the format: [index] document_id, which corresponds to the document identifier in the database.",
+			"few_shots_examples":  "<example/>",
 		},
 		"message": "success",
 	})
@@ -754,14 +754,14 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 // implemented; tests that require a real LLM response are marked
 // xfail in PR3.
 type agentChatCompletionsRequest struct {
-	AgentID         string                 `json:"agent_id"`
-	Query           string                 `json:"query"`
-	SessionID       string                 `json:"session_id"`
-	Stream          bool                   `json:"stream"`
-	OpenAICompat    bool                   `json:"openai-compatible"`
-	Model           string                 `json:"model"`
-	Messages        []map[string]interface{} `json:"messages"`
-	ReturnTrace     bool                   `json:"return_trace"`
+	AgentID      string                   `json:"agent_id"`
+	Query        string                   `json:"query"`
+	SessionID    string                   `json:"session_id"`
+	Stream       bool                     `json:"stream"`
+	OpenAICompat bool                     `json:"openai-compatible"`
+	Model        string                   `json:"model"`
+	Messages     []map[string]interface{} `json:"messages"`
+	ReturnTrace  bool                     `json:"return_trace"`
 }
 
 func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
@@ -844,9 +844,9 @@ func (h *AgentHandler) RerunAgent(c *gin.Context) {
 		return
 	}
 	var body struct {
-		ID           string                 `json:"id"`
-		DSL          map[string]interface{} `json:"dsl"`
-		ComponentID  string                 `json:"component_id"`
+		ID          string                 `json:"id"`
+		DSL         map[string]interface{} `json:"dsl"`
+		ComponentID string                 `json:"component_id"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil && !errors.Is(err, io.EOF) {
 		jsonError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
@@ -919,7 +919,7 @@ func (h *AgentHandler) GetAgentLogs(c *gin.Context) {
 	}
 
 	key := fmt.Sprintf("%s-%s-logs", canvasID, messageID)
-	payload, rerr := cache.Get().Get(key)
+	payload, rerr := redis.Get().Get(key)
 	data := map[string]interface{}{}
 	if rerr == nil && payload != "" {
 		_ = json.Unmarshal([]byte(payload), &data)
@@ -961,9 +961,9 @@ func (h *AgentHandler) GetAgentWebhookLogs(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code": common.CodeSuccess,
 		"data": gin.H{
-			"events":         []interface{}{},
-			"finished":       false,
-			"next_since_ts":  0,
+			"events":        []interface{}{},
+			"finished":      false,
+			"next_since_ts": 0,
 		},
 		"message": "success",
 	})
