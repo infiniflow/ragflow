@@ -1,4 +1,3 @@
-// Package channels provides channel implementations for LangGraph Go.
 package channels
 
 import (
@@ -137,11 +136,19 @@ func (c *NamedBarrierValue) FromCheckpoint(checkpoint interface{}) Channel {
 	}
 
 	if checkpoint != nil && !IsMissing(checkpoint) {
-		// Restore seen from checkpoint
-		if cp, ok := checkpoint.(map[string]bool); ok {
-			newCh.seen = make(map[string]bool, len(cp))
-			for k, v := range cp {
-				newCh.seen[k] = v
+		// Restore seen from checkpoint.
+		// After JSON round-trip, map[string]bool becomes map[string]interface{}.
+		newCh.seen = make(map[string]bool)
+		switch v := checkpoint.(type) {
+		case map[string]bool:
+			for k, bv := range v {
+				newCh.seen[k] = bv
+			}
+		case map[string]interface{}:
+			for k, bv := range v {
+				if b, ok := bv.(bool); ok {
+					newCh.seen[k] = b
+				}
 			}
 		}
 	}
@@ -320,10 +327,18 @@ func (c *NamedBarrierValueAfterFinish) FromCheckpoint(checkpoint interface{}) Ch
 
 	if checkpoint != nil && !IsMissing(checkpoint) {
 		if cp, ok := checkpoint.(map[string]interface{}); ok {
-			if seen, ok := cp["seen"].(map[string]bool); ok {
-				newCh.seen = make(map[string]bool, len(seen))
-				for k, v := range seen {
-					newCh.seen[k] = v
+			// After JSON round-trip, map[string]bool becomes map[string]interface{}.
+			newCh.seen = make(map[string]bool)
+			switch seen := cp["seen"].(type) {
+			case map[string]bool:
+				for k, bv := range seen {
+					newCh.seen[k] = bv
+				}
+			case map[string]interface{}:
+				for k, bv := range seen {
+					if b, ok := bv.(bool); ok {
+						newCh.seen[k] = b
+					}
 				}
 			}
 			if finished, ok := cp["finished"].(bool); ok {

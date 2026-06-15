@@ -32,9 +32,10 @@ func NewBinaryOperatorAggregate(typ interface{}, operator BinaryOperator) *Binar
 }
 
 // createZeroValue creates a zero value for the given type.
-func createZeroValue(typ interface{}) interface{} {
+func createZeroValue(typ interface{}) (result interface{}) {
+	result = Missing
 	if typ == nil {
-		return Missing
+		return
 	}
 	
 	rt := reflect.TypeOf(typ)
@@ -60,16 +61,17 @@ func createZeroValue(typ interface{}) interface{} {
 		return reflect.MakeMap(rt).Interface()
 	}
 	
-	// Try to create with new
+	// Use named return so the deferred recovery can return Missing.
 	defer func() {
 		if r := recover(); r != nil {
-			// Cannot create zero value, return Missing
+			result = Missing
 		}
 	}()
 	
-	// Create a zero value using reflect.Zero instead of reflect.New
+	// Create a zero value using reflect.Zero
 	zero := reflect.Zero(rt)
-	return zero.Interface()
+	result = zero.Interface()
+	return
 }
 
 // Get returns the current value of the channel.

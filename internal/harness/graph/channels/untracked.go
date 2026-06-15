@@ -43,7 +43,9 @@ func (c *UntrackedValue) Update(values []interface{}) (bool, error) {
 
 // Copy returns a copy of the channel (value is not copied, starts empty).
 func (c *UntrackedValue) Copy() Channel {
-	return NewUntrackedValue(c.Typ)
+	newCh := NewUntrackedValue(c.Typ)
+	newCh.Key = c.Key
+	return newCh
 }
 
 // Checkpoint returns Missing (value is not checkpointed).

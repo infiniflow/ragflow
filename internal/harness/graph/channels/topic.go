@@ -75,8 +75,11 @@ func (c *Topic) Copy() Channel {
 	return newCh
 }
 
-// Checkpoint returns the current values.
+// Checkpoint returns the current values, or Missing if empty.
 func (c *Topic) Checkpoint() interface{} {
+	if len(c.values) == 0 {
+		return Missing
+	}
 	result := make([]interface{}, len(c.values))
 	copy(result, c.values)
 	return result

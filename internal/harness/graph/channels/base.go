@@ -3,6 +3,7 @@ package channels
 
 import (
 	"fmt"
+	"sync"
 	"sync/atomic"
 
 	"ragflow/internal/harness/graph/errors"
@@ -99,6 +100,7 @@ func (c *BaseChannel) SetVersion(v int) {
 
 // Registry is a registry of channel types.
 type Registry struct {
+	mu       sync.RWMutex
 	channels map[string]Channel
 }
 
@@ -111,27 +113,37 @@ func NewRegistry() *Registry {
 
 // Register registers a channel.
 func (r *Registry) Register(name string, channel Channel) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.channels[name] = channel
 }
 
 // Get gets a channel by name.
 func (r *Registry) Get(name string) (Channel, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	ch, ok := r.channels[name]
 	return ch, ok
 }
 
 // Remove removes a channel.
 func (r *Registry) Remove(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	delete(r.channels, name)
 }
 
 // Len returns the number of channels.
 func (r *Registry) Len() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return len(r.channels)
 }
 
 // Names returns all channel names.
 func (r *Registry) Names() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	names := make([]string, 0, len(r.channels))
 	for name := range r.channels {
 		names = append(names, name)
@@ -146,6 +158,8 @@ func (r *Registry) List() []string {
 
 // CreateCheckpoint creates a checkpoint for all channels.
 func (r *Registry) CreateCheckpoint() map[string]interface{} {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	checkpoint := make(map[string]interface{})
 	for name, channel := range r.channels {
 		cp := channel.Checkpoint()
@@ -158,6 +172,8 @@ func (r *Registry) CreateCheckpoint() map[string]interface{} {
 
 // RestoreFromCheckpoint restores all channels from a checkpoint.
 func (r *Registry) RestoreFromCheckpoint(checkpoint map[string]interface{}) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	for name, cp := range checkpoint {
 		channel, ok := r.channels[name]
 		if !ok {
@@ -171,6 +187,8 @@ func (r *Registry) RestoreFromCheckpoint(checkpoint map[string]interface{}) erro
 
 // UpdateChannels updates all channels with the given writes.
 func (r *Registry) UpdateChannels(writes map[string][]interface{}) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	for name, values := range writes {
 		channel, ok := r.channels[name]
 		if !ok {
@@ -185,6 +203,8 @@ func (r *Registry) UpdateChannels(writes map[string][]interface{}) error {
 
 // GetValues returns the current values of all channels.
 func (r *Registry) GetValues() (map[string]interface{}, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	values := make(map[string]interface{})
 	for name, channel := range r.channels {
 		val, err := channel.Get()
