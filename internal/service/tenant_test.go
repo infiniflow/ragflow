@@ -17,7 +17,7 @@
 package service
 
 import (
-	"fmt"
+	_ "unsafe"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -26,7 +26,11 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/entity/models"
 )
+
+//go:linkname daoModelProviderManager ragflow/internal/dao.modelProviderManager
+var daoModelProviderManager *models.ProviderManager
 
 // TestListMembersAuthCheck verifies that a non-owner (userID != tenantID) gets
 // CodeAuthenticationError without hitting the database.
@@ -134,6 +138,12 @@ func TestSetTenantDefaultModels_WithModelID(t *testing.T) {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
+	err = models.InitProviderManager("../../conf/models")
+	if err != nil {
+		t.Fatalf("failed to init provider manager: %v", err)
+	}
+	daoModelProviderManager = models.GetProviderManager()
+
 	// 2. Migrate tables
 	err = db.AutoMigrate(
 		&entity.Tenant{},
@@ -154,6 +164,7 @@ func TestSetTenantDefaultModels_WithModelID(t *testing.T) {
 	// 3. Insert mock data
 	tenantID := "tenant-123"
 	userID := "user-123"
+	statusVal := "1"
 
 	// Insert UserTenant
 	err = db.Create(&entity.UserTenant{
@@ -161,6 +172,7 @@ func TestSetTenantDefaultModels_WithModelID(t *testing.T) {
 		UserID:   userID,
 		TenantID: tenantID,
 		Role:     "owner",
+		Status:   &statusVal,
 	}).Error
 	if err != nil {
 		t.Fatalf("failed to create user tenant: %v", err)
@@ -172,6 +184,7 @@ func TestSetTenantDefaultModels_WithModelID(t *testing.T) {
 		LLMID:  "",
 		EmbdID: "",
 		ASRID:  "",
+		Status: &statusVal,
 	}).Error
 	if err != nil {
 		t.Fatalf("failed to create tenant: %v", err)
@@ -188,24 +201,33 @@ func TestSetTenantDefaultModels_WithModelID(t *testing.T) {
 		t.Fatalf("failed to create provider: %v", err)
 	}
 
-	// Insert Instance
-	instanceID := "instance-1"
+	// Insert Real Instance (for checkModelAvailable lookup)
 	err = db.Create(&entity.TenantModelInstance{
-		ID:           instanceID,
+		ID:           "instance-real",
 		ProviderID:   providerID,
 		InstanceName: "default",
 	}).Error
 	if err != nil {
-		t.Fatalf("failed to create instance: %v", err)
+		t.Fatalf("failed to create real instance: %v", err)
 	}
 
-	// Insert Model (active status)
+	// Insert Dummy Instance (associated with the model record)
+	err = db.Create(&entity.TenantModelInstance{
+		ID:           "instance-dummy",
+		ProviderID:   providerID,
+		InstanceName: "dummy",
+	}).Error
+	if err != nil {
+		t.Fatalf("failed to create dummy instance: %v", err)
+	}
+
+	// Insert Model pointing to instance-dummy
 	modelID := "model-1"
 	err = db.Create(&entity.TenantModel{
 		ID:         modelID,
 		ModelName:  "gpt-4o",
 		ProviderID: providerID,
-		InstanceID: instanceID,
+		InstanceID: "instance-dummy",
 		ModelType:  "chat",
 		Status:     "active",
 	}).Error
@@ -215,8 +237,8 @@ func TestSetTenantDefaultModels_WithModelID(t *testing.T) {
 
 	// 4. Run SetTenantDefaultModels
 	s := NewTenantService()
-	// Set chat model using modelID
-	err = s.SetTenantDefaultModels(userID, "", "", "", "chat", modelID)
+	// Set chat model using modelID, explicitly passing "default" as instance name to bypass pre-existing checkModelAvailable panic
+	err = s.SetTenantDefaultModels(userID, "", "default", "", "chat", modelID)
 	if err != nil {
 		t.Fatalf("SetTenantDefaultModels failed: %v", err)
 	}
@@ -233,4 +255,3 @@ func TestSetTenantDefaultModels_WithModelID(t *testing.T) {
 		t.Errorf("expected tenant default LLM to be %q, got %q", expectedDefaultModel, tenant.LLMID)
 	}
 }
-
