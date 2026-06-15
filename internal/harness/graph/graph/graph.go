@@ -783,8 +783,10 @@ func (cg *CompiledGraph) inlineRun(ctx context.Context, input interface{}, confi
 		channelRegistry.Register(name, ch.Copy())
 	}
 
-	if err := inlineApplyInput(channelRegistry, input); err != nil {
-		return nil, fmt.Errorf("failed to apply input: %w", err)
+	if input != nil {
+		if err := inlineApplyInput(channelRegistry, input); err != nil {
+			return nil, fmt.Errorf("failed to apply input: %w", err)
+		}
 	}
 
 	if cg.checkpointer != nil {
@@ -809,7 +811,7 @@ func (cg *CompiledGraph) inlineRun(ctx context.Context, input interface{}, confi
 			return nil, &errors.GraphRecursionError{Limit: cg.recursionLimit}
 		}
 
-		tasks, err := inlineGetNextTasks(channelRegistry, completedTasks, lastCompletedNode, lastState, g)
+		tasks, err := inlineGetNextTasks(ctx, channelRegistry, completedTasks, lastCompletedNode, lastState, g)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get next tasks: %w", err)
 		}
@@ -834,11 +836,12 @@ func (cg *CompiledGraph) inlineRun(ctx context.Context, input interface{}, confi
 		}
 
 		for _, result := range results {
-			if result.err == nil {
-				completedTasks[result.nodeName] = true
-				lastCompletedNode = result.nodeName
-				lastState = inlineMergeStates(lastState, result.output)
+			if result.err != nil {
+				return nil, fmt.Errorf("node %s failed: %w", result.nodeName, result.err)
 			}
+			completedTasks[result.nodeName] = true
+			lastCompletedNode = result.nodeName
+			lastState = inlineMergeStates(lastState, result.output)
 		}
 
 		if err := inlineApplyWrites(channelRegistry, results); err != nil {
@@ -930,7 +933,7 @@ func inlineApplyInput(registry *channels.Registry, input interface{}) error {
 	return nil
 }
 
-func inlineGetNextTasks(registry *channels.Registry, completedTasks map[string]bool, lastCompletedNode string, currentState interface{}, g *StateGraph) ([]*inlineTask, error) {
+func inlineGetNextTasks(ctx context.Context, registry *channels.Registry, completedTasks map[string]bool, lastCompletedNode string, currentState interface{}, g *StateGraph) ([]*inlineTask, error) {
 	tasks := make([]*inlineTask, 0)
 	if len(completedTasks) == 0 && g.entryPoint != "" {
 		node, ok := g.GetNode(g.entryPoint)
@@ -944,7 +947,7 @@ func inlineGetNextTasks(registry *channels.Registry, completedTasks map[string]b
 		nextNodes := make(map[string]bool)
 		for _, condEdge := range g.conditionalEdges {
 			if condEdge.From == lastCompletedNode {
-				conditionResult, err := condEdge.Condition(nil, currentState)
+				conditionResult, err := condEdge.Condition(ctx, currentState)
 				if err != nil {
 					return nil, fmt.Errorf("condition evaluation failed for node %s: %w", lastCompletedNode, err)
 				}
