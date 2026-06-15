@@ -61,15 +61,17 @@ func (h *TenantHandler) GetModels(c *gin.Context) {
 		return
 	}
 
+	// Always return success with an array. The previous contract returned
+	// code=102 "No default models" for an empty list, which (a) tripped the
+	// global error toast in web/src/utils/next-request.ts:141 and (b) was
+	// inconsistent with the Python counterpart in
+	// api/apps/restful_apis/models_api.py:30 which returns
+	// get_result(data=[]) on the no-rows path. Frontend hooks (e.g.
+	// useFetchAllAddedModels) coerce `null` to `[]` already, so `[]` is
+	// strictly safer.
 	if defaultModels == nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
-			"message": "No default models",
-			"data":    nil,
-		})
-		return
+		defaultModels = []service.ModelItem{}
 	}
-
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
 		"message": "success",
@@ -85,6 +87,14 @@ type SetModelRequest struct {
 }
 
 func (h *TenantHandler) SetModels(c *gin.Context) {
+	h.setDefaultModels(c, false)
+}
+
+func (h *TenantHandler) SetDefaultModels(c *gin.Context) {
+	h.setDefaultModels(c, true)
+}
+
+func (h *TenantHandler) setDefaultModels(c *gin.Context, wrapModels bool) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
@@ -112,10 +122,55 @@ func (h *TenantHandler) SetModels(c *gin.Context) {
 		return
 	}
 
+	if wrapModels {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeSuccess,
+			"message": "success",
+			"data":    map[string]interface{}{"models": []service.ModelItem{}},
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
 		"message": "success",
 		"data":    nil,
+	})
+}
+
+// GetDefaultModels returns the tenant's default model selections. The
+// response wraps the model list under `data.models` to mirror the
+// Python `list_tenant_default_models` contract (api/apps/restful_apis/
+// models_api.py:84). The frontend hook `useFetchDefaultModels`
+// (web/src/hooks/use-llm-request.tsx:423) reads `data.data.models`.
+func (h *TenantHandler) GetDefaultModels(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	defaultModels, err := h.tenantService.ListTenantDefaultModels(user.ID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeExceptionError,
+			"message": err.Error(),
+			"data":    false,
+		})
+		return
+	}
+
+	// Empty selection is a normal state for a freshly created tenant, not a
+	// data error. Match Python's `list_tenant_default_models` (which returns
+	// get_result(data=[])) and the frontend's expectation that `data.data.models`
+	// is always an array.
+	if defaultModels == nil {
+		defaultModels = []service.ModelItem{}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"message": "success",
+		"data":    map[string]interface{}{"models": defaultModels},
 	})
 }
 

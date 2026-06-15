@@ -374,6 +374,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 		return
 	}
 
+	disableWriteDeadlineForSSE(c)
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
