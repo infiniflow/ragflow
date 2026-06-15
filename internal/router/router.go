@@ -46,6 +46,7 @@ type Router struct {
 	difyRetrievalHandler *handler.DifyRetrievalHandler
 	pluginHandler        *handler.PluginHandler
 	modelHandler         *handler.ModelHandler
+	fileCommitHandler    *handler.FileCommitHandler
 	adminRuntimeHandler  *handler.AdminRuntimeHandler
 }
 
@@ -74,6 +75,7 @@ func NewRouter(
 	difyRetrievalHandler *handler.DifyRetrievalHandler,
 	pluginHandler *handler.PluginHandler,
 	modelHandler *handler.ModelHandler,
+	fileCommitHandler *handler.FileCommitHandler,
 	adminRuntimeHandler *handler.AdminRuntimeHandler,
 ) *Router {
 	return &Router{
@@ -100,6 +102,7 @@ func NewRouter(
 		difyRetrievalHandler: difyRetrievalHandler,
 		pluginHandler:        pluginHandler,
 		modelHandler:         modelHandler,
+		fileCommitHandler:    fileCommitHandler,
 		adminRuntimeHandler:  adminRuntimeHandler,
 	}
 }
@@ -304,7 +307,50 @@ func (r *Router) Setup(engine *gin.Engine) {
 				file.GET("/:id/ancestors", r.fileHandler.GetFileAncestors)
 				file.GET("/:id/parent", r.fileHandler.GetParentFolder)
 				file.GET("/:id", r.fileHandler.Download)
+				file.GET("/:id/versions", r.fileCommitHandler.GetFileVersionHistory)
 			}
+
+			// File commit routes — /folders/ takes folder_id directly
+			commitFolders := v1.Group("/folders")
+			{
+				commitFolders.POST("/:folder_id/commits", r.fileCommitHandler.CreateCommit)
+				commitFolders.GET("/:folder_id/commits", r.fileCommitHandler.ListCommits)
+				commitFolders.GET("/:folder_id/commits/diff", r.fileCommitHandler.DiffCommits)
+				commitFolders.GET("/:folder_id/commits/:commit_id", r.fileCommitHandler.GetCommit)
+				commitFolders.GET("/:folder_id/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
+				commitFolders.GET("/:folder_id/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
+				commitFolders.GET("/:folder_id/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
+				commitFolders.GET("/:folder_id/changes", r.fileCommitHandler.GetUncommittedChanges)
+			}
+
+		// /workspace/{workspace_id}/commits — alias for /folders/ (workspace_id == folder_id)
+		commitWorkspace := v1.Group("/workspace")
+		{
+			commitWorkspace.POST("/:folder_id/commits", r.fileCommitHandler.CreateCommit)
+			commitWorkspace.GET("/:folder_id/commits", r.fileCommitHandler.ListCommits)
+			commitWorkspace.GET("/:folder_id/commits/diff", r.fileCommitHandler.DiffCommits)
+			commitWorkspace.GET("/:folder_id/commits/:commit_id", r.fileCommitHandler.GetCommit)
+			commitWorkspace.GET("/:folder_id/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
+			commitWorkspace.GET("/:folder_id/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
+			commitWorkspace.GET("/:folder_id/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
+			commitWorkspace.GET("/:folder_id/changes", r.fileCommitHandler.GetUncommittedChanges)
+		}
+
+		// /datasets/{dataset_id}/commits — resolve dataset_id → folder_id via middleware
+		commitDatasets := v1.Group("/datasets/:dataset_id")
+		commitDatasets.Use(handler.CommitFolderResolver(r.fileCommitHandler, "datasets", "dataset_id"))
+		{
+			commitDatasets.POST("/commits", r.fileCommitHandler.CreateCommit)
+			commitDatasets.GET("/commits", r.fileCommitHandler.ListCommits)
+			commitDatasets.GET("/commits/diff", r.fileCommitHandler.DiffCommits)
+			commitDatasets.GET("/commits/:commit_id", r.fileCommitHandler.GetCommit)
+			commitDatasets.GET("/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
+			commitDatasets.GET("/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
+			commitDatasets.GET("/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
+			commitDatasets.GET("/changes", r.fileCommitHandler.GetUncommittedChanges)
+		}
+
+
 
 			// Author routes
 			authors := v1.Group("/authors")

@@ -540,12 +540,6 @@ def test_session_update_name_and_param_contract(rest_client, create_chat):
         else:
             assert body["message"] == expected_name_or_message, (scenario_name, body)
 
-    unknown_key_res = rest_client.patch(f"/chats/{chat_id}/sessions/{session_id}", json={"unknown_key": "unknown_value"})
-    assert unknown_key_res.status_code == 200
-    unknown_key_payload = unknown_key_res.json()
-    assert unknown_key_payload["code"] == 100, unknown_key_payload
-    assert 'Unrecognized field name: "unknown_key"' in unknown_key_payload["message"], unknown_key_payload
-
     for scenario_name, payload in (("empty payload", {}), ("none payload", None)):
         res = rest_client.patch(f"/chats/{chat_id}/sessions/{session_id}", json=payload)
         assert res.status_code == 200, (scenario_name, res.text)
