@@ -436,20 +436,107 @@ func (s *FileCommitService) collectAllFilesRecursive(folderID string) map[string
 	return result
 }
 
-// GetCommitTree gets the tree state snapshot for a commit
+// GetCommitTree gets the tree state snapshot for a commit as a hierarchical tree.
 func (s *FileCommitService) GetCommitTree(commitID string) (map[string]interface{}, error) {
 	commit, err := s.commitDAO.GetByID(commitID)
 	if err != nil {
 		return nil, err
 	}
 	if commit.TreeState == nil {
-		return make(map[string]interface{}), nil
+		return map[string]interface{}{"id": commit.FolderID, "name": "", "type": "folder", "children": []interface{}{}}, nil
 	}
-	var tree map[string]interface{}
-	if err := json.Unmarshal([]byte(*commit.TreeState), &tree); err != nil {
+	var flat map[string]interface{}
+	if err := json.Unmarshal([]byte(*commit.TreeState), &flat); err != nil {
 		return nil, err
 	}
-	return tree, nil
+	return s.buildHierarchicalTree(flat, commit.FolderID), nil
+}
+
+// buildHierarchicalTree builds a recursive tree from a flat tree_state map.
+// Sub-folder hierarchy is resolved from the File table's parent_id.
+func (s *FileCommitService) buildHierarchicalTree(flat map[string]interface{}, rootFolderID string) map[string]interface{} {
+	// Collect all unique folder IDs
+	folderIDs := map[string]bool{rootFolderID: true}
+	for _, v := range flat {
+		if entry, ok := v.(map[string]interface{}); ok {
+			pid, _ := entry["parent_id"].(string)
+			if pid == "" {
+				pid = rootFolderID
+			}
+			folderIDs[pid] = true
+		}
+	}
+
+	// Build folder parent map from File table
+	folderParentMap := make(map[string]string)
+	for fid := range folderIDs {
+		if fid != rootFolderID {
+			if f, err := s.fileDAO.GetByID(fid); err == nil {
+				folderParentMap[fid] = f.ParentID
+			}
+		}
+	}
+
+	// Group file entries by parent_id
+	filesByParent := make(map[string][]string)
+	fileEntries := make(map[string]map[string]interface{})
+	for fid, v := range flat {
+		entry, ok := v.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		pid, _ := entry["parent_id"].(string)
+		if pid == "" {
+			pid = rootFolderID
+		}
+		filesByParent[pid] = append(filesByParent[pid], fid)
+		fileEntries[fid] = entry
+	}
+
+	// Group sub-folders by their parent
+	childrenByFolder := make(map[string][]string)
+	for sfid, ppid := range folderParentMap {
+		childrenByFolder[ppid] = append(childrenByFolder[ppid], sfid)
+	}
+
+	var buildNode func(nodeID string) map[string]interface{}
+	buildNode = func(nodeID string) map[string]interface{} {
+		nodeName := nodeID
+		if f, err := s.fileDAO.GetByID(nodeID); err == nil {
+			nodeName = f.Name
+		}
+		node := map[string]interface{}{
+			"id":       nodeID,
+			"name":     nodeName,
+			"type":     "folder",
+			"children": []interface{}{},
+		}
+
+		// File children
+		for _, fid := range filesByParent[nodeID] {
+			entry := fileEntries[fid]
+			fn := map[string]interface{}{
+				"id":     fid,
+				"name":   entry["name"],
+				"type":   "file",
+				"hash":   entry["hash"],
+				"size":   entry["size"],
+				"status": entry["status"],
+			}
+			if loc, ok := entry["location"].(string); ok && loc != "" {
+				fn["location"] = loc
+			}
+			node["children"] = append(node["children"].([]interface{}), fn)
+		}
+		// Sub-folder children
+		for _, sfid := range childrenByFolder[nodeID] {
+			child := buildNode(sfid)
+			node["children"] = append(node["children"].([]interface{}), child)
+		}
+		return node
+	}
+
+	return buildNode(rootFolderID)
 }
 
 // GetCommitFileContent gets file content as it existed in a given commit

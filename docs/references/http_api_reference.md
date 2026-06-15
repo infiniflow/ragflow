@@ -7611,11 +7611,15 @@ Success:
         "message": "update config files",
         "author_id": "user_uuid",
         "file_count": 2,
-        "tree_state": "{...}",
+        "tree_state": "{\"file_uuid\": {\"hash\": \"abcd1234\", \"location\": \".objects/abcd1234\", \"name\": \"config.json\", \"size\": 1024, \"status\": \"1\", \"parent_id\": \"folder_uuid\"}}",
         "create_time": 1718200000000
     }
 }
 ```
+
+:::note
+`tree_state` is a JSON string containing a flat map of file entries. Each entry includes `parent_id` to track which sub-folder the file belonged to at commit time. Sub-folders are inferred from `parent_id` values.
+:::
 
 Failure:
 
@@ -7969,13 +7973,36 @@ Success:
 {
     "code": 0,
     "data": {
-        "file_uuid": {
-            "hash": "abcd1234",
-            "location": ".objects/abcd1234",
-            "name": "config.json",
-            "size": 1024,
-            "status": "1"
-        }
+        "id": "folder_uuid",
+        "name": "workspace_name",
+        "type": "folder",
+        "children": [
+            {
+                "id": "file_uuid",
+                "name": "config.json",
+                "type": "file",
+                "hash": "abcd1234",
+                "size": 1024,
+                "status": "1",
+                "location": ".objects/abcd1234"
+            },
+            {
+                "id": "sub_folder_uuid",
+                "name": "sub_folder_name",
+                "type": "folder",
+                "children": [
+                    {
+                        "id": "file_uuid_2",
+                        "name": "nested.txt",
+                        "type": "file",
+                        "hash": "ef5678",
+                        "size": 512,
+                        "status": "1",
+                        "location": ".objects/ef5678"
+                    }
+                ]
+            }
+        ]
     }
 }
 ```

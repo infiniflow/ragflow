@@ -476,14 +476,15 @@ class FileCommitService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_commit_tree(cls, commit_id):
-        """Get the tree state snapshot for a commit."""
+        """Get the tree state snapshot for a commit as a hierarchical tree."""
         success, commit = cls.get_by_id(commit_id)
         if not success or not commit.tree_state:
             return {}
         try:
-            return json.loads(commit.tree_state)
+            tree_state = json.loads(commit.tree_state)
         except Exception:
             return {}
+        return _build_hierarchical_tree(tree_state, commit.folder_id)
 
     @classmethod
     @DB.connection_context()
@@ -560,6 +561,79 @@ class FileCommitService(CommonService):
                 })
 
         return versions
+
+
+def _lookup_folder_name(folder_id):
+    """Look up a folder's display name from the File table."""
+    try:
+        row = File.get_or_none(File.id == folder_id)
+        if row:
+            return row.name
+    except Exception:
+        pass
+    return folder_id
+
+
+def _build_hierarchical_tree(tree_state, root_folder_id):
+    """Build a recursive tree from a flat tree_state map.
+
+    Returns {id, name, type: "folder", children: [{file|folder nodes}]}
+    Sub-folder hierarchy is resolved from the File table's parent_id.
+    """
+    # Collect all unique folder IDs from parent_id fields
+    folder_ids = {root_folder_id}
+    for fid, entry in tree_state.items():
+        if isinstance(entry, dict):
+            pid = entry.get("parent_id") or root_folder_id
+            folder_ids.add(pid)
+
+    # Build a map of folder_id -> parent_folder_id from the File table
+    folder_parent_map = {}
+    for fid in folder_ids:
+        if fid != root_folder_id:
+            try:
+                row = File.get_or_none(File.id == fid)
+                if row:
+                    folder_parent_map[fid] = row.parent_id
+            except Exception:
+                pass
+
+    # Group file entries by parent_id
+    files_by_parent = {}
+    for fid, entry in tree_state.items():
+        if not isinstance(entry, dict):
+            continue
+        pid = entry.get("parent_id") or root_folder_id
+        files_by_parent.setdefault(pid, []).append((fid, entry))
+
+    # Group sub-folder IDs by their parent folder
+    children_by_folder = {}
+    for sfid, ppid in folder_parent_map.items():
+        children_by_folder.setdefault(ppid, []).append(sfid)
+
+    def _build_node(node_id):
+        node = {
+            "id": node_id,
+            "name": _lookup_folder_name(node_id),
+            "type": "folder",
+            "children": [],
+        }
+        # File children
+        for fid, entry in files_by_parent.get(node_id, []):
+            fn = {"id": fid, "name": entry.get("name", fid), "type": "file",
+                  "hash": entry.get("hash", ""), "size": entry.get("size", 0),
+                  "status": entry.get("status", "1")}
+            if entry.get("location"):
+                fn["location"] = entry["location"]
+            node["children"].append(fn)
+        # Sub-folder children (resolved from File table)
+        for sfid in children_by_folder.get(node_id, []):
+            child = _build_node(sfid)
+            if child:
+                node["children"].append(child)
+        return node
+
+    return _build_node(root_folder_id)
 
 
 def _compute_file_hash(folder_id, file_id):
