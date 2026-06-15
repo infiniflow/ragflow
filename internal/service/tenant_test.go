@@ -17,9 +17,15 @@
 package service
 
 import (
+	"fmt"
 	"testing"
 
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 )
 
 // TestListMembersAuthCheck verifies that a non-owner (userID != tenantID) gets
@@ -116,3 +122,115 @@ func TestTenantRoleConstants(t *testing.T) {
 		}
 	}
 }
+
+// TestSetTenantDefaultModels_WithModelID verifies that SetTenantDefaultModels
+// correctly resolves a modelID to composite name, validates ownership, and updates the tenant.
+func TestSetTenantDefaultModels_WithModelID(t *testing.T) {
+	// 1. Setup SQLite in-memory DB
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
+		TranslateError: true,
+	})
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+
+	// 2. Migrate tables
+	err = db.AutoMigrate(
+		&entity.Tenant{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
+		&entity.UserTenant{},
+	)
+	if err != nil {
+		t.Fatalf("failed to auto migrate: %v", err)
+	}
+
+	// Swap dao.DB for the test
+	origDB := dao.DB
+	dao.DB = db
+	defer func() { dao.DB = origDB }()
+
+	// 3. Insert mock data
+	tenantID := "tenant-123"
+	userID := "user-123"
+
+	// Insert UserTenant
+	err = db.Create(&entity.UserTenant{
+		ID:       "ut-1",
+		UserID:   userID,
+		TenantID: tenantID,
+		Role:     "owner",
+	}).Error
+	if err != nil {
+		t.Fatalf("failed to create user tenant: %v", err)
+	}
+
+	// Insert Tenant
+	err = db.Create(&entity.Tenant{
+		ID:     tenantID,
+		LLMID:  "",
+		EmbdID: "",
+		ASRID:  "",
+	}).Error
+	if err != nil {
+		t.Fatalf("failed to create tenant: %v", err)
+	}
+
+	// Insert Provider
+	providerID := "provider-1"
+	err = db.Create(&entity.TenantModelProvider{
+		ID:           providerID,
+		TenantID:     tenantID,
+		ProviderName: "OpenAI",
+	}).Error
+	if err != nil {
+		t.Fatalf("failed to create provider: %v", err)
+	}
+
+	// Insert Instance
+	instanceID := "instance-1"
+	err = db.Create(&entity.TenantModelInstance{
+		ID:           instanceID,
+		ProviderID:   providerID,
+		InstanceName: "default",
+	}).Error
+	if err != nil {
+		t.Fatalf("failed to create instance: %v", err)
+	}
+
+	// Insert Model (active status)
+	modelID := "model-1"
+	err = db.Create(&entity.TenantModel{
+		ID:         modelID,
+		ModelName:  "gpt-4o",
+		ProviderID: providerID,
+		InstanceID: instanceID,
+		ModelType:  "chat",
+		Status:     "active",
+	}).Error
+	if err != nil {
+		t.Fatalf("failed to create model: %v", err)
+	}
+
+	// 4. Run SetTenantDefaultModels
+	s := NewTenantService()
+	// Set chat model using modelID
+	err = s.SetTenantDefaultModels(userID, "", "", "", "chat", modelID)
+	if err != nil {
+		t.Fatalf("SetTenantDefaultModels failed: %v", err)
+	}
+
+	// Verify Tenant default model is updated to composite name
+	tenant := &entity.Tenant{}
+	err = db.Where("id = ?", tenantID).First(tenant).Error
+	if err != nil {
+		t.Fatalf("failed to retrieve tenant: %v", err)
+	}
+
+	expectedDefaultModel := "gpt-4o@default@OpenAI"
+	if tenant.LLMID != expectedDefaultModel {
+		t.Errorf("expected tenant default LLM to be %q, got %q", expectedDefaultModel, tenant.LLMID)
+	}
+}
+

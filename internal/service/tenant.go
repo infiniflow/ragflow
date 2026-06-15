@@ -610,7 +610,7 @@ func (s *TenantService) checkModelAvailable(tenantID, providerName, instanceName
 	return nil
 }
 
-func (s *TenantService) SetTenantDefaultModels(userID, modelProvider, modelInstance, modelName, modelType string) error {
+func (s *TenantService) SetTenantDefaultModels(userID, modelProvider, modelInstance, modelName, modelType, modelID string) error {
 
 	tenantInfos, err := s.tenantDAO.GetInfoByUserID(userID)
 	if err != nil {
@@ -646,6 +646,35 @@ func (s *TenantService) SetTenantDefaultModels(userID, modelProvider, modelInsta
 	}
 	if modelTypeID == "" {
 		return fmt.Errorf("model type %s is invalid", modelType)
+	}
+
+	if modelID != "" {
+		modelEntity, err := s.modelDAO.GetByID(modelID)
+		if err != nil {
+			return fmt.Errorf("model ID %s is invalid", modelID)
+		}
+		instanceEntity, err := s.modelInstanceDAO.GetByID(modelEntity.InstanceID)
+		if err != nil {
+			return fmt.Errorf("instance for model %s not found: %w", modelID, err)
+		}
+		providerEntity, err := s.modelProviderDAO.GetByID(instanceEntity.ProviderID)
+		if err != nil {
+			return fmt.Errorf("provider for model %s not found: %w", modelID, err)
+		}
+
+		if providerEntity.TenantID != ownedTenant.TenantID {
+			return fmt.Errorf("model %s does not belong to your tenant", modelID)
+		}
+
+		if modelProvider == "" {
+			modelProvider = providerEntity.ProviderName
+		}
+		if modelInstance == "" {
+			modelInstance = instanceEntity.InstanceName
+		}
+		if modelName == "" {
+			modelName = modelEntity.ModelName
+		}
 	}
 
 	if modelProvider == "" && modelInstance == "" && modelName == "" {
