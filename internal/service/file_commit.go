@@ -89,6 +89,18 @@ func (s *FileCommitService) CreateCommit(folderID, authorID, message string, cha
 			return fmt.Errorf("failed to create commit: %w", err)
 		}
 
+		// Backfill parent_id for existing tree_state entries
+		for fid, entry := range treeState {
+			if m, ok := entry.(map[string]interface{}); ok {
+				if _, has := m["parent_id"]; !has {
+					var fileRec entity.File
+					if err := tx.Select("parent_id").Where("id = ?", fid).First(&fileRec).Error; err == nil {
+						m["parent_id"] = fileRec.ParentID
+					}
+				}
+			}
+		}
+
 		storageImpl := storage.GetStorageFactory().GetStorage()
 
 		for _, change := range changes {
@@ -136,12 +148,20 @@ func (s *FileCommitService) CreateCommit(folderID, authorID, message string, cha
 					return fmt.Errorf("failed to update file record: %w", err)
 				}
 
+				// Look up parent_id from the File table
+				fileParentID := ""
+				var fileRec entity.File
+				if err := tx.Select("parent_id").Where("id = ?", change.FileID).First(&fileRec).Error; err == nil {
+					fileParentID = fileRec.ParentID
+				}
+
 				treeState[change.FileID] = map[string]interface{}{
-					"hash":     hashHex,
-					"location": objKey,
-					"name":     change.FileName,
-					"size":     fSize,
-					"status":   "1",
+					"hash":      hashHex,
+					"location":  objKey,
+					"name":      change.FileName,
+					"size":      fSize,
+					"status":    "1",
+					"parent_id": fileParentID,
 				}
 
 			case "delete":
@@ -327,7 +347,8 @@ func (s *FileCommitService) DiffCommits(fromID, toID string) ([]entity.DiffEntry
 	return diff, nil
 }
 
-// GetUncommittedChanges gets uncommitted changes for a workspace folder
+// GetUncommittedChanges gets uncommitted changes for a workspace folder.
+// Recursively scans all sub-folders.
 func (s *FileCommitService) GetUncommittedChanges(folderID string) ([]entity.DiffEntry, error) {
 	// Get latest commit tree state
 	latest, err := s.commitDAO.GetLatestByFolderID(folderID)
@@ -343,12 +364,8 @@ func (s *FileCommitService) GetUncommittedChanges(folderID string) ([]entity.Dif
 		}
 	}
 
-	// Get current live files in this folder
-	liveFiles, _ := s.fileDAO.ListByParentID(folderID)
-	liveMap := make(map[string]*entity.File)
-	for _, f := range liveFiles {
-		liveMap[f.ID] = f
-	}
+	// Get all live files recursively under this folder
+	liveMap := s.collectAllFilesRecursive(folderID)
 
 	var changes []entity.DiffEntry
 	processed := make(map[string]bool)
@@ -357,11 +374,10 @@ func (s *FileCommitService) GetUncommittedChanges(folderID string) ([]entity.Dif
 	for fid, committedEntry := range committedFiles {
 		processed[fid] = true
 		if committedEntry["status"] == "0" {
-			continue // already deleted in commit
+			continue
 		}
 
 		if liveFile, ok := liveMap[fid]; ok {
-			// File still exists — check hash
 			liveHash := computeLiveFileHash(folderID, fid, liveFile)
 			committedHash := ""
 			if h, ok := committedEntry["hash"].(string); ok {
@@ -375,7 +391,6 @@ func (s *FileCommitService) GetUncommittedChanges(folderID string) ([]entity.Dif
 				})
 			}
 		} else {
-			// File not in live list — deleted
 			name := ""
 			if n, ok := committedEntry["name"].(string); ok {
 				name = n
@@ -389,7 +404,7 @@ func (s *FileCommitService) GetUncommittedChanges(folderID string) ([]entity.Dif
 	}
 
 	// Check for newly added files
-	for _, liveFile := range liveFiles {
+	for _, liveFile := range liveMap {
 		if !processed[liveFile.ID] {
 			changes = append(changes, entity.DiffEntry{
 				FileID:    liveFile.ID,
@@ -400,6 +415,25 @@ func (s *FileCommitService) GetUncommittedChanges(folderID string) ([]entity.Dif
 	}
 
 	return changes, nil
+}
+
+// collectAllFilesRecursive recursively collects all non-folder files under a folder.
+func (s *FileCommitService) collectAllFilesRecursive(folderID string) map[string]*entity.File {
+	result := make(map[string]*entity.File)
+	// Direct files (non-folder)
+	files, _ := s.fileDAO.ListNonFolderByParentID(folderID)
+	for _, f := range files {
+		result[f.ID] = f
+	}
+	// Sub-folders — recurse
+	subFolders, _ := s.fileDAO.ListFolderByParentID(folderID)
+	for _, sf := range subFolders {
+		sub := s.collectAllFilesRecursive(sf.ID)
+		for k, v := range sub {
+			result[k] = v
+		}
+	}
+	return result
 }
 
 // GetCommitTree gets the tree state snapshot for a commit

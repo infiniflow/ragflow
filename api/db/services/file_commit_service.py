@@ -29,6 +29,42 @@ from common.time_utils import current_timestamp, datetime_format
 logger = logging.getLogger(__name__)
 
 
+def _get_file_parent_id(file_id):
+    """Look up a file's parent_id from the File table."""
+    try:
+        row = File.get_or_none(File.id == file_id)
+        if row:
+            return row.parent_id
+    except Exception:
+        pass
+    return None
+
+
+def _collect_all_files_under(folder_id):
+    """Recursively collect all non-folder files under a folder (including sub-folders).
+
+    Returns a dict of {file_id: File_model_instance}.
+    """
+    results = {}
+    try:
+        # Direct file children (non-folder) of this folder
+        for f in File.select().where(
+            File.parent_id == folder_id,
+            File.id != folder_id,
+            File.type != "folder",
+        ):
+            results[f.id] = f
+        # Sub-folders — recurse
+        for sub in File.select().where(
+            File.parent_id == folder_id,
+            File.type == "folder",
+        ):
+            results.update(_collect_all_files_under(sub.id))
+    except Exception:
+        pass
+    return results
+
+
 class FileCommitService(CommonService):
     model = FileCommit
 
@@ -81,6 +117,13 @@ class FileCommitService(CommonService):
                 except (json.JSONDecodeError, TypeError):
                     tree_state = {}
 
+            # 4a. Backfill parent_id for existing entries that lack it
+            for fid, entry in tree_state.items():
+                if isinstance(entry, dict) and "parent_id" not in entry:
+                    pid = _get_file_parent_id(fid)
+                    if pid:
+                        entry["parent_id"] = pid
+
             storage_impl = settings.STORAGE_IMPL
 
             for change in file_changes:
@@ -120,12 +163,14 @@ class FileCommitService(CommonService):
                     }).where(File.id == file_id).execute()
 
                     # Update tree state
+                    file_parent = _get_file_parent_id(file_id)
                     tree_state[file_id] = {
                         "hash": content_hash,
                         "location": obj_key,
                         "name": change.get("file_name", ""),
                         "size": len(content_bytes),
                         "status": "1",
+                        "parent_id": file_parent,
                     }
 
                 elif op == "modify":
@@ -158,12 +203,14 @@ class FileCommitService(CommonService):
                     }).where(File.id == file_id).execute()
 
                     # Update tree state
+                    file_parent = _get_file_parent_id(file_id)
                     tree_state[file_id] = {
                         "hash": content_hash,
                         "location": obj_key,
                         "name": change.get("file_name", tree_state.get(file_id, {}).get("name", "")),
                         "size": len(content_bytes),
                         "status": "1",
+                        "parent_id": file_parent,
                     }
 
                 elif op == "delete":
@@ -373,6 +420,7 @@ class FileCommitService(CommonService):
     def get_uncommitted_changes(cls, folder_id):
         """Get uncommitted changes by comparing current File table with latest commit.
 
+        Recursively scans all sub-folders under folder_id.
         Returns list of dicts: [{"file_id", "file_name", "operation": "add"|"modify"|"delete"}]
         """
         # Get latest commit's tree state
@@ -384,17 +432,8 @@ class FileCommitService(CommonService):
             except Exception:
                 pass
 
-        # Get all current (live) files in this folder
-        current_files = {}
-        try:
-            files_query = File.select().where(
-                File.parent_id == folder_id,
-                File.id != folder_id,
-            )
-            for f in files_query:
-                current_files[f.id] = f
-        except Exception:
-            pass
+        # Get all current (live) files recursively under this folder
+        current_files = _collect_all_files_under(folder_id)
 
         changes = []
         processed = set()
@@ -403,12 +442,10 @@ class FileCommitService(CommonService):
         for fid, committed_entry in committed_files.items():
             processed.add(fid)
             if committed_entry.get("status") == "0":
-                # Already deleted in commit — skip
                 continue
 
             if fid in current_files:
                 live_file = current_files[fid]
-                # File still exists — check if hash differs
                 live_hash = _compute_file_hash(folder_id, fid)
                 committed_hash = committed_entry.get("hash", "")
                 if live_hash and live_hash != committed_hash:
@@ -418,7 +455,6 @@ class FileCommitService(CommonService):
                         "operation": "modify",
                     })
             else:
-                # File no longer in live table — deleted
                 if FileService.get_or_none(id=fid) is None:
                     changes.append({
                         "file_id": fid,
