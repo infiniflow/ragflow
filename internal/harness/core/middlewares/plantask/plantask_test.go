@@ -200,11 +200,16 @@ func TestManager_Options(t *testing.T) {
 		t.Error("WithTaskMetadata not applied")
 	}
 
-	withParent, _ := m.Create(ctx, "", "",
-		WithParentID("parent_1"),
+	// WithParentID creates a subtask under the designated parent.
+	p, _ := m.Create(ctx, "parent", "")
+	withParent, err := m.Create(ctx, "", "",
+		WithParentID(p.ID),
 	)
-	if withParent.ParentID != "parent_1" {
-		t.Error("WithParentID not applied")
+	if err != nil {
+		t.Fatalf("Create with ParentID: %v", err)
+	}
+	if withParent.ParentID != p.ID {
+		t.Errorf("WithParentID: got %s, want %s", withParent.ParentID, p.ID)
 	}
 }
 

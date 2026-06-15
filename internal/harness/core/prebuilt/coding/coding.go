@@ -157,7 +157,7 @@ func New(cfg *Config) *core.ReActAgent[*schema.Message] {
 			Middlewares:   middlewares,
 			Tools:         cfg.Tools,
 		}
-		saMW.BindToConfig(reactCfg)
+		saMW.BindToConfig(context.Background(), reactCfg)
 		return core.NewReActAgent(reactCfg)
 	}
 

@@ -192,7 +192,7 @@ func (m *middleware[M]) generateSummary(ctx context.Context, msgs []M) (string, 
 			maxAttempts = 1 + m.cfg.RetryConfig.MaxRetries
 		}
 	}
-	for attempt := 0; attempt <= maxAttempts; attempt++ {
+	for attempt := 0; attempt < maxAttempts; attempt++ {
 		resp, err := m.cfg.Model.Generate(ctx, promptMsgs)
 		if err == nil {
 			if m.cfg.EmitInternalEvents {
@@ -235,9 +235,11 @@ func typedToSchemaMessages[M core.MessageType](msgs []M) []*schema.Message {
 }
 
 func schemaMessagesToTyped[M core.MessageType](msgs []*schema.Message) []M {
-	result := make([]M, len(msgs))
-	for i, m := range msgs {
-		result[i] = any(m).(M)
+	result := make([]M, 0, len(msgs))
+	for _, m := range msgs {
+		if v, ok := any(m).(M); ok {
+			result = append(result, v)
+		}
 	}
 	return result
 }
@@ -283,16 +285,6 @@ func defaultTokenCounter[M core.MessageType](ctx context.Context, msgs []M) (int
 		total += len([]rune(text)) * 4 / 3
 	}
 	return total, nil
-}
-
-func isSummaryMessage[M core.MessageType](msg M) bool {
-	switch v := any(msg).(type) {
-	case *schema.Message:
-		return strings.Contains(v.Content, SummaryTag)
-	case *schema.AgenticMessage:
-		return strings.Contains(v.Content, SummaryTag)
-	}
-	return false
 }
 
 // FinalizerBuilder builds a Finalize function for summarization.

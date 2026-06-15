@@ -250,7 +250,7 @@ func NewAgent(ctx context.Context, cfg *AgentConfig) (core.Agent, error) {
 		}
 		saMW := subagent.New(cfg.SubAgentSpecs, subCfg)
 		reactCfg.Middlewares = append(reactCfg.Middlewares, saMW)
-		saMW.BindToConfig(reactCfg)
+		saMW.BindToConfig(context.Background(), reactCfg)
 	}
 
 	return core.NewReActAgent(reactCfg), nil

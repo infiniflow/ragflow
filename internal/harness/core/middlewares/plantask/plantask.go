@@ -60,13 +60,20 @@ func NewManager() *Manager {
 	}
 }
 
-// Create creates a new task.
+// Create creates a new task. When ParentID is set, the task is also registered
+// as a subtask of the parent within the same lock (TOCTOU-safe).
 func (m *Manager) Create(ctx context.Context, title, desc string, opts ...CreateOption) (*Task, error) {
 	cfg := &createConfig{State: TaskPending}
 	for _, o := range opts { o(cfg) }
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	if cfg.ParentID != "" {
+		if _, ok := m.tasks[cfg.ParentID]; !ok {
+			return nil, fmt.Errorf("parent task '%s' not found", cfg.ParentID)
+		}
+	}
 
 	m.nextID++
 	id := fmt.Sprintf("task_%d", m.nextID)
@@ -75,7 +82,11 @@ func (m *Manager) Create(ctx context.Context, title, desc string, opts ...Create
 		State: cfg.State, Dependencies: cfg.Dependencies,
 		ParentID: cfg.ParentID, Metadata: cfg.Metadata,
 	}
-	m.tasks[id] = &taskInternal{Task: t, subtasks: make(map[string]*taskInternal)}
+	ti := &taskInternal{Task: t, subtasks: make(map[string]*taskInternal)}
+	m.tasks[id] = ti
+	if cfg.ParentID != "" {
+		m.tasks[cfg.ParentID].subtasks[t.ID] = ti
+	}
 	return t, nil
 }
 
@@ -88,12 +99,16 @@ func (m *Manager) Get(id string) (*Task, error) {
 	return t.Task, nil
 }
 
-// List returns all top-level tasks.
+// List returns all top-level tasks (tasks without a parent).
 func (m *Manager) List() ([]*Task, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	var result []*Task
-	for _, t := range m.tasks { result = append(result, t.Task) }
+	for _, t := range m.tasks {
+		if t.ParentID == "" {
+			result = append(result, t.Task)
+		}
+	}
 	return result, nil
 }
 
@@ -148,22 +163,9 @@ func (m *Manager) Delete(id string) error {
 }
 
 // AddSubtask adds a child task to a parent task.
+// Parent-child registration happens inside Create's lock (TOCTOU-safe).
 func (m *Manager) AddSubtask(parentID, title, desc string) (*Task, error) {
-	parent, err := m.Get(parentID)
-	if err != nil { return nil, err }
-	sub, err := m.Create(context.Background(), title, desc, WithParentID(parentID))
-	if err != nil { return nil, err }
-
-	m.mu.Lock()
-	if pt, ok := m.tasks[parentID]; ok {
-		pt.subtasks[sub.ID] = &taskInternal{Task: sub}
-	}
-	m.mu.Unlock()
-
-	// Add to parent's dependencies tracking
-	if parent.Dependencies == nil { parent.Dependencies = []string{} }
-
-	return sub, nil
+	return m.Create(context.Background(), title, desc, WithParentID(parentID))
 }
 
 // GetSubtasks returns all subtasks of a parent task.

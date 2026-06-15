@@ -53,15 +53,33 @@ func New[M core.MessageType](cfg *Config) core.TypedReActMiddleware[M] {
 }
 
 func (m *middleware[M]) BeforeModelRewrite(ctx context.Context, state *core.TypedReActAgentState[M], mc *core.TypedModelContext[M]) (context.Context, *core.TypedReActAgentState[M], error) {
-	// Find assistant messages with tool calls that have no corresponding tool result
-	for i := 0; i < len(state.Messages)-1; i++ {
+	// Build a new slice instead of mutating state.Messages in-place to avoid
+	// fragility from slice reallocation mid-iteration.
+	var patched []M
+
+	// Pre-index AgenticMessage tool results by call ID for O(1) lookup.
+	agenticToolResults := make(map[string]bool)
+	for _, msg := range state.Messages {
+		if v, ok := any(msg).(*schema.AgenticMessage); ok {
+			for _, b := range v.ContentBlocks {
+				if b.ToolResult != nil && b.ToolResult.ToolCallID != "" {
+					agenticToolResults[b.ToolResult.ToolCallID] = true
+				}
+			}
+		}
+	}
+
+	for i := 0; i < len(state.Messages); i++ {
+		msg := state.Messages[i]
+		patched = append(patched, msg)
+
 		var toolCalls []struct{ ID, Name string }
-		switch v := any(state.Messages[i]).(type) {
+		switch v := any(msg).(type) {
 		case *schema.Message:
 			if v.Role != schema.RoleAssistant || len(v.ToolCalls) == 0 {
 				continue
 			}
-			// Check if next message is a tool result
+			// Next message is already a tool result — skip patching.
 			if i+1 < len(state.Messages) {
 				if next, ok := any(state.Messages[i+1]).(*schema.Message); ok && next.Role == schema.RoleTool {
 					continue
@@ -72,11 +90,8 @@ func (m *middleware[M]) BeforeModelRewrite(ctx context.Context, state *core.Type
 			}
 		case *schema.AgenticMessage:
 			for _, b := range v.ContentBlocks {
-				if b.ToolCall != nil && b.ToolCall.ID != "" {
-					// Check no matching tool result exists
-					if !hasCorrespondingAgenticToolResult(state.Messages, b.ToolCall.ID) {
-						toolCalls = append(toolCalls, struct{ ID, Name string }{b.ToolCall.ID, b.ToolCall.Name})
-					}
+				if b.ToolCall != nil && b.ToolCall.ID != "" && !agenticToolResults[b.ToolCall.ID] {
+					toolCalls = append(toolCalls, struct{ ID, Name string }{b.ToolCall.ID, b.ToolCall.Name})
 				}
 			}
 			if len(toolCalls) == 0 {
@@ -85,34 +100,15 @@ func (m *middleware[M]) BeforeModelRewrite(ctx context.Context, state *core.Type
 		default:
 			continue
 		}
-
 		if len(toolCalls) == 0 {
 			continue
 		}
-
-		// Insert placeholder tool results after the assistant message
-		insertAt := i + 1
 		for _, tc := range toolCalls {
 			patchContent := getPatchContent(m.cfg, tc.Name, tc.ID)
 			placeholder := schema.ToolMessage(patchContent, tc.ID)
-			state.Messages = append(state.Messages[:insertAt], append([]M{any(placeholder).(M)}, state.Messages[insertAt:]...)...)
-			insertAt++
-			i++
+			patched = append(patched, any(placeholder).(M))
 		}
 	}
+	state.Messages = patched
 	return ctx, state, nil
-}
-
-func hasCorrespondingAgenticToolResult[M core.MessageType](msgs []M, callID string) bool {
-	for _, msg := range msgs {
-		switch v := any(msg).(type) {
-		case *schema.AgenticMessage:
-			for _, b := range v.ContentBlocks {
-				if b.ToolResult != nil && b.ToolResult.ToolCallID == callID {
-					return true
-				}
-			}
-		}
-	}
-	return false
 }

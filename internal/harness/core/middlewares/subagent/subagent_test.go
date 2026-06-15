@@ -335,7 +335,7 @@ func TestSubAgent_Basic(t *testing.T) {
 		"parent final answer",
 	)
 	cfg := &core.ReActConfig[*schema.Message]{Model: parentModel, Middlewares: []core.ReActMiddleware{mw}}
-	mw.BindToConfig(cfg)
+	mw.BindToConfig(context.Background(), cfg)
 	agent := core.NewReActAgent(cfg)
 
 	ctx := context.Background()
@@ -373,7 +373,7 @@ func TestSubAgent_DeclarativeConfig(t *testing.T) {
 		"parent ok",
 	)
 	cfg := &core.ReActConfig[*schema.Message]{Model: parentModel, Middlewares: []core.ReActMiddleware{mw}}
-	mw.BindToConfig(cfg)
+	mw.BindToConfig(context.Background(), cfg)
 	agent := core.NewReActAgent(cfg)
 
 	ctx := context.Background()
@@ -417,7 +417,7 @@ func TestSubAgent_DeclarativeWithOwnTools(t *testing.T) {
 		"parent done",
 	)
 	cfg := &core.ReActConfig[*schema.Message]{Model: parentModel, Middlewares: []core.ReActMiddleware{mw}}
-	mw.BindToConfig(cfg)
+	mw.BindToConfig(context.Background(), cfg)
 	agent := core.NewReActAgent(cfg)
 
 	ctx := context.Background()
@@ -454,7 +454,7 @@ func TestSubAgent_MultipleSubAgents(t *testing.T) {
 		"parent done",
 	)
 	cfg := &core.ReActConfig[*schema.Message]{Model: parentModel, Middlewares: []core.ReActMiddleware{mw}}
-	mw.BindToConfig(cfg)
+	mw.BindToConfig(context.Background(), cfg)
 	agent := core.NewReActAgent(cfg)
 
 	ctx := context.Background()
@@ -491,7 +491,7 @@ func TestSubAgent_AgentFactory(t *testing.T) {
 		"parent with factory",
 	)
 	cfg := &core.ReActConfig[*schema.Message]{Model: parentModel, Middlewares: []core.ReActMiddleware{mw}}
-	mw.BindToConfig(cfg)
+	mw.BindToConfig(context.Background(), cfg)
 	agent := core.NewReActAgent(cfg)
 
 	ctx := context.Background()
@@ -531,7 +531,7 @@ func TestSubAgent_MiddlewareChain(t *testing.T) {
 		Model:       parentModel,
 		Middlewares: []core.ReActMiddleware{tracker, mw},
 	}
-	mw.BindToConfig(cfg)
+	mw.BindToConfig(context.Background(), cfg)
 	agent := core.NewReActAgent(cfg)
 
 	ctx := context.Background()
@@ -568,7 +568,7 @@ func TestSubAgent_NestedSubAgent(t *testing.T) {
 		),
 		Middlewares: []core.ReActMiddleware{innerMW},
 	}
-	innerMW.BindToConfig(innerCfg)
+	innerMW.BindToConfig(context.Background(), innerCfg)
 	middleAgent := core.NewReActAgent(innerCfg).WithName("middle").WithDescription("Middle sub-agent")
 
 	// Top-level.
@@ -584,7 +584,7 @@ func TestSubAgent_NestedSubAgent(t *testing.T) {
 		),
 		Middlewares: []core.ReActMiddleware{outerMW},
 	}
-	outerMW.BindToConfig(outerCfg)
+	outerMW.BindToConfig(context.Background(), outerCfg)
 	topAgent := core.NewReActAgent(outerCfg)
 
 	ctx := context.Background()
@@ -626,7 +626,7 @@ func TestSubAgent_RecursionGuard(t *testing.T) {
 		MaxIterations: 5,
 		Middlewares:   []core.ReActMiddleware{middleMW},
 	}
-	middleMW.BindToConfig(middleCfg)
+	middleMW.BindToConfig(context.Background(), middleCfg)
 	middleAgent := core.NewReActAgent(middleCfg).WithName("middle").WithDescription("Middle sub-agent")
 
 	// Top-level parent agent calls middle.
@@ -643,7 +643,7 @@ func TestSubAgent_RecursionGuard(t *testing.T) {
 		MaxIterations: 5,
 		Middlewares:   []core.ReActMiddleware{topMW},
 	}
-	topMW.BindToConfig(topCfg)
+	topMW.BindToConfig(context.Background(), topCfg)
 	topAgent := core.NewReActAgent(topCfg)
 
 	ctx := context.Background()
@@ -688,7 +688,7 @@ func TestSubAgent_NestedWithinLimit(t *testing.T) {
 		MaxIterations: 5,
 		Middlewares:   []core.ReActMiddleware{middleMW},
 	}
-	middleMW.BindToConfig(middleCfg)
+	middleMW.BindToConfig(context.Background(), middleCfg)
 	middleAgent := core.NewReActAgent(middleCfg).WithName("middle").WithDescription("Middle sub-agent")
 
 	// Top-level.
@@ -705,7 +705,7 @@ func TestSubAgent_NestedWithinLimit(t *testing.T) {
 		MaxIterations: 5,
 		Middlewares:   []core.ReActMiddleware{topMW},
 	}
-	topMW.BindToConfig(topCfg)
+	topMW.BindToConfig(context.Background(), topCfg)
 	topAgent := core.NewReActAgent(topCfg)
 
 	ctx := context.Background()
@@ -747,7 +747,7 @@ func TestSubAgent_MiddlewareInheritance(t *testing.T) {
 		Model:       parentModel,
 		Middlewares: []core.ReActMiddleware{parentTracker, mw},
 	}
-	mw.BindToConfig(cfg)
+	mw.BindToConfig(context.Background(), cfg)
 	agent := core.NewReActAgent(cfg)
 
 	ctx := context.Background()
@@ -780,7 +780,7 @@ func TestSubAgent_NoParentTools(t *testing.T) {
 	parentModel.addResp("no tools needed")
 
 	cfg := &core.ReActConfig[*schema.Message]{Model: parentModel, Middlewares: []core.ReActMiddleware{mw}}
-	mw.BindToConfig(cfg)
+	mw.BindToConfig(context.Background(), cfg)
 	agent := core.NewReActAgent(cfg)
 
 	ctx := context.Background()
@@ -817,7 +817,7 @@ func TestSubAgent_AgentFactoryOnly(t *testing.T) {
 		"parent legacy",
 	)
 	cfg := &core.ReActConfig[*schema.Message]{Model: parentModel, Middlewares: []core.ReActMiddleware{mw}}
-	mw.BindToConfig(cfg)
+	mw.BindToConfig(context.Background(), cfg)
 	agent := core.NewReActAgent(cfg)
 
 	ctx := context.Background()
@@ -848,8 +848,8 @@ func TestSubAgent_BindIdempotent(t *testing.T) {
 		Middlewares: []core.ReActMiddleware{mw},
 	}
 	// Call BindToConfig twice.
-	mw.BindToConfig(cfg)
-	mw.BindToConfig(cfg)
+	mw.BindToConfig(context.Background(), cfg)
+	mw.BindToConfig(context.Background(), cfg)
 
 	// Should have exactly 1 tool.
 	if len(cfg.Tools) != 1 {
@@ -885,7 +885,7 @@ func TestSubAgent_SubAgentOwnMiddlewares(t *testing.T) {
 		"parent tracked",
 	)
 	cfg := &core.ReActConfig[*schema.Message]{Model: parentModel, Middlewares: []core.ReActMiddleware{mw}}
-	mw.BindToConfig(cfg)
+	mw.BindToConfig(context.Background(), cfg)
 	agent := core.NewReActAgent(cfg)
 
 	ctx := context.Background()
@@ -924,7 +924,7 @@ func TestSubAgent_MaxDepthDefault(t *testing.T) {
 		MaxIterations: 5,
 		Middlewares:   []core.ReActMiddleware{middleMW},
 	}
-	middleMW.BindToConfig(middleCfg)
+	middleMW.BindToConfig(context.Background(), middleCfg)
 	middleAgent := core.NewReActAgent(middleCfg).WithName("middle").WithDescription("Middle")
 
 	topMW := New([]SubAgentSpec{
@@ -940,7 +940,7 @@ func TestSubAgent_MaxDepthDefault(t *testing.T) {
 		MaxIterations: 5,
 		Middlewares:   []core.ReActMiddleware{topMW},
 	}
-	topMW.BindToConfig(topCfg)
+	topMW.BindToConfig(context.Background(), topCfg)
 	topAgent := core.NewReActAgent(topCfg)
 
 	ctx := context.Background()
@@ -997,7 +997,7 @@ func TestSubAgent_ToolInvokeReturnsError(t *testing.T) {
 		Model: parentModel, Middlewares: []core.ReActMiddleware{mw},
 		MaxIterations: 5,
 	}
-	mw.BindToConfig(cfg)
+	mw.BindToConfig(context.Background(), cfg)
 	agent := core.NewReActAgent(cfg)
 
 	ctx := context.Background()
@@ -1051,7 +1051,7 @@ func TestSubAgent_EnhancedToolReturnsError(t *testing.T) {
 		Model: parentModel, Middlewares: []core.ReActMiddleware{mw},
 		MaxIterations: 5,
 	}
-	mw.BindToConfig(cfg)
+	mw.BindToConfig(context.Background(), cfg)
 	agent := core.NewReActAgent(cfg)
 
 	ctx := context.Background()
@@ -1108,7 +1108,7 @@ func TestSubAgent_MaxIterationsExceeded(t *testing.T) {
 		Model: parentModel, Middlewares: []core.ReActMiddleware{mw},
 		MaxIterations: 5,
 	}
-	mw.BindToConfig(cfg)
+	mw.BindToConfig(context.Background(), cfg)
 	agent := core.NewReActAgent(cfg)
 
 	ctx := context.Background()
@@ -1152,7 +1152,7 @@ func TestSubAgent_ParentContextCancelled(t *testing.T) {
 		Model: parentModel, Middlewares: []core.ReActMiddleware{mw},
 		MaxIterations: 5,
 	}
-	mw.BindToConfig(cfg)
+	mw.BindToConfig(context.Background(), cfg)
 	agent := core.NewReActAgent(cfg)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1222,7 +1222,7 @@ func TestSubAgent_ToolPanicRecovery(t *testing.T) {
 		Model: parentModel, Middlewares: []core.ReActMiddleware{mw},
 		MaxIterations: 5,
 	}
-	mw.BindToConfig(cfg)
+	mw.BindToConfig(context.Background(), cfg)
 	agent := core.NewReActAgent(cfg)
 
 	ctx := context.Background()
@@ -1255,7 +1255,7 @@ func TestSubAgent_AgentFactoryReturnsError(t *testing.T) {
 		Model:       &mockModel{responses: []string{"no tools needed"}},
 		Middlewares: []core.ReActMiddleware{mw},
 	}
-	mw.BindToConfig(cfg)
+	mw.BindToConfig(context.Background(), cfg)
 
 	if len(cfg.Tools) != 0 {
 		t.Errorf("expected 0 tools (factory failed), got %d", len(cfg.Tools))
@@ -1324,7 +1324,7 @@ func TestSubAgent_ParallelToolCallsOneFails(t *testing.T) {
 		Model: parentModel, Middlewares: []core.ReActMiddleware{mw},
 		MaxIterations: 5,
 	}
-	mw.BindToConfig(cfg)
+	mw.BindToConfig(context.Background(), cfg)
 	agent := core.NewReActAgent(cfg)
 
 	ctx := context.Background()
@@ -1382,7 +1382,7 @@ func TestSubAgent_EmitInternalEventsWithError(t *testing.T) {
 		Model: parentModel, Middlewares: []core.ReActMiddleware{mw},
 		MaxIterations: 5,
 	}
-	mw.BindToConfig(cfg)
+	mw.BindToConfig(context.Background(), cfg)
 	agent := core.NewReActAgent(cfg)
 
 	ctx := context.Background()

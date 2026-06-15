@@ -179,23 +179,25 @@ func New(specs []SubAgentSpec, cfg *Config) *SubAgentMiddleware {
 // which searches rc.Tools (including middleware-injected tools).
 //
 // MUST be called before agent.Run().
-func (m *SubAgentMiddleware) BindToConfig(config *core.ReActConfig[*schema.Message]) {
+// The ctx is used for sub-agent construction (AgentFactory calls, AgentTool wrapping).
+// Pass the parent agent's build context or context.Background() if none is available.
+func (m *SubAgentMiddleware) BindToConfig(ctx context.Context, config *core.ReActConfig[*schema.Message]) {
 	if m.built {
 		return // idempotent
 	}
-	m.ensureBuilt(config)
+	m.ensureBuilt(ctx, config)
 	config.Tools = append(config.Tools, m.tools...)
 	config.ToolsConfig = nil
 }
 
-func (m *SubAgentMiddleware) ensureBuilt(config *core.ReActConfig[*schema.Message]) {
+func (m *SubAgentMiddleware) ensureBuilt(ctx context.Context, config *core.ReActConfig[*schema.Message]) {
 	if m.built {
 		return
 	}
 	m.built = true
 
 	for _, spec := range m.specs {
-		agent := m.resolveAgent(spec, config)
+		agent := m.resolveAgent(ctx, spec, config)
 		if agent == nil {
 			continue
 		}
@@ -207,14 +209,14 @@ func (m *SubAgentMiddleware) ensureBuilt(config *core.ReActConfig[*schema.Messag
 		if m.cfg.MaxDepth > 0 {
 			toolOpts = append(toolOpts, core.WithMaxDepth(m.cfg.MaxDepth))
 		}
-		tool := core.NewAgentTool(context.Background(), agent, toolOpts...)
+		tool := core.NewAgentTool(ctx, agent, toolOpts...)
 		m.tools = append(m.tools, tool)
 	}
 }
 
 // resolveAgent returns a built Agent for the spec, applying middleware
 // inheritance when requested.
-func (m *SubAgentMiddleware) resolveAgent(spec SubAgentSpec, parentCfg *core.ReActConfig[*schema.Message]) core.Agent {
+func (m *SubAgentMiddleware) resolveAgent(ctx context.Context, spec SubAgentSpec, parentCfg *core.ReActConfig[*schema.Message]) core.Agent {
 	// 1. Build from AgentConfig (takes precedence).
 	if spec.AgentConfig != nil {
 		cfg := m.buildConfig(spec, parentCfg)
@@ -234,7 +236,7 @@ func (m *SubAgentMiddleware) resolveAgent(spec SubAgentSpec, parentCfg *core.ReA
 
 	// 3. Lazy factory (legacy path).
 	if spec.AgentFactory != nil {
-		agent, err := spec.AgentFactory(context.Background())
+		agent, err := spec.AgentFactory(ctx)
 		if err == nil && agent != nil {
 			return agent
 		}
