@@ -6,10 +6,8 @@ import { useNavigate } from 'react-router';
 
 import { useMutation } from '@tanstack/react-query';
 
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-
 import Spotlight from '@/components/spotlight';
+import ThemeLogo from '@/components/theme-logo';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -24,6 +22,8 @@ import {
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Authorization } from '@/constants/authorization';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 
 import { useAuth } from '@/hooks/auth-hooks';
 import { cn } from '@/lib/utils';
@@ -136,7 +136,7 @@ function AdminLogin() {
 
         <div className="absolute top-3 left-0 w-full">
           <div className="absolute mt-12 ml-12 flex items-center">
-            <img className="size-8 mr-5" src="/logo.png" alt="logo" />
+            <ThemeLogo className="size-8 mr-5" />
             <span className="text-xl font-bold">MetaGross-AI</span>
           </div>
 

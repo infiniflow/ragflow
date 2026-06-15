@@ -49,7 +49,7 @@
 .perspective-1000 {
   perspective: 1000px;
   -webkit-perspective: 1000px;
-  overflow: hidden;
+  overflow: visible;
   min-height: 680px;
   display: flex;
   align-items: center;
@@ -75,4 +75,20 @@
 .rotate-y-0 {
   transform: rotateY(0deg);
   -webkit-transform: rotateY(0deg);
+}
+
+.login-page {
+  background:
+    radial-gradient(circle at top, rgba(34, 211, 238, 0.18), transparent 28%),
+    var(--bg);
+}
+
+.company-note {
+  background: rgba(34, 211, 238, 0.12);
+  border-color: rgba(34, 211, 238, 0.35);
+  color: var(--text);
+}
+
+html.dark .company-note {
+  background: rgba(34, 211, 238, 0.18);
 }

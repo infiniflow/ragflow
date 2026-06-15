@@ -13,6 +13,8 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 
 import Spotlight from '@/components/spotlight';
+import ThemeLogo from '@/components/theme-logo';
+import ThemeSwitch from '@/components/theme-switch';
 import { Button, ButtonLoading } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -30,7 +32,6 @@ import { useForm, UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
 import FlipCard3D, { FlipFaceContext } from './card';
 import './index.less';
-
 type LoginFormContentProps = {
   isLoginPage: boolean;
   title: string;
@@ -61,18 +62,31 @@ function LoginFormContent({
   const face = useContext(FlipFaceContext);
   const isActiveFace = isLoginPage ? face === 'front' : face === 'back';
 
+  const pageTitle =
+    title === 'login'
+      ? 'Sign in to MetaGross-AI'
+      : 'Create your MetaGross-AI account';
+  const pageDescription =
+    title === 'login'
+      ? 'Use your credentials to access the AI workspace and manage your workflows.'
+      : 'Join MetaGross-AI to start using agents, automations, and smart dashboards.';
+
   return (
-    <div className="flex flex-col items-center justify-center w-full ">
-      {/* <div className="text-center mb-8">
-         <h2 className="text-xl font-semibold text-text-primary">
-          {title === 'login' ? t('loginTitle') : t('signUpTitle')}
-        </h2> 
-      </div> */}
-      <div className=" w-full max-w-[540px] bg-bg-component backdrop-blur-sm rounded-2xl shadow-xl pt-14 pl-10 pr-10 pb-2 border border-border-button ">
+    <div className="flex h-full w-full items-center justify-center">
+      <div className="w-full max-w-[540px] h-full rounded-[2rem] border border-border bg-bg-card backdrop-blur-xl p-10 shadow-2xl shadow-cyan-500/10 flex flex-col">
+        <div className="mb-8 text-center">
+          <h2 className="text-3xl font-semibold text-text-primary">
+            {pageTitle}
+          </h2>
+          <p className="mx-auto mt-3 max-w-[420px] text-sm text-text-secondary">
+            {pageDescription}
+          </p>
+        </div>
+
         {!disablePasswordLogin && (
           <Form {...form}>
             <form
-              className="flex flex-col gap-8 text-text-primary "
+              className="flex h-full min-h-[420px] flex-col justify-center gap-8 text-text-primary"
               data-testid="auth-form"
               data-active={isActiveFace ? 'true' : undefined}
               onSubmit={form.handleSubmit(onCheck)}
@@ -175,7 +189,7 @@ function LoginFormContent({
                 data-testid="auth-submit"
                 type="submit"
                 loading={loading}
-                className="bg-metallic-gradient border-b-[#00BEB4] border-b-2 hover:bg-metallic-gradient hover:border-b-[#02bcdd] w-full my-8"
+                className="bg-[var(--button-primary)] hover:bg-[var(--button-primary-hover)] w-full my-8"
               >
                 {title === 'login' ? t('login') : t('continue')}
               </ButtonLoading>
@@ -208,14 +222,14 @@ function LoginFormContent({
         )}
 
         {!disablePasswordLogin && title === 'login' && registerEnabled && (
-          <div className="mt-10 text-right">
-            <p className="text-text-disabled text-sm">
+          <div className="mt-10 text-center">
+            <p className="text-text-disabled text-sm ">
               {t('signInTip')}
               <Button
                 data-testid="auth-toggle-register"
-                variant={'transparent'}
+                variant={'static'}
                 onClick={changeTitle}
-                className="text-accent-primary/90 hover:text-accent-primary hover:bg-transparent font-medium border-none transition-colors duration-200"
+                className="!text-[var(--accent-primary)] hover:!text-[var(--accent-primary)]/90 font-medium"
               >
                 {t('signUp')}
               </Button>
@@ -223,20 +237,66 @@ function LoginFormContent({
           </div>
         )}
         {!disablePasswordLogin && title === 'register' && (
-          <div className="mt-10 text-right">
+          <div className="mt-10 text-center">
             <p className="text-text-disabled text-sm">
               {t('signUpTip')}
               <Button
                 data-testid="auth-toggle-login"
-                variant={'transparent'}
+                variant={'static'}
                 onClick={changeTitle}
-                className="text-accent-primary/90 hover:text-accent-primary hover:bg-transparent font-medium border-none transition-colors duration-200"
+                className="!text-[var(--accent-primary)] hover:!text-[var(--accent-primary)]/90 font-medium"
               >
                 {t('login')}
               </Button>
             </p>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+type CardCompanyProps = {
+  title: string;
+  par1: string;
+  par2: string;
+};
+
+function CardCompany({ title, par1, par2 }: CardCompanyProps) {
+  return (
+    <div className="hidden w-full max-w-[540px] flex-1 min-h-[720px] rounded-[2rem] border border-border bg-bg-card p-8 text-text-primary shadow-2xl shadow-cyan-500/10 backdrop-blur-xl lg:flex lg:flex-col lg:justify-between lg:gap-10">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="flex h-20 w-20 items-center justify-center rounded-[2rem] border border-white/10 bg-white/10 shadow-lg shadow-cyan-500/10">
+            <ThemeLogo className="h-14 w-14" />
+          </div>
+          <div>
+            <div className="text-2xl font-semibold text-text-primary">
+              MetaGross-AI
+            </div>
+            <div className="text-sm text-text-secondary">
+              AI workspace for teams
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-1 flex-col justify-center gap-6 text-center lg:text-left">
+        <h2 className="text-3xl font-semibold text-text-primary">{title}</h2>
+        <div className="space-y-4 text-sm leading-7 text-text-secondary">
+          <p>{par1}</p>
+          <p>{par2}</p>
+        </div>
+      </div>
+
+      <div className="rounded-[2rem] border border-border-button bg-bg-component p-6 text-sm text-text-secondary shadow-inner shadow-cyan-500/5 bg-[--note-info-bg] border-[--note-info-border]">
+        <p className="font-medium text-text-primary text-[--note-info-title]">
+          Build faster with AI-first workflows.
+        </p>
+        <p className="mt-3 text-sm leading-6 text-text-secondary text-[--note-info-text]">
+          Launch agents, share results, and stay in sync with a workspace
+          designed for smart teams.
+        </p>
       </div>
     </div>
   );
@@ -344,51 +404,40 @@ const Login = () => {
     <>
       <Spotlight opcity={0.4} coverage={60} color={'rgb(128, 255, 248)'} />
 
-      <div className="relative min-h-screen overflow-hidden">
+      <div className="relative min-h-screen overflow-clip login-page">
         <div className="relative z-10 mx-auto flex min-h-screen max-w-[1300px] flex-col justify-center px-4 py-8 sm:px-6 lg:flex-row lg:items-center lg:space-x-12">
-          <div className="hidden w-full max-w-[540px] flex-1 min-h-[640px] flex-col justify-center rounded-[2rem] border border-white/10 bg-white/5 p-8 text-text-primary shadow-2xl shadow-cyan-500/10 backdrop-blur-xl lg:flex">
-            <div className="flex items-center gap-4 mb-8">
-              <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-cyan-500/10 shadow-lg shadow-cyan-500/10">
-                <img
-                  src="/logo.png"
-                  alt="MetaGross-AI logo"
-                  className="h-14 w-14"
-                />
-              </div>
-              <div>
-                <div className="text-2xl font-semibold">MetaGross-AI</div>
-              </div>
-            </div>
-            <h2 className="text-3xl font-semibold text-text-primary">
-              Web access for AI-powered workflows
-            </h2>
-            <p className="mt-4 text-sm leading-7 text-text-secondary">
-              Use the MetaGross-AI web portal to launch agents, explore
-              workflows, and manage your AI workspace from any browser.
-            </p>
-            <p className="mt-6 text-sm leading-7 text-text-secondary">
-              Trusted performance, fast collaboration, and a clean interface for
-              everything your team builds online.
-            </p>
-          </div>
+          <CardCompany
+            title={'Web access for AI-powered workflows'}
+            par1={
+              'Use the MetaGross-AI web portal to launch agents, explore workflows, and manage your AI workspace from any browser.'
+            }
+            par2={
+              'Trusted performance, fast collaboration, and a clean interface for everything your team builds online.'
+            }
+          />
 
-          <div className="w-full max-w-[540px] flex-1 min-h-[640px]">
-            <FlipCard3D isLoginPage={isLoginPage}>
-              <LoginFormContent
-                isLoginPage={isLoginPage}
-                title={title}
-                form={form}
-                loading={loading}
-                onCheck={onCheck}
-                changeTitle={changeTitle}
-                registerEnabled={registerEnabled}
-                channels={channels || []}
-                handleLoginWithChannel={handleLoginWithChannel}
-                t={t}
-                disablePasswordLogin={!!config?.disablePasswordLogin}
-              />
-            </FlipCard3D>
+          <div className="w-full max-w-[540px] flex-1 h-[720px] flex items-center justify-center">
+            <div className="w-full h-full max-w-[540px] flex items-center justify-center">
+              <FlipCard3D isLoginPage={isLoginPage}>
+                <LoginFormContent
+                  isLoginPage={isLoginPage}
+                  title={title}
+                  form={form}
+                  loading={loading}
+                  onCheck={onCheck}
+                  changeTitle={changeTitle}
+                  registerEnabled={registerEnabled}
+                  channels={channels || []}
+                  handleLoginWithChannel={handleLoginWithChannel}
+                  t={t}
+                  disablePasswordLogin={!!config?.disablePasswordLogin}
+                />
+              </FlipCard3D>
+            </div>
           </div>
+        </div>
+        <div className="absolute bottom-6 left-1/2 z-20 flex -translate-x-1/2 items-center justify-center rounded-full bg-bg-card/90   p-2  ">
+          <ThemeSwitch />
         </div>
       </div>
     </>

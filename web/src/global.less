@@ -2,6 +2,142 @@
 
 :root {
   --font-sans: 'Inter';
+  --bg: #f0f4ff;
+  --surface: #ffffff;
+  --surface-soft: #eef2fc;
+  --surface-strong: #dde4f5;
+  --text: #0d1b3e;
+  --text-muted: #4a5a82;
+  --text-disabled: rgba(13, 27, 62, 0.6);
+  --border: #c8d3ee;
+  --border-button: rgba(148, 163, 184, 0.35);
+  --bg-card: var(--surface);
+  --bg-base: var(--bg);
+  --bg-input: var(--surface-soft);
+  --bg-component: var(--surface-strong);
+  --bg-title: #e8eefc;
+  --accent-primary: #22d3ee;
+  --button-primary: #1e3a8a;
+  --button-primary-hover: #1e3270;
+  --brand: #22d3ee;
+  --brand-hover: #06b6d4;
+  --accent-purple: #7c3aed;
+  --accent-purple-hover: #6d28d9;
+  --success: #059669;
+  --warning: #d97706;
+  --danger: #dc2626;
+  --review: #dbeafe;
+  --review-text: #1e40af;
+  --reject: #fee2e2;
+  --reject-text: #991b1b;
+  --reject-border: #fca5a5;
+  --reject-hover: #fecaca;
+  --pill-approved-bg: rgba(5, 150, 105, 0.1);
+  --pill-approved-text: #065f46;
+  --pill-review-bg: #eff6ff;
+  --pill-review-text: #1e40af;
+  --pill-status-bg: #f0f4ff;
+  --pill-status-text: #0d1b3e;
+  /* Notes */
+  --note-info-bg: #e0f2fe;
+  --note-info-border: #22d3ee;
+  --note-info-text: #0c4a6e;
+  --note-info-title: #0369a1;
+
+  --note-success-bg: #dcfce7;
+  --note-success-border: #059669;
+  --note-success-text: #14532d;
+  --note-success-title: #15803d;
+
+  --note-warning-bg: #fef9c3;
+  --note-warning-border: #d97706;
+  --note-warning-text: #713f12;
+  --note-warning-title: #92400e;
+
+  --note-danger-bg: #fee2e2;
+  --note-danger-border: #dc2626;
+  --note-danger-text: #7f1d1d;
+  --note-danger-title: #991b1b;
+
+  --note-purple-bg: #ede9fe;
+  --note-purple-border: #7c3aed;
+  --note-purple-text: #3b0764;
+  --note-purple-title: #5b21b6;
+
+  --note-neutral-bg: #f1f5f9;
+  --note-neutral-border: #94a3b8;
+  --note-neutral-text: #1e293b;
+  --note-neutral-title: #334155;
+}
+
+html.dark {
+  --bg: #070c1a;
+  --surface: #0d1528;
+  --surface-soft: #111d36;
+  --surface-strong: #0a1020;
+  --text: #e8eeff;
+  --text-muted: #7e94c4;
+  --text-disabled: rgba(226, 232, 255, 0.68);
+  --border: #1e3060;
+  --border-button: rgba(148, 163, 184, 0.28);
+  --bg-card: var(--surface);
+  --bg-base: #070c1a;
+  --bg-input: #111d36;
+  --bg-component: #0d1528;
+  --bg-title: #0b1632;
+  --accent-primary: #22d3ee;
+  --button-primary: #22d3ee;
+  --button-primary-hover: #38bdf8;
+  --brand: #7c3aed;
+  --brand-hover: #8b5cf6;
+  --accent-purple: #a78bfa;
+  --accent-purple-hover: #c4b5fd;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #f87171;
+  --review: rgba(34, 211, 238, 0.12);
+  --review-text: #67e8f9;
+  --reject: rgba(248, 113, 113, 0.15);
+  --reject-text: #fecaca;
+  --reject-border: rgba(248, 113, 113, 0.35);
+  --reject-hover: rgba(248, 113, 113, 0.25);
+  --pill-approved-bg: rgba(16, 185, 129, 0.15);
+  --pill-approved-text: #6ee7b7;
+  --pill-review-bg: rgba(34, 211, 238, 0.1);
+  --pill-review-text: #67e8f9;
+  --pill-status-bg: #111d36;
+  --pill-status-text: #c7d4f5;
+
+  /* Notes dark */
+  --note-info-bg: rgba(34, 211, 238, 0.08);
+  --note-info-border: #22d3ee;
+  --note-info-text: #a5f3fc;
+  --note-info-title: #67e8f9;
+
+  --note-success-bg: rgba(16, 185, 129, 0.08);
+  --note-success-border: #10b981;
+  --note-success-text: #a7f3d0;
+  --note-success-title: #6ee7b7;
+
+  --note-warning-bg: rgba(245, 158, 11, 0.08);
+  --note-warning-border: #f59e0b;
+  --note-warning-text: #fde68a;
+  --note-warning-title: #fcd34d;
+
+  --note-danger-bg: rgba(248, 113, 113, 0.08);
+  --note-danger-border: #f87171;
+  --note-danger-text: #fecaca;
+  --note-danger-title: #fca5a5;
+
+  --note-purple-bg: rgba(167, 139, 250, 0.08);
+  --note-purple-border: #a78bfa;
+  --note-purple-text: #ddd6fe;
+  --note-purple-title: #c4b5fd;
+
+  --note-neutral-bg: rgba(148, 163, 184, 0.08);
+  --note-neutral-border: #475569;
+  --note-neutral-text: #cbd5e1;
+  --note-neutral-title: #94a3b8;
 }
 
 @supports (font-variation-settings: normal) {

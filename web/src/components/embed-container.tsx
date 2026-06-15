@@ -21,7 +21,7 @@ export function EmbedContainer({
   return (
     <section className="h-[100vh] flex justify-center items-center">
       <div className="hidden xl:flex w-40 gap-2 absolute left-3 top-12 items-center">
-        <img src="/logo.png" alt="" />
+        <ThemeLogo />
         <span className="text-2xl font-bold">{appConf.appName}</span>
       </div>
       <div className="w-full h-full md:w-[80vw] md:h-auto border-0 md:border rounded-none md:rounded-lg">
@@ -36,7 +36,7 @@ export function EmbedContainer({
             <div className="md:text-xl text-foreground">{title}</div>
           </div>
           <div className="flex md:hidden items-center">
-            <img src="/logo.png" alt="" className="h-6" />
+            <ThemeLogo className="h-6" />
           </div>
           <Button
             variant={'secondary'}

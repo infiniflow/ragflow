@@ -1,5 +1,6 @@
 import { IconFontFill } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
+import ThemeLogo from '@/components/theme-logo';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -63,7 +64,7 @@ export function Header({
           to={Routes.Root}
           aria-current={pathname === Routes.Root ? 'page' : undefined}
         >
-          <img src={'/logo.png'} alt="MetaGross-AI logo" className="size-10" />
+          <ThemeLogo className="size-10" />
         </Link>
       </div>
 
@@ -85,8 +86,8 @@ export function Header({
         <a
           className="p-2 text-text-secondary hover:text-text-primary focus-visible:text-text-primary"
           target="_blank"
-          href="https://github.com/MetaGross-AI/MetaGross-AI" >
-        </a>
+          href="https://github.com/MetaGross-AI/MetaGross-AI"
+        ></a>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
