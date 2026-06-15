@@ -41,6 +41,8 @@ func GetParser(fileType utility.FileType, config map[string]string) (FileParser,
 		return NewDOCParser(libType)
 	case utility.FileTypePDF:
 		return NewPDFParser(), nil
+	case utility.FileTypeMarkdown:
+		return NewMarkdownParser(GoMarkdown)
 	default:
 		return nil, fmt.Errorf("unsupported file type: %s", fileType)
 	}
