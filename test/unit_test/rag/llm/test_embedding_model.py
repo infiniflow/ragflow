@@ -381,3 +381,15 @@ class TestBedrockResponseParsing:
         embed.client.invoke_model.return_value = self._body({"embeddings": [[5.0, 6.0]]})
         vector, _ = embed.encode_queries("q")
         np.testing.assert_array_equal(vector, np.array([5.0, 6.0]))
+
+    def test_unknown_provider_raises_embedding_error(self):
+        # A model that is neither amazon.* nor cohere.* must surface a clear
+        # EmbeddingError instead of an UnboundLocalError on the unset `body`.
+        embed = self._make("meta")
+        with pytest.raises(EmbeddingError):
+            embed.encode(["hello"])
+
+    def test_unknown_provider_query_raises_embedding_error(self):
+        embed = self._make("meta")
+        with pytest.raises(EmbeddingError):
+            embed.encode_queries("q")
