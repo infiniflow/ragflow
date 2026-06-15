@@ -34,8 +34,8 @@ function ModelFieldItem({
   const { t } = useTranslate('setting');
 
   return (
-    <div className="flex gap-3">
-      <label className="block text-sm font-normal text-text-secondary mb-1 w-1/4">
+    <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+      <label className="block text-sm font-normal text-text-secondary mb-1 w-full sm:w-1/4 shrink-0">
         {isRequired && <span className="text-state-error">*</span>}
         {label}
         {tooltip && (
@@ -50,7 +50,7 @@ function ModelFieldItem({
           </Tooltip>
         )}
       </label>
-      <div className="w-3/4">
+      <div className="w-full sm:w-3/4 min-w-0">
         <ModelTreeSelect
           modelTypes={ModelTypeMap[id as keyof typeof ModelTypeMap] ?? ['chat']}
           value={value}
@@ -133,9 +133,9 @@ function SystemSetting() {
   }, [defaultModelDictionary, t]);
 
   return (
-    <article className="rounded-lg w-full">
-      <header className="py-5">
-        <h2 className="text-2xl font-medium text-text-primary">
+    <article className="rounded-lg w-full min-w-0">
+      <header className="py-3 md:py-5">
+        <h2 className="text-xl md:text-2xl font-medium text-text-primary">
           {t('systemModelSettings')}
         </h2>
         <p className="mt-1 text-sm text-text-secondary ">
@@ -143,7 +143,7 @@ function SystemSetting() {
         </p>
       </header>
 
-      <div className="px-7 py-6 space-y-6 max-h-[70vh] overflow-y-auto border border-border-button rounded-lg">
+      <div className="px-4 md:px-7 py-6 space-y-6 max-h-[70vh] overflow-y-auto border border-border-button rounded-lg">
         {llmList.map((item) => (
           <ModelFieldItem
             key={item.id}

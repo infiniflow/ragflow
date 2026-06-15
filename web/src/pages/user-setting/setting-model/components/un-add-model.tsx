@@ -101,10 +101,10 @@ export const AvailableModels: FC<{
 
   return (
     <aside
-      className="text-text-primary h-full flex flex-col"
+      className="text-text-primary h-full min-h-0 flex flex-col"
       data-testid="available-models-section"
     >
-      <header className="p-4 space-y-3">
+      <header className="p-4 space-y-3 shrink-0">
         <h3 className="text-text-primary text-base">
           {t('setting.availableModels')}
         </h3>
@@ -156,7 +156,7 @@ export const AvailableModels: FC<{
       </header>
 
       {/* Models List */}
-      <div className="p-4 pt-0 flex flex-col gap-4 overflow-auto h-full scrollbar-auto">
+      <div className="p-4 pt-0 flex flex-col gap-4 overflow-auto flex-1 min-h-0 scrollbar-auto">
         {filteredModels.map((model) => (
           <div
             key={model.name}
@@ -191,7 +191,7 @@ export const AvailableModels: FC<{
 
               <Button
                 size="xs"
-                className="px-2 opacity-0 transition-all group-hover:opacity-100 group-focus-within:opacity-100"
+                className="px-2 opacity-100 md:opacity-0 transition-all md:group-hover:opacity-100 md:group-focus-within:opacity-100 shrink-0"
               >
                 <Plus size={12} />
                 {t('setting.addTheModel')}
