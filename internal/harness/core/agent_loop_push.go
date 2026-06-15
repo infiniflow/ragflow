@@ -34,6 +34,11 @@ func (l *AgentLoop[T]) Push(item T, opts ...PushOption[T]) (bool, <-chan struct{
 
 // pushWithStrategy snapshots the current target turn while the strategy decides
 // how to enqueue the item.
+//
+// When the loop is idle (no active turn), snapshot.ctx is nil and the strategy
+// receives context.TODO() — it cannot observe caller cancellation or deadlines
+// at that point. If the strategy needs the caller's context, use the Push overload
+// that accepts ctx (not yet available; pass via closure instead).
 func (l *AgentLoop[T]) pushWithStrategy(item T, cfg *pushConfig[T]) (bool, <-chan struct{}) {
 	strategy := cfg.pushStrategy
 
@@ -42,7 +47,7 @@ func (l *AgentLoop[T]) pushWithStrategy(item T, cfg *pushConfig[T]) (bool, <-cha
 
 	runCtx := snapshot.ctx
 	if runCtx == nil {
-		runCtx = context.Background()
+		runCtx = context.TODO()
 	}
 	var tc *TurnContext[T]
 	if snapshot.tc != nil {

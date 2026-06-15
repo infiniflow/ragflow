@@ -67,7 +67,6 @@ func (l *AgentLoop[T]) watchStop(done <-chan struct{}, agentCancelFunc AgentCanc
 	for {
 		if req, ok := l.stopCtrl.receiveCancel(); ok {
 			submit(req)
-			continue
 		}
 
 		select {
@@ -142,8 +141,12 @@ func (l *AgentLoop[T]) runAgentAndHandleEvents(
 	// Wrap iterator to capture framework-level signals (CancelError, InterruptContexts)
 	srcIter := iter
 	proxyIter, proxyGen := NewAsyncIteratorPair[*AgentEvent]()
+	srcIterDone := make(chan struct{})
 	go func() {
-		defer proxyGen.Close()
+		defer func() {
+			proxyGen.Close()
+			close(srcIterDone)
+		}()
 		for {
 			event, ok := srcIter.Next()
 			if !ok {
@@ -214,6 +217,8 @@ func (l *AgentLoop[T]) runAgentAndHandleEvents(
 		}
 		return l.applyFrameworkCapturedError(handleErr)
 	case <-preemptDone:
+		srcIter.Close()
+		<-srcIterDone
 		<-done
 		return nil
 	case <-stoppedDone:

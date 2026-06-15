@@ -142,18 +142,34 @@ func (l *AgentLoop[T]) Wait() *AgentLoopState[T] {
 	return l.result
 }
 
+// shouldSaveCheckpoint determines whether a turn-loop checkpoint should be saved.
+// Checkpoints are saved when:
+//  1. A stop was committed AND exit was caused by stop (runErr==nil, CancelError, or capturedCancelErr).
+//  2. A business interrupt occurred (InterruptError or interruptContexts).
+//  3. Checkpoint is not skipped (skipCheckpoint not set), not idle, and store is available.
+// On normal completion (runErr==nil, no stop committed), no checkpoint is saved.
+func (l *AgentLoop[T]) shouldSaveCheckpoint() bool {
+	if l.config.Store == nil || l.config.CheckpointID == "" {
+		return false
+	}
+	if l.stopCtrl.skipCheckpointEnabled() {
+		return false
+	}
+	isIdle := len(l.checkPointRunnerBytes) == 0 && len(l.interruptedItems) == 0
+	if isIdle {
+		return false
+	}
+	exitCausedByStop := l.runErr == nil || errors.As(l.runErr, new(*CancelError)) || l.capturedCancelErr != nil
+	businessInterrupt := errors.As(l.runErr, new(*InterruptError)) || l.interruptContexts != nil
+	return (l.stopCtrl.isCommitted() && exitCausedByStop) || businessInterrupt
+}
+
 func (l *AgentLoop[T]) cleanup(ctx context.Context) {
 	atomic.StoreInt32(&l.stopped, 1)
 
 	unhandled := l.buffer.TakeAll()
 	checkpointID := l.config.CheckpointID
-	isIdle := len(l.checkPointRunnerBytes) == 0 && len(unhandled) == 0 && len(l.interruptedItems) == 0
-
-	exitCausedByStop := l.runErr == nil || errors.As(l.runErr, new(*CancelError)) || l.capturedCancelErr != nil
-	businessInterrupt := errors.As(l.runErr, new(*InterruptError)) || l.interruptContexts != nil
-	shouldSaveCheckpoint := l.config.Store != nil && checkpointID != "" &&
-		((l.stopCtrl.isCommitted() && exitCausedByStop) || businessInterrupt) &&
-		!isIdle && !l.stopCtrl.skipCheckpointEnabled()
+	shouldSaveCheckpoint := l.shouldSaveCheckpoint()
 
 	var checkpointed bool
 	var checkpointErr error

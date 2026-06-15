@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"time"
 )
 
@@ -142,11 +143,26 @@ func (l *AgentLoop[T]) run(ctx context.Context) {
 
 				first, ok = l.buffer.Receive()
 
-				idleTimer.Stop()
+				// Drain the timer channel to avoid race with commitStop
+				if !idleTimer.Stop() {
+					select {
+					case <-idleTimer.C:
+					default:
+					}
+				}
 				close(cancelIdle)
 
 				if !ok && !l.buffer.IsClosed() {
+					if err := ctx.Err(); err != nil {
+						l.runErr = err
+						return
+					}
 					continue
+				}
+
+				// If commitStop fired via idle timer, exit
+				if atomic.LoadInt32(&l.stopped) != 0 {
+					return
 				}
 			} else {
 				first, ok = l.buffer.Receive()
@@ -226,6 +242,8 @@ func (l *AgentLoop[T]) run(ctx context.Context) {
 
 		if runErr != nil {
 			if l.capturedCancelErr != nil || l.interruptContexts != nil {
+				// Assignment (not append) is intentional: only the interrupting
+				// turn's consumed items matter — the loop exits immediately after.
 				l.interruptedItems = append([]T{}, plan.spec.consumed...)
 			}
 			l.runErr = runErr

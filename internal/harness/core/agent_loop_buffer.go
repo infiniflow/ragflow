@@ -17,18 +17,7 @@ func newTurnBuffer[T any]() *turnBuffer[T] {
 	return tb
 }
 
-func (tb *turnBuffer[T]) Send(value T) {
-	tb.mu.Lock()
-	defer tb.mu.Unlock()
-
-	if tb.closed {
-		panic("turnBuffer: send on closed buffer")
-	}
-
-	tb.buf = append(tb.buf, value)
-	tb.notEmpty.Signal()
-}
-
+// TrySend enqueues a value. Returns false if the buffer is closed — no panic.
 func (tb *turnBuffer[T]) TrySend(value T) bool {
 	tb.mu.Lock()
 	defer tb.mu.Unlock()

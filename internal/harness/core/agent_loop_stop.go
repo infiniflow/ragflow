@@ -223,6 +223,7 @@ func WithPreempt[T any](safePoint SafePoint) PushOption[T] {
 		cfg.preempt = true
 		cfg.agentCancelOpts = []CancelOption{
 			WithCancelMode(safePoint.toCancelMode()),
+			WithRecursiveCancel(),
 		}
 	}
 }
