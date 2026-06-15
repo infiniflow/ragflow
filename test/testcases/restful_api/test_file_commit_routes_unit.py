@@ -631,7 +631,9 @@ def test_get_commit_tree(monkeypatch):
 
     res = _run(module.get_commit_tree("root-folder", commit_id))
     assert res["code"] == 0
-    assert "f1" in res["data"]
+    assert res["data"]["type"] == "folder"
+    assert res["data"]["id"] == "root-folder"
+    assert any(c["id"] == "f1" for c in res["data"].get("children", []))
 
 
 @pytest.mark.p2
