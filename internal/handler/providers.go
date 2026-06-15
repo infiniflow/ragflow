@@ -704,7 +704,8 @@ func (h *ProviderHandler) ListInstanceModels(c *gin.Context) {
 }
 
 type EnableOrDisableModelRequest struct {
-	Status string `json:"status" binding:"required"`
+	ModelID string `json:"model_id"`
+	Status  string `json:"status"`
 }
 
 func (h *ProviderHandler) EnableOrDisableModel(c *gin.Context) {
@@ -749,11 +750,20 @@ func (h *ProviderHandler) EnableOrDisableModel(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
+	modelID := strings.TrimSpace(req.ModelID)
+	status := strings.TrimSpace(req.Status)
+	if status != "active" && status != "inactive" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": "Status must be active or inactive",
+		})
+		return
+	}
 
-	_, err := h.modelProviderService.UpdateModelStatus(providerName, instanceName, modelName, userID, req.Status)
+	code, err := h.modelProviderService.UpdateModelStatus(providerName, instanceName, modelName, userID, modelID, status)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
+			"code":    code,
 			"message": err.Error(),
 		})
 		return
@@ -846,7 +856,8 @@ func (h *ProviderHandler) AddModel(c *gin.Context) {
 }
 
 type DropInstanceModelRequest struct {
-	Models []string `json:"models" binding:"required"`
+	ModelIDs []string `json:"model_ids"`
+	Models   []string `json:"models"`
 }
 
 func (h *ProviderHandler) DropInstanceModels(c *gin.Context) {
@@ -875,13 +886,20 @@ func (h *ProviderHandler) DropInstanceModels(c *gin.Context) {
 		})
 		return
 	}
+	if len(req.ModelIDs) == 0 && len(req.Models) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": "model_ids or models is required",
+		})
+		return
+	}
 
 	userID := c.GetString("user_id")
 
-	_, err := h.modelProviderService.DropInstanceModels(providerName, instanceName, userID, req.Models)
+	code, err := h.modelProviderService.DropInstanceModels(providerName, instanceName, userID, req.ModelIDs, req.Models)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
+			"code":    code,
 			"message": err.Error(),
 		})
 		return

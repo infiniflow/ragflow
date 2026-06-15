@@ -1061,7 +1061,16 @@ func (m *ModelProviderService) ListInstanceModels(providerName, instanceName, us
 	return allModels, nil
 }
 
-func (m *ModelProviderService) UpdateModelStatus(providerName, instanceName, modelName, userID, status string) (common.ErrorCode, error) {
+func (m *ModelProviderService) UpdateModelStatus(providerName, instanceName, modelName, userID, modelID, status string) (common.ErrorCode, error) {
+	modelName = strings.TrimSpace(modelName)
+	modelID = strings.TrimSpace(modelID)
+	status = strings.TrimSpace(status)
+	if status != "active" && status != "inactive" {
+		return common.CodeBadRequest, errors.New("status must be active or inactive")
+	}
+	if modelName == "" && modelID == "" {
+		return common.CodeBadRequest, errors.New("model name or model ID is required")
+	}
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -1086,34 +1095,62 @@ func (m *ModelProviderService) UpdateModelStatus(providerName, instanceName, mod
 		return common.CodeServerError, err
 	}
 
-	model, err := m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
-	if err != nil {
-		var modelID string
-		modelID = utility.GenerateToken()
+	var model *entity.TenantModel
 
-		var modelSchema *modelModule.Model
-		modelSchema, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
-		if err != nil {
-			return common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
+	if modelID != "" {
+		model, err = m.modelDAO.GetByID(modelID)
+		if err != nil || model == nil {
+			return common.CodeNotFound, errors.New("model not found")
 		}
 
-		// Get model info from provider
-		model = &entity.TenantModel{
-			ID:         modelID,
-			ModelName:  modelName,
-			ModelType:  modelSchema.ModelTypes[0],
-			ProviderID: provider.ID,
-			InstanceID: instance.ID,
-			Status:     status,
+		if model.ProviderID != provider.ID || model.InstanceID != instance.ID {
+			return common.CodeNotFound, errors.New("model not found")
 		}
-		err = m.modelDAO.Create(model)
+
+		if modelName != "" && model.ModelName != modelName {
+			return common.CodeBadRequest, errors.New("model ID does not match model name")
+		}
+
+		count, err := m.modelDAO.UpdateStatusByIDAndScope(modelID, provider.ID, instance.ID, status)
 		if err != nil {
-			return common.CodeServerError, errors.New("fail to create model")
+			return common.CodeServerError, err
+		}
+		if count == 0 {
+			return common.CodeNotFound, errors.New("model not found")
 		}
 		return common.CodeSuccess, nil
+	} else {
+		model, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
+		if err != nil {
+			modelID = utility.GenerateToken()
+			if err != nil {
+				return common.CodeServerError, errors.New("fail to get UUID")
+			}
+
+			var modelSchema *modelModule.Model
+			modelSchema, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+			if err != nil {
+				return common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
+			}
+
+			// Get model info from provider
+			model = &entity.TenantModel{
+				ID:         modelID,
+				ModelName:  modelName,
+				ModelType:  modelSchema.ModelTypes[0],
+				ProviderID: provider.ID,
+				InstanceID: instance.ID,
+				Status:     status,
+			}
+			err = m.modelDAO.Create(model)
+			if err != nil {
+				return common.CodeServerError, errors.New("fail to create model")
+			}
+			return common.CodeSuccess, nil
+		}
 	}
 
-	count, err := m.modelDAO.DeleteByModelID(model.ID)
+	count, err := m.modelDAO.UpdateStatusByIDAndScope(model.ID, provider.ID, instance.ID, status)
 	if err != nil {
 		return common.CodeServerError, err
 	}
