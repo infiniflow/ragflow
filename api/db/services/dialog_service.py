@@ -286,7 +286,7 @@ class DialogService(CommonService):
         return list(objs)
 
 
-async def async_chat_solo(dialog, messages, stream=True, include_think_tags: bool = False):
+async def async_chat_solo(dialog, messages, stream=True):
     llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
     attachments = ""
     image_attachments = []
@@ -321,7 +321,7 @@ async def async_chat_solo(dialog, messages, stream=True, include_think_tags: boo
             stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, dialog.llm_setting)
         else:
             stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, dialog.llm_setting, images=image_files)
-        async for kind, value, state in _stream_with_think_delta(stream_iter, include_think_tags=include_think_tags):
+        async for kind, value, state in _stream_with_think_delta(stream_iter):
             if kind == "marker":
                 flags = {"start_to_think": True} if value == "<think>" else {"end_to_think": True}
                 yield {"answer": "", "reference": {}, "audio_binary": None, "prompt": "", "created_at": time.time(), "final": False, **flags}
@@ -543,9 +543,8 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
     use_web_search = _should_use_web_search(dialog.prompt_config, kwargs.get("internet"))
     logging.debug("web_search kb=%s tavily=%s internet=%r enabled=%s", bool(dialog.kb_ids), bool(dialog.prompt_config.get("tavily_api_key")), kwargs.get("internet"), use_web_search)
-    include_think_tags = kwargs.pop("include_think_tags", False)
     if not dialog.kb_ids and not use_web_search:
-        async for ans in async_chat_solo(dialog, messages, stream, include_think_tags=include_think_tags):
+        async for ans in async_chat_solo(dialog, messages, stream):
             yield ans
         return
 
@@ -885,7 +884,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         else:
             stream_iter = chat_mdl.async_chat_streamly_delta(prompt + prompt4citation, msg[1:], gen_conf, images=image_files)
         last_state = None
-        async for kind, value, state in _stream_with_think_delta(stream_iter, include_think_tags=include_think_tags):
+        async for kind, value, state in _stream_with_think_delta(stream_iter):
             last_state = state
             if kind == "marker":
                 flags = {"start_to_think": True} if value == "<think>" else {"end_to_think": True}
@@ -1444,7 +1443,6 @@ class _ThinkStreamState:
         self.pending_after_close = ""
         self.think_buffer = ""
         self.answer_buffer = ""
-        self.think_tag_started = False
 
 
 def _extract_visible_answer(text: str) -> str:
@@ -1460,20 +1458,14 @@ def _extract_visible_answer(text: str) -> str:
     return f"<think>{thought}</think>{answer}"
 
 
-async def _stream_with_think_delta(stream_iter, min_tokens: int = 16, include_think_tags: bool = False):
+async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
     state = _ThinkStreamState()
 
     def _emit_text(section: str, text: str):
         if not text:
             return None
         if section == "think":
-            if include_think_tags:
-                prefix = "<think>" if not state.think_tag_started else ""
-                state.think_tag_started = True
-                return prefix + text
             return text
-        if include_think_tags:
-            state.think_tag_started = False
         state.answer_buffer += text
         if num_tokens_from_string(state.answer_buffer) >= min_tokens:
             out = state.answer_buffer
@@ -1514,9 +1506,6 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16, include_th
             think_piece = _flush_think_buffer()
             if think_piece is not None:
                 yield ("text", think_piece, state)
-            if include_think_tags and state.think_tag_started:
-                state.think_tag_started = False
-                yield ("text", "</think>", state)
             state.in_think = False
             yield ("marker", "</think>", state)
             if state.pending_after_close:
@@ -1578,9 +1567,6 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16, include_th
                 think_piece = _flush_think_buffer()
                 if think_piece is not None:
                     yield ("text", think_piece, state)
-                if include_think_tags and state.think_tag_started:
-                    state.think_tag_started = False
-                    yield ("text", "</think>", state)
                 state.in_think = False
                 yield ("marker", "</think>", state)
                 pending = after_visible
@@ -1595,9 +1581,6 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16, include_th
         yield ("text", state.think_buffer, state)
         state.think_buffer = ""
     if state.close_pending:
-        if include_think_tags and state.think_tag_started:
-            state.think_tag_started = False
-            yield ("text", "</think>", state)
         state.in_think = False
         yield ("marker", "</think>", state)
     if state.answer_buffer:
@@ -1709,10 +1692,9 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         refs["chunks"] = chunks_format(refs)
         return {"answer": answer, "reference": refs}
 
-    include_think_tags = search_config.get("include_think_tags", False)
     stream_iter = chat_mdl.async_chat_streamly_delta(sys_prompt, msg, {"temperature": 0.1})
     last_state = None
-    async for kind, value, state in _stream_with_think_delta(stream_iter, include_think_tags=include_think_tags):
+    async for kind, value, state in _stream_with_think_delta(stream_iter):
         last_state = state
         if kind == "marker":
             flags = {"start_to_think": True} if value == "<think>" else {"end_to_think": True}

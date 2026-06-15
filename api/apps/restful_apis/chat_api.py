@@ -52,6 +52,28 @@ from common.misc_utils import get_uuid, thread_pool_exec
 from rag.prompts.generator import chunks_format
 from rag.prompts.template import load_prompt
 
+
+async def _inject_think_tags(stream):
+    """Restore legacy <think> tag format by converting marker events to text deltas.
+
+    When include_think_tags=True, start_to_think/end_to_think marker events are
+    replaced with ``<think>`` / ``</think>`` text chunks in the ``answer`` field,
+    matching the pre-0.24 streaming format while preserving incremental delta
+    semantics.  Marker flags are removed from all chunks so downstream consumers
+    receive a clean text stream.
+    """
+    async for ans in stream:
+        if ans.get("start_to_think"):
+            yield {"answer": "<think>", "reference": ans.get("reference", {}), "audio_binary": ans.get("audio_binary"), "final": False}
+            continue
+        if ans.get("end_to_think"):
+            yield {"answer": "</think>", "reference": ans.get("reference", {}), "audio_binary": ans.get("audio_binary"), "final": False}
+            continue
+        ans.pop("start_to_think", None)
+        ans.pop("end_to_think", None)
+        yield ans
+
+
 def _sanitize_json_floats(obj):
     """Replace NaN/Infinity floats with None so the result is RFC 8259 JSON.
 
@@ -1230,6 +1252,7 @@ async def session_completion(chat_id_in_arg=""):
             merge_generation_config(dia, chat_model_config)
 
         stream_mode = req.pop("stream", True)
+        include_think_tags = req.pop("include_think_tags", False)
 
         def _format_answer(ans):
             """Wrap a raw answer dict with session and chat identifiers."""
@@ -1242,7 +1265,10 @@ async def session_completion(chat_id_in_arg=""):
             """Yield SSE-formatted chunks from the async chat generator."""
             nonlocal dia, msg, req, conv
             try:
-                async for ans in async_chat(dia, msg, True, **req):
+                chat_stream = async_chat(dia, msg, True, **req)
+                if include_think_tags:
+                    chat_stream = _inject_think_tags(chat_stream)
+                async for ans in chat_stream:
                     ans = _format_answer(ans)
                     payload = _sanitize_json_floats({"code": 0, "message": "", "data": ans})
                     yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
