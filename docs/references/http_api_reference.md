@@ -4090,6 +4090,7 @@ The previous endpoint `POST /api/v1/chats/{chat_id}/completions` is deprecated. 
   - `"session_id"`: `string` (optional)
   - `"llm_id"`: `string` (optional)
   - `"pass_all_history_messages"`: `boolean` (optional)
+  - `"legacy"`: `boolean` (optional)
 
 ##### Request example
 
@@ -4146,6 +4147,8 @@ curl --request POST \
   Optional model override when a specific chat model should be used for this request.
 - `"pass_all_history_messages"`: (*Body Parameter*), `boolean`
   When `chat_id` and `session_id` are provided, defaults to `false`, so the server uses stored session history and only the latest user message from the request. Set to `true` to replace/use the submitted full `messages` history, and overrides the stored session history.
+- `"legacy"`: (*Body Parameter*), `boolean`
+  When `true`, streaming responses use the v0.23.0-compatible format. The streamed `answer` is cumulative, and `start_to_think` / `end_to_think` are omitted from the emitted chunks.
 
 #### Response
 
@@ -4172,80 +4175,164 @@ data:{
 
 Success with `chat_id` and `session_id`:
 
+Streaming response example with `chat_id` and `session_id`:
+
 ```json
 data:{
     "code": 0,
+    "message": "",
     "data": {
-        "answer": "I am an intelligent assistant designed to help answer questions by summarizing content from a",
-        "reference": {},
-        "audio_binary": null,
-        "id": "a84c5dd4-97b4-4624-8c3b-974012c8000d",
-        "session_id": "82b0ab2a9c1911ef9d870242ac120006"
-    }
-}
-data:{
-    "code": 0,
-    "data": {
-        "answer": "I am an intelligent assistant designed to help answer questions by summarizing content from a knowledge base. My responses are based on the information available in the knowledge base and",
-        "reference": {},
-        "audio_binary": null,
-        "id": "a84c5dd4-97b4-4624-8c3b-974012c8000d",
-        "session_id": "82b0ab2a9c1911ef9d870242ac120006"
-    }
-}
-data:{
-    "code": 0,
-    "data": {
-        "answer": "I am an intelligent assistant designed to help answer questions by summarizing content from a knowledge base. My responses are based on the information available in the knowledge base and any relevant chat history.",
-        "reference": {},
-        "audio_binary": null,
-        "id": "a84c5dd4-97b4-4624-8c3b-974012c8000d",
-        "session_id": "82b0ab2a9c1911ef9d870242ac120006"
-    }
-}
-data:{
-    "code": 0,
-    "data": {
-        "answer": "I am an intelligent assistant designed to help answer questions by summarizing content from a knowledge base ##0$$. My responses are based on the information available in the knowledge base and any relevant chat history.",
+        "answer": "",
         "reference": {
-            "total": 1,
-            "chunks": [
-                {
-                    "id": "faf26c791128f2d5e821f822671063bd",
-                    "content": "xxxxxxxx",
-                    "document_id": "dd58f58e888511ef89c90242ac120006",
-                    "document_name": "1.txt",
-                    "dataset_id": "8e83e57a884611ef9d760242ac120006",
-                    "image_id": "",
-                    "url": null,
-                    "similarity": 0.7,
-                    "vector_similarity": 0.0,
-                    "term_similarity": 1.0,
-                    "doc_type": [],
-                    "positions": [
-                        ""
-                    ]
-                }
-            ],
-            "doc_aggs": [
-                {
-                    "doc_name": "1.txt",
-                    "doc_id": "dd58f58e888511ef89c90242ac120006",
-                    "count": 1
-                }
-            ]
+            "chunks": []
         },
-        "prompt": "xxxxxxxxxxx",
-        "created_at": 1755055623.6401553,
-        "id": "a84c5dd4-97b4-4624-8c3b-974012c8000d",
-        "session_id": "82b0ab2a9c1911ef9d870242ac120006"
+        "audio_binary": null,
+        "prompt": "",
+        "created_at": 1781250170.37759,
+        "final": false,
+        "start_to_think": true,
+        "id": "76961783-1523-43f7-8148-19da08247922",
+        "session_id": "4edfabd6663211f1943e217dfc5f0165",
+        "chat_id": "d90fd732646f11f1803d2fb3c77f9b23"
     }
 }
 data:{
     "code": 0,
+    "message": "",
+    "data": {
+        "answer": "The user just said \"hello\". I should respond warmly and ask how I can help.",
+        "reference": {
+            "chunks": []
+        },
+        "audio_binary": null,
+        "prompt": "",
+        "created_at": 1781250170.3778317,
+        "final": false,
+        "id": "76961783-1523-43f7-8148-19da08247922",
+        "session_id": "4edfabd6663211f1943e217dfc5f0165",
+        "chat_id": "d90fd732646f11f1803d2fb3c77f9b23"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": " Let's keep it short and friendly.",
+        "reference": {
+            "chunks": []
+        },
+        "audio_binary": null,
+        "prompt": "",
+        "created_at": 1781250171.101234,
+        "final": false,
+        "id": "76961783-1523-43f7-8148-19da08247922",
+        "session_id": "4edfabd6663211f1943e217dfc5f0165",
+        "chat_id": "d90fd732646f11f1803d2fb3c77f9b23"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "",
+        "reference": {
+            "chunks": []
+        },
+        "audio_binary": null,
+        "prompt": "",
+        "created_at": 1781250171.5262048,
+        "final": false,
+        "end_to_think": true,
+        "id": "76961783-1523-43f7-8148-19da08247922",
+        "session_id": "4edfabd6663211f1943e217dfc5f0165",
+        "chat_id": "d90fd732646f11f1803d2fb3c77f9b23"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "Hello! 👋 Welcome!",
+        "reference": {
+            "chunks": []
+        },
+        "audio_binary": null,
+        "prompt": "",
+        "created_at": 1781250171.5266216,
+        "final": false,
+        "id": "76961783-1523-43f7-8148-19da08247922",
+        "session_id": "4edfabd6663211f1943e217dfc5f0165",
+        "chat_id": "d90fd732646f11f1803d2fb3c77f9b23"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
     "data": true
 }
 ```
+
+For `legacy: true`, the same request keeps the thinking content inside `answer` as literal `<think>` tags, and appends the final answer after `</think>`:
+
+```json
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "<think>The user just said \"hello\".",
+        "reference": {
+            "chunks": []
+        },
+        "audio_binary": null,
+        "prompt": "",
+        "created_at": 1781250170.3778317,
+        "final": false,
+        "id": "76961783-1523-43f7-8148-19da08247922",
+        "session_id": "4edfabd6663211f1943e217dfc5f0165",
+        "chat_id": "d90fd732646f11f1803d2fb3c77f9b23"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "<think>The user just said \"hello\". I should respond warmly and ask how I can help.",
+        "reference": {
+            "chunks": []
+        },
+        "audio_binary": null,
+        "prompt": "",
+        "created_at": 1781250170.901234,
+        "final": false,
+        "id": "76961783-1523-43f7-8148-19da08247922",
+        "session_id": "4edfabd6663211f1943e217dfc5f0165",
+        "chat_id": "d90fd732646f11f1803d2fb3c77f9b23"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "<think>The user just said \"hello\". I should respond warmly and ask how I can help. Let's keep it short and friendly.</think>Hello! 👋 Welcome!",
+        "reference": {
+            "chunks": []
+        },
+        "audio_binary": null,
+        "prompt": "",
+        "created_at": 1781250171.5262048,
+        "final": false,
+        "id": "76961783-1523-43f7-8148-19da08247922",
+        "session_id": "4edfabd6663211f1943e217dfc5f0165",
+        "chat_id": "d90fd732646f11f1803d2fb3c77f9b23"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": true
+}
+```
+
 
 Failure:
 
@@ -4542,6 +4629,7 @@ Use this mode for the native agent API.
 - `"user_id"`: `string` (optional)
 - `"return_trace"`: `boolean` (optional, default `false`)
 - `"release"`: `boolean` (optional, default `false`)
+- `"chat_template_kwargs": object` (optional)
 
 #### Streaming events to handle
 
@@ -4643,6 +4731,8 @@ curl --request POST \
   Variables specified in the **Begin** component.
 - `"user_id"`: (*Body parameter*), `string`
   The optional user-defined ID. Valid *only* when no `session_id` is provided.
+- `"chat_template_kwargs"`: (*Body parameter*), `object`  
+  Optional passthrough parameters for the underlying LLM's chat template. Commonly used to toggle thinking/reasoning modes on supported models (e.g., `{"enable_thinking": false}`).
 
 :::tip NOTE
 For now, this method does *not* support a file type input/variable. As a workaround, use the following to upload a file to an agent:
@@ -4714,6 +4804,7 @@ Use the same endpoint and add `"openai-compatible": true`.
 - `"stream"`: `boolean`
 - `"session_id"`: `string` (optional)
 - `"model"`: `string` (optional, accepted for compatibility)
+- `"chat_template_kwargs": object` (optional)
 
 ##### Request examples
 
@@ -4734,7 +4825,10 @@ curl --request POST \
                 "role": "user",
                 "content": "Hello"
             }
-        ]
+        ],
+        "chat_template_kwargs": {
+            "enable_thinking": true
+        }
      }'
 ```
 
@@ -4774,6 +4868,8 @@ curl --request POST \
   Optional existing session ID.
 - `"model"`: (*Body parameter*), `string`  
   Optional compatibility field. The server still routes by `agent_id`.
+- `"chat_template_kwargs"`: (*Body parameter*), `object`  
+  Optional passthrough parameters for the underlying LLM's chat template. Commonly used to toggle thinking/reasoning modes on supported models (e.g., `{"enable_thinking": false}`).
 
 ##### Response
 
@@ -7530,6 +7626,568 @@ or
 {
     "code": 404,
     "message": "Can't find this dataset!"
+}
+```
+
+---
+
+### Create commit
+
+**POST** `/api/v1/folders/{folder_id}/commits`
+
+Creates a new snapshot commit for the specified folder.  
+This endpoint also supports:
+- `/api/v1/workspace/{workspace_id}/commits` (alias, workspace_id == folder_id)
+- `/api/v1/datasets/{dataset_id}/commits` (resolves dataset to its folder)
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/folders/{folder_id}/commits`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `'message'`: `string` (required)  
+    The commit message.
+  - `'files'`: `list[object]` (required)  
+    The list of file changes. Each file change is an object with the following fields:
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/folders/{folder_id}/commits \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "message": "update config files",
+          "files": [
+               {"file_id": "file_uuid", "file_name": "config.json", "operation": "modify", "content": "{\"key\": \"value\"}"},
+               {"file_id": "file_uuid", "file_name": "readme.md", "operation": "add", "content": "# New README"}
+          ]
+     }'
+```
+
+##### Request parameters
+
+- `"message"`: (*Body parameter*), `string`, *Required*  
+  The commit message describing the changes.
+- `"files"`: (*Body parameter*), `list[object]`, *Required*  
+  Each file change object supports the following fields:
+
+  | Field | Type | Required | Description |
+  |-------|------|----------|-------------|
+  | `file_id` | `string` | Yes | The file ID |
+  | `file_name` | `string` | Only for add/rename | The file name |
+  | `operation` | `string` | Yes | `"add"`, `"modify"`, `"delete"`, or `"rename"` |
+  | `content` | `string` | Only for add/modify | The file content |
+  | `old_name` | `string` | Only for rename | The old file name |
+  | `new_name` | `string` | Only for rename | The new file name |
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "id": "commit_uuid",
+        "folder_id": "folder_uuid",
+        "parent_id": null,
+        "message": "update config files",
+        "author_id": "user_uuid",
+        "file_count": 2,
+        "tree_state": "{\"file_uuid\": {\"hash\": \"abcd1234\", \"location\": \".objects/abcd1234\", \"name\": \"config.json\", \"size\": 1024, \"status\": \"1\", \"parent_id\": \"folder_uuid\"}}",
+        "create_time": 1718200000000
+    }
+}
+```
+
+:::note
+`tree_state` is a JSON string containing a flat map of file entries. Each entry includes `parent_id` to track which sub-folder the file belonged to at commit time. Sub-folders are inferred from `parent_id` values.
+:::
+
+Failure:
+
+```json
+{
+    "code": 101,
+    "message": "required argument are missing: message"
+}
+```
+
+---
+
+### List commits
+
+**GET** `/api/v1/folders/{folder_id}/commits`
+
+Lists all commits for the specified folder with pagination.  
+Also available at:
+- `/api/v1/workspace/{workspace_id}/commits`
+- `/api/v1/datasets/{dataset_id}/commits`
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/folders/{folder_id}/commits`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Query:
+  - `'page'`: `int` (optional, default: 1)
+  - `'page_size'`: `int` (optional, default: 15)
+  - `'order_by'`: `string` (optional, default: `"create_time"`)
+  - `'desc'`: `bool` (optional, default: `true`)
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url 'http://{address}/api/v1/folders/{folder_id}/commits?page=1&page_size=15' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `"page"`: (*Query parameter*), `int`, *Optional*  
+  Page number. Defaults to 1.
+- `"page_size"`: (*Query parameter*), `int`, *Optional*  
+  Number of items per page. Defaults to 15.
+- `"order_by"`: (*Query parameter*), `string`, *Optional*  
+  Sort field. Defaults to `"create_time"`.
+- `"desc"`: (*Query parameter*), `bool`, *Optional*  
+  Sort descending. Defaults to `true`.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "total": 2,
+        "page": 1,
+        "page_size": 15,
+        "commits": [
+            {
+                "id": "commit_uuid",
+                "folder_id": "folder_uuid",
+                "parent_id": null,
+                "message": "first commit",
+                "author_id": "user_uuid",
+                "file_count": 3,
+                "create_time": 1718200000000
+            }
+        ]
+    }
+}
+```
+
+---
+
+### Get commit
+
+**GET** `/api/v1/folders/{folder_id}/commits/{commit_id}`
+
+Retrieves the details of a specific commit, including its file changes.  
+Also available at:
+- `/api/v1/workspace/{workspace_id}/commits/{commit_id}`
+- `/api/v1/datasets/{dataset_id}/commits/{commit_id}`
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/folders/{folder_id}/commits/{commit_id}`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/folders/{folder_id}/commits/{commit_id} \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `"folder_id"`: (*Path parameter*), `string`, *Required*  
+  The folder ID.
+- `"commit_id"`: (*Path parameter*), `string`, *Required*  
+  The commit ID.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "id": "commit_uuid",
+        "folder_id": "folder_uuid",
+        "parent_id": null,
+        "message": "added config files",
+        "author_id": "user_uuid",
+        "file_count": 2,
+        "create_time": 1718200000000,
+        "files": [
+            {
+                "file_id": "file_uuid",
+                "operation": "add",
+                "old_hash": null,
+                "new_hash": "abcd1234",
+                "old_name": null,
+                "new_name": null
+            }
+        ]
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Commit not found in workspace"
+}
+```
+
+---
+
+### List commit files
+
+**GET** `/api/v1/folders/{folder_id}/commits/{commit_id}/files`
+
+Lists the file changes associated with a specific commit.  
+Also available at:
+- `/api/v1/workspace/{workspace_id}/commits/{commit_id}/files`
+- `/api/v1/datasets/{dataset_id}/commits/{commit_id}/files`
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/folders/{folder_id}/commits/{commit_id}/files`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/folders/{folder_id}/commits/{commit_id}/files \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": [
+        {
+            "id": "item_uuid",
+            "file_id": "file_uuid",
+            "operation": "add",
+            "old_hash": null,
+            "new_hash": "abcd1234",
+            "old_location": null,
+            "new_location": ".objects/abcd1234",
+            "old_name": null,
+            "new_name": null
+        }
+    ]
+}
+```
+
+---
+
+### Diff commits
+
+**GET** `/api/v1/folders/{folder_id}/commits/diff?from={commit_id}&to={commit_id}`
+
+Compares two commits and returns the differences.  
+Also available at:
+- `/api/v1/workspace/{workspace_id}/commits/diff?from=...&to=...`
+- `/api/v1/datasets/{dataset_id}/commits/diff?from=...&to=...`
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/folders/{folder_id}/commits/diff`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Query:
+  - `'from'`: `string` (required)  
+    The source commit ID.
+  - `'to'`: `string` (required)  
+    The target commit ID.
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url 'http://{address}/api/v1/folders/{folder_id}/commits/diff?from=from_commit_id&to=to_commit_id' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `"from"`: (*Query parameter*), `string`, *Required*  
+  The source commit ID.
+- `"to"`: (*Query parameter*), `string`, *Required*  
+  The target commit ID.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": [
+        {
+            "file_id": "file_uuid",
+            "file_name": "config.json",
+            "operation": "modify",
+            "old_hash": "abc123",
+            "new_hash": "def456",
+            "old_location": ".objects/abc123",
+            "new_location": ".objects/def456"
+        }
+    ]
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Commit not found in workspace"
+}
+```
+
+---
+
+### Get uncommitted changes
+
+**GET** `/api/v1/folders/{folder_id}/changes`
+
+Returns the uncommitted changes for the specified folder (similar to `git status`).  
+Also available at:
+- `/api/v1/workspace/{workspace_id}/changes`
+- `/api/v1/datasets/{dataset_id}/changes`
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/folders/{folder_id}/changes`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/folders/{folder_id}/changes \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": [
+        {
+            "file_id": "file_uuid",
+            "file_name": "new.txt",
+            "operation": "add"
+        },
+        {
+            "file_id": "file_uuid",
+            "file_name": "config.json",
+            "operation": "modify"
+        },
+        {
+            "file_id": "file_uuid",
+            "file_name": "old.md",
+            "operation": "delete"
+        }
+    ]
+}
+```
+
+---
+
+### Get commit tree
+
+**GET** `/api/v1/folders/{folder_id}/commits/{commit_id}/tree`
+
+Retrieves the full folder tree snapshot as it existed at a specific commit.  
+Also available at:
+- `/api/v1/workspace/{workspace_id}/commits/{commit_id}/tree`
+- `/api/v1/datasets/{dataset_id}/commits/{commit_id}/tree`
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/folders/{folder_id}/commits/{commit_id}/tree`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/folders/{folder_id}/commits/{commit_id}/tree \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "id": "folder_uuid",
+        "name": "workspace_name",
+        "type": "folder",
+        "children": [
+            {
+                "id": "file_uuid",
+                "name": "config.json",
+                "type": "file",
+                "hash": "abcd1234",
+                "size": 1024,
+                "status": "1",
+                "location": ".objects/abcd1234"
+            },
+            {
+                "id": "sub_folder_uuid",
+                "name": "sub_folder_name",
+                "type": "folder",
+                "children": [
+                    {
+                        "id": "file_uuid_2",
+                        "name": "nested.txt",
+                        "type": "file",
+                        "hash": "ef5678",
+                        "size": 512,
+                        "status": "1",
+                        "location": ".objects/ef5678"
+                    }
+                ]
+            }
+        ]
+    }
+}
+```
+
+---
+
+### Get commit file content
+
+**GET** `/api/v1/folders/{folder_id}/commits/{commit_id}/files/{file_id}/content`
+
+Retrieves the file content as it existed at a specific commit.  
+Also available at:
+- `/api/v1/workspace/{workspace_id}/commits/{commit_id}/files/{file_id}/content`
+- `/api/v1/datasets/{dataset_id}/commits/{commit_id}/files/{file_id}/content`
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/folders/{folder_id}/commits/{commit_id}/files/{file_id}/content`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/folders/{folder_id}/commits/{commit_id}/files/{file_id}/content \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "content": "file content as it existed in that commit"
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "File not found in this commit"
+}
+```
+
+---
+
+### Get file version history
+
+**GET** `/api/v1/files/{file_id}/versions`
+
+Returns the version history for a specific file across all commits.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/files/{file_id}/versions`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/files/{file_id}/versions \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": [
+        {
+            "commit_id": "commit_uuid",
+            "operation": "modify",
+            "hash": "def456",
+            "create_time": 1718200000000,
+            "message": "updated file"
+        },
+        {
+            "commit_id": "commit_uuid",
+            "operation": "add",
+            "hash": "abc123",
+            "create_time": 1718100000000,
+            "message": "initial commit"
+        }
+    ]
 }
 ```
 

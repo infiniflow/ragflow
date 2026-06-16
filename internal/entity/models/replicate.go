@@ -25,6 +25,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 )
@@ -32,30 +33,21 @@ import (
 const replicatePollInterval = time.Second
 
 type ReplicateModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 func NewReplicateModel(baseURL map[string]string, urlSuffix URLSuffix) *ReplicateModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-	transport.ResponseHeaderTimeout = 60 * time.Second
-
 	return &ReplicateModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
 
 func (r *ReplicateModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewReplicateModel(baseURL, r.URLSuffix)
+	return NewReplicateModel(baseURL, r.baseModel.URLSuffix)
 }
 
 func (r *ReplicateModel) Name() string {
@@ -75,36 +67,28 @@ type replicatePrediction struct {
 	URLs   replicatePredictionURLs `json:"urls"`
 }
 
-type replicateModelsResponse struct {
-	Results []struct {
-		Owner string `json:"owner"`
-		Name  string `json:"name"`
-	} `json:"results"`
-}
-
 type replicateSSEEvent struct {
 	event string
 	data  string
 }
 
-func (r *ReplicateModel) baseURLForRegion(region string) (string, error) {
-	base, ok := r.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("replicate: no base URL configured for region %q", region)
-	}
-	return strings.TrimSuffix(base, "/"), nil
+type replicateModelList struct {
+	Results []replicateModelSummary `json:"results"`
+}
+
+type replicateModelSummary struct {
+	ID    string `json:"id"`
+	Owner string `json:"owner"`
+	Name  string `json:"name"`
 }
 
 func (r *ReplicateModel) endpoint(apiConfig *APIConfig, suffix string) (string, error) {
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
 
-	baseURL, err := r.baseURLForRegion(region)
+	baseURL, err := r.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return "", err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	return fmt.Sprintf("%s/%s", baseURL, suffix), nil
 }
 
@@ -115,7 +99,7 @@ func replicateUsesVersionEndpoint(modelName string) bool {
 
 func (r *ReplicateModel) predictionEndpoint(apiConfig *APIConfig, modelName string) (string, string, error) {
 	if replicateUsesVersionEndpoint(modelName) {
-		endpoint, err := r.endpoint(apiConfig, r.URLSuffix.Chat)
+		endpoint, err := r.endpoint(apiConfig, r.baseModel.URLSuffix.Chat)
 		return endpoint, modelName, err
 	}
 
@@ -124,7 +108,7 @@ func (r *ReplicateModel) predictionEndpoint(apiConfig *APIConfig, modelName stri
 		return "", "", fmt.Errorf("replicate: official model name must be owner/name")
 	}
 
-	modelsPrefix := strings.TrimSuffix(r.URLSuffix.Models, "models")
+	modelsPrefix := strings.TrimSuffix(r.baseModel.URLSuffix.Models, "models")
 	if modelsPrefix == "" {
 		modelsPrefix = "v1/"
 	}
@@ -247,7 +231,7 @@ func (r *ReplicateModel) createPrediction(ctx context.Context, url string, versi
 		req.Header.Set("Prefer", "wait=60")
 	}
 
-	resp, err := r.httpClient.Do(req)
+	resp, err := r.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -287,7 +271,7 @@ func (r *ReplicateModel) getPrediction(ctx context.Context, url string, apiKey s
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 
-	resp, err := r.httpClient.Do(req)
+	resp, err := r.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -341,8 +325,8 @@ func (r *ReplicateModel) waitForPrediction(ctx context.Context, prediction *repl
 }
 
 func (r *ReplicateModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
@@ -380,11 +364,12 @@ func (r *ReplicateModel) ChatWithMessages(modelName string, messages []Message, 
 }
 
 func (r *ReplicateModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if sender == nil {
 		return fmt.Errorf("sender is required")
-	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return fmt.Errorf("model name is required")
@@ -436,7 +421,7 @@ func (r *ReplicateModel) readPredictionStream(url string, apiKey string, sender 
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 	req.Header.Set("Accept", "text/event-stream")
 
-	resp, err := r.httpClient.Do(req)
+	resp, err := r.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -513,12 +498,12 @@ func dispatchReplicateSSEEvent(event replicateSSEEvent, sender func(*string, *st
 	}
 }
 
-func (r *ReplicateModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+func (r *ReplicateModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	url, err := r.endpoint(apiConfig, r.URLSuffix.Models)
+	url, err := r.endpoint(apiConfig, r.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
@@ -533,7 +518,7 @@ func (r *ReplicateModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := r.httpClient.Do(req)
+	resp, err := r.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -547,18 +532,38 @@ func (r *ReplicateModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result replicateModelsResponse
-	if err = json.Unmarshal(body, &result); err != nil {
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	models := make([]string, 0, len(result.Results))
-	for _, model := range result.Results {
-		if model.Owner != "" && model.Name != "" {
-			models = append(models, fmt.Sprintf("%s/%s", model.Owner, model.Name))
-		}
+	if modelList.Models != nil {
+		return ParseListModel(modelList), nil
 	}
-	return models, nil
+
+	var replicateList replicateModelList
+	if err = json.Unmarshal(body, &replicateList); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	if replicateList.Results == nil {
+		return nil, fmt.Errorf("invalid models list format")
+	}
+	for _, model := range replicateList.Results {
+		modelName := strings.TrimSpace(model.ID)
+		if modelName == "" && model.Owner != "" && model.Name != "" {
+			modelName = fmt.Sprintf("%s/%s", model.Owner, model.Name)
+		}
+		if modelName == "" {
+			modelName = strings.TrimSpace(model.Name)
+		}
+		if modelName == "" {
+			continue
+		}
+		modelList.Models = append(modelList.Models, DSModel{
+			ID: modelName,
+		})
+	}
+
+	return ParseListModel(modelList), nil
 }
 
 func (r *ReplicateModel) CheckConnection(apiConfig *APIConfig) error {
@@ -668,21 +673,13 @@ func replicateKeys(m map[string]interface{}) []string {
 }
 
 // Embed turns a list of texts into embedding vectors via Replicate's
-// prediction API. Replicate's embedding surface is the same async
-// /v1/predictions or /v1/models/{owner}/{name}/predictions endpoint
-// the chat path already uses: create a prediction with `Prefer: wait`
-// to skip the polling round-trip when possible, fall back to
-// waitForPrediction for predictions that don't finish in the wait
-// window. The driver targets the canonical Replicate embedding
-// schema (input.text / input.text_batch, output is an array of
-// {embedding: [floats]} objects); see replicateEmbedInput and
-// replicateEmbedOutputToVectors for details.
 func (r *ReplicateModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
-	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
 	}
 	if modelName == nil || strings.TrimSpace(*modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
@@ -716,8 +713,119 @@ func (r *ReplicateModel) Embed(modelName *string, texts []string, apiConfig *API
 	return replicateEmbedOutputToVectors(prediction.Output, len(texts))
 }
 
+// replicateRerankInput shapes the request body
+func replicateRerankInput(query string, documents []string) (map[string]interface{}, error) {
+	if len(documents) == 0 {
+		return nil, fmt.Errorf("replicate: documents is empty")
+	}
+	pairs := make([][2]string, len(documents))
+	for i, doc := range documents {
+		pairs[i] = [2]string{query, doc}
+	}
+	encoded, err := json.Marshal(pairs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode input_list: %w", err)
+	}
+	return map[string]interface{}{"input_list": string(encoded)}, nil
+}
+
+// replicateRerankOutputToScores normalizes Replicate's two observed
+func replicateRerankOutputToScores(output interface{}, n int) ([]float64, error) {
+	if scores, ok := output.([]interface{}); ok {
+		return replicateScoresFromInterface(scores, n)
+	}
+	if obj, ok := output.(map[string]interface{}); ok {
+		raw, present := obj["scores"]
+		if !present {
+			return nil, fmt.Errorf("replicate: rerank output missing 'scores' field; got keys %v", replicateKeys(obj))
+		}
+		arr, ok := raw.([]interface{})
+		if !ok {
+			return nil, fmt.Errorf("replicate: rerank output.scores is %T, expected array", raw)
+		}
+		return replicateScoresFromInterface(arr, n)
+	}
+	return nil, fmt.Errorf("replicate: expected rerank output to be an array or object, got %T", output)
+}
+
+func replicateScoresFromInterface(arr []interface{}, n int) ([]float64, error) {
+	if len(arr) != n {
+		return nil, fmt.Errorf("replicate: expected %d rerank scores, got %d", n, len(arr))
+	}
+	out := make([]float64, n)
+	for i, v := range arr {
+		f, ok := v.(float64)
+		if !ok {
+			return nil, fmt.Errorf("replicate: rerank score %d is %T, expected number", i, v)
+		}
+		out[i] = f
+	}
+	return out, nil
+}
+
+// Rerank scores a query against a list of documents
 func (r *ReplicateModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", r.Name())
+	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
+	}
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	url, version, err := r.predictionEndpoint(apiConfig, *modelName)
+	if err != nil {
+		return nil, err
+	}
+
+	input, err := replicateRerankInput(query, documents)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	prediction, err := r.createPrediction(ctx, url, version, input, false, *apiConfig.ApiKey, true)
+	if err != nil {
+		return nil, err
+	}
+	prediction, err = r.waitForPrediction(ctx, prediction, *apiConfig.ApiKey)
+	if err != nil {
+		return nil, err
+	}
+	if !replicatePredictionSucceeded(prediction.Status) {
+		return nil, fmt.Errorf("replicate: prediction ended with status %q", prediction.Status)
+	}
+
+	scores, err := replicateRerankOutputToScores(prediction.Output, len(documents))
+	if err != nil {
+		return nil, err
+	}
+
+	topN := len(documents)
+	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
+		topN = rerankConfig.TopN
+	}
+	results := make([]RerankResult, len(documents))
+	for i, score := range scores {
+		results[i] = RerankResult{Index: i, RelevanceScore: score}
+	}
+	if topN < len(results) {
+		// Sort by score descending, stable on index to keep deterministic
+		// ordering for ties.
+		sort.SliceStable(results, func(a, b int) bool {
+			if results[a].RelevanceScore == results[b].RelevanceScore {
+				return results[a].Index < results[b].Index
+			}
+			return results[a].RelevanceScore > results[b].RelevanceScore
+		})
+		results = results[:topN]
+	}
+	return &RerankResponse{Data: results}, nil
 }
 
 func (r *ReplicateModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

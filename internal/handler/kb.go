@@ -124,7 +124,7 @@ func (h *KnowledgebaseHandler) UpdateKB(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/kb/update_metadata_setting [post]
 func (h *KnowledgebaseHandler) UpdateMetadataSetting(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
 		return
@@ -136,8 +136,17 @@ func (h *KnowledgebaseHandler) UpdateMetadataSetting(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.kbService.UpdateMetadataSetting(&req)
+	if !h.kbService.Accessible(req.KBID, user.ID) {
+		jsonError(c, common.CodeAuthenticationError, "No authorization.")
+		return
+	}
+
+	result, code, err := h.kbService.UpdateMetadataSetting(&req, user.ID)
 	if err != nil {
+		if strings.Contains(err.Error(), "authorized") {
+			jsonError(c, common.CodeAuthenticationError, err.Error())
+			return
+		}
 		jsonError(c, code, err.Error())
 		return
 	}
@@ -178,7 +187,7 @@ func (h *KnowledgebaseHandler) GetDetail(c *gin.Context) {
 		return
 	}
 
-		jsonResponse(c, common.CodeSuccess, result, "success")
+	jsonResponse(c, common.CodeSuccess, result, "success")
 }
 
 // ListTags handles the list tags request for a knowledge base

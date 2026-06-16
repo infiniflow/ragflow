@@ -21,13 +21,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"ragflow/internal/common"
+	"ragflow/internal/engine/redis"
 	"sort"
 	"strings"
 	"time"
 
 	"go.uber.org/zap"
 
-	"ragflow/internal/cache"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
@@ -61,7 +61,7 @@ func GetTagsFromCache(kbIDs []string) (map[string]float64, error) {
 		return nil, nil
 	}
 
-	redisClient := cache.Get()
+	redisClient := redis.Get()
 	if redisClient == nil {
 		common.Warn("Redis client not available, skipping cache lookup")
 		return nil, nil
@@ -89,7 +89,7 @@ func SetTagsToCache(kbIDs []string, tags map[string]float64) error {
 		return nil
 	}
 
-	redisClient := cache.Get()
+	redisClient := redis.Get()
 	if redisClient == nil {
 		common.Warn("Redis client not available, skipping cache store")
 		return nil

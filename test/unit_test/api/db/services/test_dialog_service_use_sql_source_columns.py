@@ -282,17 +282,20 @@ def test_async_chat_uses_all_docs_when_no_doc_ids_selected(monkeypatch):
     )
 
     monkeypatch.setattr(dialog_service.settings, "retriever", retriever, raising=False)
-    monkeypatch.setattr(dialog_service.TenantLLMService, "llm_id2llm_type", lambda _llm_id: "chat")
     monkeypatch.setattr(
-        dialog_service.TenantLLMService,
-        "get_model_config",
-        lambda *_args, **_kwargs: {"llm_factory": "unit", "max_tokens": 4096},
+        dialog_service, "get_model_type_by_name",
+        lambda _tid, _llm_id: ["chat"]
+    )
+    monkeypatch.setattr(
+        dialog_service,
+        "get_model_config_from_provider_instance",
+        lambda *_args, **_kwargs: {"llm_factory": "unit", "max_tokens": 4096, "model_type": "chat"},
     )
     monkeypatch.setattr(dialog_service.TenantLangfuseService, "filter_by_tenant", lambda **_kwargs: None)
     monkeypatch.setattr(
         dialog_service,
         "get_models",
-        lambda _dialog: ([SimpleNamespace(tenant_id="tenant-id")], object(), None, chat_model, None),
+        lambda _dialog, **_kwargs: ([SimpleNamespace(tenant_id="tenant-id")], object(), None, chat_model, None),
     )
     monkeypatch.setattr(dialog_service.KnowledgebaseService, "get_field_map", lambda _kb_ids: {})
     monkeypatch.setattr(dialog_service, "label_question", lambda _question, _kbs: None)

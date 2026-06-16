@@ -1,3 +1,5 @@
+//go:build ignore
+
 //
 //  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
@@ -25,6 +27,7 @@ import (
 	"os"
 	"os/signal"
 	"ragflow/internal/common"
+	"ragflow/internal/engine/redis"
 	"ragflow/internal/server"
 	"ragflow/internal/server/local"
 	"ragflow/internal/storage"
@@ -36,12 +39,13 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
-	"ragflow/internal/cache"
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/handler"
 	"ragflow/internal/router"
 	"ragflow/internal/service"
+	"ragflow/internal/service/chunk"
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/tokenizer"
 )
@@ -50,12 +54,16 @@ func printHelp() {
 	fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS]\n\n", os.Args[0])
 	fmt.Fprintf(os.Stderr, "RAGFlow Server - Open-source RAG engine based on deep document understanding\n\n")
 	fmt.Fprintf(os.Stderr, "Options:\n")
-	fmt.Fprintf(os.Stderr, "  -p, --port int\tServer port (overrides config file)\n")
-	fmt.Fprintf(os.Stderr, "  -h, --help   \tShow this help message and exit\n")
+	fmt.Fprintf(os.Stderr, "  -p, --port int\t\tServer port (overrides config file)\n")
+	fmt.Fprintf(os.Stderr, "  -v, --version  \tPrint version information and exit\n")
+	fmt.Fprintf(os.Stderr, "  --debug        \tEnable debug-level logging\n")
+	fmt.Fprintf(os.Stderr, "  -h, --help     \tShow this help message and exit\n")
 	fmt.Fprintf(os.Stderr, "\nExamples:\n")
-	fmt.Fprintf(os.Stderr, "  %s           # Start server with config file port\n", os.Args[0])
-	fmt.Fprintf(os.Stderr, "  %s -p 8080   # Start server on port 8080\n", os.Args[0])
-	fmt.Fprintf(os.Stderr, "  %s --port 8080 # Start server on port 8080\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "  %s           \t\t# Start server with config file port\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "  %s -p 8080   \t\t# Start server on port 8080\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "  %s --port 8080 \t# Start server on port 8080\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "  %s --version  \t# Show version and exit\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "  %s --debug    \t# Start server with debug logging\n", os.Args[0])
 }
 
 func main() {
@@ -63,15 +71,25 @@ func main() {
 	var portFlag int
 	flag.IntVar(&portFlag, "port", 0, "Server port (overrides config file)")
 	flag.IntVar(&portFlag, "p", 0, "Server port (shorthand, overrides config file)")
+	var debugFlag bool
+	flag.BoolVar(&debugFlag, "debug", false, "Enable debug-level logging")
+	var versionFlag bool
+	flag.BoolVar(&versionFlag, "version", false, "Print version information and exit")
 
 	// Custom help message
 	flag.Usage = printHelp
 
 	flag.Parse()
 
+	// Handle --version flag: print version and exit immediately
+	if versionFlag {
+		fmt.Printf("RAGFlow version: %s\n", utility.GetRAGFlowVersion())
+		return
+	}
+
 	// Initialize logger with default level
 	// logger.Init("info"); // set debug log level
-	if err := common.Init("info"); err != nil {
+	if err := common.Init("info", "server_main.log"); err != nil {
 		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
 	}
 
@@ -91,17 +109,18 @@ func main() {
 		common.Fatal("Server port is not configured. Please specify via --port flag or config file.")
 	}
 
-	// Load model providers configuration
-	if err := server.LoadModelProviders(""); err != nil {
-		common.Fatal("Failed to load model providers", zap.Error(err))
-	}
-	common.Info("Model providers loaded", zap.Int("count", len(server.GetModelProviders())))
-
 	// Reinitialize logger with configured level if different
-	if config.Log.Level != "" && config.Log.Level != "info" {
-		if err := common.Init(config.Log.Level); err != nil {
-			common.Error("Failed to reinitialize logger with configured level", err)
-		}
+	level := config.Log.Level
+	if level == "" {
+		level = "info"
+	}
+
+	if debugFlag {
+		level = "debug"
+	}
+
+	if err := common.Init(level, "server_main.log"); err != nil {
+		common.Error("Failed to reinitialize logger", err)
 	}
 	server.SetLogger(common.Logger)
 	if config.Log.Level == "" {
@@ -118,13 +137,6 @@ func main() {
 		common.Fatal("Failed to initialize database", zap.Error(err))
 	}
 
-	// Initialize LLM factory data models from configuration file
-	if err := dao.InitLLMFactory(); err != nil {
-		common.Error("Failed to initialize LLM factory", err)
-	} else {
-		common.Info("LLM factory initialized successfully")
-	}
-
 	// Initialize doc engine
 	if err := engine.Init(&config.DocEngine); err != nil {
 		common.Fatal("Failed to initialize doc engine", zap.Error(err))
@@ -132,18 +144,22 @@ func main() {
 	defer engine.Close()
 
 	// Initialize Redis cache
-	if err := cache.Init(&config.Redis); err != nil {
+	if err := redis.Init(&config.Redis); err != nil {
 		common.Fatal("Failed to initialize Redis", zap.Error(err))
 	}
-	defer cache.Close()
+	defer redis.Close()
 
 	if err := storage.InitStorageFactory(); err != nil {
 		common.Fatal("Failed to initialize storage factory", zap.Error(err))
 	}
 
+	if err := engine.InitMessageQueueEngine(config.TaskExecutor.MessageQueueType); err != nil {
+		common.Error("Failed to initialize message queue engine", err)
+	}
+
 	// Initialize server variables (runtime variables that can change during operation)
 	// This must be done after Cache is initialized
-	if err := server.InitVariables(cache.Get()); err != nil {
+	if err := server.InitVariables(redis.Get()); err != nil {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
 
@@ -151,8 +167,12 @@ func main() {
 	local.InitAdminStatus(1, "admin server not connected")
 
 	// Initialize tokenizer (rag_analyzer)
+	dictPath := os.Getenv("RAGFLOW_DICT_PATH")
+	if dictPath == "" {
+		dictPath = "/usr/share/infinity/resource"
+	}
 	tokenizerCfg := &tokenizer.PoolConfig{
-		DictPath: "/usr/share/infinity/resource",
+		DictPath: dictPath,
 	}
 	if err := tokenizer.Init(tokenizerCfg); err != nil {
 		common.Fatal("Failed to initialize tokenizer", zap.Error(err))
@@ -185,7 +205,7 @@ func startServer(config *server.Config) {
 	datasetsService := service.NewDatasetService()
 	knowledgebaseService := service.NewKnowledgebaseService()
 	metadataService := service.NewMetadataService()
-	chunkService := service.NewChunkService()
+	chunkService := chunk.NewChunkService()
 	llmService := service.NewLLMService()
 	tenantService := service.NewTenantService()
 	chatService := service.NewChatService()
@@ -195,6 +215,7 @@ func startServer(config *server.Config) {
 	searchService := service.NewSearchService()
 	fileService := service.NewFileService()
 	memoryService := service.NewMemoryService()
+	mcpService := service.NewMCPService()
 	modelProviderService := service.NewModelProviderService()
 
 	// Initialize doc engine for skill search
@@ -216,11 +237,53 @@ func startServer(config *server.Config) {
 	searchHandler := handler.NewSearchHandler(searchService, userService)
 	fileHandler := handler.NewFileHandler(fileService, userService)
 	memoryHandler := handler.NewMemoryHandler(memoryService)
+	mcpHandler := handler.NewMCPHandler(mcpService)
 	skillSearchHandler := handler.NewSkillSearchHandler(docEngine)
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
+	agentHandler := handler.NewAgentHandler(service.NewAgentService(), fileService)
+	searchBotLLM := &handler.SearchBotRealLLM{Svc: modelProviderService}
+	searchBotHandler := handler.NewSearchBotHandler(
+		searchService,
+		tenantService,
+		searchBotLLM,
+		chunkService,
+	)
+	searchBotHandler.SetStreamLLM(searchBotLLM)
+	searchBotHandler.SetAskService(service.NewAskService(chunkService, nil, 0, 0))
+	pluginHandler := handler.NewPluginHandler(service.NewPluginService())
+	modelHandler := handler.NewModelHandler(service.NewModelProviderService())
+	fileCommitHandler := handler.NewFileCommitHandler(service.NewFileCommitService())
+
+	// Dify retrieval handler
+	docDAO := dao.NewDocumentDAO()
+	retrievalService := nlp.NewRetrievalService(docEngine, docDAO)
+	difyRetrievalHandler := handler.NewDifyRetrievalHandler(
+		knowledgebaseService,
+		modelProviderService,
+		metadataService,
+		retrievalService,
+		docDAO,
+		docEngine,
+	)
+
+	// Phase 6 per-tenant canvas-runtime override. The selector is backed by
+	// the existing Redis client and the global logger. The handler is
+	// ALWAYS constructed, even when Redis is briefly unavailable at startup,
+	// so the POST /api/v1/admin/canvas-runtime/:tenant_id endpoint stays
+	// registered and returns the explicit ErrSelectorNotConfigured (HTTP 500)
+	// path until Redis recovers. The previous behaviour — skipping handler
+	// construction when rdb == nil — silently removed the route until the
+	// next process restart, so a transient Redis blip at boot stranded
+	// canary operators with a 404 they could not diagnose from the client
+	// side. Review follow-up: keep the route hot.
+	var adminRuntimeSelector *runtime.Selector
+	if rdb := redis.Get().GetClient(); rdb != nil {
+		adminRuntimeSelector = runtime.NewSelector(rdb, common.Logger)
+	}
+	adminRuntimeHandler := handler.NewAdminRuntimeHandler(adminRuntimeSelector)
 
 	// Initialize router
-	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, skillSearchHandler, providerHandler)
+	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler, fileCommitHandler, adminRuntimeHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()
@@ -268,19 +331,19 @@ func startServer(config *server.Config) {
 	}
 
 	// Initialize and start heartbeat reporter to admin server
-	heartbeatService := service.NewHeartbeatSender(
+	service.AdminServiceClient = service.NewAdminClient(
 		common.Logger,
 		common.ServerTypeAPI,
 		fmt.Sprintf("ragflow-server-%d", config.Server.Port),
 		localIP,
 		config.Server.Port,
 	)
-	if err = heartbeatService.InitHTTPClient(); err != nil {
+	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
 		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
 	} else {
 		// Start heartbeat reporter with 30 seconds interval
 		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", 3*time.Second, func() {
-			if err = heartbeatService.SendHeartbeat(); err == nil {
+			if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
 				local.SetAdminStatus(0, "")
 			} else {
 				local.SetAdminStatus(1, err.Error())

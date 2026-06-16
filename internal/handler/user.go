@@ -19,14 +19,15 @@ package handler
 import (
 	"fmt"
 	"net/http"
-	"ragflow/internal/cache"
 	"ragflow/internal/common"
+	"ragflow/internal/engine/redis"
 	"ragflow/internal/server"
 	"ragflow/internal/server/local"
 	"ragflow/internal/utility"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 
 	"ragflow/internal/service"
 )
@@ -65,15 +66,19 @@ func (h *UserHandler) Register(c *gin.Context) {
 
 	user, code, err := h.userService.Register(&req)
 	if err != nil {
+		var data interface{} = false
+		if code == common.CodeExceptionError {
+			data = nil
+		}
 		c.JSON(http.StatusOK, gin.H{
 			"code":    code,
 			"message": err.Error(),
-			"data":    false,
+			"data":    data,
 		})
 		return
 	}
 
-	secretKey, err := server.GetSecretKey(cache.Get())
+	secretKey, err := server.GetSecretKey(redis.Get())
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeServerError,
@@ -137,7 +142,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 	}
 
 	// Sign the access_token using itsdangerous (compatible with Python)
-	secretKey, err := server.GetSecretKey(cache.Get())
+	secretKey, err := server.GetSecretKey(redis.Get())
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeServerError,
@@ -212,7 +217,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 		return
 	}
 
-	secretKey, err := server.GetSecretKey(cache.Get())
+	secretKey, err := server.GetSecretKey(redis.Get())
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeServerError,
@@ -411,27 +416,11 @@ func (h *UserHandler) Info(c *gin.Context) {
 // @Security ApiKeyAuth
 // @Param request body service.UpdateSettingsRequest true "user settings"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/user/setting [post]
+// @Router /api/v1/users/me [patch]
 func (h *UserHandler) Setting(c *gin.Context) {
-	// Extract token from request
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeUnauthorized,
-			"message": "Missing Authorization header",
-			"data":    false,
-		})
-		return
-	}
-
-	// Get user by token
-	user, code, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    code,
-			"message": err.Error(),
-			"data":    false,
-		})
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -447,8 +436,16 @@ func (h *UserHandler) Setting(c *gin.Context) {
 	}
 
 	// Update user settings
-	code, err = h.userService.UpdateUserSettings(user, &req)
+	code, err := h.userService.UpdateUserSettings(user, &req)
 	if err != nil {
+		if code == common.CodeExceptionError {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    code,
+				"message": err.Error(),
+				"data":    nil,
+			})
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{
 			"code":    code,
 			"message": err.Error(),
@@ -459,7 +456,7 @@ func (h *UserHandler) Setting(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
-		"message": "settings updated successfully",
+		"message": "success",
 		"data":    true,
 	})
 }
@@ -553,7 +550,251 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 		return
 	}
 
-	var req service.SetTenantInfoRequest
+	requiredKeys := []string{"tenant_id", "asr_id", "embd_id", "img2txt_id", "llm_id"}
+	missingArgumentMessage := "required argument are missing: tenant_id,asr_id,embd_id,img2txt_id,llm_id; "
+
+	var payload map[string]interface{}
+	if err := c.ShouldBindBodyWith(&payload, binding.JSON); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeArgumentError,
+			"message": missingArgumentMessage,
+			"data":    nil,
+		})
+		return
+	}
+
+	missing := make([]string, 0, len(requiredKeys))
+	for _, key := range requiredKeys {
+		if _, ok := payload[key]; !ok {
+			missing = append(missing, key)
+		}
+	}
+	if len(missing) > 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeArgumentError,
+			"message": fmt.Sprintf("required argument are missing: %s; ", joinStrings(missing)),
+			"data":    nil,
+		})
+		return
+	}
+
+	req := service.SetTenantInfoRequest{Raw: payload}
+	if value, ok := payload["tenant_id"].(string); ok {
+		req.TenantID = &value
+	}
+	if value, ok := payload["asr_id"].(string); ok {
+		req.ASRID = &value
+	}
+	if value, ok := payload["embd_id"].(string); ok {
+		req.EmbdID = &value
+	}
+	if value, ok := payload["img2txt_id"].(string); ok {
+		req.Img2TxtID = &value
+	}
+	if value, ok := payload["llm_id"].(string); ok {
+		req.LLMID = &value
+	}
+	if value, ok := payload["rerank_id"].(string); ok {
+		req.RerankID = &value
+	}
+	if value, ok := payload["tts_id"].(string); ok {
+		req.TTSID = &value
+	}
+
+	code, err := h.userService.SetTenantInfo(user.ID, &req)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"message": err.Error(),
+			"data":    nil,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"message": "success",
+		"data":    true,
+	})
+}
+
+func joinStrings(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	result := values[0]
+	for i := 1; i < len(values); i++ {
+		result += "," + values[i]
+	}
+	return result
+}
+
+// ---- Forgot-password flow (fixes #15282) -----------------------------
+//
+// Mirrors api/apps/restful_apis/user_api.py /auth/password/... endpoints.
+//
+// Contract divergence from Python: the Python endpoint returns a
+// rendered image (Content-Type: image/JPEG) from the python-captcha
+// library and stores the captcha under captcha:<email>. This Go port
+// returns a server-issued captcha_id plus a PNG captcha image (as a
+// data URL the FE drops straight into <img src>), and stores
+// captcha:<captcha_id>. The plaintext text only ever appears as
+// raster pixels — the OTP step reuses the captcha_id to look the
+// expected text up server-side.
+//
+// The PNG is rendered using stdlib `image/png` + a hand-rolled 5x7
+// bitmap font in internal/utility/captcha_png.go, because no Go
+// captcha library is vendored in go.mod (no network during build).
+// PR #15290 review (Hz-186) explicitly asked for a raster after the
+// earlier SVG implementation: the SVG embedded the answer in <text>
+// nodes, so a scripted client could base64-decode the response and
+// grep the captcha directly. PNG closes that attack — the response
+// bytes never reference the original text.
+
+type forgotCaptchaRequest struct {
+	Email string `form:"email" json:"email"`
+}
+
+// ForgotCaptcha POST /api/v1/auth/password/forgot/captcha
+// @Summary Issue forgot-password captcha
+// @Description Generates a captcha for the email and stores it in Redis
+// for 60 seconds keyed by a server-issued captcha_id. Returns the id
+// and a PNG image (data URL) the FE renders inside <img src>. The
+// plaintext code never appears in the response — only as raster
+// pixels — so a scripted client can't regex it out (fixes the
+// SVG-text leak from the previous iteration, per PR #15290 review).
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param email query string false "user email (also accepted in JSON body)"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/auth/password/forgot/captcha [post]
+func (h *UserHandler) ForgotCaptcha(c *gin.Context) {
+	var req forgotCaptchaRequest
+	// Python reads from request.args (query string), accept both for parity.
+	if v := c.Query("email"); v != "" {
+		req.Email = v
+	} else {
+		_ = c.ShouldBindJSON(&req)
+	}
+
+	captchaID, captchaImage, errCode, err := h.userService.ForgotIssueCaptcha(req.Email)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    errCode,
+			"message": err.Error(),
+			"data":    false,
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"message": "captcha issued",
+		"data": gin.H{
+			"captcha_id":    captchaID,
+			"captcha_image": captchaImage,
+		},
+	})
+}
+
+type forgotSendOTPRequest struct {
+	Email     string `json:"email"`
+	CaptchaID string `json:"captcha_id"`
+	Captcha   string `json:"captcha"`
+}
+
+// ForgotSendOTP POST /api/v1/auth/password/forgot/otp
+// @Summary Send forgot-password OTP
+// @Description Validates the captcha (looked up by captcha_id), then
+// mints a one-time code, stores a salted hash in Redis (5 min TTL,
+// attempt cap, resend cooldown), and emails the OTP to the user.
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body forgotSendOTPRequest true "email + captcha_id + captcha"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/auth/password/forgot/otp [post]
+func (h *UserHandler) ForgotSendOTP(c *gin.Context) {
+	var req forgotSendOTPRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeArgumentError,
+			"message": err.Error(),
+			"data":    false,
+		})
+		return
+	}
+	errCode, err := h.userService.ForgotSendOTP(req.Email, req.CaptchaID, req.Captcha)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    errCode,
+			"message": err.Error(),
+			"data":    false,
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"message": "verification passed, email sent",
+		"data":    true,
+	})
+}
+
+type forgotVerifyOTPRequest struct {
+	Email string `json:"email"`
+	OTP   string `json:"otp"`
+}
+
+// ForgotVerifyOTP POST /api/v1/auth/password/forgot/otp/verify
+// @Summary Verify forgot-password OTP
+// @Description Consumes the OTP if it matches, sets a short-lived
+// verified flag the reset endpoint will gate on. Wrong-OTP attempts
+// are counted and a 30-minute lockout kicks in at the limit.
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body forgotVerifyOTPRequest true "email + otp"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/auth/password/forgot/otp/verify [post]
+func (h *UserHandler) ForgotVerifyOTP(c *gin.Context) {
+	var req forgotVerifyOTPRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeArgumentError,
+			"message": err.Error(),
+			"data":    false,
+		})
+		return
+	}
+	errCode, err := h.userService.ForgotVerifyOTP(req.Email, req.OTP)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    errCode,
+			"message": err.Error(),
+			"data":    false,
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"message": "otp verified",
+		"data":    true,
+	})
+}
+
+// ForgotResetPassword POST /api/v1/auth/password/reset
+// @Summary Reset password after OTP verification
+// @Description Requires a successful prior verify call (verified flag
+// set in Redis). Updates the password hash and rotates the access
+// token so the response can auto-login the user.
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body service.ForgotResetPasswordRequest true "email + new password"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/auth/password/reset [post]
+func (h *UserHandler) ForgotResetPassword(c *gin.Context) {
+	var req service.ForgotResetPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeArgumentError,
@@ -563,19 +804,48 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 		return
 	}
 
-	err := h.userService.SetTenantInfo(user.ID, &req)
+	user, code, err := h.userService.ForgotResetPassword(&req)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
+			"code":    code,
 			"message": err.Error(),
 			"data":    false,
 		})
 		return
 	}
 
+	secretKey, err := server.GetSecretKey(redis.Get())
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": fmt.Sprintf("Failed to get secret key: %s", err.Error()),
+			"data":    false,
+		})
+		return
+	}
+	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": "Failed to generate auth token",
+			"data":    false,
+		})
+		return
+	}
+	c.Header("Authorization", authToken)
+	c.Header("Access-Control-Expose-Headers", "Authorization")
+
+	// GetUserProfile includes the password hash and the live access_token,
+	// which must never appear in the reset response body (the token is
+	// already in the Authorization header). Mirror the Python contract
+	// `user.to_safe_dict(for_self=True)` by stripping those fields before
+	// writing. PR #15290 review.
+	profile := h.userService.GetUserProfile(user)
+	delete(profile, "password")
+	delete(profile, "access_token")
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    true,
+		"message": "Password reset successful. Logged in.",
+		"data":    profile,
 	})
 }
