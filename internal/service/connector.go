@@ -18,8 +18,20 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"ragflow/internal/engine/redis"
+	"strings"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -34,6 +46,24 @@ const (
 	connectorStatusUnstarted = "0"
 	defaultConnectorFreq     = 5
 	defaultConnectorTimeout  = 60 * 29
+	webFlowTTL               = 15 * time.Minute
+	googleOAuthAuthorizeURL  = "https://accounts.google.com/o/oauth2/auth"
+	googleOAuthTokenURL      = "https://oauth2.googleapis.com/token"
+	googleOAuthHTTPTimeout   = 7 * time.Second
+)
+
+var (
+	googleDriveOAuthScopes = []string{
+		"https://www.googleapis.com/auth/drive.readonly",
+		"https://www.googleapis.com/auth/drive.metadata.readonly",
+		"https://www.googleapis.com/auth/admin.directory.group.readonly",
+		"https://www.googleapis.com/auth/admin.directory.user.readonly",
+	}
+	gmailOAuthScopes = []string{
+		"https://www.googleapis.com/auth/gmail.readonly",
+		"https://www.googleapis.com/auth/admin.directory.user.readonly",
+		"https://www.googleapis.com/auth/admin.directory.group.readonly",
+	}
 )
 
 // Sentinel errors so handlers can map to the proper response codes,
@@ -80,6 +110,59 @@ type CreateConnectorRequest struct {
 // RebuildConnectorRequest rebuild connector request.
 type RebuildConnectorRequest struct {
 	KbID string `json:"kb_id"`
+}
+
+type StartGoogleWebOAuthRequest struct {
+	Credentials json.RawMessage `json:"credentials"`
+	RedirectURI string          `json:"redirect_uri,omitempty"`
+}
+
+type StartGoogleWebOAuthResponse struct {
+	FlowID           string `json:"flow_id"`
+	AuthorizationURL string `json:"authorization_url"`
+	ExpiresIn        int64  `json:"expires_in"`
+}
+
+type PollGoogleWebOAuthResultRequest struct {
+	FlowID string `json:"flow_id"`
+}
+
+type PollGoogleWebOAuthResultResponse struct {
+	Credentials string `json:"credentials"`
+}
+
+type googleWebOAuthState struct {
+	UserID       string                 `json:"user_id"`
+	ClientConfig map[string]interface{} `json:"client_config"`
+	RedirectURI  string                 `json:"redirect_uri"`
+	CodeVerifier string                 `json:"code_verifier"`
+	CreatedAt    int64                  `json:"created_at"`
+}
+
+type googleWebOAuthResult struct {
+	UserID      string `json:"user_id"`
+	Credentials string `json:"credentials"`
+}
+
+type googleOAuthTokenResponse struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+	TokenType    string `json:"token_type,omitempty"`
+	ExpiresIn    int64  `json:"expires_in,omitempty"`
+	Scope        string `json:"scope,omitempty"`
+	IDToken      string `json:"id_token,omitempty"`
+	Error        string `json:"error,omitempty"`
+	ErrorDesc    string `json:"error_description,omitempty"`
+}
+
+type googleOAuthCredentials struct {
+	Token        string   `json:"token"`
+	RefreshToken string   `json:"refresh_token,omitempty"`
+	TokenURI     string   `json:"token_uri"`
+	ClientID     string   `json:"client_id"`
+	ClientSecret string   `json:"client_secret"`
+	Scopes       []string `json:"scopes"`
+	Expiry       string   `json:"expiry,omitempty"`
 }
 
 // canAccessConnector Test Authentication
@@ -261,6 +344,448 @@ func (s *ConnectorService) TestConnector(connectorID, userID string) error {
 	return nil
 }
 
+func (s *ConnectorService) StartGoogleWebOAuth(userID, source string, req *StartGoogleWebOAuthRequest) (*StartGoogleWebOAuthResponse, common.ErrorCode, error) {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		source = "google-drive"
+	}
+	if source != "google-drive" && source != "gmail" {
+		return nil, common.CodeArgumentError, fmt.Errorf("Invalid Google OAuth type.")
+	}
+
+	if req == nil || len(req.Credentials) == 0 {
+		return nil, common.CodeArgumentError, fmt.Errorf("required argument is missing: credentials")
+	}
+
+	redirectURI := strings.TrimSpace(req.RedirectURI)
+	if redirectURI == "" {
+		redirectURI = defaultGoogleWebOAuthRedirectURI(source)
+	}
+	if redirectURI == "" {
+		return nil, common.CodeServerError, fmt.Errorf("Google OAuth redirect URI is not configured on the server.")
+	}
+
+	credentials, err := loadGoogleCredentials(req.Credentials)
+	if err != nil {
+		return nil, common.CodeArgumentError, err
+	}
+	if hasRefreshToken(credentials) {
+		return nil, common.CodeArgumentError, fmt.Errorf("Uploaded credentials already include a refresh token.")
+	}
+
+	clientConfig, err := getGoogleWebClientConfig(credentials)
+	if err != nil {
+		return nil, common.CodeArgumentError, err
+	}
+
+	webConfig, _ := clientConfig["web"].(map[string]interface{})
+	clientID := strings.TrimSpace(stringValue(webConfig["client_id"]))
+	authURI := strings.TrimSpace(stringValue(webConfig["auth_uri"]))
+	if authURI == "" {
+		authURI = googleOAuthAuthorizeURL
+	}
+	if clientID == "" || authURI == "" {
+		return nil, common.CodeServerError, fmt.Errorf("Failed to initialize Google OAuth flow. Please verify the uploaded client configuration.")
+	}
+
+	codeVerifier, codeChallenge, err := newPKCEChallenge()
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	flowID := common.GenerateUUID()
+	authorizationURL, err := buildGoogleAuthorizationURL(authURI, clientID, redirectURI, flowID, googleOAuthScopesForSource(source), codeChallenge)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("Failed to initialize Google OAuth flow. Please verify the uploaded client configuration.")
+	}
+
+	redisClient := redis.Get()
+	if redisClient == nil {
+		return nil, common.CodeServerError, fmt.Errorf("Redis is not configured on the server.")
+	}
+
+	state := googleWebOAuthState{
+		UserID:       userID,
+		ClientConfig: clientConfig,
+		RedirectURI:  redirectURI,
+		CodeVerifier: codeVerifier,
+		CreatedAt:    time.Now().Unix(),
+	}
+	if ok := redisClient.SetObj(webStateCacheKey(flowID, source), state, webFlowTTL); !ok {
+		return nil, common.CodeServerError, fmt.Errorf("Failed to initialize Google OAuth flow. Please verify the uploaded client configuration.")
+	}
+
+	return &StartGoogleWebOAuthResponse{
+		FlowID:           flowID,
+		AuthorizationURL: authorizationURL,
+		ExpiresIn:        int64(webFlowTTL.Seconds()),
+	}, common.CodeSuccess, nil
+}
+
+func (s *ConnectorService) GoogleWebOAuthCallback(source, stateID, oauthError, errorDescription, code string) string {
+	source = strings.TrimSpace(source)
+	if source != "google-drive" && source != "gmail" {
+		return renderGoogleWebOAuthPopup("", false, "Invalid Google OAuth type.", source)
+	}
+
+	stateID = strings.TrimSpace(stateID)
+	if stateID == "" {
+		return renderGoogleWebOAuthPopup("", false, "Missing OAuth state parameter.", source)
+	}
+
+	redisClient := redis.Get()
+	if redisClient == nil {
+		return renderGoogleWebOAuthPopup(stateID, false, "Authorization session expired. Please restart from the main window.", source)
+	}
+
+	stateKey := webStateCacheKey(stateID, source)
+	var state googleWebOAuthState
+	if ok := redisClient.GetObj(stateKey, &state); !ok {
+		return renderGoogleWebOAuthPopup(stateID, false, "Authorization session expired. Please restart from the main window.", source)
+	}
+
+	if state.ClientConfig == nil {
+		redisClient.Delete(stateKey)
+		return renderGoogleWebOAuthPopup(stateID, false, "Authorization session was invalid. Please retry.", source)
+	}
+
+	if strings.TrimSpace(oauthError) != "" {
+		redisClient.Delete(stateKey)
+		message := strings.TrimSpace(errorDescription)
+		if message == "" {
+			message = strings.TrimSpace(oauthError)
+		}
+		if message == "" {
+			message = "Authorization was cancelled."
+		}
+		return renderGoogleWebOAuthPopup(stateID, false, message, source)
+	}
+
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return renderGoogleWebOAuthPopup(stateID, false, "Missing authorization code from Google.", source)
+	}
+
+	credentials, err := exchangeGoogleWebOAuthCode(state.ClientConfig, googleOAuthScopesForSource(source), state.RedirectURI, code, state.CodeVerifier)
+	if err != nil {
+		redisClient.Delete(stateKey)
+		return renderGoogleWebOAuthPopup(stateID, false, "Failed to exchange tokens with Google. Please retry.", source)
+	}
+
+	result := googleWebOAuthResult{
+		UserID:      state.UserID,
+		Credentials: credentials,
+	}
+	if ok := redisClient.SetObj(webResultCacheKey(stateID, source), result, webFlowTTL); !ok {
+		redisClient.Delete(stateKey)
+		return renderGoogleWebOAuthPopup(stateID, false, "Failed to exchange tokens with Google. Please retry.", source)
+	}
+	redisClient.Delete(stateKey)
+
+	return renderGoogleWebOAuthPopup(stateID, true, "Authorization completed successfully.", source)
+}
+
+func (s *ConnectorService) PollGoogleWebOAuthResult(userID, source string, req *PollGoogleWebOAuthResultRequest) (*PollGoogleWebOAuthResultResponse, common.ErrorCode, error) {
+	source = strings.TrimSpace(source)
+	if source != "google-drive" && source != "gmail" {
+		return nil, common.CodeArgumentError, fmt.Errorf("Invalid Google OAuth type.")
+	}
+	if req == nil || strings.TrimSpace(req.FlowID) == "" {
+		return nil, common.CodeArgumentError, fmt.Errorf("required argument is missing: flow_id")
+	}
+
+	redisClient := redis.Get()
+	if redisClient == nil {
+		return nil, common.CodeRunning, fmt.Errorf("Authorization is still pending.")
+	}
+
+	resultKey := webResultCacheKey(strings.TrimSpace(req.FlowID), source)
+	var result googleWebOAuthResult
+	if ok := redisClient.GetObj(resultKey, &result); !ok {
+		return nil, common.CodeRunning, fmt.Errorf("Authorization is still pending.")
+	}
+
+	if result.UserID != userID {
+		return nil, common.CodePermissionError, fmt.Errorf("You are not allowed to access this authorization result.")
+	}
+
+	redisClient.Delete(resultKey)
+	return &PollGoogleWebOAuthResultResponse{Credentials: result.Credentials}, common.CodeSuccess, nil
+}
+
+func defaultGoogleWebOAuthRedirectURI(source string) string {
+	if source == "gmail" {
+		return getenvDefault("GMAIL_WEB_OAUTH_REDIRECT_URI", "http://localhost:9384/api/v1/connectors/gmail/oauth/web/callback")
+	}
+	return getenvDefault("GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI", "http://localhost:9384/api/v1/connectors/google-drive/oauth/web/callback")
+}
+
+func getenvDefault(key, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+		return value
+	}
+	return fallback
+}
+
+func webStateCacheKey(flowID, source string) string {
+	return fmt.Sprintf("%s_web_flow_state:%s", source, flowID)
+}
+
+func webResultCacheKey(flowID, source string) string {
+	return fmt.Sprintf("%s_web_flow_result:%s", source, flowID)
+}
+
+func loadGoogleCredentials(raw json.RawMessage) (map[string]interface{}, error) {
+	var credentials map[string]interface{}
+	if err := json.Unmarshal(raw, &credentials); err == nil && credentials != nil {
+		return credentials, nil
+	}
+
+	var rawString string
+	if err := json.Unmarshal(raw, &rawString); err != nil {
+		return nil, fmt.Errorf("Invalid Google credentials JSON.")
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(rawString)), &credentials); err != nil || credentials == nil {
+		return nil, fmt.Errorf("Invalid Google credentials JSON.")
+	}
+	return credentials, nil
+}
+
+func hasRefreshToken(credentials map[string]interface{}) bool {
+	value, ok := credentials["refresh_token"]
+	if !ok || value == nil {
+		return false
+	}
+	if token, ok := value.(string); ok {
+		return strings.TrimSpace(token) != ""
+	}
+	return true
+}
+
+func getGoogleWebClientConfig(credentials map[string]interface{}) (map[string]interface{}, error) {
+	webSection, ok := credentials["web"].(map[string]interface{})
+	if !ok || webSection == nil {
+		return nil, fmt.Errorf("Google OAuth JSON must include a 'web' client configuration to use browser-based authorization.")
+	}
+	return map[string]interface{}{"web": webSection}, nil
+}
+
+func stringValue(value interface{}) string {
+	if s, ok := value.(string); ok {
+		return s
+	}
+	return ""
+}
+
+func googleOAuthScopesForSource(source string) []string {
+	if source == "gmail" {
+		return gmailOAuthScopes
+	}
+	return googleDriveOAuthScopes
+}
+
+func newPKCEChallenge() (string, string, error) {
+	randomBytes := make([]byte, 64)
+	if _, err := rand.Read(randomBytes); err != nil {
+		return "", "", fmt.Errorf("failed to generate OAuth code verifier: %w", err)
+	}
+	verifier := base64.RawURLEncoding.EncodeToString(randomBytes)
+	sum := sha256.Sum256([]byte(verifier))
+	challenge := base64.RawURLEncoding.EncodeToString(sum[:])
+	return verifier, challenge, nil
+}
+
+func buildGoogleAuthorizationURL(authURI, clientID, redirectURI, state string, scopes []string, codeChallenge string) (string, error) {
+	parsedURL, err := url.Parse(authURI)
+	if err != nil {
+		return "", err
+	}
+
+	query := parsedURL.Query()
+	query.Set("client_id", clientID)
+	query.Set("redirect_uri", redirectURI)
+	query.Set("response_type", "code")
+	query.Set("scope", strings.Join(scopes, " "))
+	query.Set("access_type", "offline")
+	query.Set("include_granted_scopes", "true")
+	query.Set("prompt", "consent")
+	query.Set("state", state)
+	query.Set("code_challenge", codeChallenge)
+	query.Set("code_challenge_method", "S256")
+	parsedURL.RawQuery = query.Encode()
+	return parsedURL.String(), nil
+}
+
+func exchangeGoogleWebOAuthCode(clientConfig map[string]interface{}, scopes []string, redirectURI, code, codeVerifier string) (string, error) {
+	webConfig, ok := clientConfig["web"].(map[string]interface{})
+	if !ok || webConfig == nil {
+		return "", fmt.Errorf("invalid Google OAuth client configuration")
+	}
+
+	clientID := strings.TrimSpace(stringValue(webConfig["client_id"]))
+	clientSecret := strings.TrimSpace(stringValue(webConfig["client_secret"]))
+	tokenURI := strings.TrimSpace(stringValue(webConfig["token_uri"]))
+	if tokenURI == "" {
+		tokenURI = googleOAuthTokenURL
+	}
+	if clientID == "" || tokenURI == "" {
+		return "", fmt.Errorf("invalid Google OAuth client configuration")
+	}
+
+	form := url.Values{}
+	form.Set("client_id", clientID)
+	if clientSecret != "" {
+		form.Set("client_secret", clientSecret)
+	}
+	form.Set("code", code)
+	form.Set("redirect_uri", redirectURI)
+	form.Set("grant_type", "authorization_code")
+	if strings.TrimSpace(codeVerifier) != "" {
+		form.Set("code_verifier", codeVerifier)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), googleOAuthHTTPTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURI, strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", err
+	}
+
+	var token googleOAuthTokenResponse
+	if err := json.Unmarshal(body, &token); err != nil {
+		return "", err
+	}
+	if resp.StatusCode >= http.StatusBadRequest || token.Error != "" {
+		if token.ErrorDesc != "" {
+			return "", errors.New(token.ErrorDesc)
+		}
+		if token.Error != "" {
+			return "", errors.New(token.Error)
+		}
+		return "", fmt.Errorf("google token exchange failed: HTTP %d", resp.StatusCode)
+	}
+	if token.AccessToken == "" {
+		return "", fmt.Errorf("google token exchange failed: empty access_token")
+	}
+
+	expiry := ""
+	if token.ExpiresIn > 0 {
+		expiry = time.Now().Add(time.Duration(token.ExpiresIn) * time.Second).UTC().Format(time.RFC3339Nano)
+	}
+	credentials := googleOAuthCredentials{
+		Token:        token.AccessToken,
+		RefreshToken: token.RefreshToken,
+		TokenURI:     tokenURI,
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		Scopes:       scopes,
+		Expiry:       expiry,
+	}
+	data, err := json.Marshal(credentials)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func renderGoogleWebOAuthPopup(flowID string, success bool, message, source string) string {
+	status := "error"
+	autoClose := ""
+	if success {
+		status = "success"
+		autoClose = "window.close();"
+	}
+	payloadType := fmt.Sprintf("ragflow-%s-oauth", source)
+	payload, _ := json.Marshal(map[string]string{
+		"type":    payloadType,
+		"status":  status,
+		"flowId":  flowID,
+		"message": message,
+	})
+
+	title := fmt.Sprintf("%s Authorization", googleOAuthSourceDisplayName(source))
+	heading := "Authorization failed"
+	if success {
+		heading = "Authorization complete"
+	}
+
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>%s</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f8fafc;
+      color: #0f172a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+    }
+    .card {
+      background: white;
+      padding: 32px;
+      border-radius: 12px;
+      box-shadow: 0 8px 30px rgba(15, 23, 42, 0.1);
+      max-width: 420px;
+      text-align: center;
+    }
+    h1 {
+      font-size: 1.5rem;
+      margin-bottom: 12px;
+    }
+    p {
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>%s</h1>
+    <p>%s</p>
+    <p>You can close this window.</p>
+  </div>
+  <script>
+    (function(){
+      if (window.opener) {
+        window.opener.postMessage(%s, "*");
+      }
+      %s
+    })();
+  </script>
+</body>
+</html>`, html.EscapeString(title), html.EscapeString(heading), html.EscapeString(message), string(payload), autoClose)
+}
+
+func googleOAuthSourceDisplayName(source string) string {
+	if source == "gmail" {
+		return "Gmail"
+	}
+	if source == "google-drive" {
+		return "Google Drive"
+	}
+	return "Google"
+}
+
 func (s *ConnectorService) DeleteConnector(connectorID, userID string) (bool, common.ErrorCode, error) {
 	if connectorID == "" {
 		return false, common.CodeDataError, fmt.Errorf("connector_id is required")
@@ -286,6 +811,94 @@ func (s *ConnectorService) DeleteConnector(connectorID, userID string) (bool, co
 		return false, common.CodeServerError, err
 	}
 	return true, common.CodeSuccess, nil
+}
+
+type UpdateConnectorRequest struct {
+	PruneFreq   *int64         `json:"prune_freq,omitempty"`
+	RefreshFreq *int64         `json:"refresh_freq,omitempty"`
+	Config      entity.JSONMap `json:"config,omitempty"`
+	TimeoutSecs *int64         `json:"timeout_secs,omitempty"`
+	Reschedule  bool           `json:"reschedule,omitempty"`
+	Status      string         `json:"status,omitempty"`
+}
+
+func (s *ConnectorService) UpdateConnector(connectorID, userID string, req *UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error) {
+	if connectorID == "" {
+		return nil, common.CodeDataError, fmt.Errorf("connector_id is required")
+	}
+
+	connector, err := s.connectorDAO.GetByID(connectorID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.CodeDataError, fmt.Errorf("Can't find this Connector!")
+		}
+		return nil, common.CodeServerError, err
+	}
+
+	if !s.canAccessConnector(connector, userID) {
+		return nil, common.CodeAuthenticationError, fmt.Errorf("No authorization.")
+	}
+
+	updates := map[string]interface{}{}
+	if req != nil {
+		if req.PruneFreq != nil {
+			updates["prune_freq"] = *req.PruneFreq
+		}
+		if req.RefreshFreq != nil {
+			updates["refresh_freq"] = *req.RefreshFreq
+		}
+		if req.Config != nil {
+			updates["config"] = req.Config
+		}
+		if req.TimeoutSecs != nil {
+			updates["timeout_secs"] = *req.TimeoutSecs
+		}
+	}
+
+	if len(updates) > 0 {
+		if err := s.connectorDAO.UpdateByID(connectorID, updates); err != nil {
+			return nil, common.CodeServerError, err
+		}
+	}
+
+	if req != nil {
+		if req.Reschedule {
+			if err := s.cancelConnectorTasks(connectorID); err != nil {
+				return nil, common.CodeServerError, err
+			}
+			if err := s.connectorDAO.ScheduleConnectorTasks(connectorID); err != nil {
+				return nil, common.CodeServerError, err
+			}
+		} else if isConnectorCancelStatus(req.Status) {
+			if err := s.cancelConnectorTasks(connectorID); err != nil {
+				return nil, common.CodeServerError, err
+			}
+		} else if isConnectorScheduleStatus(req.Status) {
+			if err := s.connectorDAO.ScheduleConnectorTasks(connectorID); err != nil {
+				return nil, common.CodeServerError, err
+			}
+		}
+	}
+
+	connector, err = s.connectorDAO.GetByID(connectorID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.CodeDataError, fmt.Errorf("Can't find this Connector!")
+		}
+		return nil, common.CodeServerError, err
+	}
+
+	return connector, common.CodeSuccess, nil
+}
+
+func isConnectorCancelStatus(status string) bool {
+	status = strings.TrimSpace(status)
+	return status == string(entity.TaskStatusCancel) || strings.EqualFold(status, "CANCEL")
+}
+
+func isConnectorScheduleStatus(status string) bool {
+	status = strings.TrimSpace(status)
+	return status == string(entity.TaskStatusSchedule) || strings.EqualFold(status, "SCHEDULE")
 }
 
 // RebuildConnector schedules a rebuild for an accessible connector and knowledge base.

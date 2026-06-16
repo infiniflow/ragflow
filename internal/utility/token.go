@@ -142,14 +142,6 @@ func GenerateToken() string {
 	return strings.ReplaceAll(uuid.New().String(), "-", "")
 }
 
-func GenerateUUID1() (string, error) {
-	id, err := uuid.NewUUID()
-	if err != nil {
-		return "", err
-	}
-	return strings.ReplaceAll(id.String(), "-", ""), nil
-}
-
 // GenerateAPIToken generates a secure random access key
 // Equivalent to Python's generate_confirmation_token():
 // return "ragflow-" + secrets.token_urlsafe(32)

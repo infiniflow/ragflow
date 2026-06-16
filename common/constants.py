@@ -69,6 +69,7 @@ class StatusEnum(Enum):
 class ActiveStatusEnum(Enum):
     ACTIVE = "active"
     INACTIVE = "inactive"
+    UNSUPPORTED = "unsupported"
 
 
 class ActiveEnum(Enum):
@@ -156,6 +157,8 @@ class FileSource(StrEnum):
     DINGTALK_AI_TABLE = "dingtalk_ai_table"
     ONEDRIVE = "onedrive"
     OUTLOOK = "outlook"
+    SALESFORCE = "salesforce"
+    AZURE_BLOB = "azure_blob"
 
 
 class PipelineTaskType(StrEnum):

@@ -215,7 +215,7 @@ const Chunk = () => {
             </header>
 
             <Spin spinning={loading} className="flex-1 h-0" size="large">
-              <div className="relative @container h-full px-5 pb-5 overflow-x-hidden overflow-y-auto">
+              <div className="relative @container h-full px-5 pb-5 overflow-hidden flex flex-col">
                 <div
                   className="
                     sticky top-0 z-[1] bg-bg-base space-y-4 py-5
@@ -245,7 +245,7 @@ const Chunk = () => {
                   />
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-4 flex-1 overflow-y-auto min-h-0">
                   {chunkList.map((item) => (
                     <ChunkCard
                       item={item}

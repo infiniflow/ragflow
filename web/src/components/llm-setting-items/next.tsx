@@ -4,9 +4,10 @@ import {
 } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { camelCase, isEqual } from 'lodash';
-import { useCallback } from 'react';
+import React, { useCallback } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { z } from 'zod';
+import { Collapse } from '../collapse';
 import {
   FormControl,
   FormField,
@@ -38,6 +39,7 @@ interface LlmSettingFieldItemsProps {
     | 'frequency_penalty'
     | 'max_tokens'
   >;
+  showCollapse?: boolean;
 }
 
 export const LLMIdFormField = {
@@ -80,9 +82,17 @@ export function LlmSettingFieldItems({
     'max_tokens',
   ],
   llmId,
+  showCollapse = false,
 }: LlmSettingFieldItemsProps) {
   const form = useFormContext();
   const { t } = useTranslate('chat');
+
+  const CollapseComponent = showCollapse ? Collapse : React.Fragment;
+  const collapseProps = showCollapse
+    ? {
+        title: t('modelSetting'),
+      }
+    : {};
 
   const getFieldWithPrefix = useCallback(
     (name: string) => {
@@ -142,101 +152,105 @@ export function LlmSettingFieldItems({
         testId={llmSelectTestId}
         optionTestIdPrefix={llmOptionTestIdPrefix}
       ></LLMFormField>
-      <FormField
-        control={form.control}
-        name={getFieldWithPrefix('parameter')}
-        render={({ field }) => (
-          <FormItem className="flex justify-between items-center">
-            <FormLabel className="flex-1">{t('freedom')}</FormLabel>
-            <FormControl>
-              <Select
-                value={field.value}
-                onValueChange={(val) => {
-                  handleChange(val);
-                  field.onChange(val);
-                }}
-              >
-                <SelectTrigger className="flex-1 !m-0">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {parameterOptions.map((x) => (
-                    <SelectItem value={x.value} key={x.value}>
-                      {x.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      {showFields.some((item) => item === 'temperature') && (
-        <SliderInputSwitchFormField
-          name={getFieldWithPrefix('temperature')}
-          checkName="temperatureEnabled"
-          label="temperature"
-          max={1}
-          step={0.01}
-          min={0}
-          onChange={() => {
-            checkParameterIsEqual();
-          }}
-        ></SliderInputSwitchFormField>
-      )}
-      {showFields.some((item) => item === 'top_p') && (
-        <SliderInputSwitchFormField
-          name={getFieldWithPrefix('top_p')}
-          checkName="topPEnabled"
-          label="topP"
-          max={1}
-          step={0.01}
-          min={0}
-          onChange={() => {
-            checkParameterIsEqual();
-          }}
-        ></SliderInputSwitchFormField>
-      )}
-      {showFields.some((item) => item === 'presence_penalty') && (
-        <SliderInputSwitchFormField
-          name={getFieldWithPrefix('presence_penalty')}
-          checkName="presencePenaltyEnabled"
-          label="presencePenalty"
-          max={1}
-          step={0.01}
-          min={0}
-          onChange={() => {
-            checkParameterIsEqual();
-          }}
-        ></SliderInputSwitchFormField>
-      )}
-      {showFields.some((item) => item === 'frequency_penalty') && (
-        <SliderInputSwitchFormField
-          name={getFieldWithPrefix('frequency_penalty')}
-          checkName="frequencyPenaltyEnabled"
-          label="frequencyPenalty"
-          max={1}
-          step={0.01}
-          min={0}
-          onChange={() => {
-            checkParameterIsEqual();
-          }}
-        ></SliderInputSwitchFormField>
-      )}
-      {showFields.some((item) => item === 'max_tokens') && (
-        <SliderInputSwitchFormField
-          name={getFieldWithPrefix('max_tokens')}
-          checkName="maxTokensEnabled"
-          numberInputClassName="w-20"
-          label="maxTokens"
-          max={128000}
-          min={0}
-          onChange={() => {
-            checkParameterIsEqual();
-          }}
-        ></SliderInputSwitchFormField>
-      )}
+      <CollapseComponent {...collapseProps}>
+        <section className="space-y-5">
+          <FormField
+            control={form.control}
+            name={getFieldWithPrefix('parameter')}
+            render={({ field }) => (
+              <FormItem className="flex justify-between items-center">
+                <FormLabel className="flex-1">{t('freedom')}</FormLabel>
+                <FormControl>
+                  <Select
+                    value={field.value}
+                    onValueChange={(val) => {
+                      handleChange(val);
+                      field.onChange(val);
+                    }}
+                  >
+                    <SelectTrigger className="flex-1 !m-0">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {parameterOptions.map((x) => (
+                        <SelectItem value={x.value} key={x.value}>
+                          {x.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          {showFields.some((item) => item === 'temperature') && (
+            <SliderInputSwitchFormField
+              name={getFieldWithPrefix('temperature')}
+              checkName="temperatureEnabled"
+              label="temperature"
+              max={1}
+              step={0.01}
+              min={0}
+              onChange={() => {
+                checkParameterIsEqual();
+              }}
+            ></SliderInputSwitchFormField>
+          )}
+          {showFields.some((item) => item === 'top_p') && (
+            <SliderInputSwitchFormField
+              name={getFieldWithPrefix('top_p')}
+              checkName="topPEnabled"
+              label="topP"
+              max={1}
+              step={0.01}
+              min={0}
+              onChange={() => {
+                checkParameterIsEqual();
+              }}
+            ></SliderInputSwitchFormField>
+          )}
+          {showFields.some((item) => item === 'presence_penalty') && (
+            <SliderInputSwitchFormField
+              name={getFieldWithPrefix('presence_penalty')}
+              checkName="presencePenaltyEnabled"
+              label="presencePenalty"
+              max={1}
+              step={0.01}
+              min={0}
+              onChange={() => {
+                checkParameterIsEqual();
+              }}
+            ></SliderInputSwitchFormField>
+          )}
+          {showFields.some((item) => item === 'frequency_penalty') && (
+            <SliderInputSwitchFormField
+              name={getFieldWithPrefix('frequency_penalty')}
+              checkName="frequencyPenaltyEnabled"
+              label="frequencyPenalty"
+              max={1}
+              step={0.01}
+              min={0}
+              onChange={() => {
+                checkParameterIsEqual();
+              }}
+            ></SliderInputSwitchFormField>
+          )}
+          {showFields.some((item) => item === 'max_tokens') && (
+            <SliderInputSwitchFormField
+              name={getFieldWithPrefix('max_tokens')}
+              checkName="maxTokensEnabled"
+              numberInputClassName="w-20"
+              label="maxTokens"
+              max={128000}
+              min={0}
+              onChange={() => {
+                checkParameterIsEqual();
+              }}
+            ></SliderInputSwitchFormField>
+          )}
+        </section>
+      </CollapseComponent>
     </div>
   );
 }
