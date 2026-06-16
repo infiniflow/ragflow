@@ -278,7 +278,8 @@
     {
       "name": "amazon/nova-micro-v1",
       "alias": [
-        "amazon.nova-micro-v1:0"
+        "amazon.nova-micro-v1:0",
+        "us.amazon.nova-micro-v1:0"
       ],
       "model_types": [
         "chat"
@@ -365,7 +366,8 @@
     {
       "name": "anthropic/claude-fable-5",
       "alias": [
-        "anthropic.claude-fable-5"
+        "anthropic.claude-fable-5",
+        "claude-fable-5"
       ],
       "model_types": [
         "chat",
@@ -379,7 +381,9 @@
     },
     {
       "name": "anthropic/claude-mythos-5",
-      "alias": [],
+      "alias": [
+        "claude-mythos-5"
+      ],
       "model_types": [
         "chat",
         "vision"
@@ -663,7 +667,9 @@
       "name": "anthropic/claude-sonnet-4-5",
       "alias": [
         "anthropic.claude-sonnet-4-5",
-        "anthropic/claude-sonnet-4.5"
+        "anthropic/claude-sonnet-4.5",
+        "claude-sonnet-4-5",
+        "claude-sonnet-4.5"
       ],
       "model_types": [
         "chat",
@@ -696,7 +702,8 @@
     {
       "name": "anthropic/claude-sonnet-4-7",
       "alias": [
-        "anthropic.claude-sonnet-4-7"
+        "anthropic.claude-sonnet-4-7",
+        "claude-sonnet-4-7"
       ],
       "model_types": [
         "chat",
@@ -882,16 +889,6 @@
       }
     },
     {
-      "name": "antigravity-preview-05-2026",
-      "alias": [
-        "models/antigravity-preview-05-2026"
-      ],
-      "max_tokens": 1048576,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
       "name": "arcee-ai/coder-large",
       "alias": [],
       "model_types": [
@@ -996,7 +993,8 @@
     {
       "name": "azure/o1-preview",
       "alias": [
-        "azure/eu/o1-preview"
+        "azure/eu/o1-preview",
+        "openai/o1-preview"
       ],
       "max_tokens": 128000,
       "model_types": [
@@ -1029,7 +1027,10 @@
     },
     {
       "name": "BAAI/bge-reranker-v2-m3",
-      "alias": [],
+      "alias": [
+        "bge-reranker-v2-m3",
+        "Pro/BAAI/bge-reranker-v2-m3"
+      ],
       "model_types": [
         "rerank"
       ],
@@ -1074,7 +1075,9 @@
     },
     {
       "name": "BAAI/bge-m3",
-      "alias": [],
+      "alias": [
+        "bge-m3"
+      ],
       "model_types": [
         "embedding"
       ],
@@ -1999,25 +2002,6 @@
       ]
     },
     {
-      "name": "bge-m3",
-      "alias": [],
-      "max_tokens": 8192,
-      "model_types": [
-        "embedding"
-      ],
-      "max_dimension": 1024
-    },
-    {
-      "name": "bge-reranker-v2-m3",
-      "alias": [
-        "Pro/BAAI/bge-reranker-v2-m3"
-      ],
-      "max_tokens": 1024,
-      "model_types": [
-        "rerank"
-      ]
-    },
-    {
       "name": "bigcode/starcoder2-15b-instruct-v0.1",
       "alias": [
         "starcoder2-15b-instruct-v0.1"
@@ -2837,7 +2821,8 @@
     {
       "name": "bytedance-seed/doubao-seedance-1-5-pro",
       "alias": [
-        "doubao-seedance-1-5-pro"
+        "doubao-seedance-1-5-pro",
+        "doubao-seedance-1-5-pro-251215"
       ],
       "model_types": [
         "video_generation"
@@ -3221,19 +3206,6 @@
       ]
     },
     {
-      "name": "claude-fable-5",
-      "alias": [],
-      "max_tokens": 1000000,
-      "model_types": [
-        "chat",
-        "vision"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      }
-    },
-    {
       "name": "claude-haiku-4-5-20251001",
       "alias": [
         "anthropic/claude-haiku-4-5",
@@ -3256,18 +3228,6 @@
       "max_tokens": 200000,
       "model_types": [
         "chat"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      }
-    },
-    {
-      "name": "claude-mythos-5",
-      "max_tokens": 1000000,
-      "model_types": [
-        "chat",
-        "vision"
       ],
       "thinking": {
         "default_value": true,
@@ -3415,21 +3375,6 @@
       }
     },
     {
-      "name": "claude-sonnet-4-5",
-      "alias": [
-        "claude-sonnet-4.5"
-      ],
-      "max_tokens": 1000000,
-      "model_types": [
-        "chat",
-        "vision"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      }
-    },
-    {
       "name": "claude-sonnet-4-5-20250929",
       "max_tokens": 200000,
       "model_types": [
@@ -3470,19 +3415,6 @@
       "max_tokens": 1000000,
       "model_types": [
         "chat"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      }
-    },
-    {
-      "name": "claude-sonnet-4-7",
-      "alias": [],
-      "max_tokens": 1000000,
-      "model_types": [
-        "chat",
-        "vision"
       ],
       "thinking": {
         "default_value": true,
@@ -3917,26 +3849,6 @@
       ]
     },
     {
-      "name": "deep-research-max-preview-04-2026",
-      "alias": [
-        "models/deep-research-max-preview-04-2026"
-      ],
-      "max_tokens": 1048576,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deep-research-preview-04-2026",
-      "alias": [
-        "models/deep-research-preview-04-2026"
-      ],
-      "max_tokens": 1048576,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
       "name": "deepcogito/cogito-v2.1-671b",
       "alias": [],
       "model_types": [
@@ -4225,7 +4137,9 @@
         "deepseek-chat",
         "deepseek/deepseek-v4-flash",
         "deepseek-v4-flash-260425",
-        "deepseek/deepseek-v4-flash-202605"
+        "deepseek/deepseek-v4-flash-202605",
+        "deepseek-v4-flash",
+        "Deepseek V4 Flash"
       ],
       "model_types": [
         "chat"
@@ -4239,7 +4153,8 @@
     {
       "name": "deepseek-ai/deepseek-v4-flash-base",
       "alias": [
-        "deepseek/deepseek-v4-flash-base"
+        "deepseek/deepseek-v4-flash-base",
+        "deepseek-v4-flash-base"
       ],
       "model_types": [
         "chat"
@@ -4251,7 +4166,9 @@
       "alias": [
         "deepseek/deepseek-v4-pro",
         "deepseek-v4-pro-260425",
-        "deepseek/deepseek-v4-pro-202606"
+        "deepseek/deepseek-v4-pro-202606",
+        "deepseek-v4-pro",
+        "Deepseek V4 Pro"
       ],
       "model_types": [
         "chat"
@@ -4265,7 +4182,8 @@
     {
       "name": "deepseek-ai/deepseek-v4-pro-base",
       "alias": [
-        "deepseek/deepseek-v4-pro-base"
+        "deepseek/deepseek-v4-pro-base",
+        "deepseek-v4-pro-base"
       ],
       "model_types": [
         "chat"
@@ -4306,7 +4224,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-v3.2-exp-base",
-      "alias": [],
+      "alias": [
+        "deepseek-v3.2-exp-base"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4315,7 +4235,8 @@
     {
       "name": "deepseek-ai/deepseek-v3.2-speciale",
       "alias": [
-        "deepseek/deepseek-v3.2-speciale-or"
+        "deepseek/deepseek-v3.2-speciale-or",
+        "deepseek-v3.2-speciale"
       ],
       "model_types": [
         "chat"
@@ -4336,7 +4257,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-v3.1-base",
-      "alias": [],
+      "alias": [
+        "deepseek-v3.1-base"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4380,7 +4303,13 @@
     {
       "name": "deepseek-ai/deepseek-v3",
       "alias": [
-        "deepseek/deepseek-chat"
+        "deepseek/deepseek-chat",
+        "deepseek-v3",
+        "deepseek/deepseek_v3",
+        "deepseek_v3",
+        "DeepSeek V3",
+        "deepseek/deepseek-v3",
+        "deepseek-v3-241226"
       ],
       "model_types": [
         "chat"
@@ -4389,7 +4318,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-v3-base",
-      "alias": [],
+      "alias": [
+        "deepseek-v3-base"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4397,7 +4328,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-v2.5",
-      "alias": [],
+      "alias": [
+        "deepseek-v2.5"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4405,7 +4338,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-v2.5-1210",
-      "alias": [],
+      "alias": [
+        "deepseek-v2.5-1210"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4413,7 +4348,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-coder-v2-base",
-      "alias": [],
+      "alias": [
+        "deepseek-coder-v2-base"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4421,7 +4358,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-coder-v2-instruct",
-      "alias": [],
+      "alias": [
+        "deepseek-coder-v2-instruct"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4429,7 +4368,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-coder-v2-instruct-0724",
-      "alias": [],
+      "alias": [
+        "deepseek-coder-v2-instruct-0724"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4437,7 +4378,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-coder-v2-lite-base",
-      "alias": [],
+      "alias": [
+        "deepseek-coder-v2-lite-base"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4445,7 +4388,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-coder-v2-lite-instruct",
-      "alias": [],
+      "alias": [
+        "deepseek-coder-v2-lite-instruct"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4454,7 +4399,8 @@
     {
       "name": "deepseek-ai/deepseek-math-v2",
       "alias": [
-        "deepseek/deepseek-math-v2"
+        "deepseek/deepseek-math-v2",
+        "deepseek-math-v2"
       ],
       "model_types": [
         "chat"
@@ -4463,7 +4409,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-prover-v2-671b",
-      "alias": [],
+      "alias": [
+        "deepseek-prover-v2-671b"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4471,7 +4419,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-prover-v2-7b",
-      "alias": [],
+      "alias": [
+        "deepseek-prover-v2-7b"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4479,7 +4429,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-v2",
-      "alias": [],
+      "alias": [
+        "deepseek-v2"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4487,7 +4439,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-v2-chat",
-      "alias": [],
+      "alias": [
+        "deepseek-v2-chat"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4495,7 +4449,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-v2-chat-0628",
-      "alias": [],
+      "alias": [
+        "deepseek-v2-chat-0628"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4503,7 +4459,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-v2-lite",
-      "alias": [],
+      "alias": [
+        "deepseek-v2-lite"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4511,7 +4469,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-v2-lite-chat",
-      "alias": [],
+      "alias": [
+        "deepseek-v2-lite-chat"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4519,7 +4479,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-coder-7b-base-v1.5",
-      "alias": [],
+      "alias": [
+        "deepseek-coder-7b-base-v1.5"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4527,7 +4489,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-coder-7b-instruct-v1.5",
-      "alias": [],
+      "alias": [
+        "deepseek-coder-7b-instruct-v1.5"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4535,7 +4499,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-prover-v1.5-base",
-      "alias": [],
+      "alias": [
+        "deepseek-prover-v1.5-base"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4543,7 +4509,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-prover-v1.5-rl",
-      "alias": [],
+      "alias": [
+        "deepseek-prover-v1.5-rl"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4551,7 +4519,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-prover-v1.5-sft",
-      "alias": [],
+      "alias": [
+        "deepseek-prover-v1.5-sft"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4559,7 +4529,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-prover-v1",
-      "alias": [],
+      "alias": [
+        "deepseek-prover-v1"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4645,7 +4617,11 @@
     },
     {
       "name": "deepseek-ai/deepseek-r1-0528-qwen3-8b",
-      "alias": [],
+      "alias": [
+        "deepseek-r1-0528-qwen3-8b",
+        "deepseek/deepseek-r1-0528-qwen3-8b",
+        "DeepSeek R1 0528 Qwen3 8B"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4663,7 +4639,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-r1-distill-llama-8b",
-      "alias": [],
+      "alias": [
+        "deepseek-r1-distill-llama-8b"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4687,7 +4665,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-r1-zero",
-      "alias": [],
+      "alias": [
+        "deepseek-r1-zero"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4695,7 +4675,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-vl2",
-      "alias": [],
+      "alias": [
+        "deepseek-vl2"
+      ],
       "model_types": [
         "image2text"
       ],
@@ -4703,7 +4685,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-vl2-small",
-      "alias": [],
+      "alias": [
+        "deepseek-vl2-small"
+      ],
       "model_types": [
         "image2text"
       ],
@@ -4711,7 +4695,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-vl2-tiny",
-      "alias": [],
+      "alias": [
+        "deepseek-vl2-tiny"
+      ],
       "model_types": [
         "image2text"
       ],
@@ -4719,7 +4705,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-coder-1.3b-base",
-      "alias": [],
+      "alias": [
+        "deepseek-coder-1.3b-base"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4727,7 +4715,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-coder-1.3b-instruct",
-      "alias": [],
+      "alias": [
+        "deepseek-coder-1.3b-instruct"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4735,7 +4725,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-coder-33b-base",
-      "alias": [],
+      "alias": [
+        "deepseek-coder-33b-base"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4743,7 +4735,10 @@
     },
     {
       "name": "deepseek-ai/deepseek-coder-33b-instruct",
-      "alias": [],
+      "alias": [
+        "deepseek-coder-33b-instruct",
+        "Deepseek Coder 33B Instruct"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4751,7 +4746,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-coder-5.7bmqa-base",
-      "alias": [],
+      "alias": [
+        "deepseek-coder-5.7bmqa-base"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4759,7 +4756,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-coder-6.7b-base",
-      "alias": [],
+      "alias": [
+        "deepseek-coder-6.7b-base"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4767,7 +4766,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-coder-6.7b-instruct",
-      "alias": [],
+      "alias": [
+        "deepseek-coder-6.7b-instruct"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4775,7 +4776,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-llm-67b-base",
-      "alias": [],
+      "alias": [
+        "deepseek-llm-67b-base"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4783,7 +4786,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-llm-67b-chat",
-      "alias": [],
+      "alias": [
+        "deepseek-llm-67b-chat"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4791,7 +4796,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-llm-7b-base",
-      "alias": [],
+      "alias": [
+        "deepseek-llm-7b-base"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4799,7 +4806,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-llm-7b-chat",
-      "alias": [],
+      "alias": [
+        "deepseek-llm-7b-chat"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4807,7 +4816,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-math-7b-base",
-      "alias": [],
+      "alias": [
+        "deepseek-math-7b-base"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4815,7 +4826,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-math-7b-instruct",
-      "alias": [],
+      "alias": [
+        "deepseek-math-7b-instruct"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4823,7 +4836,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-math-7b-rl",
-      "alias": [],
+      "alias": [
+        "deepseek-math-7b-rl"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4831,7 +4846,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-moe-16b-base",
-      "alias": [],
+      "alias": [
+        "deepseek-moe-16b-base"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4839,7 +4856,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-moe-16b-chat",
-      "alias": [],
+      "alias": [
+        "deepseek-moe-16b-chat"
+      ],
       "model_types": [
         "chat"
       ],
@@ -4855,7 +4874,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-vl-1.3b-base",
-      "alias": [],
+      "alias": [
+        "deepseek-vl-1.3b-base"
+      ],
       "model_types": [
         "image2text"
       ],
@@ -4863,7 +4884,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-vl-1.3b-chat",
-      "alias": [],
+      "alias": [
+        "deepseek-vl-1.3b-chat"
+      ],
       "model_types": [
         "image2text"
       ],
@@ -4871,7 +4894,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-vl-7b-base",
-      "alias": [],
+      "alias": [
+        "deepseek-vl-7b-base"
+      ],
       "model_types": [
         "image2text"
       ],
@@ -4879,7 +4904,9 @@
     },
     {
       "name": "deepseek-ai/deepseek-vl-7b-chat",
-      "alias": [],
+      "alias": [
+        "deepseek-vl-7b-chat"
+      ],
       "model_types": [
         "image2text"
       ],
@@ -4903,200 +4930,6 @@
       "model_types": [
         "text-to-image",
         "image_generation"
-      ]
-    },
-    {
-      "name": "deepseek-coder-1.3b-base",
-      "alias": [],
-      "max_tokens": 16384,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-coder-1.3b-instruct",
-      "alias": [],
-      "max_tokens": 16384,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-coder-33b-base",
-      "alias": [],
-      "max_tokens": 16384,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-coder-33b-instruct",
-      "alias": [
-        "Deepseek Coder 33B Instruct"
-      ],
-      "max_tokens": 16384,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-coder-5.7bmqa-base",
-      "alias": [],
-      "max_tokens": 16384,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-coder-6.7b-base",
-      "alias": [],
-      "max_tokens": 16384,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-coder-6.7b-instruct",
-      "alias": [],
-      "max_tokens": 16384,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-coder-7b-base-v1.5",
-      "alias": [],
-      "max_tokens": 4096,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-coder-7b-instruct-v1.5",
-      "alias": [],
-      "max_tokens": 4096,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-coder-v2-base",
-      "alias": [],
-      "max_tokens": 163840,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-coder-v2-instruct",
-      "alias": [],
-      "max_tokens": 163840,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-coder-v2-instruct-0724",
-      "alias": [],
-      "max_tokens": 163840,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-coder-v2-lite-base",
-      "alias": [],
-      "max_tokens": 163840,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-coder-v2-lite-instruct",
-      "alias": [],
-      "max_tokens": 163840,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-llm-67b-base",
-      "alias": [],
-      "max_tokens": 4096,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-llm-67b-chat",
-      "alias": [],
-      "max_tokens": 4096,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-llm-7b-base",
-      "alias": [],
-      "max_tokens": 4096,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-llm-7b-chat",
-      "alias": [],
-      "max_tokens": 4096,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-math-7b-base",
-      "alias": [],
-      "max_tokens": 4096,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-math-7b-instruct",
-      "alias": [],
-      "max_tokens": 4096,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-math-7b-rl",
-      "alias": [],
-      "max_tokens": 4096,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-math-v2",
-      "alias": [],
-      "max_tokens": 163840,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-moe-16b-base",
-      "alias": [],
-      "max_tokens": 4096,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-moe-16b-chat",
-      "alias": [],
-      "max_tokens": 4096,
-      "model_types": [
-        "chat"
       ]
     },
     {
@@ -5124,54 +4957,6 @@
         "chat",
         "vision",
         "image2text"
-      ]
-    },
-    {
-      "name": "deepseek-prover-v1",
-      "alias": [],
-      "max_tokens": 4096,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-prover-v1.5-base",
-      "alias": [],
-      "max_tokens": 4096,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-prover-v1.5-rl",
-      "alias": [],
-      "max_tokens": 4096,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-prover-v1.5-sft",
-      "alias": [],
-      "max_tokens": 4096,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-prover-v2-671b",
-      "alias": [],
-      "max_tokens": 163840,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-prover-v2-7b",
-      "alias": [],
-      "max_tokens": 32768,
-      "model_types": [
-        "chat"
       ]
     },
     {
@@ -5205,18 +4990,6 @@
         "default_value": true,
         "clear_thinking": true
       }
-    },
-    {
-      "name": "deepseek-r1-0528-qwen3-8b",
-      "alias": [
-        "deepseek/deepseek-r1-0528-qwen3-8b",
-        "DeepSeek R1 0528 Qwen3 8B"
-      ],
-      "max_tokens": 131072,
-      "model_types": [
-        "chat"
-      ],
-      "max_completion_tokens": 32000
     },
     {
       "name": "deepseek-r1-2025-01-20",
@@ -5260,14 +5033,6 @@
         "default_value": true,
         "clear_thinking": true
       }
-    },
-    {
-      "name": "deepseek-r1-distill-llama-8b",
-      "alias": [],
-      "max_tokens": 131072,
-      "model_types": [
-        "chat"
-      ]
     },
     {
       "name": "deepseek-r1-distill-qwen-1.5b",
@@ -5352,14 +5117,6 @@
       }
     },
     {
-      "name": "deepseek-r1-zero",
-      "alias": [],
-      "max_tokens": 163840,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
       "name": "deepseek-reasoner",
       "alias": [
         "deepseek/deepseek-reasoner"
@@ -5372,77 +5129,6 @@
         "default_value": true,
         "clear_thinking": true
       }
-    },
-    {
-      "name": "deepseek-v2",
-      "alias": [],
-      "max_tokens": 163840,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-v2-chat",
-      "alias": [],
-      "max_tokens": 163840,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-v2-chat-0628",
-      "alias": [],
-      "max_tokens": 163840,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-v2-lite",
-      "alias": [],
-      "max_tokens": 163840,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-v2-lite-chat",
-      "alias": [],
-      "max_tokens": 163840,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-v2.5",
-      "alias": [],
-      "max_tokens": 163840,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-v2.5-1210",
-      "alias": [],
-      "max_tokens": 163840,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-v3",
-      "alias": [
-        "deepseek/deepseek_v3",
-        "deepseek_v3",
-        "DeepSeek V3",
-        "deepseek/deepseek-v3",
-        "deepseek-v3-241226"
-      ],
-      "max_tokens": 163840,
-      "model_types": [
-        "chat"
-      ],
-      "max_completion_tokens": 16000
     },
     {
       "name": "deepseek-v3-0324",
@@ -5478,14 +5164,6 @@
       ]
     },
     {
-      "name": "deepseek-v3-base",
-      "alias": [],
-      "max_tokens": 163840,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
       "name": "deepseek-v3-huoshan",
       "max_tokens": 64000,
       "model_types": [
@@ -5508,14 +5186,6 @@
         "default_value": true,
         "clear_thinking": true
       }
-    },
-    {
-      "name": "deepseek-v3.1-base",
-      "alias": [],
-      "max_tokens": 163840,
-      "model_types": [
-        "chat"
-      ]
     },
     {
       "name": "deepseek-v3.1-huoshan",
@@ -5582,14 +5252,6 @@
       }
     },
     {
-      "name": "deepseek-v3.2-exp-base",
-      "alias": [],
-      "max_tokens": 163840,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
       "name": "deepseek-v3.2-exp-thinking",
       "max_tokens": 128000,
       "model_types": [
@@ -5601,14 +5263,6 @@
       }
     },
     {
-      "name": "deepseek-v3.2-speciale",
-      "alias": [],
-      "max_tokens": 163840,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
       "name": "deepseek-v3.2-thinking",
       "max_tokens": 128000,
       "model_types": [
@@ -5618,108 +5272,6 @@
         "default_value": true,
         "clear_thinking": true
       }
-    },
-    {
-      "name": "deepseek-v4-flash",
-      "alias": [
-        "Deepseek V4 Flash"
-      ],
-      "max_tokens": 1048576,
-      "model_types": [
-        "chat"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      },
-      "max_completion_tokens": 393216
-    },
-    {
-      "name": "deepseek-v4-flash-base",
-      "alias": [],
-      "max_tokens": 1048576,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-v4-pro",
-      "alias": [
-        "Deepseek V4 Pro"
-      ],
-      "max_tokens": 1048576,
-      "model_types": [
-        "chat"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      },
-      "max_completion_tokens": 393216
-    },
-    {
-      "name": "deepseek-v4-pro-base",
-      "alias": [],
-      "max_tokens": 1048576,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-vl-1.3b-base",
-      "alias": [],
-      "max_tokens": 16384,
-      "model_types": [
-        "image2text"
-      ]
-    },
-    {
-      "name": "deepseek-vl-1.3b-chat",
-      "alias": [],
-      "max_tokens": 16384,
-      "model_types": [
-        "image2text"
-      ]
-    },
-    {
-      "name": "deepseek-vl-7b-base",
-      "alias": [],
-      "max_tokens": 16384,
-      "model_types": [
-        "image2text"
-      ]
-    },
-    {
-      "name": "deepseek-vl-7b-chat",
-      "alias": [],
-      "max_tokens": 16384,
-      "model_types": [
-        "image2text"
-      ]
-    },
-    {
-      "name": "deepseek-vl2",
-      "alias": [],
-      "max_tokens": 4096,
-      "model_types": [
-        "image2text"
-      ]
-    },
-    {
-      "name": "deepseek-vl2-small",
-      "alias": [],
-      "max_tokens": 4096,
-      "model_types": [
-        "image2text"
-      ]
-    },
-    {
-      "name": "deepseek-vl2-tiny",
-      "alias": [],
-      "max_tokens": 4096,
-      "model_types": [
-        "image2text"
-      ]
     },
     {
       "name": "dev/glm46",
@@ -6449,13 +6001,6 @@
       ]
     },
     {
-      "name": "doubao-seedance-1-5-pro-251215",
-      "model_types": [
-        "video_generation"
-      ],
-      "alias": []
-    },
-    {
       "name": "doubao-seedance-2-0-260128",
       "model_types": [
         "video_generation"
@@ -6972,354 +6517,6 @@
       ]
     },
     {
-      "name": "gemini-2.0-flash",
-      "alias": [
-        "gemini-2.0-flash-001",
-        "gemini-2.0-flash-exp",
-        "models/gemini-2.0-flash"
-      ],
-      "max_tokens": 1048576,
-      "model_types": [
-        "chat",
-        "image2text",
-        "vision",
-        "video_understanding",
-        "audio_understanding"
-      ]
-    },
-    {
-      "name": "gemini-2.0-flash-lite",
-      "alias": [
-        "gemini-2.0-flash-lite-001",
-        "models/gemini-2.0-flash-lite"
-      ],
-      "max_tokens": 1048576,
-      "model_types": [
-        "chat",
-        "image2text",
-        "vision",
-        "video_understanding",
-        "audio_understanding"
-      ]
-    },
-    {
-      "name": "gemini-2.5-computer-use-preview-10-2025",
-      "alias": [
-        "models/gemini-2.5-computer-use-preview-10-2025"
-      ],
-      "max_tokens": 128000,
-      "model_types": [
-        "chat",
-        "image2text",
-        "vision"
-      ]
-    },
-    {
-      "name": "gemini-2.5-flash",
-      "alias": [
-        "gemini-2.5-flash-preview-09-2025",
-        "models/gemini-2.5-flash",
-        "google.gemini-2.5-flash"
-      ],
-      "max_tokens": 1048576,
-      "model_types": [
-        "chat",
-        "image2text",
-        "vision",
-        "video_understanding",
-        "audio_understanding"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      }
-    },
-    {
-      "name": "gemini-2.5-flash-image",
-      "alias": [
-        "gemini-2.5-flash-image-preview",
-        "models/gemini-2.5-flash-image"
-      ],
-      "max_tokens": 65536,
-      "model_types": [
-        "text-to-image",
-        "image_generation",
-        "image_edit",
-        "image_understanding"
-      ]
-    },
-    {
-      "name": "gemini-2.5-flash-lite",
-      "alias": [
-        "gemini-2.5-flash-lite-preview-09-2025",
-        "models/gemini-2.5-flash-lite",
-        "google.gemini-2.5-flash-lite"
-      ],
-      "max_tokens": 1048576,
-      "model_types": [
-        "chat",
-        "image2text",
-        "vision",
-        "video_understanding",
-        "audio_understanding"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      }
-    },
-    {
-      "name": "gemini-2.5-flash-native-audio-preview-12-2025",
-      "alias": [
-        "models/gemini-2.5-flash-native-audio-preview-12-2025"
-      ],
-      "max_tokens": 131072,
-      "model_types": [
-        "chat",
-        "omni",
-        "audio_understanding",
-        "audio2text",
-        "tts",
-        "video_understanding"
-      ]
-    },
-    {
-      "name": "gemini-2.5-flash-preview-tts",
-      "alias": [
-        "models/gemini-2.5-flash-preview-tts"
-      ],
-      "max_tokens": 8192,
-      "model_types": [
-        "tts",
-        "audio_generation"
-      ]
-    },
-    {
-      "name": "gemini-2.5-pro",
-      "alias": [
-        "models/gemini-2.5-pro",
-        "google/gemini-2.5-pro-preview",
-        "google/gemini-2.5-pro-preview-05-06",
-        "google.gemini-2.5-pro"
-      ],
-      "max_tokens": 1048576,
-      "model_types": [
-        "chat",
-        "image2text",
-        "vision",
-        "video_understanding",
-        "audio_understanding"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      }
-    },
-    {
-      "name": "gemini-2.5-pro-preview-tts",
-      "alias": [
-        "models/gemini-2.5-pro-preview-tts"
-      ],
-      "max_tokens": 8192,
-      "model_types": [
-        "tts",
-        "audio_generation"
-      ]
-    },
-    {
-      "name": "gemini-3-flash-preview",
-      "alias": [
-        "models/gemini-3-flash-preview"
-      ],
-      "max_tokens": 1048576,
-      "model_types": [
-        "chat",
-        "image2text",
-        "vision",
-        "video_understanding",
-        "audio_understanding"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      }
-    },
-    {
-      "name": "gemini-3-pro-image",
-      "alias": [
-        "models/gemini-3-pro-image",
-        "google/gemini-3-pro-image-preview"
-      ],
-      "max_tokens": 65536,
-      "model_types": [
-        "text-to-image",
-        "image_generation",
-        "image_edit",
-        "image_understanding"
-      ]
-    },
-    {
-      "name": "gemini-3-pro-preview",
-      "alias": [
-        "models/gemini-3-pro-preview"
-      ],
-      "max_tokens": 1048576,
-      "model_types": [
-        "chat",
-        "image2text",
-        "vision",
-        "video_understanding",
-        "audio_understanding"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      }
-    },
-    {
-      "name": "gemini-3.1-flash-image",
-      "alias": [
-        "models/gemini-3.1-flash-image",
-        "google/gemini-3.1-flash-image-preview"
-      ],
-      "max_tokens": 131072,
-      "model_types": [
-        "text-to-image",
-        "image_generation",
-        "image_edit",
-        "image_understanding"
-      ]
-    },
-    {
-      "name": "gemini-3.1-flash-lite",
-      "alias": [
-        "models/gemini-3.1-flash-lite"
-      ],
-      "max_tokens": 1048576,
-      "model_types": [
-        "chat",
-        "image2text",
-        "vision",
-        "video_understanding",
-        "audio_understanding"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      }
-    },
-    {
-      "name": "gemini-3.1-flash-lite-preview",
-      "alias": [
-        "models/gemini-3.1-flash-lite-preview"
-      ],
-      "max_tokens": 1048576,
-      "model_types": [
-        "chat",
-        "image2text",
-        "vision",
-        "video_understanding",
-        "audio_understanding"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      }
-    },
-    {
-      "name": "gemini-3.1-flash-live-preview",
-      "alias": [
-        "models/gemini-3.1-flash-live-preview"
-      ],
-      "max_tokens": 131072,
-      "model_types": [
-        "chat",
-        "omni",
-        "audio_understanding",
-        "audio2text",
-        "tts",
-        "video_understanding"
-      ]
-    },
-    {
-      "name": "gemini-3.1-flash-tts-preview",
-      "alias": [
-        "models/gemini-3.1-flash-tts-preview"
-      ],
-      "max_tokens": 8192,
-      "model_types": [
-        "tts",
-        "audio_generation"
-      ]
-    },
-    {
-      "name": "gemini-3.1-pro-preview",
-      "alias": [
-        "models/gemini-3.1-pro-preview",
-        "google/gemini-3.1-pro"
-      ],
-      "max_tokens": 1048576,
-      "model_types": [
-        "chat",
-        "image2text",
-        "vision",
-        "video_understanding",
-        "audio_understanding"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      }
-    },
-    {
-      "name": "gemini-3.1-pro-preview-customtools",
-      "alias": [
-        "models/gemini-3.1-pro-preview-customtools"
-      ],
-      "max_tokens": 1048576,
-      "model_types": [
-        "chat",
-        "image2text",
-        "vision",
-        "video_understanding",
-        "audio_understanding"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      }
-    },
-    {
-      "name": "gemini-3.5-flash",
-      "alias": [
-        "models/gemini-3.5-flash"
-      ],
-      "max_tokens": 1048576,
-      "model_types": [
-        "chat",
-        "image2text",
-        "vision",
-        "video_understanding",
-        "audio_understanding"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      }
-    },
-    {
-      "name": "gemini-3.5-live-translate-preview",
-      "alias": [
-        "models/gemini-3.5-live-translate-preview"
-      ],
-      "max_tokens": 131072,
-      "model_types": [
-        "speech_translation",
-        "audio2text",
-        "tts"
-      ]
-    },
-    {
       "name": "gemini-embedding-001",
       "alias": [
         "models/gemini-embedding-001"
@@ -7337,19 +6534,6 @@
       "max_dimension": 3072,
       "model_types": [
         "embedding"
-      ]
-    },
-    {
-      "name": "gemini-robotics-er-1.6-preview",
-      "alias": [
-        "models/gemini-robotics-er-1.6-preview"
-      ],
-      "max_tokens": 131072,
-      "model_types": [
-        "chat",
-        "image2text",
-        "vision",
-        "robotics"
       ]
     },
     {
@@ -7661,7 +6845,10 @@
     },
     {
       "name": "google/gemini-3.5-flash",
-      "alias": [],
+      "alias": [
+        "gemini-3.5-flash",
+        "models/gemini-3.5-flash"
+      ],
       "model_types": [
         "chat",
         "image2text",
@@ -7677,7 +6864,10 @@
     },
     {
       "name": "google/gemini-3.5-live-translate-preview",
-      "alias": [],
+      "alias": [
+        "gemini-3.5-live-translate-preview",
+        "models/gemini-3.5-live-translate-preview"
+      ],
       "model_types": [
         "speech_translation",
         "audio2text",
@@ -7708,7 +6898,10 @@
     {
       "name": "google/gemini-3.1-flash-image",
       "alias": [
-        "gemini-3.1-flash-image-preview"
+        "gemini-3.1-flash-image-preview",
+        "gemini-3.1-flash-image",
+        "models/gemini-3.1-flash-image",
+        "google/gemini-3.1-flash-image-preview"
       ],
       "model_types": [
         "text-to-image",
@@ -7720,7 +6913,10 @@
     },
     {
       "name": "google/gemini-3.1-flash-lite",
-      "alias": [],
+      "alias": [
+        "gemini-3.1-flash-lite",
+        "models/gemini-3.1-flash-lite"
+      ],
       "model_types": [
         "chat",
         "image2text",
@@ -7736,7 +6932,10 @@
     },
     {
       "name": "google/gemini-3.1-flash-lite-preview",
-      "alias": [],
+      "alias": [
+        "gemini-3.1-flash-lite-preview",
+        "models/gemini-3.1-flash-lite-preview"
+      ],
       "model_types": [
         "chat",
         "image2text",
@@ -7752,7 +6951,10 @@
     },
     {
       "name": "google/gemini-3.1-flash-live-preview",
-      "alias": [],
+      "alias": [
+        "gemini-3.1-flash-live-preview",
+        "models/gemini-3.1-flash-live-preview"
+      ],
       "model_types": [
         "chat",
         "omni",
@@ -7765,7 +6967,10 @@
     },
     {
       "name": "google/gemini-3.1-flash-tts-preview",
-      "alias": [],
+      "alias": [
+        "gemini-3.1-flash-tts-preview",
+        "models/gemini-3.1-flash-tts-preview"
+      ],
       "model_types": [
         "tts",
         "audio_generation"
@@ -7774,7 +6979,11 @@
     },
     {
       "name": "google/gemini-3.1-pro-preview",
-      "alias": [],
+      "alias": [
+        "gemini-3.1-pro-preview",
+        "models/gemini-3.1-pro-preview",
+        "google/gemini-3.1-pro"
+      ],
       "model_types": [
         "chat",
         "image2text",
@@ -7790,7 +6999,10 @@
     },
     {
       "name": "google/gemini-3.1-pro-preview-customtools",
-      "alias": [],
+      "alias": [
+        "gemini-3.1-pro-preview-customtools",
+        "models/gemini-3.1-pro-preview-customtools"
+      ],
       "model_types": [
         "chat",
         "image2text",
@@ -7819,7 +7031,10 @@
     },
     {
       "name": "google/gemini-3-flash-preview",
-      "alias": [],
+      "alias": [
+        "gemini-3-flash-preview",
+        "models/gemini-3-flash-preview"
+      ],
       "model_types": [
         "chat",
         "image2text",
@@ -7835,7 +7050,11 @@
     },
     {
       "name": "google/gemini-3-pro-image",
-      "alias": [],
+      "alias": [
+        "gemini-3-pro-image",
+        "models/gemini-3-pro-image",
+        "google/gemini-3-pro-image-preview"
+      ],
       "model_types": [
         "text-to-image",
         "image_generation",
@@ -7846,7 +7065,10 @@
     },
     {
       "name": "google/gemini-3-pro-preview",
-      "alias": [],
+      "alias": [
+        "gemini-3-pro-preview",
+        "models/gemini-3-pro-preview"
+      ],
       "model_types": [
         "chat",
         "image2text",
@@ -7862,7 +7084,10 @@
     },
     {
       "name": "google/gemini-2.5-computer-use-preview-10-2025",
-      "alias": [],
+      "alias": [
+        "gemini-2.5-computer-use-preview-10-2025",
+        "models/gemini-2.5-computer-use-preview-10-2025"
+      ],
       "model_types": [
         "chat",
         "image2text",
@@ -7872,7 +7097,12 @@
     },
     {
       "name": "google/gemini-2.5-flash",
-      "alias": [],
+      "alias": [
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-preview-09-2025",
+        "models/gemini-2.5-flash",
+        "google.gemini-2.5-flash"
+      ],
       "model_types": [
         "chat",
         "image2text",
@@ -7888,7 +7118,11 @@
     },
     {
       "name": "google/gemini-2.5-flash-image",
-      "alias": [],
+      "alias": [
+        "gemini-2.5-flash-image",
+        "gemini-2.5-flash-image-preview",
+        "models/gemini-2.5-flash-image"
+      ],
       "model_types": [
         "text-to-image",
         "image_generation",
@@ -7900,7 +7134,11 @@
     {
       "name": "google/gemini-2.5-flash-lite",
       "alias": [
-        "google/gemini-2.5-flash-lite-preview-09-2025"
+        "google/gemini-2.5-flash-lite-preview-09-2025",
+        "gemini-2.5-flash-lite",
+        "gemini-2.5-flash-lite-preview-09-2025",
+        "models/gemini-2.5-flash-lite",
+        "google.gemini-2.5-flash-lite"
       ],
       "model_types": [
         "chat",
@@ -7935,7 +7173,10 @@
     },
     {
       "name": "google/gemini-2.5-flash-native-audio-preview-12-2025",
-      "alias": [],
+      "alias": [
+        "gemini-2.5-flash-native-audio-preview-12-2025",
+        "models/gemini-2.5-flash-native-audio-preview-12-2025"
+      ],
       "model_types": [
         "chat",
         "omni",
@@ -7966,7 +7207,10 @@
     },
     {
       "name": "google/gemini-2.5-flash-preview-tts",
-      "alias": [],
+      "alias": [
+        "gemini-2.5-flash-preview-tts",
+        "models/gemini-2.5-flash-preview-tts"
+      ],
       "model_types": [
         "tts",
         "audio_generation"
@@ -7975,7 +7219,13 @@
     },
     {
       "name": "google/gemini-2.5-pro",
-      "alias": [],
+      "alias": [
+        "gemini-2.5-pro",
+        "models/gemini-2.5-pro",
+        "google/gemini-2.5-pro-preview",
+        "google/gemini-2.5-pro-preview-05-06",
+        "google.gemini-2.5-pro"
+      ],
       "model_types": [
         "chat",
         "image2text",
@@ -8009,7 +7259,10 @@
     },
     {
       "name": "google/gemini-2.5-pro-preview-tts",
-      "alias": [],
+      "alias": [
+        "gemini-2.5-pro-preview-tts",
+        "models/gemini-2.5-pro-preview-tts"
+      ],
       "model_types": [
         "tts",
         "audio_generation"
@@ -8039,7 +7292,12 @@
     },
     {
       "name": "google/gemini-2.0-flash",
-      "alias": [],
+      "alias": [
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-001",
+        "gemini-2.0-flash-exp",
+        "models/gemini-2.0-flash"
+      ],
       "model_types": [
         "chat",
         "image2text",
@@ -8051,7 +7309,11 @@
     },
     {
       "name": "google/gemini-2.0-flash-lite",
-      "alias": [],
+      "alias": [
+        "gemini-2.0-flash-lite",
+        "gemini-2.0-flash-lite-001",
+        "models/gemini-2.0-flash-lite"
+      ],
       "model_types": [
         "chat",
         "image2text",
@@ -8318,7 +7580,10 @@
     },
     {
       "name": "google/gemini-robotics-er-1.6-preview",
-      "alias": [],
+      "alias": [
+        "gemini-robotics-er-1.6-preview",
+        "models/gemini-robotics-er-1.6-preview"
+      ],
       "model_types": [
         "chat",
         "image2text",
@@ -9248,7 +8513,8 @@
     {
       "name": "google/lyria-3-clip-preview",
       "alias": [
-        "models/lyria-3-clip-preview"
+        "models/lyria-3-clip-preview",
+        "lyria-3-clip-preview"
       ],
       "model_types": [
         "audio_generation"
@@ -9258,7 +8524,8 @@
     {
       "name": "google/lyria-3-pro-preview",
       "alias": [
-        "models/lyria-3-pro-preview"
+        "models/lyria-3-pro-preview",
+        "lyria-3-pro-preview"
       ],
       "model_types": [
         "audio_generation"
@@ -9268,7 +8535,8 @@
     {
       "name": "google/lyria-realtime-exp",
       "alias": [
-        "models/lyria-realtime-exp"
+        "models/lyria-realtime-exp",
+        "lyria-realtime-exp"
       ],
       "model_types": [
         "audio_generation"
@@ -10519,7 +9787,8 @@
     {
       "name": "google/veo-3.1-fast-generate-preview",
       "alias": [
-        "models/veo-3.1-fast-generate-preview"
+        "models/veo-3.1-fast-generate-preview",
+        "veo-3.1-fast-generate-preview"
       ],
       "model_types": [
         "video_generation"
@@ -10528,7 +9797,8 @@
     {
       "name": "google/veo-3.1-generate-preview",
       "alias": [
-        "models/veo-3.1-generate-preview"
+        "models/veo-3.1-generate-preview",
+        "veo-3.1-generate-preview"
       ],
       "model_types": [
         "video_generation"
@@ -10537,7 +9807,8 @@
     {
       "name": "google/veo-3.1-lite-generate-preview",
       "alias": [
-        "models/veo-3.1-lite-generate-preview"
+        "models/veo-3.1-lite-generate-preview",
+        "veo-3.1-lite-generate-preview"
       ],
       "model_types": [
         "video_generation"
@@ -10771,16 +10042,6 @@
       ]
     },
     {
-      "name": "gpt-4-turbo",
-      "max_tokens": 128000,
-      "model_types": [
-        "chat",
-        "vision",
-        "image2text"
-      ],
-      "alias": []
-    },
-    {
       "name": "gpt-4-turbo-2024-04-09",
       "max_tokens": 128000,
       "model_types": [
@@ -10865,16 +10126,6 @@
       "alias": [
         "gpt-4o-all"
       ]
-    },
-    {
-      "name": "gpt-4o-2024-05-13",
-      "max_tokens": 128000,
-      "model_types": [
-        "chat",
-        "vision",
-        "image2text"
-      ],
-      "alias": []
     },
     {
       "name": "gpt-4o-2024-08-06",
@@ -10978,14 +10229,6 @@
       ]
     },
     {
-      "name": "gpt-4o-mini-search-preview",
-      "max_tokens": 128000,
-      "model_types": [
-        "chat"
-      ],
-      "alias": []
-    },
-    {
       "name": "gpt-4o-mini-transcribe",
       "max_tokens": 16000,
       "model_types": [
@@ -11045,14 +10288,6 @@
       ]
     },
     {
-      "name": "gpt-4o-search-preview",
-      "max_tokens": 128000,
-      "model_types": [
-        "chat"
-      ],
-      "alias": []
-    },
-    {
       "name": "gpt-4o-transcribe",
       "max_tokens": 16000,
       "model_types": [
@@ -11066,20 +10301,6 @@
       "max_tokens": 16000,
       "model_types": [
         "chat"
-      ]
-    },
-    {
-      "name": "gpt-5",
-      "max_tokens": 400000,
-      "model_types": [
-        "chat"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      },
-      "alias": [
-        "gpt-5-all"
       ]
     },
     {
@@ -11131,18 +10352,6 @@
       "alias": []
     },
     {
-      "name": "gpt-5-codex",
-      "max_tokens": 400000,
-      "model_types": [
-        "chat"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      },
-      "alias": []
-    },
-    {
       "name": "gpt-5-codex-2025-09-15",
       "model_types": [
         "chat"
@@ -11174,16 +10383,6 @@
       ]
     },
     {
-      "name": "gpt-5-codex-mini",
-      "model_types": [
-        "chat"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      }
-    },
-    {
       "name": "gpt-5-image",
       "model_types": [
         "chat",
@@ -11208,20 +10407,6 @@
       }
     },
     {
-      "name": "gpt-5-mini",
-      "max_tokens": 400000,
-      "model_types": [
-        "chat",
-        "vision",
-        "image2text"
-      ],
-      "alias": [],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      }
-    },
-    {
       "name": "gpt-5-mini-2025-08-07",
       "max_tokens": 400000,
       "model_types": [
@@ -11230,20 +10415,6 @@
       "alias": [
         "openai/gpt-5-mini-2025-08-07"
       ]
-    },
-    {
-      "name": "gpt-5-nano",
-      "max_tokens": 400000,
-      "model_types": [
-        "chat",
-        "vision",
-        "image2text"
-      ],
-      "alias": [],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      }
     },
     {
       "name": "gpt-5-nano-2025-08-07",
@@ -11292,21 +10463,6 @@
       ]
     },
     {
-      "name": "gpt-5.1",
-      "max_tokens": 400000,
-      "model_types": [
-        "chat"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      },
-      "alias": [
-        "gpt-5.1-thinking-all",
-        "gpt-5.1-all"
-      ]
-    },
-    {
       "name": "gpt-5.1-2025-11-13",
       "max_tokens": 400000,
       "model_types": [
@@ -11345,30 +10501,7 @@
       "alias": []
     },
     {
-      "name": "gpt-5.1-codex",
-      "max_tokens": 400000,
-      "model_types": [
-        "chat"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      },
-      "alias": []
-    },
-    {
       "name": "gpt-5.1-codex-2025-11-13",
-      "model_types": [
-        "chat"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      }
-    },
-    {
-      "name": "gpt-5.1-codex-max",
-      "max_tokens": 400000,
       "model_types": [
         "chat"
       ],
@@ -11388,18 +10521,6 @@
       }
     },
     {
-      "name": "gpt-5.1-codex-mini",
-      "max_tokens": 400000,
-      "model_types": [
-        "chat"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      },
-      "alias": []
-    },
-    {
       "name": "gpt-5.1-plus",
       "max_tokens": 400000,
       "model_types": [
@@ -11416,20 +10537,6 @@
         "default_value": true,
         "clear_thinking": true
       }
-    },
-    {
-      "name": "gpt-5.2",
-      "max_tokens": 400000,
-      "model_types": [
-        "chat"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      },
-      "alias": [
-        "gpt-5.2-all"
-      ]
     },
     {
       "name": "gpt-5.2-2025-12-11",
@@ -11467,18 +10574,6 @@
       "model_types": [
         "chat"
       ],
-      "alias": []
-    },
-    {
-      "name": "gpt-5.2-codex",
-      "max_tokens": 400000,
-      "model_types": [
-        "chat"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      },
       "alias": []
     },
     {
@@ -11545,44 +10640,7 @@
       "alias": []
     },
     {
-      "name": "gpt-5.3-codex",
-      "max_tokens": 400000,
-      "model_types": [
-        "chat"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      },
-      "alias": []
-    },
-    {
       "name": "gpt-5.3-codex-2026-02-24",
-      "model_types": [
-        "chat"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      }
-    },
-    {
-      "name": "gpt-5.3-codex-spark",
-      "model_types": [
-        "chat"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      }
-    },
-    {
-      "name": "gpt-5.4",
-      "alias": [
-        "gpt-5.4-2026-03-05",
-        "openai/gpt-5.4-2026-03-05"
-      ],
-      "max_tokens": 1050000,
       "model_types": [
         "chat"
       ],
@@ -11602,18 +10660,6 @@
         "default_value": true,
         "clear_thinking": true
       }
-    },
-    {
-      "name": "gpt-5.4-mini",
-      "max_tokens": 400000,
-      "model_types": [
-        "chat"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      },
-      "alias": []
     },
     {
       "name": "gpt-5.4-mini-2026-03-17",
@@ -11669,18 +10715,6 @@
         "default_value": true,
         "clear_thinking": true
       }
-    },
-    {
-      "name": "gpt-5.5",
-      "max_tokens": 1050000,
-      "model_types": [
-        "chat"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      },
-      "alias": []
     },
     {
       "name": "gpt-5.5-2026-04-24",
@@ -11946,56 +10980,6 @@
       ]
     },
     {
-      "name": "grok-4.3",
-      "max_tokens": 1000000,
-      "model_types": [
-        "chat",
-        "vision",
-        "image2text"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      },
-      "alias": [
-        "xai/grok-4.3",
-        "grok-4.3-latest",
-        "grok-latest",
-        "grok-3",
-        "grok-3-latest",
-        "grok-3-beta",
-        "grok-3-fast",
-        "grok-3-fast-latest",
-        "grok-3-fast-beta",
-        "grok-3-mini",
-        "grok-3-mini-latest",
-        "grok-3-mini-beta",
-        "grok-3-mini-fast",
-        "grok-3-mini-fast-latest",
-        "grok-3-mini-fast-beta",
-        "grok-3-mini-high",
-        "grok-3-mini-high-beta",
-        "grok-3-mini-fast-high",
-        "grok-3-mini-fast-high-beta",
-        "grok-4-0709",
-        "grok-4",
-        "grok-4-latest",
-        "grok-4-fast-reasoning",
-        "grok-4-fast",
-        "grok-4-fast-reasoning-latest",
-        "grok-4-fast-non-reasoning",
-        "grok-4-fast-non-reasoning-latest",
-        "grok-4-1-fast-reasoning",
-        "grok-4-1-fast",
-        "grok-4-1-fast-reasoning-latest",
-        "grok-4-1-fast-non-reasoning",
-        "grok-4-1-fast-non-reasoning-latest",
-        "grok-4.1-fast",
-        "grok-4.2",
-        "grok-4.2-fast"
-      ]
-    },
-    {
       "name": "grok-build-0.1",
       "max_tokens": 256000,
       "model_types": [
@@ -12034,15 +11018,6 @@
         "grok-imagine-image-quality-20260403",
         "grok-imagine-image-quality-latest",
         "grok-imagine-image-pro"
-      ]
-    },
-    {
-      "name": "grok-imagine-video",
-      "model_types": [
-        "video_generation"
-      ],
-      "alias": [
-        "xai/grok-imagine-video"
       ]
     },
     {
@@ -15562,29 +14537,6 @@
       ]
     },
     {
-      "name": "lyria-3-clip-preview",
-      "alias": [],
-      "max_tokens": 131072,
-      "model_types": [
-        "audio_generation"
-      ]
-    },
-    {
-      "name": "lyria-3-pro-preview",
-      "alias": [],
-      "max_tokens": 131072,
-      "model_types": [
-        "audio_generation"
-      ]
-    },
-    {
-      "name": "lyria-realtime-exp",
-      "alias": [],
-      "model_types": [
-        "audio_generation"
-      ]
-    },
-    {
       "name": "M2-her",
       "max_tokens": 1000000,
       "model_types": [
@@ -16356,7 +15308,10 @@
       "name": "meta-llama/llama-3-70b-instruct",
       "alias": [
         "llama-3-70b-instruct",
-        "Llama3 70B Instruct"
+        "Llama3 70B Instruct",
+        "meta-llama/Meta-Llama-3-70B-Instruct",
+        "Meta-Llama-3-70B-Instruct",
+        "meta/meta-llama-3-70b-instruct"
       ],
       "max_tokens": 8192,
       "max_completion_tokens": 8000,
@@ -16379,7 +15334,11 @@
       "name": "meta-llama/llama-3-8b-instruct",
       "alias": [
         "llama-3-8b-instruct",
-        "Llama 3 8B Instruct"
+        "Llama 3 8B Instruct",
+        "meta-llama/Meta-Llama-3-8B-Instruct",
+        "Meta-Llama-3-8B-Instruct",
+        "meta/meta-llama-3-8b-instruct",
+        "Meta Llama 3 8B Instruct"
       ],
       "max_tokens": 8192,
       "max_completion_tokens": 8192,
@@ -16738,17 +15697,6 @@
       "max_tokens": 8192
     },
     {
-      "name": "meta-llama/Meta-Llama-3-70B-Instruct",
-      "alias": [
-        "Meta-Llama-3-70B-Instruct",
-        "meta/meta-llama-3-70b-instruct"
-      ],
-      "model_types": [
-        "chat"
-      ],
-      "max_tokens": 8192
-    },
-    {
       "name": "meta-llama/Meta-Llama-3-70B-Instruct-Turbo",
       "alias": [
         "Meta-Llama-3-70B-Instruct-Turbo",
@@ -16763,18 +15711,6 @@
       "name": "meta-llama/Meta-Llama-3-8B",
       "alias": [
         "Meta-Llama-3-8B"
-      ],
-      "model_types": [
-        "chat"
-      ],
-      "max_tokens": 8192
-    },
-    {
-      "name": "meta-llama/Meta-Llama-3-8B-Instruct",
-      "alias": [
-        "Meta-Llama-3-8B-Instruct",
-        "meta/meta-llama-3-8b-instruct",
-        "Meta Llama 3 8B Instruct"
       ],
       "model_types": [
         "chat"
@@ -17404,12 +16340,6 @@
       "max_completion_tokens": 131072
     },
     {
-      "name": "mimo-v2-tts",
-      "model_types": [
-        "tts"
-      ]
-    },
-    {
       "name": "mimo-v2.5",
       "max_tokens": 1048576,
       "model_types": [
@@ -17448,15 +16378,6 @@
         "default_value": true,
         "clear_thinking": true
       }
-    },
-    {
-      "name": "mimo-v2.5-tts",
-      "model_types": [
-        "tts"
-      ],
-      "alias": [
-        "XiaomiMiMo/MiMo-V2.5-tts"
-      ]
     },
     {
       "name": "minimax/hailuo-02",
@@ -17515,7 +16436,10 @@
     },
     {
       "name": "minimax/minimax-m2.5-highspeed",
-      "alias": [],
+      "alias": [
+        "MiniMax-M2.5-highspeed",
+        "MiniMax M2.5-highspeed"
+      ],
       "model_types": [
         "chat"
       ],
@@ -17527,7 +16451,10 @@
     },
     {
       "name": "minimax/minimax-m2.7-highspeed",
-      "alias": [],
+      "alias": [
+        "MiniMax-M2.7-highspeed",
+        "MiniMax M2.7-highspeed"
+      ],
       "model_types": [
         "chat"
       ],
@@ -17634,36 +16561,6 @@
         "default_value": true,
         "clear_thinking": true
       }
-    },
-    {
-      "name": "MiniMax-M2.5-highspeed",
-      "max_tokens": 204800,
-      "model_types": [
-        "chat"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      },
-      "alias": [
-        "MiniMax M2.5-highspeed"
-      ],
-      "max_completion_tokens": 131100
-    },
-    {
-      "name": "MiniMax-M2.7-highspeed",
-      "max_tokens": 204800,
-      "model_types": [
-        "chat"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      },
-      "alias": [
-        "MiniMax M2.7-highspeed"
-      ],
-      "max_completion_tokens": 131072
     },
     {
       "name": "minimax-m3",
@@ -18102,7 +16999,9 @@
     },
     {
       "name": "mistral/mistral-large-latest",
-      "alias": [],
+      "alias": [
+        "mistral-large-latest"
+      ],
       "model_types": [
         "chat"
       ],
@@ -18110,7 +17009,9 @@
     },
     {
       "name": "mistral/mistral-medium-latest",
-      "alias": [],
+      "alias": [
+        "mistral-medium-latest"
+      ],
       "model_types": [
         "chat"
       ],
@@ -18118,7 +17019,9 @@
     },
     {
       "name": "mistral/mistral-small-latest",
-      "alias": [],
+      "alias": [
+        "mistral-small-latest"
+      ],
       "model_types": [
         "chat"
       ],
@@ -18195,28 +17098,7 @@
       ]
     },
     {
-      "name": "mistral-large-latest",
-      "max_tokens": 128000,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "mistral-medium-latest",
-      "max_tokens": 128000,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
       "name": "mistral-small-2503",
-      "max_tokens": 128000,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "mistral-small-latest",
       "max_tokens": 128000,
       "model_types": [
         "chat"
@@ -22854,12 +21736,6 @@
       ]
     },
     {
-      "name": "omni-moderation-latest",
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
       "name": "openai/gpt-6",
       "alias": [
         "gpt-6"
@@ -22901,7 +21777,8 @@
     {
       "name": "openai/gpt-5.5",
       "alias": [
-        "gpt-5.5-r"
+        "gpt-5.5-r",
+        "gpt-5.5"
       ],
       "model_types": [
         "chat"
@@ -22956,7 +21833,11 @@
     },
     {
       "name": "openai/gpt-5.4",
-      "alias": [],
+      "alias": [
+        "gpt-5.4",
+        "gpt-5.4-2026-03-05",
+        "openai/gpt-5.4-2026-03-05"
+      ],
       "model_types": [
         "chat"
       ],
@@ -22984,7 +21865,9 @@
     },
     {
       "name": "openai/gpt-5.4-mini",
-      "alias": [],
+      "alias": [
+        "gpt-5.4-mini"
+      ],
       "model_types": [
         "chat"
       ],
@@ -23055,7 +21938,9 @@
     },
     {
       "name": "openai/gpt-5.3-codex",
-      "alias": [],
+      "alias": [
+        "gpt-5.3-codex"
+      ],
       "model_types": [
         "chat"
       ],
@@ -23067,7 +21952,9 @@
     },
     {
       "name": "openai/gpt-5.3-codex-spark",
-      "alias": [],
+      "alias": [
+        "gpt-5.3-codex-spark"
+      ],
       "model_types": [
         "chat"
       ],
@@ -23078,7 +21965,10 @@
     },
     {
       "name": "openai/gpt-5.2",
-      "alias": [],
+      "alias": [
+        "gpt-5.2",
+        "gpt-5.2-all"
+      ],
       "model_types": [
         "chat"
       ],
@@ -23110,7 +22000,9 @@
     },
     {
       "name": "openai/gpt-5.2-codex",
-      "alias": [],
+      "alias": [
+        "gpt-5.2-codex"
+      ],
       "model_types": [
         "chat"
       ],
@@ -23136,7 +22028,11 @@
     },
     {
       "name": "openai/gpt-5.1",
-      "alias": [],
+      "alias": [
+        "gpt-5.1",
+        "gpt-5.1-thinking-all",
+        "gpt-5.1-all"
+      ],
       "model_types": [
         "chat"
       ],
@@ -23170,7 +22066,9 @@
     },
     {
       "name": "openai/gpt-5.1-codex",
-      "alias": [],
+      "alias": [
+        "gpt-5.1-codex"
+      ],
       "model_types": [
         "chat"
       ],
@@ -23182,7 +22080,9 @@
     },
     {
       "name": "openai/gpt-5.1-codex-max",
-      "alias": [],
+      "alias": [
+        "gpt-5.1-codex-max"
+      ],
       "model_types": [
         "chat"
       ],
@@ -23194,7 +22094,9 @@
     },
     {
       "name": "openai/gpt-5.1-codex-mini",
-      "alias": [],
+      "alias": [
+        "gpt-5.1-codex-mini"
+      ],
       "model_types": [
         "chat"
       ],
@@ -23215,7 +22117,10 @@
     },
     {
       "name": "openai/gpt-5",
-      "alias": [],
+      "alias": [
+        "gpt-5",
+        "gpt-5-all"
+      ],
       "model_types": [
         "chat"
       ],
@@ -23247,7 +22152,9 @@
     },
     {
       "name": "openai/gpt-5-codex",
-      "alias": [],
+      "alias": [
+        "gpt-5-codex"
+      ],
       "model_types": [
         "chat"
       ],
@@ -23259,7 +22166,9 @@
     },
     {
       "name": "openai/gpt-5-codex-mini",
-      "alias": [],
+      "alias": [
+        "gpt-5-codex-mini"
+      ],
       "model_types": [
         "chat"
       ],
@@ -23301,7 +22210,9 @@
     },
     {
       "name": "openai/gpt-5-mini",
-      "alias": [],
+      "alias": [
+        "gpt-5-mini"
+      ],
       "model_types": [
         "chat",
         "vision",
@@ -23315,7 +22226,9 @@
     },
     {
       "name": "openai/gpt-5-nano",
-      "alias": [],
+      "alias": [
+        "gpt-5-nano"
+      ],
       "model_types": [
         "chat",
         "vision",
@@ -23489,7 +22402,9 @@
     },
     {
       "name": "openai/gpt-4o-2024-05-13",
-      "alias": [],
+      "alias": [
+        "gpt-4o-2024-05-13"
+      ],
       "model_types": [
         "chat",
         "vision",
@@ -23507,7 +22422,9 @@
     },
     {
       "name": "openai/gpt-4-turbo",
-      "alias": [],
+      "alias": [
+        "gpt-4-turbo"
+      ],
       "model_types": [
         "chat",
         "vision",
@@ -23561,7 +22478,9 @@
     },
     {
       "name": "openai/gpt-4o-mini-search-preview",
-      "alias": [],
+      "alias": [
+        "gpt-4o-mini-search-preview"
+      ],
       "model_types": [
         "chat"
       ],
@@ -23576,7 +22495,9 @@
     },
     {
       "name": "openai/gpt-4o-search-preview",
-      "alias": [],
+      "alias": [
+        "gpt-4o-search-preview"
+      ],
       "model_types": [
         "chat"
       ],
@@ -23721,7 +22642,10 @@
     },
     {
       "name": "openai/antigravity-preview-05-2026",
-      "alias": [],
+      "alias": [
+        "antigravity-preview-05-2026",
+        "models/antigravity-preview-05-2026"
+      ],
       "model_types": [
         "chat"
       ],
@@ -23813,7 +22737,10 @@
     },
     {
       "name": "openai/deep-research-max-preview-04-2026",
-      "alias": [],
+      "alias": [
+        "deep-research-max-preview-04-2026",
+        "models/deep-research-max-preview-04-2026"
+      ],
       "model_types": [
         "chat"
       ],
@@ -23821,7 +22748,10 @@
     },
     {
       "name": "openai/deep-research-preview-04-2026",
-      "alias": [],
+      "alias": [
+        "deep-research-preview-04-2026",
+        "models/deep-research-preview-04-2026"
+      ],
       "model_types": [
         "chat"
       ],
@@ -24202,18 +23132,6 @@
       }
     },
     {
-      "name": "openai/o1-preview",
-      "alias": [],
-      "model_types": [
-        "chat"
-      ],
-      "max_tokens": 128000,
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      }
-    },
-    {
       "name": "openai/o1-pro",
       "alias": [
         "o1-pro"
@@ -24343,7 +23261,9 @@
     },
     {
       "name": "openai/omni-moderation-latest",
-      "alias": [],
+      "alias": [
+        "omni-moderation-latest"
+      ],
       "model_types": [
         "chat"
       ]
@@ -34021,7 +32941,8 @@
     {
       "name": "shengshu-ai/viduq3",
       "alias": [
-        "vidu-q3"
+        "vidu-q3",
+        "viduq3"
       ],
       "model_types": [
         "video_generation"
@@ -34030,7 +32951,8 @@
     {
       "name": "shengshu-ai/viduq3-turbo",
       "alias": [
-        "vidu-q3-turbo"
+        "vidu-q3-turbo",
+        "viduq3-turbo"
       ],
       "model_types": [
         "video_generation"
@@ -34864,12 +33786,6 @@
       ]
     },
     {
-      "name": "step-audio-tts-3b",
-      "model_types": [
-        "tts"
-      ]
-    },
-    {
       "name": "step-image-edit-2",
       "model_types": [
         "image",
@@ -35206,7 +34122,9 @@
     },
     {
       "name": "stepfun-ai/step-audio-tts-3b",
-      "alias": [],
+      "alias": [
+        "step-audio-tts-3b"
+      ],
       "model_types": [
         "tts"
       ]
@@ -37123,14 +36041,6 @@
       ]
     },
     {
-      "name": "us.amazon.nova-micro-v1:0",
-      "alias": [],
-      "max_tokens": 300000,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
       "name": "us.amazon.nova-pro-v1:0",
       "alias": [],
       "max_tokens": 300000,
@@ -37179,27 +36089,6 @@
       "name": "vectorizer",
       "model_types": [
         "chat"
-      ]
-    },
-    {
-      "name": "veo-3.1-fast-generate-preview",
-      "alias": [],
-      "model_types": [
-        "video_generation"
-      ]
-    },
-    {
-      "name": "veo-3.1-generate-preview",
-      "alias": [],
-      "model_types": [
-        "video_generation"
-      ]
-    },
-    {
-      "name": "veo-3.1-lite-generate-preview",
-      "alias": [],
-      "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -37292,12 +36181,6 @@
       ]
     },
     {
-      "name": "viduq3",
-      "model_types": [
-        "video_generation"
-      ]
-    },
-    {
       "name": "viduq3-mix",
       "model_types": [
         "video_generation"
@@ -37305,12 +36188,6 @@
     },
     {
       "name": "viduq3-pro",
-      "model_types": [
-        "video_generation"
-      ]
-    },
-    {
-      "name": "viduq3-turbo",
       "model_types": [
         "video_generation"
       ]
@@ -38036,7 +36913,44 @@
     },
     {
       "name": "x-ai/grok-4.3",
-      "alias": [],
+      "alias": [
+        "grok-4.3",
+        "xai/grok-4.3",
+        "grok-4.3-latest",
+        "grok-latest",
+        "grok-3",
+        "grok-3-latest",
+        "grok-3-beta",
+        "grok-3-fast",
+        "grok-3-fast-latest",
+        "grok-3-fast-beta",
+        "grok-3-mini",
+        "grok-3-mini-latest",
+        "grok-3-mini-beta",
+        "grok-3-mini-fast",
+        "grok-3-mini-fast-latest",
+        "grok-3-mini-fast-beta",
+        "grok-3-mini-high",
+        "grok-3-mini-high-beta",
+        "grok-3-mini-fast-high",
+        "grok-3-mini-fast-high-beta",
+        "grok-4-0709",
+        "grok-4",
+        "grok-4-latest",
+        "grok-4-fast-reasoning",
+        "grok-4-fast",
+        "grok-4-fast-reasoning-latest",
+        "grok-4-fast-non-reasoning",
+        "grok-4-fast-non-reasoning-latest",
+        "grok-4-1-fast-reasoning",
+        "grok-4-1-fast",
+        "grok-4-1-fast-reasoning-latest",
+        "grok-4-1-fast-non-reasoning",
+        "grok-4-1-fast-non-reasoning-latest",
+        "grok-4.1-fast",
+        "grok-4.2",
+        "grok-4.2-fast"
+      ],
       "model_types": [
         "chat",
         "vision",
@@ -38156,7 +37070,10 @@
     },
     {
       "name": "x-ai/grok-imagine-video",
-      "alias": [],
+      "alias": [
+        "grok-imagine-video",
+        "xai/grok-imagine-video"
+      ],
       "model_types": [
         "video_generation"
       ]
@@ -38222,7 +37139,10 @@
     },
     {
       "name": "xiaomi/mimo-v2.5-tts",
-      "alias": [],
+      "alias": [
+        "mimo-v2.5-tts",
+        "XiaomiMiMo/MiMo-V2.5-tts"
+      ],
       "model_types": [
         "tts"
       ]
@@ -38241,7 +37161,9 @@
     },
     {
       "name": "xiaomi/mimo-v2-tts",
-      "alias": [],
+      "alias": [
+        "mimo-v2-tts"
+      ],
       "model_types": [
         "tts"
       ]
