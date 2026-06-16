@@ -943,8 +943,8 @@ async def _struct_reembed_payload(payload: dict, embd_mdl):
 async def _struct_local_dedup(
     docs: list[dict],
     chat_mdl,
-    similarity_threshold: float,
     embd_mdl,
+    similarity_threshold: float,
 ) -> tuple[list[dict], int]:
     """Single-pass dedup inside ``docs``. Returns (deduped, dropped_count)."""
     from sklearn.metrics.pairwise import cosine_similarity
