@@ -696,14 +696,14 @@ int32_t RAGAnalyzer::Load() {
     if (!fs::exists(pos_def_path)) {
         printf("Invalid post file: %s", pos_def_path.string().c_str());
         // return Status::InvalidAnalyzerFile(pos_def_path);
-        return -1;
+        return -2;
     }
     own_dict_ = true;
     trie_ = new DartsTrie();
     pos_table_ = new POSTable(pos_def_path.string());
     if (pos_table_->Load() != 0) {
         printf("Fail to load post table: %s", pos_def_path.string().c_str());
-        return -1;
+        return -3;
         // return Status::InvalidAnalyzerFile("Failed to load RAGAnalyzer POS definition");
     }
 
@@ -737,7 +737,8 @@ int32_t RAGAnalyzer::Load() {
             }
             trie_->Build();
         } catch (const std::exception &e) {
-            return -1;
+            printf("Fail to build trie: %s", e.what());
+            return -4;
             // return Status::InvalidAnalyzerFile("Failed to load RAGAnalyzer analyzer");
         }
         trie_->Save(trie_path.string());
@@ -746,7 +747,7 @@ int32_t RAGAnalyzer::Load() {
     fs::path lemma_path(root / WORDNET_PATH);
     if (!fs::exists(lemma_path)) {
         printf("Fail to load wordnet: %s", lemma_path.string().c_str());
-        return -1;
+        return -5;
         // return Status::InvalidAnalyzerFile(lemma_path);
     }
 
@@ -755,14 +756,15 @@ int32_t RAGAnalyzer::Load() {
     fs::path opencc_path(root / OPENCC_PATH);
 
     if (!fs::exists(opencc_path)) {
-        printf("Fail to load opencc_path: %s", opencc_path.string().c_str());
-        return -1;
+        printf("opencc_path not exists: %s", opencc_path.string().c_str());
+        return -6;
         // return Status::InvalidAnalyzerFile(opencc_path);
     }
     try {
         opencc_ = new ::OpenCC(opencc_path.string());
     } catch (const std::exception &e) {
-        return -1;
+        printf("Fail to open opencc: %s", opencc_path.string().c_str());
+        return -7;
         // return Status::InvalidAnalyzerFile("Failed to load OpenCC");
     }
 
