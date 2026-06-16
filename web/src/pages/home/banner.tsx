@@ -22,7 +22,7 @@ export function Banner() {
   return (
     <section className="bg-[url('@/assets/banner.png')] bg-cover h-28 rounded-2xl  my-8 flex gap-8 justify-between">
       <div className="h-full text-3xl font-bold items-center inline-flex ml-6">
-        Welcome to RAGFlow
+        Welcome to MetaGrossAI
       </div>
       <div className="flex justify-between items-center gap-4 mr-5">
         <BannerCard></BannerCard>
@@ -50,7 +50,7 @@ export function NextBanner() {
         {t('header.welcome')}{' '}
       </span>
       <span className="font-bold text-transparent bg-clip-text bg-gradient-to-l from-[#40EBE3] to-[#4A51FF]">
-        RAGFlow
+        MetaGrossAI
       </span>
     </h1>
   );

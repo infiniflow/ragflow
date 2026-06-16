@@ -271,7 +271,7 @@ jobs:
                echo -e "SANDBOX_EXECUTOR_MANAGER_PORT=${SANDBOX_EXECUTOR_MANAGER_PORT}" >> .env
                echo -e "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}" >> .env
                echo -e "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}" >> .env
-               
+
                echo -e "COMPOSE_PROFILES=\${COMPOSE_PROFILES},tei-cpu" >> .env
                echo -e "TEI_MODEL=BAAI/bge-small-en-v1.5" >> .env
                echo -e "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}" >> .env
@@ -406,7 +406,7 @@ jobs:
 
           admin_ready=0
           for i in $(seq 1 30); do
-            if run_cli "${LOG_FILE}" $CLI --type admin --host "$ADMIN_HOST" --port "$ADMIN_PORT" --username "admin@ragflow.io" --password "admin" command "ping"; then
+            if run_cli "${LOG_FILE}" $CLI --type admin --host "$ADMIN_HOST" --port "$ADMIN_PORT" --username "support@waqoor.com" --password "admin" command "ping"; then
               admin_ready=1
               break
             fi
@@ -417,9 +417,9 @@ jobs:
             exit 1
           fi
 
-          run_cli "${LOG_FILE}" $CLI --type admin --host "$ADMIN_HOST" --port "$ADMIN_PORT" --username "admin@ragflow.io" --password "admin" command "show version"
+          run_cli "${LOG_FILE}" $CLI --type admin --host "$ADMIN_HOST" --port "$ADMIN_PORT" --username "support@waqoor.com" --password "admin" command "show version"
           ALLOW_USER_EXISTS_RE='already exists|already exist|duplicate|already.*registered|exist(s)?'
-          run_cli "${LOG_FILE}" --allow "${ALLOW_USER_EXISTS_RE}" $CLI --type admin --host "$ADMIN_HOST" --port "$ADMIN_PORT" --username "admin@ragflow.io" --password "admin" command "create user '$EMAIL' '$PASS'"
+          run_cli "${LOG_FILE}" --allow "${ALLOW_USER_EXISTS_RE}" $CLI --type admin --host "$ADMIN_HOST" --port "$ADMIN_PORT" --username "support@waqoor.com" --password "admin" command "create user '$EMAIL' '$PASS'"
 
           user_ready=0
           for i in $(seq 1 30); do
@@ -525,7 +525,7 @@ jobs:
           fi
           echo "Start to run test sdk on Elasticsearch"
           source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --junitxml=pytest-infinity-sdk.xml --cov=sdk/python/ragflow_sdk --cov-branch --cov-report=xml:coverage-es-sdk.xml test/testcases/test_sdk_api 2>&1 | tee es_sdk_test.log
-      
+
       - name: Run New RESTFUL api tests against Elasticsearch
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
@@ -622,7 +622,7 @@ jobs:
 
           admin_ready=0
           for i in $(seq 1 30); do
-            if run_cli "${LOG_FILE}" $CLI --type admin --host "$ADMIN_HOST" --port "$ADMIN_PORT" --username "admin@ragflow.io" --password "admin" command "ping"; then
+            if run_cli "${LOG_FILE}" $CLI --type admin --host "$ADMIN_HOST" --port "$ADMIN_PORT" --username "support@waqoor.com" --password "admin" command "ping"; then
               admin_ready=1
               break
             fi
@@ -633,9 +633,9 @@ jobs:
             exit 1
           fi
 
-          run_cli "${LOG_FILE}" $CLI --type admin --host "$ADMIN_HOST" --port "$ADMIN_PORT" --username "admin@ragflow.io" --password "admin" command "show version"
+          run_cli "${LOG_FILE}" $CLI --type admin --host "$ADMIN_HOST" --port "$ADMIN_PORT" --username "support@waqoor.com" --password "admin" command "show version"
           ALLOW_USER_EXISTS_RE='already exists|already exist|duplicate|already.*registered|exist(s)?'
-          run_cli "${LOG_FILE}" --allow "${ALLOW_USER_EXISTS_RE}" $CLI --type admin --host "$ADMIN_HOST" --port "$ADMIN_PORT" --username "admin@ragflow.io" --password "admin" command "create user '$EMAIL' '$PASS'"
+          run_cli "${LOG_FILE}" --allow "${ALLOW_USER_EXISTS_RE}" $CLI --type admin --host "$ADMIN_HOST" --port "$ADMIN_PORT" --username "support@waqoor.com" --password "admin" command "create user '$EMAIL' '$PASS'"
 
           user_ready=0
           for i in $(seq 1 30); do
@@ -691,7 +691,7 @@ jobs:
           else
             echo ".coverage file not found!"
           fi
-          
+
       - name: Collect ragflow log Elasticsearch
         if: ${{ !cancelled() }}
         run: |

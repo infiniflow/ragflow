@@ -19,12 +19,12 @@ import TOCInline from '@theme/TOCInline';
 
 ---
 
-### What sets RAGFlow apart from other RAG products?
+### What sets MetaGrossAI apart from other RAG products?
 
-The "garbage in garbage out" status quo remains unchanged despite the fact that LLMs have advanced Natural Language Processing (NLP) significantly. In its response, RAGFlow introduces two unique features compared to other Retrieval-Augmented Generation (RAG) products.
+The "garbage in garbage out" status quo remains unchanged despite the fact that LLMs have advanced Natural Language Processing (NLP) significantly. In its response, MetaGrossAI introduces two unique features compared to other Retrieval-Augmented Generation (RAG) products.
 
 - Fine-grained document parsing: Document parsing involves images and tables, with the flexibility for you to intervene as needed.
-- Traceable answers with reduced hallucinations: You can trust RAGFlow's responses as you can view the citations and references supporting them.
+- Traceable answers with reduced hallucinations: You can trust MetaGrossAI's responses as you can view the citations and references supporting them.
 
 ---
 
@@ -34,22 +34,15 @@ Starting from `v0.22.0`, we ship only the slim edition and no longer append the 
 
 ---
 
-### Where to find the version of RAGFlow? How to interpret it?
+### Where to find the version of MetaGrossAI? How to interpret it?
 
-You can find the RAGFlow version number on the **System** page of the UI:
+You can find the MetaGrossAI version number on the **System** page of the UI:
 
 ![Image](https://github.com/user-attachments/assets/20cf7213-2537-4e18-a88c-4dadf6228c6b)
 
-If you build RAGFlow from source, the version number is also in the system log:
+If you build MetaGrossAI from source, the version number is also in the system log:
 
-```
-        ____   ___    ______ ______ __
-       / __ \ /   |  / ____// ____// /____  _      __
-      / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
-    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
-
-2025-02-18 10:10:43,835 INFO     1445658 RAGFlow version: v0.15.0-50-g6daae7f2
+2025-02-18 10:10:43,835 INFO     1445658 MetaGrossAI version: v0.15.0-50-g6daae7f2
 ```
 
 Where:
@@ -62,47 +55,47 @@ Where:
 
 ### Why not use other open-source vector databases as the document engine?
 
-Currently, only Elasticsearch and [Infinity](https://github.com/infiniflow/infinity) meet the hybrid search requirements of RAGFlow. Most open-source vector databases have limited support for full-text search, and sparse embedding is not an alternative to full-text search. Additionally, these vector databases lack critical features essential to RAGFlow, such as phrase search and advanced ranking capabilities.
+Currently, only Elasticsearch and [Infinity](https://github.com/infiniflow/infinity) meet the hybrid search requirements of MetaGrossAI. Most open-source vector databases have limited support for full-text search, and sparse embedding is not an alternative to full-text search. Additionally, these vector databases lack critical features essential to MetaGrossAI, such as phrase search and advanced ranking capabilities.
 
 These limitations led us to develop [Infinity](https://github.com/infiniflow/infinity), the AI-native database, from the ground up.
 
 ---
 
-### Differences between cloud.ragflow.io and a locally deployed open-source RAGFlow service?
+### Differences between cloud.MetaGrossAI.io and a locally deployed open-source MetaGrossAI service?
 
-cloud.ragflow.io demonstrates the capabilities of RAGFlow Enterprise. Its DeepDoc models are pre-trained using proprietary data and it offers much more sophisticated team permission controls. Essentially, cloud.ragflow.io serves as a preview of RAGFlow's forthcoming SaaS (Software as a Service) offering.
+cloud.MetaGrossAI.io demonstrates the capabilities of MetaGrossAI Enterprise. Its DeepDoc models are pre-trained using proprietary data and it offers much more sophisticated team permission controls. Essentially, cloud.MetaGrossAI.io serves as a preview of MetaGrossAI's forthcoming SaaS (Software as a Service) offering.
 
-You can deploy an open-source RAGFlow service and call it from a Python client or through RESTful APIs. However, this is not supported on cloud.ragflow.io.
+You can deploy an open-source MetaGrossAI service and call it from a Python client or through RESTful APIs. However, this is not supported on cloud.MetaGrossAI.io.
 
 ---
 
-### Why does it take longer for RAGFlow to parse a document than LangChain?
+### Why does it take longer for MetaGrossAI to parse a document than LangChain?
 
 We put painstaking effort into document pre-processing tasks like layout analysis, table structure recognition, and OCR (Optical Character Recognition) using our vision models. This contributes to the additional time required.
 
 ---
 
-### Why does RAGFlow require more resources than other projects?
+### Why does MetaGrossAI require more resources than other projects?
 
-RAGFlow has a number of built-in models for document structure parsing, which account for the additional computational resources.
+MetaGrossAI has a number of built-in models for document structure parsing, which account for the additional computational resources.
 
 ---
 
-### Which architectures or devices does RAGFlow support?
+### Which architectures or devices does MetaGrossAI support?
 
-We officially support x86 CPU and nvidia GPU. While we also test RAGFlow on ARM64 platforms, we do not maintain RAGFlow Docker images for ARM. If you are on an ARM platform, follow [this guide](./develop/build_docker_image.mdx) to build a RAGFlow Docker image.
+We officially support x86 CPU and nvidia GPU. While we also test MetaGrossAIssAI on ARM64 platforms, we do not maintMetaMetaGrossAIssAIssAIssAIssAIssAIFlow Docker images for ARM. If you are on an ARM platform, follow [this guide](./develop/build_docker_image.mdx) to build a MetaGrossAI Docker image.
 
 ---
 
 ### Do you offer an API for integration with third-party applications?
 
-The corresponding APIs are now available. See the [RAGFlow HTTP API Reference](./references/http_api_reference.md) or the [RAGFlow Python API Reference](./references/python_api_reference.md) for more information.
+The corresponding APIs are now available. See the [MetaGrossAI HTTP API Reference](./references/http_api_reference.md) or the [MetaGrossAI Python API Reference](./references/python_api_reference.md) for more information.
 
 ---
 
 ### Do you support stream output?
 
-Yes, we do. Stream output is enabled by default in the chat assistant and agent. Note that you cannot disable stream output via RAGFlow's UI. To disable stream output in responses, use RAGFlow's Python or RESTful APIs:
+Yes, we do. Stream output is enabled by default in the chat assistant and agent. Note that you cannot disable stream output via MetaGrossAI's UI. To disable stream output in responses, use MetaGrossAI's Python or RESTful APIs:
 
 Python:
 
@@ -151,18 +144,18 @@ When debugging your chat assistant, you can use AI search as a reference to veri
 
 To resolve this issue, do either of the following:
 
-- Pull the latest source code from the [main branch](https://github.com/infiniflow/ragflow), then pull and start the v0.25.6 image.
-- Update `RAGFLOW_IMAGE` from `infiniflow/ragflow:latest` to `infiniflow/ragflow:v0.25.6` in the [.env file](https://github.com/infiniflow/ragflow/blob/main/docker/.env), then restart the service.
+- Pull the latest source code from the [main branch](https://github.com/yazeedhasan97/MetaGrossAI), then pull and start the v0.25.6 image.
+- Update `MetaGrossAI _IMAGE` from `infiniflow/ragflow:latest` to `infiniflow/ragflow:v0.25.6` in the [.env file](https://github.com/yazeedhasan97/MetaGrossAI/blob/main/docker/.env), then restart the service.
 
-### How to build the RAGFlow image from scratch?
+### How to build the MetaGrossAI  image from scratch?
 
-See [Build a RAGFlow Docker image](./develop/build_docker_image.mdx).
+See [Build a MetaGrossAI  Docker image](./develop/build_docker_image.mdx).
 
 ---
 
 ### Cannot access https://huggingface.co
 
-A locally deployed RAGFlow downloads OCR models from [Huggingface website](https://huggingface.co) by default. If your machine is unable to access this site, the following error occurs and PDF parsing fails:
+A locally deployed MetaGrossAI  downloads OCR models from [Huggingface website](https://huggingface.co) by default. If your machine is unable to access this site, the following error occurs and PDF parsing fails:
 
 ```
 FileNotFoundError: [Errno 2] No such file or directory: '/root/.cache/huggingface/hub/models--InfiniFlow--deepdoc/snapshots/be0c1e50eef6047b412d1800aa89aba4d275f997/ocr.res'
@@ -173,11 +166,11 @@ To fix this issue, use https://hf-mirror.com instead:
 1. Stop all containers and remove all related resources:
 
    ```bash
-   cd ragflow/docker/
+   cd MetaGrossAI /docker/
    docker compose down
    ```
 
-2. Uncomment the following line in **ragflow/docker/.env**:
+2. Uncomment the following line in **MetaGrossAI /docker/.env**:
 
    ```
    # HF_ENDPOINT=https://hf-mirror.com
@@ -212,13 +205,13 @@ This error suggests that you do not have Internet access or are unable to connec
 
 ### `RuntimeError: Unable to start Tika server.`
 
-This error is almost always caused by Java not being installed or not accessible in the environment. See [here](https://github.com/infiniflow/ragflow/issues/13194) for detailed instructions.
+This error is almost always caused by Java not being installed or not accessible in the environment. See [here](https://github.com/yazeedhasan97/MetaGrossAI/issues/13194) for detailed instructions.
 
 ---
 
 ### `Cannot stat '/etc/nginx/conf.d/ragflow.conf.python': No such file or directory`
 
-To resolve this, either download the missing file from the corresponding tag on [GitHub](https://github.com/infiniflow/ragflow) or update `~/ragflow/docker/docker-compose.yml` as follows: 
+To resolve this, either download the missing file from the corresponding tag on [GitHub](https://github.com/yazeedhasan97/MetaGrossAI) or update `~/ragflow/docker/docker-compose.yml` as follows:
 
 ![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/docker-compose_missing.jpg)
 
@@ -232,7 +225,7 @@ Ignore this warning and continue. All system warnings can be ignored.
 
 ### `network anomaly There is an abnormality in your network and you cannot connect to the server.`
 
-![anomaly](https://github.com/infiniflow/ragflow/assets/93570324/beb7ad10-92e4-4a58-8886-bfb7cbd09e5d)
+![anomaly](https://github.com/yazeedhasan97/MetaGrossAI/assets/93570324/beb7ad10-92e4-4a58-8886-bfb7cbd09e5d)
 
 You will not log in to RAGFlow unless the server is fully initialized. Run `docker logs -f docker-ragflow-cpu-1`.
 
@@ -257,13 +250,13 @@ You will not log in to RAGFlow unless the server is fully initialized. Run `dock
 
 Ignore this warning and continue. All system warnings can be ignored.
 
-![](https://github.com/infiniflow/ragflow/assets/93570324/ef5a6194-084a-4fe3-bdd5-1c025b40865c)
+![](https://github.com/yazeedhasan97/MetaGrossAI/assets/93570324/ef5a6194-084a-4fe3-bdd5-1c025b40865c)
 
 ---
 
 ### Why does my document parsing stall at under one percent?
 
-![stall](https://github.com/infiniflow/ragflow/assets/93570324/3589cc25-c733-47d5-bbfc-fedb74a3da50)
+![stall](https://github.com/yazeedhasan97/MetaGrossAI/assets/93570324/3589cc25-c733-47d5-bbfc-fedb74a3da50)
 
 Click the red cross beside the 'parsing status' bar, then restart the parsing process to see if the issue remains. If the issue persists and your RAGFlow is deployed locally, try the following:
 
@@ -295,7 +288,7 @@ docker compose up -d
 
 :::
 
-![nearcompletion](https://github.com/infiniflow/ragflow/assets/93570324/563974c3-f8bb-4ec8-b241-adcda8929cbb)
+![nearcompletion](https://github.com/yazeedhasan97/MetaGrossAI/assets/93570324/563974c3-f8bb-4ec8-b241-adcda8929cbb)
 
 ---
 
@@ -358,7 +351,7 @@ The status of a Docker container status does not necessarily reflect the status 
    The status of a Docker container status does not necessarily reflect the status of the service. You may find that your services are unhealthy even when the corresponding Docker containers are up running. Possible reasons for this include network failures, incorrect port numbers, or DNS issues.
    :::
 
-3. If your container keeps restarting, ensure `vm.max_map_count` >= 262144 as per [this README](https://github.com/infiniflow/ragflow?tab=readme-ov-file#-start-up-the-server). Updating the `vm.max_map_count` value in **/etc/sysctl.conf** is required, if you wish to keep your change permanent. Note that this configuration works only for Linux.
+3. If your container keeps restarting, ensure `vm.max_map_count` >= 262144 as per [this README](https://github.com/yazeedhasan97/MetaGrossAI?tab=readme-ov-file#-start-up-the-server). Updating the `vm.max_map_count` value in **/etc/sysctl.conf** is required, if you wish to keep your change permanent. Note that this configuration works only for Linux.
 
 ---
 
@@ -462,7 +455,7 @@ This error occurs because there are too many chunks matching your search criteri
 3. Reduce the **TopN** and/or raise **Similarity threshold**.
 4. Click **OK** to confirm your changes.
 
-![topn](https://github.com/infiniflow/ragflow/assets/93570324/7ec72ab3-0dd2-4cff-af44-e2663b67b2fc)
+![topn](https://github.com/yazeedhasan97/MetaGrossAI/assets/93570324/7ec72ab3-0dd2-4cff-af44-e2663b67b2fc)
 
 ---
 

@@ -307,7 +307,7 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 	if result.AdminMode {
 		result.APIToken = ""
 		if result.UserName == "" {
-			result.UserName = "admin@ragflow.io"
+			result.UserName = "support@waqoor.com"
 			result.Password = ""
 		}
 	} else {

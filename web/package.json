@@ -1,8 +1,8 @@
 {
   "version": "1.0.0",
   "private": true,
-  "description": "RAGFlow Web Frontend migrated to Vite",
-  "author": "bill",
+  "description": "MetaGrossAI Web Frontend migrated to Vite",
+  "author": "Waqoor",
   "type": "module",
   "scripts": {
     "build": "vite build --mode production",

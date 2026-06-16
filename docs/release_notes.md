@@ -15,34 +15,34 @@ Released on May 26, 2026.
 
 ### New features
 
-- Agent: Adds a **Browser** component that enables AI to autonomously navigate and interact with web pages. [#14888](https://github.com/infiniflow/ragflow/pull/14888)
+- Agent: Adds a **Browser** component that enables AI to autonomously navigate and interact with web pages. [#14888](https://github.com/yazeedhasan97/MetaGrossAI/pull/14888)
 
 ### Improvements
 
-- RAG: Stabilizes RAPTOR's AHC mode (Ψ-RAG), which was introduced in v0.25.3 to resolve previous semantic loss by building individual document trees and then merging them hierarchically. This new approach significantly accelerates index construction and outperforms the legacy GMM mode in Recall@5 and average F1. Users retain the option to switch between the two modes. [#14674](https://github.com/infiniflow/ragflow/issues/14674)[#14679](https://github.com/infiniflow/ragflow/pull/14679)
-- Agent: Introduces lightweight `@tool` decorator to streamline Python function registration process for chat models. [#15047](https://github.com/infiniflow/ragflow/pull/15047)
-- Agent: Enables agent messages to display base64-encoded images. [#15212](https://github.com/infiniflow/ragflow/pull/15212)
-- Agent: Exposes **Doc Generator** component's file metadata as discrete variables. [#15080](https://github.com/infiniflow/ragflow/pull/15080)
-- Agent: Allows developers to pass `chat_template_kwargs` to agent chat completion endpoint. [#14182](https://github.com/infiniflow/ragflow/issues/14182)[#14542](https://github.com/infiniflow/ragflow/pull/14542) See also [Converse with agent](./references/http_api_reference.md#converse-with-agent)
+- RAG: Stabilizes RAPTOR's AHC mode (Ψ-RAG), which was introduced in v0.25.3 to resolve previous semantic loss by building individual document trees and then merging them hierarchically. This new approach significantly accelerates index construction and outperforms the legacy GMM mode in Recall@5 and average F1. Users retain the option to switch between the two modes. [#14674](https://github.com/yazeedhasan97/MetaGrossAI/issues/14674)[#14679](https://github.com/yazeedhasan97/MetaGrossAI/pull/14679)
+- Agent: Introduces lightweight `@tool` decorator to streamline Python function registration process for chat models. [#15047](https://github.com/yazeedhasan97/MetaGrossAI/pull/15047)
+- Agent: Enables agent messages to display base64-encoded images. [#15212](https://github.com/yazeedhasan97/MetaGrossAI/pull/15212)
+- Agent: Exposes **Doc Generator** component's file metadata as discrete variables. [#15080](https://github.com/yazeedhasan97/MetaGrossAI/pull/15080)
+- Agent: Allows developers to pass `chat_template_kwargs` to agent chat completion endpoint. [#14182](https://github.com/yazeedhasan97/MetaGrossAI/issues/14182)[#14542](https://github.com/yazeedhasan97/MetaGrossAI/pull/14542) See also [Converse with agent](./references/http_api_reference.md#converse-with-agent)
 
 ### Bug fixes
 
-- Fixes `/chat/completions` to allow sending only latest message in API payload and removes requirement to transmit full conversation history. [#15197](https://github.com/infiniflow/ragflow/pull/15197) See also [Converse with chat assistant](./references/http_api_reference.md#converse-with-chat-assistant).
-- Weight assigned to vector similarity was not properly applied during the retrieval phase. [#15108](https://github.com/infiniflow/ragflow/pull/15108)
-- Users were unable to save parser configurations on the dataset configuration page. [#15175](https://github.com/infiniflow/ragflow/issues/15175)[#15177](https://github.com/infiniflow/ragflow/pull/15177)
-- Log text on a data source's details page was truncated. [#15056](https://github.com/infiniflow/ragflow/pull/15056)
-- An unresponsive "Status" filter on the document list page prevented users from filtering or managing uploaded documents by their parsing status. [#15170](https://github.com/infiniflow/ragflow/issues/15170)[#15216](https://github.com/infiniflow/ragflow/pull/15216)
-- Calling `GET /agents/<agent_id>/sessions/<session_id>` with a missing or invalid session ID caused a server error. [#14989](https://github.com/infiniflow/ragflow/issues/14989)[#15011](https://github.com/infiniflow/ragflow/pull/15011)
-- RAG: RAPTOR construction process halted when using the [Infinity](https://github.com/infiniflow/infinity) document engine. [#14998](https://github.com/infiniflow/ragflow/pull/14998)
-- The system failed to correctly parse structured content returned by Mistral reasoning models. [#14805](https://github.com/infiniflow/ragflow/pull/14805)
-- The **Parser** component in an ingestion pipeline incorrectly retained raw HTML tags in its text output. [#14831](https://github.com/infiniflow/ragflow/issues/14831)[#14920](https://github.com/infiniflow/ragflow/pull/14920)
-- The table parser incorrectly extracted or attached metadata during document processing. [#15127](https://github.com/infiniflow/ragflow/pull/15127)
-- Asynchronous background tasks and nested event loops were not properly handled, causing backend instability. [#14755](https://github.com/infiniflow/ragflow/issues/14755)[#14761](https://github.com/infiniflow/ragflow/pull/14761)
-- Prompt variables configured in the **Agent** component disappeared after being entered. [#15218](https://github.com/infiniflow/ragflow/pull/15218)
+- Fixes `/chat/completions` to allow sending only latest message in API payload and removes requirement to transmit full conversation history. [#15197](https://github.com/yazeedhasan97/MetaGrossAI/pull/15197) See also [Converse with chat assistant](./references/http_api_reference.md#converse-with-chat-assistant).
+- Weight assigned to vector similarity was not properly applied during the retrieval phase. [#15108](https://github.com/yazeedhasan97/MetaGrossAI/pull/15108)
+- Users were unable to save parser configurations on the dataset configuration page. [#15175](https://github.com/yazeedhasan97/MetaGrossAI/issues/15175)[#15177](https://github.com/yazeedhasan97/MetaGrossAI/pull/15177)
+- Log text on a data source's details page was truncated. [#15056](https://github.com/yazeedhasan97/MetaGrossAI/pull/15056)
+- An unresponsive "Status" filter on the document list page prevented users from filtering or managing uploaded documents by their parsing status. [#15170](https://github.com/yazeedhasan97/MetaGrossAI/issues/15170)[#15216](https://github.com/yazeedhasan97/MetaGrossAI/pull/15216)
+- Calling `GET /agents/<agent_id>/sessions/<session_id>` with a missing or invalid session ID caused a server error. [#14989](https://github.com/yazeedhasan97/MetaGrossAI/issues/14989)[#15011](https://github.com/yazeedhasan97/MetaGrossAI/pull/15011)
+- RAG: RAPTOR construction process halted when using the [Infinity](https://github.com/infiniflow/infinity) document engine. [#14998](https://github.com/yazeedhasan97/MetaGrossAI/pull/14998)
+- The system failed to correctly parse structured content returned by Mistral reasoning models. [#14805](https://github.com/yazeedhasan97/MetaGrossAI/pull/14805)
+- The **Parser** component in an ingestion pipeline incorrectly retained raw HTML tags in its text output. [#14831](https://github.com/yazeedhasan97/MetaGrossAI/issues/14831)[#14920](https://github.com/yazeedhasan97/MetaGrossAI/pull/14920)
+- The table parser incorrectly extracted or attached metadata during document processing. [#15127](https://github.com/yazeedhasan97/MetaGrossAI/pull/15127)
+- Asynchronous background tasks and nested event loops were not properly handled, causing backend instability. [#14755](https://github.com/yazeedhasan97/MetaGrossAI/issues/14755)[#14761](https://github.com/yazeedhasan97/MetaGrossAI/pull/14761)
+- Prompt variables configured in the **Agent** component disappeared after being entered. [#15218](https://github.com/yazeedhasan97/MetaGrossAI/pull/15218)
 
 ### i18n
 
-- Fully translates the interface into French with the addition of roughly 1,400 localization keys. [#15192](https://github.com/infiniflow/ragflow/pull/15192)
+- Fully translates the interface into French with the addition of roughly 1,400 localization keys. [#15192](https://github.com/yazeedhasan97/MetaGrossAI/pull/15192)
 
 ## v0.25.5
 
@@ -50,31 +50,31 @@ Released on May 20, 2026.
 
 ### New features
 
-- Introduces local and SSH provider options for sandbox environment settings within the admin interface, allowing administrators to configure execution environments without editing environment variables. [#15039](https://github.com/infiniflow/ragflow/pull/15039)
+- Introduces local and SSH provider options for sandbox environment settings within the admin interface, allowing administrators to configure execution environments without editing environment variables. [#15039](https://github.com/yazeedhasan97/MetaGrossAI/pull/15039)
 
 ### Improvements
 
-- Elasticsearch: Accelerates the retrieval process by removing unnecessary vector fetches during the main search phase, reducing latency by 50–100%. [#14970](https://github.com/infiniflow/ragflow/pull/14970)
-- Pushes metadata filters down to the [Infinity](https://github.com/infiniflow/infinity) document engine, significantly improving retrieval performance. [#14974](https://github.com/infiniflow/ragflow/pull/14974)
-- Introduces Redis-based caching for Text-to-Speech model outputs, eliminating redundant API calls for identical text to reduce latency and save provider quota. [#14851](https://github.com/infiniflow/ragflow/pull/14851)
-- Reduces server startup time by 5-9 seconds and saves roughly 200MB of memory by replacing heavy module-level imports with lazy runtime loading. [#14973](https://github.com/infiniflow/ragflow/pull/14973)
-- Optimizes the connector dashboard. [#14979](https://github.com/infiniflow/ragflow/pull/14979)
-- Increases minimum supported Python version to 3.13. [#14767](https://github.com/infiniflow/ragflow/pull/14767)
+- Elasticsearch: Accelerates the retrieval process by removing unnecessary vector fetches during the main search phase, reducing latency by 50–100%. [#14970](https://github.com/yazeedhasan97/MetaGrossAI/pull/14970)
+- Pushes metadata filters down to the [Infinity](https://github.com/infiniflow/infinity) document engine, significantly improving retrieval performance. [#14974](https://github.com/yazeedhasan97/MetaGrossAI/pull/14974)
+- Introduces Redis-based caching for Text-to-Speech model outputs, eliminating redundant API calls for identical text to reduce latency and save provider quota. [#14851](https://github.com/yazeedhasan97/MetaGrossAI/pull/14851)
+- Reduces server startup time by 5-9 seconds and saves roughly 200MB of memory by replacing heavy module-level imports with lazy runtime loading. [#14973](https://github.com/yazeedhasan97/MetaGrossAI/pull/14973)
+- Optimizes the connector dashboard. [#14979](https://github.com/yazeedhasan97/MetaGrossAI/pull/14979)
+- Increases minimum supported Python version to 3.13. [#14767](https://github.com/yazeedhasan97/MetaGrossAI/pull/14767)
 
 ### Bug fixes
 
-- Atomic database updates: Wraps document and dataset chunk counter updates in atomic database transactions to prevent data drift. [#14866](https://github.com/infiniflow/ragflow/issues/14866)[#14867](https://github.com/infiniflow/ragflow/pull/14867)
-- Data source: the GitHub data source connector was failing to sync any content by default. [#13975](https://github.com/infiniflow/ragflow/issues/13975)[#14062](https://github.com/infiniflow/ragflow/pull/14062)
-- The Tongyi-Qianwen text embedding models were hitting the wrong API endpoints when configured with international or Chinese regional URLs. [#14784](https://github.com/infiniflow/ragflow/pull/14784)
-- Agent: Fully aggregates message content, reference data, and structured outputs across all generated events to fix incomplete responses in the non-streaming `/api/v1/agentbots/<agent_id>/completions` endpoint. [#13384](https://github.com/infiniflow/ragflow/issues/13384)[#14848](https://github.com/infiniflow/ragflow/pull/14848)
-- Prevents the **Retrieval** component's manual metadata filters from getting stuck on the first loop's value by making a temporary copy of the filter settings to preserve the original placeholder.[#12582](https://github.com/infiniflow/ragflow/issues/12582)[#14849](https://github.com/infiniflow/ragflow/pull/14849)
-- Agent: Fixed MCP tool name duplication.[#14217](https://github.com/infiniflow/ragflow/pull/14217)
-- Agent: top_k passing issues [#14760](https://github.com/infiniflow/ragflow/pull/14760)
-- Chat file attachment loss. [#13993](https://github.com/infiniflow/ragflow/pull/13993)
-- IMAP synchronization process crashed when multiple email addresses or quoted commas were detected in "From" header. [#14963](https://github.com/infiniflow/ragflow/issues/14963)[#14964](https://github.com/infiniflow/ragflow/issues/14964)[#15006](https://github.com/infiniflow/ragflow/pull/15006)
-- Langfuse integration failed to track token consumption. [#9837](https://github.com/infiniflow/ragflow/issues/9837)[#13294](https://github.com/infiniflow/ragflow/pull/13294)
-- Enhances the stability and fault tolerance of the reranking module by implementing network timeouts, crash-prevention safeguards, and specific provider bug fixes. [#14264](https://github.com/infiniflow/ragflow/pull/14264)
-- Increases minimum supported Nginx to 1.31.0. [#14928](https://github.com/infiniflow/ragflow/issues/14928)[#15007](https://github.com/infiniflow/ragflow/pull/15007)
+- Atomic database updates: Wraps document and dataset chunk counter updates in atomic database transactions to prevent data drift. [#14866](https://github.com/yazeedhasan97/MetaGrossAI/issues/14866)[#14867](https://github.com/yazeedhasan97/MetaGrossAI/pull/14867)
+- Data source: the GitHub data source connector was failing to sync any content by default. [#13975](https://github.com/yazeedhasan97/MetaGrossAI/issues/13975)[#14062](https://github.com/yazeedhasan97/MetaGrossAI/pull/14062)
+- The Tongyi-Qianwen text embedding models were hitting the wrong API endpoints when configured with international or Chinese regional URLs. [#14784](https://github.com/yazeedhasan97/MetaGrossAI/pull/14784)
+- Agent: Fully aggregates message content, reference data, and structured outputs across all generated events to fix incomplete responses in the non-streaming `/api/v1/agentbots/<agent_id>/completions` endpoint. [#13384](https://github.com/yazeedhasan97/MetaGrossAI/issues/13384)[#14848](https://github.com/yazeedhasan97/MetaGrossAI/pull/14848)
+- Prevents the **Retrieval** component's manual metadata filters from getting stuck on the first loop's value by making a temporary copy of the filter settings to preserve the original placeholder.[#12582](https://github.com/yazeedhasan97/MetaGrossAI/issues/12582)[#14849](https://github.com/yazeedhasan97/MetaGrossAI/pull/14849)
+- Agent: Fixed MCP tool name duplication.[#14217](https://github.com/yazeedhasan97/MetaGrossAI/pull/14217)
+- Agent: top_k passing issues [#14760](https://github.com/yazeedhasan97/MetaGrossAI/pull/14760)
+- Chat file attachment loss. [#13993](https://github.com/yazeedhasan97/MetaGrossAI/pull/13993)
+- IMAP synchronization process crashed when multiple email addresses or quoted commas were detected in "From" header. [#14963](https://github.com/yazeedhasan97/MetaGrossAI/issues/14963)[#14964](https://github.com/yazeedhasan97/MetaGrossAI/issues/14964)[#15006](https://github.com/yazeedhasan97/MetaGrossAI/pull/15006)
+- Langfuse integration failed to track token consumption. [#9837](https://github.com/yazeedhasan97/MetaGrossAI/issues/9837)[#13294](https://github.com/yazeedhasan97/MetaGrossAI/pull/13294)
+- Enhances the stability and fault tolerance of the reranking module by implementing network timeouts, crash-prevention safeguards, and specific provider bug fixes. [#14264](https://github.com/yazeedhasan97/MetaGrossAI/pull/14264)
+- Increases minimum supported Nginx to 1.31.0. [#14928](https://github.com/yazeedhasan97/MetaGrossAI/issues/14928)[#15007](https://github.com/yazeedhasan97/MetaGrossAI/pull/15007)
 
 ## v0.25.4
 
@@ -82,20 +82,20 @@ Released on May 14, 2026
 
 ### New features
 
-- Introduces a generic RESTful API connector, enabling configurable data ingestion from niche or enterprise-specific platforms into RAGFlow. [#13545](https://github.com/infiniflow/ragflow/pull/13545)
-- Agent: Implements tag management to help users categorize, filter, and sort their Agent apps. [#14799](https://github.com/infiniflow/ragflow/pull/14799)
+- Introduces a generic RESTful API connector, enabling configurable data ingestion from niche or enterprise-specific platforms into RAGFlow. [#13545](https://github.com/yazeedhasan97/MetaGrossAI/pull/13545)
+- Agent: Implements tag management to help users categorize, filter, and sort their Agent apps. [#14799](https://github.com/yazeedhasan97/MetaGrossAI/pull/14799)
 
 ### Improvements
 
-- Adds widget customization and persistence, allowing users to tailor their chat interface and ensure their settings are retained across sessions. [#14603](https://github.com/infiniflow/ragflow/pull/14603)
+- Adds widget customization and persistence, allowing users to tailor their chat interface and ensure their settings are retained across sessions. [#14603](https://github.com/yazeedhasan97/MetaGrossAI/pull/14603)
 
 ### Model support
 
-- Adds gpt-5.4-mini and gpt-5.4-nano to the OpenAI model list [#14908](https://github.com/infiniflow/ragflow/pull/14908)
+- Adds gpt-5.4-mini and gpt-5.4-nano to the OpenAI model list [#14908](https://github.com/yazeedhasan97/MetaGrossAI/pull/14908)
 
 ### Bug fixes
 
-- Corrects the API endpoint for downloading original files from a specified dataset. [#14910](https://github.com/infiniflow/ragflow/pull/14910) See also [Download document](./references/http_api_reference.md#download-document).
+- Corrects the API endpoint for downloading original files from a specified dataset. [#14910](https://github.com/yazeedhasan97/MetaGrossAI/pull/14910) See also [Download document](./references/http_api_reference.md#download-document).
 
 ## v0.25.3
 
@@ -103,27 +103,27 @@ Released on May 13, 2026.
 
 ### New features
 
-- Enables assigning specific roles like content, metadata, and primary key, to table columns. [#13710](https://github.com/infiniflow/ragflow/pull/13710)
+- Enables assigning specific roles like content, metadata, and primary key, to table columns. [#13710](https://github.com/yazeedhasan97/MetaGrossAI/pull/13710)
 
 ### Improvements
 
-- S3 connector: Implements ETag-based incremental synchronization for S3 data sources, drastically reducing sync time and AWS egress costs for users with massive-volumn S3-based datasets. [#14628](https://github.com/infiniflow/ragflow/issues/14628)[#14677](https://github.com/infiniflow/ragflow/pull/14677)
+- S3 connector: Implements ETag-based incremental synchronization for S3 data sources, drastically reducing sync time and AWS egress costs for users with massive-volumn S3-based datasets. [#14628](https://github.com/yazeedhasan97/MetaGrossAI/issues/14628)[#14677](https://github.com/yazeedhasan97/MetaGrossAI/pull/14677)
 - API refactoring and security
   - Continues the transition of web APIs to RESTful conventions, ensuring backward compatibility for all legacy endpoints.
-  - Binds the `user_id` in `POST /api/v1/messages` to the authenticated JWT principal. [#14745](https://github.com/infiniflow/ragflow/pull/14745)
-  - Secures the sandbox executor against dynamic and indirect code execution bypasses. [#14690](https://github.com/infiniflow/ragflow/pull/14690)
-  - Enforces HTTP request timeouts across the LLM integration layer. [#14313](https://github.com/infiniflow/ragflow/pull/14313)
-- Refactors thread pool lifecycle management in `file_service.py` and `task_executor.py` for more efficient, lightweight resource handling. [#14668](https://github.com/infiniflow/ragflow/pull/14668)
-- Agent: Enables the **Code** component to output and display file-based attachments, such as charts and images, directly in the chat. [#14787](https://github.com/infiniflow/ragflow/pull/14787)
-- Reduces ingestion server boot time. [#14894](https://github.com/infiniflow/ragflow/pull/14894)
+  - Binds the `user_id` in `POST /api/v1/messages` to the authenticated JWT principal. [#14745](https://github.com/yazeedhasan97/MetaGrossAI/pull/14745)
+  - Secures the sandbox executor against dynamic and indirect code execution bypasses. [#14690](https://github.com/yazeedhasan97/MetaGrossAI/pull/14690)
+  - Enforces HTTP request timeouts across the LLM integration layer. [#14313](https://github.com/yazeedhasan97/MetaGrossAI/pull/14313)
+- Refactors thread pool lifecycle management in `file_service.py` and `task_executor.py` for more efficient, lightweight resource handling. [#14668](https://github.com/yazeedhasan97/MetaGrossAI/pull/14668)
+- Agent: Enables the **Code** component to output and display file-based attachments, such as charts and images, directly in the chat. [#14787](https://github.com/yazeedhasan97/MetaGrossAI/pull/14787)
+- Reduces ingestion server boot time. [#14894](https://github.com/yazeedhasan97/MetaGrossAI/pull/14894)
 
 ### Bug fixes
 
-- Images in multi-sheet Excel workbooks were not scoped by sheet, causing images to be incorrectly attributed across different worksheets. [#14120](https://github.com/infiniflow/ragflow/pull/14120)
-- Agent: Splits the **Message** component output into distinct 'waiting' and 'message' states when nested inside an **Iteration** component alongside a **Wait** component. [#14839](https://github.com/infiniflow/ragflow/pull/14839)
-- Agent: The **Iteration** component failed to correctly pass array elements to its child components due to a naming mismatch between the expected `IterationItem` alias and the runtime `item` variable. [#14146](https://github.com/infiniflow/ragflow/pull/14146)
-- Agent: Template strings in tool-type components like **Email** and **Invoke** failed to interpolate; `{{variable}}` placeholders were passed through as raw text. [#14601](https://github.com/infiniflow/ragflow/pull/14601)
-- Volcengine (Doubao/Ark) endpoints were not visible in the provider list. [#14702](https://github.com/infiniflow/ragflow/pull/14702)
+- Images in multi-sheet Excel workbooks were not scoped by sheet, causing images to be incorrectly attributed across different worksheets. [#14120](https://github.com/yazeedhasan97/MetaGrossAI/pull/14120)
+- Agent: Splits the **Message** component output into distinct 'waiting' and 'message' states when nested inside an **Iteration** component alongside a **Wait** component. [#14839](https://github.com/yazeedhasan97/MetaGrossAI/pull/14839)
+- Agent: The **Iteration** component failed to correctly pass array elements to its child components due to a naming mismatch between the expected `IterationItem` alias and the runtime `item` variable. [#14146](https://github.com/yazeedhasan97/MetaGrossAI/pull/14146)
+- Agent: Template strings in tool-type components like **Email** and **Invoke** failed to interpolate; `{{variable}}` placeholders were passed through as raw text. [#14601](https://github.com/yazeedhasan97/MetaGrossAI/pull/14601)
+- Volcengine (Doubao/Ark) endpoints were not visible in the provider list. [#14702](https://github.com/yazeedhasan97/MetaGrossAI/pull/14702)
 
 ## v0.25.2
 
@@ -135,13 +135,13 @@ Released on May 11, 2026.
 
 ### Data source
 
-- Introduces a lightweight snapshot mechanism for synchronizing deleted files across eight data sources—including Moodle, DingTalk AI Table, and RSS—ensuring a faithful reflection of all remote data sources. [#14362](https://github.com/infiniflow/ragflow/issues/14362)[#14499](https://github.com/infiniflow/ragflow/pull/14499)
+- Introduces a lightweight snapshot mechanism for synchronizing deleted files across eight data sources—including Moodle, DingTalk AI Table, and RSS—ensuring a faithful reflection of all remote data sources. [#14362](https://github.com/yazeedhasan97/MetaGrossAI/issues/14362)[#14499](https://github.com/yazeedhasan97/MetaGrossAI/pull/14499)
 
 ### Bug fixes
 
 - Metadata visibility issues during v0.24.0 to v0.25.0 upgrades.
 - Duplicate chat output.
-- Metadata filtering was handled in-memory instead of leveraging Elasticsearch, incurring performance bottlenecks. [#14576](https://github.com/infiniflow/ragflow/pull/14576)
+- Metadata filtering was handled in-memory instead of leveraging Elasticsearch, incurring performance bottlenecks. [#14576](https://github.com/yazeedhasan97/MetaGrossAI/pull/14576)
 
 ## v0.25.1
 
@@ -150,12 +150,12 @@ Released on April 29, 2026.
 ### Improvements
 
 - API refactoring and unification: Standardizes web APIs to RESTful conventions across all endpoints, unifying document creation and indexing flows while maintaining backward compatibility.
-- Parsing optimizations: Adds [OpenDataLoader](https://github.com/opendataloader-project/opendataloader-pdf) PDF parser backend. [#14097](https://github.com/infiniflow/ragflow/pull/14097)
-- Introduces lazy loading and chunked parsing for large PDFs (&gt;50 pages), significantly reducing memory footprint. [#14385](https://github.com/infiniflow/ragflow/pull/14385)
+- Parsing optimizations: Adds [OpenDataLoader](https://github.com/opendataloader-project/opendataloader-pdf) PDF parser backend. [#14097](https://github.com/yazeedhasan97/MetaGrossAI/pull/14097)
+- Introduces lazy loading and chunked parsing for large PDFs (&gt;50 pages), significantly reducing memory footprint. [#14385](https://github.com/yazeedhasan97/MetaGrossAI/pull/14385)
 
 ### Data source
 
-Enables synchronizing deleted files in Bitbucket, Gmail, Google Drive, and Airtable. [#14362](https://github.com/infiniflow/ragflow/issues/14362)
+Enables synchronizing deleted files in Bitbucket, Gmail, Google Drive, and Airtable. [#14362](https://github.com/yazeedhasan97/MetaGrossAI/issues/14362)
 
 ### Model support
 
@@ -192,7 +192,7 @@ Released on April 21, 2026.
 - Underlying system & infrastructure optimization:
   - Bumps RAGFlow's document engine, Elasticsearch to 9.x.
   - Switches the default object storage container to `pgsty/minio` due to the deprecation of the official MinIO images.
-  - Adds database migration scripts; see [this readme](https://github.com/infiniflow/ragflow/tree/74b44e1aa3ecd6687b3aa4ef731d0187720c3cb5/tools/scripts) for further details.
+  - Adds database migration scripts; see [this readme](https://github.com/yazeedhasan97/MetaGrossAI/tree/74b44e1aa3ecd6687b3aa4ef731d0187720c3cb5/tools/scripts) for further details.
 
 ### Model support
 
@@ -272,7 +272,7 @@ Released on December 31, 2025.
 
 ### Fixed issues
 
-- Memory: 
+- Memory:
   - The RAGFlow server failed to start if an empty memory object existed.
   - Unable to delete a newly created empty Memory.
 - RAG: MDX file parsing was not supported.
@@ -359,7 +359,7 @@ Released on November 19, 2025.
 ### Fixed issues
 
 - A v0.22.0 issue: Users failed to parse uploaded files or switch embedding model in a dataset containing parsed files using a built-in model from a `-full` RAGFlow edition.
-- Image concatenated in Word documents. [#11310](https://github.com/infiniflow/ragflow/pull/11310)
+- Image concatenated in Word documents. [#11310](https://github.com/yazeedhasan97/MetaGrossAI/pull/11310)
 - Mixed images and text were not correctly displayed in the chat history.
 
 ### Newly supported models
@@ -480,11 +480,11 @@ Released on September 10, 2025.
 
 #### HTTP APIs
 
-- Adds a body parameter `"metadata_condition"` to the [Retrieve chunks](./references/http_api_reference.md#retrieve-chunks) method, enabling metadata-based chunk filtering during retrieval. [#9877](https://github.com/infiniflow/ragflow/pull/9877)
+- Adds a body parameter `"metadata_condition"` to the [Retrieve chunks](./references/http_api_reference.md#retrieve-chunks) method, enabling metadata-based chunk filtering during retrieval. [#9877](https://github.com/yazeedhasan97/MetaGrossAI/pull/9877)
 
 #### Python APIs
 
-- Adds a parameter `metadata_condition` to the [Retrieve chunks](./references/python_api_reference.md#retrieve-chunks) method, enabling metadata-based chunk filtering during retrieval. [#9877](https://github.com/infiniflow/ragflow/pull/9877)
+- Adds a parameter `metadata_condition` to the [Retrieve chunks](./references/python_api_reference.md#retrieve-chunks) method, enabling metadata-based chunk filtering during retrieval. [#9877](https://github.com/yazeedhasan97/MetaGrossAI/pull/9877)
 
 ## v0.20.4
 
@@ -508,7 +508,7 @@ Ecommerce Customer Service Workflow: A template designed to handle enquiries abo
 
 ### Fixed issues
 
-- Dataset:  
+- Dataset:
   - Unable to share resources with the team.
   - Inappropriate restrictions on the number and size of uploaded files.
 - Chat:
@@ -524,25 +524,25 @@ Released on August 20, 2025.
 
 ### Improvements
 
-- Revamps the user interface for the **Datasets**, **Chat**, and **Search** pages.  
+- Revamps the user interface for the **Datasets**, **Chat**, and **Search** pages.
 - Search and Chat: Introduces document-level metadata filtering, allowing automatic or manual filtering during chats or searches.
 - Search: Supports creating search apps tailored to various business scenarios
 - Chat: Supports comparing answer performance of up to three chat model settings on a single **Chat** page.
-- Agent:  
-  - Implements a toggle in the **Agent** component to enable or disable citation.  
-  - Introduces a drag-and-drop method for creating components.  
+- Agent:
+  - Implements a toggle in the **Agent** component to enable or disable citation.
+  - Introduces a drag-and-drop method for creating components.
 - Documentation: Corrects inaccuracies in the API reference.
 
 ### New Agent templates
 
-- Report Agent: A template for generating summary reports in internal question-answering scenarios, supporting the display of tables and formulae.  [#9427](https://github.com/infiniflow/ragflow/pull/9427)
+- Report Agent: A template for generating summary reports in internal question-answering scenarios, supporting the display of tables and formulae.  [#9427](https://github.com/yazeedhasan97/MetaGrossAI/pull/9427)
 
 ### Fixed issues
 
 - The timeout mechanism introduced in v0.20.0 caused tasks like GraphRAG to halt.
-- Predefined opening greeting in the **Agent** component was missing during conversations.  
-- An automatic line break issue in the prompt editor.  
-- A memory leak issue caused by PyPDF. [#9469](https://github.com/infiniflow/ragflow/pull/9469)
+- Predefined opening greeting in the **Agent** component was missing during conversations.
+- An automatic line break issue in the prompt editor.
+- A memory leak issue caused by PyPDF. [#9469](https://github.com/yazeedhasan97/MetaGrossAI/pull/9469)
 
 ### API changes
 
@@ -567,8 +567,8 @@ Released on August 8, 2025.
 ### New agent templates (both workflow and agentic)
 
 - Text-to-SQL data expert Workflow: Empowers non-technical teams (e.g., operations, product) to independently query business data.
-- Choose Your Knowledge Base Workflow: Lets users select a dataset to query during conversations. [#9325](https://github.com/infiniflow/ragflow/pull/9325)
-- Choose Your Knowledge Base Agent: Delivers higher-quality responses with extended reasoning time, suited for complex queries. [#9325](https://github.com/infiniflow/ragflow/pull/9325)
+- Choose Your Knowledge Base Workflow: Lets users select a dataset to query during conversations. [#9325](https://github.com/yazeedhasan97/MetaGrossAI/pull/9325)
+- Choose Your Knowledge Base Agent: Delivers higher-quality responses with extended reasoning time, suited for complex queries. [#9325](https://github.com/yazeedhasan97/MetaGrossAI/pull/9325)
 
 ### Fixed Issues
 
@@ -616,17 +616,17 @@ Released on June 23, 2025.
 ### Fixed issues
 
 - A memory leak issue during high-concurrency requests.
-- Large file parsing freezes when GraphRAG entity resolution is enabled. [#8223](https://github.com/infiniflow/ragflow/pull/8223)
-- A context error occurring when using Sandbox in standalone mode. [#8340](https://github.com/infiniflow/ragflow/pull/8340)
-- An excessive CPU usage issue caused by Ollama. [#8216](https://github.com/infiniflow/ragflow/pull/8216)
-- A bug in the Code Component. [#7949](https://github.com/infiniflow/ragflow/pull/7949)
-- Added support for models installed via Ollama or VLLM when creating a dataset through the API. [#8069](https://github.com/infiniflow/ragflow/pull/8069)
-- Enabled role-based authentication for S3 bucket access. [#8149](https://github.com/infiniflow/ragflow/pull/8149)
+- Large file parsing freezes when GraphRAG entity resolution is enabled. [#8223](https://github.com/yazeedhasan97/MetaGrossAI/pull/8223)
+- A context error occurring when using Sandbox in standalone mode. [#8340](https://github.com/yazeedhasan97/MetaGrossAI/pull/8340)
+- An excessive CPU usage issue caused by Ollama. [#8216](https://github.com/yazeedhasan97/MetaGrossAI/pull/8216)
+- A bug in the Code Component. [#7949](https://github.com/yazeedhasan97/MetaGrossAI/pull/7949)
+- Added support for models installed via Ollama or VLLM when creating a dataset through the API. [#8069](https://github.com/yazeedhasan97/MetaGrossAI/pull/8069)
+- Enabled role-based authentication for S3 bucket access. [#8149](https://github.com/yazeedhasan97/MetaGrossAI/pull/8149)
 
 ### Newly supported models
 
-- Qwen 3 Embedding. [#8184](https://github.com/infiniflow/ragflow/pull/8184) 
-- Voyage Multimodal 3. [#7987](https://github.com/infiniflow/ragflow/pull/7987)
+- Qwen 3 Embedding. [#8184](https://github.com/yazeedhasan97/MetaGrossAI/pull/8184)
+- Voyage Multimodal 3. [#7987](https://github.com/yazeedhasan97/MetaGrossAI/pull/7987)
 
 ## v0.19.0
 
@@ -799,7 +799,7 @@ Released on February 6, 2025.
 - New UI language: Portuguese.
 - Allows setting metadata for a specific file in a dataset to enhance AI-powered chats. See [here](./guides/dataset/set_metadata.md).
 - Upgrades RAGFlow's document engine [Infinity](https://github.com/infiniflow/infinity) to v0.6.0.dev3.
-- Supports GPU acceleration for DeepDoc (see [docker-compose-gpu.yml](https://github.com/infiniflow/ragflow/blob/main/docker/docker-compose-gpu.yml)).
+- Supports GPU acceleration for DeepDoc (see [docker-compose-gpu.yml](https://github.com/yazeedhasan97/MetaGrossAI/blob/main/docker/docker-compose-gpu.yml)).
 - Supports creating and referencing a **Tag** dataset as a key milestone towards bridging the semantic gap between query and response.
 
 :::danger IMPORTANT
@@ -900,7 +900,7 @@ Released on November 29, 2024.
 
 ### Improvements
 
-Adds [Infinity's configuration file](https://github.com/infiniflow/ragflow/blob/main/docker/infinity_conf.toml) to facilitate integration and customization of [Infinity](https://github.com/infiniflow/infinity) as a document engine. From this release onwards, updates to Infinity's configuration can be made directly within RAGFlow and will take effect immediately after restarting RAGFlow using `docker compose`. [#3715](https://github.com/infiniflow/ragflow/pull/3715)
+Adds [Infinity's configuration file](https://github.com/yazeedhasan97/MetaGrossAI/blob/main/docker/infinity_conf.toml) to facilitate integration and customization of [Infinity](https://github.com/infiniflow/infinity) as a document engine. From this release onwards, updates to Infinity's configuration can be made directly within RAGFlow and will take effect immediately after restarting RAGFlow using `docker compose`. [#3715](https://github.com/yazeedhasan97/MetaGrossAI/pull/3715)
 
 ### Fixed issues
 
@@ -918,7 +918,7 @@ Released on November 26, 2024.
 
 ### New features
 
-- Supports [Infinity](https://github.com/infiniflow/infinity) or Elasticsearch (default) as document engine for vector storage and full-text indexing. [#2894](https://github.com/infiniflow/ragflow/pull/2894)
+- Supports [Infinity](https://github.com/infiniflow/infinity) or Elasticsearch (default) as document engine for vector storage and full-text indexing. [#2894](https://github.com/yazeedhasan97/MetaGrossAI/pull/2894)
 - Enhances user experience by adding more variables to the Agent and implementing auto-saving.
 - Adds a three-step translation agent template, inspired by [Andrew Ng's translation agent](https://github.com/andrewyng/translation-agent).
 - Adds an SEO-optimized blog writing agent template.
@@ -931,7 +931,7 @@ Released on November 26, 2024.
 
 ### Compatibility changes
 
-From this release onwards, **service_config.yaml.template** replaces **service_config.yaml** for configuring backend services. Upon Docker container startup, the environment variables defined in this template file are automatically populated and a **service_config.yaml** is auto-generated from it. [#3341](https://github.com/infiniflow/ragflow/pull/3341)
+From this release onwards, **service_config.yaml.template** replaces **service_config.yaml** for configuring backend services. Upon Docker container startup, the environment variables defined in this template file are automatically populated and a **service_config.yaml** is auto-generated from it. [#3341](https://github.com/yazeedhasan97/MetaGrossAI/pull/3341)
 
 This approach eliminates the need to manually update **service_config.yaml** after making changes to **.env**, facilitating dynamic environment configurations.
 

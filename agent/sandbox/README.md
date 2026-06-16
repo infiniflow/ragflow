@@ -25,7 +25,7 @@ A secure, pluggable code execution backend for RAGFlow and beyond.
 - Linux distro compatible with gVisor
 - [gVisor](https://gvisor.dev/docs/user_guide/install/)
 - Docker >= `25.0` (API 1.44+) — executor manager now bundles Docker CLI `29.1.0` to match newer daemons.
-- Docker Compose >= `v2.26.1` like [RAGFlow](https://github.com/infiniflow/ragflow)
+- Docker Compose >= `v2.26.1` like [RAGFlow](https://github.com/yazeedhasan97/MetaGrossAI)
 - [uv](https://docs.astral.sh/uv/) as package and project manager
 
 #### Optional (Recommended)
@@ -257,7 +257,7 @@ Async funcion with aioxs
 const axios = require('axios');
 async function main() {
   try {
-    const response = await axios.get('https://github.com/infiniflow/ragflow');
+    const response = await axios.get('https://github.com/yazeedhasan97/MetaGrossAI');
     return 'Body:' + response.data;
   } catch (error) {
     return 'Error:' + error.message;

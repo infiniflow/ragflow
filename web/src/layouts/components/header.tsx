@@ -63,7 +63,19 @@ export function Header({
           to={Routes.Root}
           aria-current={pathname === Routes.Root ? 'page' : undefined}
         >
-          <img src={'/logo.svg'} alt="RAGFlow logo" className="size-10" />
+          {/* This one shows normally, but HIDES in dark mode */}
+          <img
+            src={'/logo-light.png'}
+            alt="MetaGrossAI logo"
+            className="size-10 block dark:hidden object-contain"
+          />
+
+          {/* This one is hidden normally, but SHOWS in dark mode */}
+          <img
+            src={'/logo-dark.png'}
+            alt="MetaGrossAI logo"
+            className="size-10 hidden dark:block object-contain"
+          />
         </Link>
       </div>
 
@@ -73,23 +85,6 @@ export function Header({
         className="flex items-center justify-end gap-4 text-text-badge"
         data-testid="auth-status"
       >
-        <a
-          className="p-2 text-text-secondary hover:text-text-primary focus-visible:text-text-primary"
-          target="_blank"
-          href="https://discord.com/invite/NjYzJD3GM3"
-          rel="noreferrer noopener"
-        >
-          <IconFontFill name="a-DiscordIconSVGVectorIcon" />
-        </a>
-
-        <a
-          className="p-2 text-text-secondary hover:text-text-primary focus-visible:text-text-primary"
-          target="_blank"
-          href="https://github.com/infiniflow/ragflow"
-          rel="noreferrer noopener"
-        >
-          <IconFontFill name="GitHub" />
-        </a>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -115,7 +110,7 @@ export function Header({
           asLink
           variant="ghost"
           size="icon"
-          to="https://ragflow.io/docs/dev/category/user-guides"
+          to="https://metagrossai.com/docs/dev/category/user-guides"
           target="_blank"
           rel="noreferrer noopener"
         >

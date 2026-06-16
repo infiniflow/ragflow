@@ -17,7 +17,7 @@ main
 
 ### Actual behavior
 
-The restricted_loads function at [api/utils/__init__.py#L215](https://github.com/infiniflow/ragflow/blob/main/api/utils/__init__.py#L215) is still vulnerable leading via code execution.
+The restricted_loads function at [api/utils/__init__.py#L215](https://github.com/yazeedhasan97/MetaGrossAI/blob/main/api/utils/__init__.py#L215) is still vulnerable leading via code execution.
 The main reason is that numpy module has a numpy.f2py.diagnose.run_command function directly execute commands, but the restricted_loads function allows users import functions in module numpy.
 
 
@@ -65,7 +65,7 @@ Payload=pickle.dumps(Exploit())
 restricted_loads(Payload)
 ```
 **Result**
-![image](https://github.com/infiniflow/ragflow/assets/85293841/8e5ed255-2e84-466c-bce4-776f7e4401e8)
+![image](https://github.com/yazeedhasan97/MetaGrossAI/assets/85293841/8e5ed255-2e84-466c-bce4-776f7e4401e8)
 
 
 ### Additional information

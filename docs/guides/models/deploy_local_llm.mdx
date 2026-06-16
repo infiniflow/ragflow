@@ -55,9 +55,9 @@ $ sudo docker exec ollama ollama pull llama3.2
 ```
 
 ```bash
-$ sudo docker exec ollama ollama pull bge-m3                 
-> pulling daec91ffb5dd... 100% ▕████████████████▏ 1.2 GB                                  
-> success 
+$ sudo docker exec ollama ollama pull bge-m3
+> pulling daec91ffb5dd... 100% ▕████████████████▏ 1.2 GB
+> success
 ```
 
 ### 2. Find Ollama URL and ensure it is accessible
@@ -85,7 +85,7 @@ $ curl http://${IP_OF_OLLAMA_MACHINE}:11434/
 
 In RAGFlow, click on your logo on the top right of the page **>** **Model providers** and add Ollama to RAGFlow:
 
-![add ollama](https://github.com/infiniflow/ragflow/assets/93570324/10635088-028b-4b3d-add9-5c5a6e626814)
+![add ollama](https://github.com/yazeedhasan97/MetaGrossAI/assets/93570324/10635088-028b-4b3d-add9-5c5a6e626814)
 
 
 ### 4. Complete basic Ollama settings
@@ -107,7 +107,7 @@ Max retries exceeded with url: /api/chat (Caused by NewConnectionError('<urllib3
 ### 5. Update System Model Settings
 
 Click on your logo **>** **Model providers** **>** **System Model Settings** to update your model:
-   
+
 - *You should now be able to find **llama3.2** from the dropdown list under **Chat model**, and **bge-m3** from the dropdown list under **Embedding model**.*
 
 ### 6. Update Chat Configuration
@@ -127,7 +127,7 @@ To deploy a local model, e.g., **Mistral**, using Xinference:
 
 ### 1. Check firewall settings
 
-Ensure that your host machine's firewall allows inbound connections on port 9997. 
+Ensure that your host machine's firewall allows inbound connections on port 9997.
 
 ### 2. Start an Xinference instance
 
@@ -146,17 +146,17 @@ $ xinference launch -u mistral --model-name mistral-v0.1 --size-in-billions 7 --
 
 In RAGFlow, click on your logo on the top right of the page **>** **Model providers** and add Xinference to RAGFlow:
 
-![add xinference](https://github.com/infiniflow/ragflow/assets/93570324/10635088-028b-4b3d-add9-5c5a6e626814)
+![add xinference](https://github.com/yazeedhasan97/MetaGrossAI/assets/93570324/10635088-028b-4b3d-add9-5c5a6e626814)
 
 ### 5. Complete basic Xinference settings
 
-Enter an accessible base URL, such as `http://<your-xinference-endpoint-domain>:9997/v1`. 
+Enter an accessible base URL, such as `http://<your-xinference-endpoint-domain>:9997/v1`.
 > For rerank model, please use the `http://<your-xinference-endpoint-domain>:9997/v1/rerank` as the base URL.
 
 ### 6. Update System Model Settings
 
 Click on your logo **>** **Model providers** **>** **System Model Settings** to update your model.
-   
+
 *You should now be able to find **mistral** from the dropdown list under **Chat model**.*
 
 ### 7. Update Chat Configuration
@@ -172,7 +172,7 @@ To deploy a local model, e.g., **Qwen2**, using IPEX-LLM-accelerated Ollama:
 ### 1. Check firewall settings
 
 Ensure that your host machine's firewall allows inbound connections on port 11434. For example:
-   
+
 ```bash
 sudo ufw allow 11434/tcp
 ```
@@ -181,7 +181,7 @@ sudo ufw allow 11434/tcp
 
 #### 2.1 Install IPEX-LLM for Ollama
 
-:::tip NOTE 
+:::tip NOTE
 IPEX-LLM's supports Ollama on Linux and Windows systems.
 :::
 
@@ -193,7 +193,7 @@ For detailed information about installing IPEX-LLM for Ollama, see [Run llama.cp
 
 #### 2.2 Initialize Ollama
 
-1. Activate the `llm-cpp` Conda environment and initialize Ollama: 
+1. Activate the `llm-cpp` Conda environment and initialize Ollama:
 
 <Tabs
   defaultValue="linux"
@@ -202,7 +202,7 @@ For detailed information about installing IPEX-LLM for Ollama, see [Run llama.cp
     {label: 'Windows', value: 'windows'},
   ]}>
   <TabItem value="linux">
-  
+
   ```bash
   conda activate llm-cpp
   init-ollama
@@ -220,7 +220,7 @@ For detailed information about installing IPEX-LLM for Ollama, see [Run llama.cp
 </Tabs>
 
 2. If the installed `ipex-llm[cpp]` requires an upgrade to the Ollama binary files, remove the old binary files and reinitialize Ollama using `init-ollama` (Linux) or `init-ollama.bat` (Windows).
-   
+
    *A symbolic link to Ollama appears in your current directory, and you can use this executable file following standard Ollama commands.*
 
 #### 2.3 Launch Ollama service
@@ -228,7 +228,7 @@ For detailed information about installing IPEX-LLM for Ollama, see [Run llama.cp
 1. Set the environment variable `OLLAMA_NUM_GPU` to `999` to ensure that all layers of your model run on the Intel GPU; otherwise, some layers may default to CPU.
 2. For optimal performance on Intel Arc™ A-Series Graphics with Linux OS (Kernel 6.2), set the following environment variable before launching the Ollama service:
 
-   ```bash 
+   ```bash
    export SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=1
    ```
 3. Launch the Ollama service:
@@ -382,7 +382,3 @@ setting->model providers->search->gpustack->add ,configure as follow:
 
 select gpustack chat model as default llm model as follow:
 ![chat](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/ragflow-gpustack22.png)
-
-
-
-

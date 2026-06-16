@@ -1595,7 +1595,7 @@ func (s *Service) GetAllEnvironments() ([]map[string]interface{}, error) {
 	// DEFAULT_SUPERUSER_EMAIL
 	defaultSuperuserEmail := os.Getenv("DEFAULT_SUPERUSER_EMAIL")
 	if defaultSuperuserEmail == "" {
-		defaultSuperuserEmail = "admin@ragflow.io"
+		defaultSuperuserEmail = "support@waqoor.com"
 	}
 	result = append(result, map[string]interface{}{
 		"env":   "DEFAULT_SUPERUSER_EMAIL",
@@ -1711,7 +1711,7 @@ func (s *Service) ListIngestionTasks() ([]map[string]interface{}, error) {
 func (s *Service) InitDefaultAdmin() error {
 	// Default superuser settings (matching Python's DEFAULT_SUPERUSER_* defaults)
 	defaultNickname := "admin"
-	defaultEmail := "admin@ragflow.io"
+	defaultEmail := "support@waqoor.com"
 	defaultPassword := "admin"
 
 	// Query superusers

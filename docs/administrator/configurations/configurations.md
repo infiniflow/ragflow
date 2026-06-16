@@ -13,11 +13,11 @@ Configurations for deploying RAGFlow via Docker.
 
 When it comes to system configurations, you will need to manage the following files:
 
-- [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env): Contains important environment variables for Docker.
-- [service_conf.yaml.template](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml.template): Configures the back-end services. It specifies the system-level configuration for RAGFlow and is used by its API server and task executor. Upon container startup, the `service_conf.yaml` file will be generated based on this template file. This process replaces any environment variables within the template, allowing for dynamic configuration tailored to the container's environment.
-- [docker-compose.yml](https://github.com/infiniflow/ragflow/blob/main/docker/docker-compose.yml): The Docker Compose file for starting up the RAGFlow service.
+- [.env](https://github.com/yazeedhasan97/MetaGrossAI/blob/main/docker/.env): Contains important environment variables for Docker.
+- [service_conf.yaml.template](https://github.com/yazeedhasan97/MetaGrossAI/blob/main/docker/service_conf.yaml.template): Configures the back-end services. It specifies the system-level configuration for RAGFlow and is used by its API server and task executor. Upon container startup, the `service_conf.yaml` file will be generated based on this template file. This process replaces any environment variables within the template, allowing for dynamic configuration tailored to the container's environment.
+- [docker-compose.yml](https://github.com/yazeedhasan97/MetaGrossAI/blob/main/docker/docker-compose.yml): The Docker Compose file for starting up the RAGFlow service.
 
-To update the default HTTP serving port (80), go to [docker-compose.yml](https://github.com/infiniflow/ragflow/blob/main/docker/docker-compose.yml) and change `80:80`
+To update the default HTTP serving port (80), go to [docker-compose.yml](https://github.com/yazeedhasan97/MetaGrossAI/blob/main/docker/docker-compose.yml) and change `80:80`
 to `<YOUR_SERVING_PORT>:80`.
 
 :::tip NOTE
@@ -42,7 +42,7 @@ We do not actively maintain **docker-compose-CN-oc9.yml**, **docker-compose-maco
 
 ## Docker environment variables
 
-The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file contains important environment variables for Docker.
+The [.env](https://github.com/yazeedhasan97/MetaGrossAI/blob/main/docker/.env) file contains important environment variables for Docker.
 
 ### Elasticsearch
 
@@ -144,7 +144,7 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 
 ## Service configuration
 
-[service_conf.yaml.template](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml.template) specifies the system-level configuration for RAGFlow and is used by its API server and task executor.
+[service_conf.yaml.template](https://github.com/yazeedhasan97/MetaGrossAI/blob/main/docker/service_conf.yaml.template) specifies the system-level configuration for RAGFlow and is used by its API server and task executor.
 
 ### `ragflow`
 
@@ -190,7 +190,7 @@ s3:
 
 When using an external storage backend, you can remove the `minio` service from `docker-compose-base.yml`.
 
-For other S3-compatible backends (AWS S3, Alibaba Cloud OSS, Azure Blob, Google Cloud Storage), see the commented examples in [service_conf.yaml.template](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml.template).
+For other S3-compatible backends (AWS S3, Alibaba Cloud OSS, Azure Blob, Google Cloud Storage), see the commented examples in [service_conf.yaml.template](https://github.com/yazeedhasan97/MetaGrossAI/blob/main/docker/service_conf.yaml.template).
 
 ### `redis`
 
