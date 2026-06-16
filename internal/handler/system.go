@@ -147,12 +147,14 @@ func (h *SystemHandler) OceanbaseStatus(c *gin.Context) {
 
 	status, err := h.systemService.GetOceanbaseStatus()
 	if err != nil {
-		// Python: get_oceanbase_status() raising propagates to the route's
-		// except branch -> get_json_result(data=..., code=500). The HTTP
-		// status stays 200 while the envelope carries code 500.
+		// Python parity: get_oceanbase_status() raising propagates to the
+		// route's except branch -> code 500 with the error nested in data,
+		// while the HTTP status stays 200. The top-level message reflects the
+		// failure (Python leaves the default "success", which is misleading on
+		// a 500).
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeServerError,
-			"message": "success",
+			"message": "Failed to get OceanBase status",
 			"data": gin.H{
 				"status":  "error",
 				"message": "Failed to get OceanBase status: " + err.Error(),
