@@ -46,7 +46,10 @@ from common.constants import MAXIMUM_PAGE_NUMBER
 try:
     import tiktoken
     _tiktoken_encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
-except ImportError:
+except Exception:
+    # Besides ImportError, loading the encoding can fail when the cached
+    # cl100k_base file is missing and the network is unavailable (#15943).
+    # Fall back to the heuristic path instead of breaking module import.
     _tiktoken_encoding = None
 
 # Long random string pattern: 40+ char alphanumeric mixed strings (hash, token, tracking ID, etc.)

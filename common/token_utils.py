@@ -20,8 +20,10 @@ import tiktoken
 
 from common.file_utils import get_project_base_directory
 
-tiktoken_cache_dir = get_project_base_directory()
-os.environ["TIKTOKEN_CACHE_DIR"] = tiktoken_cache_dir
+# Point tiktoken at the bundled cl100k_base cache so offline/air-gapped
+# deployments don't try to download it from openaipublic.blob.core.windows.net
+# (#15943). `setdefault` keeps any explicit TIKTOKEN_CACHE_DIR the operator set.
+os.environ.setdefault("TIKTOKEN_CACHE_DIR", get_project_base_directory())
 # encoder = tiktoken.encoding_for_model("gpt-3.5-turbo")
 encoder = tiktoken.get_encoding("cl100k_base")
 
