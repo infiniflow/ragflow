@@ -119,10 +119,7 @@ func (m *ModelProviderService) AddModelProvider(providerName, userID string) (co
 
 	tenantID := tenants[0].TenantID
 
-	providerID, err := utility.GenerateUUID1()
-	if err != nil {
-		return common.CodeServerError, errors.New("fail to get UUID")
-	}
+	providerID := utility.GenerateToken()
 
 	tenantModelProvider := &entity.TenantModelProvider{
 		ID:           providerID,
@@ -278,17 +275,6 @@ func (m *ModelProviderService) ListSupportedModels(providerName, instanceName, u
 			"model_types":   model.ModelTypes,
 			"thinking":      model.Thinking,
 		})
-		modelData := map[string]interface{}{
-			"name":        model.Name,
-			"dimension":   model.MaxDimension,
-			"max_tokens":  model.MaxTokens,
-			"model_types": model.ModelTypes,
-			"thinking":    model.Thinking,
-		}
-		if len(model.Dimensions) > 0 {
-			modelData["dimensions"] = model.Dimensions
-		}
-		result = append(result, modelData)
 	}
 	return result, nil
 }
@@ -312,10 +298,7 @@ func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName
 		return common.CodeServerError, err
 	}
 
-	instanceID, err := utility.GenerateUUID1()
-	if err != nil {
-		return common.CodeServerError, errors.New("fail to get UUID")
-	}
+	instanceID := utility.GenerateToken()
 
 	extra := make(map[string]string)
 	extra["region"] = region
@@ -1106,10 +1089,7 @@ func (m *ModelProviderService) UpdateModelStatus(providerName, instanceName, mod
 	model, err := m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
 	if err != nil {
 		var modelID string
-		modelID, err = utility.GenerateUUID1()
-		if err != nil {
-			return common.CodeServerError, errors.New("fail to get UUID")
-		}
+		modelID = utility.GenerateToken()
 
 		var modelSchema *modelModule.Model
 		modelSchema, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
@@ -2070,11 +2050,7 @@ func (m *ModelProviderService) AddModel(request *AddModelRequest, userID string)
 			return common.CodeServerError, err
 		}
 
-		var modelID string
-		modelID, err = utility.GenerateUUID1()
-		if err != nil {
-			return common.CodeServerError, errors.New("fail to get UUID")
-		}
+		modelID := utility.GenerateToken()
 
 		extra := map[string]interface{}{
 			"max_tokens":  model.MaxTokens,

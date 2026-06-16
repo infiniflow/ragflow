@@ -328,7 +328,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "save_config_command":
 		return c.SaveServerConfig(cmd)
 	case "file_system_command":
-		return c.executeFilesystem(cmd)
+		return c.ExecuteFilesystemCommand(cmd)
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
 	}

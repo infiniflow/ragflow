@@ -37,6 +37,8 @@ export interface AddCustomModelDialogFields {
   defaultValue?: unknown;
   /** Minimum value for number type */
   min?: number;
+  /** Whether this field is disabled (non-editable) */
+  disabled?: boolean;
 }
 
 interface AddCustomModelDialogProps {
@@ -56,6 +58,8 @@ interface AddCustomModelDialogProps {
   loading?: boolean;
   /** Existing model names for uniqueness validation */
   existingNames: string[];
+  /** Initial form values (overrides field-level defaults). Useful for edit mode. */
+  defaultValues?: Record<string, unknown>;
 }
 
 type FormValues = Record<string, unknown>;
@@ -74,8 +78,10 @@ export const AddCustomModelDialog = ({
   cancelText,
   loading = false,
   existingNames,
+  defaultValues,
 }: AddCustomModelDialogProps) => {
   const { t } = useTranslate('setting');
+  const { t: commonT } = useTranslate('common');
   const formRef = useRef<DynamicFormRef>(null);
 
   // Translate AddCustomModelDialogFields -> FormFieldConfig for DynamicForm.
@@ -96,6 +102,7 @@ export const AddCustomModelDialog = ({
           type: FormFieldType.Custom,
           required: field.required,
           defaultValue,
+          disabled: field.disabled,
           schema: field.required
             ? z.array(z.string()).min(1, t('modelTypeRequired'))
             : z.array(z.string()).optional(),
@@ -120,7 +127,9 @@ export const AddCustomModelDialog = ({
                       <Switch
                         id={switchId}
                         checked={isChecked}
+                        disabled={field.disabled}
                         onCheckedChange={(checked) => {
+                          if (field.disabled) return;
                           const next = checked
                             ? [...currentValues, opt.value]
                             : currentValues.filter((v) => v !== opt.value);
@@ -148,6 +157,7 @@ export const AddCustomModelDialog = ({
         type: typeMap[field.type as 'text' | 'number' | 'multi-select'],
         required: field.required,
         defaultValue,
+        disabled: field.disabled,
         options: field.options,
         placeholder: field.label,
         ...(field.min !== undefined
@@ -193,12 +203,14 @@ export const AddCustomModelDialog = ({
     [onSubmit],
   );
 
-  // Reset form whenever the dialog closes, so the next open starts fresh.
+  // Reset form whenever the dialog opens/closes, applying defaultValues for edit mode.
   useEffect(() => {
     if (!open) {
       formRef.current?.reset();
+    } else if (defaultValues) {
+      formRef.current?.reset(defaultValues);
     }
-  }, [open]);
+  }, [open, defaultValues]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -211,8 +223,9 @@ export const AddCustomModelDialog = ({
           ref={formRef}
           fields={dynamicFields}
           onSubmit={handleSubmit}
+          defaultValues={defaultValues}
         >
-          <DialogFooter>
+          <DialogFooter className="mb-0 pb-0">
             <Button
               type="button"
               variant="outline"
@@ -223,7 +236,7 @@ export const AddCustomModelDialog = ({
             </Button>
             <Button type="submit" disabled={loading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {submitText ?? t('confirm')}
+              {submitText ?? commonT('confirm')}
             </Button>
           </DialogFooter>
         </DynamicForm.Root>
