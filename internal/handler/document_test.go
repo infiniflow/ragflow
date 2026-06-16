@@ -146,6 +146,9 @@ func (f *fakeDocumentService) StopIngestionTasks(tasks []string, userID string) 
 func (f *fakeDocumentService) RemoveIngestionTasks(tasks []string, userID string) ([]map[string]string, error) {
 	return nil, nil
 }
+func (f *fakeDocumentService) BatchUpdateDocumentStatus(userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
+	return map[string]interface{}{}, common.CodeSuccess, nil
+}
 
 func setupGinContextWithUser(method, path, body string) (*gin.Context, *httptest.ResponseRecorder) {
 	gin.SetMode(gin.TestMode)
