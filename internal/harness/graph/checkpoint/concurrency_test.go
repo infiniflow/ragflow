@@ -196,12 +196,13 @@ func TestCheckpointManager_PutWrites_Conflict(t *testing.T) {
 	}
 
 	// Second write with the same checkpoint_id → the first write already advanced
-	// the version chain, so this should fail with a conflict.
+	// the version chain, so this must fail with a VersionConflictError.
 	err = manager.PutWrites(ctx, config1, writes2, "task1")
 	if err == nil {
-		t.Error("expected conflict error for stale checkpoint_id")
-	} else {
-		t.Logf("Got expected conflict: %v", err)
+		t.Fatal("expected conflict error for stale checkpoint_id")
+	}
+	if _, ok := err.(*VersionConflictError); !ok {
+		t.Fatalf("expected *VersionConflictError, got %T: %v", err, err)
 	}
 }
 

@@ -83,6 +83,7 @@ type SetModelRequest struct {
 	ModelProvider string `json:"model_provider"`
 	ModelInstance string `json:"model_instance"`
 	ModelName     string `json:"model_name"`
+	ModelID       string `json:"model_id"`
 	ModelType     string `json:"model_type" binding:"required"`
 }
 
@@ -112,7 +113,7 @@ func (h *TenantHandler) setDefaultModels(c *gin.Context, wrapModels bool) {
 		return
 	}
 
-	err := h.tenantService.SetTenantDefaultModels(user.ID, req.ModelProvider, req.ModelInstance, req.ModelName, req.ModelType)
+	err := h.tenantService.SetTenantDefaultModels(user.ID, req.ModelProvider, req.ModelInstance, req.ModelName, req.ModelType, req.ModelID)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeExceptionError,
@@ -462,9 +463,9 @@ func (h *TenantHandler) InsertChunksFromFile(c *gin.Context) {
 
 	// Parse JSON - format: {"index_name"/"table_name": ..., "knowledgebase_id": ..., "chunks": [...]}
 	var debugFormat struct {
-		IndexName       string `json:"index_name"`
-		TableName       string `json:"table_name"`
-		KnowledgebaseID string `json:"knowledgebase_id"`
+		IndexName       string                   `json:"index_name"`
+		TableName       string                   `json:"table_name"`
+		KnowledgebaseID string                   `json:"knowledgebase_id"`
 		Chunks          []map[string]interface{} `json:"chunks"`
 	}
 

@@ -199,6 +199,30 @@ build_cpp() {
     echo -e "${GREEN}✓ C++ static library built successfully${NC}"
 }
 
+# Build C++ test executable
+build_cpp_test() {
+    print_section "Building C++ test executable"
+
+    if [ ! -d "$BUILD_DIR" ]; then
+        echo "Build directory not found, running cmake first..."
+        mkdir -p "$BUILD_DIR"
+        cd "$BUILD_DIR"
+        cmake .. -DCMAKE_BUILD_TYPE=Release
+    else
+        cd "$BUILD_DIR"
+    fi
+
+    echo "Building rag_analyzer_c_test..."
+    make rag_analyzer_c_test -j$(nproc)
+
+    if [ ! -f "$BUILD_DIR/rag_analyzer_c_test" ]; then
+        echo -e "${RED}Error: Failed to build rag_analyzer_c_test${NC}"
+        exit 1
+    fi
+
+    echo -e "${GREEN}✓ C++ test executable built successfully: $BUILD_DIR/rag_analyzer_c_test${NC}"
+}
+
 # Build Go server
 build_go() {
     print_section "Building RAGFlow go"
@@ -312,6 +336,7 @@ Build script for RAGFlow Go server with C++ bindings.
 OPTIONS:
     --all, -a       Build everything (C++ library + Go server) [default]
     --cpp, -c       Build only C++ static library
+    --cpp-test      Build C++ test executable (requires --cpp first)
     --go, -g        Build only Go server (requires C++ library to be built)
     --clean, -C     Clean all build artifacts
     --run, -r       Build and run the server
@@ -321,6 +346,7 @@ EXAMPLES:
     $0              # Build everything
     $0 --cpp        # Build only C++ library
     $0 --go         # Build only Go server
+    $0 --cpp-test   # Build C++ test executable
     $0 --run        # Build and run
     $0 --clean      # Clean build artifacts
 
@@ -342,6 +368,10 @@ main() {
         --cpp|-c)
             check_cpp_deps
             build_cpp
+            ;;
+        --cpp-test)
+            check_cpp_deps
+            build_cpp_test
             ;;
         --go|-g)
             check_go_deps
