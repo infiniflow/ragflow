@@ -727,18 +727,6 @@ func (h *ProviderHandler) EnableOrDisableModel(c *gin.Context) {
 		return
 	}
 
-	modelName := c.Param("model_name")
-	if modelName != "" {
-		modelName = strings.TrimPrefix(modelName, "/")
-	}
-	if modelName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Model name is required",
-		})
-		return
-	}
-
 	var req EnableOrDisableModelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		println("JSON bind error: %v (type: %T)", err, err)
@@ -751,6 +739,16 @@ func (h *ProviderHandler) EnableOrDisableModel(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 	modelID := strings.TrimSpace(req.ModelID)
+	modelName := strings.TrimPrefix(c.Param("model_name"), "/")
+	modelName = strings.TrimSpace(modelName)
+	if modelName == "" && modelID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": "model_name or model_id is required",
+		})
+		return
+	}
+
 	status := strings.TrimSpace(req.Status)
 	if status != "active" && status != "inactive" {
 		c.JSON(http.StatusBadRequest, gin.H{
