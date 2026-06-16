@@ -1928,15 +1928,32 @@ func (s *DocumentService) deleteChunkImages(doc *entity.Document, indexName stri
 			return
 		}
 		for _, chunk := range result.Chunks {
-			chunkID := firstStringField(chunk, "id", "_id")
-			if chunkID == "" {
+			imageKey, ok := chunkImageStorageKey(doc.KbID, chunk)
+			if !ok {
 				continue
 			}
-			if storageImpl.ObjExist(doc.KbID, chunkID) {
-				_ = storageImpl.Remove(doc.KbID, chunkID)
+			if storageImpl.ObjExist(doc.KbID, imageKey) {
+				_ = storageImpl.Remove(doc.KbID, imageKey)
 			}
 		}
 	}
+}
+
+func chunkImageStorageKey(defaultBucket string, chunk map[string]interface{}) (string, bool) {
+	imgID := firstStringField(chunk, "img_id")
+	if imgID != "" {
+		prefix := defaultBucket + "-"
+		if strings.HasPrefix(imgID, prefix) && len(imgID) > len(prefix) {
+			return strings.TrimPrefix(imgID, prefix), true
+		}
+		return imgID, true
+	}
+
+	chunkID := firstStringField(chunk, "id", "_id")
+	if chunkID == "" {
+		return "", false
+	}
+	return chunkID, true
 }
 
 func firstStringField(m map[string]interface{}, keys ...string) string {

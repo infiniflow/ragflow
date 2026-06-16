@@ -1172,6 +1172,44 @@ func TestUpdateDatasetDocumentPropagatesMetadataDeleteFailure(t *testing.T) {
 	}
 }
 
+func TestChunkImageStorageKeyUsesImgIDWithDatasetPrefix(t *testing.T) {
+	key, ok := chunkImageStorageKey("kb-1", map[string]interface{}{
+		"id":     "chunk-1",
+		"img_id": "kb-1-image-001",
+	})
+	if !ok {
+		t.Fatal("expected image storage key")
+	}
+	if key != "image-001" {
+		t.Fatalf("key = %q, want %q", key, "image-001")
+	}
+}
+
+func TestChunkImageStorageKeyHandlesHyphenatedDatasetID(t *testing.T) {
+	key, ok := chunkImageStorageKey("dataset-abc-123", map[string]interface{}{
+		"id":     "chunk-1",
+		"img_id": "dataset-abc-123-page-1-image",
+	})
+	if !ok {
+		t.Fatal("expected image storage key")
+	}
+	if key != "page-1-image" {
+		t.Fatalf("key = %q, want %q", key, "page-1-image")
+	}
+}
+
+func TestChunkImageStorageKeyFallsBackToChunkID(t *testing.T) {
+	key, ok := chunkImageStorageKey("kb-1", map[string]interface{}{
+		"_id": "chunk-fallback",
+	})
+	if !ok {
+		t.Fatal("expected fallback storage key")
+	}
+	if key != "chunk-fallback" {
+		t.Fatalf("key = %q, want %q", key, "chunk-fallback")
+	}
+}
+
 func TestUpdateDatasetDocumentPipelineIDTakesPrecedenceOverChunkMethod(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
