@@ -186,6 +186,14 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 	if rerankID == "" {
 		rerankID = ""
 	}
+	ttsID := cfg.UserDefaultLLM.DefaultModels.TTSModel.Name
+	if ttsID == "" {
+		ttsID = ""
+	}
+	ocrID := cfg.UserDefaultLLM.DefaultModels.OCRModel.Name
+	if ocrID == "" {
+		ocrID = ""
+	}
 
 	tenant := &entity.Tenant{
 		ID:        userID,
@@ -195,6 +203,8 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		ASRID:     asrID,
 		Img2TxtID: img2txtID,
 		RerankID:  rerankID,
+		TTSID:     ttsID,
+		OCRID:     ocrID,
 		ParserIDs: "naive:General,Q&A:Q&A,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
 		Status:    &status,
 	}
