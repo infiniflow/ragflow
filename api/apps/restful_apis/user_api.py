@@ -224,6 +224,11 @@ async def oauth_callback(channel):
         if not users:
             # Check if registration is allowed
             if not settings.REGISTER_ENABLED:
+                logging.warning(
+                    "OIDC registration blocked: email=%s, channel=%s (REGISTER_ENABLED=0)",
+                    user_info.email,
+                    channel
+                )
                 return redirect("/?error=registration_disabled")
             try:
                 try:
