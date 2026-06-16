@@ -56,14 +56,16 @@ const AvailableChannelCard = ({
 const ChatChannel = () => {
   const { t } = useTranslation();
   const { chatChannelInfo } = useChatChannelInfo();
-  const channelTemplates: IChatChannelInfo[] = Object.values(
-    ChatChannelKey,
-  ).map((id) => ({
-    id,
-    name: chatChannelInfo[id].name,
-    description: chatChannelInfo[id].description,
-    icon: chatChannelInfo[id].icon,
-  }));
+  const channelTemplates: IChatChannelInfo[] = Object.values(ChatChannelKey)
+    .filter(
+      (id) => [ChatChannelKey.DISCORD, ChatChannelKey.FEISHU].includes(id), // Show only Discord and Feishu
+    )
+    .map((id) => ({
+      id,
+      name: chatChannelInfo[id].name,
+      description: chatChannelInfo[id].description,
+      icon: chatChannelInfo[id].icon,
+    }));
 
   const { categorizedList } = useListChatChannel();
 
