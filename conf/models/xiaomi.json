@@ -4,8 +4,7 @@
     "default": "https://api.xiaomimimo.com/v1"
   },
   "url_suffix": {
-    "chat": "chat/completions",
-    "models": "models"
+    "chat": "chat/completions"
   },
   "models": [
     {
