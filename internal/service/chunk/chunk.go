@@ -591,9 +591,6 @@ func (s *ChunkService) queueParseTasks(doc *entity.Document, bucket, objectName 
 	if err := dao.NewTaskDAO().CreateMany(tasks); err != nil {
 		return err
 	}
-	if err := s.beginParseDocument(doc.ID); err != nil {
-		return err
-	}
 
 	queueName := s.parseQueueName(doc, priority)
 	for _, task := range tasks {
@@ -602,6 +599,11 @@ func (s *ChunkService) queueParseTasks(doc *entity.Document, bucket, objectName 
 		}
 		message := parseTaskMessage(task)
 		if ok := redis.Get().QueueProduct(queueName, message); !ok {
+			if _, err := dao.NewTaskDAO().DeleteByDocIDs([]string{doc.ID}); err != nil {
+				common.Warn("Failed to clean parse tasks after Redis enqueue failure",
+					zap.String("docID", doc.ID),
+					zap.Error(err))
+			}
 			return fmt.Errorf("Can't access Redis. Please check the Redis' status.")
 		}
 	}
@@ -732,6 +734,8 @@ func (s *ChunkService) beginParseDocument(docID string) error {
 		"process_begin_at": now,
 		"progress":         rand.Float64() * 0.01,
 		"run":              string(entity.TaskStatusRunning),
+		"chunk_num":        0,
+		"token_num":        0,
 	}).Error
 }
 
@@ -1034,22 +1038,7 @@ func (s *ChunkService) Parse(userID, datasetID string, req *service.ParseFileReq
 			notFound = append(notFound, docID)
 			continue
 		}
-
-		updates := map[string]interface{}{
-			"run":          string(entity.TaskStatusRunning),
-			"progress":     0,
-			"progress_msg": "",
-			"chunk_num":    0,
-			"token_num":    0,
-		}
-		result := dao.GetDB().
-			Model(&entity.Document{}).
-			Where("id = ? AND kb_id = ? AND (run IS NULL OR run <> ?)", docID, datasetID, string(entity.TaskStatusRunning)).
-			Updates(updates)
-		if result.Error != nil {
-			return nil, common.CodeServerError, result.Error
-		}
-		if result.RowsAffected == 0 {
+		if doc.Run != nil && *doc.Run == string(entity.TaskStatusRunning) {
 			return nil, common.CodeDataError, fmt.Errorf("Can't parse document that is currently being processed")
 		}
 
@@ -1072,6 +1061,14 @@ func (s *ChunkService) Parse(userID, datasetID string, req *service.ParseFileReq
 			return nil, common.CodeServerError, err
 		}
 		if err := s.queueParseTasks(doc, bucket, objectName, 0); err != nil {
+			return nil, common.CodeServerError, err
+		}
+		if err := s.beginParseDocument(doc.ID); err != nil {
+			if _, delErr := dao.NewTaskDAO().DeleteByDocIDs([]string{doc.ID}); delErr != nil {
+				common.Warn("Failed to clean parse tasks after document state update failure",
+					zap.String("docID", doc.ID),
+					zap.Error(delErr))
+			}
 			return nil, common.CodeServerError, err
 		}
 		successCount++

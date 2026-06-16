@@ -219,6 +219,7 @@ func (h *ChunkHandler) Parse(c *gin.Context) {
 			"data":    nil,
 			"message": "user_id is required",
 		})
+		return
 	}
 	datasetId := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetId == "" {
