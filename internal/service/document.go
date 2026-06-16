@@ -33,11 +33,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
-	"ragflow/internal/cache"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/server"
@@ -69,7 +67,7 @@ func NewDocumentService() *DocumentService {
 		ingestionTaskLogDAO: dao.NewIngestionTaskLogDAO(),
 		kbDAO:               dao.NewKnowledgebaseDAO(),
 		docEngine:           engine.Get(),
-		engineType:          cfg.DocEngine.Type,
+		engineType:          engineType,
 		metadataSvc:         NewMetadataService(),
 		taskDAO:             dao.NewTaskDAO(),
 		file2DocumentDAO:    dao.NewFile2DocumentDAO(),
