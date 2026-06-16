@@ -1,9 +1,12 @@
 import importlib.util
 import sys
-import unittest
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest import mock
+
+import pytest
+
+pytestmark = pytest.mark.p2
 
 
 def _load_pdf_parser_module():
@@ -129,26 +132,21 @@ class _FakeImage:
         return self
 
 
-class TestTableAutoRotate(unittest.TestCase):
-    def test_table_transformer_job_respects_env_when_auto_rotate_omitted(self):
-        with mock.patch.dict(sys.modules, {}, clear=False):
-            module = _load_pdf_parser_module()
+def test_table_transformer_job_respects_env_when_auto_rotate_omitted(monkeypatch):
+    with mock.patch.dict(sys.modules, {}, clear=False):
+        module = _load_pdf_parser_module()
 
-        parser = object.__new__(module.RAGFlowPdfParser)
-        parser.page_layout = [[{"type": "table", "x0": 0, "top": 0, "x1": 10, "bottom": 10}]]
-        parser.page_images = [_FakeImage()]
-        parser.boxes = []
-        parser.tbl_det = lambda imgs: [[] for _ in imgs]
-        parser._ocr_rotated_tables = lambda *_args, **_kwargs: None
+    parser = object.__new__(module.RAGFlowPdfParser)
+    parser.page_layout = [[{"type": "table", "x0": 0, "top": 0, "x1": 10, "bottom": 10}]]
+    parser.page_images = [_FakeImage()]
+    parser.boxes = []
+    parser.tbl_det = lambda imgs: [[] for _ in imgs]
+    parser._ocr_rotated_tables = lambda *_args, **_kwargs: None
 
-        def _unexpected_orientation_eval(_table_img):
-            raise AssertionError("orientation evaluation should be skipped when TABLE_AUTO_ROTATE=false")
+    def _unexpected_orientation_eval(_table_img):
+        raise AssertionError("orientation evaluation should be skipped when TABLE_AUTO_ROTATE=false")
 
-        parser._evaluate_table_orientation = _unexpected_orientation_eval
+    parser._evaluate_table_orientation = _unexpected_orientation_eval
+    monkeypatch.setenv("TABLE_AUTO_ROTATE", "false")
 
-        with mock.patch.dict("os.environ", {"TABLE_AUTO_ROTATE": "false"}, clear=False):
-            parser._table_transformer_job(1)
-
-
-if __name__ == "__main__":
-    unittest.main()
+    parser._table_transformer_job(1)
