@@ -29,7 +29,7 @@ export function Collapse({
   title,
   children,
   rightContent,
-  open = true,
+  open,
   defaultOpen = false,
   onOpenChange,
   disabled,
@@ -37,8 +37,12 @@ export function Collapse({
   const [currentOpen, setCurrentOpen] = useState(open);
 
   useEffect(() => {
-    setCurrentOpen(open);
-  }, [open]);
+    if (typeof open === 'boolean') {
+      setCurrentOpen(open);
+    } else {
+      setCurrentOpen(defaultOpen);
+    }
+  }, [defaultOpen, open]);
 
   const handleOpenChange = useCallback(
     (open: boolean) => {

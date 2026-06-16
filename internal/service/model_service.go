@@ -2224,6 +2224,17 @@ func (m *ModelProviderService) AddModel(request *AddModelRequest, userID string)
 
 		modelID := utility.GenerateToken()
 
+		if model.MaxDimension < 0 {
+			return common.CodeBadRequest, errors.New("max_dimension must be non-negative")
+		}
+		for _, dimension := range model.Dimensions {
+			if dimension <= 0 {
+				return common.CodeBadRequest, errors.New("dimensions must contain positive values")
+			}
+			if model.MaxDimension > 0 && dimension > model.MaxDimension {
+				return common.CodeBadRequest, fmt.Errorf("dimension %d exceeds max_dimension %d", dimension, model.MaxDimension)
+			}
+		}
 		extra := map[string]interface{}{
 			"max_tokens":    model.MaxTokens,
 			"model_types":   []string{modelType},
@@ -2523,6 +2534,9 @@ func (m *ModelProviderService) getModelConfig(tenantID, compositeModelName strin
 	var modelRecord *entity.TenantModel
 	modelRecord, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(providerID, instance.ID, modelName)
 	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, "", nil, 0, fmt.Errorf("tenant model %q lookup failed: %w", modelName, err)
+		}
 		_, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 		if err != nil {
 			return nil, "", nil, 0, fmt.Errorf("provider %s model %s not found", providerName, modelName)
