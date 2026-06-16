@@ -31,7 +31,7 @@ def _chat_channel_auth_error(channel_id: str, user_id: str):
     return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
 
-@manager.route("/chat_channels", methods=["POST"])  # noqa: F821
+@manager.route("/chat-channels", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("name", "channel", "config")
 async def create_chat_channel():
@@ -53,14 +53,14 @@ async def create_chat_channel():
     return get_json_result(data=conn.to_dict())
 
 
-@manager.route("/chat_channels", methods=["GET"])  # noqa: F821
+@manager.route("/chat-channels", methods=["GET"])  # noqa: F821
 @login_required
 def list_chat_channel():
     """List chat channel bots owned by the current tenant."""
     return get_json_result(data=ChatChannelService.list(current_user.id))
 
 
-@manager.route("/chat_channels/<channel_id>", methods=["GET"])  # noqa: F821
+@manager.route("/chat-channels/<channel_id>", methods=["GET"])  # noqa: F821
 @login_required
 def get_chat_channel(channel_id):
     """Return a chat channel bot's details when the current user can access it."""
@@ -73,7 +73,7 @@ def get_chat_channel(channel_id):
     return get_json_result(data=conn.to_dict())
 
 
-@manager.route("/chat_channels/<channel_id>", methods=["PATCH"])  # noqa: F821
+@manager.route("/chat-channels/<channel_id>", methods=["PATCH"])  # noqa: F821
 @login_required
 async def update_chat_channel(channel_id):
     """Update an accessible chat channel bot's name/config/status."""
@@ -106,7 +106,7 @@ async def update_chat_channel(channel_id):
     return get_json_result(data=conn.to_dict())
 
 
-@manager.route("/chat_channels/<channel_id>", methods=["DELETE"])  # noqa: F821
+@manager.route("/chat-channels/<channel_id>", methods=["DELETE"])  # noqa: F821
 @login_required
 def rm_chat_channel(channel_id):
     """Delete an accessible chat channel bot."""
