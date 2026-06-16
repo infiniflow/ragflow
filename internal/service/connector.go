@@ -29,12 +29,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"ragflow/internal/engine/redis"
 	"strings"
 	"time"
 
 	"gorm.io/gorm"
 
-	"ragflow/internal/cache"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -399,7 +399,7 @@ func (s *ConnectorService) StartGoogleWebOAuth(userID, source string, req *Start
 		return nil, common.CodeServerError, fmt.Errorf("Failed to initialize Google OAuth flow. Please verify the uploaded client configuration.")
 	}
 
-	redisClient := cache.Get()
+	redisClient := redis.Get()
 	if redisClient == nil {
 		return nil, common.CodeServerError, fmt.Errorf("Redis is not configured on the server.")
 	}
@@ -433,7 +433,7 @@ func (s *ConnectorService) GoogleWebOAuthCallback(source, stateID, oauthError, e
 		return renderGoogleWebOAuthPopup("", false, "Missing OAuth state parameter.", source)
 	}
 
-	redisClient := cache.Get()
+	redisClient := redis.Get()
 	if redisClient == nil {
 		return renderGoogleWebOAuthPopup(stateID, false, "Authorization session expired. Please restart from the main window.", source)
 	}
@@ -494,7 +494,7 @@ func (s *ConnectorService) PollGoogleWebOAuthResult(userID, source string, req *
 		return nil, common.CodeArgumentError, fmt.Errorf("required argument is missing: flow_id")
 	}
 
-	redisClient := cache.Get()
+	redisClient := redis.Get()
 	if redisClient == nil {
 		return nil, common.CodeRunning, fmt.Errorf("Authorization is still pending.")
 	}
