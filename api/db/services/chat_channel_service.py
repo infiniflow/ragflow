@@ -54,7 +54,7 @@ class ChatChannelService(CommonService):
     @DB.connection_context()
     def list_active(cls):
         """Return all enabled chat channel bots across tenants (with credentials)."""
-        return list(cls.model.select().where(cls.model.status == "1"))
+        return list(cls.model.select().where(cls.model.status == 1))
 
     @classmethod
     @DB.connection_context()
