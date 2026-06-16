@@ -186,6 +186,8 @@ jobs:
       - name: Prepare function test environment
         working-directory: docker
         run: |
+          # install ss
+          sudo apt update && sudo apt install -y iproute2 
           # Determine runner number (default to 1 if not found)
                RUNNER_NUM=$(sudo docker inspect $(hostname) --format '{{index .Config.Labels "com.docker.compose.container-number"}}' 2>/dev/null || true)
                RUNNER_NUM=${RUNNER_NUM:-1}
