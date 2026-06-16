@@ -221,8 +221,14 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenActive, Value: ident}
 	case "ADMIN":
 		return Token{Type: TokenAdmin, Value: ident}
+	case "SERVER":
+		return Token{Type: TokenServer, Value: ident}
+	case "API":
+		return Token{Type: TokenAPI, Value: ident}
 	case "ADD":
 		return Token{Type: TokenAdd, Value: ident}
+	case "HOST":
+		return Token{Type: TokenHost, Value: ident}
 	case "DELETE":
 		return Token{Type: TokenDelete, Value: ident}
 	case "PASSWORD":
@@ -273,6 +279,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenVars, Value: ident}
 	case "CONFIGS":
 		return Token{Type: TokenConfigs, Value: ident}
+	case "CONFIG":
+		return Token{Type: TokenConfig, Value: ident}
 	case "ENVS":
 		return Token{Type: TokenEnvs, Value: ident}
 	case "KEY":
@@ -349,6 +357,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenGet, Value: ident}
 	case "SEARCH":
 		return Token{Type: TokenSearch, Value: ident}
+	case "RETRIEVE":
+		return Token{Type: TokenRetrieve, Value: ident}
 	case "CURRENT":
 		return Token{Type: TokenCurrent, Value: ident}
 	case "VISION":
@@ -425,6 +435,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenUpdate, Value: ident}
 	case "REMOVE":
 		return Token{Type: TokenRemove, Value: ident}
+	case "EXPLAIN":
+		return Token{Type: TokenExplain, Value: ident}
 	case "CHUNK":
 		// Check if followed by STORE for compound token
 		if strings.ToUpper(l.peekToken()) == "STORE" {
@@ -465,6 +477,16 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenIngestors, Value: ident}
 	case "INGESTION":
 		return Token{Type: TokenIngestion, Value: ident}
+	case "MQ":
+		return Token{Type: TokenMQ, Value: ident}
+	case "PUBLISH":
+		return Token{Type: TokenPublish, Value: ident}
+	case "PULL":
+		return Token{Type: TokenPull, Value: ident}
+	case "PENDING":
+		return Token{Type: TokenPending, Value: ident}
+	case "NOACK":
+		return Token{Type: TokenNoACK, Value: ident}
 	case "LOG":
 		return Token{Type: TokenLog, Value: ident}
 	case "LEVEL":

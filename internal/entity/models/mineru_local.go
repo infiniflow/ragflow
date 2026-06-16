@@ -24,7 +24,6 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"time"
 )
 
 type MinerULocalModel struct {
@@ -37,14 +36,7 @@ func NewMinerLocalUModel(baseURL map[string]string, urlSuffix URLSuffix) *MinerU
 			BaseURL:          baseURL,
 			URLSuffix:        urlSuffix,
 			AllowEmptyAPIKey: true,
-			httpClient: &http.Client{
-				Transport: &http.Transport{
-					MaxIdleConns:        10,
-					MaxIdleConnsPerHost: 100,
-					IdleConnTimeout:     time.Second * 90,
-					DisableCompression:  false,
-				},
-			},
+			httpClient:       NewDriverHTTPClient(),
 		},
 	}
 }
@@ -93,7 +85,7 @@ func (m *MinerULocalModel) OCRFile(modelName *string, content []byte, url *strin
 	return nil, fmt.Errorf("%s no such method", m.Name())
 }
 
-func (m *MinerULocalModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (m *MinerULocalModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	return nil, fmt.Errorf("%s no such method", m.Name())
 }
 

@@ -17,7 +17,6 @@
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -25,7 +24,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 )
 
 // MoonshotModel implements ModelDriver for Moonshot
@@ -37,16 +35,9 @@ type MoonshotModel struct {
 func NewMoonshotModel(baseURL map[string]string, urlSuffix URLSuffix) *MoonshotModel {
 	return &MoonshotModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
-			httpClient: &http.Client{
-				Transport: &http.Transport{
-					MaxIdleConns:        100,
-					MaxIdleConnsPerHost: 10,
-					IdleConnTimeout:     90 * time.Second,
-					DisableCompression:  false,
-				},
-			},
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
@@ -308,43 +299,21 @@ func (m *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	}
 
 	// SSE parsing: read line by line
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		// SSE data line starts with "data:"
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-
-		// Extract JSON after "data:"
-		data := strings.TrimSpace(line[5:])
-
-		// [DONE] marks the end of stream
-		if data == "[DONE]" {
-			break
-		}
-
-		// Parse the JSON event
-		var event map[string]interface{}
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			continue
-		}
-
+	sawTerminal := false
+	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
-			continue
+			return nil
 		}
 
 		firstChoice, ok := choices[0].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		delta, ok := firstChoice["delta"].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
@@ -363,12 +332,16 @@ func (m *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Mess
 
 		finishReason, ok := firstChoice["finish_reason"].(string)
 		if ok && finishReason != "" {
-			break
+			sawTerminal = true
 		}
-	}
 
-	if err = scanner.Err(); err != nil {
-		return err
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to scan response body: %w", err)
+	}
+	if !done && !sawTerminal {
+		return fmt.Errorf("moonshot: stream ended before [DONE] or finish_reason")
 	}
 
 	// Send [DONE] marker for OpenAI compatibility
@@ -385,7 +358,7 @@ func (m *MoonshotModel) Embed(modelName *string, texts []string, apiConfig *APIC
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (m *MoonshotModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (m *MoonshotModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -423,26 +396,18 @@ func (m *MoonshotModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	if err = json.Unmarshal(body, &result); err != nil {
+	// Parse response
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-	if result.Data == nil {
-		return nil, fmt.Errorf("models response missing data")
+	if modelList.Models == nil {
+		return nil, fmt.Errorf("invalid models list format")
 	}
-
-	models := make([]string, 0, len(result.Data))
-	for _, model := range result.Data {
-		if strings.TrimSpace(model.ID) == "" {
-			return nil, fmt.Errorf("models response contains empty id")
-		}
-		models = append(models, strings.TrimSpace(model.ID))
+	models := ParseListModel(modelList)
+	if len(models) == 0 {
+		return nil, fmt.Errorf("invalid models list format")
 	}
-
 	return models, nil
 }
 

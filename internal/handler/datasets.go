@@ -373,7 +373,7 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
 	exists, err := docEngine.ChunkStoreExists(c.Request.Context(), indexName, datasetID)
 	if err != nil {
-		jsonError(c, common.CodeServerError, err.Error())
+		jsonInternalError(c, err)
 		return
 	}
 
@@ -398,7 +398,7 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 		},
 	})
 	if err != nil {
-		jsonError(c, common.CodeServerError, err.Error())
+		jsonInternalError(c, err)
 		return
 	}
 	if searchResult == nil || len(searchResult.Chunks) == 0 {
@@ -473,7 +473,7 @@ func (h *DatasetsHandler) DeleteKnowledgeGraph(c *gin.Context) {
 	if _, err := docEngine.DeleteChunks(c.Request.Context(), map[string]interface{}{
 		"knowledge_graph_kwd": []string{"graph", "subgraph", "entity", "relation", "community_report"},
 	}, indexName, datasetID); err != nil {
-		jsonError(c, common.CodeServerError, err.Error())
+		jsonInternalError(c, err)
 		return
 	}
 
@@ -600,6 +600,48 @@ func (h *DatasetsHandler) ListMetadataFlattened(c *gin.Context) {
 	}
 
 	jsonResponse(c, common.CodeSuccess, flattenedMeta, "success")
+}
+
+func (h *DatasetsHandler) UpdateDocumentMetadataConfig(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := strings.TrimSpace(c.Param("dataset_id"))
+	if datasetID == "" {
+		jsonError(c, common.CodeArgumentError, "dataset_id is required")
+		return
+	}
+	documentID := strings.TrimSpace(c.Param("document_id"))
+	if documentID == "" {
+		jsonError(c, common.CodeArgumentError, "document_id is required")
+		return
+	}
+	userID := strings.TrimSpace(user.ID)
+	if userID == "" {
+		jsonError(c, common.CodeArgumentError, "user_id is required")
+		return
+	}
+
+	var req map[string]interface{}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	data, code, err := h.datasetsService.UpdateDocumentMetadataConfig(userID, datasetID, documentID, req)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    code,
+		"data":    data,
+		"message": "success",
+	})
 }
 
 // SearchDatasets searches chunks across datasets based on a question

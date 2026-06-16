@@ -59,6 +59,10 @@ type documentServiceIface interface {
 	GetDocumentArtifact(filename string) (*service.ArtifactResponse, error)
 	GetDocumentPreview(docID string) (*service.DocumentPreview, error)
 	DownloadDocument(datasetID, docID string) (*service.DownloadDocumentResp, error)
+	ListIngestionTasks(userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error)
+	IngestDocuments(datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
+	StopIngestionTasks(tasks []string, userID string) ([]*entity.IngestionTask, error)
+	RemoveIngestionTasks(tasks []string, userID string) ([]map[string]string, error)
 }
 
 // DocumentHandler document handler
@@ -68,7 +72,7 @@ type DocumentHandler struct {
 }
 
 // NewDocumentHandler create document handler
-func NewDocumentHandler(documentService *service.DocumentService, datasetService *service.DatasetService) *DocumentHandler {
+func NewDocumentHandler(documentService documentServiceIface, datasetService *service.DatasetService) *DocumentHandler {
 	return &DocumentHandler{
 		documentService: documentService,
 		datasetService:  datasetService,
@@ -909,6 +913,143 @@ func (h *DocumentHandler) DeleteMeta(c *gin.Context) {
 	})
 }
 
+type ListIngestionsRequest struct {
+	DatasetID *string `json:"dataset_id"`
+}
+
+func (h *DocumentHandler) ListIngestionTasks(c *gin.Context) {
+	var req ListIngestionsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	var parseResult []*entity.IngestionTask
+	var err error
+	if req.DatasetID != nil {
+		if !h.datasetService.Accessible(*req.DatasetID, userID) {
+			jsonError(c, common.CodeAuthenticationError, "No authorization to access the dataset.")
+			return
+		}
+	}
+
+	parseResult, err = h.documentService.ListIngestionTasks(userID, req.DatasetID, 0, 0)
+	if err != nil {
+		jsonError(c, common.CodeExceptionError, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    parseResult,
+	})
+}
+
+type StartParseDocumentsRequest struct {
+	DatasetID string   `json:"dataset_id" binding:"required"`
+	Documents []string `json:"documents" binding:"required"`
+}
+
+func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
+	var req StartParseDocumentsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	if !h.datasetService.Accessible(req.DatasetID, userID) {
+		jsonError(c, common.CodeAuthenticationError, "No authorization to access the dataset.")
+		return
+	}
+
+	parseResult, err := h.documentService.IngestDocuments(req.DatasetID, userID, req.Documents)
+	if err != nil {
+		jsonError(c, common.CodeExceptionError, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    parseResult,
+	})
+}
+
+type StopIngestionsRequest struct {
+	Tasks []string `json:"tasks" binding:"required"`
+}
+
+func (h *DocumentHandler) StopIngestionTasks(c *gin.Context) {
+	var req StopIngestionsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	parseResult, err := h.documentService.StopIngestionTasks(req.Tasks, userID)
+	if err != nil {
+		jsonError(c, common.CodeExceptionError, err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    parseResult,
+	})
+}
+
+type RemoveIngestionsRequest struct {
+	Tasks []string `json:"tasks" binding:"required"`
+}
+
+func (h *DocumentHandler) RemoveIngestionTasks(c *gin.Context) {
+	var req RemoveIngestionsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	if req.Tasks == nil || len(req.Tasks) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    1,
+			"message": "task_ids is required",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	deletedTasks, err := h.documentService.RemoveIngestionTasks(req.Tasks, userID)
+	if err != nil {
+		jsonError(c, common.CodeExceptionError, err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    deletedTasks,
+	})
+}
+
 type ParseDocumentRequest struct {
 	Documents []string `json:"documents" binding:"required"`
 }
@@ -984,5 +1125,49 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 		"code":    0,
 		"message": "success",
 		"data":    result,
+	})
+}
+
+func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := c.Param("dataset_id")
+	if datasetID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": "dataset_id is required",
+		})
+		return
+	}
+	if !h.datasetService.Accessible(datasetID, user.ID) {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": "You don't own the dataset " + datasetID,
+		})
+		return
+	}
+
+	var docIDS []string
+	if docIDsParam := c.Query("doc_ids"); docIDsParam != "" {
+		docIDS = strings.Split(docIDsParam, ",")
+	}
+
+	summary, err := h.documentService.GetMetadataSummary(datasetID, docIDS)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    common.CodeServerError,
+			"message": "Failed to  get metadata summary" + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    gin.H{"summary": summary},
 	})
 }

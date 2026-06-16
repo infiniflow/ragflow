@@ -17,7 +17,6 @@
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -25,7 +24,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 )
 
 // NvidiaModel implements ModelDriver for Nvidia
@@ -37,16 +35,9 @@ type NvidiaModel struct {
 func NewNvidiaModel(baseURL map[string]string, urlSuffix URLSuffix) *NvidiaModel {
 	return &NvidiaModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
-			httpClient: &http.Client{
-				Transport: &http.Transport{
-					MaxIdleConns:        100,
-					MaxIdleConnsPerHost: 10,
-					IdleConnTimeout:     90 * time.Second,
-					DisableCompression:  false,
-				},
-			},
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
@@ -282,38 +273,20 @@ func (n *NvidiaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-
-		data := strings.TrimSpace(line[5:])
-		if data == "[DONE]" {
-			break
-		}
-
-		var event map[string]interface{}
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			continue
-		}
-
+	if _, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
-			continue
+			return nil
 		}
 
 		firstChoice, ok := choices[0].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		delta, ok := firstChoice["delta"].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
@@ -330,10 +303,9 @@ func (n *NvidiaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 			}
 		}
 
-		finishReason, ok := firstChoice["finish_reason"].(string)
-		if ok && finishReason != "" {
-			break
-		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to scan response body: %w", err)
 	}
 
 	endOfStream := "[DONE]"
@@ -341,7 +313,7 @@ func (n *NvidiaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		return err
 	}
 
-	return scanner.Err()
+	return nil
 }
 
 type nvidiaEmbeddingResponse struct {
@@ -591,7 +563,7 @@ func (n *NvidiaModel) ParseFile(modelName *string, content []byte, url *string, 
 // and returns the list of available model ids. The endpoint is
 // OpenAI-compatible, so the parsing follows the same shape used by
 // the moonshot, xai, and openai drivers.
-func (n NvidiaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (n NvidiaModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -632,30 +604,16 @@ func (n NvidiaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("Nvidia models API error: %s, body: %s", resp.Status, string(body))
 	}
 
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
+	// Parse response
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	data, ok := result["data"].([]interface{})
-	if !ok {
+	if modelList.Models == nil {
 		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	models := make([]string, 0, len(data))
-	for _, item := range data {
-		m, ok := item.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		id, ok := m["id"].(string)
-		if !ok {
-			continue
-		}
-		models = append(models, id)
-	}
-
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 func (n NvidiaModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

@@ -145,34 +145,24 @@ export const useSubmitBedrock = () => {
       if (!isVerify) {
         setSaveLoading(true);
       }
+      const { instancePayload, modelPayload } = splitProviderPayload(payload);
       if (isVerify) {
-        const legacyPayload = payload as any;
-        const modelType = Array.isArray(legacyPayload.model_type)
-          ? (legacyPayload.model_type as string[])
-          : legacyPayload.model_type
-            ? [legacyPayload.model_type as string]
-            : [];
-        const apiKey = JSON.stringify({
-          auth_mode: legacyPayload.auth_mode,
-          bedrock_ak: legacyPayload.bedrock_ak,
-          bedrock_sk: legacyPayload.bedrock_sk,
-          aws_role_arn: legacyPayload.aws_role_arn,
-        });
         return verifyConnection(
           payload.llm_factory as string,
-          apiKey,
-          legacyPayload.bedrock_region,
-          undefined,
-          [
-            {
-              model_type: modelType,
-              model_name: (legacyPayload.model_name as string) ?? '',
-              max_tokens: (legacyPayload.max_tokens as number) ?? 0,
-            },
-          ],
+          JSON.stringify(instancePayload.api_key),
+          instancePayload.base_url,
+          instancePayload.region,
+          [modelPayload],
         );
       }
-      const ret = await submitProviderInstance(payload, false);
+      const ret = await submitProviderInstance(
+        {
+          ...instancePayload,
+          max_tokens: modelPayload.max_tokens,
+          model_info: [modelPayload],
+        },
+        false,
+      );
       setSaveLoading(false);
       if (ret.code === 0) {
         hideBedrockAddingModal();

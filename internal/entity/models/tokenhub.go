@@ -17,7 +17,6 @@
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -25,7 +24,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 )
 
 type TokenHubModel struct {
@@ -35,16 +33,9 @@ type TokenHubModel struct {
 func NewTokenHubModel(baseURL map[string]string, urlSuffix URLSuffix) *TokenHubModel {
 	return &TokenHubModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
-			httpClient: &http.Client{
-				Transport: &http.Transport{
-					MaxIdleConns:        10,
-					MaxIdleConnsPerHost: 100,
-					IdleConnTimeout:     time.Second * 60,
-					DisableCompression:  false,
-				},
-			},
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
@@ -279,44 +270,20 @@ func (t *TokenHubModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// SSE parsing: read line by line
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		// SSE data line starts with "data:"
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-
-		// Extract JSON after "data:"
-		data := strings.TrimSpace(line[5:])
-
-		// [DONE] marks the end of stream
-		if data == "[DONE]" {
-			break
-		}
-
-		// Parse the JSON event
-		var event map[string]interface{}
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			continue
-		}
-
+	if _, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
-			continue
+			return nil
 		}
 
 		firstChoice, ok := choices[0].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		delta, ok := firstChoice["delta"].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
@@ -337,19 +304,14 @@ func (t *TokenHubModel) ChatStreamlyWithSender(modelName string, messages []Mess
 			}
 		}
 
-		finishReason, ok := firstChoice["finish_reason"].(string)
-		if ok && finishReason != "" {
-			break
-		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to scan response body: %w", err)
 	}
 
 	// Send [DONE] marker for OpenAI compatibility
 	endOfStream := "[DONE]"
-	if err = sender(&endOfStream, nil); err != nil {
-		return err
-	}
-
-	return scanner.Err()
+	return sender(&endOfStream, nil)
 }
 
 func (t *TokenHubModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
@@ -460,7 +422,7 @@ func (t *TokenHubModel) ParseFile(modelName *string, content []byte, url *string
 	return nil, fmt.Errorf("%s no such method", t.Name())
 }
 
-func (t *TokenHubModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (t *TokenHubModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -496,31 +458,35 @@ func (t *TokenHubModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
+	// Parse response. Tokenhub returns `data` as a heterogeneous array
+	// where some items omit `id` or are not objects at all. Decode into
+	// a generic envelope so a single bad row cannot fail the whole list,
+	// then keep only the entries that carry a string `id`.
+	var envelope struct {
+		Data interface{} `json:"data"`
+	}
+	if err = json.Unmarshal(body, &envelope); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	data, ok := result["data"].([]interface{})
+	rawItems, ok := envelope.Data.([]interface{})
 	if !ok {
 		return nil, fmt.Errorf("invalid models list format")
 	}
-
-	models := make([]string, 0, len(data))
-	for _, model := range data {
-		modelMap, ok := model.(map[string]interface{})
+	modelList := ModelList{Models: make([]DSModel, 0, len(rawItems))}
+	for _, raw := range rawItems {
+		item, ok := raw.(map[string]interface{})
 		if !ok {
 			continue
 		}
-		modelName, ok := modelMap["id"].(string)
-		if !ok {
+		id, ok := item["id"].(string)
+		if !ok || strings.TrimSpace(id) == "" {
 			continue
 		}
-		models = append(models, modelName)
+		ownedBy, _ := item["owned_by"].(string)
+		modelList.Models = append(modelList.Models, DSModel{ID: id, OwnedBy: ownedBy})
 	}
 
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 func (t *TokenHubModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

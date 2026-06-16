@@ -17,7 +17,6 @@
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -51,36 +50,17 @@ type modelscopeChatResponse struct {
 }
 
 type modelscopeModelListResponse struct {
-	Data []struct {
-		ID string `json:"id"`
-	} `json:"data"`
+	Data []DSModel `json:"data"`
 }
 
 // NewModelScopeModel creates a new ModelScope model instance.
 func NewModelScopeModel(baseURL map[string]string, urlSuffix URLSuffix) *ModelScopeModel {
-	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
-	var transport *http.Transport
-	if ok {
-		transport = defaultTransport.Clone()
-	} else {
-		transport = &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-		}
-	}
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-	transport.ResponseHeaderTimeout = 60 * time.Second
-
 	return &ModelScopeModel{
 		baseModel: BaseModel{
 			BaseURL:          baseURL,
 			URLSuffix:        urlSuffix,
 			AllowEmptyAPIKey: true,
-			httpClient: &http.Client{
-				Transport: transport,
-			},
+			httpClient:       NewDriverHTTPClient(),
 		},
 	}
 }
@@ -303,36 +283,19 @@ func (m *ModelScopeModel) ChatStreamlyWithSender(modelName string, messages []Me
 		}
 	}()
 
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	sawTerminal := false
-	for scanner.Scan() {
+	streamDone, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		lastActiveMu.Lock()
 		lastActive = time.Now()
 		lastActiveMu.Unlock()
 
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-		data := strings.TrimSpace(line[5:])
-		if data == "[DONE]" {
-			sawTerminal = true
-			break
-		}
-
-		var event map[string]interface{}
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			continue
-		}
-
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
-			continue
+			return nil
 		}
 		firstChoice, ok := choices[0].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		if delta, ok := firstChoice["delta"].(map[string]interface{}); ok {
@@ -350,17 +313,16 @@ func (m *ModelScopeModel) ChatStreamlyWithSender(modelName string, messages []Me
 
 		if finishReason, ok := firstChoice["finish_reason"].(string); ok && finishReason != "" {
 			sawTerminal = true
-			break
 		}
-	}
-
-	if err := scanner.Err(); err != nil {
+		return nil
+	})
+	if err != nil {
 		if ctx.Err() != nil {
 			return fmt.Errorf("modelscope: stream idle for more than %s, aborted", modelscopeStreamIdleTimeout)
 		}
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
-	if !sawTerminal {
+	if !streamDone && !sawTerminal {
 		return fmt.Errorf("modelscope: stream ended before [DONE] or finish_reason")
 	}
 
@@ -402,7 +364,7 @@ func (m *ModelScopeModel) ParseFile(modelName *string, content []byte, url *stri
 
 // ListModels returns the model IDs exposed by ModelScope's OpenAI-compatible
 // /v1/models endpoint.
-func (m *ModelScopeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (m *ModelScopeModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -446,13 +408,7 @@ func (m *ModelScopeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]string, 0, len(result.Data))
-	for _, model := range result.Data {
-		if model.ID != "" {
-			models = append(models, model.ID)
-		}
-	}
-	return models, nil
+	return ParseListModel(ModelList{Models: result.Data}), nil
 }
 
 func (m *ModelScopeModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

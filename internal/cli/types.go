@@ -42,7 +42,10 @@ const (
 	TokenAlter
 	TokenActive
 	TokenAdmin
+	TokenServer
+	TokenAPI
 	TokenAdd
+	TokenHost
 	TokenDelete
 	TokenPassword
 	TokenDataset
@@ -68,6 +71,7 @@ const (
 	TokenVar
 	TokenVars
 	TokenConfigs
+	TokenConfig
 	TokenEnvs
 	TokenKey
 	TokenKeys
@@ -96,6 +100,7 @@ const (
 	TokenParser
 	TokenPipeline
 	TokenSearch
+	TokenRetrieve
 	TokenCurrent
 	TokenVision
 	TokenEmbedding
@@ -150,6 +155,7 @@ const (
 	TokenGet
 	TokenUpdate
 	TokenRemove
+	TokenExplain
 	TokenChunk
 	TokenChunks
 	TokenDocument
@@ -164,6 +170,11 @@ const (
 	TokenStart
 	TokenStop
 	TokenIngestion
+	TokenMQ
+	TokenPublish
+	TokenPull
+	TokenPending
+	TokenNoACK
 	TokenLog
 	TokenLevel
 	TokenDebug

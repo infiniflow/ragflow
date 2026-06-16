@@ -17,7 +17,6 @@
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -25,7 +24,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 )
 
 // AvianModel implements ModelDriver for Avian (https://api.avian.io/docs/).
@@ -34,21 +32,14 @@ type AvianModel struct {
 }
 
 // NewAvianModel creates a new Avian model instance.
+// NewDriverHTTPClient applies the same transport settings that were previously
+// set inline (MaxIdleConns, IdleConnTimeout, ResponseHeaderTimeout, etc.).
 func NewAvianModel(baseURL map[string]string, urlSuffix URLSuffix) *AvianModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-	transport.ResponseHeaderTimeout = 60 * time.Second
-
 	return &AvianModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
-			httpClient: &http.Client{
-				Transport: transport,
-			},
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
@@ -238,32 +229,14 @@ func (a *AvianModel) ChatStreamlyWithSender(modelName string, messages []Message
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	sawTerminal := false
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-
-		data := strings.TrimSpace(line[5:])
-		if data == "[DONE]" {
-			sawTerminal = true
-			break
-		}
-
-		var event avianChatResponse
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			return fmt.Errorf("avian: invalid SSE event: %w", err)
-		}
+	done, err := ParseSSEStream[avianChatResponse](resp.Body, func(event avianChatResponse) error {
 		if event.Error != nil {
 			return fmt.Errorf("avian: upstream stream error: %v", event.Error)
 		}
 		if len(event.Choices) == 0 {
-			continue
+			return nil
 		}
-
 		choice := event.Choices[0]
 		if reasoning := choice.Delta.ReasoningContent; reasoning != "" {
 			if err := sender(nil, &reasoning); err != nil {
@@ -281,13 +254,13 @@ func (a *AvianModel) ChatStreamlyWithSender(modelName string, messages []Message
 		}
 		if choice.FinishReason != "" || event.FinishReason != "" {
 			sawTerminal = true
-			break
 		}
-	}
-	if err := scanner.Err(); err != nil {
+		return nil
+	})
+	if err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
-	if !sawTerminal {
+	if !done && !sawTerminal {
 		return fmt.Errorf("avian: stream ended before [DONE] or finish_reason")
 	}
 
@@ -299,7 +272,7 @@ type avianModelInfo struct {
 	ID string `json:"id"`
 }
 
-func (a *AvianModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (a *AvianModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -335,18 +308,12 @@ func (a *AvianModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result []avianModelInfo
-	if err = json.Unmarshal(body, &result); err != nil {
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList.Models); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]string, 0, len(result))
-	for _, model := range result {
-		if model.ID != "" {
-			models = append(models, model.ID)
-		}
-	}
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 func (a *AvianModel) CheckConnection(apiConfig *APIConfig) error {
@@ -397,3 +364,4 @@ func (a *AvianModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
 func (a *AvianModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
+

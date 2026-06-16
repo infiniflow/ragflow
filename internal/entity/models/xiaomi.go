@@ -17,7 +17,6 @@
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -28,9 +27,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"ragflow/internal/common"
 	"strings"
-	"time"
 )
 
 type XiaomiModel struct {
@@ -38,28 +35,11 @@ type XiaomiModel struct {
 }
 
 func NewXiaomiModel(baseURL map[string]string, urlSuffix URLSuffix) *XiaomiModel {
-	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
-	var transport *http.Transport
-	if ok {
-		transport = defaultTransport.Clone()
-	} else {
-		transport = &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-		}
-	}
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-	transport.ResponseHeaderTimeout = 60 * time.Second
-
 	return &XiaomiModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
-			httpClient: &http.Client{
-				Transport: transport,
-			},
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
@@ -317,44 +297,20 @@ func (x *XiaomiModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	}
 
 	// SSE parsing: read line by line
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		common.Info(line)
-
-		// SSE data line starts with "data:"
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-
-		// Extract JSON after "data:"
-		data := strings.TrimSpace(line[5:])
-
-		// [DONE] marks the end of stream
-		if data == "[DONE]" {
-			break
-		}
-
-		// Parse the JSON event
-		var event map[string]interface{}
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			continue
-		}
-
+	if _, err := ParseSSEStreamTolerant[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
-			continue
+			return nil
 		}
 
 		firstChoice, ok := choices[0].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		delta, ok := firstChoice["delta"].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
@@ -371,10 +327,9 @@ func (x *XiaomiModel) ChatStreamlyWithSender(modelName string, messages []Messag
 			}
 		}
 
-		finishReason, ok := firstChoice["finish_reason"].(string)
-		if ok && finishReason != "" {
-			break
-		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to scan response body: %w", err)
 	}
 
 	// Send [DONE] marker for OpenAI compatibility
@@ -383,7 +338,7 @@ func (x *XiaomiModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		return err
 	}
 
-	return scanner.Err()
+	return nil
 }
 
 func (x *XiaomiModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
@@ -619,28 +574,9 @@ func decodeXiaomiASRResponse(body []byte) (*ASRResponse, error) {
 }
 
 func readXiaomiASRStream(body io.Reader, sender func(*string, *string) error) error {
-	scanner := bufio.NewScanner(body)
-	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-
-		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-		if data == "" {
-			continue
-		}
-		if data == "[DONE]" {
-			break
-		}
-
-		var chunk xiaomiChatCompletionChunk
-		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			continue
-		}
+	if _, err := ParseSSEStreamTolerant[xiaomiChatCompletionChunk](body, func(chunk xiaomiChatCompletionChunk) error {
 		if len(chunk.Choices) == 0 {
-			continue
+			return nil
 		}
 
 		content := chunk.Choices[0].Delta.Content
@@ -649,8 +585,8 @@ func readXiaomiASRStream(body io.Reader, sender func(*string, *string) error) er
 				return err
 			}
 		}
-	}
-	if err := scanner.Err(); err != nil {
+		return nil
+	}); err != nil {
 		return fmt.Errorf("error reading Xiaomi ASR stream: %w", err)
 	}
 
@@ -835,35 +771,16 @@ func decodeXiaomiTTSResponse(body []byte) (*TTSResponse, error) {
 }
 
 func readXiaomiTTSStream(body io.Reader, sender func(*string, *string) error) error {
-	scanner := bufio.NewScanner(body)
-	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-
-		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-		if data == "" {
-			continue
-		}
-		if data == "[DONE]" {
-			break
-		}
-
-		var chunk xiaomiChatCompletionChunk
-		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			continue
-		}
+	if _, err := ParseSSEStreamTolerant[xiaomiChatCompletionChunk](body, func(chunk xiaomiChatCompletionChunk) error {
 		if len(chunk.Choices) == 0 || chunk.Choices[0].Delta.Audio == nil || chunk.Choices[0].Delta.Audio.Data == "" {
-			continue
+			return nil
 		}
 		audioData := chunk.Choices[0].Delta.Audio.Data
 		if err := sender(&audioData, nil); err != nil {
 			return err
 		}
-	}
-	if err := scanner.Err(); err != nil {
+		return nil
+	}); err != nil {
 		return fmt.Errorf("error reading Xiaomi TTS stream: %w", err)
 	}
 	return nil
@@ -884,7 +801,7 @@ func (x *XiaomiModel) ParseFile(modelName *string, content []byte, url *string, 
 	return nil, fmt.Errorf("no such method %s", x.Name())
 }
 
-func (x *XiaomiModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (x *XiaomiModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	return nil, fmt.Errorf("no such method %s", x.Name())
 }
 

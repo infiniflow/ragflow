@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 )
 
 type MinerUModel struct {
@@ -33,16 +32,9 @@ type MinerUModel struct {
 func NewMinerUModel(baseURL map[string]string, urlSuffix URLSuffix) *MinerUModel {
 	return &MinerUModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
-			httpClient: &http.Client{
-				Transport: &http.Transport{
-					MaxIdleConns:        10,
-					MaxIdleConnsPerHost: 100,
-					IdleConnTimeout:     time.Second * 90,
-					DisableCompression:  false,
-				},
-			},
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
@@ -91,7 +83,7 @@ func (m *MinerUModel) OCRFile(modelName *string, content []byte, url *string, ap
 	return nil, fmt.Errorf("%s no such method", m.Name())
 }
 
-func (m *MinerUModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (m *MinerUModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	return nil, fmt.Errorf("%s no such method", m.Name())
 }
 
