@@ -2,14 +2,16 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Spin } from '@/components/ui/spin';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useShowDeleteConfirm } from '@/hooks/common-hooks';
 import {
   IDocumentStructureGraph,
   IDocumentStructureTemplate,
+  useDeleteDocumentStructureGraph,
 } from '@/hooks/use-chunk-request';
 import ForceGraph from '@/pages/dataset/knowledge-graph/force-graph';
 import TreeGraph from '@/pages/dataset/knowledge-graph/tree-graph';
-import { X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Trash2, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 /**
  * Normalize a template's ``kind`` string. The backend stamps a few
@@ -190,6 +192,34 @@ export function DocumentStructureGraph({
   const activeNodeCount = useTreeLayout
     ? treeGraphData.nodes.length
     : forceGraphData.nodes.length;
+  const { deleteStructureGraph, loading: deleting } =
+    useDeleteDocumentStructureGraph();
+  const showDeleteConfirm = useShowDeleteConfirm();
+
+  const handleDelete = useCallback(() => {
+    if (!activeTemplate?.template_id) return;
+    void showDeleteConfirm({
+      title: `Delete ${activeTemplate.template_name}?`,
+      content: 'This structure graph tab will be removed from this document.',
+      onOk: async () => {
+        const code = await deleteStructureGraph({
+          template_id: activeTemplate.template_id,
+        });
+        if (code === 0) {
+          const next = nonEmptyTemplates.find(
+            (t) => t.template_id !== activeTemplate.template_id,
+          );
+          setActiveId(next?.template_id ?? '');
+        }
+        return code;
+      },
+    });
+  }, [
+    activeTemplate,
+    deleteStructureGraph,
+    nonEmptyTemplates,
+    showDeleteConfirm,
+  ]);
 
   return (
     <div className="absolute inset-0 z-10 flex flex-col bg-bg-base">
@@ -231,10 +261,23 @@ export function DocumentStructureGraph({
             </span>
           ) : null}
         </div>
-        <Button variant="ghost" size="sm" onClick={onClose}>
-          <X className="size-4" />
-          Close
-        </Button>
+        <div className="flex items-center gap-1 shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleDelete}
+            disabled={!activeTemplate || deleting}
+            loading={deleting}
+            title="Delete structure graph"
+          >
+            <Trash2 className="size-4" />
+            Delete
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            <X className="size-4" />
+            Close
+          </Button>
+        </div>
       </header>
       <Spin spinning={loading} className="flex-1 h-0">
         {isEmpty ? (

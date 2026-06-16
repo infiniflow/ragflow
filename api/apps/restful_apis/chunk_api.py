@@ -55,7 +55,6 @@ from api.utils.reference_metadata_utils import (
 from common import settings
 from common.constants import LLMType, ParserType, RetCode, TaskStatus
 from common.doc_store.doc_store_base import OrderByExpr
-from rag.advanced_rag.knowlege_compile.structure import rebuild_structure_graph_json
 from common.metadata_utils import convert_conditions, meta_filter
 from common.misc_utils import thread_pool_exec
 from common.string_utils import is_content_empty, remove_redundant_spaces
@@ -698,6 +697,62 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
 
     templates_out = [grouped[bid] for bid in ordered_ids if grouped[bid]["entities"] or grouped[bid]["relations"]]
     return get_result(data={"templates": templates_out})
+
+
+@manager.route("/datasets/<dataset_id>/documents/<document_id>/structure/graph", methods=["DELETE"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def delete_document_structure_graph(tenant_id, dataset_id, document_id):
+    """Delete one structure-graph tab for a document.
+
+    Request body::
+
+        {"template_id": "<template id> | legacy:<compile_kwd> | raptor"}
+
+    Template-backed structure tabs remove both the compact graph row and
+    the underlying entity/relation rows. RAPTOR only removes the graph
+    projection row so summary chunks remain available for retrieval.
+    """
+    from rag.nlp import search
+
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
+    if not dataset_tenant_id:
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    docs = DocumentService.query(id=document_id, kb_id=dataset_id)
+    if not docs:
+        return get_error_data_result(message=f"You don't own the document {document_id}.")
+
+    req = await get_request_json()
+    template_id = str(req.get("template_id") or "").strip()
+    if not template_id:
+        return get_error_data_result(message="`template_id` is required")
+
+    index_name = search.index_name(dataset_tenant_id)
+
+    def _delete(condition: dict) -> int:
+        return settings.docStoreConn.delete(condition, index_name, dataset_id)
+
+    try:
+        deleted = 0
+        if template_id == "raptor":
+            deleted += _delete({"doc_id": [document_id], "compile_kwd": ["raptor_graph"]})
+            return get_result(data={"deleted": deleted}, message=f"deleted {deleted} structure graph rows")
+
+        if template_id.startswith("legacy:"):
+            compile_kwd = template_id[len("legacy:"):].strip()
+            if not compile_kwd:
+                return get_error_data_result(message="`template_id` is invalid")
+            base_condition = {"doc_id": [document_id], "compile_kwd": [compile_kwd]}
+        else:
+            base_condition = {"doc_id": [document_id], "compilation_template_ids": [template_id]}
+
+        deleted += _delete({**base_condition, "knowledge_graph_kwd": ["graph"]})
+        deleted += _delete({**base_condition, "knowledge_graph_kwd": ["entity", "relation"]})
+        return get_result(data={"deleted": deleted}, message=f"deleted {deleted} structure graph rows")
+    except Exception as e:
+        return server_error_response(e)
 
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>/chunks", methods=["POST"])  # noqa: F821

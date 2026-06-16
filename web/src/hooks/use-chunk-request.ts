@@ -191,6 +191,32 @@ export const useFetchDocumentStructureGraph = (enabled: boolean) => {
   return { data: data ?? EMPTY_DOCUMENT_STRUCTURE_GRAPH, loading };
 };
 
+export const useDeleteDocumentStructureGraph = () => {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const { knowledgeId, documentId } = useGetKnowledgeSearchParams();
+
+  const { isPending: loading, mutateAsync } = useMutation({
+    mutationKey: ['deleteDocumentStructureGraph', knowledgeId, documentId],
+    mutationFn: async (params: { template_id: string }) => {
+      const { data } = await kbService.deleteDocumentStructureGraph({
+        kb_id: knowledgeId,
+        doc_id: documentId,
+        template_id: params.template_id,
+      });
+      if (data.code === 0) {
+        message.success(t('message.deleted'));
+        queryClient.invalidateQueries({
+          queryKey: ['fetchDocumentStructureGraph', knowledgeId, documentId],
+        });
+      }
+      return data?.code;
+    },
+  });
+
+  return { deleteStructureGraph: mutateAsync, loading };
+};
+
 export const useFetchNextChunkList = (
   enabled = true,
 ): ResponseGetType<{

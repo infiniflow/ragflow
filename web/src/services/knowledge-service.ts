@@ -166,6 +166,15 @@ const chunkService = {
       },
     });
   },
+  deleteDocumentStructureGraph: (params: Record<string, any>) => {
+    const datasetId = getDatasetId(params);
+    const documentId = getDocumentId(params);
+    return request.delete(api.documentStructureGraph(datasetId, documentId), {
+      data: {
+        template_id: params.template_id,
+      },
+    });
+  },
   createChunk: async (payload: Record<string, any>) => {
     const datasetId = getDatasetId(payload);
     const documentId = getDocumentId(payload);
