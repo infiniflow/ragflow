@@ -69,6 +69,7 @@ class StatusEnum(Enum):
 class ActiveStatusEnum(Enum):
     ACTIVE = "active"
     INACTIVE = "inactive"
+    UNSUPPORTED = "unsupported"
 
 
 class ActiveEnum(Enum):
