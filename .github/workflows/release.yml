@@ -107,6 +107,9 @@ jobs:
           echo "Release tag: ${RELEASE_TAG}"
           echo "Commit: ${GITHUB_SHA}"
 
+          OFFICE_OXIDE_PREFIX="${OFFICE_OXIDE_PREFIX:-${HOME}/.office_oxide}"
+          echo "office_oxide prefix: ${OFFICE_OXIDE_PREFIX}"
+
           build_one() {
             local goos="$1"
             local goarch="$2"
@@ -116,7 +119,9 @@ jobs:
 
             echo "Building ${goos}/${goarch} -> ${output}"
 
-            CGO_ENABLED=0 \
+            CGO_ENABLED=1 \
+            CGO_CFLAGS="-I${OFFICE_OXIDE_PREFIX}/include/office_oxide_c" \
+            CGO_LDFLAGS="-L${OFFICE_OXIDE_PREFIX}/lib -loffice_oxide -Wl,-rpath,${OFFICE_OXIDE_PREFIX}/lib" \
             GOOS="${goos}" \
             GOARCH="${goarch}" \
             go build \
@@ -138,11 +143,11 @@ jobs:
           build_one windows arm64 ".exe"
 
           if command -v ldd >/dev/null 2>&1; then
-            if ldd "${DIST_DIR}/${CLI_NAME}-${RELEASE_TAG}-linux-amd64" 2>&1 | grep -q "not a dynamic executable"; then
-              echo "Verified linux/amd64 CLI is not dynamically linked"
+            if ldd "${DIST_DIR}/${CLI_NAME}-${RELEASE_TAG}-linux-amd64" 2>&1 | tee /tmp/ragflow-cli-ldd.txt | grep -q "liboffice_oxide"; then
+              echo "Verified linux/amd64 CLI links office_oxide"
             else
-              echo "::error::linux/amd64 CLI is dynamically linked"
-              ldd "${DIST_DIR}/${CLI_NAME}-${RELEASE_TAG}-linux-amd64" || true
+              echo "::error::linux/amd64 CLI does not link office_oxide"
+              cat /tmp/ragflow-cli-ldd.txt || true
               exit 1
             fi
           fi
