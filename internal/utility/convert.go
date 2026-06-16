@@ -326,10 +326,50 @@ func ConvertToString(v interface{}) string {
 	}
 }
 
-// ConvertMapToJSONString converts a map to JSON string for Infinity JSON columns
-// If v is a map[string]interface{}, marshals it to JSON string
-// If v is nil, returns "{}"
-// Otherwise returns v as-is
+// Infinity's JSON_TERM_MAX_LENGTH is 512 bytes in the C++ source.  A single
+// string value that tokenises to a term longer than this limit crashes the
+// Infinity engine.  We truncate string values conservatively so that no term
+// can exceed the engine limit.
+const maxJSONStringChars = 256
+
+// truncateJSONStrings recursively truncates string values in obj to at most
+// maxLength characters.  Non-string, non-map, non-slice values are returned
+// unchanged.  The original object is never mutated.
+func truncateJSONStrings(obj interface{}, maxLength int) interface{} {
+	switch v := obj.(type) {
+	case string:
+		if len(v) > maxLength {
+			return v[:maxLength]
+		}
+		return v
+	case map[string]interface{}:
+		out := make(map[string]interface{}, len(v))
+		for k, val := range v {
+			out[k] = truncateJSONStrings(val, maxLength)
+		}
+		return out
+	case []interface{}:
+		out := make([]interface{}, len(v))
+		for i, val := range v {
+			out[i] = truncateJSONStrings(val, maxLength)
+		}
+		return out
+	default:
+		return v
+	}
+}
+
+// SafeJSONMarshal is like json.Marshal but truncates string values first
+// to prevent Infinity JsonTermT overflow.
+func SafeJSONMarshal(v interface{}) ([]byte, error) {
+	return json.Marshal(truncateJSONStrings(v, maxJSONStringChars))
+}
+
+// ConvertMapToJSONString converts a map to JSON string for Infinity JSON columns.
+// If v is a map[string]interface{}, marshals it to JSON string (with string
+// truncation to prevent Infinity JsonTermT overflow).
+// If v is nil, returns "{}".
+// Otherwise returns v as-is.
 //
 // e.g. map[string]interface{}{"key": "value"}) -> `"{\"key\":\"value\"}"`
 func ConvertMapToJSONString(v interface{}) interface{} {
@@ -337,7 +377,7 @@ func ConvertMapToJSONString(v interface{}) interface{} {
 		return "{}"
 	}
 	if m, ok := v.(map[string]interface{}); ok {
-		jsonBytes, _ := json.Marshal(m)
+		jsonBytes, _ := SafeJSONMarshal(m)
 		return string(jsonBytes)
 	}
 	return v

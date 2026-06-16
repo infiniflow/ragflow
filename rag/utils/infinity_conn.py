@@ -24,6 +24,41 @@ import pandas as pd
 from common.constants import PAGERANK_FLD, TAG_FLD
 from common.doc_store.doc_store_base import MatchExpr, MatchTextExpr, MatchDenseExpr, FusionExpr, OrderByExpr
 from common.doc_store.infinity_conn_base import InfinityConnectionBase
+import logging
+
+# Infinity's JSON_TERM_MAX_LENGTH is 512 bytes (infiniflow/infinity C++ source).
+# A single string value that tokenizes to a term longer than this limit will
+# crash the Infinity engine.  We truncate string values conservatively before
+# JSON-serialisation so that no term can exceed the engine limit.
+_MAX_JSON_STRING_CHARS = 256
+
+
+def _truncate_json_strings(obj, max_length=_MAX_JSON_STRING_CHARS):
+    """Recursively truncate string values in *obj* to at most *max_length* characters.
+
+    Objects that are not strings, dicts or lists are returned unchanged.
+    Returns a (possibly truncated) deep copy — the original is never mutated.
+    """
+    if isinstance(obj, str):
+        if len(obj) > max_length:
+            logging.warning("Truncated %d-char JSON string to %d chars before Infinity indexing", len(obj), max_length)
+            return obj[:max_length]
+        return obj
+    if isinstance(obj, dict):
+        return {k: _truncate_json_strings(v, max_length) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_truncate_json_strings(v, max_length) for v in obj]
+    return obj
+
+
+def _safe_json_dumps(v, max_length=_MAX_JSON_STRING_CHARS, **dumps_kwargs):
+    """``json.dumps`` with automatic string truncation to prevent Infinity
+    ``JsonTermT`` overflow when a JSON-indexed field contains a value whose
+    tokenised form exceeds ``JSON_TERM_MAX_LENGTH`` (512 bytes).
+
+    Returns the JSON string.
+    """
+    return json.dumps(_truncate_json_strings(v, max_length), **dumps_kwargs)
 
 
 @singleton
@@ -434,11 +469,11 @@ class InfinityConnection(InfinityConnectionBase):
                         else:
                             d[k] = v
                     elif re.search(r"_feas$", k):
-                        d[k] = json.dumps(v)
+                        d[k] = _safe_json_dumps(v)
                     elif k == "chunk_data":
                         # Convert data dict to JSON string for storage
                         if isinstance(v, dict):
-                            d[k] = json.dumps(v)
+                            d[k] = _safe_json_dumps(v)
                         else:
                             d[k] = v
                     elif k == "extra":
@@ -448,7 +483,7 @@ class InfinityConnection(InfinityConnectionBase):
                         # both dict and JSON-string. Other backends (OceanBase JSON
                         # column, ES/OpenSearch) keep dict shape — this is Infinity-only.
                         if isinstance(v, dict):
-                            d[k] = json.dumps(v)
+                            d[k] = _safe_json_dumps(v)
                         else:
                             d[k] = v if v else ""
                     elif k == "kb_id":
@@ -463,7 +498,7 @@ class InfinityConnection(InfinityConnectionBase):
                         d[k] = "_".join(f"{num:08x}" for num in v)
                     elif k == "meta_fields":
                         if isinstance(v, dict):
-                            d[k] = json.dumps(v, ensure_ascii=False)
+                            d[k] = _safe_json_dumps(v, ensure_ascii=False)
                         else:
                             d[k] = v if v else "{}"
                     else:
@@ -563,7 +598,7 @@ class InfinityConnection(InfinityConnectionBase):
                     else:
                         new_value[k] = v
                 elif re.search(r"_feas$", k):
-                    new_value[k] = json.dumps(v)
+                    new_value[k] = _safe_json_dumps(v)
                 elif k == "kb_id":
                     if isinstance(new_value[k], list):
                         new_value[k] = new_value[k][0]  # since d[k] is a list, but we need a str

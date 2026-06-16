@@ -2236,7 +2236,7 @@ func transformChunkFields(chunk map[string]interface{}, embeddingCols [][2]inter
 		default:
 			// Check for *_feas fields
 			if strings.HasSuffix(k, "_feas") {
-				jsonBytes, _ := json.Marshal(v)
+				jsonBytes, _ := utility.SafeJSONMarshal(v)
 				d[k] = string(jsonBytes)
 			} else if fieldKeyword(k) {
 				// keyword fields with list values -> ### joined
