@@ -51,6 +51,7 @@ const MessageItem = ({
   showLikeButton = true,
   showLoudspeaker = true,
   visibleAvatar = true,
+  nickname,
 }: IProps) => {
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
@@ -98,6 +99,7 @@ const MessageItem = ({
                 className="size-10"
                 avatar={avatar ?? '/logo.svg'}
                 isPerson
+                name={nickname}
               />
             ) : avatarDialog ? (
               <RAGFlowAvatar

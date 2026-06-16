@@ -10,6 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { ModelStatus } from '@/constants/llm';
 import {
   useDeleteProviderInstance,
+  useEditInstanceModel,
   useFetchAddedProviders,
   useFetchInstanceModels,
   useFetchProviderInstance,
@@ -21,9 +22,19 @@ import {
   IInstanceModel,
   IProviderInstance,
 } from '@/interfaces/database/llm';
-import { ChevronsDown, ChevronsUp, Settings, Trash2 } from 'lucide-react';
+import { IProviderModelItem } from '@/interfaces/request/llm';
+import { cn } from '@/lib/utils';
+import {
+  ChevronsDown,
+  ChevronsUp,
+  Pencil,
+  Settings,
+  Trash2,
+} from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { AddCustomModelDialog } from '../modal/provider-modal/components/add-custom-model-dialog';
+import { useCustomModelFields } from '../modal/provider-modal/components/use-custom-model-fields';
 import { mapModelKey } from './un-add-model';
 
 export function UsedModel({
@@ -74,6 +85,9 @@ function ProviderCard({
   ) => void;
 }) {
   const { data: instances } = useFetchProviderInstances(provider.name);
+  if (!instances || instances.length <= 0) {
+    return null;
+  }
 
   return (
     <div
@@ -90,7 +104,6 @@ function ProviderCard({
           </div>
         </div>
       </div>
-
       {/* Instances */}
       {instances.length > 0 && (
         <div className="border-t border-border-button">
@@ -285,7 +298,11 @@ function ModelListItem({
   providerName: string;
   instanceName: string;
 }) {
+  const { t } = useTranslation();
   const { updateModelStatus } = useUpdateModelStatus();
+  const { editInstanceModel, loading: editLoading } = useEditInstanceModel();
+  const customModelFields = useCustomModelFields();
+  const [editOpen, setEditOpen] = useState(false);
 
   const handleStatusChange = (checked: boolean) => {
     updateModelStatus({
@@ -296,11 +313,45 @@ function ModelListItem({
     });
   };
 
+  // Only show name / model_types / max_tokens; only model_types is editable.
+  const editFields = useMemo(
+    () =>
+      customModelFields
+        .filter((f) => ['name', 'model_types', 'max_tokens'].includes(f.name))
+        .map((f) => ({
+          ...f,
+          disabled: f.name !== 'model_types',
+        })),
+    [customModelFields],
+  );
+
+  const editDefaultValues = useMemo(
+    () => ({
+      name: model.name,
+      model_types: model.model_type ?? [],
+      max_tokens: model.max_tokens ?? 0,
+    }),
+    [model],
+  );
+
+  const handleEditSubmit = useCallback(
+    async (item: IProviderModelItem) => {
+      await editInstanceModel({
+        provider_name: providerName,
+        instance_name: instanceName,
+        model_name: [model.name],
+        model_type: item.model_types ?? [],
+      });
+      setEditOpen(false);
+    },
+    [editInstanceModel, providerName, instanceName, model.name],
+  );
+
   return (
-    <li className="flex items-center border-b-[0.5px] border-border-button justify-between p-3 hover:bg-bg-card transition-colors last:border-b-0">
+    <li className="flex items-center border-b-[0.5px] border-border-button justify-between p-3 hover:bg-bg-card transition-colors last:border-b-0 group">
       <div className="flex items-center space-x-3">
         <span className="font-medium text-text-primary">{model.name}</span>
-        {model.model_type.map((modelType) => (
+        {model.model_type.slice(0, 3).map((modelType) => (
           <span
             className="px-2 py-1 text-xs bg-bg-card text-text-secondary rounded-md"
             key={modelType}
@@ -308,10 +359,40 @@ function ModelListItem({
             {modelType}
           </span>
         ))}
+        {model.model_type.length > 3 && (
+          <span
+            className="px-2 py-1 text-xs bg-bg-card text-text-secondary rounded-md"
+            key="ellipsis"
+          >
+            ...
+          </span>
+        )}
+        <Button
+          size="icon"
+          variant="ghost"
+          className={cn('h-6 w-6 hidden', 'group-hover:flex')}
+          onClick={(e: any) => {
+            e.stopPropagation();
+            setEditOpen(true);
+          }}
+          aria-label={t('setting.editCustomModelTitle')}
+        >
+          <Pencil size={12} />
+        </Button>
       </div>
       <Switch
         checked={model.status === ModelStatus.Active}
         onCheckedChange={handleStatusChange}
+      />
+      <AddCustomModelDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        title={t('setting.editCustomModelTitle')}
+        fields={editFields}
+        defaultValues={editDefaultValues}
+        onSubmit={handleEditSubmit}
+        loading={editLoading}
+        existingNames={[]}
       />
     </li>
   );

@@ -13,7 +13,7 @@ import (
 
 var googleListModelsMu sync.Mutex
 
-func withGoogleListModelsStub(t *testing.T, fn func(context.Context, *genai.ClientConfig) ([]string, error)) {
+func withGoogleListModelsStub(t *testing.T, fn func(context.Context, *genai.ClientConfig) ([]ListModelResponse, error)) {
 	t.Helper()
 
 	googleListModelsMu.Lock()
@@ -54,7 +54,7 @@ func TestGoogleModelListModelsRequiresAPIKey(t *testing.T) {
 	}
 
 	calls := 0
-	withGoogleListModelsStub(t, func(context.Context, *genai.ClientConfig) ([]string, error) {
+	withGoogleListModelsStub(t, func(context.Context, *genai.ClientConfig) ([]ListModelResponse, error) {
 		calls++
 		return nil, nil
 	})
@@ -83,9 +83,9 @@ func TestGoogleModelListModelsReturnsModelNames(t *testing.T) {
 	model := &GoogleModel{}
 	apiKey := "test-api-key"
 	configuredAPIKey := "  " + apiKey + "  "
-	expected := []string{"models/gemini-2.5-flash", "models/gemini-2.5-pro"}
+	expected := []ListModelResponse{{Name: "models/gemini-2.5-flash"}, {Name: "models/gemini-2.5-pro"}}
 
-	withGoogleListModelsStub(t, func(_ context.Context, config *genai.ClientConfig) ([]string, error) {
+	withGoogleListModelsStub(t, func(_ context.Context, config *genai.ClientConfig) ([]ListModelResponse, error) {
 		if config.APIKey != apiKey {
 			t.Fatalf("expected API key %q, got %q", apiKey, config.APIKey)
 		}
@@ -107,7 +107,7 @@ func TestGoogleModelCheckConnectionUsesListModels(t *testing.T) {
 	apiKey := "test-api-key"
 	calls := 0
 
-	withGoogleListModelsStub(t, func(_ context.Context, config *genai.ClientConfig) ([]string, error) {
+	withGoogleListModelsStub(t, func(_ context.Context, config *genai.ClientConfig) ([]ListModelResponse, error) {
 		calls++
 		if config.APIKey != apiKey {
 			t.Fatalf("expected API key %q, got %q", apiKey, config.APIKey)
@@ -115,7 +115,7 @@ func TestGoogleModelCheckConnectionUsesListModels(t *testing.T) {
 		if config.HTTPOptions.BaseURL != customBaseURL {
 			t.Fatalf("expected base URL %q, got %q", customBaseURL, config.HTTPOptions.BaseURL)
 		}
-		return []string{"models/gemini-2.5-flash"}, nil
+		return []ListModelResponse{{Name: "models/gemini-2.5-flash"}}, nil
 	})
 
 	if err := model.CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {
@@ -130,7 +130,7 @@ func TestGoogleModelCheckConnectionRequiresAPIKey(t *testing.T) {
 	model := &GoogleModel{}
 	calls := 0
 
-	withGoogleListModelsStub(t, func(context.Context, *genai.ClientConfig) ([]string, error) {
+	withGoogleListModelsStub(t, func(context.Context, *genai.ClientConfig) ([]ListModelResponse, error) {
 		calls++
 		return nil, nil
 	})
@@ -182,7 +182,7 @@ func TestGoogleModelCheckConnectionReturnsListModelsError(t *testing.T) {
 	apiKey := "test-api-key"
 	listErr := errors.New("list models failed")
 
-	withGoogleListModelsStub(t, func(context.Context, *genai.ClientConfig) ([]string, error) {
+	withGoogleListModelsStub(t, func(context.Context, *genai.ClientConfig) ([]ListModelResponse, error) {
 		return nil, listErr
 	})
 
@@ -313,11 +313,11 @@ func TestGoogleModelListModelsPassesBaseURL(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			model := NewGoogleModel(tc.baseURL, URLSuffix{})
-			withGoogleListModelsStub(t, func(_ context.Context, config *genai.ClientConfig) ([]string, error) {
+			withGoogleListModelsStub(t, func(_ context.Context, config *genai.ClientConfig) ([]ListModelResponse, error) {
 				if config.HTTPOptions.BaseURL != tc.expectedBaseURL {
 					t.Fatalf("expected base URL %q, got %q", tc.expectedBaseURL, config.HTTPOptions.BaseURL)
 				}
-				return []string{"models/gemini-2.5-flash"}, nil
+				return []ListModelResponse{{Name: "models/gemini-2.5-flash"}}, nil
 			})
 
 			if _, err := model.ListModels(&APIConfig{ApiKey: &apiKey, Region: tc.region}); err != nil {
@@ -329,8 +329,8 @@ func TestGoogleModelListModelsPassesBaseURL(t *testing.T) {
 
 func TestCollectGoogleModelNamesPaginates(t *testing.T) {
 	pages := []googleModelPage{
-		{items: []string{"models/gemini-2.5-flash"}, nextPageToken: "page-2"},
-		{items: []string{"models/gemini-2.5-pro"}, nextPageToken: ""},
+		{items: []DSModel{{ID: "Gemini 2.5 Flash", OwnedBy: "Google"}}, nextPageToken: "page-2"},
+		{items: []DSModel{{ID: "Gemini 2.5 Pro", OwnedBy: "Google"}}, nextPageToken: ""},
 	}
 	var pageTokens []string
 
@@ -345,7 +345,7 @@ func TestCollectGoogleModelNamesPaginates(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	expectedModels := []string{"models/gemini-2.5-flash", "models/gemini-2.5-pro"}
+	expectedModels := []ListModelResponse{{Name: "Gemini 2.5 Flash@Google"}, {Name: "Gemini 2.5 Pro@Google"}}
 	if !reflect.DeepEqual(models, expectedModels) {
 		t.Fatalf("expected models %v, got %v", expectedModels, models)
 	}
@@ -371,18 +371,15 @@ func TestCollectGoogleModelNamesReturnsPageError(t *testing.T) {
 	pageErr := errors.New("next page failed")
 	calls := 0
 
-	models, err := collectGoogleModelNames(context.Background(), func(context.Context, string) (googleModelPage, error) {
+	_, err := collectGoogleModelNames(context.Background(), func(context.Context, string) (googleModelPage, error) {
 		calls++
 		if calls == 1 {
-			return googleModelPage{items: []string{"models/gemini-2.5-flash"}, nextPageToken: "page-2"}, nil
+			return googleModelPage{items: []DSModel{{ID: "Gemini 2.5 Flash", OwnedBy: "Google"}}, nextPageToken: "page-2"}, nil
 		}
 		return googleModelPage{}, pageErr
 	})
 	if !errors.Is(err, pageErr) {
 		t.Fatalf("expected page error %v, got %v", pageErr, err)
-	}
-	if models != nil {
-		t.Fatalf("expected no models on error, got %v", models)
 	}
 }
 

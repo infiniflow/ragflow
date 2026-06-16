@@ -435,6 +435,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenUpdate, Value: ident}
 	case "REMOVE":
 		return Token{Type: TokenRemove, Value: ident}
+	case "EXPLAIN":
+		return Token{Type: TokenExplain, Value: ident}
 	case "CHUNK":
 		// Check if followed by STORE for compound token
 		if strings.ToUpper(l.peekToken()) == "STORE" {
@@ -475,6 +477,16 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenIngestors, Value: ident}
 	case "INGESTION":
 		return Token{Type: TokenIngestion, Value: ident}
+	case "MQ":
+		return Token{Type: TokenMQ, Value: ident}
+	case "PUBLISH":
+		return Token{Type: TokenPublish, Value: ident}
+	case "PULL":
+		return Token{Type: TokenPull, Value: ident}
+	case "PENDING":
+		return Token{Type: TokenPending, Value: ident}
+	case "NOACK":
+		return Token{Type: TokenNoACK, Value: ident}
 	case "LOG":
 		return Token{Type: TokenLog, Value: ident}
 	case "LEVEL":

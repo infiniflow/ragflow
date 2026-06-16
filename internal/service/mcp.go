@@ -28,7 +28,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/mcpclient"
 	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
@@ -491,7 +490,7 @@ func (s *MCPService) ImportServers(tenantID string, servers map[string]map[strin
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-		tools, fetchErr := mcpclient.FetchTools(ctx, mcpclient.FetchOptions{
+		tools, fetchErr := utility.FetchTools(ctx, utility.FetchOptions{
 			URL:        url,
 			ServerType: stype,
 			Headers:    headers,
@@ -597,7 +596,7 @@ func (s *MCPService) TestServer(mcpID string, req *TestServerRequest) ([]map[str
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	tools, err := mcpclient.FetchTools(ctx, mcpclient.FetchOptions{
+	tools, err := utility.FetchTools(ctx, utility.FetchOptions{
 		URL:        req.URL,
 		ServerType: req.ServerType,
 		Headers:    headers,
@@ -628,7 +627,7 @@ func (s *MCPService) TestServer(mcpID string, req *TestServerRequest) ([]map[str
 
 // toolsAsMap mirrors Python's `{tool["name"]: tool ...}` shape used when
 // persisting variables.tools.
-func toolsAsMap(tools []mcpclient.Tool) map[string]interface{} {
+func toolsAsMap(tools []utility.Tool) map[string]interface{} {
 	m := map[string]interface{}{}
 	for _, t := range tools {
 		if t.Raw != nil {

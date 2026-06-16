@@ -59,6 +59,14 @@ export default {
     instance_name: string;
   }) =>
     `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models`,
+  editInstanceModel: ({
+    provider_name,
+    instance_name,
+  }: {
+    provider_name: string;
+    instance_name: string;
+  }) =>
+    `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models`,
   deleteProviderInstance: ({ provider_name }: { provider_name: string }) =>
     `${restAPIv1}/providers/${provider_name}/instances`,
   updateModelStatus: ({
@@ -87,6 +95,13 @@ export default {
     `${restAPIv1}/connectors/google/oauth/web/result?type=${type}`,
   boxWebAuthStart: () => `${restAPIv1}/connectors/box/oauth/web/start`,
   boxWebAuthResult: () => `${restAPIv1}/connectors/box/oauth/web/result`,
+
+  // chat channel
+  chatChannelSet: `${restAPIv1}/chat_channels`,
+  chatChannelList: `${restAPIv1}/chat_channels`,
+  chatChannelDetail: (id: string) => `${restAPIv1}/chat_channels/${id}`,
+  chatChannelUpdate: (id: string) => `${restAPIv1}/chat_channels/${id}`,
+  chatChannelDel: (id: string) => `${restAPIv1}/chat_channels/${id}`,
 
   // plugin
   llmTools: `${restAPIv1}/plugin/tools`,

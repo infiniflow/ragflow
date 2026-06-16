@@ -167,17 +167,15 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       },
     ],
     verifyTransform: (values) => ({
-      apiKey: {
-        ark_api_key: values.api_key,
-        endpoint_id: values.endpoint_id,
-      },
+      apiKey: values.api_key,
+      endpoint_id: values.endpoint_id,
       modelInfo: buildModelInfoFromValues(values),
     }),
     submitTransform: (values) => ({
       instance_name: values.instance_name,
       llm_factory: LLMFactory.VolcEngine,
       endpoint_id: values.endpoint_id,
-      ark_api_key: values.api_key,
+      api_key: values.api_key,
       model_info: buildModelInfoFromValues(values),
     }),
   },
@@ -671,7 +669,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         modelInfo: [
           {
             model_name: values.model_name,
-            model_type: 'ocr',
+            model_type: ['ocr'],
             max_tokens: 0,
           },
         ],
@@ -694,7 +692,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         model_info: [
           {
             model_name: values.model_name,
-            model_type: 'ocr',
+            model_type: ['ocr'],
             max_tokens: 0,
           },
         ],
@@ -766,7 +764,10 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       return {
         apiKey: cfg,
         baseUrl: values.paddleocr_api_url,
-        modelInfo: buildModelInfoFromValues(values),
+        modelInfo: buildModelInfoFromValues({
+          ...values,
+          model_type: ['ocr'],
+        }),
       };
     },
     submitTransform: (values) => {
@@ -782,7 +783,10 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         llm_factory: LLMFactory.PaddleOCR,
         api_key: cfg,
         api_base: '',
-        model_info: buildModelInfoFromValues(values),
+        model_info: buildModelInfoFromValues({
+          ...values,
+          model_type: ['ocr'],
+        }),
       };
     },
   },

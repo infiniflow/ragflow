@@ -299,7 +299,7 @@ func TestReplicateListModelsAndCheckConnection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if strings.Join(models, ",") != "meta/meta-llama-3-70b-instruct,replicate/hello-world" {
+	if joinModelNames(models, ",") != "meta/meta-llama-3-70b-instruct,replicate/hello-world" {
 		t.Errorf("models=%v", models)
 	}
 	if err := model.CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {

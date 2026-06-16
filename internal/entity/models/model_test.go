@@ -23,11 +23,21 @@ import (
 	"testing"
 )
 
+// joinModelNames extracts model names from a ListModelResponse slice and
+// joins them with sep, for use in test assertions.
+func joinModelNames(models []ListModelResponse, sep string) string {
+	names := make([]string, len(models))
+	for i, m := range models {
+		names[i] = m.Name
+	}
+	return strings.Join(names, sep)
+}
+
 func readProviderConfig(t *testing.T, fileName string) []byte {
 	t.Helper()
 
 	for _, candidate := range []string{
-		filepath.Join("..", "..", "conf", "models", fileName),
+		filepath.Join("..", "..", "..", "conf", "models", fileName),
 		filepath.Join("conf", "models", fileName),
 	} {
 		data, err := os.ReadFile(candidate)
@@ -45,13 +55,52 @@ func readPPIOProviderConfig(t *testing.T) []byte {
 	return readProviderConfig(t, "ppio.json")
 }
 
-func TestHostedProviderConfigsLoadSharedDrivers(t *testing.T) {
-	dir := t.TempDir()
-	for _, fileName := range []string{"mineru.json", "paddleocr.json"} {
+// setupProviderTestDir creates a temporary directory populated with provider
+// config files and conf/all_models.json, then changes the working directory to
+// it. InitProviderManager hardcodes a read of conf/all_models.json relative to
+// CWD, so the test must run from a directory that contains conf/all_models.json.
+//
+// Provider configs MUST be copied before the chdir because readProviderConfig
+// resolves file paths relative to the test binary's original CWD.
+//
+// Caller must defer the returned restore function.
+func setupProviderTestDir(t *testing.T, configFileNames ...string) (dir string, restore func()) {
+	t.Helper()
+	dir = t.TempDir()
+
+	// Copy provider configs first — readProviderConfig uses relative paths
+	// that are only valid from the original CWD.
+	for _, fileName := range configFileNames {
 		if err := os.WriteFile(filepath.Join(dir, fileName), readProviderConfig(t, fileName), 0o600); err != nil {
 			t.Fatalf("write %s config: %v", fileName, err)
 		}
 	}
+
+	confDir := filepath.Join(dir, "conf")
+	if err := os.MkdirAll(confDir, 0o755); err != nil {
+		t.Fatalf("create conf dir: %v", err)
+	}
+
+	allModelsSrc := filepath.Join("..", "..", "..", "conf", "all_models.json")
+	data, err := os.ReadFile(allModelsSrc)
+	if err != nil {
+		t.Fatalf("read all_models.json: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(confDir, "all_models.json"), data, 0o600); err != nil {
+		t.Fatalf("write all_models.json: %v", err)
+	}
+
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	return dir, func() { os.Chdir(orig) }
+}
+
+func TestHostedProviderConfigsLoadSharedDrivers(t *testing.T) {
+	dir, restore := setupProviderTestDir(t, "mineru.json", "paddleocr.json")
+	defer restore()
 
 	err := InitProviderManager(dir)
 	if err != nil {
@@ -90,12 +139,8 @@ func TestHostedProviderConfigsLoadSharedDrivers(t *testing.T) {
 }
 
 func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
-	dir := t.TempDir()
-	for _, fileName := range []string{"mineru_local.json", "paddleocr_local.json"} {
-		if err := os.WriteFile(filepath.Join(dir, fileName), readProviderConfig(t, fileName), 0o600); err != nil {
-			t.Fatalf("write %s config: %v", fileName, err)
-		}
-	}
+	dir, restore := setupProviderTestDir(t, "mineru_local.json", "paddleocr_local.json")
+	defer restore()
 
 	err := InitProviderManager(dir)
 	if err != nil {
@@ -128,18 +173,15 @@ func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
 }
 
 func TestProviderConfigsLoadURLSuffixKeys(t *testing.T) {
-	dir := t.TempDir()
-	for _, fileName := range []string{"cohere.json", "xai.json"} {
-		if err := os.WriteFile(filepath.Join(dir, fileName), readProviderConfig(t, fileName), 0o600); err != nil {
-			t.Fatalf("write %s config: %v", fileName, err)
-		}
-	}
+	dir, restore := setupProviderTestDir(t, "cohere.json", "xai.json")
+	defer restore()
 
 	err := InitProviderManager(dir)
 	if err != nil {
 		t.Fatalf("InitProviderManager: %v", err)
 	}
 
+	pm := GetProviderManager()
 	cohere := pm.FindProvider("CoHere")
 	if cohere == nil {
 		t.Fatal("CoHere provider not found")
@@ -180,7 +222,7 @@ func TestProviderConfigRejectsUnknownURLSuffixKey(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	_, err := InitProviderManager(dir)
+	err := InitProviderManager(dir)
 	if err == nil {
 		t.Fatal("InitProviderManager succeeded with unknown url_suffix key")
 	}
@@ -193,16 +235,15 @@ func TestProviderConfigRejectsUnknownURLSuffixKey(t *testing.T) {
 }
 
 func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "ppio.json"), readPPIOProviderConfig(t), 0o600); err != nil {
-		t.Fatalf("write ppio config: %v", err)
-	}
+	dir, restore := setupProviderTestDir(t, "ppio.json")
+	defer restore()
 
 	err := InitProviderManager(dir)
 	if err != nil {
 		t.Fatalf("InitProviderManager: %v", err)
 	}
 
+	pm := GetProviderManager()
 	provider := pm.FindProvider("ppio")
 	if provider == nil {
 		t.Fatal("PPIO provider not found")
@@ -252,22 +293,22 @@ func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetModelByName: %v", err)
 	}
-	if model.MaxTokens != 64000 {
-		t.Errorf("deepseek/deepseek-r1 max_tokens=%d", model.MaxTokens)
+	if *model.MaxTokens != 64000 {
+		t.Errorf("deepseek/deepseek-r1 max_tokens=%d", *model.MaxTokens)
 	}
 	model, err = pm.GetModelByName("ppio", "deepseek/deepseek-v4-pro")
 	if err != nil {
 		t.Fatalf("GetModelByName v4 pro: %v", err)
 	}
-	if model.MaxTokens != 1048576 {
-		t.Errorf("deepseek/deepseek-v4-pro max_tokens=%d", model.MaxTokens)
+	if *model.MaxTokens != 1048576 {
+		t.Errorf("deepseek/deepseek-v4-pro max_tokens=%d", *model.MaxTokens)
 	}
 	model, err = pm.GetModelByName("ppio", "deepseek/deepseek-v4-flash")
 	if err != nil {
 		t.Fatalf("GetModelByName v4 flash: %v", err)
 	}
-	if model.MaxTokens != 1048576 {
-		t.Errorf("deepseek/deepseek-v4-flash max_tokens=%d", model.MaxTokens)
+	if *model.MaxTokens != 1048576 {
+		t.Errorf("deepseek/deepseek-v4-flash max_tokens=%d", *model.MaxTokens)
 	}
 
 	resp := pm.SearchByType("chat")
@@ -280,16 +321,15 @@ func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
 }
 
 func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "siliconflow.json"), readProviderConfig(t, "siliconflow.json"), 0o600); err != nil {
-		t.Fatalf("write siliconflow config: %v", err)
-	}
+	dir, restore := setupProviderTestDir(t, "siliconflow.json")
+	defer restore()
 
 	err := InitProviderManager(dir)
 	if err != nil {
 		t.Fatalf("InitProviderManager: %v", err)
 	}
 
+	pm := GetProviderManager()
 	provider := pm.FindProvider("SiliconFlow")
 	if provider == nil {
 		t.Fatal("SiliconFlow provider not found")
@@ -314,8 +354,8 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetModelByName DeepSeek-V4-Pro: %v", err)
 	}
-	if deepSeekV4Pro.MaxTokens != 1048576 {
-		t.Errorf("DeepSeek-V4-Pro max_tokens=%d", deepSeekV4Pro.MaxTokens)
+	if *deepSeekV4Pro.MaxTokens != 1048576 {
+		t.Errorf("DeepSeek-V4-Pro max_tokens=%d", *deepSeekV4Pro.MaxTokens)
 	}
 	if !deepSeekV4Pro.ModelTypeMap["chat"] {
 		t.Errorf("DeepSeek-V4-Pro model types=%v, want chat", deepSeekV4Pro.ModelTypes)
@@ -325,8 +365,8 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetModelByName Kimi-K2.6: %v", err)
 	}
-	if kimiK26.MaxTokens != 262144 {
-		t.Errorf("Kimi-K2.6 max_tokens=%d", kimiK26.MaxTokens)
+	if *kimiK26.MaxTokens != 262144 {
+		t.Errorf("Kimi-K2.6 max_tokens=%d", *kimiK26.MaxTokens)
 	}
 	if !kimiK26.ModelTypeMap["chat"] || !kimiK26.ModelTypeMap["vision"] {
 		t.Errorf("Kimi-K2.6 model types=%v, want chat+vision", kimiK26.ModelTypes)
@@ -336,7 +376,7 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetModelByName GLM-5.1: %v", err)
 	}
-	if glm51.MaxTokens != 204800 {
-		t.Errorf("GLM-5.1 max_tokens=%d", glm51.MaxTokens)
+	if *glm51.MaxTokens != 204800 {
+		t.Errorf("GLM-5.1 max_tokens=%d", *glm51.MaxTokens)
 	}
 }

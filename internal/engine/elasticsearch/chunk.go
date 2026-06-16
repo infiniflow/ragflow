@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"reflect"
 	"regexp"
@@ -281,22 +282,22 @@ func (e *elasticsearchEngine) updateSingleChunk(ctx context.Context, indexName, 
 
 	hits, ok := searchResult["hits"].(map[string]interface{})
 	if !ok {
-		return fmt.Errorf("elasticsearch update error: 404 Not Found")
+		return fmt.Errorf("%w: %s", types.ErrDocumentNotFound, chunkID)
 	}
 
 	hitList, ok := hits["hits"].([]interface{})
 	if !ok || len(hitList) == 0 {
-		return fmt.Errorf("elasticsearch update error: 404 Not Found")
+		return fmt.Errorf("%w: %s", types.ErrDocumentNotFound, chunkID)
 	}
 
 	firstHit, ok := hitList[0].(map[string]interface{})
 	if !ok {
-		return fmt.Errorf("elasticsearch update error: 404 Not Found")
+		return fmt.Errorf("%w: %s", types.ErrDocumentNotFound, chunkID)
 	}
 
 	actualID, ok := firstHit["_id"].(string)
 	if !ok {
-		return fmt.Errorf("elasticsearch update error: 404 Not Found")
+		return fmt.Errorf("%w: %s", types.ErrDocumentNotFound, chunkID)
 	}
 
 	doc := copyFields(newValue)
@@ -402,6 +403,9 @@ func (e *elasticsearchEngine) updateSingleChunk(ctx context.Context, indexName, 
 		}
 		defer res.Body.Close()
 		if res.IsError() {
+			if res.StatusCode == http.StatusNotFound {
+				return fmt.Errorf("%w: %s", types.ErrDocumentNotFound, chunkID)
+			}
 			return fmt.Errorf("elasticsearch update error: %s", res.Status())
 		}
 	}
