@@ -203,27 +203,27 @@ func autoMigrateSafely(db *gorm.DB, model interface{}) error {
 	// Check if error is MySQL duplicate index error (Error 1061)
 	errStr := err.Error()
 	if strings.Contains(errStr, "Error 1061") && strings.Contains(errStr, "Duplicate key name") {
-		common.Info("Index already exists, skipping", zap.String("error", errStr))
+		common.Warn("Index already exists, skipping", zap.String("error", errStr))
 		return nil
 	}
 
 	if strings.Contains(errStr, "Error 1060") && strings.Contains(errStr, "Duplicate column name") {
-		common.Info("Column already exists, skipping", zap.String("error", errStr))
+		common.Warn("Column already exists, skipping", zap.String("error", errStr))
 		return nil
 	}
 
 	if strings.Contains(errStr, "Error 1050") && strings.Contains(errStr, "Table") {
-		common.Info("Table already exists, skipping", zap.String("error", errStr))
+		common.Warn("Table already exists, skipping", zap.String("error", errStr))
 		return nil
 	}
 
 	if strings.Contains(errStr, "Error 1091") && strings.Contains(errStr, "Can't DROP") {
-		common.Info("Index/column already dropped, skipping", zap.String("error", errStr))
+		common.Warn("Index/column already dropped, skipping", zap.String("error", errStr))
 		return nil
 	}
 
 	if strings.Contains(errStr, "Error 1138") && strings.Contains(errStr, "Invalid use of NULL") {
-		common.Info("NULL value in existing rows, skipping migration change", zap.String("error", errStr))
+		common.Warn("NULL value in existing rows, skipping migration change", zap.String("error", errStr))
 		return nil
 	}
 
