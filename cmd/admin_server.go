@@ -70,7 +70,7 @@ func main() {
 	// Handle --version flag: print version and exit immediately
 	if versionFlag {
 		fmt.Printf("RAGFlow version: %s\n", utility.GetRAGFlowVersion())
-		os.Exit(0)
+		return
 	}
 
 	// Initialize logger
