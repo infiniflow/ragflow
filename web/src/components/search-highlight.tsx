@@ -3,7 +3,7 @@ import { escapeRegExp } from 'lodash';
 import { Fragment, useMemo } from 'react';
 
 type SearchHighlightProps = {
-  text: string;
+  text?: string | null;
   query: string;
   className?: string;
 };
@@ -13,18 +13,20 @@ export function SearchHighlight({
   query,
   className,
 }: SearchHighlightProps) {
+  const safeText = text ?? '';
+
   const parts = useMemo(() => {
     const trimmedQuery = query.trim();
     if (!trimmedQuery) {
-      return [{ text, highlight: false }];
+      return [{ text: safeText, highlight: false }];
     }
 
     const regex = new RegExp(`(${escapeRegExp(trimmedQuery)})`, 'gi');
-    return text.split(regex).map((part) => ({
+    return safeText.split(regex).map((part) => ({
       text: part,
       highlight: part.toLowerCase() === trimmedQuery.toLowerCase(),
     }));
-  }, [text, query]);
+  }, [safeText, query]);
 
   return (
     <span className={cn('inline', className)}>
