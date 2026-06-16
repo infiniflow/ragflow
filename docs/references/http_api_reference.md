@@ -7544,6 +7544,568 @@ or
 
 ---
 
+### Create commit
+
+**POST** `/api/v1/folders/{folder_id}/commits`
+
+Creates a new snapshot commit for the specified folder.  
+This endpoint also supports:
+- `/api/v1/workspace/{workspace_id}/commits` (alias, workspace_id == folder_id)
+- `/api/v1/datasets/{dataset_id}/commits` (resolves dataset to its folder)
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/folders/{folder_id}/commits`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `'message'`: `string` (required)  
+    The commit message.
+  - `'files'`: `list[object]` (required)  
+    The list of file changes. Each file change is an object with the following fields:
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/folders/{folder_id}/commits \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "message": "update config files",
+          "files": [
+               {"file_id": "file_uuid", "file_name": "config.json", "operation": "modify", "content": "{\"key\": \"value\"}"},
+               {"file_id": "file_uuid", "file_name": "readme.md", "operation": "add", "content": "# New README"}
+          ]
+     }'
+```
+
+##### Request parameters
+
+- `"message"`: (*Body parameter*), `string`, *Required*  
+  The commit message describing the changes.
+- `"files"`: (*Body parameter*), `list[object]`, *Required*  
+  Each file change object supports the following fields:
+
+  | Field | Type | Required | Description |
+  |-------|------|----------|-------------|
+  | `file_id` | `string` | Yes | The file ID |
+  | `file_name` | `string` | Only for add/rename | The file name |
+  | `operation` | `string` | Yes | `"add"`, `"modify"`, `"delete"`, or `"rename"` |
+  | `content` | `string` | Only for add/modify | The file content |
+  | `old_name` | `string` | Only for rename | The old file name |
+  | `new_name` | `string` | Only for rename | The new file name |
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "id": "commit_uuid",
+        "folder_id": "folder_uuid",
+        "parent_id": null,
+        "message": "update config files",
+        "author_id": "user_uuid",
+        "file_count": 2,
+        "tree_state": "{\"file_uuid\": {\"hash\": \"abcd1234\", \"location\": \".objects/abcd1234\", \"name\": \"config.json\", \"size\": 1024, \"status\": \"1\", \"parent_id\": \"folder_uuid\"}}",
+        "create_time": 1718200000000
+    }
+}
+```
+
+:::note
+`tree_state` is a JSON string containing a flat map of file entries. Each entry includes `parent_id` to track which sub-folder the file belonged to at commit time. Sub-folders are inferred from `parent_id` values.
+:::
+
+Failure:
+
+```json
+{
+    "code": 101,
+    "message": "required argument are missing: message"
+}
+```
+
+---
+
+### List commits
+
+**GET** `/api/v1/folders/{folder_id}/commits`
+
+Lists all commits for the specified folder with pagination.  
+Also available at:
+- `/api/v1/workspace/{workspace_id}/commits`
+- `/api/v1/datasets/{dataset_id}/commits`
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/folders/{folder_id}/commits`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Query:
+  - `'page'`: `int` (optional, default: 1)
+  - `'page_size'`: `int` (optional, default: 15)
+  - `'order_by'`: `string` (optional, default: `"create_time"`)
+  - `'desc'`: `bool` (optional, default: `true`)
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url 'http://{address}/api/v1/folders/{folder_id}/commits?page=1&page_size=15' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `"page"`: (*Query parameter*), `int`, *Optional*  
+  Page number. Defaults to 1.
+- `"page_size"`: (*Query parameter*), `int`, *Optional*  
+  Number of items per page. Defaults to 15.
+- `"order_by"`: (*Query parameter*), `string`, *Optional*  
+  Sort field. Defaults to `"create_time"`.
+- `"desc"`: (*Query parameter*), `bool`, *Optional*  
+  Sort descending. Defaults to `true`.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "total": 2,
+        "page": 1,
+        "page_size": 15,
+        "commits": [
+            {
+                "id": "commit_uuid",
+                "folder_id": "folder_uuid",
+                "parent_id": null,
+                "message": "first commit",
+                "author_id": "user_uuid",
+                "file_count": 3,
+                "create_time": 1718200000000
+            }
+        ]
+    }
+}
+```
+
+---
+
+### Get commit
+
+**GET** `/api/v1/folders/{folder_id}/commits/{commit_id}`
+
+Retrieves the details of a specific commit, including its file changes.  
+Also available at:
+- `/api/v1/workspace/{workspace_id}/commits/{commit_id}`
+- `/api/v1/datasets/{dataset_id}/commits/{commit_id}`
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/folders/{folder_id}/commits/{commit_id}`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/folders/{folder_id}/commits/{commit_id} \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `"folder_id"`: (*Path parameter*), `string`, *Required*  
+  The folder ID.
+- `"commit_id"`: (*Path parameter*), `string`, *Required*  
+  The commit ID.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "id": "commit_uuid",
+        "folder_id": "folder_uuid",
+        "parent_id": null,
+        "message": "added config files",
+        "author_id": "user_uuid",
+        "file_count": 2,
+        "create_time": 1718200000000,
+        "files": [
+            {
+                "file_id": "file_uuid",
+                "operation": "add",
+                "old_hash": null,
+                "new_hash": "abcd1234",
+                "old_name": null,
+                "new_name": null
+            }
+        ]
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Commit not found in workspace"
+}
+```
+
+---
+
+### List commit files
+
+**GET** `/api/v1/folders/{folder_id}/commits/{commit_id}/files`
+
+Lists the file changes associated with a specific commit.  
+Also available at:
+- `/api/v1/workspace/{workspace_id}/commits/{commit_id}/files`
+- `/api/v1/datasets/{dataset_id}/commits/{commit_id}/files`
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/folders/{folder_id}/commits/{commit_id}/files`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/folders/{folder_id}/commits/{commit_id}/files \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": [
+        {
+            "id": "item_uuid",
+            "file_id": "file_uuid",
+            "operation": "add",
+            "old_hash": null,
+            "new_hash": "abcd1234",
+            "old_location": null,
+            "new_location": ".objects/abcd1234",
+            "old_name": null,
+            "new_name": null
+        }
+    ]
+}
+```
+
+---
+
+### Diff commits
+
+**GET** `/api/v1/folders/{folder_id}/commits/diff?from={commit_id}&to={commit_id}`
+
+Compares two commits and returns the differences.  
+Also available at:
+- `/api/v1/workspace/{workspace_id}/commits/diff?from=...&to=...`
+- `/api/v1/datasets/{dataset_id}/commits/diff?from=...&to=...`
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/folders/{folder_id}/commits/diff`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Query:
+  - `'from'`: `string` (required)  
+    The source commit ID.
+  - `'to'`: `string` (required)  
+    The target commit ID.
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url 'http://{address}/api/v1/folders/{folder_id}/commits/diff?from=from_commit_id&to=to_commit_id' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `"from"`: (*Query parameter*), `string`, *Required*  
+  The source commit ID.
+- `"to"`: (*Query parameter*), `string`, *Required*  
+  The target commit ID.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": [
+        {
+            "file_id": "file_uuid",
+            "file_name": "config.json",
+            "operation": "modify",
+            "old_hash": "abc123",
+            "new_hash": "def456",
+            "old_location": ".objects/abc123",
+            "new_location": ".objects/def456"
+        }
+    ]
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Commit not found in workspace"
+}
+```
+
+---
+
+### Get uncommitted changes
+
+**GET** `/api/v1/folders/{folder_id}/changes`
+
+Returns the uncommitted changes for the specified folder (similar to `git status`).  
+Also available at:
+- `/api/v1/workspace/{workspace_id}/changes`
+- `/api/v1/datasets/{dataset_id}/changes`
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/folders/{folder_id}/changes`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/folders/{folder_id}/changes \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": [
+        {
+            "file_id": "file_uuid",
+            "file_name": "new.txt",
+            "operation": "add"
+        },
+        {
+            "file_id": "file_uuid",
+            "file_name": "config.json",
+            "operation": "modify"
+        },
+        {
+            "file_id": "file_uuid",
+            "file_name": "old.md",
+            "operation": "delete"
+        }
+    ]
+}
+```
+
+---
+
+### Get commit tree
+
+**GET** `/api/v1/folders/{folder_id}/commits/{commit_id}/tree`
+
+Retrieves the full folder tree snapshot as it existed at a specific commit.  
+Also available at:
+- `/api/v1/workspace/{workspace_id}/commits/{commit_id}/tree`
+- `/api/v1/datasets/{dataset_id}/commits/{commit_id}/tree`
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/folders/{folder_id}/commits/{commit_id}/tree`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/folders/{folder_id}/commits/{commit_id}/tree \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "id": "folder_uuid",
+        "name": "workspace_name",
+        "type": "folder",
+        "children": [
+            {
+                "id": "file_uuid",
+                "name": "config.json",
+                "type": "file",
+                "hash": "abcd1234",
+                "size": 1024,
+                "status": "1",
+                "location": ".objects/abcd1234"
+            },
+            {
+                "id": "sub_folder_uuid",
+                "name": "sub_folder_name",
+                "type": "folder",
+                "children": [
+                    {
+                        "id": "file_uuid_2",
+                        "name": "nested.txt",
+                        "type": "file",
+                        "hash": "ef5678",
+                        "size": 512,
+                        "status": "1",
+                        "location": ".objects/ef5678"
+                    }
+                ]
+            }
+        ]
+    }
+}
+```
+
+---
+
+### Get commit file content
+
+**GET** `/api/v1/folders/{folder_id}/commits/{commit_id}/files/{file_id}/content`
+
+Retrieves the file content as it existed at a specific commit.  
+Also available at:
+- `/api/v1/workspace/{workspace_id}/commits/{commit_id}/files/{file_id}/content`
+- `/api/v1/datasets/{dataset_id}/commits/{commit_id}/files/{file_id}/content`
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/folders/{folder_id}/commits/{commit_id}/files/{file_id}/content`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/folders/{folder_id}/commits/{commit_id}/files/{file_id}/content \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "content": "file content as it existed in that commit"
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "File not found in this commit"
+}
+```
+
+---
+
+### Get file version history
+
+**GET** `/api/v1/files/{file_id}/versions`
+
+Returns the version history for a specific file across all commits.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/files/{file_id}/versions`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/files/{file_id}/versions \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": [
+        {
+            "commit_id": "commit_uuid",
+            "operation": "modify",
+            "hash": "def456",
+            "create_time": 1718200000000,
+            "message": "updated file"
+        },
+        {
+            "commit_id": "commit_uuid",
+            "operation": "add",
+            "hash": "abc123",
+            "create_time": 1718100000000,
+            "message": "initial commit"
+        }
+    ]
+}
+```
+
+---
+
 ## SEARCH APP MANAGEMENT
 
 ### Create search app

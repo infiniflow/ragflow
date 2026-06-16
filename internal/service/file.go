@@ -398,7 +398,7 @@ func (s *FileService) UploadFile(tenantID, parentID string, files []*multipart.F
 			Name:       uniqueName,
 			Location:   &location,
 			Size:       int64(len(data)),
-			Type:       fileType,
+			Type:       string(fileType),
 			SourceType: "",
 		}
 

@@ -16,7 +16,9 @@
 
 package cli
 
-import "fmt"
+import (
+	"fmt"
+)
 
 // ExecuteCommand executes a parsed command
 // Returns benchmark result map for commands that support it (e.g., ping_server with iterations > 1)
@@ -103,14 +105,25 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListAdminTasks(cmd)
 	case "admin_list_ingestors":
 		return c.ListAdminIngestors(cmd)
-	case "admin_start_ingestion_command":
-		return c.AdminStartIngestionCommand(cmd)
-	case "admin_stop_ingestion_command":
+	case "admin_stop_ingestion_tasks":
 		return c.AdminStopIngestionCommand(cmd)
+	case "admin_remove_ingestion_tasks":
+		return c.AdminRemoveIngestionCommand(cmd)
 	case "admin_shutdown_ingestor_command":
 		return c.AdminShutdownIngestor(cmd)
 	case "list_admin_ingestion_tasks":
 		return c.ListAdminIngestionTasks(cmd)
+	case "user_list_message_queue_command":
+		return c.UserListMessageQueueCommand(cmd)
+	case "user_publish_message_command":
+		return c.UserPublishMessageCommand(cmd)
+	case "user_pull_message_command":
+		return c.UserPullMessageCommand(cmd)
+	case "user_show_message_queue_command":
+		return c.UserShowMessageQueueCommand(cmd)
+	case "admin_remove_service_command":
+		return c.AdminRemoveServiceCommand(cmd)
+	// TODO: Implement other commands
 	case "show_admin_server":
 		return c.ShowAdminServer(cmd)
 	case "show_api_server":
@@ -285,6 +298,17 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.GetMetadata(cmd)
 	case "parse_documents_user_command":
 		return c.ParseDocumentsUserCommand(cmd)
+	case "user_start_ingestion_command":
+		return c.UserStartIngestionCommand(cmd)
+	case "user_stop_ingestion_command":
+		return c.UserStopIngestionCommand(cmd)
+	case "user_list_ingestion_tasks":
+		return c.ListUserIngestionTasks(cmd)
+	case "user_remove_task_command":
+		return c.UserRemoveTaskCommand(cmd)
+	// TODO: Implement other commands
+	case "user_parse_local_file_command":
+		return c.UserParseLocalFile(cmd)
 	case "show_admin_server":
 		return c.ShowAdminServer(cmd)
 	case "show_api_server":
@@ -299,10 +323,12 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.AddAdminServer(cmd)
 	case "delete_admin_server":
 		return c.DeleteAdminServer(cmd)
+	case "user_chunk_command":
+		return c.ChunkCommand(cmd)
 	case "save_config_command":
 		return c.SaveServerConfig(cmd)
 	case "file_system_command":
-		return c.executeFilesystem(cmd)
+		return c.ExecuteFilesystemCommand(cmd)
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
 	}

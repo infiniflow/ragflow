@@ -152,14 +152,28 @@ COPY pyproject.toml uv.lock ./
 
 # https://github.com/astral-sh/uv/issues/10462
 # uv records index url into uv.lock but doesn't failover among multiple indexes
+# Also rewrite pypi.tuna.tsinghua.edu.cn to mirrors.aliyun.com/pypi so locks
+# that were resolved against the Tsinghua mirror (e.g. when UV_INDEX pointed
+# there) get normalized to the Aliyun mirror in NEED_MIRROR=1 builds. Without
+# this, stale Tsinghua URLs slip through and `uv sync --frozen` 404s on
+# packages that the Tsinghua mirror no longer carries.
 RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
     if [ "$NEED_MIRROR" == "1" ]; then \
         sed -i 's|pypi.org|mirrors.aliyun.com/pypi|g' uv.lock; \
+        sed -i 's|pypi.tuna.tsinghua.edu.cn|mirrors.aliyun.com/pypi|g' uv.lock; \
     else \
         sed -i 's|mirrors.aliyun.com/pypi|pypi.org|g' uv.lock; \
+        sed -i 's|pypi.tuna.tsinghua.edu.cn|pypi.org|g' uv.lock; \
         sed -i 's|gitee.com|github.com|g' uv.lock; \
     fi; \
-    uv sync --python 3.13 --frozen && \
+    # --refresh-package litellm forces a re-download of litellm from the
+    # (post-sed) URLs in uv.lock even if BuildKit's persistent uv cache mount
+    # holds a stale wheel from a previous build. litellm 1.88.x has had
+    # multiple internal ImportError issues (1.88.1 missing
+    # DEFAULT_HEALTH_CHECK_STALENESS_MULTIPLIER, 1.88.0 wheel pulled via
+    # some proxies missing RedisPipelineLpopOperation) — always re-fetching
+    # the locked version avoids serving a half-broken cached copy.
+    uv sync --python 3.13 --frozen --refresh-package litellm && \
     # Ensure pip is available in the venv for runtime package installation (fixes #12651)
     .venv/bin/python3 -m ensurepip --upgrade
 
