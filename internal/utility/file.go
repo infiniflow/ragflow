@@ -25,17 +25,19 @@ import (
 type FileType string
 
 const (
-	FileTypePDF    FileType = "pdf"
-	FileTypeDOC    FileType = "doc"
-	FileTypeDOCX   FileType = "docx"
-	FileTypePPT    FileType = "ppt"
-	FileTypePPTX   FileType = "pptx"
-	FileTypeXLS    FileType = "xls"
-	FileTypeXLSX   FileType = "xlsx"
-	FileTypeVISUAL FileType = "visual"
-	FileTypeAURAL  FileType = "aural"
-	FileTypeFOLDER FileType = "folder"
-	FileTypeOTHER  FileType = "other"
+	FileTypePDF      FileType = "pdf"
+	FileTypeDOC      FileType = "doc"
+	FileTypeDOCX     FileType = "docx"
+	FileTypePPT      FileType = "ppt"
+	FileTypePPTX     FileType = "pptx"
+	FileTypeXLS      FileType = "xls"
+	FileTypeXLSX     FileType = "xlsx"
+	FileTypeHTML     FileType = "html"
+	FileTypeMarkdown FileType = "md"
+	FileTypeVISUAL   FileType = "visual"
+	FileTypeAURAL    FileType = "aural"
+	FileTypeFOLDER   FileType = "folder"
+	FileTypeOTHER    FileType = "other"
 )
 
 var (
@@ -82,6 +84,10 @@ func GetFileType(filename string) FileType {
 		return FileTypePPT
 	case "pptx":
 		return FileTypePPTX
+	case "html", "htm":
+		return FileTypeHTML
+	case "md":
+		return FileTypeMarkdown
 	default:
 		return FileTypeOTHER
 	}

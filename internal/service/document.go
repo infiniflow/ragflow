@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"ragflow/internal/common"
+	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
@@ -32,12 +33,12 @@ import (
 	"strings"
 	"time"
 
-	"ragflow/internal/cache"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 
-	"gorm.io/gorm"
 	"ragflow/internal/server"
+
+	"gorm.io/gorm"
 )
 
 // DocumentService document service
@@ -998,7 +999,7 @@ func (s *DocumentService) cancelDocParse(doc *entity.Document) error {
 	}
 
 	// Set Redis cancel signal for each task (best-effort)
-	redisClient := cache.Get()
+	redisClient := redis.Get()
 	for _, t := range tasks {
 		if redisClient != nil {
 			redisClient.Set(fmt.Sprintf("%s-cancel", t.ID), "x", 0)

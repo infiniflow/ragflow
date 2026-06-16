@@ -26,11 +26,10 @@ package canvas
 import (
 	"context"
 	"errors"
+	redis2 "ragflow/internal/engine/redis"
 	"time"
 
 	"github.com/redis/go-redis/v9"
-
-	"ragflow/internal/cache"
 )
 
 // runKeyPrefix is the Redis Hash key namespace for run metadata.
@@ -62,7 +61,7 @@ type RunTracker struct {
 // construction.
 func NewRunTracker(ttl time.Duration) *RunTracker {
 	var client *redis.Client
-	if rc := cache.Get(); rc != nil {
+	if rc := redis2.Get(); rc != nil {
 		client = rc.GetClient()
 	}
 	return &RunTracker{client: client, ttl: ttl}

@@ -20,6 +20,7 @@ require (
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-sql-driver/mysql v1.7.0
 	github.com/goccy/go-json v0.10.2
+	github.com/gomarkdown/markdown v0.0.0-20260614204949-e08cff860f76
 	github.com/google/uuid v1.6.0
 	github.com/infiniflow/infinity-go-sdk v0.0.0-00010101000000-000000000000
 	github.com/iromli/go-itsdangerous v0.0.0-20220223194502-9c8bef8dac6a
@@ -34,9 +35,8 @@ require (
 	github.com/signintech/gopdf v0.36.1
 	github.com/siongui/gojianfan v0.0.0-20210926212422-2f175ac615de
 	github.com/spf13/viper v1.18.2
-	github.com/yfedoseev/office_oxide/go v0.1.2
-	github.com/yfedoseev/pdf_oxide/go v0.3.63
 	github.com/xuri/excelize/v2 v2.10.1
+	github.com/yfedoseev/office_oxide/go v0.1.2
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.44.0
@@ -82,7 +82,6 @@ require (
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/ebitengine/purego v0.10.1 // indirect
 	github.com/eino-contrib/jsonschema v1.0.3 // indirect
 	github.com/elastic/elastic-transport-go/v8 v8.8.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect

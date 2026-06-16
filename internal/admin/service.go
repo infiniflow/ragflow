@@ -26,11 +26,11 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"ragflow/internal/cache"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/elasticsearch"
+	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
@@ -1206,7 +1206,7 @@ func (s *Service) getMySQLStatus(name string) (map[string]interface{}, error) {
 func (s *Service) getRedisInfo(name string) (map[string]interface{}, error) {
 	startTime := time.Now()
 
-	redisClient := cache.Get()
+	redisClient := redis.Get()
 	if redisClient == nil {
 		return map[string]interface{}{
 			"service_name": name,

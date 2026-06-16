@@ -1,4 +1,5 @@
 //go:build ignore
+
 //
 //  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
@@ -25,9 +26,9 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"ragflow/internal/cache"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
+	"ragflow/internal/engine/redis"
 	"ragflow/internal/utility"
 	"syscall"
 	"time"
@@ -90,10 +91,10 @@ func main() {
 	defer engine.Close()
 
 	// Initialize Redis cache
-	if err := cache.Init(&cfg.Redis); err != nil {
+	if err := redis.Init(&cfg.Redis); err != nil {
 		common.Fatal("Failed to initialize Redis", zap.Error(err))
 	}
-	defer cache.Close()
+	defer redis.Close()
 
 	if err := engine.InitMessageQueueEngine(cfg.TaskExecutor.MessageQueueType); err != nil {
 		common.Error("Failed to initialize message queue engine", err)
@@ -101,7 +102,7 @@ func main() {
 
 	// Initialize server variables (runtime variables that can change during operation)
 	// This must be done after Cache is initialized
-	if err := server.InitVariables(cache.Get()); err != nil {
+	if err := server.InitVariables(redis.Get()); err != nil {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
 
