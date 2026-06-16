@@ -338,8 +338,12 @@ const maxJSONStringChars = 256
 func truncateJSONStrings(obj interface{}, maxLength int) interface{} {
 	switch v := obj.(type) {
 	case string:
-		if len(v) > maxLength {
-			return v[:maxLength]
+		// Use rune count (Unicode code points), not byte count, so that
+		// multi-byte UTF-8 characters are never split mid-sequence.
+		// This matches the Python implementation's character-based len().
+		runes := []rune(v)
+		if len(runes) > maxLength {
+			return string(runes[:maxLength])
 		}
 		return v
 	case map[string]interface{}:
