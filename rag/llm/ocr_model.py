@@ -148,6 +148,16 @@ class PaddleOCROcrModel(Base, PaddleOCRParser):
         sections, tables = PaddleOCRParser.parse_pdf(self, filepath=filepath, binary=binary, callback=callback, parse_method=parse_method, **kwargs)
         return sections, tables
 
+    def parse_image(self, filepath: str, binary=None, callback=None, **kwargs) -> str:
+        ok, reason = self.check_available()
+        if not ok:
+            raise RuntimeError(f"PaddleOCR server not accessible: {reason}")
+
+        logging.info(f"PaddleOCR parse_image start: {filepath}")
+        result = PaddleOCRParser.parse_image(self, filepath=filepath, binary=binary, callback=callback, **kwargs)
+        logging.info(f"PaddleOCR parse_image done: {filepath}, text length: {len(result)}")
+        return result
+
 
 class OpenDataLoaderOcrModel(Base, OpenDataLoaderParser):
     _FACTORY_NAME = "OpenDataLoader"
