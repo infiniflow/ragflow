@@ -209,6 +209,7 @@ class SyncBase:
         document_batch_generator = await self._generate(task)
 
         failed_docs = 0
+        had_parse_errors = False
         added_docs = 0
         updated_docs = 0
         next_update = datetime(1970, 1, 1, tzinfo=timezone.utc)
@@ -258,6 +259,8 @@ class SyncBase:
                     f"{self.SOURCE_NAME}/{task['connector_id']}",
                     task["auto_parse"]
                 )
+                if err:
+                    had_parse_errors = True
                 SyncLogsService.increase_docs(
                     task["id"], max_update,
                     len(docs), "\n".join(err), len(err)
@@ -298,6 +301,7 @@ class SyncBase:
         if (
             isinstance(self, _CursorPersistingSyncBase)
             and failed_docs == 0
+            and not had_parse_errors
         ):
             self.connector.persist_sync_state()
         SyncLogsService.done(task["id"], task["connector_id"])
@@ -2100,9 +2104,11 @@ class _RDBMSBase(_CursorPersistingSyncBase):
         else:
             poll_start = task["poll_range_start"]
             start_cursor_value = self.connector.get_saved_sync_cursor_value()
+            start_cursor_id = self.connector.get_saved_sync_cursor_id() if hasattr(self.connector, "get_saved_sync_cursor_id") else None
             document_generator = self.connector.load_from_cursor_range(
                 start_cursor_value,
                 self.connector._pending_sync_cursor_value,
+                start_cursor_id,
             )
             _begin_info = f"from {poll_start}"
 
@@ -2175,9 +2181,11 @@ class BigQuery(_CursorPersistingSyncBase):
             document_generator = self.connector.load_from_state()
         else:
             start_cursor_value = self.connector.get_saved_sync_cursor_value()
+            start_cursor_id = self.connector.get_saved_sync_cursor_id() if hasattr(self.connector, "get_saved_sync_cursor_id") else None
             document_generator = self.connector.load_from_cursor_range(
                 start_cursor_value,
                 self.connector._pending_sync_cursor_value,
+                start_cursor_id,
             )
 
         target = (

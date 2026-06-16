@@ -17,6 +17,7 @@ import hashlib
 import json
 import logging
 from datetime import date, datetime, time, timezone
+from decimal import Decimal
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
 from common.data_source.config import DocumentSource, INDEX_BATCH_SIZE
@@ -135,6 +136,7 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
         self._sync_connector_id: str | None = None
         self._sync_config: Dict[str, Any] | None = None
         self._pending_sync_cursor_value: Any = None
+        self._pending_sync_cursor_id: Any = None
 
     # ------------------------------------------------------------------ #
     # Credentials & client
@@ -233,24 +235,23 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
             config.use_query_cache = False
         return config
 
-    def _get_cursor_column_field_type(self) -> str:
-        """Resolve the BigQuery field type of the timestamp column.
-
-        Table mode reads the table schema; custom query mode reads the schema of a
-        free dry-run of the wrapped base query.
-        """
-        client = self._get_client()
-
+    def _resolve_schema(self, client: Any, dry_run_job: Any = None) -> List[Any]:
         if not self.query and self.dataset_id and self.table_id:
             table = client.get_table(f"{self.project_id}.{self.dataset_id}.{self.table_id}")
-            schema = table.schema
+            return table.schema
         else:
-            job = client.query(
-                self._wrap_query(self._build_base_query()),
-                job_config=self._build_query_job_config(dry_run=True),
-                location=self.location or None,
-            )
-            schema = job.schema or []
+            if dry_run_job is None:
+                dry_run_job = client.query(
+                    self._wrap_query(self._build_base_query()),
+                    job_config=self._build_query_job_config(dry_run=True),
+                    location=self.location or None,
+                )
+            return dry_run_job.schema or []
+
+    def _get_cursor_column_field_type(self) -> str:
+        """Resolve the BigQuery field type of the timestamp column."""
+        client = self._get_client()
+        schema = self._resolve_schema(client)
 
         for field in schema:
             if field.name == self.timestamp_column:
@@ -279,6 +280,7 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
         base_query: str,
         start: Any = None,
         end: Any = None,
+        start_id: Any = None,
     ) -> Tuple[str, List[Any]]:
         wrapped = self._wrap_query(base_query)
         if not self.timestamp_column or (start is None and end is None):
@@ -288,8 +290,16 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
         conditions: List[str] = []
         params: List[Any] = []
         if start is not None:
-            conditions.append(f"ragflow_src.{self.timestamp_column} > @start_cursor")
-            params.append(self._make_cursor_param("start_cursor", start, param_type))
+            if self.id_column and start_id is not None:
+                conditions.append(
+                    f"(ragflow_src.{self.timestamp_column} > @start_cursor OR "
+                    f"(ragflow_src.{self.timestamp_column} = @start_cursor AND ragflow_src.{self.id_column} > @start_cursor_id))"
+                )
+                params.append(self._make_cursor_param("start_cursor", start, param_type))
+                params.append(self._make_cursor_param("start_cursor_id", start_id, "STRING"))
+            else:
+                conditions.append(f"ragflow_src.{self.timestamp_column} >= @start_cursor")
+                params.append(self._make_cursor_param("start_cursor", start, param_type))
         if end is not None:
             conditions.append(f"ragflow_src.{self.timestamp_column} <= @end_cursor")
             params.append(self._make_cursor_param("end_cursor", end, param_type))
@@ -299,8 +309,18 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
         return wrapped, params
 
     def _build_max_timestamp_query(self, base_query: str) -> str:
+        if self.id_column:
+            # We need both the max timestamp and the max id for that timestamp
+            return (
+                f"SELECT ragflow_src.{self.timestamp_column}, MAX(ragflow_src.{self.id_column}) "
+                f"FROM ({base_query}) AS ragflow_src "
+                f"WHERE ragflow_src.{self.timestamp_column} = ("
+                f"  SELECT MAX({self.timestamp_column}) FROM ({base_query})"
+                f") "
+                f"GROUP BY ragflow_src.{self.timestamp_column}"
+            )
         return (
-            f"SELECT MAX(ragflow_src.{self.timestamp_column}) "
+            f"SELECT MAX(ragflow_src.{self.timestamp_column}), NULL "
             f"FROM ({base_query}) AS ragflow_src"
         )
 
@@ -320,6 +340,10 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
             return {_CURSOR_TYPE_KEY: "datetime", "value": value.isoformat()}
         if isinstance(value, date):
             return {_CURSOR_TYPE_KEY: "date", "value": value.isoformat()}
+        if isinstance(value, time):
+            return {_CURSOR_TYPE_KEY: "time", "value": value.isoformat()}
+        if isinstance(value, Decimal):
+            return {_CURSOR_TYPE_KEY: "decimal", "value": str(value)}
         return value
 
     @staticmethod
@@ -330,6 +354,10 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
                 return datetime.fromisoformat(value["value"])
             if kind == "date":
                 return date.fromisoformat(value["value"])
+            if kind == "time":
+                return time.fromisoformat(value["value"])
+            if kind == "decimal":
+                return Decimal(value["value"])
         return value
 
     # ------------------------------------------------------------------ #
@@ -481,14 +509,15 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
         self,
         start: Any = None,
         end: Any = None,
+        start_id: Any = None,
     ) -> Generator[list[Document], None, None]:
         base_query = self._build_base_query()
-        query, params = self._build_time_filtered_query(base_query, start, end)
+        query, params = self._build_time_filtered_query(base_query, start, end, start_id)
         yield from self._yield_rows_from_query(query, params)
 
-    def get_max_cursor_value(self) -> Any:
+    def get_max_cursor_value(self) -> Tuple[Any, Any]:
         if not self.timestamp_column:
-            return None
+            return None, None
 
         client = self._get_client()
         query = self._build_max_timestamp_query(self._build_base_query())
@@ -500,8 +529,8 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
         )
         row = next(iter(job.result()), None)
         if row is None or row[0] is None:
-            return None
-        return row[0]
+            return None, None
+        return row[0], row[1]
 
     # ------------------------------------------------------------------ #
     # LoadConnector / PollConnector
@@ -533,12 +562,13 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
         self,
         start_value: Any = None,
         end_value: Any = None,
+        start_id: Any = None,
     ) -> Generator[list[Document], None, None]:
         if end_value is None:
             return iter(())
-        if start_value is not None and end_value <= start_value:
+        if start_value is not None and end_value < start_value:
             return iter(())
-        return self._yield_documents(start_value, end_value)
+        return self._yield_documents(start_value, end_value, start_id)
 
     def retrieve_all_slim_docs_perm_sync(
         self,
@@ -557,13 +587,19 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
         self._sync_config = copy.deepcopy(config)
         if not self.timestamp_column:
             self._pending_sync_cursor_value = None
+            self._pending_sync_cursor_id = None
             return
-        self._pending_sync_cursor_value = self.get_max_cursor_value()
+        self._pending_sync_cursor_value, self._pending_sync_cursor_id = self.get_max_cursor_value()
 
     def get_saved_sync_cursor_value(self) -> Any:
         if self._sync_config is None:
             return None
         return self.deserialize_cursor_value(self._sync_config.get("sync_cursor_value"))
+
+    def get_saved_sync_cursor_id(self) -> Any:
+        if self._sync_config is None:
+            return None
+        return self._sync_config.get("sync_cursor_id")
 
     def persist_sync_state(self) -> None:
         if not self.timestamp_column or self._sync_connector_id is None or self._sync_config is None:
@@ -575,6 +611,7 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
         updated_conf["sync_cursor_value"] = self.serialize_cursor_value(
             self._pending_sync_cursor_value
         )
+        updated_conf["sync_cursor_id"] = self._pending_sync_cursor_id
         ConnectorService.update_by_id(self._sync_connector_id, {"config": updated_conf})
         self._sync_config = updated_conf
 
@@ -615,6 +652,25 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
                 logging.info(
                     "BigQuery base query dry-run estimate: %s bytes processed.", estimated_bytes
                 )
+                
+            schema = self._resolve_schema(client, dry_run_job)
+            schema_columns = {field.name for field in schema}
+
+            required = set(self.content_columns)
+            optional = set(self.metadata_columns)
+            if self.id_column:
+                optional.add(self.id_column)
+            if self.timestamp_column:
+                optional.add(self.timestamp_column)
+
+            missing = (required | optional) - schema_columns
+            if missing:
+                raise ConnectorValidationError(
+                    f"BigQuery configured columns not found in schema: {', '.join(sorted(missing))}"
+                )
+
+            if self.timestamp_column:
+                self._resolve_cursor_param_type()
         except (ConnectorValidationError, ConnectorMissingCredentialError):
             raise
         except Exception as exc:

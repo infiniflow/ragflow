@@ -173,9 +173,31 @@ def test_missing_table_and_query_raises():
 
 
 @pytest.mark.p2
-def test_time_filtered_query_uses_parameters_with_resolved_type():
+def test_time_filtered_query_compound_cursor_with_id_column():
+    client = _FakeClient(table_schema=[
+        _FakeSchemaField("updated_at", "TIMESTAMP"),
+        _FakeSchemaField("id", "STRING")
+    ])
+    connector = _make_connector(client=client, timestamp_column="updated_at", id_column="id")
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    end = datetime(2026, 2, 1, tzinfo=timezone.utc)
+
+    query, params = connector._build_time_filtered_query(
+        connector._build_base_query(), start, end, start_id="last-id"
+    )
+
+    assert "(ragflow_src.updated_at > @start_cursor OR (ragflow_src.updated_at = @start_cursor AND ragflow_src.id > @start_cursor_id))" in query
+    assert "ragflow_src.updated_at <= @end_cursor" in query
+    assert [(p.name, p.type_, p.value) for p in params] == [
+        ("start_cursor", "TIMESTAMP", start),
+        ("start_cursor_id", "STRING", "last-id"),
+        ("end_cursor", "TIMESTAMP", end),
+    ]
+
+@pytest.mark.p2
+def test_time_filtered_query_uses_gte_without_id_column():
     client = _FakeClient(table_schema=[_FakeSchemaField("updated_at", "TIMESTAMP")])
-    connector = _make_connector(client=client, timestamp_column="updated_at")
+    connector = _make_connector(client=client, timestamp_column="updated_at", id_column=None)
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
     end = datetime(2026, 2, 1, tzinfo=timezone.utc)
 
@@ -183,7 +205,7 @@ def test_time_filtered_query_uses_parameters_with_resolved_type():
         connector._build_base_query(), start, end
     )
 
-    assert "ragflow_src.updated_at > @start_cursor" in query
+    assert "ragflow_src.updated_at >= @start_cursor" in query
     assert "ragflow_src.updated_at <= @end_cursor" in query
     assert [(p.name, p.type_, p.value) for p in params] == [
         ("start_cursor", "TIMESTAMP", start),
@@ -304,6 +326,8 @@ def test_batches_accumulate_to_batch_size():
 def test_cursor_serialize_deserialize_roundtrip():
     dt = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
     d = date(2026, 1, 1)
+    t = time(12, 0)
+    dec = Decimal("1.23")
 
     assert BigQueryConnector.deserialize_cursor_value(
         BigQueryConnector.serialize_cursor_value(dt)
@@ -311,6 +335,12 @@ def test_cursor_serialize_deserialize_roundtrip():
     assert BigQueryConnector.deserialize_cursor_value(
         BigQueryConnector.serialize_cursor_value(d)
     ) == d
+    assert BigQueryConnector.deserialize_cursor_value(
+        BigQueryConnector.serialize_cursor_value(t)
+    ) == t
+    assert BigQueryConnector.deserialize_cursor_value(
+        BigQueryConnector.serialize_cursor_value(dec)
+    ) == dec
     assert BigQueryConnector.serialize_cursor_value(42) == 42
     assert BigQueryConnector.deserialize_cursor_value(42) == 42
 
@@ -347,9 +377,38 @@ def test_slim_docs_use_id_column():
 
 
 @pytest.mark.p2
-def test_validation_requires_content_columns():
-    connector = _make_connector(content_columns="")
-    with pytest.raises(ConnectorValidationError):
+def test_validation_detects_missing_content_column():
+    client = _FakeClient(table_schema=[_FakeSchemaField("other", "STRING")])
+    connector = _make_connector(client=client, content_columns="name")
+    with pytest.raises(ConnectorValidationError, match="name"):
+        connector.validate_connector_settings()
+
+@pytest.mark.p2
+def test_validation_detects_missing_metadata_column():
+    client = _FakeClient(table_schema=[_FakeSchemaField("name", "STRING")])
+    connector = _make_connector(client=client, content_columns="name", metadata_columns="status")
+    with pytest.raises(ConnectorValidationError, match="status"):
+        connector.validate_connector_settings()
+
+@pytest.mark.p2
+def test_validation_detects_missing_id_column():
+    client = _FakeClient(table_schema=[_FakeSchemaField("name", "STRING")])
+    connector = _make_connector(client=client, content_columns="name", metadata_columns="", id_column="id")
+    with pytest.raises(ConnectorValidationError, match="id"):
+        connector.validate_connector_settings()
+
+@pytest.mark.p2
+def test_validation_detects_missing_timestamp_column():
+    client = _FakeClient(table_schema=[_FakeSchemaField("name", "STRING")])
+    connector = _make_connector(client=client, content_columns="name", metadata_columns="", id_column="", timestamp_column="ts")
+    with pytest.raises(ConnectorValidationError, match="ts"):
+        connector.validate_connector_settings()
+
+@pytest.mark.p2
+def test_validation_detects_unsupported_cursor_type_early():
+    client = _FakeClient(table_schema=[_FakeSchemaField("name", "STRING"), _FakeSchemaField("ts", "BOOL")])
+    connector = _make_connector(client=client, content_columns="name", metadata_columns="", id_column="", timestamp_column="ts")
+    with pytest.raises(ConnectorValidationError, match="not supported as a cursor"):
         connector.validate_connector_settings()
 
 

@@ -407,6 +407,54 @@ async def test_rdbms_cursor_persists_only_after_success(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.p2
+async def test_rdbms_cursor_does_not_persist_when_parse_returns_errors(monkeypatch):
+    monkeypatch.setattr(sync_data_source, "RDBMSConnector", _FakeRDBMSConnector)
+    _patch_common_dependencies(monkeypatch)
+    monkeypatch.setattr(
+        sync_data_source.KnowledgebaseService,
+        "get_by_id",
+        lambda *_args, **_kwargs: (True, object()),
+    )
+    monkeypatch.setattr(
+        sync_data_source.SyncLogsService,
+        "increase_docs",
+        lambda *_args, **_kwargs: None,
+    )
+
+    monkeypatch.setattr(
+        sync_data_source.SyncLogsService,
+        "duplicate_and_parse",
+        lambda *_args, **_kwargs: (["parse error"], ["parsed-doc-id"]),
+    )
+
+    task = {
+        **_make_task(),
+        "reindex": "0",
+        "poll_range_start": datetime(2026, 1, 1, tzinfo=timezone.utc),
+        "skip_connection_log": True,
+    }
+    sync = sync_data_source.MySQL(
+        {
+            "host": "localhost",
+            "port": 3306,
+            "database": "db",
+            "query": "SELECT * FROM t",
+            "content_columns": "name",
+            "timestamp_column": "ts",
+            "credentials": {"username": "u", "password": "p"},
+            "sync_deleted_files": False,
+        }
+    )
+
+    await sync._run_task_logic(task)
+
+    connector = _FakeRDBMSConnector.instance
+    assert connector is not None
+    assert connector.persist_sync_state_called is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.p2
 async def test_rdbms_cursor_does_not_persist_when_batch_is_skipped(monkeypatch):
     monkeypatch.setattr(sync_data_source, "RDBMSConnector", _FakeRDBMSConnector)
     _patch_common_dependencies(monkeypatch)
@@ -613,6 +661,43 @@ async def test_bigquery_cursor_persists_only_after_success(monkeypatch):
     connector = _FakeBigQueryConnector.instance
     assert connector is not None
     assert connector.persist_sync_state_called is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.p2
+async def test_bigquery_cursor_does_not_persist_when_parse_returns_errors(monkeypatch):
+    monkeypatch.setattr(sync_data_source, "BigQueryConnector", _FakeBigQueryConnector)
+    _patch_common_dependencies(monkeypatch)
+    monkeypatch.setattr(
+        sync_data_source.KnowledgebaseService,
+        "get_by_id",
+        lambda *_args, **_kwargs: (True, object()),
+    )
+    monkeypatch.setattr(
+        sync_data_source.SyncLogsService,
+        "increase_docs",
+        lambda *_args, **_kwargs: None,
+    )
+
+    monkeypatch.setattr(
+        sync_data_source.SyncLogsService,
+        "duplicate_and_parse",
+        lambda *_args, **_kwargs: (["parse error"], ["parsed-doc-id"]),
+    )
+
+    task = {
+        **_make_task(),
+        "reindex": "0",
+        "poll_range_start": datetime(2026, 1, 1, tzinfo=timezone.utc),
+        "skip_connection_log": True,
+    }
+    sync = sync_data_source.BigQuery(_bigquery_conf(timestamp_column="updated_at"))
+
+    await sync._run_task_logic(task)
+
+    connector = _FakeBigQueryConnector.instance
+    assert connector is not None
+    assert connector.persist_sync_state_called is False
 
 
 @pytest.mark.asyncio

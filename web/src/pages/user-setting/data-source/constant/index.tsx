@@ -1512,7 +1512,7 @@ export const DataSourceFormFields = {
     {
       label: 'Service Account JSON',
       name: 'config.credentials.service_account_json',
-      type: FormFieldType.Textarea,
+      type: FormFieldType.Password,
       required: true,
       placeholder: '{ "type": "service_account", "project_id": "...", ... }',
       tooltip: t('setting.bigqueryServiceAccountJsonTip'),
@@ -1524,6 +1524,14 @@ export const DataSourceFormFields = {
       required: false,
       placeholder: 'analytics',
       tooltip: t('setting.bigqueryDatasetIdTip'),
+      customValidate: (val: string, values: any) => {
+        const hasQuery = !!(values?.config?.query ?? '').trim();
+        const hasTable = !!(values?.config?.table_id ?? '').trim();
+        if (!hasQuery && !((val ?? '').trim() && hasTable)) {
+          return 'Dataset ID is required when not using a custom SQL Query';
+        }
+        return true;
+      },
     },
     {
       label: 'Table ID',
@@ -1532,6 +1540,14 @@ export const DataSourceFormFields = {
       required: false,
       placeholder: 'customers',
       tooltip: t('setting.bigqueryTableIdTip'),
+      customValidate: (val: string, values: any) => {
+        const hasQuery = !!(values?.config?.query ?? '').trim();
+        const hasDataset = !!(values?.config?.dataset_id ?? '').trim();
+        if (!hasQuery && !(hasDataset && (val ?? '').trim())) {
+          return 'Table ID is required when not using a custom SQL Query';
+        }
+        return true;
+      },
     },
     {
       label: 'SQL Query',
@@ -1540,6 +1556,15 @@ export const DataSourceFormFields = {
       required: false,
       placeholder: 'Leave empty to use Dataset ID + Table ID',
       tooltip: t('setting.bigqueryQueryTip'),
+      customValidate: (val: string, values: any) => {
+        const hasQuery = !!(val ?? '').trim();
+        const hasDataset = !!(values?.config?.dataset_id ?? '').trim();
+        const hasTable = !!(values?.config?.table_id ?? '').trim();
+        if (!hasQuery && !(hasDataset && hasTable)) {
+          return 'Provide a SQL Query, or both Dataset ID and Table ID';
+        }
+        return true;
+      },
     },
     {
       label: 'Content Columns',
