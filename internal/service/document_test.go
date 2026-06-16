@@ -17,6 +17,8 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -27,6 +29,21 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 )
+
+type failingDeleteMetadataEngine struct {
+	fakeChatDocEngine
+	deleteErr    error
+	updateCalled bool
+}
+
+func (f *failingDeleteMetadataEngine) DeleteMetadata(ctx context.Context, condition map[string]interface{}, tenantID string) (int64, error) {
+	return 0, f.deleteErr
+}
+
+func (f *failingDeleteMetadataEngine) UpdateMetadata(ctx context.Context, docID string, datasetID string, metaFields map[string]interface{}, tenantID string) error {
+	f.updateCalled = true
+	return nil
+}
 
 // setupServiceTestDB initializes an in-memory SQLite database for service tests.
 func setupServiceTestDB(t *testing.T) *gorm.DB {
@@ -1063,6 +1080,95 @@ func TestUpdateDatasetDocumentChunkMethodResetsForReparse(t *testing.T) {
 	kb, _ := dao.NewKnowledgebaseDAO().GetByID("kb-1")
 	if kb.TokenNum != 0 || kb.ChunkNum != 0 {
 		t.Fatalf("kb counters = token:%d chunk:%d, want zero", kb.TokenNum, kb.ChunkNum)
+	}
+}
+
+func TestUpdateDatasetDocumentParserIDResetsForReparse(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
+
+	parserID := "manual"
+	svc := testDocumentService(t)
+	resp, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+		ParserID: &parserID,
+	}, map[string]bool{"parser_id": true})
+	if err != nil {
+		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
+	}
+	if resp.ChunkMethod != parserID || resp.Run != "UNSTART" || resp.TokenCount != 0 || resp.ChunkCount != 0 {
+		t.Fatalf("response = %+v, want parser_id=%s run=UNSTART counts=0", resp, parserID)
+	}
+
+	doc, _ := dao.NewDocumentDAO().GetByID("doc-1")
+	if doc.ParserID != parserID {
+		t.Fatalf("parser_id = %q, want %q", doc.ParserID, parserID)
+	}
+	if doc.TokenNum != 0 || doc.ChunkNum != 0 {
+		t.Fatalf("doc counters = token:%d chunk:%d, want zero", doc.TokenNum, doc.ChunkNum)
+	}
+	kb, _ := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	if kb.TokenNum != 0 || kb.ChunkNum != 0 {
+		t.Fatalf("kb counters = token:%d chunk:%d, want zero", kb.TokenNum, kb.ChunkNum)
+	}
+}
+
+func TestResetDocumentForReparseSkipsSecondCounterDecrement(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
+
+	staleDoc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	if err != nil {
+		t.Fatalf("get doc: %v", err)
+	}
+
+	svc := testDocumentService(t)
+	parserID := "manual"
+	if err := svc.resetDocumentForReparse(staleDoc, "tenant-1", &parserID, nil); err != nil {
+		t.Fatalf("first resetDocumentForReparse failed: %v", err)
+	}
+	if err := svc.resetDocumentForReparse(staleDoc, "tenant-1", &parserID, nil); err != nil {
+		t.Fatalf("second resetDocumentForReparse failed: %v", err)
+	}
+
+	doc, _ := dao.NewDocumentDAO().GetByID("doc-1")
+	if doc.TokenNum != 0 || doc.ChunkNum != 0 {
+		t.Fatalf("doc counters = token:%d chunk:%d, want zero", doc.TokenNum, doc.ChunkNum)
+	}
+	kb, _ := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	if kb.TokenNum != 0 || kb.ChunkNum != 0 {
+		t.Fatalf("kb counters = token:%d chunk:%d, want zero after duplicate reset", kb.TokenNum, kb.ChunkNum)
+	}
+}
+
+func TestUpdateDatasetDocumentPropagatesMetadataDeleteFailure(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 0, 0)
+
+	engine := &failingDeleteMetadataEngine{deleteErr: errors.New("delete failed")}
+	svc := testDocumentService(t)
+	svc.docEngine = engine
+	svc.metadataSvc = &MetadataService{}
+
+	_, code, err := svc.UpdateDatasetDocument("tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+		MetaFields: map[string]any{"new": "value"},
+	}, map[string]bool{"meta_fields": true})
+	if err == nil {
+		t.Fatal("expected metadata delete error")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("code = %v, want %v", code, common.CodeDataError)
+	}
+	if err.Error() != "failed to delete document metadata: delete failed" {
+		t.Fatalf("err = %q", err.Error())
+	}
+	if engine.updateCalled {
+		t.Fatal("metadata update should not run after delete failure")
 	}
 }
 

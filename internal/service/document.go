@@ -1617,7 +1617,7 @@ func (s *DocumentService) UpdateDatasetDocument(userID, datasetID, documentID st
 
 	if present["meta_fields"] {
 		if err := s.replaceDocumentMetadata(documentID, req.MetaFields); err != nil {
-			return nil, common.CodeDataError, errors.New("Failed to update metadata")
+			return nil, common.CodeDataError, err
 		}
 	}
 
@@ -1635,6 +1635,11 @@ func (s *DocumentService) UpdateDatasetDocument(userID, datasetID, documentID st
 
 	if req.PipelineID != nil && *req.PipelineID != "" {
 		if err := s.resetDocumentForReparse(doc, kb.TenantID, nil, req.PipelineID); err != nil {
+			return nil, common.CodeDataError, err
+		}
+	} else if present["parser_id"] && req.ParserID != nil && strings.TrimSpace(*req.ParserID) != "" {
+		parserID := strings.TrimSpace(*req.ParserID)
+		if err := s.resetDocumentForReparse(doc, kb.TenantID, &parserID, nil); err != nil {
 			return nil, common.CodeDataError, err
 		}
 	} else if req.ChunkMethod != nil && *req.ChunkMethod != "" {
@@ -1802,7 +1807,9 @@ func (s *DocumentService) replaceDocumentMetadata(docID string, meta map[string]
 	if s.docEngine == nil || s.metadataSvc == nil {
 		return nil
 	}
-	_ = s.DeleteDocumentAllMetadata(docID)
+	if err := s.DeleteDocumentAllMetadata(docID); err != nil {
+		return err
+	}
 	return s.SetDocumentMetadata(docID, map[string]interface{}(meta))
 }
 
@@ -1876,8 +1883,12 @@ func (s *DocumentService) resetDocumentForReparse(doc *entity.Document, tenantID
 	}
 
 	if doc.TokenNum > 0 {
-		if err := s.decrementDocumentAndKBCountersForReparse(doc); err != nil {
+		decremented, err := s.decrementDocumentAndKBCountersForReparse(doc)
+		if err != nil {
 			return errors.New("Document not found!")
+		}
+		if !decremented {
+			return nil
 		}
 		if s.docEngine != nil {
 			indexName := fmt.Sprintf("ragflow_%s", tenantID)
@@ -1939,17 +1950,23 @@ func firstStringField(m map[string]interface{}, keys ...string) string {
 	return ""
 }
 
-func (s *DocumentService) decrementDocumentAndKBCountersForReparse(doc *entity.Document) error {
-	return dao.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&entity.Document{}).
-			Where("id = ? AND kb_id = ?", doc.ID, doc.KbID).
+func (s *DocumentService) decrementDocumentAndKBCountersForReparse(doc *entity.Document) (bool, error) {
+	decremented := false
+	err := dao.DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&entity.Document{}).
+			Where("id = ? AND kb_id = ? AND token_num = ? AND chunk_num = ?", doc.ID, doc.KbID, doc.TokenNum, doc.ChunkNum).
 			Updates(map[string]interface{}{
 				"token_num":        gorm.Expr("token_num - ?", doc.TokenNum),
 				"chunk_num":        gorm.Expr("chunk_num - ?", doc.ChunkNum),
 				"process_duration": gorm.Expr("process_duration - ?", doc.ProcessDuration),
-			}).Error; err != nil {
-			return err
+			})
+		if result.Error != nil {
+			return result.Error
 		}
+		if result.RowsAffected == 0 {
+			return nil
+		}
+		decremented = true
 
 		return tx.Model(&entity.Knowledgebase{}).
 			Where("id = ?", doc.KbID).
@@ -1958,6 +1975,7 @@ func (s *DocumentService) decrementDocumentAndKBCountersForReparse(doc *entity.D
 				"chunk_num": gorm.Expr("chunk_num - ?", doc.ChunkNum),
 			}).Error
 	})
+	return decremented, err
 }
 
 func (s *DocumentService) updateChunkMethod(doc *entity.Document, tenantID string, chunkMethod string, parserConfig map[string]any, hasParserConfig bool) error {
