@@ -163,6 +163,32 @@ class TestRaptorServiceScheduleRaptorCleanup:
         assert ("doc_3", None) in cleanup_list
 
 
+class TestRaptorServiceBuildRaptorGraph:
+    """Tests for RAPTOR graph projection."""
+
+    def test_build_raptor_graph_preserves_source_chunk_ids(self):
+        graph = RaptorService._build_raptor_graph([
+            {
+                "content_with_weight": "leaf level summary",
+                "raptor_layer_int": 1,
+                "source_chunk_ids": ["chunk-a", "chunk-b"],
+            },
+            {
+                "content_with_weight": "parent level summary",
+                "raptor_layer_int": 2,
+                "source_chunk_ids": ["chunk-a", "chunk-b", "chunk-c"],
+            },
+        ])
+
+        by_description = {entity["description"]: entity for entity in graph["entities"]}
+        assert by_description["leaf level summary"]["source_chunk_ids"] == ["chunk-a", "chunk-b"]
+        assert by_description["parent level summary"]["source_chunk_ids"] == [
+            "chunk-a",
+            "chunk-b",
+            "chunk-c",
+        ]
+
+
 # =============================================================================
 # Public Entry Point Tests
 # =============================================================================

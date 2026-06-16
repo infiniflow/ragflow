@@ -747,7 +747,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         while end - start > 1:
             self._check_task_canceled(task_id, "layer processing")
 
-            embeddings = [embd for _, embd in chunks[start:end]]
+            embeddings = [embd for _, embd,_ in chunks[start:end]]
             if len(embeddings) == 2:
                 await summarize([start, start + 1])
                 produced = len(chunks) - end

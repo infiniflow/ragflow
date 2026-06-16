@@ -386,7 +386,7 @@ def _struct_load_payload(doc: dict) -> dict:
     return payload if isinstance(payload, dict) else {}
 
 
-def _struct_graph_entity(payload: dict) -> dict | None:
+def _struct_graph_entity(payload: dict, source_chunk_ids: list | None = None) -> dict | None:
     name = payload.get("name") or payload.get("text") or payload.get("term") or payload.get("title")
     name = str(name).strip() if name is not None else ""
     if not name:
@@ -400,10 +400,14 @@ def _struct_graph_entity(payload: dict) -> dict | None:
         aliases = []
     aliases = [str(a).strip() for a in aliases if str(a).strip()]
     description = payload.get("description") or payload.get("discription") or payload.get("definition_excerpt") or ""
+    if isinstance(source_chunk_ids, str):
+        source_chunk_ids = [source_chunk_ids]
+    source_chunk_ids = _struct_union_chunk_ids(source_chunk_ids)
     return {
         "aliases": aliases,
         "mention_count": 1,
         "name": name,
+        "source_chunk_ids": source_chunk_ids,
         "type": typ or "other",
         "discription": str(description).strip() if description is not None else "",
     }
@@ -441,6 +445,9 @@ def _struct_merge_graph_entities(entities: list[dict]) -> list[dict]:
                 aliases.append(alias)
         if not target.get("discription") and entity.get("discription"):
             target["discription"] = entity["discription"]
+        target["source_chunk_ids"] = _struct_union_chunk_ids(
+            target.get("source_chunk_ids"), entity.get("source_chunk_ids"),
+        )
     return [merged[key] for key in order]
 
 
@@ -680,47 +687,7 @@ async def compile_structure_from_text(
                 "q_<dim>_vec": [...],
                 "id": <xxhash>,
             }
-
-    parser_config = {
-        "compile_type": "list",
-        "guideline": {
-            "target": "你是一位专业的合规分析师，负责从合规文档中准确提取结构化的合规要求。",
-            "rules_for_entities": "- '提取的合规要求应完整保留原文的核心含义' 
-      - '依据法规应标注具体的法规名称和条款'
-      - '完成期限应明确标注时间节点'
-      - '责任人应尽可能具体到部门或个人'"
-        },
-        "output": {
-            "entities": {
-            "description": "合规要求和监管事项清单",
-            "fields":[
-              {
-                "name": "requirement",
-                "type": "str",
-                "description":'合规要求描述',
-                "required": True
-              },
-              {
-                "name": "regulation",
-                "type": "str",
-                "description":'依据法规',
-                "required": True
-              },
-              {
-                "name": "deadline",
-                "type": "str",
-                "description":'完成期限',
-                "required": False
-              },
-              {
-                "name": "responsible_party",
-                "type": "str",
-                "description":'责任人或责任部门',
-                "required": False
-              }
-            ]}
-        }
-    }    """
+    """
     if isinstance(parser_config, str):
         try:
             parser_config = json.loads(parser_config)
@@ -1169,7 +1136,7 @@ async def _struct_rebuild_graph_json(
     from common.doc_store.doc_store_base import OrderByExpr
 
     index = _rag_search.index_name(tenant_id)
-    fields = ["content_with_weight", "knowledge_graph_kwd"]
+    fields = ["content_with_weight", "knowledge_graph_kwd", "source_id"]
     condition: dict = {
         "doc_id": [doc_id],
         "compile_kwd": [compile_kwd],
@@ -1199,7 +1166,7 @@ async def _struct_rebuild_graph_json(
             if relation:
                 relations.append(relation)
         else:
-            entity = _struct_graph_entity(payload)
+            entity = _struct_graph_entity(payload, row.get("source_id"))
             if entity:
                 entities.append(entity)
 

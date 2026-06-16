@@ -525,7 +525,7 @@ class RaptorService:
               "id":          xxh128(content)           # 32-char hex
               "name":        first 16 whitespace tokens
               "description": content_with_weight
-              "source_chunk_ids": []
+              "source_chunk_ids": row.source_chunk_ids
             }
 
         Relations: full bipartite layer-by-layer fan-out — every node at
@@ -562,11 +562,14 @@ class RaptorService:
             ).hexdigest()  # 32-char hex
             if nid in by_id:
                 continue
+            source_chunk_ids = row.get("source_chunk_ids") or []
+            if not isinstance(source_chunk_ids, list):
+                source_chunk_ids = []
             by_id[nid] = {
                 "id": nid,
                 "name": name,
                 "description": content,
-                "source_chunk_ids": [],
+                "source_chunk_ids": list(source_chunk_ids),
             }
             by_layer.setdefault(layer, []).append(nid)
 
@@ -590,7 +593,8 @@ class RaptorService:
         persist a single graph row that the dataset structure-graph
         endpoint can surface as a tree.
 
-        Loads only ``content_with_weight`` + ``raptor_layer_int`` (per
+        Loads only ``content_with_weight`` + ``raptor_layer_int`` +
+        ``source_chunk_ids`` (per
         the smallest-payload contract) and writes one row with::
 
             compile_kwd:                  "raptor_graph"
@@ -610,7 +614,7 @@ class RaptorService:
         kb_id_str = str(ctx.kb_id)
         index_nm = search.index_name(tenant_id)
 
-        select_fields = ["content_with_weight", "raptor_layer_int"]
+        select_fields = ["content_with_weight", "raptor_layer_int", "source_chunk_ids"]
         try:
             res = await thread_pool_exec(
                 settings.docStoreConn.search,
