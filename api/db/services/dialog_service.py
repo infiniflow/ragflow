@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 from datetime import datetime
 from functools import partial
 from timeit import default_timer as timer
-from langfuse import Langfuse
+from langfuse import Langfuse, propagate_attributes
 from peewee import fn
 from api.db.services.file_service import FileService
 from common.constants import LLMType, ParserType, StatusEnum
@@ -875,8 +875,10 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                 "input": {"prompt": prompt, "prompt4citation": prompt4citation, "messages": msg},
             }
             if session_id:
-                observation_kwargs["session_id"] = session_id
-            langfuse_generation = langfuse_tracer.start_observation(**observation_kwargs)
+                with propagate_attributes(session_id=session_id):
+                    langfuse_generation = langfuse_tracer.start_observation(**observation_kwargs)
+            else:
+                langfuse_generation = langfuse_tracer.start_observation(**observation_kwargs)
         except Exception as e:  # noqa: BLE001 - tracing must not break chat flow
             logger.warning("Langfuse start_observation failed; continuing without tracing: %s", e)
             langfuse_tracer = None

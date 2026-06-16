@@ -88,6 +88,8 @@ type DefaultModelsConfig struct {
 	RerankModel     ModelConfig `mapstructure:"rerank_model"`
 	ASRModel        ModelConfig `mapstructure:"asr_model"`
 	Image2TextModel ModelConfig `mapstructure:"image2text_model"`
+	OCRModel        ModelConfig `mapstructure:"ocr_model"`
+	TTSModel        ModelConfig `mapstructure:"tts_model"`
 }
 
 // ModelConfig model configuration

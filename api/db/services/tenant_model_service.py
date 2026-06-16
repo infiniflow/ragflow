@@ -83,7 +83,7 @@ class TenantModelService(CommonService):
                     extra="{}"
                 )
             return len(operation.get("add", [])) + len(operation.get("delete", []))
-        model_record_example = [model_record for model_record in model_type_records if model_record.status != ActiveStatusEnum.UNSUPPORTED]
+        model_record_example = [model_record for model_record in model_type_records if model_record.status != ActiveStatusEnum.UNSUPPORTED.value]
         extra_fields = model_record_example[0].extra if model_record_example else "{}"
         model_status = model_record_example[0].status if model_record_example else ActiveStatusEnum.ACTIVE.value
         type_record_map = {record.model_type: record for record in model_type_records}
