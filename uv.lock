@@ -7422,9 +7422,9 @@ wheels = [
 name = "pyotp"
 version = "2.9.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f3/b2/1d5994ba2acde054a443bd5e2d384175449c7d2b6d1a0614dbca3a63abfc/pyotp-2.9.0.tar.gz", hash = "sha256:346b6642e0dbdde3b4ff5a930b664ca82abfa116356ed48cc42c7d6590d36f63" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f3/b2/1d5994ba2acde054a443bd5e2d384175449c7d2b6d1a0614dbca3a63abfc/pyotp-2.9.0.tar.gz", hash = "sha256:346b6642e0dbdde3b4ff5a930b664ca82abfa116356ed48cc42c7d6590d36f63", size = 17763, upload-time = "2023-07-27T23:41:03.295Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/c3/c0/c33c8792c3e50193ef55adb95c1c3c2786fe281123291c2dbf0eaab95a6f/pyotp-2.9.0-py3-none-any.whl", hash = "sha256:81c2e5865b8ac55e825b0358e496e1d9387c811e85bb40e71a3b29b288963612" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/c3/c0/c33c8792c3e50193ef55adb95c1c3c2786fe281123291c2dbf0eaab95a6f/pyotp-2.9.0-py3-none-any.whl", hash = "sha256:81c2e5865b8ac55e825b0358e496e1d9387c811e85bb40e71a3b29b288963612", size = 13376, upload-time = "2023-07-27T23:41:01.685Z" },
 ]
 
 [[package]]
@@ -9059,14 +9059,14 @@ wheels = [
 
 [[package]]
 name = "starlette"
-version = "0.51.0"
+version = "1.3.1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "anyio" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/e7/65/5a1fadcc40c5fdc7df421a7506b79633af8f5d5e3a95c3e72acacec644b9/starlette-0.51.0.tar.gz", hash = "sha256:4c4fda9b1bc67f84037d3d14a5112e523509c369d9d47b111b2f984b0cc5ba6c", size = 2647658, upload-time = "2026-01-10T20:23:15.043Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/eb/e3/7c1dc7381d9f8ab7d854328ebfa884e62cb3f3d8549ddfd37c7814f42afa/starlette-1.3.1.tar.gz", hash = "sha256:05d0213193f2fbaae60e2ecb593b4add4262ad4e46536b54abe36f11a71724e0", size = 2703240, upload-time = "2026-06-12T09:23:11.602Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/18/c4/09985a03dba389d4fe16a9014147a7b02fa76ef3519bf5846462a485876d/starlette-0.51.0-py3-none-any.whl", hash = "sha256:fb460a3d6fd3c958d729fdd96aee297f89a51b0181f16401fe8fd4cb6129165d", size = 74133, upload-time = "2026-01-10T20:23:13.445Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/ec/bb/2799cc2ede3ed41131f8975621e7213dfc7ef4acbbaadfa440f32500c370/starlette-1.3.1-py3-none-any.whl", hash = "sha256:c7372aae11c3c3f26a42df7bd626cec2f47d03483d261d369516a615a53714c6", size = 73632, upload-time = "2026-06-12T09:23:10.017Z" },
 ]
 
 [[package]]
