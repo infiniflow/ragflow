@@ -103,7 +103,7 @@ export const EmptyAppCard = (props: {
   }
 
   return (
-    <div className="flex w-full justify-center px-5 max-md:-translate-y-8 md:px-0 md:translate-y-0">
+    <div className="flex w-full justify-center px-5 md:px-0">
       <EmptyCard
         onClick={isSearch ? undefined : props.onClick}
         data-testid={testId}
