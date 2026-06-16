@@ -51,7 +51,7 @@ Public entry points:
   - ``compile_structure_from_text(...)`` — LLM extraction → ES-ready docs.
   - ``merge_compiled_structures(...)`` — local + ES deduplication via cosine
     similarity (sklearn) and KNN (``MatchDenseExpr``), with LLM-judged merges
-    that preserve relation src/target and union ``source_id`` lists.
+    that preserve relation src/target and union ``source_chunk_ids`` lists.
 
 Cross-chunk merging at extraction time is intentionally not implemented; it
 is handled separately by ``merge_compiled_structures``.
@@ -536,7 +536,7 @@ def _struct_to_es_doc(
         "compile_kwd": compile_kwd,
         "knowledge_graph_kwd": kind,
         "doc_id": doc_id_str,
-        "source_id": list(chunk_ids or []),
+        "source_chunk_ids": list(chunk_ids or []),
         "content_ltks": content_ltks,
         "content_sm_ltks": content_sm_ltks,
         f"q_{len(vec_list)}_vec": vec_list,
@@ -683,7 +683,7 @@ async def compile_structure_from_text(
                 "content_with_weight": <json>,
                 "compile_kwd": "list" | "set" | "hypergraph",
                 "doc_id": <doc_id>,
-                "source_id": [<chunk_id>, ...],
+                "source_chunk_ids": [<chunk_id>, ...],
                 "q_<dim>_vec": [...],
                 "id": <xxhash>,
             }
@@ -943,8 +943,8 @@ async def _struct_reembed_payload(payload: dict, embd_mdl):
 async def _struct_local_dedup(
     docs: list[dict],
     chat_mdl,
-    embd_mdl,
     similarity_threshold: float,
+    embd_mdl,
 ) -> tuple[list[dict], int]:
     """Single-pass dedup inside ``docs``. Returns (deduped, dropped_count)."""
     from sklearn.metrics.pairwise import cosine_similarity
@@ -989,7 +989,7 @@ async def _struct_local_dedup(
                 continue
             merged_payload = _struct_apply_merge_invariants(existing, merged_payload)
             merged_chunk_ids = _struct_union_chunk_ids(
-                existing.get("source_id"), incoming.get("source_id"),
+                existing.get("source_chunk_ids"), incoming.get("source_chunk_ids"),
             )
             new_vec = await _struct_reembed_payload(merged_payload, embd_mdl)
             if new_vec is None:
@@ -1059,7 +1059,7 @@ async def _struct_es_dedup_one(
         extra_options={"similarity": similarity_threshold},
     )
     select_fields = [
-        "id", "content_with_weight", "source_id", "knowledge_graph_kwd", "compile_kwd",
+        "id", "content_with_weight", "source_chunk_ids", "knowledge_graph_kwd", "compile_kwd",
         "doc_id", "from_entity_kwd", "to_entity_kwd",
     ]
     try:
@@ -1089,7 +1089,7 @@ async def _struct_es_dedup_one(
 
     merged_payload = _struct_apply_merge_invariants(old_doc, merged_payload)
     merged_chunk_ids = _struct_union_chunk_ids(
-        old_doc.get("source_id"), doc.get("source_id"),
+        old_doc.get("source_chunk_ids"), doc.get("source_chunk_ids"),
     )
     new_vec = await _struct_reembed_payload(merged_payload, embd_mdl)
     if new_vec is None:
@@ -1136,7 +1136,7 @@ async def _struct_rebuild_graph_json(
     from common.doc_store.doc_store_base import OrderByExpr
 
     index = _rag_search.index_name(tenant_id)
-    fields = ["content_with_weight", "knowledge_graph_kwd", "source_id"]
+    fields = ["content_with_weight", "knowledge_graph_kwd", "source_chunk_ids"]
     condition: dict = {
         "doc_id": [doc_id],
         "compile_kwd": [compile_kwd],
@@ -1166,7 +1166,7 @@ async def _struct_rebuild_graph_json(
             if relation:
                 relations.append(relation)
         else:
-            entity = _struct_graph_entity(payload, row.get("source_id"))
+            entity = _struct_graph_entity(payload, row.get("source_chunk_ids"))
             if entity:
                 entities.append(entity)
 
@@ -1237,7 +1237,7 @@ async def merge_compiled_structures(
     embd_mdl,
     tenant_id: str,
     kb_id: str,
-    similarity_threshold: float = 0.9,
+    similarity_threshold: float = 0.95,
     compilation_template_id: str | None = None,
 ) -> dict:
     """Merge ``docs`` (the output of ``compile_structure_from_text``) before
@@ -1249,7 +1249,7 @@ async def merge_compiled_structures(
            field via ``sklearn.metrics.pairwise.cosine_similarity``; pairs
            above ``similarity_threshold`` go through ``_struct_merge_pair``
            (LLM-judged). On a duplicate verdict the surviving entry is
-           rebuilt from the merged payload (union of ``source_id``,
+           rebuilt from the merged payload (union of ``source_chunk_ids``,
            re-embedded, src/target preserved on relations).
         2. **ES dedup**: for each surviving doc, KNN-search ES with the same
            filter via ``MatchDenseExpr`` (top1, similarity ≥ threshold). On a

@@ -100,7 +100,7 @@ def _compilation_template_kind(kind) -> str:
 #   does pairwise cosine + LLM duplicate-judging, so it is the more expensive
 #   step; we cap the per-flush set to keep the local-dedup buckets tractable.
 _DOC_STRUCTURE_COMPILE_BATCH_CHUNKS = 4
-_DOC_STRUCTURE_MERGE_MAX_DOCS = 256
+_DOC_STRUCTURE_MERGE_MAX_DOCS = 512
 
 # Artifact-MAP tuning: how many chunks to feed per artifact_map_from_chunks
 # invocation. The function does its own per-call resume-set load + ES persist,

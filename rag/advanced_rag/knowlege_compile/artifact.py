@@ -21,13 +21,13 @@
     Embeddings go through ``LLMBundle.encode`` via ``thread_pool_exec`` (kept
     in the signature for symmetry with the downstream REDUCE / REFINE phases
     even though MAP itself does not embed).
-  - Citation anchor is the source chunk id (``source_id`` list per item), not
+  - Citation anchor is the source chunk id (``source_chunk_ids`` list per item), not
     a byte position. The LLM is prompted to tag each extracted item with the
     ``[CHUNK_ID …]`` of the chunk it came from.
   - Resume: per-chunk extracts are persisted to ES under
     ``compile_kwd="artifact_map_extract"`` with ``available_int=0`` and no vector
     / token-list fields, so retrievers ignore them but downstream phases can
-    fetch them by ``doc_id`` + ``source_id``. Re-running MAP for the same
+    fetch them by ``doc_id`` + ``source_chunk_ids``. Re-running MAP for the same
     ``doc_id`` skips chunks that already have an extract row.
 
 Public entry: ``artifact_map_from_chunks``.
@@ -637,7 +637,7 @@ def _artifact_build_resume_doc(
         "id": _stable_row_id(content_with_weight, doc_id_str, chunk_id),
         "doc_id": doc_id_str,
         "compile_kwd": ARTIFACT_MAP_COMPILE_KWD,
-        "source_id": [chunk_id],
+        "source_chunk_ids": [chunk_id],
         "content_with_weight": content_with_weight,
         "available_int": 0,
     }
@@ -655,7 +655,7 @@ async def _artifact_load_resume_set(doc_id: str, tenant_id: str, kb_id: str) -> 
         "compile_kwd": [ARTIFACT_MAP_COMPILE_KWD],
         "doc_id": [str(doc_id)],
     }
-    select_fields = ["id", "source_id"]
+    select_fields = ["id", "source_chunk_ids"]
     try:
         res = await thread_pool_exec(
             settings.docStoreConn.search,
@@ -669,7 +669,7 @@ async def _artifact_load_resume_set(doc_id: str, tenant_id: str, kb_id: str) -> 
 
     seen: set[str] = set()
     for row in field_map.values():
-        src = row.get("source_id") or []
+        src = row.get("source_chunk_ids") or []
         if isinstance(src, list):
             for cid in src:
                 if isinstance(cid, str) and cid:
