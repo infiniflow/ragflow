@@ -1075,7 +1075,7 @@ func (s *FileService) UploadFromURL(tenantID, rawURL string) (map[string]interfa
 		Name:      uniqueName,
 		Location:  &location,
 		Size:      int64(len(data)),
-		Type:      fileType,
+		Type:      string(fileType),
 	}
 	if err := s.fileDAO.Insert(fileRecord); err != nil {
 		return nil, fmt.Errorf("failed to insert file record: %w", err)
