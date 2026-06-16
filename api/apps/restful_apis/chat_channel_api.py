@@ -43,8 +43,7 @@ async def create_chat_channel():
         "name": req["name"],
         "channel": req["channel"],
         "config": req["config"],
-        "dialog_id": req.get("dialog_id") or None,
-        "status": "1",
+        "dialog_id": req.get("dialog_id") or None
     }
     ChatChannelService.insert(**channel)
 
@@ -97,7 +96,7 @@ async def update_chat_channel(channel_id):
         if dia.tenant_id != conn.tenant_id:
             return _chat_channel_auth_error(channel_id, current_user.id)
 
-    update_fields = {fld: req[fld] for fld in ["name", "config", "dialog_id", "status"] if fld in req}
+    update_fields = {fld: req[fld] for fld in ["name", "config", "dialog_id"] if fld in req}
     if update_fields:
         ChatChannelService.update_by_id(channel_id, update_fields)
 
