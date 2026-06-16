@@ -72,10 +72,10 @@ export default function Datasets() {
     <>
       {kbs?.length || searchString ? (
         <article
-          className="size-full flex flex-col"
+          className="size-full min-w-0 flex flex-col"
           data-testid="datasets-list"
         >
-          <header className="px-5 pt-8 mb-4">
+          <header className="mb-4 min-w-0 px-5 pt-8">
             <ListFilterBar
               title={t('header.dataset')}
               searchString={searchString}

@@ -86,8 +86,11 @@ export default function Agents() {
   return (
     <>
       {data?.length || searchString ? (
-        <article className="size-full flex flex-col" data-testid="agents-list">
-          <header className="px-5 pt-8 mb-4">
+        <article
+          className="size-full min-w-0 flex flex-col"
+          data-testid="agents-list"
+        >
+          <header className="mb-4 min-w-0 px-5 pt-8">
             <ListFilterBar
               title={t('flow.agents')}
               searchString={searchString}
