@@ -318,7 +318,7 @@ class TaskHandler:
                     chat_mdl=chat_model,
                     embd_mdl=embedding_model,
                     vector_size=vector_size,
-                    doc_ids=ctx.doc_ids,
+                    doc_ids=ctx.doc_ids or [ctx.doc_id],
                 )
 
             ctx.recording_context.record("raptor_chunks", chunks)
@@ -326,7 +326,7 @@ class TaskHandler:
 
             # Insert RAPTOR chunks
             if chunks:
-                task_doc_id = (ctx.doc_ids or [GRAPH_RAPTOR_FAKE_DOC_ID])[0]
+                task_doc_id = (ctx.doc_ids or [ctx.doc_id] or [GRAPH_RAPTOR_FAKE_DOC_ID])[0]
                 chunk_service = ChunkService(ctx=ctx)
                 insert_result = await chunk_service.insert_chunks(ctx.id, task_tenant_id, task_dataset_id, chunks)
                 if insert_result:
