@@ -61,6 +61,23 @@ func (dao *TenantModelInstanceDAO) GetAllInstancesByProviderID(providerID string
 	return instances, nil
 }
 
+// GetByProviderIDs returns all TenantModelInstance rows whose provider_id
+// is in providerIDs. Mirrors Python's
+// TenantModelInstanceService.get_by_provider_ids used by
+// models_api_service.list_tenant_added_models. An empty input slice
+// returns an empty (non-nil) slice with no error.
+func (dao *TenantModelInstanceDAO) GetByProviderIDs(providerIDs []string) ([]*entity.TenantModelInstance, error) {
+	instances := make([]*entity.TenantModelInstance, 0)
+	if len(providerIDs) == 0 {
+		return instances, nil
+	}
+	err := DB.Where("provider_id IN ?", providerIDs).Find(&instances).Error
+	if err != nil {
+		return nil, err
+	}
+	return instances, nil
+}
+
 func (dao *TenantModelInstanceDAO) GetInstanceByApiKey(apiKey, providerID string) (*entity.TenantModelInstance, error) {
 	var instance entity.TenantModelInstance
 	err := DB.Where("api_key = ? && provider_id = ?", apiKey, providerID).First(&instance).Error

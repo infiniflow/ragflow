@@ -149,24 +149,25 @@ function LoginFormContent({
                   name="remember"
                   render={({ field }) => (
                     <FormItem>
-                      <FormControl>
-                        <div className="flex gap-2">
+                      <div className="flex gap-2 group">
+                        <FormControl>
                           <Checkbox
                             checked={field.value}
                             onCheckedChange={(checked) => {
                               field.onChange(checked);
                             }}
+                            className="group-hover:border-border-default group-hover:bg-border-button"
                           />
-                          <FormLabel
-                            className={cn(' hover:text-text-primary', {
-                              'text-text-disabled': !field.value,
-                              'text-text-primary': field.value,
-                            })}
-                          >
-                            {t('rememberMe')}
-                          </FormLabel>
-                        </div>
-                      </FormControl>
+                        </FormControl>
+                        <FormLabel
+                          className={cn('cursor-pointer', {
+                            'text-text-disabled': !field.value,
+                            'text-text-primary': field.value,
+                          })}
+                        >
+                          {t('rememberMe')}
+                        </FormLabel>
+                      </div>
                       <FormMessage />
                     </FormItem>
                   )}

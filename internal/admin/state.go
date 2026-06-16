@@ -17,18 +17,9 @@
 package admin
 
 import (
-	"errors"
 	"ragflow/internal/common"
 	"sync"
 	"time"
-)
-
-// Service errors
-var (
-	ErrInvalidToken = errors.New("invalid token")
-	ErrNotAdmin     = errors.New("user is not admin")
-	ErrUserInactive = errors.New("user is inactive")
-	ErrUserNotFound = errors.New("user not found")
 )
 
 // API server state
@@ -58,6 +49,9 @@ func (s *ServerStore) UpdateServerInfo(serverName string, status *common.BaseMes
 		s.servers[serverName] = status
 		return
 	case common.ServerTypeIngestion:
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.servers[serverName] = status
 		return
 	}
 }

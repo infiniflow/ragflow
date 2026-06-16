@@ -1,0 +1,453 @@
+{
+  "components": {
+    "Begin:7d83abf3b4f611efa3c40242ac120002": {
+      "downstream": ["Categorize:11111111aaaa0001aaaa0001aaaa0001"],
+      "upstream": [],
+      "obj": {
+        "component_name": "Begin",
+        "params": {
+          "mode": "conversational",
+          "enablePrologue": true,
+          "prologue": "Hi! I'm your multi-source research copilot. Ask me anything and I'll dig through our knowledge base, score the evidence, and synthesize a sourced answer.",
+          "inputs": [
+            {"name": "query", "type": "string", "value": "{sys.query}"},
+            {"name": "user_id", "type": "string", "value": "{sys.user_id}"},
+            {"name": "session_id", "type": "string", "value": "{sys.session_id}"}
+          ],
+          "outputs": []
+        }
+      }
+    },
+    "Categorize:11111111aaaa0001aaaa0001aaaa0001": {
+      "downstream": ["Switch:22222222bbbb0001bbbb0001bbbb0001"],
+      "obj": {
+        "component_name": "Categorize",
+        "params": {
+          "category_description": {
+            "research": {
+              "to": "Switch:22222222bbbb0001bbbb0001bbbb0001",
+              "description": "User is asking a research question, a how-to, a comparison, or wants a sourced answer.",
+              "examples": [
+                "What is retrieval-augmented generation?",
+                "Compare LoRA vs full fine-tuning",
+                "Summarize the latest papers on agent loops"
+              ]
+            },
+            "clarify": {
+              "to": "UserFillup:cccccccc00010001cccc00010001cccc0001",
+              "description": "User's intent is ambiguous and we need them to disambiguate.",
+              "examples": ["explain that", "tell me about it", "go on"]
+            },
+            "decline": {
+              "to": "Message:00000000eeee0001eeee0001eeee0001",
+              "description": "User is asking for content we cannot provide (e.g. medical diagnosis, legal advice, or unrelated chitchat).",
+              "examples": ["diagnose my symptoms", "should I sue my employer", "hi how are you"]
+            }
+          },
+          "llm_id": "gpt-4o-mini",
+          "query": "{Begin:7d83abf3b4f611efa3c40242ac120002@query}",
+          "message_history_window_size": 5,
+          "temperature": 0.0,
+          "outputs": [{"name": "intent", "type": "string"}]
+        }
+      }
+    },
+    "Switch:22222222bbbb0001bbbb0001bbbb0001": {
+      "downstream": [
+        "Agent:33333333cccc0001cccc0001cccc0001",
+        "UserFillup:cccccccc00010001cccc00010001cccc0001",
+        "Message:00000000eeee0001eeee0001eeee0001"
+      ],
+      "obj": {
+        "component_name": "Switch",
+        "params": {
+          "logical_operator": "or",
+          "conditions": [
+            {
+              "cpn_id": "Categorize:11111111aaaa0001aaaa0001aaaa0001",
+              "operator": "=",
+              "value": "research",
+              "to": "Agent:33333333cccc0001cccc0001cccc0001"
+            }
+          ],
+          "end_cpn_ids": [
+            "UserFillup:cccccccc00010001cccc00010001cccc0001",
+            "Message:00000000eeee0001eeee0001eeee0001"
+          ],
+          "operators": [
+            "contains", "not contains", "start with", "end with",
+            "empty", "not empty", "=", "≠", ">", "<", "≥", "≤"
+          ]
+        }
+      }
+    },
+    "UserFillup:cccccccc00010001cccc00010001cccc0001": {
+      "downstream": ["Message:00000000eeee0002eeee0002eeee0002"],
+      "obj": {
+        "component_name": "UserFillup",
+        "params": {
+          "inputs": [
+            {
+              "name": "intent",
+              "type": "select",
+              "options": ["research", "chitchat", "support"],
+              "value": "research"
+            },
+            {
+              "name": "clarifying_question",
+              "type": "string",
+              "value": "Could you tell me a bit more about what you want to know? I can answer research questions, summarize documents, or compare approaches."
+            }
+          ],
+          "outputs": [
+            {"name": "intent", "type": "string"},
+            {"name": "clarifying_question", "type": "string"}
+          ]
+        }
+      }
+    },
+    "Message:00000000eeee0001eeee0001eeee0001": {
+      "downstream": [],
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": "I'm sorry, but I can't help with that kind of request. I can answer research questions, summarize documents, or compare approaches — feel free to ask one of those!",
+          "outputs": []
+        }
+      }
+    },
+    "Message:00000000eeee0002eeee0002eeee0002": {
+      "downstream": [],
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": "Got it. To help me route your question, please share a clarifying question via the form.",
+          "outputs": []
+        }
+      }
+    },
+    "Agent:33333333cccc0001cccc0001cccc0001": {
+      "downstream": ["Loop:dddddddd0001000100010001000100010001"],
+      "obj": {
+        "component_name": "Agent",
+        "params": {
+          "description": "Decomposes the user's research question into 1-5 self-contained sub-questions that the loop can answer one at a time.",
+          "llm_id": "gpt-4o",
+          "prompts": [
+            {
+              "role": "system",
+              "content": "You are a meticulous research planner. Decompose the user's question into 1-5 self-contained sub-questions that can each be answered by retrieving from a knowledge base. Output JSON: {\"sub_questions\": [\"...\", \"...\"]}."
+            },
+            {
+              "role": "user",
+              "content": "{Begin:7d83abf3b4f611efa3c40242ac120002@query}"
+            }
+          ],
+          "tools": ["retrieval"],
+          "memory": [
+            {"role": "user", "limit": 6, "session_only": true}
+          ],
+          "cite": false,
+          "max_steps": 4,
+          "delay_after_error": 2,
+          "exception_method": "default",
+          "exception_default_value": "{\"sub_questions\": [\"{Begin:7d83abf3b4f611efa3c40242ac120002@query}\"]}",
+          "exception_goto": "Loop:dddddddd0001000100010001000100010001",
+          "exception_comment": "fallback to a single-sub-question loop with the original query",
+          "outputs": [
+            {"name": "sub_questions", "type": "json"}
+          ]
+        }
+      }
+    },
+    "Loop:dddddddd0001000100010001000100010001": {
+      "downstream": ["Iteration:7777777700010001000100010001aaaa0001"],
+      "obj": {
+        "component_name": "Loop",
+        "params": {
+          "loop_variables": [
+            {"name": "accumulated_evidence", "source": "literal", "value": "[]"}
+          ],
+          "loop_termination_condition": [
+            {
+              "variable": "accumulated_evidence",
+              "operator": "≥",
+              "value": "5"
+            }
+          ],
+          "maximum_loop_count": 5,
+          "outputs": []
+        }
+      }
+    },
+    "LoopItem:eeeeeeee00010001000100010001bbbb0001": {
+      "downstream": ["Retrieval:555555550001000100010001eeee0001"],
+      "obj": {
+        "component_name": "LoopItem",
+        "params": {
+          "outputs": []
+        }
+      }
+    },
+    "Retrieval:555555550001000100010001eeee0001": {
+      "downstream": ["LLM:444444440001000100010001dddd0001"],
+      "obj": {
+        "component_name": "Retrieval",
+        "params": {
+          "kb_ids": ["kb_research_2024", "kb_company_wiki", "kb_industry_reports"],
+          "top_k": 10,
+          "rerank_id": "bge-reranker-v2-m3",
+          "empty_response": "No matching documents were found.",
+          "keywords": [
+            "{Agent:33333333cccc0001cccc0001cccc0001@sub_questions}"
+          ],
+          "query": "{Begin:7d83abf3b4f611efa3c40242ac120002@query}",
+          "outputs": [{"name": "chunks", "type": "json"}]
+        }
+      }
+    },
+    "LLM:444444440001000100010001dddd0001": {
+      "downstream": ["Categorize:11111111aaaa0002aaaa0002aaaa0002"],
+      "obj": {
+        "component_name": "LLM",
+        "params": {
+          "model": "gpt-4o-mini",
+          "temperature": 0.0,
+          "system": "You are a relevance scorer. For each chunk, output a JSON object {\"idx\": <int>, \"score\": <0.0-1.0>, \"reason\": \"<short>\"}.",
+          "prompt": "Score the relevance of each chunk to the user's question.\n\nQuestion: {Begin:7d83abf3b4f611efa3c40242ac120002@query}\n\nChunks: {Retrieval:555555550001000100010001eeee0001@chunks}",
+          "max_tokens": 1024,
+          "outputs": [{"name": "scored_chunks", "type": "json"}]
+        }
+      }
+    },
+    "Categorize:11111111aaaa0002aaaa0002aaaa0002": {
+      "downstream": ["Switch:22222222bbbb0002bbbb0002bbbb0002"],
+      "obj": {
+        "component_name": "Categorize",
+        "params": {
+          "category_description": {
+            "high_relevance": {
+              "to": "Switch:22222222bbbb0002bbbb0002bbbb0002",
+              "description": "The retrieved chunk is highly relevant to the user's question (score ≥ 0.7).",
+              "examples": ["directly answers the question", "contains the exact term the user asked about"]
+            },
+            "low_relevance": {
+              "to": "VariableAggregator:666666660001000100010001ffff0001",
+              "description": "The retrieved chunk is off-topic or redundant (score < 0.3).",
+              "examples": ["tangentially mentions the topic", "duplicates another chunk"]
+            }
+          },
+          "llm_id": "gpt-4o-mini",
+          "query": "{LLM:444444440001000100010001dddd0001@scored_chunks}",
+          "message_history_window_size": 1,
+          "temperature": 0.0,
+          "outputs": [{"name": "relevance", "type": "string"}]
+        }
+      }
+    },
+    "Switch:22222222bbbb0002bbbb0002bbbb0002": {
+      "downstream": ["VariableAggregator:666666660001000100010001ffff0001"],
+      "obj": {
+        "component_name": "Switch",
+        "params": {
+          "logical_operator": "or",
+          "conditions": [
+            {
+              "cpn_id": "Categorize:11111111aaaa0002aaaa0002aaaa0002",
+              "operator": "contains",
+              "value": "high_relevance",
+              "to": "VariableAggregator:666666660001000100010001ffff0001"
+            }
+          ],
+          "end_cpn_ids": ["VariableAggregator:666666660001000100010001ffff0001"],
+          "operators": [
+            "contains", "not contains", "=", "≠"
+          ]
+        }
+      }
+    },
+    "VariableAggregator:666666660001000100010001ffff0001": {
+      "downstream": ["Iteration:7777777700010001000100010001aaaa0001"],
+      "obj": {
+        "component_name": "VariableAggregator",
+        "params": {
+          "groups": [
+            {
+              "group_id": "evidence_group",
+              "group_name": "evidence",
+              "llm_id": "gpt-4o-mini",
+              "format": "{Retrieval:555555550001000100010001eeee0001@chunks}",
+              "refusal_answer": "no evidence",
+              "output": {
+                "value": {"type": "collected", "value": "evidence"}
+              }
+            }
+          ],
+          "outputs": [
+            {"name": "evidence", "type": "json"}
+          ]
+        }
+      }
+    },
+    "Iteration:7777777700010001000100010001aaaa0001": {
+      "downstream": ["LLM:444444440002000200020002dddd0002"],
+      "obj": {
+        "component_name": "Iteration",
+        "params": {
+          "items_ref": "VariableAggregator:666666660001000100010001ffff0001@evidence",
+          "variable": {
+            "chunk_id": "",
+            "chunk_text": ""
+          },
+          "outputs": []
+        }
+      }
+    },
+    "IterationItem:8888888800010001000100010001bbbb0001": {
+      "downstream": ["VariableAggregator:666666660002000200020002ffff0002"],
+      "obj": {
+        "component_name": "IterationItem",
+        "params": {
+          "outputs": [
+            {"name": "excerpt", "type": "string"}
+          ]
+        }
+      }
+    },
+    "VariableAggregator:666666660002000200020002ffff0002": {
+      "downstream": ["LLM:444444440002000200020002dddd0002"],
+      "obj": {
+        "component_name": "VariableAggregator",
+        "params": {
+          "groups": [
+            {
+              "group_id": "ranked_group",
+              "group_name": "ranked_excerpts",
+              "llm_id": "gpt-4o-mini",
+              "format": "{IterationItem:8888888800010001000100010001bbbb0001@excerpt}",
+              "refusal_answer": "no excerpt",
+              "output": {
+                "value": {"type": "collected", "value": "ranked_excerpts"}
+              }
+            }
+          ],
+          "outputs": [
+            {"name": "ranked_excerpts", "type": "json"}
+          ]
+        }
+      }
+    },
+    "LLM:444444440002000200020002dddd0002": {
+      "downstream": ["CodeExec:bbbbbbbb0001000100010001cccc0001"],
+      "obj": {
+        "component_name": "LLM",
+        "params": {
+          "model": "deepseek-chat",
+          "temperature": 0.2,
+          "system": "You are a careful synthesizer. Combine the ranked excerpts into a sourced answer. Cite the chunk id for every claim.",
+          "prompt": "Question: {Begin:7d83abf3b4f611efa3c40242ac120002@query}\n\nRanked excerpts: {VariableAggregator:666666660002000200020002ffff0002@ranked_excerpts}",
+          "max_tokens": 1024,
+          "outputs": [
+            {"name": "draft_answer", "type": "string"},
+            {"name": "citations", "type": "json"}
+          ]
+        }
+      }
+    },
+    "CodeExec:bbbbbbbb0001000100010001cccc0001": {
+      "downstream": ["Switch:22222222bbbb0003bbbb0003bbbb0003"],
+      "obj": {
+        "component_name": "CodeExec",
+        "params": {
+          "script": "import json, sys\ndraft = sys.argv[1]\ncitations = json.loads(sys.argv[2])\n# Validate: every claim in the draft must reference a real citation id.\nok = all(c.get('id') for c in citations) and len(citations) > 0\nprint(json.dumps({\"ok\": ok, \"citation_count\": len(citations), \"draft_len\": len(draft)}))",
+          "lang": "python",
+          "arguments": [
+            "{LLM:444444440002000200020002dddd0002@draft_answer}",
+            "{LLM:444444440002000200020002dddd0002@citations}"
+          ],
+          "outputs": [
+            {"name": "validation", "type": "json"}
+          ]
+        }
+      }
+    },
+    "Switch:22222222bbbb0003bbbb0003bbbb0003": {
+      "downstream": [
+        "VariableAssigner:9999999900010001000100010001cccc0001",
+        "LLM:444444440002000200020002dddd0002",
+        "Message:00000000eeee0003eeee0003eeee0003"
+      ],
+      "obj": {
+        "component_name": "Switch",
+        "params": {
+          "logical_operator": "or",
+          "conditions": [
+            {
+              "cpn_id": "CodeExec:bbbbbbbb0001000100010001cccc0001",
+              "operator": "contains",
+              "value": "\"ok\": true",
+              "to": "VariableAssigner:9999999900010001000100010001cccc0001"
+            }
+          ],
+          "end_cpn_ids": [
+            "LLM:444444440002000200020002dddd0002",
+            "Message:00000000eeee0003eeee0003eeee0003"
+          ],
+          "operators": [
+            "contains", "not contains", "=", "≠"
+          ]
+        }
+      }
+    },
+    "VariableAssigner:9999999900010001000100010001cccc0001": {
+      "downstream": ["Message:00000000eeee0004eeee0004eeee0004"],
+      "obj": {
+        "component_name": "VariableAssigner",
+        "params": {
+          "concurrent": true,
+          "orders": [
+            {
+              "id": "research_done",
+              "name": "research_done",
+              "source": "literal",
+              "value": "true"
+            },
+            {
+              "id": "draft_answer",
+              "name": "draft_answer",
+              "source": "ref",
+              "ref": "{LLM:444444440002000200020002dddd0002@draft_answer}"
+            },
+            {
+              "id": "citations",
+              "name": "citations",
+              "source": "ref",
+              "ref": "{LLM:444444440002000200020002dddd0002@citations}"
+            }
+          ],
+          "outputs": []
+        }
+      }
+    },
+    "Message:00000000eeee0003eeee0003eeee0003": {
+      "downstream": [],
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": "I couldn't validate the answer after multiple attempts. Here is my best-effort draft:\n\n{LLM:444444440002000200020002dddd0002@draft_answer}",
+          "outputs": []
+        }
+      }
+    },
+    "Message:00000000eeee0004eeee0004eeee0004": {
+      "downstream": [],
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": "{LLM:444444440002000200020002dddd0002@draft_answer}\n\nCitations:\n{LLM:444444440002000200020002dddd0002@citations}",
+          "outputs": []
+        }
+      }
+    }
+  }
+}

@@ -87,6 +87,7 @@ Coba layanan cloud kami di [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
 ## 🔥 Pembaruan Terbaru
 
+- 2026-06-15 Mendukung berbagai saluran obrolan seperti Feishu, Discord, Telegram, Line, dll.
 - 2026-04-24 Mendukung DeepSeek v4.
 - 2026-03-24 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — Menyediakan skill resmi untuk mengakses dataset RAGFlow melalui OpenClaw.
 - 2025-12-26 Mendukung 'Memori' untuk agen AI.
@@ -97,10 +98,7 @@ Coba layanan cloud kami di [https://cloud.ragflow.io](https://cloud.ragflow.io).
 - 2025-08-08 Mendukung model seri GPT-5 terbaru dari OpenAI.
 - 2025-08-01 Mendukung alur kerja agen dan MCP.
 - 2025-05-23 Menambahkan komponen pelaksana kode Python/JS ke Agen.
-- 2025-05-05 Mendukung kueri lintas bahasa.
 - 2025-03-19 Mendukung penggunaan model multi-modal untuk memahami gambar di dalam file PDF atau DOCX.
-- 2024-12-18 Meningkatkan model Analisis Tata Letak Dokumen di DeepDoc.
-- 2024-08-22 Dukungan untuk teks ke pernyataan SQL melalui RAG.
 
 ## 🎉 Tetap Terkini
 

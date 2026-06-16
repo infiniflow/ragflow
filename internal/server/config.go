@@ -41,6 +41,7 @@ type Config struct {
 	Authentication   AuthenticationConfig   `mapstructure:"authentication"`
 	Database         DatabaseConfig         `mapstructure:"database"`
 	Redis            RedisConfig            `mapstructure:"redis"`
+	Nats             NatsConfig             `mapstructure:"nats"`
 	Log              LogConfig              `mapstructure:"log"`
 	DocEngine        DocEngineConfig        `mapstructure:"doc_engine"`
 	StorageEngine    StorageConfig          `mapstructure:"storage_engine"`
@@ -51,13 +52,13 @@ type Config struct {
 	UserDefaultLLM   UserDefaultLLMConfig   `mapstructure:"user_default_llm"`
 	DefaultSuperUser DefaultSuperUser       `mapstructure:"default_super_user"`
 	Language         string                 `mapstructure:"language"`
+	TaskExecutor     TaskExecutorConfig     `mapstructure:"task_executor"`
 }
 
 // AdminConfig admin server configuration
 type AdminConfig struct {
-	Host                 string `mapstructure:"host"`
-	Port                 int    `mapstructure:"http_port"`
-	IngestionManagerPort int    `mapstructure:"ingestion_manager_port"`
+	Host string `mapstructure:"host"`
+	Port int    `mapstructure:"http_port"`
 }
 
 type AuthenticationConfig struct {
@@ -69,6 +70,10 @@ type DefaultSuperUser struct {
 	Email    string `mapstructure:"email"`
 	Password string `mapstructure:"password"`
 	Nickname string `mapstructure:"nickname"`
+}
+
+type TaskExecutorConfig struct {
+	MessageQueueType string `mapstructure:"message_queue_type"`
 }
 
 // UserDefaultLLMConfig user default LLM configuration
@@ -83,6 +88,8 @@ type DefaultModelsConfig struct {
 	RerankModel     ModelConfig `mapstructure:"rerank_model"`
 	ASRModel        ModelConfig `mapstructure:"asr_model"`
 	Image2TextModel ModelConfig `mapstructure:"image2text_model"`
+	OCRModel        ModelConfig `mapstructure:"ocr_model"`
+	TTSModel        ModelConfig `mapstructure:"tts_model"`
 }
 
 // ModelConfig model configuration
@@ -230,6 +237,11 @@ type RedisConfig struct {
 	DB       int    `mapstructure:"db"`
 }
 
+type NatsConfig struct {
+	Host string `mapstructure:"host"`
+	Port int    `mapstructure:"port"`
+}
+
 var (
 	globalConfig *Config
 	globalViper  *viper.Viper
@@ -371,6 +383,13 @@ func Init(configPath string) error {
 				"message_queue_type": mqType,
 			}
 			delete(configDict, "message_queue_type")
+		case "nats":
+			host := getString(configDict, "host")
+			port := getInt(configDict, "port")
+			configDict["id"] = id
+			configDict["name"] = "nats"
+			configDict["host"] = host
+			configDict["port"] = port
 		case "admin":
 			// Skip admin section
 			continue
@@ -583,9 +602,6 @@ func FromConfigFile(configPath string) error {
 		globalConfig.Admin.Port = 9383
 	} else {
 		globalConfig.Admin.Port += 2
-	}
-	if globalConfig.Admin.IngestionManagerPort == 0 {
-		globalConfig.Admin.IngestionManagerPort = 9385
 	}
 
 	// authentication section

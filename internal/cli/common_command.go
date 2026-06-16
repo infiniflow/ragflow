@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"ragflow/internal/common"
 	"strings"
 	"time"
 
@@ -464,13 +465,11 @@ func (c *CLI) SetDefaultModel(cmd *Command) (ResponseIf, error) {
 	}
 
 	var providerName, instanceName, modelName string
-	names := strings.Split(compositeModelName, "/")
-	if len(names) != 3 {
-		return nil, fmt.Errorf("model name must be in format 'provider/instance/model'")
+	var err error
+	modelName, instanceName, providerName, err = common.ExtractCompositeName(compositeModelName)
+	if err != nil {
+		return nil, err
 	}
-	providerName = names[0]
-	instanceName = names[1]
-	modelName = names[2]
 
 	payload := map[string]interface{}{
 		"model_type":     modelType,
@@ -480,7 +479,6 @@ func (c *CLI) SetDefaultModel(cmd *Command) (ResponseIf, error) {
 	}
 
 	var resp *Response
-	var err error
 	switch c.Config.CLIMode {
 	case AdminMode:
 		resp, err = c.AdminServerClient.Request("PATCH", "/admin/models", "web", nil, payload)
@@ -560,7 +558,7 @@ func (c *CLI) ListDefaultModels(cmd *Command) (ResponseIf, error) {
 	case AdminMode:
 		resp, err = c.AdminServerClient.Request("GET", "/admin/models", "web", nil, nil)
 	case APIMode:
-		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", "/models", "web", nil, nil)
+		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", "/models/default", "web", nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
@@ -573,7 +571,7 @@ func (c *CLI) ListDefaultModels(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list default models: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonResponse
+	var result ModelsResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("failed to list default models: invalid JSON (%w)", err)
 	}

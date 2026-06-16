@@ -13,6 +13,7 @@ const {
   listInstanceModels,
   showProviderInstance,
   addInstanceModel,
+  editInstanceModel,
   deleteProviderInstance,
   updateModelStatus,
 } = api;
@@ -65,6 +66,10 @@ const methods = {
   addInstanceModel: {
     url: addInstanceModel,
     method: 'post',
+  },
+  editInstanceModel: {
+    url: editInstanceModel,
+    method: 'put',
   },
   deleteProviderInstance: {
     url: deleteProviderInstance,
