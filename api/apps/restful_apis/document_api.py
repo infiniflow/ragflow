@@ -1723,16 +1723,23 @@ async def get_document_thumbnail(doc_id):
     """
     try:
         if not DocumentService.accessible(doc_id, current_user.id):
+            logging.warning(f"Unauthorized thumbnail access for document {doc_id} by user {current_user.id}")
             return get_data_error_result(message="No authorization.")
         e, doc = DocumentService.get_by_id(doc_id)
         if not e:
+            logging.info(f"Thumbnail requested for non-existent document {doc_id}")
             return get_data_error_result(message="Document not found.")
         if not doc.thumbnail:
+            logging.info(f"No thumbnail available for document {doc_id}")
             return get_data_error_result(message="Image not found.")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, doc.kb_id, doc.thumbnail)
         if not data:
+            logging.info(f"Thumbnail data not found in storage for document {doc_id}")
             return get_data_error_result(message="Image not found.")
         content_type = _content_type_for_document_image(doc.thumbnail, data)
+        if not content_type.startswith("image/"):
+            logging.warning(f"Thumbnail endpoint refused non-image payload for document {doc_id} (detected {content_type})")
+            return get_data_error_result(message="Image not found.")
         response = await make_response(data)
         response.headers.set("Content-Type", content_type)
         return response
@@ -1770,6 +1777,7 @@ async def get_document_image(image_id):
             return get_data_error_result(message="Image not found.")
         bkt, nm = parsed
         if not KnowledgebaseService.accessible(bkt, current_user.id):
+            logging.warning(f"Unauthorized image access for kb {bkt} by user {current_user.id}")
             return get_data_error_result(message="No authorization.")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, bkt, nm)
         if not data:
