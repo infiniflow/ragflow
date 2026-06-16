@@ -75,7 +75,6 @@ func main() {
 	flag.BoolVar(&debugFlag, "debug", false, "Enable debug-level logging")
 	var versionFlag bool
 	flag.BoolVar(&versionFlag, "version", false, "Print version information and exit")
-	flag.BoolVar(&versionFlag, "v", false, "Print version information and exit (shorthand)")
 
 	// Custom help message
 	flag.Usage = printHelp
