@@ -478,6 +478,7 @@ class TestDocumentMetadataUnit:
 
         monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
         monkeypatch.setattr(module, "make_response", fake_make_response)
+        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *args, **kwargs: True)
         res = _run(module.get_document_image("kb1-object.png"))
         assert isinstance(res, _ImageResponse)
         assert res.headers["Content-Type"] == "image/png"
@@ -510,6 +511,7 @@ class TestDocumentMetadataUnit:
 
         monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
         monkeypatch.setattr(module, "make_response", fake_make_response)
+        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *args, **kwargs: True)
         res = _run(module.get_document_image("kb1-a1b2c3d4e5f6"))
         assert isinstance(res, _ImageResponse)
         assert res.headers["Content-Type"] == "image/png"
@@ -522,6 +524,7 @@ class TestDocumentMetadataUnit:
             return None
 
         monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
+        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *args, **kwargs: True)
         res = _run(module.get_document_image("kb1-object-key"))
         assert res["code"] == RetCode.DATA_ERROR
         assert res["message"] == "Image not found."
@@ -545,8 +548,8 @@ class TestDocumentMetadataUnit:
         assert res["code"] == RetCode.DATA_ERROR
         assert res["message"] == "This file is empty."
 
-    @pytest.mark.skip(reason="Moved to /api/v1/documents/images/<image_id>")
-    def test_get_image_success_and_exception_unit(self, document_app_module, monkeypatch):
+    def test_get_document_image_success_and_exception_unit(self, document_app_module, monkeypatch):
+        """Unit test for get_document_image with mocked storage and tenant auth."""
         module = document_app_module
 
         class _Headers(dict):
@@ -567,19 +570,43 @@ class TestDocumentMetadataUnit:
         monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
         monkeypatch.setattr(module, "make_response", fake_make_response)
         monkeypatch.setattr(module.settings, "STORAGE_IMPL", SimpleNamespace(get=lambda *_args, **_kwargs: b"image-bytes"))
-        res = _run(module.get_image("bucket-name"))
+        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *args, **kwargs: True)
+        res = _run(module.get_document_image("kb1-thumbnail.png"))
         assert isinstance(res, _ImageResponse)
         assert res.data == b"image-bytes"
-        assert res.headers["Content-Type"] == "image/JPEG"
+        assert res.headers["Content-Type"] == "image/png"
 
         async def raise_error(*_args, **_kwargs):
             raise RuntimeError("image boom")
 
         monkeypatch.setattr(module, "thread_pool_exec", raise_error)
         monkeypatch.setattr(module, "server_error_response", lambda e: {"code": 500, "message": str(e)})
-        res = _run(module.get_image("bucket-name"))
+        res = _run(module.get_document_image("kb1-thumbnail.png"))
         assert res["code"] == 500
         assert "image boom" in res["message"]
+
+    def test_get_document_image_denies_cross_tenant(self, document_app_module, monkeypatch):
+        """get_document_image must respect KnowledgebaseService.accessible check."""
+        module = document_app_module
+
+        async def fake_thread_pool_exec(*_args, **_kwargs):
+            return b"some-bytes"
+
+        async def fake_make_response(data):
+            class _ImageResponse:
+                def __init__(self, data):
+                    self.data = data
+                    self.headers = {}
+            return _ImageResponse(data)
+
+        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
+        monkeypatch.setattr(module, "make_response", fake_make_response)
+        monkeypatch.setattr(module.settings, "STORAGE_IMPL", SimpleNamespace(get=lambda *_args, **_kwargs: b"some-bytes"))
+        # Simulate cross-tenant: accessible returns False
+        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *args, **kwargs: False)
+        res = _run(module.get_document_image("kb1-secret.pdf"))
+        assert res["code"] == 102
+        assert res["message"] == "No authorization."
 
     def test_get_document_image_hyphenated_object_key(self, document_app_module, monkeypatch):
         """Hyphenated thumbnail keys are parsed with split('-', 1) and return correct MIME type."""
@@ -613,6 +640,7 @@ class TestDocumentMetadataUnit:
             "STORAGE_IMPL",
             SimpleNamespace(get=_storage_get),
         )
+        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda *args, **kwargs: True)
 
         image_id = "kb12345678901234567890123456789012-page-1.png"
         res = _run(module.get_document_image(image_id))
