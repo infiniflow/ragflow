@@ -387,11 +387,7 @@ const ModelProviders = () => {
           onEditInstance={handleEditInstance}
         />
       </section>
-      <section className="hidden md:flex md:flex-col md:w-2/5 overflow-auto scrollbar-auto min-w-0">
-        <AvailableModels handleAddModel={handleAddModelWithClose} />
-      </section>
-
-      {isMobile && (
+      {isMobile ? (
         <Sheet open={availableModelsOpen} onOpenChange={setAvailableModelsOpen}>
           <SheetContent
             side="bottom"
@@ -403,6 +399,10 @@ const ModelProviders = () => {
             <AvailableModels handleAddModel={handleAddModelWithClose} />
           </SheetContent>
         </Sheet>
+      ) : (
+        <section className="flex flex-col w-2/5 overflow-auto scrollbar-auto min-w-0">
+          <AvailableModels handleAddModel={handleAddModelWithClose} />
+        </section>
       )}
 
       {/* Unified ProviderModal (replaces 9 independent modals) */}
