@@ -28,7 +28,7 @@ from rag.advanced_rag.knowlege_compile.structure import compile_structure_from_t
 import xxhash
 
 from timeit import default_timer as timer
-from typing import Callable, Dict, List, Optional
+from typing import AsyncIterator, Callable, Dict, List, Optional
 
 from api.db.services.document_service import DocumentService, queue_per_doc_raptor_task
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -39,7 +39,7 @@ from api.db.joint_services.tenant_model_service import (
     get_model_config_from_provider_instance
 )
 from api.db.services.llm_service import LLMBundle
-from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID
+from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, clear_doc_chunking_counter, credit_doc_chunking_task
 from common.constants import LLMType
 from common.exceptions import TaskCanceledException
 from common.connection_utils import timeout
@@ -90,6 +90,26 @@ def _compilation_template_kind(kind) -> str:
     return normalized
 
 
+# Document-structure compilation tuning.
+# - COMPILE_BATCH_CHUNKS bounds how many source chunks are handed to a single
+#   compile_structure_from_text() invocation (the call fans them out across
+#   max_workers internally, so a moderate window keeps memory + LLM-context
+#   pressure predictable for long docs).
+# - MERGE_MAX_DOCS bounds how many compiled ES-ready docs may accumulate
+#   before we flush them through merge_compiled_structures(). The merger
+#   does pairwise cosine + LLM duplicate-judging, so it is the more expensive
+#   step; we cap the per-flush set to keep the local-dedup buckets tractable.
+_DOC_STRUCTURE_COMPILE_BATCH_CHUNKS = 4
+_DOC_STRUCTURE_MERGE_MAX_DOCS = 256
+
+# Artifact-MAP tuning: how many chunks to feed per artifact_map_from_chunks
+# invocation. The function does its own per-call resume-set load + ES persist,
+# so smaller batches mean more (small) ES round-trips but a flat memory
+# footprint. 64 keeps the resume-set re-reads cheap while leaving room for the
+# function's internal split_chunks packing to do real work.
+_ARTIFACT_MAP_BATCH_CHUNKS = 64
+
+
 class TaskHandler:
     """Main task handler for document processing.
 
@@ -118,15 +138,34 @@ class TaskHandler:
         self._task_context = ctx
         self._billing_hook = billing_hook
 
+    @staticmethod
+    def _is_standard_chunking_task(task_type: str) -> bool:
+        task_type = (task_type or "").lower()
+        return task_type not in {
+            "memory",
+            "raptor",
+            "graphrag",
+            "mindmap",
+            "artifact",
+            "evaluation",
+            "reembedding",
+            "clone",
+        } and not task_type.startswith("dataflow")
+
     async def handle_task(self) -> None:
         try:
             await self.handle()
+        except Exception:
+            if self._is_standard_chunking_task(self._task_context.task_type):
+                clear_doc_chunking_counter(self._task_context.doc_id)
+            raise
         finally:
             task_id = self._task_context.id
             task_tenant_id = self._task_context.tenant_id
             task_dataset_id = self._task_context.kb_id
             task_doc_id = self._task_context.doc_id
             if self._task_context.has_canceled_func(task_id):
+                clear_doc_chunking_counter(task_doc_id)
                 try:
                     exists = await thread_pool_exec(
                         settings.docStoreConn.index_exist,
@@ -200,7 +239,7 @@ class TaskHandler:
             elif task_type == "clone":
                 await self._run_clone()
             else:
-                await self._run_standard_chunking(embedding_model)
+                await self._run_standard_chunking(embedding_model, vector_size)
 
 
     def _init_kb(self, vector_size: int) -> None:
@@ -267,6 +306,7 @@ class TaskHandler:
         self,
         embedding_model: LLMBundle,
         vector_size: int,
+        mark_done: bool = True,
     ) -> None:
         """Run RAPTOR summary generation."""
         ctx = self._task_context
@@ -372,8 +412,9 @@ class TaskHandler:
                 else:
                     DocumentService.increment_chunk_num(task_doc_id, task_dataset_id, token_count, len(chunks), 0)
 
-            ctx.recording_context.record("task_status", "completed")
-            ctx.progress_cb(prog=1.0, msg="RAPTOR done")
+            if mark_done:
+                ctx.recording_context.record("task_status", "completed")
+                ctx.progress_cb(prog=1.0, msg="RAPTOR done")
 
     async def _run_graphrag(
         self,
@@ -453,7 +494,20 @@ class TaskHandler:
 
     async def _run_standard_chunking(
         self,
-        embedding_model: LLMBundle
+        embedding_model: LLMBundle,
+        vector_size: int,
+    ) -> None:
+        ctx = self._task_context
+        try:
+            await self._run_standard_chunking_impl(embedding_model, vector_size)
+        except Exception:
+            clear_doc_chunking_counter(ctx.doc_id)
+            raise
+
+    async def _run_standard_chunking_impl(
+        self,
+        embedding_model: LLMBundle,
+        vector_size: int,
     ) -> None:
         """Run standard chunking pipeline."""
         ctx = self._task_context
@@ -485,7 +539,14 @@ class TaskHandler:
         logging.info("Build document {}: {:.2f}s".format(ctx.name, timer() - start_ts))
 
         if not chunks:
-            ctx.progress_cb(1., msg=f"No chunk built from {ctx.name}")
+            ctx.progress_cb(msg=f"No chunk built from {ctx.name}")
+            if not await self._run_document_post_chunking_if_last(
+                embedding_model, vector_size, task_start_ts, 0, 0,
+            ):
+                return
+            task_time_cost = timer() - task_start_ts
+            ctx.recording_context.record("task_status", "completed")
+            ctx.progress_cb(prog=1.0, msg="Task done ({:.2f}s)".format(task_time_cost))
             return
 
         ctx.progress_cb(msg="Generate {} chunks".format(len(chunks)))
@@ -523,6 +584,7 @@ class TaskHandler:
         chunk_service = ChunkService(ctx=ctx)
 
         if ctx.has_canceled_func(task_id):
+            clear_doc_chunking_counter(task_doc_id)
             ctx.progress_cb(-1, msg="Task has been canceled.")
             return
 
@@ -532,6 +594,7 @@ class TaskHandler:
 
         if not insert_result:
             ctx.recording_context.record("insertion_result", "failed")
+            clear_doc_chunking_counter(task_doc_id)
             return
         ctx.recording_context.record("insertion_result", "success")
 
@@ -541,39 +604,8 @@ class TaskHandler:
 
         ctx.progress_cb(msg="Indexing done ({:.2f}s).".format(timer() - start_ts))
 
-        # Artifact compilation runs as a separate KB-wide task that the user
-        # triggers from the "Artifact" generate button 鈥?handled by
-        # TaskHandler._run_artifact when task_type == "artifact".
-
-        toc_chunk = await self._process_toc_thread(toc_thread)
-        if toc_chunk:
-            ctx.recording_context.record("toc_chunk", [toc_chunk])
-            await post_processor.insert_toc_chunk(toc_chunk, chunk_service)
-
-        await self._run_document_structure_compile(chunks, embedding_model)
-
-        # Per-doc RAPTOR auto-trigger. Reads ``parser_config.raptor.use_raptor``
-        # which is set via the chunk-method dialog (default off). Queues
-        # a doc-scoped raptor task so the executor picks it up and runs
-        # ``_run_raptor`` against just this document's chunks.
-        # Best-effort — a queue failure doesn't fail the chunking task.
-        raptor_cfg = (ctx.parser_config or {}).get("raptor") or {}
-        if raptor_cfg.get("use_raptor"):
-            try:
-                ok_doc, doc_obj = DocumentService.get_by_id(task_doc_id)
-                if ok_doc and doc_obj is not None:
-                    ctx.progress_cb(msg="Starting RAPTOR task.")
-                    await self._run_raptor(embedding_model, vector_size)
-                else:
-                    logging.warning(
-                        "raptor: cannot resolve doc %s to queue per-doc task", task_doc_id,
-                    )
-            except Exception:
-                logging.exception(
-                    "raptor: failed to queue per-doc task for doc %s", task_doc_id,
-                )
-
         if ctx.has_canceled_func(task_id):
+            clear_doc_chunking_counter(task_doc_id)
             ctx.progress_cb(-1, msg="Task has been canceled.")
             return
 
@@ -582,6 +614,11 @@ class TaskHandler:
             ctx.write_interceptor.intercept("DocumentService.increment_chunk_num")
         else:
             DocumentService.increment_chunk_num(task_doc_id, task_dataset_id, token_count, chunk_count, 0)
+
+        if not await self._run_document_post_chunking_if_last(
+            embedding_model, vector_size, task_start_ts, len(chunks), token_count,
+        ):
+            return
 
         task_time_cost = timer() - task_start_ts
         ctx.recording_context.record("task_status", "completed")
@@ -594,17 +631,154 @@ class TaskHandler:
             )
         )
 
-    async def _run_document_structure_compile(self, chunks: list[dict], embedding_model: LLMBundle) -> None:
-        """Run document-scoped knowledge compilation for non-artifact templates."""
+    async def _run_document_post_chunking_if_last(
+        self,
+        embedding_model: LLMBundle,
+        vector_size: int,
+        task_start_ts: float,
+        chunks_len: int,
+        token_count: int,
+    ) -> bool:
+        ctx = self._task_context
+        task_id = ctx.id
+        task_doc_id = ctx.doc_id
+
+        if ctx.has_canceled_func(task_id):
+            clear_doc_chunking_counter(task_doc_id)
+            ctx.progress_cb(-1, msg="Task has been canceled.")
+            return False
+
+        remaining_chunking_tasks = 0 if ctx.write_interceptor else credit_doc_chunking_task(task_doc_id, task_id)
+        if remaining_chunking_tasks != 0:
+            if remaining_chunking_tasks is not None and remaining_chunking_tasks < 0:
+                logging.warning(
+                    "Chunking counter for doc %s is missing or expired after task %s; "
+                    "skip post-processing to avoid duplicate finalizers.",
+                    task_doc_id,
+                    task_id,
+                )
+            else:
+                logging.info(
+                    "Chunk doc(%s), page(%s-%s), chunks(%s), token(%s), elapsed:%.2f; "
+                    "waiting for %s chunking task(s) before post-processing",
+                    ctx.name,
+                    ctx.from_page,
+                    ctx.to_page,
+                    chunks_len,
+                    token_count,
+                    timer() - task_start_ts,
+                    remaining_chunking_tasks,
+                )
+            return True
+
+        # I am the unique last chunking task for this doc. The Redis counter is
+        # decremented atomically, and the per-task done sentinel prevents retry
+        # double-credit.
+        # Document-structure compile and RAPTOR are independent post-chunking
+        # passes — they read the same chunks but write disjoint ES rows
+        # (compile_kwd in {list,set,hypergraph,...} vs raptor_kwd="raptor"
+        # + compile_kwd="raptor_graph"). Run them concurrently so the slower
+        # of the two bounds wall time instead of their sum.
+        async def _maybe_run_raptor():
+            raptor_cfg = (ctx.parser_config or {}).get("raptor") or {}
+            if not raptor_cfg.get("use_raptor"):
+                return
+            try:
+                ok_doc, doc_obj = DocumentService.get_by_id(task_doc_id)
+                if ok_doc and doc_obj is not None:
+                    ctx.progress_cb(msg="Starting RAPTOR task.")
+                    await self._run_raptor(embedding_model, vector_size, mark_done=False)
+                else:
+                    logging.warning(
+                        "raptor: cannot resolve doc %s to queue per-doc task", task_doc_id,
+                    )
+            except Exception:
+                logging.exception(
+                    "raptor: failed to queue per-doc task for doc %s", task_doc_id,
+                )
+
+        original_progress_cb = getattr(ctx, "_progress_cb", None)
+        if original_progress_cb is not None:
+            ctx._progress_cb = self._cap_done_progress(original_progress_cb)
+        try:
+            # Structure-compile failures still propagate (prior behavior);
+            # RAPTOR failures are swallowed inside _maybe_run_raptor (also prior
+            # behavior), so a bare gather() is enough — no return_exceptions
+            # needed.
+            await asyncio.gather(
+                self._run_document_structure_compile(embedding_model),
+                _maybe_run_raptor(),
+            )
+        finally:
+            if original_progress_cb is not None:
+                ctx._progress_cb = original_progress_cb
+            clear_doc_chunking_counter(task_doc_id)
+
+        if ctx.has_canceled_func(task_id):
+            clear_doc_chunking_counter(task_doc_id)
+            ctx.progress_cb(-1, msg="Task has been canceled.")
+            return False
+        return True
+
+    @staticmethod
+    def _cap_done_progress(progress_cb: Callable) -> Callable:
+        def capped_progress(*args, **kwargs):
+            args = list(args)
+            if args:
+                prog = args[0]
+                if isinstance(prog, (int, float)) and not isinstance(prog, bool) and prog >= 1:
+                    args[0] = 0.99
+            if "prog" in kwargs:
+                prog = kwargs["prog"]
+                if isinstance(prog, (int, float)) and not isinstance(prog, bool) and prog >= 1:
+                    kwargs["prog"] = 0.99
+            return progress_cb(*args, **kwargs)
+
+        return capped_progress
+
+    async def _run_document_structure_compile(self, embedding_model: LLMBundle) -> None:
+        """Run document-scoped knowledge compilation for non-artifact templates.
+
+        Streams the doc's chunks from the doc-store in batches of
+        ``_DOC_STRUCTURE_COMPILE_BATCH_CHUNKS`` (so memory stays bounded for
+        long documents) and fans each batch out to every configured
+        non-artifact template:
+
+          1. Per batch, per template: feed the batch through
+             ``compile_structure_from_text`` and extend that template's
+             ``accumulated`` list with the returned ES-ready docs.
+          2. Per template: whenever ``accumulated`` reaches
+             ``_DOC_STRUCTURE_MERGE_MAX_DOCS``, flush it through
+             ``merge_compiled_structures``.
+          3. After the stream finishes, drain each template's remainder
+             with a final flush.
+
+        Streaming once and fanning out keeps the doc-store read cost
+        constant in the number of templates.
+        """
         ctx = self._task_context
         template_ids = _parser_config_compilation_template_ids(ctx.parser_config)
         if not template_ids:
             return
 
-        compile_chunks = sorted(chunks, key=lambda d: (
-            d.get("page_num_int", 0)[0] if isinstance(d.get("page_num_int", 0), list) else d.get("page_num_int", 0),
-            d.get("top_int", 0)[0] if isinstance(d.get("top_int", 0), list) else d.get("top_int", 0)
-        ))
+        # Resolve template configs up-front; drop artifact + invalid entries.
+        active_templates: list[tuple[str, dict]] = []
+        for template_id in template_ids:
+            template = CompilationTemplateService.get_saved(template_id, ctx.tenant_id)
+            if not template:
+                logging.warning("document_structure_compile: template %s not found", template_id)
+                continue
+            parser_cfg = template.get("config") or {}
+            if not isinstance(parser_cfg, dict):
+                logging.warning("document_structure_compile: template %s config is invalid", template_id)
+                continue
+            kind = _compilation_template_kind(parser_cfg.get("kind"))
+            if not kind or kind == "artifacts":
+                continue
+            active_templates.append((template_id, parser_cfg))
+
+        if not active_templates:
+            return
 
         doc_task_llm_id = ctx.parser_config.get("llm_id") or ctx.llm_id
         chat_model_config = get_model_config_from_provider_instance(
@@ -612,44 +786,69 @@ class TaskHandler:
         )
         chat_mdl = LLMBundle(ctx.tenant_id, chat_model_config, lang=ctx.language)
 
-        total = len(template_ids)
         progress_cb = ctx.progress_cb
-        for idx, template_id in enumerate(template_ids):
-            template = CompilationTemplateService.get_saved(template_id, ctx.tenant_id)
-            if not template:
-                logging.warning("document_structure_compile: template %s not found", template_id)
-                continue
+        total = len(active_templates)
 
-            parser_cfg = template.get("config") or {}
-            if not isinstance(parser_cfg, dict):
-                logging.warning("document_structure_compile: template %s config is invalid", template_id)
-                continue
+        # Per-template accumulators + aggregate counters.
+        accumulators: dict[str, list[dict]] = {tid: [] for tid, _ in active_templates}
+        agg_infos: dict[str, dict] = {
+            tid: {"inserted": 0, "updated": 0, "duplicates_dropped": 0}
+            for tid, _ in active_templates
+        }
 
-            kind = _compilation_template_kind(parser_cfg.get("kind"))
-            if not kind or kind == "artifacts":
-                continue
-
-            progress_cb(msg=f"Start document knowledge compilation ({idx + 1}/{total}) ...")
-            docs = await compile_structure_from_text(
-                compile_chunks,
-                parser_cfg,
-                chat_mdl,
-                embedding_model,
-                ctx.doc_id,
-                language=ctx.language,
-                callback=progress_cb,
-                compilation_template_id=template_id,
-            )
+        async def _flush(template_id: str) -> None:
+            acc = accumulators[template_id]
+            if not acc:
+                return
             info = await merge_compiled_structures(
-                docs,
+                acc,
                 chat_mdl,
                 embedding_model,
                 ctx.tenant_id,
                 ctx.kb_id,
                 compilation_template_id=template_id,
             )
-            ctx.recording_context.record(f"document_structure_compile:{template_id}", info)
-            progress_cb(msg=f"Document knowledge compilation done ({idx + 1}/{total}): {info}")
+            acc.clear()
+            if isinstance(info, dict):
+                agg = agg_infos[template_id]
+                for k in ("inserted", "updated", "duplicates_dropped"):
+                    agg[k] = agg.get(k, 0) + int(info.get(k, 0) or 0)
+
+        progress_cb(msg=f"Start document knowledge compilation ({total} template(s)) ...")
+
+        batch_no = 0
+        async for batch in self._load_chunks_for_doc(
+            ctx.tenant_id, ctx.kb_id, ctx.doc_id,
+            batch_size=_DOC_STRUCTURE_COMPILE_BATCH_CHUNKS,
+        ):
+            batch_no += 1
+            for idx, (template_id, parser_cfg) in enumerate(active_templates):
+                progress_cb(
+                    msg=f"  compile batch {batch_no} ({len(batch)} chunks) for template ({idx + 1}/{total})"
+                )
+                docs = await compile_structure_from_text(
+                    batch,
+                    parser_cfg,
+                    chat_mdl,
+                    embedding_model,
+                    ctx.doc_id,
+                    language=ctx.language,
+                    callback=progress_cb,
+                    compilation_template_id=template_id,
+                )
+                if docs:
+                    accumulators[template_id].extend(docs)
+                if len(accumulators[template_id]) >= _DOC_STRUCTURE_MERGE_MAX_DOCS:
+                    progress_cb(
+                        msg=f"  merge flush ({len(accumulators[template_id])} docs) for template ({idx + 1}/{total})"
+                    )
+                    await _flush(template_id)
+
+        for idx, (template_id, _parser_cfg) in enumerate(active_templates):
+            await _flush(template_id)
+            agg = agg_infos[template_id]
+            ctx.recording_context.record(f"document_structure_compile:{template_id}", agg)
+            progress_cb(msg=f"Document knowledge compilation done ({idx + 1}/{total}): {agg}")
 
     async def _process_toc_thread(self, toc_thread):
         try:
@@ -752,35 +951,47 @@ class TaskHandler:
                 continue
             parser_cfg = template.get("config") or {}
 
-            chunks = await self._load_chunks_for_doc(ctx.tenant_id, ctx.kb_id, doc_id)
-            if not chunks:
+            # Stream the doc's chunks in batches and call MAP per batch so
+            # peak memory stays bounded for long docs. Each MAP call has its
+            # own resume mechanism (artifact_map_extract rows keyed by
+            # chunk_id), so batching is correct end-to-end: a batch whose
+            # chunks were already processed in a prior run is a near-no-op.
+            agg = {"entities": 0, "concepts": 0, "claims": 0, "relations": 0}
+            saw_any = False
+            batch_no = 0
+            async for batch in self._load_chunks_for_doc(
+                ctx.tenant_id, ctx.kb_id, doc_id,
+                batch_size=_ARTIFACT_MAP_BATCH_CHUNKS,
+            ):
+                saw_any = True
+                batch_no += 1
+                try:
+                    phase1 = await artifact_map_from_chunks(
+                        chunks=batch,
+                        chat_mdl=chat_mdl,
+                        embd_mdl=embedding_model,
+                        doc_id=doc_id,
+                        tenant_id=ctx.tenant_id,
+                        kb_id=ctx.kb_id,
+                        language=ctx.language,
+                        callback=_stage_cb(f"[artifact MAP {i + 1}/{n_docs} b{batch_no}]"),
+                        parser_config=parser_cfg,
+                        batch_size_cap=8,
+                        window_fraction=0.5,
+                    )
+                except Exception:
+                    logging.exception("artifact: MAP failed for doc %s batch %d", doc_id, batch_no)
+                    continue
+                for k in agg.keys():
+                    agg[k] += len(phase1.get(k) or [])
+
+            if not saw_any:
                 logging.info("artifact: no chunks for doc %s; skipping", doc_id)
                 continue
-
-            try:
-                phase1 = await artifact_map_from_chunks(
-                    chunks=chunks,
-                    chat_mdl=chat_mdl,
-                    embd_mdl=embedding_model,
-                    doc_id=doc_id,
-                    tenant_id=ctx.tenant_id,
-                    kb_id=ctx.kb_id,
-                    language=ctx.language,
-                    callback=_stage_cb(f"[artifact MAP {i + 1}/{n_docs}]"),
-                    parser_config=parser_cfg,
-                    batch_size_cap=8,
-                    window_fraction=0.5,
-                )
-                logging.info(
-                    "artifact: MAP doc=%s entities=%d concepts=%d claims=%d relations=%d",
-                    doc_id,
-                    len(phase1.get("entities") or []),
-                    len(phase1.get("concepts") or []),
-                    len(phase1.get("claims") or []),
-                    len(phase1.get("relations") or []),
-                )
-            except Exception:
-                logging.exception("artifact: MAP failed for doc %s", doc_id)
+            logging.info(
+                "artifact: MAP doc=%s entities=%d concepts=%d claims=%d relations=%d (batches=%d)",
+                doc_id, agg["entities"], agg["concepts"], agg["claims"], agg["relations"], batch_no,
+            )
 
         # 5. REDUCE / PLAN / REFINE KB-wide.
         try:
@@ -836,63 +1047,69 @@ class TaskHandler:
         progress(1.0, f"Artifact compiled {len(pages or [])} page(s).")
 
     @staticmethod
-    async def _load_chunks_for_doc(tenant_id: str, kb_id: str, doc_id: str) -> List[Dict]:
-        """Load all available chunks for one document from the doc store.
+    async def _load_chunks_for_doc(
+        tenant_id: str,
+        kb_id: str,
+        doc_id: str,
+        batch_size: int = 500,
+    ) -> AsyncIterator[List[Dict]]:
+        """Stream a document's chunks from the doc store one batch at a time.
 
-        Paginates with a 500-row window. Skips ``compile_kwd``-marked rows
-        (artifact pages, structure entities, etc.) by filtering on
-        ``available_int=1`` + ``doc_id=<doc_id>`` 鈥?the artifact writer
-        stores its rows under ``doc_id=<kb_id_str>`` as a sentinel, so a
-        real-doc filter excludes them naturally.
+        Async generator that yields successive batches of up to ``batch_size``
+        chunks. Order is pushed to the doc store via
+        ``OrderByExpr().asc("page_num_int").asc("top_int")`` so callers do
+        not need to re-sort. Rows with a ``compile_kwd`` marker (artifact
+        pages, structure entities, etc.) are filtered out defensively.
+
+        Memory is bounded by ``batch_size``: at most one page is materialised
+        at a time, so long documents do not balloon the worker's heap.
         """
         from common.doc_store.doc_store_base import OrderByExpr
 
         index_nm = search.index_name(tenant_id)
         if not settings.docStoreConn.index_exist(index_nm, kb_id):
-            return []
+            return
 
         select_fields = [
             "id", "doc_id", "content_with_weight",
             "page_num_int", "top_int",
         ]
-        chunks: List[Dict] = []
+        order_by = OrderByExpr()
+        order_by.asc("page_num_int")
+        order_by.asc("top_int")
+
         offset = 0
-        PAGE = 500
         while True:
             try:
                 res = await thread_pool_exec(
                     settings.docStoreConn.search,
                     select_fields, [], {"doc_id": [doc_id], "available_int": 1},
-                    [], OrderByExpr(), offset, PAGE,
+                    [], order_by, offset, batch_size,
                     index_nm, [kb_id],
                 )
                 field_map = settings.docStoreConn.get_fields(res, select_fields)
             except Exception:
-                logging.exception("artifact: failed to load chunks for doc=%s", doc_id)
-                break
+                logging.exception("load_chunks_for_doc: failed to load chunks for doc=%s", doc_id)
+                return
             if not field_map:
-                break
+                return
+
+            batch: List[Dict] = []
             for row_id, row in field_map.items():
-                # Defensive: skip any row that snuck in with a compile_kwd
-                # (some backends ignore the doc_id filter for sentinel rows).
                 if row.get("compile_kwd"):
                     continue
-                chunks.append({
+                batch.append({
                     "id": row_id,
                     "doc_id": row.get("doc_id") or doc_id,
                     "content_with_weight": row.get("content_with_weight") or "",
                     "page_num_int": row.get("page_num_int", 0),
                     "top_int": row.get("top_int", 0),
                 })
-            if len(field_map) < PAGE:
-                break
-            offset += PAGE
-        # Stable ordering by (page, top) so MAP batches are reproducible.
-        chunks.sort(key=lambda d: (
-            (d.get("page_num_int", 0) or [0])[0] if isinstance(d.get("page_num_int"), list) else d.get("page_num_int", 0),
-            (d.get("top_int", 0) or [0])[0] if isinstance(d.get("top_int"), list) else d.get("top_int", 0),
-        ))
-        return chunks
+            if batch:
+                yield batch
+            if len(field_map) < batch_size:
+                return
+            offset += batch_size
 
     async def _persist_artifact_pages_to_es(
         self, ctx: TaskContext, pages: List[Dict], embd_mdl,
