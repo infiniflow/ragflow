@@ -5,8 +5,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -53,40 +51,10 @@ func TestVoyageName(t *testing.T) {
 	}
 }
 
-func TestVoyageListModelsReturnsStaticCatalog(t *testing.T) {
-	// Voyage has no live /models endpoint, so ListModels serves the statically
-	// configured catalog from the loaded provider definition.
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "voyage.json"), readProviderConfig(t, "voyage.json"), 0o600); err != nil {
-		t.Fatalf("write voyage config: %v", err)
-	}
-	if err := InitProviderManager(dir); err != nil {
-		t.Fatalf("InitProviderManager: %v", err)
-	}
-
-	models, err := newVoyageForTest("http://unused").ListModels(&APIConfig{})
-	if err != nil {
-		t.Fatalf("ListModels: %v", err)
-	}
-	if len(models) == 0 {
-		t.Fatal("ListModels returned no models")
-	}
-
-	var found *ListModelResponse
-	for i := range models {
-		if models[i].Name == "voyage-3.5" {
-			found = &models[i]
-			break
-		}
-	}
-	if found == nil {
-		t.Fatalf("voyage-3.5 not found in catalog: %v", models)
-	}
-	if len(found.ModelTypes) != 1 || found.ModelTypes[0] != "embedding" {
-		t.Errorf("voyage-3.5 ModelTypes=%v, want [embedding]", found.ModelTypes)
-	}
-	if found.MaxTokens == nil || *found.MaxTokens != 327680 {
-		t.Errorf("voyage-3.5 MaxTokens=%v, want 327680", found.MaxTokens)
+func TestVoyageListModelsNotSupported(t *testing.T) {
+	// Voyage has no model-list endpoint, so ListModels returns a not-supported error.
+	if _, err := newVoyageForTest("http://unused").ListModels(&APIConfig{}); err == nil {
+		t.Fatal("ListModels: expected not-supported error, got nil")
 	}
 }
 
