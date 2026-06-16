@@ -31,3 +31,10 @@ type BaseMessage struct {
 	Timestamp   time.Time   `json:"timestamp"`
 	Ext         interface{} `json:"ext,omitempty"`
 }
+
+type StartIngestionRequest struct {
+	TaskID   string `json:"task_id" binding:"required"`
+	TaskType string `json:"task_type" binding:"required"`
+	From     string `json:"from" binding:"required"`
+	UserID   string `json:"user_id" binding:"required"`
+}

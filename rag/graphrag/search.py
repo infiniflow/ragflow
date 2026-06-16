@@ -78,10 +78,18 @@ class KGSearch(Dealer):
                 continue
             if isinstance(ent["entity_kwd"], list):
                 ent["entity_kwd"] = ent["entity_kwd"][0]
+            # n_hop_with_weight may be absent (older chunks) or an empty string
+            # (the Infinity column default), neither of which json.loads handles.
+            n_hop_raw = ent.get("n_hop_with_weight") or "[]"
+            try:
+                n_hop_ents = json.loads(n_hop_raw)
+            except (json.JSONDecodeError, TypeError):
+                logging.warning(f"Failed to parse n_hop_with_weight for entity {ent.get('entity_kwd')}: {n_hop_raw}")
+                n_hop_ents = []
             res[ent["entity_kwd"]] = {
                 "sim": get_float(ent.get("_score", 0)),
                 "pagerank": get_float(ent.get("rank_flt", 0)),
-                "n_hop_ents": json.loads(ent.get("n_hop_with_weight", "[]")),
+                "n_hop_ents": n_hop_ents,
                 "description": ent.get("content_with_weight", "{}")
             }
         return res
@@ -111,7 +119,7 @@ class KGSearch(Dealer):
         filters = deepcopy(filters)
         filters["knowledge_graph_kwd"] = "entity"
         matchDense = self.get_vector(", ".join(keywords), emb_mdl, 1024, sim_thr)
-        es_res = self.dataStore.search(["content_with_weight", "entity_kwd", "rank_flt"], [], filters, [matchDense],
+        es_res = self.dataStore.search(["content_with_weight", "entity_kwd", "rank_flt", "n_hop_with_weight"], [], filters, [matchDense],
                                        OrderByExpr(), 0, N,
                                        idxnms, kb_ids)
         return self._ent_info_from_(es_res, sim_thr)
@@ -184,7 +192,9 @@ class KGSearch(Dealer):
                         nhop_pathes[(f, t)]["sim"] += ent["sim"] / (2 + i)
                     else:
                         nhop_pathes[(f, t)]["sim"] = ent["sim"] / (2 + i)
-                    nhop_pathes[(f, t)]["pagerank"] = wts[i]
+                    nhop_pathes[(f, t)]["pagerank"] = max(
+                        nhop_pathes[(f, t)].get("pagerank", 0), wts[i]
+                    )
 
         logging.info("Retrieved entities: {}".format(list(ents_from_query.keys())))
         logging.info("Retrieved relations: {}".format(list(rels_from_txt.keys())))

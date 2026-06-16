@@ -17,7 +17,6 @@
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -25,105 +24,48 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 )
 
 // LongCatModel implements ModelDriver for LongCat (Meituan).
-//
-// LongCat exposes an OpenAI-compatible chat completions endpoint at
-// https://api.longcat.chat/openai/v1/chat/completions and lists models at
-// https://api.longcat.chat/openai/v1/models. The official docs
-// (https://longcat.chat/platform/docs/APIDocs.html) do not advertise separate
-// /embeddings, /rerank, /audio, or /ocr endpoints. The wire shape matches the
-// OpenAI convention: response/delta carry reasoning_content alongside content
-// for thinking models.
-//
-// Documented request fields are limited to: model, messages, stream,
-// max_tokens, temperature, top_p. Sending other OpenAI-style fields
-// (stop, reasoning_effort, etc.) is not documented and is therefore
-// omitted to avoid relying on undocumented upstream behavior.
 type LongCatModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 // NewLongCatModel creates a new LongCat model instance.
-//
-// We clone http.DefaultTransport so we keep Go's defaults for
-// ProxyFromEnvironment, DialContext (with KeepAlive), HTTP/2,
-// TLSHandshakeTimeout, and ExpectContinueTimeout, and only override
-// the connection-pool fields we care about.
-//
-// The Client itself has no Timeout. http.Client.Timeout would also
-// cap the time spent reading the response body, which would cut off
-// long-lived SSE streams in ChatStreamlyWithSender. Non-streaming
-// callers wrap each request with context.WithTimeout instead.
 func NewLongCatModel(baseURL map[string]string, urlSuffix URLSuffix) *LongCatModel {
-	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
-	var transport *http.Transport
-	if ok {
-		transport = defaultTransport.Clone()
-	} else {
-		transport = &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-		}
-	}
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-	transport.ResponseHeaderTimeout = 60 * time.Second
-
 	return &LongCatModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
 
 func (l *LongCatModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewLongCatModel(baseURL, l.URLSuffix)
+	return NewLongCatModel(baseURL, l.baseModel.URLSuffix)
 }
 
 func (l *LongCatModel) Name() string {
 	return "longcat"
 }
 
-// baseURLForRegion returns the base URL for the given region, or an
-// error if no entry exists. This makes a misconfigured region fail
-// fast with a clear message, instead of silently producing a relative
-// URL that the HTTP transport then rejects.
-func (l *LongCatModel) baseURLForRegion(region string) (string, error) {
-	base, ok := l.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("longcat: no base URL configured for region %q", region)
-	}
-	return base, nil
-}
-
 // ChatWithMessages sends multiple messages with roles and returns the response.
 func (l *LongCatModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := l.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := l.baseURLForRegion(region)
+	baseURL, err := l.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, l.URLSuffix.Chat)
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, l.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -139,14 +81,6 @@ func (l *LongCatModel) ChatWithMessages(modelName string, messages []Message, ap
 		"stream":   false,
 	}
 
-	// Note: do NOT propagate chatModelConfig.Stream into the request body
-	// here. ChatWithMessages parses a single JSON response, so stream must
-	// always be off for this code path.
-	//
-	// Only the fields documented at
-	// https://longcat.chat/platform/docs/APIDocs.html are forwarded.
-	// Other ChatConfig fields (Stop, Effort, ...) are dropped on the
-	// floor because the upstream behavior is undefined.
 	if chatModelConfig != nil {
 		if chatModelConfig.MaxTokens != nil {
 			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
@@ -175,7 +109,7 @@ func (l *LongCatModel) ChatWithMessages(modelName string, messages []Message, ap
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := l.httpClient.Do(req)
+	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -232,12 +166,11 @@ func (l *LongCatModel) ChatWithMessages(modelName string, messages []Message, ap
 }
 
 // ChatStreamlyWithSender sends messages and streams the response via the
-// sender function. The LongCat SSE stream uses the same shape as the
-// OpenAI o-series: "data:" lines carrying JSON events with
-// delta.content for the visible answer and delta.reasoning_content for
-// the chain-of-thought (LongCat-Flash-Thinking only), terminated by
-// a [DONE] line.
 func (l *LongCatModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := l.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
@@ -246,20 +179,12 @@ func (l *LongCatModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		return fmt.Errorf("messages is empty")
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
-	}
-
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := l.baseURLForRegion(region)
+	baseURL, err := l.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, l.URLSuffix.Chat)
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, l.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -276,10 +201,6 @@ func (l *LongCatModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	}
 
 	if chatModelConfig != nil {
-		// Refuse to run if the caller explicitly asked for stream=false.
-		// The body of this method only knows how to read SSE, so a
-		// non-SSE JSON response would be parsed as if it were a stream
-		// and produce no chunks. Better to fail clearly.
 		if chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
 			return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 		}
@@ -301,9 +222,7 @@ func (l *LongCatModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// SSE streams are long-lived. Rely on the transport's
-	// ResponseHeaderTimeout to cap the connection-establishment phase
-	// instead of attaching a hard deadline here.
+	// SSE streams are long-lived.
 	req, err := http.NewRequestWithContext(context.Background(), "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -312,7 +231,7 @@ func (l *LongCatModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := l.httpClient.Do(req)
+	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -323,60 +242,27 @@ func (l *LongCatModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// SSE parsing: bump the scanner buffer from the 64KB default to 1MB
-	// so we never silently truncate a long data: line.
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	sawTerminal := false
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-
-		data := strings.TrimSpace(line[5:])
-
-		if data == "[DONE]" {
-			sawTerminal = true
-			break
-		}
-
-		var event map[string]interface{}
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			// A malformed frame can mean a truncated SSE event or an
-			// upstream incident; either way, the caller is better
-			// served by a hard failure than by silent partial output.
-			return fmt.Errorf("longcat: invalid SSE event: %w", err)
-		}
-
-		// LongCat (like other OpenAI-compatible upstreams) can emit a
-		// terminal `{"error": ...}` frame instead of a normal choices
-		// chunk when something goes wrong mid-stream. Surface it
-		// instead of falling through to the choices-missing branch.
+	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		if apiErr, ok := event["error"]; ok {
 			return fmt.Errorf("longcat: upstream stream error: %v", apiErr)
 		}
 
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
-			continue
+			return nil
 		}
 
 		firstChoice, ok := choices[0].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		delta, ok := firstChoice["delta"].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
-		// Reasoning chunks first, content second. When an SSE event
-		// carries both, callers that pipe them to a UI render the
-		// chain-of-thought before the answer for that token, matching
-		// the wire ordering LongCat-Flash-Thinking emits.
 		if r, ok := delta["reasoning_content"].(string); ok && r != "" {
 			if err := sender(nil, &r); err != nil {
 				return err
@@ -393,14 +279,13 @@ func (l *LongCatModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		finishReason, ok := firstChoice["finish_reason"].(string)
 		if ok && finishReason != "" {
 			sawTerminal = true
-			break
 		}
-	}
-
-	if err := scanner.Err(); err != nil {
+		return nil
+	})
+	if err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
-	if !sawTerminal {
+	if !done && !sawTerminal {
 		return fmt.Errorf("longcat: stream ended before [DONE] or finish_reason")
 	}
 
@@ -417,27 +302,23 @@ type longCatModelInfo struct {
 }
 
 type longCatListModelsResponse struct {
-	Data  []longCatModelInfo `json:"data"`
-	Error interface{}        `json:"error"`
+	Data  []DSModel   `json:"data"`
+	Error interface{} `json:"error"`
 }
 
 const longCatMaxListModelsResponseBytes = 1 << 20
 
-func (l *LongCatModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+func (l *LongCatModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := l.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := l.baseURLForRegion(region)
+	baseURL, err := l.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, l.URLSuffix.Models)
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, l.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -449,7 +330,7 @@ func (l *LongCatModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := l.httpClient.Do(req)
+	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -477,13 +358,7 @@ func (l *LongCatModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	models := make([]string, 0, len(result.Data))
-	for _, model := range result.Data {
-		if model.ID != "" {
-			models = append(models, model.ID)
-		}
-	}
-	return models, nil
+	return ParseListModel(ModelList{Models: result.Data}), nil
 }
 
 func (l *LongCatModel) CheckConnection(apiConfig *APIConfig) error {
@@ -491,9 +366,6 @@ func (l *LongCatModel) CheckConnection(apiConfig *APIConfig) error {
 	return err
 }
 
-// Embed is not exposed by the LongCat API. The /v1/embeddings endpoint
-// does not exist on api.longcat.chat; this returns the documented
-// sentinel.
 func (l *LongCatModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("%s, no such method", l.Name())
 }
@@ -526,20 +398,19 @@ func (l *LongCatModel) AudioSpeechWithSender(modelName *string, audioContent *st
 	return fmt.Errorf("%s, no such method", l.Name())
 }
 
-// OCRFile is not exposed by the LongCat API.
 func (l *LongCatModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", l.Name())
 }
 
 // ParseFile parse file
-func (z *LongCatModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (l *LongCatModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", l.Name())
 }
 
-func (z *LongCatModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (l *LongCatModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", l.Name())
 }
 
-func (z *LongCatModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (l *LongCatModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", l.Name())
 }

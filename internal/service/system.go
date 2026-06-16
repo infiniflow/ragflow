@@ -20,10 +20,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"ragflow/internal/engine/redis"
 	"strings"
 	"time"
 
-	"ragflow/internal/cache"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/server"
@@ -226,7 +226,7 @@ func (s *SystemService) getDatabaseStatus() ComponentStatus {
 
 func (s *SystemService) getRedisStatus() ComponentStatus {
 	startedAt := time.Now()
-	redisClient := cache.Get()
+	redisClient := redis.Get()
 	if redisClient == nil {
 		return ComponentStatus{
 			"status":  "red",
@@ -250,7 +250,7 @@ func (s *SystemService) getRedisStatus() ComponentStatus {
 
 func (s *SystemService) getTaskExecutorHeartbeats() map[string][]interface{} {
 	heartbeatsByExecutor := map[string][]interface{}{}
-	redisClient := cache.Get()
+	redisClient := redis.Get()
 	if redisClient == nil {
 		return heartbeatsByExecutor
 	}
@@ -325,7 +325,7 @@ func (s *SystemService) Healthz(ctx context.Context) (*HealthzResponse, bool) {
 	}
 
 	redisOK, redisMeta := timedHealthCheck(func() error {
-		redisClient := cache.Get()
+		redisClient := redis.Get()
 		if redisClient == nil || !redisClient.Health() {
 			return fmt.Errorf("redis is not healthy")
 		}

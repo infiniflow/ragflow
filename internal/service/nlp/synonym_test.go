@@ -70,6 +70,7 @@ func (m *MockRedisClient) Set(key, value string) {
 
 // TestNewSynonym tests the constructor
 func TestNewSynonym(t *testing.T) {
+	requireWordNetData(t)
 	t.Run("without redis", func(t *testing.T) {
 		s := NewSynonym(nil, "", testSynonymWordNetDir)
 		if s == nil {
@@ -237,7 +238,7 @@ func TestSynonymLoad(t *testing.T) {
 	s := NewSynonym(redis, tmpDir, testSynonymWordNetDir)
 
 	// Simulate multiple lookups to trigger load
-	s.lookupNum = 200 // Set above threshold
+	s.lookupNum.Store(200) // Set above threshold
 	s.loadTm = time.Now().Add(-4000 * time.Second) // Set load time > 1 hour ago
 
 	// Call load directly
@@ -270,7 +271,7 @@ func TestSynonymLoadNotTriggered(t *testing.T) {
 	s := NewSynonym(redis, "", "")
 
 	// Set conditions that should prevent load
-	s.lookupNum = 50 // Below threshold
+	s.lookupNum.Store(50) // Below threshold
 	s.loadTm = time.Now()
 
 	// Call load
@@ -278,7 +279,7 @@ func TestSynonymLoadNotTriggered(t *testing.T) {
 
 	// Should not attempt to load from Redis
 	// (indirect check: lookupNum should not reset)
-	if s.lookupNum != 50 {
+	if s.lookupNum.Load() != 50 {
 		t.Error("Load should not be triggered when lookupNum < 100")
 	}
 }
