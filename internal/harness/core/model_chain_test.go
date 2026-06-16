@@ -13,7 +13,7 @@ import (
 func TestBuildModelWrapperChain_NoConfig(t *testing.T) {
 	base := &mockModel{}
 	base.addResp("raw")
-	model := BuildModelWrapperChain(base, nil, DefaultReActConfig[*schema.Message]())
+	model := BuildModelWrapperChain(base, nil, DefaultReActConfig[*schema.Message](), nil)
 	if model == nil { t.Fatal("nil model") }
 	resp, err := model.Generate(context.Background(), []Message{schema.UserMessage("hi")})
 	if err != nil { t.Fatalf("Generate: %v", err) }
@@ -25,7 +25,7 @@ func TestBuildModelWrapperChain_WithRetry(t *testing.T) {
 	base.addResp("retry-ok")
 	cfg := DefaultReActConfig[*schema.Message]()
 	cfg.RetryConfig = &ModelRetryConfig{MaxRetries: 2}
-	model := BuildModelWrapperChain(base, nil, cfg)
+	model := BuildModelWrapperChain(base, nil, cfg, nil)
 	if model == nil { t.Fatal("nil model") }
 	resp, err := model.Generate(context.Background(), []Message{schema.UserMessage("hi")})
 	if err != nil { t.Fatalf("Generate: %v", err) }
@@ -40,7 +40,7 @@ func TestBuildModelWrapperChain_WithFailover(t *testing.T) {
 
 	cfg := DefaultReActConfig[*schema.Message]()
 	cfg.FailoverConfig = &FailoverConfigMsg{Models: []Model[*schema.Message]{fallback}}
-	model := BuildModelWrapperChain(primary, nil, cfg)
+	model := BuildModelWrapperChain(primary, nil, cfg, nil)
 	resp, err := model.Generate(context.Background(), []Message{schema.UserMessage("hi")})
 	if err != nil { t.Fatalf("Generate: %v", err) }
 	if resp.Content != "primary-ok" { t.Errorf("content = %s", resp.Content) }
@@ -57,7 +57,7 @@ func TestBuildModelWrapperChain_WithMiddleware(t *testing.T) {
 	base.addResp("mw-ok")
 	cfg := DefaultReActConfig[*schema.Message]()
 	cfg.Middlewares = []ReActMiddleware{mw}
-	model := BuildModelWrapperChain(base, nil, cfg)
+	model := BuildModelWrapperChain(base, nil, cfg, nil)
 	resp, err := model.Generate(context.Background(), []Message{schema.UserMessage("hi")})
 	if err != nil { t.Fatalf("Generate: %v", err) }
 	if !wrapCalled { t.Error("middleware WrapModel not called") }
@@ -82,7 +82,7 @@ func TestBuildModelWrapperChain_WithFullChain(t *testing.T) {
 	cfg.FailoverConfig = &FailoverConfigMsg{Models: []Model[*schema.Message]{fallback}}
 	cfg.Middlewares = []ReActMiddleware{mw}
 
-	model := BuildModelWrapperChain(primary, nil, cfg)
+	model := BuildModelWrapperChain(primary, nil, cfg, nil)
 	resp, err := model.Generate(context.Background(), []Message{schema.UserMessage("hi")})
 	if err != nil { t.Fatalf("Generate: %v", err) }
 	if !wrapCalled { t.Error("middleware WrapModel not called in chain") }
@@ -94,7 +94,7 @@ func TestBuildModelWrapperChain_NilMiddleware(t *testing.T) {
 	base.addResp("nil-mw")
 	cfg := DefaultReActConfig[*schema.Message]()
 	cfg.Middlewares = []ReActMiddleware{nil, nil}
-	model := BuildModelWrapperChain(base, nil, cfg)
+	model := BuildModelWrapperChain(base, nil, cfg, nil)
 	_, err := model.Generate(context.Background(), []Message{schema.UserMessage("hi")})
 	if err != nil { t.Fatalf("Generate: %v", err) }
 }

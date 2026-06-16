@@ -35,7 +35,7 @@ func TestStability_ReActGraph_FullLifecycle(t *testing.T) {
 		Checkpointer:    store,
 		RecursionLimit:  10,
 		InterruptBefore: nil, // no interrupts for this test
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("NewReActGraph: %v", err)
 	}

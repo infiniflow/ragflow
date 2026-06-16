@@ -190,12 +190,17 @@ func (ec *reActExecCtx) send(ev any) {
 }
 
 type execContext struct {
-	instruction       string
-	returnDirectly    map[string]bool
-	toolInfos         []*schema.ToolInfo
-	deferredToolInfos []*schema.ToolInfo
+	instruction        string
+	returnDirectly     map[string]bool
+	toolInfos          []*schema.ToolInfo // from config.Tools + contributor ToolInfos
+	deferredToolInfos  []*schema.ToolInfo
 	toolSearchTool    *schema.ToolInfo
 	emitInternalEvents bool
+
+	// ToolContributor results (collected once in once.Do).
+	contribTools           []Tool
+	contribToolInfos       []*schema.ToolInfo
+	contribReturnDirectly  map[string]bool
 }
 
 // ---- Run function builder ----
@@ -206,7 +211,10 @@ func (a *ReActAgent[M]) buildRunFunc(ctx context.Context) typedRunFunc[M] {
 		ec, err := a.prepareExecContext(ctx)
 		if err != nil { onceRun = func(_ context.Context, _ *typedRunParams[M]) {}; a.run = onceRun; return }
 		a.exeCtx = ec
-		hasTools := len(a.config.Tools) > 0 || (a.config.ToolsConfig != nil && len(a.config.ToolsConfig.Tools) > 0)
+		// Check for tools: config.Tools + ToolContributor tools
+		hasTools := len(a.config.Tools) > 0 ||
+			(a.config.ToolsConfig != nil && len(a.config.ToolsConfig.Tools) > 0) ||
+			len(ec.contribTools) > 0
 		if !hasTools {
 			onceRun = a.buildNoToolsRunFunc()
 		} else if a.config.GraphReAct {
@@ -219,23 +227,53 @@ func (a *ReActAgent[M]) buildRunFunc(ctx context.Context) typedRunFunc[M] {
 	return a.run
 }
 
-func (a *ReActAgent[M]) prepareExecContext(_ context.Context) (*execContext, error) {
+func (a *ReActAgent[M]) prepareExecContext(ctx context.Context) (*execContext, error) {
 	instruction := a.config.Instruction
 	if instruction == "" { instruction = internal.DefaultSystemPrompt }
 	rd := a.config.ReturnDirectly
 	if rd == nil { rd = make(map[string]bool) }
-	return &execContext{instruction: instruction, returnDirectly: rd, toolInfos: toolsToInfosTyped[M](a.config.Tools), emitInternalEvents: a.config.EmitInternalEvents}, nil
+
+	// Collect from ToolContributor middlewares.
+	contribTools := collectContributorTools(ctx, a.config.Middlewares)
+	contribInfos := collectContributorToolInfos(ctx, a.config.Middlewares)
+	contribRD := collectContributorReturnDirectly(ctx, a.config.Middlewares)
+
+	// Merge return-directly.
+	mergedRD := make(map[string]bool, len(rd)+len(contribRD))
+	for k, v := range rd { mergedRD[k] = v }
+	for k, v := range contribRD { mergedRD[k] = v }
+
+	// Merge tool infos: config tools + contributor explicit infos.
+	configInfos := toolsToInfosTyped[M](a.config.Tools)
+	allInfos := make([]*schema.ToolInfo, 0, len(configInfos)+len(contribInfos))
+	allInfos = append(allInfos, configInfos...)
+	allInfos = append(allInfos, contribInfos...)
+
+	return &execContext{
+		instruction:          instruction,
+		returnDirectly:       mergedRD,
+		toolInfos:            allInfos,
+		contribTools:         contribTools,
+		contribToolInfos:     contribInfos,
+		contribReturnDirectly: contribRD,
+		emitInternalEvents:   a.config.EmitInternalEvents,
+	}, nil
 }
 
 // ---- No-tools run function ----
 
 func (a *ReActAgent[M]) buildNoToolsRunFunc() typedRunFunc[M] {
 	return func(ctx context.Context, p *typedRunParams[M]) {
+		// Build allTools: config.Tools + contribTools
+		allTools := make([]Tool, 0, len(a.config.Tools)+len(a.exeCtx.contribTools))
+		allTools = append(allTools, a.config.Tools...)
+		allTools = append(allTools, a.exeCtx.contribTools...)
+
 		// BeforeAgent middleware
-		rc := &ReActAgentContext{Instruction: a.exeCtx.instruction, Tools: a.config.Tools, ReturnDirectly: a.exeCtx.returnDirectly}
+		rc := &ReActAgentContext{Instruction: a.exeCtx.instruction, Tools: allTools, ReturnDirectly: a.exeCtx.returnDirectly}
 		if err := a.runBeforeAgent(&ctx, rc, p.generator); err != nil { return }
 
-		model := BuildModelWrapperChain(a.config.Model, nil, a.config)
+		model := BuildModelWrapperChain(a.config.Model, nil, a.config, a.exeCtx.toolInfos)
 		state := NewReActAgentState(p.input.Messages, a.exeCtx.toolInfos, a.config.MaxIterations)
 
 		// BeforeModelRewrite middleware
@@ -524,7 +562,7 @@ func (a *ReActAgent[M]) buildGraphReActRunFunc() typedRunFunc[M] {
 			return
 		}
 
-		rg, err := NewReActGraph(msgAgent, graphCfg)
+		rg, err := NewReActGraph(msgAgent, graphCfg, a.exeCtx.toolInfos)
 		if err != nil {
 			p.generator.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("NewReActGraph: %w", err)})
 			return

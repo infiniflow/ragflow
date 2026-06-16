@@ -60,8 +60,34 @@ func New(cfg *TypedConfig[*schema.Message]) core.TypedReActMiddleware[*schema.Me
 	return NewTyped[*schema.Message](cfg)
 }
 
+func (m *middleware[M]) ContributeTools(ctx context.Context) []core.Tool {
+	if m.cfg == nil { return nil }
+	var tools []core.Tool
+	for _, s := range m.loadSkills() {
+		switch s.ExecutionMode {
+		case ModeFork, ModeForkWithContext:
+			tools = append(tools, m.newSkillTool(s))
+		}
+	}
+	return tools
+}
+
+func (m *middleware[M]) ContributeToolInfos(ctx context.Context) []*schema.ToolInfo { return nil }
+func (m *middleware[M]) ContributeReturnDirectly(ctx context.Context) map[string]bool { return nil }
+
 func (m *middleware[M]) BeforeAgent(ctx context.Context, rc *core.ReActAgentContext) (context.Context, *core.ReActAgentContext, error) {
 	if m.cfg == nil { return ctx, rc, nil }
+	for _, s := range m.loadSkills() {
+		if s.ExecutionMode == ModeInline {
+			rc.Instruction = applyCustomInstruction(rc.Instruction, s, m.cfg.CustomSystemPrompt)
+		}
+	}
+	return ctx, rc, nil
+}
+
+// loadSkills returns all skills from config and backend.
+func (m *middleware[M]) loadSkills() []Config {
+	if m.cfg == nil { return nil }
 	skills := m.cfg.Skills
 	if len(skills) == 0 && m.cfg.Backend != nil {
 		names, err := m.cfg.Backend.List()
@@ -76,16 +102,7 @@ func (m *middleware[M]) BeforeAgent(ctx context.Context, rc *core.ReActAgentCont
 			}
 		}
 	}
-
-	for _, s := range skills {
-		switch s.ExecutionMode {
-		case ModeInline:
-			rc.Instruction = applyCustomInstruction(rc.Instruction, s, m.cfg.CustomSystemPrompt)
-		case ModeFork, ModeForkWithContext:
-			rc.Tools = append(rc.Tools, m.newSkillTool(s))
-		}
-	}
-	return ctx, rc, nil
+	return skills
 }
 
 func (m *middleware[M]) newSkillTool(s Config) core.Tool {

@@ -402,17 +402,20 @@ func wrapIterWithCancelCtx[M MessageType](iter *AsyncIterator[*TypedAgentEvent[M
 	go func() {
 		defer gen.Close()
 		endedByCancel := false
-		defer func() {
-			// Only mark done on actual cancellation, not on normal completion.
-			// This prevents a shared cancelContext from being marked done by a
-			// sub-agent that finishes naturally, which would block later cancel calls.
-			if endedByCancel || cc.shouldCancel() {
-				cc.markDone()
-			}
-		}()
 		for {
 			event, ok := iter.Next()
-			if !ok { break }
+			if !ok {
+				// Inner iterator closed. If cancel was requested but no interrupt
+				// event was produced (e.g., the goroutine never started), emit
+				// a CancelError so the caller can detect the cancellation.
+				if cc.isRoot() && cc.shouldCancel() {
+					if err, ok := cc.createAndMarkHandled(); ok {
+						gen.Send(&TypedAgentEvent[M]{Err: err})
+					}
+					endedByCancel = true
+				}
+				break
+			}
 			if cc.isRoot() && event.Action != nil && event.Action.internalInterrupted != nil && cc.shouldCancel() {
 				if err, ok := cc.createAndMarkHandled(); ok {
 					err.interruptSignal = event.Action.internalInterrupted
@@ -422,6 +425,12 @@ func wrapIterWithCancelCtx[M MessageType](iter *AsyncIterator[*TypedAgentEvent[M
 				return
 			}
 			gen.Send(event)
+		}
+		// Mark done on cancellation or when requested (not on normal completion,
+		// to avoid prematurely marking a shared cancelContext for a sub-agent
+		// that finishes naturally).
+		if endedByCancel || cc.shouldCancel() {
+			cc.markDone()
 		}
 	}()
 	return it

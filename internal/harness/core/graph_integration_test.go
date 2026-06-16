@@ -222,7 +222,7 @@ func TestGraphIntegration_ReActWithCheckpointResume(t *testing.T) {
 		Checkpointer:    saver,
 		InterruptBefore: []string{"execute_tools"},
 		RecursionLimit:  20,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("NewReActGraph: %v", err)
 	}

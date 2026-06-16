@@ -38,45 +38,46 @@ func New(cfg *TypedConfig[*schema.Message]) core.TypedReActMiddleware[*schema.Me
 	return NewTyped[*schema.Message](cfg)
 }
 
-func (m *middleware[M]) BeforeAgent(ctx context.Context, rc *core.ReActAgentContext) (context.Context, *core.ReActAgentContext, error) {
-	m.initOnce.Do(func() {})
-	// initOnce ensures tools are loaded into rc at least once per middleware instance.
-	// If a previous run already loaded tools, skip re-adding to avoid duplicates.
-	if len(rc.Tools) > 0 || rc.ToolSearchTool != nil {
-		return ctx, rc, nil
-	}
-
+func (m *middleware[M]) ContributeTools(ctx context.Context) []core.Tool {
 	if len(m.cfg.AllTools) <= m.cfg.SearchThreshold {
-		// Small toolset: pass all directly
-		rc.Tools = append(rc.Tools, m.cfg.AllTools...)
-		return ctx, rc, nil
+		return m.cfg.AllTools
 	}
-
-	// Large toolset: search or deferred mode
 	if m.cfg.UseDeferred {
-		// Model-native search mode
-		rc.ToolSearchTool = &schema.ToolInfo{
+		return nil // tools are searched via meta-tool
+	}
+	// Client-side search mode: add search meta-tool + pass some directly
+	tools := []core.Tool{m.newSearchTool()}
+	passDirect := m.cfg.SearchThreshold / 2
+	if passDirect > len(m.cfg.AllTools) {
+		passDirect = len(m.cfg.AllTools)
+	}
+	tools = append(tools, m.cfg.AllTools[:passDirect]...)
+	return tools
+}
+
+func (m *middleware[M]) ContributeToolInfos(ctx context.Context) []*schema.ToolInfo {
+	if m.cfg.UseDeferred && len(m.cfg.AllTools) > m.cfg.SearchThreshold {
+		return []*schema.ToolInfo{{
 			Name:        "search_tools",
 			Description: "Search for available tools by keyword",
-		}
-		return ctx, rc, nil
+		}}
 	}
+	return nil
+}
 
-	// Client-side search mode: add search meta-tool + pass some directly
-	rc.Tools = append(rc.Tools, m.newSearchTool())
+func (m *middleware[M]) ContributeReturnDirectly(ctx context.Context) map[string]bool { return nil }
 
-	// Pass the first threshold/2 tools directly (commonly needed)
-	passDirect := m.cfg.SearchThreshold / 2
-	if passDirect > len(m.cfg.AllTools) { passDirect = len(m.cfg.AllTools) }
-	rc.Tools = append(rc.Tools, m.cfg.AllTools[:passDirect]...)
-
+func (m *middleware[M]) BeforeAgent(ctx context.Context, rc *core.ReActAgentContext) (context.Context, *core.ReActAgentContext, error) {
+	// Tool contribution is now handled via ToolContributor.
+	// BeforeAgent is kept for backward compatibility: if tools are already
+	// present (set by user or another middleware), skip re-initialization.
 	return ctx, rc, nil
 }
 
 func (m *middleware[M]) BeforeModelRewrite(ctx context.Context, state *core.TypedReActAgentState[M], mc *core.TypedModelContext[M]) (context.Context, *core.TypedReActAgentState[M], error) {
 	if !m.cfg.UseDeferred { return ctx, state, nil }
 
-	// Deferred mode: build tool info list
+	// Deferred mode: build tool info list for all available tools.
 	infos := make([]*schema.ToolInfo, 0, len(m.cfg.AllTools))
 	for _, t := range m.cfg.AllTools {
 		infos = append(infos, &schema.ToolInfo{Name: t.Name(), Description: t.Description()})

@@ -53,8 +53,23 @@ func NewTyped[M core.MessageType](cfg *Config) *middleware[M] {
 
 func New(cfg *Config) *middleware[*schema.Message] { return NewTyped[*schema.Message](cfg) }
 
+func (m *middleware[M]) ContributeTools(ctx context.Context) []core.Tool {
+	if m.cfg.Backend == nil { return nil }
+	return m.buildTools()
+}
+
+func (m *middleware[M]) ContributeToolInfos(ctx context.Context) []*schema.ToolInfo { return nil }
+
+func (m *middleware[M]) ContributeReturnDirectly(ctx context.Context) map[string]bool { return nil }
+
+// BeforeAgent provides tools in rc.Tools for backward compatibility with
+// code that calls BeforeAgent directly (e.g., existing tests).
+// The preferred path is ToolContributor (ContributeTools), which is automatically
+// collected during agent build.
 func (m *middleware[M]) BeforeAgent(ctx context.Context, rc *core.ReActAgentContext) (context.Context, *core.ReActAgentContext, error) {
-	if m.cfg.Backend == nil { return ctx, rc, nil }
+	if m.cfg.Backend == nil {
+		return ctx, rc, nil
+	}
 	rc.Tools = append(rc.Tools, m.buildTools()...)
 	return ctx, rc, nil
 }

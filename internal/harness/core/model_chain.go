@@ -164,7 +164,8 @@ func (w *callbackModelWrapper[M]) BindTools(tools []*schema.ToolInfo) error { re
 //	base → failover → retry → eventSender → user wrappers → callback
 //
 // The chain is built from innermost (closest to model) to outermost.
-func BuildModelWrapperChain[M MessageType](base Model[M], ec *reActExecCtx, cfg *ReActConfig[M]) Model[M] {
+// allToolInfos contains the merged tool infos from config.Tools + ToolContributor middlewares.
+func BuildModelWrapperChain[M MessageType](base Model[M], ec *reActExecCtx, cfg *ReActConfig[M], allToolInfos []*schema.ToolInfo) Model[M] {
 	model := base
 
 	// 1. Event sender (skip if user middlewares provide their own to avoid duplicates)
@@ -187,7 +188,7 @@ func BuildModelWrapperChain[M MessageType](base Model[M], ec *reActExecCtx, cfg 
 	for _, mw := range cfg.Middlewares {
 		if mw == nil { continue }
 		mc := &TypedModelContext[M]{
-			Tools: toolsToInfosTyped[M](cfg.Tools),
+			Tools:               allToolInfos,
 			ModelRetryConfig:    cfg.RetryConfig,
 			ModelFailoverConfig: cfg.FailoverConfig,
 		}

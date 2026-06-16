@@ -242,7 +242,7 @@ func NewAgent(ctx context.Context, cfg *AgentConfig) (core.Agent, error) {
 		}
 	}
 
-	// 6. Handle SubAgentSpecs — create SubAgentMiddleware and bind.
+	// 6. Handle SubAgentSpecs — create SubAgentMiddleware and init.
 	if len(cfg.SubAgentSpecs) > 0 {
 		subCfg := &subagent.Config{}
 		if harness := lookupHarness(cfg.HarnessProfileName); harness != nil && harness.RecursionDepth > 0 {
@@ -250,7 +250,7 @@ func NewAgent(ctx context.Context, cfg *AgentConfig) (core.Agent, error) {
 		}
 		saMW := subagent.New(cfg.SubAgentSpecs, subCfg)
 		reactCfg.Middlewares = append(reactCfg.Middlewares, saMW)
-		saMW.BindToConfig(ctx, reactCfg)
+		saMW.Init(ctx, reactCfg)
 	}
 
 	return core.NewReActAgent(reactCfg), nil

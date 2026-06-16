@@ -36,7 +36,7 @@ func TestReActGraph_CheckpointInterruptResume(t *testing.T) {
 	rg, err := NewReActGraph(agent, &ReActGraphConfig{
 		Checkpointer:   checkpoint.NewMemorySaver(),
 		RecursionLimit: 20,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("NewReActGraph: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestReActGraph_StreamWithInterrupt(t *testing.T) {
 		Checkpointer:    checkpoint.NewMemorySaver(),
 		InterruptBefore: []string{},
 		RecursionLimit:  20,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("NewReActGraph: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestReActGraph_FullCheckpointInterruptResume(t *testing.T) {
 		Checkpointer:    saver,
 		RecursionLimit:  20,
 		InterruptBefore: []string{"execute_tools"}, // pause before tool execution
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("NewReActGraph: %v", err)
 	}
@@ -202,7 +202,7 @@ func TestReActGraph_SerialCheckpointCycles(t *testing.T) {
 	rg, err := NewReActGraph(agent, &ReActGraphConfig{
 		Checkpointer:   saver,
 		RecursionLimit: 30,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("NewReActGraph: %v", err)
 	}
@@ -256,7 +256,7 @@ func TestReActGraph_StreamingCheckpointEvents(t *testing.T) {
 		Checkpointer:    saver,
 		InterruptBefore: []string{},
 		RecursionLimit:  20,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("NewReActGraph: %v", err)
 	}
@@ -306,7 +306,7 @@ func TestReActGraph_ConcurrentCheckpoints(t *testing.T) {
 				Checkpointer:    checkpoint.NewMemorySaver(),
 				InterruptBefore: []string{},
 				RecursionLimit:  10,
-			})
+			}, nil)
 			if err != nil {
 				errs <- err
 				return

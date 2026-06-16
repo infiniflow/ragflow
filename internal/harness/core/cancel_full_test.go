@@ -24,6 +24,28 @@ func drainAndAssertCancelError(t *testing.T, iter *AsyncIterator[*AgentEvent]) {
 	t.Fatal("expected CancelError in event stream")
 }
 
+// drainAndAssertCancelOrInterrupt accepts either a CancelError or an interrupt action.
+// Workflow agents may produce either depending on timing: if the cancel signal arrives
+// before the goroutine enters a sub-agent, the workflow emits an interrupt (Action.Interrupted).
+// If it arrives during sub-agent execution, the sub-agent emits a CancelError.
+func drainAndAssertCancelOrInterrupt(t *testing.T, iter *AsyncIterator[*AgentEvent]) {
+	t.Helper()
+	for {
+		ev, ok := iter.Next()
+		if !ok {
+			break
+		}
+		var ce *CancelError
+		if ev.Err != nil && errors.As(ev.Err, &ce) {
+			return
+		}
+		if ev.Action != nil && ev.Action.Interrupted != nil {
+			return
+		}
+	}
+	t.Fatal("expected CancelError or Interrupted action in event stream")
+}
+
 func drainEventsAndAssertCancelError(t *testing.T, iter *AsyncIterator[*AgentEvent]) []*AgentEvent {
 	t.Helper()
 	var events []*AgentEvent; hasCancel := false

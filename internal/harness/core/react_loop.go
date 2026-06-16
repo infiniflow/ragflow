@@ -37,18 +37,40 @@ func (a *ReActAgent[M]) buildReActRunFunc() typedRunFunc[M] {
 			}
 		}
 
+		// Build allTools: config.Tools + contribTools
+		allTools := make([]Tool, 0, len(a.config.Tools)+len(a.exeCtx.contribTools))
+		allTools = append(allTools, a.config.Tools...)
+		allTools = append(allTools, a.exeCtx.contribTools...)
+
+		// Build merged return-directly
+		allRD := make(map[string]bool, len(a.exeCtx.returnDirectly)+len(a.exeCtx.contribReturnDirectly))
+		for k, v := range a.exeCtx.returnDirectly { allRD[k] = v }
+		for k, v := range a.exeCtx.contribReturnDirectly { allRD[k] = v }
+
 		// BeforeAgent middlewares
-		rc := &ReActAgentContext{Instruction: a.exeCtx.instruction, Tools: a.config.Tools, ReturnDirectly: a.exeCtx.returnDirectly, ToolSearchTool: a.exeCtx.toolSearchTool}
+		rc := &ReActAgentContext{Instruction: a.exeCtx.instruction, Tools: allTools, ReturnDirectly: allRD, ToolSearchTool: a.exeCtx.toolSearchTool}
 		if err := a.runBeforeAgent(&ctx, rc, p.generator); err != nil { return }
 
-		model := BuildModelWrapperChain(a.config.Model, nil, a.config)
+		model := BuildModelWrapperChain(a.config.Model, nil, a.config, a.exeCtx.toolInfos)
 
+		// Build ToolsNode from merged tools, preserving ToolInvokeMiddlewares from config.
 		var tn *ToolsNode[M]
-		if a.config.ToolsConfig != nil {
-			tn = NewToolsNode[M](a.config.ToolsConfig)
-		} else if len(a.config.Tools) > 0 {
-			// Auto-create ToolsNode from Tools list if ToolsConfig not set.
-			tn = NewToolsNode[M](&ToolsNodeConfig{Tools: a.config.Tools})
+		if len(allTools) > 0 {
+			tnCfg := &ToolsNodeConfig{
+				Tools:            allTools,
+				ReturnDirectly:   allRD,
+				LoopGuard:        nil,
+				ArgumentsAliases: nil,
+			}
+			if a.config.ToolsConfig != nil {
+				tnCfg.ToolInvokeMiddlewares = a.config.ToolsConfig.ToolInvokeMiddlewares
+				tnCfg.Registry = a.config.ToolsConfig.Registry
+				tnCfg.EmitInternalEvents = a.config.ToolsConfig.EmitInternalEvents
+				tnCfg.LoopGuard = a.config.ToolsConfig.LoopGuard
+				tnCfg.UnknownToolHandler = a.config.ToolsConfig.UnknownToolHandler
+				tnCfg.ArgumentsAliases = a.config.ToolsConfig.ArgumentsAliases
+			}
+			tn = NewToolsNode[M](tnCfg)
 		}
 
 		for state.RemainingIterations > 0 {
