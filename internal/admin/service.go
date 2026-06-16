@@ -1811,6 +1811,7 @@ func (s *Service) InitDefaultAdmin() error {
 			return fmt.Errorf("failed to add tenant for admin: %w", err)
 		}
 
+		common.Info("Init default super user successfully")
 		return nil
 	}
 
@@ -1838,6 +1839,7 @@ func (s *Service) InitDefaultAdmin() error {
 		}
 	}
 
+	common.Info("Init default super user successfully")
 	return nil
 }
 

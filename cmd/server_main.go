@@ -54,12 +54,16 @@ func printHelp() {
 	fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS]\n\n", os.Args[0])
 	fmt.Fprintf(os.Stderr, "RAGFlow Server - Open-source RAG engine based on deep document understanding\n\n")
 	fmt.Fprintf(os.Stderr, "Options:\n")
-	fmt.Fprintf(os.Stderr, "  -p, --port int\tServer port (overrides config file)\n")
-	fmt.Fprintf(os.Stderr, "  -h, --help   \tShow this help message and exit\n")
+	fmt.Fprintf(os.Stderr, "  -p, --port int\t\tServer port (overrides config file)\n")
+	fmt.Fprintf(os.Stderr, "  -v, --version  \tPrint version information and exit\n")
+	fmt.Fprintf(os.Stderr, "  --debug        \tEnable debug-level logging\n")
+	fmt.Fprintf(os.Stderr, "  -h, --help     \tShow this help message and exit\n")
 	fmt.Fprintf(os.Stderr, "\nExamples:\n")
-	fmt.Fprintf(os.Stderr, "  %s           # Start server with config file port\n", os.Args[0])
-	fmt.Fprintf(os.Stderr, "  %s -p 8080   # Start server on port 8080\n", os.Args[0])
-	fmt.Fprintf(os.Stderr, "  %s --port 8080 # Start server on port 8080\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "  %s           \t\t# Start server with config file port\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "  %s -p 8080   \t\t# Start server on port 8080\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "  %s --port 8080 \t# Start server on port 8080\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "  %s --version  \t# Show version and exit\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "  %s --debug    \t# Start server with debug logging\n", os.Args[0])
 }
 
 func main() {
@@ -67,11 +71,21 @@ func main() {
 	var portFlag int
 	flag.IntVar(&portFlag, "port", 0, "Server port (overrides config file)")
 	flag.IntVar(&portFlag, "p", 0, "Server port (shorthand, overrides config file)")
+	var debugFlag bool
+	flag.BoolVar(&debugFlag, "debug", false, "Enable debug-level logging")
+	var versionFlag bool
+	flag.BoolVar(&versionFlag, "version", false, "Print version information and exit")
 
 	// Custom help message
 	flag.Usage = printHelp
 
 	flag.Parse()
+
+	// Handle --version flag: print version and exit immediately
+	if versionFlag {
+		fmt.Printf("RAGFlow version: %s\n", utility.GetRAGFlowVersion())
+		return
+	}
 
 	// Initialize logger with default level
 	// logger.Init("info"); // set debug log level
@@ -100,6 +114,11 @@ func main() {
 	if level == "" {
 		level = "info"
 	}
+
+	if debugFlag {
+		level = "debug"
+	}
+
 	if err := common.Init(level, "server_main.log"); err != nil {
 		common.Error("Failed to reinitialize logger", err)
 	}
