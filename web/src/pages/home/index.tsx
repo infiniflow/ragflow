@@ -1,19 +1,14 @@
 import { PageContainer } from '@/layouts/components/page-container';
-import { Applications } from './applications';
 import { NextBanner } from './banner';
-import { Datasets } from './datasets';
-
+import { HomeChatEntry } from './home-chat-entry';
 const Home = () => {
   return (
     <PageContainer>
-      <article>
-        <header className="mb-8">
-          <NextBanner />
-        </header>
+      <header className="mb-8">
+        <NextBanner />
+      </header>
 
-        <Datasets />
-        <Applications />
-      </article>
+      <HomeChatEntry />
     </PageContainer>
   );
 };

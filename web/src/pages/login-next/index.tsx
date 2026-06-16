@@ -8,11 +8,10 @@ import {
 } from '@/hooks/use-login-request';
 import { useSystemConfig } from '@/hooks/use-system-request';
 import { rsaPsw } from '@/utils';
-import { useContext, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 
-import Spotlight from '@/components/spotlight';
 import ThemeLogo from '@/components/theme-logo';
 import ThemeSwitch from '@/components/theme-switch';
 import { Button, ButtonLoading } from '@/components/ui/button';
@@ -30,10 +29,51 @@ import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
-import FlipCard3D, { FlipFaceContext } from './card';
 import './index.less';
-type LoginFormContentProps = {
-  isLoginPage: boolean;
+
+// ─── Left Panel (full background image) ───────────────────────────────────────
+
+function LeftPanel() {
+  return (
+    <div
+      className="hidden lg:flex lg:flex-col lg:justify-between relative w-1/2 min-h-screen overflow-hidden"
+      style={{
+        backgroundImage: "url('bgImage.png')", // ← replace with your image path
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      }}
+    >
+      {/* Dark overlay for readability */}
+      <div className="absolute inset-0 bg-black/50" />
+
+      {/* Content on top of image */}
+      <div className="relative z-10 flex flex-col h-full p-12">
+        {/* Logo */}
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 border border-white/20">
+            <ThemeLogo className="h-7 w-7" />
+          </div>
+          <span className="text-xl font-semibold text-white">MetaGross-AI</span>
+        </div>
+
+        {/* Tagline */}
+        <div className="mt-auto space-y-4 pb-8">
+          <h2 className="text-4xl font-semibold text-white leading-tight">
+            Web access for AI-powered workflows
+          </h2>
+          <p className="text-base text-white/70 leading-relaxed max-w-sm">
+            Launch agents, explore workflows, and manage your AI workspace from
+            any browser. Trusted performance for everything your team builds.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Form ─────────────────────────────────────────────────────────────────────
+
+type AuthFormProps = {
   title: string;
   form: UseFormReturn<any>;
   loading: boolean;
@@ -46,8 +86,7 @@ type LoginFormContentProps = {
   disablePasswordLogin?: boolean;
 };
 
-function LoginFormContent({
-  isLoginPage,
+function AuthForm({
   title,
   form,
   loading,
@@ -58,51 +97,67 @@ function LoginFormContent({
   handleLoginWithChannel,
   t,
   disablePasswordLogin,
-}: LoginFormContentProps) {
-  const face = useContext(FlipFaceContext);
-  const navigate = useNavigate();
-  const isActiveFace = isLoginPage ? face === 'front' : face === 'back';
-
-  const pageTitle =
-    title === 'login'
-      ? 'Sign in to MetaGross-AI'
-      : 'Create your MetaGross-AI account';
-  const pageDescription =
-    title === 'login'
-      ? 'Use your credentials to access the AI workspace and manage your workflows.'
-      : 'Join MetaGross-AI to start using agents, automations, and smart dashboards.';
+}: AuthFormProps) {
+  const isLogin = title === 'login';
+  const navigate = useNavigate()
+  const pageTitle = isLogin
+    ? 'Sign in to MetaGross-AI'
+    : 'Create your MetaGross-AI account';
+  const pageDescription = isLogin
+    ? 'Use your credentials to access the AI workspace and manage your workflows.'
+    : 'Join MetaGross-AI to start using agents, automations, and smart dashboards.';
 
   return (
-    <div className="flex h-full w-full items-center justify-center">
-      <div className="w-full max-w-[540px] h-full rounded-[2rem] border border-border bg-bg-card backdrop-blur-xl p-10 shadow-2xl shadow-cyan-500/10 flex flex-col">
-        <div className="mb-8 text-center">
-          <h2 className="text-3xl font-semibold text-text-primary">
-            {pageTitle}
-          </h2>
-          <p className="mx-auto mt-3 max-w-[420px] text-sm text-text-secondary">
-            {pageDescription}
-          </p>
-        </div>
+    <div className="flex flex-col w-full max-w-[460px]">
+      {/* Header */}
+      <div className="mb-8">
+        <h2 className="text-3xl font-semibold text-text-primary">
+          {pageTitle}
+        </h2>
+        <p className="mt-2 text-sm text-text-secondary">{pageDescription}</p>
+      </div>
 
-        {!disablePasswordLogin && (
-          <Form {...form}>
-            <form
-              className="flex h-full min-h-[420px] flex-col justify-center gap-8 text-text-primary"
-              data-testid="auth-form"
-              data-active={isActiveFace ? 'true' : undefined}
-              onSubmit={form.handleSubmit(onCheck)}
-            >
+      {/* Password-based form */}
+      {!disablePasswordLogin && (
+        <Form {...form}>
+          <form
+            className="flex flex-col gap-5"
+            data-testid="auth-form"
+            onSubmit={form.handleSubmit(onCheck)}
+          >
+            {/* Email */}
+            <FormField
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel required>{t('emailLabel')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      data-testid="auth-email"
+                      placeholder={t('emailPlaceholder')}
+                      autoComplete="email"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Nickname — register only */}
+            {!isLogin && (
               <FormField
                 control={form.control}
-                name="email"
+                name="nickname"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel required>{t('emailLabel')}</FormLabel>
+                    <FormLabel required>{t('nicknameLabel')}</FormLabel>
                     <FormControl>
                       <Input
-                        data-testid="auth-email"
-                        placeholder={t('emailPlaceholder')}
-                        autoComplete="email"
+                        data-testid="auth-nickname"
+                        placeholder={t('nicknamePlaceholder')}
+                        autoComplete="username"
                         {...field}
                       />
                     </FormControl>
@@ -110,82 +165,49 @@ function LoginFormContent({
                   </FormItem>
                 )}
               />
-              {title === 'register' && (
-                <FormField
-                  control={form.control}
-                  name="nickname"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel required>{t('nicknameLabel')}</FormLabel>
-                      <FormControl>
-                        <Input
-                          data-testid="auth-nickname"
-                          placeholder={t('nicknamePlaceholder')}
-                          autoComplete="username"
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              )}
+            )}
 
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel required>{t('passwordLabel')}</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <Input
-                          data-testid="auth-password"
-                          type={'password'}
-                          placeholder={t('passwordPlaceholder')}
-                          autoComplete={
-                            title === 'login'
-                              ? 'current-password'
-                              : 'new-password'
-                          }
-                          {...field}
-                        />
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              {title === 'login' && (
-                <div className="flex justify-end -mt-4">
-                  <Button
-                    variant={'static'}
-                    type="button"
-                    onClick={() => navigate('/forgot-password')}
-                    className="!text-[var(--accent-primary)] hover:!text-[var(--accent-primary)]/90 text-sm font-medium"
-                  >
-                    {t('forget')}
-                  </Button>
-                </div>
+            {/* Password */}
+            <FormField
+              control={form.control}
+              name="password"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel required>{t('passwordLabel')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      data-testid="auth-password"
+                      type="password"
+                      placeholder={t('passwordPlaceholder')}
+                      autoComplete={
+                        isLogin ? 'current-password' : 'new-password'
+                      }
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
               )}
+            />
 
-              {title === 'login' && (
+            {/* Forgot password + Remember me row — login only */}
+            {isLogin && (
+              <div className="flex items-center justify-between -mt-1">
                 <FormField
                   control={form.control}
                   name="remember"
                   render={({ field }) => (
                     <FormItem>
                       <FormControl>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 items-center">
                           <Checkbox
                             checked={field.value}
-                            onCheckedChange={(checked) => {
-                              field.onChange(checked);
-                            }}
+                            onCheckedChange={(checked) =>
+                              field.onChange(checked)
+                            }
                           />
                           <FormLabel
-                            className={cn(' hover:text-text-primary', {
+                            className={cn('cursor-pointer', {
                               'text-text-disabled': !field.value,
                               'text-text-primary': field.value,
                             })}
@@ -194,127 +216,94 @@ function LoginFormContent({
                           </FormLabel>
                         </div>
                       </FormControl>
-                      <FormMessage />
                     </FormItem>
                   )}
                 />
-              )}
-              <ButtonLoading
-                data-testid="auth-submit"
-                type="submit"
-                loading={loading}
-                className="bg-[var(--button-primary)] hover:bg-[var(--button-primary-hover)] w-full my-8"
-              >
-                {title === 'login' ? t('login') : t('continue')}
-              </ButtonLoading>
-            </form>
-          </Form>
-        )}
+                <Button
+                  variant="static"
+                  type="button"
+                  onClick={() => navigate('/forgot-password')}
+                  className="!text-[var(--accent-primary)] hover:!text-[var(--accent-primary)]/90 text-sm font-medium p-0"
+                >
+                  {t('forget')}
+                </Button>
+              </div>
+            )}
 
-        {title === 'login' && channels && channels.length > 0 && (
-          <div className={disablePasswordLogin ? 'py-8' : 'mt-3 border'}>
-            {channels.map((item) => (
-              <Button
-                variant={'transparent'}
-                key={item.channel}
-                onClick={() => handleLoginWithChannel(item.channel)}
-                style={{ marginTop: 10 }}
-                className={disablePasswordLogin ? 'w-full' : ''}
-              >
-                <div className="flex items-center">
-                  <SvgIcon
-                    name={item.icon || 'sso'}
-                    width={20}
-                    height={20}
-                    style={{ marginRight: 5 }}
-                  />
-                  Sign in with {item.display_name}
-                </div>
-              </Button>
-            ))}
-          </div>
-        )}
+            {/* Submit */}
+            <ButtonLoading
+              data-testid="auth-submit"
+              type="submit"
+              loading={loading}
+              className="bg-[var(--button-primary)] hover:bg-[var(--button-primary-hover)] w-full mt-2"
+            >
+              {isLogin ? t('login') : t('continue')}
+            </ButtonLoading>
+          </form>
+        </Form>
+      )}
 
-        {!disablePasswordLogin && title === 'login' && registerEnabled && (
-          <div className="mt-10 text-center">
-            <p className="text-text-disabled text-sm ">
+      {/* SSO channels — login only */}
+      {isLogin && channels && channels.length > 0 && (
+        <div
+          className={cn('mt-4', {
+            'py-4': disablePasswordLogin,
+            'border-t mt-6 pt-4': !disablePasswordLogin,
+          })}
+        >
+          {channels.map((item) => (
+            <Button
+              variant="transparent"
+              key={item.channel}
+              onClick={() => handleLoginWithChannel(item.channel)}
+              className={cn('mt-2', { 'w-full': disablePasswordLogin })}
+            >
+              <div className="flex items-center gap-2">
+                <SvgIcon name={item.icon || 'sso'} width={20} height={20} />
+                Sign in with {item.display_name}
+              </div>
+            </Button>
+          ))}
+        </div>
+      )}
+
+      {/* Switch between login / register */}
+      {!disablePasswordLogin && (
+        <p className="mt-8 text-center text-sm text-text-secondary">
+          {isLogin ? (
+            <>
               {t('signInTip')}
-              <Button
-                data-testid="auth-toggle-register"
-                variant={'static'}
-                onClick={changeTitle}
-                className="!text-[var(--accent-primary)] hover:!text-[var(--accent-primary)]/90 font-medium"
-              >
-                {t('signUp')}
-              </Button>
-            </p>
-          </div>
-        )}
-        {!disablePasswordLogin && title === 'register' && (
-          <div className="mt-10 text-center">
-            <p className="text-text-disabled text-sm">
+              {registerEnabled && (
+                <Button
+                  data-testid="auth-toggle-register"
+                  variant="static"
+                  onClick={changeTitle}
+                  className="!text-[var(--accent-primary)] hover:!text-[var(--accent-primary)]/90 font-medium ml-1"
+                >
+                  {t('signUp')}
+                </Button>
+              )}
+            </>
+          ) : (
+            <>
               {t('signUpTip')}
               <Button
                 data-testid="auth-toggle-login"
-                variant={'static'}
+                variant="static"
                 onClick={changeTitle}
-                className="!text-[var(--accent-primary)] hover:!text-[var(--accent-primary)]/90 font-medium"
+                className="!text-[var(--accent-primary)] hover:!text-[var(--accent-primary)]/90 font-medium ml-1"
               >
                 {t('login')}
               </Button>
-            </p>
-          </div>
-        )}
-      </div>
+            </>
+          )}
+        </p>
+      )}
     </div>
   );
 }
 
-type CardCompanyProps = {
-  title: string;
-  par1: string;
-  par2: string;
-};
-
-function CardCompany({ title, par1, par2 }: CardCompanyProps) {
-  return (
-    <div className="hidden w-full max-w-[540px] flex-1 min-h-[720px] rounded-[2rem] border border-border bg-bg-card p-8 text-text-primary shadow-2xl shadow-cyan-500/10 backdrop-blur-xl lg:flex lg:flex-col lg:justify-between lg:gap-10">
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="flex h-20 w-20 items-center justify-center rounded-[2rem] border border-white/10 bg-white/10 shadow-lg shadow-cyan-500/10">
-            <ThemeLogo className="h-14 w-14" />
-          </div>
-          <div>
-            <div className="text-2xl font-semibold text-text-primary">
-              MetaGross-AI
-            </div>
-            <div className="text-sm text-text-secondary">
-              AI workspace for teams
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-1 flex-col justify-center gap-6 text-center lg:text-left">
-        <h2 className="text-3xl font-semibold text-text-primary">{title}</h2>
-        <div className="space-y-4 text-sm leading-7 text-text-secondary">
-          <p>{par1}</p>
-          <p>{par2}</p>
-        </div>
-      </div>
-
-      <div className="rounded-[2rem] border border-border-button bg-bg-component p-6 text-sm text-text-secondary shadow-inner shadow-cyan-500/5 bg-[--note-info-bg] border-[--note-info-border]">
-        <p className="font-medium text-text-primary text-[--note-info-title]">
-          Build faster with AI-first workflows.
-        </p>
-        <p className="mt-3 text-sm leading-6 text-text-secondary text-[--note-info-text]">
-          Launch agents, share results, and stay in sync with a workspace
-          designed for smart teams.
-        </p>
-      </div>
-    </div>
-  );
-}
+// ─── Main Page ─────────────────────────────────────────────────────────────────
 
 const Login = () => {
   const [title, setTitle] = useState('login');
@@ -325,7 +314,6 @@ const Login = () => {
   const { login: loginWithChannel, loading: loginWithChannelLoading } =
     useLoginWithChannel();
   const { t } = useTranslation('translation', { keyPrefix: 'login' });
-  const [isLoginPage, setIsLoginPage] = useState(true);
 
   const loading =
     signLoading ||
@@ -335,26 +323,18 @@ const Login = () => {
   const { config } = useSystemConfig();
   const registerEnabled = config?.registerEnabled !== 0;
 
-  const { isLogin } = useAuth();
+  const { isLogin: isLoggedIn } = useAuth();
   useEffect(() => {
-    if (isLogin) {
-      navigate('/');
-    }
-  }, [isLogin, navigate]);
+    if (isLoggedIn) navigate('/');
+  }, [isLoggedIn, navigate]);
 
   const handleLoginWithChannel = async (channel: string) => {
     await loginWithChannel(channel);
   };
 
   const changeTitle = () => {
-    setIsLoginPage(title !== 'login');
-    if (title === 'login' && !registerEnabled) {
-      return;
-    }
-
-    setTimeout(() => {
-      setTitle(title === 'login' ? 'register' : 'login');
-    }, 200);
+    if (title === 'login' && !registerEnabled) return;
+    setTitle(title === 'login' ? 'register' : 'login');
   };
 
   const FormSchema = z
@@ -376,38 +356,30 @@ const Login = () => {
         });
       }
     });
+
   type FormValues = z.infer<typeof FormSchema>;
+
   const form = useForm<FormValues>({
-    defaultValues: {
-      nickname: '',
-      email: '',
-      password: '',
-      remember: false,
-    },
+    defaultValues: { nickname: '', email: '', password: '', remember: false },
     resolver: zodResolver(FormSchema),
   });
 
   const onCheck = async (params: FormValues) => {
     try {
       const rsaPassWord = rsaPsw(params.password) as string;
-
       if (title === 'login') {
         const code = await login({
           email: `${params.email}`.trim(),
           password: rsaPassWord,
         });
-        if (code === 0) {
-          navigate('/');
-        }
+        if (code === 0) navigate('/');
       } else {
         const code = await register({
           nickname: params.nickname,
           email: params.email,
           password: rsaPassWord,
         });
-        if (code === 0) {
-          setTitle('login');
-        }
+        if (code === 0) setTitle('login');
       }
     } catch (errorInfo) {
       console.log('Failed:', errorInfo);
@@ -415,46 +387,31 @@ const Login = () => {
   };
 
   return (
-    <>
-      <Spotlight opcity={0.4} coverage={60} color={'rgb(128, 255, 248)'} />
+    <div className="flex min-h-screen bg-bg-card">
+      {/* Left: full background image */}
+      <LeftPanel />
 
-      <div className="relative min-h-screen overflow-clip login-page">
-        <div className="relative z-10 mx-auto flex min-h-screen max-w-[1300px] flex-col justify-center px-4 py-8 sm:px-6 lg:flex-row lg:items-center lg:space-x-12">
-          <CardCompany
-            title={'Web access for AI-powered workflows'}
-            par1={
-              'Use the MetaGross-AI web portal to launch agents, explore workflows, and manage your AI workspace from any browser.'
-            }
-            par2={
-              'Trusted performance, fast collaboration, and a clean interface for everything your team builds online.'
-            }
-          />
-
-          <div className="w-full max-w-[540px] flex-1 h-[720px] flex items-center justify-center">
-            <div className="w-full h-full max-w-[540px] flex items-center justify-center">
-              <FlipCard3D isLoginPage={isLoginPage}>
-                <LoginFormContent
-                  isLoginPage={isLoginPage}
-                  title={title}
-                  form={form}
-                  loading={loading}
-                  onCheck={onCheck}
-                  changeTitle={changeTitle}
-                  registerEnabled={registerEnabled}
-                  channels={channels || []}
-                  handleLoginWithChannel={handleLoginWithChannel}
-                  t={t}
-                  disablePasswordLogin={!!config?.disablePasswordLogin}
-                />
-              </FlipCard3D>
-            </div>
-          </div>
-        </div>
-        <div className="absolute bottom-6 left-1/2 z-20 flex -translate-x-1/2 items-center justify-center rounded-full bg-bg-card/90   p-2  ">
+      {/* Right: form panel */}
+      <div className="flex flex-1 flex-col items-center justify-center px-8 py-12 relative">
+        {/* Theme switch top-right */}
+        <div className="absolute top-6 right-6">
           <ThemeSwitch />
         </div>
+
+        <AuthForm
+          title={title}
+          form={form}
+          loading={loading}
+          onCheck={onCheck}
+          changeTitle={changeTitle}
+          registerEnabled={registerEnabled}
+          channels={channels || []}
+          handleLoginWithChannel={handleLoginWithChannel}
+          t={t}
+          disablePasswordLogin={!!config?.disablePasswordLogin}
+        />
       </div>
-    </>
+    </div>
   );
 };
 

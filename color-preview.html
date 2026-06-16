@@ -80,8 +80,8 @@
       --border: #1e3060;
       --button-primary: #22d3ee;
       --button-primary-hover: #38bdf8;
-      --brand: #7c3aed;
-      --brand-hover: #8b5cf6;
+      --brand: #1e40af;
+      --brand-hover: #2563eb;
       --accent-purple: #a78bfa;
       --accent-purple-hover: #c4b5fd;
       --success: #10b981;
@@ -133,51 +133,119 @@
     }
 
     /* ── buttons ── */
-    .button-primary       { background: var(--button-primary); color: #ffffff; }
-    .button-primary:hover { background: var(--button-primary-hover); color: #ffffff; }
-    html[data-theme="dark"] .button-primary       { color: #070c1a; }
-    html[data-theme="dark"] .button-primary:hover { color: #070c1a; }
+    .button-primary {
+      background: var(--button-primary);
+      color: #ffffff;
+    }
 
-    .button-brand       { background: var(--brand); color: #ffffff; }
-    .button-brand:hover { background: var(--brand-hover); color: #ffffff; }
-    html[data-theme="dark"] .button-brand       { color: #f5f3ff; }
-    html[data-theme="dark"] .button-brand:hover { color: #f5f3ff; }
+    .button-primary:hover {
+      background: var(--button-primary-hover);
+      color: #ffffff;
+    }
 
-    .button-purple       { background: var(--accent-purple); color: #ffffff; }
-    .button-purple:hover { background: var(--accent-purple-hover); color: #ffffff; }
-    html[data-theme="dark"] .button-purple       { color: #1e0a3c; }
-    html[data-theme="dark"] .button-purple:hover { color: #1e0a3c; }
+    html[data-theme="dark"] .button-primary {
+      color: #070c1a;
+    }
 
-    .button-success { background: var(--success); color: #ffffff; }
-    html[data-theme="dark"] .button-success { color: #022c22; }
+    html[data-theme="dark"] .button-primary:hover {
+      color: #070c1a;
+    }
 
-    .button-warning { background: var(--warning); color: #ffffff; }
-    html[data-theme="dark"] .button-warning { color: #1c0f00; }
+    .button-brand {
+      background: var(--brand);
+      color: #ffffff;
+    }
 
-    .button-danger  { background: var(--danger); color: #ffffff; }
-    html[data-theme="dark"] .button-danger  { color: #1a0000; }
+    .button-brand:hover {
+      background: var(--brand-hover);
+      color: #ffffff;
+    }
+
+    html[data-theme="dark"] .button-brand {
+      color: #f5f3ff;
+    }
+
+    html[data-theme="dark"] .button-brand:hover {
+      color: #f5f3ff;
+    }
+
+    .button-purple {
+      background: var(--accent-purple);
+      color: #ffffff;
+    }
+
+    .button-purple:hover {
+      background: var(--accent-purple-hover);
+      color: #ffffff;
+    }
+
+    html[data-theme="dark"] .button-purple {
+      color: #1e0a3c;
+    }
+
+    html[data-theme="dark"] .button-purple:hover {
+      color: #1e0a3c;
+    }
+
+    .button-success {
+      background: var(--success);
+      color: #ffffff;
+    }
+
+    html[data-theme="dark"] .button-success {
+      color: #022c22;
+    }
+
+    .button-warning {
+      background: var(--warning);
+      color: #ffffff;
+    }
+
+    html[data-theme="dark"] .button-warning {
+      color: #1c0f00;
+    }
+
+    .button-danger {
+      background: var(--danger);
+      color: #ffffff;
+    }
+
+    html[data-theme="dark"] .button-danger {
+      color: #1a0000;
+    }
 
     .button-review {
       background: var(--review);
       color: var(--review-text);
       border: 1px solid var(--review-text);
     }
+
     .button-reject {
       background: var(--reject);
       color: var(--reject-text);
       border: 1px solid var(--reject-border);
     }
-    .button-reject:hover { background: var(--reject-hover); }
+
+    .button-reject:hover {
+      background: var(--reject-hover);
+    }
 
     /* ── base ── */
-    * { box-sizing: border-box; }
+    * {
+      box-sizing: border-box;
+    }
+
     body {
       margin: 0;
       font-family: Inter, system-ui, sans-serif;
       background: var(--bg);
       color: var(--text);
     }
-    .page { min-height: 100vh; padding: 40px 24px; }
+
+    .page {
+      min-height: 100vh;
+      padding: 40px 24px;
+    }
 
     .topbar {
       display: flex;
@@ -187,8 +255,17 @@
       align-items: center;
       margin-bottom: 32px;
     }
-    .topbar h1 { margin: 0; font-size: 1.75rem; }
-    .topbar p  { margin: 8px 0 0; color: var(--text-muted); max-width: 640px; }
+
+    .topbar h1 {
+      margin: 0;
+      font-size: 1.75rem;
+    }
+
+    .topbar p {
+      margin: 8px 0 0;
+      color: var(--text-muted);
+      max-width: 640px;
+    }
 
     .toggle {
       border: 1px solid var(--border);
@@ -213,10 +290,22 @@
       padding: 24px;
       box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
     }
-    .frame h2 { margin: 0 0 12px; font-size: 1.15rem; }
-    .frame p  { margin: 0 0 18px; color: var(--text-muted); }
 
-    .swatches { display: grid; gap: 14px; }
+    .frame h2 {
+      margin: 0 0 12px;
+      font-size: 1.15rem;
+    }
+
+    .frame p {
+      margin: 0 0 18px;
+      color: var(--text-muted);
+    }
+
+    .swatches {
+      display: grid;
+      gap: 14px;
+    }
+
     .swatch {
       display: grid;
       grid-template-columns: 96px 1fr 96px;
@@ -227,24 +316,52 @@
       background: var(--surface-soft);
       border: 1px solid var(--border);
     }
-    .swatch-chip {
-      width: 56px; height: 56px;
-      border-radius: 16px;
-      border: 1px solid rgba(0,0,0,0.08);
-    }
-    .swatch-title { font-weight: 700; }
-    .swatch-label { color: var(--text-muted); font-size: 0.92rem; }
-    .swatch-value { text-align: right; font-family: monospace; color: var(--text-muted); }
 
-    .preview-panel { display: grid; gap: 18px; margin-top: 24px; }
+    .swatch-chip {
+      width: 56px;
+      height: 56px;
+      border-radius: 16px;
+      border: 1px solid rgba(0, 0, 0, 0.08);
+    }
+
+    .swatch-title {
+      font-weight: 700;
+    }
+
+    .swatch-label {
+      color: var(--text-muted);
+      font-size: 0.92rem;
+    }
+
+    .swatch-value {
+      text-align: right;
+      font-family: monospace;
+      color: var(--text-muted);
+    }
+
+    .preview-panel {
+      display: grid;
+      gap: 18px;
+      margin-top: 24px;
+    }
+
     .card {
       border-radius: 20px;
       background: var(--surface-soft);
       border: 1px solid var(--border);
       padding: 20px;
     }
-    .card-title { margin: 0 0 12px; font-weight: 700; }
-    .button-row { display: flex; flex-wrap: wrap; gap: 12px; }
+
+    .card-title {
+      margin: 0 0 12px;
+      font-weight: 700;
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
 
     .button {
       border: none;
@@ -263,14 +380,28 @@
       font-weight: 700;
       border: 1px solid var(--border);
     }
+
     .pill-approved {
       background: var(--pill-approved-bg);
       color: var(--pill-approved-text);
       border-color: rgba(5, 150, 105, 0.2);
     }
-    .pill-status  { background: var(--pill-status-bg);  color: var(--pill-status-text); }
-    .pill-review  { background: var(--pill-review-bg);  color: var(--pill-review-text); }
-    .pill-reject  { background: var(--reject); color: var(--reject-text); border-color: var(--reject-border); }
+
+    .pill-status {
+      background: var(--pill-status-bg);
+      color: var(--pill-status-text);
+    }
+
+    .pill-review {
+      background: var(--pill-review-bg);
+      color: var(--pill-review-text);
+    }
+
+    .pill-reject {
+      background: var(--reject);
+      color: var(--reject-text);
+      border-color: var(--reject-border);
+    }
 
     /* ── sticky notes ── */
     .notes-grid {
@@ -287,9 +418,10 @@
       position: relative;
       transition: transform 0.15s ease, box-shadow 0.15s ease;
     }
+
     .note:hover {
       transform: translateY(-3px);
-      box-shadow: 0 12px 32px rgba(0,0,0,0.12);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
     }
 
     .note-icon {
@@ -297,15 +429,18 @@
       margin-bottom: 10px;
       display: block;
     }
+
     .note-title {
       font-weight: 700;
       font-size: 0.95rem;
       margin-bottom: 6px;
     }
+
     .note-body {
       font-size: 0.88rem;
       line-height: 1.6;
     }
+
     .note-tag {
       display: inline-block;
       margin-top: 12px;
@@ -316,29 +451,95 @@
       opacity: 0.75;
     }
 
-    .note-info    { background: var(--note-info-bg);    border-color: var(--note-info-border);    color: var(--note-info-text); }
-    .note-info    .note-title { color: var(--note-info-title); }
-    .note-info    .note-tag   { background: var(--note-info-border); color: #fff; }
+    .note-info {
+      background: var(--note-info-bg);
+      border-color: var(--note-info-border);
+      color: var(--note-info-text);
+    }
 
-    .note-success { background: var(--note-success-bg); border-color: var(--note-success-border); color: var(--note-success-text); }
-    .note-success .note-title { color: var(--note-success-title); }
-    .note-success .note-tag   { background: var(--note-success-border); color: #fff; }
+    .note-info .note-title {
+      color: var(--note-info-title);
+    }
 
-    .note-warning { background: var(--note-warning-bg); border-color: var(--note-warning-border); color: var(--note-warning-text); }
-    .note-warning .note-title { color: var(--note-warning-title); }
-    .note-warning .note-tag   { background: var(--note-warning-border); color: #fff; }
+    .note-info .note-tag {
+      background: var(--note-info-border);
+      color: #fff;
+    }
 
-    .note-danger  { background: var(--note-danger-bg);  border-color: var(--note-danger-border);  color: var(--note-danger-text); }
-    .note-danger  .note-title { color: var(--note-danger-title); }
-    .note-danger  .note-tag   { background: var(--note-danger-border); color: #fff; }
+    .note-success {
+      background: var(--note-success-bg);
+      border-color: var(--note-success-border);
+      color: var(--note-success-text);
+    }
 
-    .note-purple  { background: var(--note-purple-bg);  border-color: var(--note-purple-border);  color: var(--note-purple-text); }
-    .note-purple  .note-title { color: var(--note-purple-title); }
-    .note-purple  .note-tag   { background: var(--note-purple-border); color: #fff; }
+    .note-success .note-title {
+      color: var(--note-success-title);
+    }
 
-    .note-neutral { background: var(--note-neutral-bg); border-color: var(--note-neutral-border); color: var(--note-neutral-text); }
-    .note-neutral .note-title { color: var(--note-neutral-title); }
-    .note-neutral .note-tag   { background: var(--note-neutral-border); color: #fff; }
+    .note-success .note-tag {
+      background: var(--note-success-border);
+      color: #fff;
+    }
+
+    .note-warning {
+      background: var(--note-warning-bg);
+      border-color: var(--note-warning-border);
+      color: var(--note-warning-text);
+    }
+
+    .note-warning .note-title {
+      color: var(--note-warning-title);
+    }
+
+    .note-warning .note-tag {
+      background: var(--note-warning-border);
+      color: #fff;
+    }
+
+    .note-danger {
+      background: var(--note-danger-bg);
+      border-color: var(--note-danger-border);
+      color: var(--note-danger-text);
+    }
+
+    .note-danger .note-title {
+      color: var(--note-danger-title);
+    }
+
+    .note-danger .note-tag {
+      background: var(--note-danger-border);
+      color: #fff;
+    }
+
+    .note-purple {
+      background: var(--note-purple-bg);
+      border-color: var(--note-purple-border);
+      color: var(--note-purple-text);
+    }
+
+    .note-purple .note-title {
+      color: var(--note-purple-title);
+    }
+
+    .note-purple .note-tag {
+      background: var(--note-purple-border);
+      color: #fff;
+    }
+
+    .note-neutral {
+      background: var(--note-neutral-bg);
+      border-color: var(--note-neutral-border);
+      color: var(--note-neutral-text);
+    }
+
+    .note-neutral .note-title {
+      color: var(--note-neutral-title);
+    }
+
+    .note-neutral .note-tag {
+      background: var(--note-neutral-border);
+      color: #fff;
+    }
   </style>
 </head>
 
@@ -347,7 +548,7 @@
 
     <div class="topbar">
       <div>
-        <h1>Mentorax Color Palette</h1>
+        <h1>MetaGross Color Palette</h1>
         <p>Derived from the logo's cyan → blue → purple → magenta gradient.</p>
       </div>
       <button id="toggle" class="toggle">Switch to dark mode</button>
@@ -361,32 +562,50 @@
         <div class="swatches">
           <div class="swatch">
             <div class="swatch-chip" style="background:var(--bg)"></div>
-            <div><div class="swatch-title">Background</div><div class="swatch-label">Page background</div></div>
+            <div>
+              <div class="swatch-title">Background</div>
+              <div class="swatch-label">Page background</div>
+            </div>
             <div class="swatch-value" data-token="--bg"></div>
           </div>
           <div class="swatch">
             <div class="swatch-chip" style="background:var(--surface)"></div>
-            <div><div class="swatch-title">Surface</div><div class="swatch-label">Cards, panels</div></div>
+            <div>
+              <div class="swatch-title">Surface</div>
+              <div class="swatch-label">Cards, panels</div>
+            </div>
             <div class="swatch-value" data-token="--surface"></div>
           </div>
           <div class="swatch">
             <div class="swatch-chip" style="background:var(--surface-soft)"></div>
-            <div><div class="swatch-title">Soft surface</div><div class="swatch-label">Hover, inputs</div></div>
+            <div>
+              <div class="swatch-title">Soft surface</div>
+              <div class="swatch-label">Hover, inputs</div>
+            </div>
             <div class="swatch-value" data-token="--surface-soft"></div>
           </div>
           <div class="swatch">
             <div class="swatch-chip" style="background:var(--text)"></div>
-            <div><div class="swatch-title">Text</div><div class="swatch-label">Primary body text</div></div>
+            <div>
+              <div class="swatch-title">Text</div>
+              <div class="swatch-label">Primary body text</div>
+            </div>
             <div class="swatch-value" data-token="--text"></div>
           </div>
           <div class="swatch">
             <div class="swatch-chip" style="background:var(--text-muted)"></div>
-            <div><div class="swatch-title">Muted text</div><div class="swatch-label">Secondary text</div></div>
+            <div>
+              <div class="swatch-title">Muted text</div>
+              <div class="swatch-label">Secondary text</div>
+            </div>
             <div class="swatch-value" data-token="--text-muted"></div>
           </div>
           <div class="swatch">
             <div class="swatch-chip" style="background:var(--border)"></div>
-            <div><div class="swatch-title">Border</div><div class="swatch-label">Dividers, inputs</div></div>
+            <div>
+              <div class="swatch-title">Border</div>
+              <div class="swatch-label">Dividers, inputs</div>
+            </div>
             <div class="swatch-value" data-token="--border"></div>
           </div>
         </div>
@@ -398,44 +617,54 @@
         <div class="swatches">
           <div class="swatch">
             <div class="swatch-chip" style="background:var(--button-primary)"></div>
-            <div><div class="swatch-title">Primary</div><div class="swatch-label">Navy blue — main CTA</div></div>
+            <div>
+              <div class="swatch-title">Primary</div>
+              <div class="swatch-label">Navy blue — main CTA</div>
+            </div>
             <div class="swatch-value" data-token="--button-primary"></div>
           </div>
           <div class="swatch">
             <div class="swatch-chip" style="background:var(--brand)"></div>
-            <div><div class="swatch-title">Brand / Cyan</div><div class="swatch-label">Logo top edge</div></div>
+            <div>
+              <div class="swatch-title">Secondary</div>
+              <div class="swatch-label">Logo top edge</div>
+            </div>
             <div class="swatch-value" data-token="--brand"></div>
           </div>
           <div class="swatch">
             <div class="swatch-chip" style="background:var(--accent-purple)"></div>
-            <div><div class="swatch-title">Purple accent</div><div class="swatch-label">Logo left side</div></div>
+            <div>
+              <div class="swatch-title">Purple accent</div>
+              <div class="swatch-label">Logo left side</div>
+            </div>
             <div class="swatch-value" data-token="--accent-purple"></div>
           </div>
           <div class="swatch">
             <div class="swatch-chip" style="background:var(--success)"></div>
-            <div><div class="swatch-title">Success</div><div class="swatch-label">Confirmed, active</div></div>
+            <div>
+              <div class="swatch-title">Success</div>
+              <div class="swatch-label">Confirmed, active</div>
+            </div>
             <div class="swatch-value" data-token="--success"></div>
           </div>
           <div class="swatch">
             <div class="swatch-chip" style="background:var(--warning)"></div>
-            <div><div class="swatch-title">Warning</div><div class="swatch-label">Pending, caution</div></div>
+            <div>
+              <div class="swatch-title">Warning</div>
+              <div class="swatch-label">Pending, caution</div>
+            </div>
             <div class="swatch-value" data-token="--warning"></div>
           </div>
           <div class="swatch">
             <div class="swatch-chip" style="background:var(--danger)"></div>
-            <div><div class="swatch-title">Danger</div><div class="swatch-label">Error, delete</div></div>
+            <div>
+              <div class="swatch-title">Danger</div>
+              <div class="swatch-label">Error, delete</div>
+            </div>
             <div class="swatch-value" data-token="--danger"></div>
           </div>
-          <div class="swatch">
-            <div class="swatch-chip" style="background:var(--review)"></div>
-            <div><div class="swatch-title">Review</div><div class="swatch-label">Neutral state</div></div>
-            <div class="swatch-value" data-token="--review"></div>
-          </div>
-          <div class="swatch">
-            <div class="swatch-chip" style="background:var(--reject)"></div>
-            <div><div class="swatch-title">Reject</div><div class="swatch-label">Rejected state</div></div>
-            <div class="swatch-value" data-token="--reject"></div>
-          </div>
+
+
         </div>
       </section>
 
@@ -537,4 +766,5 @@
     updateSwatchValues();
   </script>
 </body>
+
 </html>
