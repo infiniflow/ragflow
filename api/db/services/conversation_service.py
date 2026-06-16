@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import hashlib
 import time
 import logging
 from uuid import uuid4
@@ -52,6 +53,29 @@ class ConversationService(CommonService):
             sessions = sessions.paginate(page_number, items_per_page)
 
         return list(sessions.dicts())
+
+    @classmethod
+    @DB.connection_context()
+    def get_or_create_for_channel(cls, dialog_id, channel_id, chat_id, name=None):
+        """Find or create the conversation backing one channel end-user chat.
+
+        A chat_channel is bound to a dialog; each end-user chat on that channel
+        keeps its own conversation history. The conversation is identified by a
+        deterministic id derived from (channel_id, chat_id) so history persists
+        across restarts without a back-reference column on the conversation.
+        """
+        conv_id = hashlib.md5(f"{channel_id}:{chat_id}".encode("utf-8")).hexdigest()[:32]
+        conv = cls.model.get_or_none(cls.model.id == conv_id)
+        if conv is not None:
+            return conv
+        cls.save(
+            id=conv_id,
+            dialog_id=dialog_id,
+            name=name or f"channel:{channel_id}:{chat_id}",
+            message=[],
+            reference=[],
+        )
+        return cls.model.get_or_none(cls.model.id == conv_id)
 
     @classmethod
     @DB.connection_context()
@@ -187,7 +211,7 @@ async def async_completion(tenant_id, chat_id, question, name="New session", ses
 
     if stream:
         try:
-            async for ans in async_chat(dia, msg, True, **kwargs):
+            async for ans in async_chat(dia, msg, True, session_id=session_id, **kwargs):
                 ans = structure_answer(conv, ans, message_id, session_id)
                 yield "data:" + json.dumps({"code": 0, "data": ans}, ensure_ascii=False) + "\n\n"
             ConversationService.update_by_id(conv.id, conv.to_dict())
@@ -199,7 +223,7 @@ async def async_completion(tenant_id, chat_id, question, name="New session", ses
 
     else:
         answer = None
-        async for ans in async_chat(dia, msg, False, **kwargs):
+        async for ans in async_chat(dia, msg, False, session_id=session_id, **kwargs):
             answer = structure_answer(conv, ans, message_id, session_id)
             ConversationService.update_by_id(conv.id, conv.to_dict())
             break
@@ -275,7 +299,7 @@ async def async_iframe_completion(dialog_id, question, session_id=None, stream=T
 
     if stream:
         try:
-            async for ans in async_chat(dia, msg, True, **kwargs):
+            async for ans in async_chat(dia, msg, True, session_id=session_id, **kwargs):
                 ans = structure_answer(conv, ans, message_id, session_id)
                 yield "data:" + json.dumps({"code": 0, "message": "", "data": ans},
                                            ensure_ascii=False) + "\n\n"
@@ -288,7 +312,7 @@ async def async_iframe_completion(dialog_id, question, session_id=None, stream=T
 
     else:
         answer = None
-        async for ans in async_chat(dia, msg, False, **kwargs):
+        async for ans in async_chat(dia, msg, False, session_id=session_id, **kwargs):
             answer = structure_answer(conv, ans, message_id, session_id)
             API4ConversationService.append_message(conv.id, conv.to_dict())
             break

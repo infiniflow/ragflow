@@ -181,7 +181,7 @@ func TestAI302ListModelsHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if got := strings.Join(models, ","); got != "gpt-5,jina-embeddings-v3" {
+	if got := joinModelNames(models, ","); got != "gpt-5,jina-embeddings-v3" {
 		t.Errorf("models=%q", got)
 	}
 }

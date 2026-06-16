@@ -1,50 +1,54 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package models
 
 import (
-	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
-	"time"
 )
 
 type TokenHubModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 func NewTokenHubModel(baseURL map[string]string, urlSuffix URLSuffix) *TokenHubModel {
 	return &TokenHubModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Timeout: time.Second * 120,
-			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				MaxIdleConnsPerHost: 100,
-				IdleConnTimeout:     time.Second * 60,
-				DisableCompression:  false,
-			},
+		baseModel: BaseModel{
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
 
 func (t *TokenHubModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewTokenHubModel(baseURL, t.URLSuffix)
+	return NewTokenHubModel(baseURL, t.baseModel.URLSuffix)
 }
 
 func (t *TokenHubModel) Name() string {
 	return "tokenhub"
 }
 
-func validateTokenHubChatRequest(modelName string, messages []Message, apiConfig *APIConfig) error {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
-	}
+func validateTokenHubChatRequest(modelName string, messages []Message) error {
 	if strings.TrimSpace(modelName) == "" {
 		return fmt.Errorf("model name is required")
 	}
@@ -55,16 +59,18 @@ func validateTokenHubChatRequest(modelName string, messages []Message, apiConfig
 }
 
 func (t *TokenHubModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if err := validateTokenHubChatRequest(modelName, messages, apiConfig); err != nil {
+	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+	if err := validateTokenHubChatRequest(modelName, messages); err != nil {
 		return nil, err
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", t.BaseURL[region], t.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, t.baseModel.URLSuffix.Chat)
 
 	// Convert messages to the format expected by API
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -106,17 +112,18 @@ func (t *TokenHubModel) ChatWithMessages(modelName string, messages []Message, a
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig != nil && apiConfig.ApiKey != nil {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -177,19 +184,22 @@ func (t *TokenHubModel) ChatWithMessages(modelName string, messages []Message, a
 }
 
 func (t *TokenHubModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
-	if sender == nil {
-		return fmt.Errorf("sender is required")
-	}
-	if err := validateTokenHubChatRequest(modelName, messages, apiConfig); err != nil {
+	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if sender == nil {
+		return fmt.Errorf("sender is required")
+	}
+	if err := validateTokenHubChatRequest(modelName, messages); err != nil {
+		return err
 	}
 
-	url := fmt.Sprintf("%s/%s", t.BaseURL[region], t.URLSuffix.Chat)
+	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, t.baseModel.URLSuffix.Chat)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -238,7 +248,10 @@ func (t *TokenHubModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -246,7 +259,7 @@ func (t *TokenHubModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -257,44 +270,20 @@ func (t *TokenHubModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// SSE parsing: read line by line
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		// SSE data line starts with "data:"
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-
-		// Extract JSON after "data:"
-		data := strings.TrimSpace(line[5:])
-
-		// [DONE] marks the end of stream
-		if data == "[DONE]" {
-			break
-		}
-
-		// Parse the JSON event
-		var event map[string]interface{}
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			continue
-		}
-
+	if _, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
-			continue
+			return nil
 		}
 
 		firstChoice, ok := choices[0].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		delta, ok := firstChoice["delta"].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
@@ -315,38 +304,33 @@ func (t *TokenHubModel) ChatStreamlyWithSender(modelName string, messages []Mess
 			}
 		}
 
-		finishReason, ok := firstChoice["finish_reason"].(string)
-		if ok && finishReason != "" {
-			break
-		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to scan response body: %w", err)
 	}
 
 	// Send [DONE] marker for OpenAI compatibility
 	endOfStream := "[DONE]"
-	if err = sender(&endOfStream, nil); err != nil {
-		return err
-	}
-
-	return scanner.Err()
+	return sender(&endOfStream, nil)
 }
 
 func (t *TokenHubModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
-	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", t.BaseURL[region], t.URLSuffix.Embedding)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, t.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -358,7 +342,10 @@ func (t *TokenHubModel) Embed(modelName *string, texts []string, apiConfig *APIC
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -366,7 +353,7 @@ func (t *TokenHubModel) Embed(modelName *string, texts []string, apiConfig *APIC
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -435,26 +422,28 @@ func (t *TokenHubModel) ParseFile(modelName *string, content []byte, url *string
 	return nil, fmt.Errorf("%s no such method", t.Name())
 }
 
-func (t *TokenHubModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+func (t *TokenHubModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, t.baseModel.URLSuffix.Models)
 
-	url := fmt.Sprintf("%s/%s", t.BaseURL[region], t.URLSuffix.Models)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -469,31 +458,35 @@ func (t *TokenHubModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
+	// Parse response. Tokenhub returns `data` as a heterogeneous array
+	// where some items omit `id` or are not objects at all. Decode into
+	// a generic envelope so a single bad row cannot fail the whole list,
+	// then keep only the entries that carry a string `id`.
+	var envelope struct {
+		Data interface{} `json:"data"`
+	}
+	if err = json.Unmarshal(body, &envelope); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	data, ok := result["data"].([]interface{})
+	rawItems, ok := envelope.Data.([]interface{})
 	if !ok {
 		return nil, fmt.Errorf("invalid models list format")
 	}
-
-	models := make([]string, 0, len(data))
-	for _, model := range data {
-		modelMap, ok := model.(map[string]interface{})
+	modelList := ModelList{Models: make([]DSModel, 0, len(rawItems))}
+	for _, raw := range rawItems {
+		item, ok := raw.(map[string]interface{})
 		if !ok {
 			continue
 		}
-		modelName, ok := modelMap["id"].(string)
-		if !ok {
+		id, ok := item["id"].(string)
+		if !ok || strings.TrimSpace(id) == "" {
 			continue
 		}
-		models = append(models, modelName)
+		ownedBy, _ := item["owned_by"].(string)
+		modelList.Models = append(modelList.Models, DSModel{ID: id, OwnedBy: ownedBy})
 	}
 
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 func (t *TokenHubModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

@@ -24,7 +24,7 @@ from quart import request, make_response,send_file
 from peewee import OperationalError
 from pydantic import ValidationError
 
-from api.apps import login_required
+from api.apps import AUTH_JWT, AUTH_API, AUTH_BETA, current_user, login_required
 from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
 from api.apps.services.document_api_service import validate_document_update_fields, map_doc_keys, \
     map_doc_keys_with_run_status, update_document_name_only, update_chunk_method, update_document_status_only, \
@@ -1191,6 +1191,7 @@ async def update_metadata_config(tenant_id, dataset_id, document_id):
 
 
 @manager.route("/thumbnails", methods=["GET"])  # noqa: F821
+@login_required(auth_types=[AUTH_JWT, AUTH_API, AUTH_BETA])
 def list_thumbnails():
     """
     Get thumbnails for documents.
@@ -1624,7 +1625,17 @@ async def stop_parse_documents(tenant_id, dataset_id):
                     continue
 
                 cancel_all_task_of(doc_id)
-                DocumentService.update_by_id(doc_id, {"run": str(TaskStatus.CANCEL.value)})
+                DocumentService.update_by_id(
+                    doc_id,
+                    {
+                        "run": str(TaskStatus.CANCEL.value),
+                        "progress": 0,
+                        "chunk_num": 0,
+                    },
+                )
+                index_name = search.index_name(tenant_id)
+                if settings.docStoreConn.index_exist(index_name, doc.kb_id):
+                    settings.docStoreConn.delete({"doc_id": doc.id}, index_name, doc.kb_id)
                 success_count += 1
 
             result = {"success_count": success_count}
@@ -1639,6 +1650,25 @@ async def stop_parse_documents(tenant_id, dataset_id):
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
+
+
+def _parse_document_image_id(image_id: str) -> tuple[str, str] | None:
+    """Split a composite document image ID into storage bucket and object key.
+
+    Thumbnail URLs use ``{dataset_id}-{thumbnail}``. Only the first hyphen
+    separates the dataset/kb id (bucket) from the object key, which may
+    contain additional hyphens (e.g. ``page-1.png``).
+
+    Args:
+        image_id: Path segment from ``GET /documents/images/<image_id>``.
+
+    Returns:
+        ``(bucket, object_key)`` when valid, otherwise ``None``.
+    """
+    parts = image_id.split("-", 1)
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        return None
+    return parts[0], parts[1]
 
 
 def _detect_image_content_type_from_bytes(data):
@@ -1668,6 +1698,7 @@ def _content_type_for_document_image(object_name, data):
 
 
 @manager.route("/documents/images/<image_id>", methods=["GET"])  # noqa: F821
+@login_required(auth_types=[AUTH_JWT, AUTH_API, AUTH_BETA])
 async def get_document_image(image_id):
     """
     Get a document image by ID.
@@ -1680,7 +1711,7 @@ async def get_document_image(image_id):
         required: true
         schema:
           type: string
-        description: The image ID (format: bucket-name-image-name)
+        description: Composite ID ``{dataset_id}-{thumbnail_object_key}`` (split on first hyphen only)
     responses:
       200:
         description: Image file
@@ -1691,10 +1722,10 @@ async def get_document_image(image_id):
               format: binary
     """
     try:
-        arr = image_id.split("-")
-        if len(arr) != 2:
+        parsed = _parse_document_image_id(image_id)
+        if not parsed:
             return get_data_error_result(message="Image not found.")
-        bkt, nm = image_id.split("-")
+        bkt, nm = parsed
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, bkt, nm)
         if not data:
             return get_data_error_result(message="Image not found.")
@@ -1889,7 +1920,7 @@ async def batch_update_document_status(tenant_id, dataset_id):
     return get_json_result(data=result)
 
 @manager.route("/documents/<doc_id>/preview", methods=["GET"])  # noqa: F821
-@login_required
+@login_required(auth_types=[AUTH_JWT, AUTH_API, AUTH_BETA])
 async def get(doc_id):
     """Return the raw file bytes for a document the requesting user is authorized to read.
 
@@ -1898,6 +1929,8 @@ async def get(doc_id):
     enumeration.
     """
     try:
+        if not DocumentService.accessible(doc_id, current_user.id):
+            return get_data_error_result(message="Document not found!")
 
         e, doc = DocumentService.get_by_id(doc_id)
         if not e:
@@ -1905,6 +1938,8 @@ async def get(doc_id):
 
         b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, b, n)
+        if not data:
+            return get_data_error_result(message="This file is empty.")
         response = await make_response(data)
 
         ext = re.search(r"\.([^.]+)$", doc.name.lower())
@@ -1917,6 +1952,16 @@ async def get(doc_id):
         return response
     except Exception as e:
         return server_error_response(e)
+
+
+def _mimetype_for_document(doc) -> str:
+    match = re.search(r"\.([^.]+)$", (doc.name or "").lower())
+    if not match:
+        return "application/octet-stream"
+    ext = match.group(1)
+    fallback_prefix = "image" if doc.type == FileType.VISUAL.value else "application"
+    return CONTENT_TYPE_MAP.get(ext, f"{fallback_prefix}/{ext}")
+
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["GET"])  # noqa: F821
 @login_required
@@ -1972,7 +2017,7 @@ async def download(dataset_id, document_id):
         file,
         as_attachment=True,
         attachment_filename=doc[0].name,
-        mimetype="application/octet-stream",  # Set a default MIME type
+        mimetype=_mimetype_for_document(doc[0]),
     )
 
 @manager.route("/documents/<document_id>", methods=["GET"])  # noqa: F821
@@ -2029,5 +2074,5 @@ async def download_document(document_id):
         file,
         as_attachment=True,
         attachment_filename=doc[0].name,
-        mimetype="application/octet-stream",  # Set a default MIME type
+        mimetype=_mimetype_for_document(doc[0]),
     )
