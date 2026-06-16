@@ -194,6 +194,7 @@ func GetModelProviderManager() *models.ProviderManager {
 // autoMigrateSafely runs AutoMigrate and ignores duplicate index errors
 // This handles cases where indexes already exist (e.g., created by Python backend)
 func autoMigrateSafely(db *gorm.DB, model interface{}) error {
+	//err := db.Debug().AutoMigrate(model) // to print debug info
 	err := db.AutoMigrate(model)
 	if err == nil {
 		return nil
