@@ -396,15 +396,9 @@ func (s *TenantService) GetDefaultModelName(tenantID string, modelType entity.Mo
 	case entity.ModelTypeImage2Text:
 		modelID = tenant.Img2TxtID
 	case entity.ModelTypeTTS:
-		if tenant.TTSID == nil {
-			return "", fmt.Errorf("tenant TTS model not configured")
-		}
-		modelID = *tenant.TTSID
+		modelID = tenant.TTSID
 	case entity.ModelTypeOCR:
-		if tenant.OCRID == nil {
-			return "", fmt.Errorf("tenant OCR model not configured")
-		}
-		modelID = *tenant.OCRID
+		modelID = tenant.OCRID
 	default:
 		return "", fmt.Errorf("invalid model type: %s", modelType)
 	}

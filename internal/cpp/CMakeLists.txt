@@ -164,7 +164,7 @@ add_executable(rag_analyzer_c_test
         rag_analyzer_c_test.cpp
 )
 
-target_link_libraries(rag_analyzer_c_test rag_tokenizer_c_api stdc++ libm.a ${PCRE2_LIB})
+target_link_libraries(rag_analyzer_c_test rag_tokenizer_c_api stdc++ m ${PCRE2_LIB})
 target_include_directories(rag_analyzer_c_test PUBLIC "${CMAKE_SOURCE_DIR}")
 set_target_properties(rag_analyzer_c_test PROPERTIES
         CXX_STANDARD 20
