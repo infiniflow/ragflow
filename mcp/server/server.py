@@ -58,7 +58,7 @@ JSON_RESPONSE = True
 class RAGFlowConnector:
     _MAX_DATASET_CACHE = 32
     _CACHE_TTL = 300
-    _DATASET_PAGE_SIZE = 1000
+    _DATASET_PAGE_SIZE = 100
 
     _dataset_metadata_cache: OrderedDict[str, tuple[dict, float | int]] = OrderedDict()  # "dataset_id" -> (metadata, expiry_ts)
     _document_metadata_cache: OrderedDict[str, tuple[list[tuple[str, dict]], float | int]] = OrderedDict()  # "dataset_id" -> ([(document_id, doc_metadata)], expiry_ts)
@@ -162,8 +162,10 @@ class RAGFlowConnector:
 
         return res_json
 
-    async def list_datasets(self, *, api_key: str, page: int = 1, page_size: int = 1000, orderby: str = "create_time", desc: bool = True, id: str | None = None, name: str | None = None):
+    async def list_datasets(self, *, api_key: str, page: int = 1, page_size: int | None = None, orderby: str = "create_time", desc: bool = True, id: str | None = None, name: str | None = None):
         """Return accessible datasets as newline-delimited JSON for MCP tool descriptions."""
+        if page_size is None:
+            page_size = self._DATASET_PAGE_SIZE
         res_json = await self._fetch_datasets_page(api_key=api_key, page=page, page_size=page_size, orderby=orderby, desc=desc, id=id, name=name)
         result_list = []
         for data in res_json["data"]:
@@ -699,6 +701,18 @@ def main(base_url, host, port, mode, api_key, transport_sse_enabled, transport_s
         val = os.environ.get(key, str(default))
         return str(val).strip().lower() in ("1", "true", "yes", "on")
 
+    def parse_int_flag(key: str, default: int) -> int:
+        val = os.environ.get(key)
+        if val is None:
+            return default
+        try:
+            parsed = int(val)
+        except ValueError as e:
+            raise click.UsageError(f"{key} must be an integer.") from e
+        if parsed < 1 or parsed > 100:
+            raise click.UsageError(f"{key} must be between 1 and 100.")
+        return parsed
+
     global BASE_URL, HOST, PORT, MODE, HOST_API_KEY, TRANSPORT_SSE_ENABLED, TRANSPORT_STREAMABLE_HTTP_ENABLED, JSON_RESPONSE
     BASE_URL = os.environ.get("RAGFLOW_MCP_BASE_URL", base_url)
     HOST = os.environ.get("RAGFLOW_MCP_HOST", host)
@@ -708,6 +722,7 @@ def main(base_url, host, port, mode, api_key, transport_sse_enabled, transport_s
     TRANSPORT_SSE_ENABLED = parse_bool_flag("RAGFLOW_MCP_TRANSPORT_SSE_ENABLED", transport_sse_enabled)
     TRANSPORT_STREAMABLE_HTTP_ENABLED = parse_bool_flag("RAGFLOW_MCP_TRANSPORT_STREAMABLE_ENABLED", transport_streamable_http_enabled)
     JSON_RESPONSE = parse_bool_flag("RAGFLOW_MCP_JSON_RESPONSE", json_response)
+    RAGFlowConnector._DATASET_PAGE_SIZE = parse_int_flag("RAGFLOW_MCP_DATASET_PAGE_SIZE", RAGFlowConnector._DATASET_PAGE_SIZE)
 
     if MODE == LaunchMode.SELF_HOST and not HOST_API_KEY:
         raise click.UsageError("--api-key is required when --mode is 'self-host'")
