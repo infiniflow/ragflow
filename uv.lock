@@ -1398,7 +1398,7 @@ wheels = [
 
 [[package]]
 name = "crawl4ai"
-version = "0.8.9"
+version = "0.8.5"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
 dependencies = [
     { name = "aiofiles" },
@@ -1415,6 +1415,7 @@ dependencies = [
     { name = "httpx", extra = ["http2"] },
     { name = "humanize" },
     { name = "lark" },
+    { name = "litellm" },
     { name = "lxml" },
     { name = "nltk" },
     { name = "numpy" },
@@ -1432,12 +1433,11 @@ dependencies = [
     { name = "rich" },
     { name = "shapely" },
     { name = "snowballstemmer" },
-    { name = "unclecode-litellm" },
     { name = "xxhash" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/90/2b/9e2b376ec8d4b803cc7b47b428a0ac762c59ce1215d0ab5a4aa9e7afc4a3/crawl4ai-0.8.9.tar.gz", hash = "sha256:00a3c97b9492a694f24fa66bc80b9f1533e5637745dc0e30914c88aac52763e3" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/19/0b/4afc4dedb31c1170f669f573804dd6317ad3d205032abe4d4bc73586397c/crawl4ai-0.8.5.tar.gz", hash = "sha256:0f201555b4cb0fba9f7a45fe038be04b5cd81929dfb8f7b05b63bc78a2292ff7" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/c3/97/6443bf99add1c16b16d992b8d0816a3ce7adecde37323d368bed36dd0aff/crawl4ai-0.8.9-py3-none-any.whl", hash = "sha256:7836cfc9d81ed7fc646d614e984402c336e5a682462f3d92ff37de121a4244d6" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/72/51/a2eba2f9ea7d40ddd69d533eeacf835b27946f32204705ae3333bb61b118/crawl4ai-0.8.5-py3-none-any.whl", hash = "sha256:058ff53792e238714bad0045303cade859514f4bcaea8887acb0a190c6798654" },
 ]
 
 [[package]]
@@ -8055,7 +8055,7 @@ requires-dist = [
     { name = "chardet", specifier = ">=5.2.0,<6.0.0" },
     { name = "cn2an", specifier = "==0.5.22" },
     { name = "cohere", specifier = "==5.6.2" },
-    { name = "crawl4ai", specifier = ">=0.8.0" },
+    { name = "crawl4ai", specifier = ">=0.8.0,<0.8.6" },
     { name = "dashscope", specifier = "==1.25.11" },
     { name = "debugpy", specifier = ">=1.8.13" },
     { name = "deepl", specifier = "==1.18.0" },
@@ -9499,29 +9499,6 @@ dependencies = [
 sdist = { url = "https://mirrors.aliyun.com/pypi/packages/5f/ee/6bc65bd375c812026a7af63fe9d09d409382120aff25f2152f1ba12af5ec/umap_learn-0.5.9.post2.tar.gz", hash = "sha256:bdf60462d779bd074ce177a0714ced17e6d161285590fa487f3f9548dd3c31c9" }
 wheels = [
     { url = "https://mirrors.aliyun.com/pypi/packages/6b/b1/c24deeda9baf1fd491aaad941ed89e0fed6c583a117fd7b79e0a33a1e6c0/umap_learn-0.5.9.post2-py3-none-any.whl", hash = "sha256:fbe51166561e0e7fab00ef3d516ac2621243b8d15cf4bef9f656d701736b16a0" },
-]
-
-[[package]]
-name = "unclecode-litellm"
-version = "1.81.13"
-source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
-dependencies = [
-    { name = "aiohttp" },
-    { name = "click" },
-    { name = "fastuuid" },
-    { name = "httpx" },
-    { name = "importlib-metadata" },
-    { name = "jinja2" },
-    { name = "jsonschema" },
-    { name = "openai" },
-    { name = "pydantic" },
-    { name = "python-dotenv" },
-    { name = "tiktoken" },
-    { name = "tokenizers" },
-]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/ce/c4/93ed52c49c2347184f908c692ebb7c1f06303805910774c3282ac68033db/unclecode_litellm-1.81.13.tar.gz", hash = "sha256:db70e34e3e859c0a07f02cb02eaa644f8fa4b4ecc5e2f3be9a58bd7d1c3feedc" }
-wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/43/85/7b1e0bc5827bcb23dc572b17c447fb5825340f36a9e4405d4b777b862e0c/unclecode_litellm-1.81.13-py3-none-any.whl", hash = "sha256:5e1fbedbed92333b48e7371e0bacf86d1288020451bf34351703c3b159591399" },
 ]
 
 [[package]]
