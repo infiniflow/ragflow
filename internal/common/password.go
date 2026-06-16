@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package admin
+package common
 
 import (
 	"crypto/rand"
@@ -148,7 +148,7 @@ func IsWerkzeugHash(hashStr string) bool {
 
 // GenerateWerkzeugPasswordHash generates a werkzeug-compatible password hash using scrypt
 // This matches Python werkzeug's default behavior
-func GenerateWerkzeugPasswordHash(password string, iterations int) (string, error) {
+func GenerateWerkzeugPasswordHash(password string) (string, error) {
 	// Generate random bytes (12 bytes will produce 16-char base64 string)
 	randomBytes := make([]byte, 12)
 	if _, err := rand.Read(randomBytes); err != nil {
@@ -181,7 +181,7 @@ func DecryptPassword(encryptedPassword string) (string, error) {
 	}
 
 	// Load private key
-	privateKey, err := loadPrivateKey()
+	privateKey, err := LoadPrivateKey()
 	if err != nil {
 		return "", err
 	}
@@ -196,8 +196,8 @@ func DecryptPassword(encryptedPassword string) (string, error) {
 	return string(plaintext), nil
 }
 
-// loadPrivateKey loads and decrypts the RSA private key from conf/private.pem
-func loadPrivateKey() (*rsa.PrivateKey, error) {
+// LoadPrivateKey loads and decrypts the RSA private key from conf/private.pem
+func LoadPrivateKey() (*rsa.PrivateKey, error) {
 	// Read private key file
 	keyData, err := os.ReadFile("conf/private.pem")
 	if err != nil {
