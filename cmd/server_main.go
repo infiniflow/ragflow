@@ -57,7 +57,6 @@ func printHelp() {
 	fmt.Fprintf(os.Stderr, "  -p, --port int\t\tServer port (overrides config file)\n")
 	fmt.Fprintf(os.Stderr, "  -v, --version  \tPrint version information and exit\n")
 	fmt.Fprintf(os.Stderr, "  --debug        \tEnable debug-level logging\n")
-	fmt.Fprintf(os.Stderr, "  --init-superuser\tInitialize superuser account\n")
 	fmt.Fprintf(os.Stderr, "  -h, --help     \tShow this help message and exit\n")
 	fmt.Fprintf(os.Stderr, "\nExamples:\n")
 	fmt.Fprintf(os.Stderr, "  %s           \t\t# Start server with config file port\n", os.Args[0])
@@ -77,8 +76,6 @@ func main() {
 	var versionFlag bool
 	flag.BoolVar(&versionFlag, "version", false, "Print version information and exit")
 	flag.BoolVar(&versionFlag, "v", false, "Print version information and exit (shorthand)")
-	var initSuperuserFlag bool
-	flag.BoolVar(&initSuperuserFlag, "init-superuser", false, "Initialize superuser account")
 
 	// Custom help message
 	flag.Usage = printHelp
@@ -188,9 +185,6 @@ func main() {
 	if err := nlp.InitQueryBuilderFromTokenizer(tokenizerCfg.DictPath); err != nil {
 		common.Fatal("Failed to initialize query builder", zap.Error(err))
 	}
-
-	// Store init-superuser flag for later use
-	_ = initSuperuserFlag
 
 	startServer(config)
 
