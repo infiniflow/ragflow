@@ -65,6 +65,14 @@ type ChunkService struct {
 	userTenantDAO  *dao.UserTenantDAO
 	documentDAO    *dao.DocumentDAO
 	searchService  *service.SearchService
+
+	accessibleFunc                func(string, string) bool
+	getKnowledgebaseByIDFunc      func(string) (*entity.Knowledgebase, error)
+	getDocumentsByIDsFunc         func([]string) ([]*entity.Document, error)
+	getDocumentStorageAddressFunc func(*entity.Document) (string, string, error)
+	queueParseTasksFunc           func(*entity.Document, string, string, int64) error
+	beginParseDocumentFunc        func(string) error
+	deleteTasksByDocIDsFunc       func([]string) (int64, error)
 }
 
 // NewChunkService creates chunk service
@@ -581,6 +589,9 @@ func checkDuplicateIDs(documentIDs []string, idTypes string) ([]string, []string
 }
 
 func (s *ChunkService) queueParseTasks(doc *entity.Document, bucket, objectName string, priority int64) error {
+	if s.queueParseTasksFunc != nil {
+		return s.queueParseTasksFunc(doc, bucket, objectName, priority)
+	}
 	tasks, err := s.buildParseTasks(doc, bucket, objectName, priority)
 	if err != nil {
 		return err
@@ -728,6 +739,9 @@ func (s *ChunkService) getStorageBinary(bucket, objectName string) ([]byte, erro
 }
 
 func (s *ChunkService) beginParseDocument(docID string) error {
+	if s.beginParseDocumentFunc != nil {
+		return s.beginParseDocumentFunc(docID)
+	}
 	now := time.Now()
 	return dao.GetDB().Model(&entity.Document{}).Where("id = ?", docID).Updates(map[string]interface{}{
 		"progress_msg":     "Task is queued...",
@@ -737,6 +751,41 @@ func (s *ChunkService) beginParseDocument(docID string) error {
 		"chunk_num":        0,
 		"token_num":        0,
 	}).Error
+}
+
+func (s *ChunkService) getDocumentStorageAddress(doc *entity.Document) (string, string, error) {
+	if s.getDocumentStorageAddressFunc != nil {
+		return s.getDocumentStorageAddressFunc(doc)
+	}
+	return service.NewDocumentService().GetDocumentStorageAddress(doc)
+}
+
+func (s *ChunkService) deleteTasksByDocIDs(docIDs []string) (int64, error) {
+	if s.deleteTasksByDocIDsFunc != nil {
+		return s.deleteTasksByDocIDsFunc(docIDs)
+	}
+	return dao.NewTaskDAO().DeleteByDocIDs(docIDs)
+}
+
+func (s *ChunkService) accessible(datasetID, userID string) bool {
+	if s.accessibleFunc != nil {
+		return s.accessibleFunc(datasetID, userID)
+	}
+	return s.kbDAO.Accessible(datasetID, userID)
+}
+
+func (s *ChunkService) getKnowledgebaseByID(datasetID string) (*entity.Knowledgebase, error) {
+	if s.getKnowledgebaseByIDFunc != nil {
+		return s.getKnowledgebaseByIDFunc(datasetID)
+	}
+	return s.kbDAO.GetByID(datasetID)
+}
+
+func (s *ChunkService) getDocumentsByIDs(docIDs []string) ([]*entity.Document, error) {
+	if s.getDocumentsByIDsFunc != nil {
+		return s.getDocumentsByIDsFunc(docIDs)
+	}
+	return s.documentDAO.GetByIDs(docIDs)
 }
 
 func (s *ChunkService) parseQueueName(doc *entity.Document, priority int64) string {
@@ -1016,14 +1065,14 @@ func docName(doc *entity.Document) string {
 }
 
 func (s *ChunkService) Parse(userID, datasetID string, req *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error) {
-	if !s.kbDAO.Accessible(datasetID, userID) {
+	if !s.accessible(datasetID, userID) {
 		return nil, common.CodeOperatingError, fmt.Errorf("You don't own the dataset %s.", datasetID)
 	}
 	if req == nil || len(req.DocumentIDs) == 0 {
 		return nil, common.CodeDataError, fmt.Errorf("`document_ids` is required")
 	}
 
-	kb, err := s.kbDAO.GetByID(datasetID)
+	kb, err := s.getKnowledgebaseByID(datasetID)
 	if err != nil || kb == nil {
 		return nil, common.CodeDataError, fmt.Errorf("dataset not found")
 	}
@@ -1031,7 +1080,7 @@ func (s *ChunkService) Parse(userID, datasetID string, req *service.ParseFileReq
 	docIDs, duplicateMessages := checkDuplicateIDs(req.DocumentIDs, "document")
 	notFound := make([]string, 0)
 
-	docs, err := s.documentDAO.GetByIDs(docIDs)
+	docs, err := s.getDocumentsByIDs(docIDs)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -1066,11 +1115,11 @@ func (s *ChunkService) Parse(userID, datasetID string, req *service.ParseFileReq
 				return nil, common.CodeServerError, err
 			}
 		}
-		if _, err := dao.NewTaskDAO().DeleteByDocIDs([]string{docID}); err != nil {
+		if _, err := s.deleteTasksByDocIDs([]string{docID}); err != nil {
 			return nil, common.CodeServerError, err
 		}
 
-		bucket, objectName, err := service.NewDocumentService().GetDocumentStorageAddress(doc)
+		bucket, objectName, err := s.getDocumentStorageAddress(doc)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
@@ -1078,7 +1127,7 @@ func (s *ChunkService) Parse(userID, datasetID string, req *service.ParseFileReq
 			return nil, common.CodeServerError, err
 		}
 		if err := s.beginParseDocument(doc.ID); err != nil {
-			if _, delErr := dao.NewTaskDAO().DeleteByDocIDs([]string{doc.ID}); delErr != nil {
+			if _, delErr := s.deleteTasksByDocIDs([]string{doc.ID}); delErr != nil {
 				common.Warn("Failed to clean parse tasks after document state update failure",
 					zap.String("docID", doc.ID),
 					zap.Error(delErr))
