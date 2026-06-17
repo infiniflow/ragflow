@@ -885,8 +885,6 @@ func (x *XiaomiModel) ParseFile(modelName *string, content []byte, url *string, 
 }
 
 func (x *XiaomiModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
-	// Xiaomi's API does not expose a model-list endpoint, so listing supported
-	// models is not supported for this provider.
 	return nil, fmt.Errorf("no such method %s", x.Name())
 }
 
