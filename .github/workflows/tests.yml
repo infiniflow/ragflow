@@ -15,7 +15,7 @@ on:
   # — pull_request_target workflows use the workflow files from the default branch, and secrets are available.
   # — pull_request workflows use the workflow files from the pull request branch, and secrets are unavailable.
   pull_request:
-    types: [ synchronize, ready_for_review ]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
     paths-ignore:
       - 'docs/**'
       - '*.md'
@@ -97,37 +97,37 @@ jobs:
           version: ">=0.11.x"
           args: "check"
 
-      - name: Check comments of changed Python files
-        if: ${{ false }}
-        run: |
-          if [[ ${{ github.event_name }} == 'pull_request' || ${{ github.event_name }} == 'pull_request_target' ]]; then
-            CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} \
-              | grep -E '\.(py)$' || true)
-
-            if [ -n "$CHANGED_FILES" ]; then
-              echo "Check comments of changed Python files with check_comment_ascii.py"
-
-              readarray -t files <<< "$CHANGED_FILES"
-              HAS_ERROR=0
-
-              for file in "${files[@]}"; do
-                if [ -f "$file" ]; then
-                  if python3 check_comment_ascii.py "$file"; then
-                    echo "✅ $file"
-                  else
-                    echo "❌ $file"
-                    HAS_ERROR=1
-                  fi
-                fi
-              done
-
-              if [ $HAS_ERROR -ne 0 ]; then
-                exit 1
-              fi
-            else
-              echo "No Python files changed"
-            fi
-          fi
+#      - name: Check comments of changed Python files
+#        if: ${{ false }}
+#        run: |
+#          if [[ ${{ github.event_name }} == 'pull_request' || ${{ github.event_name }} == 'pull_request_target' ]]; then
+#            CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} \
+#              | grep -E '\.(py)$' || true)
+#
+#            if [ -n "$CHANGED_FILES" ]; then
+#              echo "Check comments of changed Python files with check_comment_ascii.py"
+#
+#              readarray -t files <<< "$CHANGED_FILES"
+#              HAS_ERROR=0
+#
+#              for file in "${files[@]}"; do
+#                if [ -f "$file" ]; then
+#                  if python3 check_comment_ascii.py "$file"; then
+#                    echo "✅ $file"
+#                  else
+#                    echo "❌ $file"
+#                    HAS_ERROR=1
+#                  fi
+#                fi
+#              done
+#
+#              if [ $HAS_ERROR -ne 0 ]; then
+#                exit 1
+#              fi
+#            else
+#              echo "No Python files changed"
+#            fi
+#          fi
 
       - name: Check gofmt of changed Go files
         if: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_target' }}
@@ -159,15 +159,25 @@ jobs:
 
       - name: Build ragflow go server
         run: |
+          set -euo pipefail
           BUILDER_CONTAINER=ragflow_build_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
-          echo "BUILDER_CONTAINER=${BUILDER_CONTAINER}" >> ${GITHUB_ENV}
+          cleanup_builder() {
+            if [[ -n "${BUILDER_CONTAINER:-}" ]]; then
+              sudo docker rm -f -v "${BUILDER_CONTAINER}" >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup_builder EXIT
+
+          echo "BUILDER_CONTAINER=${BUILDER_CONTAINER}" >> "${GITHUB_ENV}"
           TZ=${TZ:-$(readlink -f /etc/localtime | awk -F '/zoneinfo/' '{print $2}')}
-          sudo docker run --privileged -d --name ${BUILDER_CONTAINER} -e TZ=${TZ} -e UV_INDEX=https://mirrors.aliyun.com/pypi/simple -v ${PWD}:/ragflow -v ${PWD}/internal/cpp/resource:/usr/share/infinity/resource infiniflow/infinity_builder:ubuntu22_clang20
-          sudo docker exec ${BUILDER_CONTAINER} bash -c "git config --global safe.directory \"*\" && cd /ragflow && ./build.sh --cpp"
+          sudo docker run --privileged -d --name "${BUILDER_CONTAINER}" \
+            -e TZ="${TZ}" \
+            -e UV_INDEX=https://mirrors.aliyun.com/pypi/simple \
+            -v "${PWD}:/ragflow" \
+            -v "${PWD}/internal/cpp/resource:/usr/share/infinity/resource" \
+            infiniflow/infinity_builder:ubuntu22_clang20
+          sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
           ./build.sh --go
-          if [[ -n "${BUILDER_CONTAINER}" ]]; then
-            sudo docker rm -f -v "${BUILDER_CONTAINER}"
-          fi
 
 #      - name: Prepare test resources
 #        run: |
@@ -203,9 +213,13 @@ jobs:
           echo "HTTP_API_TEST_LEVEL=${HTTP_API_TEST_LEVEL}" >> ${GITHUB_ENV}
           echo "RAGFLOW_CONTAINER=${GITHUB_RUN_ID}-ragflow-cpu-1" >> ${GITHUB_ENV}
 
-      - name: Run unit test
+      - name: Prepare Python test environment
         run: |
           uv sync --python 3.13 --group test --frozen
+          uv pip install -e sdk/python
+
+      - name: Run unit test
+        run: |
           source .venv/bin/activate
           which pytest || echo "pytest not in PATH"
           echo "Start to run unit test"
@@ -309,8 +323,6 @@ jobs:
 
                # Patch entrypoint.sh for coverage
                sed -i '/"\$PY" api\/ragflow_server.py \${INIT_SUPERUSER_ARGS} &/c\   echo "Ensuring coverage is installed..."\n      "$PY" -m pip install coverage -i https://mirrors.aliyun.com/pypi/simple\n     export COVERAGE_FILE=/ragflow/logs/.coverage\n        echo "Starting ragflow_server with coverage..."\n        "$PY" -m coverage run --source=./api/apps --omit="*/tests/*,*/migrations/*" -a api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &' ./entrypoint.sh
-               cd ..
-               uv sync --python 3.13 --group test --frozen && uv pip install -e sdk/python
 
 
       - name: Start ragflow:nightly for Infinity
@@ -325,7 +337,7 @@ jobs:
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           svc_ready=0
           for i in $(seq 1 60); do
-            if sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/api/v1/system/ping > /dev/null 2>&1; then
+            if sudo docker exec ${RAGFLOW_CONTAINER} curl -sf --connect-timeout 5 "${HOST_ADDRESS}/api/v1/system/ping" > /dev/null 2>&1; then
               svc_ready=1
               break
             fi
@@ -345,7 +357,7 @@ jobs:
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           svc_ready=0
           for i in $(seq 1 60); do
-            if sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/api/v1/system/ping > /dev/null 2>&1; then
+            if sudo docker exec ${RAGFLOW_CONTAINER} curl -sf --connect-timeout 5 "${HOST_ADDRESS}/api/v1/system/ping" > /dev/null 2>&1; then
               svc_ready=1
               break
             fi
@@ -421,7 +433,7 @@ jobs:
 
           svc_ready=0
           for i in $(seq 1 60); do
-            if sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/api/v1/system/ping > /dev/null 2>&1; then
+            if sudo docker exec ${RAGFLOW_CONTAINER} curl -sf --connect-timeout 5 "${HOST_ADDRESS}/api/v1/system/ping" > /dev/null 2>&1; then
               svc_ready=1
               break
             fi
@@ -541,7 +553,7 @@ jobs:
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           svc_ready=0
           for i in $(seq 1 60); do
-            if sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/api/v1/system/ping > /dev/null 2>&1; then
+            if sudo docker exec ${RAGFLOW_CONTAINER} curl -sf --connect-timeout 5 "${HOST_ADDRESS}/api/v1/system/ping" > /dev/null 2>&1; then
               svc_ready=1
               break
             fi
@@ -561,7 +573,7 @@ jobs:
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           svc_ready=0
           for i in $(seq 1 60); do
-            if sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/api/v1/system/ping > /dev/null 2>&1; then
+            if sudo docker exec ${RAGFLOW_CONTAINER} curl -sf --connect-timeout 5 "${HOST_ADDRESS}/api/v1/system/ping" > /dev/null 2>&1; then
               svc_ready=1
               break
             fi
@@ -637,7 +649,7 @@ jobs:
 
           svc_ready=0
           for i in $(seq 1 60); do
-            if sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/api/v1/system/ping > /dev/null 2>&1; then
+            if sudo docker exec ${RAGFLOW_CONTAINER} curl -sf --connect-timeout 5 "${HOST_ADDRESS}/api/v1/system/ping" > /dev/null 2>&1; then
               svc_ready=1
               break
             fi
