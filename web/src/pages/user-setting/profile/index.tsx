@@ -276,7 +276,6 @@ const ProfilePage: FC = () => {
                         </FormControl>
                       </div>
                       <div className="flex w-full pt-1">
-                        <div className="w-1/4"></div>
                         <FormMessage />
                       </div>
                     </FormItem>

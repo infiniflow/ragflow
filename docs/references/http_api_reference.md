@@ -4090,6 +4090,7 @@ The previous endpoint `POST /api/v1/chats/{chat_id}/completions` is deprecated. 
   - `"session_id"`: `string` (optional)
   - `"llm_id"`: `string` (optional)
   - `"pass_all_history_messages"`: `boolean` (optional)
+  - `"legacy"`: `boolean` (optional)
 
 ##### Request example
 
@@ -4146,6 +4147,8 @@ curl --request POST \
   Optional model override when a specific chat model should be used for this request.
 - `"pass_all_history_messages"`: (*Body Parameter*), `boolean`
   When `chat_id` and `session_id` are provided, defaults to `false`, so the server uses stored session history and only the latest user message from the request. Set to `true` to replace/use the submitted full `messages` history, and overrides the stored session history.
+- `"legacy"`: (*Body Parameter*), `boolean`
+  When `true`, streaming responses use the v0.23.0-compatible format. The streamed `answer` is cumulative, and `start_to_think` / `end_to_think` are omitted from the emitted chunks.
 
 #### Response
 
@@ -4172,80 +4175,164 @@ data:{
 
 Success with `chat_id` and `session_id`:
 
+Streaming response example with `chat_id` and `session_id`:
+
 ```json
 data:{
     "code": 0,
+    "message": "",
     "data": {
-        "answer": "I am an intelligent assistant designed to help answer questions by summarizing content from a",
-        "reference": {},
-        "audio_binary": null,
-        "id": "a84c5dd4-97b4-4624-8c3b-974012c8000d",
-        "session_id": "82b0ab2a9c1911ef9d870242ac120006"
-    }
-}
-data:{
-    "code": 0,
-    "data": {
-        "answer": "I am an intelligent assistant designed to help answer questions by summarizing content from a knowledge base. My responses are based on the information available in the knowledge base and",
-        "reference": {},
-        "audio_binary": null,
-        "id": "a84c5dd4-97b4-4624-8c3b-974012c8000d",
-        "session_id": "82b0ab2a9c1911ef9d870242ac120006"
-    }
-}
-data:{
-    "code": 0,
-    "data": {
-        "answer": "I am an intelligent assistant designed to help answer questions by summarizing content from a knowledge base. My responses are based on the information available in the knowledge base and any relevant chat history.",
-        "reference": {},
-        "audio_binary": null,
-        "id": "a84c5dd4-97b4-4624-8c3b-974012c8000d",
-        "session_id": "82b0ab2a9c1911ef9d870242ac120006"
-    }
-}
-data:{
-    "code": 0,
-    "data": {
-        "answer": "I am an intelligent assistant designed to help answer questions by summarizing content from a knowledge base ##0$$. My responses are based on the information available in the knowledge base and any relevant chat history.",
+        "answer": "",
         "reference": {
-            "total": 1,
-            "chunks": [
-                {
-                    "id": "faf26c791128f2d5e821f822671063bd",
-                    "content": "xxxxxxxx",
-                    "document_id": "dd58f58e888511ef89c90242ac120006",
-                    "document_name": "1.txt",
-                    "dataset_id": "8e83e57a884611ef9d760242ac120006",
-                    "image_id": "",
-                    "url": null,
-                    "similarity": 0.7,
-                    "vector_similarity": 0.0,
-                    "term_similarity": 1.0,
-                    "doc_type": [],
-                    "positions": [
-                        ""
-                    ]
-                }
-            ],
-            "doc_aggs": [
-                {
-                    "doc_name": "1.txt",
-                    "doc_id": "dd58f58e888511ef89c90242ac120006",
-                    "count": 1
-                }
-            ]
+            "chunks": []
         },
-        "prompt": "xxxxxxxxxxx",
-        "created_at": 1755055623.6401553,
-        "id": "a84c5dd4-97b4-4624-8c3b-974012c8000d",
-        "session_id": "82b0ab2a9c1911ef9d870242ac120006"
+        "audio_binary": null,
+        "prompt": "",
+        "created_at": 1781250170.37759,
+        "final": false,
+        "start_to_think": true,
+        "id": "76961783-1523-43f7-8148-19da08247922",
+        "session_id": "4edfabd6663211f1943e217dfc5f0165",
+        "chat_id": "d90fd732646f11f1803d2fb3c77f9b23"
     }
 }
 data:{
     "code": 0,
+    "message": "",
+    "data": {
+        "answer": "The user just said \"hello\". I should respond warmly and ask how I can help.",
+        "reference": {
+            "chunks": []
+        },
+        "audio_binary": null,
+        "prompt": "",
+        "created_at": 1781250170.3778317,
+        "final": false,
+        "id": "76961783-1523-43f7-8148-19da08247922",
+        "session_id": "4edfabd6663211f1943e217dfc5f0165",
+        "chat_id": "d90fd732646f11f1803d2fb3c77f9b23"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": " Let's keep it short and friendly.",
+        "reference": {
+            "chunks": []
+        },
+        "audio_binary": null,
+        "prompt": "",
+        "created_at": 1781250171.101234,
+        "final": false,
+        "id": "76961783-1523-43f7-8148-19da08247922",
+        "session_id": "4edfabd6663211f1943e217dfc5f0165",
+        "chat_id": "d90fd732646f11f1803d2fb3c77f9b23"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "",
+        "reference": {
+            "chunks": []
+        },
+        "audio_binary": null,
+        "prompt": "",
+        "created_at": 1781250171.5262048,
+        "final": false,
+        "end_to_think": true,
+        "id": "76961783-1523-43f7-8148-19da08247922",
+        "session_id": "4edfabd6663211f1943e217dfc5f0165",
+        "chat_id": "d90fd732646f11f1803d2fb3c77f9b23"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "Hello! 👋 Welcome!",
+        "reference": {
+            "chunks": []
+        },
+        "audio_binary": null,
+        "prompt": "",
+        "created_at": 1781250171.5266216,
+        "final": false,
+        "id": "76961783-1523-43f7-8148-19da08247922",
+        "session_id": "4edfabd6663211f1943e217dfc5f0165",
+        "chat_id": "d90fd732646f11f1803d2fb3c77f9b23"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
     "data": true
 }
 ```
+
+For `legacy: true`, the same request keeps the thinking content inside `answer` as literal `<think>` tags, and appends the final answer after `</think>`:
+
+```json
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "<think>The user just said \"hello\".",
+        "reference": {
+            "chunks": []
+        },
+        "audio_binary": null,
+        "prompt": "",
+        "created_at": 1781250170.3778317,
+        "final": false,
+        "id": "76961783-1523-43f7-8148-19da08247922",
+        "session_id": "4edfabd6663211f1943e217dfc5f0165",
+        "chat_id": "d90fd732646f11f1803d2fb3c77f9b23"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "<think>The user just said \"hello\". I should respond warmly and ask how I can help.",
+        "reference": {
+            "chunks": []
+        },
+        "audio_binary": null,
+        "prompt": "",
+        "created_at": 1781250170.901234,
+        "final": false,
+        "id": "76961783-1523-43f7-8148-19da08247922",
+        "session_id": "4edfabd6663211f1943e217dfc5f0165",
+        "chat_id": "d90fd732646f11f1803d2fb3c77f9b23"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": {
+        "answer": "<think>The user just said \"hello\". I should respond warmly and ask how I can help. Let's keep it short and friendly.</think>Hello! 👋 Welcome!",
+        "reference": {
+            "chunks": []
+        },
+        "audio_binary": null,
+        "prompt": "",
+        "created_at": 1781250171.5262048,
+        "final": false,
+        "id": "76961783-1523-43f7-8148-19da08247922",
+        "session_id": "4edfabd6663211f1943e217dfc5f0165",
+        "chat_id": "d90fd732646f11f1803d2fb3c77f9b23"
+    }
+}
+data:{
+    "code": 0,
+    "message": "",
+    "data": true
+}
+```
+
 
 Failure:
 

@@ -250,12 +250,12 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 		return nil, fmt.Errorf("User '%s' already exists", username)
 	}
 
-	decryptedPassword, err := DecryptPassword(password)
+	decryptedPassword, err := common.DecryptPassword(password)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt password: %w", err)
 	}
 
-	hashedPassword, err := GenerateWerkzeugPasswordHash(decryptedPassword, 150000)
+	hashedPassword, err := common.GenerateWerkzeugPasswordHash(decryptedPassword)
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
@@ -770,16 +770,16 @@ func (s *Service) ChangePassword(username, newPassword string) error {
 
 	user := userList[0]
 
-	decryptedPassword, err := DecryptPassword(newPassword)
+	decryptedPassword, err := common.DecryptPassword(newPassword)
 	if err != nil {
 		return fmt.Errorf("failed to decrypt password: %w", err)
 	}
 
-	if user.Password != nil && CheckWerkzeugPassword(decryptedPassword, *user.Password) {
+	if user.Password != nil && common.CheckWerkzeugPassword(decryptedPassword, *user.Password) {
 		return nil
 	}
 
-	hashedPassword, err := GenerateWerkzeugPasswordHash(decryptedPassword, 150000)
+	hashedPassword, err := common.GenerateWerkzeugPasswordHash(decryptedPassword)
 	if err != nil {
 		return fmt.Errorf("failed to hash password: %w", err)
 	}
@@ -1784,7 +1784,7 @@ func (s *Service) InitDefaultAdmin() error {
 		// Python: password = encode_to_base64(password) = base64.b64encode(password)
 		// Then: generate_password_hash(base64_password) creates werkzeug hash
 		password := base64.StdEncoding.EncodeToString([]byte(defaultPassword))
-		hashedPassword, err := GenerateWerkzeugPasswordHash(password, 150000)
+		hashedPassword, err := common.GenerateWerkzeugPasswordHash(password)
 		if err != nil {
 			return fmt.Errorf("failed to hash password: %w", err)
 		}
@@ -1811,6 +1811,7 @@ func (s *Service) InitDefaultAdmin() error {
 			return fmt.Errorf("failed to add tenant for admin: %w", err)
 		}
 
+		common.Info("Init default super user successfully")
 		return nil
 	}
 
@@ -1838,6 +1839,7 @@ func (s *Service) InitDefaultAdmin() error {
 		}
 	}
 
+	common.Info("Init default super user successfully")
 	return nil
 }
 
