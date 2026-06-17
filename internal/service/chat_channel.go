@@ -74,7 +74,6 @@ func (s *ChatChannelService) CreateChatChannel(tenantID, name, channelType strin
 			return nil, errors.New("No authorization.")
 		}
 	}
-	
 	row := &entity.ChatChannel{
 		ID:       common.GenerateUUID(),
 		TenantID: tenantID,
