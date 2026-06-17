@@ -58,10 +58,10 @@ export const AddedChannelCard = (props: IAddedChannelCardProps) => {
           >
             <div className="flex flex-col gap-0.5">
               <div className="text-sm text-text-primary">{item.name}</div>
-              {item.dialog_id ? (
+              {item.chat_id ? (
                 <div className="text-xs text-text-secondary flex items-center gap-1">
                   <Link2 size={12} />
-                  {item.dialog_name || item.dialog_id}
+                  {item.dialog_name || item.chat_id}
                 </div>
               ) : (
                 <div className="text-xs text-text-secondary/60">

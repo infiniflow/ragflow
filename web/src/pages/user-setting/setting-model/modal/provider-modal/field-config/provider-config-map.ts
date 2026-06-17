@@ -725,7 +725,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       {
         name: 'paddleocr_api_url',
         label: 'paddleocrApiUrl',
-        type: FormFieldType.Text,
+        type: 'inputSelect',
         required: true,
         placeholder: 'paddleocrApiUrlPlaceholder',
         validation: { message: 'paddleocrApiUrlMessage' },
@@ -746,8 +746,10 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         defaultValue: 'PaddleOCR-VL',
         placeholder: 'paddleocrSelectAlgorithm',
         options: [
+          { label: 'PaddleOCR-VL-1.6', value: 'PaddleOCR-VL-1.6' },
           { label: 'PaddleOCR-VL-1.5', value: 'PaddleOCR-VL-1.5' },
           { label: 'PaddleOCR-VL', value: 'PaddleOCR-VL' },
+          { label: 'PP-OCRv6', value: 'PP-OCRv6' },
           { label: 'PP-OCRv5', value: 'PP-OCRv5' },
           { label: 'PP-StructureV3', value: 'PP-StructureV3' },
         ],

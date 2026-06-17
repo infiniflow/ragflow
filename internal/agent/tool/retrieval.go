@@ -21,22 +21,25 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"ragflow/internal/agent/runtime"
 )
 
-// ErrGraphRAGNotSupported is returned by the Retrieval tool when callers
-// pass use_kg=true. GraphRAG is explicitly out of scope for the Go Canvas
-// (plan §5 Phase 3 + §9 Q3); users must either disable use_kg or fall back
-// to the Python Canvas.
+// ErrGraphRAGNotSupported is returned by the Retrieval tool when
+// callers pass use_kg=true. GraphRAG support is a future
+// enhancement; users must either disable use_kg or fall back to
+// the Python Canvas.
 var ErrGraphRAGNotSupported = errors.New("GraphRAG 检索暂不支持，请使用 Python Canvas 或关闭 use_kg")
 
-// ErrRetrievalServiceMissing is returned by the stub when the
-// internal/service/nlp RetrievalService is not wired. Plan §5 Phase 3
-// batch 1 ships the tool shell; service wiring lands in Phase 5.
+// ErrRetrievalServiceMissing is returned when the
+// internal/service/nlp RetrievalService is not registered. Wire a
+// real implementation via SetRetrievalService at boot to resolve.
 var ErrRetrievalServiceMissing = errors.New(
-	"Retrieval service not yet implemented (Phase 5 wiring) — " +
+	"Retrieval service not yet implemented (service not registered) — " +
 		"use Python Canvas or implement internal/service/nlp/retrieval.go",
 )
 
@@ -76,13 +79,11 @@ type chunkPayload struct {
 	Score      float64 `json:"score,omitempty"`
 }
 
-// RetrievalTool is the Phase 3 batch 1 shell for the Retrieval tool
-// (plan §2.11.4 row 15, §5 Phase 3 第 1 批).
-//
-// In Phase 3 batch 1 the tool is a STUB: it validates the input (rejecting
-// use_kg=true with ErrGraphRAGNotSupported) and returns a structured
-// "not-yet-wired" error so callers can detect the gap. Phase 5 wires the
-// in-process call to internal/service/nlp.RetrievalService.
+// RetrievalTool is the Retrieval tool. It validates the input
+// (rejecting use_kg=true with ErrGraphRAGNotSupported) and
+// dispatches to the registered RetrievalService via
+// SetRetrievalService. When no service is registered, the call
+// surfaces ErrRetrievalServiceMissing.
 type RetrievalTool struct{}
 
 // NewRetrievalTool returns a RetrievalTool implementing eino's
@@ -92,7 +93,7 @@ func NewRetrievalTool() *RetrievalTool {
 }
 
 // Info returns the tool's metadata for the chat model. The schema mirrors
-// the Python RetrievalParam ToolMeta (plan §5 Phase 3, 字段对齐).
+// the Python RetrievalParam ToolMeta (plan , 字段对齐).
 func (r *RetrievalTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
 		Name: retrievalToolName,
@@ -115,17 +116,17 @@ func (r *RetrievalTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 			},
 			"use_kg": {
 				Type:     schema.Boolean,
-				Desc:     "GraphRAG toggle. Not supported in Go Canvas (plan §5 Phase 3); must be false.",
+				Desc:     "GraphRAG toggle. Not supported in Go Canvas (plan ); must be false.",
 				Required: false,
 			},
 		}),
 	}, nil
 }
 
-// InvokableRun executes the tool. In Phase 3 batch 1 this validates the
-// input and returns a structured error (or ErrGraphRAGNotSupported) so
-// callers can detect the gap. Phase 5 will replace the stub body with
-// the in-process call to internal/service/nlp.RetrievalService.
+// InvokableRun executes the tool. It validates the input and
+// dispatches to the registered RetrievalService. When no
+// service is registered, the call surfaces
+// ErrRetrievalServiceMissing.
 func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ...tool.Option) (string, error) {
 	var args retrievalArgs
 	if argumentsInJSON != "" {
@@ -135,7 +136,7 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 	}
 
 	if args.UseKG {
-		// Plan §5 Phase 3 + §9 Q3: GraphRAG is out of scope for the Go
+		// Plan  + §9 Q3: GraphRAG is out of scope for the Go
 		// Canvas. Return the structured error so the model can react.
 		return stubJSON(retrievalResult{
 			Stub:  true,
@@ -143,12 +144,87 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 		}), ErrGraphRAGNotSupported
 	}
 
-	// Phase 3 batch 1: in-process wiring lands in Phase 5. The stub
-	// surfaces a clear, machine-detectable error.
-	return stubJSON(retrievalResult{
-		Stub:  true,
-		Error: ErrRetrievalServiceMissing.Error(),
-	}), ErrRetrievalServiceMissing
+	// Dispatch to the registered RetrievalService. When the
+	// default stub is in place, the call surfaces
+	// ErrRetrievalServiceMissing; once a real impl is installed
+	// via SetRetrievalService (or SetSimpleRetrievalService for
+	// dev), the chunks flow through normally.
+	svc := GetRetrievalService()
+	chunks, err := svc.Search(ctx, RetrievalRequest{
+		Query:          args.Query,
+		DatasetIDs:     args.DatasetIDs,
+		TopN:           args.TopN,
+		UseKG:          args.UseKG,
+		UseRerank:      false, // future enhancement
+		RerankID:       "",
+		TOCEnhance:     false, // future enhancement
+		MetadataFilter: nil,   // future enhancement
+	})
+	if err != nil {
+		return stubJSON(retrievalResult{
+			Stub:  true,
+			Error: err.Error(),
+		}), err
+	}
+	// Map the chunks into the result envelope. The retrievalResult
+	// type carries the eino-tool envelope shape (chunkPayload, not
+	// RetrievalChunk), so we translate.
+	payload := make([]chunkPayload, 0, len(chunks))
+	for _, c := range chunks {
+		payload = append(payload, chunkPayload{
+			ID:         c.ID,
+			Content:    c.Content,
+			DocumentID: c.DocumentID,
+			Score:      c.Score,
+		})
+	}
+	out := retrievalResult{
+		FormalizedContent: renderChunks(chunks, args.Query),
+		Chunks:            payload,
+	}
+	// Record chunks into canvas state so the Agent's post-stream
+	// citation grounding call can read them. The recording is
+	// best-effort — when the canvas state is not
+	// attached (e.g. unit tests), we skip silently.
+	if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil && len(chunks) > 0 {
+		asMap := make([]map[string]any, 0, len(chunks))
+		for _, c := range chunks {
+			asMap = append(asMap, map[string]any{
+				"id":          c.ID,
+				"content":     c.Content,
+				"document_id": c.DocumentID,
+				"score":       c.Score,
+			})
+		}
+		state.SetRetrievalChunks(asMap)
+	}
+	result, err := stubJSONWithErr(out)
+	if err != nil {
+		return "", err
+	}
+	return result, nil
+}
+
+// renderChunks concatenates the retrieved chunks into a human-
+// readable content string. Mirrors Python's
+// `kb_prompt(kbinfos, ...)` format: each chunk gets a header
+// line with its ID and document, then the content.
+func renderChunks(chunks []RetrievalChunk, query string) string {
+	var sb strings.Builder
+	for _, c := range chunks {
+		fmt.Fprintf(&sb, "[ID:%s] %s\n", c.ID, c.Content)
+	}
+	return sb.String()
+}
+
+// stubJSONWithErr is the (string, error) variant for call sites
+// that need to propagate marshal failures.
+func stubJSONWithErr(r retrievalResult) (string, error) {
+	b, err := json.Marshal(r)
+	if err != nil {
+		return "", fmt.Errorf("retrieval: marshal result: %w", err)
+	}
+	return string(b), nil
 }
 
 // stubJSON marshals the result and returns it as a string. Marshaling

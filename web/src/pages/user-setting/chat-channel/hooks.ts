@@ -166,7 +166,7 @@ export const useConnectChatChannelDialog = () => {
       dialogId: string | null;
     }) => {
       const { data } = await updateChatChannel(params.channelId, {
-        dialog_id: params.dialogId,
+        chat_id: params.dialogId,
       });
       if (data.code === 0) {
         message.success(t('message.operated'));
