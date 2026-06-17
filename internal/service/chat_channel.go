@@ -62,6 +62,19 @@ func (s *ChatChannelService) List(tenantID string) ([]*entity.ChatChannelListRes
 }
 
 func (s *ChatChannelService) CreateChatChannel(tenantID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error) {
+	if chatID != nil && *chatID != "" {
+		dialog, err := s.chatDAO.GetByID(*chatID)
+		if err != nil {
+			if dao.IsNotFoundErr(err) {
+				return nil, errors.New("Can't find this chat assistant!")
+			}
+			return nil, err
+		}
+		if dialog.TenantID != tenantID {
+			return nil, errors.New("No authorization.")
+		}
+	}
+	
 	row := &entity.ChatChannel{
 		ID:       common.GenerateUUID(),
 		TenantID: tenantID,
