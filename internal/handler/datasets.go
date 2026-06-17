@@ -198,8 +198,12 @@ func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
 	}
 
 	result, code, err := h.datasetsService.UpdateDataset(datasetID, userID, req)
-	if err != nil || code != common.CodeSuccess {
+	if err != nil {
 		jsonError(c, code, err.Error())
+		return
+	}
+	if code != common.CodeSuccess {
+		jsonError(c, code, "dataset updated failed")
 		return
 	}
 
