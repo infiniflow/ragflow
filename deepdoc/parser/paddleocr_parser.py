@@ -380,6 +380,14 @@ class PaddleOCRParser(RAGFlowPdfParser):
                     if block_content.strip():
                         texts.append(block_content.strip())
 
+        # Fallback to ocrResults for models like PP-OCRv6
+        if not texts:
+            ocr_results = result.get("ocrResults", [])
+            for ocr_result in ocr_results:
+                pruned = ocr_result.get("prunedResult", {})
+                rec_texts = pruned.get("rec_texts", [])
+                texts.extend(t.strip() for t in rec_texts if t.strip())
+
         if callback:
             callback(0.9, f"[PaddleOCR] image done, blocks: {len(texts)}")
 
@@ -556,11 +564,13 @@ class PaddleOCRParser(RAGFlowPdfParser):
             callback(0.8, "[PaddleOCR] result received")
 
         # Extract raw result (preserving prunedResult with bbox info)
-        combined_result: dict[str, Any] = {"layoutParsingResults": []}
+        combined_result: dict[str, Any] = {"layoutParsingResults": [], "ocrResults": []}
         for line_obj in jsonl_data:
             result = line_obj.get("result", {})
             layout_results = result.get("layoutParsingResults", [])
             combined_result["layoutParsingResults"].extend(layout_results)
+            ocr_results = result.get("ocrResults", [])
+            combined_result["ocrResults"].extend(ocr_results)
 
         return combined_result
 
@@ -570,6 +580,26 @@ class PaddleOCRParser(RAGFlowPdfParser):
 
         if algorithm in SUPPORTED_PADDLEOCR_ALGORITHMS:
             layout_parsing_results = result.get("layoutParsingResults", [])
+
+            # Fallback to ocrResults for models like PP-OCRv6 that only return text recognition
+            if not layout_parsing_results:
+                ocr_results = result.get("ocrResults", [])
+                for page_idx, ocr_result in enumerate(ocr_results):
+                    pruned = ocr_result.get("prunedResult", {})
+                    rec_texts = pruned.get("rec_texts", [])
+                    rec_boxes = pruned.get("rec_boxes", [])
+                    for i, text in enumerate(rec_texts):
+                        text = text.strip()
+                        if not text:
+                            continue
+                        if i < len(rec_boxes):
+                            box = rec_boxes[i]
+                            left, top, right, bottom = box[0], box[1], box[2], box[3]
+                        else:
+                            left, top, right, bottom = 0, 0, 0, 0
+                        tag = f"@@{page_idx + 1}\t{left // self._ZOOMIN}\t{right // self._ZOOMIN}\t{top // self._ZOOMIN}\t{bottom // self._ZOOMIN}##"
+                        sections.append((text, tag))
+                return sections
 
             for page_idx, layout_result in enumerate(layout_parsing_results):
                 pruned_result = layout_result.get("prunedResult", {})

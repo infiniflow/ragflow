@@ -107,6 +107,11 @@ type paddleJsonlLine struct {
 				Text string `json:"text"`
 			} `json:"markdown"`
 		} `json:"layoutParsingResults"`
+		OcrResults []struct {
+			PrunedResult struct {
+				RecTexts []string `json:"rec_texts"`
+			} `json:"prunedResult"`
+		} `json:"ocrResults"`
 	} `json:"result"`
 }
 
@@ -288,6 +293,19 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 		for _, layoutRes := range lineData.Result.LayoutParsingResults {
 			fullMarkdown.WriteString(layoutRes.Markdown.Text)
 			fullMarkdown.WriteString("\n\n")
+		}
+
+		// Fallback to ocrResults for models like PP-OCRv6
+		if len(lineData.Result.LayoutParsingResults) == 0 {
+			for _, ocrRes := range lineData.Result.OcrResults {
+				for _, text := range ocrRes.PrunedResult.RecTexts {
+					text = strings.TrimSpace(text)
+					if text != "" {
+						fullMarkdown.WriteString(text)
+						fullMarkdown.WriteString("\n")
+					}
+				}
+			}
 		}
 	}
 
