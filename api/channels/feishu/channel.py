@@ -1,3 +1,7 @@
+"""Feishu (Lark) channel integration using WebSocket.
+
+This module provides the Feishu channel implementation for RAGFlow.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -25,6 +29,14 @@ LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class FeishuAccount:
+    """Feishu bot account configuration.
+
+    Attributes:
+        account_id: The account ID for this bot.
+        app_id: The Feishu app ID.
+        app_secret: The Feishu app secret.
+        domain: The domain ("feishu" or "lark").
+    """
     account_id: str
     app_id: str
     app_secret: str
@@ -32,13 +44,27 @@ class FeishuAccount:
 
 
 def _lark_domain(domain: str) -> str:
+    """Convert domain string to lark-oapi domain constant.
+
+    Args:
+        domain: Either "feishu" or "lark".
+
+    Returns:
+        The corresponding lark-oapi domain constant.
+    """
     return lark.FEISHU_DOMAIN if domain != "lark" else lark.LARK_DOMAIN
 
 
 class FeishuChannel(Channel):
+    """Feishu channel using WebSocket to receive events."""
     channel_id = "feishu"
 
     def __init__(self, account: FeishuAccount) -> None:
+        """Initialize the Feishu channel.
+
+        Args:
+            account: The Feishu account configuration.
+        """
         super().__init__()
         self.account = account
         self.account_id = account.account_id
@@ -55,6 +81,7 @@ class FeishuChannel(Channel):
         )
 
     async def start(self) -> None:
+        """Start the Feishu WebSocket client."""
         # The channel loop is the cross-thread dispatch target for inbound events.
         self._loop = asyncio.get_running_loop()
         LOGGER.info("[feishu:%s] starting WebSocket client", self.account_id)
@@ -66,6 +93,12 @@ class FeishuChannel(Channel):
         self._ws_thread.start()
 
     def _run_ws(self) -> None:
+        """Run the WebSocket client on a dedicated thread with its own event loop.
+
+        This is necessary because lark-oapi captures the running loop when
+        handlers/clients are built, and using the channel daemon loop causes
+        event loop conflicts.
+        """
         # Everything lark touches must be created and run on THIS thread with its
         # own event loop. lark captures the running loop when the handler/client
         # are built and when start() runs; building them on the channel daemon
@@ -103,6 +136,7 @@ class FeishuChannel(Channel):
                 pass
 
     async def stop(self) -> None:
+        """Stop the WebSocket client and clean up resources."""
         # lark's ws client exposes no clean public stop; disconnect best-effort.
         client = self._ws_client
         if client is not None:
@@ -118,6 +152,11 @@ class FeishuChannel(Channel):
         self._ws_thread = None
 
     async def send(self, message: OutgoingMessage) -> None:
+        """Send a message to the Feishu chat.
+
+        Args:
+            message: The outgoing message to send.
+        """
         content = json.dumps({"text": message.text}, ensure_ascii=False)
         if message.reply_to_message_id:
             req = (
@@ -155,6 +194,13 @@ class FeishuChannel(Channel):
             )
 
     def _on_message_receive(self, data: P2ImMessageReceiveV1) -> None:
+        """Handle incoming Feishu message event.
+
+        Runs on the lark-oapi WS thread; bounces into asyncio for downstream handlers.
+
+        Args:
+            data: The Feishu message event data.
+        """
         # Runs on the lark-oapi WS thread; bounce into asyncio for downstream handlers.
         try:
             incoming = self._normalize(data)
@@ -165,12 +211,25 @@ class FeishuChannel(Channel):
             LOGGER.error("[feishu:%s] inbound message handling error", self.account_id, exc_info=True)
 
     def _log_dispatch_result(self, future) -> None:
+        """Log any errors from the dispatch future.
+
+        Args:
+            future: The asyncio future from the dispatch.
+        """
         try:
             future.result()
         except Exception:
             LOGGER.error("[feishu:%s] dispatch error", self.account_id, exc_info=True)
 
     def _normalize(self, data: P2ImMessageReceiveV1) -> IncomingMessage:
+        """Convert Feishu event data to IncomingMessage.
+
+        Args:
+            data: The Feishu message event data.
+
+        Returns:
+            An IncomingMessage instance.
+        """
         event = data.event
         msg = event.message
         sender = event.sender
@@ -197,6 +256,18 @@ class FeishuChannel(Channel):
 
 
 def _build(account_id: str, cfg: dict) -> Channel:
+    """Build a FeishuChannel instance from configuration.
+
+    Args:
+        account_id: The account ID.
+        cfg: Configuration dict containing app_id, app_secret, and optionally domain.
+
+    Returns:
+        A FeishuChannel instance.
+
+    Raises:
+        ValueError: If app_id or app_secret is missing.
+    """
     app_id = cfg.get("app_id")
     app_secret = cfg.get("app_secret")
     if not app_id or not app_secret:

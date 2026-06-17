@@ -1,3 +1,9 @@
+"""Channel registry for dynamic channel instantiation.
+
+This module provides a registry pattern for channel implementations,
+allowing them to be registered by name and instantiated from configuration.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -14,10 +20,21 @@ _BUILDERS: Dict[str, ChannelBuilder] = {}
 
 
 def register_channel(name: str, builder: ChannelBuilder) -> None:
+    """Register a channel builder function by name.
+
+    Args:
+        name: The channel type identifier (e.g., "slack", "feishu").
+        builder: A function that takes (account_id, config) and returns a Channel.
+    """
     _BUILDERS[name] = builder
 
 
 def registered_channel_ids() -> List[str]:
+    """Return a sorted list of registered channel type identifiers.
+
+    Returns:
+        List of channel names that have been registered.
+    """
     return sorted(_BUILDERS)
 
 
