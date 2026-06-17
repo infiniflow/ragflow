@@ -211,6 +211,7 @@ func startServer(config *server.Config) {
 	llmService := service.NewLLMService()
 	tenantService := service.NewTenantService()
 	chatService := service.NewChatService()
+	chatChannelService := service.NewChatChannelService()
 	chatSessionService := service.NewChatSessionService()
 	systemService := service.NewSystemService()
 	connectorService := service.NewConnectorService()
@@ -234,7 +235,7 @@ func startServer(config *server.Config) {
 	chunkHandler := handler.NewChunkHandler(chunkService, userService)
 	llmHandler := handler.NewLLMHandler(llmService, userService)
 	chatHandler := handler.NewChatHandler(chatService, userService)
-	chatChannelHandler := handler.NewChatChannel()
+	chatChannelHandler := handler.NewChatChannelHandler(chatChannelService)
 	chatSessionHandler := handler.NewChatSessionHandler(chatSessionService, userService)
 	connectorHandler := handler.NewConnectorHandler(connectorService, userService)
 	searchHandler := handler.NewSearchHandler(searchService, userService)
@@ -290,7 +291,6 @@ func startServer(config *server.Config) {
 		docDAO,
 		docEngine,
 	)
-
 	// Per-tenant canvas-runtime override selector, backed by the
 	// existing Redis client and the global logger. The handler is
 	// ALWAYS constructed, even when Redis is briefly unavailable at

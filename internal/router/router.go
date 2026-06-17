@@ -587,18 +587,22 @@ func (r *Router) Setup(engine *gin.Engine) {
 			chunk.POST("/update", r.chunkHandler.UpdateChunk) // Internal API only for GO
 		}
 
-		chat_channels := v1.Group("/chat-channels")
-		{
-			chat_channels.POST("", r.chatChannelHandler.CreateChatChannel)
-			chat_channels.GET("", r.chatChannelHandler.ListChatChannel)
-		}
-
 		// Chat routes
 		chat := authorized.Group("/v1/dialog")
 		{
 			chat.POST("/next", r.chatHandler.ListChatsNext)
 			chat.POST("/set", r.chatHandler.SetDialog)
 			chat.POST("/rm", r.chatHandler.RemoveChats)
+		}
+
+		// Chat Channel
+		chanChannel := v1.Group("/chat-channels")
+		{
+			chanChannel.POST("", r.chatChannelHandler.CreateChatChannel)
+			chanChannel.GET("", r.chatChannelHandler.ListChatChannel)
+			chanChannel.GET("/:channel_id", r.chatChannelHandler.GetChatChannel)
+			chanChannel.PATCH("/:channel_id", r.chatChannelHandler.UpdateChatChannel)
+			chanChannel.DELETE("/:channel_id", r.chatChannelHandler.DeleteChatChannel)
 		}
 
 		// Chat session (conversation) routes
