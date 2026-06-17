@@ -271,9 +271,6 @@ func (v *VoyageModel) Rerank(modelName *string, query string, documents []string
 }
 
 func (v *VoyageModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
-	// Voyage AI's public API only exposes /v1/embeddings and /v1/rerank — there is
-	// no model-list endpoint (see https://docs.voyageai.com/reference), so listing
-	// models is not supported for this provider.
 	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
 
