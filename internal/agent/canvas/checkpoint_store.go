@@ -25,11 +25,10 @@ package canvas
 import (
 	"context"
 	"errors"
+	redis2 "ragflow/internal/engine/redis"
 	"time"
 
 	"github.com/redis/go-redis/v9"
-
-	"ragflow/internal/cache"
 )
 
 // checkpointKeyPrefix is the Redis key namespace for checkpoint payloads.
@@ -51,7 +50,7 @@ type RedisCheckPointStore struct {
 // inject their own client via struct-literal construction.
 func NewRedisCheckPointStore(ttl time.Duration) *RedisCheckPointStore {
 	var client *redis.Client
-	if rc := cache.Get(); rc != nil {
+	if rc := redis2.Get(); rc != nil {
 		client = rc.GetClient()
 	}
 	return &RedisCheckPointStore{client: client, ttl: ttl}

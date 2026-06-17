@@ -21,22 +21,30 @@ import (
 	"ragflow/internal/utility"
 )
 
-func GetParser(fileType utility.FileType) (FileParser, error) {
+func GetParser(fileType utility.FileType, config map[string]string) (FileParser, error) {
+	libType, ok := config["lib_type"]
+	if !ok {
+		return nil, fmt.Errorf("missing lib_type config")
+	}
 	switch fileType {
 	case utility.FileTypePPTX:
-		return NewPPTXParser(), nil
+		return NewPPTXParser(libType)
 	case utility.FileTypePPT:
-		return NewPPTParser(), nil
+		return NewPPTParser(libType)
 	case utility.FileTypeXLSX:
-		return NewXLSXParser(), nil
+		return NewXLSXParser(libType)
 	case utility.FileTypeXLS:
-		return NewXLSParser(), nil
+		return NewXLSParser(libType)
 	case utility.FileTypeDOCX:
-		return NewDOCXParser(), nil
+		return NewDOCXParser(libType)
 	case utility.FileTypeDOC:
-		return NewDOCParser(), nil
+		return NewDOCParser(libType)
 	case utility.FileTypePDF:
 		return NewPDFParser(), nil
+	case utility.FileTypeHTML:
+		return NewHTMLParser(Official)
+	case utility.FileTypeMarkdown:
+		return NewMarkdownParser(GoMarkdown)
 	default:
 		return nil, fmt.Errorf("unsupported file type: %s", fileType)
 	}

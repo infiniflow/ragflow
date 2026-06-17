@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"ragflow/internal/common"
 	"strconv"
 	"strings"
 )
@@ -888,13 +889,6 @@ func (p *Parser) parseModelNames(raw string) ([]string, error) {
 	return modelNames, nil
 }
 
-type AddModelConfig struct {
-	ModelName  string
-	ModelTypes []string
-	MaxTokens  int
-	Thinking   *bool
-}
-
 // syntax: add model 'xxx' to provider 'vllm' instance 'test' with tokens 1024 chat think vision;
 func (p *Parser) parseAddModel() (*Command, error) {
 	p.nextToken() // consume MODEL
@@ -952,6 +946,8 @@ func (p *Parser) parseAddModel() (*Command, error) {
 	var modelTypes []string
 	var supportThink *bool = nil
 	maxTokens := 0
+	var maxDimension *int = nil
+	var dimensions []int = nil
 
 	models := make([]map[string]any, 0, len(modelNames))
 	if p.curToken.Type != TokenWith {
@@ -984,6 +980,24 @@ A:
 		case TokenEmbedding:
 			modelTypes = append(modelTypes, "embedding")
 			p.nextToken()
+			if p.curToken.Type == TokenInteger {
+				val, err := p.parseNumber()
+				if err != nil {
+					return nil, err
+				}
+				maxDimension = &val
+				p.nextToken()
+
+				dimensions = make([]int, 0)
+				for p.curToken.Type == TokenInteger {
+					dim, err := p.parseNumber()
+					if err != nil {
+						return nil, err
+					}
+					dimensions = append(dimensions, int(dim))
+					p.nextToken()
+				}
+			}
 
 		case TokenRerank:
 			modelTypes = append(modelTypes, "rerank")
@@ -1056,12 +1070,19 @@ A:
 				model["thinking"] = *supportThink
 			}
 
+			if maxDimension != nil {
+				model["max_dimension"] = *maxDimension
+				model["dimensions"] = dimensions
+			}
+
 			models = append(models, model)
 
 			i++
 			modelTypes = nil
 			supportThink = nil
 			maxTokens = 0
+			maxDimension = nil
+			dimensions = nil
 
 			if p.curToken.Type == TokenComma {
 				p.nextToken()
@@ -2285,7 +2306,7 @@ func (p *Parser) parseSetVariable() (*Command, error) {
 func (p *Parser) parseSetDefault() (*Command, error) {
 	p.nextToken() // consume DEFAULT
 
-	var modelType, compositeModelName string
+	var modelType, modelNameOrID string
 	var err error
 
 	switch p.curToken.Type {
@@ -2313,12 +2334,12 @@ func (p *Parser) parseSetDefault() (*Command, error) {
 	}
 	p.nextToken() // pass MODEL
 
-	// Format: 'provider/instance/model' or just 'message'
+	// Format: 'model@instance@provider' or just 'message'
 	if p.curToken.Type != TokenQuotedString {
-		return nil, fmt.Errorf("expected quoted string with format provider/instance/model")
+		return nil, fmt.Errorf("expected quoted string with format model@instance@provider")
 	}
 
-	compositeModelName, err = p.parseQuotedString()
+	modelNameOrID, err = p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
@@ -2326,7 +2347,14 @@ func (p *Parser) parseSetDefault() (*Command, error) {
 
 	cmd := NewCommand("set_default_model")
 	cmd.Params["model_type"] = modelType
-	cmd.Params["composite_model_name"] = compositeModelName
+
+	if common.IsCompositeModelName(modelNameOrID) {
+		cmd.Params["composite_model_name"] = modelNameOrID
+	} else if common.IsUUID(modelNameOrID) {
+		cmd.Params["model_id"] = modelNameOrID
+	} else {
+		return nil, fmt.Errorf("invalid format of model name or ID: %s", modelNameOrID)
+	}
 
 	p.nextToken()
 	// Semicolon is optional for UNSET TOKEN
@@ -3024,7 +3052,7 @@ func (p *Parser) parseChatCommand() (*Command, error) {
 	p.nextToken() // consume CHAT
 
 	var err error
-	var compositeModelName string = ""
+	var modelNameOrID string = ""
 	var messages []string
 	var images []string
 	var videos []string
@@ -3038,11 +3066,11 @@ optionsLoop:
 		switch p.curToken.Type {
 		case TokenWith:
 			p.nextToken()
-			// 'model@instance@provider'
-			if compositeModelName != "" {
-				return nil, fmt.Errorf("model name is already set")
+			// 'model@instance@provider' or model ID
+			if modelNameOrID != "" {
+				return nil, fmt.Errorf("model name or ID is already set")
 			}
-			compositeModelName, err = p.parseQuotedString()
+			modelNameOrID, err = p.parseQuotedString()
 			if err != nil {
 				return nil, err
 			}
@@ -3182,7 +3210,13 @@ optionsLoop:
 	}
 	cmd := NewCommand("chat_to_model")
 
-	cmd.Params["composite_model_name"] = compositeModelName
+	if common.IsCompositeModelName(modelNameOrID) {
+		cmd.Params["composite_model_name"] = modelNameOrID
+	} else if common.IsUUID(modelNameOrID) {
+		cmd.Params["model_id"] = modelNameOrID
+	} else {
+		return nil, fmt.Errorf("invalid format of model name or ID: %s", modelNameOrID)
+	}
 	cmd.Params["messages"] = messages
 	cmd.Params["images"] = images
 	cmd.Params["videos"] = videos
@@ -3276,7 +3310,7 @@ textLoop:
 	}
 	p.nextToken() // consume WITH
 
-	compositeModelName, err := p.parseQuotedString()
+	modelNameOrID, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
@@ -3306,7 +3340,13 @@ textLoop:
 	}
 
 	cmd := NewCommand("embed_user_text")
-	cmd.Params["composite_model_name"] = compositeModelName
+	if common.IsCompositeModelName(modelNameOrID) {
+		cmd.Params["composite_model_name"] = modelNameOrID
+	} else if common.IsUUID(modelNameOrID) {
+		cmd.Params["model_id"] = modelNameOrID
+	} else {
+		return nil, fmt.Errorf("invalid format of model name or ID: %s", modelNameOrID)
+	}
 	cmd.Params["texts"] = texts
 	if dimension > 0 {
 		cmd.Params["dimension"] = dimension
@@ -3356,7 +3396,7 @@ documentLoop:
 	}
 	p.nextToken() // consume WITH
 
-	compositeModelName, err := p.parseQuotedString()
+	modelNameOrID, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
@@ -3374,7 +3414,13 @@ documentLoop:
 	p.nextToken()
 
 	cmd := NewCommand("rarank_user_document")
-	cmd.Params["composite_model_name"] = compositeModelName
+	if common.IsCompositeModelName(modelNameOrID) {
+		cmd.Params["composite_model_name"] = modelNameOrID
+	} else if common.IsUUID(modelNameOrID) {
+		cmd.Params["model_id"] = modelNameOrID
+	} else {
+		return nil, fmt.Errorf("invalid format of model name or ID: %s", modelNameOrID)
+	}
 	cmd.Params["query"] = query
 	cmd.Params["documents"] = documents
 	cmd.Params["top_n"] = topN
@@ -3389,7 +3435,7 @@ func (p *Parser) parseASRCommand() (*Command, error) {
 	}
 	p.nextToken() // consume WITH
 
-	compositeModelName, err := p.parseQuotedString()
+	modelNameOrID, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
@@ -3407,7 +3453,13 @@ func (p *Parser) parseASRCommand() (*Command, error) {
 	p.nextToken()
 
 	cmd := NewCommand("asr_user_command")
-	cmd.Params["composite_model_name"] = compositeModelName
+	if common.IsCompositeModelName(modelNameOrID) {
+		cmd.Params["composite_model_name"] = modelNameOrID
+	} else if common.IsUUID(modelNameOrID) {
+		cmd.Params["model_id"] = modelNameOrID
+	} else {
+		return nil, fmt.Errorf("invalid format of model name or ID: %s", modelNameOrID)
+	}
 	cmd.Params["audio_file"] = audioFile
 
 	for p.curToken.Type != TokenEOF && p.curToken.Type != TokenSemicolon {
@@ -3445,8 +3497,17 @@ func (p *Parser) parseTTSCommand() (*Command, error) {
 	if p.curToken.Type != TokenQuotedString && p.curToken.Type != TokenIdentifier {
 		return nil, fmt.Errorf("expect model name after 'with'")
 	}
-	cmd.Params["composite_model_name"] = strings.Trim(p.curToken.Value, "\"'")
+
+	modelNameOrID := strings.Trim(p.curToken.Value, "\"'")
 	p.nextToken()
+
+	if common.IsCompositeModelName(modelNameOrID) {
+		cmd.Params["composite_model_name"] = modelNameOrID
+	} else if common.IsUUID(modelNameOrID) {
+		cmd.Params["model_id"] = modelNameOrID
+	} else {
+		return nil, fmt.Errorf("invalid format of model name or ID: %s", modelNameOrID)
+	}
 
 	if p.curToken.Type != TokenText {
 		return nil, fmt.Errorf("expect 'text' parameter")
@@ -3509,7 +3570,7 @@ func (p *Parser) parseOCRCommand() (*Command, error) {
 	}
 	p.nextToken() // consume WITH
 
-	compositeModelName, err := p.parseQuotedString()
+	modelNameOrID, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
@@ -3540,7 +3601,18 @@ func (p *Parser) parseOCRCommand() (*Command, error) {
 		return nil, fmt.Errorf("expected FILE or URL")
 	}
 
-	cmd.Params["composite_model_name"] = compositeModelName
+	if common.IsCompositeModelName(modelNameOrID) {
+		cmd.Params["composite_model_name"] = modelNameOrID
+	} else if common.IsUUID(modelNameOrID) {
+		cmd.Params["model_id"] = modelNameOrID
+	} else {
+		return nil, fmt.Errorf("invalid format of model name or ID: %s", modelNameOrID)
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
 
 	return cmd, nil
 }
@@ -3548,7 +3620,7 @@ func (p *Parser) parseOCRCommand() (*Command, error) {
 func (p *Parser) parseModelParseCommand() (*Command, error) {
 	p.nextToken() // consume WITH
 
-	compositeModelName, err := p.parseQuotedString()
+	modelNameOrID, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
@@ -3579,7 +3651,18 @@ func (p *Parser) parseModelParseCommand() (*Command, error) {
 		return nil, fmt.Errorf("expected FILE or URL")
 	}
 
-	cmd.Params["composite_model_name"] = compositeModelName
+	if common.IsCompositeModelName(modelNameOrID) {
+		cmd.Params["composite_model_name"] = modelNameOrID
+	} else if common.IsUUID(modelNameOrID) {
+		cmd.Params["model_id"] = modelNameOrID
+	} else {
+		return nil, fmt.Errorf("invalid format of model name or ID: %s", modelNameOrID)
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
 
 	return cmd, nil
 }
@@ -3711,7 +3794,7 @@ func (p *Parser) parseUseCommand() (*Command, error) {
 func (p *Parser) parseUseModel() (*Command, error) {
 	p.nextToken() // consume MODEL
 
-	compositeModelName, err := p.parseQuotedString()
+	modelNameOrID, err := p.parseQuotedString()
 	if err != nil {
 		return nil, fmt.Errorf("expected model identifier in format 'model@instance@provider': %w", err)
 	}
@@ -3723,7 +3806,19 @@ func (p *Parser) parseUseModel() (*Command, error) {
 	}
 
 	cmd := NewCommand("use_model")
-	cmd.Params["composite_model_name"] = compositeModelName
+
+	if common.IsCompositeModelName(modelNameOrID) {
+		cmd.Params["composite_model_name"] = modelNameOrID
+	} else if common.IsUUID(modelNameOrID) {
+		cmd.Params["model_id"] = modelNameOrID
+	} else {
+		return nil, fmt.Errorf("invalid format of model name or ID: %s", modelNameOrID)
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
 	return cmd, nil
 }
 

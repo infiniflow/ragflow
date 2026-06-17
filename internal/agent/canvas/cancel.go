@@ -25,11 +25,10 @@ package canvas
 import (
 	"context"
 	"errors"
+	redis2 "ragflow/internal/engine/redis"
 	"time"
 
 	"github.com/redis/go-redis/v9"
-
-	"ragflow/internal/cache"
 )
 
 // cancelKeySuffix is appended to the task id to form the Redis key.
@@ -49,7 +48,7 @@ const RequestCancelTTL = 24 * time.Hour
 // a package-level variable so tests can override it with a miniredis
 // client (the production path goes through cache.Get()).
 var cancelClientFn = func() (*redis.Client, error) {
-	rc := cache.Get()
+	rc := redis2.Get()
 	if rc == nil {
 		return nil, errors.New("cancel: redis cache not initialized")
 	}
