@@ -4149,8 +4149,8 @@ curl --request POST \
   When `chat_id` and `session_id` are provided, defaults to `false`, so the server uses stored session history and only the latest user message from the request. Set to `true` to replace/use the submitted full `messages` history, and overrides the stored session history.
 - `"legacy"`: (*Body Parameter*), `boolean`  
   Defaults to `false`. Wheter to enable backward compatibility with RAGFlow v0.23.0 for streaming responses. When set to `true`:  
-  - Cumulative output: The answer field in each chunk returns the entire text generated so far, rather than just the new tokens (deltas).
-  When `true`, streaming responses use the v0.23.0-compatible format. The streamed `answer` is cumulative, and `start_to_think` / `end_to_think` are omitted from the emitted chunks.
+  - Cumulative output: The `"answer"` field in each chunk returns the entire text generated so far, rather than just the new tokens (deltas).
+  - No reasoning markers: The `start_to_think` and `end_to_think` signals are stripped from the stream.
 
 #### Response
 
@@ -4630,7 +4630,6 @@ Use this mode for the native agent API.
 - `"files"`: `list[object]` (optional)
 - `"user_id"`: `string` (optional)
 - `"return_trace"`: `boolean` (optional, default `false`)
-- `"release"`: `boolean` (optional, default `false`)
 - `"chat_template_kwargs": object` (optional)
 
 #### Streaming events to handle
