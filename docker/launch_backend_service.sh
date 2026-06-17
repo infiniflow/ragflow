@@ -9,9 +9,9 @@ usage() {
     echo
     echo "Without arguments, starts ragflow and task_executor."
     echo "Available service types:"
-    echo "  ragflow         Start api/ragflow_server.py"
+    echo "  ragflow         Start RAGFlow server based on API_PROXY_SCHEME"
     echo "  task_executor   Start rag/svr/task_executor.py workers"
-    echo "  admin           Start admin/server/admin_server.py"
+    echo "  admin           Start Admin server based on API_PROXY_SCHEME"
     echo "  data_sync       Start rag/svr/sync_data_source.py"
     echo
     echo "Examples:"
@@ -113,45 +113,57 @@ task_exe(){
 
 # Function to execute ragflow_server with retry logic
 run_server(){
+    local server_name="ragflow_server.py"
+    local -a server_cmd=("$PY" "api/ragflow_server.py")
+    if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+        server_name="ragflow_server"
+        server_cmd=("bin/ragflow_server")
+    fi
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
-        echo "Starting ragflow_server.py (Attempt $((retry_count+1)))"
-        $PY api/ragflow_server.py
+        echo "Starting $server_name (Attempt $((retry_count+1)))"
+        "${server_cmd[@]}"
         EXIT_CODE=$?
         if [ $EXIT_CODE -eq 0 ]; then
-            echo "ragflow_server.py exited successfully."
+            echo "$server_name exited successfully."
             break
         else
-            echo "ragflow_server.py failed with exit code $EXIT_CODE. Retrying..." >&2
+            echo "$server_name failed with exit code $EXIT_CODE. Retrying..." >&2
             retry_count=$((retry_count + 1))
             sleep 2
         fi
     done
 
     if [ $retry_count -ge $MAX_RETRIES ]; then
-        echo "ragflow_server.py failed after $MAX_RETRIES attempts. Exiting..." >&2
+        echo "$server_name failed after $MAX_RETRIES attempts. Exiting..." >&2
         cleanup
     fi
 }
 
 # Function to execute admin_server with retry logic
 run_admin_server(){
+    local server_name="admin_server.py"
+    local -a server_cmd=("$PY" "admin/server/admin_server.py")
+    if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+        server_name="admin_server"
+        server_cmd=("bin/admin_server")
+    fi
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
-        echo "Starting admin_server.py (Attempt $((retry_count+1)))"
-        $PY admin/server/admin_server.py
+        echo "Starting $server_name (Attempt $((retry_count+1)))"
+        "${server_cmd[@]}"
         EXIT_CODE=$?
         if [ $EXIT_CODE -eq 0 ]; then
-            echo "admin_server.py exited successfully."
+            echo "$server_name exited successfully."
             break
         else
-            echo "admin_server.py failed with exit code $EXIT_CODE. Retrying..." >&2
+            echo "$server_name failed with exit code $EXIT_CODE. Retrying..." >&2
             retry_count=$((retry_count + 1))
             sleep 2
         fi
     done
     if [ $retry_count -ge $MAX_RETRIES ]; then
-        echo "admin_server.py failed after $MAX_RETRIES attempts. Exiting..." >&2
+        echo "$server_name failed after $MAX_RETRIES attempts. Exiting..." >&2
         cleanup
     fi
 }
@@ -267,13 +279,6 @@ if [[ "$START_DATA_SYNC" -eq 1 ]]; then
   run_data_sync &
   PIDS+=($!)
 fi
-
-# Start the Python admin server (9381) when ENABLE_ADMIN_SERVER=1
-run_admin_server &
-PIDS+=($!)
-
-# Start the Go server(s) when running in hybrid or go mode
-run_go_servers
 
 # Wait for all background processes to finish
 wait
