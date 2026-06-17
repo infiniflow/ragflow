@@ -742,6 +742,7 @@ class Markdown(MarkdownParser):
         return images, cache
 
     def __call__(self, filename, binary=None, separate_tables=True, delimiter=None, return_section_images=False):
+        """Parse markdown into text sections and optional standalone table chunks."""
         if binary:
             encoding = find_codec(binary)
             txt = binary.decode(encoding, errors="ignore")

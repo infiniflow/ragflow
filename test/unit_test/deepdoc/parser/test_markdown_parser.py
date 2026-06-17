@@ -168,6 +168,7 @@ class TestMarkdownElementExtractorTables:
 @pytest.mark.p2
 class TestMarkdownTableDedup:
     def test_separate_tables_removes_pipe_table_from_text_sections(self, markdown_parser_module):
+        """Ensure separated pipe tables do not leak back into text chunks."""
         text = "Before\n\n| Name | Value |\n| --- | --- |\n| A | 1 |\n| B | 2 |\n\nAfter"
 
         parser = markdown_parser_module.RAGFlowMarkdownParser()
