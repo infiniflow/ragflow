@@ -1922,6 +1922,11 @@ if __name__ == "__main__":
 
     faulthandler.enable()
     init_root_logger(CONSUMER_NAME)
+    if args.legacy_index is not None:
+        logging.info(
+            "Using legacy positional task executor index without -i/--index: %s",
+            args.legacy_index,
+        )
     try:
         asyncio.run(main())
     except Exception as e:
