@@ -1,11 +1,11 @@
-// Package component — Categorize (Phase 2 P0, plan §2.11.3 row 6, §2.11.6 D3).
+// Package component — Categorize (T3).
 //
-// LLM-based classifier. The component asks the model to pick exactly one
-// of the configured categories, returns the chosen category name plus a
-// uniform score map (1.0 for the chosen category, 0.0 for the rest), and
-// emits an empty `_next` list. The `_next` field is reserved for Phase 5
-// when the eino MultiBranch node replaces the Python
-// `set_output("_next", cpn_ids)` routing protocol.
+// LLM-based classifier. The component asks the model to pick exactly
+// one of the configured categories, returns the chosen category name
+// plus a uniform score map (1.0 for the chosen category, 0.0 for the
+// rest). The MultiBranch wiring in canvas/multibranch.go consumes
+// outputs["_next"] for runtime routing; the field is reserved for
+// that consumer.
 package component
 
 import (
@@ -39,7 +39,7 @@ type CategorizeParam struct {
 //	"category" string             — chosen category name (or default if
 //	                                model returned something not in list)
 //	"scores"   map[string]float64
-//	"_next"    []string           — reserved for Phase 5 eino MultiBranch
+//	"_next"    []string           — reserved for canvas/multibranch.go routing
 type CategorizeOutput struct {
 	Category string
 	Scores   map[string]float64
@@ -133,7 +133,7 @@ func (c *CategorizeComponent) Outputs() map[string]string {
 	return map[string]string{
 		"category": "Chosen category name (one of the configured list, or the default)",
 		"scores":   "Score map (1.0 for the chosen category, 0.0 for the rest)",
-		"_next":    "Reserved for Phase 5 eino MultiBranch — empty in P0",
+		"_next":    "Reserved for canvas/multibranch.go routing; currently empty",
 	}
 }
 

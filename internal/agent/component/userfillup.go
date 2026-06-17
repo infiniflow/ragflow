@@ -14,16 +14,17 @@
 //  limitations under the License.
 //
 
-// Package component — UserFillUp component (T3, plan §2.11.3 row 2).
+// Package component — UserFillUp component (T3).
 //
-// UserFillUp is the user-interaction / form-filling node. It renders an
-// optional `tips` template (with `{{key}}` placeholders resolved against
-// the form's input map) and passes each form field through to its
-// downstream outputs. File-type inputs (value.type starts with "file")
-// are deferred — Phase 5 will wire FileService.get_files; the P3 port
-// emits a stable "<file:key>" stub so the run keeps flowing.
+// UserFillUp is the user-interaction / form-filling node. It
+// renders an optional `tips` template (with `{{key}}` placeholders
+// resolved against the form's input map) and passes each form
+// field through to its downstream outputs. File-type inputs
+// (value.type starts with "file") emit a stable "<file:key>" stub
+// so the run keeps flowing while the FileService integration
+// surfaces the actual bytes via the storage layer.
 //
-// Mirrors agent/component/fillup.py:24-83.
+// Mirrors agent/component/fillup.py.
 package component
 
 import (
@@ -42,8 +43,8 @@ const componentNameUserFillUp = "UserFillUp"
 const defaultUserFillUpTips = "Please fill up the form"
 
 // fileStubPrefix is prepended to the form-field key when an input is
-// classified as a file-type input. Phase 5 will replace this with the
-// actual FileService.get_files payload.
+// classified as a file-type input. The FileService.get_files payload
+// surfaces the actual bytes via the storage layer.
 const fileStubPrefix = "<file:"
 
 // tipsPlaceholderPattern matches `{{key}}` placeholders in the tips
@@ -124,8 +125,8 @@ func (u *UserFillUpComponent) Name() string { return u.name }
 func (u *UserFillUpComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
 	// State is required for the canvas ref grammar, but UserFillUp's
 	// tips substitution uses simple {{key}} placeholders resolved
-	// against the form input map. We still extract state for future
-	// Phase 5 use and to fail loudly if the engine forgot to wire it.
+	// against the form input map. We still extract state so a
+	// nil-state error surfaces early.
 	if _, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err != nil {
 		return nil, fmt.Errorf("UserFillUp: %w", err)
 	}
@@ -165,7 +166,7 @@ func (u *UserFillUpComponent) Inputs() map[string]string {
 		"inputs":           "Map of form-field name → {value, type, optional?}.",
 		"enable_tips":      "Render the `tips` template (default true).",
 		"tips":             "Template string with {{key}} placeholders, resolved against the form fields.",
-		"layout_recognize": "Layout recognizer hint used for file inputs (deferred to Phase 5).",
+		"layout_recognize": "Layout recognizer hint used for file inputs.",
 	}
 }
 
@@ -194,9 +195,8 @@ func formFields(inputs map[string]any) (map[string]any, bool) {
 
 // renderTips substitutes every {{key}} placeholder in template with
 // the corresponding field's value. File-type fields render as
-// "<file:key>" stubs — FileService integration is Phase 5. Plain
-// string fields use their value verbatim; non-string values are
-// coerced via fmt.Sprintf("%v", ...).
+// "<file:key>" stubs. Plain string fields use their value
+// verbatim; non-string values are coerced via fmt.Sprintf("%v", ...).
 func renderTips(template string, fields map[string]any) string {
 	if template == "" {
 		return ""

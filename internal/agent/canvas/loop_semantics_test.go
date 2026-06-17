@@ -67,7 +67,6 @@ func runLoopCanvas(t *testing.T, dsl *Canvas) (*CanvasState, error) {
 // each iteration. The loop terminates when counter >= threshold.
 func counterLoopDSL(step int, threshold int, maxCount int) *Canvas {
 	return &Canvas{
-		Version: 1,
 		Components: map[string]CanvasComponent{
 			"begin": {
 				Obj:        CanvasComponentObj{ComponentName: "Begin", Params: map[string]any{}},
@@ -187,7 +186,6 @@ func TestLoop_MaxCount(t *testing.T) {
 // a string instead of a list.
 func TestLoop_FactoryErrorSurfaces(t *testing.T) {
 	dsl := &Canvas{
-		Version: 1,
 		Components: map[string]CanvasComponent{
 			"begin": {
 				Obj:        CanvasComponentObj{ComponentName: "Begin", Params: map[string]any{}},
@@ -236,7 +234,6 @@ func TestLoop_FactoryErrorSurfaces(t *testing.T) {
 // for v1 DSLs.
 func TestLoop_LegacyExitLoopStaysNoOp(t *testing.T) {
 	dsl := &Canvas{
-		Version: 1,
 		Components: map[string]CanvasComponent{
 			"begin": {
 				Obj:        CanvasComponentObj{ComponentName: "Begin", Params: map[string]any{}},
@@ -291,7 +288,6 @@ func TestLoop_FactoryRegisteredInThisBinary(t *testing.T) {
 // for non-string types, which is what we want here.
 func variableModeLoopDSL(threshold, step int) *Canvas {
 	return &Canvas{
-		Version: 1,
 		Components: map[string]CanvasComponent{
 			"begin": {
 				Obj:        CanvasComponentObj{ComponentName: "Begin", Params: map[string]any{}},
