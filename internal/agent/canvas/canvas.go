@@ -50,8 +50,8 @@ type Canvas struct {
 }
 
 // CanvasComponent is the in-memory DSL node. The Obj.ComponentName
-// matches agent/component/<name>.py's class name (case-insensitive per
-// dsl-v1-corner-cases.md §13).
+// matches agent/component/<name>.py's class name (case-insensitive,
+// per Python v1 DSL semantics).
 type CanvasComponent struct {
 	Obj        CanvasComponentObj `json:"obj"`
 	Downstream []string           `json:"downstream"`

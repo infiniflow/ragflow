@@ -242,15 +242,14 @@ func startServer(config *server.Config) {
 	mcpHandler := handler.NewMCPHandler(mcpService)
 	skillSearchHandler := handler.NewSkillSearchHandler(docEngine)
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
-	// Phase 4.4 V2 (Goal 8): production boot wiring for the
-	// agent service's Redis-backed run infrastructure. We attempt
-	// to install the Redis-backed CheckPointStore / StateSerializer
-	// / RunTracker; when Redis is unreachable (degraded boot,
-	// stand-alone mode, no-redis CI), the constructors return
-	// errors and we fall through to the in-memory / no-tracking
-	// path. The agent service treats nil options as the test path
-	// (commit 0c62184a0), so graceful degradation is a 1-line
-	// if-not-nil pass-through — no separate "boot" mode required.
+	// Install the agent service's Redis-backed run infrastructure
+	// (CheckPointStore / StateSerializer / RunTracker). When Redis
+	// is unreachable (degraded boot, stand-alone mode, no-redis CI)
+	// the constructors return errors and we fall through to the
+	// in-memory / no-tracking path: the agent service treats nil
+	// options as the in-memory test path, so graceful degradation
+	// is a 1-line if-not-nil pass-through — no separate "boot" mode
+	// required.
 	agentOpts := buildAgentRunOptions()
 	agentHandler := handler.NewAgentHandler(service.NewAgentServiceWithOptions(
 		agentOpts.checkpointStore,
@@ -258,15 +257,13 @@ func startServer(config *server.Config) {
 		agentOpts.runTracker,
 	), fileService)
 
-	// Phase 4.4 V2 (Goal 9): Phase 8b TTS service wire-up. The
-	// model-provider-synthesizer previously lived in cmd/server_main
-	// but the linter rewrites removed it; this is the real
-	// dispatch restoration (v3.6.1 Gap #3). The dispatch routes
-	// the audio.SynthesizeRequest through ModelProviderService.
-	// AudioSpeech, which fans out to the per-tenant TTS model
-	// driver. When the model provider is unconfigured, the
-	// synthesizer falls back to a no-op echo (the audio package
-	// contract), so this is always safe to call.
+	// Wire the TTS synthesizer to the per-tenant model-provider
+	// dispatch. SynthesizeRequest is routed through
+	// ModelProviderService.AudioSpeech, which fans out to the
+	// tenant's configured TTS model driver. When the model
+	// provider is unconfigured, the synthesizer falls back to a
+	// no-op echo (the audio package contract), so this is always
+	// safe to call.
 	configureTTSSynthesizer(modelProviderService)
 	searchBotLLM := &handler.SearchBotRealLLM{Svc: modelProviderService}
 	searchBotHandler := handler.NewSearchBotHandler(
@@ -293,16 +290,16 @@ func startServer(config *server.Config) {
 		docEngine,
 	)
 
-	// Phase 6 per-tenant canvas-runtime override. The selector is backed by
-	// the existing Redis client and the global logger. The handler is
-	// ALWAYS constructed, even when Redis is briefly unavailable at startup,
-	// so the POST /api/v1/admin/canvas-runtime/:tenant_id endpoint stays
-	// registered and returns the explicit ErrSelectorNotConfigured (HTTP 500)
-	// path until Redis recovers. The previous behaviour — skipping handler
-	// construction when rdb == nil — silently removed the route until the
-	// next process restart, so a transient Redis blip at boot stranded
-	// canary operators with a 404 they could not diagnose from the client
-	// side. Review follow-up: keep the route hot.
+	// Per-tenant canvas-runtime override selector, backed by the
+	// existing Redis client and the global logger. The handler is
+	// ALWAYS constructed, even when Redis is briefly unavailable at
+	// startup, so the POST /api/v1/admin/canvas-runtime/:tenant_id
+	// endpoint stays registered and returns the explicit
+	// ErrSelectorNotConfigured (HTTP 500) path until Redis recovers.
+	// Skipping handler construction when rdb == nil silently removed
+	// the route until the next process restart, so a transient
+	// Redis blip at boot stranded canary operators with a 404 they
+	// could not diagnose from the client side. Keep the route hot.
 	var adminRuntimeSelector *runtime.Selector
 	if rdb := redis.Get().GetClient(); rdb != nil {
 		adminRuntimeSelector = runtime.NewSelector(rdb, common.Logger)
@@ -400,26 +397,25 @@ func startServer(config *server.Config) {
 }
 
 // agentRunOptions bundles the three optional injection slots the
-// agent service accepts via NewAgentServiceWithOptions. Phase 4.4 V2
-// (Goals 4, 5, 7) wires these so the production boot path has
-// Redis-backed checkpoint + state-serialise + run-tracker infrastructure
-// without forcing every boot to require Redis. The fields stay nil
-// when the underlying constructors fail (Redis unreachable, etc.)
-// — agent service treats nil as "in-memory / no-tracking" so the
-// server continues to serve traffic.
+// agent service accepts via NewAgentServiceWithOptions: the Redis-
+// backed CheckPointStore, StateSerializer, and RunTracker. The
+// fields stay nil when the underlying constructors fail (Redis
+// unreachable, etc.); the agent service treats nil as "in-memory
+// / no-tracking" so the server continues to serve traffic without
+// requiring Redis to be up.
 type agentRunOptions struct {
 	checkpointStore canvas.CheckPointStore
 	stateSerializer canvas.StateSerializer
 	runTracker      *canvas.RunTracker
 }
 
-// buildAgentRunOptions attempts to install the Redis-backed run
-// infrastructure. The Redis client is the one already initialised
-// at the top of main; the TTL is a conservative 24h for both the
-// checkpoint store and the run tracker (matches the V1 RunTracker
-// default). On any error (Redis down at boot, constructor panic,
-// nil-Redis fallback) we log and return a zero-value struct —
-// agent service falls back to the in-memory path transparently.
+// buildAgentRunOptions installs the Redis-backed run infrastructure
+// when Redis is available. The Redis client is the one already
+// initialised at the top of main; the TTL is a conservative 24h for
+// both the checkpoint store and the run tracker. On any error
+// (Redis down at boot, constructor panic, nil-Redis fallback) we
+// log and return a zero-value struct — the agent service falls back
+// to the in-memory path transparently.
 func buildAgentRunOptions() agentRunOptions {
 	var out agentRunOptions
 	if !redis.IsEnabled() || redis.Get() == nil {
@@ -446,13 +442,12 @@ func buildAgentRunOptions() agentRunOptions {
 	return out
 }
 
-// configureTTSSynthesizer is the Phase 8b TTS service wire-up
-// (Goal 9 + v3.6.1 Gap #3). It installs a real
-// audio.ModelProviderFunc that dispatches Synthesize requests
-// through the project's ModelProviderService. The model
-// provider's AudioSpeech method (internal/service/model_service.go)
-// resolves the per-tenant TTS model driver, sends the request
-// upstream, and returns synthesized audio bytes.
+// configureTTSSynthesizer installs the audio.ModelProviderFunc
+// that dispatches Synthesize requests through the project's
+// ModelProviderService. The model provider's AudioSpeech method
+// (internal/service/model_service.go) resolves the per-tenant TTS
+// model driver, sends the request upstream, and returns
+// synthesized audio bytes.
 //
 // The audio package's NewTTSDispatchFunc helper converts the
 // audio.SynthesizeRequest shape into the model's dispatch shape

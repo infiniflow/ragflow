@@ -2,7 +2,7 @@
 //
 // Registry maps component names to factories. Each component's init() calls
 // Register(name, factory) to enroll itself; lookup is case-insensitive
-// (Python v1 case-insensitivity per dsl-v1-corner-cases.md §13).
+// (matches Python v1 component_name case-insensitivity).
 package component
 
 import (

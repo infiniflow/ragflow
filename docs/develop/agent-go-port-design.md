@@ -509,6 +509,75 @@ func BuildByName(name string, params map[string]any) (einotool.BaseTool, error)
 
 **Tool 通用模式**：HTTP 类 tool 走 `http_helper.go` (context + retry + 指数 backoff)；ExeSQL 走 stdlib `database/sql` + 各 driver (mysql / pg / mssql / oceanbase / trino)；CodeExec 走 `internal/agent/sandbox/` 5 providers (`self_managed` / `aliyun` / `e2b` / `local` / `ssh`) + `tool/sandbox_bridge.go` 桥接；Retrieval 走进程内 `internal/service/nlp/retrieval.go` (Dealer 后端已 Go 化)。
 
+### 4.6 Component & Tool Inventory
+
+Parity legend: ✅ implemented & tested · 🟡 scaffolded (loud-fail sentinel) · ⚠️ implemented with a known gap vs Python.
+
+#### Universe A — Canvas DAG components (24)
+
+| Name | Source | Status |
+|------|--------|--------|
+| Agent | `internal/agent/component/agent.go` | ✅ |
+| Begin | `internal/agent/component/begin.go` | ✅ |
+| Browser | `internal/agent/component/browser.go` | ✅ |
+| Categorize | `internal/agent/component/categorize.go` | ✅ |
+| DataOperations | `internal/agent/component/data_operations.go` | ✅ |
+| DocsGenerator | `internal/agent/component/docs_generator.go` | ✅ |
+| ExcelProcessor | `internal/agent/component/excel_processor.go` | ✅ |
+| ExeSQL | `internal/agent/component/universe_a_wrappers.go` | ⚠️ Wrapper exists; registry primary still stub |
+| Fillup | `internal/agent/component/fillup.go` | ✅ |
+| Generate | `internal/agent/component/fixture_stubs.go` | ✅ Legacy alias for DSL round-trip |
+| Invoke | `internal/agent/component/invoke.go` | ✅ |
+| Iteration | `internal/agent/component/fixture_stubs.go` | ✅ Legacy alias; compat stub |
+| IterationItem | `internal/agent/component/fixture_stubs.go` | ✅ Legacy alias; compat stub |
+| ListOperations | `internal/agent/component/list_operations.go` | ✅ |
+| LLM | `internal/agent/component/llm.go` | ✅ |
+| Loop | `internal/agent/component/loop.go` | ✅ Engine-level macro (`LoopItem`/`ExitLoop` deliberately not registered) |
+| Message | `internal/agent/component/message.go` | 🟡 TTS real engine + MemorySaver completion still deferred |
+| Parallel | `internal/agent/component/parallel.go` | ✅ |
+| Retrieval | `internal/agent/component/universe_a_wrappers.go` | ⚠️ Wrapper exists; registry primary still stub (also covers `SearchMyDataset` alias) |
+| StringTransform | `internal/agent/component/string_transform.go` | ✅ |
+| Switch | `internal/agent/component/switch.go` | ✅ All 12 operators with case-folded string ops |
+| TavilySearch | `internal/agent/component/universe_a_wrappers.go` | ⚠️ Wrapper exists; registry primary still stub |
+| UserFillUp | `internal/agent/component/userfillup.go` | ✅ |
+| VariableAggregator | `internal/agent/component/variable_aggregator.go` | ✅ |
+| VariableAssigner | `internal/agent/component/variable_assigner.go` | ✅ |
+| Answer | `internal/agent/component/fixture_stubs.go` | 🟡 Compat stub; canvas pause/resume is real but the Answer node is still a placeholder |
+
+> **Stub vs wrapper**: `Retrieval` / `TavilySearch` / `ExeSQL` have real delegation wrappers in `universe_a_wrappers.go`; the registry still maps them to stubs in `fixture_stubs.go`. Tracked in §14.
+
+#### Universe B — eino ReAct tools (25 = 23 standalone + 2 aliases)
+
+| Name | Source | Status |
+|------|--------|--------|
+| akshare | `internal/agent/tool/akshare.go` | ✅ |
+| arxiv | `internal/agent/tool/arxiv.go` | ✅ |
+| code_exec | `internal/agent/tool/code_exec.go` + `code_exec_client.go` | ✅ All 5 sandbox providers |
+| crawler | `internal/agent/tool/crawler.go` | ✅ |
+| deepl | `internal/agent/tool/deepl.go` | ✅ |
+| duckduckgo | `internal/agent/tool/duckduckgo.go` | ✅ |
+| email | `internal/agent/tool/email.go` | ✅ |
+| execute_sql | `internal/agent/tool/exesql.go` | ⚠️ SELECT-only; rejects Trino/DB2 (`ErrExeSQLUnsupportedDB`) |
+| exesql | `internal/agent/tool/exesql.go` | ⚠️ Alias of `execute_sql` |
+| github | `internal/agent/tool/github.go` | ✅ |
+| google | `internal/agent/tool/google.go` | ✅ |
+| google_scholar | `internal/agent/tool/google_scholar.go` | ✅ |
+| jin10 | `internal/agent/tool/jin10.go` | ✅ |
+| mcp | `internal/agent/tool/mcp.go` | 🟡 `MCPToolAdapter` wraps `mcpclient.Tool`; `InvokableRun` returns "not yet implemented" until `mcpclient.CallTools` lands |
+| pubmed | `internal/agent/tool/pubmed.go` | ✅ |
+| qweather | `internal/agent/tool/qweather.go` | ✅ |
+| retrieval | `internal/agent/tool/retrieval.go` | ✅ Adapter + boot wiring (`cmd/server_main.go`) |
+| search_my_dataset | `internal/agent/tool/registry.go` | ✅ Alias of `retrieval` |
+| search_my_dateset | `internal/agent/tool/registry.go` | ✅ Python-typo alias of `retrieval` |
+| searxng | `internal/agent/tool/searxng.go` | ✅ |
+| tavily | `internal/agent/tool/tavily.go` | ✅ |
+| tushare | `internal/agent/tool/tushare.go` | ✅ |
+| wencai | `internal/agent/tool/wencai.go` | ✅ |
+| wikipedia | `internal/agent/tool/wikipedia.go` | ✅ |
+| yahoo_finance | `internal/agent/tool/yahoo_finance.go` | ✅ |
+
+**Total**: 49 named entities (24 components + 25 tools).
+
 ---
 
 ## 5. DSL 单一形态
@@ -1001,6 +1070,69 @@ The five Python sandbox providers are ported to Go with functional parity (self_
 - **Windows build of `LocalProvider`** — `syscall.Setpgid` is POSIX-only. The Go side is `//go:build !windows`; the Python side runs on Windows via `process.kill()`. Tracked; not blocking because RAGFlow production is Linux. (1-2 days, deferred)
 - **e2b community Go SDK is a single-maintainer port** — `github.com/eric642/e2b-go-sdk` v0.1.3 (Apache-2.0). Re-evaluate quarterly; fork to `github.com/infiniflow/e2b-go-sdk` if maintenance lags. (1 day fork if needed)
 - **OTel spans on provider ops** — providers are log-free; OTel span propagation is on the HTTP client only (via `otelhttp.NewTransport`). Providers themselves do not emit OTel spans. (1 day)
+
+---
+
+## 15. Operations Guide
+
+### 15.1 Boot wiring
+
+`cmd/server_main.go` registers the runtime in three layers:
+
+1. **ProviderManager** (`internal/agent/sandbox/manager.go`) — chooses which sandbox provider backs CodeExec. Default `self_managed`; override via `SANDBOX_PROVIDER_TYPE`. Falls back to env-driven init when the admin-panel settings table is empty/malformed.
+2. **RetrievalService** (`internal/agent/tool/retrieval_service.go`) — `nlp.NewRetrievalService(docEngine, docDAO)` and `kg.NewRetrieval(...)` are wired via `tool.SetRetrievalService(...)` / `tool.SetKGRetrievalService(...)` at boot. The first backs `use_kg=false`; the second backs `use_kg=true`.
+3. **AgentService** (`internal/service/agent.go`) — accepts optional Redis-backed CheckPointStore / StateSerializer / RunTracker via `NewAgentServiceWithOptions(...)`. Boot installs these when Redis is up; otherwise the fields stay nil and the service falls back to in-memory mode (transparent to callers).
+
+Any layer that is not wired at boot produces a loud-fail sentinel (see §15.3) — stubs never silently return empty results.
+
+### 15.2 Feature flags
+
+| Env var | Default | Effect |
+|---------|---------|--------|
+| `SANDBOX_PROVIDER_TYPE` | `self_managed` | One of `self_managed` / `aliyun_codeinterpreter` / `e2b` / `local` / `ssh` |
+| `SANDBOX_EXECUTOR_MANAGER_URL` | `http://sandbox-executor-manager:9385` | self-managed endpoint |
+| `SANDBOX_EXECUTOR_MANAGER_TIMEOUT` | `30` (s) | self-managed per-call timeout |
+| `AGENTRUN_*` (5 vars) | n/a | aliyun code interpreter |
+| `E2B_API_KEY` / `E2B_ACCESS_TOKEN` | n/a | e2b (one required) |
+| `E2B_TEMPLATE` | `base` | e2b sandbox template |
+| `LOCAL_*` (8 vars) | n/a | local subprocess |
+| `SSH_HOST` / `SSH_PORT` / `SSH_USERNAME` / `SSH_PASSWORD` / `SSH_PRIVATE_KEY` / `SSH_PRIVATE_KEY_PATH` | n/a | SSH provider |
+| `COMPONENT_EXEC_TIMEOUT` | `600` (s) | canvas-level per-invocation timeout; per-class overrides via env-derived map (see `canvas/timeout.go`) |
+
+### 15.3 Known deferred items (loud-fail sentinels)
+
+| Sentinel | Cause | Fix |
+|----------|-------|-----|
+| `ErrRetrievalServiceMissing` | `tool.SetRetrievalService(...)` not called at boot | Wire `nlp.NewRetrievalService` at boot (default in `cmd/server_main.go`) |
+| `ErrKGRetrievalServiceMissing` | Canvas uses `use_kg=true` and `tool.SetKGRetrievalService(...)` not called | Wire `kg.NewRetrieval(...)` at boot (default in `cmd/server_main.go`) |
+| `ErrMemoryServiceMissing` | `component.SetMemorySaver(...)` not called at boot | Wire `NewMemoryMessageService(...)` (default in `cmd/server_main.go`) |
+| `ErrEmbedderNotWired` | MemorySaver reached but no embedder configured | Port the embedding model — see §14 |
+| `ErrSandboxNotConfigured` | `SANDBOX_PROVIDER_TYPE` set to unknown value | Set to one of the 5 supported values |
+| `ErrE2BProviderNotImplemented` | `SANDBOX_PROVIDER_TYPE=e2b` and no `E2B_API_KEY`/`E2B_ACCESS_TOKEN` | Provide one of the two env vars |
+| `ErrTTSEngineNotConfigured` | Message runs with `auto_play=true` and no `audio.SetSynthesizer(...)` | Wire a TTS engine at boot — see §14 |
+| `ErrExeSQLUnsupportedDB` | `db_type` is `trino` or `ibm db2` | Add the driver registration — see §14 |
+
+### 15.4 Canvas migration (Python → Go)
+
+`tools/migrate-canvas` cross-validates Python's `normalize_chunker_dsl` against Go's `NormalizeForCanvas`. Manual equivalent until the tool ships:
+
+1. Export canvas JSON from Python: `GET /api/v1/canvas/<id>/export`.
+2. Validate Python normalizer: `uv run python -c "from agent.canvas import normalize_chunker_dsl; print(normalize_chunker_dsl(json.load(open('canvas.json'))))"`.
+3. Validate Go normalizer: `go test ./internal/agent/dsl/ -run TestNormalize -v` (uses fixtures in `internal/agent/dsl/testdata/`).
+4. Diff the two normalized forms. If structurally identical, the canvas is Go-portable.
+
+### 15.5 Testing
+
+```sh
+go test -count=1 ./internal/agent/...           # all agent tests
+go test -count=1 ./internal/agent/component/   # component tests
+go test -count=1 ./internal/agent/tool/         # tool tests + retrieval + sandbox providers
+go test -count=1 ./internal/agent/sandbox/     # 5 sandbox providers + manager
+go test -count=1 ./internal/agent/canvas/      # canvas engine, parallel, interrupt/resume
+go test -count=1 ./internal/agent/runtime/     # state, template, history window
+```
+
+Fixtures: `internal/agent/dsl/testdata/` (7 JSONs) drive the e2e suite and match the input corpus Python's `normalize_chunker_dsl` accepts.
 
 ---
 
