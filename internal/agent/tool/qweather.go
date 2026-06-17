@@ -77,8 +77,8 @@ type qweatherEnvelope struct {
 	Error     string `json:"_ERROR,omitempty"`
 }
 
-// QWeatherTool is the Phase 3 batch 4 implementation of the 和风天气
-// (QWeather) current-conditions tool (plan §2.11.4 row 14, §5 Phase 3
+// QWeatherTool is the 和风天气
+// (QWeather) current-conditions tool (
 // 第 4 批). It performs a GET against devapi.qweather.com/v7/weather/now
 // and returns the parsed now.{temp, feelsLike, text, windDir, humidity}.
 //

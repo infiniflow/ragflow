@@ -150,7 +150,6 @@ run_admin_server(){
             sleep 2
         fi
     done
-
     if [ $retry_count -ge $MAX_RETRIES ]; then
         echo "admin_server.py failed after $MAX_RETRIES attempts. Exiting..." >&2
         cleanup
@@ -268,6 +267,13 @@ if [[ "$START_DATA_SYNC" -eq 1 ]]; then
   run_data_sync &
   PIDS+=($!)
 fi
+
+# Start the Python admin server (9381) when ENABLE_ADMIN_SERVER=1
+run_admin_server &
+PIDS+=($!)
+
+# Start the Go server(s) when running in hybrid or go mode
+run_go_servers
 
 # Wait for all background processes to finish
 wait

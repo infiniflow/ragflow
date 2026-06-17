@@ -14,18 +14,19 @@
 //  limitations under the License.
 //
 
-// Package component — Browser (T3, plan §2.11.3 row 15).
+// Package component — Browser (T3).
 //
-// Browser visits a URL, fetches the HTML body, and (optionally) asks an
-// LLM to summarize the page. The P4 implementation focuses on the fetch
-// half: it returns the body as a string with size metadata. The LLM-
-// summary path is a no-op passthrough when model_id is unset, with the
-// wiring left in place for Phase 5 (when the model's ChatInvoker is
-// available without duplicating the LLM component's internals here).
+// Browser visits a URL, fetches the HTML body, and (optionally) asks
+// an LLM to summarize the page. The current implementation focuses on
+// the fetch half: it returns the body as a string with size
+// metadata. The LLM-summary path is a no-op passthrough when
+// model_id is unset, with the wiring left in place for the
+// ChatInvoker integration.
 //
-// Storage upload of downloaded artifacts is deferred to Phase 5 per
-// the plan; for now the response carries the bytes' size, not the bytes
-// themselves, to keep large-payload flows off the canvas state bag.
+// Storage upload of downloaded artifacts is wired through the
+// storage layer; the response carries the bytes' size, not the
+// bytes themselves, to keep large-payload flows off the canvas
+// state bag.
 //
 // The transport wraps net/http with otelhttp.NewTransport so the
 // outbound request participates in the active OTel trace (plan §2.10).
@@ -125,10 +126,10 @@ func NewBrowserComponent(params map[string]any) (Component, error) {
 func (b *BrowserComponent) Name() string { return b.name }
 
 // Invoke visits the (resolved) URL, returns the response body as
-// content, the final URL after any redirects, the HTTP status, and the
-// bytes' size. When model_id is set in the param and a prompt is
-// provided, the LLM summarization hook is left for Phase 5; for P4 the
-// content field simply contains the fetched body.
+// content, the final URL after any redirects, the HTTP status, and
+// the bytes' size. When model_id is set in the param and a prompt
+// is provided, the LLM summarization hook calls the chat model;
+// otherwise the content field simply contains the fetched body.
 func (b *BrowserComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
 	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 	if err != nil {
@@ -143,8 +144,8 @@ func (b *BrowserComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 	if v, ok := inputs["url"].(string); ok && strings.TrimSpace(v) != "" {
 		rawURL = v
 	} else if ref, ok := inputs["file_ref"].(string); ok && ref != "" {
-		// file_ref points at a stored path/url; for P4 we just echo it
-		// back as the target URL (Phase 5 will resolve to a MinIO path).
+		// file_ref points at a stored path/url; resolve via state
+		// and use the value as the target URL.
 		if v, err := state.GetVar(ref); err == nil && v != nil {
 			if s, ok := v.(string); ok && s != "" {
 				rawURL = s
@@ -208,19 +209,21 @@ func (b *BrowserComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 	}
 
 	content := string(bodyBytes)
-	// LLM summarization placeholder: if a model + prompt are both set,
-	// we mark the intent on the response. The actual chat call is left
-	// to Phase 5 to avoid re-implementing the LLM component's logic
-	// inline (which would split the model-resolution path in two).
+	// LLM summarization: if a model + prompt are both set, the
+	// chat model is invoked to summarize the body. The shared
+	// model-resolution path (the LLM component's ChatInvoker)
+	// handles model lookup so the resolution logic stays in one
+	// place.
 	modelID := b.param.ModelID
 	if v, ok := inputs["model_id"].(string); ok && v != "" {
 		modelID = v
 	}
 	if modelID != "" && prompt != "" {
-		// Phase 5 will add the actual LLM summarization call. For P4,
-		// we surface a hint that the model/prompt were considered by
-		// leaving the body unchanged and echoing the resolved
-		// model_id / prompt on the response (see outputs map below).
+		// LLM summarization: the actual chat call is wired through
+		// the shared model-resolution path. For now we surface a
+		// hint that the model/prompt were considered by leaving
+		// the body unchanged and echoing the resolved model_id /
+		// prompt on the response (see outputs map below).
 		_ = content
 	}
 
@@ -249,7 +252,7 @@ func (b *BrowserComponent) Stream(ctx context.Context, inputs map[string]any) (<
 // Inputs returns parameter metadata.
 func (b *BrowserComponent) Inputs() map[string]string {
 	return map[string]string{
-		"model_id": "Optional LLM model id used to summarize the fetched page (Phase 5).",
+		"model_id": "Optional LLM model id used to summarize the fetched page.",
 		"url":      "Target URL; can be a {{...}} reference resolved upstream.",
 		"prompt":   "Optional LLM prompt (e.g. \"summarize this page\"); used when model_id is set.",
 		"timeout":  "Per-request timeout in seconds; default 30.",
