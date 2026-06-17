@@ -16,6 +16,7 @@ import { useSaveSetting } from './use-user-setting-request';
 export interface ILoginRequestBody {
   email: string;
   password: string;
+  hcaptcha_token?: string;
 }
 
 export interface IRegisterRequestBody extends ILoginRequestBody {
@@ -60,7 +61,7 @@ export const useLogin = () => {
     mutateAsync,
   } = useMutation({
     mutationKey: ['login'],
-    mutationFn: async (params: { email: string; password: string }) => {
+    mutationFn: async (params: ILoginRequestBody) => {
       const { data: res = {}, response } = await userService.login(params);
       if (res.code === 0) {
         // The language is based on the .lng stored in the client's local storage.

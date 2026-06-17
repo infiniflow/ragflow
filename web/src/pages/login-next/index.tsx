@@ -1,4 +1,5 @@
 import SvgIcon from '@/components/svg-icon';
+import { useIsDarkTheme } from '@/components/theme-provider';
 import { useAuth } from '@/hooks/auth-hooks';
 import {
   useLogin,
@@ -8,7 +9,7 @@ import {
 } from '@/hooks/use-login-request';
 import { useSystemConfig } from '@/hooks/use-system-request';
 import { rsaPsw } from '@/utils';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 
@@ -26,11 +27,11 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import HCaptcha from '@hcaptcha/react-hcaptcha';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
 import './index.less';
-
 // ─── Left Panel (full background image) ───────────────────────────────────────
 
 function LeftPanel() {
@@ -84,6 +85,9 @@ type AuthFormProps = {
   handleLoginWithChannel: (channel: string) => void;
   t: ReturnType<typeof useTranslation>['t'];
   disablePasswordLogin?: boolean;
+  requireCaptcha: boolean;
+  captchaKey: string | undefined;
+  captchaRef: React.RefObject<HCaptcha>;
 };
 
 function AuthForm({
@@ -97,15 +101,20 @@ function AuthForm({
   handleLoginWithChannel,
   t,
   disablePasswordLogin,
+  requireCaptcha,
+  captchaKey,
+  captchaRef,
 }: AuthFormProps) {
   const isLogin = title === 'login';
-  const navigate = useNavigate()
+  const navigate = useNavigate();
   const pageTitle = isLogin
     ? 'Sign in to MetaGross-AI'
     : 'Create your MetaGross-AI account';
   const pageDescription = isLogin
     ? 'Use your credentials to access the AI workspace and manage your workflows.'
     : 'Join MetaGross-AI to start using agents, automations, and smart dashboards.';
+
+  const isDark = useIsDarkTheme();
 
   return (
     <div className="flex flex-col w-full max-w-[460px]">
@@ -230,6 +239,30 @@ function AuthForm({
               </div>
             )}
 
+            {requireCaptcha && (
+              <div className="flex justify-left">
+                <FormField
+                  control={form.control}
+                  name="hcaptcha_token"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <HCaptcha
+                          key={captchaKey}
+                          ref={captchaRef}
+                          theme={isDark ? 'dark' : 'light'}
+                          sitekey="bcf819c2-a604-4008-9c6a-a37e84cec112"
+                          onVerify={(token) => field.onChange(token)}
+                          onExpire={() => field.onChange('')}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
+
             {/* Submit */}
             <ButtonLoading
               data-testid="auth-submit"
@@ -315,6 +348,12 @@ const Login = () => {
     useLoginWithChannel();
   const { t } = useTranslation('translation', { keyPrefix: 'login' });
 
+  const [requireCaptcha, setRequireCaptcha] = useState(true);
+  const [captchaKey, setCaptchaKey] = useState<string>(() =>
+    crypto.randomUUID(),
+  );
+  const captchaRef = useRef<HCaptcha>(null);
+
   const loading =
     signLoading ||
     registerLoading ||
@@ -346,6 +385,7 @@ const Login = () => {
         .min(1, { message: t('emailPlaceholder') }),
       password: z.string().min(1, { message: t('passwordPlaceholder') }),
       remember: z.boolean().optional(),
+      hcaptcha_token: z.string().optional(),
     })
     .superRefine((data, ctx) => {
       if (title === 'register' && !data.nickname) {
@@ -365,14 +405,21 @@ const Login = () => {
   });
 
   const onCheck = async (params: FormValues) => {
+    if (requireCaptcha && !params.hcaptcha_token) return;
     try {
       const rsaPassWord = rsaPsw(params.password) as string;
       if (title === 'login') {
         const code = await login({
           email: `${params.email}`.trim(),
           password: rsaPassWord,
+          hcaptcha_token: params.hcaptcha_token || '',
         });
         if (code === 0) navigate('/');
+        // If your API signals captcha_required via an error code or flag:
+        if (code === 'captcha_required') {
+          setRequireCaptcha(true);
+          setCaptchaKey(crypto.randomUUID());
+        }
       } else {
         const code = await register({
           nickname: params.nickname,
@@ -381,7 +428,9 @@ const Login = () => {
         });
         if (code === 0) setTitle('login');
       }
-    } catch (errorInfo) {
+    } catch (errorInfo: any) {
+      setCaptchaKey(crypto.randomUUID());
+      if (errorInfo?.captcha_required) setRequireCaptcha(true);
       console.log('Failed:', errorInfo);
     }
   };
@@ -409,6 +458,9 @@ const Login = () => {
           handleLoginWithChannel={handleLoginWithChannel}
           t={t}
           disablePasswordLogin={!!config?.disablePasswordLogin}
+          requireCaptcha={requireCaptcha}
+          captchaKey={captchaKey}
+          captchaRef={captchaRef}
         />
       </div>
     </div>
