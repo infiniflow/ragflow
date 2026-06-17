@@ -8,10 +8,12 @@ const {
   addProvider,
   addProviderInstance,
   verifyProviderConnection,
+  listProviderModels,
   listProviderInstances,
   listInstanceModels,
   showProviderInstance,
   addInstanceModel,
+  editInstanceModel,
   deleteProviderInstance,
   updateModelStatus,
 } = api;
@@ -45,6 +47,10 @@ const methods = {
     url: verifyProviderConnection,
     method: 'post',
   },
+  listProviderModels: {
+    url: listProviderModels,
+    method: 'get',
+  },
   listProviderInstances: {
     url: listProviderInstances,
     method: 'get',
@@ -60,6 +66,10 @@ const methods = {
   addInstanceModel: {
     url: addInstanceModel,
     method: 'post',
+  },
+  editInstanceModel: {
+    url: editInstanceModel,
+    method: 'put',
   },
   deleteProviderInstance: {
     url: deleteProviderInstance,

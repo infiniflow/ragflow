@@ -285,7 +285,7 @@ const Chunk = () => {
                   />
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-4 flex-1 overflow-y-auto min-h-0">
                   {chunkList.map((item) => (
                     <ChunkCard
                       item={item}

@@ -45,6 +45,8 @@ export enum DataSourceKey {
   RSS = 'rss',
   ONEDRIVE = 'onedrive',
   OUTLOOK = 'outlook',
+  SALESFORCE = 'salesforce',
+  AZURE_BLOB = 'azure_blob',
   TEAMS = 'teams',
   SLACK = 'slack',
   SHAREPOINT = 'sharepoint',
@@ -135,6 +137,12 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.OUTLOOK]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.SALESFORCE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.AZURE_BLOB]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.TEAMS]: {
@@ -335,6 +343,16 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.OUTLOOK}Description`),
       icon: <Mail className="text-text-primary" size={22} />,
     },
+    [DataSourceKey.SALESFORCE]: {
+      name: 'Salesforce',
+      description: t(`setting.${DataSourceKey.SALESFORCE}Description`),
+      icon: <SvgIcon name={'data-source/salesforce'} width={38} />,
+    },
+    [DataSourceKey.AZURE_BLOB]: {
+      name: 'Azure Blob Storage',
+      description: t(`setting.${DataSourceKey.AZURE_BLOB}Description`),
+      icon: <SvgIcon name={'data-source/azure-blob'} width={38} />,
+    },
   };
 };
 
@@ -503,6 +521,183 @@ export const DataSourceFormFields = {
       required: false,
       placeholder: 'support@example.com, sales@example.com',
       tooltip: t('setting.outlookUserIdsTip'),
+    },
+    {
+      label: 'Batch Size',
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      validation: {
+        min: 1,
+        message: 'Batch Size must be at least 1',
+      },
+    },
+  ],
+  [DataSourceKey.SALESFORCE]: [
+    {
+      label: 'Instance URL',
+      name: 'config.credentials.instance_url',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'https://your-domain.my.salesforce.com',
+      tooltip: t('setting.salesforceInstanceUrlTip'),
+      validation: {
+        pattern: /^https:\/\/[a-zA-Z0-9.-]+\.salesforce\.com$/,
+        message:
+          'Must be a valid Salesforce domain (https://...salesforce.com)',
+      },
+    },
+    {
+      label: 'Client ID',
+      name: 'config.credentials.client_id',
+      type: FormFieldType.Text,
+      required: true,
+      tooltip: t('setting.salesforceClientIdTip'),
+    },
+    {
+      label: 'Client Secret',
+      name: 'config.credentials.client_secret',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.salesforceClientSecretTip'),
+    },
+    {
+      label: 'Objects',
+      name: 'config.objects',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'Account,Contact,Opportunity,Case,Knowledge__kav',
+      tooltip: t('setting.salesforceObjectsTip'),
+    },
+    {
+      label: 'API Version',
+      name: 'config.api_version',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'v59.0',
+      tooltip: t('setting.salesforceApiVersionTip'),
+      validation: {
+        pattern: /^v\d+\.\d+$/,
+        message: 'API version must match format like v59.0',
+      },
+    },
+    {
+      label: 'Batch Size',
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      validation: {
+        min: 1,
+        message: 'Batch Size must be at least 1',
+      },
+    },
+  ],
+  [DataSourceKey.AZURE_BLOB]: [
+    {
+      label: 'Auth Mode',
+      name: 'config.auth_mode',
+      type: FormFieldType.Select,
+      required: true,
+      options: [
+        { label: 'Account Key', value: 'account_key' },
+        { label: 'Connection String', value: 'connection_string' },
+        { label: 'SAS Token', value: 'sas_token' },
+      ],
+      tooltip: t('setting.azureBlobAuthModeTip'),
+    },
+    {
+      label: 'Account Name',
+      name: 'config.credentials.account_name',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'mystorageaccount',
+      tooltip: t('setting.azureBlobAccountNameTip'),
+      shouldRender: (values: any) =>
+        values?.config?.auth_mode === 'account_key',
+      customValidate: (val: string, values: any) =>
+        values?.config?.auth_mode === 'account_key' && !(val ?? '').trim()
+          ? 'Account name is required for account key auth'
+          : true,
+    },
+    {
+      label: 'Account Key',
+      name: 'config.credentials.account_key',
+      type: FormFieldType.Password,
+      required: false,
+      tooltip: t('setting.azureBlobAccountKeyTip'),
+      shouldRender: (values: any) =>
+        values?.config?.auth_mode === 'account_key',
+      customValidate: (val: string, values: any) =>
+        values?.config?.auth_mode === 'account_key' && !val
+          ? 'Account key is required for account key auth'
+          : true,
+    },
+    {
+      label: 'Connection String',
+      name: 'config.credentials.connection_string',
+      type: FormFieldType.Password,
+      required: false,
+      tooltip: t('setting.azureBlobConnectionStringTip'),
+      shouldRender: (values: any) =>
+        values?.config?.auth_mode === 'connection_string',
+      customValidate: (val: string, values: any) =>
+        values?.config?.auth_mode === 'connection_string' && !val
+          ? 'Connection string is required for connection string auth'
+          : true,
+    },
+    {
+      label: 'Container URL',
+      name: 'config.credentials.container_url',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'https://account.blob.core.windows.net/container',
+      tooltip: t('setting.azureBlobContainerUrlTip'),
+      shouldRender: (values: any) => values?.config?.auth_mode === 'sas_token',
+      customValidate: (val: string, values: any) =>
+        values?.config?.auth_mode === 'sas_token' && !(val ?? '').trim()
+          ? 'Container URL is required for SAS token auth'
+          : true,
+    },
+    {
+      label: 'SAS Token',
+      name: 'config.credentials.sas_token',
+      type: FormFieldType.Password,
+      required: false,
+      tooltip: t('setting.azureBlobSasTokenTip'),
+      shouldRender: (values: any) => values?.config?.auth_mode === 'sas_token',
+      customValidate: (val: string, values: any) =>
+        values?.config?.auth_mode === 'sas_token' && !val
+          ? 'SAS token is required for SAS token auth'
+          : true,
+    },
+    {
+      label: 'Container Name',
+      name: 'config.credentials.container_name',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'my-container',
+      tooltip: t('setting.azureBlobContainerNameTip'),
+      shouldRender: (values: any) =>
+        values?.config?.auth_mode === 'account_key' ||
+        values?.config?.auth_mode === 'connection_string',
+      customValidate: (val: string, values: any) => {
+        const mode = values?.config?.auth_mode;
+        if (
+          (mode === 'account_key' || mode === 'connection_string') &&
+          !(val ?? '').trim()
+        ) {
+          return 'Container name is required for this auth mode';
+        }
+        return true;
+      },
+    },
+    {
+      label: 'Prefix (optional)',
+      name: 'config.prefix',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'documents/reports/',
+      tooltip: t('setting.azureBlobPrefixTip'),
     },
     {
       label: 'Batch Size',
@@ -902,7 +1097,7 @@ export const DataSourceFormFields = {
   ],
   [DataSourceKey.BOX]: [
     {
-      label: 'Box OAuth JSON',
+      label: 'Box OAuth Configuration',
       name: 'config.credentials.box_tokens',
       type: FormFieldType.Textarea,
       required: true,
@@ -1979,6 +2174,37 @@ export const DataSourceFormDefaultValues = {
         tenant_id: '',
         client_id: '',
         client_secret: '',
+      },
+    },
+  },
+  [DataSourceKey.SALESFORCE]: {
+    name: '',
+    source: DataSourceKey.SALESFORCE,
+    config: {
+      objects: '',
+      api_version: 'v59.0',
+      batch_size: 2,
+      credentials: {
+        instance_url: '',
+        client_id: '',
+        client_secret: '',
+      },
+    },
+  },
+  [DataSourceKey.AZURE_BLOB]: {
+    name: '',
+    source: DataSourceKey.AZURE_BLOB,
+    config: {
+      auth_mode: 'account_key',
+      prefix: '',
+      batch_size: 2,
+      credentials: {
+        account_name: '',
+        account_key: '',
+        connection_string: '',
+        container_url: '',
+        sas_token: '',
+        container_name: '',
       },
     },
   },

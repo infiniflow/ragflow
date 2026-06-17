@@ -17,6 +17,8 @@
 from enum import IntEnum
 from enum import StrEnum
 
+from common.constants import PipelineTaskType
+
 
 class UserTenantRole(StrEnum):
     OWNER = 'owner'

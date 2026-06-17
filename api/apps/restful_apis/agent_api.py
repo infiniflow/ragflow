@@ -130,6 +130,29 @@ def _normalize_agent_reference_entry(reference):
     }
 
 
+def _normalize_agent_reference_chunk(chunk):
+    if not isinstance(chunk, dict):
+        return {
+            "id": chunk,
+            "content": str(chunk),
+            "document_id": None,
+            "document_name": None,
+            "dataset_id": None,
+            "image_id": None,
+            "positions": None,
+        }
+
+    return {
+        "id": chunk.get("chunk_id", chunk.get("id")),
+        "content": chunk.get("content_with_weight", chunk.get("content")),
+        "document_id": chunk.get("doc_id", chunk.get("document_id")),
+        "document_name": chunk.get("docnm_kwd", chunk.get("document_name")),
+        "dataset_id": chunk.get("kb_id", chunk.get("dataset_id")),
+        "image_id": chunk.get("image_id", chunk.get("img_id")),
+        "positions": chunk.get("positions", chunk.get("position_int")),
+    }
+
+
 def _normalize_agent_session(conv):
     conv["message"] = conv.get("message", [])
     for info in conv["message"]:
@@ -150,18 +173,7 @@ def _normalize_agent_session(conv):
         messages = [message for i, message in enumerate(conv["message"]) if i != 0 and message["role"] != "user"]
         for message, reference in zip(messages, conv["reference"]):
             chunks = reference.get("chunks", [])
-            message["reference"] = [
-                {
-                    "id": chunk.get("chunk_id", chunk.get("id")),
-                    "content": chunk.get("content_with_weight", chunk.get("content")),
-                    "document_id": chunk.get("doc_id", chunk.get("document_id")),
-                    "document_name": chunk.get("docnm_kwd", chunk.get("document_name")),
-                    "dataset_id": chunk.get("kb_id", chunk.get("dataset_id")),
-                    "image_id": chunk.get("image_id", chunk.get("img_id")),
-                    "positions": chunk.get("positions", chunk.get("position_int")),
-                }
-                for chunk in chunks
-            ]
+            message["reference"] = [_normalize_agent_reference_chunk(chunk) for chunk in chunks]
     del conv["reference"]
     return conv
 
@@ -1435,6 +1447,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
             from agent.canvas import Canvas
 
             canvas = Canvas(dsl_str, str(tenant_id), canvas_id=agent_id, custom_header=custom_header)
+            canvas.clear_history()
         except Exception as exc:
             return server_error_response(exc)
         turn_id = get_uuid()
@@ -1443,7 +1456,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
             "dialog_id": cvs.id,
             "user_id": user_id,
             "exp_user_id": user_id,
-            "name": req.get("name", ""),
+            "name": req.get("name") or (query[:250] if query else "") or "",
             "message": [
                 {
                     "role": "user",
@@ -2344,7 +2357,7 @@ async def download_attachment(tenant_id=None, attachment_id=None):
 
     Mirrors the authorization model of the preview endpoint: the user must belong
     to the tenant that owns the document's knowledge base. A denial returns the
-    same "Document not found!" response so the endpoint cannot be used to
+    same "Attachment not found!" response so the endpoint cannot be used to
     enumerate doc ids across tenants.
     """
     try:
@@ -2352,6 +2365,15 @@ async def download_attachment(tenant_id=None, attachment_id=None):
         # pass `attachment_id` instead of the route parameter name.
         ext = request.args.get("ext", "markdown")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, attachment_id)
+        if not data:
+            # Storage object missing or empty (orphaned DB metadata, tenant
+            # mismatch). Without this guard `make_response(None)` raises
+            # `TypeError: response value cannot be None` and the caller
+            # sees HTTP 500 — same bug class as #15365 on document
+            # preview. Return the same "Attachment not found!" shape used
+            # by the preview route's missing-record path so byte-streaming
+            # endpoints respond consistently on a not-found.
+            return get_data_error_result(message="Attachment not found!")
         response = await make_response(data)
         content_type = CONTENT_TYPE_MAP.get(ext, f"application/{ext}")
         apply_safe_file_response_headers(response, content_type, ext)

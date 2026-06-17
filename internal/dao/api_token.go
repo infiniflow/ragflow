@@ -17,6 +17,8 @@
 package dao
 
 import (
+	"errors"
+
 	"ragflow/internal/entity"
 )
 
@@ -90,6 +92,18 @@ type ConversationStatsRow struct {
 	ThumbUp  int64   `gorm:"column:thumb_up"`
 }
 
+// Create inserts a new api_4_conversation row. The caller is responsible
+// for setting ID, DialogID, UserID and the BaseModel time fields; the
+// DAO does not assign defaults because session creation paths in the
+// Python agent API generate a uuid + tenant timestamp and rely on the
+// round-trip shape being byte-identical.
+func (dao *API4ConversationDAO) Create(conv *entity.API4Conversation) error {
+	if conv == nil {
+		return errors.New("api4 conversation: nil row")
+	}
+	return DB.Create(conv).Error
+}
+
 // Stats returns daily conversation aggregates for a tenant.
 func (dao *API4ConversationDAO) Stats(tenantID, fromDate, toDate string, source *string) ([]ConversationStatsRow, error) {
 	var rows []ConversationStatsRow
@@ -117,6 +131,31 @@ func (dao *API4ConversationDAO) Stats(tenantID, fromDate, toDate string, source 
 		Order(dateExpr).
 		Scan(&rows).Error
 	return rows, err
+}
+
+func (dao *API4ConversationDAO) GetBySessionID(sessionID, agentID string) (*entity.API4Conversation, error) {
+	var result entity.API4Conversation
+	tx := DB.Where("id = ? AND dialog_id = ?", sessionID, agentID).Find(&result)
+	if tx.Error != nil {
+		return nil, tx.Error
+	}
+	if tx.RowsAffected == 0 {
+		return nil, nil
+	}
+	return &result, nil
+}
+
+// ListIDsByAgentID lists conversation IDs for one agent.
+func (dao *API4ConversationDAO) ListIDsByAgentID(agentID string) ([]string, error) {
+	var ids []string
+	err := DB.Model(&entity.API4Conversation{}).Where("dialog_id = ?", agentID).Pluck("id", &ids).Error
+	return ids, err
+}
+
+// DeleteBySessionIDAndAgentID deletes API4Conversations by sessionID and agentID
+func (dao *API4ConversationDAO) DeleteBySessionIDAndAgentID(sessionID, agentID string) (int64, error) {
+	result := DB.Where("id = ? AND dialog_id = ?", sessionID, agentID).Delete(&entity.API4Conversation{})
+	return result.RowsAffected, result.Error
 }
 
 // DeleteByDialogIDs deletes API4Conversations by dialog IDs (hard delete)

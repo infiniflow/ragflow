@@ -397,8 +397,10 @@ class TaskService(CommonService):
                         ((prog == -1) | (prog > cls.model.progress))))
                     ).execute()
 
-        process_duration = (datetime.now() - task.begin_at).total_seconds()
-        cls.model.update(process_duration=process_duration).where(cls.model.id == id).execute()
+        begin_at = task.begin_at
+        if begin_at is not None:
+            process_duration = (datetime.now() - begin_at).total_seconds()
+            cls.model.update(process_duration=process_duration).where(cls.model.id == id).execute()
 
     @classmethod
     @DB.connection_context()

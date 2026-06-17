@@ -42,6 +42,12 @@ type Router struct {
 	skillSearchHandler   *handler.SkillSearchHandler
 	providerHandler      *handler.ProviderHandler
 	agentHandler         *handler.AgentHandler
+	searchBotHandler     *handler.SearchBotHandler
+	difyRetrievalHandler *handler.DifyRetrievalHandler
+	pluginHandler        *handler.PluginHandler
+	modelHandler         *handler.ModelHandler
+	fileCommitHandler    *handler.FileCommitHandler
+	adminRuntimeHandler  *handler.AdminRuntimeHandler
 }
 
 // NewRouter create router
@@ -65,6 +71,12 @@ func NewRouter(
 	skillSearchHandler *handler.SkillSearchHandler,
 	providerHandler *handler.ProviderHandler,
 	agentHandler *handler.AgentHandler,
+	searchBotHandler *handler.SearchBotHandler,
+	difyRetrievalHandler *handler.DifyRetrievalHandler,
+	pluginHandler *handler.PluginHandler,
+	modelHandler *handler.ModelHandler,
+	fileCommitHandler *handler.FileCommitHandler,
+	adminRuntimeHandler *handler.AdminRuntimeHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -86,11 +98,26 @@ func NewRouter(
 		skillSearchHandler:   skillSearchHandler,
 		providerHandler:      providerHandler,
 		agentHandler:         agentHandler,
+		searchBotHandler:     searchBotHandler,
+		difyRetrievalHandler: difyRetrievalHandler,
+		pluginHandler:        pluginHandler,
+		modelHandler:         modelHandler,
+		fileCommitHandler:    fileCommitHandler,
+		adminRuntimeHandler:  adminRuntimeHandler,
 	}
 }
 
 // Setup setup routes
 func (r *Router) Setup(engine *gin.Engine) {
+	// Mark all responses from Go with a header for debugging.
+	engine.Use(func(c *gin.Context) {
+		c.Header("X-API-Source", "go")
+		c.Next()
+	})
+
+	// Log all HTTP requests.
+	engine.Use(gin.Logger())
+
 	// Health check
 	engine.GET("/health", r.systemHandler.Health)
 
@@ -135,6 +162,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// Google redirects here after Gmail / Google Drive web OAuth completes.
 		apiNoAuth.GET("/connectors/gmail/oauth/web/callback", r.connectorHandler.GmailWebOAuthCallback)
 		apiNoAuth.GET("/connectors/google-drive/oauth/web/callback", r.connectorHandler.GoogleDriveWebOAuthCallback)
+		// Forgot-password flow (fixes #15282).
+		// Routes are intentionally registered before any auth middleware:
+		// a user who has forgotten their password is, by definition,
+		// unauthenticated.
+		apiNoAuth.POST("/auth/password/forgot/captcha", r.userHandler.ForgotCaptcha)
+		apiNoAuth.POST("/auth/password/forgot/otp", r.userHandler.ForgotSendOTP)
+		apiNoAuth.POST("/auth/password/forgot/otp/verify", r.userHandler.ForgotVerifyOTP)
+		apiNoAuth.POST("/auth/password/reset", r.userHandler.ForgotResetPassword)
 	}
 
 	// Protected routes
@@ -192,6 +227,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				documents.POST("", r.documentHandler.CreateDocument)
 				documents.GET("", r.documentHandler.ListDocuments)
+				documents.GET("/artifact/:filename", r.documentHandler.GetDocumentArtifact)
+				documents.GET("/:id/preview", r.documentHandler.GetDocumentPreview)
 				documents.GET("/:id", r.documentHandler.GetDocumentByID)
 				documents.PUT("/:id", r.documentHandler.UpdateDocument)
 				documents.DELETE("/:id", r.documentHandler.DeleteDocument)
@@ -205,6 +242,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 				chats.GET("/:chat_id/sessions", r.chatSessionHandler.ListChatSessions)
 			}
 
+			// Searchbot routes
+			v1.POST("/searchbots/related_questions", r.searchBotHandler.Handle)
+			v1.POST("/searchbots/retrieval_test", r.searchBotHandler.RetrievalTest)
+			v1.POST("/searchbots/ask", r.searchBotHandler.Ask)
+
 			// Dataset routes
 			datasets := v1.Group("/datasets")
 			{
@@ -215,8 +257,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.DELETE("/:dataset_id/graph", r.datasetsHandler.DeleteKnowledgeGraph)
 				datasets.POST("", r.datasetsHandler.CreateDataset)
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
-				datasets.POST("/search", r.chunkHandler.RetrievalTest)
+				datasets.POST("/search", r.datasetsHandler.SearchDatasets)
 				datasets.GET("/metadata/flattened", r.datasetsHandler.ListMetadataFlattened)
+				datasets.GET("/:dataset_id/metadata/summary", r.documentHandler.MetadataSummaryByDataset)
 
 				// Dataset ingestion logs
 				datasets.GET("/:dataset_id/ingestions/summary", r.datasetsHandler.GetIngestionSummary)
@@ -229,13 +272,19 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 				// Dataset documents
 				datasets.GET("/:dataset_id/documents", r.documentHandler.ListDocuments)
+				datasets.GET("/:dataset_id/documents/:document_id", r.documentHandler.DownloadDocument)
 				datasets.DELETE("/:dataset_id/documents", r.documentHandler.DeleteDocuments)
 
 				// Dataset document chunk
 				datasets.GET("/:dataset_id/documents/:document_id/chunks/:chunk_id", r.chunkHandler.Get)
-				datasets.POST("/:dataset_id/documents/parse", r.documentHandler.ParseDocuments)
-				datasets.POST("/:dataset_id/documents/stop", r.documentHandler.StopParseDocuments)
+				datasets.POST("/:dataset_id/documents/parse", r.documentHandler.StartIngestionTask)
+				datasets.GET("/ingestion/tasks", r.documentHandler.ListIngestionTasks)
+				datasets.PUT("/ingestion/tasks", r.documentHandler.StopIngestionTasks)
+				datasets.DELETE("/ingestion/tasks", r.documentHandler.RemoveIngestionTasks)
+				//datasets.POST("/:dataset_id/documents/parse", r.documentHandler.ParseDocuments)
+				//datasets.POST("/:dataset_id/documents/stop", r.documentHandler.StopParseDocuments)
 				datasets.DELETE("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.RemoveChunks)
+				datasets.PUT("/:dataset_id/documents/:document_id/metadata/config", r.datasetsHandler.UpdateDocumentMetadataConfig)
 			}
 
 			// Search routes
@@ -254,10 +303,54 @@ func (r *Router) Setup(engine *gin.Engine) {
 				file.GET("", r.fileHandler.ListFiles)
 				file.DELETE("", r.fileHandler.DeleteFiles)
 				file.POST("/move", r.fileHandler.MoveFiles)
+				file.POST("/link-to-datasets", r.fileHandler.LinkToDatasets)
 				file.GET("/:id/ancestors", r.fileHandler.GetFileAncestors)
 				file.GET("/:id/parent", r.fileHandler.GetParentFolder)
 				file.GET("/:id", r.fileHandler.Download)
+				file.GET("/:id/versions", r.fileCommitHandler.GetFileVersionHistory)
 			}
+
+			// File commit routes — /folders/ takes folder_id directly
+			commitFolders := v1.Group("/folders")
+			{
+				commitFolders.POST("/:folder_id/commits", r.fileCommitHandler.CreateCommit)
+				commitFolders.GET("/:folder_id/commits", r.fileCommitHandler.ListCommits)
+				commitFolders.GET("/:folder_id/commits/diff", r.fileCommitHandler.DiffCommits)
+				commitFolders.GET("/:folder_id/commits/:commit_id", r.fileCommitHandler.GetCommit)
+				commitFolders.GET("/:folder_id/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
+				commitFolders.GET("/:folder_id/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
+				commitFolders.GET("/:folder_id/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
+				commitFolders.GET("/:folder_id/changes", r.fileCommitHandler.GetUncommittedChanges)
+			}
+
+		// /workspace/{workspace_id}/commits — alias for /folders/ (workspace_id == folder_id)
+		commitWorkspace := v1.Group("/workspace")
+		{
+			commitWorkspace.POST("/:folder_id/commits", r.fileCommitHandler.CreateCommit)
+			commitWorkspace.GET("/:folder_id/commits", r.fileCommitHandler.ListCommits)
+			commitWorkspace.GET("/:folder_id/commits/diff", r.fileCommitHandler.DiffCommits)
+			commitWorkspace.GET("/:folder_id/commits/:commit_id", r.fileCommitHandler.GetCommit)
+			commitWorkspace.GET("/:folder_id/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
+			commitWorkspace.GET("/:folder_id/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
+			commitWorkspace.GET("/:folder_id/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
+			commitWorkspace.GET("/:folder_id/changes", r.fileCommitHandler.GetUncommittedChanges)
+		}
+
+		// /datasets/{dataset_id}/commits — resolve dataset_id → folder_id via middleware
+		commitDatasets := v1.Group("/datasets/:dataset_id")
+		commitDatasets.Use(handler.CommitFolderResolver(r.fileCommitHandler, "datasets", "dataset_id"))
+		{
+			commitDatasets.POST("/commits", r.fileCommitHandler.CreateCommit)
+			commitDatasets.GET("/commits", r.fileCommitHandler.ListCommits)
+			commitDatasets.GET("/commits/diff", r.fileCommitHandler.DiffCommits)
+			commitDatasets.GET("/commits/:commit_id", r.fileCommitHandler.GetCommit)
+			commitDatasets.GET("/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
+			commitDatasets.GET("/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
+			commitDatasets.GET("/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
+			commitDatasets.GET("/changes", r.fileCommitHandler.GetUncommittedChanges)
+		}
+
+
 
 			// Author routes
 			authors := v1.Group("/authors")
@@ -276,23 +369,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 				memory.GET("/:memory_id", r.memoryHandler.GetMemoryMessages)
 			}
 
-			// TODO: Message routes - Implementation pending - depends on CanvasService, TaskService and embedding engine
-			// message := v1.Group("/messages")
-			// {
-			// 	message.POST("", r.memoryHandler.AddMessage)
-			// 	message.DELETE("/:memory_id/:message_id", r.memoryHandler.ForgetMessage)
-			// 	message.PUT("/:memory_id/:message_id", r.memoryHandler.UpdateMessage)
-			// 	message.GET("/search", r.memoryHandler.SearchMessage)
-			// 	message.GET("", r.memoryHandler.GetMessages)
-			// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
-			// }
-
-			mcp := v1.Group("/mcp")
+			// Message routes
+			message := v1.Group("/messages")
 			{
-				mcp.POST("/servers", r.mcpHandler.CreateMCPServer)
-				mcp.GET("/servers", r.mcpHandler.ListMCPServers)
-				mcp.PUT("/servers/:mcp_id", r.mcpHandler.UpdateMCPServer)
-				mcp.DELETE("/servers/:mcp_id", r.mcpHandler.DeleteMCPServer)
+				message.DELETE("/:memory_message", r.memoryHandler.ForgetMessage)
 			}
 
 			// Skill search routes
@@ -331,7 +411,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.GET("/:provider_name/instances/:instance_name", r.providerHandler.ShowProviderInstance)
 				provider.GET("/:provider_name/instances/:instance_name/balance", r.providerHandler.ShowInstanceBalance)
 				provider.GET("/:provider_name/instances/:instance_name/connection", r.providerHandler.CheckInstanceConnection)
-				provider.GET("/:provider_name/connection", r.providerHandler.CheckConnection)
+				// Python's /providers/<name>/connection is POST — see
+				// api/apps/restful_apis/provider_api.py:359. The web front-end
+				// posts {api_key, base_url, region, model_info} there
+				// (web/src/services/llm-service.ts:45-48 method: 'post'). The
+				// Go handler body is already POST-shaped (ShouldBindJSON
+				// against CheckConnectionRequest), so the only thing missing
+				// was the routing method.
+				provider.POST("/:provider_name/connection", r.providerHandler.CheckConnection)
 				provider.GET("/:provider_name/instances/:instance_name/tasks", r.providerHandler.ListTasks)
 				provider.GET("/:provider_name/instances/:instance_name/tasks/:task_id", r.providerHandler.ShowTask)
 				provider.PUT("/:provider_name/instances/:instance_name", r.providerHandler.AlterProviderInstance)
@@ -351,15 +438,44 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 			model := v1.Group("/models")
 			{
-				model.GET("/", r.tenantHandler.GetModels)
+				// GET /models returns the tenant's added models across
+				// all instances, matching Python's
+				// models_api_service.list_tenant_added_models. Front-end
+				// useFetchAllAddedModels consumes this. Routed to the
+				// provider handler because that's where the
+				// modelProviderService is wired.
+				model.GET("/", r.providerHandler.ListTenantAddedModels)
+
+				// TODO: list default models?
+				//model.GET("/", r.tenantHandler.GetModels)
 				model.PATCH("/", r.tenantHandler.SetModels)
+				// Tenant default-model selection (used by the agent
+				// page's useFetchDefaultModels hook). Mirrors the
+				// Python contract at api/apps/restful_apis/models_api.py:84.
+				model.GET("/default", r.tenantHandler.GetDefaultModels)
+				model.PATCH("/default", r.tenantHandler.SetDefaultModels)
+			}
+
+			allModels := v1.Group("/all-models")
+			{
+				allModels.GET("", r.modelHandler.ListAllModels)
 			}
 
 			// Agent routes
 			agents := v1.Group("/agents")
+			RegisterAgentRoutes(agents, r.agentHandler)
+
+			// Plugin routes
+			plugin := v1.Group("/plugin")
 			{
-				agents.GET("", r.agentHandler.ListAgents)
+				plugin.GET("/tools", r.pluginHandler.ListLLMTools)
 			}
+
+			// Admin routes — Phase 6 per-tenant canvas runtime override.
+			// RegisterAdminRuntimeRoutes lives in admin_routes.go; a nil
+			// handler is tolerated and yields a no-op registration.
+			admin := v1.Group("/admin")
+			RegisterAdminRuntimeRoutes(admin, r.adminRuntimeHandler)
 
 			connector := v1.Group("/connectors")
 			{
@@ -372,6 +488,21 @@ func (r *Router) Setup(engine *gin.Engine) {
 				connector.DELETE("/:connector_id", r.connectorHandler.DeleteConnector)
 				connector.POST("/:connector_id/rebuild", r.connectorHandler.RebuildConnector)
 				connector.POST("/:connector_id/test", r.connectorHandler.TestConnector)
+			}
+
+			// MCP server routes. Per-server CRUD ships via separate PRs that
+			// share the same handler/service: GET list (#15253), GET by id
+			// (#15254), POST create (#15260, merged), PUT (#15261), DELETE
+			// (#15262, merged). This PR adds only the non-overlapping
+			// endpoints: import and test.
+			mcp := v1.Group("/mcp")
+			{
+				mcp.POST("/servers", r.mcpHandler.CreateMCPServer)
+				mcp.GET("/servers", r.mcpHandler.ListMCPServers)
+				mcp.PUT("/servers/:mcp_id", r.mcpHandler.UpdateMCPServer)
+				mcp.DELETE("/servers/:mcp_id", r.mcpHandler.DeleteMCPServer)
+				mcp.POST("/servers/import", r.mcpHandler.ImportMCPServers)
+				mcp.POST("/servers/:mcp_id/test", r.mcpHandler.TestMCPServer)
 			}
 
 			system := v1.Group("/system")
@@ -489,6 +620,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 		}
 
 	}
+
+	// Dify retrieval routes
+	dify := authorized.Group("/api/v1/dify")
+	{
+		dify.POST("/retrieval", r.difyRetrievalHandler.Retrieval)
+		dify.GET("/retrieval", r.difyRetrievalHandler.Retrieval)
+	}
+	apiNoAuth.GET("/dify/retrieval/health", r.difyRetrievalHandler.HealthCheck)
 
 	// Handle undefined routes
 	engine.NoRoute(handler.HandleNoRoute)

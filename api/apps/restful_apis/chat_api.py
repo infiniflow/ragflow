@@ -459,32 +459,21 @@ async def list_chats():
         page_number = int(request.args.get("page", 0))
         items_per_page = validate_rest_api_page_size(int(request.args.get("page_size", 0)))
 
-        tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
-        authorized_owner_ids = {member["tenant_id"] for member in tenants}
-        authorized_owner_ids.add(current_user.id)
-
         if owner_ids:
-            requested_owner_ids = set(owner_ids)
-            unauthorized_owner_ids = requested_owner_ids - authorized_owner_ids
-            if unauthorized_owner_ids:
-                logging.warning(
-                    "Rejected list_chats request: user=%s attempted unauthorized owner_ids=%s",
-                    current_user.id,
-                    sorted(unauthorized_owner_ids),
-                )
-                return get_json_result(
-                    data=False,
-                    message="Only authorized owner_ids can be queried.",
-                    code=RetCode.OPERATING_ERROR,
-                )
-            effective_owner_ids = list(requested_owner_ids)
+            chats, total = await thread_pool_exec(
+                DialogService.get_by_tenant_ids,
+                owner_ids, current_user.id, 0, 0, orderby, desc, keywords, **exact_filters,
+            )
+            chats = [chat for chat in chats if chat["tenant_id"] in owner_ids]
+            total = len(chats)
+            if page_number and items_per_page:
+                start = (page_number - 1) * items_per_page
+                chats = chats[start : start + items_per_page]
         else:
-            effective_owner_ids = list(authorized_owner_ids)
-
-        chats, total = await thread_pool_exec(
-            DialogService.get_by_tenant_ids,
-            effective_owner_ids, current_user.id, page_number, items_per_page, orderby, desc, keywords, **exact_filters,
-        )
+            chats, total = await thread_pool_exec(
+                DialogService.get_by_tenant_ids,
+                [], current_user.id, page_number, items_per_page, orderby, desc, keywords, **exact_filters,
+            )
 
         return get_json_result(
             data={"chats": [_build_chat_response(chat) for chat in chats], "total": total}
@@ -1240,6 +1229,11 @@ async def session_completion(chat_id_in_arg=""):
             dia.llm_id = tenant_info.llm_id
             merge_generation_config(dia, chat_model_config)
 
+        legacy = _get_bool_request_flag(
+            req,
+            "legacy",
+            default=False,
+        )
         stream_mode = req.pop("stream", True)
 
         def _format_answer(ans):
@@ -1253,10 +1247,53 @@ async def session_completion(chat_id_in_arg=""):
             """Yield SSE-formatted chunks from the async chat generator."""
             nonlocal dia, msg, req, conv
             try:
-                async for ans in async_chat(dia, msg, True, **req):
-                    ans = _format_answer(ans)
-                    payload = _sanitize_json_floats({"code": 0, "message": "", "data": ans})
-                    yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
+                if legacy:
+                    # v0.23.0-style streaming: emit accumulated answer text and
+                    # reconstruct raw <think>...</think> markers from the newer
+                    # start_to_think/end_to_think events.
+                    legacy_answer = ""
+                    final_answer = None
+                    async for ans in async_chat(dia, msg, True, session_id=session_id, **req):
+                        ans = _format_answer(ans)
+                        if ans.get("final"):
+                            final_answer = ans
+                            continue
+                        if ans.get("start_to_think"):
+                            legacy_answer += "<think>"
+                            legacy_chunk = {**ans, "answer": legacy_answer}
+                            legacy_chunk.pop("start_to_think", None)
+                            legacy_chunk.pop("end_to_think", None)
+                            payload = _sanitize_json_floats({"code": 0, "message": "", "data": legacy_chunk})
+                            yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
+                            continue
+                        if ans.get("end_to_think"):
+                            legacy_answer += "</think>"
+                            legacy_chunk = {**ans, "answer": legacy_answer}
+                            legacy_chunk.pop("start_to_think", None)
+                            legacy_chunk.pop("end_to_think", None)
+                            payload = _sanitize_json_floats({"code": 0, "message": "", "data": legacy_chunk})
+                            yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
+                            continue
+                        delta = ans.get("answer") or ""
+                        if not delta:
+                            continue
+                        legacy_answer += delta
+                        legacy_chunk = {**ans, "answer": legacy_answer}
+                        legacy_chunk.pop("start_to_think", None)
+                        legacy_chunk.pop("end_to_think", None)
+                        payload = _sanitize_json_floats({"code": 0, "message": "", "data": legacy_chunk})
+                        yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
+                    if final_answer is not None:
+                        final_chunk = {**final_answer, "answer": final_answer.get("answer") or legacy_answer}
+                        final_chunk.pop("start_to_think", None)
+                        final_chunk.pop("end_to_think", None)
+                        payload = _sanitize_json_floats({"code": 0, "message": "", "data": final_chunk})
+                        yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
+                else:
+                    async for ans in async_chat(dia, msg, True, session_id=session_id, **req):
+                        ans = _format_answer(ans)
+                        payload = _sanitize_json_floats({"code": 0, "message": "", "data": ans})
+                        yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
                 if conv is not None:
                     await thread_pool_exec(ConversationService.update_by_id, conv.id, conv.to_dict())
             except Exception as ex:
@@ -1273,7 +1310,7 @@ async def session_completion(chat_id_in_arg=""):
             return resp
 
         answer = None
-        async for ans in async_chat(dia, msg, False, **req):
+        async for ans in async_chat(dia, msg, False, session_id=session_id, **req):
             answer = _format_answer(ans)
             if conv is not None:
                 await thread_pool_exec(ConversationService.update_by_id, conv.id, conv.to_dict())

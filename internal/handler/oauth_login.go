@@ -20,10 +20,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"ragflow/internal/engine/redis"
 
 	"github.com/gin-gonic/gin"
 
-	"ragflow/internal/cache"
 	"ragflow/internal/common"
 	"ragflow/internal/server"
 	"ragflow/internal/service"
@@ -62,7 +62,7 @@ func (h *UserHandler) OAuthLogin(c *gin.Context) {
 		return
 	}
 
-	init, code, err := h.userService.OAuthLoginInitiate(channel, cache.Get())
+	init, code, err := h.userService.OAuthLoginInitiate(channel, redis.Get())
 	if err != nil {
 		// Mirror Python's oauth_login: the raised ValueError propagates to
 		// server_error_response, which replies HTTP 200 with code 100 and
@@ -116,13 +116,13 @@ func (h *UserHandler) OAuthCallback(c *gin.Context) {
 
 	frontendBase := frontendRedirectBase()
 
-	result, _, err := h.userService.OAuthCallback(c.Request.Context(), channel, queryCode, queryState, cookieState, cache.Get())
+	result, _, err := h.userService.OAuthCallback(c.Request.Context(), channel, queryCode, queryState, cookieState, redis.Get())
 	if err != nil {
 		c.Redirect(http.StatusFound, frontendBase+"?error="+callbackError(channel, err))
 		return
 	}
 
-	secretKey, kerr := server.GetSecretKey(cache.Get())
+	secretKey, kerr := server.GetSecretKey(redis.Get())
 	if kerr != nil {
 		c.Redirect(http.StatusFound, frontendBase+"?error=server_error")
 		return

@@ -135,12 +135,22 @@ func (dao *DocumentDAO) GetAllDocIDsByKBIDs(kbIDs []string) ([]map[string]string
 
 // GetByIDs retrieves documents by multiple IDs
 func (dao *DocumentDAO) GetByIDs(ids []string) ([]*entity.Document, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
 	var documents []*entity.Document
 	err := DB.Where("id IN ?", ids).Find(&documents).Error
 	if err != nil {
 		return nil, err
 	}
 	return documents, nil
+}
+
+// GetByDocumentIDAndDatasetID retrieves a document by document ID and dataset/KB ID.
+func (dao *DocumentDAO) GetByDocumentIDAndDatasetID(documentID, datasetID string) (*entity.Document, error) {
+	var document entity.Document
+	err := DB.Where("id = ? AND kb_id = ?", documentID, datasetID).First(&document).Error
+	return &document, err
 }
 
 // CountByTenantID counts documents by tenant ID

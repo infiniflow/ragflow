@@ -17,7 +17,6 @@
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -25,83 +24,38 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 )
 
 // N1NModel implements ModelDriver for n1n.ai
-// (https://docs.n1n.ai).
-//
-// n1n.ai is an aggregator that exposes an OpenAI-compatible REST API
-// at https://api.n1n.ai/v1. The chat, embeddings, rerank, and models
-// endpoints are documented; audio/image/video endpoints are listed in
-// the docs but out of scope for this driver, which sticks to the
-// ModelDriver methods backed by documented JSON surfaces.
 type N1NModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 // NewN1NModel creates a new n1n.ai model instance.
-//
-// We clone http.DefaultTransport so we keep Go's defaults for
-// ProxyFromEnvironment, DialContext (with KeepAlive), HTTP/2,
-// TLSHandshakeTimeout, and ExpectContinueTimeout, and only override
-// the connection-pool fields we care about.
-//
-// The Client itself has no Timeout. http.Client.Timeout would also
-// cap the time spent reading the response body, which would cut off
-// long-lived SSE streams in ChatStreamlyWithSender. Non-streaming
-// callers wrap each request with context.WithTimeout instead.
 func NewN1NModel(baseURL map[string]string, urlSuffix URLSuffix) *N1NModel {
-	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
-	var transport *http.Transport
-	if ok {
-		transport = defaultTransport.Clone()
-	} else {
-		transport = &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-		}
-	}
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-	transport.ResponseHeaderTimeout = 60 * time.Second
-
 	return &N1NModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
 
 func (n *N1NModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewN1NModel(baseURL, n.URLSuffix)
+	return NewN1NModel(baseURL, n.baseModel.URLSuffix)
 }
 
 func (n *N1NModel) Name() string {
 	return "n1n"
 }
 
-// baseURLForRegion returns the base URL for the given region, trimmed
-// of any trailing slash so callers can append a suffix without
-// producing "//" in the path.
-func (n *N1NModel) baseURLForRegion(region string) (string, error) {
-	base, ok := n.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("n1n: no base URL configured for region %q", region)
-	}
-	return strings.TrimRight(base, "/"), nil
-}
-
 func (n *N1NModel) endpointURL(region, suffix string) (string, error) {
-	baseURL, err := n.baseURLForRegion(region)
+	baseURL, err := n.baseModel.GetBaseURL(&APIConfig{Region: &region})
 	if err != nil {
 		return "", err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	return fmt.Sprintf("%s/%s", baseURL, strings.TrimLeft(suffix, "/")), nil
 }
 
@@ -110,13 +64,6 @@ func n1nRegion(apiConfig *APIConfig) string {
 		return *apiConfig.Region
 	}
 	return "default"
-}
-
-func n1nValidateAPIKey(apiConfig *APIConfig) (string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return "", fmt.Errorf("api key is required")
-	}
-	return *apiConfig.ApiKey, nil
 }
 
 func newN1NJSONRequest(ctx context.Context, method, endpoint string, payload interface{}, apiKey string) (*http.Request, error) {
@@ -178,15 +125,6 @@ func buildN1NChatRequest(modelName string, messages []Message, stream bool, chat
 		reqBody.Temperature = chatModelConfig.Temperature
 		reqBody.TopP = chatModelConfig.TopP
 		reqBody.Stop = chatModelConfig.Stop
-		// Map ChatConfig.Thinking *bool -> n1n.ai's documented
-		// `thinking: {type: "enabled"|"disabled"}` body field
-		// (per maintainer review on PR #15010, with example curl
-		// against deepseek-v3-1-250821). Models that don't support
-		// the field ignore it silently; the reasoning-capable
-		// variants (e.g. deepseek-v3-1-think-250821) surface the
-		// chain-of-thought via message.reasoning_content on the
-		// non-stream path and delta.reasoning_content on the
-		// streaming path, both of which this driver already reads.
 		if chatModelConfig.Thinking != nil {
 			if *chatModelConfig.Thinking {
 				reqBody.Thinking = &n1nThinking{Type: "enabled"}
@@ -221,10 +159,10 @@ type n1nChatResponse struct {
 // ChatWithMessages sends a single, non-streaming chat completion
 // against n1n.ai's /v1/chat/completions endpoint.
 func (n *N1NModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	apiKey, err := n1nValidateAPIKey(apiConfig)
-	if err != nil {
+	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
+	apiKey := *apiConfig.ApiKey
 	if strings.TrimSpace(modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
@@ -232,14 +170,11 @@ func (n *N1NModel) ChatWithMessages(modelName string, messages []Message, apiCon
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.URLSuffix.Chat)
+	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
 
-	// Force stream=false here; ChatWithMessages reads a single JSON
-	// response body, so a streaming SSE response would be parsed as
-	// truncated JSON and produce a confusing error.
 	reqBody := buildN1NChatRequest(modelName, messages, false, chatModelConfig)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
@@ -250,7 +185,7 @@ func (n *N1NModel) ChatWithMessages(modelName string, messages []Message, apiCon
 		return nil, err
 	}
 
-	resp, err := n.httpClient.Do(req)
+	resp, err := n.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -280,10 +215,6 @@ func (n *N1NModel) ChatWithMessages(modelName string, messages []Message, apiCon
 	chatResp := &ChatResponse{
 		Answer: &content,
 	}
-	// Preserve a nil pointer when the upstream omitted reasoning, so
-	// downstream callers can distinguish "no reasoning emitted" from
-	// "reasoning present but empty". Matches the streaming path,
-	// which already suppresses empty reasoning chunks.
 	if parsed.Choices[0].Message.ReasoningContent != "" {
 		reasonContent := parsed.Choices[0].Message.ReasoningContent
 		chatResp.ReasonContent = &reasonContent
@@ -291,11 +222,12 @@ func (n *N1NModel) ChatWithMessages(modelName string, messages []Message, apiCon
 	return chatResp, nil
 }
 
-// ChatStreamlyWithSender sends a streaming chat completion. The n1n.ai
-// SSE stream uses the standard OpenAI shape: "data:" lines carrying
-// JSON events with delta.content (and delta.reasoning_content for
-// reasoning-capable models), terminated by a "[DONE]" line.
+// ChatStreamlyWithSender sends a streaming chat completion.
 func (n *N1NModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
@@ -305,35 +237,25 @@ func (n *N1NModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-	apiKey, err := n1nValidateAPIKey(apiConfig)
-	if err != nil {
-		return err
-	}
+	apiKey := *apiConfig.ApiKey
 
-	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.URLSuffix.Chat)
+	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
 
 	if chatModelConfig != nil && chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
-		// Caller explicitly asked for stream=false. The body of this
-		// method only knows how to read SSE, so a non-SSE JSON
-		// response would be parsed as if it were a stream and produce
-		// no chunks. Fail clearly.
 		return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 	}
 
 	reqBody := buildN1NChatRequest(modelName, messages, true, chatModelConfig)
 
-	// SSE streams are long-lived; rely on the transport's
-	// ResponseHeaderTimeout to cap the connection-establishment phase
-	// instead of attaching a hard deadline here.
 	req, err := newN1NJSONRequest(context.Background(), "POST", endpoint, reqBody, apiKey)
 	if err != nil {
 		return err
 	}
 
-	resp, err := n.httpClient.Do(req)
+	resp, err := n.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -344,33 +266,10 @@ func (n *N1NModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 		return fmt.Errorf("n1n chat stream API error: %s, body: %s", resp.Status, string(body))
 	}
 
-	// Bump the scanner buffer from the 64KB default to 1MB so we
-	// never silently truncate a long data: line. n1n.ai tags some
-	// chunks with a long obfuscation suffix that can push individual
-	// SSE lines well past 64KB on large contexts.
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	sawTerminal := false
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-		data := strings.TrimSpace(line[5:])
-		if data == "[DONE]" {
-			sawTerminal = true
-			break
-		}
-
-		var event n1nChatResponse
-		if err := json.Unmarshal([]byte(data), &event); err != nil {
-			// A malformed frame can mean a truncated SSE event or an
-			// upstream incident; the caller is better served by a
-			// hard failure than by silent partial output.
-			return fmt.Errorf("n1n: invalid SSE event: %w", err)
-		}
+	done, err := ParseSSEStream[n1nChatResponse](resp.Body, func(event n1nChatResponse) error {
 		if len(event.Choices) == 0 {
-			continue
+			return nil
 		}
 		choice := event.Choices[0]
 		if choice.Delta.ReasoningContent != "" {
@@ -387,14 +286,13 @@ func (n *N1NModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 		}
 		if choice.FinishReason != "" {
 			sawTerminal = true
-			break
 		}
-	}
-
-	if err := scanner.Err(); err != nil {
+		return nil
+	})
+	if err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
-	if !sawTerminal {
+	if !done && !sawTerminal {
 		return fmt.Errorf("n1n: stream ended before [DONE] or finish_reason")
 	}
 
@@ -422,22 +320,21 @@ type n1nEmbeddingRequest struct {
 	Dimensions int      `json:"dimensions,omitempty"`
 }
 
-// Embed turns a list of texts into embedding vectors using the
-// n1n.ai /v1/embeddings endpoint. Output is one vector per input, in
-// the same order the inputs were given.
+// Embed turns a list of texts into embedding vectors
 func (n *N1NModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
-	apiKey, err := n1nValidateAPIKey(apiConfig)
-	if err != nil {
-		return nil, err
-	}
+	apiKey := *apiConfig.ApiKey
 	if modelName == nil || strings.TrimSpace(*modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.URLSuffix.Embedding)
+	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
@@ -458,7 +355,7 @@ func (n *N1NModel) Embed(modelName *string, texts []string, apiConfig *APIConfig
 		return nil, err
 	}
 
-	resp, err := n.httpClient.Do(req)
+	resp, err := n.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -477,11 +374,6 @@ func (n *N1NModel) Embed(modelName *string, texts []string, apiConfig *APIConfig
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	// Reorder the returned vectors by their reported index so the
-	// output always lines up with the input texts, even if the
-	// upstream returns items out of order. Reject duplicates and
-	// out-of-range indices so a malformed response fails loudly
-	// rather than silently overwriting earlier slots.
 	embeddings := make([]EmbeddingData, len(texts))
 	filled := make([]bool, len(texts))
 	for _, item := range parsed.Data {
@@ -524,18 +416,19 @@ type n1nRerankRequest struct {
 // Rerank scores a query against a list of documents using
 // n1n.ai's /v1/rerank endpoint (Cohere-shaped response).
 func (n *N1NModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
-	apiKey, err := n1nValidateAPIKey(apiConfig)
-	if err != nil {
-		return nil, err
-	}
+	apiKey := *apiConfig.ApiKey
 	if modelName == nil || strings.TrimSpace(*modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.URLSuffix.Rerank)
+	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.baseModel.URLSuffix.Rerank)
 	if err != nil {
 		return nil, err
 	}
@@ -557,7 +450,7 @@ func (n *N1NModel) Rerank(modelName *string, query string, documents []string, a
 		return nil, err
 	}
 
-	resp, err := n.httpClient.Do(req)
+	resp, err := n.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -599,20 +492,17 @@ type n1nModelCatalogItem struct {
 }
 
 type n1nModelCatalogResponse struct {
-	Data []n1nModelCatalogItem `json:"data"`
+	Data []DSModel `json:"data"`
 }
 
-// ListModels returns the live n1n.ai model catalog from
-// GET /v1/models. The shipped catalog in conf/models/n1n.json is a
-// representative subset; this method surfaces the full upstream list
-// (hundreds of models routed through the aggregator).
-func (n *N1NModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	apiKey, err := n1nValidateAPIKey(apiConfig)
-	if err != nil {
+// ListModels returns the live n1n.ai model catalog
+func (n *N1NModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
+	apiKey := *apiConfig.ApiKey
 
-	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.URLSuffix.Models)
+	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
@@ -625,7 +515,7 @@ func (n *N1NModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, err
 	}
 
-	resp, err := n.httpClient.Do(req)
+	resp, err := n.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -644,33 +534,20 @@ func (n *N1NModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]string, 0, len(parsed.Data))
-	for _, item := range parsed.Data {
-		if item.ID != "" {
-			models = append(models, item.ID)
-		}
-	}
-	return models, nil
+	return ParseListModel(ModelList{Models: parsed.Data}), nil
 }
 
-// CheckConnection verifies the API key by querying the documented
-// /v1/models endpoint — the cheapest auth check on the documented
-// surface, with no per-call charge against tenant quota.
+// CheckConnection verifies the API key
 func (n *N1NModel) CheckConnection(apiConfig *APIConfig) error {
 	_, err := n.ListModels(apiConfig)
 	return err
 }
 
-// Balance is not exposed by the n1n.ai API. Account balance and
-// quota are available only via the web console at
-// https://api.n1n.ai/console; the public API surface does not
-// publish them.
 func (n *N1NModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
-// TranscribeAudio: n1n.ai exposes /v1/audio/transcriptions but the
-// driver does not currently implement the multipart upload flow.
+// TranscribeAudio: n1n.ai exposes /v1/audio/transcriptions
 func (n *N1NModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
@@ -679,8 +556,7 @@ func (n *N1NModel) TranscribeAudioWithSender(modelName *string, file *string, ap
 	return fmt.Errorf("%s, no such method", n.Name())
 }
 
-// AudioSpeech: n1n.ai exposes /v1/audio/speech but the driver does
-// not currently implement the binary audio response handling.
+// AudioSpeech: n1n.ai exposes /v1/audio/speech
 func (n *N1NModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
@@ -699,8 +575,7 @@ func (n *N1NModel) ParseFile(modelName *string, content []byte, url *string, api
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
-// ListTasks: n1n.ai has /v1/contents/generations/tasks for async
-// image/video jobs, but that surface is not modeled by this driver.
+// ListTasks: n1n.ai has /v1/contents/generations/tasks
 func (n *N1NModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
