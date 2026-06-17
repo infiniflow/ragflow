@@ -16,6 +16,7 @@
 
 import logging
 import re
+from html import escape as html_escape
 from io import BytesIO
 from docx import Document
 from docx.table import Table as DocxTable
@@ -71,7 +72,8 @@ class Docx(DocxParser):
                         else:
                             break
                     col_idx += 1
-                    html += f"<td>{c.text}</td>" if span == 1 else f"<td colspan='{span}'>{c.text}</td>"
+                    cell = html_escape(c.text)
+                    html += f"<td>{cell}</td>" if span == 1 else f"<td colspan='{span}'>{cell}</td>"
             except Exception as e:
                 logging.warning(f"Error parsing table, ignore: {e}")
             html += "</tr>"

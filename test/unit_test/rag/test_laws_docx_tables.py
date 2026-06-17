@@ -94,6 +94,20 @@ def test_laws_docx_merged_cells_use_colspan():
 
 
 @pytest.mark.p2
+def test_laws_docx_escapes_cell_html():
+    def builder(d):
+        d.add_heading("Heading", level=1)
+        t = d.add_table(rows=1, cols=1)
+        t.cell(0, 0).text = "a < b & c > d"
+
+    chunks = Docx()("law.docx", _build_docx(builder))
+    table_chunk = next(c for c in chunks if "<table>" in c)
+    # Special characters are HTML-escaped so the table markup stays well-formed.
+    assert "a &lt; b &amp; c &gt; d" in table_chunk
+    assert "<td>a < b" not in table_chunk
+
+
+@pytest.mark.p2
 def test_laws_docx_tables_only_does_not_crash():
     def builder(d):
         t = d.add_table(rows=1, cols=2)
