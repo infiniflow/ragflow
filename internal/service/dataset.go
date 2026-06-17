@@ -24,14 +24,17 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	redisengine "ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/server"
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/utility"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -68,6 +71,15 @@ var (
 		"number": {},
 	}
 	datasetChunkMethodErrorMessage = "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'resume', 'table' or 'tag'"
+	validIndexTypes                = []string{"graph", "raptor", "mindmap"}
+	indexTypeToTaskType            = map[string]string{"graph": "graphrag", "raptor": "raptor", "mindmap": "mindmap"}
+	indexTypeToDisplayName         = map[string]string{"graph": "Graph", "raptor": "RAPTOR", "mindmap": "Mindmap"}
+)
+
+const (
+	graphRaptorFakeDocID  = "graph_raptor_x"
+	maximumTaskPageNumber = int64(100000000)
+	serverQueueNamePrefix = "te"
 )
 
 // DatasetService implements the RESTful dataset APIs from dataset_api.py.
@@ -79,6 +91,7 @@ type DatasetService struct {
 	tenantLLMDAO   *dao.TenantLLMDAO
 	pipelineLogDAO *dao.PipelineOperationLogDAO
 	userTenantDAO  *dao.UserTenantDAO
+	taskDAO        *dao.TaskDAO
 	searchService  *SearchService
 	docEngine      engine.DocEngine
 	embeddingCache *utility.EmbeddingLRU
@@ -100,6 +113,7 @@ func NewDatasetService() *DatasetService {
 		tenantLLMDAO:   dao.NewTenantLLMDAO(),
 		pipelineLogDAO: dao.NewPipelineOperationLogDAO(),
 		userTenantDAO:  dao.NewUserTenantDAO(),
+		taskDAO:        dao.NewTaskDAO(),
 		searchService:  NewSearchService(),
 		docEngine:      engine.Get(),
 		embeddingCache: utility.NewEmbeddingLRU(1000),
@@ -147,6 +161,246 @@ func (s *DatasetService) UpdateDocumentMetadataConfig(userID, datasetID, documen
 	}
 
 	return updatedDoc, common.CodeSuccess, nil
+}
+
+func checkType(indexType string) bool {
+	haveType := false
+	for _, t := range validIndexTypes {
+		if indexType == t {
+			haveType = true
+		}
+	}
+	return haveType
+}
+
+func (s *DatasetService) queueRaptorOrGraphRagTasks(sampleDoc *entity.Document, taskType string, priority int, fakeDocID string, docIDs []string) (string, error) {
+	if docIDs == nil || len(docIDs) == 0 {
+		docIDs = make([]string, 0)
+	}
+	if !checkIndexTaskType(taskType) {
+		return "", errors.New("type should be graphrag, raptor or mindmap")
+	}
+
+	chunkingConfig, err := s.documentDAO.GetChunkingConfig(sampleDoc.ID)
+	if err != nil {
+		return "", err
+	}
+
+	hasher := xxhash.New()
+	keys := make([]string, 0, len(chunkingConfig))
+	for key := range chunkingConfig {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		_, _ = hasher.Write([]byte(fmt.Sprint(chunkingConfig[key])))
+	}
+
+	taskID := strings.ReplaceAll(uuid.New().String(), "-", "")[:32]
+	beginAt := time.Now().Truncate(time.Second)
+	progressMsg := beginAt.Format("15:04:05") + " created task " + taskType
+
+	for _, field := range []interface{}{fakeDocID, maximumTaskPageNumber, maximumTaskPageNumber, taskType} {
+		_, _ = hasher.Write([]byte(fmt.Sprint(field)))
+	}
+	digest := fmt.Sprintf("%016x", hasher.Sum64())
+	task := &entity.Task{
+		ID:          taskID,
+		DocID:       fakeDocID,
+		FromPage:    maximumTaskPageNumber,
+		ToPage:      maximumTaskPageNumber,
+		TaskType:    taskType,
+		ProgressMsg: &progressMsg,
+		BeginAt:     &beginAt,
+		Digest:      &digest,
+	}
+	if err := s.taskDAO.Create(task); err != nil {
+		return "", err
+	}
+
+	if fakeDocID != "" {
+		if err := s.documentDAO.UpdateByID(fakeDocID, map[string]interface{}{
+			"progress_msg":     "Task is queued...",
+			"process_begin_at": beginAt,
+		}); err != nil {
+			return "", err
+		}
+	}
+
+	queueMessage := map[string]interface{}{
+		"id":           taskID,
+		"doc_id":       fakeDocID,
+		"from_page":    maximumTaskPageNumber,
+		"to_page":      maximumTaskPageNumber,
+		"task_type":    taskType,
+		"progress_msg": progressMsg,
+		"begin_at":     beginAt.Format("2006-01-02 15:04:05"),
+		"digest":       digest,
+		"doc_ids":      docIDs,
+	}
+	redisClient := redisengine.Get()
+	if redisClient == nil || !redisClient.QueueProduct(datasetIndexQueueName(priority), queueMessage) {
+		return "", errors.New("Can't access Redis. Please check the Redis' status")
+	}
+
+	return taskID, nil
+}
+
+func checkIndexTaskType(taskType string) bool {
+	switch taskType {
+	case "graphrag", "raptor", "mindmap":
+		return true
+	default:
+		return false
+	}
+}
+
+func datasetIndexTaskID(kb *entity.Knowledgebase, indexType string) string {
+	if kb == nil {
+		return ""
+	}
+	switch indexType {
+	case "graph":
+		if kb.GraphragTaskID != nil {
+			return *kb.GraphragTaskID
+		}
+	case "raptor":
+		if kb.RaptorTaskID != nil {
+			return *kb.RaptorTaskID
+		}
+	case "mindmap":
+		if kb.MindmapTaskID != nil {
+			return *kb.MindmapTaskID
+		}
+	}
+	return ""
+}
+
+func datasetIndexTaskIDUpdate(indexType, taskID string) map[string]interface{} {
+	switch indexType {
+	case "graph":
+		return map[string]interface{}{"graphrag_task_id": taskID}
+	case "raptor":
+		return map[string]interface{}{"raptor_task_id": taskID}
+	case "mindmap":
+		return map[string]interface{}{"mindmap_task_id": taskID}
+	default:
+		return map[string]interface{}{}
+	}
+}
+
+func datasetIndexQueueName(priority int) string {
+	return fmt.Sprintf("%s.%d.common", serverQueueNamePrefix, priority)
+}
+
+// RunIndex Run an indexing task (graph/raptor/mindmap) for a dataset.
+func (s *DatasetService) RunIndex(userID, datasetID, indexType string) (map[string]interface{}, common.ErrorCode, error) {
+	if !checkType(indexType) {
+		return nil, common.CodeDataError, fmt.Errorf("Invalid index type '%s'. Must be one of %v", indexType, validIndexTypes)
+	}
+
+	if datasetID == "" {
+		return nil, common.CodeDataError, errors.New(`Lack of "Dataset ID"`)
+	}
+	if !s.kbDAO.Accessible(datasetID, userID) {
+		return nil, common.CodeDataError, errors.New("No authorization.")
+	}
+
+	kb, err := s.kbDAO.GetByID(datasetID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, errors.New("Invalid Dataset ID")
+		}
+		return nil, common.CodeDataError, errors.New("Internal server error")
+	}
+
+	taskType := indexTypeToTaskType[indexType]
+	displayName := indexTypeToDisplayName[indexType]
+
+	existingTaskID := datasetIndexTaskID(kb, indexType)
+	if existingTaskID != "" {
+		task, err := s.taskDAO.GetByID(existingTaskID)
+		if err != nil {
+			common.Warn("A valid dataset index task id is expected", zap.String("dataset_id", datasetID), zap.String("task_id", existingTaskID), zap.String("task_type", displayName), zap.Error(err))
+		}
+		if task != nil && task.Progress != 1 && task.Progress != -1 {
+			return nil, common.CodeDataError, fmt.Errorf("Task %s in progress with status %v. A %s Task is already running.", existingTaskID, task.Progress, displayName)
+		}
+	}
+
+	documents, code, err := s.getDocumentsByDatasetForIndex(datasetID)
+	if err != nil {
+		return nil, code, err
+	}
+	_ = documents
+
+	sampleDocument := documents[0]
+	documentIDs := make([]string, len(documents))
+
+	for i, doc := range documents {
+		documentIDs[i] = doc.ID
+	}
+
+	taskID, err := s.queueRaptorOrGraphRagTasks(sampleDocument, taskType, 0, graphRaptorFakeDocID, documentIDs)
+	if err != nil {
+		common.Warn("Failed to queue dataset index task", zap.String("dataset_id", datasetID), zap.String("task_type", taskType), zap.Error(err))
+		return nil, common.CodeDataError, errors.New("Internal server error")
+	}
+	if err := s.kbDAO.UpdateByID(kb.ID, datasetIndexTaskIDUpdate(indexType, taskID)); err != nil {
+		common.Warn("Cannot save dataset index task id", zap.String("dataset_id", datasetID), zap.String("task_type", taskType), zap.Error(err))
+	}
+
+	return map[string]interface{}{"task_id": taskID}, common.CodeSuccess, nil
+}
+
+func (s *DatasetService) getDocumentsByDatasetForIndex(datasetID string) ([]*entity.Document, common.ErrorCode, error) {
+	documents, _, err := s.documentDAO.GetByKBID(datasetID)
+	if err != nil {
+		common.Warn("Failed to load dataset documents for index", zap.String("dataset_id", datasetID), zap.Error(err))
+		return nil, common.CodeDataError, errors.New("Internal server error")
+	}
+	if len(documents) == 0 {
+		return nil, common.CodeDataError, fmt.Errorf("No documents in Dataset %s", datasetID)
+	}
+	return documents, common.CodeSuccess, nil
+}
+
+type TraceIndexRequest struct {
+	Type string `json:"type" binding:"required"`
+}
+
+// TraceIndex Trace an indexing task (graph/raptor/mindmap) for a dataset.
+func (s *DatasetService) TraceIndex(datasetID, userID, indexType string) (*entity.Task, common.ErrorCode, error) {
+	if !checkType(indexType) {
+		return nil, common.CodeDataError, fmt.Errorf("Invalid index type '%s'. Must be one of %v", indexType, validIndexTypes)
+	}
+
+	if datasetID == "" {
+		return nil, common.CodeDataError, errors.New(`Lack of "Dataset ID"`)
+	}
+	if !s.kbDAO.Accessible(datasetID, userID) {
+		return nil, common.CodeDataError, errors.New("No authorization.")
+	}
+
+	kb, err := s.kbDAO.GetByID(datasetID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, errors.New("Invalid Dataset ID")
+		}
+		return nil, common.CodeDataError, errors.New("Internal server error")
+	}
+
+	taskID := datasetIndexTaskID(kb, indexType)
+
+	var task *entity.Task
+	if taskID != "" {
+		task, err = s.taskDAO.GetByID(taskID)
+		if err != nil || task == nil {
+			return nil, common.CodeSuccess, nil
+		}
+	}
+
+	return task, common.CodeSuccess, nil
 }
 
 // SearchDatasetsRequest is the request structure for searching chunks across datasets.
