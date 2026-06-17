@@ -4136,7 +4136,7 @@ curl --request POST \
 - `"question"`: (*Body Parameter*), `string`
   Latest user question. This is equivalent to passing `messages: [{"role": "user", "content": question}]`.
 - `"stream"`: (*Body Parameter*), `boolean`
-  Whether to output responses in a streaming way:
+  Enables streaming output:
   - `true`: Enable streaming (default).
   - `false`: Disable streaming.
 - `"chat_id"`: (*Body Parameter*)
@@ -4148,7 +4148,7 @@ curl --request POST \
 - `"pass_all_history_messages"`: (*Body Parameter*), `boolean`
   When `chat_id` and `session_id` are provided, defaults to `false`, so the server uses stored session history and only the latest user message from the request. Set to `true` to replace/use the submitted full `messages` history, and overrides the stored session history.
 - `"legacy"`: (*Body Parameter*), `boolean`  
-  Defaults to `false`. Wheter to enable backward compatibility with RAGFlow v0.23.0 for streaming responses. When set to `true`:  
+  Defaults to `false`. Enables backward compatibility with RAGFlow v0.23.0 for streaming responses. When set to `true`:  
   - Cumulative output: The `"answer"` field in each chunk returns the entire text generated so far, rather than just the new tokens (deltas).
   - No reasoning markers: The `start_to_think` and `end_to_think` signals are stripped from the stream.
 
