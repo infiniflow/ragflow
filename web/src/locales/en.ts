@@ -67,6 +67,7 @@ export default {
       add: 'Add',
       remove: 'Remove',
       search: 'Search',
+      reset: 'Reset',
       noDataFound: 'No data found.',
       noData: 'No data available',
       promptPlaceholder: `Please input or use / to quickly insert variables.`,
