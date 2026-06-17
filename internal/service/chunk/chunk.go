@@ -1030,17 +1030,35 @@ func (s *ChunkService) Parse(userID, datasetID string, req *service.ParseFileReq
 
 	docIDs, duplicateMessages := checkDuplicateIDs(req.DocumentIDs, "document")
 	notFound := make([]string, 0)
-	successCount := 0
 
+	docs, err := s.documentDAO.GetByIDs(docIDs)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	docByID := make(map[string]*entity.Document, len(docs))
+	for _, doc := range docs {
+		docByID[doc.ID] = doc
+	}
 	for _, docID := range docIDs {
-		doc, err := s.documentDAO.GetByID(docID)
-		if err != nil || doc == nil || doc.KbID != datasetID {
+		doc := docByID[docID]
+		if doc == nil || doc.KbID != datasetID {
 			notFound = append(notFound, docID)
-			continue
 		}
+	}
+	if len(notFound) > 0 {
+		return nil, common.CodeDataError, fmt.Errorf("Documents not found: %v", notFound)
+	}
+	for _, docID := range docIDs {
+		doc := docByID[docID]
 		if doc.Run != nil && *doc.Run == string(entity.TaskStatusRunning) {
 			return nil, common.CodeDataError, fmt.Errorf("Can't parse document that is currently being processed")
 		}
+	}
+
+	successCount := 0
+
+	for _, docID := range docIDs {
+		doc := docByID[docID]
 
 		if s.docEngine != nil {
 			indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
@@ -1052,10 +1070,6 @@ func (s *ChunkService) Parse(userID, datasetID string, req *service.ParseFileReq
 			return nil, common.CodeServerError, err
 		}
 
-		doc, err = s.documentDAO.GetByID(docID)
-		if err != nil {
-			return nil, common.CodeServerError, err
-		}
 		bucket, objectName, err := service.NewDocumentService().GetDocumentStorageAddress(doc)
 		if err != nil {
 			return nil, common.CodeServerError, err
@@ -1074,9 +1088,6 @@ func (s *ChunkService) Parse(userID, datasetID string, req *service.ParseFileReq
 		successCount++
 	}
 
-	if len(notFound) > 0 {
-		return nil, common.CodeDataError, fmt.Errorf("Documents not found: %v", notFound)
-	}
 	if len(duplicateMessages) > 0 {
 		if successCount > 0 {
 			return map[string]interface{}{
