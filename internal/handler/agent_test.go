@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -30,6 +31,7 @@ import (
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
+	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -414,8 +416,8 @@ func (f *fullFakeAgentService) UpdateAgent(context.Context, string, string, enti
 func (f *fullFakeAgentService) DeleteAgent(context.Context, string, string) error {
 	return nil
 }
-func (f *fullFakeAgentService) RunAgent(context.Context, string, string, string) (<-chan string, error) {
-	ch := make(chan string)
+func (f *fullFakeAgentService) RunAgent(context.Context, string, string, string, string, string) (<-chan canvas.RunEvent, error) {
+	ch := make(chan canvas.RunEvent)
 	close(ch)
 	return ch, nil
 }
@@ -562,17 +564,33 @@ var _ = func() bool {
 // _require_canvas_access_sync / _require_canvas_owner_sync decorators
 // (api/apps/restful_apis/agent_api.py:74-100). ErrAgentNotOwner is the
 // owner-level sentinel used by DeleteAgent only.
+//
+// v3.5.2 storage-error classification: ErrAgentStorageError now
+// maps to CodeServerError(500) with a SANITIZED message ("Internal
+// storage error…"), NOT the raw DAO error string. Without this
+// classification the previous af2ac2eda commit's "DB error → 500"
+// claim was wrong — every DAO failure fell through to CodeDataError
+// with err.Error(), potentially leaking DSNs / table names / gorm
+// stack frames. The wrapped case below also pins that errors.Is
+// finds the sentinel through fmt.Errorf("...: %w: %w", err, sentinel)
+// (Go 1.20+ multi-wrap).
 func TestMapAgentError(t *testing.T) {
+	wrappedStorage := fmt.Errorf("RunAgent: load version %q: underlying db: %w: %w",
+		"v-bad", errors.New("connection refused"), service.ErrAgentStorageError)
 	cases := []struct {
-		name string
-		err  error
-		want common.ErrorCode
+		name       string
+		err        error
+		want       common.ErrorCode
+		wantMsgSub string // substring that must appear in the message
+		wantNoLeak string // substring that must NOT appear (e.g. raw DAO text)
 	}{
-		{"nil", nil, common.CodeSuccess},
-		{"user_canvas_not_found", dao.ErrUserCanvasNotFound, common.CodeOperatingError},
-		{"user_canvas_version_not_found", dao.ErrUserCanvasVersionNotFound, common.CodeOperatingError},
-		{"agent_not_owner", service.ErrAgentNotOwner, common.CodeOperatingError},
-		{"generic", errors.New("boom"), common.CodeDataError},
+		{"nil", nil, common.CodeSuccess, "", ""},
+		{"user_canvas_not_found", dao.ErrUserCanvasNotFound, common.CodeOperatingError, "permission", ""},
+		{"user_canvas_version_not_found", dao.ErrUserCanvasVersionNotFound, common.CodeOperatingError, "permission", ""},
+		{"agent_not_owner", service.ErrAgentNotOwner, common.CodeOperatingError, "owner", ""},
+		{"agent_storage_error", service.ErrAgentStorageError, common.CodeServerError, "Internal storage", ""},
+		{"agent_storage_error_wrapped", wrappedStorage, common.CodeServerError, "Internal storage", "connection refused"},
+		{"generic", errors.New("boom"), common.CodeDataError, "boom", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -584,8 +602,17 @@ func TestMapAgentError(t *testing.T) {
 				if msg != "" {
 					t.Errorf("mapAgentError(nil) = msg %q, want empty", msg)
 				}
-			} else if msg == "" {
+				return
+			}
+			if msg == "" {
 				t.Errorf("mapAgentError(%v) returned empty message", tc.err)
+			}
+			if tc.wantMsgSub != "" && !strings.Contains(msg, tc.wantMsgSub) {
+				t.Errorf("mapAgentError(%v) = msg %q, want substring %q", tc.err, msg, tc.wantMsgSub)
+			}
+			if tc.wantNoLeak != "" && strings.Contains(msg, tc.wantNoLeak) {
+				t.Errorf("mapAgentError(%v) = msg %q, LEAKS raw DAO substring %q",
+					tc.err, msg, tc.wantNoLeak)
 			}
 		})
 	}

@@ -59,8 +59,8 @@ type googleScholarEnvelope struct {
 // a package var so tests can substitute a httptest.Server URL.
 var googleScholarEndpoint = "https://scholar.google.com/scholar"
 
-// GoogleScholarTool is the Phase 3 batch 3 implementation of the
-// Google Scholar search tool (plan §2.11.4 row 12, §5 Phase 3 第 3 批).
+// GoogleScholarTool is the
+// Google Scholar search tool.
 // There is no public Scholar API, so we fetch the search-results
 // HTML and parse it with golang.org/x/net/html.
 type GoogleScholarTool struct {

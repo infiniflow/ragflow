@@ -39,6 +39,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
+	"ragflow/internal/agent/audio"
+	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -240,7 +242,32 @@ func startServer(config *server.Config) {
 	mcpHandler := handler.NewMCPHandler(mcpService)
 	skillSearchHandler := handler.NewSkillSearchHandler(docEngine)
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
-	agentHandler := handler.NewAgentHandler(service.NewAgentService(), fileService)
+	// Phase 4.4 V2 (Goal 8): production boot wiring for the
+	// agent service's Redis-backed run infrastructure. We attempt
+	// to install the Redis-backed CheckPointStore / StateSerializer
+	// / RunTracker; when Redis is unreachable (degraded boot,
+	// stand-alone mode, no-redis CI), the constructors return
+	// errors and we fall through to the in-memory / no-tracking
+	// path. The agent service treats nil options as the test path
+	// (commit 0c62184a0), so graceful degradation is a 1-line
+	// if-not-nil pass-through — no separate "boot" mode required.
+	agentOpts := buildAgentRunOptions()
+	agentHandler := handler.NewAgentHandler(service.NewAgentServiceWithOptions(
+		agentOpts.checkpointStore,
+		agentOpts.stateSerializer,
+		agentOpts.runTracker,
+	), fileService)
+
+	// Phase 4.4 V2 (Goal 9): Phase 8b TTS service wire-up. The
+	// model-provider-synthesizer previously lived in cmd/server_main
+	// but the linter rewrites removed it; this is the real
+	// dispatch restoration (v3.6.1 Gap #3). The dispatch routes
+	// the audio.SynthesizeRequest through ModelProviderService.
+	// AudioSpeech, which fans out to the per-tenant TTS model
+	// driver. When the model provider is unconfigured, the
+	// synthesizer falls back to a no-op echo (the audio package
+	// contract), so this is always safe to call.
+	configureTTSSynthesizer(modelProviderService)
 	searchBotLLM := &handler.SearchBotRealLLM{Svc: modelProviderService}
 	searchBotHandler := handler.NewSearchBotHandler(
 		searchService,
@@ -370,4 +397,75 @@ func startServer(config *server.Config) {
 	if err = srv.Shutdown(ctx); err != nil {
 		common.Fatal("Server forced to shutdown", zap.Error(err))
 	}
+}
+
+// agentRunOptions bundles the three optional injection slots the
+// agent service accepts via NewAgentServiceWithOptions. Phase 4.4 V2
+// (Goals 4, 5, 7) wires these so the production boot path has
+// Redis-backed checkpoint + state-serialise + run-tracker infrastructure
+// without forcing every boot to require Redis. The fields stay nil
+// when the underlying constructors fail (Redis unreachable, etc.)
+// — agent service treats nil as "in-memory / no-tracking" so the
+// server continues to serve traffic.
+type agentRunOptions struct {
+	checkpointStore canvas.CheckPointStore
+	stateSerializer canvas.StateSerializer
+	runTracker      *canvas.RunTracker
+}
+
+// buildAgentRunOptions attempts to install the Redis-backed run
+// infrastructure. The Redis client is the one already initialised
+// at the top of main; the TTL is a conservative 24h for both the
+// checkpoint store and the run tracker (matches the V1 RunTracker
+// default). On any error (Redis down at boot, constructor panic,
+// nil-Redis fallback) we log and return a zero-value struct —
+// agent service falls back to the in-memory path transparently.
+func buildAgentRunOptions() agentRunOptions {
+	var out agentRunOptions
+	if !redis.IsEnabled() || redis.Get() == nil {
+		common.Info("agent: redis client not initialised; agent run infra in in-memory mode (no checkpoints, no run tracker)")
+		return out
+	}
+	cp := canvas.NewRedisCheckPointStore(24 * time.Hour)
+	out.checkpointStore = cp
+	// stateSerializer is intentionally left nil. eino's default
+	// InternalSerializer (used when no compose.WithSerializer is
+	// passed at compile time) already knows how to round-trip
+	// runtime.CanvasState because the runtime package registers
+	// it via compose.RegisterSerializableType[CanvasState] in
+	// init(). Overriding with RAGFlow's plain-JSON
+	// CanvasStateSerializer (json.Marshal/Unmarshal) produces
+	// bytes the InternalSerializer cannot decode on the resume
+	// pass — the UserFillUp two-node pattern surfaces this as
+	// "load checkpoint from store fail: cannot unmarshal object
+	// into Go struct field checkpoint.Channels of type
+	// compose.channel". Rely on eino's default instead.
+	rt := canvas.NewRunTracker(24 * time.Hour)
+	out.runTracker = rt
+	common.Info("agent: redis-backed run infra installed (24h TTL on checkpoint store + run tracker; eino default serializer)")
+	return out
+}
+
+// configureTTSSynthesizer is the Phase 8b TTS service wire-up
+// (Goal 9 + v3.6.1 Gap #3). It installs a real
+// audio.ModelProviderFunc that dispatches Synthesize requests
+// through the project's ModelProviderService. The model
+// provider's AudioSpeech method (internal/service/model_service.go)
+// resolves the per-tenant TTS model driver, sends the request
+// upstream, and returns synthesized audio bytes.
+//
+// The audio package's NewTTSDispatchFunc helper converts the
+// audio.SynthesizeRequest shape into the model's dispatch shape
+// (audioContent = req.Text, voice/lang → TTSConfig.Params,
+// ModelName from req.Engine). When the model provider is
+// unconfigured (nil dispatcher) the helper returns nil, which
+// reverts the audio package to its default stub.
+func configureTTSSynthesizer(modelProviderService *service.ModelProviderService) {
+	if modelProviderService == nil {
+		common.Info("agent: model provider service not initialised; TTS in no-op echo mode")
+		audio.SetModelProviderSynthesizer(nil)
+		return
+	}
+	audio.SetModelProviderSynthesizer(audio.NewTTSDispatchFunc(modelProviderService))
+	common.Info("agent: TTS model-provider dispatch installed (audio.Synthesize → ModelProviderService.AudioSpeech)")
 }
