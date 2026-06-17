@@ -436,35 +436,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				v1.POST("/file/parse", r.providerHandler.ParseFile)
 			}
 
-			/*
-
-			{
-			  "models": [
-			    {
-			      "model_name": "gpt-4-turbo",
-			      "model_types": ["chat"],
-			      "max_tokens": 128000,
-			      "thinking": false
-			    },
-			    {
-			      "model_name": "gpt-4-vision",
-			      "model_types": ["chat", "vision"],
-			      "max_tokens": 128000
-			    },
-			    {
-			      "model_name": "text-embedding-3-large",
-			      "model_types": ["embedding"],
-			      "max_tokens": 8192
-			    },
-			    {
-			      "model_name": "qwen-rerank",
-			      "model_types": ["rerank"],
-			      "max_tokens": 4096
-			    }
-			  ]
-			}
-			*/
-
 			model := v1.Group("/models")
 			{
 				// GET /models returns the tenant's added models across
