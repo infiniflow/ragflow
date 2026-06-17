@@ -33,7 +33,7 @@ jobs:
     name: ragflow_preflight
     # https://docs.github.com/en/actions/using-jobs/using-conditions-to-control-job-execution
     # https://github.com/orgs/community/discussions/26261
-    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci')) }}
+    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci')) }}
     runs-on: [ "self-hosted", "ragflow-test" ]
     outputs:
       http_api_test_level: ${{ steps.test_level.outputs.http_api_test_level }}
@@ -188,7 +188,7 @@ jobs:
   ragflow_tests_infinity:
     name: ragflow_tests_infinity
     needs: ragflow_preflight
-    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci')) }}
+    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci')) }}
     runs-on: [ "self-hosted", "ragflow-test" ]
     env:
       DOC_ENGINE: infinity
@@ -282,8 +282,22 @@ jobs:
                  return 0
                }
 
+               cleanup_stale_port_locks() {
+                 local now stale_after lock lock_ts
+                 now=$(date -u +%s)
+                 stale_after=$((6 * 60 * 60))
+                 for lock in "${PORT_LOCK_DIR}"/*.lock; do
+                   [[ -e "${lock}" ]] || continue
+                   lock_ts=$(awk '{print $3}' "${lock}" 2>/dev/null || true)
+                   if [[ "${lock_ts}" =~ ^[0-9]+$ ]] && (( now - lock_ts > stale_after )); then
+                     rm -f "${lock}"
+                   fi
+                 done
+               }
+
                reserve_port_offset() {
                  local attempt candidate reservation
+                 cleanup_stale_port_locks
                  for attempt in $(seq 0 59); do
                    candidate=$(( PARTITION_BASE + ((GITHUB_RUN_ID + RUNNER_NUM * 1000 + attempt * 97) % PARTITION_SIZE) ))
                    reservation="${PORT_LOCK_DIR}/${candidate}.lock"
@@ -588,7 +602,7 @@ jobs:
   ragflow_tests_elasticsearch:
     name: ragflow_tests_elasticsearch
     needs: ragflow_preflight
-    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci')) }}
+    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci')) }}
     runs-on: [ "self-hosted", "ragflow-test" ]
     env:
       DOC_ENGINE: elasticsearch
@@ -682,8 +696,22 @@ jobs:
                  return 0
                }
 
+               cleanup_stale_port_locks() {
+                 local now stale_after lock lock_ts
+                 now=$(date -u +%s)
+                 stale_after=$((6 * 60 * 60))
+                 for lock in "${PORT_LOCK_DIR}"/*.lock; do
+                   [[ -e "${lock}" ]] || continue
+                   lock_ts=$(awk '{print $3}' "${lock}" 2>/dev/null || true)
+                   if [[ "${lock_ts}" =~ ^[0-9]+$ ]] && (( now - lock_ts > stale_after )); then
+                     rm -f "${lock}"
+                   fi
+                 done
+               }
+
                reserve_port_offset() {
                  local attempt candidate reservation
+                 cleanup_stale_port_locks
                  for attempt in $(seq 0 59); do
                    candidate=$(( PARTITION_BASE + ((GITHUB_RUN_ID + RUNNER_NUM * 1000 + attempt * 97) % PARTITION_SIZE) ))
                    reservation="${PORT_LOCK_DIR}/${candidate}.lock"
