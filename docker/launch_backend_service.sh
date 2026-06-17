@@ -116,6 +116,7 @@ run_server(){
     local server_name="ragflow_server.py"
     local -a server_cmd=("$PY" "api/ragflow_server.py")
     if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+        prepare_for_go
         server_name="ragflow_server"
         server_cmd=("bin/ragflow_server")
     fi
@@ -145,6 +146,7 @@ run_admin_server(){
     local server_name="admin_server.py"
     local -a server_cmd=("$PY" "admin/server/admin_server.py")
     if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+        prepare_for_go
         server_name="admin_server"
         server_cmd=("bin/admin_server")
     fi
@@ -206,6 +208,21 @@ run_mysql_migrations() {
         --database-version "v0.26.1" \
         --mark-database-version-on-success
     echo "Model provider table migrations completed."
+}
+
+prepare_for_go() {
+    if [ -d /usr/share/infinity/resource ]; then
+        echo "Resource directory already exists. Skipping preparation."
+        return
+    fi
+    mkdir -p /usr/share/infinity/resource
+    if [ "$NEED_MIRROR" == "1" ]; then
+        git clone --depth 1 --single-branch https://gitee.com/infiniflow/resource /tmp/resource;
+    else
+        git clone --depth 1 --single-branch https://github.com/infiniflow/resource.git /tmp/resource;
+    fi
+    cp -r /tmp/resource/* /usr/share/infinity/resource
+    rm -rf /tmp/resource
 }
 
 START_RAGFLOW=0
