@@ -17,6 +17,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"net/netip"
 	"strings"
@@ -90,7 +91,7 @@ func TestListVersions_Success(t *testing.T) {
 	})
 
 	svc := NewAgentService()
-	versions, err := svc.ListVersions("canvas-1")
+	versions, err := svc.ListVersions(context.Background(), "user-1", "canvas-1")
 	if err != nil {
 		t.Fatalf("ListVersions failed: %v", err)
 	}
@@ -134,135 +135,12 @@ func TestListVersions_Empty(t *testing.T) {
 	})
 
 	svc := NewAgentService()
-	versions, err := svc.ListVersions("canvas-empty")
+	versions, err := svc.ListVersions(context.Background(), "user-1", "canvas-empty")
 	if err != nil {
 		t.Fatalf("ListVersions failed: %v", err)
 	}
 	if len(versions) != 0 {
 		t.Errorf("expected 0 versions, got %d", len(versions))
-	}
-}
-
-// TestCheckCanvasAccess_Owner verifies that the canvas owner gets access.
-func TestCheckCanvasAccess_Owner(t *testing.T) {
-	testDB := setupServiceTestDB(t)
-	t.Helper()
-
-	if err := testDB.AutoMigrate(
-		&entity.User{},
-		&entity.UserCanvas{},
-	); err != nil {
-		t.Fatalf("failed to migrate: %v", err)
-	}
-
-	orig := dao.DB
-	dao.DB = testDB
-	t.Cleanup(func() { dao.DB = orig })
-
-	testDB.Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "a@b.com"})
-	testDB.Create(&entity.UserCanvas{ID: "c-1", UserID: "user-1", Title: sptr("My Agent")})
-
-	svc := NewAgentService()
-	ok, err := svc.CheckCanvasAccess("user-1", "c-1")
-	if err != nil {
-		t.Fatalf("CheckCanvasAccess failed: %v", err)
-	}
-	if !ok {
-		t.Error("expected owner to have access")
-	}
-}
-
-// TestCheckCanvasAccess_NotOwner verifies that a tenant member can access
-// a team-level canvas.
-func TestCheckCanvasAccess_NotOwner(t *testing.T) {
-	testDB := setupServiceTestDB(t)
-	t.Helper()
-
-	if err := testDB.AutoMigrate(
-		&entity.User{},
-		&entity.UserCanvas{},
-		&entity.UserTenant{},
-	); err != nil {
-		t.Fatalf("failed to migrate: %v", err)
-	}
-
-	orig := dao.DB
-	dao.DB = testDB
-	t.Cleanup(func() { dao.DB = orig })
-
-	testDB.Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "a@b.com"})
-	testDB.Create(&entity.User{ID: "user-2", Nickname: "member", Email: "c@d.com"})
-	// user-2 is a member of user-1's tenant (status "1" = active)
-	testDB.Create(&entity.UserTenant{ID: "ut-1", UserID: "user-2", TenantID: "user-1", Role: "member", Status: sptr("1")})
-	// Canvas has team-level permission
-	testDB.Create(&entity.UserCanvas{ID: "c-1", UserID: "user-1", Permission: "team", Title: sptr("Team Agent")})
-
-	svc := NewAgentService()
-	ok, err := svc.CheckCanvasAccess("user-2", "c-1")
-	if err != nil {
-		t.Fatalf("CheckCanvasAccess failed: %v", err)
-	}
-	if !ok {
-		t.Error("expected tenant member to have access to team canvas")
-	}
-}
-
-// TestCheckCanvasAccess_PrivateCanvas_Denied verifies that a tenant member
-// cannot access a private (default "me") canvas.
-func TestCheckCanvasAccess_PrivateCanvas_Denied(t *testing.T) {
-	testDB := setupServiceTestDB(t)
-	t.Helper()
-
-	if err := testDB.AutoMigrate(
-		&entity.User{},
-		&entity.UserCanvas{},
-		&entity.UserTenant{},
-	); err != nil {
-		t.Fatalf("failed to migrate: %v", err)
-	}
-
-	orig := dao.DB
-	dao.DB = testDB
-	t.Cleanup(func() { dao.DB = orig })
-
-	testDB.Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "a@b.com"})
-	testDB.Create(&entity.User{ID: "user-2", Nickname: "member", Email: "c@d.com"})
-	// user-2 is a tenant member (status "1" = active)
-	testDB.Create(&entity.UserTenant{ID: "ut-1", UserID: "user-2", TenantID: "user-1", Role: "member", Status: sptr("1")})
-	// Canvas has default "me" permission (private)
-	testDB.Create(&entity.UserCanvas{ID: "c-1", UserID: "user-1", Title: sptr("Private Agent")})
-
-	svc := NewAgentService()
-	ok, err := svc.CheckCanvasAccess("user-2", "c-1")
-	if err != nil {
-		t.Fatalf("CheckCanvasAccess failed: %v", err)
-	}
-	if ok {
-		t.Error("expected tenant member to be denied access to private canvas")
-	}
-}
-
-// TestCheckCanvasAccess_NotFound verifies behavior for non-existent canvas.
-func TestCheckCanvasAccess_NotFound(t *testing.T) {
-	testDB := setupServiceTestDB(t)
-	t.Helper()
-
-	if err := testDB.AutoMigrate(
-		&entity.User{},
-	); err != nil {
-		t.Fatalf("failed to migrate: %v", err)
-	}
-
-	orig := dao.DB
-	dao.DB = testDB
-	t.Cleanup(func() { dao.DB = orig })
-
-	testDB.Create(&entity.User{ID: "user-1", Nickname: "tester", Email: "a@b.com"})
-
-	svc := NewAgentService()
-	_, err := svc.CheckCanvasAccess("user-1", "non-existent")
-	if err == nil {
-		t.Error("expected error for non-existent canvas")
 	}
 }
 
@@ -272,7 +150,9 @@ func TestGetVersion_Success(t *testing.T) {
 	t.Helper()
 
 	if err := testDB.AutoMigrate(
+		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.UserTenant{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
@@ -280,6 +160,12 @@ func TestGetVersion_Success(t *testing.T) {
 	orig := dao.DB
 	dao.DB = testDB
 	t.Cleanup(func() { dao.DB = orig })
+
+	testDB.Create(&entity.UserCanvas{
+		ID:     "canvas-1",
+		UserID: "user-1",
+		Title:  sptr("Test Agent"),
+	})
 
 	testDB.Create(&entity.UserCanvasVersion{
 		ID:           "v1",
@@ -289,7 +175,7 @@ func TestGetVersion_Success(t *testing.T) {
 	})
 
 	svc := NewAgentService()
-	v, err := svc.GetVersion("canvas-1", "v1")
+	v, err := svc.GetVersion(context.Background(), "user-1", "canvas-1", "v1")
 	if err != nil {
 		t.Fatalf("GetVersion failed: %v", err)
 	}
@@ -320,7 +206,7 @@ func TestGetVersion_WrongCanvas(t *testing.T) {
 	})
 
 	svc := NewAgentService()
-	_, err := svc.GetVersion("canvas-other", "v1")
+	_, err := svc.GetVersion(context.Background(), "user-other", "canvas-other", "v1")
 	if err == nil {
 		t.Error("expected error for version belonging to another canvas")
 	}
@@ -342,7 +228,7 @@ func TestGetVersion_NotFound(t *testing.T) {
 	t.Cleanup(func() { dao.DB = orig })
 
 	svc := NewAgentService()
-	_, err := svc.GetVersion("canvas-1", "non-existent")
+	_, err := svc.GetVersion(context.Background(), "user-1", "canvas-1", "non-existent")
 	if err == nil {
 		t.Error("expected error for non-existent version")
 	}

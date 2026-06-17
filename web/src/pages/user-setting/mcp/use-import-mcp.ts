@@ -44,6 +44,7 @@ export const useImportMcp = () => {
           try {
             McpConfigSchema.parse(mcp);
           } catch (error) {
+            console.error(error);
             message.error('Incorrect data format');
             return;
           }
@@ -56,6 +57,7 @@ export const useImportMcp = () => {
             message.error(errorMessage);
           }
         } catch (error) {
+          console.error(error);
           message.error(errorMessage);
         }
       }

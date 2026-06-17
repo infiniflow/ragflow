@@ -1,3 +1,4 @@
+//go:build ignore
 //
 //  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
@@ -68,7 +69,7 @@ func main() {
 			os.Exit(1)
 		}
 	} else {
-		if err = client.NewRun(); err != nil {
+		if err = client.Run(); err != nil {
 			fmt.Printf("CLI error: %v\n", err)
 			os.Exit(1)
 		}

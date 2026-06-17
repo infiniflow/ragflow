@@ -18,7 +18,7 @@ package engine
 
 import (
 	"context"
-
+	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
 )
 
@@ -86,4 +86,13 @@ func Type(docEngine DocEngine) EngineType {
 	// This is a placeholder that should be implemented differently
 	// or rely on configuration to know the type
 	return EngineType("unknown")
+}
+
+type MessageQueue interface {
+	Init() error
+	InitConsumer(subject string) error
+	PublishTask(subject string, payload []byte) error
+	GetMessages(messageCount int) ([]common.TaskHandle, error)
+	ListMessages(messageType string, pending bool) ([]map[string]string, error)
+	ShowMessageQueue() (map[string]string, error)
 }

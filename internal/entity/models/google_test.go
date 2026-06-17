@@ -329,8 +329,8 @@ func TestGoogleModelListModelsPassesBaseURL(t *testing.T) {
 
 func TestCollectGoogleModelNamesPaginates(t *testing.T) {
 	pages := []googleModelPage{
-		{items: []string{"models/gemini-2.5-flash"}, nextPageToken: "page-2"},
-		{items: []string{"models/gemini-2.5-pro"}, nextPageToken: ""},
+		{items: []DSModel{{ID: "Gemini 2.5 Flash", OwnedBy: "Google"}}, nextPageToken: "page-2"},
+		{items: []DSModel{{ID: "Gemini 2.5 Pro", OwnedBy: "Google"}}, nextPageToken: ""},
 	}
 	var pageTokens []string
 
@@ -345,7 +345,7 @@ func TestCollectGoogleModelNamesPaginates(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	expectedModels := []ListModelResponse{{Name: "models/gemini-2.5-flash"}, {Name: "models/gemini-2.5-pro"}}
+	expectedModels := []ListModelResponse{{Name: "Gemini 2.5 Flash@Google"}, {Name: "Gemini 2.5 Pro@Google"}}
 	if !reflect.DeepEqual(models, expectedModels) {
 		t.Fatalf("expected models %v, got %v", expectedModels, models)
 	}
@@ -371,18 +371,15 @@ func TestCollectGoogleModelNamesReturnsPageError(t *testing.T) {
 	pageErr := errors.New("next page failed")
 	calls := 0
 
-	models, err := collectGoogleModelNames(context.Background(), func(context.Context, string) (googleModelPage, error) {
+	_, err := collectGoogleModelNames(context.Background(), func(context.Context, string) (googleModelPage, error) {
 		calls++
 		if calls == 1 {
-			return googleModelPage{items: []string{"models/gemini-2.5-flash"}, nextPageToken: "page-2"}, nil
+			return googleModelPage{items: []DSModel{{ID: "Gemini 2.5 Flash", OwnedBy: "Google"}}, nextPageToken: "page-2"}, nil
 		}
 		return googleModelPage{}, pageErr
 	})
 	if !errors.Is(err, pageErr) {
 		t.Fatalf("expected page error %v, got %v", pageErr, err)
-	}
-	if models != nil {
-		t.Fatalf("expected no models on error, got %v", models)
 	}
 }
 

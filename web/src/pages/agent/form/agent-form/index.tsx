@@ -207,7 +207,7 @@ function AgentForm({ node }: INextOperatorForm) {
           <Separator></Separator>
           <AgentTools></AgentTools>
           <Agents node={node}></Agents>
-          <Collapse title={<div>{t('flow.advancedSettings')}</div>}>
+          <Collapse defaultOpen title={<div>{t('flow.advancedSettings')}</div>}>
             <section className="space-y-5">
               <MessageHistoryWindowSizeFormField></MessageHistoryWindowSizeFormField>
               <FormField
