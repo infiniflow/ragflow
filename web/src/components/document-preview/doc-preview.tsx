@@ -1,58 +1,25 @@
 import message from '@/components/ui/message';
 import { Spin } from '@/components/ui/spin';
 import request from '@/utils/request';
-import { DocxEditorViewer, useDocxEditor } from '@extend-ai/react-docx';
+import {
+  DocxEditorViewer,
+  useDocxEditor,
+  useDocxPageLayout,
+} from '@extend-ai/react-docx';
 import classNames from 'classnames';
 import { ZoomIn, ZoomOut } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+
+import {
+  isZipLikeBlob,
+  useDocumentResizeObserver,
+  useDocxPreviewZoom,
+} from './hooks';
 
 interface DocPreviewerProps {
   className?: string;
   url: string;
 }
-
-// ZIP file header bytes "PK"
-const ZIP_HEADER_0 = 0x50;
-const ZIP_HEADER_1 = 0x4b;
-
-const isZipLikeBlob = async (blob: Blob): Promise<boolean> => {
-  try {
-    const headerSlice = blob.slice(0, 4);
-    const buf = await headerSlice.arrayBuffer();
-    const bytes = new Uint8Array(buf);
-    return (
-      bytes.length >= 2 &&
-      bytes[0] === ZIP_HEADER_0 &&
-      bytes[1] === ZIP_HEADER_1
-    );
-  } catch (e) {
-    console.error('Failed to inspect blob header', e);
-    return false;
-  }
-};
-
-const ZOOM_STEPS = [25, 50, 75, 100, 125, 150, 175, 200] as const;
-
-const clampZoom = (scale: number, direction: 1 | -1): number => {
-  let idx = ZOOM_STEPS.indexOf(scale as (typeof ZOOM_STEPS)[number]);
-  if (idx < 0) {
-    if (direction > 0) {
-      idx = ZOOM_STEPS.findIndex((v) => v > scale);
-    } else {
-      for (let i = ZOOM_STEPS.length - 1; i >= 0; i--) {
-        if (ZOOM_STEPS[i] < scale) {
-          idx = i;
-          break;
-        }
-      }
-    }
-  }
-  idx = Math.max(
-    0,
-    Math.min(ZOOM_STEPS.length - 1, idx < 0 ? 0 : idx + direction),
-  );
-  return ZOOM_STEPS[idx] ?? scale;
-};
 
 // Word document preview component.
 // Uses @extend-ai/react-docx for canvas-based page-level rendering.
@@ -63,9 +30,19 @@ export const DocPreviewer: React.FC<DocPreviewerProps> = ({
 }) => {
   const editor = useDocxEditor({ initialFileName: 'document.docx' });
   const { importDocxFile, status, totalPages } = editor;
+  const { layout } = useDocxPageLayout(editor);
+  const { containerWidth, setContainerRef } = useDocumentResizeObserver();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [zoomScale, setZoomScale] = useState(100);
+  const showContent = !loading && !error;
+  const { zoomScale, minZoom, maxZoom, handleZoomIn, handleZoomOut } =
+    useDocxPreviewZoom({
+      url,
+      totalPages,
+      pageWidthPx: layout?.pageWidthPx,
+      containerWidth,
+      enabled: showContent,
+    });
   const cancelledRef = useRef(false);
 
   // Fetch the document blob and load it into the editor
@@ -117,7 +94,6 @@ export const DocPreviewer: React.FC<DocPreviewerProps> = ({
       await importDocxFile(file);
 
       if (!cancelledRef.current) {
-        setZoomScale(100);
         setLoading(false);
       }
     } catch (err) {
@@ -144,15 +120,6 @@ export const DocPreviewer: React.FC<DocPreviewerProps> = ({
     }
   }, [status]);
 
-  const handleZoomIn = useCallback(() => {
-    setZoomScale((s) => clampZoom(s, 1));
-  }, []);
-
-  const handleZoomOut = useCallback(() => {
-    setZoomScale((s) => clampZoom(s, -1));
-  }, []);
-
-  const showContent = !loading && !error;
   const pageCount = showContent && totalPages > 0 ? totalPages : 0;
 
   return (
@@ -170,7 +137,7 @@ export const DocPreviewer: React.FC<DocPreviewerProps> = ({
         <div className="flex items-center gap-1">
           <button
             type="button"
-            disabled={loading || !!error || zoomScale <= ZOOM_STEPS[0]}
+            disabled={loading || !!error || zoomScale <= minZoom}
             className="p-1 rounded hover:bg-gray-100 disabled:opacity-30 transition-opacity"
             onClick={handleZoomOut}
             aria-label="Zoom out"
@@ -182,11 +149,7 @@ export const DocPreviewer: React.FC<DocPreviewerProps> = ({
           </span>
           <button
             type="button"
-            disabled={
-              loading ||
-              !!error ||
-              zoomScale >= ZOOM_STEPS[ZOOM_STEPS.length - 1]
-            }
+            disabled={loading || !!error || zoomScale >= maxZoom}
             className="p-1 rounded hover:bg-gray-100 disabled:opacity-30 transition-opacity"
             onClick={handleZoomIn}
             aria-label="Zoom in"
@@ -197,7 +160,10 @@ export const DocPreviewer: React.FC<DocPreviewerProps> = ({
       </div>
 
       {/* Viewer / Error area */}
-      <div className="relative flex-1 overflow-auto bg-background-paper">
+      <div
+        ref={setContainerRef}
+        className="relative flex-1 overflow-auto bg-background-paper"
+      >
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center">
             <Spin />
@@ -221,7 +187,7 @@ export const DocPreviewer: React.FC<DocPreviewerProps> = ({
         )}
 
         {showContent && (
-          <div className="flex justify-center p-4">
+          <div className="flex p-4" style={{ justifyContent: 'safe center' }}>
             <div style={{ zoom: zoomScale / 100 }}>
               <DocxEditorViewer
                 editor={editor}

@@ -28,6 +28,7 @@ import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
+import { NICKNAME_PATTERN } from '../user-setting/profile/constants';
 import { BgSvg } from './bg';
 import FlipCard3D, { FlipFaceContext } from './card';
 import './index.less';
@@ -253,6 +254,9 @@ const Login = () => {
   const { login: loginWithChannel, loading: loginWithChannelLoading } =
     useLoginWithChannel();
   const { t } = useTranslation('translation', { keyPrefix: 'login' });
+  const { t: tSetting } = useTranslation('translation', {
+    keyPrefix: 'setting',
+  });
   const [isLoginPage, setIsLoginPage] = useState(true);
 
   const loading =
@@ -287,7 +291,7 @@ const Login = () => {
 
   const FormSchema = z
     .object({
-      nickname: z.string(),
+      nickname: z.string().optional(),
       email: z
         .string()
         .email()
@@ -296,10 +300,19 @@ const Login = () => {
       remember: z.boolean().optional(),
     })
     .superRefine((data, ctx) => {
-      if (title === 'register' && !data.nickname) {
+      if (title !== 'register') return;
+      if (!data.nickname) {
         ctx.addIssue({
           path: ['nickname'],
           message: 'nicknamePlaceholder',
+          code: z.ZodIssueCode.custom,
+        });
+        return;
+      }
+      if (!NICKNAME_PATTERN.test(data.nickname)) {
+        ctx.addIssue({
+          path: ['nickname'],
+          message: tSetting('usernameInvalidCharacters'),
           code: z.ZodIssueCode.custom,
         });
       }
