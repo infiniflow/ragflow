@@ -87,6 +87,14 @@ def test_heading_without_space_separator():
 
 
 @pytest.mark.p2
+def test_custom_heading_with_mid_name_digit_falls_back_to_one():
+    # "Heading v2 draft" has a digit mid-name, not at the end; must not be
+    # misread as level 2. Anchoring to $ ensures only trailing digits count.
+    level, _ = docx_question_level(_para("Heading v2 draft"))
+    assert level == 1
+
+
+@pytest.mark.p2
 def test_non_heading_paragraph_without_bullets_returns_zero():
     level, txt = docx_question_level(_para("Normal", "body paragraph"))
     assert level == 0

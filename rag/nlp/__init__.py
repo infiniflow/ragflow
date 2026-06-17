@@ -1205,7 +1205,7 @@ def docx_question_level(p, bull=-1):
         # "Heading" style and custom "Heading*" styles may carry no trailing number
         # (or none separated by a space). Extract the level digits safely and fall
         # back to the top level instead of raising ValueError on int() (#16163).
-        m = re.search(r"\d+", p.style.name)
+        m = re.search(r"\d+$", p.style.name)
         return (int(m.group()) if m else 1), txt
     else:
         if bull < 0:
