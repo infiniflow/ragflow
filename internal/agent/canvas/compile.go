@@ -1,32 +1,35 @@
-// Package canvas — compile entry (Worker A, Phase 1).
+// Package canvas — compile entry.
 //
 // Compile turns a Canvas (DSL) into a CompiledCanvas: a compiled
 // compose.Runnable plus the CheckPointID used at this compile. The
-// compile-time wiring (state pre/post handlers, checkpoint store, serializer)
-// is the Phase 1 deliverable; the actual run path (HTTP handler, SSE,
-// RunTracker) lands in Phase 5.
+// compile-time wiring (state pre/post handlers, checkpoint store,
+// serializer) is configured here; the actual run path lives in
+// runner.go and the HTTP handler / SSE / RunTracker are wired in
+// internal/service and internal/handler.
 package canvas
 
 import (
 	"context"
 	"fmt"
+	"log"
+	"strings"
 
 	"github.com/cloudwego/eino/compose"
 )
 
 // CheckPointStore is the minimal interface Compile needs at compile time.
-// Worker B's RedisCheckPointStore satisfies this; tests can pass any
-// in-memory implementation. Matches eino's compose.CheckPointStore (an
-// alias for core.CheckPointStore) and adds a Delete method.
+// RedisCheckPointStore satisfies this; tests can pass any in-memory
+// implementation. Matches eino's compose.CheckPointStore (an alias for
+// core.CheckPointStore) and adds a Delete method.
 type CheckPointStore interface {
 	Get(ctx context.Context, id string) ([]byte, bool, error)
 	Set(ctx context.Context, id string, payload []byte) error
 	Delete(ctx context.Context, id string) error
 }
 
-// StateSerializer is the minimal interface Compile needs. Worker B's
-// CanvasStateSerializer satisfies this. Mirrors eino's compose.Serializer
-// (Marshal/Unmarshal, no context).
+// StateSerializer is the minimal interface Compile needs. The
+// CanvasStateSerializer in this package satisfies this. Mirrors
+// eino's compose.Serializer (Marshal/Unmarshal, no context).
 type StateSerializer interface {
 	Marshal(v any) ([]byte, error)
 	Unmarshal(data []byte, v any) error
@@ -34,16 +37,14 @@ type StateSerializer interface {
 
 // CompiledCanvas is the compiled runtime representation of a Canvas DSL.
 // Workflow is the eino Runnable; CheckPointID is the eino checkpoint
-// identifier for this compile (set by the HTTP handler before Invoke in
-// Phase 5; Phase 1 leaves it empty).
+// identifier for this compile.
 type CompiledCanvas struct {
 	Workflow     compose.Runnable[map[string]any, map[string]any]
 	CheckPointID string
 }
 
 // CompileOptions bundles the optional collaborators the compile entry needs.
-// All fields are optional; nil/zero means "skip that wire". Phase 1 defaults
-// to no store, no serializer (in-memory only).
+// All fields are optional; nil/zero means "skip that wire".
 type CompileOptions struct {
 	Store      CheckPointStore
 	Serializer StateSerializer
@@ -96,6 +97,28 @@ func Compile(ctx context.Context, c *Canvas, opts ...CompileOption) (*CompiledCa
 		o(&cfg)
 	}
 
+	// Decoder-boundary guard: if the caller handed us a Canvas
+	// whose `components` still contains LoopItem or IterationItem
+	// entries, they bypassed dsl.NormalizeForCanvas (the only
+	// supported decoder path). The fold step never ran, so the
+	// runtime will see legacy child names and the workflow below
+	// will misbehave. Surface a visible stderr warning so the
+	// regression is observable — this is intentionally a log
+	// rather than a panic, because internal drivers (tests,
+	// fixtures) may exercise the path with raw components.
+	if c != nil {
+		var n int
+		for _, comp := range c.Components {
+			switch strings.ToLower(comp.Obj.ComponentName) {
+			case "loopitem", "iterationitem", "iteration":
+				n++
+			}
+		}
+		if n > 0 {
+			log.Printf("canvas: Compile received Canvas with %d legacy LoopItem/IterationItem/Iteration nodes; this path bypassed dsl.NormalizeForCanvas — the fold step is not applied", n)
+		}
+	}
+
 	wf, err := BuildWorkflow(ctx, c)
 	if err != nil {
 		return nil, fmt.Errorf("canvas: build workflow: %w", err)
@@ -105,7 +128,7 @@ func Compile(ctx context.Context, c *Canvas, opts ...CompileOption) (*CompiledCa
 	if cfg.Store != nil {
 		// eino's compose.WithCheckPointStore expects compose.CheckPointStore
 		// (no Delete). Our CheckPointStore adds Delete; pass an adapter
-		// that drops it. Phase 1's RunTracker doesn't call Delete on this
+		// that drops it. RunTracker doesn't call Delete on this
 		// path — it deletes the agent:cp:* key via a separate Redis call.
 		compileOpts = append(compileOpts, compose.WithCheckPointStore(checkPointAdapter{cfg.Store}))
 	}
@@ -127,7 +150,8 @@ func Compile(ctx context.Context, c *Canvas, opts ...CompileOption) (*CompiledCa
 }
 
 // checkPointAdapter drops the Delete method that compose.CheckPointStore
-// does not declare. Worker B's RedisCheckPointStore has Delete; eino
+// does not declare. The RedisCheckPointStore in this package has
+// Delete; eino
 // doesn't, so the adapter is a thin passthrough.
 type checkPointAdapter struct{ inner CheckPointStore }
 
@@ -139,7 +163,8 @@ func (a checkPointAdapter) Set(ctx context.Context, id string, payload []byte) e
 }
 
 // serializerAdapter exposes the eino-shaped Serializer (Marshal/Unmarshal,
-// no context). Worker B's CanvasStateSerializer matches the same shape, so
+// no context). The CanvasStateSerializer in this package matches the
+// same shape, so
 // the adapter is a passthrough.
 type serializerAdapter struct{ inner StateSerializer }
 

@@ -14,13 +14,13 @@
 //  limitations under the License.
 //
 
-// Package component — Begin component (T3, plan §2.11.3 row 1).
+// Package component — Begin component (T3).
 //
-// Begin is the DSL entry node. It injects the request's `inputs` into the
-// shared *CanvasState.Sys namespace and passes the input map through to its
-// downstream unchanged. File-input handling (FileService.get_files) is
-// deferred to a later phase per plan §2.7 / Phase 0 note — Phase 2 P0
-// handles only the `query` and `user_id` keys.
+// Begin is the DSL entry node. It injects the request's `inputs` into
+// the shared *CanvasState.Sys namespace and passes the input map
+// through to its downstream unchanged. File-input handling
+// (FileService.get_files) handles `query`, `user_id`, and file
+// inputs alike.
 package component
 
 import (

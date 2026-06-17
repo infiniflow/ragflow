@@ -56,6 +56,15 @@ func NewRedisCheckPointStore(ttl time.Duration) *RedisCheckPointStore {
 	return &RedisCheckPointStore{client: client, ttl: ttl}
 }
 
+// NewRedisCheckPointStoreWithClient returns a store wired to a
+// caller-supplied redis.Client. Same rationale as
+// NewRunTrackerWithClient: enables test code (or any code that
+// needs a dedicated Redis pool) to inject a client without going
+// through the global cache singleton.
+func NewRedisCheckPointStoreWithClient(client *redis.Client, ttl time.Duration) *RedisCheckPointStore {
+	return &RedisCheckPointStore{client: client, ttl: ttl}
+}
+
 // Get implements eino's CheckPointStore.Get. Returns (nil, false, nil) when
 // the key does not exist (redis.Nil) so callers can distinguish "missing"
 // from "present-but-error".

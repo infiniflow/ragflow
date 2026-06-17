@@ -1,4 +1,4 @@
-// Package component — Categorize unit tests (Phase 2 P0, plan §2.11.3 row 6).
+// Package component — Categorize unit tests.
 package component
 
 import (
@@ -38,7 +38,7 @@ func TestCategorize_ChosenCategory(t *testing.T) {
 		t.Fatalf("_next missing or wrong type: %T", out["_next"])
 	}
 	if len(next) != 0 {
-		t.Errorf("_next=%v, want [] (Phase 5 placeholder)", next)
+		t.Errorf("_next=%v, want [] (placeholder; MultiBranch wires the actual routing)", next)
 	}
 }
 
