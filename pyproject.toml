@@ -210,6 +210,11 @@ constraint-dependencies = [
     # via selenium-wire -> trio-websocket -> trio.
     "trio>=0.26.0",
 ]
+exclude-dependencies = [
+    # crawl4ai>=0.8.6 depends on unclecode-litellm, which installs the same
+    # `litellm` package namespace as upstream litellm and can corrupt imports.
+    "unclecode-litellm",
+]
 override-dependencies = [
     # moodlepy<=0.24.1 pins attrs<23.0.0, but trio>=0.26.0 requires attrs>=23.2.0.
     # attrs 23.x is backward-compatible; moodlepy works fine at runtime with it.
