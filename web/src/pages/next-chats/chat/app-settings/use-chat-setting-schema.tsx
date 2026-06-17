@@ -4,6 +4,7 @@ import {
 } from '@/components/llm-setting-items/next';
 import { MetadataFilterSchema } from '@/components/metadata-filter';
 import { rerankFormSchema } from '@/components/rerank';
+import { TemporalRetrievalSchema } from '@/components/temporal-retrieval';
 import {
   similarityThresholdSchema,
   vectorSimilarityWeightSchema,
@@ -60,6 +61,7 @@ export function useChatSettingSchema() {
     ...similarityThresholdSchema,
     ...topnSchema,
     ...MetadataFilterSchema,
+    ...TemporalRetrievalSchema,
   });
 
   return formSchema;

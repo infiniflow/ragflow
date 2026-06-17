@@ -18,6 +18,7 @@ const {
   setMeta,
   getMeta,
   getMetaKeys,
+  getTemporalMetadataProfile,
   retrievalTestShare,
 } = api;
 
@@ -56,6 +57,10 @@ const methods = {
   },
   getMetaKeys: {
     url: getMetaKeys,
+    method: 'get',
+  },
+  getTemporalMetadataProfile: {
+    url: getTemporalMetadataProfile,
     method: 'get',
   },
   retrievalTestShare: {

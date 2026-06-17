@@ -1023,6 +1023,7 @@ class Dialog(DataBaseModel):
         default={"system": "", "prologue": "Hi! I'm your assistant. What can I do for you?", "parameters": [], "empty_response": "Sorry! No relevant content was found in the knowledge base!"},
     )
     meta_data_filter = JSONField(null=True, default={})
+    temporal_retrieval = JSONField(null=True, default={})
 
     similarity_threshold = FloatField(default=0.2)
     vector_similarity_weight = FloatField(default=0.3)
@@ -1180,6 +1181,7 @@ class Search(DataBaseModel):
             "web_search": False,
             "related_search": False,
             "query_mindmap": False,
+            "temporal_retrieval": {},
         },
     )
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
@@ -1735,6 +1737,7 @@ def migrate_db():
     alter_db_add_column(migrator, "document", "suffix", CharField(max_length=32, null=False, default="", help_text="The real file extension suffix", index=True))
     alter_db_add_column(migrator, "api_4_conversation", "errors", TextField(null=True, help_text="errors"))
     alter_db_add_column(migrator, "dialog", "meta_data_filter", JSONField(null=True, default={}))
+    alter_db_add_column(migrator, "dialog", "temporal_retrieval", JSONField(null=True, default={}))
     alter_db_column_type(migrator, "canvas_template", "title", JSONField(null=True, default=dict, help_text="Canvas title"))
     alter_db_column_type(migrator, "canvas_template", "description", JSONField(null=True, default=dict, help_text="Canvas description"))
     alter_db_add_column(migrator, "user_canvas", "canvas_category", CharField(max_length=32, null=False, default="agent_canvas", help_text="agent_canvas|dataflow_canvas", index=True))

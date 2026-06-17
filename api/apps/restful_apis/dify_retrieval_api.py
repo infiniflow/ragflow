@@ -28,7 +28,8 @@ from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
-from common.metadata_utils import meta_filter, convert_conditions
+from common.metadata_utils import convert_conditions
+from common.temporal_retrieval import resolve_temporal_retrieval_context
 from api.apps import login_required
 from api.utils.api_utils import add_tenant_id_to_kwargs, build_error_result, get_request_json, get_json_result
 from rag.app.tag import label_question
@@ -247,7 +248,14 @@ async def retrieval(tenant_id):
             code=RetCode.ARGUMENT_ERROR,
         )
     metadata_condition = req.get("metadata_condition", {}) or {}
-    metas = DocMetadataService.get_flatted_meta_by_kbs([kb_id])
+    temporal_retrieval = req.get("temporal_retrieval") or {}
+    meta_data_filter = {}
+    if metadata_condition:
+        meta_data_filter = {
+            "method": "manual",
+            "manual": convert_conditions(metadata_condition),
+            "logic": metadata_condition.get("logic", "and"),
+        }
 
     doc_ids = []
     try:
@@ -264,9 +272,18 @@ async def retrieval(tenant_id):
             return build_error_result(message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
         model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
         embd_mdl = LLMBundle(kb.tenant_id, model_config)
-        if metadata_condition:
-            doc_ids.extend(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
-        if not doc_ids and metadata_condition:
+        temporal_ctx = await resolve_temporal_retrieval_context(
+            raw_query=question,
+            refined_query=question,
+            retrieval_query=question,
+            meta_data_filter=meta_data_filter,
+            temporal_retrieval=temporal_retrieval,
+            kb_ids=[kb_id],
+            base_doc_ids=doc_ids,
+            metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs([kb_id]),
+        )
+        doc_ids = temporal_ctx.doc_ids
+        if metadata_condition.get("conditions") and doc_ids == ["-999"]:
             doc_ids = ["-999"]
         ranks = await settings.retriever.retrieval(
             question,
@@ -279,7 +296,8 @@ async def retrieval(tenant_id):
             vector_similarity_weight=0.3,
             top=top,
             doc_ids=doc_ids,
-            rank_feature=label_question(question, [kb])
+            rank_feature=label_question(question, [kb]),
+            temporal_rank_policy=temporal_ctx.temporal_rank_policy,
         )
         ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], [tenant_id])
 

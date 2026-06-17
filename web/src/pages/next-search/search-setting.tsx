@@ -14,6 +14,10 @@ import {
 } from '@/components/metadata-filter';
 import { ModelTreeSelect } from '@/components/model-tree-select';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
+import {
+  TemporalRetrieval,
+  TemporalRetrievalSchema,
+} from '@/components/temporal-retrieval';
 import { Button } from '@/components/ui/button';
 import { SingleFormSlider } from '@/components/ui/dual-range-slider';
 import {
@@ -82,6 +86,7 @@ const SearchSettingFormSchema = z
         })
         .optional(),
       ...MetadataFilterSchema,
+      ...TemporalRetrievalSchema,
     }),
     ...LlmSettingEnabledSchema,
   })
@@ -151,6 +156,13 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         related_search: search_config?.related_search || false,
         query_mindmap: search_config?.query_mindmap || false,
         meta_data_filter: search_config?.meta_data_filter,
+        temporal_retrieval: {
+          enabled: false,
+          mode: 'auto',
+          temporal_field: '',
+          half_life_days: 14,
+          ...(search_config?.temporal_retrieval || {}),
+        },
         reference_metadata: {
           include: search_config?.reference_metadata?.include || false,
           fields:
@@ -359,6 +371,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
               required
             ></KnowledgeBaseFormField>
             <MetadataFilter prefix="search_config."></MetadataFilter>
+            <TemporalRetrieval prefix="search_config."></TemporalRetrieval>
             <FormField
               control={formMethods.control}
               name="search_config.reference_metadata.include"

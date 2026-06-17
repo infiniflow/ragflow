@@ -181,6 +181,7 @@ async def apply_meta_data_filter(
         manual_value_resolver: Callable[[dict], dict] | None = None,
         kb_ids: list[str] | None = None,
         metas_loader: Callable[[], dict] | None = None,
+        extra_conditions: list[dict] | None = None,
 ) -> list[str] | None:
     """
     Apply metadata filtering rules and return the filtered doc_ids.
@@ -209,11 +210,13 @@ async def apply_meta_data_filter(
     """
     from rag.prompts.generator import gen_meta_filter  # move from the top of the file to avoid circular import
 
-    doc_ids = list(base_doc_ids) if base_doc_ids else []
+    base_doc_ids = list(base_doc_ids) if base_doc_ids else []
+    extra_conditions = [flt for flt in (extra_conditions or []) if isinstance(flt, dict)]
 
-    if not meta_data_filter:
-        return doc_ids
+    if not meta_data_filter and not extra_conditions:
+        return base_doc_ids
 
+    meta_data_filter = meta_data_filter or {}
     method = meta_data_filter.get("method")
 
     # Memoised metadata loader. ``_get_metas`` materialises the dict at most
@@ -243,13 +246,41 @@ async def apply_meta_data_filter(
         logging.debug("Metadata filter falls back to in-memory filter")
         return meta_filter(_get_metas(), conditions, logic)
 
+    def _scope_to_base(filtered_doc_ids: list[str]) -> list[str]:
+        if not base_doc_ids:
+            return list(filtered_doc_ids)
+        allowed = set(filtered_doc_ids)
+        return [doc_id for doc_id in base_doc_ids if doc_id in allowed]
+
+    def _run_user_and_extra(user_conditions: list[dict], user_logic: str) -> list[str]:
+        user_conditions = user_conditions or []
+        user_logic = user_logic or "and"
+        if user_conditions and extra_conditions and user_logic != "and":
+            user_doc_ids = _run_metadata_filter(user_conditions, user_logic)
+            extra_doc_ids = _run_metadata_filter(extra_conditions, "and")
+            allowed = set(user_doc_ids) & set(extra_doc_ids)
+            if base_doc_ids:
+                allowed &= set(base_doc_ids)
+            ordered = user_doc_ids or extra_doc_ids
+            return [doc_id for doc_id in ordered if doc_id in allowed]
+
+        conditions = list(user_conditions)
+        logic = user_logic
+        if extra_conditions:
+            conditions.extend(extra_conditions)
+            logic = "and"
+        if not conditions:
+            return list(base_doc_ids)
+        return _scope_to_base(_run_metadata_filter(conditions, logic))
+
     if method == "auto":
         filters: dict = await gen_meta_filter(chat_mdl, _get_metas(), question)
         logging.debug(f"Metadata filter(auto) generated: {filters}")
-        doc_ids.extend(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
+        doc_ids = _run_user_and_extra(filters["conditions"], filters.get("logic", "and"))
         if not doc_ids:
             return None
     elif method == "semi_auto":
+        doc_ids = list(base_doc_ids)
         selected_keys = []
         constraints = {}
         for item in meta_data_filter.get("semi_auto", []):
@@ -268,16 +299,24 @@ async def apply_meta_data_filter(
             if filtered_metas:
                 filters: dict = await gen_meta_filter(chat_mdl, filtered_metas, question, constraints=constraints)
                 logging.debug(f"Metadata filter(semi_auto) generated: {filters}")
-                doc_ids.extend(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
+                doc_ids = _run_user_and_extra(filters["conditions"], filters.get("logic", "and"))
                 if not doc_ids:
                     return None
+            elif extra_conditions:
+                doc_ids = _run_user_and_extra([], "and")
+        elif extra_conditions:
+            doc_ids = _run_user_and_extra([], "and")
     elif method == "manual":
         filters = meta_data_filter.get("manual", [])
         if manual_value_resolver:
             filters = [manual_value_resolver(flt) for flt in filters]
         logging.debug(f"Metadata filter(manual): {filters}")
-        doc_ids.extend(_run_metadata_filter(filters, meta_data_filter.get("logic", "and")))
-        if filters and not doc_ids:
+        doc_ids = _run_user_and_extra(filters, meta_data_filter.get("logic", "and"))
+        if (filters or extra_conditions) and not doc_ids:
+            doc_ids = ["-999"]
+    else:
+        doc_ids = _run_user_and_extra([], "and")
+        if extra_conditions and not doc_ids:
             doc_ids = ["-999"]
 
     logging.debug(f"apply_meta_data_filter meta_filter={meta_data_filter}, returning doc_ids={doc_ids}")

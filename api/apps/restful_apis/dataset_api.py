@@ -78,6 +78,51 @@ def get_flattened_metadata(tenant_id):
         return get_error_data_result(message="Internal server error")
 
 
+@manager.route("/datasets/metadata/keys", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def get_metadata_keys(tenant_id):
+    dataset_ids = request.args.get("dataset_ids") or request.args.get("kb_ids", "")
+    dataset_ids = [d for d in dataset_ids.split(",") if d]
+    if not dataset_ids:
+        return get_error_data_result(message="Lack of dataset_ids in query parameters")
+
+    try:
+        success, result = dataset_api_service.get_metadata_keys(dataset_ids, tenant_id)
+        if success:
+            return get_result(data=result)
+        return get_error_data_result(message=result)
+    except ValueError as e:
+        return get_error_argument_result(str(e))
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/metadata/temporal/profile", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def get_temporal_metadata_profile(tenant_id):
+    dataset_ids = request.args.get("dataset_ids") or request.args.get("kb_ids", "")
+    dataset_ids = [d for d in dataset_ids.split(",") if d]
+    temporal_field = (request.args.get("temporal_field") or "").strip()
+    if not dataset_ids:
+        return get_error_data_result(message="Lack of dataset_ids in query parameters")
+    if not temporal_field:
+        return get_error_data_result(message="Lack of temporal_field in query parameters")
+
+    try:
+        success, result = dataset_api_service.profile_temporal_field(dataset_ids, temporal_field, tenant_id)
+        if success:
+            return get_result(data=result)
+        return get_error_data_result(message=result)
+    except ValueError as e:
+        return get_error_argument_result(str(e))
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
 @manager.route("/datasets", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs

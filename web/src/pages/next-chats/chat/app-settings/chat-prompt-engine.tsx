@@ -7,6 +7,7 @@ import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
 import { SwitchFormField } from '@/components/switch-fom-field';
 import { TavilyFormField } from '@/components/tavily-form-field';
+import { TemporalRetrieval } from '@/components/temporal-retrieval';
 import { TOCEnhanceFormField } from '@/components/toc-enhance-form-field';
 import { TopNFormField } from '@/components/top-n-item';
 import {
@@ -115,6 +116,7 @@ export function ChatPromptEngine() {
         <TOCEnhanceFormField name="prompt_config.toc_enhance"></TOCEnhanceFormField>
         <TavilyFormField></TavilyFormField>
         <MetadataFilter></MetadataFilter>
+        <TemporalRetrieval></TemporalRetrieval>
         <FormField
           control={form.control}
           name={'prompt_config.reference_metadata.include'}
