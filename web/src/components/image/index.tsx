@@ -12,6 +12,15 @@ interface IImage extends React.ImgHTMLAttributes<HTMLImageElement> {
   label?: string;
 }
 
+type ImageCacheItem = {
+  count: number;
+  objectUrl?: string;
+  promise?: Promise<string>;
+  timer?: ReturnType<typeof setTimeout>;
+};
+
+const imageCache = new Map<string, ImageCacheItem>();
+
 export const buildDocumentImageUrl = (id: string, t?: string | number) => {
   const params = new URLSearchParams();
 
@@ -23,9 +32,61 @@ export const buildDocumentImageUrl = (id: string, t?: string | number) => {
   return `${restAPIv1}/documents/images/${id}${query ? `?${query}` : ''}`;
 };
 
+const fetchDocumentImage = (url: string, authorization: string) => {
+  const cacheKey = `${authorization}:${url}`;
+  let item = imageCache.get(cacheKey);
+
+  if (!item) {
+    item = { count: 0 };
+    imageCache.set(cacheKey, item);
+  }
+  if (item.timer) {
+    clearTimeout(item.timer);
+    item.timer = undefined;
+  }
+  item.count += 1;
+
+  if (!item.promise) {
+    item.promise = fetch(url, { headers: { [Authorization]: authorization } })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(response.statusText);
+        }
+        return response.blob();
+      })
+      .then((blob) => {
+        item.objectUrl = URL.createObjectURL(blob);
+        return item.objectUrl;
+      })
+      .catch((error) => {
+        imageCache.delete(cacheKey);
+        throw error;
+      });
+  }
+
+  return {
+    promise: item.promise,
+    release: () => {
+      item.count -= 1;
+      if (item.count <= 0) {
+        item.timer = setTimeout(() => {
+          if (item.count <= 0) {
+            if (item.objectUrl) {
+              URL.revokeObjectURL(item.objectUrl);
+            }
+            imageCache.delete(cacheKey);
+          }
+        }, 30000);
+      }
+    },
+  };
+};
+
 export const useDocumentImageUrl = (id: string, t?: string | number) => {
   const directUrl = useMemo(() => buildDocumentImageUrl(id, t), [id, t]);
-  const [imageUrl, setImageUrl] = useState(directUrl);
+  const [imageUrl, setImageUrl] = useState(() =>
+    getAuthorization() && getSearchValue('shared_id') ? '' : directUrl,
+  );
 
   useEffect(() => {
     const authorization = getAuthorization();
@@ -34,22 +95,15 @@ export const useDocumentImageUrl = (id: string, t?: string | number) => {
       return;
     }
 
-    let objectUrl = '';
     let ignore = false;
     setImageUrl('');
-    fetch(directUrl, { headers: { [Authorization]: authorization } })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(response.statusText);
-        }
-        return response.blob();
-      })
-      .then((blob) => {
+    const { promise, release } = fetchDocumentImage(directUrl, authorization);
+    promise
+      .then((url) => {
         if (ignore) {
           return;
         }
-        objectUrl = URL.createObjectURL(blob);
-        setImageUrl(objectUrl);
+        setImageUrl(url);
       })
       .catch(() => {
         if (!ignore) {
@@ -59,9 +113,7 @@ export const useDocumentImageUrl = (id: string, t?: string | number) => {
 
     return () => {
       ignore = true;
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
+      release();
     };
   }, [directUrl]);
 
