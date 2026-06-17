@@ -431,9 +431,9 @@ func TestTranslateLoopCondition_InvalidLogicalOp(t *testing.T) {
 
 func TestTranslateLoopCondition_IncompleteEntry(t *testing.T) {
 	cases := []map[string]any{
-		{"operator": "=", "value": 1},                          // missing variable
-		{"variable": "x"},                                      // missing operator
-		{"variable": "x", "operator": ""},                      // empty operator
+		{"operator": "=", "value": 1},     // missing variable
+		{"variable": "x"},                 // missing operator
+		{"variable": "x", "operator": ""}, // empty operator
 	}
 	for i, item := range cases {
 		params := map[string]any{
@@ -575,7 +575,7 @@ func TestBuildWorkflow_LegacyExitLoop(t *testing.T) {
 
 func TestBuildWorkflow_UnknownComponentErrors(t *testing.T) {
 	// A component name that is neither in legacyNoOpNames nor in the
-	// Phase 1 primitive allowlist must produce a clear error from
+	// isKnownPrimitive allowlist must produce a clear error from
 	// BuildWorkflow. Silent acceptance would mask DSL typos until the
 	// workflow failed at runtime.
 	c := &Canvas{

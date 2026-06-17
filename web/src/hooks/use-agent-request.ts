@@ -1043,11 +1043,9 @@ export const useExportAgentLog = () => {
     mutationFn: async (searchParams: IAgentLogsRequest) => {
       const { data } = await fetchAgentLogsByCanvasId(id as string, {
         ...searchParams,
-        page: 1,
-        page_size: 100000,
       });
 
-      return data?.data?.sessions ?? [];
+      return data?.data ?? [];
     },
   });
 
