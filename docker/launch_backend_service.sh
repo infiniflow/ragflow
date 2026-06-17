@@ -203,7 +203,7 @@ run_mysql_migrations() {
         --stages tenant_model_provider,tenant_model_instance,tenant_model,model_id_config \
         --config conf/service_conf.yaml \
         --execute \
-        --database-version "v0.26.0" \
+        --database-version "v0.26.1" \
         --mark-database-version-on-success
     echo "Model provider table migrations completed."
 }
