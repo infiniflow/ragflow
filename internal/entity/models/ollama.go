@@ -516,7 +516,22 @@ func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, err
 	for _, model := range result["models"].([]interface{}) {
 		modelMap := model.(map[string]interface{})
 		modelName := modelMap["name"].(string)
-		models = append(models, ListModelResponse{Name: modelName})
+
+		// Determine model type based on name
+		var modelTypes []string
+		lowerName := strings.ToLower(modelName)
+		if strings.Contains(lowerName, "rerank") || strings.Contains(lowerName, "bge-reranker") {
+			modelTypes = []string{"rerank"}
+		} else if strings.Contains(lowerName, "embed") {
+			modelTypes = []string{"embedding"}
+		} else {
+			modelTypes = []string{"chat"}
+		}
+
+		models = append(models, ListModelResponse{
+			Name:       modelName,
+			ModelTypes: modelTypes,
+		})
 	}
 
 	return models, nil
