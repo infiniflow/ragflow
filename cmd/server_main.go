@@ -234,6 +234,7 @@ func startServer(config *server.Config) {
 	chunkHandler := handler.NewChunkHandler(chunkService, userService)
 	llmHandler := handler.NewLLMHandler(llmService, userService)
 	chatHandler := handler.NewChatHandler(chatService, userService)
+	chatChannelHandler := handler.NewChatChannel()
 	chatSessionHandler := handler.NewChatSessionHandler(chatSessionService, userService)
 	connectorHandler := handler.NewConnectorHandler(connectorService, userService)
 	searchHandler := handler.NewSearchHandler(searchService, userService)
@@ -307,7 +308,7 @@ func startServer(config *server.Config) {
 	adminRuntimeHandler := handler.NewAdminRuntimeHandler(adminRuntimeSelector)
 
 	// Initialize router
-	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler, fileCommitHandler, adminRuntimeHandler)
+	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatChannelHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler, fileCommitHandler, adminRuntimeHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()
