@@ -363,6 +363,9 @@ class OpenRouter(Base):
             supported_parameters = set(model.get("supported_parameters") or [])
 
             model_types = []
+            # Check for rerank models by name pattern
+            if "rerank" in model_name.lower() or "reranker" in model_name.lower():
+                model_types.append(LLMType.RERANK.value)
             if "text" in output_modalities:
                 model_types.append(LLMType.CHAT.value)
             if "embeddings" in output_modalities:
