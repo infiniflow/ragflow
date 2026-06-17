@@ -1022,6 +1022,366 @@ func (s *DatasetService) GetDataset(datasetID, userID string) (map[string]interf
 	return data, common.CodeSuccess, nil
 }
 
+type DatasetConnectorRequest struct {
+	ID        string `json:"id"`
+	AutoParse string `json:"auto_parse,omitempty"`
+}
+
+type UpdateDatasetRequest struct {
+	Name               *string                    `json:"name,omitempty"`
+	Avatar             *string                    `json:"avatar,omitempty"`
+	Description        *string                    `json:"description,omitempty"`
+	Language           *string                    `json:"language,omitempty"`
+	Connectors         *[]DatasetConnectorRequest `json:"connectors,omitempty"`
+	EmbdID             *string                    `json:"embd_id,omitempty"`
+	EmbeddingModel     *string                    `json:"embedding_model,omitempty"`
+	Permission         *string                    `json:"permission,omitempty"`
+	ParserID           *string                    `json:"parser_id,omitempty"`
+	ChunkMethod        *string                    `json:"chunk_method,omitempty"`
+	Pagerank           *int64                     `json:"pagerank,omitempty"`
+	ParserConfig       map[string]interface{}     `json:"parser_config,omitempty"`
+	PipelineID         *string                    `json:"pipeline_id,omitempty"`
+	AutoMetadataConfig *AutoMetadataConfig        `json:"auto_metadata_config,omitempty"`
+	Ext                map[string]interface{}     `json:"ext,omitempty"`
+}
+
+// UpdateDataset Update a dataset
+func (s *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDatasetRequest) (map[string]interface{}, common.ErrorCode, error) {
+	kb, err := s.kbDAO.GetByID(datasetID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, errors.New("Dataset not found")
+		}
+		return nil, common.CodeServerError, errors.New("Database operation failed")
+	}
+
+	if kb == nil || kb.TenantID != tenantID {
+		return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", tenantID, datasetID)
+	}
+
+	connectorsProvided := req.Connectors != nil
+	connectors := make([]DatasetConnectorRequest, 0)
+	if req.Connectors != nil {
+		connectors = *req.Connectors
+	}
+
+	updates := make(map[string]interface{})
+	extUpdates := normalizeDatasetUpdateExt(req.Ext)
+
+	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		if name == "" {
+			return nil, common.CodeDataError, errors.New("String should have at least 1 character")
+		}
+		if len(name) > 128 {
+			return nil, common.CodeDataError, errors.New("String should have at most 128 characters")
+		}
+		updates["name"] = name
+	}
+	if req.Avatar != nil {
+		if len(*req.Avatar) > 65535 {
+			return nil, common.CodeDataError, errors.New("String should have at most 65535 characters")
+		}
+		if err := validateDatasetAvatar(*req.Avatar); err != nil {
+			return nil, common.CodeDataError, err
+		}
+		updates["avatar"] = *req.Avatar
+	}
+	if req.Description != nil {
+		if len(*req.Description) > 65535 {
+			return nil, common.CodeDataError, errors.New("String should have at most 65535 characters")
+		}
+		updates["description"] = *req.Description
+	}
+	if req.Language != nil {
+		language := strings.TrimSpace(*req.Language)
+		if len(language) > 32 {
+			return nil, common.CodeDataError, errors.New("String should have at most 32 characters")
+		}
+		updates["language"] = language
+	}
+	if req.Permission != nil {
+		permission := strings.TrimSpace(*req.Permission)
+		if permission != "me" && permission != "team" {
+			return nil, common.CodeDataError, errors.New("Input should be 'me' or 'team'")
+		}
+		updates["permission"] = permission
+	}
+	if req.PipelineID != nil {
+		pipelineID, err := normalizeDatasetPipelineID(*req.PipelineID)
+		if err != nil {
+			return nil, common.CodeDataError, err
+		}
+		if pipelineID != nil {
+			updates["pipeline_id"] = *pipelineID
+		}
+	}
+
+	for key, value := range extUpdates {
+		if _, exists := updates[key]; !exists {
+			updates[key] = value
+		}
+	}
+
+	parserID, parserIDProvided, err := datasetUpdateParserID(req)
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+	if !parserIDProvided {
+		if extParserID, ok := updates["parser_id"]; ok {
+			parserIDValue, ok := extParserID.(string)
+			if !ok {
+				return nil, common.CodeDataError, errors.New(datasetChunkMethodErrorMessage)
+			}
+			parserID = strings.TrimSpace(parserIDValue)
+			if err := validateDatasetChunkMethod(parserID); err != nil {
+				return nil, common.CodeDataError, err
+			}
+			parserIDProvided = true
+		}
+	}
+	if parserIDProvided {
+		updates["parser_id"] = parserID
+	}
+
+	embdID, embdIDProvided, err := datasetUpdateEmbeddingID(req)
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+	if !embdIDProvided {
+		if extEmbdID, ok := updates["embd_id"]; ok {
+			embdIDValue, ok := extEmbdID.(string)
+			if !ok {
+				return nil, common.CodeDataError, errors.New("Embedding model identifier must follow <model_name>@<provider> format")
+			}
+			embdID = strings.TrimSpace(embdIDValue)
+			if embdID != "" {
+				if err := validateDatasetEmbeddingModel(embdID); err != nil {
+					return nil, common.CodeDataError, err
+				}
+			}
+			embdIDProvided = true
+		}
+	}
+	if embdIDProvided {
+		if embdID == "" {
+			embdID = kb.EmbdID
+		}
+		ok, message := s.verifyEmbeddingAvailability(embdID, tenantID)
+		if !ok {
+			return nil, common.CodeDataError, errors.New(message)
+		}
+		updates["embd_id"] = embdID
+	}
+
+	if req.AutoMetadataConfig != nil {
+		req.ParserConfig = applyAutoMetadataConfig(req.ParserConfig, req.AutoMetadataConfig)
+	}
+	if req.ParserConfig != nil {
+		if err := validateDatasetParserConfigSize(req.ParserConfig); err != nil {
+			return nil, common.CodeDataError, err
+		}
+		if len(req.ParserConfig) > 0 {
+			parserConfig := normalizeDatasetUpdateParserConfig(req.ParserConfig)
+			updates["parser_config"] = common.DeepMergeMaps(kb.ParserConfig, parserConfig)
+		}
+	}
+
+	if req.Pagerank != nil && *req.Pagerank != kb.Pagerank {
+		if *req.Pagerank < 0 || *req.Pagerank > 100 {
+			return nil, common.CodeDataError, errors.New("Input should be less than or equal to 100")
+		}
+		if s.engineType == server.EngineInfinity {
+			return nil, common.CodeDataError, errors.New("'pagerank' can only be set when doc_engine is elasticsearch")
+		}
+		indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
+		if *req.Pagerank > 0 {
+			err = s.docEngine.UpdateChunks(context.Background(), map[string]interface{}{"kb_id": kb.ID}, map[string]interface{}{common.PAGERANK_FLD: *req.Pagerank}, indexName, kb.ID)
+		} else {
+			err = s.docEngine.UpdateChunks(context.Background(), map[string]interface{}{"exists": common.PAGERANK_FLD}, map[string]interface{}{"remove": common.PAGERANK_FLD}, indexName, kb.ID)
+		}
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+		updates["pagerank"] = *req.Pagerank
+	}
+
+	if parserIDProvided && parserID != kb.ParserID {
+		if _, ok := updates["parser_config"]; !ok {
+			updates["parser_config"] = common.GetParserConfig(parserID, nil)
+		}
+	}
+	if kb.PipelineID != nil && parserIDProvided {
+		if _, ok := updates["pipeline_id"]; !ok {
+			updates["pipeline_id"] = ""
+		}
+	}
+
+	if nameValue, ok := updates["name"].(string); ok && strings.ToLower(nameValue) != strings.ToLower(kb.Name) {
+		existing, lookupErr := s.kbDAO.GetByName(nameValue, tenantID)
+		if lookupErr != nil && !dao.IsNotFoundErr(lookupErr) {
+			return nil, common.CodeServerError, errors.New("Database operation failed")
+		}
+		if existing != nil {
+			return nil, common.CodeDataError, fmt.Errorf("Dataset name '%s' already exists", nameValue)
+		}
+	}
+
+	if len(updates) == 0 && !connectorsProvided {
+		return nil, common.CodeDataError, errors.New("No properties were modified")
+	}
+
+	if len(updates) > 0 {
+		if err = s.kbDAO.UpdateByID(kb.ID, updates); err != nil {
+			return nil, common.CodeServerError, errors.New("Update dataset error.(Database error)")
+		}
+	}
+
+	if connectorsProvided {
+		connectorLinks := make([]dao.DatasetConnectorLink, 0, len(connectors))
+		for _, connector := range connectors {
+			connectorID := strings.TrimSpace(connector.ID)
+			if connectorID == "" {
+				return nil, common.CodeDataError, errors.New("connector id is required")
+			}
+			connectorLinks = append(connectorLinks, dao.DatasetConnectorLink{
+				ID:        connectorID,
+				AutoParse: connector.AutoParse,
+			})
+		}
+		if err = s.connectorDAO.LinkDatasetConnectors(kb.ID, connectorLinks); err != nil {
+			return nil, common.CodeServerError, errors.New("Database operation failed")
+		}
+	}
+
+	updatedKB, err := s.kbDAO.GetByID(kb.ID)
+	if err != nil {
+		return nil, common.CodeDataError, errors.New("Dataset updated failed")
+	}
+
+	data := datasetToMap(updatedKB)
+	linkedConnectors, err := s.connectorDAO.ListByDatasetID(kb.ID)
+	if err != nil {
+		return nil, common.CodeServerError, errors.New("Database operation failed")
+	}
+	data["connectors"] = linkedConnectors
+	return data, common.CodeSuccess, nil
+}
+
+func datasetUpdateParserID(req UpdateDatasetRequest) (string, bool, error) {
+	parserID := ""
+	provided := false
+	if req.ParserID != nil {
+		parserID = strings.TrimSpace(*req.ParserID)
+		provided = true
+	}
+	if req.ChunkMethod != nil {
+		parserID = strings.TrimSpace(*req.ChunkMethod)
+		provided = true
+	}
+	if !provided {
+		return "", false, nil
+	}
+	if err := validateDatasetChunkMethod(parserID); err != nil {
+		return "", true, err
+	}
+	return parserID, true, nil
+}
+
+func datasetUpdateEmbeddingID(req UpdateDatasetRequest) (string, bool, error) {
+	embdID := ""
+	provided := false
+	if req.EmbdID != nil {
+		embdID = strings.TrimSpace(*req.EmbdID)
+		provided = true
+	}
+	if req.EmbeddingModel != nil {
+		embdID = strings.TrimSpace(*req.EmbeddingModel)
+		provided = true
+	}
+	if !provided {
+		return "", false, nil
+	}
+	if embdID != "" {
+		if err := validateDatasetEmbeddingModel(embdID); err != nil {
+			return "", true, err
+		}
+	}
+	return embdID, true, nil
+}
+
+func normalizeDatasetUpdateExt(ext map[string]interface{}) map[string]interface{} {
+	if ext == nil {
+		return nil
+	}
+
+	updates := make(map[string]interface{}, len(ext))
+	for key, value := range ext {
+		switch key {
+		case "embedding_model":
+			updates["embd_id"] = value
+		case "chunk_method":
+			updates["parser_id"] = value
+		case "connectors", "auto_metadata_config", "ext", "parse_type":
+			continue
+		default:
+			updates[key] = value
+		}
+	}
+	return updates
+}
+
+func normalizeDatasetUpdateParserConfig(parserConfig map[string]interface{}) map[string]interface{} {
+	normalized := common.DeepMergeMaps(nil, parserConfig)
+	parentChild, _ := normalized["parent_child"].(map[string]interface{})
+	if parentChild == nil {
+		parentChild = map[string]interface{}{}
+	}
+
+	if datasetBoolValue(parentChild["use_parent_child"]) {
+		childrenDelimiter, ok := parentChild["children_delimiter"]
+		if !ok {
+			childrenDelimiter = "\n"
+		}
+		normalized["children_delimiter"] = childrenDelimiter
+		enableChildren, ok := parentChild["use_parent_child"]
+		if !ok {
+			enableChildren = true
+		}
+		normalized["enable_children"] = enableChildren
+	} else {
+		normalized["children_delimiter"] = ""
+		normalized["enable_children"] = false
+		normalized["parent_child"] = map[string]interface{}{}
+	}
+
+	if extFields, ok := normalized["ext"].(map[string]interface{}); ok {
+		delete(normalized, "ext")
+		for key, value := range extFields {
+			normalized[key] = value
+		}
+	}
+
+	return normalized
+}
+
+func datasetBoolValue(value interface{}) bool {
+	switch typedValue := value.(type) {
+	case bool:
+		return typedValue
+	case string:
+		return typedValue == "1" || strings.EqualFold(typedValue, "true")
+	case int:
+		return typedValue != 0
+	case int64:
+		return typedValue != 0
+	case float64:
+		return typedValue != 0
+	default:
+		return false
+	}
+}
+
 // GetMetadataConfig gets the auto-metadata configuration for a dataset.
 func (s *DatasetService) GetMetadataConfig(datasetID, tenantID string) (map[string]interface{}, common.ErrorCode, error) {
 	kb, err := s.kbDAO.GetByIDAndTenantID(datasetID, tenantID)
