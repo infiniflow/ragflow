@@ -732,50 +732,6 @@ func (c *CLI) SetVariable(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// ListUsers lists all users (admin mode only)
-// Returns (result_map, error) - result_map is non-nil for benchmark mode
-func (c *CLI) ListUsers(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	// Check for benchmark iterations
-	iterations := 1
-	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
-		iterations = val
-	}
-
-	if iterations > 1 {
-		// Benchmark mode - return raw result for benchmark stats
-		return c.AdminServerClient.RequestWithIterations("GET", "/admin/users", "admin", nil, nil, iterations)
-	}
-
-	resp, err := c.AdminServerClient.Request("GET", "/admin/users", "admin", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list users: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list users: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list users failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	for _, user := range result.Data {
-		delete(user, "create_date")
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
-}
-
 // DropUser deletes a user (admin mode only)
 func (c *CLI) DropUser(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
@@ -800,39 +756,6 @@ func (c *CLI) DropUser(cmd *Command) (ResponseIf, error) {
 
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("drop user failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
-}
-
-// Show user show user (admin mode only)
-func (c *CLI) ShowUser(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	userName, ok := cmd.Params["user_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("user_name not provided")
-	}
-
-	resp, err := c.AdminServerClient.Request("GET", fmt.Sprintf("/admin/users/%s", userName), "admin", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to show user: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to show user: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("show user failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
@@ -1610,5 +1533,562 @@ func (c *CLI) AdminRemoveServiceCommand(cmd *Command) (ResponseIf, error) {
 	}
 
 	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *CLI) AdminShowUserActivityCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	days, ok := cmd.Params["days"].(int)
+	if !ok {
+		return nil, fmt.Errorf("days not provided")
+	}
+
+	payload := map[string]interface{}{
+		"days": days,
+	}
+
+	resp, err := c.AdminServerClient.Request("GET", "/admin/statistics", "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get statistics: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to get statistics: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("get statistics failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *CLI) AdminShowUserSummaryCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	userName, ok := cmd.Params["user_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("user_name not provided")
+	}
+
+	var datasetName *string
+	dataset, ok := cmd.Params["dataset"].(string)
+	if ok {
+		datasetName = &dataset
+	} else {
+		datasetName = nil
+	}
+
+	payload := map[string]interface{}{
+		"user_name": userName,
+		"dataset":   datasetName,
+	}
+
+	resp, err := c.AdminServerClient.Request("GET", "/admin/statistics", "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get statistics: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to get statistics: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("get statistics failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *CLI) AdminShowUserDatasetCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode == AdminMode {
+		return nil, fmt.Errorf("already in admin mode")
+	}
+
+	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
+		return nil, fmt.Errorf("admin server not added")
+	}
+
+	c.Config.CLIMode = AdminMode
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "switch to admin server"
+	result.Duration = 0
+	return &result, nil
+}
+
+func (c *CLI) AdminShowUserStorageCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode == AdminMode {
+		return nil, fmt.Errorf("already in admin mode")
+	}
+
+	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
+		return nil, fmt.Errorf("admin server not added")
+	}
+
+	c.Config.CLIMode = AdminMode
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "switch to admin server"
+	result.Duration = 0
+	return &result, nil
+}
+
+func (c *CLI) AdminShowUserQuotaCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode == AdminMode {
+		return nil, fmt.Errorf("already in admin mode")
+	}
+
+	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
+		return nil, fmt.Errorf("admin server not added")
+	}
+
+	c.Config.CLIMode = AdminMode
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "switch to admin server"
+	result.Duration = 0
+	return &result, nil
+}
+
+func (c *CLI) AdminShowUserIndexCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode == AdminMode {
+		return nil, fmt.Errorf("already in admin mode")
+	}
+
+	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
+		return nil, fmt.Errorf("admin server not added")
+	}
+
+	c.Config.CLIMode = AdminMode
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "switch to admin server"
+	result.Duration = 0
+	return &result, nil
+}
+
+func (c *CLI) AdminShowUserPermissionCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode == AdminMode {
+		return nil, fmt.Errorf("already in admin mode")
+	}
+
+	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
+		return nil, fmt.Errorf("admin server not added")
+	}
+
+	c.Config.CLIMode = AdminMode
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "switch to admin server"
+	result.Duration = 0
+	return &result, nil
+}
+
+// Show user show user (admin mode only)
+func (c *CLI) AdminShowUserInfoCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	userName, ok := cmd.Params["user_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("user_name not provided")
+	}
+
+	resp, err := c.AdminServerClient.Request("GET", fmt.Sprintf("/admin/users/%s", userName), "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to show user: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to show user: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("show user failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *CLI) AdminShowUsersSummaryCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode == AdminMode {
+		return nil, fmt.Errorf("already in admin mode")
+	}
+
+	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
+		return nil, fmt.Errorf("admin server not added")
+	}
+
+	c.Config.CLIMode = AdminMode
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "switch to admin server"
+	result.Duration = 0
+	return &result, nil
+}
+
+// ListUsers lists all users (admin mode only)
+// Returns (result_map, error) - result_map is non-nil for benchmark mode
+func (c *CLI) AdminListUsersCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	// Check for benchmark iterations
+	iterations := 1
+	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
+		iterations = val
+	}
+
+	if iterations > 1 {
+		// Benchmark mode - return raw result for benchmark stats
+		return c.AdminServerClient.RequestWithIterations("GET", "/admin/users", "admin", nil, nil, iterations)
+	}
+
+	resp, err := c.AdminServerClient.Request("GET", "/admin/users", "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list users: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list users: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list users failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	for _, user := range result.Data {
+		delete(user, "create_date")
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *CLI) AdminListActiveUsersCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode == AdminMode {
+		return nil, fmt.Errorf("already in admin mode")
+	}
+
+	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
+		return nil, fmt.Errorf("admin server not added")
+	}
+
+	c.Config.CLIMode = AdminMode
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "switch to admin server"
+	result.Duration = 0
+	return &result, nil
+}
+
+func (c *CLI) AdminListInactiveUsersCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode == AdminMode {
+		return nil, fmt.Errorf("already in admin mode")
+	}
+
+	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
+		return nil, fmt.Errorf("admin server not added")
+	}
+
+	c.Config.CLIMode = AdminMode
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "switch to admin server"
+	result.Duration = 0
+	return &result, nil
+}
+
+func (c *CLI) AdminListUsersStorageCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode == AdminMode {
+		return nil, fmt.Errorf("already in admin mode")
+	}
+
+	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
+		return nil, fmt.Errorf("admin server not added")
+	}
+
+	c.Config.CLIMode = AdminMode
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "switch to admin server"
+	result.Duration = 0
+	return &result, nil
+}
+
+func (c *CLI) AdminListUsersDocumentsCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode == AdminMode {
+		return nil, fmt.Errorf("already in admin mode")
+	}
+
+	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
+		return nil, fmt.Errorf("admin server not added")
+	}
+
+	c.Config.CLIMode = AdminMode
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "switch to admin server"
+	result.Duration = 0
+	return &result, nil
+}
+func (c *CLI) AdminListUsersIndexCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode == AdminMode {
+		return nil, fmt.Errorf("already in admin mode")
+	}
+
+	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
+		return nil, fmt.Errorf("admin server not added")
+	}
+
+	c.Config.CLIMode = AdminMode
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "switch to admin server"
+	result.Duration = 0
+	return &result, nil
+}
+
+func (c *CLI) AdminListUsersQuotaCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode == AdminMode {
+		return nil, fmt.Errorf("already in admin mode")
+	}
+
+	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
+		return nil, fmt.Errorf("admin server not added")
+	}
+
+	c.Config.CLIMode = AdminMode
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "switch to admin server"
+	result.Duration = 0
+	return &result, nil
+}
+
+func (c *CLI) AdminListUsersPlanCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode == AdminMode {
+		return nil, fmt.Errorf("already in admin mode")
+	}
+
+	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
+		return nil, fmt.Errorf("admin server not added")
+	}
+
+	c.Config.CLIMode = AdminMode
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "switch to admin server"
+	result.Duration = 0
+	return &result, nil
+}
+
+func (c *CLI) AdminShowDataSummaryCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode == AdminMode {
+		return nil, fmt.Errorf("already in admin mode")
+	}
+
+	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
+		return nil, fmt.Errorf("admin server not added")
+	}
+
+	c.Config.CLIMode = AdminMode
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "switch to admin server"
+	result.Duration = 0
+	return &result, nil
+}
+
+func (c *CLI) AdminShowDataStaleCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode == AdminMode {
+		return nil, fmt.Errorf("already in admin mode")
+	}
+
+	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
+		return nil, fmt.Errorf("admin server not added")
+	}
+
+	c.Config.CLIMode = AdminMode
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "switch to admin server"
+	result.Duration = 0
+	return &result, nil
+}
+
+func (c *CLI) AdminShowDataStorageCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode == AdminMode {
+		return nil, fmt.Errorf("already in admin mode")
+	}
+
+	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
+		return nil, fmt.Errorf("admin server not added")
+	}
+
+	c.Config.CLIMode = AdminMode
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "switch to admin server"
+	result.Duration = 0
+	return &result, nil
+}
+
+func (c *CLI) AdminShowDataIndexCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode == AdminMode {
+		return nil, fmt.Errorf("already in admin mode")
+	}
+
+	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
+		return nil, fmt.Errorf("admin server not added")
+	}
+
+	c.Config.CLIMode = AdminMode
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "switch to admin server"
+	result.Duration = 0
+	return &result, nil
+}
+
+func (c *CLI) AdminShowQuotaSummaryCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode == AdminMode {
+		return nil, fmt.Errorf("already in admin mode")
+	}
+
+	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
+		return nil, fmt.Errorf("admin server not added")
+	}
+
+	c.Config.CLIMode = AdminMode
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "switch to admin server"
+	result.Duration = 0
+	return &result, nil
+}
+
+func (c *CLI) AdminPurgeStaleCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode == AdminMode {
+		return nil, fmt.Errorf("already in admin mode")
+	}
+
+	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
+		return nil, fmt.Errorf("admin server not added")
+	}
+
+	c.Config.CLIMode = AdminMode
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "switch to admin server"
+	result.Duration = 0
+	return &result, nil
+}
+
+func (c *CLI) AdminPurgeUserCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode == AdminMode {
+		return nil, fmt.Errorf("already in admin mode")
+	}
+
+	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
+		return nil, fmt.Errorf("admin server not added")
+	}
+
+	c.Config.CLIMode = AdminMode
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "switch to admin server"
+	result.Duration = 0
+	return &result, nil
+}
+
+func (c *CLI) AdminPurgeUsersCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode == AdminMode {
+		return nil, fmt.Errorf("already in admin mode")
+	}
+
+	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
+		return nil, fmt.Errorf("admin server not added")
+	}
+
+	c.Config.CLIMode = AdminMode
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "switch to admin server"
+	result.Duration = 0
 	return &result, nil
 }

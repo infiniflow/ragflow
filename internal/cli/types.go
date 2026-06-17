@@ -41,6 +41,7 @@ const (
 	TokenUser
 	TokenAlter
 	TokenActive
+	TokenInactive
 	TokenAdmin
 	TokenServer
 	TokenAPI
@@ -175,6 +176,18 @@ const (
 	TokenPull
 	TokenPending
 	TokenNoACK
+	TokenAnalyze
+	TokenSummary
+	TokenStorage
+	TokenQuota
+	TokenTree
+	TokenStale
+	TokenDays
+	TokenActivity
+	TokenData
+	TokenPurge
+	TokenPlan
+	TokenPreview
 	TokenLog
 	TokenLevel
 	TokenDebug

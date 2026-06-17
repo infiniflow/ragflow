@@ -219,6 +219,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenAlter, Value: ident}
 	case "ACTIVE":
 		return Token{Type: TokenActive, Value: ident}
+	case "INACTIVE":
+		return Token{Type: TokenInactive, Value: ident}
 	case "ADMIN":
 		return Token{Type: TokenAdmin, Value: ident}
 	case "SERVER":
@@ -487,6 +489,30 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenPending, Value: ident}
 	case "NOACK":
 		return Token{Type: TokenNoACK, Value: ident}
+	case "ANALYZE":
+		return Token{Type: TokenAnalyze, Value: ident}
+	case "SUMMARY":
+		return Token{Type: TokenSummary, Value: ident}
+	case "STORAGE":
+		return Token{Type: TokenStorage, Value: ident}
+	case "QUOTA":
+		return Token{Type: TokenQuota, Value: ident}
+	case "TREE":
+		return Token{Type: TokenTree, Value: ident}
+	case "STALE":
+		return Token{Type: TokenStale, Value: ident}
+	case "DAYS":
+		return Token{Type: TokenDays, Value: ident}
+	case "ACTIVITY":
+		return Token{Type: TokenActivity, Value: ident}
+	case "PURGE":
+		return Token{Type: TokenPurge, Value: ident}
+	case "PREVIEW":
+		return Token{Type: TokenPreview, Value: ident}
+	case "PLAN":
+		return Token{Type: TokenPlan, Value: ident}
+	case "DATA":
+		return Token{Type: TokenData, Value: ident}
 	case "LOG":
 		return Token{Type: TokenLog, Value: ident}
 	case "LEVEL":
