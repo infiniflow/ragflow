@@ -835,9 +835,13 @@ def _struct_filter_key(doc: dict) -> tuple:
 _struct_doc_vec = _find_vec_field
 
 
-def _struct_union_chunk_ids(a: list, b: list) -> list:
+def _struct_union_chunk_ids(*chunk_id_lists) -> list:
     """Order-preserving union (compat shim — prefer ``_common.union_ordered``)."""
-    return _union_ordered(a, b)
+    normalized = [
+        [chunk_ids] if isinstance(chunk_ids, str) else chunk_ids
+        for chunk_ids in chunk_id_lists
+    ]
+    return _union_ordered(*normalized)
 
 
 async def _struct_merge_pair(existing: dict, incoming: dict, chat_mdl) -> dict | None:
@@ -1237,7 +1241,7 @@ async def merge_compiled_structures(
     embd_mdl,
     tenant_id: str,
     kb_id: str,
-    similarity_threshold: float = 0.95,
+    similarity_threshold: float = 0.96,
     compilation_template_id: str | None = None,
 ) -> dict:
     """Merge ``docs`` (the output of ``compile_structure_from_text``) before
