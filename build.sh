@@ -16,6 +16,7 @@ CPP_DIR="$PROJECT_ROOT/internal/cpp"
 BUILD_DIR="$CPP_DIR/cmake-build-release"
 RAGFLOW_SERVER_BINARY="$PROJECT_ROOT/bin/ragflow_server"
 ADMIN_SERVER_BINARY="$PROJECT_ROOT/bin/admin_server"
+INGESTOR_BINARY="$PROJECT_ROOT/bin/ingestor"
 RAGFLOW_CLI_BINARY="$PROJECT_ROOT/bin/ragflow_cli"
 
 # office_oxide native library settings
@@ -261,13 +262,16 @@ build_go() {
     export CGO_LDFLAGS="-L${OFFICE_OXIDE_PREFIX}/lib -loffice_oxide -Wl,-rpath,${OFFICE_OXIDE_PREFIX}/lib${CGO_LDFLAGS:+ $CGO_LDFLAGS}"
     echo "Exporting CGO_LDFLAGS: $CGO_LDFLAGS"
 
-    echo "Building RAGFlow binary: $RAGFLOW_SERVER_BINARY, $ADMIN_SERVER_BINARY, and $RAGFLOW_CLI_BINARY"
+    echo "Building RAGFlow binary: $RAGFLOW_SERVER_BINARY, $ADMIN_SERVER_BINARY, $INGESTOR_BINARY, and $RAGFLOW_CLI_BINARY"
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
         go build -o "$RAGFLOW_SERVER_BINARY" cmd/server_main.go
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
         go build -o "$ADMIN_SERVER_BINARY" cmd/admin_server.go
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
+        CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
+        go build -o "$INGESTOR_BINARY" cmd/ingestor.go
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
         go build -o "$RAGFLOW_CLI_BINARY" cmd/ragflow_cli.go
@@ -282,9 +286,15 @@ build_go() {
         exit 1
     fi
 
+    if [ ! -f "$INGESTOR_BINARY" ]; then
+        echo -e "${RED}Error: Failed to build Ingestor binary${NC}"
+        exit 1
+    fi
+
     echo -e "${GREEN}✓ Go ragflow_server built successfully: $RAGFLOW_SERVER_BINARY${NC}"
     echo -e "${GREEN}✓ Go admin_server built successfully: $ADMIN_SERVER_BINARY${NC}"
     echo -e "${GREEN}✓ Go ragflow_cli built successfully: $RAGFLOW_CLI_BINARY${NC}"
+    echo -e "${GREEN}✓ Go ingestor built successfully: $INGESTOR_BINARY${NC}"
 }
 
 # Clean build artifacts
@@ -294,6 +304,8 @@ clean() {
     rm -rf "$BUILD_DIR"
     rm -f "$RAGFLOW_SERVER_BINARY"
     rm -f "$ADMIN_SERVER_BINARY"
+    rm -f "$INGESTOR_BINARY"
+    rm -f "$RAGFLOW_CLI_BINARY"
 
     echo -e "${GREEN}✓ Build artifacts cleaned${NC}"
 }
@@ -308,6 +320,10 @@ run() {
         echo -e "${RED}Error: $RAGFLOW_SERVER_BINARY not found. Build first with --all or --go${NC}"
         exit 1
     fi
+    if [ ! -f "$INGESTOR_BINARY" ]; then
+        echo -e "${RED}Error: $INGESTOR_BINARY not found. Build first with --all or --go${NC}"
+        exit 1
+    fi
 
     cd "$PROJECT_ROOT"
 
@@ -320,6 +336,12 @@ run() {
 
     # Give admin_server a moment to bind its listening port (9383) before
     # ragflow_server starts sending heartbeats to it.
+    sleep 1
+
+    print_section "Starting ingestor (background)"
+    "$INGESTOR_BINARY" &
+    INGESTOR_PID=$!
+    trap 'kill "$INGESTOR_PID" 2>/dev/null || true' EXIT INT TERM
     sleep 1
 
     print_section "Starting RAGFlow server (foreground)"
@@ -396,7 +418,7 @@ main() {
             build_cpp
             build_go
             echo -e "\n${GREEN}=== Build completed successfully! ===${NC}"
-            echo "Binary: $RAGFLOW_SERVER_BINARY, $ADMIN_SERVER_BINARY"
+            echo "Binary: $RAGFLOW_SERVER_BINARY, $ADMIN_SERVER_BINARY, $INGESTOR_BINARY, $RAGFLOW_CLI_BINARY"
             ;;
         *)
             echo -e "${RED}Unknown option: $1${NC}"
