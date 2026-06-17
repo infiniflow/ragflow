@@ -960,10 +960,11 @@ optionsLoop:
 		if modelIndex >= len(modelNames) {
 			return nil, fmt.Errorf("too many model configs: got more configs than model names")
 		}
+		currentModelName := modelNames[modelIndex]
 		switch p.curToken.Type {
 		case TokenThink:
 			if supportThink != nil {
-				return nil, fmt.Errorf("think model is already set for model %s", modelNames[modelIndex])
+				return nil, fmt.Errorf("think model is already set for model %s", currentModelName)
 			}
 			value := true
 			supportThink = &value
@@ -1022,7 +1023,7 @@ optionsLoop:
 		case TokenToken, TokenTokens:
 			p.nextToken()
 			if maxTokens != 0 {
-				return nil, fmt.Errorf("max tokens is already given %d for model %s", maxTokens, modelNames[modelIndex])
+				return nil, fmt.Errorf("max tokens is already given %d for model %s", maxTokens, currentModelName)
 			}
 			if p.curToken.Type != TokenInteger {
 				return nil, fmt.Errorf("expected integer")
@@ -1036,7 +1037,7 @@ optionsLoop:
 
 		case TokenComma, TokenSemicolon, TokenEOF:
 			if len(modelTypes) == 0 {
-				return nil, fmt.Errorf("model type is required for model %s", modelNames[modelIndex])
+				return nil, fmt.Errorf("model type is required for model %s", currentModelName)
 			}
 
 			seenTypes := make(map[string]struct{}, len(modelTypes))
@@ -1058,11 +1059,11 @@ optionsLoop:
 
 			modelTypes = dedupedModelTypes
 			if len(modelTypes) == 0 {
-				return nil, fmt.Errorf("model type is required for model %s", modelNames[modelIndex])
+				return nil, fmt.Errorf("model type is required for model %s", currentModelName)
 			}
 
 			model := map[string]any{
-				"model_name":  modelNames[modelIndex],
+				"model_name":  currentModelName,
 				"model_types": modelTypes,
 				"max_tokens":  maxTokens,
 			}
