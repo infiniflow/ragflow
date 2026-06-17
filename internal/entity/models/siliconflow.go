@@ -118,6 +118,16 @@ func (s *SiliconflowModel) ChatWithMessages(modelName string, messages []Message
 		if chatModelConfig.Stop != nil {
 			reqBody["stop"] = *chatModelConfig.Stop
 		}
+
+		if chatModelConfig.Thinking != nil {
+			thinkingType := "disabled"
+			if *chatModelConfig.Thinking {
+				thinkingType = "enabled"
+			}
+			reqBody["thinking"] = map[string]interface{}{
+				"type": thinkingType,
+			}
+		}
 	}
 
 	// Qwen3 family: disable thinking by default (matches Python's

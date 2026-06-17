@@ -61,6 +61,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -239,21 +240,10 @@ func (p *SelfManagedProvider) ExecuteCode(
 		timeout = int(p.timeout.Seconds())
 	}
 
-	// Wrap the code in the result-protocol driver so the user's
-	// main() return value comes back as a structured result.
-	argsJSON, err := argsToJSON(args)
-	if err != nil {
-		return nil, err
-	}
-	var wrapped string
-	if lang == "python" {
-		wrapped = BuildPythonWrapper(code, argsJSON)
-	} else {
-		wrapped = BuildJavaScriptWrapper(code, argsJSON)
-	}
-
 	payload := map[string]any{
-		"code_b64":  base64.StdEncoding.EncodeToString([]byte(wrapped)),
+		// executor_manager wraps the raw user code on the server side.
+		// Do not pre-wrap here or we risk double-execution semantics.
+		"code_b64":  base64.StdEncoding.EncodeToString([]byte(code)),
 		"language":  lang,
 		"arguments": args,
 	}
@@ -314,12 +304,11 @@ func (p *SelfManagedProvider) ExecuteCode(
 	// container exec), the Go side still gets the value.
 	stdout, structured := ExtractStructuredResult(raw.Stdout)
 
-	// Prefer the server-side result when present; fall back to
-	// the client-side extract.
-	if raw.Result != nil {
-		if v, ok := raw.Result["present"].(bool); ok && v {
-			structured = raw.Result
-		}
+	// Prefer the server-side result whenever it is present in the
+	// HTTP payload. executor_manager already parsed the canonical
+	// result marker; this is the most reliable source of truth.
+	if len(raw.Result) > 0 {
+		structured = raw.Result
 	}
 
 	metadata := map[string]any{
@@ -334,6 +323,8 @@ func (p *SelfManagedProvider) ExecuteCode(
 		"runtime_error_type":  raw.RuntimeErr,
 		"structured_result":   structured,
 	}
+	log.Printf("DEBUG CodeExec self_managed: http_result=%#v structured_result=%#v stdout=%q stderr=%q exit_code=%d",
+		raw.Result, structured, stdout, raw.Stderr, raw.ExitCode)
 
 	return &ExecutionResult{
 		Stdout:        stdout,

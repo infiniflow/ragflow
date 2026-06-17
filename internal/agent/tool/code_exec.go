@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
@@ -69,6 +70,7 @@ type codeExecArgs struct {
 type codeExecResult struct {
 	Content     string           `json:"content,omitempty"`
 	ActualType  string           `json:"actual_type,omitempty"`
+	RawResult   any              `json:"raw_result,omitempty"`
 	Stub        bool             `json:"stub,omitempty"`
 	Error       string           `json:"_ERROR,omitempty"`
 	ExitCode    int              `json:"exit_code,omitempty"`
@@ -142,12 +144,14 @@ func (c *CodeExecTool) InvokableRun(ctx context.Context, argumentsInJSON string,
 	// ErrCodeExecSandboxMissing; once a real client is
 	// installed via SetSandboxClient at boot, the script runs.
 	client := GetSandboxClient()
-	resp, err := client.ExecuteCode(ctx, SandboxRequest{
+	req := SandboxRequest{
 		Lang:      lang,
 		Script:    script,
 		Arguments: args.Args,
 		Timeout:   args.Timeout,
-	})
+	}
+	log.Printf("DEBUG CodeExec tool invoke: lang=%q timeout=%d arguments=%#v script=%q", req.Lang, req.Timeout, req.Arguments, req.Script)
+	resp, err := client.ExecuteCode(ctx, req)
 	if err != nil {
 		return codeExecStubResult(err.Error()), err
 	}
@@ -183,20 +187,34 @@ func codeExecResultJSON(r *SandboxResponse) (string, error) {
 		return codeExecStubResult("empty response"), nil
 	}
 	out := codeExecResult{
-		Content:  r.Returned,
 		ExitCode: r.ExitCode,
 		Stdout:   r.Stdout,
 		Stderr:   r.Stderr,
-	}
-	if r.StructuredResult != nil {
-		if v, ok := r.StructuredResult["actual_type"].(string); ok {
-			out.ActualType = v
-		}
 	}
 	if r.Metadata != nil {
 		out.Artifacts = extractArtifactList(r.Metadata, "artifacts")
 		out.Attachments = extractArtifactList(r.Metadata, "attachments")
 	}
+	hasStructuredResult := false
+	resolvedValue, usedStdoutFallback := resolveCodeExecResultValue(r)
+	if r.StructuredResult != nil {
+		hasStructuredResult, _ = r.StructuredResult["present"].(bool)
+	}
+	if strings.TrimSpace(r.Stderr) != "" &&
+		!hasStructuredResult &&
+		len(out.Artifacts) == 0 &&
+		strings.TrimSpace(r.Stdout) == "" {
+		out.Error = r.Stderr
+	} else {
+		if usedStdoutFallback && strings.TrimSpace(r.Stdout) != "" {
+			fmt.Fprintln(os.Stderr, "code_exec: falling back to stdout deserialization because no structured result metadata was provided")
+		}
+		out.RawResult = NormalizeCodeExecOutputValue(resolvedValue)
+		out.ActualType = InferCodeExecActualType(out.RawResult)
+		out.Content = RenderCodeExecCanonicalContent(out.RawResult)
+	}
+	log.Printf("DEBUG CodeExec tool: structured_result=%#v resolved_value=%#v raw_result=%#v content=%q actual_type=%q stderr=%q stdout=%q",
+		r.StructuredResult, resolvedValue, out.RawResult, out.Content, out.ActualType, r.Stderr, r.Stdout)
 	b, err := json.Marshal(out)
 	if err != nil {
 		return "", fmt.Errorf("code_exec: marshal result: %w", err)
@@ -238,6 +256,27 @@ func codeExecStubResult(msg string) string {
 		return fmt.Sprintf(`{"_ERROR":"code_exec: marshal stub: %s","stub":true}`, err)
 	}
 	return string(b)
+}
+
+func resolveCodeExecResultValue(r *SandboxResponse) (any, bool) {
+	if r != nil && r.StructuredResult != nil {
+		if present, _ := r.StructuredResult["present"].(bool); present {
+			return r.StructuredResult["value"], false
+		}
+	}
+	return deserializeCodeExecStdout(r.Stdout), true
+}
+
+func deserializeCodeExecStdout(stdout string) any {
+	text := strings.TrimSpace(stdout)
+	if text == "" {
+		return ""
+	}
+	var decoded any
+	if err := json.Unmarshal([]byte(text), &decoded); err == nil {
+		return decoded
+	}
+	return text
 }
 
 // normalizeCodeExecLang accepts the model's literal "language" or the

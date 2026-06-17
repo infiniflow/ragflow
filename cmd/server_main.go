@@ -40,6 +40,7 @@ import (
 	"go.uber.org/zap"
 
 	"ragflow/internal/agent/audio"
+	_ "ragflow/internal/agent/component" // blank import: registers every Component factory (Begin / Agent / LLM / Message / Retrieval / ...) into the shared runtime at package init
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/dao"

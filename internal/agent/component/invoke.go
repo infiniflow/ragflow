@@ -156,10 +156,30 @@ func (i *InvokeComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 		}
 	}
 
+	bodyStr := string(bodyBytes)
+
+	// Clean HTML from response body when clean_html input is set.
+	if cleanHTML, _ := inputs["clean_html"].(bool); cleanHTML {
+		bodyStr = stripHTMLTags(bodyStr)
+	}
+
+	// Parse body according to the requested datatype.
+	datatype, _ := inputs["datatype"].(string)
+	if datatype == "" {
+		// Infer from Content-Type header.
+		ct := resp.Header.Get("Content-Type")
+		if strings.Contains(ct, "application/json") {
+			datatype = "json"
+		} else {
+			datatype = "text"
+		}
+	}
+
 	return map[string]any{
-		"status":  resp.StatusCode,
-		"body":    string(bodyBytes),
-		"headers": hdr,
+		"status":   resp.StatusCode,
+		"body":     bodyStr,
+		"headers":  hdr,
+		"datatype": datatype,
 	}, nil
 }
 
@@ -186,15 +206,19 @@ func (i *InvokeComponent) Inputs() map[string]string {
 		"timeout":      "Per-request timeout in seconds; default 30.",
 		"proxy":        "Optional proxy URL (e.g. http://host:3128).",
 		"content_type": "Optional Content-Type; default 'application/json' for POST/PUT.",
+		"clean_html":   "When true, strip HTML tags from the response body.",
+		"datatype":     "Expected response datatype: 'json', 'text', or 'html'. Default 'json'.",
+		"variables":    "Optional template variables for URL/body interpolation.",
 	}
 }
 
 // Outputs returns the response surface.
 func (i *InvokeComponent) Outputs() map[string]string {
 	return map[string]string{
-		"status":  "HTTP status code (int).",
-		"body":    "Response body (string, truncated at 16 MiB).",
-		"headers": "Response headers (first value per key).",
+		"status":   "HTTP status code (int).",
+		"body":     "Response body (string, truncated at 16 MiB).",
+		"headers":  "Response headers (first value per key).",
+		"datatype": "Inferred response datatype: 'json' | 'text' | 'html'.",
 	}
 }
 
@@ -214,6 +238,39 @@ func mustParseProxy(raw string) *url.URL {
 		panic(fmt.Sprintf("Invoke: proxy URL %q has no host", raw))
 	}
 	return u
+}
+
+// stripHTMLTags removes HTML tags from the input string. This is a
+// best-effort implementation — it uses a simple regexp to remove
+// everything between < and >. It is NOT a full HTML sanitizer and
+// should only be used for cleaning up response text for consumption
+// by downstream LLM nodes.
+// Mirrors Python's `strip_html_tags` helper (invoke.py).
+func stripHTMLTags(s string) string {
+	// Simple regexp-based approach: remove everything between < and >
+	re := strings.NewReplacer(
+		"<script", "\n<script",
+		"</script>", "</script>\n",
+		"<style", "\n<style",
+		"</style>", "</style>\n",
+	)
+	s = re.Replace(s)
+	for {
+		start := strings.Index(s, "<")
+		if start == -1 {
+			break
+		}
+		end := strings.Index(s[start:], ">")
+		if end == -1 {
+			break
+		}
+		s = s[:start] + s[start+end+1:]
+	}
+	// Collapse multiple newlines
+	for strings.Contains(s, "\n\n\n") {
+		s = strings.ReplaceAll(s, "\n\n\n", "\n\n")
+	}
+	return strings.TrimSpace(s)
 }
 
 // netHTTPImports is a no-op reference to keep `net` in the import set

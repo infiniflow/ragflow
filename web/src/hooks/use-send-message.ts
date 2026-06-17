@@ -1,5 +1,6 @@
 import message from '@/components/ui/message';
 import { Authorization } from '@/constants/authorization';
+import { ResponseType } from '@/interfaces/database/base';
 import { IReferenceObject } from '@/interfaces/database/chat';
 import { BeginQuery } from '@/pages/agent/interface';
 import { getAuthorization } from '@/utils/authorization-util';
@@ -122,8 +123,30 @@ export const useSendMessageBySSE = (url: string) => {
           body: JSON.stringify(body),
           signal: controller?.signal || sseRef.current?.signal,
         });
-
-        const res = response.clone().json();
+        if (!response.ok) {
+          let errorMessage = response.statusText || 'Request failed';
+          try {
+            const errorBody = (await response
+              .clone()
+              .json()) as Partial<ResponseType>;
+            if (typeof errorBody?.message === 'string' && errorBody.message) {
+              errorMessage = errorBody.message;
+            }
+          } catch {
+            // Non-JSON error body; fall back to the HTTP status text.
+          }
+          setDone(true);
+          resetAnswerList();
+          return {
+            response,
+            data: {
+              code: response.status,
+              data: null,
+              message: errorMessage,
+              status: response.status,
+            },
+          };
+        }
 
         const reader = response?.body
           ?.pipeThrough(new TextDecoderStream())
@@ -185,7 +208,15 @@ export const useSendMessageBySSE = (url: string) => {
         console.info('done?');
         setDone(true);
         resetAnswerList();
-        return { data: await res, response };
+        return {
+          response,
+          data: {
+            code: 0,
+            data: true,
+            message: 'success',
+            status: response.status,
+          },
+        };
       } catch (e) {
         setDone(true);
         resetAnswerList();

@@ -193,8 +193,12 @@ func TestCodeExec_ResultSurfacesActualType(t *testing.T) {
 	t.Parallel()
 
 	resp := &SandboxResponse{
-		Returned:         `{"x": 1}`,
-		StructuredResult: map[string]any{"actual_type": "Object"},
+		StructuredResult: map[string]any{
+			"present": true,
+			"value": map[string]any{
+				"x": float64(1),
+			},
+		},
 	}
 	out, err := codeExecResultJSON(resp)
 	if err != nil {
@@ -207,8 +211,67 @@ func TestCodeExec_ResultSurfacesActualType(t *testing.T) {
 	if got.ActualType != "Object" {
 		t.Errorf("ActualType = %q, want Object", got.ActualType)
 	}
-	if got.Content != `{"x": 1}` {
-		t.Errorf("Content = %q, want %q", got.Content, `{"x": 1}`)
+	if got.Content != "{\n  \"x\": 1\n}" {
+		t.Errorf("Content = %q, want pretty JSON object", got.Content)
+	}
+}
+
+func TestCodeExec_ResultUsesStructuredResultValue(t *testing.T) {
+	t.Parallel()
+
+	resp := &SandboxResponse{
+		Returned: "8",
+		StructuredResult: map[string]any{
+			"present": true,
+			"value":   float64(8),
+		},
+	}
+	out, err := codeExecResultJSON(resp)
+	if err != nil {
+		t.Fatalf("codeExecResultJSON: %v", err)
+	}
+	var got map[string]any
+	if jerr := json.Unmarshal([]byte(out), &got); jerr != nil {
+		t.Fatalf("output not valid JSON: %v", jerr)
+	}
+	if got["raw_result"] != float64(8) {
+		t.Fatalf("raw_result = %#v, want 8", got["raw_result"])
+	}
+	if got["content"] != "8" {
+		t.Fatalf("content = %#v, want \"8\"", got["content"])
+	}
+	if got["actual_type"] != "Number" {
+		t.Fatalf("actual_type = %#v, want Number", got["actual_type"])
+	}
+}
+
+func TestCodeExec_ResultFallsBackToStdoutJSON(t *testing.T) {
+	t.Parallel()
+
+	resp := &SandboxResponse{
+		Stdout: `{"a":[1,2]}`,
+	}
+	out, err := codeExecResultJSON(resp)
+	if err != nil {
+		t.Fatalf("codeExecResultJSON: %v", err)
+	}
+	var got map[string]any
+	if jerr := json.Unmarshal([]byte(out), &got); jerr != nil {
+		t.Fatalf("output not valid JSON: %v", jerr)
+	}
+	raw, ok := got["raw_result"].(map[string]any)
+	if !ok {
+		t.Fatalf("raw_result type = %T, want map[string]any", got["raw_result"])
+	}
+	arr, ok := raw["a"].([]any)
+	if !ok || len(arr) != 2 || arr[0] != float64(1) || arr[1] != float64(2) {
+		t.Fatalf("raw_result[a] = %#v, want [1 2]", raw["a"])
+	}
+	if got["actual_type"] != "Object" {
+		t.Fatalf("actual_type = %#v, want Object", got["actual_type"])
+	}
+	if got["content"] != "{\n  \"a\": [\n    1,\n    2\n  ]\n}" {
+		t.Fatalf("content = %#v, want pretty JSON", got["content"])
 	}
 }
 

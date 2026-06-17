@@ -34,7 +34,7 @@ import nltk
 # Reuse data already fetched by download_deps.py (the directory the app exports
 # as NLTK_DATA) so provisioned environments do not download it again.
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
-_LOCAL_NLTK_DATA = os.path.join(_REPO_ROOT, "nltk_data")
+_LOCAL_NLTK_DATA = os.path.join(_REPO_ROOT, "ragflow_deps", "nltk_data")
 if os.path.isdir(_LOCAL_NLTK_DATA) and _LOCAL_NLTK_DATA not in nltk.data.path:
     nltk.data.path.insert(0, _LOCAL_NLTK_DATA)
 

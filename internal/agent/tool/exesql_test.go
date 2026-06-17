@@ -339,8 +339,11 @@ func TestExeSQL_UnsupportedDB(t *testing.T) {
 		Username: "u", Password: "p",
 	})
 	_, err := e.InvokableRun(context.Background(), `{"sql":"SELECT 1"}`)
-	if !errors.Is(err, ErrExeSQLUnsupportedDB) {
-		t.Fatalf("err = %v, want ErrExeSQLUnsupportedDB", err)
+	if err == nil {
+		t.Fatal("expected non-nil error for trino without registered driver")
+	}
+	if errors.Is(err, ErrExeSQLUnsupportedDB) {
+		t.Fatalf("err = %v, did not want ErrExeSQLUnsupportedDB after trino wiring", err)
 	}
 }
 

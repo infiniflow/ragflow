@@ -72,8 +72,6 @@ func TestRetrieval_DelegatesToRealWrapper(t *testing.T) {
 // SearchMyDataset → Retrieval alias resolves to the real wrapper
 // (not the stub).
 func TestSearchMyDataset_AliasDelegatesToRealWrapper(t *testing.T) {
-	t.Parallel()
-
 	prev := agenttool.GetRetrievalService()
 	agenttool.SetSimpleRetrievalService()
 	t.Cleanup(func() { agenttool.SetRetrievalService(prev) })

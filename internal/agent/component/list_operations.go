@@ -45,6 +45,42 @@ import (
 
 const componentNameListOperations = "ListOperations"
 
+// listOpPanic is the sentinel value that opNth/opHead/opTail panic with
+// in strict-mode range errors. Invoke()'s defer/recover converts these
+// into a typed error; any other panic is re-raised unchanged so a real
+// bug in operator code is not masked as a "ListOperations: ..." error.
+//
+// Mirrors agent/component/list_operations.py:_raise_strict_range_error
+// (raises ValueError, caught by the canvas framework).
+type listOpPanic struct{ msg string }
+
+func (p *listOpPanic) Error() string { return p.msg }
+
+// strictRangePanic builds the panic value raised by opNth/opHead/opTail
+// in strict mode. The result is recoverable by Invoke()'s defer/recover;
+// callers use it as `panic(strictRangePanic("head", n))`.
+func strictRangePanic(op string, n int) *listOpPanic {
+	return &listOpPanic{
+		msg: fmt.Sprintf("ListOperations: %s requires n to be within the valid range in strict mode, got %d", op, n),
+	}
+}
+
+// coerceBool mirrors Python's _is_strict accept-list. Bools pass through;
+// the strings "1", "true", "yes", "on" (any case) are accepted; everything
+// else is false. Mirrors agent/component/list_operations.py:79-82.
+func coerceBool(v any) bool {
+	if b, ok := v.(bool); ok {
+		return b
+	}
+	if s, ok := v.(string); ok {
+		switch strings.ToLower(strings.TrimSpace(s)) {
+		case "1", "true", "yes", "on":
+			return true
+		}
+	}
+	return false
+}
+
 // listOperationsParam is the static configuration.
 type listOperationsParam struct {
 	Query      string         `json:"query"`
@@ -52,6 +88,7 @@ type listOperationsParam struct {
 	N          int            `json:"n"`
 	Strict     bool           `json:"strict"`
 	SortMethod string         `json:"sort_method"`
+	SortBy     []string       `json:"sort_by"`
 	Filter     map[string]any `json:"filter"`
 }
 
@@ -65,20 +102,31 @@ func (p *listOperationsParam) Update(conf map[string]any) error {
 	if p.Operations == "" {
 		p.Operations = "nth"
 	}
+	p.Operations = normalizeListOperationName(p.Operations)
 	p.N = toInt(conf["n"])
-	if s, ok := conf["strict"].(bool); ok {
-		p.Strict = s
+	if v, ok := conf["strict"]; ok {
+		p.Strict = coerceBool(v)
 	}
 	p.SortMethod, _ = conf["sort_method"].(string)
 	if p.SortMethod == "" {
 		p.SortMethod = "asc"
 	}
+	p.SortBy = parseSortByFieldList(conf["sort_by"])
 	if f, ok := conf["filter"].(map[string]any); ok {
 		p.Filter = f
 	} else {
 		p.Filter = map[string]any{}
 	}
 	return nil
+}
+
+func normalizeListOperationName(op string) string {
+	switch strings.ToLower(strings.TrimSpace(op)) {
+	case "topn":
+		return "head"
+	default:
+		return op
+	}
 }
 
 // Check validates the param.
@@ -106,12 +154,65 @@ func (p *listOperationsParam) AsDict() map[string]any {
 		"n":           p.N,
 		"strict":      p.Strict,
 		"sort_method": p.SortMethod,
+		"sort_by":     p.SortBy,
 		"filter":      p.Filter,
 	}
 }
 
+// parseSortByFieldList normalises the DSL `sort_by` field. The DSL
+// takes a comma-separated string ("score" or "score,title") and the
+// Python param layer accepts the same shape (see
+// agent/component/list_operations.py:_sort). A nil/empty/whitespace
+// input collapses to nil so opSort can fall back to the legacy
+// hashableKey behaviour (sort by the lexicographically first field).
+func parseSortByFieldList(v any) []string {
+	if v == nil {
+		return nil
+	}
+	var raw string
+	switch x := v.(type) {
+	case string:
+		raw = x
+	case []any:
+		// Tolerate the JSON-array form some editors emit: ["score"].
+		parts := make([]string, 0, len(x))
+		for _, item := range x {
+			if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+				parts = append(parts, strings.TrimSpace(s))
+			}
+		}
+		return parts
+	case []string:
+		parts := make([]string, 0, len(x))
+		for _, s := range x {
+			if s = strings.TrimSpace(s); s != "" {
+				parts = append(parts, s)
+			}
+		}
+		return parts
+	default:
+		return nil
+	}
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // toInt coerces a value to int. Floats are truncated; strings parsed
-// via Atoi; everything else falls back to 0.
+// via Atoi; bools follow Python's int() semantics (true → 1, false → 0);
+// everything else falls back to 0. Mirrors Python's _coerce_n in
+// agent/component/list_operations.py:73-77.
 func toInt(v any) int {
 	switch x := v.(type) {
 	case int:
@@ -124,6 +225,11 @@ func toInt(v any) int {
 		var n int
 		fmt.Sscanf(x, "%d", &n)
 		return n
+	case bool:
+		if x {
+			return 1
+		}
+		return 0
 	}
 	return 0
 }
@@ -157,18 +263,36 @@ func (l *ListOperationsComponent) Name() string { return l.name }
 // the configured operation. The transformed list is returned at
 // outputs["result"], with outputs["first"] / outputs["last"] set to
 // the first / last element of the result (or nil for an empty result).
-func (l *ListOperationsComponent) Invoke(ctx context.Context, _ map[string]any) (map[string]any, error) {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
-	if err != nil {
-		return nil, fmt.Errorf("ListOperations: %w", err)
+//
+// A defer/recover at the top of this function converts any
+// *listOpPanic raised by opNth/opHead/opTail (strict-mode range
+// errors) into a returned error. Any other panic is re-raised so a
+// real bug in the operator code is not masked as a "ListOperations:
+// ..." error.
+func (l *ListOperationsComponent) Invoke(ctx context.Context, _ map[string]any) (result map[string]any, err error) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			return
+		}
+		if lp, ok := r.(*listOpPanic); ok {
+			err = lp
+			return
+		}
+		panic(r)
+	}()
+
+	state, _, serr := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	if serr != nil {
+		return nil, fmt.Errorf("ListOperations: %w", serr)
 	}
 	if state == nil {
 		return nil, fmt.Errorf("ListOperations: nil canvas state")
 	}
 
-	raw, err := state.GetVar(l.param.Query)
-	if err != nil {
-		return nil, fmt.Errorf("ListOperations: query %q: %w", l.param.Query, err)
+	raw, serr := state.GetVar(l.param.Query)
+	if serr != nil {
+		return nil, fmt.Errorf("ListOperations: query %q: %w", l.param.Query, serr)
 	}
 	items, ok := raw.([]any)
 	if !ok {
@@ -189,6 +313,8 @@ func (l *ListOperationsComponent) Invoke(ctx context.Context, _ map[string]any) 
 		out = l.opSort(items)
 	case "drop_duplicates":
 		out = l.opDropDuplicates(items)
+	default:
+		return nil, fmt.Errorf("ListOperations: unsupported operation %q", l.param.Operations)
 	}
 
 	first, last := any(nil), any(nil)
@@ -215,9 +341,19 @@ func (l *ListOperationsComponent) Stream(ctx context.Context, inputs map[string]
 	return ch, nil
 }
 
-// Inputs returns an empty surface — all config is in the param.
+// Inputs returns the public parameter surface (declared so the editor
+// can render per-input hints). All values map to the static DSL param
+// unless overridden via the orchestrator's input map.
 func (l *ListOperationsComponent) Inputs() map[string]string {
-	return map[string]string{}
+	return map[string]string{
+		"query":       "List reference or data to operate on. Overrides the static DSL param.",
+		"operations":  "Operation: nth, head, tail, filter, sort, drop_duplicates. Overrides DSL param.",
+		"n":           "N value for nth/head/tail operations. Overrides DSL param.",
+		"strict":      "When true, index-out-of-range is fatal. Accepts bool or '1'/'true'/'yes'/'on' (case-insensitive). Default false.",
+		"sort_method": "Sort direction: 'asc' or 'desc'. Overrides DSL param.",
+		"sort_by":     "Comma-separated list of map keys to sort by (primary, tiebreak, ...). Empty/missing falls back to lexicographically first key. Overrides DSL param.",
+		"filter":      "Filter spec: {operator, value}. Operator is one of: =, ≠, contains, start with, end with. Overrides DSL param.",
+	}
 }
 
 // Outputs returns the transformed list plus head/tail scalars.
@@ -235,7 +371,7 @@ func (l *ListOperationsComponent) opNth(items []any) []any {
 	n := l.param.N
 	if n == 0 {
 		if l.param.Strict {
-			panic(fmt.Sprintf("ListOperations: nth requires n to be within the valid range in strict mode, got %d", n))
+			panic(strictRangePanic("nth", n))
 		}
 		return []any{}
 	}
@@ -244,7 +380,7 @@ func (l *ListOperationsComponent) opNth(items []any) []any {
 			return []any{items[n-1]}
 		}
 		if l.param.Strict {
-			panic(fmt.Sprintf("ListOperations: nth requires n to be within the valid range in strict mode, got %d", n))
+			panic(strictRangePanic("nth", n))
 		}
 		return []any{}
 	}
@@ -253,7 +389,7 @@ func (l *ListOperationsComponent) opNth(items []any) []any {
 		return []any{items[n]}
 	}
 	if l.param.Strict {
-		panic(fmt.Sprintf("ListOperations: nth requires n to be within the valid range in strict mode, got %d", n))
+		panic(strictRangePanic("nth", n))
 	}
 	return []any{}
 }
@@ -263,7 +399,7 @@ func (l *ListOperationsComponent) opHead(items []any) []any {
 	n := l.param.N
 	if l.param.Strict {
 		if n < 1 || n > len(items) {
-			panic(fmt.Sprintf("ListOperations: head requires n to be within the valid range in strict mode, got %d", n))
+			panic(strictRangePanic("head", n))
 		}
 		return append([]any{}, items[:n]...)
 	}
@@ -281,7 +417,7 @@ func (l *ListOperationsComponent) opTail(items []any) []any {
 	n := l.param.N
 	if l.param.Strict {
 		if n < 1 || n > len(items) {
-			panic(fmt.Sprintf("ListOperations: tail requires n to be within the valid range in strict mode, got %d", n))
+			panic(strictRangePanic("tail", n))
 		}
 		return append([]any{}, items[len(items)-n:]...)
 	}
@@ -310,6 +446,12 @@ func (l *ListOperationsComponent) opFilter(items []any) []any {
 // opSort: stable sort; for dict items, use hashable key. Reverse on
 // sort_method == "desc". The Python implementation uses sorted() which
 // is stable; Go's sort.SliceStable preserves that.
+//
+// When SortBy is set, the sort key is the tuple (item[k1], item[k2],
+// ...) for each map element (primary = first listed field, tiebreak =
+// subsequent fields). When SortBy is empty, the comparator falls back
+// to the full hashableKey — equivalent to the lexicographically first
+// field, matching the pre-sort_by behaviour.
 func (l *ListOperationsComponent) opSort(items []any) []any {
 	if len(items) == 0 {
 		return []any{}
@@ -317,8 +459,22 @@ func (l *ListOperationsComponent) opSort(items []any) []any {
 	reverse := strings.EqualFold(l.param.SortMethod, "desc")
 	cp := append([]any{}, items...)
 	if _, isMap := cp[0].(map[string]any); isMap {
+		var keyFn func(any) any
+		if len(l.param.SortBy) > 0 {
+			fields := l.param.SortBy
+			keyFn = func(x any) any {
+				m, _ := x.(map[string]any)
+				out := make([]any, 0, len(fields))
+				for _, k := range fields {
+					out = append(out, m[k])
+				}
+				return out
+			}
+		} else {
+			keyFn = hashableKey
+		}
 		sort.SliceStable(cp, func(i, j int) bool {
-			ki, kj := hashableKey(cp[i]), hashableKey(cp[j])
+			ki, kj := keyFn(cp[i]), keyFn(cp[j])
 			if reverse {
 				return lessKey(kj, ki)
 			}
@@ -369,9 +525,18 @@ func dedupKey(v any) string {
 }
 
 // normValue is the Python _norm helper: "" for nil, else str(v).
+// Bools are rendered as "True" / "False" (Python's str() output) so
+// filter `=` comparisons match the Python DSL contract. Mirrors
+// agent/component/list_operations.py:151-153.
 func normValue(v any) string {
 	if v == nil {
 		return ""
+	}
+	if b, ok := v.(bool); ok {
+		if b {
+			return "True"
+		}
+		return "False"
 	}
 	return fmt.Sprintf("%v", v)
 }

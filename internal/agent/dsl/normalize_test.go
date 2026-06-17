@@ -202,8 +202,8 @@ func TestNormalize_HandleIdsEnforced(t *testing.T) {
 	}
 }
 
-// TestNormalize_FoldsLoopAndIteration is the Go-port compatibility
-// step: a dsl carrying the legacy Loop+LoopItem or
+// TestNormalizeForRun_FoldsLoopAndIteration is the runtime
+// compatibility step: a dsl carrying the legacy Loop+LoopItem or
 // Iteration+IterationItem node pair must be folded into a single
 // Loop/Parallel node, with the child node removed and its downstream
 // merged into the parent. Iteration parents are also renamed to
@@ -215,7 +215,7 @@ func TestNormalize_HandleIdsEnforced(t *testing.T) {
 //     (child dropped; Body:1 appended to parent.downstream)
 //  2. Iteration:abc + IterationItem:def + Body:1 → Parallel:abc + Body:1
 //     (child dropped; parent renamed to Parallel; Body:1 appended)
-func TestNormalize_FoldsLoopAndIteration(t *testing.T) {
+func TestNormalizeForRun_FoldsLoopAndIteration(t *testing.T) {
 	t.Run("LoopPlusLoopItem", func(t *testing.T) {
 		in := map[string]any{
 			"graph": map[string]any{
@@ -241,7 +241,7 @@ func TestNormalize_FoldsLoopAndIteration(t *testing.T) {
 				},
 			},
 		}
-		out := NormalizeForCanvas(in)
+		out := NormalizeForRun(in)
 		comps, _ := out["components"].(map[string]any)
 		if _, dropped := comps["LoopItem:def"]; dropped {
 			t.Error("LoopItem:def should be folded away")
@@ -282,7 +282,7 @@ func TestNormalize_FoldsLoopAndIteration(t *testing.T) {
 				},
 			},
 		}
-		out := NormalizeForCanvas(in)
+		out := NormalizeForRun(in)
 		comps, _ := out["components"].(map[string]any)
 		if _, dropped := comps["IterationItem:def"]; dropped == false {
 			// has anything, we want it dropped
@@ -330,6 +330,203 @@ func TestNormalize_FoldsLoopAndIteration(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestNormalizeForRun_RewritesLegacyIterationAliases(t *testing.T) {
+	in := map[string]any{
+		"graph": map[string]any{
+			"nodes": []any{
+				map[string]any{"id": "Iteration:abc", "type": "iterationNode"},
+				map[string]any{"id": "IterationItem:def", "type": "iterationStartNode", "parentId": "Iteration:abc"},
+				map[string]any{"id": "Body:1", "type": "messageNode"},
+			},
+			"edges": []any{},
+		},
+		"components": map[string]any{
+			"Iteration:abc": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Iteration",
+					"params": map[string]any{
+						"items_ref": "sys.arr",
+						"outputs": map[string]any{
+							"lines": map[string]any{
+								"ref":  "StringTransform:FmtItem@result",
+								"type": "Array<string>",
+							},
+						},
+					},
+				},
+				"downstream": []any{"IterationItem:def", "Done:1"},
+			},
+			"IterationItem:def": map[string]any{
+				"obj":        map[string]any{"component_name": "IterationItem", "params": map[string]any{}},
+				"downstream": []any{"Body:1"},
+			},
+			"Body:1": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Message",
+					"params": map[string]any{
+						"content": []any{
+							"{IterationItem:def@index}: {IterationItem:def@item}",
+						},
+					},
+				},
+				"downstream": []any{},
+			},
+			"Done:1": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Message",
+					"params": map[string]any{
+						"content": []any{
+							"done {Iteration:abc@lines}",
+						},
+					},
+				},
+				"downstream": []any{},
+			},
+		},
+	}
+
+	out := NormalizeForRun(in)
+	comps, _ := out["components"].(map[string]any)
+	body, _ := comps["Body:1"].(map[string]any)
+	if body == nil {
+		t.Fatal("Body:1 missing after normalize")
+	}
+	obj, _ := body["obj"].(map[string]any)
+	params, _ := obj["params"].(map[string]any)
+	content, _ := params["content"].([]any)
+	if len(content) != 1 {
+		t.Fatalf("content len = %d, want 1", len(content))
+	}
+	got, _ := content[0].(string)
+	want := "{index}: {item}"
+	if got != want {
+		t.Fatalf("legacy iteration aliases: got %q, want %q", got, want)
+	}
+}
+
+// TestNormalizeForCanvas_PreservesIterationCanvasShape pins the
+// front-end protocol boundary: canvas-facing normalization may repair
+// graph structure, but it must not rename Iteration to Parallel or
+// emit the internal parallelNode type.
+func TestNormalizeForCanvas_PreservesIterationCanvasShape(t *testing.T) {
+	in := map[string]any{
+		"graph": map[string]any{
+			"nodes": []any{
+				map[string]any{
+					"id":   "Iteration:abc",
+					"type": "iterationNode",
+					"data": map[string]any{"label": "Iteration", "name": "Iteration"},
+				},
+				map[string]any{
+					"id":       "IterationItem:def",
+					"type":     "iterationStartNode",
+					"parentId": "Iteration:abc",
+					"data":     map[string]any{"label": "IterationItem", "name": "IterationItem"},
+				},
+			},
+			"edges": []any{},
+		},
+		"components": map[string]any{
+			"Iteration:abc": map[string]any{
+				"obj":        map[string]any{"component_name": "Iteration", "params": map[string]any{"items_ref": "x"}},
+				"downstream": []any{"IterationItem:def"},
+			},
+			"IterationItem:def": map[string]any{
+				"obj":        map[string]any{"component_name": "IterationItem", "params": map[string]any{}},
+				"downstream": []any{},
+			},
+		},
+	}
+
+	out := NormalizeForCanvas(in)
+	comps, _ := out["components"].(map[string]any)
+	parent, _ := comps["Iteration:abc"].(map[string]any)
+	if parent == nil {
+		t.Fatal("Iteration:abc missing after canvas normalize")
+	}
+	if obj, _ := parent["obj"].(map[string]any); obj != nil {
+		if obj["component_name"] != "Iteration" {
+			t.Errorf("canvas normalize renamed component_name = %v, want Iteration", obj["component_name"])
+		}
+	}
+	if _, ok := comps["IterationItem:def"]; !ok {
+		t.Error("canvas normalize folded away IterationItem:def; want preserved")
+	}
+
+	graph, _ := out["graph"].(map[string]any)
+	nodes, _ := graph["nodes"].([]any)
+	for _, n := range nodes {
+		nm, _ := n.(map[string]any)
+		if nm == nil || nm["id"] != "Iteration:abc" {
+			continue
+		}
+		if nm["type"] != "iterationNode" {
+			t.Errorf("canvas normalize graph node type = %v, want iterationNode", nm["type"])
+		}
+		if data, _ := nm["data"].(map[string]any); data != nil {
+			if data["label"] != "Iteration" {
+				t.Errorf("canvas normalize graph label = %v, want Iteration", data["label"])
+			}
+		}
+	}
+}
+
+// TestNormalizeForCanvas_RepairsLeakedParallelShape verifies that a
+// historically polluted stored DSL is repaired on read before it goes
+// back to the front-end: internal Parallel / parallelNode must be
+// mapped back to Iteration / iterationNode without mutating the input.
+func TestNormalizeForCanvas_RepairsLeakedParallelShape(t *testing.T) {
+	in := map[string]any{
+		"graph": map[string]any{
+			"nodes": []any{
+				map[string]any{
+					"id":   "Iteration:abc",
+					"type": "parallelNode",
+					"data": map[string]any{"label": "Parallel", "name": "Parallel"},
+				},
+			},
+			"edges": []any{},
+		},
+		"components": map[string]any{
+			"Iteration:abc": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Parallel",
+					"params":         map[string]any{},
+				},
+				"downstream": []any{},
+				"upstream":   []any{},
+			},
+		},
+	}
+
+	out := NormalizeForCanvas(in)
+	comps, _ := out["components"].(map[string]any)
+	parent, _ := comps["Iteration:abc"].(map[string]any)
+	obj, _ := parent["obj"].(map[string]any)
+	if obj["component_name"] != "Iteration" {
+		t.Errorf("component_name = %v, want Iteration", obj["component_name"])
+	}
+
+	graph, _ := out["graph"].(map[string]any)
+	nodes, _ := graph["nodes"].([]any)
+	node, _ := nodes[0].(map[string]any)
+	if node["type"] != "iterationNode" {
+		t.Errorf("graph node type = %v, want iterationNode", node["type"])
+	}
+	data, _ := node["data"].(map[string]any)
+	if data["label"] != "Iteration" {
+		t.Errorf("graph node label = %v, want Iteration", data["label"])
+	}
+	if data["name"] != "Iteration" {
+		t.Errorf("graph node name = %v, want Iteration", data["name"])
+	}
+
+	origNode := in["graph"].(map[string]any)["nodes"].([]any)[0].(map[string]any)
+	if origNode["type"] != "parallelNode" {
+		t.Errorf("input node type mutated to %v", origNode["type"])
+	}
 }
 
 // TestNormalize_DoesNotMutateInput pins the documented
@@ -386,7 +583,7 @@ func TestNormalize_DoesNotMutateInput(t *testing.T) {
 	}
 
 	// Run the normalizer.
-	_ = NormalizeForCanvas(in)
+	_ = NormalizeForRun(in)
 
 	// (1) graph.edges[*].sourceHandle / targetHandle must NOT be
 	// rewritten in the original input.
@@ -431,7 +628,7 @@ func TestNormalize_FixtureSmoke(t *testing.T) {
 		name := e.Name()
 		t.Run(name, func(t *testing.T) {
 			raw := loadFixture(t, name)
-			out := NormalizeForCanvas(raw)
+			out := NormalizeForRun(raw)
 			if out == nil {
 				t.Fatalf("[%s] normalize returned nil", name)
 			}
@@ -441,8 +638,8 @@ func TestNormalize_FixtureSmoke(t *testing.T) {
 			if !hasGraph && !hasComps {
 				t.Errorf("[%s] normalize produced neither graph nor components", name)
 			}
-			// If components survived, no Iteration / LoopItem /
-			// IterationItem may linger — those are folded.
+			// If components survived on the runtime-normalized view, no
+			// Iteration / LoopItem / IterationItem may linger — those are folded.
 			if hasComps {
 				for id, raw := range comps {
 					comp, _ := raw.(map[string]any)

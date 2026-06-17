@@ -35,7 +35,7 @@ The project uses **uv** for dependency management.
 1. **Setup Environment**:
    ```bash
    uv sync --python 3.13 --all-extras
-   uv run python3 download_deps.py
+   uv run python3 ragflow_deps/download_deps.py
    ```
 
 2. **Run Server**:
