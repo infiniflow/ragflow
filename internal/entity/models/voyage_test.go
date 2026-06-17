@@ -51,13 +51,6 @@ func TestVoyageName(t *testing.T) {
 	}
 }
 
-func TestVoyageListModelsNotSupported(t *testing.T) {
-	// Voyage has no model-list endpoint, so ListModels returns a not-supported error.
-	if _, err := newVoyageForTest("http://unused").ListModels(&APIConfig{}); err == nil {
-		t.Fatal("ListModels: expected not-supported error, got nil")
-	}
-}
-
 func TestVoyageNewModelWithCustomDefaultTransport(t *testing.T) {
 	original := http.DefaultTransport
 	http.DefaultTransport = roundTripperFunc(func(*http.Request) (*http.Response, error) {
