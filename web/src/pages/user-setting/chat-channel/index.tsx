@@ -61,6 +61,7 @@ const ChatChannel = () => {
       (id) =>
         [
           ChatChannelKey.DISCORD,
+          ChatChannelKey.DINGTALK,
           ChatChannelKey.FEISHU,
           ChatChannelKey.TELEGRAM,
           ChatChannelKey.QQBOT,

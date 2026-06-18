@@ -33,7 +33,7 @@ import threading
 LOGGER = logging.getLogger(__name__)
 
 # Channel packages bundled under api/channels that self-register on import.
-_BUNDLED_CHANNELS = ("feishu", "discord", "telegram", "line", "wecom", "qqbot")
+_BUNDLED_CHANNELS = ("feishu", "discord", "telegram", "line", "wecom", "qqbot", "dingtalk")
 
 # How often (seconds) to reconcile running channels against the database.
 _RECONCILE_INTERVAL_SECS = 10
