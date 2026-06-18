@@ -11,8 +11,8 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
-	"ragflow/internal/harness/graph/checkpoint"
 	"ragflow/internal/harness/graph/channels"
+	"ragflow/internal/harness/graph/checkpoint"
 	"ragflow/internal/harness/graph/constants"
 	"ragflow/internal/harness/graph/errors"
 	"ragflow/internal/harness/graph/graph"
@@ -34,6 +34,7 @@ type Engine struct {
 	graph               *graph.StateGraph
 	checkpointer        graph.Checkpointer
 	interrupts          map[string]bool
+	interruptsAfter     map[string]bool
 	recursionLimit      int
 	debug               bool
 	config              *types.RunnableConfig
@@ -49,10 +50,10 @@ type Engine struct {
 
 // deferredCheckpoint stores checkpoint data for deferred saving (DurabilityExit mode)
 type deferredCheckpoint struct {
-	ThreadID    string
+	ThreadID     string
 	CheckpointID string
-	Step        int
-	Checkpoint  map[string]interface{}
+	Step         int
+	Checkpoint   map[string]interface{}
 }
 
 // NewEngine creates a new Pregel engine bound to a StateGraph.
@@ -64,6 +65,7 @@ func NewEngine(g *graph.StateGraph, opts ...EngineOption) *Engine {
 	eng := &Engine{
 		graph:           g,
 		interrupts:      make(map[string]bool),
+		interruptsAfter: make(map[string]bool),
 		recursionLimit:  25,
 		debug:           false,
 		config:          types.NewRunnableConfig(),
@@ -104,6 +106,15 @@ func WithInterrupts(nodes ...string) EngineOption {
 	return func(e *Engine) {
 		for _, node := range nodes {
 			e.interrupts[node] = true
+		}
+	}
+}
+
+// WithInterruptsAfter sets the after-execution interrupt nodes.
+func WithInterruptsAfter(nodes ...string) EngineOption {
+	return func(e *Engine) {
+		for _, node := range nodes {
+			e.interruptsAfter[node] = true
 		}
 	}
 }
@@ -179,7 +190,7 @@ type ExecuteResult struct {
 func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMode) (<-chan interface{}, <-chan error) {
 	outputCh := make(chan interface{}, 100)
 	errCh := make(chan error, 1)
-	
+
 	go func() {
 		defer close(errCh)
 
@@ -210,7 +221,7 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 			fwWg.Wait()
 			close(outputCh)
 		}()
-		
+
 		// Create async pipeline for concurrent task execution
 		retryPolicy := e.retryPolicy
 		if retryPolicy == nil {
@@ -220,7 +231,7 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 		asyncPipeline := NewAsyncPipeline(e.maxConcurrency, retryPolicy)
 		pipelineCtx := asyncPipeline.Start(ctx)
 		defer asyncPipeline.Stop()
-		
+
 		// Reset per-execution engine state.
 		// Without this, reusing the same Engine across multiple RunSync calls
 		// causes checkpoint maps and channel versions to accumulate indefinitely,
@@ -236,13 +247,13 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 		for name, ch := range graphChannels {
 			channelRegistry.Register(name, ch.Copy())
 		}
-		
+
 		// Apply input to channels
 		if err := e.applyInput(channelRegistry, input); err != nil {
 			errCh <- fmt.Errorf("failed to apply input: %w", err)
 			return
 		}
-		
+
 		// Get thread ID for checkpointing
 		threadID := e.getThreadID()
 
@@ -276,13 +287,13 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 		defer backgroundExec.Stop()
 		// Replace engine-level backgroundExec reference for use by async pipeline
 		e.backgroundExec = backgroundExec
-		
+
 		// Execute Pregel loop
 		step := 0
 		completedTasks := make(map[string]bool)
 		lastCompletedNode := ""
 		lastState := input
-		
+
 		for {
 			// Check context cancellation at each superstep.
 			select {
@@ -297,27 +308,27 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 				errCh <- &errors.GraphRecursionError{Limit: e.recursionLimit}
 				return
 			}
-			
+
 			// Emit checkpoint event via stream manager
 			streamManager.EmitCheckpoint(step, channelRegistry.CreateCheckpoint())
-			
+
 			// Determine next tasks
 			tasks, triggers, err := e.prepareNextTasks(channelRegistry, completedTasks, lastCompletedNode, lastState)
 			if err != nil {
 				errCh <- fmt.Errorf("failed to prepare next tasks: %w", err)
 				return
 			}
-			
+
 			// Emit task start events
 			for _, task := range tasks {
 				streamManager.EmitTaskStart(step, task.Name, task.ID)
 			}
-			
+
 			// If no tasks, we're done
 			if len(tasks) == 0 {
 				break
 			}
-			
+
 			// Check for interrupts
 			interruptedTasks := e.shouldInterrupt(channelRegistry, tasks, triggers)
 			if len(interruptedTasks) > 0 {
@@ -331,28 +342,33 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 						return
 					}
 				}
-				
+
 				// Emit interrupt event
 				interruptNames := make([]string, len(interruptedTasks))
 				for i, task := range interruptedTasks {
 					interruptNames[i] = task.Name
 				}
 				streamManager.EmitInterrupt(step, interruptNames)
-				
+
 				errCh <- &errors.GraphInterrupt{}
 				return
 			}
-			
+
 			// Execute tasks using async pipeline
 			results, err := e.executeTasksAsync(pipelineCtx, tasks, channelRegistry, asyncPipeline, streamManager, step)
 			if err != nil {
 				errCh <- fmt.Errorf("failed to execute tasks: %w", err)
 				return
 			}
-			
+
 			// Mark tasks as completed and track last state
 			allFailed := len(results) > 0
+			var interruptTaskNames []string
 			for _, result := range results {
+				if errors.IsGraphInterrupt(result.Err) {
+					interruptTaskNames = append(interruptTaskNames, result.Name)
+					continue
+				}
 				if result.Err == nil {
 					allFailed = false
 					completedTasks[result.Name] = true
@@ -361,6 +377,22 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 					lastState = e.mergeStates(lastState, result.Output)
 				}
 			}
+			// If any task was interrupted, handle the interrupt.
+			if len(interruptTaskNames) > 0 {
+				// Save checkpoint
+				if e.checkpointer != nil {
+					checkpoint := channelRegistry.CreateCheckpoint()
+					if err := e.saveCheckpoint(ctx, e.getThreadID(), "", step, map[string]interface{}{
+						"channel_values": checkpoint,
+					}); err != nil {
+						errCh <- fmt.Errorf("failed to save checkpoint on interrupt: %w", err)
+						return
+					}
+				}
+				streamManager.EmitInterrupt(step, interruptTaskNames)
+				errCh <- &errors.GraphInterrupt{}
+				return
+			}
 			// If every task in this step failed, the graph cannot make progress.
 			// Terminate immediately rather than infinitely re-scheduling the
 			// same failing nodes (e.g. a panicking node caught by recover()).
@@ -368,24 +400,24 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 				errCh <- fmt.Errorf("all %d tasks failed in step %d", len(results), step)
 				return
 			}
-			
+
 			// Apply writes to channels
 			_, err = e.applyWrites(channelRegistry, results, triggers)
 			if err != nil {
 				errCh <- fmt.Errorf("failed to apply writes: %w", err)
 				return
 			}
-			
+
 			// Emit values event
 			if values, err := channelRegistry.GetValues(); err == nil {
 				streamManager.EmitValues(step, values)
 			}
-			
+
 			// Save checkpoint based on durability mode
 			if e.checkpointer != nil {
 				checkpoint := channelRegistry.CreateCheckpoint()
 				checkpointID := uuid.New().String()
-				
+
 				switch e.config.Durability {
 				case types.DurabilitySync:
 					// Synchronous save - block until complete
@@ -413,17 +445,24 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 					}
 				}
 			}
-			
+
+			// Check for after-node interrupts. The checkpoint above already
+			// captures this step's output.
+			if e.shouldInterruptAfter(results) {
+				errCh <- &errors.GraphInterrupt{}
+				return
+			}
+
 			step++
 		}
-		
+
 		// Get final state
 		finalState, err := e.buildOutput(channelRegistry, lastState)
 		if err != nil {
 			errCh <- fmt.Errorf("failed to build output: %w", err)
 			return
 		}
-		
+
 		// Save deferred checkpoints for DurabilityExit mode
 		if e.config.Durability == types.DurabilityExit {
 			if err := e.saveDeferredCheckpoints(ctx); err != nil {
@@ -431,11 +470,11 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 				return
 			}
 		}
-		
+
 		// Emit final event
 		streamManager.EmitFinal(step, finalState)
 	}()
-	
+
 	return outputCh, errCh
 }
 
@@ -466,52 +505,60 @@ func (e *Engine) prepareNextTasksWithMode(
 ) ([]*Task, map[string]struct{}, error) {
 	tasks := make([]*Task, 0)
 	triggerToNodes := make(map[string]struct{})
-	
+
 	// If this is the first step
 	if len(completedTasks) == 0 {
 		entryPoint := e.getEntryPoint()
 		if entryPoint == "" {
 			return nil, nil, fmt.Errorf("no entry point set")
 		}
-		
+
 		// Handle direct edge Start → End (empty/trivial graph)
 		if entryPoint == constants.End {
 			return tasks, triggerToNodes, nil
 		}
-		
+
 		node := e.getNode(entryPoint)
 		if node == nil {
 			return nil, nil, &errors.NodeNotFoundError{NodeName: entryPoint}
 		}
-		
+
 		// Pass node Triggers as task Channels so the first task reads from
 		// registered channels rather than receiving a nil state.
+		// When the entry point has no explicit triggers, use all registered
+		// channel names so it can read the initial input values. This is
+		// needed by systems (e.g. canvas) that route data via context
+		// rather than channels but still register input channels for
+		// the engine's input validation.
 		triggers := e.getTriggers(node)
+		if len(triggers) == 0 {
+			triggers = registry.Names()
+		}
 		task := e.createTask(node, currentState, triggers, []string{})
 		tasks = append(tasks, task)
 		triggerToNodes["__start__"] = struct{}{}
 		return tasks, triggerToNodes, nil
 	}
-	
+
 	// AllPredecessor (DAG) mode: scan all uncompleted nodes and check if
 	// ALL of their incoming-edge source nodes have completed.
 	if e.graph.NodeTriggerMode == types.NodeTriggerAllPredecessor {
 		return e.prepareNextTasksDAG(completedTasks, currentState, forExecution)
 	}
-	
+
 	// AnyPredecessor (Pregel/BSP) mode: determine next nodes from the
 	// last completed node's outgoing edges.
 	nextNodes := e.getNextNodes(lastCompletedNode, currentState)
-	
+
 	for nodeName := range nextNodes {
 		node := e.getNode(nodeName)
 		if node == nil {
 			continue
 		}
-		
+
 		// Determine triggers for this node
 		triggers := e.getTriggers(node)
-		
+
 		// BSP mode: always schedule, even if previously completed (supports loops).
 		var task *Task
 		if forExecution {
@@ -520,13 +567,13 @@ func (e *Engine) prepareNextTasksWithMode(
 			task = e.createTaskInfo(node, currentState, triggers, []string{})
 		}
 		tasks = append(tasks, task)
-		
+
 		// Build trigger to nodes mapping
 		for _, trigger := range triggers {
 			triggerToNodes[trigger] = struct{}{}
 		}
 	}
-	
+
 	return tasks, triggerToNodes, nil
 }
 
@@ -604,15 +651,15 @@ func (e *Engine) shouldInterrupt(
 	triggerToNodes map[string]struct{},
 ) []*Task {
 	interrupted := make([]*Task, 0)
-	
+
 	// Check if any triggered node should interrupt
 	if len(e.interrupts) == 0 {
 		return interrupted
 	}
-	
+
 	// Check if "*" is set (interrupt all)
 	interruptAll := e.interrupts[types.All]
-	
+
 	for _, task := range tasks {
 		shouldInterrupt := false
 		if interruptAll {
@@ -620,7 +667,7 @@ func (e *Engine) shouldInterrupt(
 		} else {
 			shouldInterrupt = e.interrupts[task.Name]
 		}
-		
+
 		if shouldInterrupt {
 			// Check if this task was triggered by a channel update
 			triggered := false
@@ -630,14 +677,33 @@ func (e *Engine) shouldInterrupt(
 					break
 				}
 			}
-			
+
 			if triggered {
 				interrupted = append(interrupted, task)
 			}
 		}
 	}
-	
+
 	return interrupted
+}
+
+// shouldInterruptAfter checks if any SUCCESSFULLY completed task's node name
+// is in interruptsAfter. Called AFTER execution and checkpoint save so the
+// checkpoint already captures the node's output.
+func (e *Engine) shouldInterruptAfter(results []*TaskResult) bool {
+	if len(e.interruptsAfter) == 0 {
+		return false
+	}
+	interruptAll := e.interruptsAfter[types.All]
+	for _, r := range results {
+		if r.Err != nil {
+			continue
+		}
+		if interruptAll || e.interruptsAfter[r.Name] {
+			return true
+		}
+	}
+	return false
 }
 
 // applyWrites applies task outputs to channels with version management and write merging.
@@ -789,22 +855,22 @@ func (e *Engine) executeTasks(
 	results := make([]*TaskResult, len(tasks))
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	
+
 	for i, task := range tasks {
 		wg.Add(1)
 		go func(idx int, t *Task) {
 			defer wg.Done()
-			
+
 			result := e.executeTask(ctx, t, registry)
-			
+
 			mu.Lock()
 			results[idx] = result
 			mu.Unlock()
 		}(i, task)
 	}
-	
+
 	wg.Wait()
-	
+
 	return results, nil
 }
 
@@ -820,12 +886,12 @@ func (e *Engine) executeTasksAsync(
 	results := make([]*TaskResult, len(tasks))
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	
+
 	for i, task := range tasks {
 		wg.Add(1)
 		go func(idx int, t *Task) {
 			defer wg.Done()
-			
+
 			// Read input for this task
 			input, err := e.readTaskInput(registry, t)
 			if err != nil {
@@ -837,22 +903,22 @@ func (e *Engine) executeTasksAsync(
 				mu.Unlock()
 				return
 			}
-			
+
 			// Define the function to execute
 			executeFn := func(ctx context.Context) (interface{}, error) {
 				return t.Func(ctx, input)
 			}
-			
+
 			// Use task's retry policy or default
 			retryPolicy := t.RetryPolicy
 			if retryPolicy == nil {
 				defaultPolicy := types.DefaultRetryPolicy()
 				retryPolicy = &defaultPolicy
 			}
-			
+
 			// Execute with async pipeline
 			resultCh := asyncPipeline.ExecuteNode(ctx, t.Name, executeFn, &RetryConfig{Policy: retryPolicy})
-			
+
 			// Wait for result
 			select {
 			case <-ctx.Done():
@@ -872,17 +938,17 @@ func (e *Engine) executeTasksAsync(
 					mu.Unlock()
 					return
 				}
-				
+
 				// Convert async result to task result
 				taskResult := &TaskResult{
 					Name:   t.Name,
 					Output: asyncResult.Output,
 					Err:    asyncResult.Err,
 				}
-				
+
 				// Emit task end event
 				streamManager.EmitTaskEnd(step, t.Name, t.ID, asyncResult.Output, asyncResult.Duration, asyncResult.Err)
-				
+
 				// Emit update event if successful
 				if asyncResult.Err == nil {
 					streamManager.EmitUpdate(step, t.Name, asyncResult.Output)
@@ -890,14 +956,14 @@ func (e *Engine) executeTasksAsync(
 					// Emit error event
 					streamManager.EmitError(step, asyncResult.Err, t.Name)
 				}
-				
+
 				mu.Lock()
 				results[idx] = taskResult
 				mu.Unlock()
 			}
 		}(i, task)
 	}
-	
+
 	wg.Wait()
 	return results, nil
 }
@@ -916,21 +982,21 @@ func (e *Engine) executeTask(
 			Err:  fmt.Errorf("failed to read task input: %w", err),
 		}
 	}
-	
+
 	// Use RetryExecutor for retry logic
 	retryPolicy := task.RetryPolicy
 	if retryPolicy == nil {
 		defaultPolicy := types.DefaultRetryPolicy()
 		retryPolicy = &defaultPolicy
 	}
-	
+
 	retryExecutor := NewRetryExecutor(retryPolicy)
-	
+
 	// Define the function to execute
 	executeFn := func(ctx context.Context) (interface{}, error) {
 		return task.Func(ctx, input)
 	}
-	
+
 	// Execute with retry
 	output, err := retryExecutor.Execute(ctx, task.Name, executeFn)
 	if err != nil {
@@ -954,7 +1020,7 @@ func (e *Engine) executeTask(
 			Err:  err,
 		}
 	}
-	
+
 	// Success
 	return &TaskResult{
 		Name:   task.Name,
@@ -968,7 +1034,7 @@ func (e *Engine) readTaskInput(registry *channels.Registry, task *Task) (interfa
 	if len(task.Channels) == 0 {
 		return nil, nil
 	}
-	
+
 	// Read values from specified channels
 	values := make(map[string]interface{})
 	for _, channelName := range task.Channels {
@@ -984,18 +1050,18 @@ func (e *Engine) readTaskInput(registry *channels.Registry, task *Task) (interfa
 			values[channelName] = value
 		}
 	}
-	
+
 	return values, nil
 }
 
 // Task represents a task to execute.
 type Task struct {
-	ID         string
-	Name       string
-	Func       types.NodeFunc
-	Channels   []string
-	Path       []string
-	Triggers   map[string]struct{}
+	ID          string
+	Name        string
+	Func        types.NodeFunc
+	Channels    []string
+	Path        []string
+	Triggers    map[string]struct{}
 	RetryPolicy *types.RetryPolicy
 }
 
@@ -1172,13 +1238,13 @@ func (e *Engine) applyInput(registry *channels.Registry, input interface{}) erro
 	if err != nil {
 		return err
 	}
-	
+
 	// Apply each key to corresponding channel
 	writes := make(map[string][]interface{})
 	for key, value := range inputMap {
 		writes[key] = []interface{}{value}
 	}
-	
+
 	return registry.UpdateChannels(writes)
 }
 
@@ -1196,11 +1262,11 @@ func (e *Engine) buildOutput(registry *channels.Registry, lastState interface{})
 	if err != nil {
 		return lastState, nil
 	}
-	
+
 	if len(values) > 0 {
 		return values, nil
 	}
-	
+
 	return lastState, nil
 }
 
@@ -1208,15 +1274,15 @@ func (e *Engine) mergeStates(existing, new interface{}) interface{} {
 	if existing == nil {
 		return new
 	}
-	
+
 	if new == nil {
 		return existing
 	}
-	
+
 	// Try to merge maps
 	existingMap, ok1 := existing.(map[string]interface{})
 	newMap, ok2 := new.(map[string]interface{})
-	
+
 	if ok1 && ok2 {
 		result := make(map[string]interface{})
 		for k, v := range existingMap {
@@ -1227,7 +1293,7 @@ func (e *Engine) mergeStates(existing, new interface{}) interface{} {
 		}
 		return result
 	}
-	
+
 	return new
 }
 
@@ -1236,31 +1302,31 @@ func toMap(v interface{}) (map[string]interface{}, error) {
 	if v == nil {
 		return nil, fmt.Errorf("nil value")
 	}
-	
+
 	// If it's already a map
 	if m, ok := v.(map[string]interface{}); ok {
 		return m, nil
 	}
-	
+
 	// Use reflection to convert struct to map
 	rv := reflect.ValueOf(v)
 	if rv.Kind() == reflect.Ptr {
 		rv = rv.Elem()
 	}
-	
+
 	if rv.Kind() != reflect.Struct && rv.Kind() != reflect.Map {
 		return map[string]interface{}{"__root__": v}, nil
 	}
-	
+
 	result := make(map[string]interface{})
-	
+
 	if rv.Kind() == reflect.Map {
 		for _, key := range rv.MapKeys() {
 			result[fmt.Sprintf("%v", key.Interface())] = rv.MapIndex(key).Interface()
 		}
 		return result, nil
 	}
-	
+
 	// Struct
 	rt := rv.Type()
 	for i := 0; i < rv.NumField(); i++ {
@@ -1270,12 +1336,12 @@ func toMap(v interface{}) (map[string]interface{}, error) {
 			continue
 		}
 		value := rv.Field(i).Interface()
-		
+
 		// Convert field name to snake_case for consistency
 		fieldName := toSnakeCase(field.Name)
 		result[fieldName] = value
 	}
-	
+
 	return result, nil
 }
 
@@ -1299,7 +1365,7 @@ func (e *Engine) saveCheckpoint(ctx context.Context, threadID, checkpointID stri
 	return e.checkpointer.Put(ctx, map[string]interface{}{
 		constants.ConfigKeyThreadID:     threadID,
 		constants.ConfigKeyCheckpointID: checkpointID,
-		"step":          step,
+		"step":                          step,
 	}, checkpoint)
 }
 

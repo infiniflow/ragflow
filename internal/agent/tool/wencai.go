@@ -21,9 +21,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 )
 
 const wencaiToolName = "wencai"
@@ -74,34 +71,34 @@ type WencaiTool struct{}
 func NewWencaiTool() *WencaiTool { return &WencaiTool{} }
 
 // Info returns the tool's metadata for the chat model.
-func (w *WencaiTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: wencaiToolName,
-		Desc: wencaiToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+func (w *WencaiTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        wencaiToolName,
+		Description: wencaiToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"query": {
-				Type:     schema.String,
-				Desc:     "Natural-language Wencai query (e.g. \"近期涨停股\", \"高股息低估值\").",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "Natural-language Wencai query (e.g. \"近期涨停股\", \"高股息低估值\").",
+				Required:    true,
 			},
 			"page": {
-				Type:     schema.Integer,
-				Desc:     "Optional 1-based page number. Defaults to 1.",
-				Required: false,
+				Type:        ParamTypeInteger,
+				Description: "Optional 1-based page number. Defaults to 1.",
+				Required:    false,
 			},
 			"per_page": {
-				Type:     schema.Integer,
-				Desc:     "Optional results per page. Defaults to 20.",
-				Required: false,
+				Type:        ParamTypeInteger,
+				Description: "Optional results per page. Defaults to 20.",
+				Required:    false,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 // InvokableRun validates the input shape (query is required) and
 // returns a clear "use Python Canvas" error. The model receives a
 // JSON envelope with the message in the `_ERROR` field.
-func (w *WencaiTool) InvokableRun(_ context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (w *WencaiTool) InvokableRun(_ context.Context, argsJSON string) (string, error) {
 	var p wencaiParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return wencaiErrJSON(errors.New(wencaiUnsupportedMessage)),

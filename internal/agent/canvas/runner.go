@@ -1,17 +1,17 @@
 //
-//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+// Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//   http://www.apache.org/licenses/LICENSE-2.0
 //
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //
 
 // runner.go — Canvas execution runtime. Drives a Canvas invocation
@@ -31,7 +31,7 @@
 //     The answer is extracted from the post-run state via
 //     extractAnswerFromState (catches "answer" / "result" / "content"
 //     keys — matches Python's v1 surface for legacy SSE consumers).
-//  2. Eino interrupt (runErr is an *InterruptSignal or wrapped
+//  2. harness interrupt (runErr is an *InterruptSignal or wrapped
 //     variant): emit `waiting_for_user` with the first interrupt
 //     id. Persist the id so the next call can resume via
 //     compose.ResumeWithData (signalled through root:
@@ -41,10 +41,10 @@
 //  4. Other errors: emit `error` event with the err.Error() string.
 //
 // SSE wire contract (matches the handler envelope):
-//   - RunEvent.Type == "message"          → {data: <string>}
+//   - RunEvent.Type == "message"     → {data: <string>}
 //   - RunEvent.Type == "waiting_for_user" → {cpn_id: <string>}
-//   - RunEvent.Type == "error"            → {message: <string>}
-//   - RunEvent.Type == "done"             → final terminator frame
+//   - RunEvent.Type == "error"      → {message: <string>}
+//   - RunEvent.Type == "done"       → final terminator frame
 package canvas
 
 import (
@@ -87,13 +87,13 @@ type ErrorEvent struct {
 
 // RunFunc is the canvas execution contract the Runner depends on.
 // Service-layer code supplies an implementation that compiles the
-// DSL and invokes the eino Workflow; the Runner is agnostic to
+// DSL and invokes the harness graph; the Runner is agnostic to
 // that machinery.
 //
 // Return contract:
 //
 //   - nil error, non-nil state: run completed normally.
-//   - non-nil error that is an eino interrupt signal: the run paused
+//   - non-nil error that is a harness interrupt signal: the run paused
 //     on a wait-for-user node. The Runner extracts the InterruptCtx
 //     list via ExtractInterruptContexts and emits a `waiting_for_user`
 //     event. state may be nil in this branch (the engine does not
@@ -111,7 +111,7 @@ type RunFunc func(ctx context.Context, root map[string]any) (*CanvasState, error
 // channel that the RunFunc is expected to observe.
 type Runner struct {
 	mu           sync.Mutex
-	interruptIDs map[string]string // key = canvasID + "|" + sessionID; value = eino interrupt id
+	interruptIDs map[string]string // key = canvasID + "|" + sessionID; value = harness interrupt id
 	runCancels   map[string]chan struct{}
 }
 
@@ -132,7 +132,7 @@ func sessionKey(canvasID, sessionID string) string {
 	return canvasID + "|" + sessionID
 }
 
-// saveInterruptID stores the eino interrupt id for a (canvasID,
+// saveInterruptID stores the interrupt id for a (canvasID,
 // sessionID) pair. Called when the RunFunc returns an interrupt
 // error; the next RunAgent call with the same session id reads it
 // back via getInterruptID and forwards it to the RunFunc so the
@@ -216,7 +216,7 @@ func (r *Runner) Run(
 			if errors.Is(runErr, context.Canceled) || errors.Is(runErr, errCancelled) {
 				return
 			}
-			if ctxs := ExtractInterruptContexts(runErr); len(ctxs) > 0 {
+			if ctxs := MustExtractInterruptContexts(runErr); len(ctxs) > 0 {
 				// Wait-for-user: persist the first interrupt id
 				// and emit the SSE event.
 				cpnID := FirstInterruptID(ctxs)

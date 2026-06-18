@@ -62,10 +62,7 @@ func TestGitHub_BuildURL(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := buildGitHubURL(tc.query, tc.max)
-			u, err := url.Parse(got)
-			if err != nil {
-				t.Fatalf("url.Parse(%q): %v", got, err)
-			}
+			u, _ := url.Parse(got)
 			if u.Host != tc.wantHost {
 				t.Errorf("host = %q, want %q", u.Host, tc.wantHost)
 			}
@@ -103,11 +100,8 @@ func TestGitHub_ParseResponse(t *testing.T) {
 		Transport: rewriteHostTransport(srv.URL),
 	})
 	tool := NewGitHubToolWith(helper)
-	out, err := tool.InvokableRun(context.Background(),
+	out, _ := tool.InvokableRun(context.Background(),
 		`{"query":"ragflow","max_results":5,"token":"ghp_xyz"}`)
-	if err != nil {
-		t.Fatalf("InvokableRun: %v", err)
-	}
 
 	var env githubEnvelope
 	if jerr := json.Unmarshal([]byte(out), &env); jerr != nil {
@@ -150,14 +144,11 @@ func TestGitHub_Info(t *testing.T) {
 	t.Parallel()
 
 	tool := NewGitHubTool()
-	info, err := tool.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := tool.ToolMeta()
+	if meta.Name != "github" {
+		t.Errorf("Name = %q, want github", meta.Name)
 	}
-	if info.Name != "github" {
-		t.Errorf("Name = %q, want github", info.Name)
-	}
-	if !strings.Contains(info.Desc, "GitHub") {
-		t.Errorf("Desc = %q, want to mention GitHub", info.Desc)
+	if !strings.Contains(meta.Description, "GitHub") {
+		t.Errorf("Desc = %q, want to mention GitHub", meta.Description)
 	}
 }

@@ -22,9 +22,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 )
 
 const googleToolName = "google"
@@ -84,33 +81,33 @@ func NewGoogleToolWith(h *HTTPHelper) *GoogleTool {
 }
 
 // Info returns the tool's metadata for the chat model.
-func (g *GoogleTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: googleToolName,
-		Desc: googleToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+func (g *GoogleTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        googleToolName,
+		Description: googleToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"query": {
-				Type:     schema.String,
-				Desc:     "Search query",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "Search query",
+				Required:    true,
 			},
 			"api_key": {
-				Type:     schema.String,
-				Desc:     "Google Programmable Search API key.",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "Google Programmable Search API key.",
+				Required:    true,
 			},
 			"cx": {
-				Type:     schema.String,
-				Desc:     "Google Programmable Search engine ID (cx).",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "Google Programmable Search engine ID (cx).",
+				Required:    true,
 			},
 			"max_results": {
-				Type:     schema.Integer,
-				Desc:     "Maximum number of results to return. Defaults to 5 (max 10 per request).",
-				Required: false,
+				Type:        ParamTypeInteger,
+				Description: "Maximum number of results to return. Defaults to 5 (max 10 per request).",
+				Required:    false,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 // buildGoogleURL constructs the CSE query URL. The Programmable Search
@@ -131,7 +128,7 @@ func buildGoogleURL(apiKey, cx, query string, maxResults int) string {
 }
 
 // InvokableRun performs the Google Programmable Search.
-func (g *GoogleTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (g *GoogleTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var p googleParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return googleErrJSON(fmt.Errorf("google: parse arguments: %w", err)),

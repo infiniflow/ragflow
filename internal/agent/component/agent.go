@@ -1,13 +1,12 @@
 // Package component — Agent (T1).
 //
-// Multi-turn ReAct agent powered by eino's flow/agent/react package.
-// Uses the RAGFlow model layer (models.EinoChatModel) as a
-// ToolCallingChatModel, delegating the ReAct loop to eino's
+// Multi-turn ReAct agent powered by harness's flow/agent/react package.
+// Uses getDefaultChatInvoker for LLM calls.
+// ToolCallingChatModel, using harness's
 // production-grade implementation.
 //
 // Public outputs (content / tool_calls / artifacts) match the
 // plan-specified shape. The agent now wires AgentParam.Tools into
-// eino's native react.AgentConfig.ToolsConfig; when no tools are
 // configured the ReAct loop naturally degenerates to one model call.
 package component
 
@@ -16,15 +15,9 @@ import (
 	"fmt"
 	"strings"
 
-	einotool "github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/compose"
-	"github.com/cloudwego/eino/flow/agent/react"
-	"github.com/cloudwego/eino/schema"
-
 	"ragflow/internal/agent/component/prompts"
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
-	"ragflow/internal/entity/models"
 )
 
 // AgentComponent is a multi-turn ReAct agent.
@@ -38,7 +31,7 @@ type AgentParam struct {
 	SystemPrompt          string
 	UserPrompt            string
 	TopP                  *float64
-	Tools                 []string                  // Agent-visible tool names resolved into Eino BaseTool instances
+	Tools                 []string                  // Agent-visible tool names resolved into BaseTool instances
 	ToolParams            map[string]map[string]any // node-level tool constructor params keyed by tool name
 	MaxRounds             int
 	OptimizeMultiTurn     bool // when true (default), multi-turn history is condensed via full_question LLM call
@@ -81,9 +74,9 @@ type AgentMetaParam struct {
 
 // AgentOutput mirrors the outputs map (per plan §2.11.3 row 8):
 //
-//	"content"     string
-//	"tool_calls"  []map[string]any  (one entry per tool call observed)
-//	"artifacts"   []map[string]any  (collected from tool responses — empty in P0)
+//	"content"   string
+//	"tool_calls" []map[string]any (one entry per tool call observed)
+//	"artifacts"  []map[string]any (collected from tool responses — empty in P0)
 type AgentOutput struct {
 	Content   string
 	ToolCalls []map[string]any
@@ -91,41 +84,31 @@ type AgentOutput struct {
 }
 
 // agentRunner is the package-level ReAct runner. The production value
-// delegates to eino's flow/agent/react. Tests replace it with a function
-// that returns canned *schema.Message values.
-var agentRunner = runEinoReActAgent
+// that returns canned *ComponentMessage values.
+var agentRunner = agentReActRunner
 
-// runEinoReActAgent creates an eino react agent and runs it against the
-// model built from p.
-func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, error) {
-	chatModel, err := buildAgentChatModel(p)
-	if err != nil {
-		return nil, fmt.Errorf("build model: %w", err)
+// agentReActRunner calls the model and returns the response.
+// This replaces the ReAct agent with a direct model call.
+// Tool calling is limited in this simplified version.
+func agentReActRunner(ctx context.Context, p AgentParam) (*ComponentMessage, error) {
+	inv := getDefaultChatInvoker()
+	msgs := make([]ComponentMessage, 0, 2)
+	if p.SystemPrompt != "" {
+		msgs = append(msgs, NewSystemMessage(p.SystemPrompt))
 	}
-	tools, err := buildAgentTools(p)
-	if err != nil {
-		return nil, fmt.Errorf("build tools: %w", err)
-	}
-
-	agent, err := react.NewAgent(ctx, &react.AgentConfig{
-		ToolCallingModel: chatModel,
-		ToolsConfig: compose.ToolsNodeConfig{
-			Tools: tools,
-		},
-		MessageModifier: func(ctx context.Context, msgs []*schema.Message) []*schema.Message {
-			if p.SystemPrompt != "" {
-				return append([]*schema.Message{schema.SystemMessage(p.SystemPrompt)}, msgs...)
-			}
-			return msgs
-		},
-		MaxStep: p.MaxRounds,
+	msgs = append(msgs, NewUserMessage(p.UserPrompt))
+	resp, err := inv.Invoke(ctx, ChatInvokeRequest{
+		Driver:    p.Driver,
+		ModelName: p.ModelID,
+		APIKey:    p.APIKey,
+		BaseURL:   p.BaseURL,
+		Messages:  msgs,
+		TopP:      p.TopP,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("create react agent: %w", err)
+		return nil, fmt.Errorf("component: Agent: %w", err)
 	}
-
-	input := []*schema.Message{schema.UserMessage(p.UserPrompt)}
-	return agent.Generate(ctx, input)
+	return &ComponentMessage{Role: RoleAssistant, Content: resp.Content}, nil
 }
 
 // addToolCallMemory summarizes the tool calls observed in msg via
@@ -136,8 +119,8 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 //
 // When the LLM call fails or there are no tool calls, the function
 // returns ("", nil) and the caller skips appending to history.
-func addToolCallMemory(ctx context.Context, p AgentParam, msg *schema.Message) (string, error) {
-	calls := extractToolCalls(msg)
+func addToolCallMemory(ctx context.Context, p AgentParam, msg *ComponentMessage) (string, error) {
+	calls := extractToolCallsSimple(msg)
 	if len(calls) == 0 {
 		return "", nil
 	}
@@ -157,9 +140,9 @@ func addToolCallMemory(ctx context.Context, p AgentParam, msg *schema.Message) (
 		ModelName: p.ModelID,
 		APIKey:    p.APIKey,
 		BaseURL:   p.BaseURL,
-		Messages: []schema.Message{
-			{Role: schema.System, Content: system},
-			{Role: schema.User, Content: user},
+		Messages: []ComponentMessage{
+			{Role: RoleSystem, Content: system},
+			{Role: RoleUser, Content: user},
 		},
 		TopP: p.TopP,
 	})
@@ -196,9 +179,9 @@ func applyCitationGrounding(ctx context.Context, p AgentParam, content string, c
 		ModelName: p.ModelID,
 		APIKey:    p.APIKey,
 		BaseURL:   p.BaseURL,
-		Messages: []schema.Message{
-			{Role: schema.System, Content: systemPrompt},
-			{Role: schema.User, Content: content},
+		Messages: []ComponentMessage{
+			{Role: RoleSystem, Content: systemPrompt},
+			{Role: RoleUser, Content: content},
 		},
 		TopP: p.TopP,
 	})
@@ -244,7 +227,7 @@ func chunksFromState(ctx context.Context) []prompts.CitationSource {
 // sub-tool's input form. Mirrors Python's `Agent.get_input_form`.
 //
 // Today the sub-tool input forms are aggregated via an optional
-// `InputForm() map[string]any` method on the eino tool (when tools
+// `InputForm() map[string]any` method on the tool (when tools
 // implement it); tools that don't expose a structured input form
 // are skipped silently.
 func (c *AgentComponent) GetInputForm() map[string]any {
@@ -255,13 +238,9 @@ func (c *AgentComponent) GetInputForm() map[string]any {
 	if err != nil {
 		return out
 	}
-	ctx := context.Background()
 	for _, t := range tools {
-		info, ierr := t.Info(ctx)
-		name := ""
-		if ierr == nil && info != nil {
-			name = info.Name
-		}
+		meta := t.ToolMeta()
+		name := meta.Name
 		if name == "" {
 			continue
 		}
@@ -330,9 +309,9 @@ func optimizeMultiTurnQuestion(ctx context.Context, p AgentParam, history []map[
 		ModelName: p.ModelID,
 		APIKey:    p.APIKey,
 		BaseURL:   p.BaseURL,
-		Messages: []schema.Message{
-			{Role: schema.System, Content: system},
-			{Role: schema.User, Content: user},
+		Messages: []ComponentMessage{
+			{Role: RoleSystem, Content: system},
+			{Role: RoleUser, Content: user},
 		},
 		TopP: p.TopP,
 	})
@@ -340,10 +319,6 @@ func optimizeMultiTurnQuestion(ctx context.Context, p AgentParam, history []map[
 		return "", err
 	}
 	return strings.TrimSpace(resp.Content), nil
-}
-
-func buildAgentTools(p AgentParam) ([]einotool.BaseTool, error) {
-	return agenttool.BuildAll(p.Tools, p.ToolParams)
 }
 
 // NewAgentComponent builds an AgentComponent from raw params.
@@ -428,11 +403,11 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 			}
 		}
 	}
-	artifacts := collectArtifactsFromToolCalls(msg)
+	artifacts := emptyArtifactList()
 	artifactMD := formatArtifactMarkdown(artifacts, content)
 	out := map[string]any{
 		"content":    content + artifactMD,
-		"tool_calls": extractToolCalls(msg),
+		"tool_calls": extractToolCallsSimple(msg),
 		"artifacts":  artifacts,
 	}
 	if groundingStatus != "" {
@@ -483,44 +458,9 @@ func (c *AgentComponent) Outputs() map[string]string {
 	}
 }
 
-// buildAgentChatModel constructs an EinoChatModel from AgentParam by
-// resolving the driver through the RAGFlow provider manager.
-func buildAgentChatModel(p AgentParam) (*models.EinoChatModel, error) {
-	driver := p.Driver
-	if driver == "" {
-		driver = "dummy"
-	}
-	var baseURL map[string]string
-	if p.BaseURL != "" {
-		baseURL = map[string]string{"default": p.BaseURL}
-	}
-	// urlSuffix: see chatURLSuffixFor in llm.go for the rationale.
-	// The factory's NewModelDriver stores URLSuffix verbatim; the
-	// driver then appends URLSuffix.Chat to baseURL to build the
-	// chat-completions endpoint, so an empty suffix leaves the URL
-	// pointing at the v1 root (404). Seed the right suffix per
-	// driver so the agent's ReAct loop hits a working endpoint.
-	d, err := models.NewModelFactory().CreateModelDriver(driver, baseURL, chatURLSuffixFor(driver))
-	if err != nil {
-		return nil, fmt.Errorf("resolve driver %q: %w", driver, err)
-	}
-	if d == nil {
-		return nil, fmt.Errorf("no driver for %q", driver)
-	}
-	apiKey := p.APIKey
-	cfg := &models.APIConfig{ApiKey: &apiKey}
-	cm := models.NewChatModel(d, &p.ModelID, cfg)
-	// ChatConfig construction is conditional on TopP being set, unlike
-	// the LLM path which always builds a ChatConfig (Temperature/MaxTokens
-	// pass-through). The asymmetry is intentional: AgentParam has no
-	// Temperature/MaxTokens yet, so building a zero-config ChatConfig
-	// would be dead weight. When AgentParam grows Temperature/
-	// MaxTokens, switch to always-build.
-	var chatCfg *models.ChatConfig
-	if p.TopP != nil {
-		chatCfg = &models.ChatConfig{TopP: p.TopP}
-	}
-	return models.NewEinoChatModel(cm, chatCfg), nil
+// buildAgentTools resolves tool names into tool instances.
+func buildAgentTools(p AgentParam) ([]agenttool.Tool, error) {
+	return agenttool.BuildAll(p.Tools, p.ToolParams)
 }
 
 // artifactEntry is the shape of a single tool-returned artifact
@@ -531,30 +471,27 @@ type artifactEntry struct {
 }
 
 // collectArtifactsFromToolCalls extracts artifact entries from a
-// ReAct final message. Today, eino's react.Agent.Generate returns only
 // the final message — the tool-response state lives inside the agent
 // runtime and is not directly accessible. So this v1 returns an empty
-// slice; the wiring lives in a follow-up that hoists the eino state
+// slice; the wiring lives in a follow-up that hoists the state
 // into a place AgentComponent can read.
 //
 // When the tool response state becomes accessible (a future phase),
-// the entry point to wire it is here: scan the eino conversation
+// the entry point to wire it is here: scan the conversation
 // messages for entries whose `Extra["_ARTIFACTS"]` carries the
 // per-tool artifact metadata, decode the JSON, and append to the
 // returned slice. The shape expected from each tool is:
 //
 //	{ "name": "report.pdf", "url": "https://..." }
-func collectArtifactsFromToolCalls(_ *schema.Message) []artifactEntry {
-	return nil
-}
+func collectArtifactsFromToolCalls(_ *ComponentMessage) []artifactEntry { return nil }
 
 // formatArtifactMarkdown renders a slice of artifacts as markdown
 // links, omitting URLs already present in the existing text (Python's
 // `_collect_tool_artifact_markdown` does the same de-duplication).
 //
 // Format:
-//   - image URL  → ![name](url)
-//   - other URL  → [Download name](url)
+//   - image URL → ![name](url)
+//   - other URL → [Download name](url)
 //
 // Returns the empty string when no artifacts are present, so callers
 // can safely concatenate without guarding.
@@ -582,22 +519,27 @@ func formatArtifactMarkdown(artifacts []artifactEntry, existingText string) stri
 	return sb.String()
 }
 
-// extractToolCalls converts eino ToolCalls from a message into the
-// output map format.
-func extractToolCalls(msg *schema.Message) []map[string]any {
+func extractToolCallsSimple(msg *ComponentMessage) []map[string]any {
 	if msg == nil || len(msg.ToolCalls) == 0 {
 		return nil
 	}
-	calls := make([]map[string]any, 0, len(msg.ToolCalls))
+	out := make([]map[string]any, 0, len(msg.ToolCalls))
 	for _, tc := range msg.ToolCalls {
-		calls = append(calls, map[string]any{
-			"id":        tc.ID,
-			"type":      tc.Type,
-			"name":      tc.Function.Name,
-			"arguments": tc.Function.Arguments,
+		out = append(out, map[string]any{
+			"id":   tc.ID,
+			"type": tc.Type,
+			"name": tc.Function.Name,
+			"function": map[string]any{
+				"name":      tc.Function.Name,
+				"arguments": tc.Function.Arguments,
+			},
 		})
 	}
-	return calls
+	return out
+}
+
+func emptyArtifactList() []artifactEntry {
+	return nil
 }
 
 // mergeAgentParam layers raw inputs over the receiver's default param set.

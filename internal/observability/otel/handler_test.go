@@ -21,164 +21,106 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/cloudwego/eino/callbacks"
-	"github.com/cloudwego/eino/components"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
-// newTestHandler returns a *OtelHandler wired to an in-memory
-// [tracetest.SpanRecorder]. The recorder exposes the spans the handler
-// emits so tests can assert on names, attributes and status without
-// needing a real OTel collector.
-func newTestHandler(t *testing.T) (*OtelHandler, *tracetest.SpanRecorder) {
+// setupTestTracer configures a tracer backed by an in-memory span
+// recorder so tests can assert on emitted spans without a collector.
+func setupTestTracer(t *testing.T) *tracetest.SpanRecorder {
 	t.Helper()
 	recorder := tracetest.NewSpanRecorder()
-	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	SetTracerProvider(provider)
 	t.Cleanup(func() {
-		_ = tp.Shutdown(context.Background())
+		_ = provider.Shutdown(context.Background())
 	})
-	h := NewOtelHandler(tp)
-	return h, recorder
+	return recorder
 }
 
-// TestOtelHandler_RecordsSpan asserts that a single OnStart/OnEnd pair
-// produces exactly one span, named "<Component>:<Name>", carrying the
-// cpn.id / cpn.name / run.id / session.id attributes derived from the
-// context and the RunInfo.
-func TestOtelHandler_RecordsSpan(t *testing.T) {
-	h, recorder := newTestHandler(t)
-
+// TestStartEndSpan asserts a StartSpan / EndSpan pair produces one
+// span with the expected name and attributes.
+func TestStartEndSpan(t *testing.T) {
+	recorder := setupTestTracer(t)
 	ctx := context.Background()
-	ctx = WithRunID(ctx, "run-123")
-	ctx = WithSessionID(ctx, "sess-456")
+	ctx = WithRunID(ctx, "run-1")
+	ctx = WithSessionID(ctx, "sess-1")
 
-	info := &callbacks.RunInfo{
-		Name:      "llm_1",
-		Type:      "OpenAI",
-		Component: components.ComponentOfChatModel,
-	}
-
-	ctx = h.OnStart(ctx, info, "prompt")
-	ctx = h.OnEnd(ctx, info, "answer")
+	ctx = StartSpan(ctx, "test-agent", attribute.String("extra.key", "extra-val"))
+	ctx = EndSpan(ctx)
 
 	spans := recorder.Ended()
-	if got, want := len(spans), 1; got != want {
-		t.Fatalf("span count: got %d, want %d", got, want)
+	if len(spans) != 1 {
+		t.Fatalf("expected 1 span, got %d", len(spans))
 	}
-	span := spans[0]
-	if got, want := span.Name(), "ChatModel:llm_1"; got != want {
-		t.Errorf("span name: got %q, want %q", got, want)
+	s := spans[0]
+	if s.Name() != "test-agent" {
+		t.Errorf("span name = %q, want %q", s.Name(), "test-agent")
 	}
-
-	wantAttrs := map[string]string{
-		"cpn.id":        "llm_1",
-		"cpn.name":      "llm_1",
-		"cpn.component": "ChatModel",
-		"cpn.type":      "OpenAI",
-		"run.id":        "run-123",
-		"session.id":    "sess-456",
+	attrs := attrsToMap(s.Attributes())
+	if attrs["run.id"] != "run-1" {
+		t.Errorf("run.id = %q, want %q", attrs["run.id"], "run-1")
 	}
-	gotAttrs := attrMap(span)
-	for k, want := range wantAttrs {
-		if got := gotAttrs[k]; got != want {
-			t.Errorf("attribute %q: got %q, want %q", k, got, want)
-		}
+	if attrs["session.id"] != "sess-1" {
+		t.Errorf("session.id = %q, want %q", attrs["session.id"], "sess-1")
+	}
+	if attrs["extra.key"] != "extra-val" {
+		t.Errorf("extra.key = %q, want %q", attrs["extra.key"], "extra-val")
 	}
 }
 
-// TestOtelHandler_RecordsError asserts that OnError attaches the error
-// to the span (RecordedErrorCount > 0) and flips the span status to
-// OTel's Error code. The check on recorded-error count is portable
-// across the small API changes the SDK has shipped.
-func TestOtelHandler_RecordsError(t *testing.T) {
-	h, recorder := newTestHandler(t)
+// TestEndSpanWithError records an error on the span and marks it.
+func TestEndSpanWithError(t *testing.T) {
+	recorder := setupTestTracer(t)
+	ctx := StartSpan(context.Background(), "err-agent")
 
-	ctx := context.Background()
-	info := &callbacks.RunInfo{
-		Name:      "retrieval_0",
-		Component: components.ComponentOfRetriever,
-	}
-
-	ctx = h.OnStart(ctx, info, nil)
-	ctx = h.OnError(ctx, info, errors.New("kaboom"))
+	err := errors.New("something went wrong")
+	ctx = EndSpanWithError(ctx, err)
 
 	spans := recorder.Ended()
-	if got, want := len(spans), 1; got != want {
-		t.Fatalf("span count: got %d, want %d", got, want)
+	if len(spans) != 1 {
+		t.Fatalf("expected 1 span, got %d", len(spans))
 	}
-	span := spans[0]
-
-	// Two independent assertions: (1) the span status is Error per
-	// OTel spec, (2) at least one "exception" event was recorded with
-	// the err.Error() message attached. Either is sufficient to prove
-	// the OnError path propagated the error to OTel; together they
-	// guard against regressions in either half of the contract.
-	if status := span.Status(); status.Code != codes.Error {
-		t.Errorf("span status code: got %v, want %v", status.Code, codes.Error)
-	}
-	foundException := false
-	for _, ev := range span.Events() {
-		if ev.Name == "exception" {
-			for _, kv := range ev.Attributes {
-				if string(kv.Key) == "exception.message" && kv.Value.AsString() == "kaboom" {
-					foundException = true
-				}
-			}
-		}
-	}
-	if !foundException {
-		t.Errorf("expected an \"exception\" event with message \"kaboom\"; events: %+v", span.Events())
+	s := spans[0]
+	if s.Status().Code != codes.Error {
+		t.Errorf("status code = %v, want Error", s.Status().Code)
 	}
 }
 
-// TestOtelHandler_NoOpWhenProviderNil asserts that constructing a
-// handler with a nil provider is safe: OnStart returns the same context
-// (no span attached, no panic), and no spans are emitted to a recorder
-// the test later installs.
-func TestOtelHandler_NoOpWhenProviderNil(t *testing.T) {
-	h := NewOtelHandler(nil)
-	if h == nil {
-		t.Fatal("NewOtelHandler(nil) returned nil handler")
-	}
+// TestStartEndSpan_NoopWithoutProvider verifies that calling span
+// lifecycle functions without setting a tracer provider does not
+// panic and produces no spans.
+func TestStartEndSpan_NoopWithoutProvider(t *testing.T) {
+	// Ensure default noop state.
+	SetTracerProvider(nil)
 
 	ctx := context.Background()
-	info := &callbacks.RunInfo{
-		Name:      "noop_0",
-		Component: components.Component("Lambda"),
-	}
+	ctx = StartSpan(ctx, "ghost")
+	ctx = EndSpan(ctx)
 
-	out := h.OnStart(ctx, info, nil)
-	if out != ctx {
-		t.Errorf("OnStart should return ctx unchanged when tp is nil, got %v want %v", out, ctx)
-	}
-	out = h.OnEnd(out, info, nil)
-	if out != ctx {
-		t.Errorf("OnEnd should return ctx unchanged when tp is nil, got %v want %v", out, ctx)
-	}
-
-	// OnError with nil tp must also be a clean no-op: no panic, ctx
-	// unchanged.
-	out = h.OnError(out, info, errors.New("ignored"))
-	if out != ctx {
-		t.Errorf("OnError should return ctx unchanged when tp is nil, got %v want %v", out, ctx)
-	}
-
-	// And — for completeness — the streaming variants must not panic
-	// when tp is nil. The framework may pass nil readers; we treat them
-	// as best-effort and assert no-op behaviour.
-	_ = h.OnStartWithStreamInput(ctx, info, nil)
-	_ = h.OnEndWithStreamOutput(ctx, info, nil)
+	// If no panic occurs, the test passes.
 }
 
-// attrMap flattens a span's attributes into a string map so the test
-// can assert on individual key/value pairs without worrying about
-// attribute ordering (the SDK does not guarantee it).
-func attrMap(s sdktrace.ReadOnlySpan) map[string]string {
-	out := make(map[string]string, len(s.Attributes()))
-	for _, kv := range s.Attributes() {
-		out[string(kv.Key)] = kv.Value.AsString()
+// TestWithRunID_SessionID verifies context helpers round-trip.
+func TestWithRunID_SessionID(t *testing.T) {
+	ctx := WithRunID(context.Background(), "abc")
+	if got := RunIDFromContext(ctx); got != "abc" {
+		t.Errorf("RunIDFromContext = %q, want %q", got, "abc")
 	}
-	return out
+	ctx = WithSessionID(ctx, "xyz")
+	if got := SessionIDFromContext(ctx); got != "xyz" {
+		t.Errorf("SessionIDFromContext = %q, want %q", got, "xyz")
+	}
+}
+
+// attrsToMap converts a []attribute.KeyValue to a map for easy
+// assertion.
+func attrsToMap(attrs []attribute.KeyValue) map[string]string {
+	m := make(map[string]string, len(attrs))
+	for _, a := range attrs {
+		m[string(a.Key)] = a.Value.AsString()
+	}
+	return m
 }

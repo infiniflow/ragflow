@@ -94,17 +94,14 @@ func TestAkShare_Info(t *testing.T) {
 	t.Parallel()
 
 	tool := NewAkShareTool()
-	info, err := tool.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := tool.ToolMeta()
+	if meta.Name != "akshare" {
+		t.Errorf("Name = %q, want akshare", meta.Name)
 	}
-	if info.Name != "akshare" {
-		t.Errorf("Name = %q, want akshare", info.Name)
+	if !strings.Contains(meta.Description, "AkShare") {
+		t.Errorf("Desc = %q, want to mention AkShare", meta.Description)
 	}
-	if !strings.Contains(info.Desc, "AkShare") {
-		t.Errorf("Desc = %q, want to mention AkShare", info.Desc)
-	}
-	if !strings.Contains(info.Desc, "STUB") && !strings.Contains(info.Desc, "Python") {
-		t.Errorf("Desc = %q, want to flag stub status", info.Desc)
+	if !strings.Contains(meta.Description, "STUB") && !strings.Contains(meta.Description, "Python") {
+		t.Errorf("Desc = %q, want to flag stub status", meta.Description)
 	}
 }

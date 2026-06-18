@@ -211,9 +211,9 @@ func TestGraphIntegration_ReActWithCheckpointResume(t *testing.T) {
 	tool := &mockTool{name: "calculator", desc: "math tool"}
 
 	agent := NewReActAgent(&ReActConfig[*schema.Message]{
-		Model:        model,
-		Tools:        []Tool{tool},
-		ToolsConfig:  &ToolsNodeConfig{Tools: []Tool{tool}},
+		Model:         model,
+		Tools:         []Tool{tool},
+		ToolsConfig:   &ToolsNodeConfig{Tools: []Tool{tool}},
 		MaxIterations: 3,
 	}).WithName("react_cp_agent")
 
@@ -304,4 +304,3 @@ func TestGraphIntegration_WorkflowGraphCompile(t *testing.T) {
 		t.Fatal("Compile() returned nil")
 	}
 }
-

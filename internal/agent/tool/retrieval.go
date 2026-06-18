@@ -23,9 +23,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
-
 	"ragflow/internal/agent/runtime"
 )
 
@@ -86,7 +83,7 @@ type chunkPayload struct {
 // surfaces ErrRetrievalServiceMissing.
 type RetrievalTool struct{}
 
-// NewRetrievalTool returns a RetrievalTool implementing eino's
+// NewRetrievalTool returns a RetrievalTool implementing the tool.Tool interface.
 // tool.InvokableTool interface.
 func NewRetrievalTool() *RetrievalTool {
 	return &RetrievalTool{}
@@ -94,40 +91,40 @@ func NewRetrievalTool() *RetrievalTool {
 
 // Info returns the tool's metadata for the chat model. The schema mirrors
 // the Python RetrievalParam ToolMeta (plan , 字段对齐).
-func (r *RetrievalTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: retrievalToolName,
-		Desc: retrievalToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+func (r *RetrievalTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        retrievalToolName,
+		Description: retrievalToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"query": {
-				Type:     schema.String,
-				Desc:     "The keywords to search the dataset. The keywords should be the most important words/terms (including synonyms) from the original request.",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "The keywords to search the dataset. The keywords should be the most important words/terms (including synonyms) from the original request.",
+				Required:    true,
 			},
 			"dataset_ids": {
-				Type:     schema.Array,
-				Desc:     "Optional list of dataset IDs to restrict the search to.",
-				Required: false,
+				Type:        ParamTypeArray,
+				Description: "Optional list of dataset IDs to restrict the search to.",
+				Required:    false,
 			},
 			"top_n": {
-				Type:     schema.Integer,
-				Desc:     "Number of top chunks to return. Defaults to 8 if omitted.",
-				Required: false,
+				Type:        ParamTypeInteger,
+				Description: "Number of top chunks to return. Defaults to 8 if omitted.",
+				Required:    false,
 			},
 			"use_kg": {
-				Type:     schema.Boolean,
-				Desc:     "GraphRAG toggle. Not supported in Go Canvas (plan ); must be false.",
-				Required: false,
+				Type:        ParamTypeBoolean,
+				Description: "GraphRAG toggle. Not supported in Go Canvas (plan ); must be false.",
+				Required:    false,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 // InvokableRun executes the tool. It validates the input and
 // dispatches to the registered RetrievalService. When no
 // service is registered, the call surfaces
 // ErrRetrievalServiceMissing.
-func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ...tool.Option) (string, error) {
+func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string) (string, error) {
 	var args retrievalArgs
 	if argumentsInJSON != "" {
 		if err := json.Unmarshal([]byte(argumentsInJSON), &args); err != nil {
@@ -167,7 +164,7 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 		}), err
 	}
 	// Map the chunks into the result envelope. The retrievalResult
-	// type carries the eino-tool envelope shape (chunkPayload, not
+	// type carries the tool envelope shape (chunkPayload, not
 	// RetrievalChunk), so we translate.
 	payload := make([]chunkPayload, 0, len(chunks))
 	for _, c := range chunks {

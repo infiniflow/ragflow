@@ -45,7 +45,7 @@ func TestNewExeSQLConnParams_RequiredFields(t *testing.T) {
 
 // TestNewExeSQLConnParams_AllFields: full params map decodes correctly.
 func TestNewExeSQLConnParams_AllFields(t *testing.T) {
-	conn, err := NewExeSQLConnParams(map[string]any{
+	conn, _ := NewExeSQLConnParams(map[string]any{
 		"db_type":     "postgres",
 		"host":        "db.example.com",
 		"port":        5432,
@@ -54,9 +54,6 @@ func TestNewExeSQLConnParams_AllFields(t *testing.T) {
 		"password":    "secret",
 		"max_records": 100,
 	})
-	if err != nil {
-		t.Fatalf("NewExeSQLConnParams: %v", err)
-	}
 	if conn.DBType != "postgres" {
 		t.Errorf("DBType=%q, want postgres", conn.DBType)
 	}

@@ -56,11 +56,11 @@ type ReActGraphState struct {
 // ReActGraph wraps a ChatModelAgent's loop into a StateGraph with automatic
 // checkpoint at each iteration and interrupt before tool execution.
 type ReActGraph struct {
-	compiled  *graph.CompiledGraph
-	config    *ReActConfig[*schema.Message]
-	agent     *ReActAgent[*schema.Message]
-	allInfos  []*schema.ToolInfo // merged config + contributor tool infos
-	allTools  []Tool             // merged config + contributor tools
+	compiled *graph.CompiledGraph
+	config   *ReActConfig[*schema.Message]
+	agent    *ReActAgent[*schema.Message]
+	allInfos []*schema.ToolInfo // merged config + contributor tool infos
+	allTools []Tool             // merged config + contributor tools
 }
 
 // ReActGraphConfig holds options for building a ReActGraph.
@@ -87,6 +87,14 @@ func NewReActGraph(agent *ReActAgent[*schema.Message], cfg *ReActGraphConfig, al
 		cfg = &ReActGraphConfig{}
 	}
 	agentCfg := agent.config
+	// Fallback: when allToolInfos is nil, derive from the agent's tools
+	// so model wrappers always have tool metadata.
+	if allToolInfos == nil {
+		allToolInfos = toolsToInfosTyped[*schema.Message](agentCfg.Tools)
+		if agentCfg.ToolsConfig != nil {
+			allToolInfos = append(allToolInfos, toolsToInfosTyped[*schema.Message](agentCfg.ToolsConfig.Tools)...)
+		}
+	}
 	sg := graph.NewStateGraph(&ReActGraphState{})
 
 	// Register channels for state fields used by the graph engine.
@@ -115,8 +123,8 @@ func NewReActGraph(agent *ReActAgent[*schema.Message], cfg *ReActGraphConfig, al
 		s := state.(*ReActGraphState)
 		rc := &ReActAgentContext{
 			Instruction:    s.Instruction,
-			Tools:          agentCfg.Tools,
-			ReturnDirectly: agentCfg.ReturnDirectly,
+			Tools:          allTools,
+			ReturnDirectly: allRD,
 		}
 		for _, mw := range agentCfg.Middlewares {
 			if mw == nil {
@@ -280,8 +288,8 @@ func NewReActGraph(agent *ReActAgent[*schema.Message], cfg *ReActGraphConfig, al
 		for _, tc := range pendingCalls {
 			// Build a fresh message containing only this tool call.
 			singleMsg := &schema.Message{
-				Role:    schema.RoleAssistant,
-				Content: "",
+				Role:      schema.RoleAssistant,
+				Content:   "",
 				ToolCalls: []schema.ToolCall{tc},
 			}
 			var action *AgentAction
@@ -409,11 +417,11 @@ func NewReActGraph(agent *ReActAgent[*schema.Message], cfg *ReActGraphConfig, al
 	}
 
 	return &ReActGraph{
-		compiled:  compiled,
-		config:    agentCfg,
-		agent:     agent,
-		allInfos:  allToolInfos,
-		allTools:  allTools,
+		compiled: compiled,
+		config:   agentCfg,
+		agent:    agent,
+		allInfos: allToolInfos,
+		allTools: allTools,
 	}, nil
 }
 

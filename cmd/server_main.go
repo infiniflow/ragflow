@@ -37,6 +37,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"go.uber.org/zap"
 
 	"ragflow/internal/agent/audio"
@@ -405,40 +407,47 @@ func startServer(config *server.Config) {
 // requiring Redis to be up.
 type agentRunOptions struct {
 	checkpointStore canvas.CheckPointStore
-	stateSerializer canvas.StateSerializer
+	stateSerializer canvas.CanvasStateSerializer
 	runTracker      *canvas.RunTracker
 }
 
-// buildAgentRunOptions installs the Redis-backed run infrastructure
-// when Redis is available. The Redis client is the one already
-// initialised at the top of main; the TTL is a conservative 24h for
-// both the checkpoint store and the run tracker. On any error
-// (Redis down at boot, constructor panic, nil-Redis fallback) we
-// log and return a zero-value struct — the agent service falls back
+// buildAgentRunOptions installs the NATS-backed checkpoint store.
+// The NATS KV bucket is used for checkpoint persistence; the run tracker
+// remains Redis-backed for now. On any error (NATS down, config missing)
+// we log and return a zero-value struct — the agent service falls back
 // to the in-memory path transparently.
 func buildAgentRunOptions() agentRunOptions {
 	var out agentRunOptions
-	if !redis.IsEnabled() || redis.Get() == nil {
-		common.Info("agent: redis client not initialised; agent run infra in in-memory mode (no checkpoints, no run tracker)")
-		return out
+
+	// Create a NATS-backed CheckPointStore.
+	natsCfg := server.GetConfig().Nats
+	if natsCfg.Host == "" || natsCfg.Port == 0 {
+		common.Info("agent: nats not configured; checkpoint store in in-memory mode")
+	} else {
+		nc, err := nats.Connect(fmt.Sprintf("nats://%s:%d", natsCfg.Host, natsCfg.Port))
+		if err != nil {
+			common.Info("agent: nats connect failed; checkpoint store in in-memory mode", zap.Error(err))
+		} else {
+			js, err := jetstream.New(nc)
+			if err != nil {
+				nc.Close()
+				common.Info("agent: nats JetStream initialization failed; checkpoint store in in-memory mode", zap.Error(err))
+			} else {
+				cp, err := canvas.NewNATSCheckPointStore(js, "ragflow_checkpoints")
+				if err != nil {
+					nc.Close()
+					common.Info("agent: nats KV bucket creation failed; checkpoint store in in-memory mode", zap.Error(err))
+				} else {
+					out.checkpointStore = cp
+					common.Info("agent: nats-backed checkpoint store installed (bucket=ragflow_checkpoints)")
+				}
+			}
+		}
 	}
-	cp := canvas.NewRedisCheckPointStore(24 * time.Hour)
-	out.checkpointStore = cp
-	// stateSerializer is intentionally left nil. eino's default
-	// InternalSerializer (used when no compose.WithSerializer is
-	// passed at compile time) already knows how to round-trip
-	// runtime.CanvasState because the runtime package registers
-	// it via compose.RegisterSerializableType[CanvasState] in
-	// init(). Overriding with RAGFlow's plain-JSON
-	// CanvasStateSerializer (json.Marshal/Unmarshal) produces
-	// bytes the InternalSerializer cannot decode on the resume
-	// pass — the UserFillUp two-node pattern surfaces this as
-	// "load checkpoint from store fail: cannot unmarshal object
-	// into Go struct field checkpoint.Channels of type
-	// compose.channel". Rely on eino's default instead.
+	// stateSerializer is intentionally left nil as described above.
+	// Run tracker remains Redis-backed when available.
 	rt := canvas.NewRunTracker(24 * time.Hour)
 	out.runTracker = rt
-	common.Info("agent: redis-backed run infra installed (24h TTL on checkpoint store + run tracker; eino default serializer)")
 	return out
 }
 

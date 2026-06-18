@@ -24,7 +24,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/cloudwego/eino/compose"
+	"ragflow/internal/harness"
+	"ragflow/internal/harness/graph/interrupt"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
@@ -92,7 +94,7 @@ type AgentService struct {
 	// / canvas.WithStateSerializer so every Compile's check-point
 	// payload and CanvasState snapshot round-trip to Redis.
 	checkpointStore canvas.CheckPointStore
-	stateSerializer canvas.StateSerializer
+	stateSerializer interface{}
 
 	// runTracker records per-run lifecycle (Start / MarkSucceeded /
 	// MarkFailed / MarkCancelled) to Redis hash "agent:run:{id}".
@@ -122,7 +124,7 @@ func NewAgentService() *AgentService {
 // requiring Redis.
 func NewAgentServiceWithOptions(
 	cp canvas.CheckPointStore,
-	ser canvas.StateSerializer,
+	ser interface{},
 	rt *canvas.RunTracker,
 ) *AgentService {
 	return &AgentService{
@@ -502,7 +504,7 @@ func (s *AgentService) DeleteVersion(ctx context.Context, userID, canvasID, vers
 
 // RunAgent starts a run for the given canvas and returns a channel of
 // orchestrator events the HTTP layer streams back as SSE. The driver owns
-// the wait-for-user cycle (eino interrupt, gap-analysis §11.6.4): the
+// the wait-for-user cycle (harness interrupt): the
 // RunFunc returns an interrupt error when a UserFillUp node pauses the
 // graph, the driver persists the interrupt id keyed by (canvasID,
 // sessionID), and resumes when the next call supplies a non-empty
@@ -705,7 +707,8 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			resumeData := root["__resume_data__"]
 			delete(root, "__resume_interrupt_id__")
 			delete(root, "__resume_data__")
-			ctx2 = compose.ResumeWithData(ctx2, resumeID, resumeData)
+			ctx2 = interrupt.WithInterruptContext(ctx2)
+			interrupt.AppendResumeValue(ctx2, resumeData)
 		}
 
 		// Run lifecycle: best-effort. Tracker may be nil (test
@@ -718,11 +721,11 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 
 		// Compile. The CheckPointStore is wired independently of
 		// the state serializer. The state serializer is
-		// OPTIONAL: when the user does not set one, eino's
+		// OPTIONAL: when the user does not set one, harness's
 		// default InternalSerializer is used (which knows about
 		// runtime.CanvasState via compose.RegisterSerializableType
 		// in runtime/state.go:init). RAGFlow's plain-JSON
-		// CanvasStateSerializer is incompatible with eino's
+		// CanvasStateSerializer is incompatible with harness's
 		// internal checkpoint format — see cmd/server_main.go
 		// buildAgentRunOptions for the rationale.
 		var cc *canvas.CompiledCanvas
@@ -752,7 +755,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 
 		// Phase 4.4 V2 (Goal 7): generate a checkpoint id when
 		// a store is configured and pair the run record with the
-		// checkpoint payload. eino's WithCheckPointID is a run-time
+		// checkpoint payload. WithCheckPointID is a run-time
 		// Option (not a GraphCompileOption), so the id has to be
 		// generated per-Invoke. We use the existing runID as the
 		// checkpoint id — it's already unique per (canvas, session)
@@ -763,17 +766,18 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			cpID = runID
 		}
 
-		// Invoke. cc.Workflow.Invoke runs the full eino graph.
-		// A wait-for-user interrupt surfaces as an eino error
-		// that we pass through to Runner.Run unchanged — Runner.Run
-		// detects it via canvas.ExtractInterruptContexts (see
-		// runner.go:219-227) and emits the waiting_for_user SSE
-		// event with the saved interrupt id.
-		var invokeOpts []compose.Option
+		// Invoke. cc.Graph.Invoke runs the full harness graph.
+		// A wait-for-user interrupt surfaces as a harness interrupt
+		// that we pass through to Runner.Run unchanged.
+		var runConfig *harness.RunnableConfig
 		if cpID != "" {
-			invokeOpts = []compose.Option{compose.WithCheckPointID(cpID)}
+			runConfig = harness.NewRunnableConfig()
+			runConfig.ThreadID = cpID
+			runConfig.Configurable = map[string]interface{}{
+				"thread_id": cpID,
+			}
 		}
-		_, err = cc.Workflow.Invoke(ctx2, map[string]any{"query": userInput}, invokeOpts...)
+		_, err = cc.Graph.Invoke(ctx2, map[string]any{"query": userInput}, runConfig)
 
 		// Attach the checkpoint payload to the run record. Best-
 		// effort — tracker may be down; we don't fail the run.

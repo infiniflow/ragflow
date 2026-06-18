@@ -260,8 +260,8 @@ func (b *localShellBackend) Execute(command string) (string, error) {
 
 type execTool struct{}
 
-func (t *execTool) Name() string             { return "_bootstrap_tool" }
-func (t *execTool) Description() string       { return "Internal bootstrap tool" }
+func (t *execTool) Name() string        { return "_bootstrap_tool" }
+func (t *execTool) Description() string { return "Internal bootstrap tool" }
 func (t *execTool) Invoke(ctx context.Context, args string, opts ...core.ToolOption) (string, error) {
 	return "", nil
 }

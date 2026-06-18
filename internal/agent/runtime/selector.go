@@ -1,17 +1,17 @@
 //
-//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+// Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+// http://www.apache.org/licenses/LICENSE-2.0
 //
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //
 
 // Package runtime implements per-tenant runtime selection for the
@@ -19,12 +19,12 @@
 //
 // Two pieces live in this package:
 //
-//   - Selector (this file): reads/writes the per-tenant runtime
-//     override in Redis. The default is RuntimeGo; per-tenant
-//     overrides still let operators force a tenant back to Python
-//     during the agent_api.py deprecation window.
-//   - Metrics (metrics.go): Prometheus counter + histogram for
-//     per-run observation, keyed by runtime mode.
+// - Selector (this file): reads/writes the per-tenant runtime
+// override in Redis. The default is RuntimeGo; per-tenant
+// overrides still let operators force a tenant back to Python
+// during the agent_api.py deprecation window.
+// - Metrics (metrics.go): Prometheus counter + histogram for
+// per-run observation, keyed by runtime mode.
 package runtime
 
 import (
@@ -43,7 +43,7 @@ import (
 type RuntimeMode string
 
 const (
-	// RuntimeGo routes the tenant to the Go-side eino
+	// RuntimeGo routes the tenant to the Go-side
 	// implementation. This is the process-wide default.
 	RuntimeGo RuntimeMode = "go"
 	// RuntimePython routes the tenant to the legacy Python
@@ -114,7 +114,7 @@ func NewSelector(rdb *redis.Client, logger *zap.Logger) *Selector {
 	return &Selector{redis: rdb, logger: logger}
 }
 
-// overrideKey returns the Redis key for a tenant's runtime override.
+// overrideKey returns the Redis key for a tenant runtime override.
 func overrideKey(tenantID string) string {
 	return overrideKeyPrefix + tenantID
 }
@@ -122,9 +122,9 @@ func overrideKey(tenantID string) string {
 // Select returns the runtime mode registered for tenantID. The lookup
 // order is:
 //
-//  1. The Redis key "tenant_canvas_runtime:<tenantID>" if present.
-//  2. The process-wide Default() (env RAGFLOW_CANVAS_DEFAULT_RUNTIME,
-//     falling back to RuntimeGo).
+// 1. The Redis key "tenant_canvas_runtime:<tenantID>" if present.
+// 2. The process-wide Default() (env RAGFLOW_CANVAS_DEFAULT_RUNTIME,
+// falling back to RuntimeGo).
 //
 // A nil Redis client short-circuits to the default and never errors.
 func (s *Selector) Select(ctx context.Context, tenantID string) (RuntimeMode, error) {

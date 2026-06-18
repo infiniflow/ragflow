@@ -136,14 +136,14 @@ type Config struct {
 type SubAgentMiddleware struct {
 	core.BaseMiddleware[*schema.Message]
 
-	cfg       *Config
-	specs     []SubAgentSpec
-	mu        sync.Mutex
-	tools     []core.Tool // AgentTool wrappers, built in ensureBuilt
-	infos     []*schema.ToolInfo
+	cfg        *Config
+	specs      []SubAgentSpec
+	mu         sync.Mutex
+	tools      []core.Tool // AgentTool wrappers, built in ensureBuilt
+	infos      []*schema.ToolInfo
 	builtInfos []*schema.ToolInfo // only specs that were actually built
-	built     bool
-	parentCfg *core.ReActConfig[*schema.Message] // stored by Init for middleware inheritance
+	built      bool
+	parentCfg  *core.ReActConfig[*schema.Message] // stored by Init for middleware inheritance
 }
 
 // New creates a SubAgentMiddleware. Pass nil for cfg to use defaults.
@@ -222,10 +222,14 @@ func (m *SubAgentMiddleware) ensureBuiltSimple(ctx context.Context) {
 		m.builtInfos = append(m.builtInfos, &schema.ToolInfo{
 			Name: spec.Name, Description: spec.Description,
 		})
-		tool := core.NewAgentTool(ctx, agent,
-			core.WithEmitInternalEvents(),
-			core.WithMaxDepth(m.cfg.MaxDepth),
-		)
+		opts := []core.AgentToolOption{}
+		if m.cfg.EmitInternalEvents {
+			opts = append(opts, core.WithEmitInternalEvents())
+		}
+		if m.cfg.MaxDepth > 0 {
+			opts = append(opts, core.WithMaxDepth(m.cfg.MaxDepth))
+		}
+		tool := core.NewAgentTool(ctx, agent, opts...)
 		m.tools = append(m.tools, tool)
 		m.mu.Unlock()
 	}

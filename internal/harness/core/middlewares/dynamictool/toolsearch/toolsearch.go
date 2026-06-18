@@ -17,7 +17,7 @@ import (
 type TypedConfig[M core.MessageType] struct {
 	AllTools        []core.Tool
 	MaxResults      int
-	SearchThreshold int // Pass all directly if <= threshold; otherwise use search
+	SearchThreshold int  // Pass all directly if <= threshold; otherwise use search
 	UseDeferred     bool // Use DeferredToolInfos for model-native search
 }
 
@@ -28,9 +28,15 @@ type middleware[M core.MessageType] struct {
 }
 
 func NewTyped[M core.MessageType](cfg *TypedConfig[M]) core.TypedReActMiddleware[M] {
-	if cfg == nil { cfg = &TypedConfig[M]{MaxResults: 5, SearchThreshold: 10} }
-	if cfg.MaxResults <= 0 { cfg.MaxResults = 5 }
-	if cfg.SearchThreshold <= 0 { cfg.SearchThreshold = 10 }
+	if cfg == nil {
+		cfg = &TypedConfig[M]{MaxResults: 5, SearchThreshold: 10}
+	}
+	if cfg.MaxResults <= 0 {
+		cfg.MaxResults = 5
+	}
+	if cfg.SearchThreshold <= 0 {
+		cfg.SearchThreshold = 10
+	}
 	return &middleware[M]{cfg: cfg}
 }
 
@@ -75,7 +81,9 @@ func (m *middleware[M]) BeforeAgent(ctx context.Context, rc *core.ReActAgentCont
 }
 
 func (m *middleware[M]) BeforeModelRewrite(ctx context.Context, state *core.TypedReActAgentState[M], mc *core.TypedModelContext[M]) (context.Context, *core.TypedReActAgentState[M], error) {
-	if !m.cfg.UseDeferred { return ctx, state, nil }
+	if !m.cfg.UseDeferred {
+		return ctx, state, nil
+	}
 
 	// Deferred mode: build tool info list for all available tools.
 	infos := make([]*schema.ToolInfo, 0, len(m.cfg.AllTools))
@@ -95,7 +103,9 @@ func (m *middleware[M]) newSearchTool() core.Tool {
 			// Direct selection syntax
 			if strings.HasPrefix(args, "select:") {
 				selected := strings.Split(args[7:], ",")
-				for i := range selected { selected[i] = strings.TrimSpace(selected[i]) }
+				for i := range selected {
+					selected[i] = strings.TrimSpace(selected[i])
+				}
 				var results []string
 				for _, t := range m.cfg.AllTools {
 					for _, s := range selected {
@@ -104,13 +114,17 @@ func (m *middleware[M]) newSearchTool() core.Tool {
 						}
 					}
 				}
-				if len(results) == 0 { return "No selected tools found.", nil }
+				if len(results) == 0 {
+					return "No selected tools found.", nil
+				}
 				return "Selected tools:\n" + strings.Join(results, "\n"), nil
 			}
 
 			// Keyword search
 			keywords := strings.Fields(args)
-			if len(keywords) == 0 { return "Please provide keywords to search.", nil }
+			if len(keywords) == 0 {
+				return "Please provide keywords to search.", nil
+			}
 
 			// Separate required (+prefix) and optional keywords
 			var required, optional []string
@@ -137,20 +151,36 @@ func (m *middleware[M]) newSearchTool() core.Tool {
 				// Check required keywords
 				allMatched := true
 				for _, r := range required {
-					if !strings.Contains(name, r) && !strings.Contains(desc, r) { allMatched = false; break }
+					if !strings.Contains(name, r) && !strings.Contains(desc, r) {
+						allMatched = false
+						break
+					}
 				}
-				if !allMatched { continue }
+				if !allMatched {
+					continue
+				}
 
 				// Score optional keywords
 				for _, kw := range optional {
 					nameParts := splitToolName(t.Name())
 					for _, part := range nameParts {
-						if strings.EqualFold(part, kw) { score += 10; continue }
-						if strings.Contains(strings.ToLower(part), kw) { score += 5 }
+						if strings.EqualFold(part, kw) {
+							score += 10
+							continue
+						}
+						if strings.Contains(strings.ToLower(part), kw) {
+							score += 5
+						}
 					}
-					if strings.EqualFold(t.Name(), kw) { score += 10 }
-					if strings.Contains(name, kw) { score += 3 }
-					if strings.Contains(desc, kw) { score += 2 }
+					if strings.EqualFold(t.Name(), kw) {
+						score += 10
+					}
+					if strings.Contains(name, kw) {
+						score += 3
+					}
+					if strings.Contains(desc, kw) {
+						score += 2
+					}
 				}
 				if score > 0 || len(optional) == 0 {
 					scored = append(scored, scoredTool{name: t.Name(), desc: t.Description(), score: score})
@@ -162,10 +192,14 @@ func (m *middleware[M]) newSearchTool() core.Tool {
 				return scored[i].score > scored[j].score
 			})
 
-			if len(scored) == 0 { return "No tools found for: " + args, nil }
+			if len(scored) == 0 {
+				return "No tools found for: " + args, nil
+			}
 
 			// Limit results
-			if len(scored) > m.cfg.MaxResults { scored = scored[:m.cfg.MaxResults] }
+			if len(scored) > m.cfg.MaxResults {
+				scored = scored[:m.cfg.MaxResults]
+			}
 			var results []string
 			for _, s := range scored {
 				results = append(results, s.name+": "+s.desc)
@@ -184,7 +218,9 @@ func splitToolName(name string) []string {
 	// Further split camelCase
 	var result []string
 	for _, part := range parts {
-		if part == "" { continue }
+		if part == "" {
+			continue
+		}
 		var current strings.Builder
 		for i, r := range part {
 			if i > 0 && r >= 'A' && r <= 'Z' {
@@ -201,4 +237,3 @@ func splitToolName(name string) []string {
 	}
 	return result
 }
-

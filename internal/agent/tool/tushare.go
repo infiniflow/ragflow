@@ -24,9 +24,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 )
 
 const tushareToolName = "tushare"
@@ -119,33 +116,33 @@ func NewTushareToolWith(h *HTTPHelper) *TushareTool {
 }
 
 // Info returns the tool's metadata for the chat model.
-func (t *TushareTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: tushareToolName,
-		Desc: tushareToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+func (t *TushareTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        tushareToolName,
+		Description: tushareToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"token": {
-				Type:     schema.String,
-				Desc:     "Tushare Pro API token (积分账户).",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "Tushare Pro API token (积分账户).",
+				Required:    true,
 			},
 			"api_name": {
-				Type:     schema.String,
-				Desc:     "Tushare interface name, e.g. stock_basic, daily, fund_basic, index_daily, fut_basic.",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "Tushare interface name, e.g. stock_basic, daily, fund_basic, index_daily, fut_basic.",
+				Required:    true,
 			},
 			"params": {
-				Type:     schema.Object,
-				Desc:     "Optional query parameters, e.g. {\"ts_code\":\"000001.SZ\",\"start_date\":\"20240101\"}.",
-				Required: false,
+				Type:        ParamTypeObject,
+				Description: "Optional query parameters, e.g. {\"ts_code\":\"000001.SZ\",\"start_date\":\"20240101\"}.",
+				Required:    false,
 			},
 			"fields": {
-				Type:     schema.Array,
-				Desc:     "Optional subset of columns to return (Tushare `fields` parameter).",
-				Required: false,
+				Type:        ParamTypeArray,
+				Description: "Optional subset of columns to return (Tushare `fields` parameter).",
+				Required:    false,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 // buildTushareRequestBody marshals the request envelope to JSON. The
@@ -172,7 +169,7 @@ func buildTushareURL() string {
 }
 
 // InvokableRun performs the Tushare Pro POST call.
-func (t *TushareTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (t *TushareTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var p tushareParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return tushareErrJSON(fmt.Errorf("tushare: parse arguments: %w", err)),

@@ -44,7 +44,7 @@ func TestBuildWorkflow_3NodeLinear(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	if cc.Workflow == nil {
+	if cc.Graph == nil {
 		t.Fatal("nil compiled workflow")
 	}
 }
@@ -87,7 +87,7 @@ func TestBuildWorkflow_5NodeDiamond(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile diamond: %v", err)
 	}
-	if cc.Workflow == nil {
+	if cc.Graph == nil {
 		t.Fatal("nil compiled diamond workflow")
 	}
 }

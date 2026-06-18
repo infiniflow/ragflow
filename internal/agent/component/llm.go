@@ -1,13 +1,13 @@
 // Package component — LLM (T1).
 //
 // One-shot LLM call. Reads system_prompt + user_prompt, dispatches to a
-// chat model, and returns the assistant's content. Streaming variant
+// chat model, and returns the assistant content. Streaming variant
 // forwards incremental chunks via Stream.
 //
 // Model invocation is abstracted behind a small ChatInvoker interface so
 // tests can inject a stub without touching the network. The default
-// ChatInvoker is built around models.NewEinoChatModel so production paths
-// flow through the eino bridge (plan §2.11.6 D1).
+// ChatInvoker is the abstraction for LLM chat calls.
+
 package component
 
 import (
@@ -16,13 +16,10 @@ import (
 	"fmt"
 	"log"
 	"regexp"
-	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/cloudwego/eino/schema"
 
 	"ragflow/internal/agent/component/prompts"
 	"ragflow/internal/agent/runtime"
@@ -60,7 +57,7 @@ type LLMParam struct {
 
 	// BaseURL overrides the driver default endpoint (e.g. to point the
 	// "openai" driver at a third-party gateway). Empty defers to the
-	// driver's built-in default URL.
+	// driver built-in default URL.
 	BaseURL string
 
 	// MaxRetries caps the retry loop in retryInvoker. Zero = default
@@ -71,7 +68,7 @@ type LLMParam struct {
 
 	// DelayAfterError is the initial backoff between retry attempts.
 	// Doubles on each retry, capped at 1 minute. Zero = default
-	// (2 seconds). Matches Python's `delay_after_error` param.
+	// (2 seconds). Matches Python `delay_after_error` param.
 	DelayAfterError time.Duration
 }
 
@@ -120,7 +117,7 @@ type ChatInvokeRequest struct {
 	ModelName   string
 	APIKey      string
 	BaseURL     string
-	Messages    []schema.Message
+	Messages    []ComponentMessage
 	Temperature *float64
 	TopP        *float64
 	MaxTokens   *int
@@ -138,7 +135,7 @@ type ChatInvokeResponse struct {
 var defaultChatInvokerMu sync.RWMutex
 
 // defaultChatInvoker is the production ChatInvoker. Replaced in tests.
-var defaultChatInvoker ChatInvoker = &einoChatInvoker{}
+var defaultChatInvoker ChatInvoker = &productionChatInvoker{}
 
 // SetDefaultChatInvoker swaps the package-level ChatInvoker (test helper).
 // Pass nil to restore the default. Concurrent-safe.
@@ -153,17 +150,17 @@ func getDefaultChatInvoker() ChatInvoker {
 	defaultChatInvokerMu.RLock()
 	defer defaultChatInvokerMu.RUnlock()
 	if defaultChatInvoker == nil {
-		return &einoChatInvoker{}
+		return &productionChatInvoker{}
 	}
 	return defaultChatInvoker
 }
 
-// einoChatInvoker is the production ChatInvoker — it constructs a fresh
-// models.EinoChatModel per call from the request and dispatches.
-type einoChatInvoker struct{}
+// it constructs a fresh
+// models.ChatModel per call and dispatches.
+type productionChatInvoker struct{}
 
 // Invoke satisfies ChatInvoker.
-func (e *einoChatInvoker) Invoke(ctx context.Context, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
+func (e *productionChatInvoker) Invoke(ctx context.Context, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
 	if req.ModelName == "" {
 		return nil, fmt.Errorf("component: LLM: model_id is required")
 	}
@@ -182,11 +179,11 @@ func (e *einoChatInvoker) Invoke(ctx context.Context, req ChatInvokeRequest) (*C
 	// urlSuffix: each driver appends URLSuffix.Chat to baseURL to form
 	// the chat-completions endpoint (e.g. "chat/completions" for
 	// openai-compatible drivers, "v1/messages" for anthropic). The
-	// factory's NewModelDriver accepts a zero URLSuffix and stores it
+	// factory NewModelDriver accepts a zero URLSuffix and stores it
 	// as-is; the openai driver then builds `<base>/` (with no path),
 	// which is the wrong endpoint for a v1-root base URL. We seed
 	// the right suffix per driver here so the factory and the
-	// openai driver's URL construction agree.
+	// openai driver URL construction agree.
 	urlSuffix := chatURLSuffixFor(driver)
 	d, err := models.NewModelFactory().CreateModelDriver(driver, baseURL, urlSuffix)
 	if err != nil {
@@ -204,61 +201,31 @@ func (e *einoChatInvoker) Invoke(ctx context.Context, req ChatInvokeRequest) (*C
 		TopP:        req.TopP,
 		MaxTokens:   req.MaxTokens,
 	}
-	wrapper := models.NewEinoChatModel(cm, chatCfg)
-	out, err := wrapper.Generate(ctx, toEinoMessages(req.Messages))
+	// Convert to models.Message
+	ragMsgs := make([]models.Message, len(req.Messages))
+	for i, m := range req.Messages {
+		ragMsgs[i] = models.Message{Role: m.Role, Content: m.Content}
+	}
+	msgs := ragMsgs
+	resp, err := cm.ModelDriver.ChatWithMessages(*cm.ModelName, msgs, cm.APIConfig, chatCfg)
 	if err != nil {
 		return nil, err
 	}
+	if resp.Answer == nil {
+		return nil, fmt.Errorf("LLM returned nil Answer")
+	}
 	return &ChatInvokeResponse{
-		Content: out.Content,
+		Content: *resp.Answer,
 		Model:   req.ModelName,
 		Stopped: true,
 		Tokens:  0,
 	}, nil
 }
 
-// toEinoMessages converts the LLM component's Message slice to eino's.
-//
-// Copies Role, Content, AND UserInputMultiContent (multi-modal parts),
-// including a deep copy of the *string URL pointers in each image part
-// so that callers may mutate the returned messages without affecting
-// the source. Without the multi-content copy and pointer deep-copy,
-// vision inputs would be silently dropped or shared with the caller.
-func toEinoMessages(msgs []schema.Message) []*schema.Message {
-	if len(msgs) == 0 {
-		return nil
-	}
-	out := make([]*schema.Message, 0, len(msgs))
-	for i := range msgs {
-		m := msgs[i]
-		role := m.Role
-		if role == "" {
-			role = schema.User
-		}
-		cloned := slices.Clone(m.UserInputMultiContent)
-		for j, p := range cloned {
-			if p.Image != nil {
-				imgCopy := *p.Image
-				if p.Image.URL != nil {
-					u := *p.Image.URL
-					imgCopy.URL = &u
-				}
-				cloned[j].Image = &imgCopy
-			}
-		}
-		out = append(out, &schema.Message{
-			Role:                  role,
-			Content:               m.Content,
-			UserInputMultiContent: cloned,
-		})
-	}
-	return out
-}
-
 // chatURLSuffixFor returns the URLSuffix the factory should pass to
-// the driver for the chat endpoint. Each driver's ChatWithMessages
+// the driver for the chat endpoint. Each driver ChatWithMessages
 // builds `baseURL/URLSuffix.Chat`, so the suffix has to match the
-// provider's actual chat path. We seed the common ones here; for any
+// provider actual chat path. We seed the common ones here; for any
 // driver the factory has no entry for, we fall through to a default
 // "chat/completions" path (the openai-compatible default), which
 // matches the dummy driver and any third-party openai-compatible
@@ -298,7 +265,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 		// ResolveTemplate returns the partial output (with "" in place
 		// of unresolved refs) even on error — we accept the partial
 		// output and log the error for diagnostics. This matches
-		// Python's silent-soft-fail behavior (canvas.py returns "" for
+		// Python silent-soft-fail behavior (canvas.py returns "" for
 		// missing refs) but adds a log line so misconfigured canvases
 		// are still surfaced.
 		if resolved, rerr := runtime.ResolveTemplate(p.SystemPrompt, state); resolved != p.SystemPrompt || rerr == nil {
@@ -328,7 +295,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 
 	msgs := buildMessagesWithImages(p.SystemPrompt, p.UserPrompt, p.VisualFiles, p.Cite)
 	// Prepend the last N turns of conversation history from the
-	// canvas state. Mirrors Python's `_get_chat_template_kwargs` /
+	// canvas state. Mirrors Python `_get_chat_template_kwargs` /
 	// `_fit_messages` path. When window size is 0 or history is
 	// empty,
 	// this is a no-op.
@@ -346,20 +313,20 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 	//
 	// LLM retry normal-absolute-count: when MaxRetries OR
 	// DelayAfterError is explicitly set on LLMParam, the
-	// operator's intent is an ABSOLUTE attempt budget. The
+	// operator intent is an ABSOLUTE attempt budget. The
 	// default invoker installed at boot in cmd/server_main.go
-	// is itself a retryInvoker wrapping einoChatInvoker.
+	// is itself a retryInvoker wrapping productionChatInvoker.
 	// Without unwrapping, the two loops would multiplicatively
 	// stack:
 	//
-	//   boot=3, MaxRetries=5 → up to (3+1) × (5+1) = 24
-	//                          invocations, not the 6 the
-	//                          operator almost certainly intended.
+	// boot=3, MaxRetries=5 → up to (3+1) × (5+1) = 24
+	// invocations, not the 6 the
+	// operator almost certainly intended.
 	//
 	// unwrapChatInvoker peels off any retryInvoker layers to
 	// reach the bare invoker, then the param-override branch
 	// wraps that bare invoker in a fresh retryInvoker with the
-	// operator's literal values. Net effect: the absolute attempt
+	// operator literal values. Net effect: the absolute attempt
 	// count is exactly (MaxRetries + 1), independent of the boot
 	// layer.
 	//
@@ -454,8 +421,8 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 // element channel buffer.
 //
 // Each chunk is a map[string]any with two keys:
-//   - "thinking" (string): the model's reasoning content, empty if absent
-//   - "content"  (string): the model's visible content
+// - "thinking" (string): the model reasoning content, empty if absent
+// - "content" (string): the model visible content
 //
 // A final chunk with key "done" (bool=true) signals end-of-stream so
 // downstream consumers can flush state without relying on channel close
@@ -463,7 +430,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 //
 // Today, the LLM driver layer returns a single non-streamed response,
 // so this v1 emits exactly one chunk + one done. Hooking the actual
-// eino stream (EinoChatModel.Stream at internal/entity/models/llm.go:137)
+
 // is deferred — the public surface here is correct, only the data
 // source needs to be swapped to a real StreamReader consumer in a
 // follow-up.
@@ -538,20 +505,20 @@ func (c *LLMComponent) Outputs() map[string]string {
 
 // buildMessages assembles a system + user message sequence. Order:
 // system first (if set), then user.
-func buildMessages(system, user string) []schema.Message {
-	out := make([]schema.Message, 0, 2)
+func buildMessages(system, user string) []ComponentMessage {
+	out := make([]ComponentMessage, 0, 2)
 	if system != "" {
-		out = append(out, schema.Message{Role: schema.System, Content: system})
+		out = append(out, ComponentMessage{Role: RoleSystem, Content: system})
 	}
 	if user != "" {
-		out = append(out, schema.Message{Role: schema.User, Content: user})
+		out = append(out, ComponentMessage{Role: RoleUser, Content: user})
 	}
 	return out
 }
 
 // injectCitationPrompt returns the system message with the canonical
 // citation-instruction text appended. When system is empty, returns
-// the prompt as-is. Two newlines separate the user's system prompt
+// the prompt as-is. Two newlines separate the user system prompt
 // from the citation block so the LLM can parse them distinctly.
 // matchOutputStructure parses the LLM response and returns the
 // parsed map iff it is a JSON object that contains every top-level
@@ -571,11 +538,11 @@ func matchOutputStructure(content string, expected map[string]any) (map[string]a
 }
 
 // buildStructuredRetryMessages rebuilds the message list with a
-// follow-up user turn that surfaces the LLM's first response and
+// follow-up user turn that surfaces the LLM first response and
 // asks for valid JSON matching the expected top-level keys. The
 // retry uses the same chat invoker on the next call; the message
 // list returned here is what gets sent on the retry.
-func buildStructuredRetryMessages(system, user string, images []string, cite bool, expected map[string]any, prevContent string) []schema.Message {
+func buildStructuredRetryMessages(system, user string, images []string, cite bool, expected map[string]any, prevContent string) []ComponentMessage {
 	msgs := buildMessagesWithImages(system, user, images, cite)
 	keys := make([]string, 0, len(expected))
 	for k := range expected {
@@ -588,8 +555,8 @@ func buildStructuredRetryMessages(system, user string, images []string, cite boo
 		"Please re-generate the response as a single valid JSON object containing all of these top-level keys: " + keysList + ".\n" +
 		"Output ONLY the JSON object — no prose, no markdown code fences."
 	if len(msgs) > 0 {
-		msgs[len(msgs)-1] = schema.Message{
-			Role:    schema.User,
+		msgs[len(msgs)-1] = ComponentMessage{
+			Role:    RoleUser,
 			Content: retryUser,
 		}
 	}
@@ -613,7 +580,7 @@ func injectCitationPrompt(system string) string {
 // standard alphabet ("+/=") or URL-safe alphabet ("-_=") — the regex
 // accepts both because real-world emitters (browser data URIs, Python
 // base64.urlsafe_b64encode) mix them. Validation of the actual bytes
-// is the driver's job; the regex is intentionally permissive about the
+// is the driver job; the regex is intentionally permissive about the
 // alphabet but strict about the "data:image/...;base64," prefix.
 //
 // Note: this regex requires ";base64," immediately after the subtype.
@@ -625,7 +592,7 @@ var dataImageRe = regexp.MustCompile(`data:image/[a-zA-Z0-9.+-]+;base64,[A-Za-z0
 // base64 URIs and returns the deduplicated set in first-seen
 // order. The current implementation only walks top-level string
 // values; recursive walk over nested structs/lists is a future
-// enhancement (Python's _extract_data_images covers the recursive
+// enhancement (Python _extract_data_images covers the recursive
 // case).
 func extractDataImages(values []string) []string {
 	seen := make(map[string]struct{})
@@ -647,7 +614,7 @@ func extractDataImages(values []string) []string {
 // is a {role, content} map; only the last `window` are kept, with
 // assistant/user roles preserved. Invalid entries (missing role or
 // content) are skipped silently.
-func prependHistory(current []schema.Message, history []map[string]any, window int) []schema.Message {
+func prependHistory(current []ComponentMessage, history []map[string]any, window int) []ComponentMessage {
 	if window <= 0 || len(history) == 0 {
 		return current
 	}
@@ -655,7 +622,7 @@ func prependHistory(current []schema.Message, history []map[string]any, window i
 	if len(history) > window {
 		start = len(history) - window
 	}
-	out := make([]schema.Message, 0, len(current)+(len(history)-start))
+	out := make([]ComponentMessage, 0, len(current)+(len(history)-start))
 	for i := start; i < len(history); i++ {
 		entry := history[i]
 		role, _ := entry["role"].(string)
@@ -663,20 +630,20 @@ func prependHistory(current []schema.Message, history []map[string]any, window i
 		if role == "" || content == "" {
 			continue
 		}
-		out = append(out, schema.Message{Role: schema.RoleType(role), Content: content})
+		out = append(out, ComponentMessage{Role: role, Content: content})
 	}
 	return append(out, current...)
 }
 
 // buildMessagesWithImages assembles a system + user message sequence,
-// attaching data:image URIs as eino multi-modal content parts when
+// attaching data:image URIs as multi-modal content parts when
 // present. Without images the function is identical to buildMessages.
 //
 // When cite is true, the citation-instruction prompt is appended to the
 // system message (creating one if it was empty). This mirrors the
 // Python LLM._prepare_prompt_variables path where cite=True
 // triggers `citation_prompt()` injection. The post-stream
-// grounding call (Python's _gen_citations_async) is the
+// grounding call (Python _gen_citations_async) is the
 // RetrievalService-driven citation enhancement.
 //
 // Each image is wrapped in a MessageInputPart{Type: "image_url",
@@ -686,57 +653,28 @@ func prependHistory(current []schema.Message, history []map[string]any, window i
 // Using URL (rather than splitting into Base64Data + MIMEType) keeps the
 // data URI intact, which matches the existing anthropic_test.go:221
 // fixture format.
-func buildMessagesWithImages(system, user string, images []string, cite bool) []schema.Message {
+func buildMessagesWithImages(system, user string, images []string, cite bool) []ComponentMessage {
 	if cite {
 		system = injectCitationPrompt(system)
 	}
-	out := make([]schema.Message, 0, 2)
+	msgs := make([]ComponentMessage, 0, 2)
 	if system != "" {
-		out = append(out, schema.Message{Role: schema.System, Content: system})
+		msgs = append(msgs, NewSystemMessage(system))
 	}
-
-	if len(images) == 0 {
-		if user != "" {
-			out = append(out, schema.Message{Role: schema.User, Content: user})
+	userMsg := NewUserMessage(user)
+	if len(images) > 0 {
+		parts := make([]ComponentMessagePart, 0, 1+len(images))
+		parts = append(parts, ComponentMessagePart{Type: "text", Text: user})
+		for _, uri := range images {
+			parts = append(parts, ComponentMessagePart{Type: "image_url", ImageURL: uri})
 		}
-		return out
+		userMsg.MultiContent = parts
+		userMsg.Content = "" // text is in MultiContent parts
 	}
-
-	parts := make([]schema.MessageInputPart, 0, 1+len(images))
-	if user != "" {
-		parts = append(parts, schema.MessageInputPart{
-			Type: schema.ChatMessagePartTypeText,
-			Text: user,
-		})
-	}
-	for _, uri := range images {
-		u := uri
-		parts = append(parts, schema.MessageInputPart{
-			Type: schema.ChatMessagePartTypeImageURL,
-			Image: &schema.MessageInputImage{
-				MessagePartCommon: schema.MessagePartCommon{URL: &u},
-			},
-		})
-	}
-	out = append(out, schema.Message{
-		Role:                  schema.User,
-		UserInputMultiContent: parts,
-	})
-	return out
+	msgs = append(msgs, userMsg)
+	return msgs
 }
 
-// mergeLLMParam layers raw inputs over the receiver's default param set.
-//
-// v1 DSL aliases accepted alongside the v2 names:
-//
-//	"llm_id"      → "model_id"
-//	"sys_prompt"  → "system_prompt"
-//	"base_url"    → "BaseURL"
-//
-// The v1 fixtures in internal/agent/dsl/testdata use the
-// short forms; without these aliases the v1→v2 conversion (plan §2.5)
-// would have to be run before the factory builds the component, which
-// the e2e compile+invoke path doesn't do.
 func mergeLLMParam(base LLMParam, inputs map[string]any) LLMParam {
 	p := base
 	if v, ok := stringFrom(inputs, "model_id"); ok {

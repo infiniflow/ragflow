@@ -23,9 +23,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 )
 
 const searxngToolName = "searxng"
@@ -81,28 +78,28 @@ func NewSearXNGToolWith(h *HTTPHelper) *SearXNGTool {
 }
 
 // Info returns the tool's metadata for the chat model.
-func (s *SearXNGTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: searxngToolName,
-		Desc: searxngToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+func (s *SearXNGTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        searxngToolName,
+		Description: searxngToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"query": {
-				Type:     schema.String,
-				Desc:     "Search query",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "Search query",
+				Required:    true,
 			},
 			"base_url": {
-				Type:     schema.String,
-				Desc:     `SearXNG base URL. Defaults to "http://localhost:8888".`,
-				Required: false,
+				Type:        ParamTypeString,
+				Description: `SearXNG base URL. Defaults to "http://localhost:8888".`,
+				Required:    false,
 			},
 			"max_results": {
-				Type:     schema.Integer,
-				Desc:     "Maximum number of results to return. Defaults to 5.",
-				Required: false,
+				Type:        ParamTypeInteger,
+				Description: "Maximum number of results to return. Defaults to 5.",
+				Required:    false,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 // buildSearXNGURL constructs the SearXNG /search URL. The base URL is
@@ -124,7 +121,7 @@ func buildSearXNGURL(baseURL, query string, maxResults int) string {
 }
 
 // InvokableRun performs the SearXNG search.
-func (s *SearXNGTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (s *SearXNGTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var p searxngParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return searxngErrJSON(fmt.Errorf("searxng: parse arguments: %w", err)),

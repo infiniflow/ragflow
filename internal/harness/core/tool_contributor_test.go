@@ -119,8 +119,8 @@ type markerTool struct {
 	mu       sync.Mutex
 }
 
-func (t *markerTool) Name() string             { return t.name }
-func (t *markerTool) Description() string       { return "test tool: " + t.name }
+func (t *markerTool) Name() string        { return t.name }
+func (t *markerTool) Description() string { return "test tool: " + t.name }
 func (t *markerTool) Invoke(ctx context.Context, args string, opts ...ToolOption) (string, error) {
 	t.mu.Lock()
 	t.executed = true

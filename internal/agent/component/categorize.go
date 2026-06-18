@@ -13,8 +13,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-
-	"github.com/cloudwego/eino/schema"
 )
 
 // CategorizeComponent is an LLM classifier.
@@ -77,9 +75,9 @@ func (c *CategorizeComponent) Invoke(ctx context.Context, inputs map[string]any)
 		sysPrompt = "You are a strict classifier."
 	}
 	userPrompt := buildCategorizePrompt(p)
-	msgs := []schema.Message{
-		{Role: schema.System, Content: sysPrompt},
-		{Role: schema.User, Content: userPrompt},
+	msgs := []ComponentMessage{
+		{Role: RoleSystem, Content: sysPrompt},
+		{Role: RoleUser, Content: userPrompt},
 	}
 	resp, err := inv.Invoke(ctx, ChatInvokeRequest{
 		Driver:    p.Driver,

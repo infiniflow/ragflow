@@ -26,7 +26,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cloudwego/eino/compose"
+	"ragflow/internal/harness/graph/interrupt"
 )
 
 // TestBuildInputSpec_BasicFields passes enable_tips/tips/inputs and
@@ -91,19 +91,19 @@ func TestIsInterruptError_PlainError(t *testing.T) {
 	}
 }
 
-// TestExtractInterruptContexts_NilSafe covers the nil error case.
-func TestExtractInterruptContexts_NilSafe(t *testing.T) {
-	if got := ExtractInterruptContexts(nil); got != nil {
-		t.Errorf("ExtractInterruptContexts(nil) = %v; want nil", got)
+// TestMustExtractInterruptContexts_NilSafe covers the nil error case.
+func TestMustExtractInterruptContexts_NilSafe(t *testing.T) {
+	if got := MustExtractInterruptContexts(nil); got != nil {
+		t.Errorf("MustExtractInterruptContexts(nil) = %v; want nil", got)
 	}
 }
 
-// TestExtractInterruptContexts_PlainError covers the negative path:
+// TestMustExtractInterruptContexts_PlainError covers the negative path:
 // a plain error has no InterruptContexts.
-func TestExtractInterruptContexts_PlainError(t *testing.T) {
-	got := ExtractInterruptContexts(errors.New("boom"))
+func TestMustExtractInterruptContexts_PlainError(t *testing.T) {
+	got := MustExtractInterruptContexts(errors.New("boom"))
 	if got != nil {
-		t.Errorf("ExtractInterruptContexts(plain err) = %v; want nil", got)
+		t.Errorf("MustExtractInterruptContexts(plain err) = %v; want nil", got)
 	}
 }
 
@@ -112,7 +112,7 @@ func TestFirstInterruptID_Empty(t *testing.T) {
 	if got := FirstInterruptID(nil); got != "" {
 		t.Errorf("FirstInterruptID(nil) = %q; want \"\"", got)
 	}
-	if got := FirstInterruptID([]*compose.InterruptCtx{}); got != "" {
+	if got := FirstInterruptID([]*interruptCtx{}); got != "" {
 		t.Errorf("FirstInterruptID([]) = %q; want \"\"", got)
 	}
 }
@@ -120,7 +120,7 @@ func TestFirstInterruptID_Empty(t *testing.T) {
 // TestFirstInterruptID_PicksFirst confirms it returns the first
 // element's ID.
 func TestFirstInterruptID_PicksFirst(t *testing.T) {
-	got := FirstInterruptID([]*compose.InterruptCtx{
+	got := FirstInterruptID([]*interruptCtx{
 		{ID: "first"},
 		{ID: "second"},
 	})
@@ -171,7 +171,8 @@ func TestUserFillUpNodeBody_ResumeReturnsInput(t *testing.T) {
 	// string form of the node's address. We pass the cpnID as the
 	// address — that's what UserFillUpNodeBody advertises when it
 	// composes its output.
-	ctx := compose.ResumeWithData(context.Background(), "ufu_1", "user typed this")
+	ctx := interrupt.WithInterruptContext(context.Background())
+	interrupt.AppendResumeValue(ctx, "user typed this")
 
 	_, err := body(ctx, map[string]any{"x": 1})
 	// Outside an engine runner, GetResumeContext cannot match the

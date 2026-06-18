@@ -234,20 +234,21 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 					"component_name": "Begin",
 					"params":         map[string]any{},
 				},
-				"downstream": []any{"message_0"},
+				"downstream": []any{"user_fill_up_0"},
 			},
 			"message_0": map[string]any{
 				"obj": map[string]any{
 					"component_name": "Message",
 					"params":         map[string]any{"text": "got: {{user_fill_up_0@user_input}}"},
 				},
-				"upstream": []any{"begin_0", "user_fill_up_0"},
+				"upstream": []any{"user_fill_up_0"},
 			},
 			"user_fill_up_0": map[string]any{
 				"obj": map[string]any{
 					"component_name": "UserFillUp",
 					"params":         map[string]any{"enable_tips": true},
 				},
+				"upstream":   []any{"begin_0"},
 				"downstream": []any{"message_0"},
 			},
 		},
@@ -255,27 +256,20 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 	}
 	makeCanvasWithDSL(t, "canvas-fillup", "user-1", "tenant-1", "v-fillup", dsl)
 
-	// v3.6.1 Gap #1 fix: a real checkpoint store + serializer is
-	// REQUIRED for the second Invoke to actually resume from
-	// run 1's saved state. Without these, buildRunFunc's
-	// `cpID = runID` branch is dead and compose.WithCheckPointID
-	// is never passed to eino, so the second Invoke starts a
-	// fresh execution that re-enters UserFillUp from scratch
-	// (compose.GetResumeContext returns isResume=false on a
-	// non-resume run, which is the correct eino behaviour but
-	// the wrong assumption for our test). The minimal
-	// eino-only repro at /tmp/eino-repro/repro_test.go confirms
-	// eino's resume API works correctly when given a real
-	// CheckPointStore + CheckPointID.
+	// v3.6.1 Gap #1 fix: a real checkpoint store is REQUIRED for
+	// the second Invoke to actually resume from run 1's saved state.
+	// Without it, buildRunFunc's `cpID = runID` branch is dead and
+	// no checkpoint id is passed to the harness, so the second Invoke
+	// starts a fresh execution that re-enters UserFillUp from scratch.
 	tracker, mr := newRunTrackerForTest(t, 30*24*time.Hour)
 	cpClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = cpClient.Close() })
 	cp := canvas.NewRedisCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
-	// stateSerializer is intentionally nil so eino's default
-	// InternalSerializer is used (which knows about CanvasState
+	// stateSerializer is intentionally nil so harness's default
+	// serializer is used (which knows about CanvasState
 	// via runtime.RegisterSerializableType[CanvasState]). The
 	// RAGFlow plain-JSON CanvasStateSerializer is incompatible
-	// with eino's internal checkpoint format — see cmd/server_main.go
+	// with harness's internal checkpoint format — see cmd/server_main.go
 	// buildAgentRunOptions for the production rationale.
 	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 

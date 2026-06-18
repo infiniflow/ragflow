@@ -1,23 +1,23 @@
 //
-//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+// Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//   http://www.apache.org/licenses/LICENSE-2.0
 //
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //
 
 // Universe A delegation wrappers. Canvas-facing components that
-// delegate to their corresponding Universe B eino tool
+// delegate to their corresponding Universe B tool
 // implementations. The delegation pattern keeps the canvas
-// scheduler's Component contract thin and the eino tool's
+// scheduler's Component contract thin and the tool's
 // InvokableRun interface as the actual implementation seam.
 //
 // Primary registration: TavilySearch, Retrieval (incl. the
@@ -33,8 +33,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
-
-	einotool "github.com/cloudwego/eino/components/tool"
 
 	agenttool "ragflow/internal/agent/tool"
 )
@@ -290,15 +288,15 @@ func newExeSQLComponent(params map[string]any) (Component, error) {
 //
 // Field map:
 //
-//	v1 surface          → tool surface
-//	-------------------   --------------
-//	db_type (optional)  → db_type        (defaults to "mysql")
-//	database            → database
-//	username            → username
-//	host                → host
-//	port (float64)      → port           (coerced to int)
-//	password            → password
-//	top_n (numeric)     → max_records    (and dropped from out)
+//	v1 surface     → tool surface
+//	-------------------  --------------
+//	db_type (optional) → db_type    (defaults to "mysql")
+//	database      → database
+//	username      → username
+//	host        → host
+//	port (float64)   → port      (coerced to int)
+//	password      → password
+//	top_n (numeric)   → max_records  (and dropped from out)
 //
 // Returns a fresh map; the input is not mutated.
 func translateExeSQLParamsToToolShape(v1Params map[string]any) map[string]any {
@@ -376,7 +374,7 @@ func (c *exesqlComponent) Stream(_ context.Context, _ map[string]any) (<-chan ma
 	return nil, nil
 }
 
-// parseToolEnvelope decodes the JSON envelope returned by eino tool
+// parseToolEnvelope decodes the JSON envelope returned by tool
 // InvokableRun into a map[string]any. The result has whatever keys
 // the tool's result type carries (rows/columns/chunks/etc.).
 func parseToolEnvelope(jsonStr string) map[string]any {
@@ -433,6 +431,5 @@ var (
 	_ Component = (*exesqlComponent)(nil)
 )
 
-// Compile-time check that the eino InvokableTool methods we call
+// Compile-time check that the InvokableTool methods we call
 // are reachable (catches a future refactor that renames them).
-var _ einotool.InvokableTool = (*agenttool.TavilyTool)(nil)

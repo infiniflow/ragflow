@@ -20,8 +20,6 @@ import (
 	"context"
 	"math"
 	"testing"
-
-	"github.com/cloudwego/eino/schema"
 )
 
 // TestLLM_ForwardsTopP verifies that a TopP value on LLMParam reaches
@@ -120,13 +118,13 @@ func TestLLMFactory_ParsesTopP(t *testing.T) {
 // set, when invoked, calls the agent runner with the value preserved
 // through mergeAgentParam.
 func TestAgentParam_ForwardsTopP(t *testing.T) {
-	withAgentRunner(t, func(_ context.Context, p AgentParam) (*schema.Message, error) {
+	withAgentRunner(t, func(_ context.Context, p AgentParam) (*ComponentMessage, error) {
 		if p.TopP == nil {
 			t.Errorf("TopP nil at runner; mergeAgentParam did not propagate it")
 		} else if math.Abs(*p.TopP-0.5) > 1e-9 {
 			t.Errorf("TopP at runner=%v, want 0.5", *p.TopP)
 		}
-		return &schema.Message{Content: "ok"}, nil
+		return &ComponentMessage{Content: "ok"}, nil
 	})
 
 	topP := 0.5
@@ -142,11 +140,11 @@ func TestAgentParam_ForwardsTopP(t *testing.T) {
 
 // TestAgent_TopPFromInputs verifies mergeAgentParam parses inputs["top_p"].
 func TestAgent_TopPFromInputs(t *testing.T) {
-	withAgentRunner(t, func(_ context.Context, p AgentParam) (*schema.Message, error) {
+	withAgentRunner(t, func(_ context.Context, p AgentParam) (*ComponentMessage, error) {
 		if p.TopP == nil {
 			t.Errorf("TopP nil at runner; inputs[top_p] not parsed")
 		}
-		return &schema.Message{Content: "ok"}, nil
+		return &ComponentMessage{Content: "ok"}, nil
 	})
 
 	c := NewAgentComponent(AgentParam{ModelID: "echo", MaxRounds: 1})

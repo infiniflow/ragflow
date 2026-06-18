@@ -41,7 +41,7 @@ type retryInvoker struct {
 // retryInvoker. The intended use is LLMParam's param-override
 // path: when a DSL sets LLMParam.MaxRetries explicitly, the
 // production boot's retryInvoker is also wrapping the
-// einoChatInvoker, and the two loops would otherwise
+// productionChatInvoker, and the two loops would otherwise
 // multiplicatively stack (boot=3, MaxRetries=5 → up to
 // (3+1)*(5+1) = 24 invocations). LLMComponent.Invoke walks the
 // Unwrap chain to find the bare invoker, then wraps that with

@@ -19,44 +19,41 @@ package tool
 import (
 	"fmt"
 	"strings"
-
-	einotool "github.com/cloudwego/eino/components/tool"
 )
 
 // Factory builds a tool instance by DSL / Agent-visible name and
-// optional node-level configuration. The config map belongs to the
-// Agent node / DSL, not to the model-emitted function-call args.
-type Factory func(params map[string]any) (einotool.BaseTool, error)
+// optional node-level configuration.
+type Factory func(params map[string]any) (Tool, error)
 
 var registry = map[string]Factory{
-	"akshare":           noConfig("akshare", func() einotool.BaseTool { return NewAkShareTool() }),
-	"arxiv":             noConfig("arxiv", func() einotool.BaseTool { return NewArxivTool() }),
-	"code_exec":         noConfig("code_exec", func() einotool.BaseTool { return NewCodeExecTool() }),
-	"crawler":           noConfig("crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
-	"deepl":             noConfig("deepl", func() einotool.BaseTool { return NewDeepLTool() }),
-	"duckduckgo":        noConfig("duckduckgo", func() einotool.BaseTool { return NewDuckDuckGoTool() }),
-	"email":             noConfig("email", func() einotool.BaseTool { return NewEmailTool() }),
+	"akshare":           noConfig("akshare", func() Tool { return NewAkShareTool() }),
+	"arxiv":             noConfig("arxiv", func() Tool { return NewArxivTool() }),
+	"code_exec":         noConfig("code_exec", func() Tool { return NewCodeExecTool() }),
+	"crawler":           noConfig("crawler", func() Tool { return NewCrawlerTool() }),
+	"deepl":             noConfig("deepl", func() Tool { return NewDeepLTool() }),
+	"duckduckgo":        noConfig("duckduckgo", func() Tool { return NewDuckDuckGoTool() }),
+	"email":             noConfig("email", func() Tool { return NewEmailTool() }),
 	"execute_sql":       buildExeSQLTool,
 	"exesql":            buildExeSQLTool,
-	"github":            noConfig("github", func() einotool.BaseTool { return NewGitHubTool() }),
-	"google":            noConfig("google", func() einotool.BaseTool { return NewGoogleTool() }),
-	"google_scholar":    noConfig("google_scholar", func() einotool.BaseTool { return NewGoogleScholarTool() }),
-	"jin10":             noConfig("jin10", func() einotool.BaseTool { return NewJin10Tool() }),
-	"pubmed":            noConfig("pubmed", func() einotool.BaseTool { return NewPubMedTool() }),
-	"qweather":          noConfig("qweather", func() einotool.BaseTool { return NewQWeatherTool() }),
-	"retrieval":         noConfig("retrieval", func() einotool.BaseTool { return NewRetrievalTool() }),
-	"search_my_dataset": noConfig("search_my_dataset", func() einotool.BaseTool { return NewRetrievalTool() }),
-	"search_my_dateset": noConfig("search_my_dateset", func() einotool.BaseTool { return NewRetrievalTool() }),
-	"searxng":           noConfig("searxng", func() einotool.BaseTool { return NewSearXNGTool() }),
-	"tavily":            noConfig("tavily", func() einotool.BaseTool { return NewTavilyTool() }),
-	"tushare":           noConfig("tushare", func() einotool.BaseTool { return NewTushareTool() }),
-	"wencai":            noConfig("wencai", func() einotool.BaseTool { return NewWencaiTool() }),
-	"wikipedia":         noConfig("wikipedia", func() einotool.BaseTool { return NewWikipediaTool() }),
-	"yahoo_finance":     noConfig("yahoo_finance", func() einotool.BaseTool { return NewYahooFinanceTool() }),
+	"github":            noConfig("github", func() Tool { return NewGitHubTool() }),
+	"google":            noConfig("google", func() Tool { return NewGoogleTool() }),
+	"google_scholar":    noConfig("google_scholar", func() Tool { return NewGoogleScholarTool() }),
+	"jin10":             noConfig("jin10", func() Tool { return NewJin10Tool() }),
+	"pubmed":            noConfig("pubmed", func() Tool { return NewPubMedTool() }),
+	"qweather":          noConfig("qweather", func() Tool { return NewQWeatherTool() }),
+	"retrieval":         noConfig("retrieval", func() Tool { return NewRetrievalTool() }),
+	"search_my_dataset": noConfig("search_my_dataset", func() Tool { return NewRetrievalTool() }),
+	"search_my_dateset": noConfig("search_my_dateset", func() Tool { return NewRetrievalTool() }),
+	"searxng":           noConfig("searxng", func() Tool { return NewSearXNGTool() }),
+	"tavily":            noConfig("tavily", func() Tool { return NewTavilyTool() }),
+	"tushare":           noConfig("tushare", func() Tool { return NewTushareTool() }),
+	"wencai":            noConfig("wencai", func() Tool { return NewWencaiTool() }),
+	"wikipedia":         noConfig("wikipedia", func() Tool { return NewWikipediaTool() }),
+	"yahoo_finance":     noConfig("yahoo_finance", func() Tool { return NewYahooFinanceTool() }),
 }
 
-func noConfig(name string, fn func() einotool.BaseTool) Factory {
-	return func(params map[string]any) (einotool.BaseTool, error) {
+func noConfig(name string, fn func() Tool) Factory {
+	return func(params map[string]any) (Tool, error) {
 		if len(params) != 0 {
 			return nil, fmt.Errorf("agent tool: tool %q does not accept node-level params", name)
 		}
@@ -64,8 +61,8 @@ func noConfig(name string, fn func() einotool.BaseTool) Factory {
 	}
 }
 
-// BuildByName resolves a tool name into an Eino BaseTool.
-func BuildByName(name string, params map[string]any) (einotool.BaseTool, error) {
+// BuildByName resolves a tool name into a Tool.
+func BuildByName(name string, params map[string]any) (Tool, error) {
 	key := strings.ToLower(strings.TrimSpace(name))
 	if key == "" {
 		return nil, fmt.Errorf("agent tool: empty tool name")
@@ -80,13 +77,12 @@ func BuildByName(name string, params map[string]any) (einotool.BaseTool, error) 
 	return factory(params)
 }
 
-// BuildAll resolves a list of tool names into Eino BaseTool instances.
-// perToolParams is keyed by the Agent-visible tool name.
-func BuildAll(names []string, perToolParams map[string]map[string]any) ([]einotool.BaseTool, error) {
+// BuildAll resolves a list of tool names into Tool instances.
+func BuildAll(names []string, perToolParams map[string]map[string]any) ([]Tool, error) {
 	if len(names) == 0 {
 		return nil, nil
 	}
-	tools := make([]einotool.BaseTool, 0, len(names))
+	tools := make([]Tool, 0, len(names))
 	for _, name := range names {
 		var params map[string]any
 		if perToolParams != nil {
@@ -104,7 +100,7 @@ func BuildAll(names []string, perToolParams map[string]map[string]any) ([]einoto
 	return tools, nil
 }
 
-func buildExeSQLTool(params map[string]any) (einotool.BaseTool, error) {
+func buildExeSQLTool(params map[string]any) (Tool, error) {
 	conn, err := decodeExeSQLConnParams(params)
 	if err != nil {
 		return nil, err

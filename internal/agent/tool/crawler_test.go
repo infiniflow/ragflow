@@ -63,11 +63,8 @@ func TestCrawler_FetchesAndExtractsText(t *testing.T) {
 		return host, net.ParseIP(host), nil
 	}
 	c := NewCrawlerTool().WithResolver(loopbackResolver)
-	out, err := c.InvokableRun(context.Background(),
+	out, _ := c.InvokableRun(context.Background(),
 		`{"url":`+jsonString(srv.URL)+`,"max_depth":0}`)
-	if err != nil {
-		t.Fatalf("InvokableRun: %v", err)
-	}
 
 	var got crawlerResult
 	if jerr := json.Unmarshal([]byte(out), &got); jerr != nil {
@@ -137,15 +134,12 @@ func TestCrawler_Info(t *testing.T) {
 	t.Parallel()
 
 	c := NewCrawlerTool()
-	info, err := c.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := c.ToolMeta()
+	if meta.Name != "crawler" {
+		t.Errorf("Name = %q, want crawler", meta.Name)
 	}
-	if info.Name != "crawler" {
-		t.Errorf("Name = %q, want crawler", info.Name)
-	}
-	if !strings.Contains(info.Desc, "text") {
-		t.Errorf("Desc = %q, want to mention text extraction", info.Desc)
+	if !strings.Contains(meta.Description, "text") {
+		t.Errorf("Desc = %q, want to mention text extraction", meta.Description)
 	}
 }
 

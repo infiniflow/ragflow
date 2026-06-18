@@ -335,7 +335,7 @@ func (h *AgentHandler) ListTemplates(c *gin.Context) {
 }
 
 // RunAgent returns an SSE stream of execution events. The Phase 5 stub emits
-// a single "Phase 5 wiring pending" event and closes; the real eino run
+// a single "Phase 5 wiring pending" event and closes; the real harness run
 // loop will replace the channel source in service.AgentService.RunAgent.
 // @Summary Run Agent (SSE)
 // @Tags agents
@@ -438,7 +438,7 @@ func writeRunEventSSE(w io.Writer, flusher http.Flusher, ev canvas.RunEvent) {
 // sanitiseRunEventError replaces the raw error message in an SSE
 // error event with the sanitised envelope when the error chain
 // carries internal implementation details (registry contents,
-// DAO errors, eino internal strings). The sync-error path
+// DAO errors, harness internal strings).
 // (mapAgentError) already does this for the RunAgent HTTP
 // response; this function mirrors the contract for the async
 // SSE error events that surface from the orchestrator goroutine.
@@ -852,7 +852,7 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 // Phase 5 stub: validates `agent_id` (101) and the openai-compatible
 // `messages` requirement (102), then routes to either an SSE stream
 // (Content-Type: text/event-stream + [DONE] terminator) or a JSON
-// envelope depending on the body. The eino run loop is not yet
+// envelope depending on the body. The harness run loop is not yet
 // implemented; tests that require a real LLM response are marked
 // xfail in PR3.
 type agentChatCompletionsRequest struct {

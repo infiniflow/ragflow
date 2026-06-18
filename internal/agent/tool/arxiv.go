@@ -26,9 +26,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 )
 
 const arxivToolName = "arxiv"
@@ -106,23 +103,23 @@ func NewArxivToolWith(h *HTTPHelper) *ArxivTool {
 }
 
 // Info returns the tool's metadata for the chat model.
-func (a *ArxivTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: arxivToolName,
-		Desc: arxivToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+func (a *ArxivTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        arxivToolName,
+		Description: arxivToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"query": {
-				Type:     schema.String,
-				Desc:     "Search query (matches the arXiv `all:` field).",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "Search query (matches the arXiv `all:` field).",
+				Required:    true,
 			},
 			"max_results": {
-				Type:     schema.Integer,
-				Desc:     "Maximum number of results to return. Defaults to 5.",
-				Required: false,
+				Type:        ParamTypeInteger,
+				Description: "Maximum number of results to return. Defaults to 5.",
+				Required:    false,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 // buildArxivURL constructs the ArXiv /api/query URL.
@@ -203,7 +200,7 @@ func normalizeArxivWhitespace(s string) string {
 }
 
 // InvokableRun performs the ArXiv search.
-func (a *ArxivTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (a *ArxivTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var p arxivParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return arxivErrJSON(fmt.Errorf("arxiv: parse arguments: %w", err)),

@@ -26,7 +26,7 @@ type Node struct {
 	// Triggers lists channel names this node reads from.
 	Triggers []string
 	// Writes lists channel names this node writes to.
-	Writes   []string
+	Writes []string
 	// RetryPolicy configures automatic retry for this node.
 	RetryPolicy *types.RetryPolicy
 	// Tags are opaque labels for filtering and debugging.
@@ -267,9 +267,9 @@ type NodeOptions struct {
 	Metadata     map[string]interface{}
 	Triggers     []string
 	Writes       []string
-	FieldMapping []FieldMapping          // field-level routing for this node's output
-	StatePre     types.NodeFunc          // transforms state BEFORE node execution
-	StatePost    types.NodeFunc          // transforms state AFTER node execution
+	FieldMapping []FieldMapping // field-level routing for this node's output
+	StatePre     types.NodeFunc // transforms state BEFORE node execution
+	StatePost    types.NodeFunc // transforms state AFTER node execution
 }
 
 // WithStatePreHandler wraps the node with a pre-execution state transform.
@@ -307,14 +307,14 @@ func (g *StateGraph) AddEdge(from, to string) error {
 	if _, ok := g.nodes[to]; !ok && to != constants.End {
 		return &errors.NodeNotFoundError{NodeName: to}
 	}
-	
+
 	g.edges = append(g.edges, &Edge{From: from, To: to})
-	
+
 	// If this is an edge from Start, set entry point to the target node
 	if from == constants.Start {
 		g.entryPoint = to
 	}
-	
+
 	// If this is an edge to End, set the source as a finish point
 	if to == constants.End {
 		found := false
@@ -328,7 +328,7 @@ func (g *StateGraph) AddEdge(from, to string) error {
 			g.finishPoints = append(g.finishPoints, from)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -337,14 +337,14 @@ func (g *StateGraph) AddConditionalEdges(from string, condition types.EdgeFunc, 
 	if _, ok := g.nodes[from]; !ok {
 		return &errors.NodeNotFoundError{NodeName: from}
 	}
-	
+
 	// Validate all targets exist
 	for _, target := range mapping {
 		if _, ok := g.nodes[target]; !ok && target != constants.End {
 			return &errors.NodeNotFoundError{NodeName: target}
 		}
 	}
-	
+
 	g.conditionalEdges = append(g.conditionalEdges, &ConditionalEdge{
 		From:      from,
 		Condition: condition,
@@ -358,7 +358,7 @@ func (g *StateGraph) AddBranch(from string, condition types.EdgeFunc, then func(
 	if _, ok := g.nodes[from]; !ok {
 		return &errors.NodeNotFoundError{NodeName: from}
 	}
-	
+
 	g.branches = append(g.branches, &Branch{
 		From:      from,
 		Condition: condition,
@@ -472,11 +472,11 @@ func (g *StateGraph) Validate() error {
 	if g.entryPoint == "" {
 		return fmt.Errorf("no entry point set")
 	}
-	
+
 	if len(g.finishPoints) == 0 {
 		return fmt.Errorf("no finish points set")
 	}
-	
+
 	// Check that all nodes are reachable
 	reachable := g.computeReachable()
 	for name := range g.nodes {
@@ -484,12 +484,12 @@ func (g *StateGraph) Validate() error {
 			return fmt.Errorf("node %s is not reachable from entry point", name)
 		}
 	}
-	
+
 	// Validate state schema
 	if err := g.ValidateStateSchema(); err != nil {
 		return fmt.Errorf("state schema validation failed: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -499,14 +499,14 @@ func (g *StateGraph) computeReachable() map[string]bool {
 	if g.entryPoint == "" {
 		return reachable
 	}
-	
+
 	queue := []string{g.entryPoint}
 	reachable[g.entryPoint] = true
-	
+
 	for len(queue) > 0 {
 		current := queue[0]
 		queue = queue[1:]
-		
+
 		// Follow regular edges
 		for _, edge := range g.edges {
 			if edge.From == current && !reachable[edge.To] && edge.To != constants.End {
@@ -514,7 +514,7 @@ func (g *StateGraph) computeReachable() map[string]bool {
 				queue = append(queue, edge.To)
 			}
 		}
-		
+
 		// Follow conditional edges - all targets are potentially reachable
 		for _, condEdge := range g.conditionalEdges {
 			if condEdge.From == current {
@@ -526,10 +526,10 @@ func (g *StateGraph) computeReachable() map[string]bool {
 				}
 			}
 		}
-		
+
 		// Note: branches are truly dynamic and can't be statically verified
 	}
-	
+
 	return reachable
 }
 
@@ -578,25 +578,26 @@ func (g *StateGraph) Compile(opts ...CompileOption) (*CompiledGraph, error) {
 	if err := g.Validate(); err != nil {
 		return nil, fmt.Errorf("graph validation failed: %w", err)
 	}
-	
+
 	// Configure channels and reducers from schema annotations
 	if err := g.configureChannelsFromSchema(); err != nil {
 		return nil, fmt.Errorf("failed to configure channels from schema: %w", err)
 	}
-	
+
 	cg := &CompiledGraph{
 		graph:           g,
 		checkpointer:    nil,
 		interrupts:      make(map[string]bool),
+		interruptsAfter: make(map[string]bool),
 		recursionLimit:  constants.DefaultRecursionLimit,
 		debug:           false,
 		nodeTriggerMode: types.NodeTriggerAnyPredecessor,
 	}
-	
+
 	for _, opt := range opts {
 		opt(cg)
 	}
-	
+
 	// Propagate node trigger mode to the graph for the engine to access.
 	g.NodeTriggerMode = cg.nodeTriggerMode
 
@@ -622,6 +623,18 @@ func WithInterrupts(nodes ...string) CompileOption {
 	return func(cg *CompiledGraph) {
 		for _, node := range nodes {
 			cg.interrupts[node] = true
+		}
+	}
+}
+
+// WithInterruptsAfter marks one or more nodes as interrupt-after points.
+// Execution pauses AFTER the named node completes, saving a checkpoint with
+// the node's output, then returns GraphInterrupt for resume.
+// Use "*" to interrupt after every node.
+func WithInterruptsAfter(nodes ...string) CompileOption {
+	return func(cg *CompiledGraph) {
+		for _, node := range nodes {
+			cg.interruptsAfter[node] = true
 		}
 	}
 }
@@ -690,12 +703,13 @@ func SetPregelRunFunc(fn func(ctx context.Context, cg *CompiledGraph, input inte
 //	cg, err := sg.Compile(graph.WithCheckpointer(memSaver))
 //	result, err := cg.Invoke(ctx, MyState{Messages: []string{"hello"}})
 type CompiledGraph struct {
-	graph            *StateGraph
-	checkpointer     Checkpointer
-	interrupts       map[string]bool
-	recursionLimit   int
-	debug            bool
-	nodeTriggerMode  types.NodeTriggerMode
+	graph           *StateGraph
+	checkpointer    Checkpointer
+	interrupts      map[string]bool // nodes to interrupt BEFORE execution
+	interruptsAfter map[string]bool // nodes to interrupt AFTER execution
+	recursionLimit  int
+	debug           bool
+	nodeTriggerMode types.NodeTriggerMode
 }
 
 // Invoke executes the graph synchronously. It applies input to the state
@@ -710,12 +724,12 @@ func (cg *CompiledGraph) Invoke(ctx context.Context, input interface{}, config .
 	if len(config) > 0 && config[0] != nil {
 		rc = config[0]
 	}
-	
+
 	result, err := cg.run(ctx, input, rc, types.StreamModeValues)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return result, nil
 }
 
@@ -852,9 +866,17 @@ func (cg *CompiledGraph) inlineRun(ctx context.Context, input interface{}, confi
 			cp := channelRegistry.CreateCheckpoint()
 			_ = cg.checkpointer.Put(ctx, map[string]interface{}{
 				constants.ConfigKeyThreadID: getThreadID(config),
-				"step":      step,
+				"step":                      step,
 			}, cp)
 		}
+
+		// Check for after-node interrupts. The checkpoint above already
+		// captures this step's output, so a resume starts with the node's
+		// data in place.
+		if inlineShouldInterruptAfter(results, cg.interruptsAfter) {
+			return nil, &errors.GraphInterrupt{}
+		}
+
 		step++
 	}
 
@@ -876,9 +898,15 @@ func (cg *CompiledGraph) GetCheckpointer() Checkpointer {
 }
 
 // GetInterrupts returns the set of node names that are configured to interrupt
-// execution (human-in-the-loop breakpoints).
+// execution (human-in-the-loop breakpoints) BEFORE node execution.
 func (cg *CompiledGraph) GetInterrupts() map[string]bool {
 	return cg.interrupts
+}
+
+// GetInterruptsAfter returns the set of node names that are configured to
+// interrupt execution AFTER node execution.
+func (cg *CompiledGraph) GetInterruptsAfter() map[string]bool {
+	return cg.interruptsAfter
 }
 
 // GetRecursionLimit returns the maximum number of Pregel steps before the
@@ -994,6 +1022,25 @@ func inlineShouldInterrupt(tasks []*inlineTask, interrupts map[string]bool) bool
 	interruptAll := interrupts[types.All]
 	for _, t := range tasks {
 		if interruptAll || interrupts[t.nodeName] {
+			return true
+		}
+	}
+	return false
+}
+
+// inlineShouldInterruptAfter checks if any SUCCESSFULLY completed task's node
+// name is in interruptsAfter. This is called AFTER execution and checkpoint
+// save, so the checkpoint captures the node's output.
+func inlineShouldInterruptAfter(results []*inlineTaskResult, interruptsAfter map[string]bool) bool {
+	if len(interruptsAfter) == 0 {
+		return false
+	}
+	interruptAll := interruptsAfter[types.All]
+	for _, r := range results {
+		if r.err != nil {
+			continue
+		}
+		if interruptAll || interruptsAfter[r.nodeName] {
 			return true
 		}
 	}

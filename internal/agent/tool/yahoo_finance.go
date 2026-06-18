@@ -23,9 +23,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 )
 
 const yahooFinanceToolName = "yahoo_finance"
@@ -89,23 +86,23 @@ func NewYahooFinanceToolWith(h *HTTPHelper) *YahooFinanceTool {
 }
 
 // Info returns the tool's metadata for the chat model.
-func (y *YahooFinanceTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: yahooFinanceToolName,
-		Desc: yahooFinanceToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+func (y *YahooFinanceTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        yahooFinanceToolName,
+		Description: yahooFinanceToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"symbols": {
-				Type:     schema.Array,
-				Desc:     "Stock symbols to look up (e.g. AAPL, MSFT, 0005.HK).",
-				Required: true,
+				Type:        ParamTypeArray,
+				Description: "Stock symbols to look up (e.g. AAPL, MSFT, 0005.HK).",
+				Required:    true,
 			},
 			"fields": {
-				Type:     schema.Array,
-				Desc:     "Optional list of fields to request via the `fields` query parameter.",
-				Required: false,
+				Type:        ParamTypeArray,
+				Description: "Optional list of fields to request via the `fields` query parameter.",
+				Required:    false,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 // buildYahooFinanceURL composes the quote URL with the symbol list
@@ -120,7 +117,7 @@ func buildYahooFinanceURL(symbols []string, fields []string) string {
 }
 
 // InvokableRun performs the Yahoo Finance quote lookup.
-func (y *YahooFinanceTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (y *YahooFinanceTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var p yahooFinanceParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return yahooFinanceErrJSON(fmt.Errorf("yahoo_finance: parse arguments: %w", err)),

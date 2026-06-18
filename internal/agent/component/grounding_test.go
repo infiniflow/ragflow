@@ -28,8 +28,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/cloudwego/eino/schema"
-
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/runtime"
 )
@@ -68,8 +66,8 @@ func TestGrounding_Applied(t *testing.T) {
 	SetDefaultChatInvoker(inv)
 	defer SetDefaultChatInvoker(prev)
 
-	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
-		return &schema.Message{Role: schema.Assistant, Content: "original answer"}, nil
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*ComponentMessage, error) {
+		return &ComponentMessage{Role: RoleAssistant, Content: "original answer"}, nil
 	})
 
 	state := canvas.NewCanvasState("r1", "t1")
@@ -93,7 +91,7 @@ func TestGrounding_Applied(t *testing.T) {
 		t.Errorf("expected 1 chat call, got %d", inv.calls)
 	}
 	// System message should contain the citation prompt + sources block.
-	if got := inv.lastReq.Messages[0].Role; got != schema.System {
+	if got := inv.lastReq.Messages[0].Role; got != RoleSystem {
 		t.Errorf("first message role=%v, want System", got)
 	}
 	if !contains(inv.lastReq.Messages[0].Content, "ID: 0") {
@@ -109,8 +107,8 @@ func TestGrounding_NoChunks(t *testing.T) {
 	SetDefaultChatInvoker(inv)
 	defer SetDefaultChatInvoker(prev)
 
-	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
-		return &schema.Message{Role: schema.Assistant, Content: "answer"}, nil
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*ComponentMessage, error) {
+		return &ComponentMessage{Role: RoleAssistant, Content: "answer"}, nil
 	})
 
 	state := canvas.NewCanvasState("r1", "t1")
@@ -141,8 +139,8 @@ func TestGrounding_CiteFalse(t *testing.T) {
 	SetDefaultChatInvoker(inv)
 	defer SetDefaultChatInvoker(prev)
 
-	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
-		return &schema.Message{Role: schema.Assistant, Content: "answer"}, nil
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*ComponentMessage, error) {
+		return &ComponentMessage{Role: RoleAssistant, Content: "answer"}, nil
 	})
 
 	c := NewAgentComponent(AgentParam{ModelID: "stub", Cite: false})
@@ -166,8 +164,8 @@ func TestGrounding_LLMError(t *testing.T) {
 	SetDefaultChatInvoker(errInv)
 	defer SetDefaultChatInvoker(prev)
 
-	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
-		return &schema.Message{Role: schema.Assistant, Content: "original"}, nil
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*ComponentMessage, error) {
+		return &ComponentMessage{Role: RoleAssistant, Content: "original"}, nil
 	})
 
 	state := canvas.NewCanvasState("r1", "t1")
@@ -196,8 +194,8 @@ func TestGrounding_EmptyContent(t *testing.T) {
 	SetDefaultChatInvoker(inv)
 	defer SetDefaultChatInvoker(prev)
 
-	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
-		return &schema.Message{Role: schema.Assistant, Content: "original"}, nil
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*ComponentMessage, error) {
+		return &ComponentMessage{Role: RoleAssistant, Content: "original"}, nil
 	})
 
 	state := canvas.NewCanvasState("r1", "t1")

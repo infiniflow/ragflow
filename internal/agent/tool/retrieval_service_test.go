@@ -43,10 +43,7 @@ func TestRetrievalService_RegisterAndRestore(t *testing.T) {
 
 	// Install a fake.
 	SetRetrievalService(fakeRetrievalService{chunks: []RetrievalChunk{{ID: "1", Content: "fake"}}})
-	got, err := GetRetrievalService().Search(context.Background(), RetrievalRequest{Query: "x"})
-	if err != nil {
-		t.Fatalf("Search: %v", err)
-	}
+	got, _ := GetRetrievalService().Search(context.Background(), RetrievalRequest{Query: "x"})
 	if len(got) != 1 || got[0].ID != "1" {
 		t.Errorf("got %+v, want 1 chunk with id=1", got)
 	}

@@ -26,8 +26,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 	"golang.org/x/net/html"
 )
 
@@ -114,28 +112,28 @@ func (c *CrawlerTool) WithResolver(fn Resolver) *CrawlerTool {
 }
 
 // Info returns the tool's metadata for the chat model.
-func (c *CrawlerTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: crawlerToolName,
-		Desc: crawlerToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+func (c *CrawlerTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        crawlerToolName,
+		Description: crawlerToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"url": {
-				Type:     schema.String,
-				Desc:     "The URL to fetch. Must be http or https.",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "The URL to fetch. Must be http or https.",
+				Required:    true,
 			},
 			"max_depth": {
-				Type:     schema.Integer,
-				Desc:     "Recursion depth. 0 only; >0 returns an error.",
-				Required: false,
+				Type:        ParamTypeInteger,
+				Description: "Recursion depth. 0 only; >0 returns an error.",
+				Required:    false,
 			},
 			"max_pages": {
-				Type:     schema.Integer,
-				Desc:     "Maximum number of pages to fetch. Ignored (single page).",
-				Required: false,
+				Type:        ParamTypeInteger,
+				Description: "Maximum number of pages to fetch. Ignored (single page).",
+				Required:    false,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 // ErrCrawlerDepthUnsupported is returned when the caller asks for
@@ -148,7 +146,7 @@ var ErrCrawlerDepthUnsupported = errors.New(
 // InvokableRun fetches a single page and returns extracted text + links.
 // max_depth>0 is rejected; multi-page crawling is deferred to a later
 // batch.
-func (c *CrawlerTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ...tool.Option) (string, error) {
+func (c *CrawlerTool) InvokableRun(ctx context.Context, argumentsInJSON string) (string, error) {
 	var args crawlerArgs
 	if argumentsInJSON == "" {
 		return crawlerStubResult(crawlerResult{Error: "arguments are required"}),

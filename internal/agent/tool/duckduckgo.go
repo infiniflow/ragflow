@@ -22,9 +22,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 )
 
 const duckduckgoToolName = "duckduckgo"
@@ -96,23 +93,23 @@ func NewDuckDuckGoToolWith(h *HTTPHelper) *DuckDuckGoTool {
 }
 
 // Info returns the tool's metadata for the chat model.
-func (d *DuckDuckGoTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: duckduckgoToolName,
-		Desc: duckduckgoToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+func (d *DuckDuckGoTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        duckduckgoToolName,
+		Description: duckduckgoToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"query": {
-				Type:     schema.String,
-				Desc:     "Search query",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "Search query",
+				Required:    true,
 			},
 			"max_results": {
-				Type:     schema.Integer,
-				Desc:     "Maximum number of related topics to return. Defaults to 5.",
-				Required: false,
+				Type:        ParamTypeInteger,
+				Description: "Maximum number of related topics to return. Defaults to 5.",
+				Required:    false,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 // buildDuckDuckGoURL constructs the Instant Answer API URL.
@@ -142,7 +139,7 @@ func flattenDuckDuckGoTopics(in []duckduckgoTopic) []duckduckgoTopicOut {
 }
 
 // InvokableRun performs the DuckDuckGo Instant Answer query.
-func (d *DuckDuckGoTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (d *DuckDuckGoTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var p duckduckgoParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return duckduckgoErrJSON(fmt.Errorf("duckduckgo: parse arguments: %w", err)),
