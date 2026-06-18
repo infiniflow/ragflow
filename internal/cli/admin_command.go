@@ -1536,6 +1536,41 @@ func (c *CLI) AdminRemoveServiceCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+// Show user show user (admin mode only)
+func (c *CLI) AdminShowUserInfoCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	userName, ok := cmd.Params["user_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("user_name not provided")
+	}
+
+	apiURL := fmt.Sprintf("/admin/users/%s", userName)
+
+	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to show user: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to show user: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("show user failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
 func (c *CLI) AdminShowUserActivityCommand(cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
@@ -1547,22 +1582,30 @@ func (c *CLI) AdminShowUserActivityCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("days not provided")
 	}
 
-	payload := map[string]interface{}{
-		"days": days,
+	email, ok := cmd.Params["user_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	resp, err := c.AdminServerClient.Request("GET", "/admin/statistics", "admin", nil, payload)
+	payload := map[string]interface{}{
+		"days":  days,
+		"email": email,
+	}
+
+	apiURL := fmt.Sprintf("/admin/users/%s/activity", email)
+
+	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get statistics: %w", err)
+		return nil, fmt.Errorf("failed to get user activity: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to get statistics: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to get user activity: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonResponse
+	var result CommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("get statistics failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("get user activity failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
@@ -1583,31 +1626,20 @@ func (c *CLI) AdminShowUserSummaryCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	var datasetName *string
-	dataset, ok := cmd.Params["dataset"].(string)
-	if ok {
-		datasetName = &dataset
-	} else {
-		datasetName = nil
-	}
+	apiURL := fmt.Sprintf("/admin/users/%s/summary", userName)
 
-	payload := map[string]interface{}{
-		"user_name": userName,
-		"dataset":   datasetName,
-	}
-
-	resp, err := c.AdminServerClient.Request("GET", "/admin/statistics", "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get statistics: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to get statistics: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to get user summary: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonResponse
+	var result CommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("get statistics failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("get user summary failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
@@ -1620,39 +1652,80 @@ func (c *CLI) AdminShowUserSummaryCommand(cmd *Command) (ResponseIf, error) {
 
 func (c *CLI) AdminShowUserDatasetCommand(cmd *Command) (ResponseIf, error) {
 
-	if c.Config.CLIMode == AdminMode {
-		return nil, fmt.Errorf("already in admin mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
-		return nil, fmt.Errorf("admin server not added")
+	dataset, ok := cmd.Params["dataset_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("dataset_name not provided")
 	}
 
-	c.Config.CLIMode = AdminMode
+	email, ok := cmd.Params["user_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("user_name not provided")
+	}
 
-	var result SimpleResponse
-	result.Code = 0
-	result.Message = "switch to admin server"
-	result.Duration = 0
+	payload := map[string]interface{}{
+		"dataset": dataset,
+	}
+
+	apiURL := fmt.Sprintf("/admin/users/%s/dataset", email)
+
+	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user dataset: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to get user dataset: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("get user dataset failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
 	return &result, nil
 }
 
 func (c *CLI) AdminShowUserStorageCommand(cmd *Command) (ResponseIf, error) {
 
-	if c.Config.CLIMode == AdminMode {
-		return nil, fmt.Errorf("already in admin mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
-		return nil, fmt.Errorf("admin server not added")
+	email, ok := cmd.Params["user_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	c.Config.CLIMode = AdminMode
+	apiURL := fmt.Sprintf("/admin/users/%s/storage", email)
 
-	var result SimpleResponse
-	result.Code = 0
-	result.Message = "switch to admin server"
-	result.Duration = 0
+	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user storage: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to get user storage: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("get user storage failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
 	return &result, nil
 }
 
@@ -1710,39 +1783,6 @@ func (c *CLI) AdminShowUserPermissionCommand(cmd *Command) (ResponseIf, error) {
 	result.Code = 0
 	result.Message = "switch to admin server"
 	result.Duration = 0
-	return &result, nil
-}
-
-// Show user show user (admin mode only)
-func (c *CLI) AdminShowUserInfoCommand(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	userName, ok := cmd.Params["user_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("user_name not provided")
-	}
-
-	resp, err := c.AdminServerClient.Request("GET", fmt.Sprintf("/admin/users/%s", userName), "admin", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to show user: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to show user: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("show user failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
 	return &result, nil
 }
 
