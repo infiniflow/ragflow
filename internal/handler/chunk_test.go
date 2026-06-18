@@ -58,6 +58,9 @@ func (m *mockChunkSvc) UpdateChunk(req *service.UpdateChunkRequest, userID strin
 func (m *mockChunkSvc) RemoveChunks(*service.RemoveChunksRequest, string) (int64, error) {
 	panic("not implemented")
 }
+func (m *mockChunkSvc) StopParsing(string, string, service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
+	panic("not implemented")
+}
 func (m *mockChunkSvc) Parse(string, string, *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error) {
 	panic("not implemented")
 }
