@@ -263,6 +263,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.GET("/:dataset_id", r.datasetsHandler.GetDataset)
 				datasets.PUT("/:dataset_id", r.datasetsHandler.UpdateDataset)
 				datasets.GET("/:dataset_id/graph", r.datasetsHandler.GetKnowledgeGraph)
+				datasets.GET("/:dataset_id/tags", r.datasetsHandler.ListTags)
 				datasets.DELETE("/:dataset_id/tags", r.datasetsHandler.RemoveTags)
 				datasets.GET("/:dataset_id/index", r.datasetsHandler.TraceIndex)
 				datasets.POST("/:dataset_id/index", r.datasetsHandler.RunIndex)
