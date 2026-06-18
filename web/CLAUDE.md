@@ -86,7 +86,10 @@ The folder `src/components/ui/` is the project's **shared UI library** — it co
 - **Prefer `requestAnimationFrame` or `useLayoutEffect`** over `setTimeout(..., 0)` for focus or DOM measurement operations.
 - **Prefer `useTranslation` from `react-i18next`** over project-wrapped utilities like `useTranslate`.
 - Extract complex logic into hooks or utils; keep components lean.
-- Use `PascalCase` for constants and component names.
+- Use **PascalCase** for constants and component names.
+  - Components: `EditableTextarea`, `RAGFlowFormItem`
+  - Constants: `InitialMockData`, `DefaultPlaceholder`
+- Avoid camelCase or SCREAMING_SNAKE_CASE for components and top-level constants.
 - Avoid duplicating component structures in JSX; favor render props or reusable components.
 
 ### Utility Libraries and Reuse

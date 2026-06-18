@@ -12,9 +12,10 @@ import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { TFunction } from 'i18next';
 import {
+  Columns3Cog,
   LucideBox,
-  LucideMessagesSquare,
   LucideLogOut,
+  LucideMessagesSquare,
   LucideServer,
   LucideUnplug,
   LucideUser,
@@ -60,6 +61,11 @@ const menuItems = (t: TFunction) => [
     icon: <LucideUnplug className="size-[1em]" />,
     label: t('setting.api'),
     key: Routes.Api,
+  },
+  {
+    icon: <Columns3Cog className="size-[1em]" />,
+    label: t('setting.compilationTemplates'),
+    key: Routes.CompilationTemplates,
   },
 ];
 

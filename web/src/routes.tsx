@@ -43,6 +43,7 @@ export enum Routes {
   Plan = '/plan',
   Model = '/model',
   Prompt = '/prompt',
+  CompilationTemplates = '/compilation-templates',
   DataSource = '/data-source',
   DataSourceDetailPage = '/data-source-detail-page',
   ChatChannel = '/chat-channel',
@@ -298,6 +299,11 @@ const routeConfigOptions = [
           {
             path: `${Routes.UserSetting}${Routes.ChatChannel}`,
             Component: () => import('@/pages/user-setting/chat-channel'),
+          },
+          {
+            path: `${Routes.UserSetting}${Routes.CompilationTemplates}`,
+            Component: () =>
+              import('@/pages/user-setting/compilation-templates'),
           },
         ],
       },

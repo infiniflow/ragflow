@@ -1479,6 +1479,13 @@ Example: Virtual Hosted Style`,
       datasourceDescription: 'Manage your data source and connections',
       chatChannels: 'Chat channels',
       chatChannelsDescription: 'Manage your chat channel bots and credentials',
+      compilationTemplates: 'Compilation templates',
+      compilationTemplatesDescription: 'Manage your compilation templates',
+      addTemplate: 'Add template',
+      noTemplates: 'No compilation templates yet.',
+      deleteTemplateModalTitle: 'Delete template',
+      deleteTemplateModalContent:
+        'Are you sure you want to delete this template? This action cannot be undone.',
       channelEmptyTip:
         'No chat channels added yet. Select one below to connect.',
       availableChannels: 'Available channels',

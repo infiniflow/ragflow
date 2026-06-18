@@ -282,6 +282,11 @@ export default {
 
   // explore
 
+  // compilation templates
+  compilationTemplates: `${restAPIv1}/compilation_templates`,
+  compilationTemplate: (id: string) =>
+    `${restAPIv1}/compilation_templates/${id}`,
+
   // mcp server
   listMcpServer: `${restAPIv1}/mcp/servers`,
   getMcpServer: (id: string) => `${restAPIv1}/mcp/servers/${id}`,
