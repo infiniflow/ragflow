@@ -19,7 +19,7 @@ RAGFlow handles schema updates and migrations automatically at startup. However,
 
 ## mysql_migration.py
 
-The [mysql_migration.py](https://github.com/infiniflow/ragflow/blob/main/tools/scripts/mysql_migration.py) script is a specialized tool for re-organizing RAGFlow’s model-related data. It transitions data from older unified tables into a modern, multi-table structure to support advanced model management.
+The [mysql_migration.py](https://github.com/yazeedhasan97/MetaGrossAI/blob/main/tools/scripts/mysql_migration.py) script is a specialized tool for re-organizing RAGFlow’s model-related data. It transitions data from older unified tables into a modern, multi-table structure to support advanced model management.
 
 ### Key functions
 
@@ -38,7 +38,7 @@ The [mysql_migration.py](https://github.com/infiniflow/ragflow/blob/main/tools/s
 
 ## db_schema_sync.py
 
-The [db_schema_sync.py](https://github.com/infiniflow/ragflow/blob/main/tools/scripts/db_schema_sync.py) script is a synchronization utility that ensures your MySQL database structure matches the Peewee ORM models defined in the RAGFlow source code.
+The [db_schema_sync.py](https://github.com/yazeedhasan97/MetaGrossAI/blob/main/tools/scripts/db_schema_sync.py) script is a synchronization utility that ensures your MySQL database structure matches the Peewee ORM models defined in the RAGFlow source code.
 
 ### Key functions
 

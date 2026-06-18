@@ -439,7 +439,7 @@ func FromEnvironments() error {
 	}
 
 	// Default super user email
-	globalConfig.DefaultSuperUser.Email = "admin@ragflow.io"
+	globalConfig.DefaultSuperUser.Email = "support@waqoor.com"
 	superUserEmail := os.Getenv("DEFAULT_SUPERUSER_EMAIL")
 	if superUserEmail != "" {
 		_, err := mail.ParseAddress(superUserEmail)

@@ -56,7 +56,7 @@ export HF_ENDPOINT=https://hf-mirror.com
     Girdi, görseller veya PDF'ler içeren bir dizin ya da tek bir görsel veya PDF dosyası olabilir.
     Sonuçların konumlarını gösteren görsellerin ve OCR metnini içeren txt dosyalarının bulunduğu `sonuc_klasoru` klasörüne bakabilirsiniz.
     <div align="center" style="margin-top:20px;margin-bottom:20px;">
-    <img src="https://github.com/infiniflow/ragflow/assets/12318111/f25bee3d-aaf7-4102-baf5-d5208361d110" width="900"/>
+    <img src="https://github.com/yazeedhasan97/MetaGrossAI/assets/12318111/f25bee3d-aaf7-4102-baf5-d5208361d110" width="900"/>
     </div>
 
   - **Yerleşim Tanıma (Layout Recognition)**. Farklı alanlardan gelen dokümanlar farklı yerleşimlere sahip olabilir; gazete, dergi, kitap ve özgeçmiş gibi dokümanlar yerleşim açısından birbirinden farklıdır. Yalnızca makine doğru bir yerleşim analizi yapabildiğinde, metin parçalarının ardışık olup olmadığına, bu parçanın Tablo Yapısı Tanıma (TSR) ile mi işlenmesi gerektiğine veya bu parçanın bir şekil olup bu başlıkla mı açıklandığına karar verebilir.
@@ -79,7 +79,7 @@ export HF_ENDPOINT=https://hf-mirror.com
     Girdi, görseller veya PDF'ler içeren bir dizin ya da tek bir görsel veya PDF dosyası olabilir.
     Aşağıdaki gibi algılama sonuçlarını gösteren görsellerin bulunduğu `sonuc_klasoru` klasörüne bakabilirsiniz:
     <div align="center" style="margin-top:20px;margin-bottom:20px;">
-    <img src="https://github.com/infiniflow/ragflow/assets/12318111/07e0f625-9b28-43d0-9fbb-5bf586cd286f" width="1000"/>
+    <img src="https://github.com/yazeedhasan97/MetaGrossAI/assets/12318111/07e0f625-9b28-43d0-9fbb-5bf586cd286f" width="1000"/>
     </div>
 
   - **TSR (Tablo Yapısı Tanıma)**. Veri tablosu, sayılar veya metin dahil verileri sunmak için sıklıkla kullanılan bir yapıdır. Bir tablonun yapısı; hiyerarşik başlıklar, birleştirilmiş hücreler ve yansıtılmış satır başlıkları gibi çok karmaşık olabilir. TSR'nin yanı sıra, içeriği LLM tarafından iyi anlaşılabilecek cümlelere dönüştürüyoruz.
@@ -97,7 +97,7 @@ export HF_ENDPOINT=https://hf-mirror.com
     Girdi, görseller veya PDF'ler içeren bir dizin ya da tek bir görsel veya PDF dosyası olabilir.
     Algılama sonuçlarını gösteren görsellerin ve HTML sayfalarının bulunduğu `sonuc_klasoru` klasörüne bakabilirsiniz:
     <div align="center" style="margin-top:20px;margin-bottom:20px;">
-    <img src="https://github.com/infiniflow/ragflow/assets/12318111/cb24e81b-f2ba-49f3-ac09-883d75606f4c" width="1000"/>
+    <img src="https://github.com/yazeedhasan97/MetaGrossAI/assets/12318111/cb24e81b-f2ba-49f3-ac09-883d75606f4c" width="1000"/>
     </div>
 
   - **Tablo Otomatik Döndürme**. Tabloların yanlış yönde olabileceği (90°, 180° veya 270° döndürülmüş) taranmış PDF'ler için, PDF ayrıştırıcısı tablo yapısı tanıma işleminden önce en iyi döndürme açısını OCR güven puanlarını kullanarak otomatik olarak algılar. Bu, döndürülmüş tablolar için OCR doğruluğunu ve tablo yapısı algılamasını önemli ölçüde artırır.

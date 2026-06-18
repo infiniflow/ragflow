@@ -28,7 +28,7 @@
 #include <map>
 
 // C++ reimplementation of
-// https://github.com/infiniflow/ragflow/blob/main/rag/nlp/rag_tokenizer.py
+// https://github.com/yazeedhasan97/MetaGrossAI/blob/main/rag/nlp/rag_tokenizer.py
 
 typedef void (*HookType)(void* data,
                          const char* text,
