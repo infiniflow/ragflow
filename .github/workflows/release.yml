@@ -205,10 +205,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          cc="$(cygpath -m "$(command -v clang)")"
-          echo "CC=${cc}" >> "${GITHUB_ENV}"
+          cc_path="$(command -v clang.exe || command -v clang)"
+          cc="$(cygpath -m "${cc_path}")"
+          github_env="$(cygpath -u "${GITHUB_ENV}")"
+          echo "CC=${cc}" >> "${github_env}"
           echo "Resolved MSYS2 clang: ${cc}"
-          clang --version
+          "${cc_path}" --version
 
       - name: Build Go CLI release binaries
         if: runner.os != 'Windows'
