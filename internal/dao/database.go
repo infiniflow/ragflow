@@ -19,10 +19,13 @@ package dao
 import (
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"strings"
+	"sync"
 	"time"
 
 	"ragflow/internal/server"
@@ -36,6 +39,7 @@ import (
 
 var DB *gorm.DB
 var modelProviderManager *models.ProviderManager
+var modelProviderManagerMu sync.Mutex
 
 // LLMFactoryConfig represents a single LLM factory configuration
 type LLMFactoryConfig struct {
@@ -188,7 +192,42 @@ func GetDB() *gorm.DB {
 
 // GetModelProviderManager get database instance
 func GetModelProviderManager() *models.ProviderManager {
+	if modelProviderManager != nil {
+		return modelProviderManager
+	}
+
+	modelProviderManagerMu.Lock()
+	defer modelProviderManagerMu.Unlock()
+	if modelProviderManager != nil {
+		return modelProviderManager
+	}
+	if existing := models.GetProviderManager(); existing != nil {
+		modelProviderManager = existing
+		return modelProviderManager
+	}
+	modelConfigDir, err := findModelConfigDir()
+	if err != nil {
+		log.Fatal("Failed to locate model providers:", err)
+	}
+	if err := models.InitProviderManager(modelConfigDir); err != nil {
+		log.Fatal("Failed to load model providers:", err)
+	}
+	modelProviderManager = models.GetProviderManager()
 	return modelProviderManager
+}
+
+func findModelConfigDir() (string, error) {
+	candidates := []string{
+		"conf/models",
+		filepath.Join("..", "..", "conf", "models"),
+		filepath.Join("..", "..", "..", "conf", "models"),
+	}
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("conf/models not found")
 }
 
 // autoMigrateSafely runs AutoMigrate and ignores duplicate index errors

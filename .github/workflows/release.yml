@@ -9,6 +9,7 @@ on:
   push:
     tags:
       - "v*.*.*"                  # normal release
+      - 'nightly'                 # mutable tag
 
 permissions:
   contents: write
@@ -22,8 +23,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  release:
+  prepare:
     runs-on: [ "self-hosted", "ragflow-release" ]
+    outputs:
+      release_tag: ${{ steps.release.outputs.release_tag }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
+
     steps:
       - name: Ensure workspace ownership
         run: echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}
@@ -36,7 +41,15 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Prepare release body
+      # https://github.com/actions/setup-go
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Prepare release metadata
+        id: release
         run: |
           if [[ ${GITHUB_EVENT_NAME} != "schedule" ]]; then
             RELEASE_TAG=${GITHUB_REF#refs/tags/}
@@ -53,8 +66,8 @@ jobs:
           fi
           echo "RELEASE_TAG=${RELEASE_TAG}" >> ${GITHUB_ENV}
           echo "PRERELEASE=${PRERELEASE}" >> ${GITHUB_ENV}
-          RELEASE_DATETIME=$(date --rfc-3339=seconds)
-          echo Release ${RELEASE_TAG} created from ${GITHUB_SHA} at ${RELEASE_DATETIME} > release_body.md
+          echo "release_tag=${RELEASE_TAG}" >> ${GITHUB_OUTPUT}
+          echo "prerelease=${PRERELEASE}" >> ${GITHUB_OUTPUT}
 
       - name: Move the existing mutable tag
         # https://github.com/softprops/action-gh-release/issues/171
@@ -72,15 +85,319 @@ jobs:
             fi
           fi
 
-      - name: Create or overwrite a release
-        # https://github.com/actions/upload-release-asset has been replaced by https://github.com/softprops/action-gh-release
+  build_cli:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            runner: ubuntu-24.04
+            native_asset: native-linux-x86_64.tar.gz
+          - goos: linux
+            goarch: arm64
+            runner: ubuntu-24.04-arm
+            native_asset: native-linux-aarch64.tar.gz
+          - goos: darwin
+            goarch: amd64
+            runner: macos-15-intel
+            native_asset: native-macos-x86_64.tar.gz
+          - goos: darwin
+            goarch: arm64
+            runner: macos-14
+            native_asset: native-macos-aarch64.tar.gz
+          - goos: windows
+            goarch: amd64
+            runner: windows-latest
+            native_asset: native-windows-x86_64.zip
+            msystem: CLANG64
+            msys2_packages: mingw-w64-clang-x86_64-clang mingw-w64-clang-x86_64-lld
+            output_ext: .exe
+          - goos: windows
+            goarch: arm64
+            runner: windows-11-arm
+            native_asset: native-windows-aarch64.zip
+            msystem: CLANGARM64
+            msys2_packages: mingw-w64-clang-aarch64-clang mingw-w64-clang-aarch64-lld
+            output_ext: .exe
+    runs-on: ${{ matrix.runner }}
+    env:
+      CLI_NAME: ragflow_cli
+      CLI_MAIN: ./cmd/ragflow_cli.go
+      DIST_DIR: dist/cli
+      OFFICE_OXIDE_VERSION: "0.1.2"
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+
+    steps:
+      # https://github.com/actions/checkout/blob/v6/README.md
+      - name: Check out code
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      # https://github.com/actions/setup-go
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download office_oxide native library
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          OFFICE_OXIDE_PREFIX="${RUNNER_TEMP}/office_oxide"
+          OFFICE_OXIDE_URL="https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VERSION}/${{ matrix.native_asset }}"
+
+          mkdir -p "${OFFICE_OXIDE_PREFIX}"
+          curl -fsSL "${OFFICE_OXIDE_URL}" -o "${RUNNER_TEMP}/${{ matrix.native_asset }}"
+          tar xzf "${RUNNER_TEMP}/${{ matrix.native_asset }}" -C "${OFFICE_OXIDE_PREFIX}"
+
+          test -f "${OFFICE_OXIDE_PREFIX}/include/office_oxide_c/office_oxide.h"
+          test -f "${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.a"
+          ln -sf "office_oxide_c/office_oxide.h" "${OFFICE_OXIDE_PREFIX}/include/office_oxide.h"
+          test -f "${OFFICE_OXIDE_PREFIX}/include/office_oxide.h"
+
+          echo "OFFICE_OXIDE_PREFIX=${OFFICE_OXIDE_PREFIX}" >> "${GITHUB_ENV}"
+
+      - name: Download office_oxide native library
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $officeOxidePrefix = Join-Path $env:RUNNER_TEMP "office_oxide"
+          $officeOxideUrl = "https://github.com/yfedoseev/office_oxide/releases/download/v$env:OFFICE_OXIDE_VERSION/${{ matrix.native_asset }}"
+          $archivePath = Join-Path $env:RUNNER_TEMP "${{ matrix.native_asset }}"
+
+          New-Item -ItemType Directory -Force -Path $officeOxidePrefix | Out-Null
+          Invoke-WebRequest -Uri $officeOxideUrl -OutFile $archivePath
+          Expand-Archive -Path $archivePath -DestinationPath $officeOxidePrefix -Force
+
+          if (-not (Test-Path (Join-Path $officeOxidePrefix "include\office_oxide_c\office_oxide.h"))) {
+            throw "office_oxide.h was not found"
+          }
+          if (-not (Test-Path (Join-Path $officeOxidePrefix "lib\office_oxide.lib"))) {
+            throw "office_oxide.lib was not found"
+          }
+
+          Copy-Item -Force `
+            -Path (Join-Path $officeOxidePrefix "include\office_oxide_c\office_oxide.h") `
+            -Destination (Join-Path $officeOxidePrefix "include\office_oxide.h")
+
+          "OFFICE_OXIDE_PREFIX=$officeOxidePrefix" >> $env:GITHUB_ENV
+
+      - name: Set up MSYS2
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.msystem }}
+          update: true
+          install: ${{ matrix.msys2_packages }}
+          path-type: inherit
+
+      - name: Configure Windows C compiler
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+
+          cc_path="$(command -v clang.exe || command -v clang)"
+          cc="$(cygpath -m "${cc_path}")"
+          github_env="$(cygpath -u "${GITHUB_ENV}")"
+          echo "CC=${cc}" >> "${github_env}"
+          echo "Resolved MSYS2 clang: ${cc}"
+          "${cc_path}" --version
+
+      - name: Build Go CLI release binaries
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p "${DIST_DIR}"
+
+          if [[ ! -e "${CLI_MAIN}" ]]; then
+            echo "::error::Go CLI entry does not exist: ${CLI_MAIN}"
+            echo "::error::Please update CLI_MAIN in .github/workflows/release.yml"
+            exit 1
+          fi
+
+          echo "Building Go CLI release binaries"
+          echo "CLI name: ${CLI_NAME}"
+          echo "CLI main: ${CLI_MAIN}"
+          echo "Release tag: ${RELEASE_TAG}"
+          echo "Commit: ${GITHUB_SHA}"
+
+          output="${DIST_DIR}/${CLI_NAME}-${RELEASE_TAG}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          echo "Building ${{ matrix.goos }}/${{ matrix.goarch }} -> ${output}"
+
+          case "${{ matrix.goos }}" in
+            linux)
+              cgo_ldflags="${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.a -lm -ldl -lpthread"
+              ;;
+            darwin)
+              cgo_ldflags="${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.a"
+              ;;
+            *)
+              echo "::error::Unsupported Unix target: ${{ matrix.goos }}"
+              exit 1
+              ;;
+          esac
+          cgo_cflags="-I${OFFICE_OXIDE_PREFIX}/include -I${OFFICE_OXIDE_PREFIX}/include/office_oxide_c"
+
+          echo "office_oxide prefix: ${OFFICE_OXIDE_PREFIX}"
+          echo "CGO_CFLAGS: ${cgo_cflags}"
+          echo "CGO_LDFLAGS: ${cgo_ldflags}"
+
+          CGO_ENABLED=1 \
+          CGO_CFLAGS="${cgo_cflags}" \
+          CGO_LDFLAGS="${cgo_ldflags}" \
+          GOOS="${{ matrix.goos }}" \
+          GOARCH="${{ matrix.goarch }}" \
+          go build \
+            -trimpath \
+            -ldflags="-s -w -X main.version=${RELEASE_TAG} -X main.commit=${GITHUB_SHA}" \
+            -o "${output}" \
+            "${CLI_MAIN}"
+
+          chmod +x "${output}"
+
+          if [[ "${{ matrix.goos }}" == "linux" ]] && command -v ldd >/dev/null 2>&1; then
+            if ldd "${output}" 2>&1 | grep -q "liboffice_oxide"; then
+              echo "::error::linux CLI unexpectedly links liboffice_oxide dynamically"
+              ldd "${output}" || true
+              exit 1
+            fi
+            echo "Verified linux CLI does not require liboffice_oxide.so at runtime"
+          fi
+
+      - name: Build Go CLI release binaries
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:DIST_DIR | Out-Null
+
+          if (-not (Test-Path $env:CLI_MAIN)) {
+            Write-Error "Go CLI entry does not exist: $env:CLI_MAIN"
+            exit 1
+          }
+
+          $output = Join-Path $env:DIST_DIR "${env:CLI_NAME}-${env:RELEASE_TAG}-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.output_ext }}"
+          Write-Host "Building ${{ matrix.goos }}/${{ matrix.goarch }} -> $output"
+
+          $officeOxidePrefix = $env:OFFICE_OXIDE_PREFIX -replace "\\", "/"
+          $cc = $env:CC
+          if ([string]::IsNullOrWhiteSpace($cc)) {
+            Write-Error "CC is not set"
+            exit 1
+          }
+          if (-not (Test-Path $cc)) {
+            Write-Error "C compiler does not exist: $cc"
+            exit 1
+          }
+
+          $env:CGO_ENABLED = "1"
+          $env:CC = $cc
+          $env:CGO_CFLAGS = "-I${officeOxidePrefix}/include -I${officeOxidePrefix}/include/office_oxide_c"
+          $env:CGO_LDFLAGS = "${officeOxidePrefix}/lib/office_oxide.lib -lws2_32 -lntdll -luserenv"
+          $env:GOOS = "${{ matrix.goos }}"
+          $env:GOARCH = "${{ matrix.goarch }}"
+
+          Write-Host "CC: $env:CC"
+          & $env:CC --version
+          Write-Host "office_oxide prefix: $officeOxidePrefix"
+          Write-Host "CGO_CFLAGS: $env:CGO_CFLAGS"
+          Write-Host "CGO_LDFLAGS: $env:CGO_LDFLAGS"
+
+          go build `
+            -trimpath `
+            -ldflags="-s -w -X main.version=$env:RELEASE_TAG -X main.commit=$env:GITHUB_SHA" `
+            -o "$output" `
+            "$env:CLI_MAIN"
+
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/cli/*
+          if-no-files-found: error
+
+  publish_cli_assets:
+    needs:
+      - prepare
+      - build_cli
+    runs-on: [ "self-hosted", "ragflow-release" ]
+
+    steps:
+      - name: Ensure workspace ownership
+        run: echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}
+
+      # https://github.com/actions/checkout/blob/v6/README.md
+      - name: Check out code
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Download CLI artifacts
+        uses: actions/download-artifact@v5
+        with:
+          pattern: cli-*
+          path: dist/cli
+          merge-multiple: true
+
+      - name: Prepare CLI release assets
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          RELEASE_DATETIME=$(date --rfc-3339=seconds)
+          echo Release ${RELEASE_TAG} created from ${GITHUB_SHA} at ${RELEASE_DATETIME} > release_body.md
+
+          cd dist/cli
+          sha256sum * > SHA256SUMS
+          cd -
+
+          echo "Generated CLI release assets:"
+          ls -lh dist/cli
+
+      - name: Upload Go CLI release assets
         uses: softprops/action-gh-release@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}  # Use the secret as an environment variable
-          prerelease: ${{ env.PRERELEASE }}
-          tag_name: ${{ env.RELEASE_TAG }}
-          # The body field does not support environment variable substitution directly.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          prerelease: ${{ needs.prepare.outputs.prerelease }}
+          tag_name: ${{ needs.prepare.outputs.release_tag }}
           body_path: release_body.md
+          files: |
+            dist/cli/*
+            tools/scripts/install.sh
+            tools/scripts/install.ps1
+
+  release:
+    needs:
+      - prepare
+      - publish_cli_assets
+    runs-on: [ "self-hosted", "ragflow-release" ]
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+
+    steps:
+      - name: Ensure workspace ownership
+        run: echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}
+
+      # https://github.com/actions/checkout/blob/v6/README.md
+      - name: Check out code
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Build and push image
         run: |
