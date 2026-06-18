@@ -1143,7 +1143,7 @@ func (s *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 	if parserIDProvided {
 		updates["parser_id"] = parserID
 	}
-
+	// datasetUpdateEmbeddingID
 	embdID, embdIDProvided, err := datasetUpdateEmbeddingID(req)
 	if err != nil {
 		return nil, common.CodeDataError, err
