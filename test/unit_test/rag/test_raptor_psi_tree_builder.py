@@ -207,6 +207,46 @@ def test_unknown_clustering_method_is_rejected(raptor_module):
         _make_raptor(raptor_module, clustering_method="psi")
 
 
+@pytest.mark.p2
+def test_get_optimal_clusters_handles_max_cluster_equal_one(raptor_module):
+    raptor = _make_raptor(raptor_module, max_cluster=1)
+
+    optimal = raptor._get_optimal_clusters(
+        np.array([[0.0, 0.0], [0.1, 0.0], [1.0, 1.0], [1.1, 1.1]]),
+        random_state=0,
+    )
+
+    assert optimal == 1
+
+
+@pytest.mark.p2
+def test_get_optimal_clusters_evaluates_upper_bound_candidate(monkeypatch, raptor_module):
+    raptor = _make_raptor(raptor_module, max_cluster=3)
+    evaluated = []
+
+    class RecordingGaussianMixture:
+        def __init__(self, n_components, random_state=None):
+            self.n_components = n_components
+            evaluated.append(n_components)
+
+        def fit(self, embeddings):
+            return self
+
+        def bic(self, embeddings):
+            scores = {1: 30.0, 2: 20.0, 3: 10.0}
+            return scores[self.n_components]
+
+    monkeypatch.setattr(raptor_module, "GaussianMixture", RecordingGaussianMixture)
+
+    optimal = raptor._get_optimal_clusters(
+        np.array([[0.0, 0.0], [0.1, 0.0], [1.0, 1.0], [1.1, 1.1]]),
+        random_state=0,
+    )
+
+    assert optimal == 3
+    assert evaluated == [1, 2, 3]
+
+
 def test_psi_tree_builder_ranks_all_leaf_pairs_by_original_cosine_similarity(raptor_module):
     raptor = _make_raptor(raptor_module)
     leaves = [
