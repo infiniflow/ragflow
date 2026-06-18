@@ -109,11 +109,6 @@ class FeishuChannel(Channel):
         exc = context.get("exception")
         if isinstance(exc, ConnectionClosedOK):
             return
-        message = context.get("message", "")
-        if "Task exception was never retrieved" in message and isinstance(
-            exc, ConnectionClosedOK
-        ):
-            return
         loop.default_exception_handler(context)
 
     async def stop(self) -> None:
