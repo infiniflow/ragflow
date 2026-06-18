@@ -145,6 +145,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminListUsersConditionCommand(cmd)
 	case "admin_show_quota_summary_command":
 		return c.AdminShowQuotaSummaryCommand(cmd)
+	case "admin_show_tasks_summary_command":
+		return c.AdminShowTasksSummaryCommand(cmd)
 	case "admin_show_data_summary_command":
 		return c.AdminShowDataSummaryCommand(cmd)
 	case "admin_show_data_orphan_command":
@@ -159,6 +161,12 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminPurgeUserCommand(cmd)
 	case "admin_purge_users_command":
 		return c.AdminPurgeUsersCommand(cmd)
+	case "admin_list_user_ingestion_tasks_command":
+		return c.AdminListUserIngestionTasksCommand(cmd)
+	case "admin_stop_user_ingestion_tasks_command":
+		return c.AdminStopUserIngestionTasksCommand(cmd)
+	case "admin_remove_user_ingestion_tasks_command":
+		return c.AdminRemoveUserIngestionTasksCommand(cmd)
 	// TODO: Implement other commands
 	case "show_admin_server":
 		return c.ShowAdminServer(cmd)
@@ -274,6 +282,11 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ChatToModel(cmd)
 	case "think_chat_to_model":
 		return c.ChatToModel(cmd)
+	case "openai_chat":
+		return c.OpenaiChat(cmd)
+	case "openai_chat_help":
+		printOpenaiChatHelp()
+		return nil, nil
 	case "embed_user_text":
 		return c.EmbedUserText(cmd)
 	case "rarank_user_document":

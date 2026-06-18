@@ -189,6 +189,7 @@ const (
 	TokenPurge
 	TokenPlan
 	TokenPreview
+	TokenOpenaiChat
 	TokenLog
 	TokenLevel
 	TokenDebug

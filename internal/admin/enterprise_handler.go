@@ -696,6 +696,21 @@ func (h *Handler) ShowUsersQuotaSummary(c *gin.Context) {
 	success(c, usersQuotaSummary, "")
 }
 
+// ShowIngestionTasksSummary handle show ingestion tasks summary
+func (h *Handler) ShowIngestionTasksSummary(c *gin.Context) {
+	ingestionTasksSummary, err := h.service.ShowIngestionTasksSummary()
+	if err != nil {
+		if errors.Is(err, common.ErrUserNotFound) {
+			errorResponse(c, "User not found", 404)
+			return
+		}
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, ingestionTasksSummary, "")
+}
+
 // ShowDataSummary handle show data summary
 func (h *Handler) ShowDataSummary(c *gin.Context) {
 	dataSummary, err := h.service.ShowDataSummary()
