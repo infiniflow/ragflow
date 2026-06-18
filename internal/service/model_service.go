@@ -895,7 +895,30 @@ func (m *ModelProviderService) ListTenantAddedModels(userID, modelTypeFilter str
 func (m *ModelProviderService) AlterProviderInstance(providerName, instanceName, newInstanceName, apiKey, userID string) (common.ErrorCode, error) {
 	return common.CodeSuccess, nil
 }
-func (m *ModelProviderService) DropProviderInstances(providerName, userID string, instances []string) (common.ErrorCode, error) {
+
+func (m *ModelProviderService) getProviderInstancesByNames(providerID string, instanceNames []string) ([]*entity.TenantModelInstance, []string, error) {
+	modelInstances := make([]*entity.TenantModelInstance, 0, len(instanceNames))
+	missingInstanceNames := make([]string, 0)
+
+	for _, instanceName := range instanceNames {
+		modelInstance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(providerID, instanceName)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				missingInstanceNames = append(missingInstanceNames, instanceName)
+				continue
+			}
+			return nil, nil, err
+		}
+		modelInstances = append(modelInstances, modelInstance)
+	}
+
+	return modelInstances, missingInstanceNames, nil
+}
+
+func (m *ModelProviderService) DropProviderInstances(providerName, userID string, instanceNames []string) (common.ErrorCode, error) {
+	if len(instanceNames) == 0 {
+		return common.CodeBadRequest, errors.New("instances is required")
+	}
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -912,47 +935,31 @@ func (m *ModelProviderService) DropProviderInstances(providerName, userID string
 	// Check if provider exists
 	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
 	if err != nil {
-		// Tenant hasn't connected this provider. The DELETE request is a
-		// no-op in that case — mirrors Python's drop_provider_instances in
-		// api/apps/services/provider_api_service.py, which simply iterates
-		// the (empty) instance list. The previous contract bubbled
-		// "record not found" as a 500, which broke the front-end "remove
-		// instance" flow when the UI's snapshot was slightly stale.
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return common.CodeSuccess, nil
+			return common.CodeNotFound, fmt.Errorf("no provider found for provider %q", providerName)
 		}
 		return common.CodeServerError, err
 	}
 
-	for _, instanceName := range instances {
-		// Get model instance
-		var tenantModelInstance *entity.TenantModelInstance
-		tenantModelInstance, err = m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
-		if err != nil {
-			// The instance name isn't in the DB (e.g. UI holds a stale id
-			// after the user already removed it on another tab). Match
-			// Python and skip silently instead of returning 500.
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				continue
-			}
+	modelInstances, missingInstanceNames, err := m.getProviderInstancesByNames(provider.ID, instanceNames)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+	if len(missingInstanceNames) > 0 {
+		return common.CodeNotFound, fmt.Errorf("no instance found for provider %q and instances %q", providerName, missingInstanceNames)
+	}
+
+	for _, modelInstance := range modelInstances {
+		if _, err = m.modelDAO.DeleteByProviderIDAndInstanceID(provider.ID, modelInstance.ID); err != nil {
 			return common.CodeServerError, err
 		}
 
-		// Delete all models of this instance
-		var count int64 = 0
-		count, err = m.modelDAO.DeleteByProviderIDAndInstanceID(provider.ID, tenantModelInstance.ID)
+		count, err := m.modelInstanceDAO.DeleteByProviderIDAndInstanceName(provider.ID, modelInstance.InstanceName)
 		if err != nil {
 			return common.CodeServerError, err
 		}
-
-		// Delete model instance
-		count, err = m.modelInstanceDAO.DeleteByProviderIDAndInstanceName(provider.ID, instanceName)
-		if err != nil {
-			return common.CodeServerError, err
-		}
-
 		if count == 0 {
-			return common.CodeNotFound, errors.New("provider instance not found")
+			return common.CodeNotFound, fmt.Errorf("provider instance %q not found", modelInstance.InstanceName)
 		}
 	}
 
