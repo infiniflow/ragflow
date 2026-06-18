@@ -39,6 +39,10 @@ var engineTypeProvider = func() string { return "" }
 // RegisterEngineType wires the engine package's GetEngineType into the
 // tokenizer, breaking the circular import (engine/elasticsearch → tokenizer → engine).
 func RegisterEngineType(get func() string) {
+	if get == nil {
+		engineTypeProvider = func() string { return "" }
+		return
+	}
 	engineTypeProvider = get
 }
 
@@ -522,7 +526,10 @@ func NumTokensFromString(s string) int {
 	}
 	enc, err := getCL100KEncoder()
 	if err != nil {
-		return 0
+		// Fail closed: avoid dangerous undercounting when encoder is unavailable.
+		// A conservative byte-length estimate errs on the side of over-counting,
+		// which is safer for budget enforcement than returning zero.
+		return len([]byte(s))
 	}
 	return len(enc.Encode(s, nil, nil))
 }

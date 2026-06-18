@@ -161,38 +161,38 @@ Note: Both image and video understanding support streaming and thinking modes as
 
 ### 6.8. Chat with OpenAI compatible API
 ```
-RAGFlow(user)> openai_chat '<chat_id>' 'Hello, how are you?';
+RAGFlow(api/default)> openai_chat '<chat_id>' 'Hello, how are you?';
 Answer: Hello! I'm just a virtual assistant, so I don't have feelings, but I'm here and ready to help you with anything you need. How can I assist you today? 😊
 Time: 8.487349
 ```
 
 ```
-RAGFlow(user)> openai_chat '<chat_id>' 'Great, now what about x^3?' \
-               system 'You are a math tutor. Always explain step by step.' \
-               history 'user:What is the derivative of x^2?;assistant:The derivative of x^2 is 2x.';
+RAGFlow(api/default)> openai_chat '<chat_id>' 'Great, now what about x^3?' \
+                      system 'You are a math tutor. Always explain step by step.' \
+                      history 'user:What is the derivative of x^2?;assistant:The derivative of x^2 is 2x.';
 ```
 
 ```
-RAGFlow(user)> openai_chat '<chat_id>' 'Hello, how are you?' temperature 0.7 max_tokens 100;
+RAGFlow(api/default)> openai_chat '<chat_id>' 'Hello, how are you?' temperature 0.7 max_tokens 100;
 ```
 
 ```
-RAGFlow(user)> openai_chat '<chat_id>' "what's in the doc?" stream true \
-               extra_body '{"reference":true,"reference_metadata":{"include":true,"fields":["author","title"]}}';
+RAGFlow(api/default)> openai_chat '<chat_id>' "what's in the doc?" stream true \
+                      extra_body '{"reference":true,"reference_metadata":{"include":true,"fields":["author","title"]}}';
 ```
 
 ```
-RAGFlow(user)> openai_chat '7b1d58f263ca11f18121ab54cc8673a7' 'Hello' \
-               extra_body '{"metadata_condition":{"logic":"and","conditions":[{"key":"doc_type","operator":"is","value":"faq"}]}}';
+RAGFlow(api/default)> openai_chat '7b1d58f263ca11f18121ab54cc8673a7' 'Hello' \
+                      extra_body '{"metadata_condition":{"logic":"and","conditions":[{"key":"doc_type","operator":"is","value":"faq"}]}}';
 ```
 
 ```
-RAGFlow(user)> openai_chat '<chat_id>' 'Hello, how are you?' temp 100;
+RAGFlow(api/default)> openai_chat '<chat_id>' 'Hello, how are you?' temp 100;
 CLI error: OPENAI_CHAT: unknown option "temp" (valid: model, system, history, delimiter, temperature, max_tokens, stream, top_p, frequency_penalty, presence_penalty, extra_body)
 ```
 
 ```
-RAGFlow(user)> openai_chat '<chat_id>' 'Hello, how are you?' extra_body '{"ref":true}';
+RAGFlow(api/default)> openai_chat '<chat_id>' 'Hello, how are you?' extra_body '{"ref":true}';
 CLI error: OPENAI_CHAT extra_body: unknown field "ref" (valid: reference, reference_metadata, metadata_condition)
 ```
 

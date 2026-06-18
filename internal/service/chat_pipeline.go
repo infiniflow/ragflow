@@ -335,15 +335,13 @@ func (s *ChatPipelineService) AsyncChat(
 			common.Warn("get_field_map failed; proceeding without field_map", zap.Error(fmErr))
 			fieldMap = nil
 		}
-		if fieldMap != nil {
-			common.Debug("field_map retrieved", zap.Any("field_map", fieldMap))
-		}
 		// Try structured SQL retrieval before vector search.
 		// Only runs on the last question
 		// HIT → return structured result directly.
 		// MISS → fall through to vector search.
 		if len(fieldMap) > 0 && chatModel != nil && len(kbs) > 0 {
 			common.Info("Phase 6: Use SQL to retrieval")
+			common.Debug("field_map retrieved", zap.Any("field_map", fieldMap))
 			quote := true
 			if v, ok := promptConfig["quote"].(bool); ok {
 				quote = v
@@ -369,8 +367,7 @@ func (s *ChatPipelineService) AsyncChat(
 				ansStr, _ = ans["answer"].(string)
 			}
 			if ans != nil && (ansStr != "" || len(chunks) > 0) {
-				common.Debug("SQL retrieval handled request",
-					zap.String("answer", truncateForLog(ansStr, 80)))
+				common.Info("SQL retrieval succeeded, skipping vector retrieval")
 
 				// Enrich chunks with document metadata
 				if includeRefMeta, metadataFields := s.resolveReferenceMetadata(promptConfig, kwargs); includeRefMeta && len(chunks) > 0 {
@@ -1037,7 +1034,7 @@ func (s *ChatPipelineService) AsyncChat(
 				// Wraps reasoning in <think></think> markers.
 				// inThink tracks local state to route reasoning vs answer.
 				var inThink bool
-				driverErr = chatDriver.ChatStreamlyWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg,
+				_, driverErr = chatDriver.ChatStreamlyWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg,
 					func(answerDelta *string, reason *string) error {
 						if answerDelta == nil || *answerDelta == "" {
 							return nil
@@ -1232,6 +1229,7 @@ func (s *ChatPipelineService) AsyncChat(
 			timer.Exit(common.PhaseGenerateAnswer)
 			out <- final
 		}
+		common.Info("AsyncChat completed", zap.String("chat_id", chat.ID))
 	}()
 
 	return out, nil

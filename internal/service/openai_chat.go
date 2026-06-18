@@ -278,7 +278,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 
 	var docIDsStr string
 	if openaiReq.MetadataCondition != nil {
-		common.Debug("metadata_condition filter start",
+		common.Debug("metadata_condition filter started",
 			zap.Any("condition", openaiReq.MetadataCondition))
 		kbIDs := make([]string, 0, len(dialog.KBIDs))
 		for _, raw := range dialog.KBIDs {
@@ -292,9 +292,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 			return
 		}
 		docIDsStr = MetadataConditionToDocIDs(metas, openaiReq.MetadataCondition)
-		common.Debug("metadata_condition filter end",
-			zap.String("doc_ids", docIDsStr),
-			zap.Int("meta_count", len(metas)))
+		common.Debug("metadata_condition filter ended", zap.String("doc_ids", docIDsStr))
 	}
 
 	common.Debug("OpenAI chat config resolved",

@@ -589,14 +589,20 @@ func (s *ChatSessionService) getLastRole(messages []interface{}) string {
 
 // chunksFormat formats chunks for reference (simplified version)
 func (s *ChatSessionService) chunksFormat(reference map[string]interface{}) []map[string]interface{} {
-	chunks, _ := reference["chunks"].([]map[string]interface{})
-	if chunks == nil {
+	switch c := reference["chunks"].(type) {
+	case []map[string]interface{}:
+		formatted := make([]map[string]interface{}, len(c))
+		copy(formatted, c)
+		return formatted
+	case []interface{}:
+		formatted := make([]map[string]interface{}, 0, len(c))
+		for _, item := range c {
+			if m, ok := item.(map[string]interface{}); ok {
+				formatted = append(formatted, m)
+			}
+		}
+		return formatted
+	default:
 		return []map[string]interface{}{}
 	}
-
-	formatted := make([]map[string]interface{}, len(chunks))
-	for i, chunk := range chunks {
-		formatted[i] = chunk
-	}
-	return formatted
 }

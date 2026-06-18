@@ -1088,6 +1088,9 @@ func buildIndexNames(tenantIDs []string) []string {
 // FetchChunkVectors returns q_{dim}_vec for the given chunk IDs.
 // Missing or wrong-dimension chunks get a zero vector.
 func (s *RetrievalService) FetchChunkVectors(ctx context.Context, chunkIDs []string, tenantIDs []string, kbIDs []string, dim int) (map[string][]float64, error) {
+	if dim <= 0 {
+		return nil, fmt.Errorf("FetchChunkVectors: dim must be > 0, got %d", dim)
+	}
 	if len(chunkIDs) == 0 {
 		return map[string][]float64{}, nil
 	}
@@ -1111,7 +1114,9 @@ func (s *RetrievalService) FetchChunkVectors(ctx context.Context, chunkIDs []str
 	}
 
 	out := make(map[string][]float64, len(chunkIDs))
-	zero := make([]float64, dim)
+	for _, cid := range chunkIDs {
+		out[cid] = make([]float64, dim)
+	}
 
 	for _, chunk := range result.Chunks {
 		cid, _ := chunk["id"].(string)
@@ -1143,7 +1148,7 @@ func (s *RetrievalService) FetchChunkVectors(ctx context.Context, chunkIDs []str
 			}
 		}
 		if len(vec) != dim {
-			vec = zero
+			vec = make([]float64, dim)
 		}
 		out[cid] = vec
 	}
