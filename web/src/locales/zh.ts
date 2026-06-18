@@ -57,6 +57,7 @@ export default {
       add: '添加',
       remove: '移除',
       search: '搜索',
+      reset: '重置',
       noDataFound: '没有找到数据。',
       noData: '暂无数据',
       bedrockCredentialsHint:
@@ -1518,7 +1519,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         rerank: 'Rerank',
         sequence2text: 'sequence2text',
         tts: 'TTS',
-        image2text: 'OCR',
+        image2text: 'VLM',
+        ocr: 'OCR',
         speech2text: 'ASR',
       },
       modelFeatures: '模型特性',

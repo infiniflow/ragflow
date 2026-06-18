@@ -585,8 +585,12 @@ func (cm *CheckpointManager) PutWrites(ctx context.Context, config *types.Runnab
 		return fmt.Errorf("checkpoint_id is required for put_writes on thread %s", threadID)
 	}
 	if callerID != current.ID {
-		return fmt.Errorf("conflict: caller expected parent checkpoint %s but latest is %s for thread %s",
-			callerID, current.ID, threadID)
+		return &VersionConflictError{
+			CurrentVersion:  current.Version,
+			ExpectedVersion: current.Version + 1,
+			CheckpointID:    current.ID,
+			ThreadID:        threadID,
+		}
 	}
 
 	// Create a new checkpoint with the writes applied

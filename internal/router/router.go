@@ -273,6 +273,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				// Dataset documents
 				datasets.GET("/:dataset_id/documents", r.documentHandler.ListDocuments)
 				datasets.GET("/:dataset_id/documents/:document_id", r.documentHandler.DownloadDocument)
+				datasets.PATCH("/:dataset_id/documents/:document_id", r.documentHandler.UpdateDatasetDocument)
 				datasets.DELETE("/:dataset_id/documents", r.documentHandler.DeleteDocuments)
 
 				// Dataset document chunk
@@ -324,32 +325,32 @@ func (r *Router) Setup(engine *gin.Engine) {
 				commitFolders.GET("/:folder_id/changes", r.fileCommitHandler.GetUncommittedChanges)
 			}
 
-			// /workspace/{workspace_id}/commits — alias for /folders/ (workspace_id == folder_id)
-			commitWorkspace := v1.Group("/workspace")
-			{
-				commitWorkspace.POST("/:folder_id/commits", r.fileCommitHandler.CreateCommit)
-				commitWorkspace.GET("/:folder_id/commits", r.fileCommitHandler.ListCommits)
-				commitWorkspace.GET("/:folder_id/commits/diff", r.fileCommitHandler.DiffCommits)
-				commitWorkspace.GET("/:folder_id/commits/:commit_id", r.fileCommitHandler.GetCommit)
-				commitWorkspace.GET("/:folder_id/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
-				commitWorkspace.GET("/:folder_id/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
-				commitWorkspace.GET("/:folder_id/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
-				commitWorkspace.GET("/:folder_id/changes", r.fileCommitHandler.GetUncommittedChanges)
-			}
+		// /workspace/{workspace_id}/commits — alias for /folders/ (workspace_id == folder_id)
+		commitWorkspace := v1.Group("/workspace")
+		{
+			commitWorkspace.POST("/:folder_id/commits", r.fileCommitHandler.CreateCommit)
+			commitWorkspace.GET("/:folder_id/commits", r.fileCommitHandler.ListCommits)
+			commitWorkspace.GET("/:folder_id/commits/diff", r.fileCommitHandler.DiffCommits)
+			commitWorkspace.GET("/:folder_id/commits/:commit_id", r.fileCommitHandler.GetCommit)
+			commitWorkspace.GET("/:folder_id/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
+			commitWorkspace.GET("/:folder_id/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
+			commitWorkspace.GET("/:folder_id/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
+			commitWorkspace.GET("/:folder_id/changes", r.fileCommitHandler.GetUncommittedChanges)
+		}
 
-			// /datasets/{dataset_id}/commits — resolve dataset_id → folder_id via middleware
-			commitDatasets := v1.Group("/datasets/:dataset_id")
-			commitDatasets.Use(handler.CommitFolderResolver(r.fileCommitHandler, "datasets", "dataset_id"))
-			{
-				commitDatasets.POST("/commits", r.fileCommitHandler.CreateCommit)
-				commitDatasets.GET("/commits", r.fileCommitHandler.ListCommits)
-				commitDatasets.GET("/commits/diff", r.fileCommitHandler.DiffCommits)
-				commitDatasets.GET("/commits/:commit_id", r.fileCommitHandler.GetCommit)
-				commitDatasets.GET("/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
-				commitDatasets.GET("/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
-				commitDatasets.GET("/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
-				commitDatasets.GET("/changes", r.fileCommitHandler.GetUncommittedChanges)
-			}
+		// /datasets/{dataset_id}/commits — resolve dataset_id → folder_id via middleware
+		commitDatasets := v1.Group("/datasets/:dataset_id")
+		commitDatasets.Use(handler.CommitFolderResolver(r.fileCommitHandler, "datasets", "dataset_id"))
+		{
+			commitDatasets.POST("/commits", r.fileCommitHandler.CreateCommit)
+			commitDatasets.GET("/commits", r.fileCommitHandler.ListCommits)
+			commitDatasets.GET("/commits/diff", r.fileCommitHandler.DiffCommits)
+			commitDatasets.GET("/commits/:commit_id", r.fileCommitHandler.GetCommit)
+			commitDatasets.GET("/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
+			commitDatasets.GET("/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
+			commitDatasets.GET("/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
+			commitDatasets.GET("/changes", r.fileCommitHandler.GetUncommittedChanges)
+		}
 
 			// Author routes
 			authors := v1.Group("/authors")
@@ -498,6 +499,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				mcp.POST("/servers", r.mcpHandler.CreateMCPServer)
 				mcp.GET("/servers", r.mcpHandler.ListMCPServers)
+				mcp.GET("/servers/:mcp_id", r.mcpHandler.GetMCPServer)
 				mcp.PUT("/servers/:mcp_id", r.mcpHandler.UpdateMCPServer)
 				mcp.DELETE("/servers/:mcp_id", r.mcpHandler.DeleteMCPServer)
 				mcp.POST("/servers/import", r.mcpHandler.ImportMCPServers)

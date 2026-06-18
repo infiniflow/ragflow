@@ -889,13 +889,6 @@ func (p *Parser) parseModelNames(raw string) ([]string, error) {
 	return modelNames, nil
 }
 
-type AddModelConfig struct {
-	ModelName  string
-	ModelTypes []string
-	MaxTokens  int
-	Thinking   *bool
-}
-
 // syntax: add model 'xxx' to provider 'vllm' instance 'test' with tokens 1024 chat think vision;
 func (p *Parser) parseAddModel() (*Command, error) {
 	p.nextToken() // consume MODEL
@@ -949,10 +942,12 @@ func (p *Parser) parseAddModel() (*Command, error) {
 	}
 	p.nextToken()
 
-	i := 0
+	modelIndex := 0
 	var modelTypes []string
 	var supportThink *bool = nil
 	maxTokens := 0
+	var maxDimension *int = nil
+	var dimensions []int = nil
 
 	models := make([]map[string]any, 0, len(modelNames))
 	if p.curToken.Type != TokenWith {
@@ -960,15 +955,16 @@ func (p *Parser) parseAddModel() (*Command, error) {
 	}
 	p.nextToken()
 
-A:
+optionsLoop:
 	for {
-		if i >= len(modelNames) {
+		if modelIndex >= len(modelNames) {
 			return nil, fmt.Errorf("too many model configs: got more configs than model names")
 		}
+		currentModelName := modelNames[modelIndex]
 		switch p.curToken.Type {
 		case TokenThink:
 			if supportThink != nil {
-				return nil, fmt.Errorf("think model is already set for model %s", modelNames[i])
+				return nil, fmt.Errorf("think model is already set for model %s", currentModelName)
 			}
 			value := true
 			supportThink = &value
@@ -985,6 +981,24 @@ A:
 		case TokenEmbedding:
 			modelTypes = append(modelTypes, "embedding")
 			p.nextToken()
+			if p.curToken.Type == TokenInteger {
+				val, err := p.parseNumber()
+				if err != nil {
+					return nil, err
+				}
+				maxDimension = &val
+				p.nextToken()
+
+				dimensions = make([]int, 0)
+				for p.curToken.Type == TokenInteger {
+					dim, err := p.parseNumber()
+					if err != nil {
+						return nil, err
+					}
+					dimensions = append(dimensions, int(dim))
+					p.nextToken()
+				}
+			}
 
 		case TokenRerank:
 			modelTypes = append(modelTypes, "rerank")
@@ -1009,7 +1023,7 @@ A:
 		case TokenToken, TokenTokens:
 			p.nextToken()
 			if maxTokens != 0 {
-				return nil, fmt.Errorf("max tokens is already given %d for model %s", maxTokens, modelNames[i])
+				return nil, fmt.Errorf("max tokens is already given %d for model %s", maxTokens, currentModelName)
 			}
 			if p.curToken.Type != TokenInteger {
 				return nil, fmt.Errorf("expected integer")
@@ -1023,7 +1037,7 @@ A:
 
 		case TokenComma, TokenSemicolon, TokenEOF:
 			if len(modelTypes) == 0 {
-				return nil, fmt.Errorf("model type is required for model %s", modelNames[i])
+				return nil, fmt.Errorf("model type is required for model %s", currentModelName)
 			}
 
 			seenTypes := make(map[string]struct{}, len(modelTypes))
@@ -1045,11 +1059,11 @@ A:
 
 			modelTypes = dedupedModelTypes
 			if len(modelTypes) == 0 {
-				return nil, fmt.Errorf("model type is required for model %s", modelNames[i])
+				return nil, fmt.Errorf("model type is required for model %s", currentModelName)
 			}
 
 			model := map[string]any{
-				"model_name":  modelNames[i],
+				"model_name":  currentModelName,
 				"model_types": modelTypes,
 				"max_tokens":  maxTokens,
 			}
@@ -1057,12 +1071,19 @@ A:
 				model["thinking"] = *supportThink
 			}
 
+			if maxDimension != nil {
+				model["max_dimension"] = *maxDimension
+				model["dimensions"] = dimensions
+			}
+
 			models = append(models, model)
 
-			i++
+			modelIndex++
 			modelTypes = nil
 			supportThink = nil
 			maxTokens = 0
+			maxDimension = nil
+			dimensions = nil
 
 			if p.curToken.Type == TokenComma {
 				p.nextToken()
@@ -1072,7 +1093,7 @@ A:
 			if p.curToken.Type == TokenSemicolon {
 				p.nextToken()
 			}
-			break A
+			break optionsLoop
 
 		default:
 			return nil, fmt.Errorf("unexpected token type: %s", p.curToken.Value)

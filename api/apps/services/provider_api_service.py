@@ -603,7 +603,7 @@ def _hybrid_get_instance_models(provider_name: str, instance_id: str):
     model_info_map: dict = {}
     model_unsupported_type_map = {}
     for model_record in model_records:
-        if model_record.status == ActiveStatusEnum.UNSUPPORTED:
+        if model_record.status == ActiveStatusEnum.UNSUPPORTED.value:
             if model_unsupported_type_map.get(model_record.model_name):
                 model_unsupported_type_map[model_record.model_name].append(model_record.model_type)
             else:
