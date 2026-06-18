@@ -442,12 +442,7 @@ func (p *Parser) parseShowCommand() (*Command, error) {
 		if p.curToken.Type == TokenSemicolon {
 			p.nextToken()
 		}
-
 		return NewCommand("show_current"), nil
-	case TokenUser:
-		return p.parseShowUser()
-	case TokenRole:
-		return p.parseShowRole()
 	case TokenVar:
 		return p.parseShowVariable()
 	case TokenService:
@@ -471,60 +466,6 @@ func (p *Parser) parseShowCommand() (*Command, error) {
 	default:
 		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
 	}
-}
-
-func (p *Parser) parseShowUser() (*Command, error) {
-	p.nextToken() // consume USER
-
-	// Check for PERMISSION
-	if p.curToken.Type == TokenPermission {
-		p.nextToken()
-		userName, err := p.parseQuotedString()
-		if err != nil {
-			return nil, err
-		}
-		cmd := NewCommand("show_user_permission")
-		cmd.Params["user_name"] = userName
-		p.nextToken()
-		// Semicolon is optional for SHOW TOKEN
-		if p.curToken.Type == TokenSemicolon {
-			p.nextToken()
-		}
-		return cmd, nil
-	}
-
-	userName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("show_user")
-	cmd.Params["user_name"] = userName
-
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseShowRole() (*Command, error) {
-	p.nextToken() // consume ROLE
-	roleName, err := p.parseIdentifier()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("show_role")
-	cmd.Params["role_name"] = roleName
-
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
 }
 
 func (p *Parser) parseShowVariable() (*Command, error) {
