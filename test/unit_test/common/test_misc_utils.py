@@ -17,6 +17,7 @@ import asyncio
 import contextvars
 import hashlib
 import sys
+import threading
 import types
 import uuid
 from contextlib import contextmanager
@@ -25,7 +26,11 @@ from unittest.mock import patch
 import pytest
 
 from common import ssrf_guard
-from common.misc_utils import convert_bytes, download_img, get_uuid, hash_str2int, thread_pool_exec
+<<<<<<< HEAD
+from common.misc_utils import convert_bytes, download_img, get_uuid, hash_str2int, once, thread_pool_exec
+=======
+from common.misc_utils import convert_bytes, download_img, get_uuid, hash_str2int, once
+>>>>>>> 811f1b160 (fix(common/misc_utils): allow once decorator retries after failure)
 
 
 class _Hdr:
@@ -558,3 +563,74 @@ class TestConvertBytes:
         # Ensure we don't exceed available units
         huge_value = 100 * 1125899906842624  # 100 PB (still within PB range)
         assert "PB" in convert_bytes(huge_value)
+
+
+@pytest.mark.p2
+class TestOnce:
+    """Test cases for the once() run-exactly-once decorator."""
+
+    def test_runs_only_once_on_success(self):
+        """A successful function body runs once; later calls return the cached result."""
+        calls = {"n": 0}
+
+        @once
+        def init():
+            calls["n"] += 1
+            return calls["n"]
+
+        assert init() == 1
+        assert init() == 1  # cached, not re-executed
+        assert calls["n"] == 1
+
+    def test_exception_allows_retry(self):
+        """A first-call exception must not permanently disable the function.
+
+        Previously ``executed`` was set to True before the wrapped function ran,
+        so a raising first call left the decorator stuck returning None forever.
+        After a failure the body should run again on the next call.
+        """
+        calls = {"n": 0}
+
+        @once
+        def flaky():
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("boom")
+            return "ok"
+
+        with pytest.raises(RuntimeError):
+            flaky()
+
+        # The first call failed, so the second call must retry and succeed.
+        assert flaky() == "ok"
+        assert calls["n"] == 2
+
+    def test_thread_safe_single_execution(self):
+        """Concurrent callers must trigger exactly one successful execution."""
+        calls = {"n": 0}
+        counter_lock = threading.Lock()
+        barrier = threading.Barrier(8)
+
+        @once
+        def init():
+            with counter_lock:
+                calls["n"] += 1
+            return 42
+
+        results = []
+        results_lock = threading.Lock()
+
+        def worker():
+            barrier.wait()
+            value = init()
+            with results_lock:
+                results.append(value)
+
+        threads = [threading.Thread(target=worker) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert calls["n"] == 1
+        assert results == [42] * 8
