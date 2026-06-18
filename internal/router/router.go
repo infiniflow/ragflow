@@ -338,7 +338,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				commitWorkspace.GET("/:folder_id/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
 				commitWorkspace.GET("/:folder_id/changes", r.fileCommitHandler.GetUncommittedChanges)
 			}
-	
+
 			// /datasets/{dataset_id}/commits — resolve dataset_id → folder_id via middleware
 			commitDatasets := v1.Group("/datasets/:dataset_id")
 			commitDatasets.Use(handler.CommitFolderResolver(r.fileCommitHandler, "datasets", "dataset_id"))
