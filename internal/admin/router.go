@@ -88,6 +88,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.GET("/users/index", r.handler.ListUsersIndex)
 			protected.GET("/users/quota", r.handler.ListUsersQuota)
 			protected.GET("/users/quota/summary", r.handler.ShowUsersQuotaSummary)
+			protected.GET("/ingestion/tasks/summary", r.handler.ShowIngestionTasksSummary)
 			protected.GET("/data/summary", r.handler.ShowDataSummary)
 			protected.GET("/data/orphan", r.handler.ShowDataOrphan)
 			protected.GET("/data/storage", r.handler.ShowDataStorage)
@@ -172,6 +173,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.DELETE("/ingestion/tasks", r.handler.RemoveIngestionTasks)
 			protected.PUT("/ingestion/tasks", r.handler.StopIngestionTasks)
 			protected.GET("/ingestion/tasks", r.handler.ListIngestionTasks)
+
 		}
 	}
 

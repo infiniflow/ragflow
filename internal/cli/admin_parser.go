@@ -487,6 +487,8 @@ func (p *Parser) parseAdminShowCommand() (*Command, error) {
 		return p.parseAdminShowDataCommand()
 	case TokenQuota:
 		return p.parseAdminShowQuotaCommand()
+	case TokenTasks:
+		return p.parseAdminShowQuotaCommand()
 	default:
 		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
 	}
@@ -2358,6 +2360,26 @@ func (p *Parser) parseAdminShowQuotaCommand() (*Command, error) {
 		cmd = NewCommand("admin_show_quota_summary_command")
 	default:
 		return nil, fmt.Errorf("expected SUMMARY after QUOTA")
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// SHOW TASKS SUMMARY;
+func (p *Parser) parseAdminShowTasksCommand() (*Command, error) {
+	p.nextToken() // consume TASKS
+
+	var cmd *Command
+	switch p.curToken.Type {
+	case TokenSummary:
+		p.nextToken()
+		cmd = NewCommand("admin_show_tasks_summary_command")
+	default:
+		return nil, fmt.Errorf("expected SUMMARY after TASKS")
 	}
 
 	// Semicolon is optional

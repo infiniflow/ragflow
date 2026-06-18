@@ -145,6 +145,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminListUsersConditionCommand(cmd)
 	case "admin_show_quota_summary_command":
 		return c.AdminShowQuotaSummaryCommand(cmd)
+	case "admin_show_tasks_summary_command":
+		return c.AdminShowTasksSummaryCommand(cmd)
 	case "admin_show_data_summary_command":
 		return c.AdminShowDataSummaryCommand(cmd)
 	case "admin_show_data_orphan_command":
