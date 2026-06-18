@@ -161,6 +161,12 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminPurgeUserCommand(cmd)
 	case "admin_purge_users_command":
 		return c.AdminPurgeUsersCommand(cmd)
+	case "admin_list_user_ingestion_tasks_command":
+		return c.AdminListUserIngestionTasksCommand(cmd)
+	case "admin_stop_user_ingestion_tasks_command":
+		return c.AdminStopUserIngestionTasksCommand(cmd)
+	case "admin_remove_user_ingestion_tasks_command":
+		return c.AdminRemoveUserIngestionTasksCommand(cmd)
 	// TODO: Implement other commands
 	case "show_admin_server":
 		return c.ShowAdminServer(cmd)

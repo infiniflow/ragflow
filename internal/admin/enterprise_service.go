@@ -17,6 +17,7 @@
 package admin
 
 import (
+	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -497,4 +498,69 @@ func (s *Service) PurgeUsersData(preview bool, days int, userPlan *string, userA
 	}
 
 	return result, nil
+}
+
+func (s *Service) ListIngestionTasksByCondition(email, status *string) ([]map[string]interface{}, error) {
+
+	if email == nil && status == nil {
+		return nil, fmt.Errorf("email or status are required")
+	}
+
+	element := map[string]interface{}{
+		"command": "list_ingestion_tasks_by_condition",
+		"error":   "'List ingestion tasks by condition' is implemented in enterprise edition",
+	}
+
+	if email != nil {
+		element["email"] = *email
+	}
+	if status != nil {
+		element["status"] = *status
+	}
+
+	return []map[string]interface{}{element}, nil
+}
+
+func (s *Service) StopIngestionTasksByCondition(tasks []string, email, status *string) ([]map[string]interface{}, error) {
+
+	if email == nil && status == nil {
+		return nil, fmt.Errorf("email or status are required")
+	}
+
+	element := map[string]interface{}{
+		"command": "stop_ingestion_tasks_by_condition",
+		"tasks":   tasks,
+		"error":   "'Stop ingestion tasks by condition' is implemented in enterprise edition",
+	}
+
+	if email != nil {
+		element["email"] = *email
+	}
+	if status != nil {
+		element["status"] = *status
+	}
+
+	return []map[string]interface{}{element}, nil
+}
+
+func (s *Service) RemoveIngestionTasksByCondition(tasks []string, email, status *string) ([]map[string]interface{}, error) {
+
+	if email == nil && status == nil {
+		return nil, fmt.Errorf("email or status are required")
+	}
+
+	element := map[string]interface{}{
+		"command": "remove_ingestion_tasks_by_condition",
+		"tasks":   tasks,
+		"error":   "'Remove ingestion tasks by condition' is implemented in enterprise edition",
+	}
+
+	if email != nil {
+		element["email"] = *email
+	}
+	if status != nil {
+		element["status"] = *status
+	}
+
+	return []map[string]interface{}{element}, nil
 }
