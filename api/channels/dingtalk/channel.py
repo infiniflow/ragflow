@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -17,6 +18,7 @@ LOGGER = logging.getLogger(__name__)
 DINGTALK_API_BASE = "https://api.dingtalk.com"
 DINGTALK_WS_FALLBACK = "wss://wss-open-connection.dingtalk.com:443/connect"
 DINGTALK_STREAM_TOPIC = "/v1.0/im/bot/messages/get"
+DINGTALK_MESSAGE_TTL_SECS = 3600
 
 
 @dataclass
@@ -37,6 +39,8 @@ class DingTalkChannel(Channel):
         self._ws: Optional[aiohttp.ClientWebSocketResponse] = None
         self._stop_requested = False
         self._session_webhooks: Dict[str, str] = {}
+        self._processed_message_ids: Dict[str, float] = {}
+        self._inflight_message_ids: Dict[str, float] = {}
 
     async def start(self) -> None:
         self._stop_requested = False
@@ -68,6 +72,8 @@ class DingTalkChannel(Channel):
         self._ws = None
         self._stream_task = None
         self._session_webhooks.clear()
+        self._processed_message_ids.clear()
+        self._inflight_message_ids.clear()
 
     async def send(self, message: OutgoingMessage) -> None:
         session_webhook = self._session_webhooks.get(message.chat_id)
@@ -241,6 +247,9 @@ class DingTalkChannel(Channel):
             return
 
         data: Any = obj
+        headers = obj.get("headers") if isinstance(obj, dict) else {}
+        if not isinstance(headers, dict):
+            headers = {}
         if isinstance(obj, dict):
             if isinstance(obj.get("data"), str):
                 try:
@@ -254,6 +263,14 @@ class DingTalkChannel(Channel):
             return
 
         session_webhook = str(data.get("sessionWebhook") or obj.get("sessionWebhook") or "").strip()
+        callback_message_id = str(
+            headers.get("messageId")
+            or obj.get("messageId")
+            or data.get("messageId")
+            or data.get("msgId")
+            or obj.get("msgId")
+            or ""
+        ).strip()
         chat_id = str(
             data.get("conversationId")
             or data.get("chatId")
@@ -270,6 +287,7 @@ class DingTalkChannel(Channel):
         message_id = str(data.get("msgId") or obj.get("msgId") or "").strip()
         chat_type = str(data.get("conversationType") or "").strip()
         text = self._extract_text(data)
+        dedup_key = self._build_dedup_key(data, obj)
 
         if session_webhook and chat_id:
             self._session_webhooks[chat_id] = session_webhook
@@ -277,17 +295,64 @@ class DingTalkChannel(Channel):
         if not text.strip() or not chat_id or not sender_id:
             return
 
-        incoming = IncomingMessage(
-            channel=self.channel_id,
-            account_id=self.account_id,
-            chat_id=chat_id,
-            chat_type=chat_type,
-            message_id=message_id,
-            sender_id=sender_id,
-            text=text,
-            raw=data,
-        )
-        await self._dispatch(incoming)
+        await self._ack_callback(callback_message_id, data)
+        self._prune_message_cache()
+        if dedup_key:
+            if dedup_key in self._processed_message_ids:
+                LOGGER.debug(
+                    "[dingtalk:%s] skipping processed duplicate message=%s",
+                    self.account_id,
+                    dedup_key,
+                )
+                return
+            if dedup_key in self._inflight_message_ids:
+                LOGGER.debug(
+                    "[dingtalk:%s] skipping inflight duplicate message=%s",
+                    self.account_id,
+                    dedup_key,
+                )
+                return
+            self._inflight_message_ids[dedup_key] = time.time()
+
+        try:
+            incoming = IncomingMessage(
+                channel=self.channel_id,
+                account_id=self.account_id,
+                chat_id=chat_id,
+                chat_type=chat_type,
+                message_id=message_id or dedup_key or "",
+                sender_id=sender_id,
+                text=text,
+                raw=data,
+            )
+            await self._dispatch(incoming)
+        finally:
+            if dedup_key:
+                self._inflight_message_ids.pop(dedup_key, None)
+                self._processed_message_ids[dedup_key] = time.time()
+
+    async def _ack_callback(self, message_id: str, data: Dict[str, Any]) -> None:
+        if not message_id or self._ws is None or self._ws.closed:
+            return
+        payload = {
+            "messageId": message_id,
+            "response": {"success": True},
+        }
+        try:
+            await self._ws.send_json(payload)
+            LOGGER.debug(
+                "[dingtalk:%s] acked callback messageId=%s msgId=%s",
+                self.account_id,
+                self._mask(message_id),
+                self._mask(str(data.get("msgId") or "")),
+            )
+        except Exception:
+            LOGGER.warning(
+                "[dingtalk:%s] failed to ack callback messageId=%s",
+                self.account_id,
+                self._mask(message_id),
+                exc_info=True,
+            )
 
     @staticmethod
     def _extract_text(data: Dict[str, Any]) -> str:
@@ -316,6 +381,36 @@ class DingTalkChannel(Channel):
         return urlunsplit(
             (parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment)
         )
+
+    def _build_dedup_key(self, data: Dict[str, Any], obj: Dict[str, Any]) -> str:
+        message_id = str(data.get("msgId") or obj.get("msgId") or "").strip()
+        if message_id:
+            return f"msg:{message_id}"
+
+        conversation_id = str(
+            data.get("conversationId")
+            or data.get("chatId")
+            or data.get("openConversationId")
+            or ""
+        ).strip()
+        sender_id = str(
+            data.get("senderId")
+            or data.get("senderStaffId")
+            or data.get("userId")
+            or ""
+        ).strip()
+        text = self._extract_text(data).strip()
+        if conversation_id and sender_id and text:
+            return f"fallback:{conversation_id}:{sender_id}:{text}"
+        return ""
+
+    def _prune_message_cache(self) -> None:
+        now = time.time()
+        cutoff = now - DINGTALK_MESSAGE_TTL_SECS
+        for cache in (self._processed_message_ids, self._inflight_message_ids):
+            stale = [key for key, ts in cache.items() if ts < cutoff]
+            for key in stale:
+                cache.pop(key, None)
 
     @staticmethod
     def _mask(value: str) -> str:
