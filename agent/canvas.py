@@ -154,7 +154,10 @@ class Graph:
         return self.components.get(cpn_id)
 
     def get_component_obj(self, cpn_id) -> ComponentBase:
-        return self.components.get(cpn_id)["obj"]
+        component = self.components.get(cpn_id)
+        if component is None:
+            raise ValueError(f"Component {cpn_id} not found in canvas")
+        return component["obj"]
 
     def get_component_type(self, cpn_id) -> str:
         return self.components.get(cpn_id)["obj"].component_name
@@ -608,6 +611,9 @@ class Canvas(Graph):
                     if other_branch:
                         return
                     if self.path[-1] == cpn_id:
+                        return
+                    if self.components.get(cpn_id) is None:
+                        logging.warning(f"Component {cpn_id} not found in canvas, skipping path append")
                         return
                     self.path.append(cpn_id)
 
