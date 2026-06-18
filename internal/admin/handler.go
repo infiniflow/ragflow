@@ -205,15 +205,65 @@ func (h *Handler) AuthCheck(c *gin.Context) {
 	successNoData(c, "Admin is authorized")
 }
 
+// ListUsersRequest list users request
+type ListUsersRequest struct {
+	Enterprise *bool   `json:"enterprise"`
+	UserStatus *string `json:"user_status"`
+	OrderBy    *string `json:"order_by"`
+	Top        *int    `json:"top"`
+	Days       *int    `json:"days"`
+	Quota      *int    `json:"quota"`
+	Plan       *string `json:"plan"`
+}
+
 // ListUsers handle list users
 func (h *Handler) ListUsers(c *gin.Context) {
-	users, err := h.service.ListUsers()
-	if err != nil {
-		errorResponse(c, err.Error(), 500)
-		return
+
+	var err error
+	var pageInt int
+	page := c.Param("page")
+	if page == "" {
+		pageInt = 0
+	} else {
+		pageInt, err = strconv.Atoi(page)
+		if err != nil {
+			errorResponse(c, "Page must be an integer", 400)
+			return
+		}
 	}
 
-	success(c, users, "Get all users")
+	var pageSizeInt int
+	pageSize := c.Param("page_size")
+	if pageSize == "" {
+		pageSizeInt = 0
+	} else {
+		pageSizeInt, err = strconv.Atoi(pageSize)
+		if err != nil {
+			errorResponse(c, "Page size must be an integer", 400)
+			return
+		}
+	}
+
+	var req ListUsersRequest
+	var users []map[string]interface{}
+	if err = c.ShouldBindJSON(&req); err != nil {
+		users, err = h.service.ListUsers(pageInt, pageSizeInt)
+		if err != nil {
+			errorResponse(c, err.Error(), 500)
+			return
+		}
+
+		success(c, users, "Get all users")
+	} else {
+		users, err = h.service.ListUsersEnterprise(pageInt, pageSizeInt, req.UserStatus, req.OrderBy, req.Plan, req.Top, req.Days, req.Quota)
+		if err != nil {
+			errorResponse(c, err.Error(), 500)
+			return
+		}
+
+		success(c, users, "list users")
+	}
+
 }
 
 // CreateUserHTTPRequest create user request

@@ -251,6 +251,32 @@ func (s *Service) ShowUsersActivity(days, windows *int) (map[string]interface{},
 	return result, nil
 }
 
+func (s *Service) ListUsersEnterprise(pageIndex, pageSize int, status, orderBy, plan *string, top, days, quota *int) ([]map[string]interface{}, error) {
+	item := map[string]interface{}{}
+	if status != nil {
+		item["status"] = *status
+	}
+	if orderBy != nil {
+		item["order_by"] = *orderBy
+	}
+	if plan != nil {
+		item["plan"] = *plan
+	}
+	if top != nil {
+		item["top"] = *top
+	}
+	if days != nil {
+		item["days"] = *days
+	}
+	if quota != nil {
+		item["quota"] = *quota
+	}
+
+	var result []map[string]interface{}
+	result = append(result, item)
+	return result, nil
+}
+
 // ListUsersReports list users reports for enterprise edition
 func (s *Service) ListUsersReports(pageIndex, pageSize int, status, plan *string, days *int) (map[string]interface{}, error) {
 

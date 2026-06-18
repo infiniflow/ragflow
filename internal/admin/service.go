@@ -211,8 +211,8 @@ func generateRandomHex(n int) string {
 }
 
 // ListUsers list all users
-func (s *Service) ListUsers() ([]map[string]interface{}, error) {
-	users, _, err := s.userDAO.List(0, 0)
+func (s *Service) ListUsers(page, pageSize int) ([]map[string]interface{}, error) {
+	users, _, err := s.userDAO.List(page*pageSize, pageSize)
 	if err != nil {
 		return nil, err
 	}

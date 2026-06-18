@@ -1952,13 +1952,55 @@ func (c *CLI) AdminListUsersCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) AdminListActiveUsersCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminListUsersConditionCommand(cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	resp, err := c.AdminServerClient.Request("GET", "/admin/users", "admin", nil, nil)
+	var orderBy *string
+	var userStatus *string
+	var top *int
+	var plan *string
+	var quota *int
+	var days *int
+
+	orderByStr, ok := cmd.Params["order_by"].(string)
+	if ok {
+		orderBy = &orderByStr
+	}
+	userStatusStr, ok := cmd.Params["user_status"].(string)
+	if ok {
+		userStatus = &userStatusStr
+	}
+	topInt, ok := cmd.Params["top"].(int)
+	if ok {
+		top = &topInt
+	}
+	planStr, ok := cmd.Params["plan"].(string)
+	if ok {
+		plan = &planStr
+	}
+	quotaInt, ok := cmd.Params["quota"].(int)
+	if ok {
+		quota = &quotaInt
+	}
+	daysInt, ok := cmd.Params["days"].(int)
+	if ok {
+		days = &daysInt
+	}
+
+	payload := map[string]interface{}{
+		"enterprise":  true,
+		"order_by":    orderBy,
+		"user_status": userStatus,
+		"top":         top,
+		"plan":        plan,
+		"quota":       quota,
+		"days":        days,
+	}
+
+	resp, err := c.AdminServerClient.Request("GET", "/admin/users", "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list users: %w", err)
 	}
@@ -1976,124 +2018,7 @@ func (c *CLI) AdminListActiveUsersCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("%s", result.Message)
 	}
 
-	for _, user := range result.Data {
-		delete(user, "create_date")
-	}
-
 	result.Duration = resp.Duration
-	return &result, nil
-}
-
-func (c *CLI) AdminListInactiveUsersCommand(cmd *Command) (ResponseIf, error) {
-
-	if c.Config.CLIMode == AdminMode {
-		return nil, fmt.Errorf("already in admin mode")
-	}
-
-	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
-		return nil, fmt.Errorf("admin server not added")
-	}
-
-	c.Config.CLIMode = AdminMode
-
-	var result SimpleResponse
-	result.Code = 0
-	result.Message = "switch to admin server"
-	result.Duration = 0
-	return &result, nil
-}
-
-func (c *CLI) AdminListUsersStorageCommand(cmd *Command) (ResponseIf, error) {
-
-	if c.Config.CLIMode == AdminMode {
-		return nil, fmt.Errorf("already in admin mode")
-	}
-
-	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
-		return nil, fmt.Errorf("admin server not added")
-	}
-
-	c.Config.CLIMode = AdminMode
-
-	var result SimpleResponse
-	result.Code = 0
-	result.Message = "switch to admin server"
-	result.Duration = 0
-	return &result, nil
-}
-
-func (c *CLI) AdminListUsersDocumentsCommand(cmd *Command) (ResponseIf, error) {
-
-	if c.Config.CLIMode == AdminMode {
-		return nil, fmt.Errorf("already in admin mode")
-	}
-
-	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
-		return nil, fmt.Errorf("admin server not added")
-	}
-
-	c.Config.CLIMode = AdminMode
-
-	var result SimpleResponse
-	result.Code = 0
-	result.Message = "switch to admin server"
-	result.Duration = 0
-	return &result, nil
-}
-func (c *CLI) AdminListUsersIndexCommand(cmd *Command) (ResponseIf, error) {
-
-	if c.Config.CLIMode == AdminMode {
-		return nil, fmt.Errorf("already in admin mode")
-	}
-
-	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
-		return nil, fmt.Errorf("admin server not added")
-	}
-
-	c.Config.CLIMode = AdminMode
-
-	var result SimpleResponse
-	result.Code = 0
-	result.Message = "switch to admin server"
-	result.Duration = 0
-	return &result, nil
-}
-
-func (c *CLI) AdminListUsersQuotaCommand(cmd *Command) (ResponseIf, error) {
-
-	if c.Config.CLIMode == AdminMode {
-		return nil, fmt.Errorf("already in admin mode")
-	}
-
-	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
-		return nil, fmt.Errorf("admin server not added")
-	}
-
-	c.Config.CLIMode = AdminMode
-
-	var result SimpleResponse
-	result.Code = 0
-	result.Message = "switch to admin server"
-	result.Duration = 0
-	return &result, nil
-}
-
-func (c *CLI) AdminListUsersPlanCommand(cmd *Command) (ResponseIf, error) {
-
-	if c.Config.CLIMode == AdminMode {
-		return nil, fmt.Errorf("already in admin mode")
-	}
-
-	if c.AdminServerClient == nil || c.Config.AdminClientConfig == nil {
-		return nil, fmt.Errorf("admin server not added")
-	}
-
-	c.Config.CLIMode = AdminMode
-
-	var result SimpleResponse
-	result.Code = 0
-	result.Message = "switch to admin server"
-	result.Duration = 0
 	return &result, nil
 }
 

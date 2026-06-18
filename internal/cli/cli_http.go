@@ -141,18 +141,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminShowUsersActivityCommand(cmd)
 	case "admin_list_users_command":
 		return c.AdminListUsersCommand(cmd)
-	case "admin_list_active_users_command":
-		return c.AdminListActiveUsersCommand(cmd)
-	case "admin_list_inactive_users_command":
-		return c.AdminListInactiveUsersCommand(cmd)
-	case "admin_list_users_storage_command":
-		return c.AdminListUsersStorageCommand(cmd)
-	case "admin_list_users_documents_command":
-		return c.AdminListUsersDocumentsCommand(cmd)
-	case "admin_list_users_index_command":
-		return c.AdminListUsersIndexCommand(cmd)
-	case "admin_list_users_quota_command":
-		return c.AdminListUsersQuotaCommand(cmd)
+	case "admin_list_users_condition_command":
+		return c.AdminListUsersConditionCommand(cmd)
 	case "admin_show_quota_summary_command":
 		return c.AdminShowQuotaSummaryCommand(cmd)
 	case "admin_show_data_summary_command":

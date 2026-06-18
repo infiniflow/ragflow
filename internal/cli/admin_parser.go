@@ -2205,219 +2205,74 @@ commandLoop:
 func (p *Parser) parseAdminListUsersCommand() (*Command, error) {
 	p.nextToken() // consume USERS
 
-	var command = "admin_list_users_command"
-	var cmd *Command
-	switch p.curToken.Type {
-	case TokenActive:
-		return p.parseAdminListActiveUsersCommand()
-	case TokenInactive:
-		return p.parseAdminListInactiveUsersCommand()
-	case TokenStorage:
-		return p.parseAdminListUsersStorageCommand()
-	case TokenDocuments:
-		return p.parseAdminListUsersDocumentsCommand()
-	case TokenIndex:
-		return p.parseAdminListUsersIndexCommand()
-	case TokenQuota, TokenPlan, TokenDays:
-		return p.parseAdminListQuotaUsersCommand()
-	case TokenSemicolon:
-		p.nextToken()
-	default:
-		return nil, fmt.Errorf("invalid command")
-	}
-
-	cmd = NewCommand(command)
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-// LIST USERS ACTIVE 30 DAYS; // default 7 days
-func (p *Parser) parseAdminListActiveUsersCommand() (*Command, error) {
-	p.nextToken() // consume ACTIVE
-
-	var days int
-	var err error
-	if p.curToken.Type == TokenDays {
-		p.nextToken()
-		days, err = p.parseNumber()
-		if err != nil {
-			return nil, err
-		}
-		if days < 0 {
-			return nil, fmt.Errorf("invalid number of DAYS")
-		}
-	}
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-
-	cmd := NewCommand("admin_list_active_users_command")
-	cmd.Params["days"] = days
-	return cmd, nil
-}
-
-// LIST USERS INACTIVE 30 DAYS; // default 7 days
-func (p *Parser) parseAdminListInactiveUsersCommand() (*Command, error) {
-	p.nextToken() // consume INACTIVE
-
-	var days int
-	var err error
-	if p.curToken.Type == TokenDays {
-		p.nextToken()
-		days, err = p.parseNumber()
-		if err != nil {
-			return nil, err
-		}
-		if days < 0 {
-			return nil, fmt.Errorf("invalid number of DAYS")
-		}
-	}
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-
-	cmd := NewCommand("admin_list_inactive_users_command")
-	cmd.Params["days"] = days
-	return cmd, nil
-}
-
-// LIST USERS STORAGE TOP 10;
-func (p *Parser) parseAdminListUsersStorageCommand() (*Command, error) {
-	p.nextToken() // consume STORAGE
-
-	var top int
-	var err error
-	if p.curToken.Type == TokenTop {
-		p.nextToken()
-		top, err = p.parseNumber()
-		if err != nil {
-			return nil, err
-		}
-		if top < 0 {
-			return nil, fmt.Errorf("invalid number of TOP")
-		}
-	}
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-
-	cmd := NewCommand("admin_list_users_storage_command")
-	cmd.Params["top"] = top
-	return cmd, nil
-}
-
-// LIST USERS DOCUMENTS TOP 10;
-func (p *Parser) parseAdminListUsersDocumentsCommand() (*Command, error) {
-	p.nextToken() // consume DOCUMENTS
-
-	var top int
-	var err error
-	if p.curToken.Type == TokenTop {
-		p.nextToken()
-		top, err = p.parseNumber()
-		if err != nil {
-			return nil, err
-		}
-		if top < 0 {
-			return nil, fmt.Errorf("invalid number of TOP")
-		}
-	}
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-
-	cmd := NewCommand("admin_list_users_documents_command")
-	cmd.Params["top"] = top
-	return cmd, nil
-}
-
-// LIST USERS INDEX TOP 10;
-func (p *Parser) parseAdminListUsersIndexCommand() (*Command, error) {
-	p.nextToken() // consume INDEX
-
-	var top int
-	var err error
-	if p.curToken.Type == TokenTop {
-		p.nextToken()
-		top, err = p.parseNumber()
-		if err != nil {
-			return nil, err
-		}
-		if top < 0 {
-			return nil, fmt.Errorf("invalid number of TOP")
-		}
-	}
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-
-	cmd := NewCommand("admin_list_users_index_command")
-	cmd.Params["top"] = top
-	return cmd, nil
-}
-
-// LIST USERS QUOTA 100 TOP 10;
-func (p *Parser) parseAdminListQuotaUsersCommand() (*Command, error) {
-	var top int
-	var quota int
-	var plan string = "ALL"
-	var days int
-	var err error
-
+	var orderBy string
+	var userStatus string
+	var top *int
+	var plan *string
+	var quota *int
+	var days *int
+	condition := false
 commandLoop:
 	for {
 		switch p.curToken.Type {
 		case TokenTop:
+			condition = true
 			p.nextToken()
-			top, err = p.parseNumber()
+			topInt, err := p.parseNumber()
 			if err != nil {
 				return nil, err
 			}
-			if top < 0 {
+			if topInt < 0 {
 				return nil, fmt.Errorf("invalid number of TOP")
 			}
-		case TokenQuota:
 			p.nextToken()
-			quota, err = p.parseNumber()
-			if err != nil {
-				return nil, err
-			}
-			if quota < 0 {
-				return nil, fmt.Errorf("invalid number of QUOTA")
-			}
-		case TokenPlan:
-			p.nextToken()
-			plan, err = p.parseQuotedString()
-			if err != nil {
-				return nil, err
-			}
-			if plan == "" {
-				return nil, fmt.Errorf("invalid plan")
-			}
-			p.nextToken()
+			top = &topInt
 		case TokenDays:
+			condition = true
 			p.nextToken()
-			days, err = p.parseNumber()
+			daysInt, err := p.parseNumber()
 			if err != nil {
 				return nil, err
 			}
-			if days < 0 {
+			if daysInt < 0 {
 				return nil, fmt.Errorf("invalid number of DAYS")
 			}
+			p.nextToken()
+			days = &daysInt
+		case TokenPlan:
+			condition = true
+			p.nextToken()
+			planStr, err := p.parseQuotedString()
+			if err != nil {
+				return nil, err
+			}
+			if planStr == "" {
+				return nil, fmt.Errorf("invalid plan")
+			}
+			plan = &planStr
+			p.nextToken()
+		case TokenQuota:
+			condition = true
+			p.nextToken()
+			quotaInt, err := p.parseNumber()
+			if err != nil {
+				return nil, err
+			}
+			if quotaInt < 0 {
+				return nil, fmt.Errorf("invalid number of QUOTA")
+			}
+			quota = &quotaInt
+			p.nextToken()
+		case TokenDocuments, TokenIndex, TokenStorage:
+			condition = true
+			if orderBy != "" {
+				return nil, fmt.Errorf("order by already set")
+			}
+			orderBy = p.curToken.Value
+			p.nextToken()
+		case TokenActive, TokenInactive:
+			condition = true
+			userStatus = p.curToken.Value
 			p.nextToken()
 		case TokenSemicolon:
 			p.nextToken()
@@ -2433,17 +2288,30 @@ commandLoop:
 		p.nextToken()
 	}
 
-	cmd := NewCommand("admin_list_users_quota_command")
-	if top != 0 {
-		cmd.Params["top"] = top
+	if !condition {
+		return NewCommand("admin_list_users_command"), nil
 	}
-	if quota != 0 {
-		cmd.Params["quota"] = quota
+
+	cmd := NewCommand("admin_list_users_condition_command")
+	if orderBy != "" {
+		cmd.Params["order_by"] = orderBy
 	}
-	cmd.Params["plan"] = plan
-	if days != 0 {
-		cmd.Params["days"] = days
+	if userStatus != "" {
+		cmd.Params["user_status"] = userStatus
 	}
+	if top != nil {
+		cmd.Params["top"] = *top
+	}
+	if plan != nil {
+		cmd.Params["plan"] = *plan
+	}
+	if quota != nil {
+		cmd.Params["quota"] = *quota
+	}
+	if days != nil {
+		cmd.Params["days"] = *days
+	}
+
 	return cmd, nil
 }
 
