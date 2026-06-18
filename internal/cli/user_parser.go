@@ -442,12 +442,7 @@ func (p *Parser) parseShowCommand() (*Command, error) {
 		if p.curToken.Type == TokenSemicolon {
 			p.nextToken()
 		}
-
 		return NewCommand("show_current"), nil
-	case TokenUser:
-		return p.parseShowUser()
-	case TokenRole:
-		return p.parseShowRole()
 	case TokenVar:
 		return p.parseShowVariable()
 	case TokenService:
@@ -471,60 +466,6 @@ func (p *Parser) parseShowCommand() (*Command, error) {
 	default:
 		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
 	}
-}
-
-func (p *Parser) parseShowUser() (*Command, error) {
-	p.nextToken() // consume USER
-
-	// Check for PERMISSION
-	if p.curToken.Type == TokenPermission {
-		p.nextToken()
-		userName, err := p.parseQuotedString()
-		if err != nil {
-			return nil, err
-		}
-		cmd := NewCommand("show_user_permission")
-		cmd.Params["user_name"] = userName
-		p.nextToken()
-		// Semicolon is optional for SHOW TOKEN
-		if p.curToken.Type == TokenSemicolon {
-			p.nextToken()
-		}
-		return cmd, nil
-	}
-
-	userName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("show_user")
-	cmd.Params["user_name"] = userName
-
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseShowRole() (*Command, error) {
-	p.nextToken() // consume ROLE
-	roleName, err := p.parseIdentifier()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("show_role")
-	cmd.Params["role_name"] = roleName
-
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
 }
 
 func (p *Parser) parseShowVariable() (*Command, error) {
@@ -942,7 +883,7 @@ func (p *Parser) parseAddModel() (*Command, error) {
 	}
 	p.nextToken()
 
-	i := 0
+	modelIndex := 0
 	var modelTypes []string
 	var supportThink *bool = nil
 	maxTokens := 0
@@ -955,15 +896,16 @@ func (p *Parser) parseAddModel() (*Command, error) {
 	}
 	p.nextToken()
 
-A:
+optionsLoop:
 	for {
-		if i >= len(modelNames) {
+		if modelIndex >= len(modelNames) {
 			return nil, fmt.Errorf("too many model configs: got more configs than model names")
 		}
+		currentModelName := modelNames[modelIndex]
 		switch p.curToken.Type {
 		case TokenThink:
 			if supportThink != nil {
-				return nil, fmt.Errorf("think model is already set for model %s", modelNames[i])
+				return nil, fmt.Errorf("think model is already set for model %s", currentModelName)
 			}
 			value := true
 			supportThink = &value
@@ -1022,7 +964,7 @@ A:
 		case TokenToken, TokenTokens:
 			p.nextToken()
 			if maxTokens != 0 {
-				return nil, fmt.Errorf("max tokens is already given %d for model %s", maxTokens, modelNames[i])
+				return nil, fmt.Errorf("max tokens is already given %d for model %s", maxTokens, currentModelName)
 			}
 			if p.curToken.Type != TokenInteger {
 				return nil, fmt.Errorf("expected integer")
@@ -1036,7 +978,7 @@ A:
 
 		case TokenComma, TokenSemicolon, TokenEOF:
 			if len(modelTypes) == 0 {
-				return nil, fmt.Errorf("model type is required for model %s", modelNames[i])
+				return nil, fmt.Errorf("model type is required for model %s", currentModelName)
 			}
 
 			seenTypes := make(map[string]struct{}, len(modelTypes))
@@ -1058,11 +1000,11 @@ A:
 
 			modelTypes = dedupedModelTypes
 			if len(modelTypes) == 0 {
-				return nil, fmt.Errorf("model type is required for model %s", modelNames[i])
+				return nil, fmt.Errorf("model type is required for model %s", currentModelName)
 			}
 
 			model := map[string]any{
-				"model_name":  modelNames[i],
+				"model_name":  currentModelName,
 				"model_types": modelTypes,
 				"max_tokens":  maxTokens,
 			}
@@ -1077,7 +1019,7 @@ A:
 
 			models = append(models, model)
 
-			i++
+			modelIndex++
 			modelTypes = nil
 			supportThink = nil
 			maxTokens = 0
@@ -1092,7 +1034,7 @@ A:
 			if p.curToken.Type == TokenSemicolon {
 				p.nextToken()
 			}
-			break A
+			break optionsLoop
 
 		default:
 			return nil, fmt.Errorf("unexpected token type: %s", p.curToken.Value)
