@@ -678,6 +678,8 @@ ChatChannelFormDefaultValues[ChatChannelKey.GOOGLECHAT].config.auth_mode =
 ChatChannelFormDefaultValues[
   ChatChannelKey.WECOM
 ].config.credential.connection_type = 'webhook';
+ChatChannelFormDefaultValues[ChatChannelKey.FEISHU].config.credential.domain =
+  'feishu';
 
 export const getChatChannelFields = (
   key?: ChatChannelKey,
