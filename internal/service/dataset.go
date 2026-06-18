@@ -1183,7 +1183,7 @@ func (s *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 		}
 		if len(req.ParserConfig) > 0 {
 			parserConfig := normalizeDatasetUpdateParserConfig(req.ParserConfig)
-			updates["parser_config"] = common.DeepMergeMaps(kb.ParserConfig, parserConfig)
+			updates["parser_config"] = entity.JSONMap(common.DeepMergeMaps(kb.ParserConfig, parserConfig))
 		}
 	}
 
@@ -1208,7 +1208,7 @@ func (s *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 
 	if parserIDProvided && parserID != kb.ParserID {
 		if _, ok := updates["parser_config"]; !ok {
-			updates["parser_config"] = common.GetParserConfig(parserID, nil)
+			updates["parser_config"] = entity.JSONMap(common.GetParserConfig(parserID, nil))
 		}
 	}
 	if kb.PipelineID != nil && parserIDProvided {
@@ -1784,32 +1784,11 @@ func normalizeDatasetUUID1(id string) (string, error) {
 }
 
 func (s *DatasetService) verifyEmbeddingAvailability(embdID string, tenantID string) (bool, string) {
-	modelName, _, provider, err := parseModelName(embdID)
+	_, _, _, _, err := NewModelProviderService().GetModelConfigFromProviderInstance(tenantID, entity.ModelTypeEmbedding, embdID)
 	if err != nil {
-		return false, "Embedding model identifier must follow <model_name>@<provider> format"
+		return false, err.Error()
 	}
-
-	if provider == "Builtin" {
-		return true, ""
-	}
-
-	tenantLLMs, err := s.tenantLLMDAO.ListValidByTenant(tenantID)
-	if err != nil {
-		return false, "Database operation failed"
-	}
-
-	for _, tenantLLM := range tenantLLMs {
-		if tenantLLM == nil || tenantLLM.LLMName == nil || tenantLLM.ModelType == nil {
-			continue
-		}
-		if *tenantLLM.LLMName == modelName &&
-			tenantLLM.LLMFactory == provider &&
-			*tenantLLM.ModelType == string(entity.ModelTypeEmbedding) {
-			return true, ""
-		}
-	}
-
-	return false, fmt.Sprintf("Unauthorized model: <%s>", embdID)
+	return true, ""
 }
 
 func applyAutoMetadataConfig(parserConfig map[string]interface{}, config *AutoMetadataConfig) map[string]interface{} {
