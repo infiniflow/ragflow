@@ -1024,6 +1024,261 @@ class TenantModelStage(MigrationStage):
         logger.info("Created tenant_model table")
 
 
+class TenantModelSeedingStage(MigrationStage):
+    """Seed tenant_model table with models from conf/llm_factories.json"""
+
+    name = "tenant_model_seeding"
+    description = "Seed tenant_model with models from conf/llm_factories.json for existing providers/instances"
+    source_tables = ["tenant_model_provider", "tenant_model_instance", "tenant_model"]
+    target_tables = ["tenant_model"]
+
+    def current_timestamp(self) -> int:
+        return int(time.time())
+
+    def generate_uuid(self) -> str:
+        """Generate 32-character UUID1"""
+        return uuid.uuid1().hex
+
+    def _load_llm_factories(self) -> list:
+        """Load factory_llm_infos from conf/llm_factories.json"""
+        conf_path = os.path.join(PROJECT_BASE, "conf", "llm_factories.json")
+        with open(conf_path, "r") as f:
+            data = json.load(f)
+        return data.get("factory_llm_infos", [])
+
+    def check(self) -> bool:
+        """Check if migration is needed"""
+        if not self.db.table_exists("tenant_model_provider"):
+            logger.warning("Dependency table 'tenant_model_provider' does not exist")
+            return False
+
+        if not self.db.table_exists("tenant_model_instance"):
+            logger.warning("Dependency table 'tenant_model_instance' does not exist")
+            return False
+
+        if not self.db.table_exists("tenant_model"):
+            if self.dry_run:
+                logger.info("[DRY RUN] Target table 'tenant_model' does not exist")
+                return False
+            return True
+
+        # Check if there are any models to seed
+        factories = self._load_llm_factories()
+        total_missing = 0
+        for factory in factories:
+            llm_list = factory.get("llm", [])
+            if not llm_list:
+                continue
+            factory_name = factory["name"]
+            # Query provider for this factory
+            cursor = self.db.execute_sql(
+                "SELECT id FROM tenant_model_provider WHERE provider_name = %s",
+                (factory_name,)
+            )
+            providers = cursor.fetchall()
+            for provider_id, in providers:
+                # Query instances for this provider
+                cursor = self.db.execute_sql(
+                    "SELECT id FROM tenant_model_instance WHERE provider_id = %s",
+                    (provider_id,)
+                )
+                instances = cursor.fetchall()
+                for instance_id, in instances:
+                    for llm in llm_list:
+                        model_name = llm.get("llm_name", "")
+                        model_types = llm.get("model_type", "chat")
+                        if isinstance(model_types, str):
+                            model_types = [model_types]
+                        for mt in model_types:
+                            cursor = self.db.execute_sql(
+                                "SELECT COUNT(*) FROM tenant_model "
+                                "WHERE provider_id = %s AND instance_id = %s AND model_name = %s AND model_type = %s",
+                                (provider_id, instance_id, model_name, mt)
+                            )
+                            if cursor.fetchone()[0] == 0:
+                                total_missing += 1
+
+        if total_missing == 0:
+            self.mark_noop_completes_migration()
+            logger.info("No missing models to seed in tenant_model")
+            return False
+
+        logger.info(f"Found {total_missing} missing models to seed in tenant_model")
+        return True
+
+    def execute(self) -> tuple[int, list]:
+        """Execute migration"""
+        current_ts = self.current_timestamp()
+        rows_inserted = 0
+
+        if not self.db.table_exists("tenant_model_provider"):
+            logger.error("Dependency table 'tenant_model_provider' does not exist")
+            return 0, []
+
+        if not self.db.table_exists("tenant_model_instance"):
+            logger.error("Dependency table 'tenant_model_instance' does not exist")
+            return 0, []
+
+        if not self.db.table_exists("tenant_model"):
+            if self.dry_run:
+                logger.info("[DRY RUN] Target table 'tenant_model' does not exist")
+                return 0, []
+            logger.info("Target table 'tenant_model' does not exist, will create")
+            self.create_target_table()
+
+        if self.create_table_only:
+            logger.info("[CREATE TABLE ONLY] Target table created/verified, skipping data seeding")
+            return 0, self.target_tables
+
+        # Pre-load existing extra values for model_names from tenant_model
+        # to reuse non-default extra for same model_name across providers
+        cursor = self.db.execute_sql(
+            "SELECT model_name, extra FROM tenant_model WHERE extra != '{}' AND extra IS NOT NULL"
+        )
+        existing_extra_map = {}
+        for model_name, extra in cursor.fetchall():
+            if model_name and extra and extra != "{}":
+                existing_extra_map[model_name] = extra
+
+        # Pre-load existing status values for model_names from tenant_model
+        # Prefer non-unsupported status when seeding new records for the same model_name
+        cursor = self.db.execute_sql(
+            "SELECT model_name, status FROM tenant_model WHERE status != 'unsupported' AND status IS NOT NULL"
+        )
+        existing_status_map = {}
+        for model_name, status in cursor.fetchall():
+            if model_name and status:
+                existing_status_map[model_name] = status
+
+        factories = self._load_llm_factories()
+        all_records = []
+
+        for factory in factories:
+            llm_list = factory.get("llm", [])
+            if not llm_list:
+                continue
+            factory_name = factory["name"]
+
+            # Query provider for this factory
+            cursor = self.db.execute_sql(
+                "SELECT id FROM tenant_model_provider WHERE provider_name = %s",
+                (factory_name,)
+            )
+            providers = cursor.fetchall()
+
+            for provider_id, in providers:
+                # Query instances for this provider
+                cursor = self.db.execute_sql(
+                    "SELECT id FROM tenant_model_instance WHERE provider_id = %s",
+                    (provider_id,)
+                )
+                instances = cursor.fetchall()
+                if not instances:
+                    logger.warning(f"No instances found for provider '{factory_name}' (id={provider_id}), skipping")
+                    continue
+
+                for instance_id, in instances:
+                    for llm in llm_list:
+                        model_name = llm.get("llm_name", "")
+                        if not model_name:
+                            continue
+                        model_types = llm.get("model_type", "chat")
+                        if isinstance(model_types, str):
+                            model_types = [model_types]
+
+                        # Determine extra: reuse existing non-default extra for same model_name;
+                        # otherwise build default from is_tools and max_tokens in the llm entry
+                        if model_name in existing_extra_map:
+                            extra = existing_extra_map[model_name]
+                        else:
+                            extra_dict = {}
+                            if llm.get("is_tools") is True:
+                                extra_dict["is_tools"] = True
+                            max_tokens = llm.get("max_tokens")
+                            if max_tokens is not None:
+                                extra_dict["max_tokens"] = max_tokens
+                            extra = json.dumps(extra_dict) if extra_dict else "{}"
+
+                        # Determine status: reuse existing non-unsupported status for same model_name, else "active"
+                        status = existing_status_map.get(model_name, "active")
+
+                        for mt in model_types:
+                            # Check if record already exists
+                            cursor = self.db.execute_sql(
+                                "SELECT COUNT(*) FROM tenant_model "
+                                "WHERE provider_id = %s AND instance_id = %s AND model_name = %s AND model_type = %s",
+                                (provider_id, instance_id, model_name, mt)
+                            )
+                            if cursor.fetchone()[0] > 0:
+                                continue
+                            all_records.append((model_name, provider_id, instance_id, mt, status, extra))
+
+        if not all_records:
+            logger.info("No missing models to seed")
+            return 0, []
+
+        logger.info(f"Seeding {len(all_records)} tenant_model records...")
+
+        if self.dry_run:
+            logger.info(f"[DRY RUN] Would insert {len(all_records)} records")
+            for model_name, provider_id, instance_id, mt, status, extra in all_records[:5]:
+                logger.info(f"  model_name={model_name}, provider_id={provider_id}, "
+                           f"instance_id={instance_id}, model_type={mt}, status={status}, extra={extra}")
+            if len(all_records) > 5:
+                logger.info(f"  ... and {len(all_records) - 5} more records")
+            return len(all_records), self.target_tables
+
+        # Insert records in batches
+        batch_size = 100
+        for i in range(0, len(all_records), batch_size):
+            batch = all_records[i:i + batch_size]
+            values = []
+            for model_name, provider_id, instance_id, mt, status, extra in batch:
+                record_id = self.generate_uuid()
+                model_name_escaped = model_name.replace("'", "''") if model_name else ""
+                mt_escaped = mt.replace("'", "''") if mt else ""
+                extra_escaped = extra.replace("'", "''") if extra else "{}"
+                status_escaped = status.replace("'", "''") if status else "active"
+                values.append(f"('{record_id}', '{model_name_escaped}', '{provider_id}', "
+                            f"'{instance_id}', '{mt_escaped}', '{status_escaped}', "
+                            f"'{extra_escaped}', "
+                            f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}), "
+                            f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}))")
+
+            insert_sql = f"""
+                INSERT INTO tenant_model
+                (id, model_name, provider_id, instance_id, model_type, status, extra,
+                 create_time, create_date, update_time, update_date)
+                VALUES {', '.join(values)}
+            """
+            self.db.execute_sql(insert_sql)
+            rows_inserted += len(batch)
+            logger.info(f"Inserted batch {i // batch_size + 1}: {len(batch)} records")
+
+        return rows_inserted, self.target_tables
+
+    def create_target_table(self):
+        """Create tenant_model table"""
+        create_sql = """
+        CREATE TABLE IF NOT EXISTS tenant_model (
+            id VARCHAR(32) NOT NULL PRIMARY KEY,
+            model_name VARCHAR(128),
+            provider_id VARCHAR(32) NOT NULL,
+            instance_id VARCHAR(32) NOT NULL,
+            model_type VARCHAR(32) NOT NULL,
+            status VARCHAR(32) DEFAULT 'active',
+            extra VARCHAR(1024) DEFAULT '{}',
+            create_time BIGINT,
+            create_date DATETIME,
+            update_time BIGINT,
+            update_date DATETIME,
+            INDEX idx_instance_id (instance_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """
+        self.db.execute_sql(create_sql)
+        logger.info("Created tenant_model table")
+
+
 class ModelIdConfigStage(MigrationStage):
     """Normalize stored model IDs from model@provider to model@default@provider."""
 
@@ -1271,6 +1526,7 @@ MIGRATION_STAGES = {
     'tenant_model_provider': TenantModelProviderStage,
     'tenant_model_instance': TenantModelInstanceStage,
     'tenant_model': TenantModelStage,
+    'tenant_model_seeding': TenantModelSeedingStage,
     'model_id_config': ModelIdConfigStage,
 }
 
