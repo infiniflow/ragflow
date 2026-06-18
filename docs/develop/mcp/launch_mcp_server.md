@@ -64,6 +64,10 @@ Where:
 
 The RAGFlow MCP server supports two transports: the legacy SSE transport (served at `/sse`), introduced on November 5, 2024, and deprecated on March 26, 2025, and the streamable-HTTP transport (served at `/mcp`). The legacy SSE transport and the streamable HTTP transport with JSON responses are enabled by default. To disable either transport, use the flags `--no-transport-sse-enabled` or `--no-transport-streamable-http-enabled`. To disable JSON responses for the streamable HTTP transport,  use the `--no-json-response` flag.
 
+### Dataset list page size
+
+The MCP server fetches datasets with a default page size of `100`. To use a smaller page size, set `RAGFLOW_MCP_DATASET_PAGE_SIZE` to an integer between `1` and `100`.
+
 ### Launch from Docker
 
 #### 1. Enable MCP server
