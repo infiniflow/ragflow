@@ -124,10 +124,12 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 		return p.parseAdminShutdownCommand()
 	case TokenRestart:
 		return p.parseAdminRestartCommand()
-	case TokenStart:
-		return p.parseStartIngestion()
+	case TokenMQ:
+		return p.parseMessageQueueCommand()
+	case TokenRemove:
+		return p.parseAdminRemoveCommand()
 	case TokenStop:
-		return p.parseStopIngestion()
+		return p.parseAdminStopIngestionTasks()
 	case TokenAdd:
 		return p.parseAdminAddCommand()
 	case TokenDelete:
@@ -136,6 +138,8 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 		return p.parseAdminSaveCommand()
 	case TokenUse:
 		return p.parseAdminUseCommand()
+	case TokenPurge:
+		return p.parseAdminPurgeCommand()
 	default:
 		return nil, fmt.Errorf("unknown command: %s", p.curToken.Value)
 	}
@@ -202,6 +206,8 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseStreamCommand()
 	case TokenChat:
 		return p.parseChatCommand()
+	case TokenOpenaiChat:
+		return p.parseOpenaiChatCommand()
 	case TokenThink:
 		return p.parseThinkCommand()
 	case TokenEmbed:
@@ -216,6 +222,11 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseOCRCommand()
 	case TokenCheck:
 		return p.parseCheckCommand()
+	case TokenStart:
+		return p.parseUserStartIngestion()
+	case TokenStop:
+		return p.parseUserStopIngestion()
+
 	case TokenSave:
 		return p.parseUserSaveCommand()
 	case TokenUse:
@@ -226,6 +237,10 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseRemoveCommand()
 	case TokenGet:
 		return p.parseGetCommand()
+	case TokenExplain:
+		return p.parseExplainCommand()
+	case TokenChunk:
+		return p.parseChunkCommand(false)
 
 	case TokenLS, TokenCat, TokenSearch:
 		// For context engine

@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -27,6 +28,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/parser"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"strings"
@@ -375,7 +377,7 @@ func (s *FileService) UploadFile(tenantID, parentID string, files []*multipart.F
 			Name:       uniqueName,
 			Location:   &location,
 			Size:       int64(len(data)),
-			Type:       fileType,
+			Type:       string(fileType),
 			SourceType: "",
 		}
 
@@ -1007,4 +1009,62 @@ func (s *FileService) DownloadAgentFile(tenantID, location string) ([]byte, erro
 	}
 
 	return blob, nil
+}
+
+// GetFileContents fetches file contents (text + image) from storage
+// for the given file dicts.
+//   - raw=false: images returned as base64 data URIs in images; non-images parsed and returned as text.
+//   - raw=true:  images returned as raw bytes in images; non-images parsed and returned as text.
+func (s *FileService) GetFileContents(fileDicts []map[string]interface{}, raw bool) (texts []string, images []string, err error) {
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, nil, fmt.Errorf("storage not initialized")
+	}
+
+	for _, fd := range fileDicts {
+		id, _ := fd["id"].(string)
+		if id == "" {
+			continue
+		}
+		file, ferr := s.fileDAO.GetByID(id)
+		if ferr != nil || file == nil || file.Location == nil || *file.Location == "" {
+			continue
+		}
+		data, derr := storageImpl.Get(file.ParentID, *file.Location)
+		if derr != nil || len(data) == 0 {
+			continue
+		}
+		ft := utility.FilenameType(file.Name)
+		if ft == utility.FileTypeVISUAL {
+			if raw {
+				images = append(images, string(data))
+			} else {
+				ext := utility.GetFileExtension(file.Name)
+				mime := utility.GetContentType(ext, string(ft))
+				images = append(images, "data:"+mime+";base64,"+base64.StdEncoding.EncodeToString(data))
+			}
+		} else {
+			texts = append(texts, parseFileContent(file.Name, data))
+		}
+	}
+	return texts, images, nil
+}
+
+// parseFileContent tries to parse a file's contents using the appropriate parser.
+// Falls back to returning raw text if no parser is available.
+func parseFileContent(filename string, data []byte) string {
+	fileType := utility.GetFileType(filename)
+	if fileType == utility.FileTypeOTHER {
+		return string(data)
+	}
+	// Parser config — office_oxide for MS Office formats; other parsers ignore it.
+	parserCfg := map[string]string{"lib_type": "office_oxide"}
+	fp, err := parser.GetParser(fileType, parserCfg)
+	if err != nil {
+		return string(data)
+	}
+	if err := fp.Parse(filename, data); err != nil {
+		return string(data)
+	}
+	return fp.String()
 }

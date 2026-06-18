@@ -19,25 +19,32 @@ package engine
 import (
 	"fmt"
 	"ragflow/internal/common"
+	"ragflow/internal/engine/nats"
 	"ragflow/internal/server"
 	"sync"
 
-	"go.uber.org/zap"
-
 	"ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/engine/infinity"
+
+	"go.uber.org/zap"
+	"ragflow/internal/tokenizer"
 )
 
 var (
-	globalEngine DocEngine
-	engineType   EngineType
-	once         sync.Once
+	globalEngine       DocEngine
+	engineType         EngineType
+	messageQueueEngine MessageQueue
+	once               sync.Once
 )
 
 // Init initializes document engine
 func Init(cfg *server.DocEngineConfig) error {
 	var initErr error
 	once.Do(func() {
+		tokenizer.RegisterEngineType(func() string {
+			return string(GetEngineType())
+		})
+
 		engineType = EngineType(cfg.Type)
 		var err error
 		switch engineType {
@@ -72,6 +79,25 @@ func Get() DocEngine {
 func Close() error {
 	if globalEngine != nil {
 		return globalEngine.Close()
+	}
+	return nil
+}
+
+func GetMessageQueueEngine() MessageQueue {
+	return messageQueueEngine
+}
+
+func InitMessageQueueEngine(messageQueueType string) error {
+	config := server.GetConfig()
+	switch messageQueueType {
+	case "nats":
+		messageQueueEngine = nats.NewNatsEngine(config.Nats.Host, config.Nats.Port)
+		err := messageQueueEngine.Init()
+		if err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unsupported message queue type: %s", messageQueueType)
 	}
 	return nil
 }

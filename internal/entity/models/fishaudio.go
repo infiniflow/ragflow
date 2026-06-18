@@ -17,7 +17,6 @@
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -41,7 +40,7 @@ func NewFishAudioModel(baseURL map[string]string, urlSuffix URLSuffix) *FishAudi
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: &http.Client{},
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
@@ -301,29 +300,11 @@ func (f *FishAudioModel) AudioSpeechWithSender(modelName *string, audioContent *
 		return fmt.Errorf("FishAudio stream API error: %d - %s", resp.StatusCode, string(buf[:n]))
 	}
 
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
-
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-
-		dataStr := strings.TrimSpace(line[6:])
-		if dataStr == "" {
-			continue
-		}
-
-		var event struct {
-			AudioBase64 string `json:"audio_base64"`
-		}
-
-		if err := json.Unmarshal([]byte(dataStr), &event); err != nil {
-			continue
-		}
-
+	if _, err := ParseSSEStream[struct {
+		AudioBase64 string `json:"audio_base64"`
+	}](resp.Body, func(event struct {
+		AudioBase64 string `json:"audio_base64"`
+	}) error {
 		if event.AudioBase64 != "" {
 			audioBytes, err := base64.StdEncoding.DecodeString(event.AudioBase64)
 			if err == nil && len(audioBytes) > 0 {
@@ -333,10 +314,9 @@ func (f *FishAudioModel) AudioSpeechWithSender(modelName *string, audioContent *
 				}
 			}
 		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("error reading FishAudio stream: %w", err)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to scan response body: %w", err)
 	}
 
 	return nil
@@ -399,14 +379,19 @@ func (f *FishAudioModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, 
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]ListModelResponse, 0, len(result.Items))
+	modelList := ModelList{Object: "list"}
 	for _, item := range result.Items {
-		models = append(models, ListModelResponse{
-			Name: item.Title,
-		})
+		name := strings.TrimSpace(item.Title)
+		if name == "" {
+			name = strings.TrimSpace(item.ID)
+		}
+		if name == "" {
+			continue
+		}
+		modelList.Models = append(modelList.Models, DSModel{ID: name})
 	}
 
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 func (f *FishAudioModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

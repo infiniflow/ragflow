@@ -18,7 +18,7 @@ package engine
 
 import (
 	"context"
-
+	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
 )
 
@@ -61,6 +61,10 @@ type DocEngine interface {
 	GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{}
 	GetAggregation(chunks []map[string]interface{}, fieldName string) []map[string]interface{}
 	GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string
+
+	// Run SQL
+	RunSQL(ctx context.Context, tableName string, sqlText string, kbIDs []string, format string) ([]map[string]interface{}, error)
+
 	GetChunkIDs(chunks []map[string]interface{}) []string
 	KNNScores(ctx context.Context, chunks []map[string]interface{}, queryVector []float64, topK int) (map[string]interface{}, error)
 	GetScores(searchResult map[string]interface{}) map[string]float64
@@ -86,4 +90,13 @@ func Type(docEngine DocEngine) EngineType {
 	// This is a placeholder that should be implemented differently
 	// or rely on configuration to know the type
 	return EngineType("unknown")
+}
+
+type MessageQueue interface {
+	Init() error
+	InitConsumer(subject string) error
+	PublishTask(subject string, payload []byte) error
+	GetMessages(messageCount int) ([]common.TaskHandle, error)
+	ListMessages(messageType string, pending bool) ([]map[string]string, error)
+	ShowMessageQueue() (map[string]string, error)
 }

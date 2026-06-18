@@ -1,12 +1,17 @@
-import { AgentCategory, EmptyDsl, Operator } from '@/constants/agent';
+import { AgentCategory, Operator } from '@/constants/agent';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useSetAgent } from '@/hooks/use-agent-request';
 
 import { FileId, initialParserValues } from '@/pages/agent/constant';
+import { initialEmptyDsl } from '@/pages/agent/utils/dsl-bridge';
 import { useCallback } from 'react';
 import { FlowType } from '../constant';
 import { FormSchemaType } from '../create-agent-form';
 
+// Dataflow seed DSL. Exported as-is so that the bridge module
+// (`web/src/pages/agent/utils/dsl-bridge.ts`) and any other consumer
+// can import it directly. The bridge picks this up in
+// `initialEmptyDsl(false)`.
 export const DataflowEmptyDsl = {
   graph: {
     nodes: [
@@ -86,7 +91,7 @@ export function useCreateAgentOrPipeline() {
       const isAgent = data.type === FlowType.Agent;
       const ret = await setAgent({
         title: data.name,
-        dsl: isAgent ? EmptyDsl : DataflowEmptyDsl,
+        dsl: initialEmptyDsl(isAgent),
         canvas_category: isAgent
           ? AgentCategory.AgentCanvas
           : AgentCategory.DataflowCanvas,

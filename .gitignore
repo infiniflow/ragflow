@@ -137,6 +137,9 @@ web_modules/
 # Output of 'npm pack'
 *.tgz
 
+# Claude Code plans / state — local-only artifacts
+.claude/
+
 # Yarn Integrity file
 .yarn-integrity
 
@@ -233,3 +236,8 @@ internal/cpp/cmake-build-debug/
 bin/*
 !bin/.gitkeep
 .claude/settings.local.json
+
+.run/
+# Local agent tooling state (per-developer; not for commit)
+.omc/
+.marscode/

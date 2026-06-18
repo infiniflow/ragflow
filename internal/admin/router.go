@@ -46,6 +46,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 		admin.POST("/reports", r.handler.Reports)
 
+		//admin.POST("/ingestion/tasks", r.handler.StartIngestionTask)
+		//admin.DELETE("/ingestion", r.handler.CancelIngestionTask) // cancel ingestion
+		//admin.GET("/ingestion/tasks", r.handler.ListIngestionTasks)
+
 		// Protected routes
 		protected := admin.Group("")
 		protected.Use(r.handler.AuthMiddleware())
@@ -54,9 +58,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.POST("/logout", r.handler.Logout)
 			// Auth
 			protected.GET("/auth", r.handler.AuthCheck)
-
-			// Tasks
-			protected.GET("/tasks", r.handler.ListTasks)
 
 			// User management
 			protected.GET("/users", r.handler.ListUsers)
@@ -69,6 +70,32 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.DELETE("/users/:username/admin", r.handler.RevokeAdmin)
 			protected.GET("/users/:username/datasets", r.handler.GetUserDatasets)
 			protected.GET("/users/:username/agents", r.handler.GetUserAgents)
+
+			// For enterprise edition
+			protected.GET("/users/:username/activity", r.handler.ShowUserActivity)
+			protected.GET("/users/:username/dataset", r.handler.ShowUserDatasetSummary)
+			protected.GET("/users/:username/summary", r.handler.ShowUserSummary)
+			protected.GET("/users/:username/storage", r.handler.ShowUserStorage)
+			protected.GET("/users/:username/quota", r.handler.ShowUserQuota)
+			protected.GET("/users/:username/index", r.handler.ShowUserIndex)
+			protected.PUT("/users/:username/role", r.handler.UpdateUserRole)
+			protected.GET("/users/:username/permission", r.handler.ShowUserPermission)
+			protected.GET("/users/summary", r.handler.ShowUsersSummary)
+			protected.GET("/users/activity", r.handler.ShowUsersActivity)
+			protected.GET("/users/reports", r.handler.ListUsersReports)
+			protected.GET("/users/storage", r.handler.ListUsersStorage)
+			protected.GET("/users/documents", r.handler.ListUsersDocuments)
+			protected.GET("/users/index", r.handler.ListUsersIndex)
+			protected.GET("/users/quota", r.handler.ListUsersQuota)
+			protected.GET("/users/quota/summary", r.handler.ShowUsersQuotaSummary)
+			protected.GET("/ingestion/tasks/summary", r.handler.ShowIngestionTasksSummary)
+			protected.GET("/data/summary", r.handler.ShowDataSummary)
+			protected.GET("/data/orphan", r.handler.ShowDataOrphan)
+			protected.GET("/data/storage", r.handler.ShowDataStorage)
+			protected.GET("/data/index", r.handler.ShowDataIndex)
+			protected.DELETE("/data/orphan", r.handler.PurgeOrphanData)
+			protected.DELETE("/users/:username/data", r.handler.PurgeUserData)
+			protected.DELETE("/users/data", r.handler.PurgeUsersData)
 
 			// API Keys
 			protected.GET("/users/:username/keys", r.handler.ListUserAPITokens)
@@ -87,10 +114,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.GET("/roles/:role_name/permission", r.handler.GetRolePermission)
 			protected.POST("/roles/:role_name/permission", r.handler.GrantRolePermission)
 			protected.DELETE("/roles/:role_name/permission", r.handler.RevokeRolePermission)
-
-			// User roles and permissions
-			protected.PUT("/users/:username/role", r.handler.UpdateUserRole)
-			protected.GET("/users/:username/permission", r.handler.GetUserPermission)
 
 			// Service management
 			protected.GET("/services", r.handler.GetServices)
@@ -137,10 +160,18 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.GET("/:provider_name/models/:model_name", r.handler.ShowModel)
 			}
 
+			queue := protected.Group("/queue")
+			{
+				queue.GET("/", r.handler.ShowMessageQueue)
+				queue.POST("/messages", r.handler.PublishMessageToQueue)
+				queue.GET("/messages", r.handler.ListMessagesFromQueue)
+				queue.PUT("/messages", r.handler.PullMessageFromQueue)
+			}
+
 			protected.GET("/ingestors", r.handler.ListIngestors)
 			protected.DELETE("/ingestors", r.handler.ShutdownIngestor)
-			protected.POST("/ingestion", r.handler.StartIngestionTask)  // start ingestion
-			protected.DELETE("/ingestion", r.handler.StopIngestionTask) // stop ingestion
+			protected.DELETE("/ingestion/tasks", r.handler.RemoveIngestionTasks)
+			protected.PUT("/ingestion/tasks", r.handler.StopIngestionTasks)
 			protected.GET("/ingestion/tasks", r.handler.ListIngestionTasks)
 
 		}

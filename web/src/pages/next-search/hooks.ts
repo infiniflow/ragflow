@@ -107,7 +107,11 @@ export const useShowMindMapDrawer = (
   } = useSearchFetchMindMap();
 
   const handleShowModal = useCallback(() => {
-    const searchParams = { question: trim(question), kb_ids: kbIds, searchId };
+    const searchParams = {
+      question: trim(question),
+      kb_ids: kbIds,
+      search_id: searchId,
+    };
     if (
       !isEmpty(searchParams.question) &&
       !isEqual(searchParams, ref.current)
@@ -148,10 +152,10 @@ export const useTestChunkRetrieval = (
     gcTime: 0,
     mutationFn: async (values: any) => {
       const { data } = await retrievalTestFunc({
-        ...values,
-        kb_id: values.kb_id ?? knowledgeBaseId,
         page,
         size: pageSize,
+        ...values,
+        kb_id: values.kb_id ?? knowledgeBaseId,
         tenant_id: tenantId,
       });
       if (data.code === 0) {
@@ -199,11 +203,10 @@ export const useTestChunkAllRetrieval = (
     gcTime: 0,
     mutationFn: async (values: any) => {
       const { data } = await retrievalTestFunc({
-        ...values,
-        kb_id: values.kb_id ?? knowledgeBaseId,
-        doc_ids: [],
         page,
         size: pageSize,
+        ...values,
+        kb_id: values.kb_id ?? knowledgeBaseId,
         tenant_id: tenantId,
       });
       if (data.code === 0) {
@@ -324,14 +327,12 @@ export const useSendQuestion = (
   const [searchStr, setSearchStr] = useState<string>('');
   const [isFirstRender, setIsFirstRender] = useState(true);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
-
-  const { pagination, setPagination } = useGetPaginationWithRouter();
+  const [pageSize, setPageSize] = useState(10);
 
   const sendQuestion = useCallback(
     (question: string, enableAI: boolean = true) => {
       const q = trim(question);
       if (isEmpty(q)) return;
-      setPagination({ page: 1 });
       setIsFirstRender(false);
       setCurrentAnswer({} as IAnswer);
       if (enableAI) {
@@ -352,7 +353,7 @@ export const useSendQuestion = (
         highlight: true,
         question: q,
         page: 1,
-        size: pagination.pageSize,
+        size: pageSize,
         search_id: searchId,
       });
 
@@ -366,8 +367,7 @@ export const useSendQuestion = (
       askUrl,
       kbIds,
       fetchRelatedQuestions,
-      setPagination,
-      pagination.pageSize,
+      pageSize,
       tenantId,
       searchId,
       sharedId,
@@ -455,6 +455,8 @@ export const useSendQuestion = (
     selectedDocumentIds,
     isSearchStrEmpty: isEmpty(trim(searchStr)),
     stopOutputMessage,
+    pageSize,
+    setPageSize,
   };
 };
 
@@ -479,6 +481,8 @@ export const useSearching = ({
     isSearchStrEmpty,
     setSearchStr,
     stopOutputMessage,
+    pageSize,
+    setPageSize,
   } = useSendQuestion(
     searchData.search_config.kb_ids,
     tenantId as string,
@@ -537,14 +541,15 @@ export const useSearching = ({
     ],
   );
 
-  const { pagination, setPagination } = useGetPaginationWithRouter();
-  const onChange = (pageNumber: number, pageSize: number) => {
-    setPagination({ page: pageNumber, pageSize });
-    handleTestChunk(selectedDocumentIds, pageNumber, pageSize);
-  };
+  const handleTopChange = useCallback(
+    (size: number) => {
+      setPageSize(size);
+      handleTestChunk(selectedDocumentIds, 1, size);
+    },
+    [handleTestChunk, selectedDocumentIds, setPageSize],
+  );
 
   return {
-    sendQuestion,
     handleClickRelatedQuestion,
     handleSearchStrChange,
     handleTestChunk,
@@ -573,8 +578,8 @@ export const useSearching = ({
     chunks,
     total,
     handleSearch,
-    pagination,
-    onChange,
+    pageSize,
+    handleTopChange,
   };
 };
 

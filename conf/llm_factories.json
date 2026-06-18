@@ -4097,7 +4097,46 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING",
             "status": "1",
-            "llm": []
+            "llm": [
+                {
+                    "llm_name": "meta/llama-4-maverick-instruct",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "meta/llama-4-scout-instruct",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "meta/meta-llama-3-70b-instruct",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "meta/meta-llama-3-8b-instruct",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "replicate/all-mpnet-base-v2:b6b7585c9640cd7a9572c6e129c9549d79c9c31f0d3fdce7baac7c67ca38f305",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 384,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "ibm-granite/granite-embedding-278m-multilingual:1f76d42a05f120e12272746d5a2d86b525c13420773f795a4cbef9117d8685f1",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 512,
+                    "model_type": "embedding"
+                }
+            ],
+            "rank": "987",
+            "url": "https://api.replicate.com"
         },
         {
             "name": "Tencent Hunyuan",
@@ -6689,6 +6728,7 @@
             "logo": "",
             "tags": "OCR",
             "status": "1",
+            "url": "https://paddleocr.aistudio-app.com",
             "llm": []
         },
         {

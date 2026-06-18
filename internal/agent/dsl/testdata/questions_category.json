@@ -1,0 +1,174 @@
+{
+  "globals": {
+    "sys.conversation_turns": 0,
+    "sys.date": "",
+    "sys.files": [],
+    "sys.history": [],
+    "sys.query": "",
+    "sys.user_id": ""
+  },
+  "graph": {
+    "edges": [
+      {
+        "id": "xy-edge__beginstart-Categorize:TamePartsLookend",
+        "source": "begin",
+        "sourceHandle": "start",
+        "target": "Categorize:TamePartsLook",
+        "targetHandle": "end"
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Categorize:TamePartsLookaac5cf51-6f8d-4dfd-8b94-979707801675-Message:AngryTeamsKnockend",
+        "source": "Categorize:TamePartsLook",
+        "sourceHandle": "aac5cf51-6f8d-4dfd-8b94-979707801675",
+        "target": "Message:AngryTeamsKnock",
+        "targetHandle": "end"
+      },
+      {
+        "id": "xy-edge__Categorize:TamePartsLook11694d3c-8300-4bf9-b2c9-2fe92fcc45eb-Message:PunyPetsFollowend",
+        "source": "Categorize:TamePartsLook",
+        "sourceHandle": "11694d3c-8300-4bf9-b2c9-2fe92fcc45eb",
+        "target": "Message:PunyPetsFollow",
+        "targetHandle": "end"
+      }
+    ],
+    "nodes": [
+      {
+        "data": {
+          "label": "Begin",
+          "name": "begin"
+        },
+        "dragging": false,
+        "id": "begin",
+        "measured": {
+          "height": 49,
+          "width": 200
+        },
+        "position": {
+          "x": -407,
+          "y": 58.5
+        },
+        "selected": false,
+        "sourcePosition": "left",
+        "targetPosition": "right",
+        "type": "beginNode"
+      },
+      {
+        "data": {
+          "form": {
+            "frequencyPenaltyEnabled": false,
+            "frequency_penalty": 0.7,
+            "items": [
+              {
+                "description": "The question is not about the product usage, appearance and how it works. Just casual chat.",
+                "examples": [
+                  {
+                    "value": "How are you doing?\nWhat is your name?\nAre you a robot?\nWhat's the weather?\nWill it rain?"
+                  }
+                ],
+                "name": "casual",
+                "uuid": "aac5cf51-6f8d-4dfd-8b94-979707801675"
+              },
+              {
+                "description": "Complain even curse about the product or service you provide. But the comment is not specific enough.",
+                "examples": [
+                  {
+                    "value": "How bad is it.\nIt's really sucks.\\nDamn, for God's sake, can it be more steady?\\nShit, I just can't use this shit.\\nI can't stand it anymore"
+                  }
+                ],
+                "name": "complain",
+                "uuid": "11694d3c-8300-4bf9-b2c9-2fe92fcc45eb"
+              }
+            ],
+            "llm_id": "glm-4-flash___OpenAI-API@OpenAI-API-Compatible#admin",
+            "maxTokensEnabled": false,
+            "max_tokens": 256,
+            "message_history_window_size": 1,
+            "outputs": {
+              "category_name": {
+                "type": "string"
+              }
+            },
+            "parameter": "Precise",
+            "presencePenaltyEnabled": false,
+            "presence_penalty": 0.4,
+            "query": "sys.query",
+            "temperature": 0.1,
+            "temperatureEnabled": false,
+            "topPEnabled": false,
+            "top_p": 0.3
+          },
+          "label": "Categorize",
+          "name": "问题分类_0"
+        },
+        "dragging": false,
+        "id": "Categorize:TamePartsLook",
+        "measured": {
+          "height": 153,
+          "width": 200
+        },
+        "position": {
+          "x": -106.5,
+          "y": 31
+        },
+        "selected": true,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "categorizeNode"
+      },
+      {
+        "data": {
+          "form": {
+            "content": [
+              "{sys.query}11111\n\n"
+            ]
+          },
+          "label": "Message",
+          "name": "回复消息_0"
+        },
+        "dragging": false,
+        "id": "Message:AngryTeamsKnock",
+        "measured": {
+          "height": 85,
+          "width": 200
+        },
+        "position": {
+          "x": 177.5,
+          "y": 32
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "messageNode"
+      },
+      {
+        "data": {
+          "form": {
+            "content": [
+              "{sys.query}22222"
+            ]
+          },
+          "label": "Message",
+          "name": "回复消息_1"
+        },
+        "dragging": false,
+        "id": "Message:PunyPetsFollow",
+        "measured": {
+          "height": 85,
+          "width": 200
+        },
+        "position": {
+          "x": 179.5,
+          "y": 158
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "messageNode"
+      }
+    ]
+  },
+  "variables": []
+}

@@ -149,6 +149,7 @@ async def chatbots_inputs(dialog_id, tenant_id=None):
             "avatar": dialog.icon,
             "prologue": dialog.prompt_config.get("prologue", ""),
             "has_tavily_key": bool(dialog.prompt_config.get("tavily_api_key", "").strip()),
+            "llm_id": dialog.llm_id or "",
         }
     )
 
