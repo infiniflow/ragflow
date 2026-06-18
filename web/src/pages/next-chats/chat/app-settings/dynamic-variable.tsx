@@ -15,10 +15,15 @@ import { useCallback } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
-export function DynamicVariableForm() {
+interface DynamicVariableFormProps {
+  name?: string;
+}
+
+export function DynamicVariableForm({
+  name = 'prompt_config.parameters',
+}: DynamicVariableFormProps) {
   const { t } = useTranslation();
   const form = useFormContext();
-  const name = 'prompt_config.parameters';
 
   const { fields, remove, append } = useFieldArray({
     name,
