@@ -11,6 +11,8 @@ interface ISearchParams {
   to_date?: Date;
   orderby?: string;
   desc?: boolean;
+  page?: number;
+  page_size?: number;
 }
 
 export const useExportAgentLogToCSV = () => {
@@ -58,9 +60,12 @@ export const useExportAgentLogToCSV = () => {
       to_date: searchParams.to_date,
       orderby: searchParams.orderby,
       desc: searchParams.desc,
+      page: searchParams.page,
+      page_size: searchParams.page_size,
     });
 
     if (allData.length === 0) {
+      console.log('No data to export', allData);
       message.warning(t('flow.noDataToExport'));
       return;
     }

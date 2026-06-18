@@ -54,6 +54,11 @@ func (dao *TenantModelDAO) DeleteByModelID(modelID string) (int64, error) {
 	return result.RowsAffected, result.Error
 }
 
+func (dao *TenantModelDAO) DeleteByModelIDAndProviderIDAndInstanceID(modelID, providerID, instanceID string) (int64, error) {
+	result := DB.Unscoped().Where("id = ? AND provider_id = ? AND instance_id = ?", modelID, providerID, instanceID).Delete(&entity.TenantModel{})
+	return result.RowsAffected, result.Error
+}
+
 func (dao *TenantModelDAO) DeleteByProviderIDAndInstanceID(provideID, instanceID string) (int64, error) {
 	result := DB.Unscoped().Where("provider_id = ? AND instance_id = ?", provideID, instanceID).Delete(&entity.TenantModel{})
 	return result.RowsAffected, result.Error
@@ -61,6 +66,11 @@ func (dao *TenantModelDAO) DeleteByProviderIDAndInstanceID(provideID, instanceID
 
 func (dao *TenantModelDAO) DeleteByProviderIDAndInstanceIDAndModelName(provideID, instanceID, modelName string) (int64, error) {
 	result := DB.Unscoped().Where("provider_id = ? AND instance_id = ? AND model_name = ?", provideID, instanceID, modelName).Delete(&entity.TenantModel{})
+	return result.RowsAffected, result.Error
+}
+
+func (dao *TenantModelDAO) UpdateStatusByIDAndScope(modelID, providerID, instanceID, status string) (int64, error) {
+	result := DB.Model(&entity.TenantModel{}).Where("id = ? AND provider_id = ? AND instance_id = ?", modelID, providerID, instanceID).Update("status", status)
 	return result.RowsAffected, result.Error
 }
 
@@ -105,6 +115,26 @@ func (dao *TenantModelDAO) GetByProviderIDAndInstanceIDAndModelTypeAndModelName(
 func (dao *TenantModelDAO) GetModelsByInstanceID(instanceID string) ([]*entity.TenantModel, error) {
 	var models []*entity.TenantModel
 	err := DB.Where("instance_id = ?", instanceID).Find(&models).Error
+	if err != nil {
+		return nil, err
+	}
+	return models, nil
+}
+
+// GetModelsByProviderIDsAndInstanceIDs returns TenantModel rows whose
+// provider_id is in providerIDs and instance_id is in instanceIDs.
+// Mirrors Python's
+// TenantModelService.get_models_by_provider_ids_and_instance_ids and is
+// used to fetch per-tenant enable/disable overrides in bulk during
+// /api/v1/models response assembly. The Go port never WRITES to
+// tenant_model, so callers must treat an empty result as "use factory
+// defaults" — see ModelProviderService.ListTenantAddedModels.
+func (dao *TenantModelDAO) GetModelsByProviderIDsAndInstanceIDs(providerIDs, instanceIDs []string) ([]*entity.TenantModel, error) {
+	models := make([]*entity.TenantModel, 0)
+	if len(providerIDs) == 0 || len(instanceIDs) == 0 {
+		return models, nil
+	}
+	err := DB.Where("provider_id IN ? AND instance_id IN ?", providerIDs, instanceIDs).Find(&models).Error
 	if err != nil {
 		return nil, err
 	}

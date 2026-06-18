@@ -45,8 +45,6 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.PingByCommand(cmd)
 	case "benchmark":
 		return c.RunBenchmark(cmd)
-	case "list_users":
-		return c.ListUsers(cmd)
 	case "list_services":
 		return c.ListServices(cmd)
 	case "grant_admin":
@@ -67,8 +65,6 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowAdminVersion(cmd)
 	case "show_current":
 		return c.ShowCommonCurrent(cmd)
-	case "show_user":
-		return c.ShowUser(cmd)
 	case "list_variables":
 		return c.ListVariables(cmd)
 	case "show_variable":
@@ -123,6 +119,54 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.UserShowMessageQueueCommand(cmd)
 	case "admin_remove_service_command":
 		return c.AdminRemoveServiceCommand(cmd)
+	case "admin_show_user_info_command":
+		return c.AdminShowUserInfoCommand(cmd)
+	case "admin_show_user_activity_command":
+		return c.AdminShowUserActivityCommand(cmd)
+	case "admin_show_user_summary_command":
+		return c.AdminShowUserSummaryCommand(cmd)
+	case "admin_show_user_dataset_command":
+		return c.AdminShowUserDatasetCommand(cmd)
+	case "admin_show_user_storage_command":
+		return c.AdminShowUserStorageCommand(cmd)
+	case "admin_show_user_quota_command":
+		return c.AdminShowUserQuotaCommand(cmd)
+	case "admin_show_user_index_command":
+		return c.AdminShowUserIndexCommand(cmd)
+	case "admin_show_user_permission_command":
+		return c.AdminShowUserPermissionCommand(cmd)
+	case "admin_show_users_summary_command":
+		return c.AdminShowUsersSummaryCommand(cmd)
+	case "admin_show_users_activity_command":
+		return c.AdminShowUsersActivityCommand(cmd)
+	case "admin_list_users_command":
+		return c.AdminListUsersCommand(cmd)
+	case "admin_list_users_condition_command":
+		return c.AdminListUsersConditionCommand(cmd)
+	case "admin_show_quota_summary_command":
+		return c.AdminShowQuotaSummaryCommand(cmd)
+	case "admin_show_tasks_summary_command":
+		return c.AdminShowTasksSummaryCommand(cmd)
+	case "admin_show_data_summary_command":
+		return c.AdminShowDataSummaryCommand(cmd)
+	case "admin_show_data_orphan_command":
+		return c.AdminShowDataOrphanCommand(cmd)
+	case "admin_show_data_storage_command":
+		return c.AdminShowDataStorageCommand(cmd)
+	case "admin_show_data_index_command":
+		return c.AdminShowDataIndexCommand(cmd)
+	case "admin_purge_orphan_command":
+		return c.AdminPurgeOrphanCommand(cmd)
+	case "admin_purge_user_command":
+		return c.AdminPurgeUserCommand(cmd)
+	case "admin_purge_users_command":
+		return c.AdminPurgeUsersCommand(cmd)
+	case "admin_list_user_ingestion_tasks_command":
+		return c.AdminListUserIngestionTasksCommand(cmd)
+	case "admin_stop_user_ingestion_tasks_command":
+		return c.AdminStopUserIngestionTasksCommand(cmd)
+	case "admin_remove_user_ingestion_tasks_command":
+		return c.AdminRemoveUserIngestionTasksCommand(cmd)
 	// TODO: Implement other commands
 	case "show_admin_server":
 		return c.ShowAdminServer(cmd)
@@ -238,6 +282,11 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ChatToModel(cmd)
 	case "think_chat_to_model":
 		return c.ChatToModel(cmd)
+	case "openai_chat":
+		return c.OpenaiChat(cmd)
+	case "openai_chat_help":
+		printOpenaiChatHelp()
+		return nil, nil
 	case "embed_user_text":
 		return c.EmbedUserText(cmd)
 	case "rarank_user_document":
@@ -328,7 +377,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "save_config_command":
 		return c.SaveServerConfig(cmd)
 	case "file_system_command":
-		return c.executeFilesystem(cmd)
+		return c.ExecuteFilesystemCommand(cmd)
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
 	}

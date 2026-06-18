@@ -33,6 +33,7 @@ type Router struct {
 	chunkHandler         *handler.ChunkHandler
 	llmHandler           *handler.LLMHandler
 	chatHandler          *handler.ChatHandler
+	openaiChatHandler    *handler.OpenAIChatHandler
 	chatSessionHandler   *handler.ChatSessionHandler
 	connectorHandler     *handler.ConnectorHandler
 	searchHandler        *handler.SearchHandler
@@ -46,6 +47,8 @@ type Router struct {
 	difyRetrievalHandler *handler.DifyRetrievalHandler
 	pluginHandler        *handler.PluginHandler
 	modelHandler         *handler.ModelHandler
+	fileCommitHandler    *handler.FileCommitHandler
+	adminRuntimeHandler  *handler.AdminRuntimeHandler
 }
 
 // NewRouter create router
@@ -73,6 +76,9 @@ func NewRouter(
 	difyRetrievalHandler *handler.DifyRetrievalHandler,
 	pluginHandler *handler.PluginHandler,
 	modelHandler *handler.ModelHandler,
+	fileCommitHandler *handler.FileCommitHandler,
+	adminRuntimeHandler *handler.AdminRuntimeHandler,
+	openaiChatHandler *handler.OpenAIChatHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -85,6 +91,7 @@ func NewRouter(
 		chunkHandler:         chunkHandler,
 		llmHandler:           llmHandler,
 		chatHandler:          chatHandler,
+		openaiChatHandler:    openaiChatHandler,
 		chatSessionHandler:   chatSessionHandler,
 		connectorHandler:     connectorHandler,
 		searchHandler:        searchHandler,
@@ -98,6 +105,8 @@ func NewRouter(
 		difyRetrievalHandler: difyRetrievalHandler,
 		pluginHandler:        pluginHandler,
 		modelHandler:         modelHandler,
+		fileCommitHandler:    fileCommitHandler,
+		adminRuntimeHandler:  adminRuntimeHandler,
 	}
 }
 
@@ -236,6 +245,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 				chats.GET("/:chat_id/sessions", r.chatSessionHandler.ListChatSessions)
 			}
 
+			// OpenAI-compatible chat completions route
+			openai := v1.Group("/openai")
+			{
+				openai.POST("/:chat_id/chat/completions", r.openaiChatHandler.OpenAIChatCompletions)
+			}
+
 			// Searchbot routes
 			v1.POST("/searchbots/related_questions", r.searchBotHandler.Handle)
 			v1.POST("/searchbots/retrieval_test", r.searchBotHandler.RetrievalTest)
@@ -246,8 +261,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				datasets.GET("", r.datasetsHandler.ListDatasets)
 				datasets.GET("/:dataset_id", r.datasetsHandler.GetDataset)
+				datasets.PUT("/:dataset_id", r.datasetsHandler.UpdateDataset)
 				datasets.GET("/:dataset_id/graph", r.datasetsHandler.GetKnowledgeGraph)
 				datasets.DELETE("/:dataset_id/tags", r.datasetsHandler.RemoveTags)
+				datasets.GET("/:dataset_id/index", r.datasetsHandler.TraceIndex)
+				datasets.POST("/:dataset_id/index", r.datasetsHandler.RunIndex)
 				datasets.DELETE("/:dataset_id/graph", r.datasetsHandler.DeleteKnowledgeGraph)
 				datasets.POST("", r.datasetsHandler.CreateDataset)
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
@@ -267,6 +285,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				// Dataset documents
 				datasets.GET("/:dataset_id/documents", r.documentHandler.ListDocuments)
 				datasets.GET("/:dataset_id/documents/:document_id", r.documentHandler.DownloadDocument)
+				datasets.PATCH("/:dataset_id/documents/:document_id", r.documentHandler.UpdateDatasetDocument)
 				datasets.DELETE("/:dataset_id/documents", r.documentHandler.DeleteDocuments)
 
 				// Dataset document chunk
@@ -301,6 +320,47 @@ func (r *Router) Setup(engine *gin.Engine) {
 				file.GET("/:id/ancestors", r.fileHandler.GetFileAncestors)
 				file.GET("/:id/parent", r.fileHandler.GetParentFolder)
 				file.GET("/:id", r.fileHandler.Download)
+				file.GET("/:id/versions", r.fileCommitHandler.GetFileVersionHistory)
+			}
+
+			// File commit routes — /folders/ takes folder_id directly
+			commitFolders := v1.Group("/folders")
+			{
+				commitFolders.POST("/:folder_id/commits", r.fileCommitHandler.CreateCommit)
+				commitFolders.GET("/:folder_id/commits", r.fileCommitHandler.ListCommits)
+				commitFolders.GET("/:folder_id/commits/diff", r.fileCommitHandler.DiffCommits)
+				commitFolders.GET("/:folder_id/commits/:commit_id", r.fileCommitHandler.GetCommit)
+				commitFolders.GET("/:folder_id/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
+				commitFolders.GET("/:folder_id/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
+				commitFolders.GET("/:folder_id/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
+				commitFolders.GET("/:folder_id/changes", r.fileCommitHandler.GetUncommittedChanges)
+			}
+
+			// /workspace/{workspace_id}/commits — alias for /folders/ (workspace_id == folder_id)
+			commitWorkspace := v1.Group("/workspace")
+			{
+				commitWorkspace.POST("/:folder_id/commits", r.fileCommitHandler.CreateCommit)
+				commitWorkspace.GET("/:folder_id/commits", r.fileCommitHandler.ListCommits)
+				commitWorkspace.GET("/:folder_id/commits/diff", r.fileCommitHandler.DiffCommits)
+				commitWorkspace.GET("/:folder_id/commits/:commit_id", r.fileCommitHandler.GetCommit)
+				commitWorkspace.GET("/:folder_id/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
+				commitWorkspace.GET("/:folder_id/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
+				commitWorkspace.GET("/:folder_id/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
+				commitWorkspace.GET("/:folder_id/changes", r.fileCommitHandler.GetUncommittedChanges)
+			}
+
+			// /datasets/{dataset_id}/commits — resolve dataset_id → folder_id via middleware
+			commitDatasets := v1.Group("/datasets/:dataset_id")
+			commitDatasets.Use(handler.CommitFolderResolver(r.fileCommitHandler, "datasets", "dataset_id"))
+			{
+				commitDatasets.POST("/commits", r.fileCommitHandler.CreateCommit)
+				commitDatasets.GET("/commits", r.fileCommitHandler.ListCommits)
+				commitDatasets.GET("/commits/diff", r.fileCommitHandler.DiffCommits)
+				commitDatasets.GET("/commits/:commit_id", r.fileCommitHandler.GetCommit)
+				commitDatasets.GET("/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
+				commitDatasets.GET("/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
+				commitDatasets.GET("/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
+				commitDatasets.GET("/changes", r.fileCommitHandler.GetUncommittedChanges)
 			}
 
 			// Author routes
@@ -324,6 +384,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			message := v1.Group("/messages")
 			{
 				message.DELETE("/:memory_message", r.memoryHandler.ForgetMessage)
+				message.PUT("/:memory_message", r.memoryHandler.UpdateMessage)
 			}
 
 			// Skill search routes
@@ -362,7 +423,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.GET("/:provider_name/instances/:instance_name", r.providerHandler.ShowProviderInstance)
 				provider.GET("/:provider_name/instances/:instance_name/balance", r.providerHandler.ShowInstanceBalance)
 				provider.GET("/:provider_name/instances/:instance_name/connection", r.providerHandler.CheckInstanceConnection)
-				provider.GET("/:provider_name/connection", r.providerHandler.CheckConnection)
+				// Python's /providers/<name>/connection is POST — see
+				// api/apps/restful_apis/provider_api.py:359. The web front-end
+				// posts {api_key, base_url, region, model_info} there
+				// (web/src/services/llm-service.ts:45-48 method: 'post'). The
+				// Go handler body is already POST-shaped (ShouldBindJSON
+				// against CheckConnectionRequest), so the only thing missing
+				// was the routing method.
+				provider.POST("/:provider_name/connection", r.providerHandler.CheckConnection)
 				provider.GET("/:provider_name/instances/:instance_name/tasks", r.providerHandler.ListTasks)
 				provider.GET("/:provider_name/instances/:instance_name/tasks/:task_id", r.providerHandler.ShowTask)
 				provider.PUT("/:provider_name/instances/:instance_name", r.providerHandler.AlterProviderInstance)
@@ -382,8 +450,22 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 			model := v1.Group("/models")
 			{
-				model.GET("/", r.tenantHandler.GetModels)
+				// GET /models returns the tenant's added models across
+				// all instances, matching Python's
+				// models_api_service.list_tenant_added_models. Front-end
+				// useFetchAllAddedModels consumes this. Routed to the
+				// provider handler because that's where the
+				// modelProviderService is wired.
+				model.GET("/", r.providerHandler.ListTenantAddedModels)
+
+				// TODO: list default models?
+				//model.GET("/", r.tenantHandler.GetModels)
 				model.PATCH("/", r.tenantHandler.SetModels)
+				// Tenant default-model selection (used by the agent
+				// page's useFetchDefaultModels hook). Mirrors the
+				// Python contract at api/apps/restful_apis/models_api.py:84.
+				model.GET("/default", r.tenantHandler.GetDefaultModels)
+				model.PATCH("/default", r.tenantHandler.SetDefaultModels)
 			}
 
 			allModels := v1.Group("/all-models")
@@ -393,27 +475,19 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 			// Agent routes
 			agents := v1.Group("/agents")
-			{
-				agents.GET("", r.agentHandler.ListAgents)
-				agents.GET("/prompts", r.agentHandler.GetPrompts)
-				agents.GET("/templates", r.agentHandler.ListTemplates)
-				agents.GET("/download", r.agentHandler.DownloadAgentFile)
-				agents.POST("/test_db_connection", r.agentHandler.TestDBConnection)
-				agents.GET("/:agent_id/versions", r.agentHandler.ListAgentVersions)
-				agents.GET("/:agent_id/versions/:version_id", r.agentHandler.GetAgentVersion)
-				agents.POST("/:agent_id/upload", r.agentHandler.UploadAgentFile)
-				agents.PUT("/:agent_id/tags", r.agentHandler.UpdateAgentTags)
-				agents.GET("/:agent_id/sessions", r.agentHandler.ListAgentSessions)
-				agents.GET("/:agent_id/sessions/:session_id", r.agentHandler.GetAgentSession)
-				agents.DELETE("/:agent_id/sessions/:session_id", r.agentHandler.DeleteAgentSessionItem)
-				agents.DELETE("/:agent_id/sessions", r.agentHandler.DeleteAgentSessions)
-			}
+			RegisterAgentRoutes(agents, r.agentHandler)
 
 			// Plugin routes
 			plugin := v1.Group("/plugin")
 			{
 				plugin.GET("/tools", r.pluginHandler.ListLLMTools)
 			}
+
+			// Admin routes — Phase 6 per-tenant canvas runtime override.
+			// RegisterAdminRuntimeRoutes lives in admin_routes.go; a nil
+			// handler is tolerated and yields a no-op registration.
+			admin := v1.Group("/admin")
+			RegisterAdminRuntimeRoutes(admin, r.adminRuntimeHandler)
 
 			connector := v1.Group("/connectors")
 			{
@@ -437,6 +511,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				mcp.POST("/servers", r.mcpHandler.CreateMCPServer)
 				mcp.GET("/servers", r.mcpHandler.ListMCPServers)
+				mcp.GET("/servers/:mcp_id", r.mcpHandler.GetMCPServer)
 				mcp.PUT("/servers/:mcp_id", r.mcpHandler.UpdateMCPServer)
 				mcp.DELETE("/servers/:mcp_id", r.mcpHandler.DeleteMCPServer)
 				mcp.POST("/servers/import", r.mcpHandler.ImportMCPServers)

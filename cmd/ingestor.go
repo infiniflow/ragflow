@@ -1,3 +1,5 @@
+//go:build ignore
+
 //
 //  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
@@ -22,6 +24,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"ragflow/internal/engine/redis"
 	"ragflow/internal/ingestion"
 	"ragflow/internal/server/local"
 	"ragflow/internal/service"
@@ -31,7 +34,6 @@ import (
 	"syscall"
 	"time"
 
-	"ragflow/internal/cache"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -49,11 +51,15 @@ func printIngestionServerHelp() {
 	fmt.Fprintf(os.Stderr, "  --name string\t\tIngestion server name (default: \"default_ingestion\")\n")
 	fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host (overrides config file)\n")
 	fmt.Fprintf(os.Stderr, "  --admin-port int\tAdmin server port (overrides config file)\n")
+	fmt.Fprintf(os.Stderr, "  --version  \tPrint version information and exit\n")
+	fmt.Fprintf(os.Stderr, "  --debug        \tEnable debug-level logging\n")
 	fmt.Fprintf(os.Stderr, "  -h, --help\t\tShow this help message and exit\n")
 	fmt.Fprintf(os.Stderr, "\nExamples:\n")
 	fmt.Fprintf(os.Stderr, "  %s                          # Start with default config\n", os.Args[0])
 	fmt.Fprintf(os.Stderr, "  %s -f /path/to/config.yaml   # Start with custom config file\n", os.Args[0])
 	fmt.Fprintf(os.Stderr, "  %s --admin-host 10.0.0.1 --admin-port 9383\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "  %s --version  \t\t# Show version and exit\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "  %s --debug    \t\t# Start with debug logging\n", os.Args[0])
 }
 
 func main() {
@@ -67,11 +73,21 @@ func main() {
 	flag.StringVar(&name, "name", "default_ingestion", "Ingestion server name")
 	flag.StringVar(&adminHost, "admin-host", "", "Admin server host (overrides config file)")
 	flag.IntVar(&adminPort, "admin-port", 0, "Admin server port (overrides config file)")
+	var debugFlag bool
+	flag.BoolVar(&debugFlag, "debug", false, "Enable debug-level logging")
+	var versionFlag bool
+	flag.BoolVar(&versionFlag, "version", false, "Print version information and exit")
 
 	// Custom help message
 	flag.Usage = printIngestionServerHelp
 
 	flag.Parse()
+
+	// Handle --version flag: print version and exit immediately
+	if versionFlag {
+		fmt.Printf("RAGFlow version: %s\n", utility.GetRAGFlowVersion())
+		return
+	}
 
 	// Initialize logger with default level
 	if err := common.Init("info", "ingestion_server.log"); err != nil {
@@ -102,6 +118,11 @@ func main() {
 	if level == "" {
 		level = "info"
 	}
+
+	if debugFlag {
+		level = "debug"
+	}
+
 	if err := common.Init(level, "ingestion_server.log"); err != nil {
 		common.Error("Failed to reinitialize logger", err)
 	}
@@ -121,10 +142,10 @@ func main() {
 	defer engine.Close()
 
 	// Initialize Redis cache
-	if err := cache.Init(&config.Redis); err != nil {
+	if err := redis.Init(&config.Redis); err != nil {
 		common.Fatal("Failed to initialize Redis", zap.Error(err))
 	}
-	defer cache.Close()
+	defer redis.Close()
 
 	// Initialize storage factory
 	if err := storage.InitStorageFactory(); err != nil {
@@ -136,7 +157,7 @@ func main() {
 	}
 
 	// Initialize server variables (runtime variables from Redis)
-	if err := server.InitVariables(cache.Get()); err != nil {
+	if err := server.InitVariables(redis.Get()); err != nil {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
 

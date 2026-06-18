@@ -21,13 +21,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"ragflow/internal/common"
+	"ragflow/internal/engine/redis"
 	"sort"
 	"strings"
 	"time"
 
 	"go.uber.org/zap"
 
-	"ragflow/internal/cache"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
@@ -61,7 +61,7 @@ func GetTagsFromCache(kbIDs []string) (map[string]float64, error) {
 		return nil, nil
 	}
 
-	redisClient := cache.Get()
+	redisClient := redis.Get()
 	if redisClient == nil {
 		common.Warn("Redis client not available, skipping cache lookup")
 		return nil, nil
@@ -89,7 +89,7 @@ func SetTagsToCache(kbIDs []string, tags map[string]float64) error {
 		return nil
 	}
 
-	redisClient := cache.Get()
+	redisClient := redis.Get()
 	if redisClient == nil {
 		common.Warn("Redis client not available, skipping cache store")
 		return nil
@@ -114,7 +114,8 @@ func SetTagsToCache(kbIDs []string, tags map[string]float64) error {
 // Knowledgebase type alias for entity.Knowledgebase
 type Knowledgebase = entity.Knowledgebase
 
-// GetAllTagsInPortion returns the tag distribution for given KBs
+// GetAllTagsInPortion returns all tag_kwd values and their occurrence counts
+// for documents belonging to the given kbIDs.
 func (s *MetadataService) GetAllTagsInPortion(tenantID string, kbIDs []string) (map[string]float64, error) {
 	if len(kbIDs) == 0 {
 		return make(map[string]float64), nil
@@ -122,12 +123,14 @@ func (s *MetadataService) GetAllTagsInPortion(tenantID string, kbIDs []string) (
 
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
 
-	// Search with large limit to get all tag_kwd values
 	searchReq := &types.SearchRequest{
 		IndexNames: []string{indexName},
 		KbIDs:      kbIDs,
 		Offset:     0,
-		Limit:      10000, // Large limit to get all docs
+		// Python passes limit=0 ("unlimited") which Go SearchRequest treats
+		// as engine default (Infinity/ES: 30), so use an explicit large cap.
+		Limit:        100000,
+		SelectFields: []string{"tag_kwd"},
 	}
 
 	searchResp, err := s.docEngine.Search(context.Background(), searchReq)
@@ -259,7 +262,7 @@ func (s *MetadataService) TagQuery(question string, tenantIDs []string, kbIDs []
 //  4. Get tag KBs by IDs
 //  5. Call TagQuery to get weighted tag features for the question
 func (s *MetadataService) LabelQuestion(question string, kbs []*Knowledgebase) map[string]float64 {
-	if len(kbs) == 0 {
+	if len(kbs) == 0 || question == "" {
 		return nil
 	}
 
