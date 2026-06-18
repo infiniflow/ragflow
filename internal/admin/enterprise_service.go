@@ -389,6 +389,17 @@ func (s *Service) ShowUsersQuotaSummary() (map[string]interface{}, error) {
 	return result, nil
 }
 
+// ShowIngestionTasksSummary show ingestion tasks summary for enterprise edition
+func (s *Service) ShowIngestionTasksSummary() (map[string]interface{}, error) {
+
+	result := map[string]interface{}{
+		"command": "show_ingestion_tasks_summary",
+		"error":   "'Show ingestion tasks summary' is implemented in enterprise edition",
+	}
+
+	return result, nil
+}
+
 // ShowDataSummary show data summary for enterprise edition
 func (s *Service) ShowDataSummary() (map[string]interface{}, error) {
 
