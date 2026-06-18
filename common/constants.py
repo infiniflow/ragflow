@@ -87,6 +87,16 @@ class LLMType(StrEnum):
     OCR = "ocr"
 
 
+class ModelTypeBinary(Enum):
+    CHAT = 0b0000001      # 1 << 0 = 1
+    EMBEDDING = 0b0000010  # 1 << 1 = 2
+    SPEECH2TEXT = 0b0000100  # 1 << 2 = 4
+    IMAGE2TEXT = 0b0001000  # 1 << 3 = 8
+    RERANK = 0b0010000  # 1 << 4 = 16
+    TTS = 0b0100000  # 1 << 5 = 32
+    OCR = 0b1000000  # 1 << 6 = 64
+
+
 class TaskStatus(StrEnum):
     UNSTART = "0"
     RUNNING = "1"
