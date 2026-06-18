@@ -541,11 +541,40 @@ export const ChatChannelFormFields: Record<ChatChannelKey, FormFieldConfig[]> =
     ],
     [ChatChannelKey.WECOM]: [
       {
+        label: 'Connection Type',
+        name: 'config.credential.connection_type',
+        type: FormFieldType.Select,
+        required: true,
+        defaultValue: 'webhook',
+        options: [
+          { label: 'Webhook', value: 'webhook' },
+          { label: 'WebSocket', value: 'websocket' },
+        ],
+      },
+      {
+        label: 'Bot ID',
+        name: 'config.credential.bot_id',
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: 'AIBOTID',
+        shouldRender: (values: any) =>
+          values?.config?.credential?.connection_type === 'websocket',
+      },
+      {
+        label: 'Secret',
+        name: 'config.credential.secret',
+        type: FormFieldType.Password,
+        required: true,
+        placeholder: 'App Secret / Long-connection Secret',
+      },
+      {
         label: 'Corp ID',
         name: 'config.credential.corp_id',
         type: FormFieldType.Text,
         required: true,
         placeholder: 'ww1234567890abcdef',
+        shouldRender: (values: any) =>
+          values?.config?.credential?.connection_type !== 'websocket',
       },
       {
         label: 'Agent ID',
@@ -553,18 +582,16 @@ export const ChatChannelFormFields: Record<ChatChannelKey, FormFieldConfig[]> =
         type: FormFieldType.Number,
         required: true,
         placeholder: '1000001',
-      },
-      {
-        label: 'Secret',
-        name: 'config.credential.secret',
-        type: FormFieldType.Password,
-        required: true,
+        shouldRender: (values: any) =>
+          values?.config?.credential?.connection_type !== 'websocket',
       },
       {
         label: 'Token',
         name: 'config.credential.token',
         type: FormFieldType.Password,
         required: true,
+        shouldRender: (values: any) =>
+          values?.config?.credential?.connection_type !== 'websocket',
       },
       {
         label: 'AES Key',
@@ -572,6 +599,8 @@ export const ChatChannelFormFields: Record<ChatChannelKey, FormFieldConfig[]> =
         type: FormFieldType.Password,
         required: true,
         placeholder: '43 chars',
+        shouldRender: (values: any) =>
+          values?.config?.credential?.connection_type !== 'websocket',
       },
     ],
     [ChatChannelKey.WHATSAPP]: [],
@@ -646,6 +675,9 @@ export const ChatChannelFormDefaultValues: Record<
 // googlechat carries a non-credential discriminator (auth_mode).
 ChatChannelFormDefaultValues[ChatChannelKey.GOOGLECHAT].config.auth_mode =
   'webhook_url';
+ChatChannelFormDefaultValues[
+  ChatChannelKey.WECOM
+].config.credential.connection_type = 'webhook';
 
 export const getChatChannelFields = (
   key?: ChatChannelKey,
