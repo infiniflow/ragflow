@@ -2125,6 +2125,7 @@ func (p *Parser) parseAdminShowUserPermissionCommand(userName string) (*Command,
 }
 
 // SHOW USERS SUMMARY;
+// SHOW USERS ACTIVITY;
 func (p *Parser) parseAdminShowUsersCommand() (*Command, error) {
 	p.nextToken() // consume USERS
 
@@ -2133,9 +2134,62 @@ func (p *Parser) parseAdminShowUsersCommand() (*Command, error) {
 		p.nextToken()
 		cmd := NewCommand("admin_show_users_summary_command")
 		return cmd, nil
+	case TokenActivity:
+		return p.parseAdminShowUsersActivityCommand()
 	default:
 		return nil, fmt.Errorf("invalid command")
 	}
+}
+
+// SHOW USERS ACTIVITY WINDOW 2 DAYS 30;
+func (p *Parser) parseAdminShowUsersActivityCommand() (*Command, error) {
+	p.nextToken() // consume ACTIVITY
+
+	var days int
+	var err error
+	var windowSize int
+
+commandLoop:
+	for {
+		switch p.curToken.Type {
+		case TokenDays:
+			p.nextToken()
+			days, err = p.parseNumber()
+			if err != nil {
+				return nil, err
+			}
+			if days < 1 {
+				return nil, fmt.Errorf("invalid number of DAYS")
+			}
+			p.nextToken()
+		case TokenWindow:
+			p.nextToken()
+			windowSize, err = p.parseNumber()
+			if err != nil {
+				return nil, err
+			}
+			if windowSize < 0 {
+				return nil, fmt.Errorf("invalid number of WINDOWS")
+			}
+			p.nextToken()
+		case TokenSemicolon:
+			p.nextToken()
+			break commandLoop // done
+		default:
+			// No more options to process
+			break commandLoop
+		}
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("admin_show_users_activity_command")
+	cmd.Params["days"] = days
+	cmd.Params["window"] = windowSize
+	return cmd, nil
 }
 
 // LIST USERS;
@@ -2155,26 +2209,17 @@ func (p *Parser) parseAdminListUsersCommand() (*Command, error) {
 	var cmd *Command
 	switch p.curToken.Type {
 	case TokenActive:
-		p.nextToken()
-		command = "admin_list_active_users_command"
+		return p.parseAdminListActiveUsersCommand()
 	case TokenInactive:
-		p.nextToken()
-		command = "admin_list_inactive_users_command"
+		return p.parseAdminListInactiveUsersCommand()
 	case TokenStorage:
-		p.nextToken()
-		command = "admin_list_users_storage_command"
+		return p.parseAdminListUsersStorageCommand()
 	case TokenDocuments:
-		p.nextToken()
-		command = "admin_list_users_documents_command"
+		return p.parseAdminListUsersDocumentsCommand()
 	case TokenIndex:
-		p.nextToken()
-		command = "admin_list_users_index_command"
-	case TokenQuota:
-		p.nextToken()
-		command = "admin_list_users_quota_command"
-	case TokenPlan:
-		p.nextToken()
-		command = "admin_list_users_plan_command"
+		return p.parseAdminListUsersIndexCommand()
+	case TokenQuota, TokenPlan, TokenDays:
+		return p.parseAdminListQuotaUsersCommand()
 	case TokenSemicolon:
 		p.nextToken()
 	default:
@@ -2190,8 +2235,220 @@ func (p *Parser) parseAdminListUsersCommand() (*Command, error) {
 	return cmd, nil
 }
 
+// LIST USERS ACTIVE 30 DAYS; // default 7 days
+func (p *Parser) parseAdminListActiveUsersCommand() (*Command, error) {
+	p.nextToken() // consume ACTIVE
+
+	var days int
+	var err error
+	if p.curToken.Type == TokenDays {
+		p.nextToken()
+		days, err = p.parseNumber()
+		if err != nil {
+			return nil, err
+		}
+		if days < 0 {
+			return nil, fmt.Errorf("invalid number of DAYS")
+		}
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("admin_list_active_users_command")
+	cmd.Params["days"] = days
+	return cmd, nil
+}
+
+// LIST USERS INACTIVE 30 DAYS; // default 7 days
+func (p *Parser) parseAdminListInactiveUsersCommand() (*Command, error) {
+	p.nextToken() // consume INACTIVE
+
+	var days int
+	var err error
+	if p.curToken.Type == TokenDays {
+		p.nextToken()
+		days, err = p.parseNumber()
+		if err != nil {
+			return nil, err
+		}
+		if days < 0 {
+			return nil, fmt.Errorf("invalid number of DAYS")
+		}
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("admin_list_inactive_users_command")
+	cmd.Params["days"] = days
+	return cmd, nil
+}
+
+// LIST USERS STORAGE TOP 10;
+func (p *Parser) parseAdminListUsersStorageCommand() (*Command, error) {
+	p.nextToken() // consume STORAGE
+
+	var top int
+	var err error
+	if p.curToken.Type == TokenTop {
+		p.nextToken()
+		top, err = p.parseNumber()
+		if err != nil {
+			return nil, err
+		}
+		if top < 0 {
+			return nil, fmt.Errorf("invalid number of TOP")
+		}
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("admin_list_users_storage_command")
+	cmd.Params["top"] = top
+	return cmd, nil
+}
+
+// LIST USERS DOCUMENTS TOP 10;
+func (p *Parser) parseAdminListUsersDocumentsCommand() (*Command, error) {
+	p.nextToken() // consume DOCUMENTS
+
+	var top int
+	var err error
+	if p.curToken.Type == TokenTop {
+		p.nextToken()
+		top, err = p.parseNumber()
+		if err != nil {
+			return nil, err
+		}
+		if top < 0 {
+			return nil, fmt.Errorf("invalid number of TOP")
+		}
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("admin_list_users_documents_command")
+	cmd.Params["top"] = top
+	return cmd, nil
+}
+
+// LIST USERS INDEX TOP 10;
+func (p *Parser) parseAdminListUsersIndexCommand() (*Command, error) {
+	p.nextToken() // consume INDEX
+
+	var top int
+	var err error
+	if p.curToken.Type == TokenTop {
+		p.nextToken()
+		top, err = p.parseNumber()
+		if err != nil {
+			return nil, err
+		}
+		if top < 0 {
+			return nil, fmt.Errorf("invalid number of TOP")
+		}
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("admin_list_users_index_command")
+	cmd.Params["top"] = top
+	return cmd, nil
+}
+
+// LIST USERS QUOTA 100 TOP 10;
+func (p *Parser) parseAdminListQuotaUsersCommand() (*Command, error) {
+	var top int
+	var quota int
+	var plan string = "ALL"
+	var days int
+	var err error
+
+commandLoop:
+	for {
+		switch p.curToken.Type {
+		case TokenTop:
+			p.nextToken()
+			top, err = p.parseNumber()
+			if err != nil {
+				return nil, err
+			}
+			if top < 0 {
+				return nil, fmt.Errorf("invalid number of TOP")
+			}
+		case TokenQuota:
+			p.nextToken()
+			quota, err = p.parseNumber()
+			if err != nil {
+				return nil, err
+			}
+			if quota < 0 {
+				return nil, fmt.Errorf("invalid number of QUOTA")
+			}
+		case TokenPlan:
+			p.nextToken()
+			plan, err = p.parseQuotedString()
+			if err != nil {
+				return nil, err
+			}
+			if plan == "" {
+				return nil, fmt.Errorf("invalid plan")
+			}
+			p.nextToken()
+		case TokenDays:
+			p.nextToken()
+			days, err = p.parseNumber()
+			if err != nil {
+				return nil, err
+			}
+			if days < 0 {
+				return nil, fmt.Errorf("invalid number of DAYS")
+			}
+			p.nextToken()
+		case TokenSemicolon:
+			p.nextToken()
+			break commandLoop // done
+		default:
+			// No more options to process
+			break commandLoop
+		}
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("admin_list_users_quota_command")
+	if top != 0 {
+		cmd.Params["top"] = top
+	}
+	if quota != 0 {
+		cmd.Params["quota"] = quota
+	}
+	cmd.Params["plan"] = plan
+	if days != 0 {
+		cmd.Params["days"] = days
+	}
+	return cmd, nil
+}
+
 // SHOW DATA SUMMARY;
-// SHOW DATA STALE;
+// SHOW DATA ORPHAN;
 // SHOW DATA STORAGE;
 // SHOW DATA INDEX;
 func (p *Parser) parseAdminShowDataCommand() (*Command, error) {
@@ -2202,9 +2459,9 @@ func (p *Parser) parseAdminShowDataCommand() (*Command, error) {
 	case TokenSummary:
 		p.nextToken()
 		cmd = NewCommand("admin_show_data_summary_command")
-	case TokenStale:
+	case TokenOrphan:
 		p.nextToken()
-		cmd = NewCommand("admin_show_data_stale_command")
+		cmd = NewCommand("admin_show_data_orphan_command")
 	case TokenStorage:
 		p.nextToken()
 		cmd = NewCommand("admin_show_data_storage_command")
@@ -2212,7 +2469,7 @@ func (p *Parser) parseAdminShowDataCommand() (*Command, error) {
 		p.nextToken()
 		cmd = NewCommand("admin_show_data_index_command")
 	default:
-		return nil, fmt.Errorf("expected SUMMARY, STALE, STORAGE, INDEX, TASKS, QUOTA_SUMMARY after ALL")
+		return nil, fmt.Errorf("expected SUMMARY, ORPHAN, STORAGE, INDEX, TASKS, QUOTA_SUMMARY after ALL")
 	}
 
 	// Semicolon is optional
@@ -2242,8 +2499,8 @@ func (p *Parser) parseAdminShowQuotaCommand() (*Command, error) {
 	return cmd, nil
 }
 
-// PURGE PREVIEW STALE
-// PURGE STALE
+// PURGE PREVIEW ORPHAN
+// PURGE ORPHAN
 
 // PURGE PREVIEW USER 'user@example.com';
 // PURGE USER
@@ -2262,8 +2519,8 @@ func (p *Parser) parseAdminPurgeCommand() (*Command, error) {
 	}
 
 	switch p.curToken.Type {
-	case TokenStale:
-		return p.parseAdminPurgeStaleCommand(preview)
+	case TokenOrphan:
+		return p.parseAdminPurgeOrphanCommand(preview)
 	case TokenUser:
 		return p.parseAdminPurgeUserCommand(preview)
 	case TokenUsers:
@@ -2273,18 +2530,18 @@ func (p *Parser) parseAdminPurgeCommand() (*Command, error) {
 	}
 }
 
-// PURGE PREVIEW STALE
-// PURGE STALE
-func (p *Parser) parseAdminPurgeStaleCommand(preview bool) (*Command, error) {
-	p.nextToken() // consume STALE
+// PURGE PREVIEW ORPHAN
+// PURGE ORPHAN
+func (p *Parser) parseAdminPurgeOrphanCommand(preview bool) (*Command, error) {
+	p.nextToken() // consume ORPHAN
 
-	cmd := NewCommand("admin_purge_stale_command")
+	cmd := NewCommand("admin_purge_orphan_command")
 	cmd.Params["preview"] = preview
 	return cmd, nil
 }
 
 // PURGE PREVIEW USER 'user@example.com';
-// PURGE USER
+// PURGE USER 'user@example.com';
 func (p *Parser) parseAdminPurgeUserCommand(preview bool) (*Command, error) {
 	p.nextToken() // consume USER
 
@@ -2358,9 +2615,7 @@ commandLoop:
 	}
 
 	cmd := NewCommand("admin_purge_users_command")
-	if preview {
-		cmd.Params["preview"] = true
-	}
+	cmd.Params["preview"] = preview
 	if planName != nil {
 		cmd.Params["plan_name"] = *planName
 	}

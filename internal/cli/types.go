@@ -181,8 +181,9 @@ const (
 	TokenStorage
 	TokenQuota
 	TokenTree
-	TokenStale
+	TokenOrphan
 	TokenDays
+	TokenWindow
 	TokenActivity
 	TokenData
 	TokenPurge

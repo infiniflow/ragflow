@@ -137,6 +137,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminShowUserPermissionCommand(cmd)
 	case "admin_show_users_summary_command":
 		return c.AdminShowUsersSummaryCommand(cmd)
+	case "admin_show_users_activity_command":
+		return c.AdminShowUsersActivityCommand(cmd)
 	case "admin_list_users_command":
 		return c.AdminListUsersCommand(cmd)
 	case "admin_list_active_users_command":
@@ -151,20 +153,18 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminListUsersIndexCommand(cmd)
 	case "admin_list_users_quota_command":
 		return c.AdminListUsersQuotaCommand(cmd)
-	case "admin_list_users_plan_command":
-		return c.AdminListUsersPlanCommand(cmd)
+	case "admin_show_quota_summary_command":
+		return c.AdminShowQuotaSummaryCommand(cmd)
 	case "admin_show_data_summary_command":
 		return c.AdminShowDataSummaryCommand(cmd)
-	case "admin_show_data_stale_command":
-		return c.AdminShowDataStaleCommand(cmd)
+	case "admin_show_data_orphan_command":
+		return c.AdminShowDataOrphanCommand(cmd)
 	case "admin_show_data_storage_command":
 		return c.AdminShowDataStorageCommand(cmd)
 	case "admin_show_data_index_command":
 		return c.AdminShowDataIndexCommand(cmd)
-	case "admin_show_quota_summary_command":
-		return c.AdminShowQuotaSummaryCommand(cmd)
-	case "admin_purge_stale_command":
-		return c.AdminPurgeStaleCommand(cmd)
+	case "admin_purge_orphan_command":
+		return c.AdminPurgeOrphanCommand(cmd)
 	case "admin_purge_user_command":
 		return c.AdminPurgeUserCommand(cmd)
 	case "admin_purge_users_command":

@@ -25,6 +25,183 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// ListRoles handle list roles
+func (h *Handler) ListRoles(c *gin.Context) {
+	roles, err := h.service.ListRoles()
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	if roles == nil {
+		roles = []map[string]interface{}{}
+	}
+
+	success(c, gin.H{
+		"roles": roles,
+		"total": len(roles),
+	}, "")
+}
+
+// CreateRoleHTTPRequest create role request
+type CreateRoleHTTPRequest struct {
+	RoleName    string `json:"role_name" binding:"required"`
+	Description string `json:"description"`
+}
+
+// CreateRole handle create role
+func (h *Handler) CreateRole(c *gin.Context) {
+	var req CreateRoleHTTPRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errorResponse(c, "Role name is required", 400)
+		return
+	}
+
+	role, err := h.service.CreateRole(req.RoleName, req.Description)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, role, "")
+}
+
+// GetRole handle get role
+func (h *Handler) GetRole(c *gin.Context) {
+	roleName := c.Param("role_name")
+	if roleName == "" {
+		errorResponse(c, "Role name is required", 400)
+		return
+	}
+
+	role, err := h.service.GetRole(roleName)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, role, "")
+}
+
+// UpdateRoleHTTPRequest update role request
+type UpdateRoleHTTPRequest struct {
+	Description string `json:"description" binding:"required"`
+}
+
+// UpdateRole handle update role
+func (h *Handler) UpdateRole(c *gin.Context) {
+	roleName := c.Param("role_name")
+	if roleName == "" {
+		errorResponse(c, "Role name is required", 400)
+		return
+	}
+
+	var req UpdateRoleHTTPRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errorResponse(c, "Role description is required", 400)
+		return
+	}
+
+	role, err := h.service.UpdateRole(roleName, req.Description)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, role, "")
+}
+
+// DeleteRole handle delete role
+func (h *Handler) DeleteRole(c *gin.Context) {
+	roleName := c.Param("role_name")
+	if roleName == "" {
+		errorResponse(c, "Role name is required", 400)
+		return
+	}
+
+	if err := h.service.DeleteRole(roleName); err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	successNoData(c, "")
+}
+
+// GetRolePermission handle get role permission
+func (h *Handler) GetRolePermission(c *gin.Context) {
+	roleName := c.Param("role_name")
+	if roleName == "" {
+		errorResponse(c, "Role name is required", 400)
+		return
+	}
+
+	permissions, err := h.service.GetRolePermission(roleName)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, permissions, "")
+}
+
+// GrantRolePermissionHTTPRequest grant role permission request
+type GrantRolePermissionHTTPRequest struct {
+	Actions  []string `json:"actions" binding:"required"`
+	Resource string   `json:"resource" binding:"required"`
+}
+
+// GrantRolePermission handle grant role permission
+func (h *Handler) GrantRolePermission(c *gin.Context) {
+	roleName := c.Param("role_name")
+	if roleName == "" {
+		errorResponse(c, "Role name is required", 400)
+		return
+	}
+
+	var req GrantRolePermissionHTTPRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errorResponse(c, "Permission is required", 400)
+		return
+	}
+
+	result, err := h.service.GrantRolePermission(roleName, req.Actions, req.Resource)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "")
+}
+
+// RevokeRolePermissionHTTPRequest revoke role permission request
+type RevokeRolePermissionHTTPRequest struct {
+	Actions  []string `json:"actions" binding:"required"`
+	Resource string   `json:"resource" binding:"required"`
+}
+
+// RevokeRolePermission handle revoke role permission
+func (h *Handler) RevokeRolePermission(c *gin.Context) {
+	roleName := c.Param("role_name")
+	if roleName == "" {
+		errorResponse(c, "Role name is required", 400)
+		return
+	}
+
+	var req RevokeRolePermissionHTTPRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errorResponse(c, "Permission is required", 400)
+		return
+	}
+
+	result, err := h.service.RevokeRolePermission(roleName, req.Actions, req.Resource)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "")
+}
+
 type ShowUserActivityRequest struct {
 	Days  int    `json:"days"`
 	Email string `json:"email"`
@@ -173,6 +350,51 @@ func (h *Handler) ShowUserIndex(c *gin.Context) {
 	success(c, userIndex, "")
 }
 
+// UpdateUserRoleHTTPRequest update user role request
+type UpdateUserRoleHTTPRequest struct {
+	RoleName string `json:"role_name" binding:"required"`
+}
+
+// UpdateUserRole handle update user role
+func (h *Handler) UpdateUserRole(c *gin.Context) {
+	username := c.Param("username")
+	if username == "" {
+		errorResponse(c, "Username is required", 400)
+		return
+	}
+
+	var req UpdateUserRoleHTTPRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errorResponse(c, "Role name is required", 400)
+		return
+	}
+
+	result, err := h.service.UpdateUserRole(username, req.RoleName)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "")
+}
+
+// ShowUserPermission handle show user permission
+func (h *Handler) ShowUserPermission(c *gin.Context) {
+	username := c.Param("username")
+	if username == "" {
+		errorResponse(c, "Username is required", 400)
+		return
+	}
+
+	permissions, err := h.service.ShowUserPermission(username)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, permissions, "")
+}
+
 // ShowUsersSummary handle show users summary
 func (h *Handler) ShowUsersSummary(c *gin.Context) {
 	usersSummary, err := h.service.ShowUsersSummary()
@@ -189,8 +411,8 @@ func (h *Handler) ShowUsersSummary(c *gin.Context) {
 }
 
 type ShowUsersActivityRequest struct {
-	Days    *int `json:"days"`
-	Windows *int `json:"windows"`
+	Days   *int `json:"days"`
+	Window *int `json:"window"`
 }
 
 // ShowUsersActivity handle show users activity
@@ -204,7 +426,7 @@ func (h *Handler) ShowUsersActivity(c *gin.Context) {
 		})
 		return
 	}
-	usersActivity, err := h.service.ShowUsersActivity(req.Days, req.Windows)
+	usersActivity, err := h.service.ShowUsersActivity(req.Days, req.Window)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
 			errorResponse(c, "User not found", 404)
@@ -597,10 +819,10 @@ func (h *Handler) PurgeUserData(c *gin.Context) {
 }
 
 type PurgeUsersDataRequest struct {
-	Preview  bool    `json:"preview"`
-	Days     int     `json:"days"`
-	Plan     *string `json:"plan"`
-	Activity *string `json:"activity"`
+	Preview    bool    `json:"preview"`
+	Days       int     `json:"days"`
+	Plan       *string `json:"plan"`
+	UserStatus *string `json:"user_status"`
 }
 
 // PurgeUsersData handle purge users data
@@ -615,7 +837,7 @@ func (h *Handler) PurgeUsersData(c *gin.Context) {
 		return
 	}
 
-	result, err := h.service.PurgeUsersData(request.Preview, request.Days, request.Plan, request.Activity)
+	result, err := h.service.PurgeUsersData(request.Preview, request.Days, request.Plan, request.UserStatus)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
 			errorResponse(c, "User not found", 404)

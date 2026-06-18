@@ -499,10 +499,12 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenQuota, Value: ident}
 	case "TREE":
 		return Token{Type: TokenTree, Value: ident}
-	case "STALE":
-		return Token{Type: TokenStale, Value: ident}
+	case "ORPHAN":
+		return Token{Type: TokenOrphan, Value: ident}
 	case "DAYS":
 		return Token{Type: TokenDays, Value: ident}
+	case "WINDOW":
+		return Token{Type: TokenWindow, Value: ident}
 	case "ACTIVITY":
 		return Token{Type: TokenActivity, Value: ident}
 	case "PURGE":

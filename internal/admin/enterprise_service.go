@@ -22,6 +22,56 @@ import (
 	"ragflow/internal/entity"
 )
 
+// Role management methods
+
+// ListRoles list all roles
+func (s *Service) ListRoles() ([]map[string]interface{}, error) {
+	// TODO: Implement list roles
+	return []map[string]interface{}{}, nil
+}
+
+// CreateRole create a new role
+func (s *Service) CreateRole(roleName, description string) (map[string]interface{}, error) {
+	// TODO: Implement create role
+	return map[string]interface{}{}, nil
+}
+
+// GetRole get role details
+func (s *Service) GetRole(roleName string) (map[string]interface{}, error) {
+	// TODO: Implement get role
+	return map[string]interface{}{}, nil
+}
+
+// UpdateRole update role
+func (s *Service) UpdateRole(roleName, description string) (map[string]interface{}, error) {
+	// TODO: Implement update role
+	return map[string]interface{}{}, nil
+}
+
+// DeleteRole delete role
+func (s *Service) DeleteRole(roleName string) error {
+	// TODO: Implement delete role
+	return nil
+}
+
+// GetRolePermission get role permissions
+func (s *Service) GetRolePermission(roleName string) ([]map[string]interface{}, error) {
+	// TODO: Implement get role permissions
+	return []map[string]interface{}{}, nil
+}
+
+// GrantRolePermission grant permission to role
+func (s *Service) GrantRolePermission(roleName string, actions []string, resource string) (map[string]interface{}, error) {
+	// TODO: Implement grant role permission
+	return map[string]interface{}{}, nil
+}
+
+// RevokeRolePermission revoke permission from role
+func (s *Service) RevokeRolePermission(roleName string, actions []string, resource string) (map[string]interface{}, error) {
+	// TODO: Implement revoke role permission
+	return map[string]interface{}{}, nil
+}
+
 // ShowUserActivity show user activity for enterprise edition
 func (s *Service) ShowUserActivity(email string, days int) (map[string]interface{}, error) {
 	// Query user by email
@@ -127,6 +177,45 @@ func (s *Service) ShowUserIndex(email string) (map[string]interface{}, error) {
 		"email":    user.Email,
 		"nickname": user.Nickname,
 		"error":    "'show user index' is implemented in enterprise edition",
+	}
+
+	return result, nil
+}
+
+// UpdateUserRole update user role
+func (s *Service) UpdateUserRole(email, roleName string) (map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := map[string]interface{}{
+		"command":  "update_user_role",
+		"role":     roleName,
+		"email":    user.Email,
+		"nickname": user.Nickname,
+		"error":    "'update user role' is implemented in enterprise edition",
+	}
+
+	return result, nil
+}
+
+// ShowUserPermission show user permissions for enterprise edition
+func (s *Service) ShowUserPermission(email string) (map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := map[string]interface{}{
+		"command":  "show_user_permission",
+		"email":    user.Email,
+		"nickname": user.Nickname,
+		"error":    "'show user permission' is implemented in enterprise edition",
 	}
 
 	return result, nil

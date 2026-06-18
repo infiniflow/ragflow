@@ -78,6 +78,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.GET("/users/:username/storage", r.handler.ShowUserStorage)
 			protected.GET("/users/:username/quota", r.handler.ShowUserQuota)
 			protected.GET("/users/:username/index", r.handler.ShowUserIndex)
+			protected.PUT("/users/:username/role", r.handler.UpdateUserRole)
+			protected.GET("/users/:username/permission", r.handler.ShowUserPermission)
 			protected.GET("/users/summary", r.handler.ShowUsersSummary)
 			protected.GET("/users/activity", r.handler.ShowUsersActivity)
 			protected.GET("/users/reports", r.handler.ListUsersReports)
@@ -111,10 +113,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.GET("/roles/:role_name/permission", r.handler.GetRolePermission)
 			protected.POST("/roles/:role_name/permission", r.handler.GrantRolePermission)
 			protected.DELETE("/roles/:role_name/permission", r.handler.RevokeRolePermission)
-
-			// User roles and permissions
-			protected.PUT("/users/:username/role", r.handler.UpdateUserRole)
-			protected.GET("/users/:username/permission", r.handler.GetUserPermission)
 
 			// Service management
 			protected.GET("/services", r.handler.GetServices)
