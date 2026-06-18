@@ -70,6 +70,41 @@ PIDS=()
 # Set the path to the NLTK data directory
 export NLTK_DATA="./nltk_data"
 
+# Kill any previously running RAGFlow backend processes before starting new ones.
+kill_existing_backend_processes() {
+  local patterns=(
+    "api/ragflow_server.py"
+    "rag/svr/task_executor.py"
+    "admin/server/admin_server.py"
+  )
+  local pattern pid
+
+  echo "Checking for existing RAGFlow backend processes..."
+  for pattern in "${patterns[@]}"; do
+    while IFS= read -r pid; do
+      [ -n "$pid" ] || continue
+      if kill -0 "$pid" 2>/dev/null; then
+        echo "Killing stale process $pid matching: $pattern"
+        kill "$pid" 2>/dev/null || true
+      fi
+    done < <(pgrep -f "$pattern" || true)
+  done
+
+  sleep 2
+
+  for pattern in "${patterns[@]}"; do
+    while IFS= read -r pid; do
+      [ -n "$pid" ] || continue
+      if kill -0 "$pid" 2>/dev/null; then
+        echo "Force killing stale process $pid matching: $pattern"
+        kill -9 "$pid" 2>/dev/null || true
+      fi
+    done < <(pgrep -f "$pattern" || true)
+  done
+}
+
+kill_existing_backend_processes
+
 # Function to handle termination signals
 cleanup() {
   echo "Termination signal received. Shutting down..."
