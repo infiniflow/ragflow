@@ -754,10 +754,10 @@ Commands (User Mode):
   LIST TOKENS;                                           - List API tokens
   LIST PROVIDERS;                                        - List available LLM providers
   CREATE TOKEN;                                          - Create new API token
-  ADD PROVIDER 'name';                                - Create a provider without API key
-  ADD PROVIDER 'name' 'api_key';                      - Create a provider with API key
+  ADD PROVIDER 'name';                                   - Create a provider without API key
+  ADD PROVIDER 'name' 'api_key';                         - Create a provider with API key
   DROP TOKEN 'token_value';                              - Delete an API token
-  DELETE PROVIDER 'name';                                  - Delete a provider
+  DELETE PROVIDER 'name';                                - Delete a provider
   SET TOKEN 'token_value';                               - Set and validate API token
   SHOW TOKEN;                                            - Show current API token
   SHOW PROVIDER 'name';                                  - Show provider details
@@ -767,6 +767,8 @@ Commands (User Mode):
   USE MODEL 'provider/instance/model';                   - Set current model for chat
   CHAT 'message';                                        - Chat using current model
   CHAT 'provider/instance/model' 'message';              - Chat with specified model
+  OPENAI_CHAT 'chat_id' 'message' [options] ;            - OpenAI-compatible chat 
+                                                           (run openai_chat -h for detailed options)
 
 Filesystem Commands (no quotes):
   ls [path]                    - List resources
@@ -916,6 +918,58 @@ Datasets syntax (full filter set):
         doc_ids ['d1', 'd2'];
     search 'manual' on datasets 'kb1' with
         meta_data_filter '{"method":"manual","conditions":[{"key":"author","op":"eq","value":"Luo"}]}';
+`
+	fmt.Println(help)
+}
+
+// printOpenaiChatHelp prints help for the OPENAI_CHAT command.
+func printOpenaiChatHelp() {
+	help := `OPENAI_CHAT — hit POST /api/v1/openai/<chat_id>/chat/completions
+
+Syntax:
+  OPENAI_CHAT 'chat_id' 'message'
+       [system "..."]
+       [history "user:...;assistant:...;user:..."]
+       [history_delimiter "<char>"]
+       [model <string>]
+       [temperature <float>] [max_tokens <int>] [stream <bool>]
+       [top_p <float>] [frequency_penalty <float>] [presence_penalty <float>]
+       [extra_body <json>] ;
+
+Required positional:
+  'chat_id'   the dialog id (becomes the URL path segment)
+  'message'   the user message content
+
+Named options (any order; all optional with defaults):
+  system            '...'           override the system prompt
+  history           '...'           prior turns: user:...;assistant:...;user:...
+  history_delimiter '...'           turn separator for history (default ';')
+  model             '...'           'model' (sentinel) or composite (default 'model')
+  temperature       <float>         0..2  (default 0)
+  max_tokens        <int>           (default 0 = server/model default)
+  stream            <bool>          true|false  (default false)
+  top_p             <float>         0..1
+  frequency_penalty <float>         -2..2
+  presence_penalty  <float>         -2..2
+  extra_body        <json>          '{"reference":true,...}'
+
+Defaults:
+  model       'model'  — server resolves to the dialog's configured LLM
+  stream      false
+  temperature 0
+  history_delimiter ';'      — commas in content survive unchanged
+
+extra_body allowlist:
+  reference            bool
+  reference_metadata   { include?: bool, fields?: string[] }
+  metadata_condition   { logic?: "and"|"or", conditions?: [{key, operator, value}] }
+
+Examples:
+  OPENAI_CHAT 'cid' 'Hello, how are you?';
+  OPENAI_CHAT 'cid' 'Hello' model 'Qwen/Qwen3-8B@ling@SILICONFLOW' temperature 0.7 max_tokens 512;
+  OPENAI_CHAT 'cid' 'Hello' stream true;
+  OPENAI_CHAT 'cid' 'next' system 'You are concise.' history 'user:q1;assistant:a1';
+  OPENAI_CHAT 'cid' 'Hello' extra_body '{"reference":true,"metadata_condition":{"logic":"and","conditions":[{"key":"doc_type","operator":"is","value":"faq"}]}}';
 `
 	fmt.Println(help)
 }

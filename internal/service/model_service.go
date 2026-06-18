@@ -2498,3 +2498,39 @@ func (m *ModelProviderService) ListAllModels(pageIndex, pageSize int) ([]map[str
 func (m *ModelProviderService) ShowModel(modelName string) (*modelModule.Model, error) {
 	return dao.GetModelProviderManager().GetModelByNameOrAlias(modelName), nil
 }
+
+// isImage2TextLLM returns true when the named LLM is registered as an
+// image2text model for the tenant.
+// Returns false on lookup error or empty LLM ID so callers fall back to
+// chat — matches Python's branch order where only an EXPLICIT image2text
+// registration switches the model type away from chat.
+func (m *ModelProviderService) isImage2TextLLM(tenantID, llmID string) bool {
+	if m == nil || llmID == "" {
+		return false
+	}
+	modelTypes, err := m.GetModelTypeByName(tenantID, llmID)
+	if err != nil {
+		return false
+	}
+	for _, mt := range modelTypes {
+		if mt == entity.ModelTypeImage2Text {
+			return true
+		}
+	}
+	return false
+}
+
+// GetChatModelConfig resolves the model configuration for a chat dialog.
+// If llmID is empty, falls back to the tenant's default chat model.
+// When the named LLM is registered as an image2text model, returns the
+// IMAGE2TEXT driver/config instead of CHAT.
+func (m *ModelProviderService) GetChatModelConfig(tenantID string, llmID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	if llmID == "" {
+		return m.GetTenantDefaultModelByType(tenantID, entity.ModelTypeChat)
+	}
+	modelType := entity.ModelTypeChat
+	if m.isImage2TextLLM(tenantID, llmID) {
+		modelType = entity.ModelTypeImage2Text
+	}
+	return m.GetModelConfigFromProviderInstance(tenantID, modelType, llmID)
+}
