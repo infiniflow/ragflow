@@ -437,7 +437,10 @@ func (s *DatasetService) RunIndex(userID, datasetID, indexType string) (map[stri
 			var existingTask entity.Task
 			taskErr := tx.Where("id = ?", existingTaskID).First(&existingTask).Error
 			if taskErr != nil {
-				common.Warn("A valid dataset index task id is expected", zap.String("dataset_id", datasetID), zap.String("task_id", existingTaskID), zap.String("task_type", displayName), zap.Error(taskErr))
+				if errors.Is(taskErr, gorm.ErrRecordNotFound) {
+				} else {
+					return taskErr
+				}
 			} else if existingTask.Progress != 1 && existingTask.Progress != -1 {
 				dataErr = fmt.Errorf("Task %s in progress with status %v. A %s Task is already running.", existingTaskID, existingTask.Progress, displayName)
 				return dataErr
