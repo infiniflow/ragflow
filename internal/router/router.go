@@ -325,7 +325,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				commitFolders.GET("/:folder_id/changes", r.fileCommitHandler.GetUncommittedChanges)
 			}
 
-		// /workspace/{workspace_id}/commits — alias for /folders/ (workspace_id == folder_id)
+			// /workspace/{workspace_id}/commits — alias for /folders/ (workspace_id == folder_id)
 			commitWorkspace := v1.Group("/workspace")
 			{
 				commitWorkspace.POST("/:folder_id/commits", r.fileCommitHandler.CreateCommit)
