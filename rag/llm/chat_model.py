@@ -602,6 +602,7 @@ class Base(ABC):
         assert False, "Shouldn't be here."
 
     async def _async_chat(self, history, gen_conf, **kwargs):
+        """Run non-streaming async chat while dropping unsupported request kwargs."""
         logging.info("[HISTORY]" + json.dumps(history, ensure_ascii=False, indent=2))
         kwargs.pop("images", None)
         kwargs.pop("chat_template_kwargs", None)
@@ -1509,6 +1510,7 @@ class LiteLLMBase(ABC):
         return self.provider == SupportedLiteLLMProvider.DeepSeek
 
     async def async_chat(self, system, history, gen_conf, **kwargs):
+        """Run LiteLLM async chat while dropping unsupported request kwargs."""
         kwargs.pop("images", None)
         kwargs.pop("chat_template_kwargs", None)
         hist = list(history) if history else []
