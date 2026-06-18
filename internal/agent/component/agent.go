@@ -6,18 +6,20 @@
 // production-grade implementation.
 //
 // Public outputs (content / tool_calls / artifacts) match the
-// plan-specified shape. The agent now wires AgentParam.Tools into
-// configured the ReAct loop naturally degenerates to one model call.
+// plan-specified shape.
 package component
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
+	"go.uber.org/zap"
 	"ragflow/internal/agent/component/prompts"
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
+	"ragflow/internal/common"
 )
 
 // AgentComponent is a multi-turn ReAct agent.
@@ -25,7 +27,6 @@ type AgentComponent struct {
 	param AgentParam
 }
 
-// AgentParam captures the (resolved) DSL parameters for an Agent node.
 type AgentParam struct {
 	ModelID               string
 	SystemPrompt          string
@@ -34,23 +35,23 @@ type AgentParam struct {
 	Tools                 []string                  // Agent-visible tool names resolved into BaseTool instances
 	ToolParams            map[string]map[string]any // node-level tool constructor params keyed by tool name
 	MaxRounds             int
-	OptimizeMultiTurn     bool // when true (default), multi-turn history is condensed via full_question LLM call
-	OptimizeHistoryWindow int  // number of history turns to include in the optimization prompt (default 3)
-	// Meta is the OpenAI-style function-call schema the Agent exposes
-	// when it is itself called as a tool by a parent component. Mirrors
-	// Python's `meta: ToolMeta` field — describes the Agent's own
-	// inputs (user_prompt / reasoning / context) for callers.
-	Meta AgentMeta
-	// Cite enables post-stream citation grounding. When true,
-	// the Agent reads the chunks recorded in
-	// state.Retrieval["chunks"] (populated by the Retrieval tool),
-	// renders prompts.CitationPlusPrompt, and makes a second LLM
-	// call to insert [ID:N] tags into the final content. Mirrors
-	// Python's `_generate_with_citation` flow.
-	Cite    bool
-	Driver  string
-	APIKey  string
-	BaseURL string
+	OptimizeMultiTurn     bool
+	OptimizeHistoryWindow int
+	Meta                  AgentMeta
+	Cite                  bool
+	Driver                string
+	APIKey                string
+	BaseURL               string
+	// SubAgents holds parsed sub-agent tool definitions. Populated from
+	// the DSL's `tools` parameter (config objects) at component creation
+	// time and from `inputs["tools"]` at invocation time. Each entry maps
+	// a sanitized function name (LLM-visible) to the raw config map.
+	SubAgents map[string]map[string]any
+	// StreamFinal enables progressive streaming for the final answer via
+	// StreamContentStreaming. Only true for the top-level agent, so
+	// sub-agents never send IsThink:false events that would close the
+	// parent's thinking section prematurely.
+	StreamFinal bool
 }
 
 // AgentMeta declares the OpenAI-style function-call interface for the
@@ -88,27 +89,334 @@ type AgentOutput struct {
 var agentRunner = agentReActRunner
 
 // agentReActRunner calls the model and returns the response.
-// This replaces the ReAct agent with a direct model call.
-// Tool calling is limited in this simplified version.
+// Uses streaming LLM for progressive output throughout the entire ReAct loop.
+// The loop terminates naturally when the LLM returns no tool_calls (i.e. it
+// decides the task is complete). Every content and reasoning chunk is
+// forwarded to progCh in real time, matching Python's streaming behavior.
 func agentReActRunner(ctx context.Context, p AgentParam) (*ComponentMessage, error) {
-	inv := getDefaultChatInvoker()
 	msgs := make([]ComponentMessage, 0, 2)
 	if p.SystemPrompt != "" {
 		msgs = append(msgs, NewSystemMessage(p.SystemPrompt))
 	}
 	msgs = append(msgs, NewUserMessage(p.UserPrompt))
-	resp, err := inv.Invoke(ctx, ChatInvokeRequest{
-		Driver:    p.Driver,
-		ModelName: p.ModelID,
-		APIKey:    p.APIKey,
-		BaseURL:   p.BaseURL,
-		Messages:  msgs,
-		TopP:      p.TopP,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("component: Agent: %w", err)
+
+	progCh := runtime.ProgressChFromCtx(ctx)
+
+	// Build tool definitions + sub-agent definitions.
+	toolDefs := buildToolDefs(p)
+	toolByName := make(map[string]agenttool.Tool, len(p.Tools))
+	for _, name := range p.Tools {
+		var params map[string]any
+		if p.ToolParams != nil {
+			params = p.ToolParams[name]
+		}
+		t, err := agenttool.BuildByName(name, params)
+		if err != nil {
+			continue
+		}
+		toolByName[t.ToolMeta().Name] = t
 	}
-	return &ComponentMessage{Role: RoleAssistant, Content: resp.Content}, nil
+
+	maxRounds := p.MaxRounds
+	if maxRounds <= 0 {
+		maxRounds = 3
+	}
+	maxRounds += 2 // extra room for final answer after all sub-agents
+
+	common.Info("agentReAct starting", zap.Int("maxRounds", maxRounds), zap.Int("tools", len(toolDefs)), zap.Int("subAgents", len(p.SubAgents)), zap.String("model", p.ModelID))
+
+	for round := 0; round < maxRounds; round++ {
+		common.Info("agentReAct round", zap.Int("round", round), zap.Int("msgs", len(msgs)))
+
+		resp, err := StreamingInvoke(ctx, ChatInvokeRequest{
+			Driver: p.Driver, ModelName: p.ModelID, APIKey: p.APIKey,
+			BaseURL: p.BaseURL, Messages: msgs, TopP: p.TopP, Tools: toolDefs,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("component: Agent round %d: %w", round, err)
+		}
+
+		// Execute tool calls (sub-agents or regular tools).
+		if len(resp.ToolCalls) > 0 {
+			if progCh != nil {
+				// Send initial model reasoning (reasoning_content) to
+				// the thinking section BEFORE the tool-call markers so
+				// the front-end shows the model's thought process first.
+				if resp.ReasonContent != "" {
+					progCh <- runtime.ProgEvent{Text: resp.ReasonContent + "\n\n", IsThink: true}
+				}
+				// Tool-call markers for the thinking section.
+				for _, tc := range resp.ToolCalls {
+					progCh <- runtime.ProgEvent{Text: "\n\n**Calling " + tc.FuncName + "...**\n\n", IsThink: true}
+				}
+			}
+			// Build assistant message with tool_calls array.
+			compTCs := make([]ComponentToolCall, 0, len(resp.ToolCalls))
+			for _, tc := range resp.ToolCalls {
+				compTCs = append(compTCs, ComponentToolCall{
+					ID:   tc.ID,
+					Type: tc.Type,
+					Function: ComponentFunctionCall{
+						Name:      tc.FuncName,
+						Arguments: tc.Arguments,
+					},
+				})
+			}
+			assistantMsg := ComponentMessage{
+				Role:      RoleAssistant,
+				Content:   resp.Content,
+				ToolCalls: compTCs,
+			}
+			msgs = append(msgs, assistantMsg)
+			for idx, tc := range resp.ToolCalls {
+				if subCfg, isSub := p.SubAgents[tc.FuncName]; isSub {
+					if progCh != nil {
+						// Log panel: sub-agent started.
+						progCh <- runtime.ProgEvent{
+							IsNodeEvent: true, NodeEventType: "started",
+							NodeCPNID: tc.FuncName, NodeDisplayName: tc.FuncName, NodeClassName: "Agent",
+						}
+					}
+					result := runSubAgent(ctx, subCfg, p, tc.Arguments)
+					if progCh != nil {
+						// Text marker for the thinking section.
+						progCh <- runtime.ProgEvent{Text: "\n\n**" + tc.FuncName + " returned.**\n\n", IsThink: true}
+						progCh <- runtime.ProgEvent{Text: result, IsThink: true}
+						// Log panel: sub-agent finished with its inputs, outputs, and Thoughts.
+						inputs := parseSubAgentInputs(tc.Arguments)
+						outputs := map[string]any{"content": result}
+						progCh <- runtime.ProgEvent{
+							IsNodeEvent: true, NodeEventType: "finished",
+							NodeCPNID: tc.FuncName, NodeDisplayName: tc.FuncName, NodeClassName: "Agent",
+							Thoughts:    result,
+							NodeInputs:  inputs,
+							NodeOutputs: outputs,
+						}
+					}
+					// Use the tool call's ID — required by OpenAI API format.
+					tcID := tc.ID
+					if tcID == "" {
+						tcID = fmt.Sprintf("call_%d", idx)
+					}
+					msgs = append(msgs, ComponentMessage{Role: "tool", Content: result, ToolCallID: tcID})
+					continue
+				}
+				tool, exists := toolByName[tc.FuncName]
+				if !exists {
+					msgs = append(msgs, ComponentMessage{
+						Role: "tool", Content: fmt.Sprintf(`{"_ERROR": "unknown tool %q"}`, tc.FuncName),
+					})
+					continue
+				}
+				result, tErr := tool.InvokableRun(ctx, tc.Arguments)
+				if tErr != nil {
+					result = fmt.Sprintf(`{"_ERROR": %q}`, tErr.Error())
+				}
+				tcID := tc.ID
+				if tcID == "" {
+					tcID = fmt.Sprintf("call_%d", idx)
+				}
+				msgs = append(msgs, ComponentMessage{Role: "tool", Content: result, ToolCallID: tcID})
+			}
+			continue // next round — tool calls will be retried with tool results in history
+		}
+
+		// No tool calls → final answer.
+		//
+		// Content source: some models (DeepSeek R1 / V4) put the
+		// final answer in "reasoning_content" when "content" is
+		// empty.  Fall back to ReasonContent to capture both cases.
+		content := resp.Content
+		if content == "" {
+			content = resp.ReasonContent
+		}
+		if content != "" {
+			if progCh != nil && p.StreamFinal {
+				// Stream the final answer progressively by
+				// sending resp.Content as word-level chunks to
+				// progCh.  This avoids a *second* API call
+				// (StreamContentStreaming) whose message history
+				// contains tool results that require tool_call_id
+				// — the model driver serialisation drops those.
+				streamContentToProgCh(content, progCh)
+			}
+			return &ComponentMessage{Role: RoleAssistant, Content: content}, nil
+		}
+	}
+
+	return &ComponentMessage{Role: RoleAssistant, Content: "Agent reached max rounds."}, nil
+}
+
+// parseSubAgentInputs converts the tool-call argument JSON into a
+// map for the node_finished log panel entry.  Returns a minimal
+// map on parse failure so the panel still shows something.
+func parseSubAgentInputs(argsJSON string) map[string]any {
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(argsJSON), &parsed); err != nil || len(parsed) == 0 {
+		return map[string]any{"arguments": argsJSON}
+	}
+	return parsed
+}
+
+// streamContentToProgCh sends content to progCh as a single IsThink:false
+// event that closes the thinking section and displays the answer in the
+// main output area.  This replaces the abandoned StreamContentStreaming
+// path (a second LLM call whose tool-result messages lacked tool_call_id
+// fields).
+func streamContentToProgCh(content string, progCh chan<- runtime.ProgEvent) {
+	if content == "" {
+		return
+	}
+	progCh <- runtime.ProgEvent{Text: content, IsThink: false}
+}
+
+// sanitizeFnName converts a display name to a valid OpenAI function name
+// (only [a-zA-Z0-9_-] characters; spaces become underscores).
+func sanitizeFnName(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '_' || r == '-' {
+			b.WriteRune(r)
+		} else if r == ' ' {
+			b.WriteRune('_')
+		}
+	}
+	if b.Len() == 0 {
+		return "agent_tool"
+	}
+	return b.String()
+}
+
+// parseSubAgentConfigs extracts sub-agent tool definitions from the DSL's
+// `tools` field (an array of {component_name, id, name, params} objects).
+// Returns a map keyed by sanitized function name → raw config object.
+// Returns nil when tools is nil or empty, or contains no sub-agent objects.
+func parseSubAgentConfigs(toolsRaw any) map[string]map[string]any {
+	arr, ok := toolsRaw.([]any)
+	if !ok {
+		return nil
+	}
+	out := make(map[string]map[string]any)
+	for _, item := range arr {
+		cfg, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		// Only process entries that look like sub-agent configs
+		// (have component_name, id, name, and nested params).
+		if _, ok := cfg["component_name"].(string); !ok {
+			continue
+		}
+		if _, ok := cfg["id"].(string); !ok {
+			continue
+		}
+		name, ok := cfg["name"].(string)
+		if !ok || name == "" {
+			continue
+		}
+		if _, ok := cfg["params"].(map[string]any); !ok {
+			continue
+		}
+		fn := sanitizeFnName(name)
+		out[fn] = cfg
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// buildToolDefs converts string tool names AND sub-agent configs into
+// OpenAI-compatible tool definition maps. Returns nil when nothing is
+// configured or all tools/sub-agents are unsupported/skipped.
+func buildToolDefs(p AgentParam) []map[string]any {
+	if len(p.Tools) == 0 && len(p.SubAgents) == 0 {
+		return nil
+	}
+	var defs []map[string]any
+
+	// Phase 1: string tool names from p.Tools.
+	for _, name := range p.Tools {
+		var params map[string]any
+		if p.ToolParams != nil {
+			params = p.ToolParams[name]
+		}
+		t, err := agenttool.BuildByName(name, params)
+		if err != nil {
+			continue
+		}
+		meta := t.ToolMeta()
+		props := make(map[string]any)
+		reqd := make([]string, 0)
+		for pn, pi := range meta.Parameters {
+			f := map[string]any{"type": pi.Type, "description": pi.Description}
+			if pi.Enum != nil {
+				f["enum"] = pi.Enum
+			}
+			props[pn] = f
+			if pi.Required {
+				reqd = append(reqd, pn)
+			}
+		}
+		schema := map[string]any{"type": "object", "properties": props}
+		if len(reqd) > 0 {
+			schema["required"] = reqd
+		}
+		defs = append(defs, map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name":        meta.Name,
+				"description": meta.Description,
+				"parameters":  schema,
+			},
+		})
+	}
+
+	// Phase 2: sub-agent configs from p.SubAgents.
+	// Tool parameters MUST match Python's Agent.get_meta() shape:
+	// {user_prompt, reasoning, context} — the model expects these specific
+	// parameter names and descriptions to understand how to delegate tasks.
+	for fn, cfg := range p.SubAgents {
+		paramsRaw, _ := cfg["params"].(map[string]any)
+		desc := ""
+		if paramsRaw != nil {
+			desc, _ = paramsRaw["description"].(string)
+		}
+		if desc == "" {
+			if n, _ := cfg["name"].(string); n != "" {
+				desc = "Execute agent: " + n
+			} else {
+				desc = "Execute a sub-agent"
+			}
+		}
+		defs = append(defs, map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name":        fn,
+				"description": desc,
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"user_prompt": map[string]any{
+							"type":        "string",
+							"description": "The task or query to send to this agent",
+						},
+						"reasoning": map[string]any{
+							"type":        "string",
+							"description": "Supervisor's reasoning for choosing this agent",
+						},
+						"context": map[string]any{
+							"type":        "string",
+							"description": "All relevant background information from prior research steps",
+						},
+					},
+					"required": []string{"user_prompt", "reasoning", "context"},
+				},
+			},
+		})
+	}
+	return defs
 }
 
 // addToolCallMemory summarizes the tool calls observed in msg via
@@ -326,6 +634,7 @@ func NewAgentComponent(p AgentParam) *AgentComponent {
 	if p.MaxRounds <= 0 {
 		p.MaxRounds = 3
 	}
+	p.StreamFinal = true
 	return &AgentComponent{param: p}
 }
 
@@ -342,11 +651,38 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	if p.UserPrompt == "" && p.SystemPrompt == "" {
 		return nil, &ParamError{Field: "user_prompt", Reason: "at least one of user_prompt or system_prompt must be set"}
 	}
-	// v1 fixtures sometimes ship only a system prompt. Fall back to
-	// using the system text as the user message so the underlying
-	// chat call still has something to send to the model.
+
+	// Resolve {{cpn_id@var}} template references in system and user
+	// prompts against the canvas state. This MUST run BEFORE the
+	// user_prompt fallback — otherwise template refs like {{begin@query}}
+	// would be overwritten by the fallback text and never resolved.
+	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+		if resolved, rerr := runtime.ResolveTemplate(p.SystemPrompt, state); resolved != p.SystemPrompt || rerr == nil {
+			p.SystemPrompt = resolved
+		}
+		if resolved, rerr := runtime.ResolveTemplate(p.UserPrompt, state); resolved != p.UserPrompt || rerr == nil {
+			p.UserPrompt = resolved
+			if rerr != nil {
+				common.Warn("Agent: resolve user_prompt", zap.Error(rerr))
+			}
+		}
+	}
+
+	// After template resolution: if user_prompt is still empty, try to
+	// read the Begin node's "query" output directly from canvas state.
+	// Do NOT fall back to system_prompt.
 	if p.UserPrompt == "" {
-		p.UserPrompt = p.SystemPrompt
+		if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+			if raw, rErr := state.GetVar("begin@query"); rErr == nil {
+				if q, ok := raw.(string); ok && q != "" {
+					p.UserPrompt = q
+				}
+			}
+		}
+	}
+	// Still empty → use a minimal placeholder.
+	if p.UserPrompt == "" {
+		p.UserPrompt = "Please process the instructions above."
 	}
 
 	// Multi-turn conversation optimization. When the canvas state
@@ -582,6 +918,15 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 	if v, ok := sliceFrom(inputs, "tools"); ok {
 		p.Tools = v
 	}
+	if sa := parseSubAgentConfigs(inputs["tools"]); sa != nil {
+		if p.SubAgents == nil {
+			p.SubAgents = sa
+		} else {
+			for k, v := range sa {
+				p.SubAgents[k] = v
+			}
+		}
+	}
 	if v, ok := nestedMapFrom(inputs, "tool_params"); ok {
 		p.ToolParams = v
 	}
@@ -633,6 +978,80 @@ func nestedMapFrom(inputs map[string]any, name string) (map[string]map[string]an
 	return out, true
 }
 
+// runSubAgent executes a sub-agent by building an AgentParam from the
+// sub-agent config and calling agentReActRunner. Calls agentReActRunner
+// directly (not through NewAgentComponent.Invoke) to avoid the init cycle
+// agentRunner → agentReActRunner → runSubAgent → Invoke → agentRunner.
+func runSubAgent(ctx context.Context, cfg map[string]any, parentParam AgentParam, argsJSON string) string {
+	paramsRaw, _ := cfg["params"].(map[string]any)
+	if paramsRaw == nil {
+		return `{"_ERROR": "sub-agent: missing params"}`
+	}
+	subParam := AgentParam{
+		Driver:  parentParam.Driver,
+		APIKey:  parentParam.APIKey,
+		BaseURL: parentParam.BaseURL,
+	}
+	if v, ok := stringFrom(paramsRaw, "llm_id"); ok {
+		subParam.ModelID = v
+	} else if v, ok := stringFrom(paramsRaw, "model_id"); ok {
+		subParam.ModelID = v
+	}
+	if v, ok := stringFrom(paramsRaw, "sys_prompt"); ok {
+		subParam.SystemPrompt = v
+	} else if v, ok := stringFrom(paramsRaw, "system_prompt"); ok {
+		subParam.SystemPrompt = v
+	}
+	if v, ok := intFrom(paramsRaw, "max_rounds"); ok {
+		subParam.MaxRounds = v
+	}
+	if v, ok := sliceFrom(paramsRaw, "tools"); ok {
+		subParam.Tools = v
+	}
+
+	// User prompt: parse from argsJSON. Tool calling parameters are now
+	// {user_prompt, reasoning, context} matching Python's Agent meta.
+	var toolArgs struct {
+		UserPrompt string `json:"user_prompt"`
+		Reasoning  string `json:"reasoning"`
+		Context    string `json:"context"`
+		Input      string `json:"input"` // backward compat
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &toolArgs); err == nil {
+		// New format: user_prompt from the tool call.
+		if toolArgs.UserPrompt != "" {
+			subParam.UserPrompt = toolArgs.UserPrompt
+		} else if toolArgs.Input != "" {
+			// Old format fallback.
+			if promptsRaw, ok := paramsRaw["prompts"].([]any); ok && len(promptsRaw) > 0 {
+				if first, ok := promptsRaw[0].(map[string]any); ok {
+					if content, _ := first["content"].(string); content != "" {
+						subParam.UserPrompt = strings.ReplaceAll(content, "{sys.query}", toolArgs.Input)
+					}
+				}
+			}
+			if subParam.UserPrompt == "" {
+				subParam.UserPrompt = toolArgs.Input
+			}
+		}
+	}
+	if subParam.UserPrompt == "" {
+		subParam.UserPrompt = parentParam.UserPrompt
+	}
+	if subParam.ModelID == "" {
+		subParam.ModelID = parentParam.ModelID
+	}
+
+	msg, err := agentReActRunner(ctx, subParam)
+	if err != nil {
+		return fmt.Sprintf(`{"_ERROR": "sub-agent: %s"}`, err.Error())
+	}
+	if msg == nil {
+		return `{"_ERROR": "sub-agent: nil response"}`
+	}
+	return msg.Content
+}
+
 // init registers AgentComponent with the orchestrator-owned registry.
 func init() {
 	Register("Agent", func(params map[string]any) (Component, error) {
@@ -657,6 +1076,7 @@ func init() {
 		if v, ok := sliceFrom(params, "tools"); ok {
 			p.Tools = v
 		}
+		p.SubAgents = parseSubAgentConfigs(params["tools"])
 		if v, ok := nestedMapFrom(params, "tool_params"); ok {
 			p.ToolParams = v
 		}

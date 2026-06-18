@@ -53,6 +53,9 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
+
+	"ragflow/internal/agent/runtime"
 )
 
 // RunEvent is the unit the Runner pushes onto its output channel.
@@ -68,8 +71,10 @@ type RunEvent struct {
 // The Python agent API streams arbitrary strings; we mirror that
 // shape so the existing front-end parses the events the same way.
 type MessageEvent struct {
-	Answer    string        `json:"answer,omitempty"`
-	Reference []interface{} `json:"reference,omitempty"`
+	Content      string        `json:"content,omitempty"`
+	Reference    []interface{} `json:"reference,omitempty"`
+	StartToThink bool          `json:"start_to_think,omitempty"`
+	EndToThink   bool          `json:"end_to_think,omitempty"`
 }
 
 // WaitingForUserEvent is the JSON payload for Type=="waiting_for_user"
@@ -211,14 +216,142 @@ func (r *Runner) Run(
 			}
 		}
 
-		state, runErr := safeInvoke(ctx, cancel, run, root)
+		// Create a progress channel so the RunFunc can stream content
+		// chunks during the LLM call. The channel is passed through
+		// root so the agent component can send to it.
+		progCh := make(chan runtime.ProgEvent, 256)
+		root[ProgressCh] = progCh
+
+		// Emit workflow_started so the frontend log panel has context.
+		push(out, RunEvent{Type: "workflow_started", Data: "{}"})
+
+		// Emit node_started for every known component BEFORE the canvas
+		// runs, so the log panel shows a spinning (waiting) indicator
+		// while the LLM is generating. Component metadata is injected
+		// into root by service.RunAgent under __comp_types__ /
+		// __comp_names__; both are optional and safe to be absent.
+		emitNodeStarted(out, root)
+
+		// Start the canvas in a goroutine and stream progress chunks
+		// while it runs.
+		type runResult struct {
+			state *CanvasState
+			err   error
+		}
+		resultCh := make(chan runResult, 1)
+		go func() {
+			state, runErr := safeInvoke(ctx, cancel, run, root)
+			resultCh <- runResult{state, runErr}
+		}()
+
+		// Simple approach: IsThink=true events open/keep thinking open.
+		// IsThink=false events close thinking and go to main output.
+		var state *CanvasState
+		var runErr error
+		var thinkActive bool
+	loop:
+		for {
+			select {
+			case pe, ok := <-progCh:
+				if !ok || (pe.Text == "" && !pe.IsNodeEvent) {
+					continue
+				}
+				if pe.IsNodeEvent {
+					thoughts := ""
+					nodeInputs := map[string]any{}
+					nodeOutputs := map[string]any{}
+					if pe.NodeEventType == "finished" {
+						thoughts = pe.Thoughts
+						if pe.NodeInputs != nil {
+							nodeInputs = pe.NodeInputs
+						}
+						if pe.NodeOutputs != nil {
+							nodeOutputs = pe.NodeOutputs
+						}
+					}
+					eventType := "node_finished"
+					if pe.NodeEventType == "started" {
+						eventType = "node_started"
+					}
+					nodeData, _ := json.Marshal(map[string]any{
+						"component_id":   pe.NodeCPNID,
+						"component_name": pe.NodeDisplayName,
+						"component_type": pe.NodeClassName,
+						"inputs":         nodeInputs,
+						"outputs":        nodeOutputs,
+						"error":          nil,
+						"elapsed_time":   0,
+						"created_at":     time.Now().Unix(),
+						"thoughts":       thoughts,
+					})
+					push(out, RunEvent{Type: eventType, Data: string(nodeData)})
+					continue
+				}
+				msg := MessageEvent{Content: pe.Text}
+				if pe.IsThink && !thinkActive {
+					thinkActive = true
+					msg.StartToThink = true
+				} else if !pe.IsThink && thinkActive {
+					thinkActive = false
+					msg.EndToThink = true
+				}
+				payload, _ := json.Marshal(msg)
+				push(out, RunEvent{Type: "message", Data: string(payload)})
+			case res := <-resultCh:
+				state, runErr = res.state, res.err
+				break loop
+			}
+		}
+	drain:
+		for {
+			select {
+			case pe, ok := <-progCh:
+				if !ok || (pe.Text == "" && !pe.IsNodeEvent) {
+					continue
+				}
+				if pe.IsNodeEvent {
+					thoughts := ""
+					if pe.NodeEventType == "finished" {
+						thoughts = pe.Thoughts
+					}
+					nodeData, _ := json.Marshal(map[string]any{
+						"component_id":   pe.NodeCPNID,
+						"component_name": pe.NodeDisplayName,
+						"component_type": pe.NodeClassName,
+						"inputs":         map[string]any{},
+						"outputs":        map[string]any{},
+						"error":          nil,
+						"elapsed_time":   0,
+						"created_at":     time.Now().Unix(),
+						"thoughts":       thoughts,
+					})
+					eventType := "node_started"
+					if pe.NodeEventType == "finished" {
+						eventType = "node_finished"
+					}
+					push(out, RunEvent{Type: eventType, Data: string(nodeData)})
+					continue
+				}
+				msg := MessageEvent{Content: pe.Text}
+				if pe.IsThink && !thinkActive {
+					thinkActive = true
+					msg.StartToThink = true
+				} else if !pe.IsThink && thinkActive {
+					thinkActive = false
+					msg.EndToThink = true
+				}
+				payload, _ := json.Marshal(msg)
+				push(out, RunEvent{Type: "message", Data: string(payload)})
+			default:
+				break drain
+			}
+		}
+		delete(root, ProgressCh)
 		if runErr != nil {
 			if errors.Is(runErr, context.Canceled) || errors.Is(runErr, errCancelled) {
 				return
 			}
 			if ctxs := MustExtractInterruptContexts(runErr); len(ctxs) > 0 {
-				// Wait-for-user: persist the first interrupt id
-				// and emit the SSE event.
 				cpnID := FirstInterruptID(ctxs)
 				r.saveInterruptID(canvasID, sessionID, cpnID)
 				payload, _ := json.Marshal(WaitingForUserEvent{CpnID: cpnID})
@@ -226,10 +359,6 @@ func (r *Runner) Run(
 				return
 			}
 			if IsInterruptError(runErr) {
-				// Raw InterruptSignal (no wrapped InterruptCtx list
-				// available). Emit a generic waiting_for_user event
-				// without a cpn id — the front-end falls back to
-				// the first paused session it knows about.
 				r.saveInterruptID(canvasID, sessionID, runErr.Error())
 				payload, _ := json.Marshal(WaitingForUserEvent{CpnID: runErr.Error()})
 				push(out, RunEvent{Type: "waiting_for_user", Data: string(payload)})
@@ -239,14 +368,45 @@ func (r *Runner) Run(
 			return
 		}
 
-		// Normal completion. Extract the answer from the post-run
-		// state. We walk state.Snapshot() looking for any cpn whose
-		// output contains an "answer" / "result" key, and emit a
-		// single MessageEvent carrying the value. The first
-		// non-empty match wins.
+		if snap := state.Snapshot(); snap != nil {
+			ctype, _ := root["__comp_types__"].(map[string]string)
+			cname, _ := root["__comp_names__"].(map[string]string)
+			now := time.Now().Unix()
+			for cpnID, outputs := range snap {
+				typeName := ctype[cpnID]
+				displayName := cname[cpnID]
+				if displayName == "" {
+					displayName = cpnID
+				}
+				if outputs == nil {
+					outputs = map[string]any{}
+				}
+				finishData, _ := json.Marshal(map[string]any{
+					"component_id":   cpnID,
+					"component_name": displayName,
+					"component_type": typeName,
+					"inputs":         map[string]any{},
+					"outputs":        outputs,
+					"error":          nil,
+					"elapsed_time":   0,
+					"created_at":     now,
+					"thoughts":       "",
+				})
+				push(out, RunEvent{Type: "node_finished", Data: string(finishData)})
+			}
+		}
+
+		// Redundant EndToThink event removed here. The final answer
+		// streaming via streamContentToProgCh already closes the
+		// thinking section (IsThink:false when thinkActive is true
+		// triggers EndToThink).  An extra EndToThink with empty
+		// Content would cause Content to be omitted by omitempty,
+		// resulting in data.content===undefined in the front-end
+		// and appending the string "undefined" to the answer.
 		answer, reference := extractAnswerFromState(state)
-		payload, _ := json.Marshal(MessageEvent{Answer: answer, Reference: reference})
+		payload, _ := json.Marshal(MessageEvent{Content: answer, Reference: reference})
 		push(out, RunEvent{Type: "message", Data: string(payload)})
+		push(out, RunEvent{Type: "workflow_finished", Data: "{}"})
 		push(out, RunEvent{Type: "done", Data: ""})
 	}()
 
@@ -313,6 +473,46 @@ func safeInvoke(ctx context.Context, cancel chan struct{}, run RunFunc, root map
 func push(out chan<- RunEvent, ev RunEvent) {
 	defer func() { _ = recover() }()
 	out <- ev
+}
+
+// ProgressCh is the key used in root to pass a streaming-content
+// channel from the RunFunc to the runner. The Runner reads from this
+// channel during safeInvoke and emits incremental message events.
+const ProgressCh = "__progress__"
+
+// emitNodeStarted reads component metadata from root and emits a
+// node_started RunEvent for every known component in the order
+// specified by __comp_ids__ (a []string, populated by
+// service.extractComponentInfo). Map iteration is NOT used because
+// Go map iteration order is random.
+func emitNodeStarted(out chan<- RunEvent, root map[string]any) {
+	ctype, _ := root["__comp_types__"].(map[string]string)
+	cname, _ := root["__comp_names__"].(map[string]string)
+	ids, _ := root["__comp_ids__"].([]string)
+	if len(ids) == 0 {
+		// Fallback: if no ordered list, walk types map (unordered).
+		for cpnID := range ctype {
+			ids = append(ids, cpnID)
+		}
+	}
+	for _, cpnID := range ids {
+		displayName := cname[cpnID]
+		if displayName == "" {
+			displayName = cpnID
+		}
+		startData, _ := json.Marshal(map[string]any{
+			"component_id":   cpnID,
+			"component_name": displayName,
+			"component_type": ctype[cpnID],
+			"inputs":         map[string]any{},
+			"outputs":        map[string]any{},
+			"error":          nil,
+			"elapsed_time":   0,
+			"created_at":     time.Now().Unix(),
+			"thoughts":       "",
+		})
+		push(out, RunEvent{Type: "node_started", Data: string(startData)})
+	}
 }
 
 // pushErr serialises an ErrorEvent and pushes it on the channel.

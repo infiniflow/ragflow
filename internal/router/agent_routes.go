@@ -53,6 +53,7 @@ func RegisterAgentRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
 	g.POST("/:canvas_id/run", h.RunAgent)
 	g.DELETE("/:canvas_id/run", h.CancelAgent)
 	g.POST("/:canvas_id/publish", h.PublishAgent)
+	g.POST("/:canvas_id/reset", h.ResetAgent)
 	g.PUT("/:canvas_id/tags", h.UpdateAgentTags)
 
 	// Versions.

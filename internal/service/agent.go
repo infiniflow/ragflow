@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"sync"
 
@@ -520,7 +521,8 @@ func (s *AgentService) DeleteVersion(ctx context.Context, userID, canvasID, vers
 // for the full production chain (real Compile/Invoke, resume path,
 // error-layering contract).
 func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID, version, userInput string) (<-chan canvas.RunEvent, error) {
-	if _, err := s.loadCanvasForUser(ctx, userID, canvasID); err != nil {
+	canvasRow, err := s.loadCanvasForUser(ctx, userID, canvasID)
+	if err != nil {
 		return nil, err
 	}
 	if sessionID == "" {
@@ -547,7 +549,8 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	//   - explicit version, row not found       → 404
 	//   - explicit version, row from other canvas → 404 (IDOR)
 	//   - explicit version, DB error            → 500 (surface it)
-	//   - latest path, no rows + no error       → "no version published" placeholder
+	//   - latest path + canvas DSL available    → use canvas DSL
+	//   - latest path, no rows + no canvas DSL  → placeholder
 	//   - latest path, DB error                 → 500 (surface it)
 	var versionRow *entity.UserCanvasVersion
 	if version != "" {
@@ -579,9 +582,10 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		row, err := s.versionDAO.GetLatest(canvasID)
 		if err != nil {
 			if errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
-				// Legitimate "no version published" — let the
-				// run proceed with the placeholder answer so
-				// the SSE surface still flows.
+				// No published version — fall back to the
+				// canvas's own DSL so unsaved canvases
+				// (e.g. freshly created from a template)
+				// still run.
 			} else {
 				// Wrap DB-side errors with ErrAgentStorageError
 				// for the same reason as above (no DAO-string
@@ -593,6 +597,15 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		}
 	}
 	dsl := normalisedDSLForRun(versionRow)
+	// Fall back to canvas DSL when no version has been published.
+	if dsl == nil && len(canvasRow.DSL) > 0 {
+		dsl = dslpkg.NormalizeForCanvas(map[string]any(canvasRow.DSL))
+	}
+
+	// Pre-extract component metadata for the log-panel timeline
+	// (runner.go reads from root["__comp_types__"] and root["__comp_names__"]
+	// before safeInvoke so it can emit node_started before the canvas runs).
+	compTypes, compNames, compIDs := extractComponentInfo(dsl)
 
 	run := s.buildRunFunc(canvasID, versionRow, dsl)
 
@@ -608,6 +621,9 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	if dsl != nil {
 		root["__dsl_present__"] = true
 	}
+	root["__comp_types__"] = compTypes
+	root["__comp_names__"] = compNames
+	root["__comp_ids__"] = compIDs
 	// Phase 4.4 V2.1 (v3.6.1): populate root["tenant_id"] so the
 	// RunTracker.Start call (in buildRunFunc) records the run
 	// under the right tenant. The lookup is best-effort — a
@@ -692,13 +708,30 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			return nil, err
 		}
 
+		// Pre-populate Begin node outputs from DSL defaults so
+		// template refs like {{begin@customer_review}} resolve
+		// without needing customer_review as a graph channel.
+		// The graph engine only registers "query" as a channel
+		// (see scheduler.go BuildWorkflow) — passing unknown keys
+		// would fail with "channel not found".
+		for key, val := range extractBeginInputs(dsl) {
+			state.SetVar("begin", key, val)
+		}
 		// Sys["query"] is the canonical Begin-node input key
 		// (BeginComponent.Invoke reads inputs["query"] and writes
 		// it into state.Sys["query"]). Pre-seeding it here lets
 		// the first Begin run see the user's input even before
 		// Begin writes back.
 		state.Sys["query"] = userInput
+		if tid := tenantIDFromRoot(root); tid != "" {
+			state.Sys["tenant_id"] = tid
+		}
+		// Attach the streaming progress channel (if present) to ctx
+		// so the Agent/LLM component's streaming call can send chunks.
 		ctx2 := runtime.WithState(ctx, state)
+		if progCh, ok := root[canvas.ProgressCh].(chan runtime.ProgEvent); ok {
+			ctx2 = runtime.WithProgressCh(ctx2, progCh)
+		}
 
 		// Resume path: if Runner.Run injected a saved interrupt id
 		// + the user's follow-up, decorate ctx so the targeted
@@ -860,6 +893,321 @@ func normalisedDSLForRun(v *entity.UserCanvasVersion) map[string]any {
 		return nil
 	}
 	return dslpkg.NormalizeForCanvas(map[string]any(v.DSL))
+}
+
+// extractComponentInfo builds component-type and component-name maps from
+// the raw DSL, for ONLY the top-level execution path (matching Python's
+// Canvas.run loop which iterates self.path). Sub-graph components (nested
+// sub-agents, tool definitions, etc.) are excluded so the log panel shows
+// the same 3–5 entries as the Python version.
+//
+// Priority for display name:
+//  1. dsl["graph"]["nodes"][i]["data"]["name"]
+//  2. comp.Obj.Params["title"]
+//  3. raw component id (last resort)
+//
+// Returns compTypes, compNames (both keyed by DSL component id) and
+// compIDs (ordered slice, suitable for runner.go's emitNodeStarted).
+// runner.go reads all three from root to emit node_started in the
+// correct order (map iteration would be random).
+func extractComponentInfo(dsl map[string]any) (compTypes, compNames map[string]string, compIDs []string) {
+	compTypes = make(map[string]string)
+	compNames = make(map[string]string)
+	if dsl == nil {
+		return
+	}
+
+	c, err := decodeCanvasFromDSL(dsl)
+	if err != nil {
+		return // best-effort; empty maps are safe for runner.go
+	}
+
+	// Determine which component IDs to show, PRESERVING ORDER.
+	// Priority:
+	//  1. c.Path — topological execution order (Python's self.path).
+	//  2. Heuristic order using graph edges (topological sort).
+	//  3. Fallback: sort with rules: begin first, message last.
+	//
+	// The graph.nodes array from the React-Flow layout is NOT in
+	// topological order (Message can appear before Agent). We build
+	// a proper topological sort from graph.edges instead.
+	ids := c.Path
+	if len(ids) == 0 {
+		ids = topologicalSort(dsl, c.Components)
+	}
+	if len(ids) == 0 {
+		// Last resort: sort with begin first, message components last.
+		ids = make([]string, 0, len(c.Components))
+		var messages []string
+		for id := range c.Components {
+			if id == "begin" {
+				continue
+			}
+			if comp, ok := c.Components[id]; ok && strings.EqualFold(comp.Obj.ComponentName, "message") {
+				messages = append(messages, id)
+				continue
+			}
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		sort.Strings(messages)
+		ids = append([]string{"begin"}, ids...)
+		ids = append(ids, messages...)
+	}
+
+	// Collect display names from the React-Flow graph layout
+	// (user-defined names like "Deep research Agent").
+	idSet := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		idSet[id] = struct{}{}
+	}
+	if graphRaw, ok := dsl["graph"].(map[string]any); ok {
+		if nodesRaw, ok := graphRaw["nodes"].([]any); ok {
+			for _, raw := range nodesRaw {
+				node, ok := raw.(map[string]any)
+				if !ok {
+					continue
+				}
+				id, _ := node["id"].(string)
+				if id == "" {
+					continue
+				}
+				if _, in := idSet[id]; !in {
+					continue
+				}
+				if dataRaw, ok := node["data"].(map[string]any); ok {
+					if name, _ := dataRaw["name"].(string); name != "" {
+						compNames[id] = name
+					}
+				}
+			}
+		}
+	}
+
+	// Component types for the selected IDs, preserving order.
+	compIDs = ids
+	for _, id := range ids {
+		comp, ok := c.Components[id]
+		if !ok {
+			continue
+		}
+		compTypes[id] = comp.Obj.ComponentName
+		if _, hasName := compNames[id]; !hasName {
+			if title, ok := comp.Obj.Params["title"].(string); ok {
+				compNames[id] = title
+			} else {
+				compNames[id] = id
+			}
+		}
+	}
+
+	// Insert sub-agent tool components into the ordered list.
+	// For each Agent component, locate its "tools" param entries that
+	// represent sub-agent tool definitions (entries with component_name,
+	// id, and name).  Insert them immediately after the Agent so the log
+	// panel shows them in the correct position (before Response/Message).
+	expanded := make([]string, 0, len(compIDs)+4)
+	for _, id := range compIDs {
+		expanded = append(expanded, id)
+		comp, ok := c.Components[id]
+		if !ok {
+			continue
+		}
+		if !strings.EqualFold(comp.Obj.ComponentName, "Agent") {
+			continue
+		}
+		toolsRaw, ok := comp.Obj.Params["tools"]
+		if !ok {
+			continue
+		}
+		toolsArr, ok := toolsRaw.([]any)
+		if !ok {
+			continue
+		}
+		for _, raw := range toolsArr {
+			cfg, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			if _, ok := cfg["component_name"].(string); !ok {
+				continue
+			}
+			if _, ok := cfg["id"].(string); !ok {
+				continue
+			}
+			toolName, ok := cfg["name"].(string)
+			if !ok || toolName == "" {
+				continue
+			}
+			if _, ok := cfg["params"].(map[string]any); !ok {
+				continue
+			}
+			// sanitizeFnName logic (inlined from component/agent.go)
+			fn := sanitizeSubAgentName(toolName)
+			if fn == "" {
+				fn = toolName
+			}
+			compTypes[fn] = "Agent"
+			compNames[fn] = toolName
+			expanded = append(expanded, fn)
+		}
+	}
+	compIDs = expanded
+	return
+}
+
+// sanitizeSubAgentName mirrors component/agent.go's sanitizeFnName.
+func sanitizeSubAgentName(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '_' || r == '-' {
+			b.WriteRune(r)
+		} else if r == ' ' {
+			b.WriteRune('_')
+		}
+	}
+	if b.Len() == 0 {
+		return "agent_tool"
+	}
+	return b.String()
+}
+
+// topologicalSort builds a deterministic component ID order from the DSL's
+// graph edges (Kahn's algorithm). When no edges are available, falls back
+// to begin-first, message-last heuristic.
+func topologicalSort(dsl map[string]any, components map[string]canvas.CanvasComponent) []string {
+	// Build in-degree map from graph edges.
+	graphRaw, ok := dsl["graph"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	edgesRaw, ok := graphRaw["edges"].([]any)
+	if !ok || len(edgesRaw) == 0 {
+		return nil
+	}
+
+	inDegree := make(map[string]int, len(components))
+	succ := make(map[string][]string, len(components))
+	for id := range components {
+		inDegree[id] = 0
+	}
+	for _, raw := range edgesRaw {
+		edge, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		src, _ := edge["source"].(string)
+		tgt, _ := edge["target"].(string)
+		if src == "" || tgt == "" {
+			continue
+		}
+		if _, exists := components[src]; !exists {
+			continue
+		}
+		if _, exists := components[tgt]; !exists {
+			continue
+		}
+		inDegree[tgt]++
+		succ[src] = append(succ[src], tgt)
+	}
+
+	// Queue nodes with 0 in-degree.
+	queue := make([]string, 0, len(components))
+	for id, deg := range inDegree {
+		if deg == 0 {
+			queue = append(queue, id)
+		}
+	}
+	sort.Strings(queue) // deterministic order for same-degree nodes
+
+	var order []string
+	visited := make(map[string]bool, len(components))
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		if visited[id] {
+			continue
+		}
+		visited[id] = true
+		order = append(order, id)
+		for _, s := range succ[id] {
+			inDegree[s]--
+			if inDegree[s] == 0 {
+				queue = append(queue, s)
+			}
+		}
+		sort.Strings(queue)
+	}
+
+	// Include any unvisited nodes (disconnected from the main graph).
+	for id := range components {
+		if !visited[id] {
+			order = append(order, id)
+		}
+	}
+	return order
+}
+
+// extractBeginInputs reads the Begin component's DSL-defined input fields
+// and returns their default values as a map.  The caller merges additional
+// fields (e.g. "query") into the returned map before passing it to the
+// canvas invocation.
+//
+// DSL shape (components.begin.obj.params.inputs):
+//
+//	"begin": {
+//	  "obj": { "params": { "inputs": {
+//	    "customer_review": {
+//	      "type": "line",
+//	      "value": "什么手机口碑好"
+//	    },
+//	    ...
+//	  }}}
+//	}
+//
+// Returns an empty-but-non-nil map when the DSL has no begin component or
+// no inputs — callers can always merge without a nil check.
+func extractBeginInputs(dsl map[string]any) map[string]any {
+	out := make(map[string]any)
+	if dsl == nil {
+		return out
+	}
+	comps, _ := dsl["components"].(map[string]any)
+	if comps == nil {
+		return out
+	}
+	beginRaw, ok := comps["begin"]
+	if !ok {
+		return out
+	}
+	begin, _ := beginRaw.(map[string]any)
+	if begin == nil {
+		return out
+	}
+	obj, _ := begin["obj"].(map[string]any)
+	if obj == nil {
+		return out
+	}
+	params, _ := obj["params"].(map[string]any)
+	if params == nil {
+		return out
+	}
+	inputs, _ := params["inputs"].(map[string]any)
+	if inputs == nil {
+		return out
+	}
+	for key, raw := range inputs {
+		field, _ := raw.(map[string]any)
+		if field == nil {
+			continue
+		}
+		// Use the "value" field as the default value if present.
+		if v, ok := field["value"]; ok {
+			out[key] = v
+		}
+	}
+	return out
 }
 
 // CancelAgent signals the in-flight run (if any) for the given canvas to

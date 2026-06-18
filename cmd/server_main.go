@@ -43,9 +43,11 @@ import (
 
 	"ragflow/internal/agent/audio"
 	"ragflow/internal/agent/canvas"
+	cmp "ragflow/internal/agent/component"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	"ragflow/internal/entity"
 	"ragflow/internal/handler"
 	"ragflow/internal/router"
 	"ragflow/internal/service"
@@ -139,6 +141,47 @@ func main() {
 	// Initialize database
 	if err := dao.InitDB(); err != nil {
 		common.Fatal("Failed to initialize database", zap.Error(err))
+	}
+
+	// Wire model locator so Agent/LLM components can resolve model IDs
+	// (like "qwen-max@Tongyi-Qianwen") to driver name, API key, and
+	// base URL from the user's tenant configuration.
+	{
+		svc := service.NewModelProviderService()
+		cmp.SetModelLocator(func(tenantID, modelID string) (string, string, string, string, error) {
+			chatModel, err := svc.GetChatModel(tenantID, modelID)
+			if err != nil {
+				// Fall back to the tenant's default chat model.
+				common.Logger.Warn("model locator: cannot resolve, trying default", zap.String("model_id", modelID), zap.String("tenant", tenantID), zap.Error(err))
+				tenantSvc := service.NewTenantService()
+				defaultModel, err := tenantSvc.GetDefaultModelName(tenantID, entity.ModelTypeChat)
+				if err != nil {
+					return "", "", "", "", fmt.Errorf("no default chat model for tenant %q: %w", tenantID, err)
+				}
+				chatModel, err = svc.GetChatModel(tenantID, defaultModel)
+				if err != nil {
+					return "", "", "", "", fmt.Errorf("default chat model %q also failed: %w", defaultModel, err)
+				}
+				modelID = defaultModel
+			}
+			apiKey := ""
+			if chatModel.APIConfig != nil && chatModel.APIConfig.ApiKey != nil {
+				apiKey = *chatModel.APIConfig.ApiKey
+			}
+			resolvedName := ""
+			if chatModel.ModelName != nil {
+				resolvedName = *chatModel.ModelName
+			}
+			// Leave baseURL empty when not overridden — the driver
+			// picks up the provider's default URL from dao below.
+			common.Logger.Info("model locator resolved",
+				zap.String("raw", modelID),
+				zap.String("driver", chatModel.ModelDriver.Name()),
+				zap.String("resolved_name", resolvedName),
+				zap.Bool("has_api_key", apiKey != ""))
+			return chatModel.ModelDriver.Name(), resolvedName, apiKey, "", nil
+		})
+		common.Info("Model locator installed for Agent/LLM components")
 	}
 
 	// Initialize doc engine

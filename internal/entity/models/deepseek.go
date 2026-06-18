@@ -26,6 +26,8 @@ import (
 	"ragflow/internal/common"
 	"strconv"
 	"strings"
+
+	"go.uber.org/zap"
 )
 
 // DeepSeekModel implements ModelDriver for DeepSeek
@@ -354,7 +356,7 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	// SSE parsing: read line by line
 	sawTerminal := false
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
-		common.Info(fmt.Sprintf("%v", event))
+		common.Debug("deepseek SSE chunk", zap.Any("event", event))
 
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {

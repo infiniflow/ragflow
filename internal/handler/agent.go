@@ -21,11 +21,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"mime/multipart"
 	"net/http"
 	"ragflow/internal/engine/redis"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -364,6 +366,13 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
+	// Disable the HTTP Server's WriteTimeout for this SSE stream. The
+	// multi-round ReAct agent can take many minutes; a fixed timeout
+	// (default 120s in cmd/server_main.go) would cancel the context and
+	// truncate the response. Available since Go 1.20.
+	if rc := http.NewResponseController(c.Writer); rc != nil {
+		rc.SetWriteDeadline(time.Time{})
+	}
 	flusher, _ := c.Writer.(http.Flusher)
 	for ev := range events {
 		writeRunEventSSE(c.Writer, flusher, ev)
@@ -520,6 +529,33 @@ func (h *AgentHandler) PublishAgent(c *gin.Context) {
 		Description: req.Description,
 		DSL:         req.DSL,
 	})
+	if err != nil {
+		ec, em := mapAgentError(err)
+		jsonError(c, ec, em)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    row,
+		"message": "success",
+	})
+}
+
+// ResetAgent resets the canvas to its saved DSL (undoes runtime state).
+// @Summary Reset Agent
+// @Tags agents
+// @Produce json
+// @Param canvas_id path string true "canvas id"
+// @Success 200 {object} entity.UserCanvas
+// @Router /api/v1/agents/{canvas_id}/reset [post]
+func (h *AgentHandler) ResetAgent(c *gin.Context) {
+	user, code, msg := GetUser(c)
+	if code != common.CodeSuccess {
+		jsonError(c, code, msg)
+		return
+	}
+	canvasID := c.Param("canvas_id")
+	row, err := h.agentService.GetAgent(c.Request.Context(), user.ID, canvasID)
 	if err != nil {
 		ec, em := mapAgentError(err)
 		jsonError(c, ec, em)
@@ -849,25 +885,24 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 
 // AgentChatCompletions POST /api/v1/agents/chat/completions
 //
-// Phase 5 stub: validates `agent_id` (101) and the openai-compatible
-// `messages` requirement (102), then routes to either an SSE stream
-// (Content-Type: text/event-stream + [DONE] terminator) or a JSON
-// envelope depending on the body. The harness run loop is not yet
-// implemented; tests that require a real LLM response are marked
-// xfail in PR3.
+// Runs an agent canvas and streams results back as SSE events in the
+// format expected by the front-end EventSourceParserStream.
 type agentChatCompletionsRequest struct {
 	AgentID      string                   `json:"agent_id"`
 	Query        string                   `json:"query"`
+	Question     string                   `json:"question"`
 	SessionID    string                   `json:"session_id"`
 	Stream       bool                     `json:"stream"`
 	OpenAICompat bool                     `json:"openai-compatible"`
 	Model        string                   `json:"model"`
 	Messages     []map[string]interface{} `json:"messages"`
 	ReturnTrace  bool                     `json:"return_trace"`
+	UserID       string                   `json:"user_id"`
 }
 
 func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
-	if _, code, msg := GetUser(c); code != common.CodeSuccess {
+	user, code, msg := GetUser(c)
+	if code != common.CodeSuccess {
 		jsonError(c, code, msg)
 		return
 	}
@@ -885,53 +920,118 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		return
 	}
 
-	// SSE stream branch — emit a single hello frame and the [DONE]
-	// terminator, matching the test_agents_chat_completion_stream
-	// contract (Content-Type, [DONE] tail, at least one JSON event).
-	if req.Stream {
+	// Extract the user query — try query, question, or the last user message.
+	query := req.Query
+	if query == "" {
+		query = req.Question
+	}
+	if query == "" && !req.OpenAICompat {
+		// No explicit query — for now run without one (blank input).
+	}
+	if req.OpenAICompat {
+		for i := len(req.Messages) - 1; i >= 0; i-- {
+			if role, _ := req.Messages[i]["role"].(string); role == "user" {
+				query, _ = req.Messages[i]["content"].(string)
+				break
+			}
+		}
+	}
+
+	// The frontend always parses responses as SSE via EventSourceParserStream
+	// regardless of the "stream" field. Always use SSE streaming.
+	events, err := h.agentService.RunAgent(c.Request.Context(), user.ID, req.AgentID, req.SessionID, "", query)
+	if err != nil {
 		c.Writer.Header().Set("Content-Type", "text/event-stream")
 		c.Writer.Header().Set("Cache-Control", "no-cache")
 		c.Writer.Header().Set("Connection", "keep-alive")
-		flusher, _ := c.Writer.(http.Flusher)
-		payload, _ := json.Marshal(map[string]interface{}{
-			"event": "message",
-			"data": map[string]interface{}{
-				"answer":    "hello",
-				"reference": []interface{}{},
-			},
-		})
-		fmt.Fprintf(c.Writer, "data: %s\n\n", payload)
-		if flusher != nil {
+		if flusher, ok := c.Writer.(http.Flusher); ok {
+			errPayload, _ := json.Marshal(map[string]interface{}{
+				"code":    common.CodeServerError,
+				"message": err.Error(),
+			})
+			fmt.Fprintf(c.Writer, "data: %s\n\n", errPayload)
 			flusher.Flush()
-		}
-		fmt.Fprintf(c.Writer, "data: [DONE]\n\n")
-		if flusher != nil {
+			fmt.Fprintf(c.Writer, "data: [DONE]\n\n")
 			flusher.Flush()
 		}
 		return
 	}
 
-	// Non-stream branch — JSON envelope. OpenAI-compatible mode
-	// surfaces "choices" at the top level (not inside data) so the
-	// test contract `"choices" in nonstream_payload` is satisfied.
-	if req.OpenAICompat {
-		c.JSON(http.StatusOK, gin.H{
-			"code": common.CodeSuccess,
-			"choices": []map[string]interface{}{
-				{"message": gin.H{"content": "hello"}},
-			},
-			"message": "success",
-		})
-		return
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	// Disable the HTTP Server's WriteTimeout for this SSE stream. The
+	// multi-round ReAct agent can take many minutes; a fixed timeout
+	// (default 120s in cmd/server_main.go) would cancel the context and
+	// truncate the response. Available since Go 1.20.
+	if rc := http.NewResponseController(c.Writer); rc != nil {
+		rc.SetWriteDeadline(time.Time{})
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code": common.CodeSuccess,
-		"data": gin.H{
-			"session_id": req.SessionID,
-			"data":       gin.H{"content": "hello"},
-		},
-		"message": "success",
-	})
+	flusher, _ := c.Writer.(http.Flusher)
+
+	msgID := generateMessageID()
+	for ev := range events {
+		writeChatCompletionSSE(c.Writer, flusher, ev, msgID)
+	}
+
+}
+
+// generateMessageID creates a short unique message identifier.
+func generateMessageID() string {
+	const hexChars = "0123456789abcdef"
+	b := make([]byte, 12)
+	for i := range b {
+		b[i] = hexChars[rand.Intn(16)]
+	}
+	return string(b)
+}
+
+// writeChatCompletionSSE transforms one canvas.RunEvent into the
+// IAnswerEvent wire format that the frontend's EventSourceParserStream
+// expects. Each event is written as a single `data:` SSE line.
+func writeChatCompletionSSE(w io.Writer, flusher http.Flusher, ev canvas.RunEvent, msgID string) {
+	switch ev.Type {
+	case "done":
+		fmt.Fprintf(w, "data: [DONE]\n\n")
+	case "error":
+		errPayload := map[string]interface{}{
+			"event":      "error",
+			"code":       common.CodeServerError,
+			"message":    ev.Data,
+			"message_id": msgID,
+			"session_id": "",
+			"task_id":    "",
+			"data":       map[string]interface{}{},
+		}
+		if err := json.Unmarshal([]byte(ev.Data), &errPayload); err == nil {
+			if _, ok := errPayload["code"]; !ok {
+				errPayload["code"] = common.CodeServerError
+			}
+		}
+		wrapped, _ := json.Marshal(errPayload)
+		fmt.Fprintf(w, "data: %s\n\n", wrapped)
+	default:
+		var innerData map[string]interface{}
+		if err := json.Unmarshal([]byte(ev.Data), &innerData); err != nil || innerData == nil {
+			innerData = map[string]interface{}{"content": ev.Data}
+		} else {
+			if ans, ok := innerData["answer"]; ok {
+				innerData["content"] = ans
+				delete(innerData, "answer")
+			}
+		}
+		wrapped, _ := json.Marshal(map[string]interface{}{
+			"event":      ev.Type,
+			"message_id": msgID,
+			"session_id": "",
+			"task_id":    "",
+			"data":       innerData,
+		})
+		fmt.Fprintf(w, "data: %s\n\n", wrapped)
+	}
+	if flusher != nil {
+		flusher.Flush()
+	}
 }
 
 // RerunAgent POST /api/v1/agents/rerun — requires id, dsl, and
@@ -1022,7 +1122,7 @@ func (h *AgentHandler) GetAgentLogs(c *gin.Context) {
 
 	key := fmt.Sprintf("%s-%s-logs", canvasID, messageID)
 	payload, rerr := redis.Get().Get(key)
-	data := map[string]interface{}{}
+	var data interface{}
 	if rerr == nil && payload != "" {
 		_ = json.Unmarshal([]byte(payload), &data)
 	}

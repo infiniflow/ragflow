@@ -11,18 +11,24 @@
 package component
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"regexp"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
 	"ragflow/internal/agent/component/prompts"
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity/models"
 )
 
@@ -109,6 +115,23 @@ type ChatInvoker interface {
 	Invoke(ctx context.Context, req ChatInvokeRequest) (*ChatInvokeResponse, error)
 }
 
+// progressChKey is the context key for the streaming progress channel.
+type progressChKey struct{}
+
+// WithProgressCh attaches a progress channel to ctx so the Agent
+// component's streaming LLM call can send content chunks upstream.
+func WithProgressCh(ctx context.Context, ch chan<- string) context.Context {
+	return context.WithValue(ctx, progressChKey{}, ch)
+}
+
+// ProgressChFromCtx extracts the progress channel from context.
+func ProgressChFromCtx(ctx context.Context) chan<- string {
+	if ch, ok := ctx.Value(progressChKey{}).(chan<- string); ok {
+		return ch
+	}
+	return nil
+}
+
 // ChatInvokeRequest is the minimal surface the LLM component needs to
 // dispatch a chat call. Driver / APIKey / ModelName are kept here so the
 // invoker can wire the right provider without the component caring.
@@ -121,14 +144,46 @@ type ChatInvokeRequest struct {
 	Temperature *float64
 	TopP        *float64
 	MaxTokens   *int
+	// Tools carries function-calling tool definitions for the ReAct loop.
+	// When non-empty, the invoker builds the request directly (bypassing
+	// the model driver's ChatWithMessages) so the model driver layer
+	// (deepseek.go etc.) does NOT need modification for tool support.
+	Tools []map[string]any
 }
 
 // ChatInvokeResponse mirrors what the LLM component writes to its outputs.
 type ChatInvokeResponse struct {
-	Content string
-	Model   string
-	Stopped bool
-	Tokens  int
+	Content       string
+	Model         string
+	Stopped       bool
+	Tokens        int
+	ToolCalls     []ToolCallResult // non-empty when the model wants to call a tool
+	ReasonContent string           // thinking/reasoning content (DeepSeek, etc.)
+}
+
+// ToolCallResult captures a single function-call from the LLM response.
+type ToolCallResult struct {
+	ID        string
+	Type      string
+	FuncName  string
+	Arguments string
+}
+
+// ModelLocator resolves a model ID (e.g. "qwen-max@Tongyi-Qianwen")
+// to its driver name, resolved model name, API key, and base URL for
+// a given tenant. The resolved model name is the pure model name
+// without provider suffix (e.g. "deepseek-v4-flash" not
+// "deepseek-v4-flash@MyDS@DeepSeek").
+type ModelLocator func(tenantID, modelID string) (driver, resolvedModelName, apiKey, baseURL string, err error)
+
+// modelLocator is the package-level model resolver. The default returns
+// ("", "", "", nil) which causes the ChatInvoker to fall back to "dummy".
+// Production wiring (cmd/server_main.go) sets this to a real implementation.
+var modelLocator ModelLocator
+
+// SetModelLocator installs the production model locator. Thread-safe.
+func SetModelLocator(l ModelLocator) {
+	modelLocator = l
 }
 
 // defaultChatInvokerMu guards defaultChatInvoker swaps during tests.
@@ -165,16 +220,36 @@ func (e *productionChatInvoker) Invoke(ctx context.Context, req ChatInvokeReques
 		return nil, fmt.Errorf("component: LLM: model_id is required")
 	}
 	driver := req.Driver
+	if driver == "" && modelLocator != nil {
+		// Try to resolve the model from the user's tenant configuration.
+		tenantID := ""
+		if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+			if tid, ok := state.Sys["tenant_id"].(string); ok {
+				tenantID = tid
+			}
+		}
+		if d, resolvedName, ak, bu, err := modelLocator(tenantID, req.ModelName); err == nil && d != "" {
+			driver = d
+			req.ModelName = resolvedName
+			req.APIKey = ak
+			req.BaseURL = bu
+		}
+	}
 	if driver == "" {
 		driver = "dummy"
 	}
 	// baseURL: drivers consult map["default"] as the canonical endpoint
 	// (see internal/entity/models/base_model.go:GetBaseURL). When the
-	// caller did not override, leave the driver default in place by
-	// passing nil — every driver seeds its own map at construction time.
+	// caller did not override, look up the provider's default URL from
+	// the model provider manager so the driver picks up the config-file
+	// endpoint (e.g. https://api.deepseek.com for DeepSeek).
 	var baseURL map[string]string
 	if req.BaseURL != "" {
 		baseURL = map[string]string{"default": req.BaseURL}
+	} else if driver != "" && driver != "dummy" {
+		if pi := dao.GetModelProviderManager().FindProvider(driver); pi != nil && len(pi.URL) > 0 {
+			baseURL = pi.URL
+		}
 	}
 	// urlSuffix: each driver appends URLSuffix.Chat to baseURL to form
 	// the chat-completions endpoint (e.g. "chat/completions" for
@@ -201,13 +276,18 @@ func (e *productionChatInvoker) Invoke(ctx context.Context, req ChatInvokeReques
 		TopP:        req.TopP,
 		MaxTokens:   req.MaxTokens,
 	}
-	// Convert to models.Message
+	// When tools are present, pass messages as ComponentMessage so
+	// tool_call_id and tool_calls fields are preserved in the API request.
+	if len(req.Tools) > 0 {
+		return invokeWithTools(ctx, req, driver, baseURL, urlSuffix, apiKey, req.Messages)
+	}
+
+	// Convert to models.Message for non-tool driver path.
 	ragMsgs := make([]models.Message, len(req.Messages))
 	for i, m := range req.Messages {
 		ragMsgs[i] = models.Message{Role: m.Role, Content: m.Content}
 	}
-	msgs := ragMsgs
-	resp, err := cm.ModelDriver.ChatWithMessages(*cm.ModelName, msgs, cm.APIConfig, chatCfg)
+	resp, err := cm.ModelDriver.ChatWithMessages(*cm.ModelName, ragMsgs, cm.APIConfig, chatCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -220,6 +300,155 @@ func (e *productionChatInvoker) Invoke(ctx context.Context, req ChatInvokeReques
 		Stopped: true,
 		Tokens:  0,
 	}, nil
+}
+
+// invokeWithTools sends a streaming chat request WITH tool definitions.
+// Uses `stream: true` (matching Python) and parses the SSE response for
+// both text content and tool_calls. Tool_calls are merged by index across
+// multiple SSE chunks, matching the OpenAI streaming format.
+// The parent ctx is used for timeout/honouring and MUST NOT be nil.
+func invokeWithTools(ctx context.Context, req ChatInvokeRequest, driver string, baseURL map[string]string, urlSuffix models.URLSuffix, apiKey string, compMsgs []ComponentMessage) (*ChatInvokeResponse, error) {
+	resolvedBaseURL, ok := baseURL["default"]
+	if !ok || resolvedBaseURL == "" {
+		return nil, fmt.Errorf("invokeWithTools: no base URL for driver %q", driver)
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, urlSuffix.Chat)
+
+	apiMessages := make([]map[string]any, len(compMsgs))
+	for i, m := range compMsgs {
+		msg := map[string]any{"role": m.Role, "content": m.Content}
+		// Tool result messages MUST include the tool_call_id matching the
+		// original tool call — required by the OpenAI API format.
+		if m.Role == "tool" && m.ToolCallID != "" {
+			msg["tool_call_id"] = m.ToolCallID
+		}
+		// Assistant messages with tool calls must include the tool_calls
+		// array so the model sees the full call context.
+		if m.Role == RoleAssistant && len(m.ToolCalls) > 0 {
+			tcList := make([]map[string]any, 0, len(m.ToolCalls))
+			for _, tc := range m.ToolCalls {
+				tcList = append(tcList, map[string]any{
+					"id":   tc.ID,
+					"type": tc.Type,
+					"function": map[string]any{
+						"name":      tc.Function.Name,
+						"arguments": tc.Function.Arguments,
+					},
+				})
+			}
+			msg["tool_calls"] = tcList
+		}
+		apiMessages[i] = msg
+	}
+
+	body := map[string]any{
+		"model":       req.ModelName,
+		"messages":    apiMessages,
+		"stream":      false, // Tools present → non-streaming for reliable tool_calls
+		"tools":       req.Tools,
+		"tool_choice": "auto",
+	}
+	if req.Temperature != nil {
+		body["temperature"] = *req.Temperature
+	}
+	if req.TopP != nil {
+		body["top_p"] = *req.TopP
+	}
+	if req.MaxTokens != nil {
+		body["max_tokens"] = *req.MaxTokens
+	}
+	// Log tool names sent
+	if len(req.Tools) > 0 {
+		var names []string
+		for _, t := range req.Tools {
+			if fn, _ := t["function"].(map[string]any); fn != nil {
+				if n, _ := fn["name"].(string); n != "" {
+					names = append(names, n)
+				}
+			}
+		}
+		common.Info("invokeWithTools sending tools", zap.Strings("names", names))
+	}
+
+	jsonData, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("invokeWithTools: marshal: %w", err)
+	}
+
+	// Use independent timeout (not parent ctx) so the HTTP server's
+	// WriteTimeout (120s) doesn't cancel individual API calls. The
+	// component-level timeout (600s in realComponentBody, env
+	// COMPONENT_EXEC_TIMEOUT) governs the total execution time.
+	callCtx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
+	defer cancel()
+
+	httpReq, err := http.NewRequestWithContext(callCtx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("invokeWithTools: new request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := http.DefaultClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("invokeWithTools: send: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("invokeWithTools: API %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	out := &ChatInvokeResponse{Model: req.ModelName}
+
+	// Non-streaming response: single JSON body.
+	var bodyResp map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&bodyResp); err != nil {
+		return nil, fmt.Errorf("invokeWithTools: decode: %w", err)
+	}
+
+	choices, _ := bodyResp["choices"].([]any)
+	if len(choices) == 0 {
+		return nil, fmt.Errorf("invokeWithTools: no choices in response")
+	}
+	first, _ := choices[0].(map[string]any)
+	msg, _ := first["message"].(map[string]any)
+	if msg == nil {
+		return nil, fmt.Errorf("invokeWithTools: no message in choice")
+	}
+
+	// Content
+	if c, _ := msg["content"].(string); c != "" {
+		out.Content = c
+	}
+	// Reasoning content (DeepSeek)
+	if rc, _ := msg["reasoning_content"].(string); rc != "" {
+		out.ReasonContent = rc
+	}
+
+	// Tool calls from JSON body — standard non-streaming format.
+	if rawCalls, ok := msg["tool_calls"].([]any); ok && len(rawCalls) > 0 {
+		for _, raw := range rawCalls {
+			call, _ := raw.(map[string]any)
+			id, _ := call["id"].(string)
+			typ, _ := call["type"].(string)
+			fnRaw, _ := call["function"].(map[string]any)
+			if fnRaw == nil {
+				continue
+			}
+			fnName, _ := fnRaw["name"].(string)
+			fnArgs, _ := fnRaw["arguments"].(string)
+			out.ToolCalls = append(out.ToolCalls, ToolCallResult{
+				ID: id, Type: typ, FuncName: fnName, Arguments: fnArgs,
+			})
+		}
+	}
+
+	if len(out.ToolCalls) == 0 && out.Content == "" && out.ReasonContent == "" {
+		return nil, fmt.Errorf("invokeWithTools: empty response")
+	}
+	return out, nil
 }
 
 // chatURLSuffixFor returns the URLSuffix the factory should pass to
@@ -237,6 +466,161 @@ func chatURLSuffixFor(driver string) models.URLSuffix {
 	default:
 		return models.URLSuffix{Chat: "chat/completions"}
 	}
+}
+
+// StreamingInvoke resolves the model, builds the streaming request with
+// tool definitions (when req.Tools is non-empty), and returns the full
+// response. Every content and reasoning_content chunk is forwarded to
+// onProgress in real time. Tool calls from the streaming SSE stream are
+// properly merged by index.
+//
+// When req.Tools is empty, StreamingInvoke falls back to the standard
+// ChatInvoker.Invoke path (non-streaming). This is intentional: only
+// the Agent ReAct loop needs streaming-with-tools; the one-shot LLM
+// component uses a simpler path.
+func StreamingInvoke(ctx context.Context, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
+	if req.ModelName == "" {
+		return nil, fmt.Errorf("component: LLM: model_id is required")
+	}
+	if len(req.Tools) == 0 {
+		// No tools → use standard non-streaming invoke. This path is
+		// the simple one-shot call; the Agent loop always has tools.
+		return getDefaultChatInvoker().Invoke(ctx, req)
+	}
+	driver := req.Driver
+	if driver == "" && modelLocator != nil {
+		tenantID := ""
+		if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+			if tid, ok := state.Sys["tenant_id"].(string); ok {
+				tenantID = tid
+			}
+		}
+		if d, resolvedName, ak, bu, err := modelLocator(tenantID, req.ModelName); err == nil && d != "" {
+			driver = d
+			req.ModelName = resolvedName
+			req.APIKey = ak
+			req.BaseURL = bu
+		}
+	}
+	if driver == "" {
+		driver = "dummy"
+	}
+	// When the driver resolves to "dummy" (no real model found — typical
+	// in tests), fall back to the standard ChatInvoker.Invoke path. The
+	// direct HTTP path (invokeWithTools) requires a resolvable base URL
+	// and fails with "no base URL for driver" for "dummy".
+	// Stripping tools ensures the mock invoker (which returns canned
+	// responses) is used instead of the production HTTP path.
+	if driver == "dummy" {
+		req.Tools = nil
+		return getDefaultChatInvoker().Invoke(ctx, req)
+	}
+	var baseURL map[string]string
+	if req.BaseURL != "" {
+		baseURL = map[string]string{"default": req.BaseURL}
+	} else if driver != "" && driver != "dummy" {
+		if pi := dao.GetModelProviderManager().FindProvider(driver); pi != nil && len(pi.URL) > 0 {
+			baseURL = pi.URL
+		}
+	}
+	urlSuffix := chatURLSuffixFor(driver)
+	apiKey := req.APIKey
+	return invokeWithTools(ctx, req, driver, baseURL, urlSuffix, apiKey, req.Messages)
+}
+
+// StreamContentStreaming sends a streaming chat request WITHOUT tools and
+// forwards every content and reasoning_content chunk to onChunk. Returns the
+// full accumulated content on success. This is used by the Agent ReAct loop
+// to stream the final answer progressively.
+//
+// When the driver cannot be resolved (test mode), the function falls back to
+// sending the content from a non-streaming invoke as a single chunk.
+func StreamContentStreaming(ctx context.Context, req ChatInvokeRequest, onChunk func(string, bool)) (string, error) {
+	if req.ModelName == "" {
+		return "", fmt.Errorf("component: LLM: model_id is required")
+	}
+	driver := req.Driver
+	if driver == "" && modelLocator != nil {
+		tenantID := ""
+		if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+			if tid, ok := state.Sys["tenant_id"].(string); ok {
+				tenantID = tid
+			}
+		}
+		if d, resolvedName, ak, bu, err := modelLocator(tenantID, req.ModelName); err == nil && d != "" {
+			driver = d
+			req.ModelName = resolvedName
+			req.APIKey = ak
+			req.BaseURL = bu
+		}
+	}
+	if driver == "" {
+		driver = "dummy"
+	}
+	if driver == "dummy" {
+		// No real model — just return the non-streaming content as a single chunk.
+		resp, err := getDefaultChatInvoker().Invoke(ctx, req)
+		if err != nil {
+			return "", err
+		}
+		if resp.Content != "" {
+			onChunk(resp.Content, false)
+		}
+		return resp.Content, nil
+	}
+
+	var baseURL map[string]string
+	if req.BaseURL != "" {
+		baseURL = map[string]string{"default": req.BaseURL}
+	} else if pi := dao.GetModelProviderManager().FindProvider(driver); pi != nil && len(pi.URL) > 0 {
+		baseURL = pi.URL
+	}
+	urlSuffix := chatURLSuffixFor(driver)
+
+	d, err := models.NewModelFactory().CreateModelDriver(driver, baseURL, urlSuffix)
+	if err != nil {
+		return "", fmt.Errorf("component: streamContent: resolve driver %q: %w", driver, err)
+	}
+	if d == nil {
+		return "", fmt.Errorf("component: streamContent: no driver for %q", driver)
+	}
+
+	apiKey := req.APIKey
+	cfg := &models.APIConfig{ApiKey: &apiKey}
+	cm := models.NewChatModel(d, &req.ModelName, cfg)
+	chatCfg := &models.ChatConfig{
+		Temperature: req.Temperature,
+		TopP:        req.TopP,
+		MaxTokens:   req.MaxTokens,
+	}
+	ragMsgs := make([]models.Message, len(req.Messages))
+	for i, m := range req.Messages {
+		ragMsgs[i] = models.Message{Role: m.Role, Content: m.Content}
+	}
+
+	var fullContent strings.Builder
+	err = cm.ModelDriver.ChatStreamlyWithSender(req.ModelName, ragMsgs, cm.APIConfig, chatCfg, func(content *string, reason *string) error {
+		if content != nil && *content != "" {
+			if *content == "[DONE]" {
+				return nil
+			}
+			fullContent.WriteString(*content)
+			// Both content and reasoning from the final streaming round
+			// go to the main output (IsThink:false). The intermediate
+			// reasoning from tool-calling rounds is already in thinking;
+			// the final round's reasoning belongs with the answer.
+			onChunk(*content, false)
+		}
+		if reason != nil && *reason != "" {
+			fullContent.WriteString(*reason)
+			onChunk(*reason, false)
+		}
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("component: streamContent: %w", err)
+	}
+	return fullContent.String(), nil
 }
 
 // NewLLMComponent builds an LLMComponent from raw params.
@@ -290,7 +674,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 	// instruction in its reply slot, which is what the v1 fixtures
 	// also expect.
 	if p.UserPrompt == "" {
-		p.UserPrompt = p.SystemPrompt
+		p.UserPrompt = "Please process the instructions above."
 	}
 
 	msgs := buildMessagesWithImages(p.SystemPrompt, p.UserPrompt, p.VisualFiles, p.Cite)

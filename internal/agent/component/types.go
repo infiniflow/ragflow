@@ -11,6 +11,7 @@ type ComponentMessage struct {
 	Role         string
 	Content      string
 	ToolCalls    []ComponentToolCall
+	ToolCallID   string // Required for role="tool" messages — matches the tool call ID
 	MultiContent []ComponentMessagePart
 }
 

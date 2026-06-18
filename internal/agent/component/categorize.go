@@ -92,9 +92,9 @@ func (c *CategorizeComponent) Invoke(ctx context.Context, inputs map[string]any)
 
 	chosen, score := pickCategory(resp.Content, p.Categories, p.DefaultCategory)
 	return map[string]any{
-		"category": chosen,
-		"scores":   score,
-		"_next":    []string{},
+		"category_name": chosen,
+		"scores":        score,
+		"_next":         []string{},
 	}, nil
 }
 
@@ -129,9 +129,9 @@ func (c *CategorizeComponent) Inputs() map[string]string {
 // Outputs returns output metadata.
 func (c *CategorizeComponent) Outputs() map[string]string {
 	return map[string]string{
-		"category": "Chosen category name (one of the configured list, or the default)",
-		"scores":   "Score map (1.0 for the chosen category, 0.0 for the rest)",
-		"_next":    "Reserved for canvas/multibranch.go routing; currently empty",
+		"category_name": "Chosen category name (one of the configured list, or the default)",
+		"scores":        "Score map (1.0 for the chosen category, 0.0 for the rest)",
+		"_next":         "Reserved for canvas/multibranch.go routing; currently empty",
 	}
 }
 
