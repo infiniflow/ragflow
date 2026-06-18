@@ -38,6 +38,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var (
@@ -77,7 +78,8 @@ var (
 )
 
 const (
-	graphRaptorFakeDocID  = "graph_raptor_x"
+	// Keep the legacy worker marker in queue payloads; persisted tasks use a real document ID.
+	graphRaptorQueueDocID = "graph_raptor_x"
 	maximumTaskPageNumber = int64(100000000)
 	serverQueueNamePrefix = "te"
 )
@@ -173,17 +175,17 @@ func checkType(indexType string) bool {
 	return haveType
 }
 
-func (s *DatasetService) queueRaptorOrGraphRagTasks(sampleDoc *entity.Document, taskType string, priority int, fakeDocID string, docIDs []string) (string, error) {
+func (s *DatasetService) newRaptorOrGraphRagTask(sampleDoc *entity.Document, taskType string, taskDocID string, queueDocID string, docIDs []string) (*entity.Task, map[string]interface{}, error) {
 	if docIDs == nil || len(docIDs) == 0 {
 		docIDs = make([]string, 0)
 	}
 	if !checkIndexTaskType(taskType) {
-		return "", errors.New("type should be graphrag, raptor or mindmap")
+		return nil, nil, errors.New("type should be graphrag, raptor or mindmap")
 	}
 
 	chunkingConfig, err := s.documentDAO.GetChunkingConfig(sampleDoc.ID)
 	if err != nil {
-		return "", err
+		return nil, nil, err
 	}
 
 	hasher := xxhash.New()
@@ -193,20 +195,27 @@ func (s *DatasetService) queueRaptorOrGraphRagTasks(sampleDoc *entity.Document, 
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
-		_, _ = hasher.Write([]byte(fmt.Sprint(chunkingConfig[key])))
+		_, _ = hasher.Write([]byte(key))
+		_, _ = hasher.Write([]byte{0})
+		v, mErr := json.Marshal(chunkingConfig[key])
+		if mErr != nil {
+			return nil, nil, mErr
+		}
+		_, _ = hasher.Write(v)
+		_, _ = hasher.Write([]byte{0})
 	}
 
 	taskID := strings.ReplaceAll(uuid.New().String(), "-", "")[:32]
 	beginAt := time.Now().Truncate(time.Second)
 	progressMsg := beginAt.Format("15:04:05") + " created task " + taskType
 
-	for _, field := range []interface{}{fakeDocID, maximumTaskPageNumber, maximumTaskPageNumber, taskType} {
+	for _, field := range []interface{}{taskDocID, maximumTaskPageNumber, maximumTaskPageNumber, taskType} {
 		_, _ = hasher.Write([]byte(fmt.Sprint(field)))
 	}
 	digest := fmt.Sprintf("%016x", hasher.Sum64())
 	task := &entity.Task{
 		ID:          taskID,
-		DocID:       fakeDocID,
+		DocID:       taskDocID,
 		FromPage:    maximumTaskPageNumber,
 		ToPage:      maximumTaskPageNumber,
 		TaskType:    taskType,
@@ -214,22 +223,10 @@ func (s *DatasetService) queueRaptorOrGraphRagTasks(sampleDoc *entity.Document, 
 		BeginAt:     &beginAt,
 		Digest:      &digest,
 	}
-	if err := s.taskDAO.Create(task); err != nil {
-		return "", err
-	}
-
-	if fakeDocID != "" {
-		if err := s.documentDAO.UpdateByID(fakeDocID, map[string]interface{}{
-			"progress_msg":     "Task is queued...",
-			"process_begin_at": beginAt,
-		}); err != nil {
-			return "", err
-		}
-	}
 
 	queueMessage := map[string]interface{}{
 		"id":           taskID,
-		"doc_id":       fakeDocID,
+		"doc_id":       queueDocID,
 		"from_page":    maximumTaskPageNumber,
 		"to_page":      maximumTaskPageNumber,
 		"task_type":    taskType,
@@ -238,12 +235,87 @@ func (s *DatasetService) queueRaptorOrGraphRagTasks(sampleDoc *entity.Document, 
 		"digest":       digest,
 		"doc_ids":      docIDs,
 	}
-	redisClient := redisengine.Get()
-	if redisClient == nil || !redisClient.QueueProduct(datasetIndexQueueName(priority), queueMessage) {
-		return "", errors.New("Can't access Redis. Please check the Redis' status")
+
+	return task, queueMessage, nil
+}
+
+func createDatasetIndexTaskInTx(tx *gorm.DB, task *entity.Task, queueDocID string) (*entity.Document, error) {
+	if task == nil {
+		return nil, errors.New("task is required")
+	}
+	if err := tx.Create(task).Error; err != nil {
+		return nil, err
 	}
 
-	return taskID, nil
+	if queueDocID == "" {
+		return nil, nil
+	}
+
+	var document entity.Document
+	err := tx.Select("id", "progress_msg", "process_begin_at").Where("id = ?", queueDocID).First(&document).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	beginAt := time.Now().Truncate(time.Second)
+	if task.BeginAt != nil {
+		beginAt = *task.BeginAt
+	}
+	if err := tx.Model(&entity.Document{}).Where("id = ?", queueDocID).Updates(map[string]interface{}{
+		"progress_msg":     "Task is queued...",
+		"process_begin_at": beginAt,
+	}).Error; err != nil {
+		return nil, err
+	}
+
+	return &document, nil
+}
+
+func enqueueDatasetIndexTask(priority int, queueMessage map[string]interface{}) error {
+	redisClient := redisengine.Get()
+	if redisClient == nil || !redisClient.QueueProduct(datasetIndexQueueName(priority), queueMessage) {
+		return errors.New("Can't access Redis. Please check the Redis' status")
+	}
+	return nil
+}
+
+func cleanupFailedDatasetIndexTask(taskID string, updatedDocument *entity.Document, kbID string, indexType string) error {
+	return dao.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Unscoped().Where("id = ?", taskID).Delete(&entity.Task{}).Error; err != nil {
+			return fmt.Errorf("delete task %s: %w", taskID, err)
+		}
+
+		if column := datasetIndexTaskIDColumn(indexType); kbID != "" && column != "" {
+			if err := tx.Model(&entity.Knowledgebase{}).Where("id = ? AND "+column+" = ?", kbID, taskID).Update(column, nil).Error; err != nil {
+				return fmt.Errorf("clear dataset task id %s: %w", taskID, err)
+			}
+		}
+
+		if updatedDocument == nil {
+			return nil
+		}
+
+		return tx.Model(&entity.Document{}).Where("id = ?", updatedDocument.ID).Updates(map[string]interface{}{
+			"progress_msg":     updatedDocument.ProgressMsg,
+			"process_begin_at": updatedDocument.ProcessBeginAt,
+		}).Error
+	})
+}
+
+func datasetIndexTaskIDColumn(indexType string) string {
+	switch indexType {
+	case "graph":
+		return "graphrag_task_id"
+	case "raptor":
+		return "raptor_task_id"
+	case "mindmap":
+		return "mindmap_task_id"
+	default:
+		return ""
+	}
 }
 
 func checkIndexTaskType(taskType string) bool {
@@ -289,6 +361,20 @@ func datasetIndexTaskIDUpdate(indexType, taskID string) map[string]interface{} {
 	}
 }
 
+func datasetIndexTaskIDs(kb *entity.Knowledgebase) []string {
+	if kb == nil {
+		return nil
+	}
+
+	taskIDs := make([]string, 0, 3)
+	for _, taskID := range []*string{kb.GraphragTaskID, kb.RaptorTaskID, kb.MindmapTaskID} {
+		if taskID != nil && *taskID != "" {
+			taskIDs = append(taskIDs, *taskID)
+		}
+	}
+	return common.Deduplicate(taskIDs)
+}
+
 func datasetIndexQueueName(priority int) string {
 	return fmt.Sprintf("%s.%d.common", serverQueueNamePrefix, priority)
 }
@@ -317,17 +403,6 @@ func (s *DatasetService) RunIndex(userID, datasetID, indexType string) (map[stri
 	taskType := indexTypeToTaskType[indexType]
 	displayName := indexTypeToDisplayName[indexType]
 
-	existingTaskID := datasetIndexTaskID(kb, indexType)
-	if existingTaskID != "" {
-		task, err := s.taskDAO.GetByID(existingTaskID)
-		if err != nil {
-			common.Warn("A valid dataset index task id is expected", zap.String("dataset_id", datasetID), zap.String("task_id", existingTaskID), zap.String("task_type", displayName), zap.Error(err))
-		}
-		if task != nil && task.Progress != 1 && task.Progress != -1 {
-			return nil, common.CodeDataError, fmt.Errorf("Task %s in progress with status %v. A %s Task is already running.", existingTaskID, task.Progress, displayName)
-		}
-	}
-
 	documents, code, err := s.getDocumentsByDatasetForIndex(datasetID)
 	if err != nil {
 		return nil, code, err
@@ -341,16 +416,57 @@ func (s *DatasetService) RunIndex(userID, datasetID, indexType string) (map[stri
 		documentIDs[i] = doc.ID
 	}
 
-	taskID, err := s.queueRaptorOrGraphRagTasks(sampleDocument, taskType, 0, graphRaptorFakeDocID, documentIDs)
+	task, queueMessage, err := s.newRaptorOrGraphRagTask(sampleDocument, taskType, sampleDocument.ID, graphRaptorQueueDocID, documentIDs)
 	if err != nil {
+		common.Warn("Failed to build dataset index task", zap.String("dataset_id", datasetID), zap.String("task_type", taskType), zap.Error(err))
+		return nil, common.CodeDataError, errors.New("Internal server error")
+	}
+
+	var updatedDocument *entity.Document
+	var dataErr error
+	err = dao.DB.Transaction(func(tx *gorm.DB) error {
+		var lockedKB entity.Knowledgebase
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND status = ?", kb.ID, string(entity.StatusValid)).
+			First(&lockedKB).Error; err != nil {
+			return err
+		}
+
+		existingTaskID := datasetIndexTaskID(&lockedKB, indexType)
+		if existingTaskID != "" {
+			var existingTask entity.Task
+			taskErr := tx.Where("id = ?", existingTaskID).First(&existingTask).Error
+			if taskErr != nil {
+				common.Warn("A valid dataset index task id is expected", zap.String("dataset_id", datasetID), zap.String("task_id", existingTaskID), zap.String("task_type", displayName), zap.Error(taskErr))
+			} else if existingTask.Progress != 1 && existingTask.Progress != -1 {
+				dataErr = fmt.Errorf("Task %s in progress with status %v. A %s Task is already running.", existingTaskID, existingTask.Progress, displayName)
+				return dataErr
+			}
+		}
+
+		updatedDocument, err = createDatasetIndexTaskInTx(tx, task, graphRaptorQueueDocID)
+		if err != nil {
+			return err
+		}
+		return tx.Model(&entity.Knowledgebase{}).Where("id = ?", lockedKB.ID).Updates(datasetIndexTaskIDUpdate(indexType, task.ID)).Error
+	})
+	if err != nil {
+		if dataErr != nil {
+			return nil, common.CodeDataError, dataErr
+		}
+		common.Warn("Failed to create dataset index task", zap.String("dataset_id", datasetID), zap.String("task_type", taskType), zap.Error(err))
+		return nil, common.CodeDataError, errors.New("Internal server error")
+	}
+
+	if err := enqueueDatasetIndexTask(0, queueMessage); err != nil {
+		if cleanupErr := cleanupFailedDatasetIndexTask(task.ID, updatedDocument, kb.ID, indexType); cleanupErr != nil {
+			err = errors.Join(err, cleanupErr)
+		}
 		common.Warn("Failed to queue dataset index task", zap.String("dataset_id", datasetID), zap.String("task_type", taskType), zap.Error(err))
 		return nil, common.CodeDataError, errors.New("Internal server error")
 	}
-	if err := s.kbDAO.UpdateByID(kb.ID, datasetIndexTaskIDUpdate(indexType, taskID)); err != nil {
-		common.Warn("Cannot save dataset index task id", zap.String("dataset_id", datasetID), zap.String("task_type", taskType), zap.Error(err))
-	}
 
-	return map[string]interface{}{"task_id": taskID}, common.CodeSuccess, nil
+	return map[string]interface{}{"task_id": task.ID}, common.CodeSuccess, nil
 }
 
 func (s *DatasetService) getDocumentsByDatasetForIndex(datasetID string) ([]*entity.Document, common.ErrorCode, error) {
@@ -395,7 +511,13 @@ func (s *DatasetService) TraceIndex(datasetID, userID, indexType string) (*entit
 	var task *entity.Task
 	if taskID != "" {
 		task, err = s.taskDAO.GetByID(taskID)
-		if err != nil || task == nil {
+		if err != nil {
+			if dao.IsNotFoundErr(err) {
+				return nil, common.CodeSuccess, nil
+			}
+			return nil, common.CodeServerError, errors.New("Internal server error")
+		}
+		if task == nil {
 			return nil, common.CodeSuccess, nil
 		}
 	}
@@ -1532,6 +1654,12 @@ func jsonMapValue(m entity.JSONMap) interface{} {
 
 func (s *DatasetService) deleteDataset(tenantID string, kb *entity.Knowledgebase) error {
 	return dao.DB.Transaction(func(tx *gorm.DB) error {
+		if taskIDs := datasetIndexTaskIDs(kb); len(taskIDs) > 0 {
+			if err := tx.Where("id IN ?", taskIDs).Delete(&entity.Task{}).Error; err != nil {
+				return fmt.Errorf("Delete dataset error for %s", kb.ID)
+			}
+		}
+
 		var documents []entity.Document
 		if err := tx.Where("kb_id = ?", kb.ID).Find(&documents).Error; err != nil {
 			return fmt.Errorf("Delete dataset error for %s", kb.ID)
