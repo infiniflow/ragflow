@@ -33,6 +33,7 @@ type Router struct {
 	chunkHandler         *handler.ChunkHandler
 	llmHandler           *handler.LLMHandler
 	chatHandler          *handler.ChatHandler
+	openaiChatHandler    *handler.OpenAIChatHandler
 	chatSessionHandler   *handler.ChatSessionHandler
 	connectorHandler     *handler.ConnectorHandler
 	searchHandler        *handler.SearchHandler
@@ -77,6 +78,7 @@ func NewRouter(
 	modelHandler *handler.ModelHandler,
 	fileCommitHandler *handler.FileCommitHandler,
 	adminRuntimeHandler *handler.AdminRuntimeHandler,
+	openaiChatHandler *handler.OpenAIChatHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -89,6 +91,7 @@ func NewRouter(
 		chunkHandler:         chunkHandler,
 		llmHandler:           llmHandler,
 		chatHandler:          chatHandler,
+		openaiChatHandler:    openaiChatHandler,
 		chatSessionHandler:   chatSessionHandler,
 		connectorHandler:     connectorHandler,
 		searchHandler:        searchHandler,
@@ -240,6 +243,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 				chats.GET("", r.chatHandler.ListChats)
 				chats.GET("/:chat_id", r.chatHandler.GetChat)
 				chats.GET("/:chat_id/sessions", r.chatSessionHandler.ListChatSessions)
+			}
+
+			// OpenAI-compatible chat completions route
+			openai := v1.Group("/openai")
+			{
+				openai.POST("/:chat_id/chat/completions", r.openaiChatHandler.OpenAIChatCompletions)
 			}
 
 			// Searchbot routes

@@ -282,6 +282,11 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ChatToModel(cmd)
 	case "think_chat_to_model":
 		return c.ChatToModel(cmd)
+	case "openai_chat":
+		return c.OpenaiChat(cmd)
+	case "openai_chat_help":
+		printOpenaiChatHelp()
+		return nil, nil
 	case "embed_user_text":
 		return c.EmbedUserText(cmd)
 	case "rarank_user_document":

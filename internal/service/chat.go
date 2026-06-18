@@ -209,18 +209,65 @@ type ParameterConfig struct {
 
 // PromptConfig prompt configuration
 type PromptConfig struct {
-	System          string            `json:"system"`
-	Prologue        string            `json:"prologue"`
-	Parameters      []ParameterConfig `json:"parameters"`
-	EmptyResponse   string            `json:"empty_response"`
-	TavilyAPIKey    string            `json:"tavily_api_key,omitempty"`
-	Keyword         bool              `json:"keyword,omitempty"`
-	Quote           bool              `json:"quote,omitempty"`
-	Reasoning       bool              `json:"reasoning,omitempty"`
-	RefineMultiturn bool              `json:"refine_multiturn,omitempty"`
-	TocEnhance      bool              `json:"toc_enhance,omitempty"`
-	TTS             bool              `json:"tts,omitempty"`
-	UseKG           bool              `json:"use_kg,omitempty"`
+	System            *string                `json:"system"`
+	Prologue          *string                `json:"prologue"`
+	Parameters        []ParameterConfig      `json:"parameters"`
+	EmptyResponse     *string                `json:"empty_response"`
+	TavilyAPIKey      string                 `json:"tavily_api_key,omitempty"`
+	Keyword           *bool                  `json:"keyword,omitempty"`
+	Quote             *bool                  `json:"quote,omitempty"`
+	Reasoning         *bool                  `json:"reasoning,omitempty"`
+	RefineMultiturn   *bool                  `json:"refine_multiturn,omitempty"`
+	TocEnhance        *bool                  `json:"toc_enhance,omitempty"`
+	TTS               *bool                  `json:"tts,omitempty"`
+	UseKG             *bool                  `json:"use_kg,omitempty"`
+	CrossLanguages    []string               `json:"cross_languages,omitempty"`
+	ReferenceMetadata map[string]interface{} `json:"reference_metadata,omitempty"`
+}
+
+const (
+	pyDefaultSystemPrompt = "You are an intelligent assistant. Please summarize the content of the dataset to answer the question. " +
+		"Please list the data in the dataset and answer in detail. " +
+		"When all dataset content is irrelevant to the question, your answer must include the sentence " +
+		`"The answer you are looking for is not found in the dataset!" ` +
+		"Answers need to consider chat history.\n" +
+		"      Here is the knowledge base:\n" +
+		"      {knowledge}\n" +
+		"      The above is the knowledge base."
+
+	pyDefaultPrologue      = "Hi! I'm your assistant. What can I do for you?"
+	pyDefaultEmptyResponse = "Sorry! No relevant content was found in the knowledge base!"
+)
+
+// applyPromptDefaults replaces missing keys with default values
+func applyPromptDefaults(p *PromptConfig) {
+	if p.System == nil || *p.System == "" {
+		s := pyDefaultSystemPrompt
+		p.System = &s
+	}
+	if p.Prologue == nil {
+		s := pyDefaultPrologue
+		p.Prologue = &s
+	}
+	if p.Parameters == nil {
+		p.Parameters = []ParameterConfig{{Key: "knowledge", Optional: false}}
+	}
+	if p.EmptyResponse == nil {
+		s := pyDefaultEmptyResponse
+		p.EmptyResponse = &s
+	}
+	if p.Quote == nil {
+		t := true
+		p.Quote = &t
+	}
+	if p.RefineMultiturn == nil {
+		t := true
+		p.RefineMultiturn = &t
+	}
+	if p.TTS == nil {
+		f := false
+		p.TTS = &f
+	}
 }
 
 // SetDialogRequest set chat request
@@ -347,12 +394,16 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 		kbIDs = []string{}
 	}
 
+	// Apply default prompt config on create only
+	if isCreate {
+		applyPromptDefaults(promptConfig)
+	}
+
 	// Set default parameters for datasets with knowledge retrieval
 	// Check if parameters is missing or empty and kb_ids is provided
 	if len(kbIDs) > 0 && (promptConfig.Parameters == nil || len(promptConfig.Parameters) == 0) {
 		// Check if system prompt uses {knowledge} placeholder
-		if strings.Contains(promptConfig.System, "{knowledge}") {
-			// Set default parameters for any dataset with knowledge placeholder
+		if promptConfig.System != nil && strings.Contains(*promptConfig.System, "{knowledge}") {
 			promptConfig.Parameters = []ParameterConfig{
 				{Key: "knowledge", Optional: false},
 			}
@@ -361,7 +412,8 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 
 	// For update: validate that {knowledge} is not used when no KBs or Tavily
 	if !isCreate {
-		if len(kbIDs) == 0 && promptConfig.TavilyAPIKey == "" && strings.Contains(promptConfig.System, "{knowledge}") {
+		if len(kbIDs) == 0 && promptConfig.TavilyAPIKey == "" &&
+			promptConfig.System != nil && strings.Contains(*promptConfig.System, "{knowledge}") {
 			return nil, errors.New("Please remove `{knowledge}` in system prompt since no dataset / Tavily used here")
 		}
 	}
@@ -372,7 +424,7 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 			continue
 		}
 		placeholder := fmt.Sprintf("{%s}", p.Key)
-		if !strings.Contains(promptConfig.System, placeholder) {
+		if promptConfig.System == nil || !strings.Contains(*promptConfig.System, placeholder) {
 			return nil, fmt.Errorf("Parameter '%s' is not used", p.Key)
 		}
 	}
@@ -410,21 +462,46 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 		llmID = tenant.LLMID
 	}
 
-	// Convert prompt config to JSONMap with all fields
-	promptConfigMap := entity.JSONMap{
-		"system":           promptConfig.System,
-		"prologue":         promptConfig.Prologue,
-		"empty_response":   promptConfig.EmptyResponse,
-		"keyword":          promptConfig.Keyword,
-		"quote":            promptConfig.Quote,
-		"reasoning":        promptConfig.Reasoning,
-		"refine_multiturn": promptConfig.RefineMultiturn,
-		"toc_enhance":      promptConfig.TocEnhance,
-		"tts":              promptConfig.TTS,
-		"use_kg":           promptConfig.UseKG,
+	// Convert prompt config to JSONMap
+	promptConfigMap := entity.JSONMap{}
+	if promptConfig.System != nil && *promptConfig.System != "" {
+		promptConfigMap["system"] = *promptConfig.System
+	}
+	if promptConfig.Prologue != nil {
+		promptConfigMap["prologue"] = *promptConfig.Prologue
+	}
+	if promptConfig.EmptyResponse != nil {
+		promptConfigMap["empty_response"] = *promptConfig.EmptyResponse
+	}
+	if promptConfig.Quote != nil {
+		promptConfigMap["quote"] = *promptConfig.Quote
+	}
+	if promptConfig.RefineMultiturn != nil {
+		promptConfigMap["refine_multiturn"] = *promptConfig.RefineMultiturn
+	}
+	if promptConfig.TTS != nil {
+		promptConfigMap["tts"] = *promptConfig.TTS
+	}
+	if promptConfig.Keyword != nil {
+		promptConfigMap["keyword"] = *promptConfig.Keyword
+	}
+	if promptConfig.Reasoning != nil {
+		promptConfigMap["reasoning"] = *promptConfig.Reasoning
+	}
+	if promptConfig.TocEnhance != nil {
+		promptConfigMap["toc_enhance"] = *promptConfig.TocEnhance
+	}
+	if promptConfig.UseKG != nil {
+		promptConfigMap["use_kg"] = *promptConfig.UseKG
 	}
 	if promptConfig.TavilyAPIKey != "" {
 		promptConfigMap["tavily_api_key"] = promptConfig.TavilyAPIKey
+	}
+	if len(promptConfig.CrossLanguages) > 0 {
+		promptConfigMap["cross_languages"] = promptConfig.CrossLanguages
+	}
+	if len(promptConfig.ReferenceMetadata) > 0 {
+		promptConfigMap["reference_metadata"] = promptConfig.ReferenceMetadata
 	}
 	if len(promptConfig.Parameters) > 0 {
 		params := make([]map[string]interface{}, len(promptConfig.Parameters))

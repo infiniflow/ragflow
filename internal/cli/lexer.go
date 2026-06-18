@@ -305,6 +305,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenChats, Value: ident}
 	case "CHAT":
 		return Token{Type: TokenChat, Value: ident}
+	case "OPENAI_CHAT":
+		return Token{Type: TokenOpenaiChat, Value: ident}
 	case "MESSAGE":
 		return Token{Type: TokenMessage, Value: ident}
 	case "IMAGE":
