@@ -154,6 +154,7 @@ class Graph:
         return self.components.get(cpn_id)
 
     def get_component_obj(self, cpn_id) -> ComponentBase:
+        """Get a component object by ID, raising ValueError if not found."""
         component = self.components.get(cpn_id)
         if component is None:
             raise ValueError(f"Component {cpn_id} not found in canvas")
@@ -607,14 +608,14 @@ class Canvas(Graph):
                         yield _node_finished(cpn_obj)
 
                 def _append_path(cpn_id):
+                    """Append cpn_id to the execution path, raising ValueError if the component does not exist."""
                     nonlocal other_branch
                     if other_branch:
                         return
                     if self.path[-1] == cpn_id:
                         return
                     if self.components.get(cpn_id) is None:
-                        logging.warning(f"Component {cpn_id} not found in canvas, skipping path append")
-                        return
+                        raise ValueError(f"Component '{cpn_id}' not found in canvas")
                     self.path.append(cpn_id)
 
                 def _extend_path(cpn_ids):
