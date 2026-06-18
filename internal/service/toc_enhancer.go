@@ -314,16 +314,16 @@ func (e *TOCEnhancer) Enhance(ctx context.Context, kbinfos map[string]interface{
 
 	id2idx := map[string]int{}
 	for i, cm := range chunksRaw {
-			if cid, ok := cm["chunk_id"].(string); ok && cid != "" {
-				id2idx[cid] = i
-			}
+		if cid, ok := cm["chunk_id"].(string); ok && cid != "" {
+			id2idx[cid] = i
+		}
 	}
 	added := 0
 	kbID := docID2KBID[topDocID]
 	for _, sc := range scores {
 		cid := sc.Title
 		if idx, exists := id2idx[cid]; exists {
-				boostSimilarity(chunksRaw[idx], sc.Score)
+			boostSimilarity(chunksRaw[idx], sc.Score)
 		} else {
 			fresh, fetchErr := e.fetchChunk(ctx, cid, topDocID, kbID)
 			if fetchErr != nil || fresh == nil {

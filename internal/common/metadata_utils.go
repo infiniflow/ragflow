@@ -49,7 +49,7 @@ var operatorMapping = map[string]string{
 	">=":     "≥",
 	"<=":     "≤",
 	"!=":     "≠",
-	"==":	"=",
+	"==":     "=",
 }
 
 // ParseAndConvert converts raw API conditions into MetaFilterInput.

@@ -132,7 +132,7 @@ func rewriteFieldAliases(sql string, aliasToActual map[string]string) string {
 		parts := selectRe.FindStringSubmatch(m)
 		prefix, cols, suffix := parts[1], parts[2], parts[3]
 		for alias, actual := range aliasToActual {
-		pat := regexp.MustCompile(`(^|[,\s])` + regexp.QuoteMeta(alias) + `($|[,\s])`)
+			pat := regexp.MustCompile(`(^|[,\s])` + regexp.QuoteMeta(alias) + `($|[,\s])`)
 			cols = pat.ReplaceAllString(cols, "${1}"+actual+"${2}")
 		}
 		return prefix + cols + suffix
@@ -151,7 +151,7 @@ func rewriteFieldAliases(sql string, aliasToActual map[string]string) string {
 func rewriteFirstAliasAfterKeyword(sql, keyword string, aliasToActual map[string]string) string {
 	for alias, actual := range aliasToActual {
 		aliasPat := regexp.MustCompile(`\b` + regexp.QuoteMeta(alias) + `\b`)
-		kwIdx := regexp.MustCompile(`(?i)\b`+regexp.QuoteMeta(keyword)+`\b`).FindStringIndex(sql)
+		kwIdx := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(keyword) + `\b`).FindStringIndex(sql)
 		if kwIdx == nil {
 			continue
 		}
@@ -328,5 +328,3 @@ func (e *infinityEngine) RunSQL(ctx context.Context, tableName string, sqlText s
 
 	return toRowMaps(res), nil
 }
-
-

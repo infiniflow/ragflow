@@ -77,8 +77,8 @@ func TestPreprocessSQL_Combined(t *testing.T) {
 
 func TestRewriteFieldAliases_SelectClause(t *testing.T) {
 	aliases := map[string]string{
-		"docnm_kwd":   "docnm",
-		"title_tks":   "docnm",
+		"docnm_kwd":    "docnm",
+		"title_tks":    "docnm",
 		"title_sm_tks": "docnm",
 		"content_ltks": "content",
 	}
@@ -104,7 +104,7 @@ func TestRewriteFieldAliases_WhereClause(t *testing.T) {
 
 func TestRewriteFieldAliases_OrderGroupHaving(t *testing.T) {
 	aliases := map[string]string{
-		"docnm_kwd":    "docnm",
+		"docnm_kwd":     "docnm",
 		"important_kwd": "important_keywords",
 	}
 	in := "select doc_id from ragflow_t1 order by docnm_kwd group by important_kwd having important_kwd > 0"
@@ -357,11 +357,11 @@ func TestLoadFieldMapping_ParsesAliases(t *testing.T) {
 
 	// alias → actual
 	expectedAliases := map[string]string{
-		"docnm_kwd":          "docnm",
-		"title_tks":          "docnm",
-		"title_sm_tks":       "docnm",
+		"docnm_kwd":           "docnm",
+		"title_tks":           "docnm",
+		"title_sm_tks":        "docnm",
 		"content_with_weight": "content",
-		"content_ltks":       "content",
+		"content_ltks":        "content",
 	}
 	if !reflect.DeepEqual(a2a, expectedAliases) {
 		t.Errorf("aliasToActual: got %v, want %v", a2a, expectedAliases)

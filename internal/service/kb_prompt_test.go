@@ -104,8 +104,6 @@ func TestKbPrompt_NoDocNameOrURL(t *testing.T) {
 	}
 }
 
-
-
 func contains(s, substr string) bool {
 	for i := 0; i <= len(s)-len(substr); i++ {
 		if s[i:i+len(substr)] == substr {
@@ -144,5 +142,3 @@ func TestKbPrompt_AllFit(t *testing.T) {
 		t.Error("both chunks should fit under generous limit")
 	}
 }
-
-

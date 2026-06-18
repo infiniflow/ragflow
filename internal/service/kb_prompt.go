@@ -33,20 +33,20 @@ func ChunksFormat(chunks []SourcedChunk) []map[string]interface{} {
 	out := make([]map[string]interface{}, len(chunks))
 	for i, ck := range chunks {
 		out[i] = map[string]interface{}{
-			"id":                 ck.ID,
-			"content":            ck.Content,
-			"document_id":        ck.DocID,
-			"document_name":      ck.DocName,
-			"dataset_id":         ck.DatasetID,
-			"image_id":           ck.ImageID,
-			"positions":          ck.Positions,
-			"url":                ck.URL,
-			"similarity":         ck.Similarity,
-			"vector_similarity":  ck.VectorSimilarity,
-			"term_similarity":    ck.TermSimilarity,
-			"row_id":             ck.ID, // row_id == ID for consistency with Python
-			"doc_type":           ck.DocType,
-			"document_metadata":  ck.DocumentMetadata,
+			"id":                ck.ID,
+			"content":           ck.Content,
+			"document_id":       ck.DocID,
+			"document_name":     ck.DocName,
+			"dataset_id":        ck.DatasetID,
+			"image_id":          ck.ImageID,
+			"positions":         ck.Positions,
+			"url":               ck.URL,
+			"similarity":        ck.Similarity,
+			"vector_similarity": ck.VectorSimilarity,
+			"term_similarity":   ck.TermSimilarity,
+			"row_id":            ck.ID, // row_id == ID for consistency with Python
+			"doc_type":          ck.DocType,
+			"document_metadata": ck.DocumentMetadata,
 		}
 	}
 	return out

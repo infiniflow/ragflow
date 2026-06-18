@@ -252,4 +252,3 @@ func TestChatCompletions_SilentlyDropsTopLevelUser(t *testing.T) {
 		t.Fatalf("expected request to flow past user check to last-message validator, got %s", respBody)
 	}
 }
-

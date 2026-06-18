@@ -151,9 +151,9 @@ type ChatConfig struct {
 	ModelClass      *string
 	Effort          *string
 	Verbosity       *string
-	Tools           interface{}                `json:"tools,omitempty"`
-	ToolChoice      *string                    `json:"tool_choice,omitempty"`
-	ToolCallsResult *[]map[string]interface{}  `json:"-"`
+	Tools           interface{}               `json:"tools,omitempty"`
+	ToolChoice      *string                   `json:"tool_choice,omitempty"`
+	ToolCallsResult *[]map[string]interface{} `json:"-"`
 }
 
 type APIConfig struct {
@@ -226,10 +226,10 @@ func (r *RerankModel) Rerank(query string, texts []string, apiConfig *APIConfig,
 
 // ToolConfig bundles tool-calling configuration for a ChatModel.
 type ToolConfig struct {
-	Tools            string           // JSON-encoded tools list
-	MaxRounds        int              // max tool-calling rounds (default: 5)
-	MaxRetries       int              // max retries on failure (default: 3)
-	ToolCallSession  ToolCallSession  // session that executes tool calls
+	Tools           string          // JSON-encoded tools list
+	MaxRounds       int             // max tool-calling rounds (default: 5)
+	MaxRetries      int             // max retries on failure (default: 3)
+	ToolCallSession ToolCallSession // session that executes tool calls
 }
 
 // ChatModel wraps a ModelDriver with chat-specific configuration

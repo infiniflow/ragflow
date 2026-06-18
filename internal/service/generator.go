@@ -322,11 +322,11 @@ func FullQuestion(
 
 	var buf bytes.Buffer
 	if err := fullQuestionTmpl.Execute(&buf, map[string]string{
-		"Today":       today,
-		"Yesterday":   yesterday,
-		"Tomorrow":    tomorrow,
+		"Today":        today,
+		"Yesterday":    yesterday,
+		"Tomorrow":     tomorrow,
 		"Conversation": conv,
-		"Language":    language,
+		"Language":     language,
 	}); err != nil {
 		return fallbackToLatestUser(messages), fmt.Errorf("FullQuestion: render template: %w", err)
 	}

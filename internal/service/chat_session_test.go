@@ -26,8 +26,11 @@ type fakeSessionStore struct {
 	deleteByIDErr error
 	getDialogErr  error
 	// record calls
-	createCalled  []*entity.ChatSession
-	updateCalled  []struct{ id string; updates map[string]interface{} }
+	createCalled []*entity.ChatSession
+	updateCalled []struct {
+		id      string
+		updates map[string]interface{}
+	}
 	deleteByIDIDs []string
 }
 
@@ -706,5 +709,3 @@ func TestCompletionStream_PipelineError(t *testing.T) {
 		t.Fatalf("expected 'model unavailable' error, got %v", err)
 	}
 }
-
-

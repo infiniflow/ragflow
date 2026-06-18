@@ -22,10 +22,10 @@ import (
 
 func TestGetFloat(t *testing.T) {
 	tests := []struct {
-		name  string
-		m     map[string]interface{}
-		key   string
-		want  float64
+		name string
+		m    map[string]interface{}
+		key  string
+		want float64
 	}{
 		{"present", map[string]interface{}{"score": 3.5}, "score", 3.5},
 		{"missing", map[string]interface{}{}, "score", 0},
@@ -93,10 +93,10 @@ func TestGetSlice(t *testing.T) {
 
 func TestToFloat64Slice(t *testing.T) {
 	tests := []struct {
-		name    string
-		v       interface{}
-		want    []float64
-		wantOk  bool
+		name   string
+		v      interface{}
+		want   []float64
+		wantOk bool
 	}{
 		{"valid", []interface{}{1.0, 2.5, 3.0}, []float64{1.0, 2.5, 3.0}, true},
 		{"empty", []interface{}{}, []float64{}, true},

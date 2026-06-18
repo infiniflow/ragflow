@@ -198,8 +198,8 @@ func TestRunSQL_PerAttemptTimeout(t *testing.T) {
 // and return the rows.
 func TestRunSQL_RetryOnTimeoutThenSucceed(t *testing.T) {
 	var (
-		mu      sync.Mutex
-		calls   int
+		mu    sync.Mutex
+		calls int
 	)
 	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

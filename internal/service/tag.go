@@ -124,12 +124,12 @@ func (s *MetadataService) GetAllTagsInPortion(tenantID string, kbIDs []string) (
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
 
 	searchReq := &types.SearchRequest{
-		IndexNames:   []string{indexName},
-		KbIDs:        kbIDs,
-		Offset:       0,
+		IndexNames: []string{indexName},
+		KbIDs:      kbIDs,
+		Offset:     0,
 		// Python passes limit=0 ("unlimited") which Go SearchRequest treats
 		// as engine default (Infinity/ES: 30), so use an explicit large cap.
-		Limit: 100000,
+		Limit:        100000,
 		SelectFields: []string{"tag_kwd"},
 	}
 

@@ -512,9 +512,9 @@ func (dr *DeepResearcher) mergeChunkInfo(
 	// Build set of existing chunk IDs.
 	seenChunkIDs := make(map[string]bool)
 	for _, m := range existingChunks {
-			if id, ok := m["chunk_id"].(string); ok {
-				seenChunkIDs[id] = true
-			}
+		if id, ok := m["chunk_id"].(string); ok {
+			seenChunkIDs[id] = true
+		}
 	}
 
 	// Append only new chunks.
@@ -596,11 +596,11 @@ func (dr *DeepResearcher) genJSON(
 		resp = cleanLLMResponse(resp)
 		lastAns = resp
 
-	repaired, rerr := jsonrepair.Repair(resp)
-	if rerr != nil {
-		repaired = resp
-	}
-	if err := json.Unmarshal([]byte(repaired), result); err != nil {
+		repaired, rerr := jsonrepair.Repair(resp)
+		if rerr != nil {
+			repaired = resp
+		}
+		if err := json.Unmarshal([]byte(repaired), result); err != nil {
 			lastErr = err.Error()
 			common.Warn("genJSON: JSON parse failed, retrying",
 				zap.Error(err), zap.Int("attempt", attempt))
