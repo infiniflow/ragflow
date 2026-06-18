@@ -70,4 +70,17 @@ module.exports = {
       },
     ],
   },
+  overrides: [
+    {
+      files: [
+        '**/*.test.ts',
+        '**/*.test.tsx',
+        '**/__tests__/**/*.ts',
+        '**/__tests__/**/*.tsx',
+      ],
+      rules: {
+        'check-file/folder-naming-convention': 'off',
+      },
+    },
+  ],
 };
