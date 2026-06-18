@@ -72,12 +72,7 @@ module.exports = {
   },
   overrides: [
     {
-      files: [
-        '**/*.test.ts',
-        '**/*.test.tsx',
-        '**/__tests__/**/*.ts',
-        '**/__tests__/**/*.tsx',
-      ],
+      files: ['**/__tests__/**'],
       rules: {
         'check-file/folder-naming-convention': 'off',
       },
