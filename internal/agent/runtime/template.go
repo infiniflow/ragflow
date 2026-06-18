@@ -31,10 +31,11 @@ import (
 // Mirrors agent/component/base.py:368 in spirit with one deviation: the
 // cpn_id part includes '_' (real RAGFlow cpn_ids are like "begin_0",
 // "llm_0", "cpn_0"). The Python regex as documented in the plan
-// (`[a-zA-Z:0-9]+`) would not match those — this looks like a documentation
-// bug in the plan; the Python source likely has the underscore too. This
-// deviation is recorded in plan §1.1 and §2.11 with a TODO to confirm
-// against the live Python source during Phase 2 cross-validation.
+// (`[a-zA-Z:0-9]+`) would not match those — this looks like a
+// documentation bug in the plan; the Python source likely has
+// the underscore too. The pattern uses underscore-friendly
+// matching; a future cross-check against the live Python source
+// can confirm the exact behavior.
 //
 // Pattern:
 //
@@ -69,12 +70,14 @@ func ExtractRefs(s string) []string {
 	return out
 }
 
-// ResolveTemplate substitutes every {{...}} in s with the current state's
-// value for that ref. Unresolvable refs (GetVar returns nil) become errors
-// — the Go port trades Python's silent soft-fail (canvas.py:177-178 returns
-// "" for None) for a Go-idiomatic loud-fail so Phase 2 parameter binding can
-// surface misconfigured canvases early. The partial output (with "" in place
-// of the unresolved ref) is still returned so callers can choose to log it.
+// ResolveTemplate substitutes every {{...}} in s with the current
+// state's value for that ref. Unresolvable refs (GetVar returns
+// nil) become errors — the Go port trades Python's silent
+// soft-fail (canvas.py:177-178 returns "" for None) for a
+// Go-idiomatic loud-fail so parameter binding can surface
+// misconfigured canvases early. The partial output (with "" in
+// place of the unresolved ref) is still returned so callers can
+// choose to log it.
 //
 // Supported forms match GetVar (cpn_id@param[.path], sys.x[.path], env.x[.path],
 // item, index).

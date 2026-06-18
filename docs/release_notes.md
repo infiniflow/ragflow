@@ -9,6 +9,25 @@ sidebar_custom_props: {
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.26.1
+
+Released on June 17, 2026.
+
+### New features
+
+- **Model provider**: Allows users to modify the model type of existing model configurations. [#16029](https://github.com/infiniflow/ragflow/pull/16029)
+- **Chat channel**: Enables users to deploy RAGFlow assistants as chatbots within external messaging platforms like Discord and Feishu. [#15850](https://github.com/infiniflow/ragflow/pull/15850)
+- **Observability**: Groups multi-turn chat traces by session within Langfuse to facilitate conversation debugging and replay. [#15679](https://github.com/infiniflow/ragflow/pull/15679)
+
+### i18n
+
+- Adds ~70 missing translation keys for the French UI. [#15983](https://github.com/infiniflow/ragflow/pull/15983)
+
+### Bug fixes
+
+- **Model provider**: Fixes inaccurate token billing, corrects embedding truncation limits to prevent indexing failures, and refactors error handling to surface root error causes. [#15424](https://github.com/infiniflow/ragflow/pull/15424)
+- **API**: Adds a legacy mode to the `/chat/completions` endpoint to restore the v0.23.0 style `<think>` output for backward compatibility. [#16014](https://github.com/infiniflow/ragflow/pull/16014) See also [Converse with chat assistant](./references/http_api_reference.md#converse-with-chat-assistant).
+
 ## v0.26.0
 
 Released on June 11, 2026.

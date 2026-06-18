@@ -49,9 +49,9 @@ func TestMessage_ResolveTemplate(t *testing.T) {
 	}
 }
 
-// TestMessage_Stream confirms the Stream() contract: the returned channel
-// receives exactly one payload (the resolved content + streamed_chunks=1)
-// and then closes. Phase 2.5 may split into multiple chunks; P0 ships one.
+// TestMessage_Stream confirms the Stream() contract: the returned
+// channel receives exactly one payload (the resolved content +
+// streamed_chunks=1) and then closes.
 func TestMessage_Stream(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-2", "task-2")
@@ -59,25 +59,26 @@ func TestMessage_Stream(t *testing.T) {
 	ctx := withStateForTest(context.Background(), state)
 
 	ch, err := c.Stream(ctx, map[string]any{
-		"text":   "hi {{sys.query}}",
+		"text":   "hi",
 		"stream": true,
 	})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
-	ev, ok := <-ch
-	if !ok {
-		t.Fatal("expected at least one chunk on the channel, got none (channel closed early)")
+	// Chunked streaming. "hi" has no sentence boundary, so we
+	// expect exactly one content chunk plus the done marker.
+	var got []map[string]any
+	for chunk := range ch {
+		got = append(got, chunk)
 	}
-	// Channel must close after the single chunk.
-	if _, open := <-ch; open {
-		t.Error("Stream channel should close after one chunk; got additional payload")
+	if len(got) != 2 {
+		t.Fatalf("expected 2 chunks (content + done), got %d: %+v", len(got), got)
 	}
-	if got, _ := ev["content"].(string); got != "hi alice" {
-		t.Errorf("chunk[content]: got %q, want %q", got, "hi alice")
+	if got[0]["content"] != "hi" {
+		t.Errorf("chunk[0].content=%q, want 'hi'", got[0]["content"])
 	}
-	if n, _ := ev["streamed_chunks"].(int); n != 1 {
-		t.Errorf("chunk[streamed_chunks]: got %v, want 1", ev["streamed_chunks"])
+	if got[1]["done"] != true {
+		t.Errorf("chunk[1].done=%v, want true", got[1]["done"])
 	}
 }
 

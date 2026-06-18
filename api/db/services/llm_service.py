@@ -137,7 +137,7 @@ class LLMBundle(LLM4Tenant):
                 safe_texts.append("None")
                 continue
             token_size = num_tokens_from_string(text)
-            if token_size > self.max_length:
+            if token_size > self.max_length * 0.95:
                 target_len = int(self.max_length * 0.95)
                 safe_texts.append(text[:target_len])
             else:

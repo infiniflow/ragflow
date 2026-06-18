@@ -54,9 +54,9 @@ type wencaiEnvelope struct {
 	Error string `json:"_ERROR,omitempty"`
 }
 
-// WencaiTool is the Phase 3 batch 4 stub implementation of the
+// WencaiTool is a stub for the
 // 同花顺 Wencai (问财) natural-language stock screening tool
-// (plan §2.11.4 row 19, §5 Phase 3 第 4 批).
+// ( .
 //
 // Wencai (https://www.iwencai.com) has no public API. The Python
 // implementation scrapes 10jqka.com.cn using session cookies and

@@ -142,7 +142,24 @@ export const useSendMessageBySSE = (url: string) => {
                 break;
               }
               try {
-                const val = JSON.parse(value?.data || '');
+                const raw = (value?.data ?? '').trim();
+                // SSE end-of-stream sentinel — no payload, skip without
+                // surfacing a JSON.parse error to the console.
+                if (!raw) {
+                  continue;
+                }
+                // Some upstreams double-wrap the body in a `data:` prefix;
+                // strip one layer so JSON.parse sees a real object.
+                const payload = raw.startsWith('data:')
+                  ? raw.slice(5).trimStart()
+                  : raw;
+                // Check the sentinel after prefix stripping so a
+                // `data: [DONE]` payload is caught and the stream
+                // loop is terminated.
+                if (payload === '[DONE]') {
+                  break;
+                }
+                const val = JSON.parse(payload);
 
                 console.info('data:', val);
                 if (typeof val?.code === 'number' && val.code !== 0) {

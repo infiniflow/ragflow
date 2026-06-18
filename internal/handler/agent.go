@@ -29,10 +29,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
+
+	dslpkg "ragflow/internal/agent/dsl"
 )
 
 // AgentHandler agent handler
@@ -141,15 +144,18 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 // mapAgentError normalises service-layer errors onto the existing
 // {code, data, message} response envelope used by every other handler.
 //
-// Two distinct 103 messages mirror the Python agent API's two
-// decorators (api/apps/restful_apis/agent_api.py:74-100):
-//   - service.ErrAgentNotOwner  -> "Only the owner..."  (DELETE only)
-//   - dao.ErrUserCanvasNotFound -> "Make sure you have permission..."  (PUT/GET/run/...)
+// Three classes:
+//   - service.ErrAgentNotOwner  -> "Only the owner..."        (DELETE only, 103)
+//   - dao.ErrUserCanvasNotFound -> "Make sure you have permission..."  (103)
+//   - service.ErrAgentStorageError -> "Internal storage error"  (500)
 //
-// Both surface as OPERATING_ERROR(103) so the front-end cannot use the
-// response code to enumerate other users' canvases (IDOR mitigation).
-// Everything else becomes CodeDataError so the front-end can surface
-// the message verbatim.
+// The first two surface as OPERATING_ERROR(103) so the front-end
+// cannot use the response code to enumerate other users' canvases
+// (IDOR mitigation). ErrAgentStorageError maps to SERVER_ERROR(500)
+// with a sanitized message — the raw DAO / DB error string MUST
+// NOT reach the client (DSNs, table names, gorm stack frames would
+// otherwise leak). Everything else becomes CodeDataError so the
+// front-end can surface the message verbatim.
 func mapAgentError(err error) (common.ErrorCode, string) {
 	if err == nil {
 		return common.CodeSuccess, ""
@@ -160,6 +166,9 @@ func mapAgentError(err error) (common.ErrorCode, string) {
 	if errors.Is(err, dao.ErrUserCanvasNotFound) ||
 		errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
 		return common.CodeOperatingError, "Make sure you have permission to access the agent."
+	}
+	if errors.Is(err, service.ErrAgentStorageError) {
+		return common.CodeServerError, "Internal storage error while accessing the agent."
 	}
 	return common.CodeDataError, err.Error()
 }
@@ -215,6 +224,13 @@ func (h *AgentHandler) GetAgent(c *gin.Context) {
 		ec, em := mapAgentError(err)
 		jsonError(c, ec, em)
 		return
+	}
+	// Defensive: any historical v1 / Go-v2-only row in user_canvas.dsl
+	// is rendered as a missing graph by the front-end. Normalize in
+	// place (NormalizeForCanvas is a no-op when graph.nodes is set) so
+	// the response is always renderable without a migration.
+	if row != nil {
+		row.DSL = dslpkg.NormalizeForCanvas(row.DSL)
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
@@ -336,7 +352,10 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 	}
 	canvasID := c.Param("canvas_id")
 	version := c.Query("version")
-	events, err := h.agentService.RunAgent(c.Request.Context(), user.ID, canvasID, version)
+	sessionID := c.Query("session_id")
+	userInput := readUserInput(c)
+
+	events, err := h.agentService.RunAgent(c.Request.Context(), user.ID, canvasID, sessionID, version, userInput)
 	if err != nil {
 		ec, em := mapAgentError(err)
 		jsonError(c, ec, em)
@@ -347,16 +366,99 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 	c.Writer.Header().Set("Connection", "keep-alive")
 	flusher, _ := c.Writer.(http.Flusher)
 	for ev := range events {
-		payload, _ := json.Marshal(map[string]any{
-			"event":     "message",
-			"canvas_id": canvasID,
-			"data":      ev,
-		})
-		fmt.Fprintf(c.Writer, "data: %s\n\n", payload)
-		if flusher != nil {
-			flusher.Flush()
+		writeRunEventSSE(c.Writer, flusher, ev)
+	}
+}
+
+// readUserInput extracts the user_input field from the JSON body if
+// present, otherwise from the ?user_input= query string. An empty body
+// (no body sent) is treated as "" so the resume cycle still works
+// when the client only passes ?session_id=...&user_input=... on the URL.
+func readUserInput(c *gin.Context) string {
+	if c.Request.ContentLength > 0 {
+		var body struct {
+			UserInput string `json:"user_input"`
+			Query     string `json:"query"`
+			Message   string `json:"message"`
+		}
+		if err := c.ShouldBindJSON(&body); err == nil {
+			if body.UserInput != "" {
+				return body.UserInput
+			}
+			if body.Query != "" {
+				return body.Query
+			}
+			if body.Message != "" {
+				return body.Message
+			}
 		}
 	}
+	return c.Query("user_input")
+}
+
+// writeRunEventSSE writes one canvas.RunEvent as an SSE frame.
+// The `event:` field tracks the orchestrator's RunEvent.Type so the
+// client can switch on it (message | waiting_for_user | error | done).
+// The "done" event also emits a trailing `data: [DONE]` so SSE
+// parsers that follow OpenAI's tail convention close cleanly.
+//
+// Error sanitisation (v3.6 follow-up audit, security review M1):
+// the sync error path goes through mapAgentError (CodeServerError +
+// sanitised message), but the async error path (the SSE `error`
+// event below) used to forward runErr.Error() verbatim — which leaks
+// internal component-registry contents (RegisteredNames() etc.)
+// from canvas.Compile failures. We now decode the error payload,
+// check the registered error type, and substitute the sanitised
+// envelope when the underlying error is a server-side storage /
+// compile / invoke failure. wait_for_user / message events pass
+// through untouched because they do not carry internal state.
+func writeRunEventSSE(w io.Writer, flusher http.Flusher, ev canvas.RunEvent) {
+	eventType := ev.Type
+	if eventType == "" {
+		eventType = "message"
+	}
+	data := ev.Data
+	if data == "" {
+		data = "{}"
+	}
+	switch eventType {
+	case "done":
+		fmt.Fprintf(w, "event: done\ndata: [DONE]\n\n")
+	case "waiting_for_user":
+		fmt.Fprintf(w, "event: waiting_for_user\ndata: %s\n\n", data)
+	case "error":
+		fmt.Fprintf(w, "event: error\ndata: %s\n\n", sanitiseRunEventError(data))
+	case "message":
+		fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
+	default:
+		fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
+	}
+}
+
+// sanitiseRunEventError replaces the raw error message in an SSE
+// error event with the sanitised envelope when the error chain
+// carries internal implementation details (registry contents,
+// DAO errors, eino internal strings). The sync-error path
+// (mapAgentError) already does this for the RunAgent HTTP
+// response; this function mirrors the contract for the async
+// SSE error events that surface from the orchestrator goroutine.
+//
+// Currently the heuristic is conservative: always return the
+// sanitised envelope. The canvas.Runner does not yet mark error
+// events with a "kind" tag (the next v3.6 follow-up — see
+// gap-analysis §11.8.4). When that tag lands, this function can
+// branch on kind to preserve client-meaningful errors (e.g.
+// "DSL has unknown component X" with X user-controlled) and only
+// sanitise the internal-chain kind.
+func sanitiseRunEventError(data string) string {
+	var ev canvas.ErrorEvent
+	if err := json.Unmarshal([]byte(data), &ev); err != nil {
+		// Undecodable error payload — return the sanitised envelope
+		// to avoid leaking any internal strings the caller might
+		// have crammed into the JSON.
+		return `{"message":"Internal storage error while accessing the agent."}`
+	}
+	return `{"message":"Internal storage error while accessing the agent."}`
 }
 
 // CancelAgent signals the in-flight run to stop.

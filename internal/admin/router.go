@@ -71,6 +71,31 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.GET("/users/:username/datasets", r.handler.GetUserDatasets)
 			protected.GET("/users/:username/agents", r.handler.GetUserAgents)
 
+			// For enterprise edition
+			protected.GET("/users/:username/activity", r.handler.ShowUserActivity)
+			protected.GET("/users/:username/dataset", r.handler.ShowUserDatasetSummary)
+			protected.GET("/users/:username/summary", r.handler.ShowUserSummary)
+			protected.GET("/users/:username/storage", r.handler.ShowUserStorage)
+			protected.GET("/users/:username/quota", r.handler.ShowUserQuota)
+			protected.GET("/users/:username/index", r.handler.ShowUserIndex)
+			protected.PUT("/users/:username/role", r.handler.UpdateUserRole)
+			protected.GET("/users/:username/permission", r.handler.ShowUserPermission)
+			protected.GET("/users/summary", r.handler.ShowUsersSummary)
+			protected.GET("/users/activity", r.handler.ShowUsersActivity)
+			protected.GET("/users/reports", r.handler.ListUsersReports)
+			protected.GET("/users/storage", r.handler.ListUsersStorage)
+			protected.GET("/users/documents", r.handler.ListUsersDocuments)
+			protected.GET("/users/index", r.handler.ListUsersIndex)
+			protected.GET("/users/quota", r.handler.ListUsersQuota)
+			protected.GET("/users/quota/summary", r.handler.ShowUsersQuotaSummary)
+			protected.GET("/data/summary", r.handler.ShowDataSummary)
+			protected.GET("/data/orphan", r.handler.ShowDataOrphan)
+			protected.GET("/data/storage", r.handler.ShowDataStorage)
+			protected.GET("/data/index", r.handler.ShowDataIndex)
+			protected.DELETE("/data/orphan", r.handler.PurgeOrphanData)
+			protected.DELETE("/users/:username/data", r.handler.PurgeUserData)
+			protected.DELETE("/users/data", r.handler.PurgeUsersData)
+
 			// API Keys
 			protected.GET("/users/:username/keys", r.handler.ListUserAPITokens)
 			protected.GET("/users/:username/tokens", r.handler.ListUserAPITokens)
@@ -88,10 +113,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.GET("/roles/:role_name/permission", r.handler.GetRolePermission)
 			protected.POST("/roles/:role_name/permission", r.handler.GrantRolePermission)
 			protected.DELETE("/roles/:role_name/permission", r.handler.RevokeRolePermission)
-
-			// User roles and permissions
-			protected.PUT("/users/:username/role", r.handler.UpdateUserRole)
-			protected.GET("/users/:username/permission", r.handler.GetUserPermission)
 
 			// Service management
 			protected.GET("/services", r.handler.GetServices)

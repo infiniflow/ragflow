@@ -14,24 +14,24 @@
 //  limitations under the License.
 //
 
-// Package component — DocsGenerator (T5, plan §2.11.3 row 21, §2.11.5.3-§2.11.5.4).
+// Package component — DocsGenerator (T5).
 //
-// DocsGenerator is a lambda that routes by output_format to one of the
-// 5 in-package writers (PDF / DOCX / TXT / Markdown / HTML). The Python
-// original (agent/component/docs_generator.py) used pypandoc + xelatex;
-// the Go port uses pure-Go libraries (signintech/gopdf, xuri/excelize,
-// yuin/goldmark) and a self-implemented OOXML writer for DOCX, avoiding
-// the AGPL-3 / archive / oversized-image-stack concerns of the Python
-// toolchain (plan §2.11.5).
+// DocsGenerator is a lambda that routes by output_format to one of
+// the 5 in-package writers (PDF / DOCX / TXT / Markdown / HTML). The
+// Python original (agent/component/docs_generator.py) used
+// pypandoc + xelatex; the Go port uses pure-Go libraries
+// (signintech/gopdf, xuri/excelize, yuin/goldmark) and a
+// self-implemented OOXML writer for DOCX, avoiding the AGPL-3 /
+// archive / oversized-image-stack concerns of the Python
+// toolchain.
 //
-// The component is the canvas entry point. It does NOT call MinIO; the
-// produced bytes (or for HTML/MD, the rendered text) are surfaced on
-// the output map for downstream nodes to attach / serve. Phase 5
-// integration wires the upload.
+// The component is the canvas entry point. It does NOT call MinIO;
+// the produced bytes (or for HTML/MD, the rendered text) are
+// surfaced on the output map for downstream nodes to attach /
+// serve.
 package component
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"strings"
@@ -48,7 +48,8 @@ const componentNameDocsGenerator = "DocsGenerator"
 // mandates a minimum of 12pt for accessibility; we default to 12.
 const defaultDocsFontSize = 12
 
-// Default font families; Phase 5 will register a real TTF asset.
+// Default font families. Operators can register a real TTF
+// asset at boot via gopdf.SetFont.
 const (
 	defaultPDFFontFamily    = "Noto Sans CJK SC"
 	defaultDOCXFontFamily   = "Noto Sans CJK SC"
@@ -240,19 +241,31 @@ func (d *DocsGenerator) Invoke(ctx context.Context, inputs map[string]any) (map[
 		}
 		mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 	case "txt":
-		renderedStr := renderTXT(param.Content, param.HeaderText, param.FooterText, param.AddTimestamp)
-		payload = []byte(renderedStr)
+		payload = iow.WriteTXT(param.Content, iow.TXTOptions{
+			HeaderText:   param.HeaderText,
+			FooterText:   param.FooterText,
+			AddTimestamp: param.AddTimestamp,
+		})
 		mime = "text/plain; charset=utf-8"
 	case "markdown", "md":
 		// Markdown "writer" returns the original content (with optional
 		// front-matter). Round-tripping Markdown → Markdown is a no-op
 		// apart from header/footer/watermark rendering as comments.
-		renderedStr := renderMarkdown(param.Content, param.HeaderText, param.FooterText, param.AddTimestamp)
-		payload = []byte(renderedStr)
+		payload = iow.WriteMarkdown(param.Content, iow.MarkdownOptions{
+			HeaderText:   param.HeaderText,
+			FooterText:   param.FooterText,
+			AddTimestamp: param.AddTimestamp,
+		})
 		mime = "text/markdown; charset=utf-8"
 	case "html":
-		renderedStr := renderHTML(param.Content, param.HeaderText, param.FooterText, param.WatermarkText, param.AddTimestamp, param.FontSize, defaultHTMLFontFamily)
-		payload = []byte(renderedStr)
+		payload = iow.WriteHTML(param.Content, iow.HTMLOptions{
+			HeaderText:    param.HeaderText,
+			FooterText:    param.FooterText,
+			WatermarkText: param.WatermarkText,
+			AddTimestamp:  param.AddTimestamp,
+			FontSize:      param.FontSize,
+			FontFamily:    defaultHTMLFontFamily,
+		})
 		mime = "text/html; charset=utf-8"
 	}
 
@@ -299,7 +312,7 @@ func (d *DocsGenerator) Outputs() map[string]string {
 		"filename":  "Sanitized filename (extension matches output_format).",
 		"mime_type": "MIME type for the payload.",
 		"size":      "Payload size in bytes.",
-		"bytes":     "Raw document bytes (for storage upload in Phase 5).",
+		"bytes":     "Raw document bytes (for storage upload).",
 		"download":  "Stub URI the canvas engine can resolve to a signed URL.",
 		"created":   "RFC3339 timestamp of the generation.",
 	}
@@ -355,95 +368,10 @@ func sanitizeFilename(raw, ext string) string {
 	return base
 }
 
-// renderTXT is the trivial plain-text path: header / footer / timestamp
-// are wrapped as plain text lines around the body.
-func renderTXT(content, header, footer string, addTimestamp bool) string {
-	var b bytes.Buffer
-	if header != "" {
-		b.WriteString(header)
-		b.WriteString("\n")
-	}
-	if addTimestamp {
-		b.WriteString(fmt.Sprintf("Generated: %s\n", time.Now().UTC().Format(time.RFC3339)))
-	}
-	b.WriteString("\n")
-	b.WriteString(content)
-	if footer != "" {
-		b.WriteString("\n")
-		b.WriteString(footer)
-	}
-	return b.String()
-}
-
-// renderMarkdown emits a Markdown doc with header/footer as HTML
-// comments and a YAML-ish front-matter timestamp.
-func renderMarkdown(content, header, footer string, addTimestamp bool) string {
-	var b bytes.Buffer
-	if addTimestamp {
-		b.WriteString("<!-- generated: ")
-		b.WriteString(time.Now().UTC().Format(time.RFC3339))
-		b.WriteString(" -->\n\n")
-	}
-	if header != "" {
-		b.WriteString("<!-- header: ")
-		b.WriteString(header)
-		b.WriteString(" -->\n\n")
-	}
-	b.WriteString(content)
-	if footer != "" {
-		b.WriteString("\n\n<!-- footer: ")
-		b.WriteString(footer)
-		b.WriteString(" -->\n")
-	}
-	return b.String()
-}
-
-// renderHTML is a minimal HTML5 wrapper around the body. The header
-// and footer are placed in <header> and <footer> elements; the
-// watermark, when set, becomes a CSS background-image placeholder (the
-// Phase 5 polish task can swap this for an SVG).
-func renderHTML(content, header, footer, watermark string, addTimestamp bool, fontSize int, fontFamily string) string {
-	var b bytes.Buffer
-	b.WriteString("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n")
-	b.WriteString("<meta charset=\"utf-8\">\n")
-	b.WriteString("<title>")
-	if header != "" {
-		b.WriteString(header)
-	} else {
-		b.WriteString("Document")
-	}
-	b.WriteString("</title>\n")
-	b.WriteString("<style>\n")
-	fmt.Fprintf(&b, "body { font-family: %q; font-size: %dpt; line-height: 1.5; }\n", fontFamily, fontSize)
-	if watermark != "" {
-		b.WriteString("body { background-image: linear-gradient(transparent, transparent); }\n")
-		b.WriteString(".watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); font-size: 96pt; color: rgba(0,0,0,0.06); pointer-events: none; z-index: -1; }\n")
-	}
-	b.WriteString("</style>\n</head>\n<body>\n")
-	if header != "" {
-		b.WriteString("<header>")
-		b.WriteString(header)
-		b.WriteString("</header>\n")
-	}
-	if watermark != "" {
-		b.WriteString("<div class=\"watermark\">")
-		b.WriteString(watermark)
-		b.WriteString("</div>\n")
-	}
-	b.WriteString("<main>\n")
-	b.WriteString(content)
-	b.WriteString("\n</main>\n")
-	if footer != "" {
-		b.WriteString("<footer>")
-		b.WriteString(footer)
-		b.WriteString("</footer>\n")
-	}
-	if addTimestamp {
-		fmt.Fprintf(&b, "<p><small>Generated: %s</small></p>\n", time.Now().UTC().Format(time.RFC3339))
-	}
-	b.WriteString("</body>\n</html>\n")
-	return b.String()
-}
+// renderTXT / renderMarkdown / renderHTML live in
+// internal/agent/component/io/{txt,markdown,html}_writer.go so
+// every per-format writer lives in its own file under io/,
+// matching the pdf_writer.go / docx_writer.go packaging.
 
 func init() {
 	Register(componentNameDocsGenerator, NewDocsGenerator)

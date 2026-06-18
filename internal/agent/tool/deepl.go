@@ -65,8 +65,8 @@ var deeplFreeEndpoint = "https://api-free.deepl.com/v2/translate"
 // deeplProEndpoint is the DeepL pro-plan API host.
 var deeplProEndpoint = "https://api.deepl.com/v2/translate"
 
-// DeepLTool is the Phase 3 batch 3 implementation of the DeepL
-// translation tool (plan §2.11.4 row 5, §5 Phase 3 第 3 批). It POSTs
+// DeepLTool is the DeepL
+// translation tool. It POSTs
 // a translation request to the DeepL /v2/translate endpoint via the
 // shared HTTPHelper.
 type DeepLTool struct {

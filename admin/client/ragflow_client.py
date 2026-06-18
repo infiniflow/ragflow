@@ -56,7 +56,7 @@ class RAGFlowClient:
 
     def login_user(self, command):
         try:
-            response = self.http_client.request("GET", "/system/ping", use_api_base=False, auth_kind="web")
+            response = self.http_client.request("GET", "/system/ping", use_api_base=True, auth_kind="web")
             if response.status_code == 200 and response.content == b"pong":
                 pass
             else:
@@ -86,11 +86,11 @@ class RAGFlowClient:
     def ping_server(self, command):
         iterations = command.get("iterations", 1)
         if iterations > 1:
-            response = self.http_client.request("GET", "/system/ping", use_api_base=False, auth_kind="web",
+            response = self.http_client.request("GET", "/system/ping", use_api_base=True, auth_kind="web",
                                                 iterations=iterations)
             return response
         else:
-            response = self.http_client.request("GET", "/system/ping", use_api_base=False, auth_kind="web")
+            response = self.http_client.request("GET", "/system/ping", use_api_base=True, auth_kind="web")
             if response.status_code == 200 and response.content == b"pong":
                 print("Server is alive")
             else:
@@ -106,8 +106,8 @@ class RAGFlowClient:
         enc_password = encrypt_password(password)
         print(f"Register user: {nickname}, email: {username}, password: ******")
         payload = {"email": username, "nickname": nickname, "password": enc_password}
-        response = self.http_client.request(method="POST", path="/user/register",
-                                            json_body=payload, use_api_base=False, auth_kind="web")
+        response = self.http_client.request(method="POST", path="/users",
+                                            json_body=payload, use_api_base=True, auth_kind="web")
         res_json = response.json()
         if response.status_code == 200:
             if res_json["code"] == 0:
@@ -1430,7 +1430,7 @@ class RAGFlowClient:
 
         payload = {
             "question": command_dict["question"],
-            "kb_id": dataset_ids,
+            "dataset_ids": dataset_ids,
             "similarity_threshold": 0.2,
             "vector_similarity_weight": 0.3,
             # "top_k": 1024,
@@ -1438,11 +1438,11 @@ class RAGFlowClient:
         }
         iterations = command_dict.get("iterations", 1)
         if iterations > 1:
-            response = self.http_client.request("POST", "/chunk/retrieval_test", json_body=payload, use_api_base=False,
+            response = self.http_client.request("POST", "/retrieval", json_body=payload, use_api_base=True,
                                                 auth_kind="web", iterations=iterations)
             return response
         else:
-            response = self.http_client.request("POST", "/chunk/retrieval_test", json_body=payload, use_api_base=False,
+            response = self.http_client.request("POST", "/retrieval", json_body=payload, use_api_base=True,
                                                 auth_kind="web")
             res_json = response.json()
             if response.status_code == 200:
@@ -1826,7 +1826,7 @@ class RAGFlowClient:
                 return None
 
     def _get_default_models(self):
-        response = self.http_client.request("GET", "/user/tenant_info", use_api_base=False, auth_kind="web")
+        response = self.http_client.request("GET", "/users/me/models", use_api_base=True, auth_kind="web")
         res_json = response.json()
         if response.status_code == 200:
             if res_json["code"] == 0:
@@ -1852,7 +1852,7 @@ class RAGFlowClient:
             "asr_id": current_payload["asr_id"],
             "tts_id": current_payload["tts_id"],
         }
-        response = self.http_client.request("POST", "/user/set_tenant_info", json_body=payload, use_api_base=False,
+        response = self.http_client.request("PATCH", "/users/me/models", json_body=payload, use_api_base=True,
                                             auth_kind="web")
         res_json = response.json()
         if response.status_code == 200 and res_json["code"] == 0:
