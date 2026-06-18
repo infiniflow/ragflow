@@ -202,12 +202,11 @@ func (o *OpenRouterModel) ChatStreamlyWithSender(modelName string, messages []Me
 	if err != nil {
 		return err
 	}
+	// All OpenRouter models use the standard chat-completions endpoint, same as
+	// the non-stream path. The previous qwen/glm branch routed to URLSuffix.AsyncChat,
+	// which OpenRouter does not configure (empty suffix) — producing a broken URL and
+	// breaking streaming for every qwen/glm model.
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.Chat)
-
-	modelType := strings.Split(modelName, "_")[0]
-	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.AsyncChat)
-	}
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -250,16 +249,16 @@ func (o *OpenRouterModel) ChatStreamlyWithSender(modelName string, messages []Me
 			reqBody["stop"] = *modelConfig.Stop
 		}
 
+		// OpenRouter controls reasoning via the standard `reasoning` request object
+		// (the non-stream path and the streamed `delta.reasoning` response use it too).
+		// The previous `thinking` key is non-standard and silently ignored by the API,
+		// so streaming reasoning was never actually enabled. `effort` takes precedence,
+		// matching the non-stream path.
 		if modelConfig.Thinking != nil {
-			if *modelConfig.Thinking {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "enabled",
-				}
-			} else {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "disabled",
-				}
-			}
+			reqBody["reasoning"] = map[string]interface{}{"enabled": *modelConfig.Thinking}
+		}
+		if modelConfig.Effort != nil {
+			reqBody["reasoning"] = map[string]interface{}{"effort": *modelConfig.Effort}
 		}
 	}
 
