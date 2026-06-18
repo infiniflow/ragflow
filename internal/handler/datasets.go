@@ -171,6 +171,48 @@ func (h *DatasetsHandler) GetDataset(c *gin.Context) {
 	})
 }
 
+// UpdateDataset Update a dataset.
+func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	userID := strings.TrimSpace(user.ID)
+	if userID == "" {
+		jsonError(c, common.CodeDataError, "user id is required")
+		return
+	}
+
+	datasetID := strings.TrimSpace(c.Param("dataset_id"))
+	if datasetID == "" {
+		jsonError(c, common.CodeBadRequest, "dataset id is required")
+		return
+	}
+
+	var req service.UpdateDatasetRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	result, code, err := h.datasetsService.UpdateDataset(datasetID, userID, req)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+	if code != common.CodeSuccess {
+		jsonError(c, code, "dataset updated failed")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": common.CodeSuccess,
+		"data": result,
+	})
+}
+
 func (h *DatasetsHandler) GetMetadataConfig(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
