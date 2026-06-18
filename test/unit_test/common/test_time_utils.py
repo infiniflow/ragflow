@@ -653,6 +653,7 @@ class TestDeltaSeconds:
             assert result > 0
 
 
+@pytest.mark.p2
 class TestTimestampToDateCurrentTimeFallback:
     """Regression tests for the None/empty fallback of timestamp_to_date.
 
@@ -679,7 +680,12 @@ class TestTimestampToDateCurrentTimeFallback:
         parsed = time.mktime(time.strptime(result, "%Y-%m-%d %H:%M:%S"))
         assert before - 2 <= parsed <= after + 2
 
+    def test_zero_timestamp_is_not_treated_as_empty(self):
+        """Zero timestamp should map to Unix epoch, not fallback to current time."""
+        assert timestamp_to_date(0) == time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(0))
 
+
+@pytest.mark.p2
 class TestFormatIso8601ToYmdHms:
     """Test cases for format_iso_8601_to_ymd_hms function."""
 

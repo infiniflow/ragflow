@@ -46,8 +46,9 @@ def timestamp_to_date(timestamp, format_string="%Y-%m-%d %H:%M:%S"):
         >>> timestamp_to_date(1704067200000)
         '2024-01-01 08:00:00'
     """
-    if not timestamp:
+    if timestamp is None or timestamp == "":
         timestamp = current_timestamp()
+        logging.debug("timestamp_to_date received empty timestamp; using current_timestamp() fallback")
     timestamp = int(timestamp) / 1000
     time_array = time.localtime(timestamp)
     str_date = time.strftime(format_string, time_array)
