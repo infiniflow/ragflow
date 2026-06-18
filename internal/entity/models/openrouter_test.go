@@ -218,3 +218,57 @@ func TestOpenRouterTranscribeAudioHTTPError(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 }
+
+// TestOpenRouterChatStreamlyRequest verifies the streaming chat request is built
+// correctly: every model (including qwen/glm) targets the standard chat endpoint,
+// and reasoning is requested via OpenRouter's standard `reasoning` object rather
+// than the non-standard `thinking` key that the API silently ignores.
+func TestOpenRouterChatStreamlyRequest(t *testing.T) {
+	var gotPath string
+	var gotBody map[string]interface{}
+	srv := newOpenRouterServer(t, "/chat/completions", func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		gotPath = r.URL.Path
+		gotBody = body
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"reasoning\":\"think\"}}]}\n\n")
+		io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n")
+		io.WriteString(w, "data: [DONE]\n\n")
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	thinking := true
+	var reasoning strings.Builder
+	// "qwen_max" would have triggered the removed async-routing branch (empty suffix).
+	err := newOpenRouterForTest(srv.URL).ChatStreamlyWithSender(
+		"qwen_max",
+		[]Message{{Role: "user", Content: "hi"}},
+		&APIConfig{ApiKey: &apiKey},
+		&ChatConfig{Thinking: &thinking},
+		func(content, reason *string) error {
+			if reason != nil {
+				reasoning.WriteString(*reason)
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("ChatStreamlyWithSender error: %v", err)
+	}
+	if gotPath != "/chat/completions" {
+		t.Errorf("path=%q, want /chat/completions (qwen must not route to async suffix)", gotPath)
+	}
+	if _, ok := gotBody["thinking"]; ok {
+		t.Errorf("request still sends non-standard `thinking` key: %v", gotBody["thinking"])
+	}
+	reason, ok := gotBody["reasoning"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("request missing standard `reasoning` object, body=%v", gotBody)
+	}
+	if reason["enabled"] != true {
+		t.Errorf("reasoning.enabled=%v, want true", reason["enabled"])
+	}
+	if reasoning.String() != "think" {
+		t.Errorf("streamed reasoning=%q, want %q", reasoning.String(), "think")
+	}
+}

@@ -85,9 +85,9 @@ func TestObserveRun_NormalisesEmptyArgs(t *testing.T) {
 	ResetMetricsForTesting()
 
 	// Pin the env-driven default to Python so the test is hermetic
-	// regardless of the host environment. (Phase 7 default is Go, but
-	// the assertion is "the empty-runtime label equals Default()", so
-	// we set the env to make the expected value explicit.)
+	// regardless of the host environment. The assertion is "the
+	// empty-runtime label equals Default()", so we set the env to
+	// make the expected value explicit.
 	t.Setenv("RAGFLOW_CANVAS_DEFAULT_RUNTIME", string(RuntimePython))
 	ResetDefaultCache()
 
@@ -98,11 +98,11 @@ func TestObserveRun_NormalisesEmptyArgs(t *testing.T) {
 	}
 }
 
-// TestObserveRun_DefaultFallsToGoAfterPhase7 documents the Phase 7
-// review fix (M4): the metric's empty-runtime fallback now follows
-// selector.Default() (which is RuntimeGo as of Phase 7), so the
-// runtime label is consistent with what Selector.Select would have
-// returned for the same tenant.
+// TestObserveRun_DefaultFallsToGoAfterPhase7 documents the
+// empty-runtime fallback: the metric's fallback now follows
+// selector.Default() (which is RuntimeGo), so the runtime label
+// is consistent with what Selector.Select would have returned
+// for the same tenant.
 func TestObserveRun_DefaultFallsToGoAfterPhase7(t *testing.T) {
 	ResetMetricsForTesting()
 	t.Setenv("RAGFLOW_CANVAS_DEFAULT_RUNTIME", "")

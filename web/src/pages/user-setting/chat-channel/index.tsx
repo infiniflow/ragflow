@@ -58,7 +58,13 @@ const ChatChannel = () => {
   const { chatChannelInfo } = useChatChannelInfo();
   const channelTemplates: IChatChannelInfo[] = Object.values(ChatChannelKey)
     .filter(
-      (id) => [ChatChannelKey.DISCORD, ChatChannelKey.FEISHU].includes(id), // Show only Discord and Feishu
+      (id) =>
+        [
+          ChatChannelKey.DISCORD,
+          ChatChannelKey.FEISHU,
+          ChatChannelKey.TELEGRAM,
+          ChatChannelKey.QQBOT,
+        ].includes(id), // Show only selected chat channels
     )
     .map((id) => ({
       id,

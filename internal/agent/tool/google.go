@@ -61,8 +61,8 @@ type googleEnvelope struct {
 	Error   string         `json:"_ERROR,omitempty"`
 }
 
-// GoogleTool is the Phase 3 batch 2 implementation of the Google
-// Programmable Search tool (plan §2.11.4 row 10, §5 Phase 3 第 2 批).
+// GoogleTool is the Google
+// Programmable Search tool.
 // It performs a GET against the CSE endpoint using the shared
 // HTTPHelper.
 type GoogleTool struct {

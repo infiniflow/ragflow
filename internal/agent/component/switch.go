@@ -14,20 +14,22 @@
 //  limitations under the License.
 //
 
-// Package component — Switch component (T2, plan §2.11.3 row 7).
+// Package component — Switch component (T2).
 //
 // Switch is a multi-condition router implemented in pure Go (no eino
 // Lambda dependency). It walks a list of AND/OR-combined condition
 // groups against the current *CanvasState, picks the first matching
 // group's downstream cpn_id, and returns it as outputs["_next"]. The
 // downstream cpn_id for a matching group is taken from the optional
-// "to" field; if absent, the P0 fallback is the index-based
+// "to" field; if absent, the fallback is the index-based
 // "matched_<i>" naming used in the spec's example assertions.
 //
-// Mirrors the Python agent/component/switch.py behavior. The Phase 5
-// eino `compose.NewGraphMultiBranch` integration (per plan §2.11.6
-// entry for Switch) is a thinner pass-through: the hard routing
-// decision lives here, MultiBranch just wires the edges.
+// Switch's runtime choice is consumed by the canvas scheduler's
+// MultiBranch wiring (see canvas/multibranch.go). The eino
+// `compose.NewGraphMultiBranch` integration is a thin pass-through:
+// the routing decision lives here, MultiBranch just wires the edges.
+//
+// Mirrors the Python agent/component/switch.py behavior.
 package component
 
 import (
@@ -35,6 +37,7 @@ import (
 	"fmt"
 	"maps"
 	"strconv"
+	"strings"
 
 	"ragflow/internal/agent/runtime"
 )
@@ -57,10 +60,11 @@ func NewSwitchComponent(_ map[string]any) (Component, error) {
 func (s *SwitchComponent) Name() string { return s.name }
 
 // Invoke evaluates the conditions list in order, returns the first
-// matching group's downstream cpn_id at outputs["_next"]. If no group
-// matches, outputs["_next"] = inputs["default"] (a free-form string —
-// Phase 5 will resolve it to a real cpn_id via the eino multi-branch
-// wiring). Unknown / empty inputs are tolerated: an absent "conditions"
+// matching group's downstream cpn_id at outputs["_next"]. If no
+// group matches, outputs["_next"] = inputs["default"] (a
+// free-form string — resolved to a real cpn_id by the canvas
+// scheduler's MultiBranch wiring in canvas/multibranch.go).
+// Unknown / empty inputs are tolerated: an absent "conditions"
 // list yields outputs["_next"] = inputs["default"].
 func (s *SwitchComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
 	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
@@ -159,8 +163,16 @@ func evaluateGroup(group map[string]any, state *runtime.CanvasState) (bool, erro
 
 // evaluateClause resolves a single clause. left is a {{...}} reference
 // (passed through runtime.ResolveTemplate); op is one of
-// "==", "!=", ">", "<", "contains", "empty". The "empty" operator
-// ignores right.
+// "==", "!=", ">", "<", ">=", "<=", "contains", "not contains",
+// "start with", "end with", "empty", "not empty". The "empty" /
+// "not empty" operators ignore right.
+//
+// String operators (==, !=, contains, not contains, start with,
+// end with) are case-insensitive — they lowercase both sides
+// before comparing. The Python agent's Categorize / Switch
+// nodes do the same; v1 ported case-insensitive matching for
+// user-facing labels where "Hello" and "hello" should be
+// treated as the same value.
 func evaluateClause(clause map[string]any, state *runtime.CanvasState) (bool, error) {
 	left, _ := clause["left"].(string)
 	op, _ := clause["op"].(string)
@@ -168,9 +180,12 @@ func evaluateClause(clause map[string]any, state *runtime.CanvasState) (bool, er
 		op = "=="
 	}
 
-	// "empty" is the only operator that does not read `right`.
+	// "empty" / "not empty" don't read `right`.
 	if op == "empty" {
 		return isEmptyValue(leftValue(left, state)), nil
+	}
+	if op == "not empty" {
+		return !isEmptyValue(leftValue(left, state)), nil
 	}
 
 	right := clause["right"]
@@ -178,26 +193,39 @@ func evaluateClause(clause map[string]any, state *runtime.CanvasState) (bool, er
 
 	switch op {
 	case "==":
-		return equalValues(lv, right), nil
+		return equalFoldValues(lv, right), nil
 	case "!=":
-		return !equalValues(lv, right), nil
+		return !equalFoldValues(lv, right), nil
 	case "contains":
-		// Treat the right-hand side as a string needle.
 		ls, rs := fmt.Sprintf("%v", lv), fmt.Sprintf("%v", right)
-		return containsString(ls, rs), nil
-	case ">", "<":
+		return containsString(strings.ToLower(ls), strings.ToLower(rs)), nil
+	case "not contains":
+		ls, rs := fmt.Sprintf("%v", lv), fmt.Sprintf("%v", right)
+		return !containsString(strings.ToLower(ls), strings.ToLower(rs)), nil
+	case "start with":
+		ls, rs := fmt.Sprintf("%v", lv), fmt.Sprintf("%v", right)
+		return strings.HasPrefix(strings.ToLower(ls), strings.ToLower(rs)), nil
+	case "end with":
+		ls, rs := fmt.Sprintf("%v", lv), fmt.Sprintf("%v", right)
+		return strings.HasSuffix(strings.ToLower(ls), strings.ToLower(rs)), nil
+	case ">", "<", ">=", "<=":
 		ln, lok := numericize(lv)
 		rn, rok := numericize(right)
 		if !lok || !rok {
 			return false, fmt.Errorf("operator %q requires numeric operands (left=%T, right=%T)", op, lv, right)
 		}
-		if op == ">" {
+		switch op {
+		case ">":
 			return ln > rn, nil
+		case "<":
+			return ln < rn, nil
+		case ">=":
+			return ln >= rn, nil
+		case "<=":
+			return ln <= rn, nil
 		}
-		return ln < rn, nil
-	default:
-		return false, fmt.Errorf("unknown operator %q", op)
 	}
+	return false, fmt.Errorf("unknown operator %q", op)
 }
 
 // leftValue resolves a {{...}} reference against state. References
@@ -231,6 +259,27 @@ func equalValues(a, b any) bool {
 	}
 	// Stringify then compare — covers most canvas-DSL comparisons.
 	return fmt.Sprintf("%v", a) == fmt.Sprintf("%v", b)
+}
+
+// equalFoldValues is the case-insensitive variant of equalValues.
+// Used by the "==" / "!=" operators in evaluateClause so user-facing
+// labels like "Hello" and "hello" compare equal — matches Python's
+// Categorize / Switch node semantics.
+func equalFoldValues(a, b any) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	as := fmt.Sprintf("%v", a)
+	bs := fmt.Sprintf("%v", b)
+	// Numeric strings should still numeric-compare (so "1" == 1 holds
+	// at the DSL level), but otherwise fall back to case-folded string
+	// compare.
+	if an, ok := numericize(as); ok {
+		if bn, ok2 := numericize(bs); ok2 {
+			return an == bn
+		}
+	}
+	return strings.EqualFold(as, bs)
 }
 
 func containsString(haystack, needle string) bool {

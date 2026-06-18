@@ -57,6 +57,7 @@ export default {
       add: '添加',
       remove: '移除',
       search: '搜索',
+      reset: '重置',
       noDataFound: '没有找到数据。',
       noData: '暂无数据',
       bedrockCredentialsHint:
