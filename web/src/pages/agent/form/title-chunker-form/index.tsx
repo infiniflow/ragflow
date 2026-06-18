@@ -71,6 +71,7 @@ export enum TitleChunkerRulesField {
 
 export type TitleChunkerFormSchemaType = z.infer<typeof FormSchema> & {
   rules: z.infer<typeof rulesSchema>;
+  hierarchy: string;
 };
 
 type LevelItemProps = {
