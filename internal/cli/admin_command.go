@@ -2348,3 +2348,135 @@ func (c *CLI) AdminPurgeUsersCommand(cmd *Command) (ResponseIf, error) {
 	result.Duration = resp.Duration
 	return &result, nil
 }
+
+func (c *CLI) AdminListUserIngestionTasksCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	userName, ok := cmd.Params["user_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("plan_name not provided")
+	}
+
+	payload := map[string]interface{}{
+		"email": userName,
+	}
+
+	status, ok := cmd.Params["status"].(string)
+	if ok {
+		payload["status"] = status
+	}
+
+	apiURL := "/admin/ingestion/tasks"
+
+	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list user %s ingestion tasks: %w", userName, err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list user %s ingestion tasks: HTTP %d, body: %s", userName, resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list user %s ingestion tasks failed: invalid JSON (%w)", userName, err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *CLI) AdminStopUserIngestionTasksCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	userName, ok := cmd.Params["user_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("user_name not provided")
+	}
+
+	payload := map[string]interface{}{
+		"email": userName,
+	}
+
+	status, ok := cmd.Params["status"].(string)
+	if ok {
+		payload["status"] = status
+	}
+
+	apiURL := "/admin/ingestion/tasks"
+
+	resp, err := c.AdminServerClient.Request("PUT", apiURL, "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to stop user %s ingestion tasks: %w", userName, err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to stop user %s ingestion tasks: HTTP %d, body: %s", userName, resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("stop user %s ingestion tasks failed: invalid JSON (%w)", userName, err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *CLI) AdminRemoveUserIngestionTasksCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	userName, ok := cmd.Params["user_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("user_name not provided")
+	}
+
+	payload := map[string]interface{}{
+		"email": userName,
+	}
+
+	status, ok := cmd.Params["status"].(string)
+	if ok {
+		payload["status"] = status
+	}
+
+	apiURL := "/admin/ingestion/tasks"
+
+	resp, err := c.AdminServerClient.Request("DELETE", apiURL, "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to remove user %s ingestion tasks: %w", userName, err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to remove user %s ingestion tasks: HTTP %d, body: %s", userName, resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("remove user %s ingestion tasks failed: invalid JSON (%w)", userName, err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}

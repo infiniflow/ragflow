@@ -1202,7 +1202,9 @@ func (h *Handler) ShowMessageQueue(c *gin.Context) {
 }
 
 type RemoveIngestionTaskRequest struct {
-	Tasks []string `json:"tasks" binding:"required"`
+	Tasks  []string `json:"tasks"`
+	Email  *string  `json:"email"`
+	Status *string  `json:"status"`
 }
 
 func (h *Handler) RemoveIngestionTasks(c *gin.Context) {
@@ -1212,17 +1214,28 @@ func (h *Handler) RemoveIngestionTasks(c *gin.Context) {
 		return
 	}
 
-	tasks, err := h.service.RemoveIngestionTasks(req.Tasks)
-	if err != nil {
-		errorResponse(c, err.Error(), 400)
-		return
-	}
+	if req.Email == nil && req.Status == nil {
+		tasks, err := h.service.RemoveIngestionTasks(req.Tasks)
+		if err != nil {
+			errorResponse(c, err.Error(), 400)
+			return
+		}
 
-	success(c, tasks, "Remove tasks successfully")
+		success(c, tasks, "Remove tasks successfully")
+	} else {
+		tasks, err := h.service.RemoveIngestionTasksByCondition(req.Tasks, req.Email, req.Status)
+		if err != nil {
+			errorResponse(c, err.Error(), 400)
+			return
+		}
+		success(c, tasks, "Remove tasks successfully")
+	}
 }
 
 type StopIngestionTaskRequest struct {
-	Tasks []string `json:"tasks" binding:"required"`
+	Tasks  []string `json:"tasks"`
+	Email  *string  `json:"email"`
+	Status *string  `json:"status"`
 }
 
 func (h *Handler) StopIngestionTasks(c *gin.Context) {
@@ -1232,26 +1245,47 @@ func (h *Handler) StopIngestionTasks(c *gin.Context) {
 		return
 	}
 
-	tasks, err := h.service.StopIngestionTasks(req.Tasks)
-	if err != nil {
-		errorResponse(c, err.Error(), 400)
-		return
-	}
+	if req.Email == nil && req.Status == nil {
+		tasks, err := h.service.StopIngestionTasks(req.Tasks)
+		if err != nil {
+			errorResponse(c, err.Error(), 400)
+			return
+		}
+		var result []map[string]string
+		for _, task := range tasks {
+			result = append(result, map[string]string{
+				"task_id": task.ID,
+				"status":  task.Status,
+			})
+		}
 
-	var result []map[string]string
-	for _, task := range tasks {
-		result = append(result, map[string]string{
-			"task_id": task.ID,
-			"status":  task.Status,
-		})
+		success(c, result, "Stop tasks successfully")
+	} else {
+		tasks, err := h.service.StopIngestionTasksByCondition(req.Tasks, req.Email, req.Status)
+		if err != nil {
+			errorResponse(c, err.Error(), 400)
+			return
+		}
+		success(c, tasks, "Stop tasks successfully")
 	}
+}
 
-	success(c, result, "Stop tasks successfully")
+type ListIngestionTasksRequest struct {
+	Email  *string `json:"email"`
+	Status *string `json:"status"`
 }
 
 // ListIngestionTasks
 func (h *Handler) ListIngestionTasks(c *gin.Context) {
-	tasks, err := h.service.ListIngestionTasks()
+	var err error
+	var tasks []map[string]interface{}
+	var req ListIngestionTasksRequest
+	if err = c.ShouldBindJSON(&req); err != nil {
+		tasks, err = h.service.ListIngestionTasks()
+	} else {
+		tasks, err = h.service.ListIngestionTasksByCondition(req.Email, req.Status)
+	}
+
 	if err != nil {
 		errorResponse(c, err.Error(), 500)
 	}
