@@ -18,6 +18,8 @@ export default {
       rename: 'Rename',
       name: 'Name',
       save: 'Save',
+      saving: 'Saving…',
+      loading: 'Loading…',
       namePlaceholder: 'Please input name',
       descriptionPlaceholder: 'Enter description',
       next: 'Next',
@@ -2958,6 +2960,29 @@ Important structured information may include: names, dates, locations, events, k
       graphCounts: '{{entities}} entities · {{relations}} relations',
       graphEmpty:
         'No knowledge graph data yet. Run the Artifact generator to produce one.',
+      graphResetView: 'Reset view',
+      editDialog: {
+        title: 'Edit artifact page',
+        previewPaneLabel: 'Preview',
+        editorPaneLabel: 'Editor',
+        editorPlaceholder: 'Edit the page markdown…',
+        discardConfirm: 'Discard your unsaved edits?',
+        doubleClickHint: 'Double-click to edit this page',
+      },
+      history: {
+        title: 'History',
+        empty: 'No edit history yet.',
+        loadMore: 'Load more',
+        noDiff: 'No diff available.',
+      },
+      navigate: {
+        title: 'All artifact pages',
+        total: '{{total}} pages',
+        empty: 'No artifact pages yet.',
+        prev: 'Previous',
+        next: 'Next',
+        page: 'Page {{page}} of {{total}}',
+      },
     },
     knowledgeCompilation: {
       title: 'Knowledge compilation',

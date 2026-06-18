@@ -52,7 +52,7 @@ DEFAULT_PARSER_CONFIG = {
     "topn_tags": 3,
     "llm_id": "glm-4-flash@CI@ZHIPU-AI",
     "raptor": {
-        "use_raptor": True,
+        "use_raptor": False,
         "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
         "max_token": 256,
         "threshold": 0.1,

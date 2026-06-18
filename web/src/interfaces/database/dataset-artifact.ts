@@ -7,6 +7,9 @@ export interface ArtifactListItem {
   slug: string;
   title: string;
   page_type: string;
+  /** Short snippet shown on the navigate page card; empty string when
+   *  the writer didn't emit a standalone summary. */
+  summary?: string;
 }
 
 export interface ArtifactListResponse {
@@ -71,4 +74,28 @@ export interface ArtifactGraphRelation {
 export interface ArtifactGraphResponse {
   entities: ArtifactGraphEntity[];
   relations: ArtifactGraphRelation[];
+}
+
+/** One entry in the per-page commit history list (cheap fields only). */
+export interface ArtifactCommitListItem {
+  id: string;
+  title: string;
+  comments?: string | null;
+  user_id?: string | null;
+  user_nickname?: string;
+  /** Epoch ms (from DataBaseModel.create_time). */
+  create_time: number;
+  /** ISO-ish datetime string from DataBaseModel.create_date. */
+  create_date?: string;
+}
+
+export interface ArtifactCommitsResponse {
+  total: number;
+  items: ArtifactCommitListItem[];
+}
+
+/** Detail payload for one commit — includes the heavy diff + content_after. */
+export interface ArtifactCommitDetail extends ArtifactCommitListItem {
+  diff?: string | null;
+  content_after?: string | null;
 }

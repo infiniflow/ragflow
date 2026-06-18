@@ -990,6 +990,37 @@ class FileCommitItem(DataBaseModel):
         )
 
 
+class ArtifactCommit(DataBaseModel):
+    """One row per user-saved edit of an artifact page.
+
+    A 'commit' is created from the dataset Artifact tab when the user saves
+    the markdown editor dialog. Per the v1 contract, no-op saves (the edit
+    produced an empty unified diff) are skipped at the service layer and do
+    not appear here. Each row is self-contained: ``content_after`` snapshots
+    the full post-save markdown so history rendering / restore does not have
+    to walk a parent chain.
+    """
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    kb_id = CharField(max_length=32, null=False, index=True)
+    page_type_kwd = CharField(max_length=32, null=False, index=True, help_text="artifact page type (entity / concept / ...)")
+    slug = CharField(max_length=512, null=False, index=True, help_text="full <page_type>/<name> slug")
+
+    user_id = CharField(max_length=32, null=True, index=True, help_text="who saved the edit; null for system / LLM commits")
+    title = CharField(max_length=255, null=False, help_text="commit title; server defaults to 'Edit <slug>' when omitted")
+    comments = TextField(null=True, default="", help_text="optional commit body / description")
+
+    diff = LongTextField(null=True, help_text="unified diff (difflib.unified_diff) between prior content and content_after")
+    content_after = LongTextField(null=True, help_text="full post-save markdown snapshot; self-contained per row")
+
+    class Meta:
+        db_table = "artifact_commit"
+        indexes = (
+            # Primary access pattern: list commits for one page newest-first.
+            (("tenant_id", "kb_id", "slug", "create_time"), False),
+        )
+
+
 class Task(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     doc_id = CharField(max_length=32, null=False, index=True)

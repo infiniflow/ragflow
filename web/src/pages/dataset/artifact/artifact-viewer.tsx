@@ -1,11 +1,14 @@
 import { Badge } from '@/components/ui/badge';
 import { useFetchDatasetArtifactPage } from '@/hooks/use-dataset-artifact-request';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Components } from 'react-markdown';
 import ReactMarkdown from 'react-markdown';
+import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import { ArtifactLinkRenderer } from './artifact-link-renderer';
+import { ArtifactNavigatePage } from './artifact-navigate-page';
+import { ArtifactPageEditDialog } from './artifact-page-edit-dialog';
 import { useArtifactSelection } from './hooks/use-artifact-state';
 
 /**
@@ -69,11 +72,27 @@ function attachSeeAlsoTitles(seeAlso: string): string {
 
 export function ArtifactViewer() {
   const { t } = useTranslation();
-  const { selected } = useArtifactSelection();
+  const { selected, select } = useArtifactSelection();
   const { data, loading } = useFetchDatasetArtifactPage(
     selected?.pageType,
     selected?.slug,
   );
+  // Double-click anywhere in the rendered page opens the split-view edit
+  // dialog. We don't want a single accidental click on a link or word to
+  // open it, so this rides exclusively on the article's onDoubleClick.
+  const [editing, setEditing] = useState(false);
+
+  // Stale-URL recovery: the URL holds the slug as the source of truth, so
+  // a leftover ``?page_type=…&slug=…`` from a prior session (or a
+  // See-also link to a now-deleted page) leaves us with
+  // ``selected != null && data == null`` even though the list endpoint
+  // is full of valid pages. Drop the URL params so the next render falls
+  // into the ``!selected`` branch and the navigate page takes over.
+  useEffect(() => {
+    if (selected && !loading && data === null) {
+      select(null);
+    }
+  }, [selected, loading, data, select]);
 
   /**
    * Body markdown overrides:
@@ -130,11 +149,9 @@ export function ArtifactViewer() {
   );
 
   if (!selected) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-text-secondary">
-        {t('artifact.selectPrompt')}
-      </div>
-    );
+    // First load / no selection — show the Google-style navigate page so
+    // the middle pane is never empty on entry.
+    return <ArtifactNavigatePage />;
   }
 
   if (loading && !data) {
@@ -146,11 +163,12 @@ export function ArtifactViewer() {
   }
 
   if (!data) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-text-secondary">
-        {t('artifact.notFound')}
-      </div>
-    );
+    // Selection points at a slug that no longer resolves (stale URL,
+    // deleted page, bare ``[[slug]]`` See-also link). The effect above
+    // is clearing the URL params; in the meantime render the navigate
+    // page so the middle pane never lands on a dead-end "no longer
+    // exists" message after the list endpoint already returned items.
+    return <ArtifactNavigatePage />;
   }
 
   const { body, seeAlso } = splitContentAndSeeAlso(
@@ -170,7 +188,11 @@ export function ArtifactViewer() {
           {data.title}
         </h1>
       </header>
-      <article className="px-6 py-6 prose max-w-none dark:prose-invert">
+      <article
+        className="px-6 py-6 prose max-w-none dark:prose-invert cursor-text"
+        onDoubleClick={() => setEditing(true)}
+        title={t('artifact.editDialog.doubleClickHint') as string}
+      >
         {data.summary ? (
           <section className="not-prose mb-6 p-4 rounded-md bg-bg-card border border-border-button">
             <h2 className="text-xs font-medium uppercase tracking-wide text-text-secondary mb-1">
@@ -182,7 +204,10 @@ export function ArtifactViewer() {
           </section>
         ) : null}
 
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={bodyComponents}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm, remarkBreaks]}
+          components={bodyComponents}
+        >
           {body}
         </ReactMarkdown>
 
@@ -200,6 +225,13 @@ export function ArtifactViewer() {
           </section>
         ) : null}
       </article>
+
+      <ArtifactPageEditDialog
+        open={editing}
+        pageType={data.page_type ?? null}
+        slug={data.slug ?? null}
+        onClose={() => setEditing(false)}
+      />
     </div>
   );
 }

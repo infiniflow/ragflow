@@ -609,15 +609,22 @@ async def list_artifacts(tenant_id, dataset_id):
 @login_required
 @add_tenant_id_to_kwargs
 async def get_artifact_graph(tenant_id, dataset_id):
-    """Return the REDUCE-phase graph payload for this dataset.
+    """Return an incremental slice of the canvas graph for this dataset.
 
-    GET /api/v1/datasets/<dataset_id>/artifacts/graph
-    Success: {"code": 0, "data": {"entities":[…],"concepts":[…],"claims":[…],"relations":[…]}}
-    The body comes from the ES row ``compile_kwd=artifact_reduce_result``.
+    GET /api/v1/datasets/<dataset_id>/artifacts/graph[?node=<slug>]
+    - ``node`` omitted: overview centred on the heaviest-weighted
+      entities, expanded outward until ``MAX_LOADING_ENTITY`` is hit.
+    - ``node`` provided: subgraph centred on that entity, including all
+      outgoing relations and their ``to`` targets (also capped).
+
+    Success: ``{"code": 0, "data": {"entities":[…],"relations":[…]}}``.
     """
     try:
+        node = request.args.get("node", None)
+        if isinstance(node, str):
+            node = node.strip() or None
         success, result = await dataset_api_service.get_artifact_graph(
-            dataset_id, tenant_id,
+            dataset_id, tenant_id, node=node,
         )
         if success:
             return get_result(data=result)
@@ -668,6 +675,103 @@ async def get_artifact_page(tenant_id, dataset_id, page_type, slug):
     try:
         success, result = await dataset_api_service.get_artifact_page(
             dataset_id, tenant_id, page_type, slug,
+        )
+        if success:
+            return get_result(data=result)
+        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route(
+    "/datasets/<dataset_id>/artifacts/<page_type>/<path:slug>/commits",
+    methods=["GET"],
+)  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def list_artifact_commits(tenant_id, dataset_id, page_type, slug):
+    """List commit history for one artifact page (newest first).
+
+    GET /api/v1/datasets/<dataset_id>/artifacts/<page_type>/<slug>/commits
+        ?page=1&page_size=50
+
+    Heavy fields (``diff``, ``content_after``) are omitted from list items
+    — fetch them per-row via ``GET .../artifacts/commits/<commit_id>``.
+    """
+    try:
+        page = int(request.args.get("page") or 1)
+        page_size = int(request.args.get("page_size") or 50)
+        success, result = await dataset_api_service.list_artifact_commits(
+            dataset_id, tenant_id, page_type, slug,
+            page=page, page_size=page_size,
+        )
+        if success:
+            return get_result(data=result)
+        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+    except ValueError as e:
+        return get_error_argument_result(str(e))
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route(
+    "/datasets/<dataset_id>/artifacts/commits/<commit_id>",
+    methods=["GET"],
+)  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def get_artifact_commit(tenant_id, dataset_id, commit_id):
+    """Fetch one artifact commit including its diff + content_after."""
+    try:
+        success, result = await dataset_api_service.get_artifact_commit(
+            dataset_id, tenant_id, commit_id,
+        )
+        if success:
+            return get_result(data=result)
+        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route(
+    "/datasets/<dataset_id>/artifacts/<page_type>/<path:slug>",
+    methods=["PUT"],
+)  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def update_artifact_page(tenant_id, dataset_id, page_type, slug):
+    """Edit one artifact page in place.
+
+    PUT /api/v1/datasets/<dataset_id>/artifacts/<page_type>/<slug>
+    Body: {"content_md": "<markdown>"}
+
+    Only the page row is updated — canvas / entity / relation rows stay
+    stale until the next artifact compile. Success returns the
+    re-fetched page dict so the dialog can refresh its preview cleanly.
+    """
+    try:
+        req = await request.get_json()
+        if not isinstance(req, dict):
+            return get_error_argument_result("Body must be a JSON object.")
+        content_md = req.get("content_md")
+        if not isinstance(content_md, str):
+            return get_error_argument_result("'content_md' must be a string.")
+        # Commit metadata — both optional. Title defaults server-side to
+        # "Edit <slug>" inside record_edit when missing.
+        title = req.get("title")
+        comments = req.get("comments")
+        if title is not None and not isinstance(title, str):
+            return get_error_argument_result("'title' must be a string.")
+        if comments is not None and not isinstance(comments, str):
+            return get_error_argument_result("'comments' must be a string.")
+        success, result = await dataset_api_service.update_artifact_page(
+            dataset_id, tenant_id, page_type, slug, content_md,
+            user_id=getattr(current_user, "id", None),
+            title=title,
+            comments=comments,
         )
         if success:
             return get_result(data=result)

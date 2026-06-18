@@ -109,6 +109,13 @@ _DOC_STRUCTURE_MERGE_MAX_DOCS = 512
 # function's internal split_chunks packing to do real work.
 _ARTIFACT_MAP_BATCH_CHUNKS = 64
 
+# Per-node cap on source_chunk_ids carried by the canvas graph blob. Pages
+# can accumulate hundreds of source chunks; the graph response is meant for
+# fast canvas rendering, not full provenance audit, so we trim each node's
+# list. The full per-page list is still available on the artifact_page row
+# the UI deep-links into.
+_ARTIFACT_GRAPH_MAX_CHUNK_IDS_PER_NODE = 64
+
 
 class TaskHandler:
     """Main task handler for document processing.
@@ -1232,35 +1239,36 @@ class TaskHandler:
             )
 
     @staticmethod
-    def _build_artifact_page_graph(pages: List[Dict], kb_id: str) -> Dict:
-        """Project the REFINE-emitted page list onto the canvas graph shape.
+    def _build_artifact_page_graph(
+        pages: List[Dict], kb_id: str,
+    ) -> tuple[Dict, List[Dict], List[Dict]]:
+        """Project the REFINE-emitted page list onto the canvas graph shape
+        AND emit per-entity / per-relation ES rows for downstream retrieval.
 
-        Graph schema (what the frontend ``ForceGraph`` adapter consumes)::
+        Returns:
+            (graph_blob, entity_rows, relation_rows)
+
+        ``graph_blob`` is the same dict the frontend ``ForceGraph`` adapter
+        consumes — unchanged from the prior contract::
 
             {
-              "entities": [
-                {
-                  "slug":        "<page.slug>",       # stable id; UI uses for deep-link
-                  "name":        "<page.title>",      # human-readable label
-                  "aliases":     [<page.entity_names>],
-                  "description": "<page.summary>",
-                  "type":        "<page.page_type>",
-                },
-                ...
-              ],
-              "relations": [
-                {"from": "<src_slug>", "to": "<dst_slug>"},
-                ...
-              ]
+              "entities":  [{slug, name, aliases, description, type, weight, source_chunk_ids}, ...],
+              "relations": [{"from": <src>, "to": <tgt>}, ...]
             }
 
+        ``entity_rows`` / ``relation_rows`` are ES-ready docs (one per node /
+        per surviving edge) using the standard artifact envelope. They are
+        BM25-only (no ``q_<dim>_vec``) — entities carry ``content_ltks``
+        derived from ``slug + " " + summary`` so name/summary lookups hit
+        the lexical index.
+
         Dangling outlinks (a slug not present as a node in this KB) are
-        dropped — they'd render as orphan edges otherwise. ``kb_id`` is
-        accepted for symmetry with future per-KB metadata but not
-        emitted on the graph; the persistence row carries it.
+        dropped on both the blob's relation list and the relation_rows.
         """
-        del kb_id  # currently unused on the graph blob itself
+        from rag.nlp import rag_tokenizer
+
         by_slug: Dict[str, Dict] = {}
+        entity_rows: List[Dict] = []
         for p in pages or []:
             slug = (p.get("slug") or "").strip()
             if not slug:
@@ -1273,16 +1281,64 @@ class TaskHandler:
             # reflects what the writer actually emitted on this page,
             # not the post-filter graph topology.
             weight = len(outlinks_raw) if isinstance(outlinks_raw, list) else 0
+
+            # Per-node provenance: union of source chunks REFINE attributed to
+            # this page. Dedup preserves first-seen order so the UI can show
+            # "earliest" evidence first; we cap the list to keep the graph
+            # blob small (full list lives on the artifact_page row).
+            raw_chunk_ids = p.get("source_chunk_ids") or []
+            seen_chunk_ids: dict[str, None] = {}
+            for cid in raw_chunk_ids:
+                if isinstance(cid, str) and cid and cid not in seen_chunk_ids:
+                    seen_chunk_ids[cid] = None
+                    if len(seen_chunk_ids) >= _ARTIFACT_GRAPH_MAX_CHUNK_IDS_PER_NODE:
+                        break
+            capped_chunk_ids = list(seen_chunk_ids.keys())
+
+            page_type = p.get("page_type") or "concept"
+            description = p.get("summary") or ""
+            name = p.get("title") or slug
+            aliases = list(p.get("entity_names") or [])
+
             by_slug[slug] = {
                 "slug": slug,
-                "name": p.get("title") or slug,
-                "aliases": list(p.get("entity_names") or []),
-                "description": p.get("summary") or "",
-                "type": p.get("page_type") or "concept",
+                "name": name,
+                "aliases": aliases,
+                "description": description,
+                "type": page_type,
                 "weight": weight,
+                "source_chunk_ids": capped_chunk_ids,
             }
 
+            # Per-entity ES row. content_ltks is built from slug + summary
+            # so BM25 hits both the deep-link key and human prose.
+            content_text = (slug + " " + description).strip()
+            entity_payload = {
+                "slug": slug,
+                "name": name,
+                "aliases": aliases,
+                "description": description,
+                "type": page_type,
+                "weight": weight,
+            }
+            entity_rows.append({
+                "id": xxhash.xxh64(
+                    f"artifact_entity:{kb_id}:{slug}".encode("utf-8", "surrogatepass"),
+                ).hexdigest(),
+                "kb_id": kb_id,
+                "doc_id": kb_id,             # KB-scoped sentinel
+                "available_int": 1,
+                "compile_kwd": "artifact_entity",
+                "type_kwd": "artifact_" + page_type,
+                "slug_kwd": slug,
+                "weight_int": int(weight),
+                "source_chunk_ids": capped_chunk_ids,
+                "content_ltks": rag_tokenizer.tokenize(content_text) if content_text else "",
+                "content_with_weight": json.dumps(entity_payload, ensure_ascii=False),
+            })
+
         relations: List[Dict] = []
+        relation_rows: List[Dict] = []
         for p in pages or []:
             src = (p.get("slug") or "").strip()
             if not src or src not in by_slug:
@@ -1297,8 +1353,23 @@ class TaskHandler:
                 if not tgt or tgt == src or tgt not in by_slug:
                     continue
                 relations.append({"from": src, "to": tgt})
+                relation_payload = {"from": src, "to": tgt}
+                relation_rows.append({
+                    "id": xxhash.xxh64(
+                        f"artifact_relation:{kb_id}:{src}:{tgt}".encode("utf-8", "surrogatepass"),
+                    ).hexdigest(),
+                    "kb_id": kb_id,
+                    "doc_id": kb_id,
+                    "available_int": 1,
+                    "compile_kwd": "artifact_relation",
+                    "type_kwd": "artifact_relation",
+                    "from_kwd": src,
+                    "to_kwd": tgt,
+                    "content_with_weight": json.dumps(relation_payload, ensure_ascii=False),
+                })
 
-        return {"entities": list(by_slug.values()), "relations": relations}
+        graph_blob = {"entities": list(by_slug.values()), "relations": relations}
+        return graph_blob, entity_rows, relation_rows
 
     async def _persist_artifact_page_graph_to_es(
         self, ctx: TaskContext, pages: List[Dict],

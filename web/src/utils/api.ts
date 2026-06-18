@@ -320,6 +320,26 @@ export default {
       .split('/')
       .map((s) => encodeURIComponent(s))
       .join('/')}`,
+  updateDatasetArtifactPage: (
+    datasetId: string,
+    pageType: string,
+    slug: string,
+  ) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts/${encodeURIComponent(pageType)}/${slug
+      .split('/')
+      .map((s) => encodeURIComponent(s))
+      .join('/')}`,
+  listDatasetArtifactCommits: (
+    datasetId: string,
+    pageType: string,
+    slug: string,
+  ) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts/${encodeURIComponent(pageType)}/${slug
+      .split('/')
+      .map((s) => encodeURIComponent(s))
+      .join('/')}/commits`,
+  getDatasetArtifactCommit: (datasetId: string, commitId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts/commits/${encodeURIComponent(commitId)}`,
 
   // next-search
   createSearch: `${restAPIv1}/searches`,

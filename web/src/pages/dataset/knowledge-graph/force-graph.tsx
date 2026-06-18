@@ -22,12 +22,20 @@ const getMaxSize = (node: any) => {
 interface IProps {
   data: any;
   show: boolean;
+  /**
+   * Optional. Fires when a user single-clicks a node. Receives the node's
+   * ``id`` (callers that key nodes by name will get the display name).
+   * Stored in a ref so updating the prop doesn't tear the graph down.
+   */
+  onNodeClick?: (id: string) => void;
 }
 
-const ForceGraph = ({ data, show }: IProps) => {
+const ForceGraph = ({ data, show, onNodeClick }: IProps) => {
   const tooltipId = useId();
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<Graph | null>(null);
+  const onNodeClickRef = useRef(onNodeClick);
+  onNodeClickRef.current = onNodeClick;
   const isDark = useIsDarkTheme();
   const nextData = useMemo(() => {
     if (!isEmpty(data)) {
@@ -179,6 +187,16 @@ const ForceGraph = ({ data, show }: IProps) => {
     graphRef.current = graph;
 
     graph.setData(nextData);
+
+    // Single-click → invoke the caller's handler (used by the Artifact
+    // graph to recenter the canvas on the clicked node). Read off a ref
+    // so prop churn doesn't force a graph teardown.
+    graph.on('node:click', (e: IElementEvent) => {
+      const id = (e?.target as any)?.id;
+      if (typeof id === 'string' && id) {
+        onNodeClickRef.current?.(id);
+      }
+    });
 
     graph.render();
   }, [isDark, nextData, tooltipId]);

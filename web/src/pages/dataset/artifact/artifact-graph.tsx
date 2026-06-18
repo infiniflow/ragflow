@@ -4,8 +4,8 @@ import {
   ArtifactGraphEntity,
   ArtifactGraphRelation,
 } from '@/interfaces/database/dataset-artifact';
-import { X } from 'lucide-react';
-import { useMemo } from 'react';
+import { Undo2, X } from 'lucide-react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ForceGraph from '../knowledge-graph/force-graph';
 
@@ -111,11 +111,40 @@ function toForceGraphShape(
 
 export function ArtifactGraph({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
-  const { data: graph, loading } = useFetchDatasetArtifactGraph(true);
+  // ``centerSlug`` drives the incremental loader: null = overview
+  // (top-weighted entities), a slug = subgraph centred on that node.
+  const [centerSlug, setCenterSlug] = useState<string | null>(null);
+  const { data: graph, loading } = useFetchDatasetArtifactGraph(
+    true,
+    centerSlug,
+  );
 
   const graphData = useMemo(
     () => toForceGraphShape(graph?.entities, graph?.relations),
     [graph],
+  );
+
+  /**
+   * Reverse the node.id → entity.slug mapping for the click handler.
+   * ``toForceGraphShape`` uses ``e.name || e.slug`` as ``node.id`` so the
+   * canvas shows human-readable labels; the API expects slugs back.
+   */
+  const nameToSlug = useMemo(() => {
+    const m = new Map<string, string>();
+    const entities = Array.isArray(graph?.entities) ? graph.entities : [];
+    for (const e of entities) {
+      const key = e.name || e.slug;
+      if (key && e.slug) m.set(key, e.slug);
+    }
+    return m;
+  }, [graph]);
+
+  const onNodeClick = useCallback(
+    (id: string) => {
+      const slug = nameToSlug.get(id);
+      if (slug && slug !== centerSlug) setCenterSlug(slug);
+    },
+    [nameToSlug, centerSlug],
   );
 
   const hasNodes = graphData.nodes.length > 0;
@@ -138,10 +167,27 @@ export function ArtifactGraph({ onClose }: { onClose: () => void }) {
             })}
           </span>
         </h3>
-        <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close">
-          <X className="size-4" />
-          {t('common.close')}
-        </Button>
+        <div className="flex items-center gap-2">
+          {centerSlug ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCenterSlug(null)}
+            >
+              <Undo2 className="size-4" />
+              {t('artifact.graphResetView')}
+            </Button>
+          ) : null}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            <X className="size-4" />
+            {t('common.close')}
+          </Button>
+        </div>
       </header>
 
       {!hasNodes ? (
@@ -154,7 +200,7 @@ export function ArtifactGraph({ onClose }: { onClose: () => void }) {
         </div>
       ) : (
         <div className="flex-1 min-h-0 relative">
-          <ForceGraph data={graphData} show />
+          <ForceGraph data={graphData} show onNodeClick={onNodeClick} />
         </div>
       )}
     </div>
