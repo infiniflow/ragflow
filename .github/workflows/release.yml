@@ -112,16 +112,16 @@ jobs:
             runner: windows-latest
             native_asset: native-windows-x86_64.zip
             msystem: CLANG64
-            msys2_packages: mingw-w64-clang-x86_64-clang
-            cc: clang
+            msys2_packages: mingw-w64-clang-x86_64-clang mingw-w64-clang-x86_64-lld
+            cc: C:/msys64/clang64/bin/clang.exe
             output_ext: .exe
           - goos: windows
             goarch: arm64
             runner: windows-11-arm
             native_asset: native-windows-aarch64.zip
             msystem: CLANGARM64
-            msys2_packages: mingw-w64-clang-aarch64-clang
-            cc: clang
+            msys2_packages: mingw-w64-clang-aarch64-clang mingw-w64-clang-aarch64-lld
+            cc: C:/msys64/clangarm64/bin/clang.exe
             output_ext: .exe
     runs-on: ${{ matrix.runner }}
     env:
