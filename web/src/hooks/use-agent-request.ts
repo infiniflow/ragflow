@@ -242,8 +242,6 @@ export const useUpdateAgentSetting = () => {
         queryClient.invalidateQueries({
           queryKey: [AgentApiAction.FetchAgentListByPage],
         });
-      } else {
-        message.error(ret?.data?.data);
       }
       return ret?.data?.code;
     },

@@ -113,7 +113,6 @@ jobs:
             native_asset: native-windows-x86_64.zip
             msystem: CLANG64
             msys2_packages: mingw-w64-clang-x86_64-clang mingw-w64-clang-x86_64-lld
-            cc: C:/msys64/clang64/bin/clang.exe
             output_ext: .exe
           - goos: windows
             goarch: arm64
@@ -121,7 +120,6 @@ jobs:
             native_asset: native-windows-aarch64.zip
             msystem: CLANGARM64
             msys2_packages: mingw-w64-clang-aarch64-clang mingw-w64-clang-aarch64-lld
-            cc: C:/msys64/clangarm64/bin/clang.exe
             output_ext: .exe
     runs-on: ${{ matrix.runner }}
     env:
@@ -203,11 +201,16 @@ jobs:
 
       - name: Configure Windows C compiler
         if: runner.os == 'Windows'
-        shell: pwsh
+        shell: msys2 {0}
         run: |
-          $cc = "${{ matrix.cc }}"
-          & $cc --version
-          "CC=$cc" >> $env:GITHUB_ENV
+          set -euo pipefail
+
+          cc_path="$(command -v clang.exe || command -v clang)"
+          cc="$(cygpath -m "${cc_path}")"
+          github_env="$(cygpath -u "${GITHUB_ENV}")"
+          echo "CC=${cc}" >> "${github_env}"
+          echo "Resolved MSYS2 clang: ${cc}"
+          "${cc_path}" --version
 
       - name: Build Go CLI release binaries
         if: runner.os != 'Windows'
@@ -287,7 +290,11 @@ jobs:
           Write-Host "Building ${{ matrix.goos }}/${{ matrix.goarch }} -> $output"
 
           $officeOxidePrefix = $env:OFFICE_OXIDE_PREFIX -replace "\\", "/"
-          $cc = "${{ matrix.cc }}"
+          $cc = $env:CC
+          if ([string]::IsNullOrWhiteSpace($cc)) {
+            Write-Error "CC is not set"
+            exit 1
+          }
           if (-not (Test-Path $cc)) {
             Write-Error "C compiler does not exist: $cc"
             exit 1
