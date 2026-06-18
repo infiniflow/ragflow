@@ -1127,32 +1127,43 @@ func (s *DatasetService) AggregateTags(datasetIDs []string, userID string) ([]ma
 		datasetIDsByTenant[kb.TenantID] = append(datasetIDsByTenant[kb.TenantID], datasetID)
 	}
 
+	const pageSize = 10000
 	merged := make(map[string]int)
 	for tenantID, kbIDs := range datasetIDsByTenant {
-		searchResp, err := s.docEngine.Search(context.Background(), &types.SearchRequest{
-			IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
-			KbIDs:        kbIDs,
-			Offset:       0,
-			Limit:        10000,
-			SelectFields: []string{"tag_kwd"},
-		})
-		if err != nil {
-			return nil, common.CodeServerError, fmt.Errorf("failed to aggregate tags: %w", err)
-		}
-		for _, agg := range s.docEngine.GetAggregation(searchResp.Chunks, "tag_kwd") {
-			tag, _ := agg["key"].(string)
-			if tag == "" {
-				continue
+		for offset := 0; ; offset += pageSize {
+			searchResp, err := s.docEngine.Search(context.Background(), &types.SearchRequest{
+				IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
+				KbIDs:        kbIDs,
+				Offset:       offset,
+				Limit:        pageSize,
+				SelectFields: []string{"tag_kwd"},
+			})
+			if err != nil {
+				return nil, common.CodeServerError, fmt.Errorf("failed to aggregate tags: %w", err)
 			}
-			switch count := agg["count"].(type) {
-			case int:
-				merged[tag] += count
-			case int32:
-				merged[tag] += int(count)
-			case int64:
-				merged[tag] += int(count)
-			case float64:
-				merged[tag] += int(count)
+			for _, agg := range s.docEngine.GetAggregation(searchResp.Chunks, "tag_kwd") {
+				tag, _ := agg["key"].(string)
+				if tag == "" {
+					continue
+				}
+				switch count := agg["count"].(type) {
+				case int:
+					merged[tag] += count
+				case int32:
+					merged[tag] += int(count)
+				case int64:
+					merged[tag] += int(count)
+				case float64:
+					merged[tag] += int(count)
+				}
+			}
+
+			chunkCount := len(searchResp.Chunks)
+			if chunkCount == 0 || chunkCount < pageSize {
+				break
+			}
+			if searchResp.Total > 0 && int64(offset+chunkCount) >= searchResp.Total {
+				break
 			}
 		}
 	}

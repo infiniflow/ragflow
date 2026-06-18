@@ -15,9 +15,10 @@ import (
 
 type aggregateTagsMockEngine struct {
 	engine.DocEngine
-	searchResults map[string]*types.SearchResult
-	searchErr     error
-	requests      []*types.SearchRequest
+	searchResults      map[string]*types.SearchResult
+	pagedSearchResults map[string]map[int]*types.SearchResult
+	searchErr          error
+	requests           []*types.SearchRequest
 }
 
 func (m *aggregateTagsMockEngine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
@@ -33,6 +34,12 @@ func (m *aggregateTagsMockEngine) Search(ctx context.Context, req *types.SearchR
 	}
 	m.requests = append(m.requests, cloned)
 	if len(req.IndexNames) == 0 {
+		return &types.SearchResult{}, nil
+	}
+	if byOffset, ok := m.pagedSearchResults[req.IndexNames[0]]; ok {
+		if res, ok := byOffset[req.Offset]; ok {
+			return res, nil
+		}
 		return &types.SearchResult{}, nil
 	}
 	if res, ok := m.searchResults[req.IndexNames[0]]; ok {
@@ -212,6 +219,64 @@ func TestDatasetServiceAggregateTagsMergesAcrossTenants(t *testing.T) {
 	}
 	if req := requestByIndex["ragflow_tenant-2"]; req == nil || len(req.KbIDs) != 1 || req.KbIDs[0] != kb2ID {
 		t.Fatalf("request for ragflow_tenant-2 = %#v, want kbIDs=[%s]", req, kb2ID)
+	}
+}
+
+func TestDatasetServiceAggregateTagsPagesThroughAllChunks(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	kbInput := "723e4567-e89b-12d3-a456-426614174006"
+	kbID := strings.ReplaceAll(kbInput, "-", "")
+	insertAggregateTagsKB(t, kbID, "user-1", string(entity.TenantPermissionMe), 10002)
+
+	firstPage := make([]map[string]interface{}, 10000)
+	for i := range firstPage {
+		firstPage[i] = map[string]interface{}{"tag_kwd": "finance"}
+	}
+
+	docEngine := &aggregateTagsMockEngine{
+		pagedSearchResults: map[string]map[int]*types.SearchResult{
+			"ragflow_user-1": {
+				0: {
+					Chunks: firstPage,
+					Total:  10002,
+				},
+				10000: {
+					Chunks: []map[string]interface{}{
+						{"tag_kwd": "finance"},
+						{"tag_kwd": "urgent"},
+					},
+					Total: 10002,
+				},
+			},
+		},
+	}
+
+	result, code, err := testDatasetServiceForAggregateTags(t, docEngine).AggregateTags([]string{kbInput}, "user-1")
+	if err != nil {
+		t.Fatalf("AggregateTags failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code=%d want=%d", code, common.CodeSuccess)
+	}
+
+	got := aggregateTagsResultMap(result)
+	if got["finance"] != 10001 {
+		t.Fatalf("finance count=%d want=10001 result=%v", got["finance"], got)
+	}
+	if got["urgent"] != 1 {
+		t.Fatalf("urgent count=%d want=1 result=%v", got["urgent"], got)
+	}
+
+	if len(docEngine.requests) != 2 {
+		t.Fatalf("search requests=%d want=2", len(docEngine.requests))
+	}
+	if docEngine.requests[0].Offset != 0 {
+		t.Fatalf("first request offset=%d want=0", docEngine.requests[0].Offset)
+	}
+	if docEngine.requests[1].Offset != 10000 {
+		t.Fatalf("second request offset=%d want=10000", docEngine.requests[1].Offset)
 	}
 }
 
