@@ -355,18 +355,18 @@ function transformTokenChunkerParams(params: TokenChunkerFormSchemaType) {
 
 function transformTitleChunkerParams(params: TitleChunkerFormSchemaType) {
   const activeRules =
-    params.method === TitleChunkerMethod.Group
+    (params.method === TitleChunkerMethod.Group
       ? params.groupRules
-      : params.hierarchyRules;
+      : params.hierarchyRules) ?? params.rules;
 
   const levels = (activeRules || []).map((rule) =>
     transformObjectArrayToPureArray(rule.levels, 'expression'),
   );
 
   const hierarchyValue =
-    params.method === TitleChunkerMethod.Group
+    (params.method === TitleChunkerMethod.Group
       ? params.hierarchyGroup
-      : params.hierarchyHierarchy;
+      : params.hierarchyHierarchy) ?? params.hierarchy;
 
   return {
     ...omit(params, [

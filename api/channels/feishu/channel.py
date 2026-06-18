@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import lark_oapi as lark
+import lark_oapi.ws.client as lark_ws_client
 from lark_oapi.api.im.v1 import (
     CreateMessageRequest,
     CreateMessageRequestBody,
@@ -73,6 +74,11 @@ class FeishuChannel(Channel):
         # context: already entered"). A dedicated isolated loop avoids that.
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
+        # lark_oapi.ws.client stores a module-level `loop` at import time and all
+        # websocket task scheduling goes through that object. Rebind it here so
+        # this Feishu channel uses the thread-local loop instead of the API
+        # server's main loop.
+        lark_ws_client.loop = loop
         try:
             handler = (
                 lark.EventDispatcherHandler.builder("", "")

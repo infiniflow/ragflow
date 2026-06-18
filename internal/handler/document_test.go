@@ -46,6 +46,10 @@ type fakeDocumentService struct {
 	metadataDocIDs  []string
 }
 
+func (f *fakeDocumentService) UpdateDatasetDocument(userID, datasetID, documentID string, req *service.UpdateDatasetDocumentRequest, present map[string]bool) (*service.UpdateDatasetDocumentResponse, common.ErrorCode, error) {
+	return nil, common.CodeSuccess, nil
+}
+
 func (f *fakeDocumentService) GetDocumentArtifact(filename string) (*service.ArtifactResponse, error) {
 	if filename == "error.txt" {
 		return nil, service.ErrArtifactNotFound
