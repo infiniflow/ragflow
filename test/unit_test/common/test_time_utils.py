@@ -17,7 +17,7 @@
 import time
 import datetime
 import pytest
-from common.time_utils import current_timestamp, timestamp_to_date, date_string_to_timestamp, datetime_format, delta_seconds
+from common.time_utils import current_timestamp, timestamp_to_date, date_string_to_timestamp, datetime_format, delta_seconds, format_iso_8601_to_ymd_hms
 
 
 class TestCurrentTimestamp:
@@ -651,3 +651,58 @@ class TestDeltaSeconds:
             date_string = "2024-01-31 12:00:00"  # Use a known past date
             result = delta_seconds(date_string)
             assert result > 0
+
+
+class TestTimestampToDateCurrentTimeFallback:
+    """Regression tests for the None/empty fallback of timestamp_to_date.
+
+    The docstring promises "If None or empty, uses current time", but the
+    fallback assigned ``time.time()`` (seconds) and then divided by 1000 again,
+    producing a date around 1970-01-21 instead of now. The existing
+    ``test_return_type_always_string`` only checks the return type, so it never
+    caught this. These tests pin the behaviour by value.
+    """
+
+    def test_none_uses_current_time(self):
+        """None input must resolve to the current time, not the epoch."""
+        before = time.time()
+        result = timestamp_to_date(None)
+        after = time.time()
+        parsed = time.mktime(time.strptime(result, "%Y-%m-%d %H:%M:%S"))
+        assert before - 2 <= parsed <= after + 2
+
+    def test_empty_string_uses_current_time(self):
+        """Empty-string input must resolve to the current time, not the epoch."""
+        before = time.time()
+        result = timestamp_to_date("")
+        after = time.time()
+        parsed = time.mktime(time.strptime(result, "%Y-%m-%d %H:%M:%S"))
+        assert before - 2 <= parsed <= after + 2
+
+
+class TestFormatIso8601ToYmdHms:
+    """Test cases for format_iso_8601_to_ymd_hms function."""
+
+    def test_standard_utc_z(self):
+        """Standard UTC timestamp with trailing Z."""
+        assert format_iso_8601_to_ymd_hms("2024-01-01T12:00:00Z") == "2024-01-01 12:00:00"
+
+    def test_explicit_utc_offset(self):
+        """Timestamp with an explicit +00:00 offset."""
+        assert format_iso_8601_to_ymd_hms("2024-01-01T12:00:00+00:00") == "2024-01-01 12:00:00"
+
+    def test_ordinal_date_extended(self):
+        """ISO 8601 ordinal date (day-of-year), extended form.
+
+        dateutil.isoparse accepts it but datetime.fromisoformat rejects it,
+        which previously made the function silently return the input unchanged.
+        """
+        assert format_iso_8601_to_ymd_hms("2024-001T12:00:00Z") == "2024-01-01 12:00:00"
+
+    def test_ordinal_date_basic(self):
+        """ISO 8601 ordinal date (day-of-year), basic form."""
+        assert format_iso_8601_to_ymd_hms("2024001T120000Z") == "2024-01-01 12:00:00"
+
+    def test_invalid_string_returns_original(self):
+        """Unparseable input is returned unchanged."""
+        assert format_iso_8601_to_ymd_hms("not-a-date") == "not-a-date"
