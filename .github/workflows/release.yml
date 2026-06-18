@@ -161,6 +161,8 @@ jobs:
 
           test -f "${OFFICE_OXIDE_PREFIX}/include/office_oxide_c/office_oxide.h"
           test -f "${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.a"
+          ln -sf "office_oxide_c/office_oxide.h" "${OFFICE_OXIDE_PREFIX}/include/office_oxide.h"
+          test -f "${OFFICE_OXIDE_PREFIX}/include/office_oxide.h"
 
           echo "OFFICE_OXIDE_PREFIX=${OFFICE_OXIDE_PREFIX}" >> "${GITHUB_ENV}"
 
@@ -182,6 +184,10 @@ jobs:
           if (-not (Test-Path (Join-Path $officeOxidePrefix "lib\office_oxide.lib"))) {
             throw "office_oxide.lib was not found"
           }
+
+          Copy-Item -Force `
+            -Path (Join-Path $officeOxidePrefix "include\office_oxide_c\office_oxide.h") `
+            -Destination (Join-Path $officeOxidePrefix "include\office_oxide.h")
 
           "OFFICE_OXIDE_PREFIX=$officeOxidePrefix" >> $env:GITHUB_ENV
 
@@ -237,9 +243,14 @@ jobs:
               exit 1
               ;;
           esac
+          cgo_cflags="-I${OFFICE_OXIDE_PREFIX}/include -I${OFFICE_OXIDE_PREFIX}/include/office_oxide_c"
+
+          echo "office_oxide prefix: ${OFFICE_OXIDE_PREFIX}"
+          echo "CGO_CFLAGS: ${cgo_cflags}"
+          echo "CGO_LDFLAGS: ${cgo_ldflags}"
 
           CGO_ENABLED=1 \
-          CGO_CFLAGS="-I${OFFICE_OXIDE_PREFIX}/include/office_oxide_c" \
+          CGO_CFLAGS="${cgo_cflags}" \
           CGO_LDFLAGS="${cgo_ldflags}" \
           GOOS="${{ matrix.goos }}" \
           GOARCH="${{ matrix.goarch }}" \
@@ -277,10 +288,14 @@ jobs:
           $officeOxidePrefix = $env:OFFICE_OXIDE_PREFIX -replace "\\", "/"
 
           $env:CGO_ENABLED = "1"
-          $env:CGO_CFLAGS = "-I${officeOxidePrefix}/include/office_oxide_c"
+          $env:CGO_CFLAGS = "-I${officeOxidePrefix}/include -I${officeOxidePrefix}/include/office_oxide_c"
           $env:CGO_LDFLAGS = "${officeOxidePrefix}/lib/office_oxide.lib -lws2_32 -lntdll -luserenv"
           $env:GOOS = "${{ matrix.goos }}"
           $env:GOARCH = "${{ matrix.goarch }}"
+
+          Write-Host "office_oxide prefix: $officeOxidePrefix"
+          Write-Host "CGO_CFLAGS: $env:CGO_CFLAGS"
+          Write-Host "CGO_LDFLAGS: $env:CGO_LDFLAGS"
 
           go build `
             -trimpath `
