@@ -664,21 +664,21 @@ class TestTimestampToDateCurrentTimeFallback:
     caught this. These tests pin the behaviour by value.
     """
 
-    def test_none_uses_current_time(self):
-        """None input must resolve to the current time, not the epoch."""
-        before = time.time()
-        result = timestamp_to_date(None)
-        after = time.time()
-        parsed = time.mktime(time.strptime(result, "%Y-%m-%d %H:%M:%S"))
-        assert before - 2 <= parsed <= after + 2
+    def test_none_uses_current_time(self, monkeypatch):
+        """None input must resolve to current_timestamp() fallback."""
+        fixed_ms = 1704067200123
+        monkeypatch.setattr("common.time_utils.current_timestamp", lambda: fixed_ms)
+        assert timestamp_to_date(None) == time.strftime(
+            "%Y-%m-%d %H:%M:%S", time.localtime(fixed_ms / 1000)
+        )
 
-    def test_empty_string_uses_current_time(self):
-        """Empty-string input must resolve to the current time, not the epoch."""
-        before = time.time()
-        result = timestamp_to_date("")
-        after = time.time()
-        parsed = time.mktime(time.strptime(result, "%Y-%m-%d %H:%M:%S"))
-        assert before - 2 <= parsed <= after + 2
+    def test_empty_string_uses_current_time(self, monkeypatch):
+        """Empty-string input must resolve to current_timestamp() fallback."""
+        fixed_ms = 1704067200123
+        monkeypatch.setattr("common.time_utils.current_timestamp", lambda: fixed_ms)
+        assert timestamp_to_date("") == time.strftime(
+            "%Y-%m-%d %H:%M:%S", time.localtime(fixed_ms / 1000)
+        )
 
     def test_zero_timestamp_is_not_treated_as_empty(self):
         """Zero timestamp should map to Unix epoch, not fallback to current time."""
