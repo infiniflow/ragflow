@@ -1497,6 +1497,7 @@ Example: Virtual Hosted Style`,
       chatChannelDesc: {
         clickclack: 'Connect a ClickClack bot',
         discord: 'Connect a Discord bot',
+        dingtalk: 'Connect a DingTalk bot',
         feishu: 'Connect a Feishu / Lark bot',
         googlechat: 'Connect a Google Chat bot',
         irc: 'Connect to an IRC server',
