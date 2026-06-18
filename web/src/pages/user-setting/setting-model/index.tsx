@@ -389,7 +389,7 @@ const ModelProviders = () => {
         onOk={onBedrockAddingOk}
         loading={bedrockAddingLoading}
         llmFactory={LLMFactory.Bedrock}
-        onVerify={async () => ({ isValid: null, logs: '' })}
+        onVerify={(payload) => onBedrockAddingOk(payload, true)}
       ></BedrockModal>
       <SoMarkModal
         visible={somarkVisible}

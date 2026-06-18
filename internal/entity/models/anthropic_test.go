@@ -297,7 +297,7 @@ func TestAnthropicListModelsAndCheckConnection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if strings.Join(models, ",") != "claude-sonnet-4-5-20250929,claude-haiku-4-5-20251001" {
+	if joinModelNames(models, ",") != "claude-sonnet-4-5-20250929,claude-haiku-4-5-20251001" {
 		t.Errorf("models=%v", models)
 	}
 	if err := m.CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {

@@ -31,7 +31,14 @@ from common.token_utils import num_tokens_from_string
 
 from common.constants import LLMType, MAXIMUM_PAGE_NUMBER
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
+from api.db.joint_services.tenant_model_service import (
+    ensure_mineru_from_env,
+    ensure_opendataloader_from_env,
+    ensure_paddleocr_from_env,
+    get_first_provider_model_name,
+    get_model_config_from_provider_instance,
+    get_tenant_default_model_by_type,
+)
 from rag.utils.file_utils import extract_embed_file, extract_links_from_pdf, extract_links_from_docx, extract_html
 from deepdoc.parser import DocxParser, EpubParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
 from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_docx_wrapper_naive, vision_figure_parser_pdf_wrapper
@@ -137,14 +144,7 @@ def by_mineru(
     if tenant_id:
         if not mineru_llm_name:
             try:
-                from api.db.services.tenant_llm_service import TenantLLMService
-
-                env_name = TenantLLMService.ensure_mineru_from_env(tenant_id)
-                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="MinerU", model_type=LLMType.OCR)
-                if candidates:
-                    mineru_llm_name = candidates[0].llm_name
-                elif env_name:
-                    mineru_llm_name = env_name
+                mineru_llm_name = get_first_provider_model_name(tenant_id, "MinerU", LLMType.OCR) or ensure_mineru_from_env(tenant_id)
             except Exception as e:  # best-effort fallback
                 logging.warning(f"fallback to env mineru: {e}")
 
@@ -220,15 +220,8 @@ def by_opendataloader(
     if tenant_id:
         if not opendataloader_llm_name:
             try:
-                from api.db.services.tenant_llm_service import TenantLLMService
-
-                env_name = TenantLLMService.ensure_opendataloader_from_env(tenant_id)
-                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="OpenDataLoader", model_type=LLMType.OCR)
-                if candidates:
-                    opendataloader_llm_name = candidates[0].llm_name
-                elif env_name:
-                    opendataloader_llm_name = env_name
-            except Exception as e:
+                opendataloader_llm_name = get_first_provider_model_name(tenant_id, "OpenDataLoader", LLMType.OCR) or ensure_opendataloader_from_env(tenant_id)
+            except Exception as e:  # best-effort fallback
                 logging.warning(f"fallback to env opendataloader: {e}")
 
         if opendataloader_llm_name:
@@ -281,14 +274,7 @@ def by_paddleocr(
     if tenant_id:
         if not paddleocr_llm_name:
             try:
-                from api.db.services.tenant_llm_service import TenantLLMService
-
-                env_name = TenantLLMService.ensure_paddleocr_from_env(tenant_id)
-                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="PaddleOCR", model_type=LLMType.OCR)
-                if candidates:
-                    paddleocr_llm_name = candidates[0].llm_name
-                elif env_name:
-                    paddleocr_llm_name = env_name
+                paddleocr_llm_name = get_first_provider_model_name(tenant_id, "PaddleOCR", LLMType.OCR) or ensure_paddleocr_from_env(tenant_id)
             except Exception as e:  # best-effort fallback
                 logging.warning(f"fallback to env paddleocr: {e}")
 
@@ -717,6 +703,11 @@ class Pdf(PdfParser):
             return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], tbls
 
 
+# Maximum number of HTTP redirects followed when fetching a remote image
+# referenced by a markdown document (each hop is SSRF-validated).
+MAX_IMAGE_REDIRECTS = 5
+
+
 class Markdown(MarkdownParser):
     def md_to_html(self, sections):
         if not sections:
@@ -788,6 +779,9 @@ class Markdown(MarkdownParser):
     def load_images_from_urls(self, urls, cache=None):
         import requests
         from pathlib import Path
+        from urllib.parse import urljoin
+
+        from common.ssrf_guard import assert_url_is_safe, pin_dns
 
         cache = cache or {}
         images = []
@@ -799,9 +793,40 @@ class Markdown(MarkdownParser):
             img_obj = None
             try:
                 if url.startswith(("http://", "https://")):
-                    response = requests.get(url, stream=True, timeout=30)
-                    if response.status_code == 200 and response.headers.get("Content-Type", "").startswith("image/"):
-                        img_obj = Image.open(BytesIO(response.content)).convert("RGB")
+                    # SSRF guard: image references come from the (untrusted) uploaded
+                    # document, so validate and DNS-pin every hop before connecting.
+                    # Otherwise a markdown image like ![x](http://169.254.169.254/...)
+                    # would make the server fetch internal services / cloud metadata.
+                    # Redirects are followed manually so each hop is re-validated,
+                    # mirroring common/data_source/rss_connector.py.
+                    current_hostname, current_ip = assert_url_is_safe(url)
+                    current_url = url
+                    response = None
+                    try:
+                        for _ in range(MAX_IMAGE_REDIRECTS + 1):
+                            # Release the previous hop before opening the next: with
+                            # stream=True the connection isn't returned to the pool
+                            # until the body is read or the response is closed.
+                            if response is not None:
+                                response.close()
+                            with pin_dns(current_hostname, current_ip):
+                                response = requests.get(current_url, stream=True, timeout=30, allow_redirects=False)
+                            if response.status_code not in (301, 302, 303, 307, 308):
+                                break
+                            location = response.headers.get("Location")
+                            if not location:
+                                break
+                            current_url = urljoin(current_url, location)
+                            current_hostname, current_ip = assert_url_is_safe(current_url)
+                        else:
+                            raise ValueError(f"Exceeded {MAX_IMAGE_REDIRECTS} redirects fetching {url!r}")
+                        if response.status_code == 200 and response.headers.get("Content-Type", "").startswith("image/"):
+                            img_obj = Image.open(BytesIO(response.content)).convert("RGB")
+                    finally:
+                        # Always release the final/streamed response, including the
+                        # non-image and redirect-cap paths where the body is unread.
+                        if response is not None:
+                            response.close()
                 else:
                     local_path = Path(url)
                     if local_path.exists():

@@ -1,0 +1,2453 @@
+{
+  "globals": {
+    "env.a": "",
+    "env.b": "",
+    "env.c": "",
+    "env.counter": 0,
+    "env.loop_done": false,
+    "env.sample_rows": [],
+    "env.zero": 0,
+    "sys.conversation_turns": 0,
+    "sys.date": "",
+    "sys.files": [],
+    "sys.history": [],
+    "sys.query": "",
+    "sys.user_id": ""
+  },
+  "graph": {
+    "edges": [
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__beginstart-UserFillUp:Menuend",
+        "markerEnd": "logo",
+        "source": "begin",
+        "sourceHandle": "start",
+        "target": "UserFillUp:Menu",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__UserFillUp:Menustart-Switch:Routeend",
+        "markerEnd": "logo",
+        "source": "UserFillUp:Menu",
+        "sourceHandle": "start",
+        "target": "Switch:Route",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Switch:RouteCase 1-Loop:InputUntil1end",
+        "markerEnd": "logo",
+        "source": "Switch:Route",
+        "sourceHandle": "Case 1",
+        "target": "Loop:InputUntil1",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Switch:RouteCase 2-UserFillUp:IterInputend",
+        "markerEnd": "logo",
+        "source": "Switch:Route",
+        "sourceHandle": "Case 2",
+        "target": "UserFillUp:IterInput",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Switch:RouteCase 3-UserFillUp:KBInputend",
+        "markerEnd": "logo",
+        "source": "Switch:Route",
+        "sourceHandle": "Case 3",
+        "target": "UserFillUp:KBInput",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Switch:RouteCase 4-UserFillUp:CondInputend",
+        "markerEnd": "logo",
+        "source": "Switch:Route",
+        "sourceHandle": "Case 4",
+        "target": "UserFillUp:CondInput",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Switch:RouteCase 5-DataOperations:UpdateSampleend",
+        "markerEnd": "logo",
+        "source": "Switch:Route",
+        "sourceHandle": "Case 5",
+        "target": "DataOperations:UpdateSample",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Switch:RouteCase 6-ListOperations:Top2end",
+        "markerEnd": "logo",
+        "source": "Switch:Route",
+        "sourceHandle": "Case 6",
+        "target": "ListOperations:Top2",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Switch:RouteCase 7-UserFillUp:TextInputend",
+        "markerEnd": "logo",
+        "source": "Switch:Route",
+        "sourceHandle": "Case 7",
+        "target": "UserFillUp:TextInput",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Switch:RouteCase 8-VariableAssigner:SetCounterend",
+        "markerEnd": "logo",
+        "source": "Switch:Route",
+        "sourceHandle": "Case 8",
+        "target": "VariableAssigner:SetCounter",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Switch:RouteCase 10-UserFillUp:CateInputend",
+        "markerEnd": "logo",
+        "source": "Switch:Route",
+        "sourceHandle": "Case 10",
+        "target": "UserFillUp:CateInput",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Switch:RouteCase 11-UserFillUp:CodeInputend",
+        "markerEnd": "logo",
+        "source": "Switch:Route",
+        "sourceHandle": "Case 11",
+        "target": "UserFillUp:CodeInput",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Switch:RouteCase 12-Message:Onlyend",
+        "markerEnd": "logo",
+        "source": "Switch:Route",
+        "sourceHandle": "Case 12",
+        "target": "Message:Only",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Switch:RouteCase 13-UserFillUp:JustWaitend",
+        "markerEnd": "logo",
+        "source": "Switch:Route",
+        "sourceHandle": "Case 13",
+        "target": "UserFillUp:JustWait",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Switch:Routeend_cpn_ids-Message:Helpend",
+        "markerEnd": "logo",
+        "source": "Switch:Route",
+        "sourceHandle": "end_cpn_ids",
+        "target": "Message:Help",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Loop:InputUntil1start-Message:LoopDoneend",
+        "markerEnd": "logo",
+        "source": "Loop:InputUntil1",
+        "sourceHandle": "start",
+        "target": "Message:LoopDone",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__LoopItem:InputUntil1Startstart-UserFillUp:LoopInputend",
+        "markerEnd": "logo",
+        "source": "LoopItem:InputUntil1Start",
+        "sourceHandle": "start",
+        "target": "UserFillUp:LoopInput",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__UserFillUp:LoopInputstart-Switch:LoopCheckend",
+        "markerEnd": "logo",
+        "source": "UserFillUp:LoopInput",
+        "sourceHandle": "start",
+        "target": "Switch:LoopCheck",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Switch:LoopCheckCase 1-ExitLoop:LoopExitend",
+        "markerEnd": "logo",
+        "source": "Switch:LoopCheck",
+        "sourceHandle": "Case 1",
+        "target": "ExitLoop:LoopExit",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Switch:LoopCheckend_cpn_ids-Message:LoopContinueend",
+        "markerEnd": "logo",
+        "source": "Switch:LoopCheck",
+        "sourceHandle": "end_cpn_ids",
+        "target": "Message:LoopContinue",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__UserFillUp:IterInputstart-StringTransform:SplitCSVend",
+        "markerEnd": "logo",
+        "source": "UserFillUp:IterInput",
+        "sourceHandle": "start",
+        "target": "StringTransform:SplitCSV",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__StringTransform:SplitCSVstart-Iteration:IterateListend",
+        "markerEnd": "logo",
+        "source": "StringTransform:SplitCSV",
+        "sourceHandle": "start",
+        "target": "Iteration:IterateList",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__IterationItem:IterStartstart-StringTransform:FmtItemend",
+        "markerEnd": "logo",
+        "source": "IterationItem:IterStart",
+        "sourceHandle": "start",
+        "target": "StringTransform:FmtItem",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Iteration:IterateListstart-Message:IterDoneend",
+        "markerEnd": "logo",
+        "source": "Iteration:IterateList",
+        "sourceHandle": "start",
+        "target": "Message:IterDone",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__DataOperations:UpdateSamplestart-ListOperations:Top2end",
+        "markerEnd": "logo",
+        "source": "DataOperations:UpdateSample",
+        "sourceHandle": "start",
+        "target": "ListOperations:Top2",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__ListOperations:Top2start-Message:DataListDoneend",
+        "markerEnd": "logo",
+        "source": "ListOperations:Top2",
+        "sourceHandle": "start",
+        "target": "Message:DataListDone",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__UserFillUp:TextInputstart-StringTransform:SplitTextend",
+        "markerEnd": "logo",
+        "source": "UserFillUp:TextInput",
+        "sourceHandle": "start",
+        "target": "StringTransform:SplitText",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__StringTransform:SplitTextstart-StringTransform:JoinTextend",
+        "markerEnd": "logo",
+        "source": "StringTransform:SplitText",
+        "sourceHandle": "start",
+        "target": "StringTransform:JoinText",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__StringTransform:JoinTextstart-Message:TextDoneend",
+        "markerEnd": "logo",
+        "source": "StringTransform:JoinText",
+        "sourceHandle": "start",
+        "target": "Message:TextDone",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__VariableAssigner:SetCounterstart-VariableAssigner:IncCounterend",
+        "markerEnd": "logo",
+        "source": "VariableAssigner:SetCounter",
+        "sourceHandle": "start",
+        "target": "VariableAssigner:IncCounter",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__VariableAssigner:IncCounterstart-Message:VarDoneend",
+        "markerEnd": "logo",
+        "source": "VariableAssigner:IncCounter",
+        "sourceHandle": "start",
+        "target": "Message:VarDone",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__VariableAggregator:PickOnestart-Message:AggDoneend",
+        "markerEnd": "logo",
+        "source": "VariableAggregator:PickOne",
+        "sourceHandle": "start",
+        "target": "Message:AggDone",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__UserFillUp:CondInputstart-Switch:CondSwitchend",
+        "markerEnd": "logo",
+        "source": "UserFillUp:CondInput",
+        "sourceHandle": "start",
+        "target": "Switch:CondSwitch",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Switch:CondSwitchCase 1-Message:CondYesend",
+        "markerEnd": "logo",
+        "source": "Switch:CondSwitch",
+        "sourceHandle": "Case 1",
+        "target": "Message:CondYes",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Switch:CondSwitchend_cpn_ids-Message:CondNoend",
+        "markerEnd": "logo",
+        "source": "Switch:CondSwitch",
+        "sourceHandle": "end_cpn_ids",
+        "target": "Message:CondNo",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__UserFillUp:KBInputstart-Retrieval:KBSearchend",
+        "markerEnd": "logo",
+        "source": "UserFillUp:KBInput",
+        "sourceHandle": "start",
+        "target": "Retrieval:KBSearch",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Retrieval:KBSearchstart-Message:KBDoneend",
+        "markerEnd": "logo",
+        "source": "Retrieval:KBSearch",
+        "sourceHandle": "start",
+        "target": "Message:KBDone",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__UserFillUp:CateInputstart-Categorize:Demoend",
+        "markerEnd": "logo",
+        "source": "UserFillUp:CateInput",
+        "sourceHandle": "start",
+        "target": "Categorize:Demo",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Categorize:Demoa1111111-1111-4111-8111-111111111111-Message:CateLoopend",
+        "markerEnd": "logo",
+        "source": "Categorize:Demo",
+        "sourceHandle": "a1111111-1111-4111-8111-111111111111",
+        "target": "Message:CateLoop",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Categorize:Demob2222222-2222-4222-8222-222222222222-Message:CateRetrievalend",
+        "markerEnd": "logo",
+        "source": "Categorize:Demo",
+        "sourceHandle": "b2222222-2222-4222-8222-222222222222",
+        "target": "Message:CateRetrieval",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Categorize:Democ3333333-3333-4333-8333-333333333333-Message:CateOtherend",
+        "markerEnd": "logo",
+        "source": "Categorize:Demo",
+        "sourceHandle": "c3333333-3333-4333-8333-333333333333",
+        "target": "Message:CateOther",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__UserFillUp:CodeInputstart-CodeExec:Doubleend",
+        "markerEnd": "logo",
+        "source": "UserFillUp:CodeInput",
+        "sourceHandle": "start",
+        "target": "CodeExec:Double",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__CodeExec:Doublestart-Message:CodeDoneend",
+        "markerEnd": "logo",
+        "source": "CodeExec:Double",
+        "sourceHandle": "start",
+        "target": "Message:CodeDone",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__UserFillUp:JustWaitstart-Message:WaitDoneend",
+        "markerEnd": "logo",
+        "source": "UserFillUp:JustWait",
+        "sourceHandle": "start",
+        "target": "Message:WaitDone",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Switch:RouteCase 9-VariableAssigner:GoldMiceTurnend",
+        "markerEnd": "logo",
+        "source": "Switch:Route",
+        "sourceHandle": "Case 9",
+        "target": "VariableAssigner:GoldMiceTurn",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__VariableAssigner:GoldMiceTurnstart-VariableAggregator:PickOneend",
+        "markerEnd": "logo",
+        "source": "VariableAssigner:GoldMiceTurn",
+        "sourceHandle": "start",
+        "target": "VariableAggregator:PickOne",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      }
+    ],
+    "nodes": [
+      {
+        "data": {
+          "form": {
+            "enablePrologue": true,
+            "inputs": {},
+            "mode": "conversational",
+            "outputs": {},
+            "prologue": "功能菜单 Demo：先选一个要演示的模块，只跑该分支，互不依赖。"
+          },
+          "label": "Begin",
+          "name": "开始"
+        },
+        "id": "begin",
+        "measured": {
+          "height": 81,
+          "width": 200
+        },
+        "position": {
+          "x": 50,
+          "y": 200
+        },
+        "selected": false,
+        "sourcePosition": "left",
+        "targetPosition": "right",
+        "type": "beginNode"
+      },
+      {
+        "data": {
+          "form": {
+            "enable_tips": true,
+            "inputs": {
+              "demo": {
+                "name": "演示模块",
+                "optional": false,
+                "options": [
+                  "loop",
+                  "iteration",
+                  "retrieval",
+                  "condition",
+                  "data_ops",
+                  "list_ops",
+                  "text",
+                  "var_assigner",
+                  "var_aggregator",
+                  "categorize",
+                  "code",
+                  "message",
+                  "wait_input"
+                ],
+                "type": "options",
+                "value": "loop"
+              }
+            },
+            "outputs": {
+              "demo": {
+                "name": "演示模块",
+                "optional": false,
+                "options": [
+                  "loop",
+                  "iteration",
+                  "retrieval",
+                  "condition",
+                  "data_ops",
+                  "list_ops",
+                  "text",
+                  "var_assigner",
+                  "var_aggregator",
+                  "categorize",
+                  "code",
+                  "message",
+                  "wait_input"
+                ],
+                "type": "options",
+                "value": "loop"
+              }
+            },
+            "tips": "请选择要演示的模块："
+          },
+          "label": "UserFillUp",
+          "name": "选择演示模块(等待输入)"
+        },
+        "id": "UserFillUp:Menu",
+        "measured": {
+          "height": 49,
+          "width": 200
+        },
+        "position": {
+          "x": 280,
+          "y": 200
+        },
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "ragNode"
+      },
+      {
+        "data": {
+          "form": {
+            "conditions": [
+              {
+                "items": [
+                  {
+                    "cpn_id": "UserFillUp:Menu@demo",
+                    "operator": "=",
+                    "value": "loop"
+                  }
+                ],
+                "logical_operator": "and",
+                "to": [
+                  "Loop:InputUntil1"
+                ]
+              },
+              {
+                "items": [
+                  {
+                    "cpn_id": "UserFillUp:Menu@demo",
+                    "operator": "=",
+                    "value": "iteration"
+                  }
+                ],
+                "logical_operator": "and",
+                "to": [
+                  "UserFillUp:IterInput"
+                ]
+              },
+              {
+                "items": [
+                  {
+                    "cpn_id": "UserFillUp:Menu@demo",
+                    "operator": "=",
+                    "value": "retrieval"
+                  }
+                ],
+                "logical_operator": "and",
+                "to": [
+                  "UserFillUp:KBInput"
+                ]
+              },
+              {
+                "items": [
+                  {
+                    "cpn_id": "UserFillUp:Menu@demo",
+                    "operator": "=",
+                    "value": "condition"
+                  }
+                ],
+                "logical_operator": "and",
+                "to": [
+                  "UserFillUp:CondInput"
+                ]
+              },
+              {
+                "items": [
+                  {
+                    "cpn_id": "UserFillUp:Menu@demo",
+                    "operator": "=",
+                    "value": "data_ops"
+                  }
+                ],
+                "logical_operator": "and",
+                "to": [
+                  "DataOperations:UpdateSample",
+                  "CodeExec:FunnyBroomsShare"
+                ]
+              },
+              {
+                "items": [
+                  {
+                    "cpn_id": "UserFillUp:Menu@demo",
+                    "operator": "=",
+                    "value": "list_ops"
+                  }
+                ],
+                "logical_operator": "and",
+                "to": [
+                  "ListOperations:Top2",
+                  "CodeExec:FlatLemonsFilm"
+                ]
+              },
+              {
+                "items": [
+                  {
+                    "cpn_id": "UserFillUp:Menu@demo",
+                    "operator": "=",
+                    "value": "text"
+                  }
+                ],
+                "logical_operator": "and",
+                "to": [
+                  "UserFillUp:TextInput"
+                ]
+              },
+              {
+                "items": [
+                  {
+                    "cpn_id": "UserFillUp:Menu@demo",
+                    "operator": "=",
+                    "value": "var_assigner"
+                  }
+                ],
+                "logical_operator": "and",
+                "to": [
+                  "VariableAssigner:SetCounter"
+                ]
+              },
+              {
+                "items": [
+                  {
+                    "cpn_id": "UserFillUp:Menu@demo",
+                    "operator": "=",
+                    "value": "var_aggregator"
+                  }
+                ],
+                "logical_operator": "and",
+                "to": [
+                  "VariableAssigner:GoldMiceTurn"
+                ]
+              },
+              {
+                "items": [
+                  {
+                    "cpn_id": "UserFillUp:Menu@demo",
+                    "operator": "=",
+                    "value": "categorize"
+                  }
+                ],
+                "logical_operator": "and",
+                "to": [
+                  "UserFillUp:CateInput"
+                ]
+              },
+              {
+                "items": [
+                  {
+                    "cpn_id": "UserFillUp:Menu@demo",
+                    "operator": "=",
+                    "value": "code"
+                  }
+                ],
+                "logical_operator": "and",
+                "to": [
+                  "UserFillUp:CodeInput"
+                ]
+              },
+              {
+                "items": [
+                  {
+                    "cpn_id": "UserFillUp:Menu@demo",
+                    "operator": "=",
+                    "value": "message"
+                  }
+                ],
+                "logical_operator": "and",
+                "to": [
+                  "Message:Only"
+                ]
+              },
+              {
+                "items": [
+                  {
+                    "cpn_id": "UserFillUp:Menu@demo",
+                    "operator": "=",
+                    "value": "wait_input"
+                  }
+                ],
+                "logical_operator": "and",
+                "to": [
+                  "UserFillUp:JustWait"
+                ]
+              }
+            ],
+            "end_cpn_ids": [
+              "Message:Help"
+            ]
+          },
+          "label": "Switch",
+          "name": "分叉路由"
+        },
+        "id": "Switch:Route",
+        "measured": {
+          "height": 1149,
+          "width": 200
+        },
+        "position": {
+          "x": 560,
+          "y": 200
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "switchNode"
+      },
+      {
+        "data": {
+          "form": {
+            "content": [
+              "未匹配到分支，请在菜单里选择一个 `demo` 选项。\n可选值: loop / iteration / retrieval / condition / data_ops / list_ops / text / var_assigner / var_aggregator / categorize / code / message / wait_input"
+            ]
+          },
+          "label": "Message",
+          "name": "帮助"
+        },
+        "dragging": false,
+        "id": "Message:Help",
+        "measured": {
+          "height": 85,
+          "width": 200
+        },
+        "position": {
+          "x": 839.2530244399046,
+          "y": 484.01601606703764
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "messageNode"
+      },
+      {
+        "data": {
+          "form": {
+            "logical_operator": "and",
+            "loop_termination_condition": [
+              {
+                "input_mode": "constant",
+                "operator": "is",
+                "value": "1",
+                "variable": "UserFillUp:LoopInput@value"
+              }
+            ],
+            "loop_variables": [
+              {
+                "input_mode": "constant",
+                "type": "string",
+                "value": "",
+                "variable": ""
+              }
+            ],
+            "maximum_loop_count": 50,
+            "outputs": {}
+          },
+          "label": "Loop",
+          "name": "循环(一直输入直到1)"
+        },
+        "dragging": false,
+        "height": 270,
+        "id": "Loop:InputUntil1",
+        "measured": {
+          "height": 270,
+          "width": 560
+        },
+        "position": {
+          "x": 1049.3951529464216,
+          "y": -96.22574856150362
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "loopNode",
+        "width": 560
+      },
+      {
+        "data": {
+          "form": {},
+          "label": "LoopItem",
+          "name": "LoopItem"
+        },
+        "extent": "parent",
+        "id": "LoopItem:InputUntil1Start",
+        "measured": {
+          "height": 45,
+          "width": 80
+        },
+        "parentId": "Loop:InputUntil1",
+        "position": {
+          "x": 40,
+          "y": 90
+        },
+        "selected": false,
+        "type": "loopStartNode"
+      },
+      {
+        "data": {
+          "form": {
+            "enable_tips": true,
+            "inputs": {
+              "value": {
+                "name": "值",
+                "optional": false,
+                "options": [],
+                "type": "line",
+                "value": ""
+              }
+            },
+            "outputs": {
+              "value": {
+                "name": "值",
+                "optional": false,
+                "options": [],
+                "type": "line",
+                "value": ""
+              }
+            },
+            "tips": "请输入任意内容，输入 `1` 则退出循环："
+          },
+          "label": "UserFillUp",
+          "name": "输入(1退出)"
+        },
+        "extent": "parent",
+        "id": "UserFillUp:LoopInput",
+        "measured": {
+          "height": 49,
+          "width": 200
+        },
+        "parentId": "Loop:InputUntil1",
+        "position": {
+          "x": 170,
+          "y": 60
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "ragNode"
+      },
+      {
+        "data": {
+          "form": {
+            "conditions": [
+              {
+                "items": [
+                  {
+                    "cpn_id": "UserFillUp:LoopInput@value",
+                    "operator": "=",
+                    "value": "1"
+                  }
+                ],
+                "logical_operator": "and",
+                "to": [
+                  "ExitLoop:LoopExit"
+                ]
+              }
+            ],
+            "end_cpn_ids": [
+              "Message:LoopContinue"
+            ]
+          },
+          "label": "Switch",
+          "name": "条件(是否为1)"
+        },
+        "dragging": false,
+        "extent": "parent",
+        "id": "Switch:LoopCheck",
+        "measured": {
+          "height": 149,
+          "width": 200
+        },
+        "parentId": "Loop:InputUntil1",
+        "position": {
+          "x": 401.50932872023736,
+          "y": 0
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "switchNode"
+      },
+      {
+        "data": {
+          "form": {
+            "content": [
+              "继续循环中，你输入的是：{UserFillUp:LoopInput@value}"
+            ]
+          },
+          "label": "Message",
+          "name": "继续循环提示"
+        },
+        "dragging": false,
+        "extent": "parent",
+        "id": "Message:LoopContinue",
+        "measured": {
+          "height": 85,
+          "width": 200
+        },
+        "parentId": "Loop:InputUntil1",
+        "position": {
+          "x": 378.56604475198424,
+          "y": 128.49067127976258
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "messageNode"
+      },
+      {
+        "data": {
+          "form": {},
+          "label": "ExitLoop",
+          "name": "退出循环"
+        },
+        "extent": "parent",
+        "id": "ExitLoop:LoopExit",
+        "measured": {
+          "height": 49,
+          "width": 200
+        },
+        "parentId": "Loop:InputUntil1",
+        "position": {
+          "x": 380,
+          "y": 220
+        },
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "exitLoopNode"
+      },
+      {
+        "data": {
+          "form": {
+            "content": [
+              "循环结束。你最后一次输入为：{UserFillUp:LoopInput@value}"
+            ]
+          },
+          "label": "Message",
+          "name": "循环结束"
+        },
+        "id": "Message:LoopDone",
+        "measured": {
+          "height": 85,
+          "width": 200
+        },
+        "position": {
+          "x": 1450,
+          "y": 120
+        },
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "messageNode"
+      },
+      {
+        "data": {
+          "form": {
+            "enable_tips": true,
+            "inputs": {
+              "csv": {
+                "name": "CSV",
+                "optional": false,
+                "options": [],
+                "type": "line",
+                "value": "a,b,c"
+              }
+            },
+            "outputs": {
+              "csv": {
+                "name": "CSV",
+                "optional": false,
+                "options": [],
+                "type": "line",
+                "value": "a,b,c"
+              }
+            },
+            "tips": "请输入一个逗号分隔列表，例如: a,b,c"
+          },
+          "label": "UserFillUp",
+          "name": "迭代输入(csv)"
+        },
+        "id": "UserFillUp:IterInput",
+        "measured": {
+          "height": 49,
+          "width": 200
+        },
+        "position": {
+          "x": 830,
+          "y": 320
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "ragNode"
+      },
+      {
+        "data": {
+          "form": {
+            "delimiters": [
+              ","
+            ],
+            "method": "split",
+            "outputs": {
+              "result": {
+                "type": "Array<string>"
+              }
+            },
+            "script": "",
+            "split_ref": "UserFillUp:IterInput@csv"
+          },
+          "label": "StringTransform",
+          "name": "文本处理(split)"
+        },
+        "id": "StringTransform:SplitCSV",
+        "measured": {
+          "height": 49,
+          "width": 200
+        },
+        "position": {
+          "x": 1100,
+          "y": 320
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "ragNode"
+      },
+      {
+        "data": {
+          "form": {
+            "items_ref": "StringTransform:SplitCSV@result",
+            "outputs": {
+              "lines": {
+                "ref": "StringTransform:FmtItem@result",
+                "type": "Array<string>"
+              }
+            }
+          },
+          "label": "Iteration",
+          "name": "迭代(遍历数组)"
+        },
+        "dragging": false,
+        "height": 260,
+        "id": "Iteration:IterateList",
+        "measured": {
+          "height": 260,
+          "width": 560
+        },
+        "position": {
+          "x": 1756,
+          "y": 304
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "group",
+        "width": 560
+      },
+      {
+        "data": {
+          "form": {
+            "outputs": {
+              "index": {
+                "type": "integer"
+              },
+              "item": {
+                "type": "unknown"
+              }
+            }
+          },
+          "label": "IterationItem",
+          "name": "IterationItem"
+        },
+        "extent": "parent",
+        "id": "IterationItem:IterStart",
+        "measured": {
+          "height": 45,
+          "width": 80
+        },
+        "parentId": "Iteration:IterateList",
+        "position": {
+          "x": 40,
+          "y": 110
+        },
+        "type": "iterationStartNode"
+      },
+      {
+        "data": {
+          "form": {
+            "delimiters": [
+              "|"
+            ],
+            "method": "merge",
+            "outputs": {
+              "result": {
+                "type": "string"
+              }
+            },
+            "script": "{IterationItem:IterStart@index}: {IterationItem:IterStart@item}",
+            "split_ref": ""
+          },
+          "label": "StringTransform",
+          "name": "文本处理(merge格式化)"
+        },
+        "dragging": false,
+        "extent": "parent",
+        "id": "StringTransform:FmtItem",
+        "measured": {
+          "height": 49,
+          "width": 200
+        },
+        "parentId": "Iteration:IterateList",
+        "position": {
+          "x": 310.52761430555097,
+          "y": 89.26417900793672
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "ragNode"
+      },
+      {
+        "data": {
+          "form": {
+            "content": [
+              "迭代结束。\n输入数组: {StringTransform:SplitCSV@result}\n格式化输出(lines):{Iteration:IterateList@lines}"
+            ]
+          },
+          "label": "Message",
+          "name": "迭代结束"
+        },
+        "dragging": false,
+        "id": "Message:IterDone",
+        "measured": {
+          "height": 85,
+          "width": 200
+        },
+        "position": {
+          "x": 2266,
+          "y": 340
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "messageNode"
+      },
+      {
+        "data": {
+          "form": {
+            "operations": "append_or_update",
+            "outputs": {
+              "result": {
+                "type": "Array<Object>"
+              }
+            },
+            "query": [
+              {
+                "input": "env.sample_rows"
+              }
+            ],
+            "updates": [
+              {
+                "key": "tag",
+                "value": "demo"
+              }
+            ]
+          },
+          "label": "DataOperations",
+          "name": "数据操作(更新样例)"
+        },
+        "dragging": false,
+        "id": "DataOperations:UpdateSample",
+        "measured": {
+          "height": 73,
+          "width": 200
+        },
+        "position": {
+          "x": 1259.6258629497247,
+          "y": 739.1221179215047
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "dataOperationsNode"
+      },
+      {
+        "data": {
+          "form": {
+            "filter": {
+              "operator": "contains",
+              "value": ""
+            },
+            "n": 2,
+            "operations": "topN",
+            "outputs": {
+              "first": {
+                "type": "Object"
+              },
+              "last": {
+                "type": "Object"
+              },
+              "result": {
+                "type": "Array<Object>"
+              }
+            },
+            "query": "DataOperations:UpdateSample@result",
+            "sort_method": "asc"
+          },
+          "label": "ListOperations",
+          "name": "列表操作(Top2)"
+        },
+        "dragging": false,
+        "id": "ListOperations:Top2",
+        "measured": {
+          "height": 73,
+          "width": 200
+        },
+        "position": {
+          "x": 1491.6136594180002,
+          "y": 720.43932400214
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "listOperationsNode"
+      },
+      {
+        "data": {
+          "form": {
+            "content": [
+              "DataOperations 输出: {DataOperations:UpdateSample@result}\n\nListOperations Top2: {ListOperations:Top2@result}\n\nfirst={ListOperations:Top2@first}\n\nlast={ListOperations:Top2@last}"
+            ]
+          },
+          "label": "Message",
+          "name": "数据/列表结束"
+        },
+        "dragging": false,
+        "id": "Message:DataListDone",
+        "measured": {
+          "height": 85,
+          "width": 200
+        },
+        "position": {
+          "x": 1749.3740020360885,
+          "y": 674.9558701063063
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "messageNode"
+      },
+      {
+        "data": {
+          "form": {
+            "enable_tips": true,
+            "inputs": {
+              "text": {
+                "name": "Text",
+                "optional": false,
+                "options": [],
+                "type": "line",
+                "value": "hello world ragflow"
+              }
+            },
+            "outputs": {
+              "text": {
+                "name": "Text",
+                "optional": false,
+                "options": [],
+                "type": "line",
+                "value": "hello world ragflow"
+              }
+            },
+            "tips": "请输入一段文本(按空格分词)："
+          },
+          "label": "UserFillUp",
+          "name": "文本输入"
+        },
+        "id": "UserFillUp:TextInput",
+        "measured": {
+          "height": 49,
+          "width": 200
+        },
+        "position": {
+          "x": 830,
+          "y": 880
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "ragNode"
+      },
+      {
+        "data": {
+          "form": {
+            "delimiters": [
+              " "
+            ],
+            "method": "split",
+            "outputs": {
+              "result": {
+                "type": "Array<string>"
+              }
+            },
+            "script": "",
+            "split_ref": "UserFillUp:TextInput@text"
+          },
+          "label": "StringTransform",
+          "name": "文本处理(split空格)"
+        },
+        "id": "StringTransform:SplitText",
+        "measured": {
+          "height": 49,
+          "width": 200
+        },
+        "position": {
+          "x": 1100,
+          "y": 880
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "ragNode"
+      },
+      {
+        "data": {
+          "form": {
+            "delimiters": [
+              "|"
+            ],
+            "method": "merge",
+            "outputs": {
+              "result": {
+                "type": "string"
+              }
+            },
+            "script": "{StringTransform:SplitText@result}",
+            "split_ref": ""
+          },
+          "label": "StringTransform",
+          "name": "文本处理(merge拼接)"
+        },
+        "id": "StringTransform:JoinText",
+        "measured": {
+          "height": 49,
+          "width": 200
+        },
+        "position": {
+          "x": 1370,
+          "y": 880
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "ragNode"
+      },
+      {
+        "data": {
+          "form": {
+            "content": [
+              "原始: {UserFillUp:TextInput@text}\nsplit: {StringTransform:SplitText@result}\nmerge: {StringTransform:JoinText@result}"
+            ]
+          },
+          "label": "Message",
+          "name": "文本结束"
+        },
+        "id": "Message:TextDone",
+        "measured": {
+          "height": 85,
+          "width": 200
+        },
+        "position": {
+          "x": 1640,
+          "y": 880
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "messageNode"
+      },
+      {
+        "data": {
+          "form": {
+            "variables": [
+              {
+                "operator": "overwrite",
+                "parameter": "env.zero",
+                "variable": "env.counter"
+              }
+            ]
+          },
+          "label": "VariableAssigner",
+          "name": "变量赋值器(重置计数)"
+        },
+        "id": "VariableAssigner:SetCounter",
+        "measured": {
+          "height": 75,
+          "width": 200
+        },
+        "position": {
+          "x": 830,
+          "y": 1080
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "variableAssignerNode"
+      },
+      {
+        "data": {
+          "form": {
+            "variables": [
+              {
+                "operator": "+=",
+                "parameter": 1,
+                "variable": "env.counter"
+              }
+            ]
+          },
+          "label": "VariableAssigner",
+          "name": "变量赋值器(counter+=1)"
+        },
+        "id": "VariableAssigner:IncCounter",
+        "measured": {
+          "height": 75,
+          "width": 200
+        },
+        "position": {
+          "x": 1100,
+          "y": 1080
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "variableAssignerNode"
+      },
+      {
+        "data": {
+          "form": {
+            "content": [
+              "env.counter={env.counter}"
+            ]
+          },
+          "label": "Message",
+          "name": "变量赋值结束"
+        },
+        "id": "Message:VarDone",
+        "measured": {
+          "height": 85,
+          "width": 200
+        },
+        "position": {
+          "x": 1370,
+          "y": 1080
+        },
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "messageNode"
+      },
+      {
+        "data": {
+          "form": {
+            "groups": [
+              {
+                "group_name": "picked",
+                "type": "string",
+                "variables": [
+                  {
+                    "value": "env.a"
+                  },
+                  {
+                    "value": "env.b"
+                  },
+                  {
+                    "value": "env.c"
+                  }
+                ]
+              }
+            ],
+            "outputs": {
+              "picked": {
+                "type": "string"
+              }
+            }
+          },
+          "label": "VariableAggregator",
+          "name": "变量聚合(从多个变量选一个)"
+        },
+        "dragging": false,
+        "id": "VariableAggregator:PickOne",
+        "measured": {
+          "height": 149,
+          "width": 200
+        },
+        "position": {
+          "x": 1140.833890405132,
+          "y": 1220.572881849679
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "variableAggregatorNode"
+      },
+      {
+        "data": {
+          "form": {
+            "content": [
+              "picked={VariableAggregator:PickOne@picked} \n(a={env.a}, \nb={env.b}, \nc={env.c})"
+            ]
+          },
+          "label": "Message",
+          "name": "聚合结束"
+        },
+        "dragging": false,
+        "id": "Message:AggDone",
+        "measured": {
+          "height": 85,
+          "width": 200
+        },
+        "position": {
+          "x": 1450.9023215901689,
+          "y": 1214.5019074277038
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "messageNode"
+      },
+      {
+        "data": {
+          "form": {
+            "enable_tips": true,
+            "inputs": {
+              "x": {
+                "name": "x",
+                "optional": false,
+                "options": [],
+                "type": "line",
+                "value": "yes"
+              }
+            },
+            "outputs": {
+              "x": {
+                "name": "x",
+                "optional": false,
+                "options": [],
+                "type": "line",
+                "value": "yes"
+              }
+            },
+            "tips": "请输入 yes 或其它值："
+          },
+          "label": "UserFillUp",
+          "name": "条件输入"
+        },
+        "dragging": false,
+        "id": "UserFillUp:CondInput",
+        "measured": {
+          "height": 49,
+          "width": 200
+        },
+        "position": {
+          "x": 838.4993641907653,
+          "y": 1469.7819902601968
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "ragNode"
+      },
+      {
+        "data": {
+          "form": {
+            "conditions": [
+              {
+                "items": [
+                  {
+                    "cpn_id": "UserFillUp:CondInput@x",
+                    "operator": "=",
+                    "value": "yes"
+                  }
+                ],
+                "logical_operator": "and",
+                "to": [
+                  "Message:CondYes"
+                ]
+              }
+            ],
+            "end_cpn_ids": [
+              "Message:CondNo"
+            ]
+          },
+          "label": "Switch",
+          "name": "条件分支"
+        },
+        "dragging": false,
+        "id": "Switch:CondSwitch",
+        "measured": {
+          "height": 149,
+          "width": 200
+        },
+        "position": {
+          "x": 1135.2116516474564,
+          "y": 1447.9264823410863
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "switchNode"
+      },
+      {
+        "data": {
+          "form": {
+            "content": [
+              "命中 IF: x==yes"
+            ]
+          },
+          "label": "Message",
+          "name": "条件=Yes"
+        },
+        "id": "Message:CondYes",
+        "measured": {
+          "height": 85,
+          "width": 200
+        },
+        "position": {
+          "x": 1370,
+          "y": 1360
+        },
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "messageNode"
+      },
+      {
+        "data": {
+          "form": {
+            "content": [
+              "走 ELSE: x!=yes, x={UserFillUp:CondInput@x}"
+            ]
+          },
+          "label": "Message",
+          "name": "条件=No"
+        },
+        "id": "Message:CondNo",
+        "measured": {
+          "height": 85,
+          "width": 200
+        },
+        "position": {
+          "x": 1370,
+          "y": 1480
+        },
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "messageNode"
+      },
+      {
+        "data": {
+          "form": {
+            "enable_tips": true,
+            "inputs": {
+              "kb": {
+                "name": "KB",
+                "optional": false,
+                "options": [],
+                "type": "line",
+                "value": ""
+              },
+              "query": {
+                "name": "Query",
+                "optional": false,
+                "options": [],
+                "type": "line",
+                "value": "ragflow 是什么"
+              }
+            },
+            "outputs": {
+              "kb": {
+                "name": "KB",
+                "optional": false,
+                "options": [],
+                "type": "line",
+                "value": ""
+              },
+              "query": {
+                "name": "Query",
+                "optional": false,
+                "options": [],
+                "type": "line",
+                "value": "ragflow 是什么"
+              }
+            },
+            "tips": "请输入知识库名称或ID，以及检索 query："
+          },
+          "label": "UserFillUp",
+          "name": "知识库检索输入"
+        },
+        "dragging": false,
+        "id": "UserFillUp:KBInput",
+        "measured": {
+          "height": 49,
+          "width": 200
+        },
+        "position": {
+          "x": 848,
+          "y": 1608
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "ragNode"
+      },
+      {
+        "data": {
+          "form": {
+            "cross_languages": [],
+            "empty_response": "(未检索到内容)",
+            "kb_ids": [],
+            "keywords_similarity_weight": 0.7,
+            "meta_data_filter": {},
+            "outputs": {
+              "formalized_content": {
+                "type": "string",
+                "value": ""
+              },
+              "json": {
+                "type": "Array<Object>",
+                "value": []
+              }
+            },
+            "query": "UserFillUp:   {UserFillUp:KBInput@kb}\nInput {UserFillUp:KBInput@query}\n",
+            "rerank_id": "",
+            "retrieval_from": "dataset",
+            "similarity_threshold": 0.2,
+            "toc_enhance": false,
+            "top_k": 512,
+            "top_n": 5,
+            "use_kg": false
+          },
+          "label": "Retrieval",
+          "name": "知识检索"
+        },
+        "dragging": false,
+        "id": "Retrieval:KBSearch",
+        "measured": {
+          "height": 49,
+          "width": 200
+        },
+        "position": {
+          "x": 1101.693490624725,
+          "y": 1600
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "retrievalNode"
+      },
+      {
+        "data": {
+          "form": {
+            "content": [
+              "KB=\n{UserFillUp:KBInput@kb}\nquery=\n{UserFillUp:KBInput@query}\nERROR={Retrieval:KBSearch@_ERROR}\nformalized_content:\n{Retrieval:KBSearch@formalized_content}"
+            ]
+          },
+          "label": "Message",
+          "name": "检索结束"
+        },
+        "dragging": false,
+        "id": "Message:KBDone",
+        "measured": {
+          "height": 85,
+          "width": 200
+        },
+        "position": {
+          "x": 1370,
+          "y": 1591.5325468763747
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "messageNode"
+      },
+      {
+        "data": {
+          "form": {
+            "enable_tips": true,
+            "inputs": {
+              "text": {
+                "name": "Text",
+                "optional": false,
+                "options": [],
+                "type": "paragraph",
+                "value": "我想做循环演示"
+              }
+            },
+            "outputs": {
+              "text": {
+                "name": "Text",
+                "optional": false,
+                "options": [],
+                "type": "paragraph",
+                "value": "我想做循环演示"
+              }
+            },
+            "tips": "请输入一段话用于分类(需要可用LLM)："
+          },
+          "label": "UserFillUp",
+          "name": "分类输入"
+        },
+        "id": "UserFillUp:CateInput",
+        "measured": {
+          "height": 49,
+          "width": 200
+        },
+        "position": {
+          "x": 830,
+          "y": 1780
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "ragNode"
+      },
+      {
+        "data": {
+          "form": {
+            "items": [
+              {
+                "description": "打招呼相关",
+                "examples": [
+                  {
+                    "value": "你好啊"
+                  },
+                  {
+                    "value": "春节快乐啊"
+                  }
+                ],
+                "name": "打招呼",
+                "uuid": "a1111111-1111-4111-8111-111111111111"
+              },
+              {
+                "description": "知识库检索相关",
+                "examples": [
+                  {
+                    "value": "帮我查一下知识库里的内容"
+                  }
+                ],
+                "name": "Retrieval",
+                "uuid": "b2222222-2222-4222-8222-222222222222"
+              },
+              {
+                "description": "其它",
+                "examples": [
+                  {
+                    "value": "随便"
+                  }
+                ],
+                "name": "Other",
+                "uuid": "c3333333-3333-4333-8333-333333333333"
+              }
+            ],
+            "llm_id": "Qwen/Qwen3-8B@default@SILICONFLOW",
+            "message_history_window_size": 1,
+            "outputs": {
+              "category_name": {
+                "type": "string"
+              }
+            },
+            "parameter": "Precise",
+            "query": "UserFillUp:CateInput@text",
+            "temperature": "0.1",
+            "temperatureEnabled": true
+          },
+          "label": "Categorize",
+          "name": "问题分类"
+        },
+        "id": "Categorize:Demo",
+        "measured": {
+          "height": 175,
+          "width": 200
+        },
+        "position": {
+          "x": 1100,
+          "y": 1760
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "categorizeNode"
+      },
+      {
+        "data": {
+          "form": {
+            "content": [
+              "分类结果={Categorize:Demo@category_name} -> 打招呼"
+            ]
+          },
+          "label": "Message",
+          "name": "分类=打招呼"
+        },
+        "id": "Message:CateLoop",
+        "measured": {
+          "height": 85,
+          "width": 200
+        },
+        "position": {
+          "x": 1370,
+          "y": 1700
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "messageNode"
+      },
+      {
+        "data": {
+          "form": {
+            "content": [
+              "分类结果={Categorize:Demo@category_name} -> Retrieval"
+            ]
+          },
+          "label": "Message",
+          "name": "分类=Retrieval"
+        },
+        "id": "Message:CateRetrieval",
+        "measured": {
+          "height": 85,
+          "width": 200
+        },
+        "position": {
+          "x": 1370,
+          "y": 1780
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "messageNode"
+      },
+      {
+        "data": {
+          "form": {
+            "content": [
+              "分类结果={Categorize:Demo@category_name} -> Other"
+            ]
+          },
+          "label": "Message",
+          "name": "分类=Other"
+        },
+        "id": "Message:CateOther",
+        "measured": {
+          "height": 85,
+          "width": 200
+        },
+        "position": {
+          "x": 1370,
+          "y": 1860
+        },
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "messageNode"
+      },
+      {
+        "data": {
+          "form": {
+            "enable_tips": true,
+            "inputs": {
+              "x": {
+                "name": "x",
+                "optional": false,
+                "options": [],
+                "type": "integer"
+              }
+            },
+            "outputs": {
+              "x": {
+                "name": "x",
+                "optional": false,
+                "options": [],
+                "type": "integer"
+              }
+            },
+            "tips": "请输入一个数字(需要Sandbox才能运行 CodeExec)："
+          },
+          "label": "UserFillUp",
+          "name": "代码输入"
+        },
+        "id": "UserFillUp:CodeInput",
+        "measured": {
+          "height": 49,
+          "width": 200
+        },
+        "position": {
+          "x": 830,
+          "y": 1980
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "ragNode"
+      },
+      {
+        "data": {
+          "form": {
+            "arguments": {
+              "x": "UserFillUp:CodeInput@x"
+            },
+            "lang": "python",
+            "outputs": {
+              "result": {
+                "type": "Number",
+                "value": ""
+              }
+            },
+            "script": "def main(x):\n    try:\n        n = int(x)\n    except Exception:\n        n = 0\n    return n * 2\n"
+          },
+          "label": "CodeExec",
+          "name": "代码执行(翻倍)"
+        },
+        "id": "CodeExec:Double",
+        "measured": {
+          "height": 49,
+          "width": 200
+        },
+        "position": {
+          "x": 1100,
+          "y": 1980
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "ragNode"
+      },
+      {
+        "data": {
+          "form": {
+            "content": [
+              "输入 x={UserFillUp:CodeInput@x}\nCodeExec.result={CodeExec:Double@result}\nERROR={CodeExec:Double@_ERROR}"
+            ]
+          },
+          "label": "Message",
+          "name": "代码结束"
+        },
+        "id": "Message:CodeDone",
+        "measured": {
+          "height": 85,
+          "width": 200
+        },
+        "position": {
+          "x": 1370,
+          "y": 1980
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "messageNode"
+      },
+      {
+        "data": {
+          "form": {
+            "content": [
+              "这是 Message 节点演示。"
+            ]
+          },
+          "label": "Message",
+          "name": "纯消息"
+        },
+        "id": "Message:Only",
+        "measured": {
+          "height": 85,
+          "width": 200
+        },
+        "position": {
+          "x": 830,
+          "y": 2160
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "messageNode"
+      },
+      {
+        "data": {
+          "form": {
+            "enable_tips": true,
+            "inputs": {
+              "anything": {
+                "name": "anything",
+                "optional": false,
+                "options": [],
+                "type": "paragraph",
+                "value": ""
+              }
+            },
+            "outputs": {
+              "anything": {
+                "name": "anything",
+                "optional": false,
+                "options": [],
+                "type": "paragraph",
+                "value": ""
+              }
+            },
+            "tips": "这是等待输入(UserFillUp)演示，请随便填："
+          },
+          "label": "UserFillUp",
+          "name": "等待输入"
+        },
+        "id": "UserFillUp:JustWait",
+        "measured": {
+          "height": 49,
+          "width": 200
+        },
+        "position": {
+          "x": 830,
+          "y": 2320
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "ragNode"
+      },
+      {
+        "data": {
+          "form": {
+            "content": [
+              "你输入的是：{UserFillUp:JustWait@anything}"
+            ]
+          },
+          "label": "Message",
+          "name": "等待输入结束"
+        },
+        "id": "Message:WaitDone",
+        "measured": {
+          "height": 85,
+          "width": 200
+        },
+        "position": {
+          "x": 1100,
+          "y": 2320
+        },
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "messageNode"
+      },
+      {
+        "data": {
+          "form": {
+            "text": "如果你选择data_ops\n需要先在会话变量中给sample rows添加内容\n比如\n[\n  {\n    \"id\": 1,\n    \"score\": 0.91,\n    \"title\": \"Alpha\"\n  },\n  {\n    \"id\": 2,\n    \"score\": 0.88,\n    \"title\": \"Beta\"\n  },\n  {\n    \"id\": 3,\n    \"score\": 0.76,\n    \"title\": \"Gamma\"\n  }\n]"
+          },
+          "label": "Note",
+          "name": "注释_0"
+        },
+        "dragHandle": ".note-drag-handle",
+        "dragging": false,
+        "id": "Note:LemonAntsGo",
+        "measured": {
+          "height": 127,
+          "width": 241
+        },
+        "position": {
+          "x": 1058.5760701931008,
+          "y": 579.4464881022832
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "noteNode"
+      },
+      {
+        "data": {
+          "form": {
+            "variables": [
+              {
+                "operator": "set",
+                "parameter": "1",
+                "variable": "env.a"
+              },
+              {
+                "operator": "set",
+                "parameter": "2",
+                "variable": "env.b"
+              },
+              {
+                "operator": "set",
+                "parameter": "c",
+                "variable": "env.c"
+              }
+            ]
+          },
+          "label": "VariableAssigner",
+          "name": "变量赋值器_0"
+        },
+        "dragging": false,
+        "id": "VariableAssigner:GoldMiceTurn",
+        "measured": {
+          "height": 141,
+          "width": 200
+        },
+        "position": {
+          "x": 872.7148306936298,
+          "y": 1177.353600491407
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "variableAssignerNode"
+      }
+    ]
+  },
+  "variables": {
+    "a": {
+      "description": "VariableAggregator 候选1(空)",
+      "name": "a",
+      "type": "string",
+      "value": ""
+    },
+    "b": {
+      "description": "VariableAggregator 候选2",
+      "name": "b",
+      "type": "string",
+      "value": ""
+    },
+    "c": {
+      "description": "VariableAggregator 候选3",
+      "name": "c",
+      "type": "string",
+      "value": ""
+    },
+    "counter": {
+      "description": "VariableAssigner 演示变量。",
+      "name": "counter",
+      "type": "number",
+      "value": 0
+    },
+    "loop_done": {
+      "description": "Loop termination flag(本demo主要用 ExitLoop 退出)。",
+      "name": "loop_done",
+      "type": "boolean",
+      "value": false
+    },
+    "sample_rows": {
+      "description": "DataOperations/ListOperations 的示例输入：Array<object>。",
+      "name": "sample_rows",
+      "type": "array<object>",
+      "value": []
+    },
+    "zero": {
+      "description": "用于 overwrite 重置(避免 parameter=0 被当成不完整)。",
+      "name": "zero",
+      "type": "number",
+      "value": 0
+    }
+  }
+}

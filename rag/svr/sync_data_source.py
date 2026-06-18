@@ -232,8 +232,10 @@ class SyncBase:
 
             docs = []
             for doc in document_batch:
+                legacy_doc_id = hash128(f"{task['connector_id']}:{doc.id}")
+                new_doc_id = hash128(f"{task['kb_id']}:{task['connector_id']}:{doc.id}")
                 d = {
-                    "id": hash128(f"{task['connector_id']}:{doc.id}"),
+                    "id": legacy_doc_id if legacy_doc_id in existing_doc_ids else new_doc_id,
                     "connector_id": task["connector_id"],
                     "source": self.SOURCE_NAME,
                     "semantic_identifier": doc.semantic_identifier,
@@ -401,8 +403,9 @@ class _BlobLikeBase(SyncBase):
             if key_record.deleted:
                 continue
 
-            doc_id = hash128(key_record.key)
-            stored = existing_fingerprints.get(doc_id, "")
+            legacy_doc_id = hash128(f"{task['connector_id']}:{key_record.key}")
+            new_doc_id = hash128(f"{task['kb_id']}:{task['connector_id']}:{key_record.key}")
+            stored = existing_fingerprints.get(legacy_doc_id, "") or existing_fingerprints.get(new_doc_id, "")
             if key_record.fingerprint and stored and key_record.fingerprint == stored:
                 bypass_count += 1
                 continue
@@ -641,14 +644,61 @@ class Notion(SyncBase):
 class Discord(SyncBase):
     SOURCE_NAME: str = FileSource.DISCORD
 
+    @staticmethod
+    def _coerce_str_list(raw):
+        """Normalise a config field that may arrive as a list (Tag input from
+        the new web form), a comma-separated string (legacy/SDK callers), or
+        None into a clean ``list[str]`` with empty entries dropped.
+
+        Fixes #15790 — the previous ``.split(',')`` call assumed a string and
+        raised ``'list' object has no attribute 'split'`` for any config saved
+        through the current UI.
+        """
+        if not raw:
+            return []
+        if isinstance(raw, str):
+            items = raw.split(",")
+        elif isinstance(raw, (list, tuple, set)):
+            items = list(raw)
+        else:
+            items = [raw]
+        # Drop None explicitly so it doesn't survive as the literal string
+        # "None" (str(None) == "None") — only stringify real values.
+        cleaned: list[str] = []
+        for item in items:
+            if item is None:
+                continue
+            text = str(item).strip()
+            if text:
+                cleaned.append(text)
+        return cleaned
+
     async def _generate(self, task: dict):
-        server_ids: str | None = self.conf.get("server_ids", None)
-        # "channel1,channel2"
-        channel_names: str | None = self.conf.get("channel_names", None)
+        server_ids_raw = self.conf.get("server_ids", None)
+        # Web form stores channels under "channels"; older configs / SDK use
+        # "channel_names" — accept either so existing sources keep working.
+        channels_raw = self.conf.get("channels", None)
+        if channels_raw in (None, "", []):
+            channels_raw = self.conf.get("channel_names", None)
+
+        server_id_strs = self._coerce_str_list(server_ids_raw)
+        # DiscordConnector.__init__ takes server_ids as list[str] and converts
+        # to list[int] internally (common/data_source/discord_connector.py:247).
+        # Validate up-front so a malformed entry warns + drops here rather than
+        # crashing the connector's int() cast — but keep the strings.
+        server_ids: list[str] = []
+        for sid in server_id_strs:
+            try:
+                int(sid)
+            except ValueError:
+                logging.warning("Discord connector: ignoring non-integer server_id %r", sid)
+                continue
+            server_ids.append(sid)
+        channel_names = self._coerce_str_list(channels_raw)
 
         self.connector = DiscordConnector(
-            server_ids=server_ids.split(",") if server_ids else [],
-            channel_names=channel_names.split(",") if channel_names else [],
+            server_ids=server_ids,
+            channel_names=channel_names,
             start_date=datetime(1970, 1, 1, tzinfo=timezone.utc).strftime("%Y-%m-%d"),
             batch_size=self.conf.get("batch_size", 1024),
         )

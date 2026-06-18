@@ -64,7 +64,7 @@ export interface SegmentedProps extends Omit<
 
 const Segmented = React.forwardRef<HTMLDivElement, SegmentedProps>(
   supportsCssAnchor
-    ? (
+    ? function Segmented(
         {
           options,
           value,
@@ -77,7 +77,7 @@ const Segmented = React.forwardRef<HTMLDivElement, SegmentedProps>(
           buttonSize = 'default',
         },
         ref,
-      ) => {
+      ) {
         const anchorNamePrefix = useId().replace(/:/g, '');
         const [selectedValue, setSelectedValue] = React.useState<
           SegmentedValue | undefined
@@ -143,7 +143,7 @@ const Segmented = React.forwardRef<HTMLDivElement, SegmentedProps>(
           </div>
         );
       }
-    : (
+    : function Segmented(
         {
           options,
           value,
@@ -156,7 +156,7 @@ const Segmented = React.forwardRef<HTMLDivElement, SegmentedProps>(
           buttonSize = 'default',
         },
         ref,
-      ) => {
+      ) {
         const [selectedValue, setSelectedValue] = React.useState<
           SegmentedValue | undefined
         >(value);

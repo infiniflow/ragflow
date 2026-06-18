@@ -1,11 +1,11 @@
 [project]
 name = "ragflow"
-version = "0.25.6"
+version = "0.26.1"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license-files = ["LICENSE"]
 readme = "README.md"
-requires-python = ">=3.13,<3.15"
+requires-python = ">=3.13,<3.14"
 dependencies = [
     # discord-py==2.3.2 unconditionally imports audioop in discord/player.py at module-
     # load time. audioop was removed from the CPython stdlib in Python 3.13 (PEP 594),
@@ -155,7 +155,12 @@ dependencies = [
     #    "xxhash>=3.5.0,<4.0.0",
     #    "trio>=0.17.0,<0.29.0",
     #    "click>=8.1.8",
-    "litellm~=1.82.0,!=1.82.7,!=1.82.8",
+    # 1.88.0 ships a broken `litellm.integrations.custom_logger`
+    # (imports `AgenticLoopPlan` from a sibling types module where the
+    # symbol is missing — see PR #15952 CI run 27414495913), and the
+    # 1.82.6/1.82.7/1.82.8 minors have a broken `litellm.caching.caching`
+    # import chain. Pin to a single known-good 1.82.x release.
+    "litellm==1.82.5",
     #    "pip>=25.2",
     #    "imageio-ffmpeg>=0.6.0",
     #    "cryptography==46.0.3",
@@ -166,6 +171,12 @@ dependencies = [
     "python-gitlab>=7.0.0",
     "alibabacloud-dingtalk>=2.0.0",
     "quart-schema==0.23.0",
+    "lark-oapi>=1.2.0",
+    "discord.py>=2.3.0",
+    "python-telegram-bot>=21.0",
+    "line-bot-sdk>=3.0.0",
+    "wechatpy>=1.8.18",
+    "aiohttp>=3.14.1",
 ]
 
 [dependency-groups]
@@ -198,6 +209,11 @@ constraint-dependencies = [
     # encounters (fixed in trio 0.26 by skipping non-callables). Pulled in transitively
     # via selenium-wire -> trio-websocket -> trio.
     "trio>=0.26.0",
+]
+exclude-dependencies = [
+    # crawl4ai>=0.8.6 depends on unclecode-litellm, which installs the same
+    # `litellm` package namespace as upstream litellm and can corrupt imports.
+    "unclecode-litellm",
 ]
 override-dependencies = [
     # moodlepy<=0.24.1 pins attrs<23.0.0, but trio>=0.26.0 requires attrs>=23.2.0.

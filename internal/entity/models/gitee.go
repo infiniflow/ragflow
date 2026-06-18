@@ -17,7 +17,6 @@
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -39,16 +38,9 @@ type GiteeModel struct {
 func NewGiteeModel(baseURL map[string]string, urlSuffix URLSuffix) *GiteeModel {
 	return &GiteeModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
-			httpClient: &http.Client{
-				Transport: &http.Transport{
-					MaxIdleConns:        100,
-					MaxIdleConnsPerHost: 10,
-					IdleConnTimeout:     90 * time.Second,
-					DisableCompression:  false,
-				},
-			},
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
@@ -314,58 +306,35 @@ func (g *GiteeModel) ChatStreamlyWithSender(modelName string, messages []Message
 	reserveText := ""
 	thinkingPhase := false
 	answerPhase := false
+	sawTerminal := false
 
-	// SSE parsing: read line by line
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		common.Info(line)
-
-		// SSE data line starts with "data:"
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-
-		// Extract JSON after "data:"
-		data := strings.TrimSpace(line[5:])
-
-		// [DONE] marks the end of stream
-		if data == "[DONE]" {
-			break
-		}
-
-		// Parse the JSON event
-		var event map[string]interface{}
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			continue
-		}
-
+	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
-			continue
+			return nil
 		}
 
 		firstChoice, ok := choices[0].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		delta, ok := firstChoice["delta"].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		content, ok := delta["content"].(string)
 		if ok && content != "" {
+			common.Info(content)
 			if content == "<think>" {
 				thinkingPhase = true
-				continue
+				return nil
 
 			} else if content == "</think>" {
 				thinkingPhase = false
 				answerPhase = true
-				continue
+				return nil
 			}
 
 			if thinkingPhase {
@@ -389,8 +358,15 @@ func (g *GiteeModel) ChatStreamlyWithSender(modelName string, messages []Message
 
 		finishReason, ok := firstChoice["finish_reason"].(string)
 		if ok && finishReason != "" {
-			break
+			sawTerminal = true
 		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to scan response body: %w", err)
+	}
+	if !done && !sawTerminal {
+		return fmt.Errorf("gitee: stream ended before [DONE] or finish_reason")
 	}
 
 	if reserveText != "" {
@@ -405,7 +381,7 @@ func (g *GiteeModel) ChatStreamlyWithSender(modelName string, messages []Message
 		return err
 	}
 
-	return scanner.Err()
+	return nil
 }
 
 type giteeEmbeddingResponse struct {
@@ -852,7 +828,7 @@ func (g *GiteeModel) getParseFile(baseURL *string, apiKey, taskID *string, timeO
 	return nil, nil
 }
 
-func (g *GiteeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (g *GiteeModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 
 	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -894,21 +870,12 @@ func (g *GiteeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	// Parse response
-	var modelList DSModelList
+	var modelList ModelList
 	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	var models []string
-	for _, model := range modelList.Models {
-		modelName := model.ID
-		if model.OwnedBy != "" {
-			modelName = model.ID + "@" + model.OwnedBy
-		}
-		models = append(models, modelName)
-	}
-
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 func (g *GiteeModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

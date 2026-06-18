@@ -1,0 +1,138 @@
+{
+  "globals": {
+    "sys.conversation_turns": 0,
+    "sys.date": "",
+    "sys.files": [],
+    "sys.history": [],
+    "sys.query": "",
+    "sys.user_id": ""
+  },
+  "graph": {
+    "edges": [
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__beginstart-Browser:BusyHatsSinkend",
+        "source": "begin",
+        "sourceHandle": "start",
+        "target": "Browser:BusyHatsSink",
+        "targetHandle": "end"
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Browser:BusyHatsSinkstart-Message:QuietMonkeysLeadend",
+        "source": "Browser:BusyHatsSink",
+        "sourceHandle": "start",
+        "target": "Message:QuietMonkeysLead",
+        "targetHandle": "end"
+      }
+    ],
+    "nodes": [
+      {
+        "data": {
+          "form": {
+            "inputs": {},
+            "mode": "conversational",
+            "outputs": {},
+            "prologue": "Hi! I'm your assistant. What can I do for you?"
+          },
+          "label": "Begin",
+          "name": "begin"
+        },
+        "dragging": false,
+        "id": "begin",
+        "measured": {
+          "height": 81,
+          "width": 200
+        },
+        "position": {
+          "x": 218.5,
+          "y": 138.5
+        },
+        "selected": false,
+        "sourcePosition": "left",
+        "targetPosition": "right",
+        "type": "beginNode"
+      },
+      {
+        "data": {
+          "form": {
+            "chromium_sandbox": false,
+            "enable_default_extensions": false,
+            "frequencyPenaltyEnabled": true,
+            "frequency_penalty": 0.7,
+            "headless": true,
+            "llm_id": "deepseek-v4-pro@DeepSeek",
+            "maxTokensEnabled": false,
+            "max_steps": 30,
+            "max_tokens": 256,
+            "outputs": {
+              "content": {
+                "type": "string",
+                "value": ""
+              },
+              "downloaded_files": {
+                "type": "Array<Object>",
+                "value": []
+              }
+            },
+            "persist_session": true,
+            "presencePenaltyEnabled": true,
+            "presence_penalty": 0.4,
+            "prompts": "{sys.query}打开百度，搜索‘2026年最新AI技术趋势’，把前5条搜索结果的标题和链接总结给我。",
+            "temperature": 0.1,
+            "temperatureEnabled": true,
+            "topPEnabled": true,
+            "top_p": 0.3,
+            "upload_sources": ""
+          },
+          "label": "Browser",
+          "name": "Browser_0"
+        },
+        "dragging": false,
+        "id": "Browser:BusyHatsSink",
+        "measured": {
+          "height": 49,
+          "width": 200
+        },
+        "position": {
+          "x": 385.29079417409025,
+          "y": 264.3466325548784
+        },
+        "selected": true,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "ragNode"
+      },
+      {
+        "data": {
+          "form": {
+            "content": [
+              "{Browser:BusyHatsSink@content}\n{Browser:BusyHatsSink@downloaded_files}"
+            ]
+          },
+          "label": "Message",
+          "name": "回复消息_0"
+        },
+        "dragging": false,
+        "id": "Message:QuietMonkeysLead",
+        "measured": {
+          "height": 85,
+          "width": 200
+        },
+        "position": {
+          "x": 554.7907941740903,
+          "y": 120.3466325548784
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "messageNode"
+      }
+    ]
+  },
+  "variables": []
+}

@@ -88,6 +88,10 @@ type DatasetService struct {
 // NewDatasetService creates a new datasets service.
 func NewDatasetService() *DatasetService {
 	cfg := server.GetConfig()
+	engineType := server.EngineType("")
+	if cfg != nil {
+		engineType = cfg.DocEngine.Type
+	}
 	return &DatasetService{
 		kbDAO:          dao.NewKnowledgebaseDAO(),
 		documentDAO:    dao.NewDocumentDAO(),
@@ -99,8 +103,50 @@ func NewDatasetService() *DatasetService {
 		searchService:  NewSearchService(),
 		docEngine:      engine.Get(),
 		embeddingCache: utility.NewEmbeddingLRU(1000),
-		engineType:     cfg.DocEngine.Type,
+		engineType:     engineType,
 	}
+}
+
+func (s *DatasetService) UpdateDocumentMetadataConfig(userID, datasetID, documentID string, req map[string]interface{}) (*entity.Document, common.ErrorCode, error) {
+	if _, err := s.kbDAO.GetByIDAndTenantID(datasetID, userID); err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, errors.New("You don't own the dataset.")
+		}
+		return nil, common.CodeServerError, errors.New("Database operation failed")
+	}
+
+	doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(documentID, datasetID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, fmt.Errorf("Document %s not found in dataset %s", documentID, datasetID)
+		}
+		return nil, common.CodeServerError, err
+	}
+
+	metadata, ok := req["metadata"]
+	if !ok {
+		return nil, common.CodeArgumentError, errors.New("metadata is required")
+	}
+
+	parserConfig := doc.ParserConfig
+	if parserConfig == nil {
+		parserConfig = entity.JSONMap{}
+	}
+	parserConfig["metadata"] = metadata
+
+	if err := s.documentDAO.UpdateByID(doc.ID, map[string]interface{}{"parser_config": parserConfig}); err != nil {
+		return nil, common.CodeExceptionError, err
+	}
+
+	updatedDoc, err := s.documentDAO.GetByID(doc.ID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, errors.New("Document not found!")
+		}
+		return nil, common.CodeExceptionError, err
+	}
+
+	return updatedDoc, common.CodeSuccess, nil
 }
 
 // SearchDatasetsRequest is the request structure for searching chunks across datasets.
@@ -201,7 +247,7 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 		"    keyword=%v\n"+
 		"    similarityThreshold=%v, vectorSimilarityWeight=%v",
 		datasetIDs, req.Question,
-		ptrString(req.Page), ptrString(req.Size), req.DocIDs,
+		common.PtrString(req.Page), common.PtrString(req.Size), req.DocIDs,
 		useKG, topK, crossLanguages, searchID,
 		metadataFilter,
 		rerankID,
@@ -481,30 +527,6 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 		Labels:  &labels,
 		Total:   retrievalResult.Total,
 	}, nil
-}
-
-// Helper functions
-
-// ptrString converts a pointer to a formatted string
-func ptrString[T any](p *T) string {
-	if p == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *p)
-}
-
-func getPageNum(page *int, defaultVal int) int {
-	if page != nil && *page > 0 {
-		return *page
-	}
-	return defaultVal
-}
-
-func getPageSize(size *int, defaultVal int) int {
-	if size != nil && *size > 0 {
-		return *size
-	}
-	return defaultVal
 }
 
 // AutoMetadataField mirrors the REST dataset auto metadata field schema.
@@ -834,10 +856,7 @@ func (s *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 		embdID = embeddingModel
 	}
 
-	kbID, err := utility.GenerateUUID1()
-	if err != nil {
-		return nil, common.CodeServerError, errors.New("Internal server error")
-	}
+	kbID := utility.GenerateToken()
 
 	status := string(entity.StatusValid)
 	// Deduplicate name within tenant
@@ -1153,8 +1172,12 @@ func (s *DatasetService) ListIngestionLogs(datasetID, userID string, page, pageS
 	}, common.CodeSuccess, nil
 }
 
-// GetIngestionLog returns a single dataset-level ingestion log, mirroring
-// dataset_api_service.get_ingestion_log.
+// GetIngestionLog returns a single ingestion log, mirroring
+// dataset_api_service.get_ingestion_log. It returns the full record (including
+// the `dsl`, `document_id`, `parser_id`, etc.) so that the front-end
+// dataflow-result page can render the pipeline timeline and chunks. The
+// file-level converter is a superset of the dataset-level fields, so it is
+// correct for both dataset-level (graph/raptor/mindmap) and per-file logs.
 func (s *DatasetService) GetIngestionLog(datasetID, userID, logID string) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
 	if datasetID == "" {
@@ -1173,7 +1196,7 @@ func (s *DatasetService) GetIngestionLog(datasetID, userID, logID string) (map[s
 		return nil, common.CodeServerError, errors.New("Database operation failed")
 	}
 
-	return datasetIngestionLogToMap(log), common.CodeSuccess, nil
+	return fileIngestionLogToMap(log), common.CodeSuccess, nil
 }
 
 func datasetIngestionLogToMap(log *entity.PipelineOperationLog) map[string]interface{} {

@@ -17,7 +17,6 @@
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -45,19 +44,11 @@ type XAIModel struct {
 
 // NewXAIModel creates a new xAI model instance.
 func NewXAIModel(baseURL map[string]string, urlSuffix URLSuffix) *XAIModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-
 	return &XAIModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
-			httpClient: &http.Client{
-				Transport: transport,
-			},
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
@@ -279,45 +270,21 @@ func (x *XAIModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	sawTerminal := false
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		// SSE data line starts with "data:"
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-
-		// Extract JSON after "data:"
-		data := strings.TrimSpace(line[5:])
-
-		// [DONE] marks the end of the stream
-		if data == "[DONE]" {
-			sawTerminal = true
-			break
-		}
-
-		// Parse the JSON event
-		var event map[string]interface{}
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			continue
-		}
-
+	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
-			continue
+			return nil
 		}
 
 		firstChoice, ok := choices[0].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		delta, ok := firstChoice["delta"].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
@@ -337,14 +304,13 @@ func (x *XAIModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 		finishReason, ok := firstChoice["finish_reason"].(string)
 		if ok && finishReason != "" {
 			sawTerminal = true
-			break
 		}
-	}
-
-	if err := scanner.Err(); err != nil {
+		return nil
+	})
+	if err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
-	if !sawTerminal {
+	if !done && !sawTerminal {
 		return fmt.Errorf("xai: stream ended before [DONE] or finish_reason")
 	}
 
@@ -364,7 +330,7 @@ func (x *XAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig
 }
 
 // ListModels returns the list of model ids visible to the API key.
-func (x *XAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (x *XAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -407,30 +373,16 @@ func (x *XAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	// Parse response
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
+	// Parse response
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	data, ok := result["data"].([]interface{})
-	if !ok {
+	if modelList.Models == nil {
 		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	models := make([]string, 0)
-	for _, model := range data {
-		modelMap, ok := model.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		modelName, ok := modelMap["id"].(string)
-		if !ok {
-			continue
-		}
-		models = append(models, modelName)
-	}
-
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 // Balance is not exposed by the xAI API, so this returns "no such method".

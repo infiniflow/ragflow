@@ -27,10 +27,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from api.apps.auth import get_auth_client
 from api.db import FileType, UserTenantRole
-from api.db.db_models import TenantLLM
 from api.db.services.file_service import FileService
-from api.db.services.llm_service import get_init_tenant_llm
-from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
 from common.time_utils import current_timestamp, datetime_format, get_format_time
 from common.misc_utils import download_img, get_uuid
@@ -43,6 +40,7 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
+from api.utils.nickname_validation import validate_nickname
 from api.utils.crypt import decrypt
 from rag.utils.redis_conn import REDIS_CONN
 from api.apps import login_required, current_user, login_user, logout_user
@@ -126,6 +124,7 @@ async def login():
     elif user:
         user.access_token = get_uuid()
         login_user(user)
+        user.last_login_time = get_format_time()
         user.update_time = current_timestamp()
         user.update_date = datetime_format(datetime.now())
         user.save()
@@ -360,6 +359,12 @@ async def setting_user():
             continue
         update_dict[k] = request_data[k]
 
+    if "nickname" in update_dict:
+        error_message, error_code = validate_nickname(update_dict["nickname"])
+        if error_message:
+            return get_json_result(data=False, message=error_message, code=error_code)
+        update_dict["nickname"] = update_dict["nickname"].strip()
+
     try:
         UserService.update_by_id(current_user.id, update_dict)
         return get_json_result(data=True)
@@ -412,10 +417,6 @@ def rollback_user_registration(user_id):
             UserTenantService.delete_by_id(u[0].id)
     except Exception:
         pass
-    try:
-        TenantLLM.delete().where(TenantLLM.tenant_id == user_id).execute()
-    except Exception:
-        pass
 
 
 def user_register(user_id, user):
@@ -448,13 +449,13 @@ def user_register(user_id, user):
         "location": "",
     }
 
-    tenant_llm = get_init_tenant_llm(user_id)
+    # tenant_llm = get_init_tenant_llm(user_id)
 
     if not UserService.save(**user):
         return None
     TenantService.insert(**tenant)
     UserTenantService.insert(**usr_tenant)
-    TenantLLMService.insert_many(tenant_llm)
+    # TenantLLMService.insert_many(tenant_llm)
     FileService.insert(file)
     return UserService.query(email=user["email"])
 
@@ -519,6 +520,11 @@ async def user_add():
 
     # Construct user info data
     nickname = req["nickname"]
+    error_message, error_code = validate_nickname(nickname)
+    if error_message:
+        return get_json_result(data=False, message=error_message, code=error_code)
+    nickname = nickname.strip()
+
     user_dict = {
         "access_token": get_uuid(),
         "email": email_address,

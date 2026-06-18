@@ -41,8 +41,12 @@ const (
 	TokenUser
 	TokenAlter
 	TokenActive
+	TokenInactive
 	TokenAdmin
+	TokenServer
+	TokenAPI
 	TokenAdd
+	TokenHost
 	TokenDelete
 	TokenPassword
 	TokenDataset
@@ -68,6 +72,7 @@ const (
 	TokenVar
 	TokenVars
 	TokenConfigs
+	TokenConfig
 	TokenEnvs
 	TokenKey
 	TokenKeys
@@ -96,6 +101,7 @@ const (
 	TokenParser
 	TokenPipeline
 	TokenSearch
+	TokenRetrieve
 	TokenCurrent
 	TokenVision
 	TokenEmbedding
@@ -150,6 +156,7 @@ const (
 	TokenGet
 	TokenUpdate
 	TokenRemove
+	TokenExplain
 	TokenChunk
 	TokenChunks
 	TokenDocument
@@ -164,6 +171,24 @@ const (
 	TokenStart
 	TokenStop
 	TokenIngestion
+	TokenMQ
+	TokenPublish
+	TokenPull
+	TokenPending
+	TokenNoACK
+	TokenAnalyze
+	TokenSummary
+	TokenStorage
+	TokenQuota
+	TokenTree
+	TokenOrphan
+	TokenDays
+	TokenWindow
+	TokenActivity
+	TokenData
+	TokenPurge
+	TokenPlan
+	TokenPreview
 	TokenLog
 	TokenLevel
 	TokenDebug
