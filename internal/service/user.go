@@ -1069,17 +1069,24 @@ func (s *UserService) GetUserByAPIToken(authorization string) (*entity.User, com
 // GetUserByBetaAPIToken gets user by beta access key from Authorization
 // header. This mirrors Python's AUTH_BETA flow used by public bot endpoints.
 func (s *UserService) GetUserByBetaAPIToken(authorization string) (*entity.User, common.ErrorCode, error) {
+	authorization = strings.TrimSpace(authorization)
 	if authorization == "" {
 		return nil, common.CodeUnauthorized, fmt.Errorf("authorization header is empty")
 	}
 
-	parts := strings.Split(authorization, " ")
+	parts := strings.Fields(authorization)
 	var token string
 	if len(parts) == 2 {
 		token = parts[1]
 	} else if len(parts) == 1 {
+		if strings.EqualFold(parts[0], "Bearer") {
+			return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization format")
+		}
 		token = parts[0]
 	} else {
+		return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization format")
+	}
+	if token == "" {
 		return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization format")
 	}
 

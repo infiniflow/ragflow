@@ -61,7 +61,7 @@ func TestUserServiceGetUserByBetaAPIToken(t *testing.T) {
 	}
 
 	svc := NewUserService()
-	for _, auth := range []string{"Bearer " + beta, beta} {
+	for _, auth := range []string{"Bearer " + beta, beta, "Bearer    " + beta} {
 		user, code, err := svc.GetUserByBetaAPIToken(auth)
 		if err != nil {
 			t.Fatalf("GetUserByBetaAPIToken(%q) failed: %v", auth, err)
@@ -84,6 +84,20 @@ func TestUserServiceGetUserByBetaAPITokenRejectsInvalidToken(t *testing.T) {
 	}
 	if code != common.CodeUnauthorized {
 		t.Fatalf("code = %v, want %v", code, common.CodeUnauthorized)
+	}
+}
+
+func TestUserServiceGetUserByBetaAPITokenRejectsEmptyOrWhitespaceToken(t *testing.T) {
+	setupUserBetaServiceDB(t)
+
+	for _, auth := range []string{"Bearer ", "   ", "\t"} {
+		_, code, err := NewUserService().GetUserByBetaAPIToken(auth)
+		if err == nil {
+			t.Fatalf("expected error for auth %q", auth)
+		}
+		if code != common.CodeUnauthorized {
+			t.Fatalf("code = %v, want %v for auth %q", code, common.CodeUnauthorized, auth)
+		}
 	}
 }
 

@@ -429,7 +429,7 @@ func (h *SearchBotHandler) SearchbotDetail(c *gin.Context) {
 		case "can't find this Search App!":
 			jsonError(c, common.CodeDataError, "Can't find this Search App!")
 		default:
-			jsonError(c, common.CodeServerError, err.Error())
+			jsonInternalError(c, err)
 		}
 		return
 	}

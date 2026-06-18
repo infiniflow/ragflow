@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"ragflow/internal/common"
@@ -261,5 +262,54 @@ func TestSearchbotDetailRejectsUnauthorizedSearchAccess(t *testing.T) {
 	}
 	if resp["code"] != float64(common.CodeOperatingError) {
 		t.Fatalf("code = %v, want %v", resp["code"], common.CodeOperatingError)
+	}
+}
+
+func TestSearchbotDetailDoesNotExposeInternalErrorText(t *testing.T) {
+	setupSearchbotDetailHandlerDB(t)
+
+	status := "1"
+	accessToken := "access-token"
+	beta := "beta-token"
+	if err := dao.DB.Create(&entity.User{
+		ID:              "tenant-1",
+		Email:           "tenant@example.com",
+		Nickname:        "Tenant",
+		AccessToken:     &accessToken,
+		IsAuthenticated: "1",
+		IsActive:        "1",
+		IsAnonymous:     "0",
+		Status:          &status,
+	}).Error; err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+	if err := dao.DB.Create(&entity.APIToken{
+		TenantID: "tenant-1",
+		Token:    "token-1",
+		Beta:     &beta,
+	}).Error; err != nil {
+		t.Fatalf("failed to create api token: %v", err)
+	}
+	if err := dao.DB.Exec("DROP TABLE user_tenant").Error; err != nil {
+		t.Fatalf("failed to drop user_tenant table: %v", err)
+	}
+
+	r := newSearchbotDetailRouter()
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/searchbots/detail?search_id=search-1", nil)
+	req.Header.Set("Authorization", "Bearer "+beta)
+	r.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	if strings.Contains(body, "no such table") {
+		t.Fatalf("response leaked internal error text: %s", body)
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if resp["code"] != float64(common.CodeServerError) {
+		t.Fatalf("code = %v, want %v", resp["code"], common.CodeServerError)
 	}
 }
