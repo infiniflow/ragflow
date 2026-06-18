@@ -351,8 +351,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			commitDatasets.GET("/changes", r.fileCommitHandler.GetUncommittedChanges)
 		}
 
-
-
 			// Author routes
 			authors := v1.Group("/authors")
 			{
@@ -500,6 +498,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				mcp.POST("/servers", r.mcpHandler.CreateMCPServer)
 				mcp.GET("/servers", r.mcpHandler.ListMCPServers)
+				mcp.GET("/servers/:mcp_id", r.mcpHandler.GetMCPServer)
 				mcp.PUT("/servers/:mcp_id", r.mcpHandler.UpdateMCPServer)
 				mcp.DELETE("/servers/:mcp_id", r.mcpHandler.DeleteMCPServer)
 				mcp.POST("/servers/import", r.mcpHandler.ImportMCPServers)
