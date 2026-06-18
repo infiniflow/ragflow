@@ -452,7 +452,7 @@ func (h *ProviderHandler) CheckInstanceConnection(c *gin.Context) {
 		return
 	}
 
-	apikey, _ := instanceInfo["apikey"].(string)
+	apikey, _ := instanceInfo["api_key"].(string)
 	region, _ := instanceInfo["region"].(string)
 	baseURL, _ := instanceInfo["base_url"].(string)
 
@@ -628,10 +628,10 @@ func (h *ProviderHandler) DropProviderInstance(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
-	_, err := h.modelProviderService.DropProviderInstances(providerName, userID, req.Instances)
+	code, err := h.modelProviderService.DropProviderInstances(providerName, userID, req.Instances)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
+			"code":    code,
 			"message": err.Error(),
 		})
 		return
