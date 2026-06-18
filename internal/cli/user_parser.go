@@ -942,7 +942,7 @@ func (p *Parser) parseAddModel() (*Command, error) {
 	}
 	p.nextToken()
 
-	i := 0
+	modelIndex := 0
 	var modelTypes []string
 	var supportThink *bool = nil
 	maxTokens := 0
@@ -955,15 +955,16 @@ func (p *Parser) parseAddModel() (*Command, error) {
 	}
 	p.nextToken()
 
-A:
+optionsLoop:
 	for {
-		if i >= len(modelNames) {
+		if modelIndex >= len(modelNames) {
 			return nil, fmt.Errorf("too many model configs: got more configs than model names")
 		}
+		currentModelName := modelNames[modelIndex]
 		switch p.curToken.Type {
 		case TokenThink:
 			if supportThink != nil {
-				return nil, fmt.Errorf("think model is already set for model %s", modelNames[i])
+				return nil, fmt.Errorf("think model is already set for model %s", currentModelName)
 			}
 			value := true
 			supportThink = &value
@@ -1022,7 +1023,7 @@ A:
 		case TokenToken, TokenTokens:
 			p.nextToken()
 			if maxTokens != 0 {
-				return nil, fmt.Errorf("max tokens is already given %d for model %s", maxTokens, modelNames[i])
+				return nil, fmt.Errorf("max tokens is already given %d for model %s", maxTokens, currentModelName)
 			}
 			if p.curToken.Type != TokenInteger {
 				return nil, fmt.Errorf("expected integer")
@@ -1036,7 +1037,7 @@ A:
 
 		case TokenComma, TokenSemicolon, TokenEOF:
 			if len(modelTypes) == 0 {
-				return nil, fmt.Errorf("model type is required for model %s", modelNames[i])
+				return nil, fmt.Errorf("model type is required for model %s", currentModelName)
 			}
 
 			seenTypes := make(map[string]struct{}, len(modelTypes))
@@ -1058,11 +1059,11 @@ A:
 
 			modelTypes = dedupedModelTypes
 			if len(modelTypes) == 0 {
-				return nil, fmt.Errorf("model type is required for model %s", modelNames[i])
+				return nil, fmt.Errorf("model type is required for model %s", currentModelName)
 			}
 
 			model := map[string]any{
-				"model_name":  modelNames[i],
+				"model_name":  currentModelName,
 				"model_types": modelTypes,
 				"max_tokens":  maxTokens,
 			}
@@ -1077,7 +1078,7 @@ A:
 
 			models = append(models, model)
 
-			i++
+			modelIndex++
 			modelTypes = nil
 			supportThink = nil
 			maxTokens = 0
@@ -1092,7 +1093,7 @@ A:
 			if p.curToken.Type == TokenSemicolon {
 				p.nextToken()
 			}
-			break A
+			break optionsLoop
 
 		default:
 			return nil, fmt.Errorf("unexpected token type: %s", p.curToken.Value)

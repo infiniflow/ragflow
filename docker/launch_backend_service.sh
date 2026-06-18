@@ -9,9 +9,9 @@ usage() {
     echo
     echo "Without arguments, starts ragflow and task_executor."
     echo "Available service types:"
-    echo "  ragflow         Start api/ragflow_server.py"
+    echo "  ragflow         Start RAGFlow server based on API_PROXY_SCHEME"
     echo "  task_executor   Start rag/svr/task_executor.py workers"
-    echo "  admin           Start admin/server/admin_server.py"
+    echo "  admin           Start Admin server based on API_PROXY_SCHEME"
     echo "  data_sync       Start rag/svr/sync_data_source.py"
     echo
     echo "Examples:"
@@ -113,46 +113,59 @@ task_exe(){
 
 # Function to execute ragflow_server with retry logic
 run_server(){
+    local server_name="ragflow_server.py"
+    local -a server_cmd=("$PY" "api/ragflow_server.py")
+    if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+        prepare_for_go
+        server_name="ragflow_server"
+        server_cmd=("bin/ragflow_server")
+    fi
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
-        echo "Starting ragflow_server.py (Attempt $((retry_count+1)))"
-        $PY api/ragflow_server.py
+        echo "Starting $server_name (Attempt $((retry_count+1)))"
+        "${server_cmd[@]}"
         EXIT_CODE=$?
         if [ $EXIT_CODE -eq 0 ]; then
-            echo "ragflow_server.py exited successfully."
+            echo "$server_name exited successfully."
             break
         else
-            echo "ragflow_server.py failed with exit code $EXIT_CODE. Retrying..." >&2
+            echo "$server_name failed with exit code $EXIT_CODE. Retrying..." >&2
             retry_count=$((retry_count + 1))
             sleep 2
         fi
     done
 
     if [ $retry_count -ge $MAX_RETRIES ]; then
-        echo "ragflow_server.py failed after $MAX_RETRIES attempts. Exiting..." >&2
+        echo "$server_name failed after $MAX_RETRIES attempts. Exiting..." >&2
         cleanup
     fi
 }
 
 # Function to execute admin_server with retry logic
 run_admin_server(){
+    local server_name="admin_server.py"
+    local -a server_cmd=("$PY" "admin/server/admin_server.py")
+    if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+        prepare_for_go
+        server_name="admin_server"
+        server_cmd=("bin/admin_server")
+    fi
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
-        echo "Starting admin_server.py (Attempt $((retry_count+1)))"
-        $PY admin/server/admin_server.py
+        echo "Starting $server_name (Attempt $((retry_count+1)))"
+        "${server_cmd[@]}"
         EXIT_CODE=$?
         if [ $EXIT_CODE -eq 0 ]; then
-            echo "admin_server.py exited successfully."
+            echo "$server_name exited successfully."
             break
         else
-            echo "admin_server.py failed with exit code $EXIT_CODE. Retrying..." >&2
+            echo "$server_name failed with exit code $EXIT_CODE. Retrying..." >&2
             retry_count=$((retry_count + 1))
             sleep 2
         fi
     done
-
     if [ $retry_count -ge $MAX_RETRIES ]; then
-        echo "admin_server.py failed after $MAX_RETRIES attempts. Exiting..." >&2
+        echo "$server_name failed after $MAX_RETRIES attempts. Exiting..." >&2
         cleanup
     fi
 }
@@ -192,9 +205,24 @@ run_mysql_migrations() {
         --stages tenant_model_provider,tenant_model_instance,tenant_model,model_id_config \
         --config conf/service_conf.yaml \
         --execute \
-        --database-version "v0.26.0" \
+        --database-version "v0.26.1" \
         --mark-database-version-on-success
     echo "Model provider table migrations completed."
+}
+
+prepare_for_go() {
+    if [ -d /usr/share/infinity/resource ]; then
+        echo "Resource directory already exists. Skipping preparation."
+        return
+    fi
+    mkdir -p /usr/share/infinity/resource
+    if [ "$NEED_MIRROR" == "1" ]; then
+        git clone --depth 1 --single-branch https://gitee.com/infiniflow/resource /tmp/resource;
+    else
+        git clone --depth 1 --single-branch https://github.com/infiniflow/resource.git /tmp/resource;
+    fi
+    cp -r /tmp/resource/* /usr/share/infinity/resource
+    rm -rf /tmp/resource
 }
 
 START_RAGFLOW=0

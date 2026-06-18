@@ -1,4 +1,4 @@
-// Package component — Agent unit tests (Phase 2 P0, plan §2.11.3 row 8).
+// Package component — Agent unit tests.
 //
 // Tests inject a canned agentRunner to verify the component contract
 // without requiring a real model or eino react agent runtime:
@@ -137,6 +137,32 @@ func TestAgent_MissingModelID(t *testing.T) {
 	var pe *ParamError
 	if !errors.As(err, &pe) {
 		t.Errorf("err type=%T, want *ParamError", err)
+	}
+}
+
+// TestAgent_Invoke_RespectsParentCancellation: when the parent
+// ctx is cancelled, the runner observes it and the error
+// propagates through Invoke.
+func TestAgent_Invoke_RespectsParentCancellation(t *testing.T) {
+	withAgentRunner(t, func(ctx context.Context, _ AgentParam) (*schema.Message, error) {
+		// Honor ctx cancellation — real runners do; a stub that
+		// ignores ctx would defeat the test's purpose.
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		return &schema.Message{Content: "ok"}, nil
+	})
+	c := NewAgentComponent(AgentParam{ModelID: "echo", MaxRounds: 1})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancel
+
+	_, err := c.Invoke(ctx, map[string]any{"user_prompt": "hi"})
+	if err == nil {
+		t.Fatal("expected error from pre-cancelled context")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
 	}
 }
 

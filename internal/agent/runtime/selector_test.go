@@ -31,14 +31,15 @@ func newTestRedis(t *testing.T) (*redis.Client, *miniredis.Miniredis) {
 	return rdb, mr
 }
 
-// TestDefault_ReturnsGo is the Phase 7 acceptance assertion: with no env
-// var override, Default() must return RuntimeGo. The env var is explicitly
-// cleared so the test is hermetic.
+// TestDefault_ReturnsGo is the default-runtime acceptance
+// assertion: with no env var override, Default() must return
+// RuntimeGo. The env var is explicitly cleared so the test is
+// hermetic.
 func TestDefault_ReturnsGo(t *testing.T) {
 	t.Setenv(defaultEnvKey, "")
 	ResetDefaultCache()
 	if got := Default(); got != RuntimeGo {
-		t.Fatalf("Default() = %q, want %q (Phase 7 default)", got, RuntimeGo)
+		t.Fatalf("Default() = %q, want %q (Go default)", got, RuntimeGo)
 	}
 }
 
@@ -61,13 +62,14 @@ func TestDefault_RespectsEnv(t *testing.T) {
 	t.Setenv(defaultEnvKey, "bogus")
 	ResetDefaultCache()
 	if got := Default(); got != RuntimeGo {
-		t.Fatalf("Default() with invalid env = %q, want %q (Phase 7 fallback)", got, RuntimeGo)
+		t.Fatalf("Default() with invalid env = %q, want %q (Go fallback)", got, RuntimeGo)
 	}
 }
 
 // TestSelector_PerTenantOverride verifies the per-tenant override
-// mechanism still works with the Phase 7 Go default: even when Default()
-// would return Go, a tenant explicitly Set to Python must be routed there.
+// mechanism still works with the Go default: even when Default()
+// would return Go, a tenant explicitly Set to Python must be
+// routed there.
 func TestSelector_PerTenantOverride(t *testing.T) {
 	t.Setenv(defaultEnvKey, "")
 	ResetDefaultCache()

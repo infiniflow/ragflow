@@ -1,4 +1,4 @@
-// Package canvas — scheduler unit tests (Worker A, Phase 1).
+// Package canvas — scheduler unit tests.
 package canvas
 
 import (
@@ -11,7 +11,6 @@ import (
 // chain. Verifies the workflow compiles and the runtime paths exist.
 func TestBuildWorkflow_3NodeLinear(t *testing.T) {
 	c := &Canvas{
-		Version: 1,
 		Components: map[string]CanvasComponent{
 			"begin_0": {
 				Obj:        CanvasComponentObj{ComponentName: "Begin", Params: map[string]any{}},
@@ -54,7 +53,6 @@ func TestBuildWorkflow_3NodeLinear(t *testing.T) {
 // B → D, C → D. The two parallel branches converge at D.
 func TestBuildWorkflow_5NodeDiamond(t *testing.T) {
 	c := &Canvas{
-		Version: 1,
 		Components: map[string]CanvasComponent{
 			"begin_0": {
 				Obj:        CanvasComponentObj{ComponentName: "Begin", Params: map[string]any{}},
@@ -98,7 +96,6 @@ func TestBuildWorkflow_5NodeDiamond(t *testing.T) {
 // cpn" guard — a DSL bug should fail at compile-time, not silently skip.
 func TestBuildWorkflow_ErrorsOnUnknownUpstream(t *testing.T) {
 	c := &Canvas{
-		Version: 1,
 		Components: map[string]CanvasComponent{
 			"begin_0": {
 				Obj:        CanvasComponentObj{ComponentName: "Begin", Params: map[string]any{}},
@@ -124,7 +121,6 @@ func TestBuildWorkflow_ErrorsOnUnknownUpstream(t *testing.T) {
 // TestBuildWorkflow_ErrorsOnSelfEdge catches the simplest DSL mistake.
 func TestBuildWorkflow_ErrorsOnSelfEdge(t *testing.T) {
 	c := &Canvas{
-		Version: 1,
 		Components: map[string]CanvasComponent{
 			"a_0": {
 				Obj:        CanvasComponentObj{ComponentName: "LLM", Params: map[string]any{}},

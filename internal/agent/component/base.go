@@ -1,14 +1,13 @@
-// Package component implements the RAGFlow agent canvas components in Go.
+// Package component implements the RAGFlow agent canvas components
+// in Go following the 5-tier porting strategy (T1–T5; see
+// docs/develop/agent-go-port-design.md §4.1).
 //
-// See plan: .claude/plans/agent-go-port.md §2.11 (5-tier porting strategy).
-// Phase 2 P0 batch covers 8 components: LLM, Agent, ExitLoop, Switch,
-// Categorize, Begin, Message, Invoke.
-//
-// Component is the runtime contract every RAGFlow component implements;
-// it is a richer interface than internal/agent/runtime.Component (which
-// is the minimal Invoke-only surface canvas needs at build time). Any
-// concrete *Component here satisfies runtime.Component structurally,
-// which is how the canvas builder consumes a registered component via
+// Component is the runtime contract every RAGFlow component
+// implements; it is a richer interface than
+// internal/agent/runtime.Component (which is the minimal Invoke-only
+// surface canvas needs at build time). Any concrete *Component here
+// satisfies runtime.Component structurally, which is how the canvas
+// builder consumes a registered component via
 // runtime.DefaultFactory().
 //
 // ParamError and ErrNotImplemented are aliased from runtime so the

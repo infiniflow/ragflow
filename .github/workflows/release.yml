@@ -9,7 +9,6 @@ on:
   push:
     tags:
       - "v*.*.*"                  # normal release
-      - 'nightly'                 # mutable tag
 
 permissions:
   contents: write
@@ -64,7 +63,6 @@ jobs:
             PRERELEASE=true
             echo "Workflow triggered by schedule"
           fi
-
           echo "RELEASE_TAG=${RELEASE_TAG}" >> ${GITHUB_ENV}
           echo "PRERELEASE=${PRERELEASE}" >> ${GITHUB_ENV}
           echo "release_tag=${RELEASE_TAG}" >> ${GITHUB_OUTPUT}

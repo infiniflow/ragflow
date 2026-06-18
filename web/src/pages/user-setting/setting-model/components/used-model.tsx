@@ -7,6 +7,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { Switch } from '@/components/ui/switch';
+import { RAGFlowTooltip } from '@/components/ui/tooltip';
 import { ModelStatus } from '@/constants/llm';
 import {
   useDeleteProviderInstance,
@@ -360,12 +361,22 @@ function ModelListItem({
           </span>
         ))}
         {model.model_type.length > 3 && (
-          <span
-            className="px-2 py-1 text-xs bg-bg-card text-text-secondary rounded-md"
-            key="ellipsis"
+          <RAGFlowTooltip
+            tooltip={
+              <div className="flex flex-col gap-1">
+                {model.model_type.slice(3).map((type) => (
+                  <span key={type}>{type}</span>
+                ))}
+              </div>
+            }
           >
-            ...
-          </span>
+            <span
+              className="px-2 py-1 text-xs bg-bg-card text-text-secondary rounded-md cursor-pointer"
+              key="ellipsis"
+            >
+              ...
+            </span>
+          </RAGFlowTooltip>
         )}
         <Button
           size="icon"

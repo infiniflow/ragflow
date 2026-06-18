@@ -14,18 +14,14 @@
 //  limitations under the License.
 //
 
-// Package component — Invoke component (T3, plan §2.11.3 row 14, §2.7).
+// Package component — Invoke component (T3).
 //
-// Invoke is the canvas HTTP client node. It supports GET/POST/PUT/DELETE
-// with custom headers, optional proxy, and per-request timeout, and
-// wraps the underlying net/http.Transport with
-// go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp.NewTransport
-// so outbound calls automatically propagate W3C traceparent headers
-// (plan §2.10 — OTel integration).
-//
-// The P0 implementation does NOT include HTML cleaning, JSON form-data
-// building, or retry/backoff. Those land in Phase 2 P3 (per plan §2.7)
-// when deepdoc HTTP use cases first need them.
+// Invoke is the canvas HTTP client node. It supports GET/POST/
+// PUT/DELETE with custom headers, optional proxy, and per-request
+// timeout, and wraps the underlying net/http.Transport with
+// go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp
+// .NewTransport so outbound calls automatically propagate W3C
+// traceparent headers.
 package component
 
 import (
@@ -167,8 +163,8 @@ func (i *InvokeComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 	}, nil
 }
 
-// Stream is a synchronous facade over Invoke for P0. Real streaming
-// (chunked transfer as it arrives) is deferred to Phase 2 P3.
+// Stream is a synchronous facade over Invoke. Real streaming
+// (chunked transfer as it arrives) is a future enhancement.
 func (i *InvokeComponent) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
 	out, err := i.Invoke(ctx, inputs)
 	if err != nil {
@@ -223,7 +219,7 @@ func mustParseProxy(raw string) *url.URL {
 // netHTTPImports is a no-op reference to keep `net` in the import set
 // for go vet's unused-import check while the production code path
 // doesn't otherwise need the net package (only used by the optional
-// proxy path via http.ProxyURL). Removed in Phase 2 P3.
+// proxy path via http.ProxyURL).
 var _ = net.IPv4len
 
 func init() {

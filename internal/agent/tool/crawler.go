@@ -37,7 +37,8 @@ const crawlerToolDescription = "Fetches a web page and returns its extracted tex
 
 // crawlerArgs is the JSON shape the model sends in. max_depth and
 // max_pages are accepted for API symmetry with the Python tool, but
-// Phase 3 batch 1 only implements depth=0 (single page fetch).
+// the current implementation only supports depth=0 (single page
+// fetch).
 type crawlerArgs struct {
 	URL      string `json:"url"`
 	MaxDepth int    `json:"max_depth,omitempty"`
@@ -69,8 +70,7 @@ type crawlerResult struct {
 // returns the first safe A/AAAA record.
 type Resolver func(rawURL string) (host string, ip net.IP, err error)
 
-// CrawlerTool is the Phase 3 batch 1 implementation of the Crawler tool
-// (plan §2.11.4 row 4, §5 Phase 3 第 1 批). It fetches a single page
+// CrawlerTool is the Crawler tool. It fetches a single page
 // (max_depth=0) via HTTPHelper and extracts text + links with
 // golang.org/x/net/html.
 type CrawlerTool struct {
@@ -126,12 +126,12 @@ func (c *CrawlerTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 			},
 			"max_depth": {
 				Type:     schema.Integer,
-				Desc:     "Recursion depth. Phase 3 batch 1 supports 0 only; >0 returns an error.",
+				Desc:     "Recursion depth. 0 only; >0 returns an error.",
 				Required: false,
 			},
 			"max_pages": {
 				Type:     schema.Integer,
-				Desc:     "Maximum number of pages to fetch. Phase 3 batch 1 ignores this (single page).",
+				Desc:     "Maximum number of pages to fetch. Ignored (single page).",
 				Required: false,
 			},
 		}),
@@ -139,9 +139,9 @@ func (c *CrawlerTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 }
 
 // ErrCrawlerDepthUnsupported is returned when the caller asks for
-// max_depth>0. Multi-page crawling is out of scope for Phase 3 batch 1.
+// max_depth>0. Multi-page crawling is out of scope.
 var ErrCrawlerDepthUnsupported = errors.New(
-	"crawler: max_depth > 0 is not supported in Phase 3 batch 1; " +
+	"crawler: max_depth > 0 is not supported; " +
 		"use a single-page fetch (max_depth=0)",
 )
 
