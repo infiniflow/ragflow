@@ -379,14 +379,19 @@ func (f *FishAudioModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, 
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]ListModelResponse, 0, len(result.Items))
+	modelList := ModelList{Object: "list"}
 	for _, item := range result.Items {
-		models = append(models, ListModelResponse{
-			Name: item.Title,
-		})
+		name := strings.TrimSpace(item.Title)
+		if name == "" {
+			name = strings.TrimSpace(item.ID)
+		}
+		if name == "" {
+			continue
+		}
+		modelList.Models = append(modelList.Models, DSModel{ID: name})
 	}
 
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 func (f *FishAudioModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

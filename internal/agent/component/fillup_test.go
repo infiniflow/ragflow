@@ -110,9 +110,9 @@ func TestFillup_NonDictInput(t *testing.T) {
 	}
 }
 
-// TestFillup_FileInputStub locks down the Phase 5 deferral for Fillup:
-// file-typed inputs are stubbed as "<file:key>" — same contract as
-// UserFillUp, so downstream components see a consistent payload
+// TestFillup_FileInputStub pins the file-typed input stub:
+// file-typed inputs are stubbed as "<file:key>" — same contract
+// as UserFillUp, so downstream components see a consistent payload
 // shape across the two form-filling components.
 func TestFillup_FileInputStub(t *testing.T) {
 	c, _ := New(componentNameFillup, nil)

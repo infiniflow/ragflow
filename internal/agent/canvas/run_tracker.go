@@ -67,6 +67,16 @@ func NewRunTracker(ttl time.Duration) *RunTracker {
 	return &RunTracker{client: client, ttl: ttl}
 }
 
+// NewRunTrackerWithClient returns a tracker wired to a caller-supplied
+// redis.Client. The intended use is tests that want to drive the
+// RunTracker against an in-memory miniredis without touching the
+// global Redis cache, but the helper is exported so non-test callers
+// (multi-tenant deployments, custom Redis pools) can inject a
+// dedicated client without going through the global cache singleton.
+func NewRunTrackerWithClient(client *redis.Client, ttl time.Duration) *RunTracker {
+	return &RunTracker{client: client, ttl: ttl}
+}
+
 // Start records a new run as in-progress. canvasID and tenantID identify
 // the source DSL and tenant; parentRunID may be empty for fresh runs and
 // carries the source run-id for resume chains (R1 in plan §2.6).

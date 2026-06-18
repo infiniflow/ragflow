@@ -9,7 +9,6 @@ on:
   push:
     tags:
       - "v*.*.*"                  # normal release
-      - 'nightly'                 # mutable tag
 
 permissions:
   contents: write

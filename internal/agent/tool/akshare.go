@@ -56,14 +56,14 @@ type akshareEnvelope struct {
 	Error  string   `json:"_ERROR,omitempty"`
 }
 
-// AkShareTool is the Phase 3 batch 4 stub implementation of the AkShare
-// Chinese financial data tool (plan §2.11.4 row 1, §5 Phase 3 第 4 批).
+// AkShareTool is a stub implementation of the AkShare Chinese
+// financial data tool.
 //
-// AkShare is a Python library (https://github.com/akfamily/akshare) —
-// there is no public HTTP API. A future thin shim that routes to a
-// Python backend is deferred. For P3-B4 the tool is registered with the
-// canvas so DSLs that reference "akshare" continue to parse, but every
-// invocation fails fast with a clear "use Python Canvas" message rather
+// AkShare is a Python library (https://github.com/akfamily/akshare)
+// — there is no public HTTP API. The tool is registered with the
+// canvas so DSLs that reference "akshare" continue to parse, but
+// every invocation fails fast with a clear "use Python Canvas"
+// message rather
 // than silently no-op'ing.
 //
 // AkShareTool does not own an HTTPHelper — it never makes network calls.

@@ -1,6 +1,6 @@
 [project]
 name = "ragflow"
-version = "0.26.0"
+version = "0.26.1"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license-files = ["LICENSE"]
@@ -176,7 +176,7 @@ dependencies = [
     "python-telegram-bot>=21.0",
     "line-bot-sdk>=3.0.0",
     "wechatpy>=1.8.18",
-    "aiohttp>=3.9.0",
+    "aiohttp>=3.14.1",
 ]
 
 [dependency-groups]
@@ -209,6 +209,11 @@ constraint-dependencies = [
     # encounters (fixed in trio 0.26 by skipping non-callables). Pulled in transitively
     # via selenium-wire -> trio-websocket -> trio.
     "trio>=0.26.0",
+]
+exclude-dependencies = [
+    # crawl4ai>=0.8.6 depends on unclecode-litellm, which installs the same
+    # `litellm` package namespace as upstream litellm and can corrupt imports.
+    "unclecode-litellm",
 ]
 override-dependencies = [
     # moodlepy<=0.24.1 pins attrs<23.0.0, but trio>=0.26.0 requires attrs>=23.2.0.

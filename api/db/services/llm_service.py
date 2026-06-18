@@ -22,6 +22,8 @@ import threading
 from functools import partial
 from typing import Generator
 
+from langfuse import propagate_attributes
+
 from api.db.db_models import LLM
 from api.db.services.common_service import CommonService
 from api.db.services.tenant_llm_service import LLM4Tenant
@@ -88,7 +90,8 @@ class LLMBundle(LLM4Tenant):
 
     def _start_langfuse_observation(self, **kwargs):
         if self.langfuse_session_id:
-            kwargs["session_id"] = self.langfuse_session_id
+            with propagate_attributes(session_id=self.langfuse_session_id):
+                return self.langfuse.start_observation(**kwargs)
         return self.langfuse.start_observation(**kwargs)
 
     def close(self):
@@ -134,7 +137,7 @@ class LLMBundle(LLM4Tenant):
                 safe_texts.append("None")
                 continue
             token_size = num_tokens_from_string(text)
-            if token_size > self.max_length:
+            if token_size > self.max_length * 0.95:
                 target_len = int(self.max_length * 0.95)
                 safe_texts.append(text[:target_len])
             else:
