@@ -24405,6 +24405,40 @@
       }
     },
     {
+      "name": "PP-OCRv5",
+      "alias": [],
+      "model_types": [
+        "ocr"
+      ]
+    },
+    {
+      "name": "PP-StructureV3",
+      "alias": [
+        "PPStructureV3"
+      ],
+      "model_types": [
+        "ocr"
+      ]
+    },
+    {
+      "name": "PP-ChatOCRv4",
+      "alias": [
+        "PPChatOCRv4Doc"
+      ],
+      "model_types": [
+        "ocr"
+      ]
+    },
+    {
+      "name": "PaddleOCR-VL",
+      "alias": [
+
+      ],
+      "model_types": [
+        "ocr"
+      ]
+    },
+    {
       "name": "Pro/deepseek-ai/DeepSeek-V3.2-Exp",
       "max_tokens": 160000,
       "model_types": [
