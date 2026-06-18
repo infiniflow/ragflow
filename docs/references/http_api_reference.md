@@ -64,7 +64,7 @@ The following v0.24.0 REST API paths are deprecated. They remain available throu
 Creates a model response for a given chat conversation.
 
 :::caution DEPRECATED
-The previous endpoint `POST /api/v1/chats_openai/{chat_id}/chat/completions` is deprecated. Please use this endpoint instead.
+`POST /api/v1/chats_openai/{chat_id}/chat/completions` is deprecated. Use this endpoint instead.
 :::
 
 This API follows the same request and response format as OpenAI's API. It allows you to interact with the model in a manner similar to how you would with [OpenAI's API](https://platform.openai.com/docs/api-reference/chat/create).
@@ -2400,7 +2400,7 @@ Failure:
 Updates content or configurations for a specified chunk.
 
 :::caution DEPRECATED
-The previous endpoint `PUT /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` is deprecated. Please use this endpoint instead.
+`PUT /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` is deprecated. Use this endpoint instead.
 :::
 
 #### Request
@@ -2800,7 +2800,7 @@ curl --request POST \
   Whether to search chunks related to the generated knowledge graph for multi-hop queries. Defaults to `False`. Before enabling this, ensure you have successfully constructed a knowledge graph for the specified datasets. See [here](../guides/dataset/advanced/construct_knowledge_graph.md) for details.
 - `"toc_enhance"`: (*Body parameter*), `boolean`
   Whether to search chunks with extracted table of content. Defaults to `False`. Before enabling this, ensure you have enabled `TOC_Enhance` and successfully extracted table of contents for the specified datasets. See [here](https://ragflow.io/docs/dev/enable_table_of_contents) for details.
-- `"rerank_id"`: (*Body parameter*), `integer`
+- `"rerank_id"`: (*Body parameter*), `string`
   The ID of the rerank model.
 - `"keyword"`: (*Body parameter*), `boolean`
   Indicates whether to enable keyword-based matching:
@@ -3623,7 +3623,7 @@ Failure:
 Updates a session of a specified chat assistant.
 
 :::caution DEPRECATED
-The previous endpoint `PUT /api/v1/chats/{chat_id}/sessions/{session_id}` is deprecated. Please use this endpoint instead.
+`PUT /api/v1/chats/{chat_id}/sessions/{session_id}` is deprecated. Use this endpoint instead.
 :::
 
 #### Request
@@ -4052,7 +4052,7 @@ Failure:
 Starts a chat completion request. The same endpoint supports three modes:
 
 :::caution DEPRECATED
-The previous endpoint `POST /api/v1/chats/{chat_id}/completions` is deprecated. Please use this endpoint instead.
+`POST /api/v1/chats/{chat_id}/completions` is deprecated. Use this endpoint instead.
 :::
 
 - No `chat_id`: talk directly with the tenant's default chat model.
@@ -4136,7 +4136,7 @@ curl --request POST \
 - `"question"`: (*Body Parameter*), `string`
   Latest user question. This is equivalent to passing `messages: [{"role": "user", "content": question}]`.
 - `"stream"`: (*Body Parameter*), `boolean`
-  Indicates whether to output responses in a streaming way:
+  Enables streaming output:
   - `true`: Enable streaming (default).
   - `false`: Disable streaming.
 - `"chat_id"`: (*Body Parameter*)
@@ -4147,8 +4147,10 @@ curl --request POST \
   Optional model override when a specific chat model should be used for this request.
 - `"pass_all_history_messages"`: (*Body Parameter*), `boolean`
   When `chat_id` and `session_id` are provided, defaults to `false`, so the server uses stored session history and only the latest user message from the request. Set to `true` to replace/use the submitted full `messages` history, and overrides the stored session history.
-- `"legacy"`: (*Body Parameter*), `boolean`
-  When `true`, streaming responses use the v0.23.0-compatible format. The streamed `answer` is cumulative, and `start_to_think` / `end_to_think` are omitted from the emitted chunks.
+- `"legacy"`: (*Body Parameter*), `boolean`  
+  Defaults to `false`. Enables backward compatibility with RAGFlow v0.23.0 for streaming responses. When set to `true`:  
+  - Cumulative output: The `"answer"` field in each chunk returns the entire text generated so far, rather than just the new tokens (deltas).
+  - No reasoning markers: The `start_to_think` and `end_to_think` signals are stripped from the stream.
 
 #### Response
 
@@ -4596,14 +4598,14 @@ Failure:
 
 ### Converse with agent
 
-**POST** `/api/v1/agents/{agent_id}/completions`
+**POST** `/api/v1/agents/chat/completions`
 
 Asks a specified agent a question to start an AI-powered conversation.
 
 Uses a single completion endpoint for all agent conversations.
 
 :::caution DEPRECATED
-The API is deprecated. Please use `POST /api/v1/agents/chat/completions` instead.
+`POST /api/v1/agents/{agent_id}/completions` is deprecated. Use this endpoint instead.
 :::
 
 #### Request
@@ -4628,7 +4630,6 @@ Use this mode for the native agent API.
 - `"files"`: `list[object]` (optional)
 - `"user_id"`: `string` (optional)
 - `"return_trace"`: `boolean` (optional, default `false`)
-- `"release"`: `boolean` (optional, default `false`)
 - `"chat_template_kwargs": object` (optional)
 
 #### Streaming events to handle
@@ -5354,7 +5355,7 @@ Failure:
 Generates five to ten alternative question strings from the user's original query to retrieve more relevant search results.
 
 :::caution DEPRECATED
-The previous endpoint `POST /api/v1/sessions/related_questions` is deprecated. Please use this endpoint instead.
+`POST /api/v1/sessions/related_questions` is deprecated. Use this endpoint instead.
 :::
 
 This operation requires a `Bearer Login Token`, which typically expires with in 24 hours. You can find it in the Request Headers in your browser easily as shown below:
@@ -6777,7 +6778,7 @@ Failure
 Check the health status of RAGFlow's dependencies (database, Redis, document engine, object storage).
 
 :::caution DEPRECATED
-The previous endpoint `GET /v1/system/healthz` is deprecated. Please use this endpoint instead.
+`GET /v1/system/healthz` is deprecated. Use this endpoint instead.
 :::
 
 #### Request
@@ -6860,7 +6861,7 @@ Explanation:
 Uploads one or multiple files to the system.
 
 :::caution DEPRECATED
-The previous endpoint `POST /api/v1/file/upload` is deprecated. Please use this endpoint instead.
+`POST /api/v1/file/upload` is deprecated. Use this endpoint instead.
 :::
 
 #### Request
@@ -7007,7 +7008,7 @@ Failure:
 **GET** `/api/v1/agents/attachments/{attachment_id}/download`
 
 :::caution DEPRECATED
-The previous endpoints `GET /v1/document/download/{doc_id}` and `GET /api/v1/document/download/{doc_id}` are deprecated. Please use this endpoint instead.
+The previous endpoints `GET /v1/document/download/{doc_id}` and `GET /api/v1/document/download/{doc_id}` are deprecated. Use this endpoint instead.
 :::
 
 Downloads a runtime attachment previously uploaded for use in the agent system.
@@ -7067,7 +7068,7 @@ Failure:
 Creates a new file or folder in the system.
 
 :::caution DEPRECATED
-The previous endpoint `POST /api/v1/file/create` is deprecated. Please use this endpoint instead.
+`POST /api/v1/file/create` is deprecated. Use this endpoint instead.
 :::
 
 #### Request
@@ -7143,7 +7144,7 @@ Failure:
 Lists files and folders under a specific folder.
 
 :::caution DEPRECATED
-The previous endpoint `GET /api/v1/file/list` is deprecated. Please use this endpoint instead.
+`GET /api/v1/file/list` is deprecated. Use this endpoint instead.
 :::
 
 #### Request
@@ -7222,7 +7223,7 @@ Failure:
 Retrieves the immediate parent folder information of a specified file.
 
 :::caution DEPRECATED
-The previous endpoint `GET /api/v1/file/parent_folder?file_id=...` is deprecated. Please use this endpoint instead.
+`GET /api/v1/file/parent_folder?file_id=...` is deprecated. Use this endpoint instead.
 :::
 
 #### Request
@@ -7279,7 +7280,7 @@ Failure:
 Retrieves all parent folders of a specified file in the folder hierarchy.
 
 :::caution DEPRECATED
-The previous endpoint `GET /api/v1/file/all_parent_folder?file_id=...` is deprecated. Please use this endpoint instead.
+`GET /api/v1/file/all_parent_folder?file_id=...` is deprecated. Use this endpoint instead.
 :::
 
 #### Request
@@ -7342,7 +7343,7 @@ Failure:
 Deletes one or multiple files or folders.
 
 :::caution DEPRECATED
-The previous endpoint `POST /api/v1/file/rm` is deprecated. Please use this endpoint instead.
+`POST /api/v1/file/rm` is deprecated. Use this endpoint instead.
 :::
 
 #### Request
@@ -7409,7 +7410,7 @@ Failure:
 Downloads a file from the system.
 
 :::caution DEPRECATED
-The previous endpoint `GET /api/v1/file/get/{file_id}` is deprecated. Please use this endpoint instead.
+`GET /api/v1/file/get/{file_id}` is deprecated. Use this endpoint instead.
 :::
 
 #### Request
@@ -7457,7 +7458,7 @@ Failure:
 Moves and/or renames files or folders. Follows Linux `mv` semantics: at least one of `dest_file_id` or `new_name` must be provided.
 
 :::caution DEPRECATED
-The previous endpoints `POST /api/v1/file/mv` and `POST /api/v1/file/rename` are deprecated. Please use this endpoint instead.
+The previous endpoints `POST /api/v1/file/mv` and `POST /api/v1/file/rename` are deprecated. Use this endpoint instead.
 :::
 
 - `dest_file_id` only: move files to a new folder, names unchanged.
@@ -7560,7 +7561,7 @@ or
 Converts files to documents and links them to specified datasets.
 
 :::caution DEPRECATED
-The previous endpoint `POST /api/v1/file/convert` is deprecated. Please use this endpoint instead.
+`POST /api/v1/file/convert` is deprecated. Use this endpoint instead.
 :::
 
 #### Request

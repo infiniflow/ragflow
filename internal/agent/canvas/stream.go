@@ -14,12 +14,8 @@
 //  limitations under the License.
 //
 
-// stream.go defines the SSE event channel and the helper that formats
-// events in the Python agent_api.py wire format. See plan §4.10.
-//
-// Phase 1 scope is the in-process channel and the SSE serializer. The
-// HTTP writer wrapper (http.Flusher + chunked transfer) is deferred to
-// Phase 5 when the canvas HTTP handler lands.
+// stream.go defines the SSE event channel and the helper that
+// formats events in the Python agent_api.py wire format.
 package canvas
 
 import (

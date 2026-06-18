@@ -1,4 +1,4 @@
-// Package canvas — Begin → Message e2e smoke test (Worker A, Phase 1).
+// Package canvas — Begin → Message e2e smoke test.
 //
 // The simplest end-to-end compile+run path. Verifies:
 //
@@ -6,14 +6,13 @@
 //  2. Compile returns a CompiledCanvas.
 //  3. The compiled Runnable.Invoke runs to completion (no eino wiring error).
 //  4. The Message node's "{{sys.query}}" reference resolves against state
-//     that was seeded into Sys — even though our placeholder lambda doesn't
-//     actually emit a string, we exercise the variable resolution path by
-//     writing into Outputs via SetVar before Invoke.
+//     that was seeded into Sys — even though our placeholder lambda
+//     doesn't actually emit a string, we exercise the variable
+//     resolution path by writing into Outputs via SetVar before Invoke.
 //
-// Real Begin/Message component bodies land in Phase 2 P0. Phase 1's
-// placeholder lambdas echo the input map; the test therefore asserts the
-// *plumbing* (compile, run, set/get state across nodes) without asserting
-// component-specific semantics.
+// The placeholder lambdas echo the input map; the test asserts the
+// *plumbing* (compile, run, set/get state across nodes) without
+// asserting component-specific semantics.
 package canvas
 
 import (
@@ -27,7 +26,6 @@ import (
 // handler chain works end-to-end).
 func TestBeginToMessage_Smoke(t *testing.T) {
 	dsl := &Canvas{
-		Version: 1,
 		Components: map[string]CanvasComponent{
 			"begin_0": {
 				Obj:        CanvasComponentObj{ComponentName: "Begin", Params: map[string]any{}},
@@ -54,17 +52,16 @@ func TestBeginToMessage_Smoke(t *testing.T) {
 	}
 
 	// Pre-seed state to mirror what the Begin node would normally inject.
-	// In Phase 1 we did this directly because no Begin body existed yet.
-	// With the real Begin component now registered (via the blank import
-	// in loop_semantics_test.go), Begin reads inputs["query"] and writes
-	// it into state.Sys["query"] itself — so we pass the query through
-	// the input map instead of seeding it directly, and Begin propagates
-	// it into the context-attached state.
+	// With the real Begin component registered (via the blank import in
+	// loop_semantics_test.go), Begin reads inputs["query"] and writes it
+	// into state.Sys["query"] itself — so we pass the query through the
+	// input map instead of seeding it directly, and Begin propagates it
+	// into the context-attached state.
 	runState := NewCanvasState("run-smoke", "task-smoke")
 	runState.SetVar("begin_0", "request", map[string]any{"q": "world"})
 
-	// Stash runState on the context so a hypothetical runner (Phase 5) can
-	// extract it via GetStateFromContext.
+	// Stash runState on the context so the canvas runner can extract
+	// it via GetStateFromContext.
 	ctx := withState(context.Background(), runState)
 
 	// Invoke with the seed input. The "query" key flows into Begin's
@@ -80,8 +77,7 @@ func TestBeginToMessage_Smoke(t *testing.T) {
 	}
 
 	// Variable resolution: ResolveTemplate against the seeded state must
-	// produce "hello world" — this is what the real Message component will
-	// emit in Phase 2 P0.
+	// produce "hello world".
 	got, err := ResolveTemplate("hello {{sys.query}}", runState)
 	if err != nil {
 		t.Fatalf("ResolveTemplate: %v", err)

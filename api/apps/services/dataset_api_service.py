@@ -781,7 +781,11 @@ def get_ingestion_log(dataset_id: str, tenant_id: str, log_id: str):
 
     from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 
-    fields = PipelineOperationLogService.get_dataset_logs_fields()
+    # Return the full record (including `dsl`) so the front-end dataflow-result
+    # page can render the pipeline timeline and chunks. The file-level field set
+    # is a superset of the dataset-level fields, so it is valid for both
+    # dataset-level (graph/raptor/mindmap) and per-file logs.
+    fields = PipelineOperationLogService.get_file_logs_fields()
     log = PipelineOperationLogService.model.select(*fields).where((PipelineOperationLogService.model.id == log_id) & (PipelineOperationLogService.model.kb_id == dataset_id)).first()
     if not log:
         return False, "Log not found"

@@ -211,3 +211,9 @@ func (dao *DocumentDAO) GetParsingStatusByKBID(kbID string) (map[string]int64, e
 	}
 	return result, nil
 }
+
+func (dao *DocumentDAO) GetByNameAndKBID(name, kbID string) ([]*entity.Document, error) {
+	var docs []*entity.Document
+	err := DB.Where("name = ? AND kb_id = ?", name, kbID).Find(&docs).Error
+	return docs, err
+}

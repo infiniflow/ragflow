@@ -14,17 +14,17 @@
 //  limitations under the License.
 //
 
-// Package runtime implements per-tenant runtime selection for the agent
-// canvas port. See plan .claude/plans/agent-go-port.md §5 Phase 6/7.
+// Package runtime implements per-tenant runtime selection for the
+// agent canvas port.
 //
 // Two pieces live in this package:
 //
-//   - Selector (this file): reads/writes the per-tenant runtime override in
-//     Redis. The default is RuntimeGo as of Phase 7; per-tenant overrides
-//     still let operators force a tenant back to Python during the
-//     agent_api.py deprecation window.
-//   - Metrics (metrics.go): Prometheus counter + histogram for per-run
-//     observation, keyed by runtime mode.
+//   - Selector (this file): reads/writes the per-tenant runtime
+//     override in Redis. The default is RuntimeGo; per-tenant
+//     overrides still let operators force a tenant back to Python
+//     during the agent_api.py deprecation window.
+//   - Metrics (metrics.go): Prometheus counter + histogram for
+//     per-run observation, keyed by runtime mode.
 package runtime
 
 import (
@@ -37,18 +37,19 @@ import (
 	"go.uber.org/zap"
 )
 
-// RuntimeMode identifies which agent-canvas runtime implementation serves a
-// given tenant. Phase 6 supports "go" and "python"; "auto" is reserved for
-// future adaptive policies.
+// RuntimeMode identifies which agent-canvas runtime implementation
+// serves a given tenant. Supports "go" and "python"; "auto" is
+// reserved for future adaptive policies.
 type RuntimeMode string
 
 const (
-	// RuntimeGo routes the tenant to the Go-side eino implementation.
-	// This is the process-wide default as of Phase 7.
+	// RuntimeGo routes the tenant to the Go-side eino
+	// implementation. This is the process-wide default.
 	RuntimeGo RuntimeMode = "go"
-	// RuntimePython routes the tenant to the legacy Python agent_api.py
-	// implementation. Retained for the 1-release deprecation window; per-tenant
-	// overrides via Selector.Set can still force a tenant to this mode.
+	// RuntimePython routes the tenant to the legacy Python
+	// agent_api.py implementation. Retained for the 1-release
+	// deprecation window; per-tenant overrides via Selector.Set
+	// can still force a tenant to this mode.
 	RuntimePython RuntimeMode = "python"
 	// RuntimeAuto defers to the per-tenant override, then to the
 	// process-wide Default(). It exists as a sentinel for clients that
@@ -71,9 +72,9 @@ var (
 
 // Default returns the process-wide default runtime mode.
 //
-// As of Phase 7, the default is Go. The per-tenant override (via
-// Selector.Set) can still force a tenant back to Python for the
-// 1-release deprecation window of agent_api.py.
+// The default is Go. The per-tenant override (via Selector.Set)
+// can still force a tenant back to Python for the 1-release
+// deprecation window of agent_api.py.
 //
 // The value is read once from the RAGFLOW_CANVAS_DEFAULT_RUNTIME env var;
 // subsequent calls return the cached result. Unknown env values fall back
@@ -123,7 +124,7 @@ func overrideKey(tenantID string) string {
 //
 //  1. The Redis key "tenant_canvas_runtime:<tenantID>" if present.
 //  2. The process-wide Default() (env RAGFLOW_CANVAS_DEFAULT_RUNTIME,
-//     falling back to RuntimeGo as of Phase 7).
+//     falling back to RuntimeGo).
 //
 // A nil Redis client short-circuits to the default and never errors.
 func (s *Selector) Select(ctx context.Context, tenantID string) (RuntimeMode, error) {

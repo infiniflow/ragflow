@@ -1,13 +1,21 @@
-// Package canvas — eino Workflow topology builder (Worker A, Phase 1).
+// Package canvas — eino Workflow topology builder.
 //
-// BuildWorkflow turns a Canvas (DSL) into a *compose.Workflow whose nodes
-// are placeholder lambda stubs in Phase 1 (real Begin/Message/LLM components
-// land in Phase 2 P0). The topology — pass-through for "begin" nodes with
-// no upstream, lambda for every other component, AddInput edge for every
-// upstream — is the Phase 1 deliverable; component bodies are deferred.
+// BuildWorkflow turns a Canvas (DSL) into a *compose.Workflow. The
+// routing rules per cpn are centralised in buildNodeBody
+// (node_body.go): legacy no-op names go to a dedicated echo
+// lambda; UserFillUp goes to the eino interrupt-based body; every
+// other name delegates to the runtime factory.
 //
-// State pre/post handlers are wired here as NODE options (GraphAddNodeOpt),
-// NOT compile options. This is the eino v0.9.2 fix documented in plan §2.6.
+// State pre/post handlers are wired here as NODE options
+// (GraphAddNodeOpt), NOT compile options.
+//
+// Cycle policy: eino's compose.Workflow is strictly a DAG and
+// rejects any cycle at Compile() time. The frontend
+// (`hasCanvasCycle` in web/src/pages/agent/hooks.tsx) prevents
+// cycle-creating edges in user-facing canvases at the React Flow
+// layer, so production graphs arriving at BuildWorkflow are
+// guaranteed acyclic. No defensive cycle detection is needed
+// here — let eino's Compile error surface naturally.
 package canvas
 
 import (
@@ -21,12 +29,14 @@ import (
 	"github.com/cloudwego/eino/compose"
 )
 
-// placeholderLambda is the Phase 1 stand-in for every real component body.
-// It copies the input map into the output map untouched, which lets
-// BuildWorkflow validate the topology (compile + edge wiring) without
-// depending on any real component implementation. Real component bodies land
-// in Phase 2 P0; once they exist, BuildWorkflow will switch on
-// comp.Obj.ComponentName and look up the registered body.
+// placeholderLambda is the canvas-package-only fallback for component
+// bodies when no factory is registered. It copies the input map into
+// the output map untouched, which lets BuildWorkflow validate the
+// topology (compile + edge wiring) without depending on any real
+// component implementation. Production runs always have a factory
+// installed via component.init() → runtime.SetDefaultFactory(component.New);
+// this fallback is exercised by canvas-only unit tests that do not
+// import the component package.
 func placeholderLambda(_ context.Context, in map[string]any) (map[string]any, error) {
 	out := make(map[string]any, len(in))
 	for k, v := range in {
@@ -39,12 +49,10 @@ func placeholderLambda(_ context.Context, in map[string]any) (map[string]any, er
 // in canvas.go). The set names the DSL v1 sentinel components that
 // the Go port accepts but does not implement — e.g. "ExitLoop".
 // Encountering one routes the node to a no-op echo body so the
-// workflow still compiles. Phase 2 P0 will also gate the
-// component-allowlist on this same name set so adding a new legacy
-// name to canvas.go is the single source of truth.
+// workflow still compiles.
 //
 // The lookup is case-insensitive: legacyNoOpNames stores keys
-// lowercase, but the DSL preserves user case (see canvas.go:92
+// lowercase, but the DSL preserves user case (see canvas.go
 // "matches agent/component/<name>.py's class name
 // (case-insensitive)"). All callers go through this predicate so
 // the case-normalization is in exactly one place.
@@ -54,26 +62,20 @@ func placeholderLambda(_ context.Context, in map[string]any) (map[string]any, er
 // component-name check is intentionally NOT performed here. The
 // unknown-component error path is exercised by the explicit
 // TestBuildWorkflow_UnknownComponentErrors test using a name that
-// is neither in the legacy set nor any of the known DSL primitives
-// (Begin / Message / LLM / Categorize / Invoke / etc. are
-// implicitly accepted by the placeholder phase). This mirrors the
-// Phase 1 contract documented in scheduler.go's package comment.
+// is neither in the legacy set nor any of the known DSL primitives.
 func isLegacyNoOp(name string) bool {
 	return legacyNoOpNames[strings.ToLower(name)]
 }
 
 // isKnownPrimitive reports whether name is a real component the Go
-// port can route to a body. In Phase 1 the allowlist is explicit
-// (mirror of the names referenced in the test fixtures) so that an
-// unknown component name surfaces a clear error from BuildWorkflow
-// instead of silently producing a no-op node. In Phase 2 P0 this
-// becomes a registry lookup against the component package.
-//
-// We keep the signature and call shape stable so swapping the body
-// to a registry check is a one-line change. The Phase 1 set
-// matches the names already used by existing fixtures and is
-// over-approximated to land any in-flight component port; tighten
-// it back to the registry-derived set when Phase 2 P0 lands.
+// port can route to a body. The allowlist is a mirror of the names
+// referenced in the test fixtures so that an unknown component
+// name surfaces a clear error from BuildWorkflow instead of
+// silently producing a no-op node. The component-name check is
+// intentionally a separate path from the runtime factory
+// lookup — the factory is the source of truth in production, and
+// this allowlist only matters for canvas-only unit tests that
+// don't import the component package.
 func isKnownPrimitive(name string) bool {
 	if name == "" {
 		return false
@@ -200,37 +202,6 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 		compose.WithGenLocalState(genState),
 	)
 
-	// Cycle pre-pass. eino's compose.Workflow is a strict DAG: any
-	// data or control edge that closes a cycle makes Compile() fail
-	// with "DAG is invalid, has loop". Several v1 fixtures
-	// (exesql.json, headhunter_zh.json) intentionally carry cycles
-	// that model "wait for the next user turn" — the Python v1
-	// engine resolves them iteratively. The Go port wraps the whole
-	// canvas in a synthetic Loop node driven by workflowx.AddLoopNode
-	// (see cycle_wrap.go) so the OUTER graph is acyclic; the
-	// cycle-causing edges live inside the loop's sub-workflow. Phase
-	// 5's real orchestrator will replace this with a proper
-	// iterative driver.
-	if hasCycle(c) {
-		exp, err := buildSyntheticLoop(ctx, c)
-		if err != nil {
-			return nil, fmt.Errorf("canvas: build synthetic loop: %w", err)
-		}
-		node, err := compileSyntheticLoop(ctx, wf, exp)
-		if err != nil {
-			return nil, err
-		}
-		// The synthetic loop is the only node the outer workflow
-		// needs to know about. Wire it as both START and END so
-		// eino's "start node not set" / "end node not set" checks
-		// pass — the loop body runs once via shouldQuit, and the
-		// outer graph exits with the sub-workflow's terminal
-		// output.
-		node.AddInput(compose.START)
-		wf.End().AddInput(syntheticLoopKey)
-		return wf, nil
-	}
-
 	// Pre-pass: Loop macro expansion. For each Loop cpn, build a
 	// sub-workflow from its downstream descendants and install a
 	// workflowx.AddLoopNode in the outer graph in place of the Loop
@@ -325,9 +296,10 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	// "entire output has already been mapped"). For diamond / merge
 	// topologies, the first upstream carries data; the rest register as
 	// exec-only dependencies via AddDependency so the node waits for
-	// them but doesn't try to consume a second data source. Phase 2 P0
-	// component bodies will switch to explicit FieldMapping when they
-	// need to merge multi-source inputs.
+	// them but doesn't try to consume a second data source. Component
+	// bodies that need to merge multi-source inputs switch to explicit
+	// FieldMapping via the StatePreHandler (see scheduler.go's
+	// statePre implementation).
 	//
 	// An upstream may be a regular node OR a Loop node (registered in
 	// the pre-pass). Both are valid edge sources. Symmetrically, the
@@ -362,6 +334,16 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 		}
 	}
 
+	// Pass 2.5: install MultiBranch edges for runtime-control parents.
+	// Switch / Categorize produce a `_next` output identifying which
+	// downstream child should run at runtime. Without this pass every
+	// declared child fires unconditionally (Pass 2 wired AddInput from
+	// parent to every child); the branch adds a control-only gate so
+	// only the chosen child is executed. The AddInput edges stay in
+	// place — they carry the data path; the branch carries the control
+	// path. See multibranch.go for the full rationale.
+	wireMultiBranches(wf, c, loopMembers)
+
 	// Pass 3: wire start nodes (no upstream) from compose.START, and wire
 	// terminal nodes (no downstream) to compose.END via wf.End(). eino
 	// tracks start/end membership by these explicit wirings — without
@@ -376,7 +358,7 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	//
 	// A "start" node with no upstream gets an empty input from START so
 	// eino registers it as a workflow entry point. FieldMapping is nil
-	// because Phase 1 placeholder lambdas just echo whatever they receive.
+	// because the placeholder lambdas just echo whatever they receive.
 	//
 	// Loop nodes are wired here too: a Loop is START if it has no
 	// upstream; it is END if it has no downstream in the outer graph

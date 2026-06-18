@@ -14,15 +14,14 @@
 //  limitations under the License.
 //
 
-// Package component — Fillup component (T3, plan §2.11.3 row 3).
+// Package component — Fillup component (T3).
 //
 // Fillup is the lighter sibling of UserFillUp: it does NOT render a
-// `tips` template. It only passes the form's input map through to its
-// outputs (file inputs are still stubbed because FileService integration
-// is Phase 5 per plan §2.11.10). The Python codebase has no separate
-// Fillup class — per plan §2.11.3 row 3, this component is the Go
-// port's normalized, tips-less variant of UserFillUp so the DSL can
-// spawn it without paying for the unused template path.
+// `tips` template. It only passes the form's input map through to
+// its outputs. The Python codebase has no separate Fillup class;
+// this component is the Go port's normalized, tips-less variant
+// of UserFillUp so the DSL can spawn it without paying for the
+// unused template path.
 package component
 
 import (
@@ -115,7 +114,7 @@ func (f *FillupComponent) Stream(ctx context.Context, inputs map[string]any) (<-
 func (f *FillupComponent) Inputs() map[string]string {
 	return map[string]string{
 		"inputs":           "Map of form-field name → {value, type, optional?}.",
-		"layout_recognize": "Layout recognizer hint used for file inputs (deferred to Phase 5).",
+		"layout_recognize": "Layout recognizer hint used for file inputs.",
 	}
 }
 

@@ -1,4 +1,4 @@
-// Package canvas — state unit tests (Worker A, Phase 1).
+// Package canvas — state unit tests.
 package canvas
 
 import (

@@ -106,11 +106,10 @@ func TestUserFillUp_PassesThroughInputs(t *testing.T) {
 	}
 }
 
-// TestUserFillUp_FileInputStub locks down the Phase 5 deferral: a
-// file-typed input must be replaced by the "<file:key>" stub in both
-// the per-field output and any reference inside the tips template.
-// This is the contract the P3 orchestrator depends on for the hard
-// gate (no FileService calls allowed yet).
+// TestUserFillUp_FileInputStub pins the file-typed input stub
+// contract: a file-typed input must be replaced by the "<file:key>"
+// stub in both the per-field output and any reference inside the
+// tips template.
 func TestUserFillUp_FileInputStub(t *testing.T) {
 	c, _ := New(componentNameUserFillUp, map[string]any{
 		"enable_tips": true,
