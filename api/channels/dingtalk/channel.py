@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import asyncio
 import json
 import logging
@@ -117,6 +118,7 @@ class DingTalkChannel(Channel):
         backoff = 3
         while not self._stop_requested:
             try:
+                self._session_webhooks.clear()
                 endpoint, ticket = await self._open_connection()
                 async with aiohttp.ClientSession() as session:
                     ws = await self._connect_websocket(session, endpoint, ticket)
@@ -130,16 +132,25 @@ class DingTalkChannel(Channel):
                     async for msg in ws:
                         if self._stop_requested:
                             break
-                        if msg.type == aiohttp.WSMsgType.TEXT:
-                            await self._handle_ws_payload(msg.data)
-                        elif msg.type == aiohttp.WSMsgType.BINARY:
-                            await self._handle_ws_payload(msg.data.decode("utf-8", "ignore"))
-                        elif msg.type in (
-                            aiohttp.WSMsgType.CLOSE,
-                            aiohttp.WSMsgType.CLOSED,
-                            aiohttp.WSMsgType.ERROR,
-                        ):
-                            break
+                        try:
+                            if msg.type == aiohttp.WSMsgType.TEXT:
+                                await self._handle_ws_payload(msg.data)
+                            elif msg.type == aiohttp.WSMsgType.BINARY:
+                                await self._handle_ws_payload(
+                                    msg.data.decode("utf-8", "ignore")
+                                )
+                            elif msg.type in (
+                                aiohttp.WSMsgType.CLOSE,
+                                aiohttp.WSMsgType.CLOSED,
+                                aiohttp.WSMsgType.ERROR,
+                            ):
+                                break
+                        except Exception:
+                            LOGGER.warning(
+                                "[dingtalk:%s] dropping malformed websocket message",
+                                self.account_id,
+                                exc_info=True,
+                            )
                 backoff = 3
             except asyncio.CancelledError:
                 break
@@ -387,6 +398,15 @@ class DingTalkChannel(Channel):
         if message_id:
             return f"msg:{message_id}"
 
+        callback_message_id = str(
+            obj.get("headers", {}).get("messageId")
+            or obj.get("messageId")
+            or data.get("messageId")
+            or ""
+        ).strip()
+        if callback_message_id:
+            return f"callback:{callback_message_id}"
+
         conversation_id = str(
             data.get("conversationId")
             or data.get("chatId")
@@ -400,8 +420,17 @@ class DingTalkChannel(Channel):
             or ""
         ).strip()
         text = self._extract_text(data).strip()
+        event_ts = str(
+            data.get("eventTime")
+            or obj.get("eventTime")
+            or data.get("timestamp")
+            or obj.get("timestamp")
+            or ""
+        ).strip()
         if conversation_id and sender_id and text:
-            return f"fallback:{conversation_id}:{sender_id}:{text}"
+            digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
+            suffix = f":{event_ts}" if event_ts else ""
+            return f"fallback:{conversation_id}:{sender_id}{suffix}:{digest}"
         return ""
 
     def _prune_message_cache(self) -> None:
