@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity/models"
 	"sort"
+	"strconv"
 	"strings"
 
 	"ragflow/internal/tokenizer"
@@ -1069,11 +1070,88 @@ func (s *RetrievalService) PruneDeletedChunks(result *RetrievalSearchResult) (*R
 	}, nil
 }
 
-// buildIndexNames creates index names for the given tenant IDs
+// buildIndexNames creates index names for the given tenant IDs.
+// Each tenantID may be a comma-separated list.
 func buildIndexNames(tenantIDs []string) []string {
-	indexNames := make([]string, len(tenantIDs))
-	for i, tenantID := range tenantIDs {
-		indexNames[i] = fmt.Sprintf("ragflow_%s", tenantID)
+	var indexNames []string
+	for _, tid := range tenantIDs {
+		for _, part := range strings.Split(tid, ",") {
+			part = strings.TrimSpace(part)
+			if part != "" {
+				indexNames = append(indexNames, fmt.Sprintf("ragflow_%s", part))
+			}
+		}
 	}
 	return indexNames
+}
+
+// FetchChunkVectors returns q_{dim}_vec for the given chunk IDs.
+// Missing or wrong-dimension chunks get a zero vector.
+func (s *RetrievalService) FetchChunkVectors(ctx context.Context, chunkIDs []string, tenantIDs []string, kbIDs []string, dim int) (map[string][]float64, error) {
+	if dim <= 0 {
+		return nil, fmt.Errorf("FetchChunkVectors: dim must be > 0, got %d", dim)
+	}
+	if len(chunkIDs) == 0 {
+		return map[string][]float64{}, nil
+	}
+
+	vecField := fmt.Sprintf("q_%d_vec", dim)
+	idxNames := buildIndexNames(tenantIDs)
+
+	req := &types.SearchRequest{
+		IndexNames:   idxNames,
+		KbIDs:        kbIDs,
+		Limit:        len(chunkIDs),
+		Offset:       0,
+		SelectFields: []string{"id", vecField},
+		Filter:       map[string]interface{}{"id": chunkIDs},
+		MatchExprs:   []interface{}{},
+	}
+
+	result, err := s.docEngine.Search(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("FetchChunkVectors: engine search failed: %w", err)
+	}
+
+	out := make(map[string][]float64, len(chunkIDs))
+	for _, cid := range chunkIDs {
+		out[cid] = make([]float64, dim)
+	}
+
+	for _, chunk := range result.Chunks {
+		cid, _ := chunk["id"].(string)
+		if cid == "" {
+			continue
+		}
+		var vec []float64
+		switch v := chunk[vecField].(type) {
+		case []float64:
+			vec = v
+		case []interface{}:
+			vec = make([]float64, len(v))
+			for i, val := range v {
+				if f, ok := val.(float64); ok {
+					vec[i] = f
+				} else if f32, ok := val.(float32); ok {
+					vec[i] = float64(f32)
+				}
+			}
+		case string:
+			// Tab-separated floats (mirrors Python's split("\t") in
+			// search.py:435-437 when Infinity returns vectors as a string).
+			parts := strings.Split(v, "\t")
+			vec = make([]float64, 0, len(parts))
+			for _, p := range parts {
+				if f, err := strconv.ParseFloat(strings.TrimSpace(p), 64); err == nil {
+					vec = append(vec, f)
+				}
+			}
+		}
+		if len(vec) != dim {
+			vec = make([]float64, dim)
+		}
+		out[cid] = vec
+	}
+
+	return out, nil
 }

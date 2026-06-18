@@ -64,6 +64,7 @@ const ChatChannel = () => {
           ChatChannelKey.FEISHU,
           ChatChannelKey.TELEGRAM,
           ChatChannelKey.QQBOT,
+          ChatChannelKey.WECOM,
         ].includes(id), // Show only selected chat channels
     )
     .map((id) => ({

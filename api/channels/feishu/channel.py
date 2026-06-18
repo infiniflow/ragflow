@@ -9,6 +9,7 @@ from typing import Optional
 
 import lark_oapi as lark
 import lark_oapi.ws.client as lark_ws_client
+from websockets.exceptions import ConnectionClosedOK
 from lark_oapi.api.im.v1 import (
     CreateMessageRequest,
     CreateMessageRequestBody,
@@ -74,6 +75,7 @@ class FeishuChannel(Channel):
         # context: already entered"). A dedicated isolated loop avoids that.
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
+        loop.set_exception_handler(self._handle_loop_exception)
         # lark_oapi.ws.client stores a module-level `loop` at import time and all
         # websocket task scheduling goes through that object. Rebind it here so
         # this Feishu channel uses the thread-local loop instead of the API
@@ -90,6 +92,7 @@ class FeishuChannel(Channel):
                 self.account.app_secret,
                 domain=_lark_domain(self.account.domain),
                 event_handler=handler,
+                auto_reconnect=False,
                 log_level=lark.LogLevel.DEBUG,
             )
             # Blocks, running lark's own connect/reconnect loop on this thread.
@@ -102,6 +105,12 @@ class FeishuChannel(Channel):
             except Exception:
                 pass
 
+    def _handle_loop_exception(self, loop, context) -> None:
+        exc = context.get("exception")
+        if isinstance(exc, ConnectionClosedOK):
+            return
+        loop.default_exception_handler(context)
+
     async def stop(self) -> None:
         # lark's ws client exposes no clean public stop; disconnect best-effort.
         client = self._ws_client
@@ -110,11 +119,21 @@ class FeishuChannel(Channel):
                 fn = getattr(client, attr, None)
                 if callable(fn):
                     try:
-                        fn()
+                        result = fn()
+                        if asyncio.iscoroutine(result):
+                            ws_loop = lark_ws_client.loop
+                            if ws_loop and not ws_loop.is_closed():
+                                await asyncio.wrap_future(
+                                    asyncio.run_coroutine_threadsafe(result, ws_loop)
+                                )
+                            else:
+                                await result
                     except Exception:
                         LOGGER.error("[feishu:%s] ws stop error", self.account_id, exc_info=True)
                     break
         self._ws_client = None
+        if self._ws_thread and self._ws_thread.is_alive():
+            await asyncio.to_thread(self._ws_thread.join, 5)
         self._ws_thread = None
 
     async def send(self, message: OutgoingMessage) -> None:
