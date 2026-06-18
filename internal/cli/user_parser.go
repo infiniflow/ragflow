@@ -3152,12 +3152,14 @@ optionsLoop:
 	}
 	cmd := NewCommand("chat_to_model")
 
-	if common.IsCompositeModelName(modelNameOrID) {
-		cmd.Params["composite_model_name"] = modelNameOrID
-	} else if common.IsUUID(modelNameOrID) {
-		cmd.Params["model_id"] = modelNameOrID
-	} else {
-		return nil, fmt.Errorf("invalid format of model name or ID: %s", modelNameOrID)
+	if modelNameOrID != "" {
+		if common.IsCompositeModelName(modelNameOrID) {
+			cmd.Params["composite_model_name"] = modelNameOrID
+		} else if common.IsUUID(modelNameOrID) {
+			cmd.Params["model_id"] = modelNameOrID
+		} else {
+			return nil, fmt.Errorf("invalid format of model name or ID: %s", modelNameOrID)
+		}
 	}
 	cmd.Params["messages"] = messages
 	cmd.Params["images"] = images
