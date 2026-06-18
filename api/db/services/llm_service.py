@@ -27,7 +27,6 @@ from langfuse import propagate_attributes
 from api.db.db_models import LLM
 from api.db.services.common_service import CommonService
 from api.db.services.tenant_llm_service import LLM4Tenant
-from common.constants import LLMType
 from common.token_utils import num_tokens_from_string
 
 
