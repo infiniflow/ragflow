@@ -1279,6 +1279,186 @@ class TenantModelSeedingStage(MigrationStage):
         logger.info("Created tenant_model table")
 
 
+class ModelTypeMergeStage(MigrationStage):
+    """Merge tenant_model rows by (provider_id, instance_id, model_name), converting model_type to binary integer"""
+
+    name = "model_type_merge"
+    description = "Merge tenant_model rows by provider_id/instance_id/model_name, converting model_type to binary integer"
+    source_tables = ["tenant_model"]
+    target_tables = ["tenant_model_merge_tmp"]
+
+    # Mapping from LLMType string values to ModelTypeBinary integer values
+    MODEL_TYPE_STR_TO_INT = {
+        "chat": 1,       # 0b0000001
+        "embedding": 2,  # 0b0000010
+        "speech2text": 4,  # 0b0000100
+        "image2text": 8,  # 0b0001000
+        "rerank": 16,    # 0b0010000
+        "tts": 32,       # 0b0100000
+        "ocr": 64,       # 0b1000000
+    }
+
+    def current_timestamp(self) -> int:
+        return int(time.time())
+
+    def generate_uuid(self) -> str:
+        """Generate 32-character UUID1"""
+        return uuid.uuid1().hex
+
+    def check(self) -> bool:
+        """Check if migration is needed"""
+        if not self.db.table_exists("tenant_model"):
+            logger.warning("Source table 'tenant_model' does not exist")
+            return False
+        return True
+
+    def execute(self) -> tuple[int, list]:
+        """Execute migration"""
+        current_ts = self.current_timestamp()
+        rows_inserted = 0
+
+        if not self.db.table_exists("tenant_model"):
+            logger.error("Source table 'tenant_model' does not exist")
+            return 0, []
+
+        # Create temporary table with model_type as INTEGER
+        self.create_target_table()
+
+        if self.create_table_only:
+            logger.info("[CREATE TABLE ONLY] Temporary table created, skipping data merge")
+            return 0, self.target_tables
+
+        # Load all records from tenant_model
+        cursor = self.db.execute_sql(
+            "SELECT id, model_name, provider_id, instance_id, model_type, status, extra, "
+            "create_time, create_date, update_time, update_date "
+            "FROM tenant_model ORDER BY id"
+        )
+        all_rows = cursor.fetchall()
+
+        # Group by (provider_id, instance_id, model_name)
+        from collections import defaultdict
+        groups = defaultdict(list)
+        for row in all_rows:
+            id_, model_name, provider_id, instance_id, model_type_str, status, extra, \
+                create_time, create_date, update_time, update_date = row
+            groups[(provider_id, instance_id, model_name)].append(row)
+
+        # Merge each group into a single record
+        merged_records = []
+        for (provider_id, instance_id, model_name), rows in groups.items():
+            # Compute binary model_type:
+            #   OR all model_types where status != 'unsupported'
+            #   Then AND with complement of OR of all model_types where status == 'unsupported'
+            supported_bits = 0
+            unsupported_bits = 0
+            first_non_unsupported_status = None
+            first_row = rows[0]
+
+            for row in rows:
+                _, _, _, _, model_type_str, status, _, _, _, _, _ = row
+                type_bit = self.MODEL_TYPE_STR_TO_INT.get(model_type_str, 0)
+                if status == "unsupported":
+                    unsupported_bits |= type_bit
+                else:
+                    supported_bits |= type_bit
+                    if first_non_unsupported_status is None:
+                        first_non_unsupported_status = status
+
+            merged_type = supported_bits & ~unsupported_bits
+            merged_status = first_non_unsupported_status or "active"
+
+            # Use first row's values for all other fields, but replace id, model_type, status
+            id_, model_name, provider_id, instance_id, _, _, extra, \
+                create_time, create_date, update_time, update_date = first_row
+
+            merged_records.append((
+                self.generate_uuid(), model_name, provider_id, instance_id,
+                merged_type, merged_status, extra,
+                create_time, create_date, update_time, update_date
+            ))
+
+        if not merged_records:
+            logger.info("No records to merge")
+            return 0, []
+
+        logger.info(f"Merging {len(all_rows)} rows into {len(merged_records)} rows...")
+
+        if self.dry_run:
+            logger.info(f"[DRY RUN] Would insert {len(merged_records)} merged rows, "
+                       f"then rename tables")
+            for rec in merged_records[:5]:
+                _, model_name, provider_id, instance_id, merged_type, status, extra, *_ = rec
+                logger.info(f"  model_name={model_name}, provider_id={provider_id}, "
+                           f"instance_id={instance_id}, model_type={merged_type}, "
+                           f"status={status}, extra={extra}")
+            if len(merged_records) > 5:
+                logger.info(f"  ... and {len(merged_records) - 5} more rows")
+            return len(merged_records), self.target_tables
+
+        # Insert merged records into temporary table
+        batch_size = 100
+        for i in range(0, len(merged_records), batch_size):
+            batch = merged_records[i:i + batch_size]
+            values = []
+            for rec in batch:
+                id_, model_name, provider_id, instance_id, merged_type, status, extra, \
+                    create_time, create_date, update_time, update_date = rec
+                model_name_escaped = (model_name.replace("'", "''") if model_name else "") or None
+                extra_escaped = extra.replace("'", "''") if extra else "{}"
+                status_escaped = status.replace("'", "''") if status else "active"
+                # Handle NULL date fields
+                create_time_val = create_time if create_time is not None else current_ts * 1000
+                update_time_val = update_time if update_time is not None else current_ts * 1000
+                create_date_sql = f"FROM_UNIXTIME({int(create_time_val / 1000)})" if create_time_val else "NULL"
+                update_date_sql = f"FROM_UNIXTIME({int(update_time_val / 1000)})" if update_time_val else "NULL"
+                values.append(f"('{id_}', '{model_name_escaped}', '{provider_id}', "
+                            f"'{instance_id}', {merged_type}, '{status_escaped}', "
+                            f"'{extra_escaped}', "
+                            f"{create_time_val}, {create_date_sql}, "
+                            f"{update_time_val}, {update_date_sql})")
+
+            insert_sql = f"""
+                INSERT INTO tenant_model_merge_tmp
+                (id, model_name, provider_id, instance_id, model_type, status, extra,
+                 create_time, create_date, update_time, update_date)
+                VALUES {', '.join(values)}
+            """
+            self.db.execute_sql(insert_sql)
+            rows_inserted += len(batch)
+            logger.info(f"Inserted batch {i // batch_size + 1}: {len(batch)} merged rows")
+
+        # Rename original table to backup, then rename temp table to tenant_model
+        logger.info("Renaming tables: tenant_model -> tenant_model_backup, tenant_model_merge_tmp -> tenant_model")
+        self.db.execute_sql("DROP TABLE IF EXISTS tenant_model_backup")
+        self.db.execute_sql("ALTER TABLE tenant_model RENAME TO tenant_model_backup")
+        self.db.execute_sql("ALTER TABLE tenant_model_merge_tmp RENAME TO tenant_model")
+        logger.info("Table rename completed successfully")
+
+        return rows_inserted, ["tenant_model_merge_tmp", "tenant_model", "tenant_model_backup"]
+
+    def create_target_table(self):
+        """Create temporary table tenant_model_merge_tmp with model_type as INTEGER"""
+        create_sql = """
+        CREATE TABLE IF NOT EXISTS tenant_model_merge_tmp (
+            id VARCHAR(32) NOT NULL PRIMARY KEY,
+            model_name VARCHAR(128),
+            provider_id VARCHAR(32) NOT NULL,
+            instance_id VARCHAR(32) NOT NULL,
+            model_type INT NOT NULL,
+            status VARCHAR(32) DEFAULT 'active',
+            extra VARCHAR(1024) DEFAULT '{}',
+            create_time BIGINT,
+            create_date DATETIME,
+            update_time BIGINT,
+            update_date DATETIME,
+            INDEX idx_instance_id (instance_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """
+        self.db.execute_sql(create_sql)
+        logger.info("Created tenant_model_merge_tmp table")
+
+
 class ModelIdConfigStage(MigrationStage):
     """Normalize stored model IDs from model@provider to model@default@provider."""
 
@@ -1527,6 +1707,7 @@ MIGRATION_STAGES = {
     'tenant_model_instance': TenantModelInstanceStage,
     'tenant_model': TenantModelStage,
     'tenant_model_seeding': TenantModelSeedingStage,
+    'model_type_merge': ModelTypeMergeStage,
     'model_id_config': ModelIdConfigStage,
 }
 

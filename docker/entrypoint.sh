@@ -275,7 +275,7 @@ ensure_db_init
 if [[ "${INIT_MODEL_PROVIDER_TABLES}" -eq 1 ]]; then
     echo "Running model provider table migrations..."
     "$PY" tools/scripts/mysql_migration.py \
-        --stages tenant_model_provider,tenant_model_instance,tenant_model,model_id_config \
+        --stages tenant_model_provider,tenant_model_instance,tenant_model,model_id_config,tenant_model_seeding,model_type_merge \
         --config conf/service_conf.yaml \
         --execute \
         --database-version "v0.26.1" \
