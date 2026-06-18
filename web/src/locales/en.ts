@@ -2988,6 +2988,8 @@ Important structured information may include: names, dates, locations, events, k
       title: 'Knowledge compilation',
       subtitle:
         'Define reusable extraction templates that decide how documents are compiled into structured artifacts.',
+      llmLabel: 'LLM',
+      llmRequired: 'LLM is required.',
       addTemplate: 'Add template',
       editTemplate: 'Edit template',
       empty: 'No templates yet. Create one to get started.',

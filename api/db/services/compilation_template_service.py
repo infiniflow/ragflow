@@ -48,12 +48,33 @@ class CompilationTemplateService(CommonService):
     @classmethod
     def _to_saved_dict(cls, template: CompilationTemplate) -> dict:
         data = template.to_dict()
+        config = data.get("config") or {}
+        # Lazy-fill llm_id with the tenant's default chat model so the
+        # frontend always sees a value (legacy templates predate the
+        # field). The DB row is left untouched — this is a read-side
+        # default. If the tenant has no default chat model set,
+        # silently leave llm_id absent and let the caller fall back
+        # however it likes.
+        if isinstance(config, dict) and not config.get("llm_id"):
+            tenant_id = data.get("tenant_id")
+            if tenant_id:
+                try:
+                    from api.db.services.user_service import TenantService
+                    ok, tenant = TenantService.get_by_id(tenant_id)
+                    if ok and getattr(tenant, "llm_id", None):
+                        config = dict(config)
+                        config["llm_id"] = tenant.llm_id
+                except Exception:
+                    logging.exception(
+                        "compilation_template: llm_id lazy-fill lookup failed for tenant=%s",
+                        tenant_id,
+                    )
         return {
             "id": data["id"],
             "name": data["name"],
             "description": data.get("description") or "",
             "kind": data["kind"],
-            "config": data.get("config") or {},
+            "config": config,
             "create_time": data.get("create_time"),
             "update_time": data.get("update_time"),
         }

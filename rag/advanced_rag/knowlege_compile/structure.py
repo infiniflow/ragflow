@@ -1235,13 +1235,323 @@ async def rebuild_structure_graph_json(
     return graph
 
 
+# ---------------------------------------------------------------------------
+# Chain-shape validation for ``list`` / ``timeline`` kinds.
+#
+# Both kinds model a strict linear chain of entities (one predecessor,
+# one successor, no cycles). The per-chunk extractor is happy to emit
+# branches / cycles when the source text supports multiple readings, so
+# we validate the relation set post-extraction and ask the LLM to pick
+# the correct chain out of the offenders. On any failure (timeout,
+# exception, malformed LLM output) the validator returns the input
+# untouched — correction is best-effort.
+# ---------------------------------------------------------------------------
+
+# Kinds whose relations must form a strict linear chain.
+CHAIN_KINDS: tuple[str, ...] = ("list", "timeline")
+
+# Max source-chunk text length passed to the LLM in the correction prompt.
+_CHAIN_CORRECTION_MAX_CHUNK_CHARS = 8196
+_CHAIN_CORRECTION_MAX_CHUNKS = 12
+
+
+CHAIN_CORRECTION_PROMPT = """You are correcting an extracted {kind}-kind structure.
+
+Constraint: the relations must form a strict linear chain — every entity has
+at most one predecessor and at most one successor, and there must be no
+cycle. The relations below were flagged by an automated detector as
+violating this constraint. Each one carries the issue that was detected.
+
+Bad relations (review and keep only those supported by the source text):
+{bad_relations_json}
+
+Source chunks the relations were extracted from:
+{source_chunks_text}
+
+Your task: from the bad relations above, pick the subset that should be
+kept. Drop the rest. Do not invent new relations. Use only ``from`` and
+``to`` slugs that appear verbatim in the bad-relations list. The result
+must satisfy the strict-chain constraint.
+
+Return ONLY a JSON object with this exact shape (no markdown fences, no
+commentary):
+{{
+  "keep": [
+    {{"from": "<slug>", "to": "<slug>"}},
+    ...
+  ]
+}}
+"""
+
+
+def _chain_extract_edge(doc: dict) -> tuple[str, str] | None:
+    """Return ``(from_slug, to_slug)`` for a relation doc, or None."""
+    if doc.get("knowledge_graph_kwd") != "relation":
+        return None
+    src = doc.get("from_entity_kwd")
+    tgt = doc.get("to_entity_kwd")
+    if isinstance(src, str) and isinstance(tgt, str) and src.strip() and tgt.strip():
+        return src.strip(), tgt.strip()
+    # Fallback: parse the payload — older relation docs may not have the
+    # *_entity_kwd columns set if the upstream extractor was permissive.
+    try:
+        payload = json.loads(doc.get("content_with_weight") or "{}")
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    for src_key, tgt_key in (("source", "target"), ("from", "to"), ("src", "tgt")):
+        s = payload.get(src_key)
+        t = payload.get(tgt_key)
+        if isinstance(s, str) and isinstance(t, str) and s.strip() and t.strip():
+            return s.strip(), t.strip()
+    return None
+
+
+def _chain_detect_violations(
+    edges: list[tuple[str, str]],
+) -> dict[tuple[str, str], list[str]]:
+    """Walk the edge list once and return ``{edge: [issue_strings]}`` for
+    every edge involved in any of:
+
+    * **self-loop** — ``from == to``.
+    * **fan-out** — multiple edges share the same ``from``.
+    * **fan-in** — multiple edges share the same ``to``.
+    * **cycle** — the edge participates in a directed cycle (size ≥ 2).
+
+    Edges with no issues are simply absent from the result dict.
+    """
+    issues: dict[tuple[str, str], list[str]] = {}
+
+    def _add(edge: tuple[str, str], reason: str) -> None:
+        issues.setdefault(edge, []).append(reason)
+
+    # Self-loops + degree counts.
+    out_groups: dict[str, list[tuple[str, str]]] = {}
+    in_groups: dict[str, list[tuple[str, str]]] = {}
+    for e in edges:
+        if e[0] == e[1]:
+            _add(e, "self-loop")
+        out_groups.setdefault(e[0], []).append(e)
+        in_groups.setdefault(e[1], []).append(e)
+
+    for node, group in out_groups.items():
+        if len(group) > 1:
+            siblings = sorted({g[1] for g in group})
+            reason = f"fan-out from '{node}' (also points to {siblings})"
+            for e in group:
+                _add(e, reason)
+    for node, group in in_groups.items():
+        if len(group) > 1:
+            siblings = sorted({g[0] for g in group})
+            reason = f"fan-in to '{node}' (also reached from {siblings})"
+            for e in group:
+                _add(e, reason)
+
+    # Cycle detection — Tarjan SCC. Any SCC of size ≥ 2 is a cycle; any
+    # self-loop already caught above is its own size-1 SCC and is
+    # excluded here.
+    adj: dict[str, list[str]] = {}
+    nodes: set[str] = set()
+    for src, tgt in edges:
+        nodes.add(src)
+        nodes.add(tgt)
+        adj.setdefault(src, []).append(tgt)
+
+    index_counter = [0]
+    stack: list[str] = []
+    on_stack: set[str] = set()
+    index: dict[str, int] = {}
+    lowlink: dict[str, int] = {}
+    sccs: list[set[str]] = []
+
+    def _strongconnect(v: str) -> None:
+        index[v] = index_counter[0]
+        lowlink[v] = index_counter[0]
+        index_counter[0] += 1
+        stack.append(v)
+        on_stack.add(v)
+        for w in adj.get(v, ()):
+            if w not in index:
+                _strongconnect(w)
+                lowlink[v] = min(lowlink[v], lowlink[w])
+            elif w in on_stack:
+                lowlink[v] = min(lowlink[v], index[w])
+        if lowlink[v] == index[v]:
+            comp: set[str] = set()
+            while True:
+                w = stack.pop()
+                on_stack.discard(w)
+                comp.add(w)
+                if w == v:
+                    break
+            if len(comp) >= 2:
+                sccs.append(comp)
+
+    for n in nodes:
+        if n not in index:
+            try:
+                _strongconnect(n)
+            except RecursionError:
+                # Pathologically deep relation graphs — skip cycle
+                # detection rather than crashing the whole flush.
+                logging.warning("chain validate: cycle detection hit recursion limit")
+                break
+
+    for comp in sccs:
+        for src, tgt in edges:
+            if src in comp and tgt in comp:
+                _add((src, tgt), f"cycle within {sorted(comp)}")
+
+    return issues
+
+
+def _chain_gather_chunk_text(
+    bad_docs: list[dict], chunks_by_id: dict[str, str],
+) -> list[tuple[str, str]]:
+    """Collect (chunk_id, text) pairs for the LLM prompt — deduplicated,
+    capped at ``_CHAIN_CORRECTION_MAX_CHUNKS`` chunks, each trimmed to
+    ``_CHAIN_CORRECTION_MAX_CHUNK_CHARS`` characters."""
+    seen: set[str] = set()
+    out: list[tuple[str, str]] = []
+    for doc in bad_docs:
+        for cid in doc.get("source_chunk_ids") or []:
+            if not isinstance(cid, str) or cid in seen:
+                continue
+            seen.add(cid)
+            text = chunks_by_id.get(cid)
+            if not isinstance(text, str) or not text.strip():
+                continue
+            out.append((cid, text[:_CHAIN_CORRECTION_MAX_CHUNK_CHARS]))
+            if len(out) >= _CHAIN_CORRECTION_MAX_CHUNKS:
+                return out
+    return out
+
+
+async def validate_and_correct_chain(
+    docs: list[dict],
+    chunks_by_id: dict[str, str],
+    chat_mdl,
+    kind: str,
+    callback=None,
+) -> list[dict]:
+    """Ensure the chain-shape constraint on ``docs`` (a flush-time mixed
+    list of entity and relation docs). On finding a violation we ask the
+    LLM to pick the subset of the offending relations that should be
+    kept; the dropped offenders are removed from the returned list.
+
+    Best-effort: any exception during detection or LLM call results in
+    ``docs`` being returned verbatim, so a misbehaving model can never
+    block the merge phase. Callers are still responsible for wrapping
+    the call in their own timeout if they want a hard wall.
+    """
+    if not docs or kind not in CHAIN_KINDS:
+        return docs
+
+    try:
+        # Bucket: relations keyed by edge for later removal.
+        edge_to_docs: dict[tuple[str, str], list[dict]] = {}
+        all_edges: list[tuple[str, str]] = []
+        for d in docs:
+            e = _chain_extract_edge(d)
+            if e is None:
+                continue
+            edge_to_docs.setdefault(e, []).append(d)
+            all_edges.append(e)
+
+        violations = _chain_detect_violations(all_edges)
+        if not violations:
+            return docs
+
+        bad_edges = list(violations.keys())
+        bad_docs: list[dict] = []
+        for e in bad_edges:
+            bad_docs.extend(edge_to_docs.get(e, ()))
+
+        bad_relations_repr = [
+            {"from": e[0], "to": e[1], "issue": "; ".join(reasons)}
+            for e, reasons in violations.items()
+        ]
+        chunk_pairs = _chain_gather_chunk_text(bad_docs, chunks_by_id)
+        source_chunks_text = (
+            "\n\n".join(f"[{cid}]\n{text}" for cid, text in chunk_pairs)
+            or "(no source chunks available)"
+        )
+        prompt = CHAIN_CORRECTION_PROMPT.format(
+            kind=kind,
+            bad_relations_json=json.dumps(bad_relations_repr, ensure_ascii=False),
+            source_chunks_text=source_chunks_text,
+        )
+        if callable(callback):
+            try:
+                callback(msg=f"chain validation: {len(bad_edges)} flagged for LLM correction")
+            except Exception:
+                pass
+
+        res = await gen_json(
+            "You correct extracted graph relations to satisfy a strict-chain constraint.",
+            prompt, chat_mdl, gen_conf={"temperature": 0.0},
+        )
+    except Exception:
+        logging.exception("chain validate: detection / LLM call failed; skipping correction")
+        return docs
+
+    if not isinstance(res, dict):
+        return docs
+    keep_raw = res.get("keep")
+    if not isinstance(keep_raw, list):
+        return docs
+
+    bad_edge_set = set(bad_edges)
+    keep_set: set[tuple[str, str]] = set()
+    for item in keep_raw:
+        if not isinstance(item, dict):
+            continue
+        s = item.get("from")
+        t = item.get("to")
+        if not isinstance(s, str) or not isinstance(t, str):
+            continue
+        edge = (s.strip(), t.strip())
+        # Reject anything that wasn't in the bad set — we don't invent
+        # new relations and we don't allow the LLM to "rescue" a
+        # never-extracted edge.
+        if edge in bad_edge_set:
+            keep_set.add(edge)
+
+    if keep_set == bad_edge_set:
+        # LLM kept everything → no correction applied.
+        return docs
+
+    # Drop the bad-edge docs that the LLM didn't keep.
+    dropped_doc_ids: set[str] = set()
+    for edge in bad_edge_set - keep_set:
+        for d in edge_to_docs.get(edge, ()):
+            did = d.get("id")
+            if isinstance(did, str):
+                dropped_doc_ids.add(did)
+
+    if not dropped_doc_ids:
+        return docs
+
+    corrected = [d for d in docs if d.get("id") not in dropped_doc_ids]
+    if callable(callback):
+        try:
+            callback(
+                msg=f"chain validation: dropped {len(dropped_doc_ids)} "
+                f"of {len(bad_edges)} flagged relation(s)"
+            )
+        except Exception:
+            pass
+    return corrected
+
+
 async def merge_compiled_structures(
     docs: list[dict],
     chat_mdl,
     embd_mdl,
     tenant_id: str,
     kb_id: str,
-    similarity_threshold: float = 0.96,
+    similarity_threshold: float = 0.98,
     compilation_template_id: str | None = None,
 ) -> dict:
     """Merge ``docs`` (the output of ``compile_structure_from_text``) before

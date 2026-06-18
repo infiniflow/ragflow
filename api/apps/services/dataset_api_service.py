@@ -2163,10 +2163,10 @@ async def get_artifact_graph(
             # If even the first entity on a page can't fit, we exit the
             # outer loop below; this preserves the "least-weight first
             # excluded" semantics.
-            if cumulative_weight + w > cap and len(entities) + len(e_sub) > 0:
-                break
-            e_sub.append(payload)
+            #if cumulative_weight + w > cap and len(entities) + len(e_sub) > 0:
+            #    break
             cumulative_weight += w
+            e_sub.append(payload)
             if len(entities) + len(e_sub) >= cap:
                 break
 

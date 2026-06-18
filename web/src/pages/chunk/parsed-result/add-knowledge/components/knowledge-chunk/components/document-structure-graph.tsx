@@ -9,6 +9,7 @@ import {
   useDeleteDocumentStructureGraph,
 } from '@/hooks/use-chunk-request';
 import ForceGraph from '@/pages/dataset/knowledge-graph/force-graph';
+import TimelineGraph from '@/pages/dataset/knowledge-graph/timeline-graph';
 import TreeGraph from '@/pages/dataset/knowledge-graph/tree-graph';
 import { Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -119,6 +120,39 @@ function toTreeShape(template: IDocumentStructureTemplate | undefined): {
   };
 }
 
+/**
+ * Project a ``timeline``-kind template onto the vertical-waterfall
+ * shape. Same id-by-name convention as the peer adapters; ``rank`` is
+ * fed from ``mention_count`` so the renderer can scale node size.
+ * Dangling-endpoint edges are dropped.
+ */
+function toTimelineShape(template: IDocumentStructureTemplate | undefined): {
+  nodes: any[];
+  edges: any[];
+} {
+  if (!template) return { nodes: [], edges: [] };
+  const entities = Array.isArray(template.entities) ? template.entities : [];
+  const relations = Array.isArray(template.relations) ? template.relations : [];
+
+  const nodes = entities.map((entity) => ({
+    id: entity.name,
+    entity_type: entity.type || 'other',
+    rank: entity.mention_count ?? 1,
+    description: entity.discription || entity.description || undefined,
+    aliases: entity.aliases ?? [],
+  }));
+  const known = new Set(nodes.map((n) => n.id));
+  const edges = relations
+    .filter((r) => known.has(r.from) && known.has(r.to))
+    .map((r) => ({
+      source: r.from,
+      target: r.to,
+      description: r.type,
+    }));
+
+  return { nodes, edges };
+}
+
 export function DocumentStructureGraph({
   data,
   loading,
@@ -164,34 +198,53 @@ export function DocumentStructureGraph({
   );
 
   /**
-   * Both ``page_index`` (case/dash variants accepted) and the
-   * synthetic ``raptor`` kind are strict hierarchies — render them as
-   * left-to-right trees under a synthetic root. Every other kind keeps
-   * the force-directed layout.
+   * Pick the right renderer for the active template's kind:
+   *   ``page_index`` / ``raptor`` → tree (left-to-right hierarchy)
+   *   ``timeline`` / ``list``      → vertical-waterfall flowchart. Both
+   *                                  kinds are strict linear chains
+   *                                  (enforced post-extract by
+   *                                  validate_and_correct_chain), so
+   *                                  they read the same way visually.
+   *   anything else                → force-directed
    */
-  const useTreeLayout = useMemo(() => {
+  type Renderer = 'tree' | 'timeline' | 'force';
+  const renderer: Renderer = useMemo(() => {
     const k = normalizeKind(activeTemplate?.kind);
-    return k === 'page_index' || k === 'raptor';
+    if (k === 'page_index' || k === 'raptor') return 'tree';
+    if (k === 'timeline' || k === 'list') return 'timeline';
+    return 'force';
   }, [activeTemplate?.kind]);
 
   const forceGraphData = useMemo(
     () =>
-      useTreeLayout
-        ? { nodes: [], edges: [] }
-        : toForceGraphShape(activeTemplate),
-    [activeTemplate, useTreeLayout],
+      renderer === 'force'
+        ? toForceGraphShape(activeTemplate)
+        : { nodes: [], edges: [] },
+    [activeTemplate, renderer],
   );
   const treeGraphData = useMemo(
     () =>
-      useTreeLayout ? toTreeShape(activeTemplate) : { nodes: [], edges: [] },
-    [activeTemplate, useTreeLayout],
+      renderer === 'tree'
+        ? toTreeShape(activeTemplate)
+        : { nodes: [], edges: [] },
+    [activeTemplate, renderer],
+  );
+  const timelineGraphData = useMemo(
+    () =>
+      renderer === 'timeline'
+        ? toTimelineShape(activeTemplate)
+        : { nodes: [], edges: [] },
+    [activeTemplate, renderer],
   );
 
   const hasAny = nonEmptyTemplates.length > 0;
   const isEmpty = !loading && !hasAny;
-  const activeNodeCount = useTreeLayout
-    ? treeGraphData.nodes.length
-    : forceGraphData.nodes.length;
+  const activeNodeCount =
+    renderer === 'tree'
+      ? treeGraphData.nodes.length
+      : renderer === 'timeline'
+        ? timelineGraphData.nodes.length
+        : forceGraphData.nodes.length;
   const { deleteStructureGraph, loading: deleting } =
     useDeleteDocumentStructureGraph();
   const showDeleteConfirm = useShowDeleteConfirm();
@@ -285,12 +338,14 @@ export function DocumentStructureGraph({
             No generated structure graph.
           </div>
         ) : activeTemplate && activeNodeCount > 0 ? (
-          useTreeLayout ? (
+          renderer === 'tree' ? (
             <TreeGraph
               data={treeGraphData}
               show
               rootId={ARTIFACT_TREE_ROOT_ID}
             />
+          ) : renderer === 'timeline' ? (
+            <TimelineGraph data={timelineGraphData} show />
           ) : (
             <ForceGraph data={forceGraphData} show />
           )

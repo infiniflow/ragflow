@@ -60,6 +60,10 @@ export interface CompilationConceptSection {
 
 export interface CompilationTemplateConfig {
   kind: CompilationTemplateKind;
+  /** Chat model id used when this template runs (MAP/document-structure
+   *  compile). Server-side lazy-fill seeds it from the tenant default
+   *  when older templates open in the edit panel. */
+  llm_id?: string;
   entity: CompilationEntitySection;
   relation: CompilationRelationSection;
   /** Present only when {@link kind} === 'artifacts'. */

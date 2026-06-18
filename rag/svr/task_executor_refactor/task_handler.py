@@ -23,8 +23,14 @@ for handling document processing tasks with refactored, testable methods.
 import asyncio
 import logging
 import json
+from api.apps.restful_apis.chunk_api import _compilation_template_kind
 from rag.advanced_rag.knowlege_compile.artifact import artifact_map_from_chunks, artifact_plan_from_reduction, artifact_reduce_from_extracts, artifact_refine_from_plan
-from rag.advanced_rag.knowlege_compile.structure import compile_structure_from_text, merge_compiled_structures
+from rag.advanced_rag.knowlege_compile.structure import (
+    CHAIN_KINDS,
+    compile_structure_from_text,
+    merge_compiled_structures,
+    validate_and_correct_chain,
+)
 import xxhash
 
 from timeit import default_timer as timer
@@ -81,13 +87,26 @@ def _parser_config_compilation_template_ids(parser_config) -> list[str]:
     return []
 
 
-def _compilation_template_kind(kind) -> str:
-    if not isinstance(kind, str):
-        return ""
-    normalized = kind.strip().lower().replace("-", "_")
-    if normalized in {"pageindex", "page_index", "knowledge_graph"}:
-        return "timeline"
-    return normalized
+def _resolve_template_chat_llm_id(parser_cfg: dict, ctx) -> str:
+    """Pick the chat model id for a knowledge-compilation template.
+
+    Resolution order:
+      1. The template's own ``llm_id`` (what the user picked in the
+         compilation-template panel).
+      2. The doc's ``parser_config.llm_id`` (the doc-level chunking
+         model).
+      3. ``ctx.llm_id`` (the chunking task's default).
+    """
+    if isinstance(parser_cfg, dict):
+        tid = parser_cfg.get("llm_id")
+        if isinstance(tid, str) and tid.strip():
+            return tid.strip()
+    doc_cfg = getattr(ctx, "parser_config", None) or {}
+    if isinstance(doc_cfg, dict):
+        did = doc_cfg.get("llm_id")
+        if isinstance(did, str) and did.strip():
+            return did.strip()
+    return ctx.llm_id
 
 
 # Document-structure compilation tuning.
@@ -108,6 +127,12 @@ _DOC_STRUCTURE_MERGE_MAX_DOCS = 512
 # footprint. 64 keeps the resume-set re-reads cheap while leaving room for the
 # function's internal split_chunks packing to do real work.
 _ARTIFACT_MAP_BATCH_CHUNKS = 64
+
+# Hard wall on the chain-validator LLM correction step. ``list`` and
+# ``timeline`` kinds run this just before each merge flush; anything
+# longer than this is treated as a blocked LLM and the uncorrected docs
+# are flushed instead.
+_STRUCTURE_CHAIN_CORRECTION_TIMEOUT_S = 120.0
 
 # Per-node cap on source_chunk_ids carried by the canvas graph blob. Pages
 # can accumulate hundreds of source chunks; the graph response is meant for
@@ -787,29 +812,90 @@ class TaskHandler:
         if not active_templates:
             return
 
-        doc_task_llm_id = ctx.parser_config.get("llm_id") or ctx.llm_id
-        chat_model_config = get_model_config_from_provider_instance(
-            ctx.tenant_id, LLMType.CHAT, doc_task_llm_id
-        )
-        chat_mdl = LLMBundle(ctx.tenant_id, chat_model_config, lang=ctx.language)
+        # Build a per-template chat_mdl using the template's own llm_id,
+        # with a cache so two templates picking the same model share a
+        # single LLMBundle. Templates whose llm_id cannot be resolved
+        # are dropped with a warning rather than silently failing.
+        llm_bundle_cache: dict[str, LLMBundle] = {}
+        chat_mdl_by_tid: dict[str, LLMBundle] = {}
+        filtered_templates: list[tuple[str, dict]] = []
+        for template_id, parser_cfg in active_templates:
+            chat_llm_id = _resolve_template_chat_llm_id(parser_cfg, ctx)
+            if chat_llm_id not in llm_bundle_cache:
+                try:
+                    cfg = get_model_config_from_provider_instance(
+                        ctx.tenant_id, LLMType.CHAT, chat_llm_id,
+                    )
+                    llm_bundle_cache[chat_llm_id] = LLMBundle(
+                        ctx.tenant_id, cfg, lang=ctx.language,
+                    )
+                except Exception:
+                    logging.exception(
+                        "document_structure_compile: cannot resolve chat model %s for template %s; skipping",
+                        chat_llm_id, template_id,
+                    )
+                    continue
+            chat_mdl_by_tid[template_id] = llm_bundle_cache[chat_llm_id]
+            filtered_templates.append((template_id, parser_cfg))
+
+        if not filtered_templates:
+            return
+        active_templates = filtered_templates
 
         progress_cb = ctx.progress_cb
         total = len(active_templates)
 
-        # Per-template accumulators + aggregate counters.
+        # Per-template accumulators + aggregate counters. ``template_kinds``
+        # is captured up-front so ``_flush`` knows whether to run the
+        # chain-shape validator (only ``list`` / ``timeline`` kinds qualify).
         accumulators: dict[str, list[dict]] = {tid: [] for tid, _ in active_templates}
+        template_kinds: dict[str, str] = {
+            tid: _compilation_template_kind((cfg or {}).get("kind"))
+            for tid, cfg in active_templates
+        }
         agg_infos: dict[str, dict] = {
             tid: {"inserted": 0, "updated": 0, "duplicates_dropped": 0}
             for tid, _ in active_templates
         }
+        # Map ``chunk_id → content_with_weight`` so the chain validator can
+        # show the LLM the source text behind any flagged relations. We
+        # populate this as each batch streams in.
+        chunks_by_id: dict[str, str] = {}
 
         async def _flush(template_id: str) -> None:
             acc = accumulators[template_id]
             if not acc:
                 return
+            kind = template_kinds.get(template_id, "")
+            if kind in CHAIN_KINDS:
+                # Best-effort chain validation; on timeout / exception we
+                # fall through with the uncorrected accumulator so the
+                # merge phase still runs.
+                try:
+                    acc = await asyncio.wait_for(
+                        validate_and_correct_chain(
+                            acc,
+                            chunks_by_id,
+                            chat_mdl_by_tid[template_id],
+                            kind,
+                            callback=progress_cb,
+                        ),
+                        timeout=_STRUCTURE_CHAIN_CORRECTION_TIMEOUT_S,
+                    )
+                    accumulators[template_id] = acc
+                except asyncio.TimeoutError:
+                    logging.warning(
+                        "chain validate: timed out after %ss for template %s; using uncorrected docs",
+                        _STRUCTURE_CHAIN_CORRECTION_TIMEOUT_S, template_id,
+                    )
+                except Exception:
+                    logging.exception(
+                        "chain validate: unexpected failure for template %s; using uncorrected docs",
+                        template_id,
+                    )
             info = await merge_compiled_structures(
                 acc,
-                chat_mdl,
+                chat_mdl_by_tid[template_id],
                 embedding_model,
                 ctx.tenant_id,
                 ctx.kb_id,
@@ -829,6 +915,15 @@ class TaskHandler:
             batch_size=_DOC_STRUCTURE_COMPILE_BATCH_CHUNKS,
         ):
             batch_no += 1
+            # Snapshot this batch's chunks for the chain validator before
+            # fanning out to templates. Only the (id, content) pair is
+            # captured — keeps memory linear in the doc, not in the
+            # template count.
+            for chunk in batch:
+                cid = chunk.get("id")
+                if isinstance(cid, str) and cid not in chunks_by_id:
+                    text = chunk.get("content_with_weight") or ""
+                    chunks_by_id[cid] = text if isinstance(text, str) else ""
             for idx, (template_id, parser_cfg) in enumerate(active_templates):
                 progress_cb(
                     msg=f"  compile batch {batch_no} ({len(batch)} chunks) for template ({idx + 1}/{total})"
@@ -836,7 +931,7 @@ class TaskHandler:
                 docs = await compile_structure_from_text(
                     batch,
                     parser_cfg,
-                    chat_mdl,
+                    chat_mdl_by_tid[template_id],
                     embedding_model,
                     ctx.doc_id,
                     language=ctx.language,
@@ -922,11 +1017,39 @@ class TaskHandler:
             progress(1.0, "No documents are configured for artifact compilation.")
             return
 
-        # 3. Resolve chat model for the KB-level task. There's no per-doc
-        # LLM here (the task has no real ctx.doc_id) so fall back to the
-        # tenant default chat model 鈥?same pattern raptor/graphrag use.
-        chat_model_config = get_tenant_default_model_by_type(ctx.tenant_id, LLMType.CHAT)
-        chat_mdl = LLMBundle(ctx.tenant_id, chat_model_config, lang=ctx.language)
+        # 3. Resolve chat models. MAP is per-(doc, template) so each pair
+        # uses its template's own ``llm_id``. REDUCE / PLAN / REFINE are
+        # KB-wide and need exactly one model — we pick the **first
+        # eligible template's** ``llm_id`` as the canonical KB chat
+        # model. The tenant default is a fallback for templates that
+        # somehow still have no ``llm_id`` resolved.
+        llm_bundle_cache: dict[str, LLMBundle] = {}
+
+        def _bundle_for(llm_id: str | None) -> LLMBundle:
+            key = (llm_id or "").strip() or "__tenant_default__"
+            cached = llm_bundle_cache.get(key)
+            if cached is not None:
+                return cached
+            try:
+                if key == "__tenant_default__":
+                    cfg = get_tenant_default_model_by_type(ctx.tenant_id, LLMType.CHAT)
+                else:
+                    cfg = get_model_config_from_provider_instance(
+                        ctx.tenant_id, LLMType.CHAT, key,
+                    )
+            except Exception:
+                logging.exception(
+                    "artifact: chat model resolution failed for llm_id=%s (kb=%s); falling back to tenant default",
+                    key, ctx.kb_id,
+                )
+                cfg = get_tenant_default_model_by_type(ctx.tenant_id, LLMType.CHAT)
+                key = "__tenant_default__"
+                cached = llm_bundle_cache.get(key)
+                if cached is not None:
+                    return cached
+            bundle = LLMBundle(ctx.tenant_id, cfg, lang=ctx.language)
+            llm_bundle_cache[key] = bundle
+            return bundle
 
         def _stage_cb(prefix: str):
             def _cb(*args, **kwargs):
@@ -945,6 +1068,9 @@ class TaskHandler:
         # (artifact_map_extract rows keyed by chunk_id) skips chunks that
         # were already processed in a prior run 鈥?this is the incremental
         # behavior the user asked for.
+        # ``kb_chat_llm_id`` is captured from the first eligible template
+        # and used as the canonical chat model for REDUCE/PLAN/REFINE.
+        kb_chat_llm_id: str | None = None
         n_docs = len(eligible)
         for i, (doc, template_id) in enumerate(eligible):
             doc_id = doc["id"]
@@ -957,6 +1083,13 @@ class TaskHandler:
                 logging.warning("artifact: template %s not found for doc %s; skipping", template_id, doc_id)
                 continue
             parser_cfg = template.get("config") or {}
+
+            map_llm_id = (parser_cfg.get("llm_id") or "").strip() if isinstance(parser_cfg, dict) else ""
+            map_chat_mdl = _bundle_for(map_llm_id)
+            if kb_chat_llm_id is None:
+                # First eligible template wins — canonical for KB-wide
+                # REDUCE/PLAN/REFINE further down.
+                kb_chat_llm_id = map_llm_id or None
 
             # Stream the doc's chunks in batches and call MAP per batch so
             # peak memory stays bounded for long docs. Each MAP call has its
@@ -975,7 +1108,7 @@ class TaskHandler:
                 try:
                     phase1 = await artifact_map_from_chunks(
                         chunks=batch,
-                        chat_mdl=chat_mdl,
+                        chat_mdl=map_chat_mdl,
                         embd_mdl=embedding_model,
                         doc_id=doc_id,
                         tenant_id=ctx.tenant_id,
@@ -1000,11 +1133,14 @@ class TaskHandler:
                 doc_id, agg["entities"], agg["concepts"], agg["claims"], agg["relations"], batch_no,
             )
 
-        # 5. REDUCE / PLAN / REFINE KB-wide.
+        # 5. REDUCE / PLAN / REFINE KB-wide. Use the first eligible
+        # template's llm_id as the canonical KB chat model; tenant
+        # default kicks in only if no eligible template had one.
+        kb_chat_mdl = _bundle_for(kb_chat_llm_id)
         try:
             progress(0.65, "Reducing extracts KB-wide...")
             await artifact_reduce_from_extracts(
-                chat_mdl=chat_mdl,
+                chat_mdl=kb_chat_mdl,
                 embd_mdl=embedding_model,
                 tenant_id=ctx.tenant_id,
                 kb_id=ctx.kb_id,
@@ -1014,7 +1150,7 @@ class TaskHandler:
 
             progress(0.75, "Planning artifact pages...")
             await artifact_plan_from_reduction(
-                chat_mdl=chat_mdl,
+                chat_mdl=kb_chat_mdl,
                 embd_mdl=embedding_model,
                 tenant_id=ctx.tenant_id,
                 kb_id=ctx.kb_id,
@@ -1026,7 +1162,7 @@ class TaskHandler:
 
             progress(0.85, "Refining pages...")
             pages = await artifact_refine_from_plan(
-                chat_mdl=chat_mdl,
+                chat_mdl=kb_chat_mdl,
                 embd_mdl=embedding_model,
                 tenant_id=ctx.tenant_id,
                 kb_id=ctx.kb_id,

@@ -93,6 +93,7 @@ export const compilationTemplateFormSchema = z
         ...CompilationTemplateKind[],
       ],
     ),
+    llm_id: z.string().trim().min(1, 'LLM is required.'),
     entity: z.object({
       description: z.string().max(TEXT_MAX),
       fields: z.array(entityFieldSchema).min(1).max(FIELDS_MAX),
@@ -152,6 +153,11 @@ export function templateConfigToFormValues(
     name,
     description: description ?? '',
     kind: config.kind,
+    // ``llm_id`` is required on save; when the stored config predates the
+    // field, server-side lazy-fill (tenant default) usually populates it
+    // before this code runs. Defensive '' fallback keeps the form
+    // controlled.
+    llm_id: (config as { llm_id?: string }).llm_id ?? '',
     entity: {
       description: config.entity?.description ?? '',
       fields: config.entity?.fields?.length
@@ -199,6 +205,7 @@ export function formValuesToTemplateConfig(
 ): CompilationTemplateConfig {
   return {
     kind: values.kind,
+    llm_id: values.llm_id,
     entity: values.entity,
     relation: values.relation,
     claim: values.kind === 'artifacts' ? values.claim : undefined,
@@ -217,6 +224,9 @@ export function emptyFormValues(): CompilationTemplateFormValues {
     name: '',
     description: '',
     kind: 'empty',
+    // Seeded later by the form's defaultModelDict useEffect once the
+    // /v1/models/default response lands.
+    llm_id: '',
     entity: {
       description: '',
       fields: [{ type: '', description: '', rule: '' }],

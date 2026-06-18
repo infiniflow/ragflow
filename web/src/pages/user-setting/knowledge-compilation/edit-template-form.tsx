@@ -19,7 +19,9 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { useFetchBuiltinCompilationTemplates } from '@/hooks/use-compilation-template-request';
+import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import { CompilationTemplate } from '@/interfaces/database/compilation-template';
+import { LLMSelect } from '@/pages/dataset/dataset-setting/configuration/common-item';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useMemo } from 'react';
 import { FormProvider, useForm } from 'react-hook-form';
@@ -68,6 +70,10 @@ export function EditTemplateForm({
 }: EditTemplateFormProps) {
   const { t } = useTranslation();
   const { data: builtins } = useFetchBuiltinCompilationTemplates();
+  // Default chat model from /v1/models/default — used as the prefill for
+  // ``llm_id`` when the user opens the form to create a fresh template
+  // or edits a legacy one whose config predates the field.
+  const defaultModelDict = useFetchDefaultModelDictionary();
 
   const defaultValues = useMemo<CompilationTemplateFormValues>(() => {
     if (initial) {
@@ -89,6 +95,20 @@ export function EditTemplateForm({
   useEffect(() => {
     form.reset(defaultValues);
   }, [defaultValues, form]);
+
+  // Prefill llm_id from the tenant default whenever the current value
+  // is empty — covers initial mount, ``form.reset`` after picking a
+  // built-in template, and the async arrival of /v1/models/default.
+  // ``form.watch`` re-runs this whenever ``llm_id`` changes, so an
+  // explicit user pick (or a saved template with its own ``llm_id``)
+  // never gets clobbered.
+  const watchedLlmId = form.watch('llm_id');
+  useEffect(() => {
+    const fallback = defaultModelDict.llm_id;
+    if (!fallback) return;
+    if (watchedLlmId) return;
+    form.setValue('llm_id', fallback, { shouldDirty: false });
+  }, [defaultModelDict.llm_id, watchedLlmId, form]);
 
   useEffect(() => {
     onDirtyChange?.(form.formState.isDirty);
@@ -175,6 +195,20 @@ export function EditTemplateForm({
                       'knowledgeCompilation.descriptionPlaceholder',
                     )}
                   />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="llm_id"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('knowledgeCompilation.llmLabel')}</FormLabel>
+                <FormControl>
+                  <LLMSelect isEdit field={field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
