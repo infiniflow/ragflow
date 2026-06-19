@@ -2574,20 +2574,20 @@ func (c *CLI) AdminListUserFilesCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	apiURL := fmt.Sprintf("/admin/users/%s/datasets", userName)
+	apiURL := fmt.Sprintf("/admin/users/%s/files", userName)
 
 	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list user %s datasets: %w", userName, err)
+		return nil, fmt.Errorf("failed to list user %s files: %w", userName, err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list user %s datasets: HTTP %d, body: %s", userName, resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to list user %s files: HTTP %d, body: %s", userName, resp.StatusCode, string(resp.Body))
 	}
 
 	var result CommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list user %s datasets failed: invalid JSON (%w)", userName, err)
+		return nil, fmt.Errorf("list user %s files failed: invalid JSON (%w)", userName, err)
 	}
 
 	if result.Code != 0 {
