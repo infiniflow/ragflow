@@ -684,7 +684,7 @@ func (p *Parser) parseAdminCreateUserCommand() (*Command, error) {
 func (p *Parser) parseAdminCreateUserAPIKeyCommand(userName string) (*Command, error) {
 	p.nextToken() // consume KEY
 
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -834,70 +834,60 @@ func (p *Parser) parseAdminDropCommand() (*Command, error) {
 
 	switch p.curToken.Type {
 	case TokenUser:
-		return p.parseDropUser()
+		return p.parseAdminDropUserCommand()
 	case TokenRole:
-		return p.parseDropRole()
-	case TokenDataset:
-		return p.parseDropDataset()
-	case TokenChat:
-		return p.parseDropChat()
-	case TokenToken:
-		return p.parseDropToken()
+		return p.parseAdminDropRoleCommand()
 	default:
 		return nil, fmt.Errorf("unknown DROP target: %s", p.curToken.Value)
 	}
 }
 
-func (p *Parser) parseAdminDropToken() (*Command, error) {
-	p.nextToken() // consume TOKEN
+func (p *Parser) parseAdminDropUserCommand() (*Command, error) {
+	p.nextToken() // consume USER
 
-	tokenValue, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
+	if p.curToken.Type != TokenQuotedString {
+		return nil, fmt.Errorf("expected USER name, got %s", p.curToken.Value)
 	}
-
-	p.nextToken()
-	if p.curToken.Type != TokenOf {
-		return nil, fmt.Errorf("expected OF")
-	}
-	p.nextToken()
 
 	userName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-
-	cmd := NewCommand("drop_token")
-	cmd.Params["token"] = tokenValue
-	cmd.Params["user_name"] = userName
-
 	p.nextToken()
+
+	switch p.curToken.Type {
+	case TokenKey:
+		return p.parseAdminDropUserAPIKeyCommand(userName)
+	default:
+		p.nextToken()
+	}
+
+	cmd := NewCommand("admin_drop_user_command")
+	cmd.Params["user_name"] = userName
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminDropUserAPIKeyCommand(userName string) (*Command, error) {
+	p.nextToken() // consume KEY
+
+	apiKey, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
-	return cmd, nil
-}
 
-func (p *Parser) parseAdminDropUser() (*Command, error) {
-	p.nextToken() // consume USER
-	userName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("drop_user")
+	cmd := NewCommand("admin_drop_user_api_key_command")
 	cmd.Params["user_name"] = userName
+	cmd.Params["api_key"] = apiKey
 
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
 	return cmd, nil
 }
 
-func (p *Parser) parseAdminDropRole() (*Command, error) {
+func (p *Parser) parseAdminDropRoleCommand() (*Command, error) {
 	p.nextToken() // consume ROLE
 	roleName, err := p.parseIdentifier()
 	if err != nil {
@@ -2628,6 +2618,9 @@ func (p *Parser) parseAdminListUserCommand() (*Command, error) {
 	case TokenFiles:
 		p.nextToken()
 		cmd = NewCommand("admin_list_user_files_command")
+	case TokenKeys:
+		p.nextToken()
+		cmd = NewCommand("admin_list_user_keys_command")
 	default:
 		return nil, fmt.Errorf("expected INGESTION or DATASETS or AGENTS or CHATS or SEARCHES or MODELS or FILES after USER")
 	}

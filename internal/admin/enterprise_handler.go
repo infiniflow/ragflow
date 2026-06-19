@@ -992,3 +992,38 @@ func (h *Handler) CreateUserAPIKey(c *gin.Context) {
 
 	success(c, apiKey, "API key generated successfully")
 }
+
+// DeleteUserAPIKey handle delete user API key
+func (h *Handler) DeleteUserAPIKey(c *gin.Context) {
+	username := c.Param("username")
+	key := c.Param("key")
+	if username == "" || key == "" {
+		errorResponse(c, "Username and key are required", 400)
+		return
+	}
+
+	result, err := h.service.DeleteUserAPIKey(username, key)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "API key deleted successfully")
+}
+
+// ListUserAPIKeys handle list user API keys
+func (h *Handler) ListUserAPIKeys(c *gin.Context) {
+	username := c.Param("username")
+	if username == "" {
+		errorResponse(c, "Username is required", 400)
+		return
+	}
+
+	result, err := h.service.ListUserAPIKeys(username)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "API keys listed successfully")
+}

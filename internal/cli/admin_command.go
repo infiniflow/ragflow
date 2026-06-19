@@ -19,7 +19,6 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"net/url"
 )
 
 // PingServer pings the server to check if it's alive
@@ -799,8 +798,8 @@ func (c *CLI) SetVariable(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// DropUser deletes a user (admin mode only)
-func (c *CLI) DropUser(cmd *Command) (ResponseIf, error) {
+// AdminDropUserCommand deletes a user (admin mode only)
+func (c *CLI) AdminDropUserCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -828,6 +827,44 @@ func (c *CLI) DropUser(cmd *Command) (ResponseIf, error) {
 	if result.Code != 0 {
 		return nil, fmt.Errorf("%s", result.Message)
 	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// AdminDropUserAPIKeyCommand drops an API key for a user (admin mode only)
+func (c *CLI) AdminDropUserAPIKeyCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	userName, ok := cmd.Params["user_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("user_name not provided")
+	}
+
+	apiKey, ok := cmd.Params["api_key"].(string)
+	if !ok {
+		return nil, fmt.Errorf("api_key not provided")
+	}
+
+	resp, err := c.AdminServerClient.Request("DELETE", fmt.Sprintf("/admin/users/%s/keys/%s", userName, apiKey), "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to drop API key: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to drop API key: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("drop API key failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
 	result.Duration = resp.Duration
 	return &result, nil
 }
@@ -1198,47 +1235,6 @@ func (c *CLI) ListAdminTokens(cmd *Command) (ResponseIf, error) {
 		delete(item, "update_date")
 		delete(item, "update_time")
 		delete(item, "create_time")
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
-}
-
-// DropToken drops an API token for a user (admin mode only)
-func (c *CLI) DropAdminToken(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	userName, ok := cmd.Params["user_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("user_name not provided")
-	}
-
-	token, ok := cmd.Params["token"].(string)
-	if !ok {
-		return nil, fmt.Errorf("token not provided")
-	}
-
-	// URL encode the token to handle special characters
-	encodedToken := url.QueryEscape(token)
-
-	resp, err := c.AdminServerClient.Request("DELETE", fmt.Sprintf("/admin/users/%s/keys/%s", userName, encodedToken), "admin", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to drop token: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to drop token: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result SimpleResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("drop token failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
 	}
 
 	result.Duration = resp.Duration
@@ -2655,6 +2651,41 @@ func (c *CLI) AdminListUserFilesCommand(cmd *Command) (ResponseIf, error) {
 	var result CommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("list user %s files failed: invalid JSON (%w)", userName, err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *CLI) AdminListUserKeysCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	userName, ok := cmd.Params["user_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("user_name not provided")
+	}
+
+	apiURL := fmt.Sprintf("/admin/users/%s/keys", userName)
+
+	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list user %s keys: %w", userName, err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list user %s keys: HTTP %d, body: %s", userName, resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list user %s keys failed: invalid JSON (%w)", userName, err)
 	}
 
 	if result.Code != 0 {

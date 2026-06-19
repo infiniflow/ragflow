@@ -61,8 +61,10 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ActivateUser(cmd)
 	case "alter_user":
 		return c.AlterUserPassword(cmd)
-	case "drop_user":
-		return c.DropUser(cmd)
+	case "admin_drop_user_command":
+		return c.AdminDropUserCommand(cmd)
+	case "admin_drop_user_api_key_command":
+		return c.AdminDropUserAPIKeyCommand(cmd)
 	case "show_service":
 		return c.ShowService(cmd)
 	case "admin_show_version_command":
@@ -87,8 +89,6 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.GenerateAdminToken(cmd)
 	case "list_tokens":
 		return c.ListAdminTokens(cmd)
-	case "drop_token":
-		return c.DropAdminToken(cmd)
 	case "list_available_providers":
 		return c.ListAvailableProviders(cmd)
 	case "show_provider":
@@ -183,6 +183,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminListUserModelsCommand(cmd)
 	case "admin_list_user_files_command":
 		return c.AdminListUserFilesCommand(cmd)
+	case "admin_list_user_keys_command":
+		return c.AdminListUserKeysCommand(cmd)
 	case "admin_stop_user_ingestion_tasks_command":
 		return c.AdminStopUserIngestionTasksCommand(cmd)
 	case "admin_remove_user_ingestion_tasks_command":

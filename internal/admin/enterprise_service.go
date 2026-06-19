@@ -705,6 +705,45 @@ func (s *Service) CreateUserAPIKey(username string) (map[string]interface{}, err
 	return result, nil
 }
 
+// DeleteUserAPIKey delete user API key
+func (s *Service) DeleteUserAPIKey(username, key string) (map[string]interface{}, error) {
+
+	user, err := s.userDAO.GetByEmail(username)
+	if err != nil {
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
+
+	result := map[string]interface{}{
+		"command":  "delete_user_api_key",
+		"email":    user.Email,
+		"nickname": user.Nickname,
+		"api_key":  key,
+		"error":    "'Delete user API key' is implemented in enterprise edition",
+	}
+
+	return result, nil
+}
+
+// ListUserAPIKeys list user API keys
+func (s *Service) ListUserAPIKeys(username string) ([]map[string]interface{}, error) {
+
+	user, err := s.userDAO.GetByEmail(username)
+	if err != nil {
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":  "list_user_api_keys",
+			"email":    user.Email,
+			"nickname": user.Nickname,
+			"error":    "'List user API keys' is implemented in enterprise edition",
+		},
+	}
+
+	return result, nil
+}
+
 func (s *Service) ListIngestionTasksByCondition(email, status *string) ([]map[string]interface{}, error) {
 
 	if email == nil && status == nil {
