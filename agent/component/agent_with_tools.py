@@ -200,7 +200,7 @@ class Agent(LLM, ToolBase):
             "[Agent] _invoke_async called. Component: %s, Keys in kwargs: %s, user_prompt: %s, tools count: %d",
             self._id,
             list(kwargs.keys()),
-            json.dumps(str(kwargs.get("user_prompt", "")))[:300],
+            json.dumps(kwargs.get("user_prompt", ""), ensure_ascii=False, default=str)[:300],
             len(self.tools) if self.tools else 0,
         )
 
