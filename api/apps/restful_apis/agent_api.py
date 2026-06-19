@@ -715,12 +715,10 @@ async def create_agent(tenant_id):
         )
 
     req["title"] = req["title"].strip()
-    if UserCanvasService.query(
-        user_id=tenant_id,
-        title=req["title"],
-        canvas_category=req["canvas_category"],
-    ):
-        return get_data_error_result(message=f"{req['title']} already exists.")
+    for canvas in UserCanvasService.query(user_id=tenant_id, canvas_category=req["canvas_category"]):
+        canvas_title = getattr(canvas, "title", req["title"])
+        if canvas_title and canvas_title.lower() == req["title"].lower():
+            return get_data_error_result(message=f"{req['title']} already exists.")
 
     req["id"] = get_uuid()
     if not UserCanvasService.save(**req):
@@ -956,10 +954,15 @@ async def update_agent(agent_id, tenant_id):
                 code=RetCode.ARGUMENT_ERROR,
             )
 
+    _, current_agent = UserCanvasService.get_by_id(agent_id)
     if req.get("title") is not None:
         req["title"] = req["title"].strip()
+        canvas_category_for_duplicate_check = req.get("canvas_category") or (current_agent.canvas_category if current_agent else CanvasCategory.Agent)
+        for canvas in UserCanvasService.query(user_id=tenant_id, canvas_category=canvas_category_for_duplicate_check):
+            canvas_title = getattr(canvas, "title", "")
+            if getattr(canvas, "id", None) != agent_id and canvas_title and canvas_title.lower() == req["title"].lower():
+                return get_data_error_result(message=f"{req['title']} already exists.")
 
-    _, current_agent = UserCanvasService.get_by_id(agent_id)
     agent_title_for_version = req.get("title") or (current_agent.title if current_agent else "")
     canvas_category = (
         req.get("canvas_category")
@@ -2357,7 +2360,7 @@ async def download_attachment(tenant_id=None, attachment_id=None):
 
     Mirrors the authorization model of the preview endpoint: the user must belong
     to the tenant that owns the document's knowledge base. A denial returns the
-    same "Document not found!" response so the endpoint cannot be used to
+    same "Attachment not found!" response so the endpoint cannot be used to
     enumerate doc ids across tenants.
     """
     try:
@@ -2365,6 +2368,15 @@ async def download_attachment(tenant_id=None, attachment_id=None):
         # pass `attachment_id` instead of the route parameter name.
         ext = request.args.get("ext", "markdown")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, attachment_id)
+        if not data:
+            # Storage object missing or empty (orphaned DB metadata, tenant
+            # mismatch). Without this guard `make_response(None)` raises
+            # `TypeError: response value cannot be None` and the caller
+            # sees HTTP 500 — same bug class as #15365 on document
+            # preview. Return the same "Attachment not found!" shape used
+            # by the preview route's missing-record path so byte-streaming
+            # endpoints respond consistently on a not-found.
+            return get_data_error_result(message="Attachment not found!")
         response = await make_response(data)
         content_type = CONTENT_TYPE_MAP.get(ext, f"application/{ext}")
         apply_safe_file_response_headers(response, content_type, ext)

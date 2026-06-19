@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 from datetime import datetime
 from functools import partial
 from timeit import default_timer as timer
-from langfuse import Langfuse
+from langfuse import Langfuse, propagate_attributes
 from peewee import fn
 from api.db.services.file_service import FileService
 from common.constants import LLMType, ParserType, StatusEnum
@@ -759,10 +759,19 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         yield {"answer": empty_res, "reference": kbinfos, "prompt": "\n\n### Query:\n%s" % " ".join(questions), "audio_binary": tts(tts_mdl, empty_res), "final": True}
         return
 
-    kwargs["knowledge"] = "\n------\n" + "\n\n------\n\n".join(knowledges)
+    # Only overwrite kwargs["knowledge"] when retrieval produced something;
+    # otherwise preserve any caller-supplied value.
+    knowledge_text = "\n\n------\n\n".join(knowledges)
+    if knowledge_text:
+        kwargs["knowledge"] = "\n------\n" + knowledge_text
     gen_conf = dialog.llm_setting
 
-    msg = [{"role": "system", "content": prompt_config["system"].format(**kwargs) + attachments_}]
+    system_content = prompt_config["system"].format(**kwargs) + attachments_
+    # If knowledge was retrieved but the template has no {knowledge}
+    # placeholder, auto-append it so the LLM still sees the context.
+    if knowledges and "{knowledge}" not in prompt_config.get("system", ""):
+        system_content += kwargs["knowledge"]
+    msg = [{"role": "system", "content": system_content}]
     prompt4citation = ""
     if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
         prompt4citation = citation_prompt()
@@ -875,8 +884,10 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                 "input": {"prompt": prompt, "prompt4citation": prompt4citation, "messages": msg},
             }
             if session_id:
-                observation_kwargs["session_id"] = session_id
-            langfuse_generation = langfuse_tracer.start_observation(**observation_kwargs)
+                with propagate_attributes(session_id=session_id):
+                    langfuse_generation = langfuse_tracer.start_observation(**observation_kwargs)
+            else:
+                langfuse_generation = langfuse_tracer.start_observation(**observation_kwargs)
         except Exception as e:  # noqa: BLE001 - tracing must not break chat flow
             logger.warning("Langfuse start_observation failed; continuing without tracing: %s", e)
             langfuse_tracer = None
@@ -900,6 +911,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             final = await decorate_answer(_extract_visible_answer(thought + full_answer))
             final["final"] = True
             final["audio_binary"] = None
+            final["answer"] = ""
             yield final
     else:
         if llm_model_config["model_type"] == "chat":
@@ -1053,7 +1065,9 @@ RULES:
    - Question mentions "not null" or "excluding null"
    - Add NULL check for count specific column
    - DO NOT add NULL check for COUNT(*) queries (COUNT(*) counts all rows including nulls)
-7. Output ONLY the SQL, no explanations"""
+7. json_extract_string() returns JSON-quoted strings ("value"), so WHERE comparisons MUST wrap values in double-quotes inside single-quotes (no spaces between quotes): '"value"' (e.g. WHERE json_extract_string(chunk_data, '$.name') = '"Alice"')
+8. For partial text search, use LIKE with wildcards: '"%value%"' (e.g. WHERE json_extract_string(chunk_data, '$.name') LIKE '"%Alice%"')
+9. Output ONLY the SQL, no explanations"""
         user_prompt = """Table: {}
 Fields (EXACT case): {}
 {}
@@ -1125,9 +1139,13 @@ Write SQL using exact field names above. Include doc_id, docnm_kwd for data quer
         logging.debug(f"use_sql: Executing SQL retrieval (attempt {tried_times})")
         tbl = settings.retriever.sql_retrieval(sql, format="json")
         if tbl is None:
-            logging.debug("use_sql: SQL retrieval returned None")
+            logging.debug("use_sql: SQL retrieval failed (returned None)")
             return None, sql
-        logging.debug(f"use_sql: SQL retrieval completed, got {len(tbl.get('rows', []))} rows")
+        row_count = len(tbl.get("rows", []))
+        if row_count == 0:
+            logging.debug("use_sql: SQL execution succeeded but returned 0 rows")
+        else:
+            logging.debug(f"use_sql: SQL retrieval completed, got {row_count} rows")
         return tbl, sql
 
     async def repair_table_for_missing_source_columns(previous_sql):
@@ -1715,6 +1733,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     full_answer = last_state.full_text if last_state else ""
     final = await decorate_answer(_extract_visible_answer(full_answer))
     final["final"] = True
+    final["answer"] = ""
     yield final
 
 

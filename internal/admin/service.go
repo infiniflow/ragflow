@@ -26,11 +26,11 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"ragflow/internal/cache"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/elasticsearch"
+	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
@@ -211,8 +211,8 @@ func generateRandomHex(n int) string {
 }
 
 // ListUsers list all users
-func (s *Service) ListUsers() ([]map[string]interface{}, error) {
-	users, _, err := s.userDAO.List(0, 0)
+func (s *Service) ListUsers(page, pageSize int) ([]map[string]interface{}, error) {
+	users, _, err := s.userDAO.List(page*pageSize, pageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -250,12 +250,12 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 		return nil, fmt.Errorf("User '%s' already exists", username)
 	}
 
-	decryptedPassword, err := DecryptPassword(password)
+	decryptedPassword, err := common.DecryptPassword(password)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt password: %w", err)
 	}
 
-	hashedPassword, err := GenerateWerkzeugPasswordHash(decryptedPassword, 150000)
+	hashedPassword, err := common.GenerateWerkzeugPasswordHash(decryptedPassword)
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
@@ -770,16 +770,16 @@ func (s *Service) ChangePassword(username, newPassword string) error {
 
 	user := userList[0]
 
-	decryptedPassword, err := DecryptPassword(newPassword)
+	decryptedPassword, err := common.DecryptPassword(newPassword)
 	if err != nil {
 		return fmt.Errorf("failed to decrypt password: %w", err)
 	}
 
-	if user.Password != nil && CheckWerkzeugPassword(decryptedPassword, *user.Password) {
+	if user.Password != nil && common.CheckWerkzeugPassword(decryptedPassword, *user.Password) {
 		return nil
 	}
 
-	hashedPassword, err := GenerateWerkzeugPasswordHash(decryptedPassword, 150000)
+	hashedPassword, err := common.GenerateWerkzeugPasswordHash(decryptedPassword)
 	if err != nil {
 		return fmt.Errorf("failed to hash password: %w", err)
 	}
@@ -1020,68 +1020,6 @@ func (s *Service) DeleteUserAPIToken(username, key string) error {
 	return nil
 }
 
-// Role management methods
-
-// ListRoles list all roles
-func (s *Service) ListRoles() ([]map[string]interface{}, error) {
-	// TODO: Implement list roles
-	return []map[string]interface{}{}, nil
-}
-
-// CreateRole create a new role
-func (s *Service) CreateRole(roleName, description string) (map[string]interface{}, error) {
-	// TODO: Implement create role
-	return map[string]interface{}{}, nil
-}
-
-// GetRole get role details
-func (s *Service) GetRole(roleName string) (map[string]interface{}, error) {
-	// TODO: Implement get role
-	return map[string]interface{}{}, nil
-}
-
-// UpdateRole update role
-func (s *Service) UpdateRole(roleName, description string) (map[string]interface{}, error) {
-	// TODO: Implement update role
-	return map[string]interface{}{}, nil
-}
-
-// DeleteRole delete role
-func (s *Service) DeleteRole(roleName string) error {
-	// TODO: Implement delete role
-	return nil
-}
-
-// GetRolePermission get role permissions
-func (s *Service) GetRolePermission(roleName string) ([]map[string]interface{}, error) {
-	// TODO: Implement get role permissions
-	return []map[string]interface{}{}, nil
-}
-
-// GrantRolePermission grant permission to role
-func (s *Service) GrantRolePermission(roleName string, actions []string, resource string) (map[string]interface{}, error) {
-	// TODO: Implement grant role permission
-	return map[string]interface{}{}, nil
-}
-
-// RevokeRolePermission revoke permission from role
-func (s *Service) RevokeRolePermission(roleName string, actions []string, resource string) (map[string]interface{}, error) {
-	// TODO: Implement revoke role permission
-	return map[string]interface{}{}, nil
-}
-
-// UpdateUserRole update user role
-func (s *Service) UpdateUserRole(username, roleName string) ([]map[string]interface{}, error) {
-	// TODO: Implement update user role
-	return []map[string]interface{}{}, nil
-}
-
-// GetUserPermission get user permissions
-func (s *Service) GetUserPermission(username string) ([]map[string]interface{}, error) {
-	// TODO: Implement get user permissions
-	return []map[string]interface{}{}, nil
-}
-
 // ListServices get all services
 func (s *Service) ListServices() ([]map[string]interface{}, error) {
 	allConfigs := server.GetAllConfigs()
@@ -1206,7 +1144,7 @@ func (s *Service) getMySQLStatus(name string) (map[string]interface{}, error) {
 func (s *Service) getRedisInfo(name string) (map[string]interface{}, error) {
 	startTime := time.Now()
 
-	redisClient := cache.Get()
+	redisClient := redis.Get()
 	if redisClient == nil {
 		return map[string]interface{}{
 			"service_name": name,
@@ -1784,7 +1722,7 @@ func (s *Service) InitDefaultAdmin() error {
 		// Python: password = encode_to_base64(password) = base64.b64encode(password)
 		// Then: generate_password_hash(base64_password) creates werkzeug hash
 		password := base64.StdEncoding.EncodeToString([]byte(defaultPassword))
-		hashedPassword, err := GenerateWerkzeugPasswordHash(password, 150000)
+		hashedPassword, err := common.GenerateWerkzeugPasswordHash(password)
 		if err != nil {
 			return fmt.Errorf("failed to hash password: %w", err)
 		}
@@ -1811,6 +1749,7 @@ func (s *Service) InitDefaultAdmin() error {
 			return fmt.Errorf("failed to add tenant for admin: %w", err)
 		}
 
+		common.Info("Init default super user successfully")
 		return nil
 	}
 
@@ -1838,6 +1777,7 @@ func (s *Service) InitDefaultAdmin() error {
 		}
 	}
 
+	common.Info("Init default super user successfully")
 	return nil
 }
 

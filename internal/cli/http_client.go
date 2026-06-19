@@ -158,12 +158,12 @@ func (c *HTTPClient) Request(method, path string, authKind string, headers map[s
 		return nil, err
 	}
 	defer resp.Body.Close()
-	duration := time.Since(startTime).Seconds()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
+	duration := time.Since(startTime).Seconds()
 
 	return &Response{
 		StatusCode: resp.StatusCode,
@@ -374,6 +374,7 @@ type CurrentModel struct {
 	Provider string
 	Instance string
 	Model    string
+	ModelID  string
 }
 
 // httpClientAdapter adapts HTTPClient to ce.HTTPClientInterface

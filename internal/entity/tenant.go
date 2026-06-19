@@ -31,10 +31,10 @@ type Tenant struct {
 	TenantImg2TxtID *int64  `gorm:"column:tenant_img2txt_id;index" json:"tenant_img2txt_id,omitempty"`
 	RerankID        string  `gorm:"column:rerank_id;size:128;not null;index" json:"rerank_id"`
 	TenantRerankID  *int64  `gorm:"column:tenant_rerank_id;index" json:"tenant_rerank_id,omitempty"`
-	TTSID           *string `gorm:"column:tts_id;size:256;index" json:"tts_id,omitempty"`
+	TTSID           string  `gorm:"column:tts_id;size:256;index" json:"tts_id,omitempty"`
 	TenantTTSID     *int64  `gorm:"column:tenant_tts_id;index" json:"tenant_tts_id,omitempty"`
 	ParserIDs       string  `gorm:"column:parser_ids;size:256;not null;index" json:"parser_ids"`
-	OCRID           *string `gorm:"column:ocr_id;size:256" json:"ocr_id,omitempty"`
+	OCRID           string  `gorm:"column:ocr_id;size:256" json:"ocr_id,omitempty"`
 	TenantOCRID     *int64  `gorm:"column:tenant_ocr_id" json:"tenant_ocr_id,omitempty"`
 	Credit          int64   `gorm:"column:credit;default:512;index" json:"credit"`
 	Status          *string `gorm:"column:status;size:1;index" json:"status,omitempty"`

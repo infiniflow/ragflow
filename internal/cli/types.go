@@ -41,6 +41,7 @@ const (
 	TokenUser
 	TokenAlter
 	TokenActive
+	TokenInactive
 	TokenAdmin
 	TokenServer
 	TokenAPI
@@ -53,6 +54,7 @@ const (
 	TokenChunkStore
 	TokenOf
 	TokenAgents
+	TokenSearches
 	TokenRole
 	TokenRoles
 	TokenDescription
@@ -175,6 +177,20 @@ const (
 	TokenPull
 	TokenPending
 	TokenNoACK
+	TokenAnalyze
+	TokenSummary
+	TokenStorage
+	TokenQuota
+	TokenTree
+	TokenOrphan
+	TokenDays
+	TokenWindow
+	TokenActivity
+	TokenData
+	TokenPurge
+	TokenPlan
+	TokenPreview
+	TokenOpenaiChat
 	TokenLog
 	TokenLevel
 	TokenDebug

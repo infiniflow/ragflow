@@ -26,11 +26,10 @@ package canvas
 import (
 	"context"
 	"errors"
+	redis2 "ragflow/internal/engine/redis"
 	"time"
 
 	"github.com/redis/go-redis/v9"
-
-	"ragflow/internal/cache"
 )
 
 // runKeyPrefix is the Redis Hash key namespace for run metadata.
@@ -62,9 +61,19 @@ type RunTracker struct {
 // construction.
 func NewRunTracker(ttl time.Duration) *RunTracker {
 	var client *redis.Client
-	if rc := cache.Get(); rc != nil {
+	if rc := redis2.Get(); rc != nil {
 		client = rc.GetClient()
 	}
+	return &RunTracker{client: client, ttl: ttl}
+}
+
+// NewRunTrackerWithClient returns a tracker wired to a caller-supplied
+// redis.Client. The intended use is tests that want to drive the
+// RunTracker against an in-memory miniredis without touching the
+// global Redis cache, but the helper is exported so non-test callers
+// (multi-tenant deployments, custom Redis pools) can inject a
+// dedicated client without going through the global cache singleton.
+func NewRunTrackerWithClient(client *redis.Client, ttl time.Duration) *RunTracker {
 	return &RunTracker{client: client, ttl: ttl}
 }
 

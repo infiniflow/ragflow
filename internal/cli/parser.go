@@ -86,6 +86,8 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 		return p.parseAdminLogout()
 	case TokenPing:
 		return p.parseAdminPingServer()
+	case TokenRegister:
+		return p.parseAdminRegisterCommand()
 	case TokenList:
 		return p.parseAdminListCommand()
 	case TokenShow:
@@ -116,8 +118,7 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 		return p.parseAdminParseCommand()
 	case TokenBenchmark:
 		return p.parseAdminBenchmarkCommand()
-	case TokenRegister:
-		return p.parseAdminRegisterCommand()
+
 	case TokenStartup:
 		return p.parseAdminStartupCommand()
 	case TokenShutdown:
@@ -138,6 +139,8 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 		return p.parseAdminSaveCommand()
 	case TokenUse:
 		return p.parseAdminUseCommand()
+	case TokenPurge:
+		return p.parseAdminPurgeCommand()
 	default:
 		return nil, fmt.Errorf("unknown command: %s", p.curToken.Value)
 	}
@@ -204,6 +207,8 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseStreamCommand()
 	case TokenChat:
 		return p.parseChatCommand()
+	case TokenOpenaiChat:
+		return p.parseOpenaiChatCommand()
 	case TokenThink:
 		return p.parseThinkCommand()
 	case TokenEmbed:

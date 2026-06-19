@@ -81,7 +81,9 @@ export const ArrayContainer = (props: IJsonContainerProps) => {
       {isArray(content.value) &&
         content.value?.map((item, index) => {
           if (
-            item[parserKeyMap[content.key as keyof typeof parserKeyMap]] === ''
+            item[parserKeyMap[content.key as keyof typeof parserKeyMap]] ===
+              '' ||
+            !item[parserKey]
           ) {
             return null;
           }

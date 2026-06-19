@@ -654,7 +654,7 @@ class MinerUParser(RAGFlowPdfParser):
                     item[key] = str((subdir / item[key]).resolve())
         return data
 
-    def _transfer_to_sections(self, outputs: list[dict[str, Any]], parse_method: str = None):
+    def _transfer_to_sections(self, outputs: list[dict[str, Any]], parse_method: str = None, table_enable: bool = False):
         sections = []
         for output in outputs:
             match output.get("type"):
@@ -691,7 +691,8 @@ class MinerUParser(RAGFlowPdfParser):
                     self.logger.debug("[MinerU] Skip unsupported section type=%s", output.get("type"))
                     continue
 
-            section = self._sanitize_section_text(section)
+            if not table_enable:
+                section = self._sanitize_section_text(section)
             if not section:
                 self.logger.debug("[MinerU] Skip section after sanitization: type=%s", output.get("type"))
                 continue
@@ -837,7 +838,7 @@ class MinerUParser(RAGFlowPdfParser):
                 except Exception as e:
                     self.logger.warning(f"[MinerU] VLM image enhancement failed: {e}. Continuing without descriptions.")
 
-            return self._transfer_to_sections(outputs, parse_method), self._transfer_to_tables(outputs)
+            return self._transfer_to_sections(outputs, parse_method, enable_table), self._transfer_to_tables(outputs)
         finally:
             if temp_pdf and temp_pdf.exists():
                 try:
