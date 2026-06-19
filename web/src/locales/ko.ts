@@ -57,9 +57,9 @@ export default {
       s: 'S',
       pleaseSelect: '선택해 주세요',
       pleaseInput: '입력해 주세요',
-      submit: '제출',
+      submit: '적용',
       clear: '초기화',
-      embedIntoSite: '웹페이지에 Embed2',
+      embedIntoSite: '웹페이지에 임베드',
       openInNewTab: '새 탭에서 채팅',
       previousPage: '이전',
       nextPage: '다음',
@@ -67,7 +67,7 @@ export default {
       add: '추가',
       remove: '제거',
       search: '검색',
-      noDataFound: '데이터를 찾을 수 없습니다.',
+      noDataFound: '데이터를 찾을 수 없습니다',
       noData: '사용 가능한 데이터가 없습니다',
       promptPlaceholder: `입력하거나 /를 사용하여 변수를 빠르게 삽입하세요.`,
       mcp: {
@@ -289,11 +289,11 @@ export default {
     },
     memories: {
       llmTooltip:
-        '대화 내용을 분석하여 핵심 정보를 추출하고 구조화된 메모리 요약을 생성합니다.',
+        '대화 내용을 분석하여 핵심 정보를 추출하고, 구조화된 메모리 요약을 생성합니다.',
       embeddingModelTooltip:
         '텍스트를 수치 벡터로 변환하여 의미 유사도 검색 및 메모리 검색에 활용합니다.',
       embeddingModelError: '메모리 유형은 필수이며 "raw"는 삭제할 수 없습니다.',
-      memoryTypeTooltip: `Raw: 사용자와 에이전트 간의 원본 대화 내용 (기본 필수).\n시맨틱 메모리: 사용자와 세계에 대한 일반 지식 및 사실.\n에피소딕 메모리: 특정 이벤트와 경험의 타임스탬프 기록.\n절차적 메모리: 학습된 스킬, 습관 및 자동화된 절차.`,
+      memoryTypeTooltip: `Raw: 사용자와 에이전트 간의 원본 대화 내용 (기본 필수).\nSemantic: 사용자와 세계에 대한 일반 지식 및 사실.\nEpisodic: 특정 이벤트와 경험의 타임스탬프 기록.\nProcedural: 학습된 스킬, 습관 및 자동화된 절차.`,
       raw: 'raw',
       semantic: 'semantic',
       episodic: 'episodic',
@@ -397,8 +397,7 @@ export default {
           '필드 이름이 이미 존재합니다. 중복된 항목을 병합할까요?',
         fieldExists: '필드가 이미 존재합니다.',
         fieldSetting: '필드 설정',
-        changesAffectNewParses:
-          '변경 사항은 새로 파싱되는 항목에만 적용됩니다.',
+        changesAffectNewParses: '변경 사항은 새로 파싱되는 항목에만 적용됩니다',
         // editMetadataForDataset: 'View and edit metadata for ',
         restrictDefinedValues: '정의된 값으로 제한',
         metadataGenerationSettings: '메타데이터 생성 설정',
@@ -444,7 +443,7 @@ export default {
       generate: '생성',
       raptor: 'RAPTOR',
       processingType: '처리 유형',
-      dataPipeline: '수집 파이프라인 전환 또는 설정.',
+      dataPipeline: '수집 파이프라인 설정',
       dataPipelineTitle: '수집 파이프라인',
       operations: '작업',
       taskId: '작업 ID',
@@ -504,10 +503,10 @@ export default {
       noTestResultsForNotRuned:
         '아직 테스트가 실행되지 않았습니다. 결과가 여기에 표시됩니다.',
       testingDescription:
-        'RAGFlow가 LLM에 전달하고자 하는 내용을 정확히 가져올 수 있는지 확인하는 검색 테스트를 실행하세요. 키워드 유사도 가중치나 유사도 임계값 등 기본 설정을 조정하여 최적의 결과를 얻었다면, 해당 변경 사항은 자동으로 저장되지 않으므로 채팅 어시스턴트 설정 또는 검색 에이전트 컴포넌트 설정에 적용해야 합니다.',
+        'RAGFlow가 LLM에 전달하고자 하는 내용을 정확히 가져올 수 있는지 확인하는 검색 테스트를 실행하세요.\n키워드 유사도 가중치나 유사도 임계값 등 기본 설정을 조정하여 최적의 결과를 얻었다면, 해당 변경 사항은 자동으로 저장되지 않으므로 채팅 어시스턴트 설정 또는 검색 에이전트 컴포넌트 설정에 적용해야 합니다.',
       similarityThreshold: '유사도 임계값',
       similarityThresholdTip:
-        'RAGFlow는 검색 시 가중 키워드 유사도와 가중 벡터 코사인 유사도, 또는 가중 키워드 유사도와 가중 rerank 점수의 조합을 사용합니다. 이 파라미터는 사용자 쿼리와 chunk 간 유사도 임계값을 설정합니다. 이 임계값보다 낮은 유사도 점수를 가진 chunk는 결과에서 제외됩니다. 기본 임계값은 0.2이며, 하이브리드 유사도 점수가 20 이상인 chunk만 검색됩니다.',
+        'RAGFlow는 검색 시 가중 키워드 유사도와 가중 벡터 코사인 유사도, 또는 가중 키워드 유사도와 가중 rerank 점수의 조합을 사용합니다. 이 파라미터는 사용자 쿼리와 chunk 간 유사도 임계값을 설정합니다.\n이 임계값보다 낮은 유사도 점수를 가진 chunk는 결과에서 제외됩니다. 기본 임계값은 0.2이며, 하이브리드 유사도 점수가 20 이상인 chunk만 검색됩니다.',
       vectorSimilarityWeight: '벡터 유사도 가중치',
       vectorSimilarityWeightTip:
         '벡터 코사인 유사도 또는 rerank 점수와 함께 사용되는 결합 유사도 점수에서 키워드 유사도의 가중치를 설정합니다. 두 가중치의 합은 1.0이어야 합니다.',
@@ -539,7 +538,7 @@ export default {
       toMessage: '끝 페이지 번호를 입력해 주세요 (끝 번호는 포함되지 않습니다)',
       layoutRecognize: 'PDF 파서',
       layoutRecognizeTip:
-        '비전 모델을 사용하여 PDF 레이아웃을 분석하고 문서 제목, 텍스트 블록, 이미지 및 표를 효과적으로 찾습니다. naive 옵션을 선택하면 PDF의 일반 텍스트만 검색됩니다. 이 옵션은 현재 PDF 문서에만 적용됩니다.',
+        '비전 모델을 사용하여 PDF 레이아웃을 분석하고 문서 제목, 텍스트 블록, 이미지 및 표를 효과적으로 찾습니다. Naive 옵션을 선택하면 PDF의 일반 텍스트만 검색됩니다. 이 옵션은 현재 PDF 문서에만 적용됩니다.',
       taskPageSize: '작업 페이지 크기',
       taskPageSizeMessage: '작업 페이지 크기를 입력해 주세요',
       taskPageSizeTip: `레이아웃 인식 중 PDF 파일은 처리 속도를 높이기 위해 chunk로 분할되어 병렬로 처리됩니다. 이 파라미터는 각 chunk의 크기를 설정합니다. chunk 크기가 클수록 페이지 간에 연속적인 텍스트가 분리될 가능성이 낮아집니다.`,
@@ -611,7 +610,7 @@ export default {
         '지식 그래프, RAPTOR, 자동 메타데이터, 자동 키워드 및 자동 질문 생성에 사용됩니다. 모델 성능이 생성 품질에 영향을 줍니다.',
       globalIndexModel: '인덱싱 모델',
       settings: '설정',
-      autoMetadataTip: `메타데이터를 자동으로 생성합니다. 파싱 중 새 파일에 적용됩니다. 기존 파일은 업데이트하려면 재파싱이 필요합니다 (chunk는 유지됩니다). '설정'에서 지정된 인덱싱 모델이 추가 토큰을 소비합니다.`,
+      autoMetadataTip: `메타데이터를 자동으로 생성합니다. 파싱 시 새로 추가되는 파일에 적용되며, 기존 파일은 업데이트하려면 재파싱이 필요합니다(Chunk는 그대로 유지됩니다). 이때 '설정'에서 지정한 인덱싱 모델이 추가 토큰을 소비하니 참고하세요.`,
       imageTableContextWindow: '이미지 및 표 컨텍스트 윈도우',
       imageTableContextWindowTip:
         '이미지 및 표 위아래의 N개 토큰 텍스트를 캡처하여 더 풍부한 배경 컨텍스트를 제공합니다.',
@@ -696,11 +695,11 @@ export default {
       chunkTokenNumber: '권장 chunk 크기',
       chunkTokenNumberMessage: '텍스트 chunk 토큰 수는 필수입니다',
       embeddingModelTip:
-        '데이터셋에서 사용하는 기본 임베딩 모델입니다. 데이터셋에 chunk가 있는 경우 임베딩 모델을 전환할 때, 시스템이 호환성 확인을 위해 몇 개의 chunk를 무작위로 샘플링하고 새 임베딩 모델로 재임베딩하여 새 벡터와 기존 벡터 간의 코사인 유사도를 계산합니다. 샘플 평균 유사도가 ≥ 0.9인 경우에만 전환이 허용됩니다. 그렇지 않으면 먼저 데이터셋의 모든 chunk를 삭제해야 변경할 수 있습니다.',
+        '데이터셋에서 사용 중인 기본 임베딩 모델입니다. 데이터셋에 이미 chunk가 있는 상태에서 임베딩 모델을 변경하면, 시스템이 일부 chunk를 무작위로 샘플링해 호환성을 검사합니다. 새 모델로 해당 chunk를 다시 임베딩한 뒤 기존 벡터와의 코사인 유사도를 계산하며, 평균 유사도가 0.9 이상일 때만 모델 전환이 가능합니다. 기준을 충족하지 못하면, 데이터셋의 모든 chunk를 삭제한 후에만 모델을 변경할 수 있습니다.',
       permissionsTip:
         "'팀'으로 설정하면 모든 팀원이 데이터셋을 관리할 수 있습니다.",
       chunkTokenNumberTip:
-        'chunk 생성을 위한 토큰 임계값을 설정합니다. 이 임계값보다 토큰이 적은 세그먼트는 임계값을 초과할 때까지 다음 세그먼트와 결합되며, 그 시점에 chunk가 생성됩니다. 임계값을 초과하더라도 구분자가 나오지 않으면 새 chunk가 생성되지 않습니다.',
+        'Chunk 생성을 위한 토큰 임계값을 설정합니다. 이 임계값보다 토큰이 적은 세그먼트는 임계값을 초과할 때까지 다음 세그먼트와 결합되며, 그 시점에 chunk가 생성됩니다. 임계값을 초과하더라도 구분자가 나오지 않으면 새 chunk가 생성되지 않습니다.',
       chunkMethod: 'Chunking 방법',
       chunkMethodTip: '오른쪽의 안내를 참조하세요.',
       upload: '업로드',
@@ -839,7 +838,7 @@ export default {
 `,
       useRaptor: 'RAPTOR',
       useRaptorTip:
-        'RAPTOR는 멀티홉 질문 답변 작업에 사용할 수 있습니다. 파일 페이지로 이동하여 생성 > RAPTOR를 클릭하여 활성화하세요. 자세한 내용은 https://ragflow.io/docs/dev/enable_raptor 을 참조하세요.',
+        'RAPTOR는 멀티홉 질의응답 작업에 사용할 수 있습니다. 파일 탭에서 [생성 > RAPTOR]를 클릭하여 활성화하세요. 자세한 내용은 https://ragflow.io/docs/dev/enable_raptor 을 참조하세요.',
       prompt: '프롬프트',
       promptTip:
         'LLM의 역할, 원하는 응답 길이, 톤, 언어 등을 포함한 시스템 프롬프트를 사용하세요. 시스템 프롬프트는 LLM에 대한 다양한 데이터 입력으로 사용되는 키(변수)와 함께 자주 사용됩니다. 사용할 키를 표시하려면 슬래시 `/` 또는 (x) 버튼을 사용하세요.',
@@ -856,7 +855,7 @@ export default {
       thresholdMessage: '임계값은 필수입니다',
       clusteringMethod: '클러스터링 방법',
       clusteringMethodTip:
-        'RAPTOR 클러스터링 방법을 선택하세요. AHC는 더 큰 최대 클러스터 값을 사용할 수 있지만 대용량 입력에서 더 많은 메모리가 필요할 수 있습니다.',
+        'RAPTOR 클러스터링 방법입니다. AHC는 더 큰 최대 클러스터 값을 사용할 수 있지만, 대용량 입력에서 더 많은 메모리가 필요할 수 있습니다.',
       clusteringMethodGmm: 'GMM',
       clusteringMethodAhc: 'AHC',
       maxCluster: '최대 클러스터',
@@ -890,20 +889,20 @@ export default {
       addTag: '태그 추가',
       useGraphRag: '지식 그래프',
       useGraphRagTip:
-        '현재 데이터셋의 파일 chunk에 지식 그래프를 구성하여 중첩된 논리가 포함된 멀티홉 질문 답변을 강화합니다. 자세한 내용은 https://ragflow.io/docs/dev/construct_knowledge_graph 을 참조하세요.',
+        '현재 데이터셋의 파일 청크에 대해 지식 그래프를 구성하여, 중첩된 논리가 포함된 멀티홉 질의응답(multi-hop QA) 성능을 향상시킵니다. 자세한 내용은 https://ragflow.io/docs/dev/construct_knowledge_graph 을 참조하세요.',
       graphRagMethod: '방법',
       graphRagMethodTip: `
-      Light: (기본값) github.com/HKUDS/LightRAG에서 제공하는 프롬프트를 사용하여 엔티티와 관계를 추출합니다. 더 적은 토큰, 메모리, 연산 리소스를 소비합니다.</br>
+      Light: (기본값) github.com/HKUDS/LightRAG에서 제공하는 프롬프트를 사용하여 엔티티와 관계를 추출합니다. 더 적은 토큰, 메모리, 연산 리소스를 사용합니다.</br>
       General: github.com/microsoft/graphrag에서 제공하는 프롬프트를 사용하여 엔티티와 관계를 추출합니다.</br>
       NER: spaCy NER과 규칙 기반 키워드 추출을 사용하여 엔티티와 관계를 추출합니다. 추출 자체에 LLM이 필요하지 않아 빠르고 리소스 효율적입니다.`,
       graphRagBatchChunkTokenSize: '배치 chunk 토큰 크기',
       graphRagBatchChunkTokenSizeTip:
         '지식 그래프 엔티티 및 관계 추출을 위해 LLM에 전송되는 각 chunk 배치의 토큰 제한입니다. NER에는 적용되지 않습니다.',
       resolution: '엔티티 해석',
-      resolutionTip: `엔티티 중복 제거 스위치입니다. 활성화하면 LLM이 유사한 엔티티(예: '2025'와 '2025년', 'IT'와 '정보 기술')를 결합하여 더 정확한 그래프를 구성합니다.`,
+      resolutionTip: `엔티티 중복 제거 기능입니다. 활성화하면 LLM이 유사한 엔티티(예: '2025'와 '2025년', 'IT'와 '정보 기술')를 결합하여 더 정확한 그래프를 구성합니다.`,
       community: '커뮤니티 리포트',
       communityTip:
-        '지식 그래프에서 커뮤니티는 관계로 연결된 엔티티 클러스터입니다. LLM이 각 커뮤니티에 대한 요약(커뮤니티 리포트)을 생성할 수 있습니다. 자세한 내용은 https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/ 을 참조하세요.',
+        '지식 그래프에서 커뮤니티는 관계로 연결된 엔티티 클러스터입니다. LLM이 각 커뮤니티에 대한 요약(커뮤니티 리포트)을 생성하도록 할 수 있습니다. 자세한 내용은 https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/ 을 참조하세요.',
       theDocumentBeingParsedCannotBeDeleted:
         '파싱 중인 문서는 삭제할 수 없습니다',
       lastWeek: '지난 주 대비',
@@ -929,18 +928,17 @@ export default {
       disabled: '비활성화됨',
       keyword: '키워드',
       image: '이미지',
-      imageUploaderTitle:
-        '이 이미지 chunk를 업데이트할 새 이미지를 업로드하세요',
+      imageUploaderTitle: '이미지를 교체하려면 새 이미지를 업로드하세요',
       function: '함수',
       chunkMessage: '값을 입력해 주세요',
       full: '전체 텍스트',
-      ellipse: '줄임표',
+      ellipse: '간단히',
       graph: '지식 그래프',
       mind: '마인드맵',
       question: '질문',
-      questionTip: `질문이 주어진 경우, chunk의 임베딩은 해당 질문을 기반으로 합니다.`,
+      questionTip: `Chunk 임베딩의 기반이 될 질문을 작성해 주세요`,
       chunkResult: 'Chunk 결과',
-      chunkResultTip: `임베딩 및 검색에 사용되는 chunk 세그먼트를 확인합니다.`,
+      chunkResultTip: `임베딩 및 검색에 사용되는 chunk 세그먼트를 확인합니다`,
       enable: '활성화',
       disable: '비활성화',
       delete: '삭제',
@@ -973,7 +971,7 @@ export default {
       assistantAvatar: '어시스턴트 아바타',
       language: '언어',
       emptyResponse: '빈 응답',
-      emptyResponseTip: `쿼리에 대해 데이터셋에서 결과를 찾을 수 없을 때 표시할 응답을 설정하거나, 빈 칸으로 두면 아무것도 찾지 못했을 때 LLM이 자유롭게 응답합니다.`,
+      emptyResponseTip: `쿼리에 대해 데이터셋에서 결과를 찾을 수 없을 때 표시할 응답을 설정합니다. 빈 칸으로 두면 LLM이 자유롭게 응답합니다.`,
       emptyResponseMessage: `데이터셋에서 관련 내용을 찾지 못하면 빈 응답이 표시됩니다. 데이터셋을 선택하지 않은 경우 '빈 응답' 필드를 비워야 합니다.`,
       emptyResponsePlaceholder:
         '찾고 있는 답변을 데이터셋에서 찾을 수 없습니다',
@@ -1044,7 +1042,7 @@ export default {
       maxTokensInvalidMessage: '최대 토큰에 유효한 숫자를 입력해 주세요.',
       maxTokensMinMessage: '최대 토큰은 0보다 작을 수 없습니다.',
       quote: '인용 표시',
-      quoteTip: '원문을 참조로 표시할지 여부입니다.',
+      quoteTip: '답변과 함께 원문을 출처로 표시할지 설정합니다.',
       selfRag: 'Self-RAG',
       selfRagTip: '참조: https://huggingface.co/papers/2310.11511',
       overview: '채팅 ID',
@@ -1103,11 +1101,11 @@ export default {
       descriptionPlaceholder: '저는 채팅 어시스턴트입니다.',
       useKnowledgeGraph: '지식 그래프 사용',
       useKnowledgeGraphTip:
-        '멀티홉 질문 답변을 위해 지정된 데이터셋의 지식 그래프를 검색에 사용할지 여부입니다. 활성화하면 엔티티, 관계 및 커뮤니티 리포트 chunk 전체에 걸쳐 반복 검색이 수행되어 검색 시간이 크게 증가합니다.',
+        '멀티홉 질의응답을 위한 검색 시, 지정된 데이터셋의 지식 그래프를 사용할 수 있습니다. 이 옵션을 활성화하면 엔티티, 관계 및 커뮤니티 리포트 chunk 전체에 걸쳐 반복 검색이 수행되어 검색 시간이 크게 증가합니다.',
       keyword: '키워드 분석',
       keywordTip: `LLM을 사용하여 사용자 질문을 분석하고, 관련성 계산 시 강조될 키워드를 추출합니다. 긴 쿼리에 효과적이지만 응답 시간이 증가합니다.`,
       languageTip:
-        '지정된 언어로 문장을 재작성하거나, 선택하지 않으면 최신 질문으로 기본 설정됩니다.',
+        '지정된 언어로 문장을 재작성할 수 있으며, 선택하지 않으면 가장 최근 질문을 기본값으로 사용합니다.',
       avatarHidden: '아바타 숨기기',
       locale: '지역',
       selectLanguage: '언어 선택',
@@ -1119,7 +1117,7 @@ export default {
       tavilyApiKeyHelp: '어떻게 얻나요?',
       crossLanguage: '크로스 언어 검색',
       crossLanguagePlaceholder: '값 선택',
-      crossLanguageTip: `크로스 언어 검색을 위한 언어를 하나 이상 선택하세요. 언어를 선택하지 않으면 시스템이 원본 쿼리로 검색합니다.`,
+      crossLanguageTip: `교차 언어(cross-language) 검색을 위해 언어를 하나 이상 선택하세요. 언어를 선택하지 않으면 시스템은 원본 쿼리로 검색합니다.`,
       createChat: '채팅 만들기',
       metadata: '메타데이터',
       metadataTip:
@@ -1136,7 +1134,7 @@ export default {
       cancel: '취소',
       chatSetting: '채팅 설정',
       tocEnhance: 'PageIndex',
-      tocEnhanceTip: ` 문서 파싱 중 목차 정보가 생성되었습니다 (일반 방법의 '목차 추출 활성화' 옵션 참조). 이를 통해 대형 모델이 사용자 쿼리와 관련된 목차 항목을 반환하고, 해당 항목을 사용하여 관련 chunk를 검색하며 정렬 과정에서 가중치를 적용할 수 있습니다. 이 방식은 책에서 인간이 정보를 검색하는 방식을 모방합니다.`,
+      tocEnhanceTip: `문서 파싱 과정에서 목차 정보가 생성됩니다(일반 방법의 '목차 추출 활성화' 옵션 참조). 이 정보를 활용하면 대형 모델이 사용자 질의와 관련된 목차 항목을 반환하고, 이를 바탕으로 관련 청크를 검색한 뒤 정렬 시 해당 청크에 가중치를 부여할 수 있습니다. 책에서 목차를 보고 원하는 정보를 찾아가는 사람의 행동 방식을 모방한 방식입니다.`,
       batchDeleteSessions: '일괄 삭제',
       deleteSelectedConfirm: '선택한 {{count}}개의 세션을 삭제하시겠습니까?',
     },
@@ -1464,7 +1462,7 @@ export default {
       profile: '프로필',
       avatar: '아바타',
       avatarTip: '프로필에 표시됩니다.',
-      profileDescription: '여기서 사진과 개인 정보를 업데이트하세요.',
+      profileDescription: '프로필 사진과 개인 정보를 업데이트하세요.',
       maxTokens: '최대 토큰',
       maxTokensMessage: '최대 토큰은 필수입니다',
       maxTokensTip: `모델의 최대 컨텍스트 크기입니다. 잘못된 값은 오류를 발생시킵니다. 기본값은 512입니다.`,
@@ -1569,7 +1567,7 @@ export default {
       sequence2txtModelTip:
         '새로 생성된 각 데이터셋의 기본 ASR 모델입니다. 이 모델을 사용하여 음성을 텍스트로 변환하세요.',
       rerankModel: 'Rerank',
-      rerankModelTip: `chunk rerank를 위한 기본 rerank 모델입니다. 드롭다운에서 모델을 찾을 수 없으면 https://ragflow.io/docs/dev/supported_models 에서 모델 제공업체가 이 모델을 지원하는지 확인하세요.`,
+      rerankModelTip: `Chunk rerank를 위한 기본 rerank 모델입니다. 드롭다운에서 모델을 찾을 수 없으면 https://ragflow.io/docs/dev/supported_models 에서 모델 제공업체가 이 모델을 지원하는지 확인하세요.`,
       ttsModel: 'TTS',
       ttsModelTip:
         '기본 텍스트 음성 변환 모델입니다. 드롭다운에서 모델을 찾을 수 없으면 https://ragflow.io/docs/dev/supported_models 에서 모델 제공업체가 이 모델을 지원하는지 확인하세요.',
@@ -1992,7 +1990,7 @@ export default {
       run: '실행',
       save: '저장',
       title: 'ID:',
-      beginDescription: '플로우가 시작되는 곳입니다.',
+      beginDescription: '플로우의 시작점',
       answerDescription: `사람과 봇 사이의 인터페이스 역할을 하는 구성 요소로, 사용자 입력을 받고 에이전트의 응답을 표시합니다.`,
       retrievalDescription: `지정된 데이터셋에서 정보를 검색하는 구성 요소입니다. 선택한 데이터셋이 동일한 임베딩 모델을 사용하는지 확인하세요.`,
       generateDescription: `LLM이 응답을 생성하도록 프롬프트하는 구성 요소입니다. 프롬프트가 올바르게 설정되었는지 확인하세요.`,
@@ -2498,10 +2496,10 @@ export default {
 여러 브랜치의 변수를 단일 변수로 집계하여 다운스트림 노드에 대한 통합 설정을 달성하는 프로세스입니다.`,
       inputVariables: '입력 변수',
       runningHintText: '실행 중...🕞',
-      openingSwitch: '시작 스위치',
+      openingSwitch: '인사말 보기',
       openingCopy: '시작 인사말',
-      openingSwitchTip: '사용자가 처음에 이 환영 메시지를 보게 됩니다.',
-      modeTip: '모드는 워크플로우가 시작되는 방식을 정의합니다.',
+      openingSwitchTip: '사용자가 처음에 시작 인사말을 보게 됩니다.',
+      modeTip: '워크플로우가 시작되는 방식을 정의합니다.',
       mode: '모드',
       conversational: '대화형',
       task: '작업',
@@ -2577,7 +2575,7 @@ export default {
         '이 버전이 프로덕션에 게시되었습니다. API 또는 임베디드 페이지를 통해 접근하세요.',
       confirmPublish: '게시 확인',
       publishIngestionPipeline: '이 수집 파이프라인을 게시하려고 합니다.',
-      publishAgent: '이 에이전트를 게시하려고 합니다',
+      publishAgent: '아래 에이전트를 게시합니다',
       linkedDataset: '연결된 데이터셋:',
       lastPublished: '마지막 게시',
       createFromBlank: '빈 템플릿에서 만들기',
@@ -2844,7 +2842,7 @@ Important structured information may include: names, dates, locations, events, k
       createSearch: '검색 만들기',
       searchGreeting: '오늘 무엇을 도와드릴까요？',
       profile: '프로필 숨기기',
-      locale: '로케일',
+      locale: '지역',
       embedCode: '임베드 코드',
       id: 'ID',
       copySuccess: '복사 성공',
