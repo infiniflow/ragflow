@@ -152,9 +152,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.DELETE("/users/data", r.handler.PurgeUsersData)
 
 			// API Keys
+			protected.POST("/users/:username/keys", r.handler.CreateUserAPIKey)
+
 			protected.GET("/users/:username/keys", r.handler.ListUserAPITokens)
 			protected.GET("/users/:username/tokens", r.handler.ListUserAPITokens)
-			protected.POST("/users/:username/keys", r.handler.GenerateUserAPIToken)
+			//protected.POST("/users/:username/keys", r.handler.GenerateUserAPIToken)
 			protected.POST("/users/:username/tokens", r.handler.GenerateUserAPIToken)
 			protected.DELETE("/users/:username/keys/:token", r.handler.DeleteUserAPIToken)
 			protected.DELETE("/users/:username/tokens/:token", r.handler.DeleteUserAPIToken)

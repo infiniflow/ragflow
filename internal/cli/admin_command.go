@@ -387,8 +387,8 @@ func (c *CLI) RevokeAdmin(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// CreateUser creates a new user (admin mode only)
-func (c *CLI) CreateUser(cmd *Command) (ResponseIf, error) {
+// AdminCreateUserCommand creates a new user (admin mode only)
+func (c *CLI) AdminCreateUserCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -433,6 +433,45 @@ func (c *CLI) CreateUser(cmd *Command) (ResponseIf, error) {
 	if result.Code != 0 {
 		return nil, fmt.Errorf("%s", result.Message)
 	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// AdminCreateUserAPIKeyCommand creates a new user API key (admin mode only)
+func (c *CLI) AdminCreateUserAPIKeyCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	userName, ok := cmd.Params["user_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("user_name not provided")
+	}
+
+	apiURL := fmt.Sprintf("/admin/users/%s/keys", userName)
+
+	resp, err := c.AdminServerClient.Request("POST", apiURL, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create API key: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to create API key: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("create API key failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	delete(result.Data, "update_date")
+	delete(result.Data, "update_time")
+	delete(result.Data, "create_time")
+
 	result.Duration = resp.Duration
 	return &result, nil
 }

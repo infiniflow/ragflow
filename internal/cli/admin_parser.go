@@ -628,7 +628,7 @@ func (p *Parser) parseAdminCreateCommand() (*Command, error) {
 
 	switch p.curToken.Type {
 	case TokenUser:
-		return p.parseCreateUser()
+		return p.parseAdminCreateUserCommand()
 	case TokenRole:
 		return p.parseAdminCreateRoleCommand()
 	case TokenModel:
@@ -644,40 +644,54 @@ func (p *Parser) parseAdminCreateCommand() (*Command, error) {
 	}
 }
 
-func (p *Parser) parseAdminCreateToken() (*Command, error) {
-	p.nextToken() // consume TOKEN
-
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-
-	return NewCommand("create_token"), nil
-}
-
-func (p *Parser) parseAdminCreateUser() (*Command, error) {
+func (p *Parser) parseAdminCreateUserCommand() (*Command, error) {
 	p.nextToken() // consume USER
 	userName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-
 	p.nextToken()
-	password, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
+
+	var cmd *Command
+	switch p.curToken.Type {
+	case TokenQuotedString:
+		var password string
+		password, err = p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		p.nextToken()
+
+		cmd = NewCommand("admin_create_user_command")
+		cmd.Params["user_name"] = userName
+		cmd.Params["password"] = password
+		cmd.Params["role"] = "user"
+	case TokenKey:
+		return p.parseAdminCreateUserAPIKeyCommand(userName)
+	default:
+		return nil, fmt.Errorf("expected password or KEY after USER, got %s", p.curToken.Value)
 	}
 
-	cmd := NewCommand("create_user")
-	cmd.Params["user_name"] = userName
-	cmd.Params["password"] = password
-	cmd.Params["role"] = "user"
-
-	p.nextToken()
 	// Semicolon is optional for UNSET TOKEN
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
+
+	return cmd, nil
+}
+
+// CREATE USER 'user@example.com' KEY;
+func (p *Parser) parseAdminCreateUserAPIKeyCommand(userName string) (*Command, error) {
+	p.nextToken() // consume KEY
+
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("admin_create_user_api_key_command")
+	cmd.Params["user_name"] = userName
+
 	return cmd, nil
 }
 

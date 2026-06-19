@@ -979,3 +979,16 @@ func (h *Handler) PurgeUsersData(c *gin.Context) {
 
 	success(c, result, "")
 }
+
+// CreateUserAPIKey handle create tenant API key
+func (h *Handler) CreateUserAPIKey(c *gin.Context) {
+	username := c.Param("username")
+
+	apiKey, err := h.service.CreateUserAPIKey(username)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, apiKey, "API key generated successfully")
+}

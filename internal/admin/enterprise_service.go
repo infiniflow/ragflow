@@ -687,6 +687,24 @@ func (s *Service) PurgeUsersData(preview bool, days int, userPlan *string, userA
 	return result, nil
 }
 
+// CreateUserAPIKey create tenant API key for tenant
+func (s *Service) CreateUserAPIKey(username string) (map[string]interface{}, error) {
+
+	user, err := s.userDAO.GetByEmail(username)
+	if err != nil {
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
+
+	result := map[string]interface{}{
+		"command":  "create_user_api_key",
+		"email":    user.Email,
+		"nickname": user.Nickname,
+		"error":    "'Create user API key' is implemented in enterprise edition",
+	}
+
+	return result, nil
+}
+
 func (s *Service) ListIngestionTasksByCondition(email, status *string) ([]map[string]interface{}, error) {
 
 	if email == nil && status == nil {
