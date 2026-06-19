@@ -49,6 +49,10 @@ chat_limiter = LoopLocalSemaphore(int(os.environ.get("MAX_CONCURRENT_CHATS", 10)
 _INSERT_BULK_SIZE = max(1, int(os.environ.get("GRAPHRAG_INSERT_BULK_SIZE", 64)))
 _INSERT_CONCURRENCY = max(1, int(os.environ.get("GRAPHRAG_INSERT_CONCURRENCY", 4)))
 
+# Embedding batch size for GraphRAG node/edge texts.  Batching reduces HTTP
+# request overhead for large knowledge graphs.  Override with GRAPHRAG_EMBED_BATCH_SIZE.
+_EMBED_BATCH_SIZE = max(1, int(os.environ.get("GRAPHRAG_EMBED_BATCH_SIZE", 64)))
+
 
 async def insert_chunks_bounded(chunks, tenant_id, kb_id, *, callback=None, label="Insert chunks"):
     """Insert ``chunks`` into the doc store in batches with bounded concurrency and retries.
@@ -371,9 +375,8 @@ def chunk_id(chunk):
     return xxhash.xxh64((chunk["content_with_weight"] + chunk["kb_id"]).encode("utf-8")).hexdigest()
 
 
-async def graph_node_to_chunk(kb_id, embd_mdl, ent_name, meta, chunks, nhop_neighbors=None):
-    global chat_limiter
-    enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
+def build_node_chunk(kb_id, ent_name, meta, nhop_neighbors=None):
+    """Build a node chunk dict without embedding. Returns (chunk, cached_embedding_or_None, text_to_embed)."""
     chunk = {
         "id": get_uuid(),
         "important_kwd": [ent_name],
@@ -393,19 +396,14 @@ async def graph_node_to_chunk(kb_id, embd_mdl, ent_name, meta, chunks, nhop_neig
         "available_int": 0,
     }
     chunk["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(chunk["content_ltks"])
-    ebd = get_embed_cache(embd_mdl.llm_name, ent_name)
-    if ebd is None:
-        async with chat_limiter:
-            timeout = 3 if enable_timeout_assertion else 30000000
-            ebd, _ = await asyncio.wait_for(
-                thread_pool_exec(embd_mdl.encode, [ent_name]),
-                timeout=timeout
-            )
-        ebd = ebd[0]
-        set_embed_cache(embd_mdl.llm_name, ent_name, ebd)
+    return chunk
+
+
+def apply_embedding(chunk, ebd, embd_mdl, text):
+    """Apply embedding vector to chunk and update cache."""
     assert ebd is not None
     chunk["q_%d_vec" % len(ebd)] = ebd
-    chunks.append(chunk)
+    set_embed_cache(embd_mdl.llm_name, text, ebd)
 
 
 @timeout(3, 3)
@@ -430,8 +428,8 @@ async def get_relation(tenant_id, kb_id, from_ent_name, to_ent_name, size=1):
     return res
 
 
-async def graph_edge_to_chunk(kb_id, embd_mdl, from_ent_name, to_ent_name, meta, chunks):
-    enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
+def build_edge_chunk(kb_id, from_ent_name, to_ent_name, meta):
+    """Build an edge chunk dict without embedding. Returns (chunk, text_to_embed)."""
     chunk = {
         "id": get_uuid(),
         "from_entity_kwd": from_ent_name,
@@ -447,22 +445,7 @@ async def graph_edge_to_chunk(kb_id, embd_mdl, from_ent_name, to_ent_name, meta,
     }
     chunk["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(chunk["content_ltks"])
     txt = f"{from_ent_name}->{to_ent_name}"
-    ebd = get_embed_cache(embd_mdl.llm_name, txt)
-    if ebd is None:
-        async with chat_limiter:
-            timeout = 3 if enable_timeout_assertion else 300000000
-            ebd, _ = await asyncio.wait_for(
-                thread_pool_exec(
-                    embd_mdl.encode,
-                    [txt + f": {meta['description']}"]
-                ),
-                timeout=timeout
-            )
-        ebd = ebd[0]
-        set_embed_cache(embd_mdl.llm_name, txt, ebd)
-    assert ebd is not None
-    chunk["q_%d_vec" % len(ebd)] = ebd
-    chunks.append(chunk)
+    return chunk, txt
 
 
 async def does_graph_contains(tenant_id, kb_id, doc_id):
@@ -552,42 +535,83 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
             }
         )
 
-    tasks = []
+    # Build all node chunks and collect cache misses for batch embedding
+    node_chunks = []
+    miss_texts = []
+    miss_indices = []
     for ii, node in enumerate(change.added_updated_nodes):
         node_attrs = graph.nodes[node]
         nhop_neighbors = n_neighbor(graph, node)
-        tasks.append(asyncio.create_task(
-            graph_node_to_chunk(kb_id, embd_mdl, node, node_attrs, chunks, nhop_neighbors)
-        ))
+        chunk = build_node_chunk(kb_id, node, node_attrs, nhop_neighbors)
+        node_chunks.append(chunk)
+        cached_ebd = get_embed_cache(embd_mdl.llm_name, node)
+        if cached_ebd is not None:
+            apply_embedding(chunk, cached_ebd, embd_mdl, node)
+        else:
+            miss_texts.append(node)
+            miss_indices.append(len(node_chunks) - 1)
         if ii % 100 == 9 and callback:
             callback(msg=f"Get embedding of nodes: {ii}/{len(change.added_updated_nodes)}")
-    try:
-        await asyncio.gather(*tasks, return_exceptions=False)
-    except Exception as e:
-        logging.error(f"Error in get_embedding_of_nodes: {e}")
-        for t in tasks:
-            t.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-        raise
 
-    tasks = []
+    # Batch encode all cache misses (for nodes, cache key == encode text)
+    enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
+    total_node_batches = max(1, (len(miss_texts) + _EMBED_BATCH_SIZE - 1) // _EMBED_BATCH_SIZE)
+    for batch_idx, i in enumerate(range(0, len(miss_texts), _EMBED_BATCH_SIZE)):
+        batch_texts = miss_texts[i:i + _EMBED_BATCH_SIZE]
+        if callback:
+            callback(msg=f"Encoding node batch {batch_idx + 1}/{total_node_batches} ({len(batch_texts)} texts)")
+        async with chat_limiter:
+            timeout = 3 if enable_timeout_assertion else 30000000
+            ebds, _ = await asyncio.wait_for(
+                thread_pool_exec(embd_mdl.encode, batch_texts),
+                timeout=timeout
+            )
+        for j, ebd in enumerate(ebds):
+            idx = miss_indices[i + j]
+            apply_embedding(node_chunks[idx], ebd, embd_mdl, batch_texts[j])
+
+    chunks.extend(node_chunks)
+
+    # Build all edge chunks and collect cache misses for batch embedding.
+    # Cache is keyed by the short "A->B" text; encode uses the longer "A->B: description".
+    edge_chunks = []
+    miss_texts = []       # full text sent to encoder
+    miss_cache_keys = []  # short key used for cache lookup/store
+    miss_indices = []
     for ii, (from_node, to_node) in enumerate(change.added_updated_edges):
         edge_attrs = graph.get_edge_data(from_node, to_node)
         if not edge_attrs:
             continue
-        tasks.append(asyncio.create_task(
-            graph_edge_to_chunk(kb_id, embd_mdl, from_node, to_node, edge_attrs, chunks)
-        ))
+        chunk, txt = build_edge_chunk(kb_id, from_node, to_node, edge_attrs)
+        edge_chunks.append(chunk)
+        cached_ebd = get_embed_cache(embd_mdl.llm_name, txt)
+        if cached_ebd is not None:
+            apply_embedding(chunk, cached_ebd, embd_mdl, txt)
+        else:
+            miss_texts.append(txt + f": {edge_attrs['description']}")
+            miss_cache_keys.append(txt)
+            miss_indices.append(len(edge_chunks) - 1)
         if ii % 100 == 9 and callback:
             callback(msg=f"Get embedding of edges: {ii}/{len(change.added_updated_edges)}")
-    try:
-        await asyncio.gather(*tasks, return_exceptions=False)
-    except Exception as e:
-        logging.error(f"Error in get_embedding_of_edges: {e}")
-        for t in tasks:
-            t.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-        raise
+
+    # Batch encode all cache misses, storing results under the short cache key.
+    total_edge_batches = max(1, (len(miss_texts) + _EMBED_BATCH_SIZE - 1) // _EMBED_BATCH_SIZE)
+    for batch_idx, i in enumerate(range(0, len(miss_texts), _EMBED_BATCH_SIZE)):
+        batch_texts = miss_texts[i:i + _EMBED_BATCH_SIZE]
+        batch_keys = miss_cache_keys[i:i + _EMBED_BATCH_SIZE]
+        if callback:
+            callback(msg=f"Encoding edge batch {batch_idx + 1}/{total_edge_batches} ({len(batch_texts)} texts)")
+        async with chat_limiter:
+            timeout = 3 if enable_timeout_assertion else 30000000
+            ebds, _ = await asyncio.wait_for(
+                thread_pool_exec(embd_mdl.encode, batch_texts),
+                timeout=timeout
+            )
+        for j, ebd in enumerate(ebds):
+            idx = miss_indices[i + j]
+            apply_embedding(edge_chunks[idx], ebd, embd_mdl, batch_keys[j])
+
+    chunks.extend(edge_chunks)
 
     now = asyncio.get_running_loop().time()
     if callback:
