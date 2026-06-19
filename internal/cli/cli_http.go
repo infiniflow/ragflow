@@ -53,6 +53,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.RevokeAdmin(cmd)
 	case "create_user":
 		return c.CreateUser(cmd)
+	case "admin_create_role_command":
+		return c.AdminCreateRoleCommand(cmd)
 	case "activate_user":
 		return c.ActivateUser(cmd)
 	case "alter_user":
@@ -61,8 +63,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.DropUser(cmd)
 	case "show_service":
 		return c.ShowService(cmd)
-	case "show_version":
-		return c.ShowAdminVersion(cmd)
+	case "admin_show_version_command":
+		return c.AdminShowVersionCommand(cmd)
 	case "show_current":
 		return c.ShowCommonCurrent(cmd)
 	case "list_variables":

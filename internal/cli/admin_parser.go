@@ -630,7 +630,7 @@ func (p *Parser) parseAdminCreateCommand() (*Command, error) {
 	case TokenUser:
 		return p.parseCreateUser()
 	case TokenRole:
-		return p.parseCreateRole()
+		return p.parseAdminCreateRoleCommand()
 	case TokenModel:
 		return p.parseCreateModelProvider()
 	case TokenDataset:
@@ -681,20 +681,21 @@ func (p *Parser) parseAdminCreateUser() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseAdminCreateRole() (*Command, error) {
+func (p *Parser) parseAdminCreateRoleCommand() (*Command, error) {
 	p.nextToken() // consume ROLE
-	roleName, err := p.parseIdentifier()
+	roleName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 
-	cmd := NewCommand("create_role")
+	cmd := NewCommand("admin_create_role_command")
 	cmd.Params["role_name"] = roleName
 
 	p.nextToken()
 	if p.curToken.Type == TokenDescription {
 		p.nextToken()
-		description, err := p.parseQuotedString()
+		var description string
+		description, err = p.parseQuotedString()
 		if err != nil {
 			return nil, err
 		}
@@ -1968,7 +1969,7 @@ func (p *Parser) parseAdminShowVersionCommand() (*Command, error) {
 		p.nextToken()
 	}
 
-	return NewCommand("show_version"), nil
+	return NewCommand("admin_show_version_command"), nil
 }
 
 // SHOW CURRENT;

@@ -58,7 +58,7 @@ func (c *CLI) PingAdmin(cmd *Command) (ResponseIf, error) {
 
 // Show admin version to show RAGFlow admin version
 // Returns benchmark result map if iterations > 1, otherwise prints status
-func (c *CLI) ShowAdminVersion(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowVersionCommand(cmd *Command) (ResponseIf, error) {
 	// Get iterations from command params (for benchmark)
 	iterations := 1
 	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
@@ -206,21 +206,21 @@ func (c *CLI) ShowRole(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// CreateRole creates a new role (admin mode only)
-func (c *CLI) CreateRole(cmd *Command) (ResponseIf, error) {
+// AdminCreateRoleCommand creates a new role (admin mode only)
+func (c *CLI) AdminCreateRoleCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	roleName, ok := cmd.Params["role_name"].(string)
 	if !ok {
-		return nil, fmt.Errorf("user_name not provided")
+		return nil, fmt.Errorf("role_name not provided")
 	}
 
-	description, ok := cmd.Params["description"].(string)
 	payload := map[string]interface{}{
 		"role_name": roleName,
 	}
+	description, ok := cmd.Params["description"].(string)
 	if ok {
 		payload["description"] = description
 	}
@@ -234,7 +234,7 @@ func (c *CLI) CreateRole(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to create role: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result SimpleResponse
+	var result CommonDataResponse
 
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("create role failed: invalid JSON (%w)", err)
