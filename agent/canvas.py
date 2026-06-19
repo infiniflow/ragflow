@@ -615,6 +615,7 @@ class Canvas(Graph):
                     if self.path[-1] == cpn_id:
                         return
                     if self.components.get(cpn_id) is None:
+                        logging.error(f"Invalid component reference in canvas execution: component '{cpn_id}' not found. Current path: {self.path}")
                         raise ValueError(f"Component '{cpn_id}' not found in canvas")
                     self.path.append(cpn_id)
 
