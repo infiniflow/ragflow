@@ -2578,8 +2578,31 @@ func (p *Parser) parseAdminListUserCommand() (*Command, error) {
 			cmd.Params["status"] = status
 			p.nextToken()
 		}
+	case TokenDatasets:
+		p.nextToken()
+		cmd = NewCommand("admin_list_user_datasets_command")
+	case TokenAgents:
+		p.nextToken()
+		cmd = NewCommand("admin_list_user_agents_command")
+	case TokenChats:
+		p.nextToken()
+		cmd = NewCommand("admin_list_user_chats_command")
+	case TokenSearches:
+		p.nextToken()
+		cmd = NewCommand("admin_list_user_searches_command")
+	case TokenModels:
+		p.nextToken()
+		cmd = NewCommand("admin_list_user_models_command")
+	case TokenFiles:
+		p.nextToken()
+		cmd = NewCommand("admin_list_user_files_command")
 	default:
-		return nil, fmt.Errorf("expected INGESTION after USER")
+		return nil, fmt.Errorf("expected INGESTION or DATASETS or AGENTS or CHATS or SEARCHES or MODELS or FILES after USER")
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 
 	cmd.Params["user_name"] = userName

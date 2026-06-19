@@ -443,40 +443,6 @@ func (h *Handler) RevokeAdmin(c *gin.Context) {
 	successNoData(c, "Admin role revoked")
 }
 
-// GetUserDatasets handle get user datasets
-func (h *Handler) GetUserDatasets(c *gin.Context) {
-	username := c.Param("username")
-	if username == "" {
-		errorResponse(c, "Username is required", 400)
-		return
-	}
-
-	datasets, err := h.service.GetUserDatasets(username)
-	if err != nil {
-		errorResponse(c, err.Error(), 500)
-		return
-	}
-
-	success(c, datasets, "")
-}
-
-// GetUserAgents handle get user agents
-func (h *Handler) GetUserAgents(c *gin.Context) {
-	username := c.Param("username")
-	if username == "" {
-		errorResponse(c, "Username is required", 400)
-		return
-	}
-
-	agents, err := h.service.GetUserAgents(username)
-	if err != nil {
-		errorResponse(c, err.Error(), 500)
-		return
-	}
-
-	success(c, agents, "")
-}
-
 // ListUserAPITokens handle get user API keys
 func (h *Handler) ListUserAPITokens(c *gin.Context) {
 	username := c.Param("username")
