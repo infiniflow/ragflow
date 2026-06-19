@@ -386,7 +386,6 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       metadata: {
         fields: 'campi',
         selectFiles: 'Selezionati {{count}} file',
-        type: 'Tipo',
         fieldNameInvalid:
           'Il nome del campo può contenere solo lettere o underscore.',
         builtIn: 'Integrato',

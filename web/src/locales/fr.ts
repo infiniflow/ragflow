@@ -468,7 +468,6 @@ export default {
       metadata: {
         fields: 'Champs',
         selectFiles: '{{count}} fichiers sélectionnés',
-        type: 'Type',
         fieldNameInvalid:
           'Le nom du champ ne peut contenir que des lettres ou des underscores.',
         builtIn: 'Intégré',

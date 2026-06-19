@@ -82,6 +82,7 @@ export default {
       seeAll: 'See all',
       bulkOperate: 'Bulk operate',
       owner: 'Owner',
+      running: 'Running...',
     },
     login: {
       loginTitle: 'Sign in to your account',
@@ -383,7 +384,6 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       metadata: {
         fields: 'fields',
         selectFiles: 'Selected {{count}} files',
-        type: 'Type',
         fieldNameInvalid: 'Field name can only contain letters or underscores.',
         builtIn: 'Built-in',
         generation: 'Generation',

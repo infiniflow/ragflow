@@ -195,7 +195,6 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
     },
     knowledgeDetails: {
       metadata: {
-        type: 'Typ',
         fieldNameInvalid:
           'Feldname darf nur Buchstaben oder Unterstriche enthalten.',
         builtIn: 'Eingebaut',

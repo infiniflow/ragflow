@@ -384,7 +384,6 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       metadata: {
         fields: 'alanlar',
         selectFiles: '{{count}} dosya seçildi',
-        type: 'Tür',
         fieldNameInvalid: 'Alan adı yalnızca harf veya alt çizgi içerebilir.',
         builtIn: 'Yerleşik',
         generation: 'Oluşturma',

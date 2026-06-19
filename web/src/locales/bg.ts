@@ -199,7 +199,6 @@ export default {
     knowledgeDetails: {
       metadata: {
         selectFiles: 'Избрани {{count}} файла',
-        type: 'Тип',
         fieldNameInvalid:
           'Името на полето може да съдържа само букви или долни черти.',
         builtIn: 'Вградени',

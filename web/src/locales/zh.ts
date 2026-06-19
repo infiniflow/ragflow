@@ -344,7 +344,6 @@ export default {
       metadata: {
         fields: '字段',
         selectFiles: '已选择 {{count}} 个文件',
-        type: '类型',
         fieldNameInvalid: '字段名称只能包含字母或下划线。',
         builtIn: '内置',
         generation: '生成',

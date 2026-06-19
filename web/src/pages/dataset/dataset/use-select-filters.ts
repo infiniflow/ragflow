@@ -79,7 +79,7 @@ export function useSelectDatasetFilters() {
         list: metaDataList,
       },
     ] as FilterCollection[];
-  }, [fileStatus, fileTypes, metaDataList]);
+  }, [fileStatus, fileTypes, metaDataList, t]);
 
   const filterGroup = {
     [t('systemAttribute')]: ['type', 'run'],

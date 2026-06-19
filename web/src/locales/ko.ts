@@ -81,6 +81,7 @@ export default {
       seeAll: '전체 보기',
       bulkOperate: '일괄 작업',
       owner: '소유자',
+      running: '실행 중...',
     },
     login: {
       loginTitle: '계정에 로그인',
@@ -294,7 +295,7 @@ export default {
       embeddingModelTooltip:
         '텍스트를 수치 벡터로 변환하여 의미 유사도 검색 및 메모리 검색에 활용합니다.',
       embeddingModelError: '메모리 유형은 필수이며 "raw"는 삭제할 수 없습니다.',
-      memoryTypeTooltip: `Raw: 사용자와 에이전트 간의 원본 대화 내용 (기본 필수).\nSemantic: 사용자와 세계에 대한 일반 지식 및 사실.\nEpisodic: 특정 이벤트와 경험의 타임스탬프 기록.\nProcedural: 학습된 스킬, 습관 및 자동화된 절차.`,
+      memoryTypeTooltip: `Raw: 사용자와 에이전트 간의 원본 대화 내용 (기본 필수)\nSemantic: 사용자와 세계에 대한 일반 지식 및 사실\nEpisodic: 특정 이벤트와 경험의 타임스탬프 기록\nProcedural: 학습된 스킬, 습관 및 자동화된 절차`,
       raw: 'raw',
       semantic: 'semantic',
       episodic: 'episodic',
@@ -340,7 +341,7 @@ export default {
         action: '작업',
       },
       config: {
-        descriptionPlaceholder: '메모리를 설명해 주세요',
+        descriptionPlaceholder: '메모리에 대한 설명을 작성해 주세요',
         memorySizeTooltip: `각 메시지의 내용 + 임베딩 벡터를 포함합니다 (≈ 내용 + 차원 × 8 바이트).\n예: 1024차원 임베딩을 사용하는 1KB 메시지는 약 9KB입니다. 5MB 기본 제한은 약 500개의 메시지를 담을 수 있습니다.`,
         avatar: '아바타',
         description: '설명',
@@ -351,7 +352,7 @@ export default {
         team: '팀',
         storageType: '저장소 유형',
         storageTypePlaceholder: '저장소 유형을 선택해 주세요',
-        forgetPolicy: '잊기 정책',
+        forgetPolicy: '메모리 망각 정책',
         temperature: 'Temperature',
         systemPrompt: '시스템 프롬프트',
         systemPromptPlaceholder: '시스템 프롬프트를 입력해 주세요',
@@ -504,7 +505,7 @@ export default {
       noTestResultsForNotRuned:
         '아직 테스트가 실행되지 않았습니다. 결과가 여기에 표시됩니다.',
       testingDescription:
-        'RAGFlow가 LLM에 전달하고자 하는 내용을 정확히 가져올 수 있는지 확인하는 검색 테스트를 실행하세요.\n키워드 유사도 가중치나 유사도 임계값 등 기본 설정을 조정하여 최적의 결과를 얻었다면, 해당 변경 사항은 자동으로 저장되지 않으므로 채팅 어시스턴트 설정 또는 검색 에이전트 컴포넌트 설정에 적용해야 합니다.',
+        'RAGFlow가 LLM에 전달하고자 하는 내용을 정확히 가져올 수 있는지 확인하는 검색 테스트를 실행하세요. 키워드 유사도 가중치나 유사도 임계값 등 기본 설정을 조정하여 최적의 결과를 얻었다면, 해당 변경 사항은 자동으로 저장되지 않으므로 채팅 어시스턴트 설정 또는 검색 에이전트 컴포넌트 설정에 적용해야 합니다.',
       similarityThreshold: '유사도 임계값',
       similarityThresholdTip:
         'RAGFlow는 검색 시 가중 키워드 유사도와 가중 벡터 코사인 유사도, 또는 가중 키워드 유사도와 가중 rerank 점수의 조합을 사용합니다. 이 파라미터는 사용자 쿼리와 chunk 간 유사도 임계값을 설정합니다.\n이 임계값보다 낮은 유사도 점수를 가진 chunk는 결과에서 제외됩니다. 기본 임계값은 0.2이며, 하이브리드 유사도 점수가 20 이상인 chunk만 검색됩니다.',
@@ -682,8 +683,7 @@ export default {
       parseType: '파싱 유형',
       manualSetup: '파이프라인',
       builtIn: '기본 제공',
-      titleDescription:
-        'LLM 및 프롬프트를 포함한 데이터셋 설정을 여기에서 업데이트하세요.',
+      titleDescription: 'LLM 및 프롬프트를 포함한 데이터셋에 대해 설정합니다.',
       name: '데이터셋 이름',
       photo: '데이터셋 사진',
       photoTip: '최대 4MB의 이미지를 업로드할 수 있습니다.',
@@ -716,7 +716,7 @@ export default {
         '모든 컬럼이 chunk 텍스트에 포함되고 메타데이터로 저장됩니다 (RAGFlow 기본값).',
       tableColumnRoles: '컬럼 역할',
       tableColumnRolesTip:
-        'chunk 텍스트에 포함할 컬럼(벡터 및 전문 검색용 인덱싱), 메타데이터에만 포함할 컬럼(필터링 가능), 또는 둘 다를 선택합니다. 변경 사항은 새 파싱에 적용되며, 기존 문서에 적용하려면 재파싱이 필요합니다.',
+        'Chunk 텍스트에 포함할 컬럼(벡터 및 전문 검색용 인덱싱), 메타데이터에만 포함할 컬럼(필터링 가능), 또는 둘 다를 선택합니다. 변경 사항은 새 파싱에 적용되며, 기존 문서에 적용하려면 재파싱이 필요합니다.',
       tableColumnRoleIndexing: '인덱싱',
       tableColumnRoleMetadata: '메타데이터',
       tableColumnRoleBoth: '둘 다',
@@ -1041,8 +1041,8 @@ export default {
         'Presence penalty와 유사하게, 모델이 동일한 단어를 자주 반복하는 경향을 줄입니다.',
       maxTokens: '최대 토큰',
       maxTokensMessage: '최대 토큰은 필수입니다',
-      maxTokensTip: `모델의 최대 컨텍스트 크기입니다. 잘못된 값은 오류를 발생시킵니다. 기본값은 512입니다.`,
-      maxTokensInvalidMessage: '최대 토큰에 유효한 숫자를 입력해 주세요.',
+      maxTokensTip: `모델의 최대 컨텍스트 크기입니다. 유효하지 않거나 잘못된 값을 입력하면 오류가 발생합니다. 기본값은 512입니다.`,
+      maxTokensInvalidMessage: '유효한 숫자를 입력해 주세요.',
       maxTokensMinMessage: '최대 토큰은 0보다 작을 수 없습니다.',
       quote: '인용 표시',
       quoteTip: '답변과 함께 원문을 출처로 표시할지 설정합니다.',
@@ -1118,7 +1118,7 @@ export default {
         'API 키가 올바르게 설정되면 Tavily 기반 웹 검색이 데이터셋 검색을 보완하는 데 사용됩니다.',
       tavilyApiKeyMessage: 'Tavily API 키를 입력해 주세요',
       tavilyApiKeyHelp: '어떻게 얻나요?',
-      crossLanguage: '크로스 언어 검색',
+      crossLanguage: '교차 언어 검색',
       crossLanguagePlaceholder: '값 선택',
       crossLanguageTip: `교차 언어(cross-language) 검색을 위해 언어를 하나 이상 선택하세요. 언어를 선택하지 않으면 시스템은 원본 쿼리로 검색합니다.`,
       createChat: '채팅 만들기',
@@ -1126,7 +1126,7 @@ export default {
       metadataTip:
         '메타데이터 필터링은 태그, 카테고리, 액세스 권한 등의 메타데이터 속성을 사용하여 시스템 내 관련 정보 검색을 세밀하게 제어하는 프로세스입니다.',
       conditions: '조건',
-      metadataKeys: '필터 가능 항목',
+      metadataKeys: '필터 가능한 항목',
       addCondition: '조건 추가',
       meta: {
         disabled: '비활성화',
@@ -1473,8 +1473,8 @@ export default {
       profileDescription: '프로필 사진과 개인 정보를 업데이트하세요.',
       maxTokens: '최대 토큰',
       maxTokensMessage: '최대 토큰은 필수입니다',
-      maxTokensTip: `모델의 최대 컨텍스트 크기입니다. 잘못된 값은 오류를 발생시킵니다. 기본값은 512입니다.`,
-      maxTokensInvalidMessage: '최대 토큰에 유효한 숫자를 입력해 주세요.',
+      maxTokensTip: `모델의 최대 컨텍스트 크기입니다. 유효하지 않거나 잘못된 값을 입력하면 오류가 발생합니다. 기본값은 512입니다.`,
+      maxTokensInvalidMessage: '유효한 숫자를 입력해 주세요.',
       maxTokensMinMessage: '최대 토큰은 0보다 작을 수 없습니다.',
       password: '비밀번호',
       passwordDescription:

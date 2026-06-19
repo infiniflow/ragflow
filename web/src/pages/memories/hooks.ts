@@ -303,6 +303,7 @@ export const useRenameMemory = () => {
 };
 
 export function useSelectFilters() {
+  const { t } = useTranslation();
   const { data: res } = useFetchMemoryList();
   const data = res?.data;
 
@@ -327,7 +328,7 @@ export function useSelectFilters() {
     {
       field: 'storageType',
       list: storageType,
-      label: t('memory.storageType'),
+      label: t('memory.config.storageType'),
     },
   ];
 

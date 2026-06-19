@@ -213,7 +213,6 @@ export default {
       metadata: {
         fields: 'поля',
         selectFiles: 'Выбрано файлов: {{count}}',
-        type: 'Тип',
         fieldNameInvalid:
           'Имя поля может содержать только буквы или подчёркивания.',
         builtIn: 'Встроенное',

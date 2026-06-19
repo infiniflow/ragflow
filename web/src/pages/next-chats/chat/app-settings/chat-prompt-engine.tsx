@@ -146,7 +146,7 @@ export function ChatPromptEngine() {
             name={'prompt_config.reference_metadata.fields'}
             render={({ field }) => (
               <FormItem>
-                <FormLabel tooltip="Select which metadata fields to display with each chunk">
+                <FormLabel tooltip={t('chat.metadataFieldsTip')}>
                   {t('chat.metadataKeys')}
                 </FormLabel>
                 <FormControl className="bg-bg-input">
@@ -154,7 +154,7 @@ export function ChatPromptEngine() {
                     options={metadataFieldOptions}
                     onValueChange={field.onChange}
                     showSelectAll={false}
-                    placeholder="Please select"
+                    placeholder={t('common.pleaseSelect')}
                     maxCount={20}
                     defaultValue={Array.isArray(field.value) ? field.value : []}
                     value={Array.isArray(field.value) ? field.value : []}

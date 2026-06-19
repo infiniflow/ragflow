@@ -208,7 +208,6 @@ export default {
       metadata: {
         fields: 'الحقول',
         selectFiles: 'الملفات المحددة ({{count}})',
-        type: 'يكتب',
         fieldNameInvalid:
           'يمكن أن يحتوي اسم الحقل على أحرف أو شرطات سفلية فقط.',
         builtIn: 'مدمج',
