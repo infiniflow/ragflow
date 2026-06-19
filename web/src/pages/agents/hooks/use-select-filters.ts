@@ -5,8 +5,10 @@ import {
 } from '@/hooks/use-agent-request';
 import { buildOwnersFilter, groupListByType } from '@/utils/list-filter-util';
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export function useSelectFilters() {
+  const { t } = useTranslation();
   const { data } = useFetchAgentList({});
   const { data: tagCounts } = useFetchAgentTags();
 
@@ -29,16 +31,16 @@ export function useSelectFilters() {
   );
 
   const filters: FilterCollection[] = [
-    buildOwnersFilter(data?.canvas ?? []),
+    buildOwnersFilter(data?.canvas ?? [], undefined, t('common.owner')),
     {
       field: 'canvasCategory',
       list: canvasCategory,
-      label: 'Canvas category',
+      label: t('flow.canvasCategory'),
     },
     {
       field: 'tags',
       list: tagList,
-      label: 'Tags',
+      label: t('flow.tags'),
     },
   ];
 

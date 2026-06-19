@@ -134,8 +134,8 @@ export function ChatPromptEngine() {
                   }}
                 />
               </FormControl>
-              <FormLabel tooltip="Display document metadata (e.g., title, page number, upload date) alongside retrieved text chunks">
-                Show chunk metadata
+              <FormLabel tooltip={t('chat.showChunkMetadataTip')}>
+                {t('chat.showChunkMetadata')}
               </FormLabel>
             </FormItem>
           )}
