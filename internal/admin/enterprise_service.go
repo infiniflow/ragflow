@@ -27,50 +27,111 @@ import (
 
 // ListRoles list all roles
 func (s *Service) ListRoles() ([]map[string]interface{}, error) {
-	// TODO: Implement list roles
-	return []map[string]interface{}{}, nil
+	result := []map[string]interface{}{
+		{
+			"command": "list_roles",
+			"error":   "'list roles' is implemented in enterprise edition",
+		},
+	}
+
+	return result, nil
 }
 
 // CreateRole create a new role
 func (s *Service) CreateRole(roleName, description string) (map[string]interface{}, error) {
-	// TODO: Implement create role
-	return map[string]interface{}{}, nil
+	result := map[string]interface{}{
+		"command":     "create_role",
+		"role_name":   roleName,
+		"description": description,
+		"error":       "'create role' is implemented in enterprise edition",
+	}
+
+	return result, nil
 }
 
 // GetRole get role details
 func (s *Service) GetRole(roleName string) (map[string]interface{}, error) {
-	// TODO: Implement get role
-	return map[string]interface{}{}, nil
+	result := map[string]interface{}{
+		"command":   "get_role",
+		"role_name": roleName,
+		"error":     "'get role' is implemented in enterprise edition",
+	}
+
+	return result, nil
+
 }
 
 // UpdateRole update role
 func (s *Service) UpdateRole(roleName, description string) (map[string]interface{}, error) {
-	// TODO: Implement update role
-	return map[string]interface{}{}, nil
+	result := map[string]interface{}{
+		"command":     "update_role",
+		"role_name":   roleName,
+		"description": description,
+		"error":       "'update role' is implemented in enterprise edition",
+	}
+
+	return result, nil
 }
 
 // DeleteRole delete role
-func (s *Service) DeleteRole(roleName string) error {
-	// TODO: Implement delete role
-	return nil
+func (s *Service) DeleteRole(roleName string) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command":   "delete_role",
+		"role_name": roleName,
+		"deleted":   true,
+		"error":     "'delete role' is implemented in enterprise edition",
+	}
+
+	return result, nil
 }
 
 // GetRolePermission get role permissions
 func (s *Service) GetRolePermission(roleName string) ([]map[string]interface{}, error) {
-	// TODO: Implement get role permissions
-	return []map[string]interface{}{}, nil
+	result := []map[string]interface{}{
+		{
+			"command":   "get_role_permission",
+			"role_name": roleName,
+			"error":     "'get role permissions' is implemented in enterprise edition",
+		},
+	}
+
+	return result, nil
 }
 
 // GrantRolePermission grant permission to role
 func (s *Service) GrantRolePermission(roleName string, actions []string, resource string) (map[string]interface{}, error) {
-	// TODO: Implement grant role permission
-	return map[string]interface{}{}, nil
+	result := map[string]interface{}{
+		"command":   "grant_role_permission",
+		"role_name": roleName,
+		"actions":   actions,
+		"resource":  resource,
+		"error":     "'grant role permission' is implemented in enterprise edition",
+	}
+
+	return result, nil
 }
 
 // RevokeRolePermission revoke permission from role
 func (s *Service) RevokeRolePermission(roleName string, actions []string, resource string) (map[string]interface{}, error) {
-	// TODO: Implement revoke role permission
-	return map[string]interface{}{}, nil
+	result := map[string]interface{}{
+		"command":   "revoke_role_permission",
+		"role_name": roleName,
+		"actions":   actions,
+		"resource":  resource,
+		"error":     "'revoke role permission' is implemented in enterprise edition",
+	}
+
+	return result, nil
+}
+
+// ListResources list role resources
+func (s *Service) ListResources() (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command": "list_resources",
+		"error":   "'list resources for role' is implemented in enterprise edition",
+	}
+
+	return result, nil
 }
 
 // ShowUserActivity show user activity for enterprise edition

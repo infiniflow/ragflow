@@ -146,12 +146,9 @@ func (p *Parser) parseAdminListCommand() (*Command, error) {
 	case TokenAgents:
 		return p.parseAdminListAgents()
 	case TokenRoles:
-		p.nextToken()
-		// Semicolon is optional for SHOW TOKEN
-		if p.curToken.Type == TokenSemicolon {
-			p.nextToken()
-		}
-		return NewCommand("list_roles"), nil
+		return p.parseAdminListRoles()
+	case TokenResources:
+		return p.parseAdminListResources()
 	case TokenVars:
 		p.nextToken()
 		// Semicolon is optional for SHOW TOKEN
@@ -257,6 +254,26 @@ func (p *Parser) parseAdminListAgents() (*Command, error) {
 		p.nextToken()
 	}
 	return cmd, nil
+}
+
+func (p *Parser) parseAdminListRoles() (*Command, error) {
+	p.nextToken() // consume ROLES
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return NewCommand("admin_list_roles_command"), nil
+}
+
+func (p *Parser) parseAdminListResources() (*Command, error) {
+	p.nextToken() // consume RESOURCES
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return NewCommand("admin_list_resources_command"), nil
 }
 
 func (p *Parser) parseAdminListTokens() (*Command, error) {

@@ -37,10 +37,7 @@ func (h *Handler) ListRoles(c *gin.Context) {
 		roles = []map[string]interface{}{}
 	}
 
-	success(c, gin.H{
-		"roles": roles,
-		"total": len(roles),
-	}, "")
+	success(c, roles, "")
 }
 
 // CreateRoleHTTPRequest create role request
@@ -119,12 +116,13 @@ func (h *Handler) DeleteRole(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.DeleteRole(roleName); err != nil {
-		errorResponse(c, err.Error(), 500)
+	role, err := h.service.DeleteRole(roleName)
+	if err != nil {
+		errorResponse(c, "Role not found", 404)
 		return
 	}
 
-	successNoData(c, "")
+	success(c, role, "")
 }
 
 // GetRolePermission handle get role permission
@@ -200,6 +198,21 @@ func (h *Handler) RevokeRolePermission(c *gin.Context) {
 	}
 
 	success(c, result, "")
+}
+
+// ListResources handle list role resources
+func (h *Handler) ListResources(c *gin.Context) {
+	resources, err := h.service.ListResources()
+	if err != nil {
+		if errors.Is(err, common.ErrUserNotFound) {
+			errorResponse(c, "Role not found", 404)
+			return
+		}
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, resources, "")
 }
 
 type ShowUserActivityRequest struct {

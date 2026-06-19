@@ -75,6 +75,10 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListUserDatasets(cmd)
 	case "list_agents":
 		return c.ListAgents(cmd)
+	case "admin_list_resources_command":
+		return c.AdminListResourcesCommand(cmd)
+	case "admin_list_roles_command":
+		return c.AdminListRolesCommand(cmd)
 	case "generate_token":
 		return c.GenerateAdminToken(cmd)
 	case "list_tokens":
