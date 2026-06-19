@@ -263,8 +263,12 @@ def build_error_result(code=RetCode.FORBIDDEN, message="success"):
         try:
             http_status = int(code)
         except (TypeError, ValueError):
+            logger.warning("build_error_result: could not convert code=%r to int; defaulting to 400", code)
             http_status = 400
-        response.status_code = http_status if 200 <= http_status <= 599 else 400
+        if not (200 <= http_status <= 599):
+            logger.warning("build_error_result: code=%r (http_status=%d) out of valid HTTP range; defaulting to 400", code, http_status)
+            http_status = 400
+        response.status_code = http_status
     return response
 
 
