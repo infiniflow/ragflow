@@ -172,6 +172,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.DELETE("/roles/:role_name/permission", r.handler.RevokeRolePermission)
 			protected.DELETE("/roles/resource", r.handler.ListResources)
 
+			// License
+			protected.GET("/system/fingerprint", r.handler.GetSystemFingerprint)
+			protected.POST("/system/license", r.handler.SetSystemLicense)
+			protected.GET("/system/license", r.handler.ShowSystemLicense)
+			protected.PUT("/system/license/config", r.handler.UpdateSystemLicenseConfig)
+
 			// Fingerprint
 			protected.GET("/fingerprint", r.handler.GetFingerprint)
 			// License

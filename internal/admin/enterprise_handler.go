@@ -215,6 +215,84 @@ func (h *Handler) ListResources(c *gin.Context) {
 	success(c, resources, "")
 }
 
+// GetSystemFingerprint handle get system fingerprint
+func (h *Handler) GetSystemFingerprint(c *gin.Context) {
+	fingerprint, err := h.service.GetSystemFingerprint()
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, fingerprint, "")
+}
+
+type SetSystemLicenseRequest struct {
+	License string `json:"license" binding:"required"`
+}
+
+// SetSystemLicense to set system license
+func (h *Handler) SetSystemLicense(c *gin.Context) {
+	var req SetSystemLicenseRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		println("JSON bind error: %v (type: %T)", err, err)
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	err := h.service.SetSystemLicense(req.License)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+	success(c, nil, "System license set successfully")
+}
+
+// ShowSystemLicense to get system license
+func (h *Handler) ShowSystemLicense(c *gin.Context) {
+	check, ok := c.GetQuery("check")
+	if !ok {
+		check = "false"
+	}
+	checkFlag, err := strconv.ParseBool(check)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
+	systemLicense, err := h.service.ShowSystemLicense(checkFlag)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, systemLicense, "")
+}
+
+type SetSystemLicenseConfigRequest struct {
+	TimeRecordSaveInterval int64 `json:"value1" binding:"required"`
+	TimeRecordTaskDuration int64 `json:"value2" binding:"required"`
+}
+
+func (h *Handler) UpdateSystemLicenseConfig(c *gin.Context) {
+	var req SetSystemLicenseConfigRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		println("JSON bind error: %v (type: %T)", err, err)
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+	result, err := h.service.UpdateSystemLicenseConfig(req.TimeRecordSaveInterval, req.TimeRecordTaskDuration)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+	success(c, result, "System license config updated successfully")
+}
+
 type ShowUserActivityRequest struct {
 	Days  int    `json:"days"`
 	Email string `json:"email"`

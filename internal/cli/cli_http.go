@@ -75,6 +75,10 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListVariables(cmd)
 	case "show_variable":
 		return c.ShowVariable(cmd)
+	case "admin_set_license_command":
+		return c.AdminSetLicenseCommand(cmd)
+	case "admin_set_license_config_command":
+		return c.AdminSetLicenseConfigCommand(cmd)
 	case "set_variable":
 		return c.SetVariable(cmd)
 	case "list_user_datasets":
@@ -127,6 +131,12 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.UserShowMessageQueueCommand(cmd)
 	case "admin_remove_service_command":
 		return c.AdminRemoveServiceCommand(cmd)
+	case "admin_check_license_command":
+		return c.AdminCheckLicenseCommand(cmd)
+	case "admin_show_fingerprint_command":
+		return c.AdminShowFingerprintCommand(cmd)
+	case "admin_show_license_command":
+		return c.AdminShowLicenseCommand(cmd)
 	case "admin_show_user_info_command":
 		return c.AdminShowUserInfoCommand(cmd)
 	case "admin_show_user_activity_command":

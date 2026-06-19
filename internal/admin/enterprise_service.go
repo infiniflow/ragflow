@@ -17,6 +17,7 @@
 package admin
 
 import (
+	"errors"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -129,6 +130,48 @@ func (s *Service) ListResources() (map[string]interface{}, error) {
 	result := map[string]interface{}{
 		"command": "list_resources",
 		"error":   "'list resources for role' is implemented in enterprise edition",
+	}
+
+	return result, nil
+}
+
+func (s *Service) GetSystemFingerprint() (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command": "get_system_fingerprint",
+		"error":   "'get system fingerprint' is implemented in enterprise edition",
+	}
+
+	return result, nil
+}
+
+func (s *Service) SetSystemLicense(license string) error {
+	return errors.New("'set system license' is implemented in enterprise edition")
+}
+
+func (s *Service) ShowSystemLicense(check bool) (map[string]interface{}, error) {
+	var result map[string]interface{}
+	if check {
+		result = map[string]interface{}{
+			"command": "check_system_license",
+			"error":   "'check system license' is implemented in enterprise edition",
+		}
+
+	} else {
+		result = map[string]interface{}{
+			"command": "show_system_license",
+			"error":   "'show system license' is implemented in enterprise edition",
+		}
+	}
+
+	return result, nil
+}
+
+func (s *Service) UpdateSystemLicenseConfig(timeRecordSaveInterval, timeRecordTaskDuration int64) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command":                   "update_system_license_config",
+		"time_record_save_interval": timeRecordSaveInterval,
+		"time_record_task_duration": timeRecordTaskDuration,
+		"error":                     "'update system license config' is implemented in enterprise edition",
 	}
 
 	return result, nil
