@@ -81,6 +81,7 @@ export default {
       seeAll: 'Voir tout',
       bulkOperate: 'Opération en masse',
       owner: 'Propriétaire',
+      running: 'En cours...',
     },
     login: {
       loginTitle: 'Connexion à votre compte',

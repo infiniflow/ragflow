@@ -37,6 +37,7 @@ export default {
       move: 'Pindahkan',
       warn: 'Peringatan',
       owner: 'Pemilik',
+      running: 'Berjalan...',
     },
     login: {
       login: 'Masuk',

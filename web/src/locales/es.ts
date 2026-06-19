@@ -33,6 +33,7 @@ export default {
       move: 'Mover',
       warn: 'Advertencia',
       owner: 'Propietario',
+      running: 'Ejecutando...',
     },
     login: {
       login: 'Iniciar sesión',

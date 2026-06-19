@@ -147,7 +147,7 @@ export function ChatPromptEngine() {
             render={({ field }) => (
               <FormItem>
                 <FormLabel tooltip={t('chat.metadataFieldsTip')}>
-                  {t('chat.metadataKeys')}
+                  {t('chat.metadataFields')}
                 </FormLabel>
                 <FormControl className="bg-bg-input">
                   <MultiSelect

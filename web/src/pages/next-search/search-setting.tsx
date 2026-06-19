@@ -398,7 +398,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                         options={metadataFieldOptions}
                         onValueChange={field.onChange}
                         showSelectAll={false}
-                        placeholder="Please select"
+                        placeholder={t('common.pleaseSelect')}
                         maxCount={20}
                         defaultValue={
                           Array.isArray(field.value) ? field.value : []

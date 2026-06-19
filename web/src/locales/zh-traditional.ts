@@ -42,6 +42,7 @@ export default {
       nextPage: '下一頁',
       add: '添加',
       owner: '擁有者',
+      running: '執行中...',
     },
     login: {
       login: '登入',

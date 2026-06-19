@@ -128,7 +128,7 @@ const RetrievalDocuments = ({
                 <span>
                   {selectedDocumentIds?.length ?? 0}/{useDocuments?.length ?? 0}
                 </span>
-                Files
+                {t('knowledgeDetails.subbarFiles')}
               </div>
               <div className="flex items-center justify-between">
                 <XIcon
@@ -155,11 +155,11 @@ const RetrievalDocuments = ({
       >
         <Command>
           <CommandInput
-            placeholder="Search..."
+            placeholder={t('common.search')}
             onKeyDown={handleInputKeyDown}
           />
           <CommandList>
-            <CommandEmpty>No results found.</CommandEmpty>
+            <CommandEmpty>{t('common.noResults')}</CommandEmpty>
             <CommandGroup>
               {!multiOptions.some((x) => 'options' in x) &&
                 (multiOptions as unknown as MultiSelectOptionType[]).map(
