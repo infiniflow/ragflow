@@ -163,6 +163,18 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminPurgeUsersCommand(cmd)
 	case "admin_list_user_ingestion_tasks_command":
 		return c.AdminListUserIngestionTasksCommand(cmd)
+	case "admin_list_user_datasets_command":
+		return c.AdminListUserDatasetsCommand(cmd)
+	case "admin_list_user_agents_command":
+		return c.AdminListUserAgentsCommand(cmd)
+	case "admin_list_user_chats_command":
+		return c.AdminListUserChatsCommand(cmd)
+	case "admin_list_user_searches_command":
+		return c.AdminListUserSearchesCommand(cmd)
+	case "admin_list_user_models_command":
+		return c.AdminListUserModelsCommand(cmd)
+	case "admin_list_user_files_command":
+		return c.AdminListUserFilesCommand(cmd)
 	case "admin_stop_user_ingestion_tasks_command":
 		return c.AdminStopUserIngestionTasksCommand(cmd)
 	case "admin_remove_user_ingestion_tasks_command":

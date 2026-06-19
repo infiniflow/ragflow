@@ -54,6 +54,7 @@ const (
 	TokenChunkStore
 	TokenOf
 	TokenAgents
+	TokenSearches
 	TokenRole
 	TokenRoles
 	TokenDescription
