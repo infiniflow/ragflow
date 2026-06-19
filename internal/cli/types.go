@@ -104,6 +104,8 @@ const (
 	TokenSearch
 	TokenRetrieve
 	TokenCurrent
+	TokenFingerprint
+	TokenLicense
 	TokenVision
 	TokenEmbedding
 	TokenRerank
