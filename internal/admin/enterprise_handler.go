@@ -338,7 +338,12 @@ func (h *Handler) ShowUserDatasetSummary(c *gin.Context) {
 		return
 	}
 
-	username := c.Param("username")
+	encodedUsername := c.Param("username")
+	username, err := common.DecodeEmail(encodedUsername)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
 	if username == "" {
 		errorResponse(c, "Username is required", 400)
 		return
@@ -359,7 +364,12 @@ func (h *Handler) ShowUserDatasetSummary(c *gin.Context) {
 
 // ShowUserSummary handle show user summary
 func (h *Handler) ShowUserSummary(c *gin.Context) {
-	username := c.Param("username")
+	encodedUsername := c.Param("username")
+	username, err := common.DecodeEmail(encodedUsername)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
 	if username == "" {
 		errorResponse(c, "Username is required", 400)
 		return
@@ -380,7 +390,12 @@ func (h *Handler) ShowUserSummary(c *gin.Context) {
 
 // ShowUserStorage handle show user storage
 func (h *Handler) ShowUserStorage(c *gin.Context) {
-	username := c.Param("username")
+	encodedUsername := c.Param("username")
+	username, err := common.DecodeEmail(encodedUsername)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
 	if username == "" {
 		errorResponse(c, "Username is required", 400)
 		return
@@ -401,7 +416,12 @@ func (h *Handler) ShowUserStorage(c *gin.Context) {
 
 // ShowUserQuota handle show user quota
 func (h *Handler) ShowUserQuota(c *gin.Context) {
-	username := c.Param("username")
+	encodedUsername := c.Param("username")
+	username, err := common.DecodeEmail(encodedUsername)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
 	if username == "" {
 		errorResponse(c, "Username is required", 400)
 		return
@@ -422,7 +442,12 @@ func (h *Handler) ShowUserQuota(c *gin.Context) {
 
 // ShowUserIndex handle show user index
 func (h *Handler) ShowUserIndex(c *gin.Context) {
-	username := c.Param("username")
+	encodedUsername := c.Param("username")
+	username, err := common.DecodeEmail(encodedUsername)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
 	if username == "" {
 		errorResponse(c, "Username is required", 400)
 		return
@@ -448,7 +473,12 @@ type UpdateUserRoleHTTPRequest struct {
 
 // UpdateUserRole handle update user role
 func (h *Handler) UpdateUserRole(c *gin.Context) {
-	username := c.Param("username")
+	encodedUsername := c.Param("username")
+	username, err := common.DecodeEmail(encodedUsername)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
 	if username == "" {
 		errorResponse(c, "Username is required", 400)
 		return
@@ -471,7 +501,12 @@ func (h *Handler) UpdateUserRole(c *gin.Context) {
 
 // ShowUserPermission handle show user permission
 func (h *Handler) ShowUserPermission(c *gin.Context) {
-	username := c.Param("username")
+	encodedUsername := c.Param("username")
+	username, err := common.DecodeEmail(encodedUsername)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
 	if username == "" {
 		errorResponse(c, "Username is required", 400)
 		return
@@ -488,7 +523,12 @@ func (h *Handler) ShowUserPermission(c *gin.Context) {
 
 // ListUserDatasets handle show user datasets
 func (h *Handler) ListUserDatasets(c *gin.Context) {
-	username := c.Param("username")
+	encodedUsername := c.Param("username")
+	username, err := common.DecodeEmail(encodedUsername)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
 	if username == "" {
 		errorResponse(c, "Username is required", 400)
 		return
@@ -505,7 +545,12 @@ func (h *Handler) ListUserDatasets(c *gin.Context) {
 
 // ListUserAgents handle show user agents
 func (h *Handler) ListUserAgents(c *gin.Context) {
-	username := c.Param("username")
+	encodedUsername := c.Param("username")
+	username, err := common.DecodeEmail(encodedUsername)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
 	if username == "" {
 		errorResponse(c, "Username is required", 400)
 		return
@@ -522,7 +567,12 @@ func (h *Handler) ListUserAgents(c *gin.Context) {
 
 // ListUserChats handle show user chats
 func (h *Handler) ListUserChats(c *gin.Context) {
-	username := c.Param("username")
+	encodedUsername := c.Param("username")
+	username, err := common.DecodeEmail(encodedUsername)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
 	if username == "" {
 		errorResponse(c, "Username is required", 400)
 		return
@@ -539,7 +589,12 @@ func (h *Handler) ListUserChats(c *gin.Context) {
 
 // ListUserSearches handle show user searches
 func (h *Handler) ListUserSearches(c *gin.Context) {
-	username := c.Param("username")
+	encodedUsername := c.Param("username")
+	username, err := common.DecodeEmail(encodedUsername)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
 	if username == "" {
 		errorResponse(c, "Username is required", 400)
 		return
@@ -556,7 +611,12 @@ func (h *Handler) ListUserSearches(c *gin.Context) {
 
 // ListUserModels handle show user models
 func (h *Handler) ListUserModels(c *gin.Context) {
-	username := c.Param("username")
+	encodedUsername := c.Param("username")
+	username, err := common.DecodeEmail(encodedUsername)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
 	if username == "" {
 		errorResponse(c, "Username is required", 400)
 		return
@@ -573,7 +633,12 @@ func (h *Handler) ListUserModels(c *gin.Context) {
 
 // ListUserFiles handle show user files
 func (h *Handler) ListUserFiles(c *gin.Context) {
-	username := c.Param("username")
+	encodedUsername := c.Param("username")
+	username, err := common.DecodeEmail(encodedUsername)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
 	if username == "" {
 		errorResponse(c, "Username is required", 400)
 		return
@@ -1007,7 +1072,12 @@ func (h *Handler) PurgeUserData(c *gin.Context) {
 		})
 		return
 	}
-	username := c.Param("username")
+	encodedUsername := c.Param("username")
+	username, err := common.DecodeEmail(encodedUsername)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
 	if username == "" {
 		errorResponse(c, "Username is required", 400)
 		return
@@ -1060,7 +1130,12 @@ func (h *Handler) PurgeUsersData(c *gin.Context) {
 
 // CreateUserAPIKey handle create tenant API key
 func (h *Handler) CreateUserAPIKey(c *gin.Context) {
-	username := c.Param("username")
+	encodedUsername := c.Param("username")
+	username, err := common.DecodeEmail(encodedUsername)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
 
 	apiKey, err := h.service.CreateUserAPIKey(username)
 	if err != nil {
@@ -1073,7 +1148,12 @@ func (h *Handler) CreateUserAPIKey(c *gin.Context) {
 
 // DeleteUserAPIKey handle delete user API key
 func (h *Handler) DeleteUserAPIKey(c *gin.Context) {
-	username := c.Param("username")
+	encodedUsername := c.Param("username")
+	username, err := common.DecodeEmail(encodedUsername)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
 	key := c.Param("key")
 	if username == "" || key == "" {
 		errorResponse(c, "Username and key are required", 400)
@@ -1091,7 +1171,12 @@ func (h *Handler) DeleteUserAPIKey(c *gin.Context) {
 
 // ListUserAPIKeys handle list user API keys
 func (h *Handler) ListUserAPIKeys(c *gin.Context) {
-	username := c.Param("username")
+	encodedUsername := c.Param("username")
+	username, err := common.DecodeEmail(encodedUsername)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
 	if username == "" {
 		errorResponse(c, "Username is required", 400)
 		return

@@ -19,6 +19,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"ragflow/internal/common"
 )
 
 // PingServer pings the server to check if it's alive
@@ -331,7 +332,10 @@ func (c *CLI) GrantAdmin(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	resp, err := c.AdminServerClient.Request("PUT", fmt.Sprintf("/admin/users/%s/admin", userName), "admin", nil, nil)
+	encodedUserName := common.EncodeEmail(userName)
+	apiURL := fmt.Sprintf("/admin/users/%s/admin", encodedUserName)
+
+	resp, err := c.AdminServerClient.Request("PUT", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to grant admin: %w", err)
 	}
@@ -364,7 +368,10 @@ func (c *CLI) RevokeAdmin(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	resp, err := c.AdminServerClient.Request("DELETE", fmt.Sprintf("/admin/users/%s/admin", userName), "admin", nil, nil)
+	encodedUserName := common.EncodeEmail(userName)
+	apiURL := fmt.Sprintf("/admin/users/%s/admin", encodedUserName)
+
+	resp, err := c.AdminServerClient.Request("DELETE", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to revoke admin: %w", err)
 	}
@@ -447,7 +454,9 @@ func (c *CLI) AdminCreateUserAPIKeyCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	apiURL := fmt.Sprintf("/admin/users/%s/keys", userName)
+	encodedUserName := common.EncodeEmail(userName)
+
+	apiURL := fmt.Sprintf("/admin/users/%s/keys", encodedUserName)
 
 	resp, err := c.AdminServerClient.Request("POST", apiURL, "admin", nil, nil)
 	if err != nil {
@@ -500,7 +509,10 @@ func (c *CLI) ActivateUser(cmd *Command) (ResponseIf, error) {
 		"activate_status": activateStatus,
 	}
 
-	resp, err := c.AdminServerClient.Request("PUT", fmt.Sprintf("/admin/users/%s/activate", userName), "admin", nil, payload)
+	encodedUserName := common.EncodeEmail(userName)
+	apiURL := fmt.Sprintf("/admin/users/%s/activate", encodedUserName)
+
+	resp, err := c.AdminServerClient.Request("PUT", apiURL, "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update user status: %w", err)
 	}
@@ -548,7 +560,10 @@ func (c *CLI) AlterUserPassword(cmd *Command) (ResponseIf, error) {
 		"new_password": encryptedPassword,
 	}
 
-	resp, err := c.AdminServerClient.Request("PUT", fmt.Sprintf("/admin/users/%s/password", userName), "admin", nil, payload)
+	encodedUserName := common.EncodeEmail(userName)
+	apiURL := fmt.Sprintf("/admin/users/%s/password", encodedUserName)
+
+	resp, err := c.AdminServerClient.Request("PUT", apiURL, "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to change user password: %w", err)
 	}
@@ -882,7 +897,10 @@ func (c *CLI) AdminDropUserCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	resp, err := c.AdminServerClient.Request("DELETE", fmt.Sprintf("/admin/users/%s", userName), "admin", nil, nil)
+	encodedUserName := common.EncodeEmail(userName)
+	apiURL := fmt.Sprintf("/admin/users/%s", encodedUserName)
+
+	resp, err := c.AdminServerClient.Request("DELETE", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop user: %w", err)
 	}
@@ -920,7 +938,10 @@ func (c *CLI) AdminDropUserAPIKeyCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("api_key not provided")
 	}
 
-	resp, err := c.AdminServerClient.Request("DELETE", fmt.Sprintf("/admin/users/%s/keys/%s", userName, apiKey), "admin", nil, nil)
+	encodedUserName := common.EncodeEmail(userName)
+	apiURL := fmt.Sprintf("/admin/users/%s/keys/%s", encodedUserName, apiKey)
+
+	resp, err := c.AdminServerClient.Request("DELETE", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop API key: %w", err)
 	}
@@ -960,12 +981,15 @@ func (c *CLI) ListUserDatasets(cmd *Command) (ResponseIf, error) {
 		iterations = val
 	}
 
+	encodedUserName := common.EncodeEmail(userName)
+	apiURL := fmt.Sprintf("/admin/users/%s/datasets", encodedUserName)
+
 	if iterations > 1 {
 		// Benchmark mode - return raw result for benchmark stats
-		return c.AdminServerClient.RequestWithIterations("GET", fmt.Sprintf("/admin/users/%s/datasets", userName), "admin", nil, nil, iterations)
+		return c.AdminServerClient.RequestWithIterations("GET", apiURL, "admin", nil, nil, iterations)
 	}
 
-	resp, err := c.AdminServerClient.Request("GET", fmt.Sprintf("/admin/users/%s/datasets", userName), "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list datasets: %w", err)
 	}
@@ -1015,12 +1039,15 @@ func (c *CLI) ListAgents(cmd *Command) (ResponseIf, error) {
 		iterations = val
 	}
 
+	encodedUserName := common.EncodeEmail(userName)
+	apiURL := fmt.Sprintf("/admin/users/%s/agents", encodedUserName)
+
 	if iterations > 1 {
 		// Benchmark mode - return raw result for benchmark stats
-		return c.AdminServerClient.RequestWithIterations("GET", fmt.Sprintf("/admin/users/%s/agents", userName), "admin", nil, nil, iterations)
+		return c.AdminServerClient.RequestWithIterations("GET", apiURL, "admin", nil, nil, iterations)
 	}
 
-	resp, err := c.AdminServerClient.Request("GET", fmt.Sprintf("/admin/users/%s/agents", userName), "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list agents: %w", err)
 	}
@@ -1063,7 +1090,10 @@ func (c *CLI) GrantPermission(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	resp, err := c.AdminServerClient.Request("GET", fmt.Sprintf("/admin/users/%s/keys", userName), "admin", nil, nil)
+	encodedUserName := common.EncodeEmail(userName)
+	apiURL := fmt.Sprintf("/admin/users/%s/keys", encodedUserName)
+
+	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tokens: %w", err)
 	}
@@ -1170,7 +1200,10 @@ func (c *CLI) AlterUserRole(cmd *Command) (ResponseIf, error) {
 		"role_name": roleName,
 	}
 
-	resp, err := c.AdminServerClient.Request("PUT", fmt.Sprintf("/admin/users/%s/role", userName), "admin", nil, payload)
+	encodedUserName := common.EncodeEmail(userName)
+	apiURL := fmt.Sprintf("/admin/users/%s/role", encodedUserName)
+
+	resp, err := c.AdminServerClient.Request("PUT", apiURL, "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to alter user role: %w", err)
 	}
@@ -1208,7 +1241,10 @@ func (c *CLI) ShowUserPermission(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	resp, err := c.AdminServerClient.Request("GET", fmt.Sprintf("/admin/users/%s/permission", userName), "admin", nil, nil)
+	encodedUserName := common.EncodeEmail(userName)
+	apiURL := fmt.Sprintf("/admin/users/%s/permission", encodedUserName)
+
+	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show user permission: %w", err)
 	}
@@ -1246,7 +1282,10 @@ func (c *CLI) GenerateAdminToken(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	resp, err := c.AdminServerClient.Request("POST", fmt.Sprintf("/admin/users/%s/keys", userName), "admin", nil, nil)
+	encodedUserName := common.EncodeEmail(userName)
+	apiURL := fmt.Sprintf("/admin/users/%s/keys", encodedUserName)
+
+	resp, err := c.AdminServerClient.Request("POST", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token: %w", err)
 	}
@@ -1283,7 +1322,10 @@ func (c *CLI) ListAdminTokens(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	resp, err := c.AdminServerClient.Request("GET", fmt.Sprintf("/admin/users/%s/keys", userName), "admin", nil, nil)
+	encodedUserName := common.EncodeEmail(userName)
+	apiURL := fmt.Sprintf("/admin/users/%s/keys", encodedUserName)
+
+	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tokens: %w", err)
 	}
@@ -1773,7 +1815,8 @@ func (c *CLI) AdminShowUserInfoCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	apiURL := fmt.Sprintf("/admin/users/%s", userName)
+	encodedUserName := common.EncodeEmail(userName)
+	apiURL := fmt.Sprintf("/admin/users/%s", encodedUserName)
 
 	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
 	if err != nil {
@@ -1818,7 +1861,8 @@ func (c *CLI) AdminShowUserActivityCommand(cmd *Command) (ResponseIf, error) {
 		"email": email,
 	}
 
-	apiURL := fmt.Sprintf("/admin/users/%s/activity", email)
+	encodedUserName := common.EncodeEmail(email)
+	apiURL := fmt.Sprintf("/admin/users/%s/activity", encodedUserName)
 
 	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, payload)
 	if err != nil {
@@ -1852,7 +1896,8 @@ func (c *CLI) AdminShowUserSummaryCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	apiURL := fmt.Sprintf("/admin/users/%s/summary", userName)
+	encodedUserName := common.EncodeEmail(userName)
+	apiURL := fmt.Sprintf("/admin/users/%s/summary", encodedUserName)
 
 	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
 	if err != nil {
@@ -1896,7 +1941,8 @@ func (c *CLI) AdminShowUserDatasetCommand(cmd *Command) (ResponseIf, error) {
 		"dataset": dataset,
 	}
 
-	apiURL := fmt.Sprintf("/admin/users/%s/dataset", email)
+	encodedUserName := common.EncodeEmail(email)
+	apiURL := fmt.Sprintf("/admin/users/%s/dataset", encodedUserName)
 
 	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, payload)
 	if err != nil {
@@ -1931,7 +1977,8 @@ func (c *CLI) AdminShowUserStorageCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	apiURL := fmt.Sprintf("/admin/users/%s/storage", email)
+	encodedUserName := common.EncodeEmail(email)
+	apiURL := fmt.Sprintf("/admin/users/%s/admin", encodedUserName)
 
 	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
 	if err != nil {
@@ -1966,7 +2013,8 @@ func (c *CLI) AdminShowUserQuotaCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	apiURL := fmt.Sprintf("/admin/users/%s/quota", email)
+	encodedUserName := common.EncodeEmail(email)
+	apiURL := fmt.Sprintf("/admin/users/%s/quota", encodedUserName)
 
 	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
 	if err != nil {
@@ -2001,7 +2049,8 @@ func (c *CLI) AdminShowUserIndexCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	apiURL := fmt.Sprintf("/admin/users/%s/index", email)
+	encodedUserName := common.EncodeEmail(email)
+	apiURL := fmt.Sprintf("/admin/users/%s/index", encodedUserName)
 
 	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
 	if err != nil {
@@ -2036,7 +2085,8 @@ func (c *CLI) AdminShowUserPermissionCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	apiURL := fmt.Sprintf("/admin/users/%s/permission", email)
+	encodedUserName := common.EncodeEmail(email)
+	apiURL := fmt.Sprintf("/admin/users/%s/permission", encodedUserName)
 
 	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
 	if err != nil {
@@ -2486,7 +2536,8 @@ func (c *CLI) AdminPurgeUserCommand(cmd *Command) (ResponseIf, error) {
 		"preview": preview,
 	}
 
-	apiURL := fmt.Sprintf("/admin/users/%s/data", userName)
+	encodedUserName := common.EncodeEmail(userName)
+	apiURL := fmt.Sprintf("/admin/users/%s/data", encodedUserName)
 
 	resp, err := c.AdminServerClient.Request("DELETE", apiURL, "admin", nil, payload)
 	if err != nil {
@@ -2630,7 +2681,8 @@ func (c *CLI) AdminListUserDatasetsCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	apiURL := fmt.Sprintf("/admin/users/%s/datasets", userName)
+	encodedUserName := common.EncodeEmail(userName)
+	apiURL := fmt.Sprintf("/admin/users/%s/datasets", encodedUserName)
 
 	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
 	if err != nil {
@@ -2664,7 +2716,8 @@ func (c *CLI) AdminListUserAgentsCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	apiURL := fmt.Sprintf("/admin/users/%s/agents", userName)
+	encodedUserName := common.EncodeEmail(userName)
+	apiURL := fmt.Sprintf("/admin/users/%s/agents", encodedUserName)
 
 	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
 	if err != nil {
@@ -2698,7 +2751,8 @@ func (c *CLI) AdminListUserChatsCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	apiURL := fmt.Sprintf("/admin/users/%s/chats", userName)
+	encodedUserName := common.EncodeEmail(userName)
+	apiURL := fmt.Sprintf("/admin/users/%s/chats", encodedUserName)
 
 	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
 	if err != nil {
@@ -2732,7 +2786,8 @@ func (c *CLI) AdminListUserSearchesCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	apiURL := fmt.Sprintf("/admin/users/%s/searches", userName)
+	encodedUserName := common.EncodeEmail(userName)
+	apiURL := fmt.Sprintf("/admin/users/%s/searches", encodedUserName)
 
 	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
 	if err != nil {
@@ -2766,7 +2821,8 @@ func (c *CLI) AdminListUserModelsCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	apiURL := fmt.Sprintf("/admin/users/%s/models", userName)
+	encodedUserName := common.EncodeEmail(userName)
+	apiURL := fmt.Sprintf("/admin/users/%s/models", encodedUserName)
 
 	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
 	if err != nil {
@@ -2800,7 +2856,8 @@ func (c *CLI) AdminListUserFilesCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	apiURL := fmt.Sprintf("/admin/users/%s/files", userName)
+	encodedUserName := common.EncodeEmail(userName)
+	apiURL := fmt.Sprintf("/admin/users/%s/files", encodedUserName)
 
 	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
 	if err != nil {
@@ -2835,7 +2892,8 @@ func (c *CLI) AdminListUserKeysCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	apiURL := fmt.Sprintf("/admin/users/%s/keys", userName)
+	encodedUserName := common.EncodeEmail(userName)
+	apiURL := fmt.Sprintf("/admin/users/%s/keys", encodedUserName)
 
 	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
 	if err != nil {

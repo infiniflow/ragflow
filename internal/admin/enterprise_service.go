@@ -79,7 +79,6 @@ func (s *Service) DeleteRole(roleName string) (map[string]interface{}, error) {
 	result := map[string]interface{}{
 		"command":   "delete_role",
 		"role_name": roleName,
-		"deleted":   true,
 		"error":     "'delete role' is implemented in enterprise edition",
 	}
 

@@ -170,7 +170,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.GET("/roles/:role_name/permission", r.handler.GetRolePermission)
 			protected.POST("/roles/:role_name/permission", r.handler.GrantRolePermission)
 			protected.DELETE("/roles/:role_name/permission", r.handler.RevokeRolePermission)
-			protected.DELETE("/roles/resource", r.handler.ListResources)
+			protected.GET("/roles/resource", r.handler.ListResources)
 
 			// License
 			protected.GET("/system/fingerprint", r.handler.GetSystemFingerprint)
