@@ -395,6 +395,108 @@ func (h *Handler) ShowUserPermission(c *gin.Context) {
 	success(c, permissions, "")
 }
 
+// ListUserDatasets handle show user datasets
+func (h *Handler) ListUserDatasets(c *gin.Context) {
+	username := c.Param("username")
+	if username == "" {
+		errorResponse(c, "Username is required", 400)
+		return
+	}
+
+	datasets, err := h.service.ListUserDatasets(username)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, datasets, "")
+}
+
+// ListUserAgents handle show user agents
+func (h *Handler) ListUserAgents(c *gin.Context) {
+	username := c.Param("username")
+	if username == "" {
+		errorResponse(c, "Username is required", 400)
+		return
+	}
+
+	agents, err := h.service.ListUserAgents(username)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, agents, "")
+}
+
+// ListUserChats handle show user chats
+func (h *Handler) ListUserChats(c *gin.Context) {
+	username := c.Param("username")
+	if username == "" {
+		errorResponse(c, "Username is required", 400)
+		return
+	}
+
+	chats, err := h.service.ListUserChats(username)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, chats, "")
+}
+
+// ListUserSearches handle show user searches
+func (h *Handler) ListUserSearches(c *gin.Context) {
+	username := c.Param("username")
+	if username == "" {
+		errorResponse(c, "Username is required", 400)
+		return
+	}
+
+	searches, err := h.service.ListUserSearches(username)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, searches, "")
+}
+
+// ListUserModels handle show user models
+func (h *Handler) ListUserModels(c *gin.Context) {
+	username := c.Param("username")
+	if username == "" {
+		errorResponse(c, "Username is required", 400)
+		return
+	}
+
+	models, err := h.service.ListUserModels(username)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, models, "")
+}
+
+// ListUserFiles handle show user files
+func (h *Handler) ListUserFiles(c *gin.Context) {
+	username := c.Param("username")
+	if username == "" {
+		errorResponse(c, "Username is required", 400)
+		return
+	}
+
+	files, err := h.service.ListUserFiles(username)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, files, "")
+}
+
 // ShowUsersSummary handle show users summary
 func (h *Handler) ShowUsersSummary(c *gin.Context) {
 	usersSummary, err := h.service.ShowUsersSummary()

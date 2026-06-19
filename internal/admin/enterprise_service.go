@@ -222,6 +222,132 @@ func (s *Service) ShowUserPermission(email string) (map[string]interface{}, erro
 	return result, nil
 }
 
+// ListUserDatasets show user datasets for enterprise edition
+func (s *Service) ListUserDatasets(email string) ([]map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":  "list_user_datasets",
+			"email":    user.Email,
+			"nickname": user.Nickname,
+			"error":    "'list user datasets' is implemented in enterprise edition",
+		},
+	}
+
+	return result, nil
+}
+
+// ListUserAgents show user agents for enterprise edition
+func (s *Service) ListUserAgents(email string) ([]map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":  "list_user_agents",
+			"email":    user.Email,
+			"nickname": user.Nickname,
+			"error":    "'list user agents' is implemented in enterprise edition",
+		},
+	}
+
+	return result, nil
+}
+
+// ListUserChats show user chats for enterprise edition
+func (s *Service) ListUserChats(email string) ([]map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":  "list_user_chats",
+			"email":    user.Email,
+			"nickname": user.Nickname,
+			"error":    "'list user chats' is implemented in enterprise edition",
+		},
+	}
+
+	return result, nil
+}
+
+// ListUserSearches show user searches for enterprise edition
+func (s *Service) ListUserSearches(email string) ([]map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":  "list_user_searches",
+			"email":    user.Email,
+			"nickname": user.Nickname,
+			"error":    "'list user searches' is implemented in enterprise edition",
+		},
+	}
+
+	return result, nil
+}
+
+// ListUserModels show user models for enterprise edition
+func (s *Service) ListUserModels(email string) ([]map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":  "list_user_models",
+			"email":    user.Email,
+			"nickname": user.Nickname,
+			"error":    "'list user models' is implemented in enterprise edition",
+		},
+	}
+
+	return result, nil
+}
+
+// ListUserFiles show user files for enterprise edition
+func (s *Service) ListUserFiles(email string) ([]map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":  "list_user_files",
+			"email":    user.Email,
+			"nickname": user.Nickname,
+			"error":    "'list user files' is implemented in enterprise edition",
+		},
+	}
+
+	return result, nil
+}
+
 // ShowUsersSummary show users summary for enterprise edition
 func (s *Service) ShowUsersSummary() (map[string]interface{}, error) {
 	result := map[string]interface{}{

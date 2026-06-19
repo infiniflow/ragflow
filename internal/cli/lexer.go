@@ -243,6 +243,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenOf, Value: ident}
 	case "AGENTS":
 		return Token{Type: TokenAgents, Value: ident}
+	case "SEARCHES":
+		return Token{Type: TokenSearches, Value: ident}
 	case "ROLE":
 		return Token{Type: TokenRole, Value: ident}
 	case "ROLES":
