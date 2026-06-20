@@ -745,7 +745,18 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             langfuse_generation.update(output=langfuse_output)
             langfuse_generation.end()
 
-        return {"answer": think + answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt), "created_at": time.time()}
+        return {
+            "answer": think + answer,
+            "reference": refs,
+            "prompt": re.sub(r"\n", "  \n", prompt),
+            "created_at": time.time(),
+            "usage": {
+                "prompt_tokens": used_token_count,
+                "completion_tokens": tk_num,
+                "total_tokens": used_token_count + tk_num,
+                "duration_ms": round(total_time_cost, 1),
+            },
+        }
 
     if langfuse_tracer:
         langfuse_generation = langfuse_tracer.start_generation(

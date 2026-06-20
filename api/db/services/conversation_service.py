@@ -256,11 +256,18 @@ async def async_iframe_completion(dialog_id, question, session_id=None, stream=T
 
     if stream:
         try:
-            async for ans in async_chat(dia, msg, True, **kwargs):
+            last_ans = None
+            async for ans in async_chat(dia, msg, True, session_id=session_id, **kwargs):
                 ans = structure_answer(conv, ans, message_id, session_id)
+                last_ans = ans
                 yield "data:" + json.dumps({"code": 0, "message": "", "data": ans},
                                            ensure_ascii=False) + "\n\n"
-            API4ConversationService.append_message(conv.id, conv.to_dict())
+            usage = (last_ans or {}).get("usage", {})
+            API4ConversationService.append_message(
+                conv.id, conv.to_dict(),
+                tokens=usage.get("total_tokens", 0),
+                duration=usage.get("duration_ms", 0.0),
+            )
         except Exception as e:
             yield "data:" + json.dumps({"code": 500, "message": str(e),
                                         "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
@@ -271,6 +278,11 @@ async def async_iframe_completion(dialog_id, question, session_id=None, stream=T
         answer = None
         async for ans in async_chat(dia, msg, False, **kwargs):
             answer = structure_answer(conv, ans, message_id, session_id)
-            API4ConversationService.append_message(conv.id, conv.to_dict())
+            usage = answer.get("usage", {})
+            API4ConversationService.append_message(
+                conv.id, conv.to_dict(),
+                tokens=usage.get("total_tokens", 0),
+                duration=usage.get("duration_ms", 0.0),
+            )
             break
         yield answer
