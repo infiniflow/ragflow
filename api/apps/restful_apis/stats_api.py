@@ -16,7 +16,6 @@
 from datetime import datetime, timedelta
 from quart import request
 from api.db.services.api_service import API4ConversationService
-from api.db.services.user_service import UserTenantService
 from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response
 from api.apps import login_required, current_user
 
@@ -24,11 +23,8 @@ from api.apps import login_required, current_user
 @login_required
 def stats():
     try:
-        tenants = UserTenantService.query(user_id=current_user.id)
-        if not tenants:
-            return get_data_error_result(message="Tenant not found!")
         objs = API4ConversationService.stats(
-            tenants[0].tenant_id,
+            current_user.id,
             request.args.get(
                 "from_date",
                 (datetime.now() -
