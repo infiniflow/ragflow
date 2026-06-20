@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { supportsCssAnchor } from '@/utils/css-support';
 
-const PathMap = {
+export const PathMap = {
   [Routes.Datasets]: [Routes.Datasets, Routes.DatasetBase],
   [Routes.Chats]: [Routes.Chats, Routes.Chat],
   [Routes.Searches]: [Routes.Searches, Routes.Search],
@@ -17,7 +17,7 @@ const PathMap = {
   [Routes.Files]: [Routes.Files],
 } as const;
 
-const menuItems = [
+export const menuItems = [
   { path: Routes.Root, name: 'header.Root', icon: LucideHouse },
   { path: Routes.Datasets, name: 'header.dataset' /* icon: Library, */ },
   {

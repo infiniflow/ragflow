@@ -15,11 +15,12 @@ import {
 import { cn } from '@/lib/utils';
 import { TenantRole } from '@/pages/user-setting/constants';
 import { Routes } from '@/routes';
-import { LucideChevronDown, LucideCircleHelp, X } from 'lucide-react';
+import { LucideChevronDown, LucideCircleHelp, Menu, X } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { BellButton } from './bell-button';
-import GlobalNavbar from './global-navbar';
+import GlobalNavbar, { menuItems, PathMap } from './global-navbar';
 import ThemeButton from './theme-button';
 
 import { supportedLanguages } from '@/locales/config';
@@ -53,7 +54,8 @@ const headerHistory = [
   },
   {
     question: 'Summarize the Tesla PDF in five bullets',
-    answer: 'Focused on revenue, delivery growth, margin pressure, and outlook.',
+    answer:
+      'Focused on revenue, delivery growth, margin pressure, and outlook.',
     chatId: 'chat-1',
   },
   {
@@ -63,53 +65,36 @@ const headerHistory = [
   },
 ];
 
-export function Header({
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLElement>) {
-  const { pathname } = useLocation();
+type ChatHistorySidebarProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+};
+
+export function ChatHistorySidebar({
+  open,
+  onOpenChange,
+}: ChatHistorySidebarProps) {
   const navigate = useNavigate();
-  const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(false);
-
-  const changeLanguage = useChangeLanguage();
-
-  const {
-    data: { language = 'en', avatar, nickname },
-  } = useFetchUserInfo();
-
-  const { data: tenantData } = useListTenant();
-  const hasNotification = useMemo(
-    () => tenantData?.some((x) => x.role === TenantRole.Invite),
-    [tenantData],
-  );
-
-  const currentLanguage = supportedLanguages.find((x) => x.code === language);
 
   const openHomeChat = (chatId: string) => {
     navigate(`${Routes.Root}?chat=${chatId}`);
-    setIsChatSidebarOpen(false);
+    onOpenChange(false);
   };
 
-  // const langItems = LanguageList.map((x) => ({
-  //   key: x,
-  //   label: <span>{LanguageMap[x as keyof typeof LanguageMap]}</span>,
-  // }));
-
   return (
-    <>
-      {isChatSidebarOpen && (
-        <button
-          aria-label="Close chat sidebar"
-          className="fixed inset-0 z-40 bg-black/20"
-          onClick={() => setIsChatSidebarOpen(false)}
-          type="button"
-        />
+    <aside
+      aria-hidden={!open}
+      className={cn(
+        'fixed inset-0 z-50 h-svh overflow-hidden border-r border-[var(--border)] bg-[var(--bg-card)] text-[var(--text)] transition-transform duration-300 xl:relative xl:inset-auto xl:z-auto xl:col-start-1 xl:row-span-2 xl:row-start-1 xl:h-full xl:min-h-0 xl:translate-x-0 xl:transition-[width,border-color]',
+        open
+          ? 'w-full translate-x-0 border-[var(--border)] xl:w-[min(360px,100vw)]'
+          : 'w-full -translate-x-full border-transparent xl:w-0',
       )}
-
-      <aside
+    >
+      <div
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex w-[min(360px,calc(100%-2rem))] flex-col border-r border-[var(--border)] bg-[var(--bg-card)] p-4 text-[var(--text)] shadow-[24px_0_60px_rgba(13,27,62,0.16)] transition-transform duration-300 dark:shadow-[24px_0_60px_rgba(0,0,0,0.32)]',
-          isChatSidebarOpen ? 'translate-x-0' : '-translate-x-full',
+          'flex h-full w-full flex-col p-4 transition-opacity duration-200 xl:w-[min(360px,100vw)]',
+          open ? 'opacity-100' : 'pointer-events-none opacity-0',
         )}
       >
         <div className="mb-5 flex items-center justify-between gap-3">
@@ -128,7 +113,7 @@ export function Header({
           <Button
             aria-label="Close chat sidebar"
             className="size-9 rounded-full p-0"
-            onClick={() => setIsChatSidebarOpen(false)}
+            onClick={() => onOpenChange(false)}
             size="auto"
             type="button"
             variant="ghost"
@@ -146,7 +131,7 @@ export function Header({
               className="h-8 rounded-full border-[var(--border-button)] bg-[var(--bg-input)] px-3 text-xs text-[var(--text)] hover:bg-[var(--bg-component)]"
               onClick={() => {
                 navigate('/chats');
-                setIsChatSidebarOpen(false);
+                onOpenChange(false);
               }}
               size="auto"
               type="button"
@@ -201,38 +186,239 @@ export function Header({
             ))}
           </div>
         </div>
-      </aside>
+      </div>
+    </aside>
+  );
+}
 
-      <header
-        key="app-navbar"
+type HeaderProps = React.HTMLAttributes<HTMLElement> & ChatHistorySidebarProps;
+
+type MobileNavbarMenuProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  activePath: string;
+  changeLanguage: (language: string) => void;
+  currentLanguageName?: string;
+  avatar?: string;
+  nickname?: string;
+  hasNotification?: boolean;
+};
+
+function MobileNavbarMenu({
+  open,
+  onOpenChange,
+  activePath,
+  changeLanguage,
+  currentLanguageName,
+  avatar,
+  nickname,
+  hasNotification,
+}: MobileNavbarMenuProps) {
+  const { t } = useTranslation();
+
+  return (
+    <div
+      aria-hidden={!open}
+      className={cn(
+        'fixed inset-0 z-40 bg-[var(--bg-card)] text-[var(--text)] transition-transform duration-300 xl:hidden',
+        open ? 'translate-y-0' : '-translate-y-full',
+      )}
+    >
+      <div
         className={cn(
-          'w-full grid grid-cols-[1fr_auto_1fr] grid-rows-1 items-center gap-8',
-          className,
+          'flex h-full flex-col p-4 transition-opacity duration-200',
+          open ? 'opacity-100' : 'pointer-events-none opacity-0',
         )}
-        {...props}
       >
-        <div className="inline-flex items-center">
-          <button
-            aria-current={pathname === Routes.Root ? 'page' : undefined}
-            aria-label="Open chat sidebar"
-            className="rounded-2xl p-1 transition hover:bg-[var(--bg-input)]"
-            onClick={() => setIsChatSidebarOpen(true)}
-            type="button"
-          >
+        <div className="mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
             <ThemeLogo className="size-10" />
-          </button>
+            <span className="text-lg font-semibold">MetaGross-AI</span>
+          </div>
+
+          <Button
+            aria-label="Close menu"
+            className="size-10 rounded-full p-0"
+            onClick={() => onOpenChange(false)}
+            size="auto"
+            type="button"
+            variant="ghost"
+          >
+            <X className="size-5" />
+          </Button>
         </div>
 
-      <GlobalNavbar />
+        <nav className="min-h-0 flex-1 overflow-y-auto">
+          <div className="flex flex-col gap-2">
+            {menuItems.map(({ path, name, icon: Icon, ...props }) => {
+              const isActive = path === activePath;
+
+              return (
+                <Link
+                  {...props}
+                  aria-current={isActive ? 'page' : undefined}
+                  className={cn(
+                    'flex min-h-12 items-center gap-3 rounded-lg px-3 text-base font-medium transition hover:bg-[var(--bg-input)]',
+                    isActive &&
+                      'bg-[var(--text-primary)] text-[var(--bg-base)] hover:bg-[var(--text-primary)]',
+                  )}
+                  key={path}
+                  onClick={() => onOpenChange(false)}
+                  to={path}
+                >
+                  {Icon && <Icon className="size-5 stroke-[1.7]" />}
+                  <span>{t(name)}</span>
+                </Link>
+              );
+            })}
+          </div>
+
+          <div className="my-6 border-t border-[var(--border)]" />
+
+          <section className="space-y-3">
+            <h2 className="px-1 text-xs font-semibold uppercase text-[var(--text-muted)]">
+              Account
+            </h2>
+
+            <Link
+              className="flex min-h-12 items-center gap-3 rounded-lg px-3 transition hover:bg-[var(--bg-input)]"
+              data-testid="settings-entrypoint-mobile"
+              onClick={() => onOpenChange(false)}
+              to={Routes.UserSetting}
+            >
+              <RAGFlowAvatar
+                name={nickname}
+                avatar={avatar}
+                isPerson
+                className="size-8"
+              />
+              <span className="min-w-0 truncate font-medium">
+                {nickname || 'Account'}
+              </span>
+            </Link>
+
+            <div className="rounded-lg border border-[var(--border-button)] p-3">
+              <div className="mb-2 text-sm text-[var(--text-muted)]">
+                Language
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {supportedLanguages.map((x) => (
+                  <Button
+                    className={cn(
+                      'justify-start',
+                      currentLanguageName === x.displayName &&
+                        'border-[var(--accent-primary)]',
+                    )}
+                    key={x.code}
+                    onClick={() => changeLanguage(x.code)}
+                    type="button"
+                    variant="outline"
+                  >
+                    {x.displayName}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                asLink
+                className="justify-start"
+                rel="noreferrer noopener"
+                target="_blank"
+                to="https://metagross.ai/docs/dev/category/user-guides"
+                variant="outline"
+              >
+                <LucideCircleHelp className="size-[1em]" />
+                Docs
+              </Button>
+
+              <div className="flex min-h-10 items-center justify-center rounded-md border border-[var(--border-button)]">
+                <ThemeButton />
+              </div>
+            </div>
+
+            {hasNotification && (
+              <div className="flex min-h-12 items-center justify-between rounded-lg border border-[var(--border-button)] px-3">
+                <span className="font-medium">Notifications</span>
+                <BellButton />
+              </div>
+            )}
+          </section>
+        </nav>
+      </div>
+    </div>
+  );
+}
+
+export function Header({
+  className,
+  open: isChatSidebarOpen,
+  onOpenChange,
+  ...props
+}: HeaderProps) {
+  const { pathname } = useLocation();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  const changeLanguage = useChangeLanguage();
+
+  const {
+    data: { language = 'en', avatar, nickname },
+  } = useFetchUserInfo();
+
+  const { data: tenantData } = useListTenant();
+  const hasNotification = useMemo(
+    () => tenantData?.some((x) => x.role === TenantRole.Invite),
+    [tenantData],
+  );
+
+  const currentLanguage = supportedLanguages.find((x) => x.code === language);
+  const activePath = useMemo(() => {
+    return (
+      Object.keys(PathMap).find((x: string) =>
+        PathMap[x as keyof typeof PathMap].some((y: string) =>
+          pathname.includes(y),
+        ),
+      ) || pathname
+    );
+  }, [pathname]);
+
+  // const langItems = LanguageList.map((x) => ({
+  //   key: x,
+  //   label: <span>{LanguageMap[x as keyof typeof LanguageMap]}</span>,
+  // }));
+
+  return (
+    <header
+      key="app-navbar"
+      className={cn(
+        'w-full grid grid-cols-[auto_minmax(0,1fr)_auto] grid-rows-1 items-center gap-3 xl:grid-cols-[1fr_auto_1fr] xl:gap-8',
+        className,
+      )}
+      {...props}
+    >
+      <div className="inline-flex items-center">
+        <button
+          aria-current={pathname === Routes.Root ? 'page' : undefined}
+          aria-label={
+            isChatSidebarOpen ? 'Close chat sidebar' : 'Open chat sidebar'
+          }
+          className="rounded-2xl p-1 transition hover:bg-[var(--bg-input)]"
+          onClick={() => onOpenChange(!isChatSidebarOpen)}
+          type="button"
+        >
+          <ThemeLogo className="size-10" />
+        </button>
+      </div>
+
+      <div className="hidden xl:block">
+        <GlobalNavbar />
+      </div>
 
       <div
-        className="flex items-center justify-end gap-4 text-text-badge"
+        className="hidden items-center justify-end gap-4 text-text-badge xl:flex"
         data-testid="auth-status"
       >
-        
-
-        
-
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button className="flex items-center gap-1" variant="ghost">
@@ -285,7 +471,28 @@ export function Header({
           </Badge> */}
         </Link>
       </div>
-      </header>
-    </>
+
+      <Button
+        aria-label="Open menu"
+        className="size-10 justify-self-end rounded-full p-0 xl:hidden"
+        onClick={() => setIsMobileMenuOpen(true)}
+        size="auto"
+        type="button"
+        variant="ghost"
+      >
+        <Menu className="size-5" />
+      </Button>
+
+      <MobileNavbarMenu
+        activePath={activePath}
+        avatar={avatar}
+        changeLanguage={changeLanguage}
+        currentLanguageName={currentLanguage?.displayName}
+        hasNotification={hasNotification}
+        nickname={nickname}
+        onOpenChange={setIsMobileMenuOpen}
+        open={isMobileMenuOpen}
+      />
+    </header>
   );
 }
