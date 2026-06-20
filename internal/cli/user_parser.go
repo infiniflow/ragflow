@@ -63,7 +63,7 @@ func (p *Parser) parseLoginUser() (*Command, error) {
 }
 
 func (p *Parser) parsePingServer() (*Command, error) {
-	cmd := NewCommand("ping")
+	cmd := NewCommand("ping_server")
 	p.nextToken()
 	// Semicolon is optional for UNSET TOKEN
 	if p.curToken.Type == TokenSemicolon {
@@ -447,8 +447,6 @@ func (p *Parser) parseShowCommand() (*Command, error) {
 		return NewCommand("show_current"), nil
 	case TokenVar:
 		return p.parseShowVariable()
-	case TokenService:
-		return p.parseShowService()
 	case TokenProvider:
 		return p.parseShowProvider()
 	case TokenModel:
@@ -479,24 +477,6 @@ func (p *Parser) parseShowVariable() (*Command, error) {
 
 	cmd := NewCommand("show_variable")
 	cmd.Params["var_name"] = varName
-
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseShowService() (*Command, error) {
-	p.nextToken() // consume SERVICE
-	serviceNum, err := p.parseNumber()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("show_service")
-	cmd.Params["number"] = serviceNum
 
 	p.nextToken()
 	// Semicolon is optional for UNSET TOKEN

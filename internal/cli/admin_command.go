@@ -634,8 +634,8 @@ func (c *CLI) ListServices(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// Show service show service (admin mode only)
-func (c *CLI) ShowService(cmd *Command) (ResponseIf, error) {
+// AdminShowService show service (admin mode only)
+func (c *CLI) AdminShowService(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}

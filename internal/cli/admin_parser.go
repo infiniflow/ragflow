@@ -69,59 +69,12 @@ func (p *Parser) parseAdminLogout() (*Command, error) {
 }
 
 func (p *Parser) parseAdminPingServer() (*Command, error) {
-	cmd := NewCommand("ping")
+	cmd := NewCommand("ping_server")
 	p.nextToken()
 	// Semicolon is optional for UNSET TOKEN
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
-	return cmd, nil
-}
-
-func (p *Parser) parseAdminRegisterCommand() (*Command, error) {
-	cmd := NewCommand("register_user")
-
-	if err := p.expectPeek(TokenUser); err != nil {
-		return nil, err
-	}
-	p.nextToken()
-
-	userName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-	cmd.Params["user_name"] = userName
-
-	p.nextToken()
-	if p.curToken.Type != TokenAs {
-		return nil, fmt.Errorf("expected AS")
-	}
-
-	p.nextToken()
-	nickname, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-	cmd.Params["nickname"] = nickname
-
-	p.nextToken()
-	if p.curToken.Type != TokenPassword {
-		return nil, fmt.Errorf("expected PASSWORD")
-	}
-
-	p.nextToken()
-	password, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-	cmd.Params["password"] = password
-
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-
 	return cmd, nil
 }
 
@@ -384,7 +337,7 @@ func (p *Parser) parseAdminShowCommand() (*Command, error) {
 
 	switch p.curToken.Type {
 	case TokenService:
-		return p.parseShowService()
+		return p.parseAdminShowService()
 	case TokenUser:
 		return p.parseAdminShowUserCommand()
 	case TokenRole:
@@ -414,10 +367,28 @@ func (p *Parser) parseAdminShowCommand() (*Command, error) {
 	case TokenQuota:
 		return p.parseAdminShowQuotaCommand()
 	case TokenTasks:
-		return p.parseAdminShowQuotaCommand()
+		return p.parseAdminShowTasksCommand()
 	default:
 		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
 	}
+}
+
+func (p *Parser) parseAdminShowService() (*Command, error) {
+	p.nextToken() // consume SERVICE
+	serviceNum, err := p.parseNumber()
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := NewCommand("admin_show_service")
+	cmd.Params["number"] = serviceNum
+
+	p.nextToken()
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
 }
 
 func (p *Parser) parseAdminShowUser() (*Command, error) {
@@ -483,24 +454,6 @@ func (p *Parser) parseAdminShowVariable() (*Command, error) {
 
 	cmd := NewCommand("show_variable")
 	cmd.Params["var_name"] = varName
-
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseAdminShowService() (*Command, error) {
-	p.nextToken() // consume SERVICE
-	serviceNum, err := p.parseNumber()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("show_service")
-	cmd.Params["number"] = serviceNum
 
 	p.nextToken()
 	// Semicolon is optional for UNSET TOKEN

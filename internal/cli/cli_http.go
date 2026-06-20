@@ -41,7 +41,7 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.LoginUserByCommand(cmd)
 	case "logout":
 		return c.Logout()
-	case "ping":
+	case "ping_server":
 		return c.PingByCommand(cmd)
 	case "benchmark":
 		return c.RunBenchmark(cmd)
@@ -65,8 +65,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminDropUserCommand(cmd)
 	case "admin_drop_user_api_key_command":
 		return c.AdminDropUserAPIKeyCommand(cmd)
-	case "show_service":
-		return c.ShowService(cmd)
+	case "admin_show_service":
+		return c.AdminShowService(cmd)
 	case "admin_show_version_command":
 		return c.AdminShowVersionCommand(cmd)
 	case "show_current":
@@ -232,7 +232,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.LoginUserByCommand(cmd)
 	case "logout":
 		return c.Logout()
-	case "ping":
+	case "ping_server":
 		return c.PingByCommand(cmd)
 	// Configuration commands
 	case "list_configs":
