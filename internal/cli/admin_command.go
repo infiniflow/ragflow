@@ -640,15 +640,6 @@ func (c *CLI) ListVariables(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	iterations := 1
-	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
-		iterations = val
-	}
-
-	if iterations > 1 {
-		return c.AdminServerClient.RequestWithIterations("GET", "/admin/variables", "admin", nil, nil, iterations)
-	}
-
 	resp, err := c.AdminServerClient.Request("GET", "/admin/variables", "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list variables: %w", err)
@@ -672,8 +663,8 @@ func (c *CLI) ListVariables(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// ShowVariable shows system variables by exact name or name prefix (admin mode only).
-func (c *CLI) ShowVariable(cmd *Command) (ResponseIf, error) {
+// AdminShowVariable shows system variables by exact name or name prefix (admin mode only).
+func (c *CLI) AdminShowVariable(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -683,15 +674,7 @@ func (c *CLI) ShowVariable(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("var_name not provided")
 	}
 
-	iterations := 1
-	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
-		iterations = val
-	}
-
 	payload := map[string]interface{}{"var_name": varName}
-	if iterations > 1 {
-		return c.AdminServerClient.RequestWithIterations("GET", "/admin/variables", "admin", nil, payload, iterations)
-	}
 
 	resp, err := c.AdminServerClient.Request("GET", "/admin/variables", "admin", nil, payload)
 	if err != nil {

@@ -343,9 +343,9 @@ func (p *Parser) parseAdminShowCommand() (*Command, error) {
 	case TokenRole:
 		return p.parseAdminShowRole()
 	case TokenVersion:
-		return p.parseAdminShowVersionCommand()
+		return p.parseAdminShowVersion()
 	case TokenVar:
-		return p.parseShowVariable()
+		return p.parseAdminShowVariable()
 	case TokenCurrent:
 		return p.parseAdminShowCurrentCommand()
 	case TokenFingerprint:
@@ -391,6 +391,200 @@ func (p *Parser) parseAdminShowService() (*Command, error) {
 	return cmd, nil
 }
 
+// SHOW USER 'user@example.com';
+// SHOW USER 'user@example.com' ACTIVITY;
+// SHOW USER 'user@example.com' SUMMARY;
+// SHOW USER 'user@example.com' DATASET 'dataset_name';
+// SHOW USER 'user@example.com' STORAGE;
+// SHOW USER 'user@example.com' QUOTA;
+// SHOW USER 'user@example.com' INDEX;
+// SHOW USER 'user@example.com' PERMISSION;
+func (p *Parser) parseAdminShowUserCommands() (*Command, error) {
+	p.nextToken() // consume USER
+
+	userName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	switch p.curToken.Type {
+	case TokenActivity:
+		return p.parseAdminShowActivityCommand(userName)
+	case TokenSummary:
+		return p.parseAdminShowUserSummaryCommand(userName)
+	case TokenDataset:
+		return p.parseAdminShowUserDataSetCommand(userName)
+	case TokenStorage:
+		return p.parseAdminShowUserStorageCommand(userName)
+	case TokenQuota:
+		return p.parseAdminShowUserQuotaCommand(userName)
+	case TokenIndex:
+		return p.parseAdminShowUserIndexCommand(userName)
+	case TokenPermission:
+		return p.parseAdminShowUserPermissionCommand(userName)
+	default:
+		return p.parseAdminShowUser(userName)
+	}
+}
+
+// SHOW USER 'user@example.com';
+func (p *Parser) parseAdminShowUser(userName string) (*Command, error) {
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("admin_show_user")
+	cmd.Params["user_name"] = userName
+
+	return cmd, nil
+}
+
+// SHOW USER 'user@example.com' ACTIVITY DAYS 30;
+func (p *Parser) parseAdminShowActivityCommand(userName string) (*Command, error) {
+	p.nextToken() // consume ACTIVITY
+
+	var days int
+	var err error
+
+	if p.curToken.Type == TokenDays {
+		p.nextToken() // consume DAYS
+		days, err = p.parseNumber()
+		if err != nil {
+			return nil, err
+		}
+		if days < 1 {
+			return nil, fmt.Errorf("invalid number of DAYS")
+		}
+		p.nextToken()
+	} else {
+		days = 7
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("admin_show_user_activity_command")
+	cmd.Params["user_name"] = userName
+	cmd.Params["days"] = days
+
+	return cmd, nil
+}
+
+// SHOW USER 'user@example.com' SUMMARY;
+func (p *Parser) parseAdminShowUserSummaryCommand(userName string) (*Command, error) {
+	p.nextToken() // consume SUMMARY
+
+	cmd := NewCommand("admin_show_user_summary_command")
+	cmd.Params["user_name"] = userName
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+// SHOW USER 'user@example.com' DATASET 'dataset_name';
+func (p *Parser) parseAdminShowUserDataSetCommand(userName string) (*Command, error) {
+	p.nextToken() // consume DATASET
+
+	var tree = false
+	var datasetName string
+	var err error
+	datasetName, err = p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	if p.curToken.Type == TokenTree {
+		tree = true
+		p.nextToken()
+	}
+
+	cmd := NewCommand("admin_show_user_dataset_command")
+	cmd.Params["user_name"] = userName
+	if datasetName != "" {
+		cmd.Params["dataset_name"] = datasetName
+	}
+	if tree {
+		cmd.Params["tree"] = true
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+// SHOW USER 'user@example.com' STORAGE;
+func (p *Parser) parseAdminShowUserStorageCommand(userName string) (*Command, error) {
+	p.nextToken() // consume STORAGE
+
+	cmd := NewCommand("admin_show_user_storage_command")
+	cmd.Params["user_name"] = userName
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+// SHOW USER 'user@example.com' QUOTA;
+func (p *Parser) parseAdminShowUserQuotaCommand(userName string) (*Command, error) {
+	p.nextToken() // consume QUOTA
+
+	cmd := NewCommand("admin_show_user_quota_command")
+	cmd.Params["user_name"] = userName
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+// SHOW USER 'user@example.com' INDEX;
+func (p *Parser) parseAdminShowUserIndexCommand(userName string) (*Command, error) {
+	p.nextToken() // consume INDEX
+
+	cmd := NewCommand("admin_show_user_index_command")
+	cmd.Params["user_name"] = userName
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+// SHOW USER 'user@example.com' PERMISSION;
+func (p *Parser) parseAdminShowUserPermissionCommand(userName string) (*Command, error) {
+	p.nextToken() // consume PERMISSION
+
+	cmd := NewCommand("admin_show_user_permission_command")
+	cmd.Params["user_name"] = userName
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// SHOW ROLE 'role_name';
 func (p *Parser) parseAdminShowRole() (*Command, error) {
 	p.nextToken() // consume ROLE
 
@@ -410,14 +604,26 @@ func (p *Parser) parseAdminShowRole() (*Command, error) {
 	return cmd, nil
 }
 
+// SHOW VERSION;
+func (p *Parser) parseAdminShowVersion() (*Command, error) {
+	p.nextToken() // consume VERSION
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return NewCommand("admin_show_version_command"), nil
+}
+
 func (p *Parser) parseAdminShowVariable() (*Command, error) {
 	p.nextToken() // consume VAR
-	varName, err := p.parseIdentifier()
+	varName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 
-	cmd := NewCommand("show_variable")
+	cmd := NewCommand("admin_show_variable")
 	cmd.Params["var_name"] = varName
 
 	p.nextToken()
@@ -1942,18 +2148,6 @@ func (p *Parser) parseAdminRemoveCommand() (*Command, error) {
 	return cmd, nil
 }
 
-// SHOW VERSION;
-func (p *Parser) parseAdminShowVersionCommand() (*Command, error) {
-	p.nextToken() // consume VERSION
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-
-	return NewCommand("admin_show_version_command"), nil
-}
-
 // SHOW CURRENT;
 func (p *Parser) parseAdminShowCurrentCommand() (*Command, error) {
 	p.nextToken() // consume CURRENT
@@ -1986,197 +2180,6 @@ func (p *Parser) parseAdminShowLicenseCommand() (*Command, error) {
 	}
 
 	return NewCommand("admin_show_license_command"), nil
-}
-
-// SHOW USER 'user@example.com';
-// SHOW USER 'user@example.com' DATASET 'dataset_name';
-// SHOW USER 'user@example.com' SUMMARY;
-// SHOW USER 'user@example.com' STORAGE;
-// SHOW USER 'user@example.com' QUOTA;
-// SHOW USER 'user@example.com' INDEX;
-func (p *Parser) parseAdminShowUserCommands() (*Command, error) {
-	p.nextToken() // consume USER
-
-	userName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-	p.nextToken()
-
-	switch p.curToken.Type {
-	case TokenActivity:
-		return p.parseAdminShowActivityCommand(userName)
-	case TokenSummary:
-		return p.parseAdminShowUserSummaryCommand(userName)
-	case TokenDataset:
-		return p.parseAdminShowUserDataSetCommand(userName)
-	case TokenStorage:
-		return p.parseAdminShowUserStorageCommand(userName)
-	case TokenQuota:
-		return p.parseAdminShowUserQuotaCommand(userName)
-	case TokenIndex:
-		return p.parseAdminShowUserIndexCommand(userName)
-	case TokenPermission:
-		return p.parseAdminShowUserPermissionCommand(userName)
-	default:
-		return p.parseAdminShowUser(userName)
-	}
-}
-
-// SHOW USER 'user@example.com';
-func (p *Parser) parseAdminShowUser(userName string) (*Command, error) {
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-
-	cmd := NewCommand("admin_show_user")
-	cmd.Params["user_name"] = userName
-
-	return cmd, nil
-}
-
-// SHOW USER 'user@example.com' ACTIVITY DAYS 30;
-func (p *Parser) parseAdminShowActivityCommand(userName string) (*Command, error) {
-	p.nextToken() // consume ACTIVITY
-
-	var days int
-	var err error
-
-	if p.curToken.Type == TokenDays {
-		p.nextToken() // consume DAYS
-		days, err = p.parseNumber()
-		if err != nil {
-			return nil, err
-		}
-		if days < 1 {
-			return nil, fmt.Errorf("invalid number of DAYS")
-		}
-		p.nextToken()
-	} else {
-		days = 7
-	}
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-
-	cmd := NewCommand("admin_show_user_activity_command")
-	cmd.Params["user_name"] = userName
-	cmd.Params["days"] = days
-
-	return cmd, nil
-}
-
-// SHOW USER 'user@example.com' SUMMARY;
-func (p *Parser) parseAdminShowUserSummaryCommand(userName string) (*Command, error) {
-	p.nextToken() // consume SUMMARY
-
-	cmd := NewCommand("admin_show_user_summary_command")
-	cmd.Params["user_name"] = userName
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-
-	return cmd, nil
-}
-
-// SHOW USER 'user@example.com' DATASET 'dataset_name';
-func (p *Parser) parseAdminShowUserDataSetCommand(userName string) (*Command, error) {
-	p.nextToken() // consume DATASET
-
-	var tree = false
-	var datasetName string
-	var err error
-	datasetName, err = p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-	p.nextToken()
-
-	if p.curToken.Type == TokenTree {
-		tree = true
-		p.nextToken()
-	}
-
-	cmd := NewCommand("admin_show_user_dataset_command")
-	cmd.Params["user_name"] = userName
-	if datasetName != "" {
-		cmd.Params["dataset_name"] = datasetName
-	}
-	if tree {
-		cmd.Params["tree"] = true
-	}
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-
-	return cmd, nil
-}
-
-// SHOW USER 'user@example.com' STORAGE;
-func (p *Parser) parseAdminShowUserStorageCommand(userName string) (*Command, error) {
-	p.nextToken() // consume STORAGE
-
-	cmd := NewCommand("admin_show_user_storage_command")
-	cmd.Params["user_name"] = userName
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-
-	return cmd, nil
-}
-
-// SHOW USER 'user@example.com' QUOTA;
-func (p *Parser) parseAdminShowUserQuotaCommand(userName string) (*Command, error) {
-	p.nextToken() // consume QUOTA
-
-	cmd := NewCommand("admin_show_user_quota_command")
-	cmd.Params["user_name"] = userName
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-
-	return cmd, nil
-}
-
-// SHOW USER 'user@example.com' INDEX;
-func (p *Parser) parseAdminShowUserIndexCommand(userName string) (*Command, error) {
-	p.nextToken() // consume INDEX
-
-	cmd := NewCommand("admin_show_user_index_command")
-	cmd.Params["user_name"] = userName
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-
-	return cmd, nil
-}
-
-// SHOW USER 'user@example.com' PERMISSION;
-func (p *Parser) parseAdminShowUserPermissionCommand(userName string) (*Command, error) {
-	p.nextToken() // consume PERMISSION
-
-	cmd := NewCommand("admin_show_user_permission_command")
-	cmd.Params["user_name"] = userName
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
 }
 
 // SHOW USERS SUMMARY;
