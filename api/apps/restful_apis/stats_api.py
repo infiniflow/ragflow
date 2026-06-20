@@ -22,6 +22,20 @@ from api.apps import login_required, current_user
 @manager.route('/system/stats', methods=['GET'])  # noqa: F821
 @login_required
 def stats():
+    """Return daily aggregated usage statistics for the authenticated user's tenant.
+
+    Query parameters:
+        from_date (str): Start date, format ``YYYY-MM-DD [HH:MM:SS]``.
+            Defaults to 7 days ago.
+        to_date (str): End date, format ``YYYY-MM-DD [HH:MM:SS]``.
+            Defaults to now.
+        canvas_id (str, optional): When present, returns agent session stats
+            instead of chat session stats.
+
+    Returns:
+        JSON with keys ``pv``, ``uv``, ``speed``, ``tokens``, ``round``,
+        ``thumb_up`` — each a list of ``[date, value]`` pairs grouped by day.
+    """
     try:
         objs = API4ConversationService.stats(
             current_user.id,
