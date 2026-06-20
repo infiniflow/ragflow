@@ -95,18 +95,18 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListAdminTokens(cmd)
 	case "list_available_providers":
 		return c.ListAvailableProviders(cmd)
-	case "show_provider":
-		return c.ShowProvider(cmd)
+	case "admin_show_provider":
+		return c.CommonShowProviderCommand(cmd)
+	case "admin_show_provider_model":
+		return c.CommonShowProviderModelCommand(cmd)
 	case "list_provider_models":
 		return c.ListModels(cmd)
 	case "list_supported_models":
 		return c.ListSupportedModels(cmd)
 	case "list_instance_models":
 		return c.ListInstanceModels(cmd)
-	case "show_provider_model":
-		return c.ShowProviderModel(cmd)
-	case "show_model":
-		return c.ShowModel(cmd)
+	case "admin_show_model":
+		return c.CommonShowModel(cmd)
 	case "list_all_models":
 		return c.ListAllModels(cmd)
 	case "list_admin_tasks":
@@ -271,7 +271,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "list_available_providers":
 		return c.ListAvailableProviders(cmd)
 	case "show_provider":
-		return c.ShowProvider(cmd)
+		return c.CommonShowProviderCommand(cmd)
 	case "list_provider_models":
 		return c.ListModels(cmd)
 	case "list_supported_models":
@@ -279,9 +279,9 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "list_instance_models":
 		return c.ListInstanceModels(cmd)
 	case "show_provider_model":
-		return c.ShowProviderModel(cmd)
+		return c.CommonShowProviderModelCommand(cmd)
 	case "show_model":
-		return c.ShowModel(cmd)
+		return c.CommonShowModel(cmd)
 	case "list_all_models":
 		return c.ListAllModels(cmd)
 	// Provider commands

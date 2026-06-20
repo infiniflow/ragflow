@@ -283,7 +283,7 @@ func (c *CLI) ListAvailableProviders(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) ShowProvider(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonShowProviderCommand(cmd *Command) (ResponseIf, error) {
 	providerName, ok := cmd.Params["provider_name"].(string)
 	if !ok {
 		return nil, fmt.Errorf("provider_name not provided")
@@ -409,7 +409,7 @@ func (c *CLI) ListSupportedModels(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) ShowProviderModel(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonShowProviderModelCommand(cmd *Command) (ResponseIf, error) {
 	providerName, ok := cmd.Params["provider_name"].(string)
 	if !ok {
 		return nil, fmt.Errorf("provider_name not provided")
@@ -949,7 +949,7 @@ func (c *CLI) ListAllModels(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) ShowModel(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonShowModel(cmd *Command) (ResponseIf, error) {
 
 	modelName, ok := cmd.Params["model_name"].(string)
 	if !ok {

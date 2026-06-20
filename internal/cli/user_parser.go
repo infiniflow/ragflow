@@ -119,6 +119,9 @@ func (p *Parser) parseRegisterCommand() (*Command, error) {
 	return cmd, nil
 }
 
+// LIST PROVIDER 'provider_name' MODELS;
+// LIST PROVIDER 'provider_name' INSTANCE 'instance_name' MODELS
+// LIST MODELS;
 func (p *Parser) parseListCommand() (*Command, error) {
 	p.nextToken() // consume LIST
 

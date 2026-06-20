@@ -353,9 +353,9 @@ func (p *Parser) parseAdminShowCommand() (*Command, error) {
 	case TokenLicense:
 		return p.parseAdminShowLicense()
 	case TokenProvider:
-		return p.parseShowProvider()
+		return p.parseAdminShowProvider()
 	case TokenModel:
-		return p.parseShowModel()
+		return p.parseAdminShowModel()
 	case TokenAdmin:
 		return p.parseUserShowAdmin()
 	case TokenAPI:
@@ -616,6 +616,7 @@ func (p *Parser) parseAdminShowVersion() (*Command, error) {
 	return NewCommand("admin_show_version_command"), nil
 }
 
+// SHOW VAR 'var_name';
 func (p *Parser) parseAdminShowVariable() (*Command, error) {
 	p.nextToken() // consume VAR
 	varName, err := p.parseQuotedString()
@@ -634,7 +635,7 @@ func (p *Parser) parseAdminShowVariable() (*Command, error) {
 	return cmd, nil
 }
 
-// ADMIN SHOW CURRENT;
+// SHOW CURRENT;
 func (p *Parser) parseAdminShowCurrent() (*Command, error) {
 	p.nextToken() // consume CURRENT
 
@@ -644,6 +645,96 @@ func (p *Parser) parseAdminShowCurrent() (*Command, error) {
 	}
 
 	return NewCommand("admin_show_current"), nil
+}
+
+// SHOW FINGERPRINT;
+func (p *Parser) parseAdminShowFingerprint() (*Command, error) {
+	p.nextToken() // consume FINGERPRINT
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return NewCommand("admin_show_fingerprint"), nil
+}
+
+// SHOW LICENSE;
+func (p *Parser) parseAdminShowLicense() (*Command, error) {
+	p.nextToken() // consume LICENSE
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return NewCommand("admin_show_license"), nil
+}
+
+// SHOW PROVIDER 'provider_name';
+func (p *Parser) parseAdminShowProvider() (*Command, error) {
+	p.nextToken() // consume PROVIDER
+
+	providerName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected provider name: %w", err)
+	}
+	p.nextToken()
+
+	if p.curToken.Type == TokenModel {
+		// SHOW PROVIDER 'provider_name' MODEL 'model_name'
+		return p.parseAdminShowProviderModel(providerName)
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("admin_show_provider")
+	cmd.Params["provider_name"] = providerName
+	return cmd, nil
+}
+
+// SHOW PROVIDER 'provider_name' MODEL 'model_name';
+func (p *Parser) parseAdminShowProviderModel(providerName string) (*Command, error) {
+	p.nextToken() // consume MODEL
+
+	modelName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected model name: %w", err)
+	}
+	p.nextToken() // consume model_name
+
+	cmd := NewCommand("admin_show_provider_model")
+	cmd.Params["model_name"] = modelName
+	cmd.Params["provider_name"] = providerName
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// SHOW MODEL 'model_name';
+func (p *Parser) parseAdminShowModel() (*Command, error) {
+	p.nextToken() // consume MODEL
+
+	modelName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected model name: %w", err)
+	}
+	p.nextToken()
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("admin_show_model")
+	cmd.Params["model_name"] = modelName
+	return cmd, nil
 }
 
 func (p *Parser) parseCommonShowPoolModel() (*Command, error) {
@@ -2158,28 +2249,6 @@ func (p *Parser) parseAdminRemoveCommand() (*Command, error) {
 		p.nextToken()
 	}
 	return cmd, nil
-}
-
-func (p *Parser) parseAdminShowFingerprint() (*Command, error) {
-	p.nextToken() // consume FINGERPRINT
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-
-	return NewCommand("admin_show_fingerprint"), nil
-}
-
-func (p *Parser) parseAdminShowLicense() (*Command, error) {
-	p.nextToken() // consume LICENSE
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-
-	return NewCommand("admin_show_license"), nil
 }
 
 // SHOW USERS SUMMARY;

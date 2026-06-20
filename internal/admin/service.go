@@ -1426,7 +1426,20 @@ func (s *Service) RestartService(serviceID string) (map[string]interface{}, erro
 	}, nil
 }
 
-// Variable/Settings methods
+// ListAllModels list all models
+func (s *Service) ListAllModels(name string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"service_name": name,
+		"message":      "List models not implemented",
+	}, nil
+}
+
+func (s *Service) GetModelByModelName(modelName string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"model_name": modelName,
+		"message":    "Get model not implemented",
+	}, nil
+}
 
 // AdminException admin exception error
 type AdminException struct {

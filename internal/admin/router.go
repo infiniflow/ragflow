@@ -101,6 +101,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.GET("/:provider_name/models/:model_name", r.handler.ShowModel)
 			}
 
+			// Models
+			protected.GET("/all-models", r.handler.ListModelsOrShowModel)
+
 			queue := protected.Group("/queue")
 			{
 				queue.GET("/", r.handler.ShowMessageQueue)

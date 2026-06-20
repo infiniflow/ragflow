@@ -748,6 +748,33 @@ func (h *Handler) ShowModel(c *gin.Context) {
 	})
 }
 
+type ListModelsOrShowModelRequest struct {
+	ModelName string `json:"model_name"`
+}
+
+func (h *Handler) ListModelsOrShowModel(c *gin.Context) {
+	var req ListModelsOrShowModelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Invalid request body",
+		})
+		return
+	}
+
+	if req.ModelName == "" {
+		// List models
+	} else {
+		// Get model
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    nil,
+	})
+}
+
 // GetVariables handle get variables
 // Python logic: if request body is empty, list all variables; otherwise get single variable by var_name from body
 func (h *Handler) GetVariables(c *gin.Context) {
