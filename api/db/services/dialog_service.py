@@ -234,6 +234,7 @@ async def async_chat_solo(dialog, messages, stream=True):
         msg[-1]["content"] += attachments
     if llm_type == "chat" and image_attachments:
         convert_last_user_msg_to_multimodal(msg, image_attachments, factory)
+    prompt_tk = sum(num_tokens_from_string(m.get("content", "")) for m in msg if isinstance(m.get("content"), str))
     if stream:
         if llm_type == "chat":
             stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, dialog.llm_setting)
@@ -257,9 +258,9 @@ async def async_chat_solo(dialog, messages, stream=True):
             "prompt": "",
             "created_at": time.time(),
             "usage": {
-                "prompt_tokens": 0,
+                "prompt_tokens": prompt_tk,
                 "completion_tokens": tk_num,
-                "total_tokens": tk_num,
+                "total_tokens": prompt_tk + tk_num,
                 "duration_ms": duration_ms,
             },
         }
@@ -280,9 +281,9 @@ async def async_chat_solo(dialog, messages, stream=True):
             "prompt": "",
             "created_at": time.time(),
             "usage": {
-                "prompt_tokens": 0,
+                "prompt_tokens": prompt_tk,
                 "completion_tokens": tk_num,
-                "total_tokens": tk_num,
+                "total_tokens": prompt_tk + tk_num,
                 "duration_ms": duration_ms,
             },
         }
