@@ -339,7 +339,7 @@ func (p *Parser) parseAdminShowCommand() (*Command, error) {
 	case TokenService:
 		return p.parseAdminShowService()
 	case TokenUser:
-		return p.parseAdminShowUserCommand()
+		return p.parseAdminShowUserCommands()
 	case TokenRole:
 		return p.parseAdminShowRoleCommand()
 	case TokenVersion:
@@ -391,50 +391,15 @@ func (p *Parser) parseAdminShowService() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseAdminShowUser() (*Command, error) {
-	p.nextToken() // consume USER
-
-	// Check for PERMISSION
-	if p.curToken.Type == TokenPermission {
-		p.nextToken()
-		userName, err := p.parseQuotedString()
-		if err != nil {
-			return nil, err
-		}
-		cmd := NewCommand("show_user_permission")
-		cmd.Params["user_name"] = userName
-		p.nextToken()
-		// Semicolon is optional for SHOW TOKEN
-		if p.curToken.Type == TokenSemicolon {
-			p.nextToken()
-		}
-		return cmd, nil
-	}
-
-	userName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("show_user")
-	cmd.Params["user_name"] = userName
-
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
 func (p *Parser) parseAdminShowRoleCommand() (*Command, error) {
 	p.nextToken() // consume ROLE
-	roleName, err := p.parseIdentifier()
+
+	roleName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 
-	cmd := NewCommand("show_role")
+	cmd := NewCommand("admin_show_role")
 	cmd.Params["role_name"] = roleName
 
 	p.nextToken()
@@ -2029,7 +1994,7 @@ func (p *Parser) parseAdminShowLicenseCommand() (*Command, error) {
 // SHOW USER 'user@example.com' STORAGE;
 // SHOW USER 'user@example.com' QUOTA;
 // SHOW USER 'user@example.com' INDEX;
-func (p *Parser) parseAdminShowUserCommand() (*Command, error) {
+func (p *Parser) parseAdminShowUserCommands() (*Command, error) {
 	p.nextToken() // consume USER
 
 	userName, err := p.parseQuotedString()
@@ -2054,19 +2019,19 @@ func (p *Parser) parseAdminShowUserCommand() (*Command, error) {
 	case TokenPermission:
 		return p.parseAdminShowUserPermissionCommand(userName)
 	default:
-		return p.parseAdminShowUserInfoCommand(userName)
+		return p.parseAdminShowUser(userName)
 	}
 }
 
 // SHOW USER 'user@example.com';
-func (p *Parser) parseAdminShowUserInfoCommand(userName string) (*Command, error) {
+func (p *Parser) parseAdminShowUser(userName string) (*Command, error) {
 
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
 
-	cmd := NewCommand("admin_show_user_info_command")
+	cmd := NewCommand("admin_show_user")
 	cmd.Params["user_name"] = userName
 
 	return cmd, nil
