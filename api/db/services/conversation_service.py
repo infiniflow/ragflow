@@ -263,6 +263,8 @@ async def async_iframe_completion(dialog_id, question, session_id=None, stream=T
                 yield "data:" + json.dumps({"code": 0, "message": "", "data": ans},
                                            ensure_ascii=False) + "\n\n"
             usage = (last_ans or {}).get("usage", {})
+            if not usage:
+                logger.warning("Missing usage in streaming completion for session_id=%s message_id=%s", session_id, message_id)
             API4ConversationService.append_message(
                 conv.id, conv.to_dict(),
                 tokens=usage.get("total_tokens", 0),
@@ -279,6 +281,8 @@ async def async_iframe_completion(dialog_id, question, session_id=None, stream=T
         async for ans in async_chat(dia, msg, False, **kwargs):
             answer = structure_answer(conv, ans, message_id, session_id)
             usage = answer.get("usage", {})
+            if not usage:
+                logger.warning("Missing usage in non-stream completion for session_id=%s message_id=%s", session_id, message_id)
             API4ConversationService.append_message(
                 conv.id, conv.to_dict(),
                 tokens=usage.get("total_tokens", 0),

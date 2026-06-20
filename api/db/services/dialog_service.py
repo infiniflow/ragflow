@@ -239,20 +239,53 @@ async def async_chat_solo(dialog, messages, stream=True):
             stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, dialog.llm_setting)
         else:
             stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, dialog.llm_setting, images=image_files)
+        stream_start_ts = timer()
+        full_answer = []
         async for kind, value, state in _stream_with_think_delta(stream_iter):
             if kind == "marker":
                 flags = {"start_to_think": True} if value == "<think>" else {"end_to_think": True}
                 yield {"answer": "", "reference": {}, "audio_binary": None, "prompt": "", "created_at": time.time(), "final": False, **flags}
                 continue
+            full_answer.append(value)
             yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "prompt": "", "created_at": time.time(), "final": False}
+        tk_num = num_tokens_from_string("".join(full_answer))
+        duration_ms = round((timer() - stream_start_ts) * 1000, 1)
+        yield {
+            "answer": "".join(full_answer),
+            "reference": {},
+            "audio_binary": None,
+            "prompt": "",
+            "created_at": time.time(),
+            "usage": {
+                "prompt_tokens": 0,
+                "completion_tokens": tk_num,
+                "total_tokens": tk_num,
+                "duration_ms": duration_ms,
+            },
+        }
     else:
+        call_start_ts = timer()
         if llm_type == "chat":
             answer = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, dialog.llm_setting)
         else:
             answer = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, dialog.llm_setting, images=image_files)
+        duration_ms = round((timer() - call_start_ts) * 1000, 1)
+        tk_num = num_tokens_from_string(answer)
         user_content = msg[-1].get("content", "[content not available]")
         logging.debug("User: {}|Assistant: {}".format(user_content, answer))
-        yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, answer), "prompt": "", "created_at": time.time()}
+        yield {
+            "answer": answer,
+            "reference": {},
+            "audio_binary": tts(tts_mdl, answer),
+            "prompt": "",
+            "created_at": time.time(),
+            "usage": {
+                "prompt_tokens": 0,
+                "completion_tokens": tk_num,
+                "total_tokens": tk_num,
+                "duration_ms": duration_ms,
+            },
+        }
 
 
 def get_models(dialog):

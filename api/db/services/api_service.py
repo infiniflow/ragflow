@@ -91,16 +91,17 @@ class API4ConversationService(CommonService):
     @classmethod
     @DB.connection_context()
     def append_message(cls, id, conversation, tokens: int = 0, duration: float = 0.0):
-        cls.update_by_id(id, conversation)
-        return (
-            cls.model.update(
-                round=cls.model.round + 1,
-                tokens=cls.model.tokens + tokens,
-                duration=cls.model.duration + duration,
+        with DB.atomic():
+            cls.update_by_id(id, conversation)
+            return (
+                cls.model.update(
+                    round=cls.model.round + 1,
+                    tokens=cls.model.tokens + tokens,
+                    duration=cls.model.duration + duration,
+                )
+                .where(cls.model.id == id)
+                .execute()
             )
-            .where(cls.model.id == id)
-            .execute()
-        )
 
     @classmethod
     @DB.connection_context()
