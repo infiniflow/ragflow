@@ -347,11 +347,11 @@ func (p *Parser) parseAdminShowCommand() (*Command, error) {
 	case TokenVar:
 		return p.parseAdminShowVariable()
 	case TokenCurrent:
-		return p.parseAdminShowCurrentCommand()
+		return p.parseAdminShowCurrent()
 	case TokenFingerprint:
-		return p.parseAdminShowFingerprintCommand()
+		return p.parseAdminShowFingerprint()
 	case TokenLicense:
-		return p.parseAdminShowLicenseCommand()
+		return p.parseAdminShowLicense()
 	case TokenProvider:
 		return p.parseShowProvider()
 	case TokenModel:
@@ -632,6 +632,18 @@ func (p *Parser) parseAdminShowVariable() (*Command, error) {
 		p.nextToken()
 	}
 	return cmd, nil
+}
+
+// ADMIN SHOW CURRENT;
+func (p *Parser) parseAdminShowCurrent() (*Command, error) {
+	p.nextToken() // consume CURRENT
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return NewCommand("admin_show_current"), nil
 }
 
 func (p *Parser) parseCommonShowPoolModel() (*Command, error) {
@@ -2148,19 +2160,7 @@ func (p *Parser) parseAdminRemoveCommand() (*Command, error) {
 	return cmd, nil
 }
 
-// SHOW CURRENT;
-func (p *Parser) parseAdminShowCurrentCommand() (*Command, error) {
-	p.nextToken() // consume CURRENT
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-
-	return NewCommand("show_current"), nil
-}
-
-func (p *Parser) parseAdminShowFingerprintCommand() (*Command, error) {
+func (p *Parser) parseAdminShowFingerprint() (*Command, error) {
 	p.nextToken() // consume FINGERPRINT
 
 	// Semicolon is optional
@@ -2168,10 +2168,10 @@ func (p *Parser) parseAdminShowFingerprintCommand() (*Command, error) {
 		p.nextToken()
 	}
 
-	return NewCommand("admin_show_fingerprint_command"), nil
+	return NewCommand("admin_show_fingerprint"), nil
 }
 
-func (p *Parser) parseAdminShowLicenseCommand() (*Command, error) {
+func (p *Parser) parseAdminShowLicense() (*Command, error) {
 	p.nextToken() // consume LICENSE
 
 	// Semicolon is optional
@@ -2179,7 +2179,7 @@ func (p *Parser) parseAdminShowLicenseCommand() (*Command, error) {
 		p.nextToken()
 	}
 
-	return NewCommand("admin_show_license_command"), nil
+	return NewCommand("admin_show_license"), nil
 }
 
 // SHOW USERS SUMMARY;

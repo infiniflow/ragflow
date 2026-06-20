@@ -69,8 +69,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminShowService(cmd)
 	case "admin_show_version_command":
 		return c.AdminShowVersionCommand(cmd)
-	case "show_current":
-		return c.ShowCommonCurrent(cmd)
+	case "admin_show_current":
+		return c.CommonShowCurrent(cmd)
 	case "list_variables":
 		return c.ListVariables(cmd)
 	case "admin_show_variable":
@@ -133,9 +133,9 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminRemoveServiceCommand(cmd)
 	case "admin_check_license_command":
 		return c.AdminCheckLicenseCommand(cmd)
-	case "admin_show_fingerprint_command":
+	case "admin_show_fingerprint":
 		return c.AdminShowFingerprintCommand(cmd)
-	case "admin_show_license_command":
+	case "admin_show_license":
 		return c.AdminShowLicenseCommand(cmd)
 	case "admin_show_user":
 		return c.AdminShowUserCommand(cmd)
@@ -267,7 +267,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "show_version":
 		return c.ShowServerVersion(cmd)
 	case "show_current":
-		return c.ShowCommonCurrent(cmd)
+		return c.CommonShowCurrent(cmd)
 	case "list_available_providers":
 		return c.ListAvailableProviders(cmd)
 	case "show_provider":

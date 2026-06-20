@@ -583,7 +583,7 @@ func (c *CLI) ListDefaultModels(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) ShowCommonCurrent(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonShowCurrent(cmd *Command) (ResponseIf, error) {
 	var result *CommonDataResponse
 
 	switch c.Config.CLIMode {
