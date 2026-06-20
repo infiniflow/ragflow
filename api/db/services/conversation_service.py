@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import time
 from uuid import uuid4
 from common.constants import StatusEnum
@@ -264,7 +265,7 @@ async def async_iframe_completion(dialog_id, question, session_id=None, stream=T
                                            ensure_ascii=False) + "\n\n"
             usage = (last_ans or {}).get("usage", {})
             if not usage:
-                logger.warning("Missing usage in streaming completion for session_id=%s message_id=%s", session_id, message_id)
+                logging.warning("Missing usage in streaming completion for session_id=%s message_id=%s", session_id, message_id)
             API4ConversationService.append_message(
                 conv.id, conv.to_dict(),
                 tokens=usage.get("total_tokens", 0),
@@ -282,7 +283,7 @@ async def async_iframe_completion(dialog_id, question, session_id=None, stream=T
             answer = structure_answer(conv, ans, message_id, session_id)
             usage = answer.get("usage", {})
             if not usage:
-                logger.warning("Missing usage in non-stream completion for session_id=%s message_id=%s", session_id, message_id)
+                logging.warning("Missing usage in non-stream completion for session_id=%s message_id=%s", session_id, message_id)
             API4ConversationService.append_message(
                 conv.id, conv.to_dict(),
                 tokens=usage.get("total_tokens", 0),
