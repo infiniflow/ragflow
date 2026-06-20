@@ -215,6 +215,41 @@ func (h *Handler) ListResources(c *gin.Context) {
 	success(c, resources, "")
 }
 
+type ListModelsOrShowModelRequest struct {
+	ModelName string `json:"model_name"`
+}
+
+func (h *Handler) ListModelsOrShowModel(c *gin.Context) {
+	var req ListModelsOrShowModelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Invalid request body",
+		})
+		return
+	}
+
+	if req.ModelName == "" {
+		// List models
+		models, err := h.service.ListAllModels()
+		if err != nil {
+			errorResponse(c, err.Error(), 500)
+			return
+		}
+
+		success(c, models, "")
+	} else {
+		// Get model
+		model, err := h.service.GetModelByModelName(req.ModelName)
+		if err != nil {
+			errorResponse(c, err.Error(), 500)
+			return
+		}
+
+		success(c, model, "")
+	}
+}
+
 // GetSystemFingerprint handle get system fingerprint
 func (h *Handler) GetSystemFingerprint(c *gin.Context) {
 	fingerprint, err := h.service.GetSystemFingerprint()

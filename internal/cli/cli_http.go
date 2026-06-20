@@ -99,15 +99,15 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.CommonShowProviderCommand(cmd)
 	case "admin_show_provider_model":
 		return c.CommonShowProviderModelCommand(cmd)
-	case "list_provider_models":
-		return c.ListModels(cmd)
+	case "admin_list_provider_models":
+		return c.CommonListModelsCommand(cmd)
 	case "list_supported_models":
 		return c.ListSupportedModels(cmd)
 	case "list_instance_models":
 		return c.ListInstanceModels(cmd)
 	case "admin_show_model":
 		return c.CommonShowModel(cmd)
-	case "list_all_models":
+	case "admin_list_all_models":
 		return c.ListAllModels(cmd)
 	case "list_admin_tasks":
 		return c.ListAdminTasks(cmd)
@@ -273,7 +273,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "show_provider":
 		return c.CommonShowProviderCommand(cmd)
 	case "list_provider_models":
-		return c.ListModels(cmd)
+		return c.CommonListModelsCommand(cmd)
 	case "list_supported_models":
 		return c.ListSupportedModels(cmd)
 	case "list_instance_models":

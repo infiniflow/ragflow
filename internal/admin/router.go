@@ -101,9 +101,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.GET("/:provider_name/models/:model_name", r.handler.ShowModel)
 			}
 
-			// Models
-			protected.GET("/all-models", r.handler.ListModelsOrShowModel)
-
 			queue := protected.Group("/queue")
 			{
 				queue.GET("/", r.handler.ShowMessageQueue)
@@ -174,6 +171,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.POST("/roles/:role_name/permission", r.handler.GrantRolePermission)
 			protected.DELETE("/roles/:role_name/permission", r.handler.RevokeRolePermission)
 			protected.GET("/roles/resource", r.handler.ListResources)
+
+			// Models
+			protected.GET("/all-models", r.handler.ListModelsOrShowModel)
 
 			// License
 			protected.GET("/system/fingerprint", r.handler.GetSystemFingerprint)

@@ -125,8 +125,10 @@ func (p *Parser) parseAdminListCommand() (*Command, error) {
 		return NewCommand("list_environments"), nil
 	case TokenAvailable:
 		return p.parseCommonListProviders()
+	case TokenProvider:
+		return p.parseAdminListProvider()
 	case TokenModels:
-		return p.parseListModelsOfProvider()
+		return p.parseAdminListModels()
 	case TokenUser:
 		return p.parseAdminListUserCommand()
 	case TokenTokens:
@@ -325,6 +327,35 @@ func (p *Parser) parseAdminListIngestionTasks() (*Command, error) {
 		p.nextToken()
 	}
 
+	return cmd, nil
+}
+
+// LIST PROVIDER 'provider_name' MODELS;
+func (p *Parser) parseAdminListProvider() (*Command, error) {
+	p.nextToken() // consume PROVIDER
+
+	providerName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenModels {
+		return nil, fmt.Errorf("expected MODELS")
+	}
+	p.nextToken() // consume MODELS
+	cmd := NewCommand("admin_list_provider_models")
+	cmd.Params["provider_name"] = providerName
+
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminListModels() (*Command, error) {
+	p.nextToken() // consume MODELS
+	cmd := NewCommand("admin_list_all_models")
 	return cmd, nil
 }
 
@@ -2644,6 +2675,7 @@ commandLoop:
 }
 
 // LIST USER 'user@example.com' INGESTION TASKS;
+// LIST USER 'user_name' PROVIDER 'provider_name' INSTANCE 'instance_name' MODELS;
 func (p *Parser) parseAdminListUserCommand() (*Command, error) {
 	p.nextToken() // consume USER
 

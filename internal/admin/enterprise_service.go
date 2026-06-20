@@ -134,6 +134,24 @@ func (s *Service) ListResources() (map[string]interface{}, error) {
 	return result, nil
 }
 
+// ListAllModels list all models
+func (s *Service) ListAllModels() ([]map[string]interface{}, error) {
+	return []map[string]interface{}{
+		{
+			"command": "list_all_models",
+			"error":   "'list all models' is implemented in enterprise edition",
+		},
+	}, nil
+}
+
+func (s *Service) GetModelByModelName(modelName string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":    "get_model_by_model_name",
+		"model_name": modelName,
+		"error":      "'get model by model name' is implemented in enterprise edition",
+	}, nil
+}
+
 func (s *Service) GetSystemFingerprint() (map[string]interface{}, error) {
 	result := map[string]interface{}{
 		"command": "get_system_fingerprint",
