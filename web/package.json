@@ -1,8 +1,8 @@
 {
   "version": "1.0.0",
   "private": true,
-  "description": "MetaGross-AI Web Frontend migrated to Vite",
-  "author": "bill",
+  "description": "MetaGrossAI Web Frontend migrated to Vite",
+  "author": "Waqoor",
   "type": "module",
   "scripts": {
     "build": "vite build --mode production",
@@ -33,7 +33,6 @@
     "@antv/g2": "^5.2.10",
     "@antv/g6": "^5.1.0",
     "@floating-ui/react": "^0.27.19",
-    "@hcaptcha/react-hcaptcha": "^2.0.2",
     "@hookform/resolvers": "^3.9.1",
     "@js-preview/excel": "^1.7.14",
     "@lexical/react": "^0.23.1",

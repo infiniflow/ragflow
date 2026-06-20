@@ -19,7 +19,7 @@ export const CodeTemplateStrMap = {
   [ProgrammingLanguage.Javascript]: `const axios = require('axios');
 async function main({}) {
   try {
-    const response = await axios.get('https://github.com/MetaGross-AI/MetaGross-AI');
+    const response = await axios.get('https://github.com/yazeedhasan97/MetaGrossAI');
     return 'Body:' + response.data;
   } catch (error) {
     return 'Error:' + error.message;

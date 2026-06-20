@@ -74,7 +74,7 @@ type SearchBotRetrievalTestRequest struct {
 	// TODO: wire highlight to nlp Retrieval when engine supports highlightFields
 	// Python: bot_api.py → retrieval(highlight=req.get("highlight"))
 	//        → search.py highlightFields → ES get_highlight()
-	// Issue: https://github.com/infiniflow/ragflow/issues/15712
+	// Issue: https://github.com/yazeedhasan97/MetaGrossAI/issues/15712
 	// Highlight           *bool                   `json:"highlight,omitempty"`
 }
 

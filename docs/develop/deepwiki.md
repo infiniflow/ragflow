@@ -13,7 +13,7 @@ An AI-generated, always-up-to-date knowledge base for understanding RAGFlow's co
 ---
 
 :::caution NOTE
-The RAGFlow content on DeepWiki is maintained by DeepWiki, not by the RAGFlow team. It may lag behind the latest official release. Always refer to the official [RAGFlow documentation](https://ragflow.io/docs/dev/) and [source code](https://github.com/infiniflow/ragflow) for the most up-to-date information.
+The RAGFlow content on DeepWiki is maintained by DeepWiki, not by the RAGFlow team. It may lag behind the latest official release. Always refer to the official [RAGFlow documentation](https://ragflow.io/docs/dev/) and [source code](https://github.com/yazeedhasan97/MetaGrossAI) for the most up-to-date information.
 :::
 
 ## What is DeepWiki?

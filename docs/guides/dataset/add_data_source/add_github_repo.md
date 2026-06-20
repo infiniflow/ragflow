@@ -48,11 +48,11 @@ Once your GitHub token is ready, register the external data source within your R
     - **Access token:** Paste the PAT generated in section 1.
     - **Include Pull Request** Whether to include pull requests in the selected repo.
     - **Include Issues** Whether to include issues in the selected repo.
-4. Click **Save** to confirm your changes.  
+4. Click **Save** to confirm your changes.
    *RAGFlow validates the connection immediately.*
 
 :::tip NOTE
-Currently deleted or modified files are not synchronized automatically. This feature is coming soon. Thanks to Gisselle-Gonzalez for requesting [this feature](https://github.com/infiniflow/ragflow/issues/13708).
+Currently deleted or modified files are not synchronized automatically. This feature is coming soon. Thanks to Gisselle-Gonzalez for requesting [this feature](https://github.com/yazeedhasan97/MetaGrossAI/issues/13708).
 :::
 
 ## 3. Dataset binding & ingestion

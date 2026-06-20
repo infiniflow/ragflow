@@ -14,7 +14,7 @@ An API key is required for RAGFlow to interact with an online AI model. This gui
 RAGFlow supports most mainstream LLMs. Please refer to [Supported Models](../../guides/models/supported_models.mdx) for a complete list of supported models. You will need to apply for your model API key online. Note that most LLM providers grant newly-created accounts trial credit, which will expire in a couple of months, or a promotional amount of free quota.
 
 :::note
-If you find your online LLM is not on the list, don't feel disheartened. The list is expanding, and you can [file a feature request](https://github.com/infiniflow/ragflow/issues/new?assignees=&labels=feature+request&projects=&template=feature_request.yml&title=%5BFeature+Request%5D%3A+) with us! Alternatively, if you have customized or locally-deployed models, you can [bind them to RAGFlow using Ollama, Xinference, or LocalAI](./deploy_local_llm.mdx).
+If you find your online LLM is not on the list, don't feel disheartened. The list is expanding, and you can [file a feature request](https://github.com/yazeedhasan97/MetaGrossAI/issues/new?assignees=&labels=feature+request&projects=&template=feature_request.yml&title=%5BFeature+Request%5D%3A+) with us! Alternatively, if you have customized or locally-deployed models, you can [bind them to RAGFlow using Ollama, Xinference, or LocalAI](./deploy_local_llm.mdx).
 :::
 
 ## Configure model API key
@@ -32,7 +32,7 @@ You have two options for configuring your model API key:
    - Update `api_key` with yours.
    - Update `base_url` if you use a proxy to connect to the remote service.
 3. Reboot your system for your changes to take effect.
-4. Log into RAGFlow.  
+4. Log into RAGFlow.
    _After logging into RAGFlow, you will find your chosen model appears under **Added models** on the **Model providers** page._
 
 ### Configure model API key after logging into RAGFlow

@@ -15,9 +15,9 @@ Compared to uploading files directly to various datasets, uploading them to RAGF
 
 ## Create folder
 
-RAGFlow's file management allows you to establish your file system with nested folder structures. To create a folder in the root directory of RAGFlow: 
+RAGFlow's file management allows you to establish your file system with nested folder structures. To create a folder in the root directory of RAGFlow:
 
-![create new folder](https://github.com/infiniflow/ragflow/assets/93570324/3a37a5f4-43a6-426d-a62a-e5cd2ff7a533)
+![create new folder](https://github.com/yazeedhasan97/MetaGrossAI/assets/93570324/3a37a5f4-43a6-426d-a62a-e5cd2ff7a533)
 
 :::caution NOTE
 Each dataset in RAGFlow has a corresponding folder under the **root/.knowledgebase** directory. You are not allowed to create a subfolder within it.
@@ -25,11 +25,11 @@ Each dataset in RAGFlow has a corresponding folder under the **root/.knowledgeba
 
 ## Upload file
 
-RAGFlow's file management supports file uploads from your local machine, allowing both individual and bulk uploads: 
+RAGFlow's file management supports file uploads from your local machine, allowing both individual and bulk uploads:
 
-![upload file](https://github.com/infiniflow/ragflow/assets/93570324/5d7ded14-ce2b-4703-8567-9356a978f45c)
+![upload file](https://github.com/yazeedhasan97/MetaGrossAI/assets/93570324/5d7ded14-ce2b-4703-8567-9356a978f45c)
 
-![bulk upload](https://github.com/infiniflow/ragflow/assets/93570324/def0db55-824c-4236-b809-a98d8c8674e3)
+![bulk upload](https://github.com/yazeedhasan97/MetaGrossAI/assets/93570324/def0db55-824c-4236-b809-a98d8c8674e3)
 
 ## Preview file
 
@@ -39,17 +39,17 @@ RAGFlow's file management supports previewing files in the following formats:
 - Tables (XLSX)
 - Pictures (JPEG, JPG, PNG, TIF, GIF)
 
-![preview](https://github.com/infiniflow/ragflow/assets/93570324/2e931362-8bbf-482c-ac86-b68b09d331bc)
+![preview](https://github.com/yazeedhasan97/MetaGrossAI/assets/93570324/2e931362-8bbf-482c-ac86-b68b09d331bc)
 
 ## Link file to datasets
 
 RAGFlow's file management allows you to *link* an uploaded file to multiple datasets, creating a file reference in each target dataset. Therefore, deleting a file in your file management will AUTOMATICALLY REMOVE all related file references across the datasets.
 
-![link knowledgebase](https://github.com/infiniflow/ragflow/assets/93570324/6c6b8db4-3269-4e35-9434-6089887e3e3f)
+![link knowledgebase](https://github.com/yazeedhasan97/MetaGrossAI/assets/93570324/6c6b8db4-3269-4e35-9434-6089887e3e3f)
 
-You can link your file to one dataset or multiple datasets at one time: 
+You can link your file to one dataset or multiple datasets at one time:
 
-![link multiple kb](https://github.com/infiniflow/ragflow/assets/93570324/6c508803-fb1f-435d-b688-683066fd7fff)
+![link multiple kb](https://github.com/yazeedhasan97/MetaGrossAI/assets/93570324/6c508803-fb1f-435d-b688-683066fd7fff)
 
 ## Move file to a specific folder
 
@@ -59,34 +59,34 @@ You can link your file to one dataset or multiple datasets at one time:
 
 **File Management** only supports file name and folder name filtering in the current directory (files or folders in the child directory will not be retrieved).
 
-![search file](https://github.com/infiniflow/ragflow/assets/93570324/77ffc2e5-bd80-4ed1-841f-068e664efffe)
+![search file](https://github.com/yazeedhasan97/MetaGrossAI/assets/93570324/77ffc2e5-bd80-4ed1-841f-068e664efffe)
 
 ## Rename file or folder
 
 RAGFlow's file management allows you to rename a file or folder:
 
-![rename_file](https://github.com/infiniflow/ragflow/assets/93570324/5abb0704-d9e9-4b43-9ed4-5750ccee011f)
+![rename_file](https://github.com/yazeedhasan97/MetaGrossAI/assets/93570324/5abb0704-d9e9-4b43-9ed4-5750ccee011f)
 
 
 ## Delete files or folders
 
-RAGFlow's file management allows you to delete files or folders individually or in bulk. 
+RAGFlow's file management allows you to delete files or folders individually or in bulk.
 
-To delete a file or folder: 
+To delete a file or folder:
 
-![delete file](https://github.com/infiniflow/ragflow/assets/93570324/85872728-125d-45e9-a0ee-21e9d4cedb8b)
+![delete file](https://github.com/yazeedhasan97/MetaGrossAI/assets/93570324/85872728-125d-45e9-a0ee-21e9d4cedb8b)
 
 To bulk delete files or folders:
 
-![bulk delete](https://github.com/infiniflow/ragflow/assets/93570324/519b99ab-ec7f-4c8a-8cea-e0b6dcb3cb46)
+![bulk delete](https://github.com/yazeedhasan97/MetaGrossAI/assets/93570324/519b99ab-ec7f-4c8a-8cea-e0b6dcb3cb46)
 
-> - You are not allowed to delete the **root/.knowledgebase** folder. 
+> - You are not allowed to delete the **root/.knowledgebase** folder.
 > - Deleting files that have been linked to datasets will **AUTOMATICALLY REMOVE** all associated file references across the datasets.
 
 ## Download uploaded file
 
 RAGFlow's file management allows you to download an uploaded file:
 
-![download_file](https://github.com/infiniflow/ragflow/assets/93570324/cf3b297f-7d9b-4522-bf5f-4f45743e4ed5)
+![download_file](https://github.com/yazeedhasan97/MetaGrossAI/assets/93570324/cf3b297f-7d9b-4522-bf5f-4f45743e4ed5)
 
-> As of RAGFlow v0.25.6, bulk download is not supported, nor can you download an entire folder. 
+> As of RAGFlow v0.25.6, bulk download is not supported, nor can you download an entire folder.

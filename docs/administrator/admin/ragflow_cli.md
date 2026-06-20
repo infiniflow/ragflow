@@ -29,14 +29,14 @@ The RAGFlow CLI is a command-line-based system administration tool that offers a
     The default password is admin.
 
     **Parameters:**
-    
+
     - -h: RAGFlow admin server host address
-    
+
     - -p: RAGFlow admin server port
 
 ## Default administrative account
 
-- Username: admin@ragflow.io
+- Username: support@waqoor.com
 - Password: admin
 
 ## Supported Commands
@@ -283,7 +283,7 @@ Listing all users
 +-------------------------------+----------------------+-----------+----------+
 | create_date                   | email                | is_active | nickname |
 +-------------------------------+----------------------+-----------+----------+
-| Mon, 22 Sep 2025 10:59:04 GMT | admin@ragflow.io     | 1         | admin    |
+| Mon, 22 Sep 2025 10:59:04 GMT | support@waqoor.com     | 1         | admin    |
 | Sun, 14 Sep 2025 17:36:27 GMT | lynn_inf@hotmail.com | 1         | Lynn     |
 +-------------------------------+----------------------+-----------+----------+
 ```
@@ -293,13 +293,13 @@ Listing all users
 - Show specified user.
 
 ```
-ragflow> show user "admin@ragflow.io";
-command: show user "admin@ragflow.io";
-Showing user: admin@ragflow.io
+ragflow> show user "support@waqoor.com";
+command: show user "support@waqoor.com";
+Showing user: support@waqoor.com
 +-------------------------------+------------------+-----------+--------------+------------------+--------------+----------+-----------------+---------------+--------+-------------------------------+
 | create_date                   | email            | is_active | is_anonymous | is_authenticated | is_superuser | language | last_login_time | login_channel | status | update_date                   |
 +-------------------------------+------------------+-----------+--------------+------------------+--------------+----------+-----------------+---------------+--------+-------------------------------+
-| Mon, 22 Sep 2025 10:59:04 GMT | admin@ragflow.io | 1         | 0            | 1                | True         | Chinese  | None            | None          | 1      | Mon, 22 Sep 2025 10:59:04 GMT |
+| Mon, 22 Sep 2025 10:59:04 GMT | support@waqoor.com | 1         | 0            | 1                | True         | Chinese  | None            | None          | 1      | Mon, 22 Sep 2025 10:59:04 GMT |
 +-------------------------------+------------------+-----------+--------------+------------------+--------------+----------+-----------------+---------------+--------+-------------------------------+
 ```
 
@@ -535,7 +535,7 @@ ragflow> list envs;
 | env                     | value            |
 +-------------------------+------------------+
 | DOC_ENGINE              | elasticsearch    |
-| DEFAULT_SUPERUSER_EMAIL | admin@ragflow.io |
+| DEFAULT_SUPERUSER_EMAIL | support@waqoor.com |
 | DB_TYPE                 | mysql            |
 | DEVICE                  | cpu              |
 | STORAGE_IMPL            | MINIO            |
