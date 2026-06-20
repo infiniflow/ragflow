@@ -139,6 +139,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminShowLicenseCommand(cmd)
 	case "admin_show_user":
 		return c.AdminShowUserCommand(cmd)
+	case "admin_show_role":
+		return c.AdminShowRoleCommand(cmd)
 	case "admin_show_user_activity_command":
 		return c.AdminShowUserActivityCommand(cmd)
 	case "admin_show_user_summary_command":

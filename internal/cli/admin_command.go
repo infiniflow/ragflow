@@ -163,49 +163,6 @@ func (c *CLI) AdminListRolesCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// ShowRole to show role (admin mode only)
-func (c *CLI) ShowRole(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	roleName := cmd.Params["role_name"].(string)
-
-	// Check for benchmark iterations
-	iterations := 1
-	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
-		iterations = val
-	}
-
-	endPoint := fmt.Sprintf("/admin/roles/%s/", roleName)
-
-	if iterations > 1 {
-		// Benchmark mode - return raw result for benchmark stats
-		return c.AdminServerClient.RequestWithIterations("GET", endPoint, "admin", nil, nil, iterations)
-	}
-
-	resp, err := c.AdminServerClient.Request("GET", endPoint, "admin", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to show role: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to show role: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("show role failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
-}
-
 // AdminCreateRoleCommand creates a new role (admin mode only)
 func (c *CLI) AdminCreateRoleCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
@@ -1836,6 +1793,38 @@ func (c *CLI) AdminShowUserCommand(cmd *Command) (ResponseIf, error) {
 	if result.Code != 0 {
 		return nil, fmt.Errorf("%s", result.Message)
 	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// AdminShowRoleCommand show role command (admin mode only)
+func (c *CLI) AdminShowRoleCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	roleName := cmd.Params["role_name"].(string)
+
+	endPoint := fmt.Sprintf("/admin/roles/%s/", roleName)
+
+	resp, err := c.AdminServerClient.Request("GET", endPoint, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to show role: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to show role: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("show role failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
 	result.Duration = resp.Duration
 	return &result, nil
 }

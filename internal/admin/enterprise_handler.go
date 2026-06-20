@@ -63,15 +63,15 @@ func (h *Handler) CreateRole(c *gin.Context) {
 	success(c, role, "")
 }
 
-// GetRole handle get role
-func (h *Handler) GetRole(c *gin.Context) {
+// ShowRole handle show role
+func (h *Handler) ShowRole(c *gin.Context) {
 	roleName := c.Param("role_name")
 	if roleName == "" {
 		errorResponse(c, "Role name is required", 400)
 		return
 	}
 
-	role, err := h.service.GetRole(roleName)
+	role, err := h.service.ShowRole(roleName)
 	if err != nil {
 		errorResponse(c, err.Error(), 500)
 		return

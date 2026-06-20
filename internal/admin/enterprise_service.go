@@ -50,12 +50,12 @@ func (s *Service) CreateRole(roleName, description string) (map[string]interface
 	return result, nil
 }
 
-// GetRole get role details
-func (s *Service) GetRole(roleName string) (map[string]interface{}, error) {
+// ShowRole show role details
+func (s *Service) ShowRole(roleName string) (map[string]interface{}, error) {
 	result := map[string]interface{}{
-		"command":   "get_role",
+		"command":   "show_role",
 		"role_name": roleName,
-		"error":     "'get role' is implemented in enterprise edition",
+		"error":     "'show role' is implemented in enterprise edition",
 	}
 
 	return result, nil

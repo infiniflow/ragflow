@@ -341,7 +341,7 @@ func (p *Parser) parseAdminShowCommand() (*Command, error) {
 	case TokenUser:
 		return p.parseAdminShowUserCommands()
 	case TokenRole:
-		return p.parseAdminShowRoleCommand()
+		return p.parseAdminShowRole()
 	case TokenVersion:
 		return p.parseAdminShowVersionCommand()
 	case TokenVar:
@@ -391,7 +391,7 @@ func (p *Parser) parseAdminShowService() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseAdminShowRoleCommand() (*Command, error) {
+func (p *Parser) parseAdminShowRole() (*Command, error) {
 	p.nextToken() // consume ROLE
 
 	roleName, err := p.parseQuotedString()
