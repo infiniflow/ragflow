@@ -56,21 +56,8 @@ func (c *CLI) PingAdmin(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// Show admin version to show RAGFlow admin version
-// Returns benchmark result map if iterations > 1, otherwise prints status
+// AdminShowVersionCommand show RAGFlow admin version
 func (c *CLI) AdminShowVersionCommand(cmd *Command) (ResponseIf, error) {
-	// Get iterations from command params (for benchmark)
-	iterations := 1
-	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
-		iterations = val
-	}
-
-	if iterations > 1 {
-		// Benchmark mode: multiple iterations
-		return c.AdminServerClient.RequestWithIterations("GET", "/admin/version", "web", nil, nil, iterations)
-	}
-
-	// Single mode
 	resp, err := c.AdminServerClient.Request("GET", "/admin/version", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show admin version: %w", err)
