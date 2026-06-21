@@ -47,6 +47,6 @@ def classify_model_error(error) -> ModelErrorCode:
         (["max rounds"], ModelErrorCode.ERROR_MODEL),
     ]
     for words, code in keywords_mapping:
-        if re.search("({})".format("|".join(words)), error_str):
+        if re.search("({})".format("|".join(re.escape(w) for w in words)), error_str):
             return code
     return ModelErrorCode.ERROR_GENERIC
