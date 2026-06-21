@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
+
 from agent.component.fillup import UserFillUpParam, UserFillUp
 from api.db.services.file_service import FileService
 
@@ -35,13 +37,31 @@ class BeginParam(UserFillUpParam):
 
 
 class Begin(UserFillUp):
+    """Entry-point component for agent workflows.
+
+    Receives the user's query and any form inputs, then makes them available
+    to downstream components.  ``sys.query`` is propagated to the ``query``
+    output field so downstream nodes can reference it as ``Begin@query``.
+    """
+
     component_name = "Begin"
 
     def _invoke(self, **kwargs):
+        """Process Begin inputs and populate outputs.
+
+        Reads ``sys.query`` from canvas globals and sets it as the ``query``
+        output.  Then iterates over any form inputs defined in the component
+        parameters, handling file uploads and setting input/output values.
+
+        Args:
+            **kwargs: Keyword arguments passed by the canvas executor.
+                ``inputs`` (dict): Form field values keyed by field name.
+        """
         if self.check_if_canceled("Begin processing"):
             return
 
         sys_query = self._canvas.globals.get("sys.query", "")
+        logging.debug("[Begin] Propagating sys.query to output: %s", sys_query)
         self.set_output("query", sys_query)
 
         layout_recognize = self._param.layout_recognize or None
@@ -63,4 +83,5 @@ class Begin(UserFillUp):
             self.set_input_value(k, v)
 
     def thoughts(self) -> str:
+        """Return the component's thought string (empty for Begin)."""
         return ""
