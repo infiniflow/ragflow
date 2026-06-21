@@ -74,12 +74,12 @@ func (s *Service) UpdateRole(roleName, description string) (map[string]interface
 	return result, nil
 }
 
-// DeleteRole delete role
-func (s *Service) DeleteRole(roleName string) (map[string]interface{}, error) {
+// DropRole drop role
+func (s *Service) DropRole(roleName string) (map[string]interface{}, error) {
 	result := map[string]interface{}{
-		"command":   "delete_role",
+		"command":   "drop_role",
 		"role_name": roleName,
-		"error":     "'delete role' is implemented in enterprise edition",
+		"error":     "'drop role' is implemented in enterprise edition",
 	}
 
 	return result, nil

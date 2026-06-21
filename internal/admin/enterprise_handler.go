@@ -108,15 +108,15 @@ func (h *Handler) UpdateRole(c *gin.Context) {
 	success(c, role, "")
 }
 
-// DeleteRole handle delete role
-func (h *Handler) DeleteRole(c *gin.Context) {
+// DropRole handle drop role
+func (h *Handler) DropRole(c *gin.Context) {
 	roleName := c.Param("role_name")
 	if roleName == "" {
 		errorResponse(c, "Role name is required", 400)
 		return
 	}
 
-	role, err := h.service.DeleteRole(roleName)
+	role, err := h.service.DropRole(roleName)
 	if err != nil {
 		errorResponse(c, "Role not found", 404)
 		return

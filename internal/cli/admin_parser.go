@@ -973,12 +973,12 @@ func (p *Parser) parseAdminDropUserAPIKey(userName string) (*Command, error) {
 
 func (p *Parser) parseAdminDropRole() (*Command, error) {
 	p.nextToken() // consume ROLE
-	roleName, err := p.parseIdentifier()
+	roleName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 
-	cmd := NewCommand("drop_role")
+	cmd := NewCommand("admin_drop_role")
 	cmd.Params["role_name"] = roleName
 
 	p.nextToken()
@@ -1051,14 +1051,14 @@ func (p *Parser) parseAdminDropChat() (*Command, error) {
 // endregion DROP commands
 
 // region ALTER commands
-func (p *Parser) parseAdminAlterCommand() (*Command, error) {
+func (p *Parser) parseAdminAlterCommands() (*Command, error) {
 	p.nextToken() // consume ALTER
 
 	switch p.curToken.Type {
 	case TokenUser:
-		return p.parseAlterUser()
+		return p.parseAdminAlterUser()
 	case TokenRole:
-		return p.parseAlterRole()
+		return p.parseAdminAlterRole()
 	default:
 		return nil, fmt.Errorf("unknown ALTER target: %s", p.curToken.Value)
 	}
@@ -1084,7 +1084,7 @@ func (p *Parser) parseAdminAlterUser() (*Command, error) {
 			return nil, err
 		}
 
-		cmd := NewCommand("alter_user")
+		cmd := NewCommand("admin_alter_user")
 		cmd.Params["user_name"] = userName
 		cmd.Params["password"] = password
 
@@ -1177,7 +1177,7 @@ func (p *Parser) parseAdminActivateUser() (*Command, error) {
 		return nil, fmt.Errorf("expected 'on' or 'off', got %s", p.curToken.Value)
 	}
 
-	cmd := NewCommand("activate_user")
+	cmd := NewCommand("admin_activate_user")
 	cmd.Params["user_name"] = userName
 	cmd.Params["activate_status"] = status
 

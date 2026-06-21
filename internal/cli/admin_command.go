@@ -191,8 +191,8 @@ func (c *CLI) AdminCreateRoleCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// DropRole deletes the role (admin mode only)
-func (c *CLI) DropRole(cmd *Command) (ResponseIf, error) {
+// AdminDropRoleCommand deletes the role (admin mode only)
+func (c *CLI) AdminDropRoleCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -211,7 +211,7 @@ func (c *CLI) DropRole(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to drop role: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result SimpleResponse
+	var result CommonDataResponse
 
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("drop role failed: invalid JSON (%w)", err)
@@ -224,8 +224,8 @@ func (c *CLI) DropRole(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// AlterRole alters the role rights (admin mode only)
-func (c *CLI) AlterRole(cmd *Command) (ResponseIf, error) {
+// AdminAlterRole alters the role rights (admin mode only)
+func (c *CLI) AdminAlterRole(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -428,8 +428,8 @@ func (c *CLI) AdminCreateUserAPIKeyCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// ActivateUser activates or deactivates a user (admin mode only)
-func (c *CLI) ActivateUser(cmd *Command) (ResponseIf, error) {
+// AdminActivateUser activates or deactivates a user (admin mode only)
+func (c *CLI) AdminActivateUser(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -478,8 +478,8 @@ func (c *CLI) ActivateUser(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// AlterUserPassword changes a user's password (admin mode only)
-func (c *CLI) AlterUserPassword(cmd *Command) (ResponseIf, error) {
+// AdminAlterUserPassword changes a user's password (admin mode only)
+func (c *CLI) AdminAlterUserPassword(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}

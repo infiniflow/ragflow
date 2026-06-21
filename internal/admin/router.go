@@ -170,7 +170,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.POST("/roles", r.handler.CreateRole)
 			protected.GET("/roles/:role_name", r.handler.ShowRole)
 			protected.PUT("/roles/:role_name", r.handler.UpdateRole)
-			protected.DELETE("/roles/:role_name", r.handler.DeleteRole)
+			protected.DELETE("/roles/:role_name", r.handler.DropRole)
 			protected.GET("/roles/:role_name/permission", r.handler.GetRolePermission)
 			protected.POST("/roles/:role_name/permission", r.handler.GrantRolePermission)
 			protected.DELETE("/roles/:role_name/permission", r.handler.RevokeRolePermission)
