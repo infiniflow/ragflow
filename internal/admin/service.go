@@ -1426,8 +1426,6 @@ func (s *Service) RestartService(serviceID string) (map[string]interface{}, erro
 	}, nil
 }
 
-// Variable/Settings methods
-
 // AdminException admin exception error
 type AdminException struct {
 	Message string

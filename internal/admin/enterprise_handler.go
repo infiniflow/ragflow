@@ -63,15 +63,15 @@ func (h *Handler) CreateRole(c *gin.Context) {
 	success(c, role, "")
 }
 
-// GetRole handle get role
-func (h *Handler) GetRole(c *gin.Context) {
+// ShowRole handle show role
+func (h *Handler) ShowRole(c *gin.Context) {
 	roleName := c.Param("role_name")
 	if roleName == "" {
 		errorResponse(c, "Role name is required", 400)
 		return
 	}
 
-	role, err := h.service.GetRole(roleName)
+	role, err := h.service.ShowRole(roleName)
 	if err != nil {
 		errorResponse(c, err.Error(), 500)
 		return
@@ -213,6 +213,41 @@ func (h *Handler) ListResources(c *gin.Context) {
 	}
 
 	success(c, resources, "")
+}
+
+type ListModelsOrShowModelRequest struct {
+	ModelName string `json:"model_name"`
+}
+
+func (h *Handler) ListModelsOrShowModel(c *gin.Context) {
+	var req ListModelsOrShowModelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Invalid request body",
+		})
+		return
+	}
+
+	if req.ModelName == "" {
+		// List models
+		models, err := h.service.ListAllModels()
+		if err != nil {
+			errorResponse(c, err.Error(), 500)
+			return
+		}
+
+		success(c, models, "")
+	} else {
+		// Get model
+		model, err := h.service.GetModelByModelName(req.ModelName)
+		if err != nil {
+			errorResponse(c, err.Error(), 500)
+			return
+		}
+
+		success(c, model, "")
+	}
 }
 
 // GetSystemFingerprint handle get system fingerprint

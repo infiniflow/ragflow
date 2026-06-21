@@ -164,13 +164,16 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Role management
 			protected.GET("/roles", r.handler.ListRoles)
 			protected.POST("/roles", r.handler.CreateRole)
-			protected.GET("/roles/:role_name", r.handler.GetRole)
+			protected.GET("/roles/:role_name", r.handler.ShowRole)
 			protected.PUT("/roles/:role_name", r.handler.UpdateRole)
 			protected.DELETE("/roles/:role_name", r.handler.DeleteRole)
 			protected.GET("/roles/:role_name/permission", r.handler.GetRolePermission)
 			protected.POST("/roles/:role_name/permission", r.handler.GrantRolePermission)
 			protected.DELETE("/roles/:role_name/permission", r.handler.RevokeRolePermission)
 			protected.GET("/roles/resource", r.handler.ListResources)
+
+			// Models
+			protected.GET("/all-models", r.handler.ListModelsOrShowModel)
 
 			// License
 			protected.GET("/system/fingerprint", r.handler.GetSystemFingerprint)

@@ -86,8 +86,6 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 		return p.parseAdminLogout()
 	case TokenPing:
 		return p.parseAdminPingServer()
-	case TokenRegister:
-		return p.parseAdminRegisterCommand()
 	case TokenList:
 		return p.parseAdminListCommand()
 	case TokenShow:
