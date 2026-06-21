@@ -100,7 +100,7 @@ func (p *Parser) parseAdminListCommand() (*Command, error) {
 	case TokenEnvs:
 		return p.parseAdminListEnvironments()
 	case TokenAvailable:
-		return p.parseCommonListProviders()
+		return p.parseCommonAvailableProviders()
 	case TokenProvider:
 		return p.parseAdminListProvider()
 	case TokenModels:
@@ -230,14 +230,14 @@ func (p *Parser) parseAdminListDefaultModels() (*Command, error) {
 	return NewCommand("list_user_default_models"), nil
 }
 
-func (p *Parser) parseCommonListProviders() (*Command, error) {
+func (p *Parser) parseCommonAvailableProviders() (*Command, error) {
 	p.nextToken() // consume AVAILABLE
 
 	if p.curToken.Type != TokenProviders {
 		return nil, fmt.Errorf("expected PROVIDERS")
 	}
 
-	return NewCommand("list_available_providers"), nil
+	return NewCommand("admin_list_available_providers"), nil
 }
 
 func (p *Parser) parseAdminListFiles() (*Command, error) {

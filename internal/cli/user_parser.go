@@ -170,7 +170,7 @@ func (p *Parser) parseListCommand() (*Command, error) {
 	case TokenDefault:
 		return p.parseListDefaultModels()
 	case TokenAvailable:
-		return p.parseCommonListProviders()
+		return p.parseCommonAvailableProviders()
 	case TokenChats:
 		p.nextToken()
 		// Semicolon is optional for SHOW TOKEN

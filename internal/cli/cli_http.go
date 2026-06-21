@@ -95,8 +95,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.GenerateAdminToken(cmd)
 	case "list_tokens":
 		return c.ListAdminTokens(cmd)
-	case "list_available_providers":
-		return c.ListAvailableProviders(cmd)
+	case "admin_list_available_providers":
+		return c.CommonAvailableProvidersCommand(cmd)
 	case "admin_show_provider":
 		return c.CommonShowProviderCommand(cmd)
 	case "admin_show_provider_model":
@@ -271,7 +271,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "show_current":
 		return c.CommonShowCurrent(cmd)
 	case "list_available_providers":
-		return c.ListAvailableProviders(cmd)
+		return c.CommonAvailableProvidersCommand(cmd)
 	case "show_provider":
 		return c.CommonShowProviderCommand(cmd)
 	case "list_provider_models":
