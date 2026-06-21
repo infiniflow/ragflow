@@ -2553,6 +2553,8 @@ func (p *Parser) parseAdminListUserIngestionTasks(userName string) (*Command, er
 	p.nextToken()
 
 	cmd := NewCommand("admin_list_user_ingestion_tasks")
+	cmd.Params["user_name"] = userName
+
 	if p.curToken.Type == TokenQuotedString {
 		var status string
 		var err error
