@@ -51,19 +51,19 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.GrantAdmin(cmd)
 	case "revoke_admin":
 		return c.RevokeAdmin(cmd)
-	case "admin_create_user_command":
+	case "admin_create_user":
 		return c.AdminCreateUserCommand(cmd)
-	case "admin_create_user_api_key_command":
+	case "admin_create_user_api_key":
 		return c.AdminCreateUserAPIKeyCommand(cmd)
-	case "admin_create_role_command":
+	case "admin_create_role":
 		return c.AdminCreateRoleCommand(cmd)
 	case "activate_user":
 		return c.ActivateUser(cmd)
 	case "alter_user":
 		return c.AlterUserPassword(cmd)
-	case "admin_drop_user_command":
+	case "admin_drop_user":
 		return c.AdminDropUserCommand(cmd)
-	case "admin_drop_user_api_key_command":
+	case "admin_drop_user_api_key":
 		return c.AdminDropUserAPIKeyCommand(cmd)
 	case "admin_show_service":
 		return c.AdminShowService(cmd)

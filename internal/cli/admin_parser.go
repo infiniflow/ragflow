@@ -825,14 +825,6 @@ func (p *Parser) parseAdminCreateCommand() (*Command, error) {
 		return p.parseAdminCreateUser()
 	case TokenRole:
 		return p.parseAdminCreateRole()
-	case TokenModel:
-		return p.parseCreateModelProvider()
-	case TokenDataset:
-		return p.parseCreateDataset()
-	case TokenChat:
-		return p.parseCreateChat()
-	case TokenToken:
-		return p.parseCreateToken()
 	default:
 		return nil, fmt.Errorf("unknown CREATE target: %s", p.curToken.Value)
 	}
@@ -856,7 +848,7 @@ func (p *Parser) parseAdminCreateUser() (*Command, error) {
 		}
 		p.nextToken()
 
-		cmd = NewCommand("admin_create_user_command")
+		cmd = NewCommand("admin_create_user")
 		cmd.Params["user_name"] = userName
 		cmd.Params["password"] = password
 		cmd.Params["role"] = "user"
@@ -883,7 +875,7 @@ func (p *Parser) parseAdminCreateUserAPIKeyCommand(userName string) (*Command, e
 		p.nextToken()
 	}
 
-	cmd := NewCommand("admin_create_user_api_key_command")
+	cmd := NewCommand("admin_create_user_api_key")
 	cmd.Params["user_name"] = userName
 
 	return cmd, nil
@@ -896,7 +888,7 @@ func (p *Parser) parseAdminCreateRole() (*Command, error) {
 		return nil, err
 	}
 
-	cmd := NewCommand("admin_create_role_command")
+	cmd := NewCommand("admin_create_role")
 	cmd.Params["role_name"] = roleName
 
 	p.nextToken()
@@ -918,125 +910,23 @@ func (p *Parser) parseAdminCreateRole() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseAdminCreateModelProvider() (*Command, error) {
-	p.nextToken() // consume MODEL
-	if p.curToken.Type != TokenProvider {
-		return nil, fmt.Errorf("expected PROVIDER")
-	}
-	p.nextToken()
-
-	providerName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	p.nextToken()
-	providerKey, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("create_model_provider")
-	cmd.Params["provider_name"] = providerName
-	cmd.Params["provider_key"] = providerKey
-
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseAdminCreateDataset() (*Command, error) {
-	p.nextToken() // consume DATASET
-	datasetName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	p.nextToken()
-	if p.curToken.Type != TokenWith {
-		return nil, fmt.Errorf("expected WITH")
-	}
-	p.nextToken()
-	if p.curToken.Type != TokenEmbedding {
-		return nil, fmt.Errorf("expected EMBEDDING")
-	}
-	p.nextToken()
-
-	embedding, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	p.nextToken()
-	cmd := NewCommand("create_user_dataset")
-	cmd.Params["dataset_name"] = datasetName
-	cmd.Params["embedding"] = embedding
-
-	if p.curToken.Type == TokenParser {
-		p.nextToken()
-		parserType, err := p.parseQuotedString()
-		if err != nil {
-			return nil, err
-		}
-		cmd.Params["parser_type"] = parserType
-		p.nextToken()
-	} else if p.curToken.Type == TokenPipeline {
-		p.nextToken()
-		pipeline, err := p.parseQuotedString()
-		if err != nil {
-			return nil, err
-		}
-		cmd.Params["pipeline"] = pipeline
-		p.nextToken()
-	} else {
-		return nil, fmt.Errorf("expected PARSER or PIPELINE")
-	}
-
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseAdminCreateChat() (*Command, error) {
-	p.nextToken() // consume CHAT
-	chatName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("create_user_chat")
-	cmd.Params["chat_name"] = chatName
-
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
 // endregion CREATE commands
 
 // region DROP commands
-func (p *Parser) parseAdminDropCommand() (*Command, error) {
+func (p *Parser) parseAdminDropCommands() (*Command, error) {
 	p.nextToken() // consume DROP
 
 	switch p.curToken.Type {
 	case TokenUser:
-		return p.parseAdminDropUserCommand()
+		return p.parseAdminDropUser()
 	case TokenRole:
-		return p.parseAdminDropRoleCommand()
+		return p.parseAdminDropRole()
 	default:
 		return nil, fmt.Errorf("unknown DROP target: %s", p.curToken.Value)
 	}
 }
 
-func (p *Parser) parseAdminDropUserCommand() (*Command, error) {
+func (p *Parser) parseAdminDropUser() (*Command, error) {
 	p.nextToken() // consume USER
 
 	if p.curToken.Type != TokenQuotedString {
@@ -1051,17 +941,17 @@ func (p *Parser) parseAdminDropUserCommand() (*Command, error) {
 
 	switch p.curToken.Type {
 	case TokenKey:
-		return p.parseAdminDropUserAPIKeyCommand(userName)
+		return p.parseAdminDropUserAPIKey(userName)
 	default:
 		p.nextToken()
 	}
 
-	cmd := NewCommand("admin_drop_user_command")
+	cmd := NewCommand("admin_drop_user")
 	cmd.Params["user_name"] = userName
 	return cmd, nil
 }
 
-func (p *Parser) parseAdminDropUserAPIKeyCommand(userName string) (*Command, error) {
+func (p *Parser) parseAdminDropUserAPIKey(userName string) (*Command, error) {
 	p.nextToken() // consume KEY
 
 	apiKey, err := p.parseQuotedString()
@@ -1074,14 +964,14 @@ func (p *Parser) parseAdminDropUserAPIKeyCommand(userName string) (*Command, err
 		p.nextToken()
 	}
 
-	cmd := NewCommand("admin_drop_user_api_key_command")
+	cmd := NewCommand("admin_drop_user_api_key")
 	cmd.Params["user_name"] = userName
 	cmd.Params["api_key"] = apiKey
 
 	return cmd, nil
 }
 
-func (p *Parser) parseAdminDropRoleCommand() (*Command, error) {
+func (p *Parser) parseAdminDropRole() (*Command, error) {
 	p.nextToken() // consume ROLE
 	roleName, err := p.parseIdentifier()
 	if err != nil {
