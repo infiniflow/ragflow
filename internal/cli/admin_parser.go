@@ -308,6 +308,11 @@ func (p *Parser) parseAdminListProvider() (*Command, error) {
 func (p *Parser) parseAdminListModels() (*Command, error) {
 	p.nextToken() // consume MODELS
 	cmd := NewCommand("admin_list_all_models")
+
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
 	return cmd, nil
 }
 
