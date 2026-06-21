@@ -236,6 +236,11 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         """Choose the GMM cluster count with the lowest BIC score."""
         max_clusters = min(self._max_cluster, len(embeddings))
         if max_clusters <= 1:
+            logging.info(
+                "RAPTOR GMM: _get_optimal_clusters returning 1 (max_clusters=%s, embeddings=%d)",
+                max_clusters,
+                len(embeddings),
+            )
             return 1
         n_clusters = np.arange(1, max_clusters + 1)
         bics = []
