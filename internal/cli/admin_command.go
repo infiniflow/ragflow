@@ -619,8 +619,8 @@ func normalizeVariableRows(rows []map[string]interface{}) {
 	}
 }
 
-// AdminListVariables lists all system variables (admin mode only).
-func (c *CLI) AdminListVariables(cmd *Command) (ResponseIf, error) {
+// AdminListVariablesCommand lists all system variables (admin mode only).
+func (c *CLI) AdminListVariablesCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -648,8 +648,8 @@ func (c *CLI) AdminListVariables(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// AdminListConfigs lists all system configs (admin mode only).
-func (c *CLI) AdminListConfigs(cmd *Command) (ResponseIf, error) {
+// AdminListConfigsCommand lists all system configs (admin mode only).
+func (c *CLI) AdminListConfigsCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -673,6 +673,34 @@ func (c *CLI) AdminListConfigs(cmd *Command) (ResponseIf, error) {
 	}
 
 	normalizeVariableRows(result.Data)
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// AdminListEnvironmentsCommand lists all system environments (admin mode only).
+func (c *CLI) AdminListEnvironmentsCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	resp, err := c.AdminServerClient.Request("GET", "/admin/environments", "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list configs: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list configs: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list configs failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
 	result.Duration = resp.Duration
 	return &result, nil
 }

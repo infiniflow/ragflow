@@ -77,14 +77,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.PUT("/services/:service_id", r.handler.RestartService)
 
 			// Variables/Settings
-			protected.GET("/variables", r.handler.GetVariables)
+			protected.GET("/variables", r.handler.ListVariables)
 			protected.PUT("/variables", r.handler.SetVariable)
 
 			// Configs
-			protected.GET("/configs", r.handler.GetConfigs)
+			protected.GET("/configs", r.handler.ListConfigs)
 
 			// Environments
-			protected.GET("/environments", r.handler.GetEnvironments)
+			protected.GET("/environments", r.handler.ListEnvironments)
 
 			// Version
 			protected.GET("/version", r.handler.GetVersion)
