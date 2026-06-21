@@ -107,21 +107,6 @@ func (p *Parser) parseAdminListCommand() (*Command, error) {
 		return p.parseAdminListModels()
 	case TokenUser:
 		return p.parseAdminListUserCommand()
-	case TokenTokens:
-		return p.parseAdminListTokens()
-	case TokenModel:
-		return p.parseAdminListModelProviders()
-	case TokenDefault:
-		return p.parseAdminListDefaultModels()
-	case TokenChats:
-		p.nextToken()
-		// Semicolon is optional for SHOW TOKEN
-		if p.curToken.Type == TokenSemicolon {
-			p.nextToken()
-		}
-		return NewCommand("list_user_chats"), nil
-	case TokenFiles:
-		return p.parseAdminListFiles()
 	case TokenIngestors:
 		return p.parseAdminListIngestors()
 	case TokenIngestion:
@@ -191,43 +176,6 @@ func (p *Parser) parseAdminListEnvironments() (*Command, error) {
 		p.nextToken()
 	}
 	return NewCommand("admin_list_environments"), nil
-}
-
-func (p *Parser) parseAdminListTokens() (*Command, error) {
-	p.nextToken() // consume TOKENS
-	cmd := NewCommand("list_tokens")
-
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseAdminListModelProviders() (*Command, error) {
-	p.nextToken() // consume MODEL
-	if p.curToken.Type != TokenProviders {
-		return nil, fmt.Errorf("expected PROVIDERS")
-	}
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return NewCommand("list_user_model_providers"), nil
-}
-
-func (p *Parser) parseAdminListDefaultModels() (*Command, error) {
-	p.nextToken() // consume DEFAULT
-	if p.curToken.Type != TokenModels {
-		return nil, fmt.Errorf("expected MODELS")
-	}
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return NewCommand("list_user_default_models"), nil
 }
 
 func (p *Parser) parseListAvailableProviders() (*Command, error) {

@@ -93,8 +93,6 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminListRolesCommand(cmd)
 	case "generate_token":
 		return c.GenerateAdminToken(cmd)
-	case "list_tokens":
-		return c.ListAdminTokens(cmd)
 	case "admin_list_available_providers":
 		return c.CommonAvailableProvidersCommand(cmd)
 	case "admin_show_provider":
