@@ -45,8 +45,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.PingByCommand(cmd)
 	case "benchmark":
 		return c.RunBenchmark(cmd)
-	case "list_services":
-		return c.ListServices(cmd)
+	case "admin_list_services":
+		return c.AdminListServicesCommand(cmd)
 	case "grant_admin":
 		return c.GrantAdmin(cmd)
 	case "revoke_admin":
@@ -71,8 +71,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminShowVersionCommand(cmd)
 	case "admin_show_current":
 		return c.CommonShowCurrent(cmd)
-	case "list_variables":
-		return c.ListVariables(cmd)
+	case "admin_list_variables":
+		return c.AdminListVariables(cmd)
 	case "admin_show_variable":
 		return c.AdminShowVariable(cmd)
 	case "admin_set_license_command":
@@ -83,8 +83,6 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.SetVariable(cmd)
 	case "list_user_datasets":
 		return c.ListUserDatasets(cmd)
-	case "list_agents":
-		return c.ListAgents(cmd)
 	case "admin_list_resources_command":
 		return c.AdminListResourcesCommand(cmd)
 	case "admin_list_roles_command":

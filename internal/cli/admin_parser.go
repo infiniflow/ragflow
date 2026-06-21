@@ -86,29 +86,15 @@ func (p *Parser) parseAdminListCommand() (*Command, error) {
 
 	switch p.curToken.Type {
 	case TokenServices:
-		p.nextToken()
-		// Semicolon is optional for SHOW TOKEN
-		if p.curToken.Type == TokenSemicolon {
-			p.nextToken()
-		}
-		return NewCommand("list_services"), nil
+		return p.parseAdminListServices()
 	case TokenUsers:
 		return p.parseAdminListUsersCommand()
-	case TokenDatasets:
-		return p.parseAdminListDatasets()
-	case TokenAgents:
-		return p.parseAdminListAgents()
 	case TokenRoles:
 		return p.parseAdminListRoles()
 	case TokenResources:
 		return p.parseAdminListResources()
 	case TokenVars:
-		p.nextToken()
-		// Semicolon is optional for SHOW TOKEN
-		if p.curToken.Type == TokenSemicolon {
-			p.nextToken()
-		}
-		return NewCommand("list_variables"), nil
+		return p.parseAdminListVariables()
 	case TokenConfigs:
 		p.nextToken()
 		// Semicolon is optional for SHOW TOKEN
@@ -157,58 +143,14 @@ func (p *Parser) parseAdminListCommand() (*Command, error) {
 	}
 }
 
-func (p *Parser) parseAdminListDatasets() (*Command, error) {
-	cmd := NewCommand("list_user_datasets")
-	p.nextToken() // consume DATASETS
+func (p *Parser) parseAdminListServices() (*Command, error) {
+	p.nextToken() // consume SERVICES
 
 	if p.curToken.Type == TokenSemicolon {
-		return cmd, nil
-	}
-
-	if p.curToken.Type == TokenOf {
-		p.nextToken()
-		userName, err := p.parseQuotedString()
-		if err != nil {
-			return nil, err
-		}
-		cmd = NewCommand("list_datasets")
-		cmd.Params["user_name"] = userName
 		p.nextToken()
 	}
 
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseAdminListAgents() (*Command, error) {
-	p.nextToken() // consume AGENTS
-
-	if p.curToken.Type == TokenSemicolon {
-		return NewCommand("list_user_agents"), nil
-	}
-
-	if p.curToken.Type != TokenOf {
-		return nil, fmt.Errorf("expected OF")
-	}
-	p.nextToken()
-
-	userName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("list_agents")
-	cmd.Params["user_name"] = userName
-
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
+	return NewCommand("admin_list_services"), nil
 }
 
 func (p *Parser) parseAdminListRoles() (*Command, error) {
@@ -229,6 +171,16 @@ func (p *Parser) parseAdminListResources() (*Command, error) {
 		p.nextToken()
 	}
 	return NewCommand("admin_list_resources_command"), nil
+}
+
+func (p *Parser) parseAdminListVariables() (*Command, error) {
+	p.nextToken() // consume VARIABLES
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return NewCommand("admin_list_variables"), nil
 }
 
 func (p *Parser) parseAdminListTokens() (*Command, error) {

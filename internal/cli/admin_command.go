@@ -535,21 +535,10 @@ type listServicesResponse struct {
 	Message string                   `json:"message"`
 }
 
-// ListServices lists all services (admin mode only)
-func (c *CLI) ListServices(cmd *Command) (ResponseIf, error) {
+// AdminListServicesCommand lists all services (admin mode only)
+func (c *CLI) AdminListServicesCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	// Check for benchmark iterations
-	iterations := 1
-	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
-		iterations = val
-	}
-
-	if iterations > 1 {
-		// Benchmark mode - return raw result for benchmark stats
-		return c.AdminServerClient.RequestWithIterations("GET", "/admin/services", "admin", nil, nil, iterations)
 	}
 
 	resp, err := c.AdminServerClient.Request("GET", "/admin/services", "admin", nil, nil)
@@ -563,15 +552,11 @@ func (c *CLI) ListServices(cmd *Command) (ResponseIf, error) {
 
 	var result CommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list users failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("list services failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
 		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	for _, user := range result.Data {
-		delete(user, "extra")
 	}
 
 	result.Duration = resp.Duration
@@ -634,8 +619,8 @@ func normalizeVariableRows(rows []map[string]interface{}) {
 	}
 }
 
-// ListVariables lists all system variables (admin mode only).
-func (c *CLI) ListVariables(cmd *Command) (ResponseIf, error) {
+// AdminListVariables lists all system variables (admin mode only).
+func (c *CLI) AdminListVariables(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -923,64 +908,6 @@ func (c *CLI) ListUserDatasets(cmd *Command) (ResponseIf, error) {
 
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("failed to list datasets: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	resJSON, err := resp.JSON()
-	if err != nil {
-		return nil, fmt.Errorf("invalid JSON response: %w", err)
-	}
-
-	data, ok := resJSON["data"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid response format")
-	}
-
-	// Convert to slice of maps and remove avatar
-	tableData := make([]map[string]interface{}, 0, len(data))
-	for _, item := range data {
-		if itemMap, ok := item.(map[string]interface{}); ok {
-			delete(itemMap, "avatar")
-			tableData = append(tableData, itemMap)
-		}
-	}
-
-	PrintTableSimple(tableData)
-	return nil, nil
-}
-
-// ListAgents lists agents for a specific user (admin mode)
-// Returns (result_map, error) - result_map is non-nil for benchmark mode
-func (c *CLI) ListAgents(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	userName, ok := cmd.Params["user_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("user_name not provided")
-	}
-
-	// Check for benchmark iterations
-	iterations := 1
-	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
-		iterations = val
-	}
-
-	encodedUserName := common.EncodeEmail(userName)
-	apiURL := fmt.Sprintf("/admin/users/%s/agents", encodedUserName)
-
-	if iterations > 1 {
-		// Benchmark mode - return raw result for benchmark stats
-		return c.AdminServerClient.RequestWithIterations("GET", apiURL, "admin", nil, nil, iterations)
-	}
-
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list agents: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list agents: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	resJSON, err := resp.JSON()
