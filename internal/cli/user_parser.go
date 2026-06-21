@@ -579,7 +579,7 @@ func (p *Parser) parseCreateCommand() (*Command, error) {
 
 	switch p.curToken.Type {
 	case TokenUser:
-		return p.parseCreateUser()
+		return p.parseAdminCreateUserCommand()
 	case TokenRole:
 		return p.parseCreateRole()
 	case TokenModel:
@@ -695,32 +695,6 @@ func (p *Parser) parseCreateMetadataStore() (*Command, error) {
 	}
 
 	return NewCommand("create_metadata_store"), nil
-}
-
-func (p *Parser) parseCreateUser() (*Command, error) {
-	p.nextToken() // consume USER
-	userName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	p.nextToken()
-	password, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("create_user")
-	cmd.Params["user_name"] = userName
-	cmd.Params["password"] = password
-	cmd.Params["role"] = "user"
-
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
 }
 
 func (p *Parser) parseCreateRole() (*Command, error) {
