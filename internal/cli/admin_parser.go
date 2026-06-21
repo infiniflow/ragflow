@@ -1068,7 +1068,7 @@ func (p *Parser) parseAdminAlterUser() (*Command, error) {
 	p.nextToken() // consume USER
 
 	if p.curToken.Type == TokenActive {
-		return p.parseActivateUser()
+		return p.parseAdminActivateUser()
 	}
 
 	if p.curToken.Type == TokenPassword {
@@ -1193,10 +1193,10 @@ func (p *Parser) parseAdminGrantCommand() (*Command, error) {
 	p.nextToken() // consume GRANT
 
 	if p.curToken.Type == TokenAdmin {
-		return p.parseGrantAdmin()
+		return p.parseAdminGrantAdmin()
 	}
 
-	return p.parseGrantPermission()
+	return p.parseAdminGrantPermission()
 }
 
 func (p *Parser) parseAdminGrantAdmin() (*Command, error) {
@@ -1265,10 +1265,10 @@ func (p *Parser) parseAdminRevokeCommand() (*Command, error) {
 	p.nextToken() // consume REVOKE
 
 	if p.curToken.Type == TokenAdmin {
-		return p.parseRevokeAdmin()
+		return p.parseAdminRevokeAdmin()
 	}
 
-	return p.parseRevokePermission()
+	return p.parseAdminRevokePermission()
 }
 
 func (p *Parser) parseAdminRevokeAdmin() (*Command, error) {
