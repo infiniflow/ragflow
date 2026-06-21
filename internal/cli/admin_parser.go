@@ -100,9 +100,9 @@ func (p *Parser) parseAdminListCommand() (*Command, error) {
 	case TokenEnvs:
 		return p.parseAdminListEnvironments()
 	case TokenAvailable:
-		return p.parseCommonAvailableProviders()
+		return p.parseListAvailableProviders()
 	case TokenProvider:
-		return p.parseAdminListProvider()
+		return p.parseAdminListProviderModels()
 	case TokenModels:
 		return p.parseAdminListModels()
 	case TokenUser:
@@ -230,7 +230,7 @@ func (p *Parser) parseAdminListDefaultModels() (*Command, error) {
 	return NewCommand("list_user_default_models"), nil
 }
 
-func (p *Parser) parseCommonAvailableProviders() (*Command, error) {
+func (p *Parser) parseListAvailableProviders() (*Command, error) {
 	p.nextToken() // consume AVAILABLE
 
 	if p.curToken.Type != TokenProviders {
@@ -293,7 +293,7 @@ func (p *Parser) parseAdminListIngestionTasks() (*Command, error) {
 }
 
 // LIST PROVIDER 'provider_name' MODELS;
-func (p *Parser) parseAdminListProvider() (*Command, error) {
+func (p *Parser) parseAdminListProviderModels() (*Command, error) {
 	p.nextToken() // consume PROVIDER
 
 	providerName, err := p.parseQuotedString()
