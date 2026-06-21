@@ -41,6 +41,9 @@ class Begin(UserFillUp):
         if self.check_if_canceled("Begin processing"):
             return
 
+        sys_query = self._canvas.globals.get("sys.query", "")
+        self.set_output("query", sys_query)
+
         layout_recognize = self._param.layout_recognize or None
         for k, v in kwargs.get("inputs", {}).items():
             if self.check_if_canceled("Begin processing"):
