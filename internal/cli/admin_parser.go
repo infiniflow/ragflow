@@ -96,12 +96,7 @@ func (p *Parser) parseAdminListCommand() (*Command, error) {
 	case TokenVars:
 		return p.parseAdminListVariables()
 	case TokenConfigs:
-		p.nextToken()
-		// Semicolon is optional for SHOW TOKEN
-		if p.curToken.Type == TokenSemicolon {
-			p.nextToken()
-		}
-		return NewCommand("list_configs"), nil
+		return p.parseAdminListConfigs()
 	case TokenEnvs:
 		p.nextToken()
 		// Semicolon is optional for SHOW TOKEN
@@ -181,6 +176,16 @@ func (p *Parser) parseAdminListVariables() (*Command, error) {
 		p.nextToken()
 	}
 	return NewCommand("admin_list_variables"), nil
+}
+
+func (p *Parser) parseAdminListConfigs() (*Command, error) {
+	p.nextToken() // consume CONFIGS
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return NewCommand("admin_list_configs"), nil
 }
 
 func (p *Parser) parseAdminListTokens() (*Command, error) {

@@ -73,6 +73,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.CommonShowCurrent(cmd)
 	case "admin_list_variables":
 		return c.AdminListVariables(cmd)
+	case "admin_list_configs":
+		return c.AdminListConfigs(cmd)
 	case "admin_show_variable":
 		return c.AdminShowVariable(cmd)
 	case "admin_set_license_command":

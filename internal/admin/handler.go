@@ -834,11 +834,6 @@ func (h *Handler) SetVariable(c *gin.Context) {
 func (h *Handler) GetConfigs(c *gin.Context) {
 	configs, err := h.service.GetAllConfigs()
 	if err != nil {
-		// Check if it's an AdminException
-		if adminErr, ok := err.(*AdminException); ok {
-			errorResponse(c, adminErr.Message, 400)
-			return
-		}
 		errorResponse(c, err.Error(), 500)
 		return
 	}
