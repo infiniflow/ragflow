@@ -21,16 +21,30 @@ import (
 	"fmt"
 	"os"
 	"ragflow/internal/common"
-	"ragflow/internal/engine"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/pkoukk/tiktoken-go"
 	"go.uber.org/zap"
 
 	rag "ragflow/internal/binding"
 )
+
+// engineTypeProvider is injected at startup by engine.RegisterEngineType
+// to break the tokenizer → engine import cycle.
+var engineTypeProvider = func() string { return "" }
+
+// RegisterEngineType wires the engine package's GetEngineType into the
+// tokenizer, breaking the circular import (engine/elasticsearch → tokenizer → engine).
+func RegisterEngineType(get func() string) {
+	if get == nil {
+		engineTypeProvider = func() string { return "" }
+		return
+	}
+	engineTypeProvider = get
+}
 
 // PoolConfig configures the elastic analyzer pool
 type PoolConfig struct {
@@ -417,7 +431,7 @@ func withAnalyzerResult[T any](fn func(*rag.Analyzer) (T, error)) (T, error) {
 //
 // NOTE: For Infinity engine, returns input unchanged to match python's behavior
 func Tokenize(text string) (string, error) {
-	if engine.GetEngineType() == "infinity" {
+	if engineTypeProvider() == "infinity" {
 		return text, nil
 	}
 	return withAnalyzerResult(func(a *rag.Analyzer) (string, error) {
@@ -454,7 +468,7 @@ func SetFineGrained(fineGrained bool) {
 //
 // NOTE: For Infinity engine, returns input unchanged to match python's behavior
 func FineGrainedTokenize(tokens string) (string, error) {
-	if engine.GetEngineType() == "infinity" {
+	if engineTypeProvider() == "infinity" {
 		return tokens, nil
 	}
 	return withAnalyzerResult(func(a *rag.Analyzer) (string, error) {
@@ -489,4 +503,33 @@ func GetTermTag(term string) string {
 		return a.GetTermTag(term), nil
 	})
 	return result
+}
+
+var cl100kEncoder struct {
+	sync.Once
+	enc *tiktoken.Tiktoken
+	err error
+}
+
+func getCL100KEncoder() (*tiktoken.Tiktoken, error) {
+	cl100kEncoder.Do(func() {
+		cl100kEncoder.enc, cl100kEncoder.err = tiktoken.GetEncoding("cl100k_base")
+	})
+	return cl100kEncoder.enc, cl100kEncoder.err
+}
+
+// NumTokensFromString returns the number of tokens in s using the cl100k_base
+// BPE encoding
+func NumTokensFromString(s string) int {
+	if s == "" {
+		return 0
+	}
+	enc, err := getCL100KEncoder()
+	if err != nil {
+		// Fail closed: avoid dangerous undercounting when encoder is unavailable.
+		// A conservative byte-length estimate errs on the side of over-counting,
+		// which is safer for budget enforcement than returning zero.
+		return len([]byte(s))
+	}
+	return len(enc.Encode(s, nil, nil))
 }

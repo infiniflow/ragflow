@@ -212,6 +212,7 @@ func startServer(config *server.Config) {
 	tenantService := service.NewTenantService()
 	chatService := service.NewChatService()
 	chatSessionService := service.NewChatSessionService()
+	openaiChatService := service.NewOpenAIChatService()
 	systemService := service.NewSystemService()
 	connectorService := service.NewConnectorService()
 	searchService := service.NewSearchService()
@@ -235,6 +236,7 @@ func startServer(config *server.Config) {
 	llmHandler := handler.NewLLMHandler(llmService, userService)
 	chatHandler := handler.NewChatHandler(chatService, userService)
 	chatSessionHandler := handler.NewChatSessionHandler(chatSessionService, userService)
+	openaiChatHandler := handler.NewOpenAIChatHandler(openaiChatService)
 	connectorHandler := handler.NewConnectorHandler(connectorService, userService)
 	searchHandler := handler.NewSearchHandler(searchService, userService)
 	fileHandler := handler.NewFileHandler(fileService, userService)
@@ -307,7 +309,7 @@ func startServer(config *server.Config) {
 	adminRuntimeHandler := handler.NewAdminRuntimeHandler(adminRuntimeSelector)
 
 	// Initialize router
-	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler, fileCommitHandler, adminRuntimeHandler)
+	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler, fileCommitHandler, adminRuntimeHandler, openaiChatHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()

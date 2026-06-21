@@ -364,9 +364,9 @@ function transformTitleChunkerParams(params: TitleChunkerFormSchemaType) {
   );
 
   const hierarchyValue =
-    params.method === TitleChunkerMethod.Group
+    (params.method === TitleChunkerMethod.Group
       ? params.hierarchyGroup
-      : params.hierarchyHierarchy;
+      : params.hierarchyHierarchy) ?? params.hierarchy;
 
   return {
     ...omit(params, [
