@@ -249,6 +249,11 @@ async def openai_chat_completions(chat_id):
     temporal_retrieval = extra_body.get("temporal_retrieval")
     if temporal_retrieval is not None and not isinstance(temporal_retrieval, dict):
         return get_error_data_result("temporal_retrieval must be an object.")
+    from common.temporal_validation import validate_temporal_retrieval_config
+
+    temporal_err = validate_temporal_retrieval_config(temporal_retrieval)
+    if temporal_err:
+        return get_error_data_result(temporal_err)
     include_reference_metadata = bool(reference_metadata.get("include", False))
     metadata_fields = reference_metadata.get("fields")
     if metadata_fields is not None and not isinstance(metadata_fields, list):

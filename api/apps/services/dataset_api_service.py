@@ -654,7 +654,9 @@ def get_metadata_keys(dataset_ids: list[str], tenant_id: str):
 
 def profile_temporal_field(dataset_ids: list[str], temporal_field: str, tenant_id: str):
     """
-    Profile a selected metadata field for temporal retrieval.
+    Profile a selected metadata field for temporal retrieval using bounded sampling.
+
+    Large datasets are sampled instead of loading metadata for every document.
     """
     if not dataset_ids:
         return False, "Lack of dataset_ids"
@@ -666,13 +668,33 @@ def profile_temporal_field(dataset_ids: list[str], temporal_field: str, tenant_i
             return False, f"No authorization for dataset '{dataset_id}'"
 
     from api.db.services.doc_metadata_service import DocMetadataService
+    from api.db.services.document_service import DocumentService
     from common.temporal_utils import profile_metadata_documents
+    from common.temporal_validation import MAX_TEMPORAL_PROFILE_SAMPLE
+    import logging
 
     metadata_by_doc = {}
+    sampled_total = 0
     for dataset_id in dataset_ids:
-        metadata_by_doc.update(DocMetadataService.get_metadata_for_documents(None, dataset_id))
+        sample_ids = [
+            row.id
+            for row in DocumentService.model.select(DocumentService.model.id)
+            .where(DocumentService.model.kb_id == dataset_id)
+            .limit(MAX_TEMPORAL_PROFILE_SAMPLE)
+        ]
+        sampled_total += len(sample_ids)
+        if sample_ids:
+            metadata_by_doc.update(DocMetadataService.get_metadata_for_documents(sample_ids, dataset_id))
 
-    return True, profile_metadata_documents(metadata_by_doc, temporal_field)
+    logging.debug(
+        "Temporal field profiling sampled %d documents across %d dataset(s) for field=%s",
+        sampled_total,
+        len(dataset_ids),
+        temporal_field,
+    )
+    profile = profile_metadata_documents(metadata_by_doc, temporal_field)
+    profile["sampled_documents"] = sampled_total
+    return True, profile
 
 
 def get_auto_metadata(dataset_id: str, tenant_id: str):

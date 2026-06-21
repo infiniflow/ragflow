@@ -47,6 +47,7 @@ from api.utils.api_utils import (
 )
 from api.utils.pagination_utils import validate_rest_api_page_size
 from common.constants import LLMType, RetCode, StatusEnum
+from common.temporal_validation import merge_temporal_retrieval_config, validate_temporal_retrieval_config
 from common import settings
 from common.misc_utils import get_uuid, thread_pool_exec
 from rag.prompts.generator import chunks_format
@@ -155,24 +156,7 @@ def _validate_name(name, *, required=True):
 
 
 def _validate_temporal_retrieval(config):
-    if config is None:
-        return None
-    if not isinstance(config, dict):
-        return "`temporal_retrieval` should be an object."
-    mode = config.get("mode")
-    if mode is not None and mode not in {"auto", "latest", "date_range", "balanced"}:
-        return "`temporal_retrieval.mode` should be one of auto, latest, date_range, balanced."
-    if config.get("enabled"):
-        field = config.get("temporal_field")
-        if not isinstance(field, str) or not field.strip():
-            return "`temporal_retrieval.temporal_field` is required when temporal retrieval is enabled."
-    if "half_life_days" in config:
-        try:
-            if float(config["half_life_days"]) <= 0:
-                return "`temporal_retrieval.half_life_days` should be greater than 0."
-        except (TypeError, ValueError):
-            return "`temporal_retrieval.half_life_days` should be a number."
-    return None
+    return validate_temporal_retrieval_config(config)
 
 
 def _build_session_response(conv: dict) -> dict:
@@ -681,9 +665,14 @@ async def patch_chat(chat_id):
             llm_setting.update(req["llm_setting"])
             req["llm_setting"] = llm_setting
         if "temporal_retrieval" in req:
-            err = _validate_temporal_retrieval(req.get("temporal_retrieval"))
+            temporal_retrieval = merge_temporal_retrieval_config(
+                current_chat.get("temporal_retrieval", {}),
+                req.get("temporal_retrieval"),
+            )
+            err = _validate_temporal_retrieval(temporal_retrieval)
             if err:
                 return get_data_error_result(message=err)
+            req["temporal_retrieval"] = temporal_retrieval
 
         # if "prompt_config" in req or "kb_ids" in req:
         #     prompt_config = req.get("prompt_config", current_chat.get("prompt_config", {}))

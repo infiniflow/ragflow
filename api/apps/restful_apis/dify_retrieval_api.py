@@ -247,8 +247,25 @@ async def retrieval(tenant_id):
             message=f"invalid or malformed arguments: {str(e)}; ",
             code=RetCode.ARGUMENT_ERROR,
         )
-    metadata_condition = req.get("metadata_condition", {}) or {}
-    temporal_retrieval = req.get("temporal_retrieval") or {}
+    metadata_condition = req.get("metadata_condition")
+    temporal_retrieval = req.get("temporal_retrieval")
+    if metadata_condition is not None and not isinstance(metadata_condition, dict):
+        return build_error_result(
+            message="metadata_condition must be an object.; ",
+            code=RetCode.ARGUMENT_ERROR,
+        )
+    if temporal_retrieval is not None and not isinstance(temporal_retrieval, dict):
+        return build_error_result(
+            message="temporal_retrieval must be an object.; ",
+            code=RetCode.ARGUMENT_ERROR,
+        )
+    from common.temporal_validation import validate_temporal_retrieval_config
+
+    temporal_err = validate_temporal_retrieval_config(temporal_retrieval)
+    if temporal_err:
+        return build_error_result(message=f"{temporal_err}; ", code=RetCode.ARGUMENT_ERROR)
+    metadata_condition = metadata_condition or {}
+    temporal_retrieval = temporal_retrieval or {}
     meta_data_filter = {}
     if metadata_condition:
         meta_data_filter = {

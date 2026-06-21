@@ -39,7 +39,15 @@ _MONTH_RE = re.compile(
     re.I,
 )
 _FROM_TO_RE = re.compile(
-    r"\b(?:from|between)\s+(20\d{2}|19\d{2})(?:-\d{2}-\d{2})?\s+(?:to|and|until|-)\s+(20\d{2}|19\d{2})(?:-\d{2}-\d{2})?\b",
+    r"\b(?:from|between)\s+((?:20\d{2}|19\d{2})(?:-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01]))?)\s+(?:to|and|until|-)\s+((?:20\d{2}|19\d{2})(?:-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01]))?)\b",
+    re.I,
+)
+_EXACT_DATE_RANGE_RE = re.compile(
+    r"\b((?:20\d{2}|19\d{2})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01]))\s+(?:to|until|-)\s+((?:20\d{2}|19\d{2})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01]))\b",
+    re.I,
+)
+_RANGE_LIKE_RE = re.compile(
+    r"\b(?:from|between)\s+(?:20\d{2}|19\d{2})(?:-\d{2}-\d{2})?\s+(?:to|and|until|-)\s+(?:20\d{2}|19\d{2})(?:-\d{2}-\d{2})?\b",
     re.I,
 )
 
@@ -142,6 +150,9 @@ class DateWindow:
     start_date: str
     end_date: str
     source: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
     def to_conditions(self, field: str) -> list[dict[str, Any]]:
         return [
@@ -293,6 +304,11 @@ def profile_temporal_field(metadata_by_doc: dict[str, dict[str, Any]], temporal_
 
 
 def extract_date_window(query: str | None, now: datetime | None = None) -> DateWindow | None:
+    """Extract an explicit temporal window from a user query.
+
+    Exact ``YYYY-MM-DD`` ranges are preserved without expanding to full years.
+    Year-only expressions still resolve to calendar-year boundaries.
+    """
     text = normalize_arabic_digits(query or "") or ""
     text_l = text.lower()
     now = now or datetime.now(UTC)
@@ -312,18 +328,27 @@ def extract_date_window(query: str | None, now: datetime | None = None) -> DateW
         first_prev_month = last_prev_month.replace(day=1)
         return DateWindow(first_prev_month.isoformat(), last_prev_month.isoformat(), "last_month")
 
+    match = _EXACT_DATE_RANGE_RE.search(text_l)
+    if match:
+        start_date, end_date = _normalize_range_bounds(match.group(1), match.group(2))
+        if start_date and end_date:
+            return DateWindow(start_date, end_date, "exact_date_range")
+
+    match = _FROM_TO_RE.search(text_l)
+    if match:
+        start_date, end_date = _normalize_range_bounds(match.group(1), match.group(2))
+        if start_date and end_date:
+            source = "exact_date_range" if len(match.group(1)) == 10 and len(match.group(2)) == 10 else "year_range"
+            return DateWindow(start_date, end_date, source)
+
+    if _RANGE_LIKE_RE.search(text_l):
+        logging.debug("Temporal date range skipped because range tokens are malformed: %s", text_l)
+        return None
+
     match = _EXACT_DATE_RE.search(text_l)
     if match:
         value = match.group(0)
         return DateWindow(value, value, "exact_date")
-
-    match = _FROM_TO_RE.search(text_l)
-    if match:
-        start_year = int(match.group(1))
-        end_year = int(match.group(2))
-        if start_year > end_year:
-            start_year, end_year = end_year, start_year
-        return DateWindow(f"{start_year}-01-01", f"{end_year}-12-31", "year_range")
 
     match = _QUARTER_RE.search(text_l)
     if match:
@@ -367,7 +392,11 @@ class TemporalRetrievalPolicy:
             return _skipped_policy("missing_temporal_field")
         temporal_field = temporal_field.strip()
 
-        mode = (config.get("mode") or "auto").lower()
+        mode_raw = config.get("mode") or "auto"
+        if not isinstance(mode_raw, str):
+            logging.debug("Temporal retrieval skipped: invalid mode type=%s", type(mode_raw).__name__)
+            return _skipped_policy("invalid_mode")
+        mode = mode_raw.lower()
         query_text = " ".join(
             part for part in [normalize_arabic_digits(raw_query), normalize_arabic_digits(refined_query)] if part
         )
@@ -381,6 +410,7 @@ class TemporalRetrievalPolicy:
         elif mode == "balanced":
             intent, confidence = "balanced", max(confidence, 0.8)
         elif mode != "auto":
+            logging.debug("Temporal retrieval skipped: invalid mode=%s", mode)
             return _skipped_policy("invalid_mode")
 
         if intent == "evergreen":
@@ -415,6 +445,14 @@ class TemporalRetrievalPolicy:
             )
 
         strategy = "metadata_filter" if filter_plan.conditions else "freshness_rerank" if rank_plan else "baseline"
+        logging.debug(
+            "Temporal policy resolved: intent=%s strategy=%s field=%s window=%s future_date_policy=%s",
+            intent,
+            strategy,
+            temporal_field,
+            explicit_window.to_dict() if explicit_window else None,
+            rank_plan.future_date_policy if rank_plan else None,
+        )
         return ResolvedTemporalPolicy(
             intent=intent,
             strategy=strategy,
@@ -427,19 +465,44 @@ class TemporalRetrievalPolicy:
         )
 
 
-def freshness_score(parsed: ParsedTemporalValue | None, now: datetime | None, half_life_days: float, offset_days: float = 0.0) -> float:
+def freshness_score(
+    parsed: ParsedTemporalValue | None,
+    now: datetime | None,
+    half_life_days: float,
+    offset_days: float = 0.0,
+    future_date_policy: str = "include_without_boost",
+) -> float:
+    """Compute exponential freshness in ``[0, 1]`` for a parsed temporal value.
+
+    Future-dated documents are handled according to ``future_date_policy``:
+    - ``include_without_boost`` / ``ignore_future``: no freshness boost
+    - ``cap_to_now``: treat the document as if it were published today
+    - ``penalize_future``: return a negative penalty factor for reranking
+    - ``allow_future``: treat future dates as maximally fresh
+    """
     if parsed is None:
         return 0.0
     now = now or datetime.now(UTC)
     age_days = (now.timestamp() - parsed.ts_norm) / 86400
     if age_days < 0:
-        return 0.0
+        if future_date_policy in {"include_without_boost", "ignore_future"}:
+            return 0.0
+        if future_date_policy == "cap_to_now":
+            age_days = 0.0
+        elif future_date_policy == "penalize_future":
+            return -0.25
+        elif future_date_policy == "allow_future":
+            age_days = 0.0
+        else:
+            return 0.0
     effective_age = max(0.0, age_days - max(0.0, offset_days))
     half_life_days = max(0.0001, half_life_days)
     return max(0.0, min(1.0, math.pow(0.5, effective_age / half_life_days)))
 
 
 def temporal_sort_score(base_score: float, freshness: float, freshness_weight: float) -> float:
+    if freshness < 0:
+        return base_score * max(0.0, 1.0 + freshness)
     return base_score * (1 + max(0.0, freshness_weight) * max(0.0, min(1.0, freshness)))
 
 
@@ -465,6 +528,27 @@ def _detect_temporal_intent(text: str, explicit_window: DateWindow | None) -> tu
     if any(term in text_l or term in text for term in _DATE_TERMS):
         return "date_range", 0.6
     return "evergreen", 0.95
+
+
+def _normalize_range_bounds(start_token: str, end_token: str) -> tuple[str | None, str | None]:
+    start_token = (start_token or "").strip()
+    end_token = (end_token or "").strip()
+    if not start_token or not end_token:
+        return None, None
+
+    if len(start_token) == 4 and len(end_token) == 4:
+        start_year = int(start_token)
+        end_year = int(end_token)
+        if start_year > end_year:
+            start_year, end_year = end_year, start_year
+        return f"{start_year}-01-01", f"{end_year}-12-31"
+
+    if len(start_token) == 10 and len(end_token) == 10:
+        if start_token > end_token:
+            start_token, end_token = end_token, start_token
+        return start_token, end_token
+
+    return None, None
 
 
 def _month_end(year: int, month: int) -> date:

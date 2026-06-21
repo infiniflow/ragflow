@@ -210,8 +210,12 @@ async def apply_meta_data_filter(
     """
     from rag.prompts.generator import gen_meta_filter  # move from the top of the file to avoid circular import
 
-    base_doc_ids = list(base_doc_ids) if base_doc_ids else []
+    if base_doc_ids is not None:
+        base_doc_ids = list(base_doc_ids)
     extra_conditions = [flt for flt in (extra_conditions or []) if isinstance(flt, dict)]
+
+    if base_doc_ids is not None and len(base_doc_ids) == 0:
+        return []
 
     if not meta_data_filter and not extra_conditions:
         return base_doc_ids
@@ -247,8 +251,10 @@ async def apply_meta_data_filter(
         return meta_filter(_get_metas(), conditions, logic)
 
     def _scope_to_base(filtered_doc_ids: list[str]) -> list[str]:
-        if not base_doc_ids:
+        if base_doc_ids is None:
             return list(filtered_doc_ids)
+        if len(base_doc_ids) == 0:
+            return []
         allowed = set(filtered_doc_ids)
         return [doc_id for doc_id in base_doc_ids if doc_id in allowed]
 
@@ -259,7 +265,7 @@ async def apply_meta_data_filter(
             user_doc_ids = _run_metadata_filter(user_conditions, user_logic)
             extra_doc_ids = _run_metadata_filter(extra_conditions, "and")
             allowed = set(user_doc_ids) & set(extra_doc_ids)
-            if base_doc_ids:
+            if base_doc_ids is not None:
                 allowed &= set(base_doc_ids)
             ordered = user_doc_ids or extra_doc_ids
             return [doc_id for doc_id in ordered if doc_id in allowed]
@@ -270,7 +276,7 @@ async def apply_meta_data_filter(
             conditions.extend(extra_conditions)
             logic = "and"
         if not conditions:
-            return list(base_doc_ids)
+            return list(base_doc_ids) if base_doc_ids is not None else None
         return _scope_to_base(_run_metadata_filter(conditions, logic))
 
     if method == "auto":
@@ -280,7 +286,7 @@ async def apply_meta_data_filter(
         if not doc_ids:
             return None
     elif method == "semi_auto":
-        doc_ids = list(base_doc_ids)
+        doc_ids = list(base_doc_ids) if base_doc_ids is not None else None
         selected_keys = []
         constraints = {}
         for item in meta_data_filter.get("semi_auto", []):

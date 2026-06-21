@@ -399,7 +399,7 @@ export function useFetchTemporalMetadataProfile(
 ) {
   const sortedKbIds = useMemo(() => [...kbIds].sort(), [kbIds]);
   const normalizedField = temporalField.trim();
-  const { data, isFetching: loading } = useQuery<Record<string, any>>({
+  const { data, isFetching: loading, isError, error } = useQuery<Record<string, any>>({
     queryKey: KnowledgeKeys.temporalMetadataProfile(sortedKbIds, normalizedField),
     initialData: {},
     enabled: sortedKbIds.length > 0 && normalizedField.length > 0,
@@ -413,7 +413,7 @@ export function useFetchTemporalMetadataProfile(
     },
   });
 
-  return { data, loading };
+  return { data, loading, error: isError ? error : undefined };
 }
 
 export const useRemoveKnowledgeGraph = () => {

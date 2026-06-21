@@ -1,14 +1,26 @@
+from datetime import UTC, datetime
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from common.metadata_utils import apply_meta_data_filter
 from common.temporal_utils import (
     TemporalRetrievalPolicy,
+    extract_date_window,
     filter_visible_metadata_dict,
+    freshness_score,
     parse_temporal_value,
     profile_temporal_field,
+    temporal_sort_score,
+)
+from common.temporal_validation import (
+    merge_temporal_retrieval_config as merge_config,
+    validate_half_life_days,
+    validate_temporal_retrieval_config,
 )
 
 
+@pytest.mark.p2
 def test_parse_temporal_value_supported_formats():
     assert parse_temporal_value("2026-06-15").date_norm == "2026-06-15"
     assert parse_temporal_value("2026-06-15T12:00:00Z").source_format == "iso_datetime"
@@ -17,6 +29,7 @@ def test_parse_temporal_value_supported_formats():
     assert parse_temporal_value("1781481600000").source_format == "unix_millis"
 
 
+@pytest.mark.p2
 def test_profile_temporal_field_and_hide_internal_metadata():
     profile = profile_temporal_field(
         {
@@ -35,6 +48,7 @@ def test_profile_temporal_field_and_hide_internal_metadata():
     }
 
 
+@pytest.mark.p2
 def test_temporal_policy_arabic_latest_uses_digit_normalization():
     resolved = TemporalRetrievalPolicy.resolve(
         "آخر أخبار ٢٠٢٦ عن الاقتصاد",
@@ -48,6 +62,77 @@ def test_temporal_policy_arabic_latest_uses_digit_normalization():
     assert resolved.filter_plan.conditions
 
 
+@pytest.mark.p1
+@pytest.mark.parametrize(
+    ("value", "expected_error"),
+    [
+        (7, None),
+        (0, "`temporal_retrieval.half_life_days` should be a finite number greater than 0."),
+        (-1, "`temporal_retrieval.half_life_days` should be a finite number greater than 0."),
+        (float("nan"), "`temporal_retrieval.half_life_days` should be a finite number greater than 0."),
+        (float("inf"), "`temporal_retrieval.half_life_days` should be a finite number greater than 0."),
+        ("14", "`temporal_retrieval.half_life_days` should be a number."),
+        (True, "`temporal_retrieval.half_life_days` should be a number."),
+    ],
+)
+def test_validate_half_life_days(value, expected_error):
+    parsed, err = validate_half_life_days(value)
+    if expected_error is None:
+        assert parsed == float(value)
+        assert err is None
+    else:
+        assert parsed is None
+        assert err == expected_error
+
+
+@pytest.mark.p1
+def test_validate_temporal_retrieval_config_rejects_bad_payloads():
+    assert validate_temporal_retrieval_config("bad") == "`temporal_retrieval` should be an object."
+    assert (
+        validate_temporal_retrieval_config({"enabled": True})
+        == "`temporal_retrieval.temporal_field` is required when temporal retrieval is enabled."
+    )
+    assert (
+        validate_temporal_retrieval_config({"enabled": True, "temporal_field": "post_date", "half_life_days": 0})
+        == "`temporal_retrieval.half_life_days` should be a finite number greater than 0."
+    )
+    assert validate_temporal_retrieval_config({"future_date_policy": "bad"}) is not None
+
+
+@pytest.mark.p1
+def test_merge_temporal_retrieval_config_preserves_existing_fields():
+    existing = {
+        "enabled": True,
+        "mode": "auto",
+        "temporal_field": "post_date",
+        "half_life_days": 30,
+    }
+    merged = merge_config(existing, {"half_life_days": 7})
+    assert merged == {
+        "enabled": True,
+        "mode": "auto",
+        "temporal_field": "post_date",
+        "half_life_days": 7,
+    }
+    assert validate_temporal_retrieval_config(merged) is None
+
+
+@pytest.mark.p1
+def test_merge_temporal_retrieval_config_invalid_partial_fails_cleanly():
+    existing = {
+        "enabled": True,
+        "mode": "auto",
+        "temporal_field": "post_date",
+        "half_life_days": 30,
+    }
+    merged = merge_config(existing, {"half_life_days": float("nan")})
+    assert (
+        validate_temporal_retrieval_config(merged)
+        == "`temporal_retrieval.half_life_days` should be a finite number greater than 0."
+    )
+
+
+@pytest.mark.p1
 @pytest.mark.asyncio
 async def test_apply_meta_data_filter_extra_conditions_scope_base_doc_ids():
     metas = {
@@ -63,3 +148,148 @@ async def test_apply_meta_data_filter_extra_conditions_scope_base_doc_ids():
     )
 
     assert doc_ids == ["doc-2"]
+
+
+@pytest.mark.p1
+@pytest.mark.asyncio
+async def test_apply_meta_data_filter_base_doc_ids_none_is_unscoped():
+    metas = {"topic": {"news": ["doc-1", "doc-2"]}}
+
+    doc_ids = await apply_meta_data_filter(
+        {"method": "manual", "manual": [{"key": "topic", "op": "=", "value": "news"}], "logic": "and"},
+        metas,
+        base_doc_ids=None,
+    )
+
+    assert sorted(doc_ids) == ["doc-1", "doc-2"]
+
+
+@pytest.mark.p1
+@pytest.mark.asyncio
+async def test_apply_meta_data_filter_base_doc_ids_empty_returns_empty():
+    metas = {"topic": {"news": ["doc-1", "doc-2"]}}
+
+    doc_ids = await apply_meta_data_filter(
+        {"method": "manual", "manual": [{"key": "topic", "op": "=", "value": "news"}], "logic": "and"},
+        metas,
+        base_doc_ids=[],
+    )
+
+    assert doc_ids == []
+
+
+@pytest.mark.p1
+@pytest.mark.asyncio
+async def test_apply_meta_data_filter_no_filters_returns_none_base_doc_ids():
+    doc_ids = await apply_meta_data_filter({}, {}, base_doc_ids=None)
+    assert doc_ids is None
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    ("query", "start", "end"),
+    [
+        ("2026-01-10 to 2026-01-20", "2026-01-10", "2026-01-20"),
+        ("from 2026-01-10 to 2026-01-20", "2026-01-10", "2026-01-20"),
+        ("between 2026-01-20 and 2026-01-10", "2026-01-10", "2026-01-20"),
+    ],
+)
+def test_extract_date_window_exact_ranges_remain_exact(query, start, end):
+    window = extract_date_window(query)
+    assert window is not None
+    assert window.start_date == start
+    assert window.end_date == end
+
+
+@pytest.mark.p2
+def test_extract_date_window_year_only_expands_to_year():
+    window = extract_date_window("earnings in 2026")
+    assert window is not None
+    assert window.start_date == "2026-01-01"
+    assert window.end_date == "2026-12-31"
+
+
+@pytest.mark.p2
+def test_extract_date_window_malformed_range_returns_none():
+    assert extract_date_window("from bad-date to also-bad") is None
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "query",
+    [
+        "from 2026 to 2026-01-20",
+        "between 2026-01-10 and 2026",
+        "from 2026-99-99 to 2026-01-20",
+    ],
+)
+def test_extract_date_window_malformed_mixed_ranges_return_none(query):
+    assert extract_date_window(query) is None
+
+
+@pytest.mark.p1
+def test_temporal_policy_invalid_mode_type_skips_without_crashing():
+    resolved = TemporalRetrievalPolicy.resolve(
+        "latest updates",
+        "latest updates",
+        {"enabled": True, "mode": ["latest"], "temporal_field": "post_date"},
+        ["kb-1"],
+    )
+
+    assert resolved.strategy == "baseline"
+    assert resolved.skipped_reason == "invalid_mode"
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize(
+    ("policy", "expected"),
+    [
+        ("include_without_boost", 0.0),
+        ("ignore_future", 0.0),
+        ("cap_to_now", 1.0),
+        ("allow_future", 1.0),
+        ("penalize_future", -0.25),
+    ],
+)
+def test_freshness_score_future_date_policies(policy, expected):
+    future = parse_temporal_value("2099-01-01")
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    score = freshness_score(future, now, 14.0, future_date_policy=policy)
+    if policy == "penalize_future":
+        assert score < 0
+    else:
+        assert score == expected
+
+
+@pytest.mark.p2
+def test_temporal_sort_score_applies_penalty():
+    assert temporal_sort_score(1.0, -0.25, 0.15) == pytest.approx(0.75)
+
+
+@pytest.mark.p1
+def test_search_dataset_req_rejects_bad_temporal_retrieval():
+    from pydantic import ValidationError
+
+    from api.utils.validation_utils import SearchDatasetReq, SearchDatasetsReq
+
+    with pytest.raises(ValidationError):
+        SearchDatasetReq(question="latest news", temporal_retrieval="bad")
+
+    with pytest.raises(ValidationError):
+        SearchDatasetReq(
+            question="latest news",
+            temporal_retrieval={"enabled": True, "half_life_days": 0, "temporal_field": "post_date"},
+        )
+
+    with pytest.raises(ValidationError):
+        SearchDatasetsReq(dataset_ids=["kb-1"], question="latest news", temporal_retrieval="bad")
+
+
+@pytest.mark.p2
+def test_profile_temporal_field_uses_sampled_documents_count():
+    profile = profile_temporal_field(
+        {f"doc-{idx}": {"post_date": "2026-01-01"} for idx in range(3)},
+        "post_date",
+    )
+    assert profile.total_documents == 3
+    assert profile.parsed_documents == 3

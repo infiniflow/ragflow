@@ -307,8 +307,19 @@ async def retrieval_test(tenant_id):
         for doc_id in doc_ids:
             if doc_id not in doc_ids_list:
                 return get_error_data_result(f"The datasets don't own the document {doc_id}")
-    metadata_condition = req.get("metadata_condition") or {}
-    temporal_retrieval = req.get("temporal_retrieval") or {}
+    metadata_condition = req.get("metadata_condition")
+    temporal_retrieval = req.get("temporal_retrieval")
+    if metadata_condition is not None and not isinstance(metadata_condition, dict):
+        return get_error_data_result("`metadata_condition` should be an object.")
+    if temporal_retrieval is not None and not isinstance(temporal_retrieval, dict):
+        return get_error_data_result("`temporal_retrieval` should be an object.")
+    from common.temporal_validation import validate_temporal_retrieval_config
+
+    temporal_err = validate_temporal_retrieval_config(temporal_retrieval)
+    if temporal_err:
+        return get_error_data_result(temporal_err)
+    metadata_condition = metadata_condition or {}
+    temporal_retrieval = temporal_retrieval or {}
     meta_data_filter = {}
     if metadata_condition:
         meta_data_filter = {

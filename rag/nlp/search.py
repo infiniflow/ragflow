@@ -605,7 +605,17 @@ class Dealer:
                     meta[(kb_id, doc_id)] = doc_meta
             return meta
 
-        meta_by_doc = await thread_pool_exec(_load_metadata)
+        try:
+            meta_by_doc = await thread_pool_exec(_load_metadata)
+        except Exception as exc:
+            logging.warning(
+                "Temporal metadata load failed; falling back to baseline ranking: field=%s kb_count=%d error=%s",
+                temporal_field,
+                len(doc_ids_by_kb),
+                exc,
+                exc_info=True,
+            )
+            return sim_np
         normalized_base = normalized_scores([float(x) for x in sim_np])
         sort_scores = []
         boosted = 0
@@ -618,6 +628,7 @@ class Dealer:
                 None,
                 getattr(temporal_rank_policy, "half_life_days", 14.0),
                 getattr(temporal_rank_policy, "freshness_offset_days", 0.0),
+                getattr(temporal_rank_policy, "future_date_policy", "include_without_boost"),
             )
             if fresh > 0:
                 boosted += 1

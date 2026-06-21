@@ -350,7 +350,15 @@ async def retrieval_test_embedded(tenant_id=None):
                 rerank_id = search_config.get("rerank_id", "")
         else:
             meta_data_filter = req.get("meta_data_filter") or {}
-            temporal_retrieval = req.get("temporal_retrieval") or {}
+            temporal_retrieval = req.get("temporal_retrieval")
+            if temporal_retrieval is not None and not isinstance(temporal_retrieval, dict):
+                return get_data_error_result(message="`temporal_retrieval` should be an object.")
+            from common.temporal_validation import validate_temporal_retrieval_config
+
+            temporal_err = validate_temporal_retrieval_config(temporal_retrieval)
+            if temporal_err:
+                return get_data_error_result(message=temporal_err)
+            temporal_retrieval = temporal_retrieval or {}
             if meta_data_filter.get("method") in ["auto", "semi_auto"]:
                 chat_model_config = await thread_pool_exec(get_tenant_default_model_by_type, tenant_id, LLMType.CHAT)
                 chat_mdl = LLMBundle(tenant_id, chat_model_config)

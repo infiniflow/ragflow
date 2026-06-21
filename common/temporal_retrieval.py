@@ -44,9 +44,25 @@ async def resolve_temporal_retrieval_context(
     metas_loader: Callable[[], dict] | None = None,
     metadata_filter_func: Callable[..., Any] = apply_meta_data_filter,
 ) -> TemporalRetrievalContext:
+    """Resolve temporal intent and merge temporal filters into metadata filtering.
+
+    Returns scoped ``doc_ids`` plus an optional ``TemporalRankPlan`` for retrieval
+    reranking. When temporal retrieval is disabled or skipped, ``doc_ids`` still
+    reflect user metadata filters and ``base_doc_ids`` scoping semantics.
+    """
+    import logging
+
     del retrieval_query
     resolved = TemporalRetrievalPolicy.resolve(raw_query, refined_query, temporal_retrieval, kb_ids)
     extra_conditions = resolved.filter_plan.conditions if resolved.filter_plan else []
+    logging.debug(
+        "Temporal retrieval context: intent=%s strategy=%s skipped=%s extra_conditions=%d base_doc_ids=%s",
+        resolved.intent,
+        resolved.strategy,
+        resolved.skipped_reason,
+        len(extra_conditions),
+        "none" if base_doc_ids is None else len(base_doc_ids),
+    )
 
     doc_ids = await metadata_filter_func(
         meta_data_filter or {},
