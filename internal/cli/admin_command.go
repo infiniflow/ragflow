@@ -990,157 +990,6 @@ func (c *CLI) ListUserDatasets(cmd *Command) (ResponseIf, error) {
 	return nil, nil
 }
 
-// GrantPermission grants permission to a role (admin mode only)
-func (c *CLI) GrantPermission(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	userName, ok := cmd.Params["user_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("user_name not provided")
-	}
-
-	encodedUserName := common.EncodeEmail(userName)
-	apiURL := fmt.Sprintf("/admin/users/%s/keys", encodedUserName)
-
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list tokens: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list tokens: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list tokens failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	// Remove extra field from data
-	for _, item := range result.Data {
-		delete(item, "extra")
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
-}
-
-// RevokePermission revokes permission from a role (admin mode only)
-func (c *CLI) RevokePermission(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	roleName, ok := cmd.Params["role_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("role_name not provided")
-	}
-
-	resource, ok := cmd.Params["resource"].(string)
-	if !ok {
-		return nil, fmt.Errorf("resource not provided")
-	}
-
-	actionsRaw, ok := cmd.Params["actions"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("actions not provided")
-	}
-
-	actions := make([]string, 0, len(actionsRaw))
-	for _, action := range actionsRaw {
-		if actionStr, ok := action.(string); ok {
-			actions = append(actions, actionStr)
-		}
-	}
-
-	payload := map[string]interface{}{
-		"resource": resource,
-		"actions":  actions,
-	}
-
-	resp, err := c.AdminServerClient.Request("DELETE", fmt.Sprintf("/admin/roles/%s/permission", roleName), "admin", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to revoke permission: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to revoke permission: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("revoke permission failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	// Remove extra field from data
-	for _, item := range result.Data {
-		delete(item, "extra")
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
-}
-
-// AlterUserRole alters user's role (admin mode only)
-func (c *CLI) AlterUserRole(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	userName, ok := cmd.Params["user_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("user_name not provided")
-	}
-
-	roleName, ok := cmd.Params["role_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("role_name not provided")
-	}
-
-	payload := map[string]interface{}{
-		"role_name": roleName,
-	}
-
-	encodedUserName := common.EncodeEmail(userName)
-	apiURL := fmt.Sprintf("/admin/users/%s/role", encodedUserName)
-
-	resp, err := c.AdminServerClient.Request("PUT", apiURL, "admin", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to alter user role: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to alter user role: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("alter user role failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	// Remove extra field from data
-	for _, item := range result.Data {
-		delete(item, "extra")
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
-}
-
 // ShowUserPermission shows user's permissions (admin mode only)
 func (c *CLI) ShowUserPermission(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
@@ -2854,6 +2703,15 @@ func (c *CLI) AdminListUserKeysCommand(cmd *Command) (ResponseIf, error) {
 
 	if result.Code != 0 {
 		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	// Remove extra field from data
+	for _, item := range result.Data {
+		delete(item, "dialog_id")
+		delete(item, "source")
+		delete(item, "update_date")
+		delete(item, "update_time")
+		delete(item, "create_time")
 	}
 
 	result.Duration = resp.Duration
