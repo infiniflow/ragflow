@@ -17,6 +17,8 @@
 package dao
 
 import (
+	"errors"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"time"
 
@@ -82,6 +84,85 @@ func (dao *ConnectorDAO) ListByDatasetID(datasetID string) ([]*ConnectorDatasetL
 	return connectors, nil
 }
 
+// DatasetConnectorLink is the connector relation payload accepted by dataset update.
+type DatasetConnectorLink struct {
+	ID        string
+	AutoParse string
+}
+
+// LinkDatasetConnectors syncs connector2kb rows for a dataset.
+func (dao *ConnectorDAO) LinkDatasetConnectors(kbID string, connectors []DatasetConnectorLink) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var existing []entity.Connector2Kb
+		if err := tx.Where("kb_id = ?", kbID).Find(&existing).Error; err != nil {
+			return err
+		}
+
+		oldConnectorIDs := make(map[string]entity.Connector2Kb, len(existing))
+		for _, row := range existing {
+			oldConnectorIDs[row.ConnectorID] = row
+		}
+
+		nextConnectorIDs := make(map[string]struct{}, len(connectors))
+		for _, connector := range connectors {
+			nextConnectorIDs[connector.ID] = struct{}{}
+			autoParse := connector.AutoParse
+			if autoParse == "" {
+				autoParse = "1"
+			}
+
+			if _, ok := oldConnectorIDs[connector.ID]; ok {
+				if err := tx.Model(&entity.Connector2Kb{}).
+					Where("connector_id = ? AND kb_id = ?", connector.ID, kbID).
+					Update("auto_parse", autoParse).Error; err != nil {
+					return err
+				}
+				continue
+			}
+
+			if err := tx.Create(&entity.Connector2Kb{
+				ID:          common.GenerateUUID(),
+				ConnectorID: connector.ID,
+				KbID:        kbID,
+				AutoParse:   autoParse,
+			}).Error; err != nil {
+				return err
+			}
+
+			if err := scheduleConnectorTask(tx, connector.ID, kbID, connectorTaskTypeSync, true); err != nil {
+				return err
+			}
+
+			var fullConnector entity.Connector
+			if err := tx.Where("id = ?", connector.ID).First(&fullConnector).Error; err != nil {
+				return err
+			}
+			if connectorConfigBool(fullConnector.Config, "sync_deleted_files") {
+				if err := scheduleConnectorTask(tx, connector.ID, kbID, connectorTaskTypePrune, false); err != nil {
+					return err
+				}
+			}
+		}
+
+		for connectorID := range oldConnectorIDs {
+			if _, ok := nextConnectorIDs[connectorID]; ok {
+				continue
+			}
+			if err := tx.Where("kb_id = ? AND connector_id = ?", kbID, connectorID).
+				Delete(&entity.Connector2Kb{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&entity.SyncLogs{}).
+				Where("connector_id = ? AND kb_id = ? AND status IN ?", connectorID, kbID, []string{string(entity.TaskStatusSchedule), string(entity.TaskStatusRunning)}).
+				Update("status", string(entity.TaskStatusCancel)).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
 // GetByID get connector by ID
 func (dao *ConnectorDAO) GetByID(id string) (*entity.Connector, error) {
 	var connector entity.Connector
@@ -112,6 +193,36 @@ func (dao *ConnectorDAO) CancelRunningOrScheduledLogs(connectorID string) error 
 	return DB.Model(&entity.SyncLogs{}).
 		Where("connector_id = ? AND status IN ?", connectorID, []string{string(entity.TaskStatusSchedule), string(entity.TaskStatusRunning)}).
 		Update("status", string(entity.TaskStatusCancel)).Error
+}
+
+// ScheduleConnectorTasks schedules sync and optional prune tasks for a connector.
+func (dao *ConnectorDAO) ScheduleConnectorTasks(connectorID string) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var connector entity.Connector
+		if err := tx.Where("id = ?", connectorID).First(&connector).Error; err != nil {
+			return err
+		}
+
+		var mappings []entity.Connector2Kb
+		if err := tx.Where("connector_id = ?", connectorID).Find(&mappings).Error; err != nil {
+			return err
+		}
+
+		for _, mapping := range mappings {
+			if err := scheduleConnectorTask(tx, connectorID, mapping.KbID, connectorTaskTypeSync, false); err != nil {
+				return err
+			}
+			if connectorConfigBool(connector.Config, "sync_deleted_files") {
+				if err := scheduleConnectorTask(tx, connectorID, mapping.KbID, connectorTaskTypePrune, false); err != nil {
+					return err
+				}
+			}
+		}
+
+		return tx.Model(&entity.Connector{}).
+			Where("id = ?", connectorID).
+			Update("status", string(entity.TaskStatusSchedule)).Error
+	})
 }
 
 // ListDocumentsByKBAndSourceType lists connector documents in a dataset.
@@ -222,6 +333,68 @@ func createRebuildSyncLog(tx *gorm.DB, connectorID, kbID, taskType string, reind
 		ErrorMsg:         "",
 		TotalDocsIndexed: 0,
 	}).Error
+}
+
+func scheduleConnectorTask(tx *gorm.DB, connectorID, kbID, taskType string, reindex bool) error {
+	var existing int64
+	if err := tx.Model(&entity.SyncLogs{}).
+		Where("connector_id = ? AND kb_id = ? AND task_type = ? AND status = ?", connectorID, kbID, taskType, string(entity.TaskStatusSchedule)).
+		Count(&existing).Error; err != nil {
+		return err
+	}
+	if existing > 0 {
+		return nil
+	}
+
+	var pollRangeStart *string
+	var totalDocsIndexed int64
+	if taskType == connectorTaskTypeSync {
+		var latest entity.SyncLogs
+		err := tx.Where("connector_id = ? AND kb_id = ? AND task_type = ? AND status = ?", connectorID, kbID, taskType, string(entity.TaskStatusDone)).
+			Order("update_time DESC").
+			First(&latest).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		if err == nil {
+			pollRangeStart = latest.PollRangeEnd
+			totalDocsIndexed = latest.TotalDocsIndexed
+		}
+	}
+
+	fromBeginning := "0"
+	if reindex {
+		fromBeginning = "1"
+	}
+	now := time.Now().Local()
+	return tx.Create(&entity.SyncLogs{
+		ID:               generateUUID(),
+		ConnectorID:      connectorID,
+		KbID:             kbID,
+		TaskType:         taskType,
+		Status:           string(entity.TaskStatusSchedule),
+		FromBeginning:    &fromBeginning,
+		PollRangeStart:   pollRangeStart,
+		TimeStarted:      &now,
+		ErrorMsg:         "",
+		TotalDocsIndexed: totalDocsIndexed,
+	}).Error
+}
+
+func connectorConfigBool(config map[string]interface{}, key string) bool {
+	value, ok := config[key]
+	if !ok {
+		return false
+	}
+
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	case string:
+		return typed == "1" || typed == "true" || typed == "TRUE"
+	default:
+		return false
+	}
 }
 
 // ListLogsByConnectorID lists sync logs for one connector with pagination.

@@ -45,6 +45,31 @@ func (s fakeConnectorService) GetConnector(string, string) (*entity.Connector, c
 	return s.connector, common.CodeSuccess, nil
 }
 
+func (s fakeConnectorService) UpdateConnector(string, string, *service.UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error) {
+	if s.err != nil {
+		return nil, s.code, s.err
+	}
+	return s.connector, common.CodeSuccess, nil
+}
+
+func (s fakeConnectorService) StartGoogleWebOAuth(string, string, *service.StartGoogleWebOAuthRequest) (*service.StartGoogleWebOAuthResponse, common.ErrorCode, error) {
+	if s.err != nil {
+		return nil, s.code, s.err
+	}
+	return &service.StartGoogleWebOAuthResponse{}, common.CodeSuccess, nil
+}
+
+func (s fakeConnectorService) GoogleWebOAuthCallback(string, string, string, string, string) string {
+	return ""
+}
+
+func (s fakeConnectorService) PollGoogleWebOAuthResult(string, string, *service.PollGoogleWebOAuthResultRequest) (*service.PollGoogleWebOAuthResultResponse, common.ErrorCode, error) {
+	if s.err != nil {
+		return nil, s.code, s.err
+	}
+	return &service.PollGoogleWebOAuthResultResponse{}, common.CodeSuccess, nil
+}
+
 func (s fakeConnectorService) ListLog(string, string, int, int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error) {
 	if s.err != nil {
 		return nil, 0, s.code, s.err

@@ -94,6 +94,7 @@ export enum LanguageAbbreviation {
   Bg = 'bg',
   Ar = 'ar',
   Tr = 'tr',
+  Ko = 'ko',
 }
 
 export const LanguageAbbreviationMap = {
@@ -112,6 +113,7 @@ export const LanguageAbbreviationMap = {
   [LanguageAbbreviation.Bg]: 'Български',
   [LanguageAbbreviation.Ar]: 'العربية',
   [LanguageAbbreviation.Tr]: 'Türkçe',
+  [LanguageAbbreviation.Ko]: '한국어',
 };
 
 export const LanguageTranslationMap = {
@@ -165,7 +167,7 @@ export enum FileMimeType {
   Mp4 = 'video/mp4',
   Json = 'application/json',
   Md = 'text/markdown',
-  Mdx = 'text/markdown',
+  Mdx = 'text/mdx',
 }
 
 export const Domain = 'cloud.ragflow.io';

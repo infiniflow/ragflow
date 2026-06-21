@@ -52,6 +52,9 @@ class MinerUContentType(StrEnum):
     EQUATION = "equation"
     CODE = "code"
     LIST = "list"
+    HEADER = "header"
+    FOOTER = "footer"
+    PAGE_NUMBER = "page_number"
     DISCARDED = "discarded"
 
 
@@ -651,10 +654,10 @@ class MinerUParser(RAGFlowPdfParser):
                     item[key] = str((subdir / item[key]).resolve())
         return data
 
-    def _transfer_to_sections(self, outputs: list[dict[str, Any]], parse_method: str = None):
+    def _transfer_to_sections(self, outputs: list[dict[str, Any]], parse_method: str = None, table_enable: bool = False):
         sections = []
         for output in outputs:
-            match output["type"]:
+            match output.get("type"):
                 case MinerUContentType.TEXT:
                     section = output.get("text", "")
                 case MinerUContentType.TABLE:
@@ -677,10 +680,19 @@ class MinerUParser(RAGFlowPdfParser):
                     section = output.get("code_body", "") + "\n".join(output.get("code_caption", []))
                 case MinerUContentType.LIST:
                     section = "\n".join(output.get("list_items", []))
-                case MinerUContentType.DISCARDED:
-                    continue  # Skip discarded blocks entirely
+                case (
+                    MinerUContentType.HEADER
+                    | MinerUContentType.FOOTER
+                    | MinerUContentType.PAGE_NUMBER
+                    | MinerUContentType.DISCARDED
+                ):
+                    continue
+                case _:
+                    self.logger.debug("[MinerU] Skip unsupported section type=%s", output.get("type"))
+                    continue
 
-            section = self._sanitize_section_text(section)
+            if not table_enable:
+                section = self._sanitize_section_text(section)
             if not section:
                 self.logger.debug("[MinerU] Skip section after sanitization: type=%s", output.get("type"))
                 continue
@@ -826,7 +838,7 @@ class MinerUParser(RAGFlowPdfParser):
                 except Exception as e:
                     self.logger.warning(f"[MinerU] VLM image enhancement failed: {e}. Continuing without descriptions.")
 
-            return self._transfer_to_sections(outputs, parse_method), self._transfer_to_tables(outputs)
+            return self._transfer_to_sections(outputs, parse_method, enable_table), self._transfer_to_tables(outputs)
         finally:
             if temp_pdf and temp_pdf.exists():
                 try:

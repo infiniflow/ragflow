@@ -73,9 +73,11 @@ func newGPUStackSSEServer(t *testing.T, expectedPath, ssePayload string) *httpte
 func newGPUStackForTest(baseURL string) *GPUStackModel {
 	return NewGPUStackModel(
 		map[string]string{"default": baseURL},
-		URLSuffix{Chat: "v1/chat/completions", Models: "v1/models"},
+		URLSuffix{Chat: "v1/chat/completions", Models: "v1/models", Embedding: "v1-openai/embeddings"},
 	)
 }
+
+const gpustackEmbeddingsPath = "/v1-openai/embeddings"
 
 func TestGPUStackName(t *testing.T) {
 	if got := newGPUStackForTest("http://unused").Name(); got != "gpustack" {
@@ -188,14 +190,14 @@ func TestGPUStackChatForwardsDocumentedFields(t *testing.T) {
 	}
 }
 
-func TestGPUStackChatRequiresAPIKey(t *testing.T) {
+func TestGPUStackChatAllowsEmptyAPIKey(t *testing.T) {
 	_, err := newGPUStackForTest("http://unused").ChatWithMessages(
 		"qwen3-8b",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{}, nil,
 	)
-	if err == nil || !strings.Contains(err.Error(), "api key is required") {
-		t.Errorf("expected api-key error, got %v", err)
+	if err == nil || strings.Contains(err.Error(), "api key is required") {
+		t.Errorf("self-hosted model should not require api key, got %v", err)
 	}
 }
 
@@ -436,7 +438,7 @@ func TestGPUStackListModelsHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if strings.Join(models, ",") != "qwen3-8b,qwen3-32b" {
+	if joinModelNames(models, ",") != "qwen3-8b,qwen3-32b" {
 		t.Errorf("models=%v", models)
 	}
 	if err := model.CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {
@@ -444,19 +446,204 @@ func TestGPUStackListModelsHappyPath(t *testing.T) {
 	}
 }
 
-func TestGPUStackListModelsRequiresAPIKey(t *testing.T) {
+func TestGPUStackListModelsAllowsEmptyAPIKey(t *testing.T) {
 	_, err := newGPUStackForTest("http://unused").ListModels(&APIConfig{})
-	if err == nil || !strings.Contains(err.Error(), "api key is required") {
-		t.Errorf("expected api-key error, got %v", err)
+	if err == nil || strings.Contains(err.Error(), "api key is required") {
+		t.Errorf("self-hosted model should not require api key, got %v", err)
+	}
+}
+
+// TestGPUStackEmbedHappyPath verifies request shape and dimensions on v1-openai/embeddings.
+func TestGPUStackEmbedHappyPath(t *testing.T) {
+	srv := newGPUStackServer(t, gpustackEmbeddingsPath, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		if body["model"] != "bge-m3" {
+			t.Errorf("model=%v", body["model"])
+		}
+		if body["dimensions"] != float64(512) {
+			t.Errorf("dimensions=%v, want 512", body["dimensions"])
+		}
+		inputs, ok := body["input"].([]interface{})
+		if !ok || len(inputs) != 2 {
+			t.Errorf("input=%v, want 2-element array", body["input"])
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{
+				{"embedding": []float64{0.2, 0.2}, "index": 1},
+				{"embedding": []float64{0.1, 0.2}, "index": 0},
+			},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "bge-m3"
+	vecs, err := newGPUStackForTest(srv.URL).Embed(
+		&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, &EmbeddingConfig{Dimension: 512})
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if len(vecs) != 2 {
+		t.Fatalf("len(vecs)=%d, want 2", len(vecs))
+	}
+	if vecs[0].Index != 0 || vecs[0].Embedding[0] != 0.1 || vecs[1].Index != 1 || vecs[1].Embedding[0] != 0.2 {
+		t.Errorf("vecs=%+v", vecs)
+	}
+}
+
+// TestGPUStackEmbedReordersByIndex verifies out-of-order response indices are mapped correctly.
+func TestGPUStackEmbedReordersByIndex(t *testing.T) {
+	srv := newGPUStackServer(t, gpustackEmbeddingsPath, func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{
+				{"embedding": []float64{2}, "index": 2},
+				{"embedding": []float64{0}, "index": 0},
+				{"embedding": []float64{1}, "index": 1},
+			},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "bge-m3"
+	vecs, err := newGPUStackForTest(srv.URL).Embed(
+		&model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	for i, v := range vecs {
+		if v.Index != i || v.Embedding[0] != float64(i) {
+			t.Errorf("slot %d = %+v, want Embedding=[%d] Index=%d", i, v, i, i)
+		}
+	}
+}
+
+// TestGPUStackEmbedEmptyInputShortCircuits avoids HTTP when texts is empty.
+func TestGPUStackEmbedEmptyInputShortCircuits(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("Embed([]) made an unexpected HTTP call")
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "bge-m3"
+	vecs, err := newGPUStackForTest(srv.URL).Embed(&model, []string{}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("Embed([]): %v", err)
+	}
+	if len(vecs) != 0 {
+		t.Errorf("len(vecs)=%d, want 0", len(vecs))
+	}
+}
+
+// TestGPUStackEmbedRequiresAPIKey rejects requests without an API key.
+func TestGPUStackEmbedAllowsEmptyAPIKey(t *testing.T) {
+	model := "bge-m3"
+	_, err := newGPUStackForTest("http://unused").Embed(&model, []string{"a"}, &APIConfig{}, nil)
+	if err == nil || strings.Contains(err.Error(), "api key is required") {
+		t.Errorf("self-hosted model should not require api key, got %v", err)
+	}
+}
+
+// TestGPUStackEmbedRejectsDuplicateIndex errors on duplicate response indices.
+func TestGPUStackEmbedRejectsDuplicateIndex(t *testing.T) {
+	srv := newGPUStackServer(t, gpustackEmbeddingsPath, func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{
+				{"embedding": []float64{0.1}, "index": 0},
+				{"embedding": []float64{0.2}, "index": 0},
+			},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "bge-m3"
+	_, err := newGPUStackForTest(srv.URL).Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Errorf("expected duplicate-index error, got %v", err)
+	}
+}
+
+// TestGPUStackEmbedRejectsOutOfRangeIndex errors when index exceeds input length.
+func TestGPUStackEmbedRejectsOutOfRangeIndex(t *testing.T) {
+	srv := newGPUStackServer(t, gpustackEmbeddingsPath, func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{
+				{"embedding": []float64{0.1}, "index": 2},
+			},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "bge-m3"
+	_, err := newGPUStackForTest(srv.URL).Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "out of range") {
+		t.Errorf("expected out-of-range error, got %v", err)
+	}
+}
+
+// TestGPUStackEmbedRejectsMissingIndex errors when index is omitted from response.
+func TestGPUStackEmbedRejectsMissingIndex(t *testing.T) {
+	srv := newGPUStackServer(t, gpustackEmbeddingsPath, func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{
+				{"embedding": []float64{0.1}},
+			},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "bge-m3"
+	_, err := newGPUStackForTest(srv.URL).Embed(&model, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "missing embedding index") {
+		t.Errorf("expected missing-index error, got %v", err)
+	}
+}
+
+// TestGPUStackEmbedRejectsEmptyVector errors when the API returns a zero-length vector.
+func TestGPUStackEmbedRejectsEmptyVector(t *testing.T) {
+	srv := newGPUStackServer(t, gpustackEmbeddingsPath, func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{
+				{"embedding": []float64{}, "index": 0},
+			},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "bge-m3"
+	_, err := newGPUStackForTest(srv.URL).Embed(&model, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "empty embedding vector") {
+		t.Errorf("expected empty-vector error, got %v", err)
+	}
+}
+
+// TestGPUStackEmbedRejectsMissingSlot errors when a response index is never returned.
+func TestGPUStackEmbedRejectsMissingSlot(t *testing.T) {
+	srv := newGPUStackServer(t, gpustackEmbeddingsPath, func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{
+				{"embedding": []float64{0.1}, "index": 0},
+			},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "bge-m3"
+	_, err := newGPUStackForTest(srv.URL).Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "missing embedding for input index") {
+		t.Errorf("expected missing-slot error, got %v", err)
 	}
 }
 
 func TestGPUStackUnsupportedMethods(t *testing.T) {
 	m := newGPUStackForTest("http://unused")
 	model := "x"
-	if _, err := m.Embed(&model, []string{"a"}, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("Embed: %v", err)
-	}
 	if _, err := m.Rerank(&model, "q", []string{"a"}, &APIConfig{}, &RerankConfig{TopN: 1}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: %v", err)
 	}

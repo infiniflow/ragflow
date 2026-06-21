@@ -14,6 +14,7 @@ export default {
       yes: 'Yes',
       no: 'No',
       total: 'Total',
+      top: 'Top {{top}}',
       rename: 'Rename',
       name: 'Name',
       save: 'Save',
@@ -66,6 +67,7 @@ export default {
       add: 'Add',
       remove: 'Remove',
       search: 'Search',
+      reset: 'Reset',
       noDataFound: 'No data found.',
       noData: 'No data available',
       promptPlaceholder: `Please input or use / to quickly insert variables.`,
@@ -914,6 +916,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       theDocumentBeingParsedCannotBeDeleted:
         'The document being parsed cannot be deleted',
       lastWeek: 'from last week',
+      top: 'Top',
     },
     chunk: {
       type: 'Type',
@@ -1385,6 +1388,58 @@ Example: Virtual Hosted Style`,
         'Datetime/timestamp column for incremental sync. Only rows modified after the last sync will be fetched.',
       rest_apiDescription:
         'Connect any REST API endpoint as a data source using a flexible, configuration-driven connector.',
+      onedriveDescription:
+        'Connect OneDrive or OneDrive for Business to index files and folders via Microsoft Graph delta queries.',
+      onedriveTenantIdTip:
+        'Azure Active Directory tenant ID (Directory ID) of the Microsoft 365 organisation.',
+      onedriveClientIdTip:
+        'Application (client) ID of the Azure AD app registration with Files.Read.All permission.',
+      onedriveClientSecretTip:
+        'Client secret value generated in the Azure AD app registration.',
+      onedriveFolderPathTip:
+        'Optional sub-folder path to limit indexing (e.g. /Documents/Reports). Leave blank to index the entire drive.',
+      outlookDescription:
+        'Connect Outlook / Microsoft 365 mailboxes and index messages via Microsoft Graph delta queries.',
+      outlookTenantIdTip:
+        'Azure Active Directory tenant ID (Directory ID) of the Microsoft 365 organisation.',
+      outlookClientIdTip:
+        'Application (client) ID of the Azure AD app registration with Mail.Read permission.',
+      outlookClientSecretTip:
+        'Client secret value generated in the Azure AD app registration.',
+      outlookFolderTip:
+        'Mail folder to sync (e.g. inbox, sentitems, archive). Defaults to inbox.',
+      outlookUserIdsTip:
+        'Comma-separated UPNs or object IDs of mailboxes to sync. Leave blank to sync every mailbox in the tenant (requires User.Read.All).',
+      salesforceDescription:
+        'Connect a Salesforce org and index CRM records (Accounts, Contacts, Opportunities, Cases, Knowledge articles) via SOQL with incremental sync.',
+      salesforceInstanceUrlTip:
+        'Salesforce org URL, e.g. https://your-domain.my.salesforce.com (no trailing slash).',
+      salesforceClientIdTip:
+        'Consumer Key of a Connected App with Client Credentials Flow enabled and the api scope.',
+      salesforceClientSecretTip:
+        'Consumer Secret of the Connected App used for client-credentials authentication.',
+      salesforceObjectsTip:
+        'Comma-separated SObject API names to index. Defaults to Account, Contact, Opportunity, Case, Knowledge__kav.',
+      salesforceApiVersionTip:
+        'Salesforce REST API version (e.g. v59.0). Use the version your org supports.',
+      azure_blobDescription:
+        'Index blobs from an Azure Blob Storage container into a knowledge base. Supports account-key, connection-string, and SAS-token auth. Unchanged blobs are skipped via ETag fingerprinting.',
+      azureBlobAuthModeTip:
+        'Choose the authentication method. Account Key and Connection String require container_name; SAS Token requires container_url + sas_token.',
+      azureBlobAccountNameTip:
+        'Azure storage account name (e.g. mystorageaccount). Required for account-key auth.',
+      azureBlobAccountKeyTip:
+        'Storage account access key (Base64-encoded). Required for account-key auth.',
+      azureBlobConnectionStringTip:
+        'Full Azure Storage connection string (DefaultEndpointsProtocol=https;AccountName=...;...). Required for connection-string auth.',
+      azureBlobContainerUrlTip:
+        'Full HTTPS URL of the container (e.g. https://account.blob.core.windows.net/container). Required for SAS-token auth.',
+      azureBlobSasTokenTip:
+        'SAS query string (without the leading "?"). Required for SAS-token auth.',
+      azureBlobContainerNameTip:
+        'Name of the container to index. Required for account-key and connection-string auth.',
+      azureBlobPrefixTip:
+        'Optional blob name prefix to limit indexing to a virtual folder (e.g. documents/reports/). Leave blank to index the entire container.',
       restApiQueryParamsTip:
         'Key=value pairs (one per line) sent as URL query parameters. Use this instead of embedding params in the URL.',
       restApiHeadersTip:
@@ -1422,6 +1477,48 @@ Example: Virtual Hosted Style`,
       availableSourcesDescription: 'Select a data source to add',
       availableSources: 'Available sources',
       datasourceDescription: 'Manage your data source and connections',
+      chatChannels: 'Chat channels',
+      chatChannelsDescription: 'Manage your chat channel bots and credentials',
+      channelEmptyTip:
+        'No chat channels added yet. Select one below to connect.',
+      availableChannels: 'Available channels',
+      availableChannelsDescription: 'Select a chat channel to add',
+      addChannelModalTitle: 'Add {{name}} bot',
+      editChannelModalTitle: 'Edit {{name}} bot',
+      deleteChannelModalTitle: 'Delete chat channel',
+      deleteChannelModalContent:
+        'Are you sure you want to delete this chat channel bot? This action cannot be undone.',
+      connectDialog: 'Connect assistant',
+      connectDialogTitle: 'Connect {{name}} to an assistant',
+      selectDialog: 'Select an assistant',
+      connectDialogTip:
+        'Messages received by this channel will be answered by the connected assistant. Clear the selection to disconnect.',
+      notConnected: 'No assistant connected',
+      chatChannelDesc: {
+        clickclack: 'Connect a ClickClack bot',
+        discord: 'Connect a Discord bot',
+        dingtalk: 'Connect a DingTalk bot',
+        feishu: 'Connect a Feishu / Lark bot',
+        googlechat: 'Connect a Google Chat bot',
+        irc: 'Connect to an IRC server',
+        line: 'Connect a LINE messaging bot',
+        matrix: 'Connect a Matrix bot',
+        mattermost: 'Connect a Mattermost bot',
+        msteams: 'Connect a Microsoft Teams bot',
+        nextcloud_talk: 'Connect a Nextcloud Talk bot',
+        nostr: 'Connect a Nostr bot',
+        qqbot: 'Connect a QQ bot',
+        slack: 'Connect a Slack bot',
+        synology_chat: 'Connect a Synology Chat bot',
+        telegram: 'Connect a Telegram bot',
+        tlon: 'Connect a Tlon (Urbit) bot',
+        twitch: 'Connect a Twitch chat bot',
+        wecom: 'Connect a WeCom bot',
+        whatsapp: 'Connect a WhatsApp bot (QR pairing)',
+        yuanbao: 'Connect a Tencent Yuanbao bot',
+        zalo: 'Connect a Zalo bot',
+        zalouser: 'Connect a personal Zalo account',
+      },
       save: 'Save',
       search: 'Search',
       availableModels: 'Available models',
@@ -1446,6 +1543,9 @@ Example: Virtual Hosted Style`,
       api: 'API',
       username: 'Name',
       usernameMessage: 'Please input your username!',
+      usernameMaxLength: 'Name must be at most {{max}} characters.',
+      usernameInvalidCharacters:
+        "Name can only contain letters, numbers, spaces, and . _ ' -",
       photo: 'Your photo',
       photoDescription: 'This will be displayed on your profile.',
       colorSchema: 'Color schema',
@@ -1491,6 +1591,39 @@ Example: Virtual Hosted Style`,
         'International users only: use https://api.minimax.io/v1',
       minimaxBaseUrlPlaceholder:
         '(International users only, fill in https://api.minimax.io/v1)',
+      openaiBaseUrlPlaceholder: 'https://api.openai.com/v1',
+      anthropicBaseUrlPlaceholder: 'https://api.anthropic.com/v1',
+      siliconflowBaseUrlPlaceholder: 'https://api.siliconflow.cn/v1',
+      groupId: 'Group ID',
+      providerOrder: 'Provider order',
+      paddleocrApiUrl: 'PaddleOCR API URL',
+      paddleocrApiUrlMessage: 'Please input the PaddleOCR API URL!',
+      paddleocrApiUrlPlaceholder:
+        'e.g. https://paddleocr-server.com/layout-parsing',
+      paddleocrAccessToken: 'AI Studio Access Token',
+      paddleocrAccessTokenMessage: 'Access token for PaddleOCR API (optional)',
+      paddleocrAccessTokenPlaceholder: 'Your AI Studio token (optional)',
+      paddleocrAlgorithm: 'PaddleOCR Algorithm',
+      paddleocrAlgorithmMessage: 'Please select a PaddleOCR algorithm',
+      mineruApiserver: 'MinerU API Server',
+      mineruApiserverMessage: 'Please input the MinerU API Server URL!',
+      mineruApiserverPlaceholder: 'e.g. http://host.docker.internal:9987',
+      mineruOutputDir: 'MinerU Output Directory',
+      mineruOutputDirMessage: 'Please input the MinerU output directory!',
+      mineruOutputDirPlaceholder: '/tmp/mineru',
+      mineruBackend: 'MinerU Backend',
+      mineruBackendMessage: 'Please select a MinerU backend!',
+      mineruSelectBackend: 'Select processing backend',
+      mineruServerUrl: 'MinerU Server URL',
+      mineruServerUrlMessage: 'Please input the MinerU Server URL!',
+      mineruServerUrlPlaceholder: 'e.g. http://your-vllm-server:30000',
+      mineruDeleteOutput: 'Delete Output Files',
+      mineruDeleteOutputMessage: 'Invalid value for delete output',
+      opendataloaderApiserver: 'OpenDataLoader API Server',
+      opendataloaderApiserverMessage:
+        'Please input the OpenDataLoader API Server!',
+      opendataloaderApiserverPlaceholder:
+        'http://your-opendataloader-service:9383',
       modify: 'Modify',
       systemModelSettings: 'Set default models',
       chatModel: 'LLM',
@@ -1514,6 +1647,10 @@ Example: Virtual Hosted Style`,
       addLlmTitle: 'Add LLM',
       editLlmTitle: 'Edit {{name}} model',
       editModel: 'Edit model',
+      instanceName: 'Instance name',
+      instanceNameMessage: 'Please input the instance name!',
+      instanceNameTip:
+        'A unique name to identify this provider instance under the same factory.',
       modelName: 'Model name',
       modelID: 'Model ID',
       modelUid: 'Model UID',
@@ -1675,11 +1812,31 @@ Example: Virtual Hosted Style`,
         rerank: 'Rerank',
         sequence2text: 'sequence2text',
         tts: 'TTS',
-        image2text: 'OCR',
+        image2text: 'VLM',
+        ocr: 'OCR',
         speech2text: 'ASR',
       },
       showToc: 'Show content',
       hideToc: 'Hide content',
+      listModels: 'List models',
+      allModels: 'All models',
+      listModelsSearchPlaceholder: 'Search models…',
+      listModelsEmpty: 'No models available',
+      listModelsLoading: 'Loading models…',
+      selectModelBeforeVerify:
+        'Please select at least one model before verification.',
+      addCustomModel: 'Add custom model',
+      addCustomModelTitle: 'Add custom model',
+      editCustomModelTitle: 'Edit model',
+      modelMaxTokens: 'Max tokens',
+      modelFeatures: 'Model features',
+      modelFeatureToolCall: 'Tool call',
+      modelFeatureFunctionCall: 'Function call',
+      modelNameRequired: 'Model name is required',
+      modelNameDuplicate: 'Model name already exists',
+      modelTypeRequired: 'Please select at least one model type',
+      modelMaxTokensMessage: 'Max tokens must be a number',
+      modelMaxTokensMinMessage: 'Max tokens must be at least 0',
     },
     message: {
       registered: 'Registered!',
