@@ -213,8 +213,13 @@ jobs:
           cxx="$(cygpath -m "${cxx_path}")"
           github_env="$(cygpath -u "${GITHUB_ENV}")"
 
+          pcre2_libdir="$(pkg-config --variable=libdir libpcre2-8)"
+          pcre2_includedir="$(pkg-config --variable=includedir libpcre2-8)"
+
           echo "CC=${cc}" >> "${github_env}"
           echo "CXX=${cxx}" >> "${github_env}"
+          echo "PCRE2_LIBDIR=$(cygpath -m "${pcre2_libdir}")" >> "${github_env}"
+          echo "PCRE2_INCLUDEDIR=$(cygpath -m "${pcre2_includedir}")" >> "${github_env}"
 
           echo "Resolved MSYS2 clang: ${cc}"
           "${cc_path}" --version
@@ -400,11 +405,19 @@ jobs:
             Write-Error "librag_tokenizer_c_api.a does not exist"
             exit 1
           }
+          if ([string]::IsNullOrWhiteSpace($env:PCRE2_LIBDIR) -or -not (Test-Path $env:PCRE2_LIBDIR)) {
+            Write-Error "PCRE2_LIBDIR is not set or does not exist: $env:PCRE2_LIBDIR"
+            exit 1
+          }
+
+          $ragTokenizerLib = (Resolve-Path "internal/cpp/cmake-build-release/librag_tokenizer_c_api.a").Path -replace '\\', '/'
+          $pcre2LibDir = $env:PCRE2_LIBDIR -replace '\\', '/'
+          $pcre2IncludeDir = $env:PCRE2_INCLUDEDIR -replace '\\', '/'
 
           $env:CGO_ENABLED = "1"
           $env:CC = $cc
-          $env:CGO_CFLAGS = "-I${officeOxidePrefix}/include -I${officeOxidePrefix}/include/office_oxide_c"
-          $env:CGO_LDFLAGS = "${officeOxidePrefix}/lib/liboffice_oxide.a -static -static-libgcc -static-libstdc++ -lws2_32 -lbcrypt -lntdll -luserenv -ladvapi32"
+          $env:CGO_CFLAGS = "-I${officeOxidePrefix}/include -I${officeOxidePrefix}/include/office_oxide_c -I${pcre2IncludeDir}"
+          $env:CGO_LDFLAGS = "${officeOxidePrefix}/lib/liboffice_oxide.a ${ragTokenizerLib} -L${pcre2LibDir} -lpcre2-8 -lc++ -static -static-libgcc -static-libstdc++ -lws2_32 -lbcrypt -lntdll -luserenv -ladvapi32"
           $env:GOOS = "${{ matrix.goos }}"
           $env:GOARCH = "${{ matrix.goarch }}"
 
