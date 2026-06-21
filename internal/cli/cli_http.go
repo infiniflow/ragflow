@@ -51,36 +51,48 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.GrantAdmin(cmd)
 	case "revoke_admin":
 		return c.RevokeAdmin(cmd)
-	case "create_user":
-		return c.CreateUser(cmd)
+	case "admin_create_user_command":
+		return c.AdminCreateUserCommand(cmd)
+	case "admin_create_user_api_key_command":
+		return c.AdminCreateUserAPIKeyCommand(cmd)
+	case "admin_create_role_command":
+		return c.AdminCreateRoleCommand(cmd)
 	case "activate_user":
 		return c.ActivateUser(cmd)
 	case "alter_user":
 		return c.AlterUserPassword(cmd)
-	case "drop_user":
-		return c.DropUser(cmd)
+	case "admin_drop_user_command":
+		return c.AdminDropUserCommand(cmd)
+	case "admin_drop_user_api_key_command":
+		return c.AdminDropUserAPIKeyCommand(cmd)
 	case "show_service":
 		return c.ShowService(cmd)
-	case "show_version":
-		return c.ShowAdminVersion(cmd)
+	case "admin_show_version_command":
+		return c.AdminShowVersionCommand(cmd)
 	case "show_current":
 		return c.ShowCommonCurrent(cmd)
 	case "list_variables":
 		return c.ListVariables(cmd)
 	case "show_variable":
 		return c.ShowVariable(cmd)
+	case "admin_set_license_command":
+		return c.AdminSetLicenseCommand(cmd)
+	case "admin_set_license_config_command":
+		return c.AdminSetLicenseConfigCommand(cmd)
 	case "set_variable":
 		return c.SetVariable(cmd)
 	case "list_user_datasets":
 		return c.ListUserDatasets(cmd)
 	case "list_agents":
 		return c.ListAgents(cmd)
+	case "admin_list_resources_command":
+		return c.AdminListResourcesCommand(cmd)
+	case "admin_list_roles_command":
+		return c.AdminListRolesCommand(cmd)
 	case "generate_token":
 		return c.GenerateAdminToken(cmd)
 	case "list_tokens":
 		return c.ListAdminTokens(cmd)
-	case "drop_token":
-		return c.DropAdminToken(cmd)
 	case "list_available_providers":
 		return c.ListAvailableProviders(cmd)
 	case "show_provider":
@@ -119,6 +131,12 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.UserShowMessageQueueCommand(cmd)
 	case "admin_remove_service_command":
 		return c.AdminRemoveServiceCommand(cmd)
+	case "admin_check_license_command":
+		return c.AdminCheckLicenseCommand(cmd)
+	case "admin_show_fingerprint_command":
+		return c.AdminShowFingerprintCommand(cmd)
+	case "admin_show_license_command":
+		return c.AdminShowLicenseCommand(cmd)
 	case "admin_show_user_info_command":
 		return c.AdminShowUserInfoCommand(cmd)
 	case "admin_show_user_activity_command":
@@ -163,6 +181,20 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminPurgeUsersCommand(cmd)
 	case "admin_list_user_ingestion_tasks_command":
 		return c.AdminListUserIngestionTasksCommand(cmd)
+	case "admin_list_user_datasets_command":
+		return c.AdminListUserDatasetsCommand(cmd)
+	case "admin_list_user_agents_command":
+		return c.AdminListUserAgentsCommand(cmd)
+	case "admin_list_user_chats_command":
+		return c.AdminListUserChatsCommand(cmd)
+	case "admin_list_user_searches_command":
+		return c.AdminListUserSearchesCommand(cmd)
+	case "admin_list_user_models_command":
+		return c.AdminListUserModelsCommand(cmd)
+	case "admin_list_user_files_command":
+		return c.AdminListUserFilesCommand(cmd)
+	case "admin_list_user_keys_command":
+		return c.AdminListUserKeysCommand(cmd)
 	case "admin_stop_user_ingestion_tasks_command":
 		return c.AdminStopUserIngestionTasksCommand(cmd)
 	case "admin_remove_user_ingestion_tasks_command":

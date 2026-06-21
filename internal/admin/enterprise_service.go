@@ -17,6 +17,7 @@
 package admin
 
 import (
+	"errors"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -27,50 +28,152 @@ import (
 
 // ListRoles list all roles
 func (s *Service) ListRoles() ([]map[string]interface{}, error) {
-	// TODO: Implement list roles
-	return []map[string]interface{}{}, nil
+	result := []map[string]interface{}{
+		{
+			"command": "list_roles",
+			"error":   "'list roles' is implemented in enterprise edition",
+		},
+	}
+
+	return result, nil
 }
 
 // CreateRole create a new role
 func (s *Service) CreateRole(roleName, description string) (map[string]interface{}, error) {
-	// TODO: Implement create role
-	return map[string]interface{}{}, nil
+	result := map[string]interface{}{
+		"command":     "create_role",
+		"role_name":   roleName,
+		"description": description,
+		"error":       "'create role' is implemented in enterprise edition",
+	}
+
+	return result, nil
 }
 
 // GetRole get role details
 func (s *Service) GetRole(roleName string) (map[string]interface{}, error) {
-	// TODO: Implement get role
-	return map[string]interface{}{}, nil
+	result := map[string]interface{}{
+		"command":   "get_role",
+		"role_name": roleName,
+		"error":     "'get role' is implemented in enterprise edition",
+	}
+
+	return result, nil
+
 }
 
 // UpdateRole update role
 func (s *Service) UpdateRole(roleName, description string) (map[string]interface{}, error) {
-	// TODO: Implement update role
-	return map[string]interface{}{}, nil
+	result := map[string]interface{}{
+		"command":     "update_role",
+		"role_name":   roleName,
+		"description": description,
+		"error":       "'update role' is implemented in enterprise edition",
+	}
+
+	return result, nil
 }
 
 // DeleteRole delete role
-func (s *Service) DeleteRole(roleName string) error {
-	// TODO: Implement delete role
-	return nil
+func (s *Service) DeleteRole(roleName string) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command":   "delete_role",
+		"role_name": roleName,
+		"error":     "'delete role' is implemented in enterprise edition",
+	}
+
+	return result, nil
 }
 
 // GetRolePermission get role permissions
 func (s *Service) GetRolePermission(roleName string) ([]map[string]interface{}, error) {
-	// TODO: Implement get role permissions
-	return []map[string]interface{}{}, nil
+	result := []map[string]interface{}{
+		{
+			"command":   "get_role_permission",
+			"role_name": roleName,
+			"error":     "'get role permissions' is implemented in enterprise edition",
+		},
+	}
+
+	return result, nil
 }
 
 // GrantRolePermission grant permission to role
 func (s *Service) GrantRolePermission(roleName string, actions []string, resource string) (map[string]interface{}, error) {
-	// TODO: Implement grant role permission
-	return map[string]interface{}{}, nil
+	result := map[string]interface{}{
+		"command":   "grant_role_permission",
+		"role_name": roleName,
+		"actions":   actions,
+		"resource":  resource,
+		"error":     "'grant role permission' is implemented in enterprise edition",
+	}
+
+	return result, nil
 }
 
 // RevokeRolePermission revoke permission from role
 func (s *Service) RevokeRolePermission(roleName string, actions []string, resource string) (map[string]interface{}, error) {
-	// TODO: Implement revoke role permission
-	return map[string]interface{}{}, nil
+	result := map[string]interface{}{
+		"command":   "revoke_role_permission",
+		"role_name": roleName,
+		"actions":   actions,
+		"resource":  resource,
+		"error":     "'revoke role permission' is implemented in enterprise edition",
+	}
+
+	return result, nil
+}
+
+// ListResources list role resources
+func (s *Service) ListResources() (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command": "list_resources",
+		"error":   "'list resources for role' is implemented in enterprise edition",
+	}
+
+	return result, nil
+}
+
+func (s *Service) GetSystemFingerprint() (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command": "get_system_fingerprint",
+		"error":   "'get system fingerprint' is implemented in enterprise edition",
+	}
+
+	return result, nil
+}
+
+func (s *Service) SetSystemLicense(license string) error {
+	return errors.New("'set system license' is implemented in enterprise edition")
+}
+
+func (s *Service) ShowSystemLicense(check bool) (map[string]interface{}, error) {
+	var result map[string]interface{}
+	if check {
+		result = map[string]interface{}{
+			"command": "check_system_license",
+			"error":   "'check system license' is implemented in enterprise edition",
+		}
+
+	} else {
+		result = map[string]interface{}{
+			"command": "show_system_license",
+			"error":   "'show system license' is implemented in enterprise edition",
+		}
+	}
+
+	return result, nil
+}
+
+func (s *Service) UpdateSystemLicenseConfig(timeRecordSaveInterval, timeRecordTaskDuration int64) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command":                   "update_system_license_config",
+		"time_record_save_interval": timeRecordSaveInterval,
+		"time_record_task_duration": timeRecordTaskDuration,
+		"error":                     "'update system license config' is implemented in enterprise edition",
+	}
+
+	return result, nil
 }
 
 // ShowUserActivity show user activity for enterprise edition
@@ -217,6 +320,132 @@ func (s *Service) ShowUserPermission(email string) (map[string]interface{}, erro
 		"email":    user.Email,
 		"nickname": user.Nickname,
 		"error":    "'show user permission' is implemented in enterprise edition",
+	}
+
+	return result, nil
+}
+
+// ListUserDatasets show user datasets for enterprise edition
+func (s *Service) ListUserDatasets(email string) ([]map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":  "list_user_datasets",
+			"email":    user.Email,
+			"nickname": user.Nickname,
+			"error":    "'list user datasets' is implemented in enterprise edition",
+		},
+	}
+
+	return result, nil
+}
+
+// ListUserAgents show user agents for enterprise edition
+func (s *Service) ListUserAgents(email string) ([]map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":  "list_user_agents",
+			"email":    user.Email,
+			"nickname": user.Nickname,
+			"error":    "'list user agents' is implemented in enterprise edition",
+		},
+	}
+
+	return result, nil
+}
+
+// ListUserChats show user chats for enterprise edition
+func (s *Service) ListUserChats(email string) ([]map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":  "list_user_chats",
+			"email":    user.Email,
+			"nickname": user.Nickname,
+			"error":    "'list user chats' is implemented in enterprise edition",
+		},
+	}
+
+	return result, nil
+}
+
+// ListUserSearches show user searches for enterprise edition
+func (s *Service) ListUserSearches(email string) ([]map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":  "list_user_searches",
+			"email":    user.Email,
+			"nickname": user.Nickname,
+			"error":    "'list user searches' is implemented in enterprise edition",
+		},
+	}
+
+	return result, nil
+}
+
+// ListUserModels show user models for enterprise edition
+func (s *Service) ListUserModels(email string) ([]map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":  "list_user_models",
+			"email":    user.Email,
+			"nickname": user.Nickname,
+			"error":    "'list user models' is implemented in enterprise edition",
+		},
+	}
+
+	return result, nil
+}
+
+// ListUserFiles show user files for enterprise edition
+func (s *Service) ListUserFiles(email string) ([]map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":  "list_user_files",
+			"email":    user.Email,
+			"nickname": user.Nickname,
+			"error":    "'list user files' is implemented in enterprise edition",
+		},
 	}
 
 	return result, nil
@@ -495,6 +724,63 @@ func (s *Service) PurgeUsersData(preview bool, days int, userPlan *string, userA
 		"plan":     plan,
 		"activity": activity,
 		"error":    "'Purge users data' is implemented in enterprise edition",
+	}
+
+	return result, nil
+}
+
+// CreateUserAPIKey create tenant API key for tenant
+func (s *Service) CreateUserAPIKey(username string) (map[string]interface{}, error) {
+
+	user, err := s.userDAO.GetByEmail(username)
+	if err != nil {
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
+
+	result := map[string]interface{}{
+		"command":  "create_user_api_key",
+		"email":    user.Email,
+		"nickname": user.Nickname,
+		"error":    "'Create user API key' is implemented in enterprise edition",
+	}
+
+	return result, nil
+}
+
+// DeleteUserAPIKey delete user API key
+func (s *Service) DeleteUserAPIKey(username, key string) (map[string]interface{}, error) {
+
+	user, err := s.userDAO.GetByEmail(username)
+	if err != nil {
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
+
+	result := map[string]interface{}{
+		"command":  "delete_user_api_key",
+		"email":    user.Email,
+		"nickname": user.Nickname,
+		"api_key":  key,
+		"error":    "'Delete user API key' is implemented in enterprise edition",
+	}
+
+	return result, nil
+}
+
+// ListUserAPIKeys list user API keys
+func (s *Service) ListUserAPIKeys(username string) ([]map[string]interface{}, error) {
+
+	user, err := s.userDAO.GetByEmail(username)
+	if err != nil {
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":  "list_user_api_keys",
+			"email":    user.Email,
+			"nickname": user.Nickname,
+			"error":    "'List user API keys' is implemented in enterprise edition",
+		},
 	}
 
 	return result, nil
