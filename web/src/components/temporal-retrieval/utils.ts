@@ -1,3 +1,10 @@
+/**
+ * Resolve dataset identifiers for temporal profile requests.
+ *
+ * Newer records use `dataset_ids`, while older chat/search records may still
+ * carry `kb_ids`. An empty `dataset_ids` array should not block the legacy
+ * fallback because empty arrays are truthy in JavaScript.
+ */
 export function resolveEffectiveDatasetIds(
   datasetIds: string[] | undefined,
   legacyKbIds: string[] | undefined,

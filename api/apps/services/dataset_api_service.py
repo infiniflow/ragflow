@@ -653,10 +653,18 @@ def get_metadata_keys(dataset_ids: list[str], tenant_id: str):
 
 
 def profile_temporal_field(dataset_ids: list[str], temporal_field: str, tenant_id: str):
-    """
-    Profile a selected metadata field for temporal retrieval using bounded sampling.
+    """Profile a selected metadata field for temporal retrieval.
 
-    Large datasets are sampled instead of loading metadata for every document.
+    Args:
+        dataset_ids: Knowledge base ids to sample, after caller-side parsing.
+        temporal_field: User-selected metadata key to evaluate as a date field.
+        tenant_id: Current tenant used for access checks.
+
+    Returns:
+        ``(True, profile_dict)`` on success or ``(False, message)`` on
+        validation/access failure. Large datasets are bounded by
+        ``MAX_TEMPORAL_PROFILE_SAMPLE`` per dataset so profiling does not load
+        all document metadata inline.
     """
     if not dataset_ids:
         return False, "Lack of dataset_ids"

@@ -24,6 +24,14 @@ from common.temporal_utils import ResolvedTemporalPolicy, TemporalRankPlan, Temp
 
 @dataclass
 class TemporalRetrievalContext:
+    """Resolved metadata scope and freshness policy for a retrieval call.
+
+    ``doc_ids`` is the result of applying user metadata filters plus temporal
+    filter conditions through the existing metadata filtering path. The rank
+    policy is passed to the retriever only when the query should be freshness
+    aware.
+    """
+
     doc_ids: list[str] | None
     temporal_rank_policy: TemporalRankPlan | None
     resolved_policy: ResolvedTemporalPolicy
@@ -89,6 +97,12 @@ def merge_temporal_reference_fields(
     metadata_fields: set[str] | None,
     temporal_retrieval: dict | None,
 ) -> set[str] | None:
+    """Include the active temporal field in reference metadata when requested.
+
+    When callers request all metadata (``metadata_fields is None``), the helper
+    preserves that behavior. Otherwise it adds the selected temporal field so
+    citations can show the date used for filtering or freshness reranking.
+    """
     if not include_metadata or not isinstance(temporal_retrieval, dict) or not temporal_retrieval.get("enabled"):
         return metadata_fields
     temporal_field = temporal_retrieval.get("temporal_field")

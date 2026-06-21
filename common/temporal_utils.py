@@ -118,17 +118,32 @@ _DATE_TERMS = (
 
 @dataclass(frozen=True)
 class ParsedTemporalValue:
+    """Normalized representation of one date-like metadata value.
+
+    ``date_norm`` is used for date-window comparisons and ``ts_norm`` is used
+    for freshness scoring. ``granularity`` records whether the source was a
+    year, day, or second-level value so callers can avoid inventing precision.
+    """
+
     source_format: str
     date_norm: str
     ts_norm: int
     granularity: str
 
     def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable dict for API responses and logs."""
         return asdict(self)
 
 
 @dataclass(frozen=True)
 class TemporalFieldProfile:
+    """Profiling summary for a candidate temporal metadata field.
+
+    The profile is shown in the UI before enabling temporal retrieval. It
+    reports parse quality, range, and whether the field is safe for hard
+    filtering or only suitable for freshness reranking.
+    """
+
     temporal_field: str
     detected_format: str | None
     parsed_percentage: float
@@ -142,19 +157,29 @@ class TemporalFieldProfile:
     parsed_documents: int
 
     def to_dict(self) -> dict[str, Any]:
+        """Return the profile in the API response shape used by the frontend."""
         return asdict(self)
 
 
 @dataclass(frozen=True)
 class DateWindow:
+    """Resolved query-time date window.
+
+    The start and end values are normalized ``YYYY-MM-DD`` strings. ``source``
+    identifies which parser rule produced the range, such as ``exact_date`` or
+    ``year_range``, which is useful for debugging temporal intent.
+    """
+
     start_date: str
     end_date: str
     source: str
 
     def to_dict(self) -> dict[str, Any]:
+        """Return a compact dict for structured temporal policy logging."""
         return asdict(self)
 
     def to_conditions(self, field: str) -> list[dict[str, Any]]:
+        """Convert this window to metadata-filter range conditions."""
         return [
             {"key": field, "op": "≥", "value": self.start_date},
             {"key": field, "op": "≤", "value": self.end_date},
@@ -163,12 +188,20 @@ class DateWindow:
 
 @dataclass(frozen=True)
 class TemporalFilterPlan:
+    """Metadata conditions generated from a temporal query intent."""
+
     conditions: list[dict[str, Any]]
     skipped_reason: str | None = None
 
 
 @dataclass(frozen=True)
 class TemporalRankPlan:
+    """Freshness reranking policy passed into the retriever.
+
+    The retriever keeps baseline semantic filtering intact and only uses this
+    plan to reorder the candidate pool when a query has a temporal intent.
+    """
+
     enabled: bool
     temporal_field: str
     half_life_days: float = 14.0
@@ -180,6 +213,13 @@ class TemporalRankPlan:
 
 @dataclass(frozen=True)
 class ResolvedTemporalPolicy:
+    """Complete temporal decision for one retrieval request.
+
+    ``filter_plan`` is pushed through existing metadata filtering, while
+    ``rank_plan`` is optional and only applied when the query should receive a
+    freshness-aware sort.
+    """
+
     intent: str
     strategy: str
     confidence: float
@@ -191,22 +231,32 @@ class ResolvedTemporalPolicy:
 
 
 def is_internal_metadata_key(key: Any) -> bool:
+    """Return whether a metadata key is reserved for temporal internals."""
     return isinstance(key, str) and any(key.startswith(prefix) for prefix in INTERNAL_METADATA_PREFIXES)
 
 
 def filter_visible_metadata_dict(meta: dict[str, Any] | None) -> dict[str, Any]:
+    """Remove internal temporal metadata from a single document metadata dict."""
     if not isinstance(meta, dict):
         return {}
     return {k: v for k, v in meta.items() if not is_internal_metadata_key(k)}
 
 
 def filter_visible_flattened_metadata(metas: dict[str, Any] | None) -> dict[str, Any]:
+    """Remove internal temporal keys from flattened metadata-key maps."""
     if not isinstance(metas, dict):
         return {}
     return {k: v for k, v in metas.items() if not is_internal_metadata_key(k)}
 
 
 def parse_temporal_value(value: Any) -> ParsedTemporalValue | None:
+    """Parse supported metadata date formats into UTC-normalized values.
+
+    Accepts ``YYYY-MM-DD``, year-only values, ISO datetimes, Unix seconds, Unix
+    milliseconds, and lists where the first parseable item is used. Returns
+    ``None`` for booleans, empty strings, malformed dates, and unsupported
+    types so bad metadata never breaks retrieval.
+    """
     if isinstance(value, list):
         for item in value:
             parsed = parse_temporal_value(item)
@@ -264,6 +314,18 @@ def parse_temporal_value(value: Any) -> ParsedTemporalValue | None:
 
 
 def profile_temporal_field(metadata_by_doc: dict[str, dict[str, Any]], temporal_field: str) -> TemporalFieldProfile:
+    """Profile parse quality for a selected metadata field.
+
+    Args:
+        metadata_by_doc: Mapping of document id to metadata dict.
+        temporal_field: User-selected source metadata key.
+
+    Returns:
+        A ``TemporalFieldProfile`` with parse, missing, and invalid rates.
+        Hard filtering is enabled only for directly comparable formats with a
+        high parse rate; freshness scoring only requires at least one parsed
+        value.
+    """
     total = len(metadata_by_doc)
     missing = 0
     invalid = 0
@@ -375,6 +437,8 @@ def extract_date_window(query: str | None, now: datetime | None = None) -> DateW
 
 
 class TemporalRetrievalPolicy:
+    """Rule-based temporal policy resolver for retrieval requests."""
+
     @staticmethod
     def resolve(
         raw_query: str | None,
@@ -382,6 +446,12 @@ class TemporalRetrievalPolicy:
         config: dict[str, Any] | None,
         kb_ids: Sequence[str] | None = None,
     ) -> ResolvedTemporalPolicy:
+        """Resolve date filtering and freshness reranking for a request.
+
+        The resolver inspects both the raw user query and the refined query so
+        temporal hints removed by query rewriting are still honored. Invalid or
+        incomplete configs return a baseline skipped policy instead of raising.
+        """
         del kb_ids
         config = config or {}
         if not config or not config.get("enabled"):
@@ -501,12 +571,19 @@ def freshness_score(
 
 
 def temporal_sort_score(base_score: float, freshness: float, freshness_weight: float) -> float:
+    """Blend normalized relevance with freshness without bypassing relevance.
+
+    Positive freshness acts as a small multiplier on the already-retrieved
+    candidate. Negative freshness represents a configured penalty for future
+    dates and reduces the candidate score.
+    """
     if freshness < 0:
         return base_score * max(0.0, 1.0 + freshness)
     return base_score * (1 + max(0.0, freshness_weight) * max(0.0, min(1.0, freshness)))
 
 
 def normalized_scores(scores: Sequence[float]) -> list[float]:
+    """Normalize scores into ``[0, 1]`` while preserving equal-score order."""
     if not scores:
         return []
     min_score = min(scores)
@@ -518,6 +595,7 @@ def normalized_scores(scores: Sequence[float]) -> list[float]:
 
 
 def _detect_temporal_intent(text: str, explicit_window: DateWindow | None) -> tuple[str, float]:
+    """Classify simple temporal intent from deterministic query rules."""
     text_l = (text or "").lower()
     if explicit_window:
         return "date_range", 0.95
@@ -531,6 +609,11 @@ def _detect_temporal_intent(text: str, explicit_window: DateWindow | None) -> tu
 
 
 def _normalize_range_bounds(start_token: str, end_token: str) -> tuple[str | None, str | None]:
+    """Normalize matched year/year or date/date range tokens.
+
+    Mixed year/date ranges are treated as malformed because expanding one side
+    would silently change user intent. Reversed ranges are ordered safely.
+    """
     start_token = (start_token or "").strip()
     end_token = (end_token or "").strip()
     if not start_token or not end_token:
@@ -552,12 +635,14 @@ def _normalize_range_bounds(start_token: str, end_token: str) -> tuple[str | Non
 
 
 def _month_end(year: int, month: int) -> date:
+    """Return the last date in a calendar month."""
     if month == 12:
         return date(year, 12, 31)
     return date(year, month + 1, 1) - timedelta(days=1)
 
 
 def _positive_float(value: Any, default: float) -> float:
+    """Parse a positive float, falling back for invalid or non-positive input."""
     try:
         parsed = float(value)
     except (TypeError, ValueError):
@@ -566,6 +651,7 @@ def _positive_float(value: Any, default: float) -> float:
 
 
 def _skipped_policy(reason: str) -> ResolvedTemporalPolicy:
+    """Build a baseline policy with a machine-readable skipped reason."""
     return ResolvedTemporalPolicy(
         intent="disabled",
         strategy="baseline",
@@ -580,10 +666,12 @@ def profile_metadata_documents(
     metadata_by_doc: dict[str, dict[str, Any]],
     temporal_field: str,
 ) -> dict[str, Any]:
+    """Profile document metadata and return the API response dict."""
     return profile_temporal_field(metadata_by_doc, temporal_field).to_dict()
 
 
 def visible_metadata_keys_from_docs(docs: Iterable[dict[str, Any]]) -> list[str]:
+    """Return sorted non-internal metadata keys from document metadata rows."""
     keys: set[str] = set()
     for doc in docs:
         if not isinstance(doc, dict):

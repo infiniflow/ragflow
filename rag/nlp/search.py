@@ -574,6 +574,13 @@ class Dealer:
         return window
 
     async def _temporal_sort_scores(self, sim_np, sres, temporal_rank_policy):
+        """Return freshness-aware scores for a retrieved candidate block.
+
+        The method hydrates metadata only for documents already returned by the
+        baseline retriever, then blends normalized relevance with a temporal
+        score. If metadata loading fails, the original similarity array is
+        returned so retrieval remains available without temporal reranking.
+        """
         if not temporal_rank_policy or not getattr(temporal_rank_policy, "enabled", False):
             return sim_np
 
@@ -597,6 +604,7 @@ class Dealer:
             return sim_np
 
         def _load_metadata():
+            """Load candidate document metadata grouped by dataset."""
             from api.db.services.doc_metadata_service import DocMetadataService
 
             meta = {}
