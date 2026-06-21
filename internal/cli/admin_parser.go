@@ -2642,6 +2642,13 @@ commandLoop:
 }
 
 // LIST USER 'user@example.com' INGESTION TASKS;
+// LIST USER 'user@example.com' DATASETS;
+// LIST USER 'user@example.com' AGENTS;
+// LIST USER 'user@example.com' CHATS;
+// LIST USER 'user@example.com' SEARCHES;
+// LIST USER 'user@example.com' MODELS; // all added models
+// LIST USER 'user@example.com' FILES;
+// LIST USER 'user@example.com' KEYS;
 // LIST USER 'user_name' PROVIDER 'provider_name' INSTANCE 'instance_name' MODELS;
 func (p *Parser) parseAdminListUserCommand() (*Command, error) {
 	p.nextToken() // consume USER
@@ -2656,44 +2663,35 @@ func (p *Parser) parseAdminListUserCommand() (*Command, error) {
 
 	switch p.curToken.Type {
 	case TokenIngestion:
-		p.nextToken()
-		if p.curToken.Type != TokenTasks {
-			return nil, fmt.Errorf("expected TASKS after INGESTION")
-		}
-		p.nextToken()
-		cmd = NewCommand("admin_list_user_ingestion_tasks_command")
-		if p.curToken.Type == TokenQuotedString {
-			var status string
-			status, err = p.parseQuotedString()
-			if err != nil {
-				return nil, err
-			}
-			cmd.Params["status"] = status
-			p.nextToken()
-		}
+		return p.parseAdminListUserIngestionTasks(userName)
 	case TokenDatasets:
 		p.nextToken()
-		cmd = NewCommand("admin_list_user_datasets_command")
+		cmd = NewCommand("admin_list_user_datasets")
 	case TokenAgents:
 		p.nextToken()
-		cmd = NewCommand("admin_list_user_agents_command")
+		cmd = NewCommand("admin_list_user_agents")
 	case TokenChats:
 		p.nextToken()
-		cmd = NewCommand("admin_list_user_chats_command")
+		cmd = NewCommand("admin_list_user_chats")
 	case TokenSearches:
 		p.nextToken()
-		cmd = NewCommand("admin_list_user_searches_command")
+		cmd = NewCommand("admin_list_user_searches")
 	case TokenModels:
 		p.nextToken()
-		cmd = NewCommand("admin_list_user_models_command")
+		cmd = NewCommand("admin_list_user_models")
 	case TokenFiles:
 		p.nextToken()
-		cmd = NewCommand("admin_list_user_files_command")
+		cmd = NewCommand("admin_list_user_files")
 	case TokenKeys:
 		p.nextToken()
-		cmd = NewCommand("admin_list_user_keys_command")
+		cmd = NewCommand("admin_list_user_keys")
+	case TokenProvider:
+		return p.parseAdminListUserProviderInstanceModels(userName)
+	case TokenProviders:
+		p.nextToken()
+		cmd = NewCommand("admin_list_user_providers")
 	default:
-		return nil, fmt.Errorf("expected INGESTION or DATASETS or AGENTS or CHATS or SEARCHES or MODELS or FILES after USER")
+		return nil, fmt.Errorf("expected INGESTION or DATASETS or AGENTS or CHATS or SEARCHES or MODELS or FILES or KEYS after USER")
 	}
 
 	// Semicolon is optional
@@ -2702,6 +2700,79 @@ func (p *Parser) parseAdminListUserCommand() (*Command, error) {
 	}
 
 	cmd.Params["user_name"] = userName
+	return cmd, nil
+}
+
+// LIST USER 'user@example.com' INGESTION TASKS 'status';
+func (p *Parser) parseAdminListUserIngestionTasks(userName string) (*Command, error) {
+	p.nextToken() // consume INGESTION
+
+	if p.curToken.Type != TokenTasks {
+		return nil, fmt.Errorf("expected TASKS after INGESTION")
+	}
+	p.nextToken()
+
+	cmd := NewCommand("admin_list_user_ingestion_tasks")
+	if p.curToken.Type == TokenQuotedString {
+		var status string
+		var err error
+		status, err = p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		cmd.Params["status"] = status
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// LIST USER 'user_name' PROVIDER 'provider_name' INSTANCES;
+// LIST USER 'user_name' PROVIDER 'provider_name' INSTANCE 'instance_name' MODELS;
+func (p *Parser) parseAdminListUserProviderInstanceModels(userName string) (*Command, error) {
+	p.nextToken() // consume PROVIDER
+
+	providerName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	if p.curToken.Type == TokenInstances {
+		p.nextToken()
+		cmd := NewCommand("admin_list_user_provider_instances")
+		cmd.Params["user_name"] = userName
+		cmd.Params["provider_name"] = providerName
+
+		if p.curToken.Type == TokenSemicolon {
+			p.nextToken()
+		}
+		return cmd, nil
+	}
+
+	if p.curToken.Type != TokenInstance {
+		return nil, fmt.Errorf("expected INSTANCE after PROVIDER")
+	}
+	p.nextToken()
+
+	instanceName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenModels {
+		return nil, fmt.Errorf("expected MODELS after INSTANCE")
+	}
+	p.nextToken()
+
+	cmd := NewCommand("admin_list_user_provider_instance_models")
+	cmd.Params["user_name"] = userName
+	cmd.Params["provider_name"] = providerName
+	cmd.Params["instance_name"] = instanceName
+
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
 	return cmd, nil
 }
 

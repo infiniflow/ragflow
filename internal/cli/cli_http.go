@@ -183,22 +183,28 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminPurgeUserCommand(cmd)
 	case "admin_purge_users_command":
 		return c.AdminPurgeUsersCommand(cmd)
-	case "admin_list_user_ingestion_tasks_command":
+	case "admin_list_user_ingestion_tasks":
 		return c.AdminListUserIngestionTasksCommand(cmd)
-	case "admin_list_user_datasets_command":
+	case "admin_list_user_datasets":
 		return c.AdminListUserDatasetsCommand(cmd)
-	case "admin_list_user_agents_command":
+	case "admin_list_user_agents":
 		return c.AdminListUserAgentsCommand(cmd)
-	case "admin_list_user_chats_command":
+	case "admin_list_user_chats":
 		return c.AdminListUserChatsCommand(cmd)
-	case "admin_list_user_searches_command":
+	case "admin_list_user_searches":
 		return c.AdminListUserSearchesCommand(cmd)
-	case "admin_list_user_models_command":
+	case "admin_list_user_models":
 		return c.AdminListUserModelsCommand(cmd)
-	case "admin_list_user_files_command":
+	case "admin_list_user_files":
 		return c.AdminListUserFilesCommand(cmd)
-	case "admin_list_user_keys_command":
+	case "admin_list_user_keys":
 		return c.AdminListUserKeysCommand(cmd)
+	case "admin_list_user_providers":
+		return c.AdminListUserProvidersCommand(cmd)
+	case "admin_list_user_provider_instances":
+		return c.AdminListUserProviderInstancesCommand(cmd)
+	case "admin_list_user_provider_instance_models":
+		return c.AdminListUserProviderInstanceModelsCommand(cmd)
 	case "admin_stop_user_ingestion_tasks_command":
 		return c.AdminStopUserIngestionTasksCommand(cmd)
 	case "admin_remove_user_ingestion_tasks_command":
