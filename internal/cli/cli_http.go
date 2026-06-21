@@ -131,7 +131,7 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.UserShowMessageQueueCommand(cmd)
 	case "admin_remove_service_command":
 		return c.AdminRemoveServiceCommand(cmd)
-	case "admin_check_license_command":
+	case "admin_check_license":
 		return c.AdminCheckLicenseCommand(cmd)
 	case "admin_show_fingerprint":
 		return c.AdminShowFingerprintCommand(cmd)
@@ -163,17 +163,17 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminListUsersCommand(cmd)
 	case "admin_list_users_condition_command":
 		return c.AdminListUsersConditionCommand(cmd)
-	case "admin_show_quota_summary_command":
+	case "admin_show_quota_summary":
 		return c.AdminShowQuotaSummaryCommand(cmd)
-	case "admin_show_tasks_summary_command":
+	case "admin_show_tasks_summary":
 		return c.AdminShowTasksSummaryCommand(cmd)
-	case "admin_show_data_summary_command":
+	case "admin_show_data_summary":
 		return c.AdminShowDataSummaryCommand(cmd)
-	case "admin_show_data_orphan_command":
+	case "admin_show_data_orphan":
 		return c.AdminShowDataOrphanCommand(cmd)
-	case "admin_show_data_storage_command":
+	case "admin_show_data_storage":
 		return c.AdminShowDataStorageCommand(cmd)
-	case "admin_show_data_index_command":
+	case "admin_show_data_index":
 		return c.AdminShowDataIndexCommand(cmd)
 	case "admin_purge_orphan_command":
 		return c.AdminPurgeOrphanCommand(cmd)

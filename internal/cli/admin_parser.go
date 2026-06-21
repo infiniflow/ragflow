@@ -307,13 +307,13 @@ func (p *Parser) parseAdminShowCommand() (*Command, error) {
 	case TokenAPI:
 		return p.parseUserShowAPI()
 	case TokenUsers:
-		return p.parseAdminShowUsersCommand()
+		return p.parseAdminShowUsersCommands()
 	case TokenData:
-		return p.parseAdminShowDataCommand()
+		return p.parseAdminShowData()
 	case TokenQuota:
-		return p.parseAdminShowQuotaCommand()
+		return p.parseAdminShowQuota()
 	case TokenTasks:
-		return p.parseAdminShowTasksCommand()
+		return p.parseAdminShowTasks()
 	default:
 		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
 	}
@@ -730,20 +730,20 @@ func (p *Parser) parseCommonShowPoolModel() (*Command, error) {
 
 // endregion SHOW commands
 
-// parseAdminCheckCommand
-func (p *Parser) parseAdminCheckCommand() (*Command, error) {
+// parseAdminCheck
+func (p *Parser) parseAdminCheck() (*Command, error) {
 	p.nextToken() // consume CHECK
 	switch p.curToken.Type {
 	case TokenLicense:
-		return p.parseAdminCheckLicenseCommand()
+		return p.parseAdminCheckLicense()
 	default:
 		return nil, fmt.Errorf("unknown CHECK target: %s", p.curToken.Value)
 	}
 }
 
-func (p *Parser) parseAdminCheckLicenseCommand() (*Command, error) {
+func (p *Parser) parseAdminCheckLicense() (*Command, error) {
 	p.nextToken() // consume LICENSE
-	cmd := NewCommand("admin_check_license_command")
+	cmd := NewCommand("admin_check_license")
 
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
@@ -822,9 +822,9 @@ func (p *Parser) parseAdminCreateCommand() (*Command, error) {
 
 	switch p.curToken.Type {
 	case TokenUser:
-		return p.parseAdminCreateUserCommand()
+		return p.parseAdminCreateUser()
 	case TokenRole:
-		return p.parseAdminCreateRoleCommand()
+		return p.parseAdminCreateRole()
 	case TokenModel:
 		return p.parseCreateModelProvider()
 	case TokenDataset:
@@ -838,7 +838,7 @@ func (p *Parser) parseAdminCreateCommand() (*Command, error) {
 	}
 }
 
-func (p *Parser) parseAdminCreateUserCommand() (*Command, error) {
+func (p *Parser) parseAdminCreateUser() (*Command, error) {
 	p.nextToken() // consume USER
 	userName, err := p.parseQuotedString()
 	if err != nil {
@@ -889,7 +889,7 @@ func (p *Parser) parseAdminCreateUserAPIKeyCommand(userName string) (*Command, e
 	return cmd, nil
 }
 
-func (p *Parser) parseAdminCreateRoleCommand() (*Command, error) {
+func (p *Parser) parseAdminCreateRole() (*Command, error) {
 	p.nextToken() // consume ROLE
 	roleName, err := p.parseQuotedString()
 	if err != nil {
@@ -2199,7 +2199,7 @@ func (p *Parser) parseAdminRemoveCommand() (*Command, error) {
 
 // SHOW USERS SUMMARY;
 // SHOW USERS ACTIVITY;
-func (p *Parser) parseAdminShowUsersCommand() (*Command, error) {
+func (p *Parser) parseAdminShowUsersCommands() (*Command, error) {
 	p.nextToken() // consume USERS
 
 	switch p.curToken.Type {
@@ -2208,14 +2208,14 @@ func (p *Parser) parseAdminShowUsersCommand() (*Command, error) {
 		cmd := NewCommand("admin_show_users_summary_command")
 		return cmd, nil
 	case TokenActivity:
-		return p.parseAdminShowUsersActivityCommand()
+		return p.parseAdminShowUsersActivity()
 	default:
 		return nil, fmt.Errorf("invalid command")
 	}
 }
 
 // SHOW USERS ACTIVITY WINDOW 2 DAYS 30;
-func (p *Parser) parseAdminShowUsersActivityCommand() (*Command, error) {
+func (p *Parser) parseAdminShowUsersActivity() (*Command, error) {
 	p.nextToken() // consume ACTIVITY
 
 	var days int
@@ -2392,25 +2392,25 @@ commandLoop:
 // SHOW DATA ORPHAN;
 // SHOW DATA STORAGE;
 // SHOW DATA INDEX;
-func (p *Parser) parseAdminShowDataCommand() (*Command, error) {
-	p.nextToken() // consume ALL
+func (p *Parser) parseAdminShowData() (*Command, error) {
+	p.nextToken() // consume DATA
 
 	var cmd *Command
 	switch p.curToken.Type {
 	case TokenSummary:
 		p.nextToken()
-		cmd = NewCommand("admin_show_data_summary_command")
+		cmd = NewCommand("admin_show_data_summary")
 	case TokenOrphan:
 		p.nextToken()
-		cmd = NewCommand("admin_show_data_orphan_command")
+		cmd = NewCommand("admin_show_data_orphan")
 	case TokenStorage:
 		p.nextToken()
-		cmd = NewCommand("admin_show_data_storage_command")
+		cmd = NewCommand("admin_show_data_storage")
 	case TokenIndex:
 		p.nextToken()
-		cmd = NewCommand("admin_show_data_index_command")
+		cmd = NewCommand("admin_show_data_index")
 	default:
-		return nil, fmt.Errorf("expected SUMMARY, ORPHAN, STORAGE, INDEX, TASKS, QUOTA_SUMMARY after ALL")
+		return nil, fmt.Errorf("expected SUMMARY, ORPHAN, STORAGE, INDEX after DATA")
 	}
 
 	// Semicolon is optional
@@ -2421,14 +2421,14 @@ func (p *Parser) parseAdminShowDataCommand() (*Command, error) {
 }
 
 // SHOW QUOTA SUMMARY;
-func (p *Parser) parseAdminShowQuotaCommand() (*Command, error) {
+func (p *Parser) parseAdminShowQuota() (*Command, error) {
 	p.nextToken() // consume QUOTA
 
 	var cmd *Command
 	switch p.curToken.Type {
 	case TokenSummary:
 		p.nextToken()
-		cmd = NewCommand("admin_show_quota_summary_command")
+		cmd = NewCommand("admin_show_quota_summary")
 	default:
 		return nil, fmt.Errorf("expected SUMMARY after QUOTA")
 	}
@@ -2441,14 +2441,14 @@ func (p *Parser) parseAdminShowQuotaCommand() (*Command, error) {
 }
 
 // SHOW TASKS SUMMARY;
-func (p *Parser) parseAdminShowTasksCommand() (*Command, error) {
+func (p *Parser) parseAdminShowTasks() (*Command, error) {
 	p.nextToken() // consume TASKS
 
 	var cmd *Command
 	switch p.curToken.Type {
 	case TokenSummary:
 		p.nextToken()
-		cmd = NewCommand("admin_show_tasks_summary_command")
+		cmd = NewCommand("admin_show_tasks_summary")
 	default:
 		return nil, fmt.Errorf("expected SUMMARY after TASKS")
 	}

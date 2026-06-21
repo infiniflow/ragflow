@@ -561,10 +561,6 @@ func (p *Parser) parseCreateCommand() (*Command, error) {
 	p.nextToken() // consume CREATE
 
 	switch p.curToken.Type {
-	case TokenUser:
-		return p.parseAdminCreateUserCommand()
-	case TokenRole:
-		return p.parseCreateRole()
 	case TokenModel:
 		return p.parseCreateModelProvider()
 	case TokenDataset:
