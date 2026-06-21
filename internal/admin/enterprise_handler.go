@@ -772,6 +772,28 @@ func (h *Handler) ListUserProviderInstanceModels(c *gin.Context) {
 	success(c, models, "")
 }
 
+// ListUserDefaultModels handle show user default models
+func (h *Handler) ListUserDefaultModels(c *gin.Context) {
+	encodedUsername := c.Param("username")
+	userName, err := common.DecodeEmail(encodedUsername)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
+	if userName == "" {
+		errorResponse(c, "Username is required", 400)
+		return
+	}
+
+	models, err := h.service.ListUserDefaultModels(userName)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, models, "")
+}
+
 // ShowUsersSummary handle show users summary
 func (h *Handler) ShowUsersSummary(c *gin.Context) {
 	usersSummary, err := h.service.ShowUsersSummary()

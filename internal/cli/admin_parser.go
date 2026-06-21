@@ -2690,6 +2690,8 @@ func (p *Parser) parseAdminListUserCommand() (*Command, error) {
 	case TokenProviders:
 		p.nextToken()
 		cmd = NewCommand("admin_list_user_providers")
+	case TokenDefault:
+		return p.parseAdminListUserDefaultModels(userName)
 	default:
 		return nil, fmt.Errorf("expected INGESTION or DATASETS or AGENTS or CHATS or SEARCHES or MODELS or FILES or KEYS after USER")
 	}
@@ -2769,6 +2771,24 @@ func (p *Parser) parseAdminListUserProviderInstanceModels(userName string) (*Com
 	cmd.Params["user_name"] = userName
 	cmd.Params["provider_name"] = providerName
 	cmd.Params["instance_name"] = instanceName
+
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// LIST USER 'user_name' DEFAULT MODELS;
+func (p *Parser) parseAdminListUserDefaultModels(userName string) (*Command, error) {
+	p.nextToken() // consume DEFAULT
+
+	if p.curToken.Type != TokenModels {
+		return nil, fmt.Errorf("expected MODELS after INSTANCE")
+	}
+	p.nextToken()
+
+	cmd := NewCommand("admin_list_user_default_models")
+	cmd.Params["user_name"] = userName
 
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()

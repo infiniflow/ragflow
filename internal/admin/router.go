@@ -137,6 +137,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.GET("/users/:username/providers", r.handler.ListUserProviders)
 			protected.GET("/users/:username/providers/:provider_name/instances", r.handler.ListUserProviderInstances)
 			protected.GET("/users/:username/providers/:provider_name/instances/:instance_name/models", r.handler.ListUserProviderInstanceModels)
+			protected.GET("/users/:username/default-models", r.handler.ListUserDefaultModels)
 			protected.GET("/users/summary", r.handler.ShowUsersSummary)
 			protected.GET("/users/activity", r.handler.ShowUsersActivity)
 			protected.GET("/users/reports", r.handler.ListUsersReports)

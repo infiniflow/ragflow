@@ -535,6 +535,27 @@ func (s *Service) ListUserProviderInstanceModels(email, providerName, instanceNa
 	return result, nil
 }
 
+// ListUserDefaultModels show user default models for enterprise edition
+func (s *Service) ListUserDefaultModels(email string) ([]map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":  "list_user_default_models",
+			"email":    user.Email,
+			"nickname": user.Nickname,
+			"error":    "'list user default models' is implemented in enterprise edition",
+		},
+	}
+
+	return result, nil
+}
+
 // ShowUsersSummary show users summary for enterprise edition
 func (s *Service) ShowUsersSummary() (map[string]interface{}, error) {
 	result := map[string]interface{}{
