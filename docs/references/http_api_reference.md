@@ -2800,7 +2800,7 @@ curl --request POST \
   Whether to search chunks related to the generated knowledge graph for multi-hop queries. Defaults to `False`. Before enabling this, ensure you have successfully constructed a knowledge graph for the specified datasets. See [here](../guides/dataset/advanced/construct_knowledge_graph.md) for details.
 - `"toc_enhance"`: (*Body parameter*), `boolean`
   Whether to search chunks with extracted table of content. Defaults to `False`. Before enabling this, ensure you have enabled `TOC_Enhance` and successfully extracted table of contents for the specified datasets. See [here](https://ragflow.io/docs/dev/enable_table_of_contents) for details.
-- `"rerank_id"`: (*Body parameter*), `integer`
+- `"rerank_id"`: (*Body parameter*), `string`
   The ID of the rerank model.
 - `"keyword"`: (*Body parameter*), `boolean`
   Indicates whether to enable keyword-based matching:

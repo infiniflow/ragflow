@@ -22,19 +22,19 @@ import (
 	"testing"
 )
 
-// TestExeSQL_TrinoUnsupported verifies the Trino dialect
-// (currently via the trinoDSN stub; see exesql_trino_stub.go) is
-// recognized by the unsupported path. The actual driver lands
-// when a use-case surfaces.
-func TestExeSQL_TrinoUnsupported(t *testing.T) {
+// TestExeSQL_TrinoDriverMissing verifies Trino is now routed through the
+// Trino DSN path. In this workspace we do not register a real "trino"
+// database/sql driver, so InvokableRun should fail at sql.Open with an
+// unknown-driver error rather than the old unsupported-db sentinel.
+func TestExeSQL_TrinoDriverMissing(t *testing.T) {
 	conn := exesqlConnParams{DBType: "trino", Host: "h", Port: 8080, Database: "d", Username: "u"}
 	tool := NewExeSQLTool(conn)
 	_, err := tool.InvokableRun(context.Background(), `{"sql":"SELECT 1"}`)
 	if err == nil {
-		t.Fatal("expected ErrExeSQLUnsupportedDB for trino")
+		t.Fatal("expected driver error for trino")
 	}
-	if !errors.Is(err, ErrExeSQLUnsupportedDB) {
-		t.Errorf("err=%v, want ErrExeSQLUnsupportedDB", err)
+	if errors.Is(err, ErrExeSQLUnsupportedDB) {
+		t.Fatalf("err=%v, did not want ErrExeSQLUnsupportedDB after trino wiring", err)
 	}
 }
 

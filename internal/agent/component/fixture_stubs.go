@@ -159,6 +159,7 @@ func (t *TavilySearchStub) Outputs() map[string]string {
 // ----- ExeSQL -----
 
 const componentNameExeSQL = "ExeSQL"
+const componentNameCodeExec = "CodeExec"
 
 // ExeSQLStub is a fixture stub for the ExeSQL component. The real
 // implementation (see internal/agent/tool/exesql.go) opens a MySQL
@@ -477,6 +478,10 @@ func (it *IterationItemStub) Outputs() map[string]string {
 // Each Register call panics on a duplicate (the registry enforces
 // uniqueness), so accidental double-registration in a later refactor
 // surfaces as a panic at init time, not as a silent override.
+func newCodeExecComponent(_ map[string]any) (Component, error) {
+	return nil, fmt.Errorf("CodeExec component not yet ported to harness")
+}
+
 func init() {
 	// Primary registration: Retrieval and ExeSQL go through the
 	// Universe A delegation wrappers in universe_a_wrappers.go
@@ -499,6 +504,7 @@ func init() {
 	Register("search_my_dateset", newRetrievalComponent)
 	Register(componentNameTavilySearch, NewTavilySearchStub)
 	Register(componentNameExeSQL, newExeSQLComponent)
+	Register(componentNameCodeExec, newCodeExecComponent)
 	Register(componentNameGenerate, NewGenerateStub)
 	Register(componentNameAnswer, NewAnswerStub)
 	Register(componentNameIteration, NewIterationStub)

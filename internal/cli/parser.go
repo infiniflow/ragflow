@@ -90,12 +90,14 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 		return p.parseAdminListCommand()
 	case TokenShow:
 		return p.parseAdminShowCommand()
+	case TokenCheck:
+		return p.parseAdminCheck()
 	case TokenCreate:
 		return p.parseAdminCreateCommand()
 	case TokenDrop:
-		return p.parseAdminDropCommand()
+		return p.parseAdminDropCommands()
 	case TokenAlter:
-		return p.parseAdminAlterCommand()
+		return p.parseAdminAlterCommands()
 	case TokenGrant:
 		return p.parseAdminGrantCommand()
 	case TokenRevoke:
@@ -116,8 +118,7 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 		return p.parseAdminParseCommand()
 	case TokenBenchmark:
 		return p.parseAdminBenchmarkCommand()
-	case TokenRegister:
-		return p.parseAdminRegisterCommand()
+
 	case TokenStartup:
 		return p.parseAdminStartupCommand()
 	case TokenShutdown:
@@ -138,6 +139,8 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 		return p.parseAdminSaveCommand()
 	case TokenUse:
 		return p.parseAdminUseCommand()
+	case TokenPurge:
+		return p.parseAdminPurgeCommand()
 	default:
 		return nil, fmt.Errorf("unknown command: %s", p.curToken.Value)
 	}
@@ -166,10 +169,6 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseDeleteCommand()
 	case TokenAlter:
 		return p.parseAlterCommand()
-	case TokenGrant:
-		return p.parseGrantCommand()
-	case TokenRevoke:
-		return p.parseRevokeCommand()
 	case TokenSet:
 		return p.parseSetCommand()
 	case TokenUnset:
@@ -204,6 +203,8 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseStreamCommand()
 	case TokenChat:
 		return p.parseChatCommand()
+	case TokenOpenaiChat:
+		return p.parseOpenaiChatCommand()
 	case TokenThink:
 		return p.parseThinkCommand()
 	case TokenEmbed:
