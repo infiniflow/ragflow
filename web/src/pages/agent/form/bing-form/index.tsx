@@ -1,5 +1,5 @@
 import { SelectWithSearch } from '@/components/originui/select-with-search';
-import { TopNFormField } from '@/components/top-n-item';
+import { createTopNSchema, TopNFormField } from '@/components/top-n-item';
 import {
   Form,
   FormControl,
@@ -27,7 +27,7 @@ export const BingFormSchema = {
   api_key: z.string(),
   country: z.string(),
   language: z.string(),
-  top_n: z.number(),
+  top_n: createTopNSchema().top_n.unwrap(),
 };
 
 export const FormSchema = z.object({

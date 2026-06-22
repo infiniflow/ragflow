@@ -1,6 +1,6 @@
 import { FormContainer } from '@/components/form-container';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
-import { TopNFormField } from '@/components/top-n-item';
+import { DEFAULT_TOP_N_MAX, TopNFormField } from '@/components/top-n-item';
 import { DatePicker } from '@/components/ui/date-picker';
 import {
   Form,
@@ -114,7 +114,7 @@ export function GoogleScholarFormWidgets() {
 }
 
 export const GoogleScholarFormPartialSchema = {
-  top_n: z.number(),
+  top_n: z.number().max(DEFAULT_TOP_N_MAX),
   sort_by: z.string(),
   year_low: z.number(),
   year_high: z.number(),

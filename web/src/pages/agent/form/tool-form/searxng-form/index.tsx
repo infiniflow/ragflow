@@ -1,5 +1,5 @@
 import { FormContainer } from '@/components/form-container';
-import { TopNFormField } from '@/components/top-n-item';
+import { DEFAULT_TOP_N_MAX, TopNFormField } from '@/components/top-n-item';
 import {
   Form,
   FormControl,
@@ -18,7 +18,9 @@ import { useWatchFormChange } from '../use-watch-change';
 
 const FormSchema = z.object({
   searxng_url: z.string().min(1),
-  top_n: z.string(),
+  top_n: z.string().refine((value) => Number(value) <= DEFAULT_TOP_N_MAX, {
+    message: `Top N must be less than or equal to ${DEFAULT_TOP_N_MAX}`,
+  }),
 });
 
 function SearXNGForm() {

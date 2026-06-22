@@ -1,6 +1,6 @@
 import { FormContainer } from '@/components/form-container';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
-import { TopNFormField } from '@/components/top-n-item';
+import { DEFAULT_TOP_N_MAX, TopNFormField } from '@/components/top-n-item';
 import {
   Form,
   FormControl,
@@ -25,7 +25,9 @@ import { Output } from '../components/output';
 import { QueryVariable } from '../components/query-variable';
 
 export const WikipediaFormPartialSchema = {
-  top_n: z.string(),
+  top_n: z.string().refine((value) => Number(value) <= DEFAULT_TOP_N_MAX, {
+    message: `Top N must be less than or equal to ${DEFAULT_TOP_N_MAX}`,
+  }),
   language: z.string(),
 };
 

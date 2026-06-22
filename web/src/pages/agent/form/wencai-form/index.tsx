@@ -1,5 +1,5 @@
 import { FormContainer } from '@/components/form-container';
-import { TopNFormField } from '@/components/top-n-item';
+import { createTopNSchema, TopNFormField } from '@/components/top-n-item';
 import {
   Form,
   FormControl,
@@ -24,8 +24,10 @@ import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 import { QueryVariable } from '../components/query-variable';
 
+const WenCaiTopNMax = 99;
+
 export const WenCaiPartialSchema = {
-  top_n: z.number(),
+  top_n: createTopNSchema(WenCaiTopNMax).top_n.unwrap(),
   query_type: z.string(),
 };
 
@@ -47,7 +49,7 @@ export function WenCaiFormWidgets() {
 
   return (
     <>
-      <TopNFormField max={99}></TopNFormField>
+      <TopNFormField max={WenCaiTopNMax}></TopNFormField>
       <FormField
         control={form.control}
         name="query_type"
