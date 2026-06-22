@@ -1176,6 +1176,9 @@ func (s *ChunkService) List(req *service.ListChunksRequest, userID string) (*ser
 	if err != nil || doc == nil {
 		return nil, fmt.Errorf("document not found")
 	}
+	if req.DatasetID != "" && doc.KbID != req.DatasetID {
+		return nil, fmt.Errorf("document not found")
+	}
 
 	// Get knowledge base to find tenant
 	kb, err := s.kbDAO.GetByID(doc.KbID)
@@ -1329,6 +1332,66 @@ func (s *ChunkService) List(req *service.ListChunksRequest, userID string) (*ser
 		Doc:    docInfo,
 	}, nil
 }
+
+func (s *ChunkService) SwitchChunks(userID, datasetID, documentID string, availableInt int, chunkIDs []string) error {
+	if s.docEngine == nil {
+		return fmt.Errorf("doc engine not initialized")
+	}
+
+	if chunkIDs == nil || len(chunkIDs) == 0 {
+		return fmt.Errorf("req is null")
+	}
+
+	ctx := context.Background()
+	defer ctx.Done()
+
+	// Get user's tenants
+	tenants, err := s.userTenantDAO.GetByUserID(userID)
+	if err != nil {
+		return fmt.Errorf("failed to get user tenants: %w", err)
+	}
+	if len(tenants) == 0 {
+		return fmt.Errorf("user has no accessible tenants")
+	}
+
+	// Find the tenant that owns this dataset
+	var targetTenantID string
+	for _, tenant := range tenants {
+		kb, err := s.kbDAO.GetByIDAndTenantID(datasetID, tenant.TenantID)
+		if err == nil && kb != nil {
+			targetTenantID = tenant.TenantID
+			break
+		}
+	}
+	if targetTenantID == "" {
+		return fmt.Errorf("user does not have access to this dataset")
+	}
+
+	docDAO := dao.NewDocumentDAO()
+	doc, err := docDAO.GetByID(documentID)
+	if err != nil || doc == nil {
+		return fmt.Errorf("document not found")
+	}
+	if doc.KbID != datasetID {
+		return fmt.Errorf("document does not belong to this dataset")
+	}
+
+	for _, cid := range chunkIDs {
+		indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
+
+		if err = s.docEngine.UpdateChunks(ctx, map[string]interface{}{
+			"id": cid,
+		}, map[string]interface{}{
+			"id":            cid,
+			"available_int": availableInt,
+		}, indexName, datasetID); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (s *ChunkService) UpdateChunk(req *service.UpdateChunkRequest, userID string) error {
 	if s.docEngine == nil {
 		return fmt.Errorf("doc engine not initialized")
