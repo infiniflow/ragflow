@@ -47,7 +47,7 @@ export function WenCaiFormWidgets() {
 
   return (
     <>
-      <TopNFormField max={99}></TopNFormField>
+      <TopNFormField></TopNFormField>
       <FormField
         control={form.control}
         name="query_type"
