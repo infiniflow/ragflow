@@ -506,7 +506,7 @@ class CreateDatasetReq(Base):
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=DATASET_NAME_LIMIT), Field(...)]
     avatar: Annotated[str | None, Field(default=None, max_length=65535)]
     description: Annotated[str | None, Field(default=None, max_length=65535)]
-    language: Annotated[str | None, Field(default=None, max_length=32)]
+    language: Annotated[str | None, StringConstraints(strip_whitespace=True, min_length=1, max_length=32), Field(default=None)]
     embedding_model: Annotated[str | None, Field(default=None, max_length=255, serialization_alias="embd_id")]
     permission: Annotated[Literal["me", "team"], Field(default="me", min_length=1, max_length=16)]
     parse_type: Annotated[int | None, Field(default=None, ge=0, le=64)]
