@@ -180,6 +180,16 @@ class MigrationDatabase:
         )
         return cursor.fetchone()[0] > 0
 
+    def get_column_type(self, table_name: str, column_name: str) -> str | None:
+        """Get the DATA_TYPE of a column from information_schema, returns None if column does not exist"""
+        cursor = self.execute_sql(
+            "SELECT DATA_TYPE FROM information_schema.columns "
+            "WHERE table_schema = %s AND table_name = %s AND column_name = %s",
+            (self.config.database, table_name, column_name)
+        )
+        row = cursor.fetchone()
+        return row[0] if row else None
+
     def get_system_setting_value(self, name: str) -> str | None:
         if not self.table_exists("system_settings"):
             logger.info("Table 'system_settings' does not exist, migration marker is unavailable")
@@ -1062,6 +1072,13 @@ class TenantModelSeedingStage(MigrationStage):
                 return False
             return True
 
+        # If model_type is already INT, the merge stage has been executed — seeding is not applicable
+        model_type_dtype = self.db.get_column_type("tenant_model", "model_type")
+        if model_type_dtype and model_type_dtype.lower() == "int":
+            self.mark_noop_completes_migration()
+            logger.info("tenant_model.model_type is already INT, seeding stage is not applicable (merge already done)")
+            return False
+
         # Check if there are any models to seed
         factories = self._load_llm_factories()
         total_missing = 0
@@ -1310,6 +1327,14 @@ class ModelTypeMergeStage(MigrationStage):
         if not self.db.table_exists("tenant_model"):
             logger.warning("Source table 'tenant_model' does not exist")
             return False
+
+        # If model_type is already INT, the merge has already been executed — no work needed
+        model_type_dtype = self.db.get_column_type("tenant_model", "model_type")
+        if model_type_dtype and model_type_dtype.lower() == "int":
+            self.mark_noop_completes_migration()
+            logger.info("tenant_model.model_type is already INT, merge stage is not applicable (already done)")
+            return False
+
         return True
 
     def execute(self) -> tuple[int, list]:

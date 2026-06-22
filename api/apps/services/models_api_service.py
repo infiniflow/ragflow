@@ -297,7 +297,7 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
 
     factory_rank_mapping = {factory["name"]: -_to_int(factory.get("rank", "500")) for factory in FACTORY_LLM_INFOS}
     added_models = [{
-        "model_type": get_model_type_human(model_record.status),
+        "model_type": get_model_type_human(model_record.model_type),
         "name": model_record.model_name,
         "provider_id": model_record.provider_id,
         "provider_name": provider_info_map[model_record.provider_id].provider_name,
