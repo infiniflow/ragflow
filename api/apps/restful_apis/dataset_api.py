@@ -113,6 +113,10 @@ async def create(tenant_id: str = None):
             description:
               type: string
               description: Optional dataset description.
+            language:
+              type: string
+              enum: ['English', 'Chinese']
+              description: Optional document language; if omitted, the server default is used.
             embedding_model:
               type: string
               description: Optional embedding model name; if omitted, the tenant's default embedding model is used.

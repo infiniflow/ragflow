@@ -61,6 +61,12 @@ async def create_dataset(tenant_id: str, req: dict):
     :param req: dataset creation request
     :return: (success, result) or (success, error_message)
     """
+    # Drop language when not provided so the model/database default applies
+    # (the create request is parsed with exclude_unset=False, so the key is
+    # always present with a None default when the caller omits it).
+    if req.get("language") is None:
+        req.pop("language", None)
+
     # Extract ext field for additional parameters
     ext_fields = req.pop("ext", {})
 
