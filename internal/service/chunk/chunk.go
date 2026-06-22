@@ -1338,6 +1338,10 @@ func (s *ChunkService) SwitchChunks(userID, datasetID, documentID string, availa
 		return fmt.Errorf("doc engine not initialized")
 	}
 
+	if availableInt != 0 && availableInt != 1 {
+		return fmt.Errorf("available_int should be 0 or 1")
+	}
+
 	if chunkIDs == nil || len(chunkIDs) == 0 {
 		return fmt.Errorf("req is null")
 	}
@@ -1380,7 +1384,8 @@ func (s *ChunkService) SwitchChunks(userID, datasetID, documentID string, availa
 		indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
 
 		if err = s.docEngine.UpdateChunks(ctx, map[string]interface{}{
-			"id": cid,
+			"id":     cid,
+			"doc_id": documentID,
 		}, map[string]interface{}{
 			"id":            cid,
 			"available_int": availableInt,

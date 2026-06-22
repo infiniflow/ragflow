@@ -302,7 +302,15 @@ func (h *ChunkHandler) ListChunks(c *gin.Context) {
 		Size:      &size,
 		Keywords:  c.Query("keywords"),
 	}
-	if available, ok := parseAvailableQuery(c.Query("available")); ok {
+	available, ok, err := parseAvailableQuery(c.Query("available"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeArgumentError,
+			"message": err.Error(),
+		})
+		return
+	}
+	if ok {
 		req.AvailableInt = &available
 	}
 
@@ -334,14 +342,14 @@ func parsePositiveQueryInt(c *gin.Context, name string, defaultValue int) (int, 
 	return value, nil
 }
 
-func parseAvailableQuery(raw string) (int, bool) {
+func parseAvailableQuery(raw string) (int, bool, error) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "":
-		return 0, false
+		return 0, false, nil
 	case "true", "1":
-		return 1, true
+		return 1, true, nil
 	default:
-		return 0, true
+		return 0, true, fmt.Errorf("available must be one of: true, false, 1, 0")
 	}
 }
 
