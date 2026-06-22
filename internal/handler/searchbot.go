@@ -45,6 +45,34 @@ type ChunkRetriever interface {
 	RetrievalTest(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error)
 }
 
+// runRetrievalTest is the shared service-call + response-shaping path used by
+// both ChunkHandler (/datasets/search) and SearchBotHandler
+// (/searchbots/retrieval_test). It logs the underlying error internally but
+// returns only a generic message to the client so we don't leak service-layer
+// details — see #15744 (converge handlers) and #15743 (err.Error leaks).
+func runRetrievalTest(
+	c *gin.Context,
+	chunkSvc ChunkRetriever,
+	req *service.RetrievalTestRequest,
+	userID, logCtx string,
+) {
+	resp, err := chunkSvc.RetrievalTest(req, userID)
+	if err != nil {
+		common.Warn(logCtx+" failed", zap.String("error", err.Error()))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    common.CodeServerError,
+			"data":    nil,
+			"message": "retrieval test failed",
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    int(common.CodeSuccess),
+		"data":    resp,
+		"message": "success",
+	})
+}
+
 
 // streamingLLM abstracts streaming chat for the Ask endpoint.
 // The returned channel delivers raw text deltas from the LLM.
@@ -274,13 +302,18 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": errorCode, "data": nil, "message": errorMessage})
+		// Match ChunkHandler / kb.go convention (jsonError → HTTP 200 + code in
+		// body) rather than HTTP 401 — see #15744 for the convergence rationale.
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
 	var req SearchBotRetrievalTestRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "data": nil, "message": err.Error()})
+		// Log the parse error but return a generic message so we don't leak
+		// service-layer wording to clients (#15743 / #15744).
+		common.Warn("searchbot retrieval test bind failed", zap.String("error", err.Error()))
+		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "data": nil, "message": "invalid request body"})
 		return
 	}
 
@@ -306,15 +339,7 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 	}
 
 	svcReq := toRetrievalServiceRequest(&req)
-
-	result, err := h.chunkSvc.RetrievalTest(svcReq, user.ID)
-	if err != nil {
-		common.Warn("searchbot retrieval test failed", zap.String("error", err.Error()))
-		c.JSON(http.StatusInternalServerError, gin.H{"code": common.CodeServerError, "data": nil, "message": "retrieval test failed"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"code": int(common.CodeSuccess), "data": result, "message": "success"})
+	runRetrievalTest(c, h.chunkSvc, svcReq, user.ID, "searchbot retrieval test")
 }
 
 // Ask performs a retrieval-augmented Q&A with streaming SSE response.
