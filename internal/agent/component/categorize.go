@@ -333,9 +333,10 @@ func init() {
 		} else if v, ok := stringFrom(params, "llm_id"); ok {
 			p.ModelID = v
 		}
-		if v, ok := sliceFrom(params, "items"); ok {
-			p.Items = v
-		} else if items, ok := params["items"].([]any); ok && len(items) > 0 {
+		// Check the object-style []any of maps first. sliceFrom would
+		// otherwise match the same []any input and return (empty, true)
+		// for non-string elements, making the object branch unreachable.
+		if items, ok := params["items"].([]any); ok && len(items) > 0 {
 			names := make([]string, 0, len(items))
 			routes := make(map[string]string, len(items))
 			for _, item := range items {
@@ -371,6 +372,8 @@ func init() {
 			if len(routes) > 0 {
 				p.CategoryRoutes = routes
 			}
+		} else if v, ok := sliceFrom(params, "items"); ok {
+			p.Items = v
 		}
 		if v, ok := sliceFrom(params, "categories"); ok {
 			p.Categories = v

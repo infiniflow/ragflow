@@ -343,6 +343,11 @@ func (r *Runner) Run(
 				return
 			}
 			pushErr(out, runErr.Error())
+			// Close the channel with the `done` terminator so the
+			// front-end sees a channel-end sentinel on the error
+			// path too — matches the contract for completed and
+			// waiting-for-user paths above.
+			push(out, RunEvent{Type: "done", Data: "", MessageID: messageID, CreatedAt: nowUnix(), TaskID: taskID, SessionID: sessionID})
 			return
 		}
 
@@ -397,8 +402,19 @@ func safeInvoke(ctx context.Context, cancel chan struct{}, run RunFunc, root map
 		err   error
 	)
 	go func() {
+		// Recover here, inside the goroutine that actually invokes
+		// `run`. A panic from `run` would otherwise crash the process
+		// before any caller could observe it; converting it into a
+		// regular error keeps the SSE contract intact and lets the
+		// runner emit a terminal `done` event.
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("canvas runner PANIC: %v\n%s", rec, debug.Stack())
+				err = fmt.Errorf("canvas runner panic: %v", rec)
+			}
+			close(done)
+		}()
 		state, err = run(ctx, root)
-		close(done)
 	}()
 	select {
 	case <-done:

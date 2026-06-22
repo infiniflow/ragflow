@@ -120,13 +120,11 @@ func (s *SiliconflowModel) ChatWithMessages(modelName string, messages []Message
 		}
 
 		if chatModelConfig.Thinking != nil {
-			thinkingType := "disabled"
-			if *chatModelConfig.Thinking {
-				thinkingType = "enabled"
-			}
-			reqBody["thinking"] = map[string]interface{}{
-				"type": thinkingType,
-			}
+			// SiliconFlow's chat completions API expects a boolean
+			// `enable_thinking` field, not a `thinking: {type: ...}` map
+			// (the latter is the DeepSeek format and is silently ignored
+			// by SiliconFlow, breaking the thinking feature).
+			reqBody["enable_thinking"] = *chatModelConfig.Thinking
 		}
 	}
 

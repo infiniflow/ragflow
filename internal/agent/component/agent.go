@@ -472,9 +472,9 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	// subsequent panic shows whether the agent returned (nil, nil).
 	if msg == nil {
 		log.Printf("DEBUG agent.Invoke: msg is NIL after agentRunner — driver=%q modelID=%q userPrompt_len=%d err=%v", p.Driver, p.ModelID, len(p.UserPrompt), err)
-	} else {
-		log.Printf("DEBUG agent.Invoke: msg OK driver=%q modelID=%q content_len=%d", p.Driver, p.ModelID, len(msg.Content))
+		return nil, fmt.Errorf("component: Agent.Invoke: agent runner returned nil message (driver=%q modelID=%q): %w", p.Driver, p.ModelID, err)
 	}
+	log.Printf("DEBUG agent.Invoke: msg OK driver=%q modelID=%q content_len=%d", p.Driver, p.ModelID, len(msg.Content))
 	content := msg.Content
 	var groundingStatus string
 	if p.Cite {

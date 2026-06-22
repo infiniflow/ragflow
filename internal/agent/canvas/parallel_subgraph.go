@@ -228,9 +228,16 @@ func buildParallelOuterWorkflow(
 			return ctx
 		}
 		itemMap, _ := item.(map[string]any)
+		// cloneCanvasState can fail (e.g. unsupported value in a Sys/Env
+		// field that the JSON round-trip rejects). When it does, fall
+		// back to a fresh per-item state so concurrent workers never
+		// share the same CanvasState — sharing would corrupt Globals
+		// and Outputs across items.
 		localState, cloneErr := cloneCanvasState(parentState)
-		if cloneErr != nil {
-			return ctx
+		if cloneErr != nil || localState == nil {
+			localState = runtime.NewCanvasState(parentState.RunID, parentState.TaskID)
+			localState.Sys = shallowCopyAnyMap(parentState.Sys)
+			localState.Globals = shallowCopyAnyMap(parentState.Globals)
 		}
 		localState.Globals["__item__"] = itemMap["item"]
 		localState.Globals["__index__"] = index
@@ -307,6 +314,20 @@ func cloneCanvasState(src *CanvasState) (*CanvasState, error) {
 		return nil, err
 	}
 	return dst, nil
+}
+
+// shallowCopyAnyMap returns a new map with the same keys/values as src.
+// A nil src yields an empty (non-nil) map so callers can assign into the
+// result without nil checks. Values are shared, not deep-copied.
+func shallowCopyAnyMap(src map[string]any) map[string]any {
+	if src == nil {
+		return map[string]any{}
+	}
+	dst := make(map[string]any, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }
 
 func resolveParallelItemRef(itemOut map[string]any, ref string) any {
