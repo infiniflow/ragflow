@@ -60,6 +60,8 @@ func (a *workflowAgent) GetType() string {
 
 func (a *workflowAgent) Run(ctx context.Context, _ *AgentInput, opts ...RunOption) *AsyncIterator[*AgentEvent] {
 	it, gen := NewAsyncIteratorPair[*AgentEvent]()
+	cc := getCommonOptions(nil, opts...).cancelCtx
+	ctx = withCancelContext(ctx, cc)
 	go func() {
 		defer func() {
 			if r := recover(); r != nil { gen.Send(&AgentEvent{Err: fmt.Errorf("panic: %v\n%s", r, debug.Stack())}) }
@@ -77,6 +79,8 @@ func (a *workflowAgent) Run(ctx context.Context, _ *AgentInput, opts ...RunOptio
 
 func (a *workflowAgent) Resume(ctx context.Context, info *ResumeInfo, opts ...RunOption) *AsyncIterator[*AgentEvent] {
 	it, gen := NewAsyncIteratorPair[*AgentEvent]()
+	cc := getCommonOptions(nil, opts...).cancelCtx
+	ctx = withCancelContext(ctx, cc)
 	go func() {
 		defer func() {
 			if r := recover(); r != nil { gen.Send(&AgentEvent{Err: fmt.Errorf("panic: %v\n%s", r, debug.Stack())}) }
@@ -104,6 +108,9 @@ func (a *workflowAgent) runSeq(ctx context.Context, gen *AsyncGenerator[*AgentEv
 	for i := start; i < len(a.subAgents); i++ {
 		sa := a.subAgents[i]
 		if cc := getCancelContext(ctx); cc != nil && cc.shouldCancel() {
+			if cerr, ok := cc.createAndMarkHandled(); ok {
+				gen.Send(&AgentEvent{Err: cerr}); return nil
+			}
 			gen.Send(cancelTransition(ctx, "Sequential cancel", &workflowState{InterruptIdx: i})); return nil
 		}
 		var si *AsyncIterator[*AgentEvent]
@@ -116,6 +123,17 @@ func (a *workflowAgent) runSeq(ctx context.Context, gen *AsyncGenerator[*AgentEv
 
 		wfCtx = updateRunPathOnly(wfCtx, sa.Name(wfCtx))
 		last := drainEvents(si, gen)
+		if cc := getCancelContext(ctx); cc != nil && cc.shouldCancel() {
+			// If a sibling wrapIterWithCancelCtx already transitioned the
+			// cancel context to stDone (via markDone), createAndMarkHandled
+			// returns ok=false. In that case, still surface the CancelError
+			// so the test consumer sees the cancellation signal — the cancel
+			// already happened, we just need to deliver it.
+			if cerr, ok := cc.createAndMarkHandled(); ok {
+				gen.Send(&AgentEvent{Err: cerr}); return nil
+			}
+			gen.Send(&AgentEvent{Err: cc.createError()}); return nil
+		}
 		if last != nil {
 			if last.Err != nil {
 				gen.Send(last); return nil
@@ -146,6 +164,9 @@ func (a *workflowAgent) runLoop(ctx context.Context, gen *AsyncGenerator[*AgentE
 		for j := startIdx; j < len(a.subAgents); j++ {
 			sa := a.subAgents[j]
 			if cc := getCancelContext(ctx); cc != nil && cc.shouldCancel() {
+				if cerr, ok := cc.createAndMarkHandled(); ok {
+					gen.Send(&AgentEvent{Err: cerr}); return nil
+				}
 				gen.Send(cancelTransition(ctx, "Loop cancel", &workflowLoopState{Iter: i, Idx: j})); return nil
 			}
 			var si *AsyncIterator[*AgentEvent]
@@ -160,6 +181,15 @@ func (a *workflowAgent) runLoop(ctx context.Context, gen *AsyncGenerator[*AgentE
 			var breakEv *AgentEvent
 			_ = breakEv
 			last := drainEvents(si, gen)
+			if cc := getCancelContext(ctx); cc != nil && cc.shouldCancel() {
+				// If a sibling wrapIterWithCancelCtx already transitioned the
+				// cancel context to stDone, createAndMarkHandled returns ok=false.
+				// Still surface a CancelError so the consumer observes the signal.
+				if cerr, ok := cc.createAndMarkHandled(); ok {
+					gen.Send(&AgentEvent{Err: cerr}); return nil
+				}
+				gen.Send(&AgentEvent{Err: cc.createError()}); return nil
+			}
 			if last != nil {
 				if last.Err != nil {
 					gen.Send(last); return nil
@@ -213,6 +243,9 @@ func (a *workflowAgent) runPar(ctx context.Context, gen *AsyncGenerator[*AgentEv
 		}
 	}
 	if cc := getCancelContext(ctx); cc != nil && cc.shouldCancel() {
+		if cerr, ok := cc.createAndMarkHandled(); ok {
+			gen.Send(&AgentEvent{Err: cerr}); return nil
+		}
 		gen.Send(cancelTransition(ctx, "Parallel cancel", &workflowParallelState{})); return nil
 	}
 	for i := range a.subAgents {
@@ -241,6 +274,12 @@ func (a *workflowAgent) runPar(ctx context.Context, gen *AsyncGenerator[*AgentEv
 		}(i, a.subAgents[i])
 	}
 	wg.Wait()
+	if cc := getCancelContext(ctx); cc != nil && cc.shouldCancel() {
+		if cerr, ok := cc.createAndMarkHandled(); ok {
+			gen.Send(&AgentEvent{Err: cerr}); return nil
+		}
+		gen.Send(&AgentEvent{Err: cc.createError()}); return nil
+	}
 	if len(signals) > 0 {
 		subEvts := make(map[int][]*agentEventWrap)
 		for i, cc := range childCtxs {
@@ -270,7 +309,9 @@ func buildPath(ctx context.Context, subs []*flowAgent, idx, iter int) context.Co
 
 func drainEvents(ai *AsyncIterator[*AgentEvent], gen *AsyncGenerator[*AgentEvent]) *AgentEvent {
 	var last *AgentEvent
-	for { ev, ok := ai.Next(); if !ok { break }
+	for {
+		ev, ok := ai.Next()
+		if !ok { break }
 		if ev.Err != nil {
 			// Return error event instead of sending it to gen — caller handles propagation.
 			return ev

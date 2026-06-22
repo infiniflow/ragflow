@@ -956,7 +956,7 @@ type CreateDatasetRequest struct {
 func (s *DatasetService) ListDatasets(id, name string, page, pageSize int, orderby string, desc bool, keywords string, ownerIDs []string, parserID, userID string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
 	id = strings.TrimSpace(id)
 	if id != "" {
-		normalizedID, err := normalizeDatasetUUID1(id)
+		normalizedID, err := normalizeDatasetID(id)
 		if err != nil {
 			return nil, 0, common.CodeDataError, err
 		}
@@ -1287,9 +1287,9 @@ func (s *DatasetService) DeleteDatasets(ids []string, deleteAll bool, tenantID s
 	normalizedIDs := make([]string, 0, len(ids))
 	seenIDs := make(map[string]struct{}, len(ids))
 
-	// Canonicalize ids once so every downstream DAO call sees the same UUID1 hex format.
+	// Canonicalize ids once so every downstream DAO call sees the same 32-char hex format.
 	for _, id := range ids {
-		normalizedID, err := normalizeDatasetUUID1(strings.TrimSpace(id))
+		normalizedID, err := normalizeDatasetID(strings.TrimSpace(id))
 		if err != nil {
 			return nil, common.CodeDataError, err
 		}
@@ -1369,7 +1369,7 @@ func (s *DatasetService) GetDataset(datasetID, userID string) (map[string]interf
 		return nil, common.CodeDataError, errors.New("Lack of \"Dataset ID\"")
 	}
 
-	normalizedID, err := normalizeDatasetUUID1(datasetID)
+	normalizedID, err := normalizeDatasetID(datasetID)
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}
@@ -2157,13 +2157,18 @@ func validateDatasetParserConfigSize(parserConfig map[string]interface{}) error 
 	return nil
 }
 
-func normalizeDatasetUUID1(id string) (string, error) {
+// normalizeDatasetID canonicalizes an id into the 32-char hex form used by
+// the storage layer. The "UUID1" name was a legacy term from when the
+// Python service generated ids with `uuid.uuid1().hex`; the Go port uses
+// `uuid.New()` (v4), so we accept any RFC 4122 version. We only reject the
+// Nil UUID, which is the reserved "no id" sentinel.
+func normalizeDatasetID(id string) (string, error) {
 	parsedUUID, err := uuid.Parse(id)
 	if err != nil {
-		return "", errors.New("Invalid UUID1 format")
+		return "", errors.New("Invalid UUID format")
 	}
-	if parsedUUID.Version() != 1 {
-		return "", errors.New("Must be a UUID1 format")
+	if parsedUUID == (uuid.UUID{}) {
+		return "", errors.New("Invalid UUID format")
 	}
 	return strings.ReplaceAll(parsedUUID.String(), "-", ""), nil
 }
