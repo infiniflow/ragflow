@@ -97,6 +97,10 @@ When searching:
     def check(self):
         self.check_valid_value(self.mode, "Keenable search mode should be in 'pro/realtime'", ["pro", "realtime"])
         self.check_positive_integer(self.top_n, "Top N")
+        # 'realtime' is not available on the keyless public endpoint, so reject
+        # the invalid combination at config time instead of failing at runtime.
+        if self.mode == "realtime" and not (self.api_key or "").strip():
+            raise ValueError("Keenable 'realtime' mode requires an API key")
 
     def get_input_form(self) -> dict[str, dict]:
         return {
@@ -127,14 +131,17 @@ class KeenableSearch(ToolBase, ABC):
         if kwargs.get("site"):
             payload["site"] = kwargs["site"]
 
+        logging.info(f"KeenableSearch: starting search (mode={self._param.mode}, keyed={bool((self._param.api_key or '').strip())})")
         last_e = None
         for _ in range(self._param.max_retries + 1):
             if self.check_if_canceled("KeenableSearch processing"):
+                logging.info("KeenableSearch: cancelled before request")
                 return
 
             try:
                 data = _request("POST", "/v1/search/public", "/v1/search", self._param.api_key, json=payload)
                 if self.check_if_canceled("KeenableSearch processing"):
+                    logging.info("KeenableSearch: cancelled after request")
                     return
 
                 results = (data.get("results") or [])[: self._param.top_n]
@@ -145,7 +152,16 @@ class KeenableSearch(ToolBase, ABC):
                     get_content=lambda r: r.get("description"),
                 )
                 self.set_output("json", results)
+                logging.info(f"KeenableSearch: returned {len(results)} results")
                 return self.output("formalized_content")
+            except ValueError as e:
+                # Config/local errors (e.g. invalid KEENABLE_API_URL) won't be
+                # fixed by retrying, so fail fast instead of sleeping.
+                if self.check_if_canceled("KeenableSearch processing"):
+                    return
+                last_e = e
+                logging.exception(f"Keenable config error: {e}")
+                break
             except Exception as e:
                 if self.check_if_canceled("KeenableSearch processing"):
                     return

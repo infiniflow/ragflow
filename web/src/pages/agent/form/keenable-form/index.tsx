@@ -29,7 +29,7 @@ export const KeenableFormPartialSchema = {
   api_key: z.string().optional(),
   mode: z.string(),
   site: z.string().optional(),
-  top_n: z.string(),
+  top_n: z.coerce.number(),
 };
 
 const FormSchema = z.object({
