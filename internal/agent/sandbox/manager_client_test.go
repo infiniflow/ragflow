@@ -92,6 +92,8 @@ func (managerClientResultKeyProvider) ExecuteCode(context.Context, *SandboxInsta
 		},
 	}, nil
 }
-func (managerClientResultKeyProvider) DestroyInstance(context.Context, *SandboxInstance) error { return nil }
-func (managerClientResultKeyProvider) HealthCheck(context.Context) error                       { return nil }
-func (managerClientResultKeyProvider) SupportedLanguages() []string                            { return []string{"python"} }
+func (managerClientResultKeyProvider) DestroyInstance(context.Context, *SandboxInstance) error {
+	return nil
+}
+func (managerClientResultKeyProvider) HealthCheck(context.Context) error { return nil }
+func (managerClientResultKeyProvider) SupportedLanguages() []string      { return []string{"python"} }

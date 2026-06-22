@@ -18,4 +18,3 @@ func splitCompositeLLMID(s string) (modelName, driver string, hasDriver bool) {
 		return s, "", false
 	}
 }
-

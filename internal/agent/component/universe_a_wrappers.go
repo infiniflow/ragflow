@@ -384,8 +384,8 @@ func (c *exesqlComponent) Stream(_ context.Context, _ map[string]any) (<-chan ma
 // override those defaults so resolved canvas refs win at invocation
 // time, while static DSL-provided literals still flow through.
 type codeExecComponent struct {
-	inner  *agenttool.CodeExecTool
-	params map[string]any
+	inner   *agenttool.CodeExecTool
+	params  map[string]any
 	outputs map[string]any
 }
 
@@ -395,8 +395,8 @@ func newCodeExecComponent(params map[string]any) (Component, error) {
 		cloned[k] = v
 	}
 	return &codeExecComponent{
-		inner:  agenttool.NewCodeExecTool(),
-		params: cloned,
+		inner:   agenttool.NewCodeExecTool(),
+		params:  cloned,
 		outputs: cloneAnyMap(asAnyMap(params["outputs"])),
 	}, nil
 }

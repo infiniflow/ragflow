@@ -90,13 +90,13 @@ func stateWith(t *testing.T, sys map[string]any) context.Context {
 // browserParam without error.
 func TestBrowser_AcceptsPythonSchema(t *testing.T) {
 	_, err := NewBrowserComponent(map[string]any{
-		"llm_id":                   "deepseek-v4-pro@DeepSeek",
-		"prompts":                  "search for AI trends",
-		"max_steps":                30,
-		"headless":                 true,
+		"llm_id":                    "deepseek-v4-pro@DeepSeek",
+		"prompts":                   "search for AI trends",
+		"max_steps":                 30,
+		"headless":                  true,
 		"enable_default_extensions": false,
-		"chromium_sandbox":         false,
-		"persist_session":          true,
+		"chromium_sandbox":          false,
+		"persist_session":           true,
 	})
 	if err != nil {
 		t.Fatalf("NewBrowserComponent: %v", err)
@@ -413,5 +413,3 @@ func TestBrowser_ParamCheck_NegativeMaxSteps(t *testing.T) {
 		t.Errorf("expected max_steps error, got %v", err)
 	}
 }
-
-

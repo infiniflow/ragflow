@@ -306,8 +306,8 @@ func TestBuildUserFillUpResumeOutput_MapResumeUsesMatchingFields(t *testing.T) {
 			"age":  map[string]any{"type": "text"},
 		},
 	}, map[string]any{
-		"name": "alice",
-		"age":  "18",
+		"name":  "alice",
+		"age":   "18",
 		"extra": "ignored",
 	})
 

@@ -334,8 +334,8 @@ func TestExeSQL_UnsupportedDB(t *testing.T) {
 	t.Parallel()
 
 	e := NewExeSQLTool(exesqlConnParams{
-		DBType:   "trino",
-		Host:     "h", Port: 8080, Database: "catalog",
+		DBType: "trino",
+		Host:   "h", Port: 8080, Database: "catalog",
 		Username: "u", Password: "p",
 	})
 	_, err := e.InvokableRun(context.Background(), `{"sql":"SELECT 1"}`)

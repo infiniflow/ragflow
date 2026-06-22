@@ -53,13 +53,13 @@ func TestResetForCanvas_ClearsPerRunState(t *testing.T) {
 func TestResetForCanvas_ZeroesSysGlobals(t *testing.T) {
 	in := map[string]any{
 		"globals": map[string]any{
-			"sys.query":         "hello",
-			"sys.conversation":  7,
-			"sys.score":         0.85,
-			"sys.history":       []any{"a", "b"},
-			"sys.session_meta":  map[string]any{"k": "v"},
-			"sys.unknown_kind":  struct{ X int }{X: 1},
-			"user.preserve_me":  "leave alone",
+			"sys.query":        "hello",
+			"sys.conversation": 7,
+			"sys.score":        0.85,
+			"sys.history":      []any{"a", "b"},
+			"sys.session_meta": map[string]any{"k": "v"},
+			"sys.unknown_kind": struct{ X int }{X: 1},
+			"user.preserve_me": "leave alone",
 			// env.* is reset, not preserved: there is no matching
 			// variables["preserve_me"] declaration, so the helper
 			// falls into the "no declared default" branch and
@@ -119,11 +119,11 @@ func TestResetForCanvas_RestoresEnvFromVariables(t *testing.T) {
 				"type":  "string",
 				"value": "default-val",
 			},
-			"numeric":  map[string]any{"type": "number"},
-			"boolean":  map[string]any{"type": "boolean"},
-			"object":   map[string]any{"type": "object"},
-			"arr":      map[string]any{"type": "array[string]"},
-			"str":      map[string]any{"type": "string"},
+			"numeric": map[string]any{"type": "number"},
+			"boolean": map[string]any{"type": "boolean"},
+			"object":  map[string]any{"type": "object"},
+			"arr":     map[string]any{"type": "array[string]"},
+			"str":     map[string]any{"type": "string"},
 		},
 		"globals": map[string]any{
 			"env.with_value": "stale",

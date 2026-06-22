@@ -69,15 +69,15 @@ const componentNameBrowser = "Browser"
 // v1 does not act on the v1-deferred params; Update accepts them so
 // the v1 fixture loads.
 type browserParam struct {
-	LLMID            string   `json:"llm_id"`
-	ModelID          string   `json:"model_id"` // alias for llm_id
-	Prompts          string   `json:"prompts"`
-	Prompt           string   `json:"prompt"` // alias for prompts
-	MaxSteps         int      `json:"max_steps"`
-	Headless         *bool    `json:"headless"`
-	EnableDefaultExt *bool    `json:"enable_default_extensions"`
-	ChromiumSandbox  *bool    `json:"chromium_sandbox"`
-	PersistSession   *bool    `json:"persist_session"`
+	LLMID            string `json:"llm_id"`
+	ModelID          string `json:"model_id"` // alias for llm_id
+	Prompts          string `json:"prompts"`
+	Prompt           string `json:"prompt"` // alias for prompts
+	MaxSteps         int    `json:"max_steps"`
+	Headless         *bool  `json:"headless"`
+	EnableDefaultExt *bool  `json:"enable_default_extensions"`
+	ChromiumSandbox  *bool  `json:"chromium_sandbox"`
+	PersistSession   *bool  `json:"persist_session"`
 
 	// Go-only fields (kept for backward compat with the existing
 	// test file; not used by the stagehand path).
@@ -176,13 +176,13 @@ func (p *browserParam) Check() error {
 // AsDict returns the param as a plain map (for serialization / debug).
 func (p *browserParam) AsDict() map[string]any {
 	out := map[string]any{
-		"llm_id":                   p.LLMID,
-		"model_id":                 p.LLMID, // alias echoed
-		"prompts":                  p.Prompts,
-		"prompt":                   p.Prompts, // alias echoed
-		"max_steps":                p.MaxSteps,
-		"url":                      p.URL,
-		"timeout":                  p.Timeout,
+		"llm_id":    p.LLMID,
+		"model_id":  p.LLMID, // alias echoed
+		"prompts":   p.Prompts,
+		"prompt":    p.Prompts, // alias echoed
+		"max_steps": p.MaxSteps,
+		"url":       p.URL,
+		"timeout":   p.Timeout,
 	}
 	if p.Headless != nil {
 		out["headless"] = *p.Headless

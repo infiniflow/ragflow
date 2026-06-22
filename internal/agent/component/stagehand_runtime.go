@@ -135,10 +135,10 @@ type StagehandInvoker interface {
 // Default cache parameters. Override via env at process start;
 // DefaultRuntime reads these via envDuration / envInt at init.
 const (
-	defaultStagehandCacheTTL    = 30 * time.Minute
-	defaultStagehandCacheCap    = 64
-	defaultStagehandCacheSweep  = 5 * time.Minute
-	minStagehandCacheSweep      = 30 * time.Second
+	defaultStagehandCacheTTL   = 30 * time.Minute
+	defaultStagehandCacheCap   = 64
+	defaultStagehandCacheSweep = 5 * time.Minute
+	minStagehandCacheSweep     = 30 * time.Second
 )
 
 // DefaultRuntime is the package-level production invoker. Replaced
@@ -395,7 +395,7 @@ func (r *stagehandRuntime) RunTask(ctx context.Context, req RunTaskRequest) (str
 	startResp, err := client.Sessions.Start(ctx, stagehand.SessionStartParams{
 		ModelName: req.ModelName,
 		Browser: stagehand.SessionStartParamsBrowser{
-			Type:         "local",
+			Type:          "local",
 			LaunchOptions: launchOpts,
 		},
 	})
@@ -541,7 +541,7 @@ func (r *stagehandRuntime) RunExtract(ctx context.Context, req RunExtractRequest
 	startResp, err := client.Sessions.Start(ctx, stagehand.SessionStartParams{
 		ModelName: req.ModelName,
 		Browser: stagehand.SessionStartParamsBrowser{
-			Type:         "local",
+			Type:          "local",
 			LaunchOptions: launchOpts,
 		},
 	})

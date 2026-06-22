@@ -83,24 +83,24 @@ type RunEvent struct {
 
 // NodeStartedData is the "data" payload for "node_started" events.
 type NodeStartedData struct {
-	Inputs       interface{} `json:"inputs"`
-	CreatedAt    float64     `json:"created_at"`
-	ComponentID  string      `json:"component_id"`
-	ComponentName string     `json:"component_name"`
-	ComponentType string     `json:"component_type"`
-	Thoughts     string      `json:"thoughts"`
+	Inputs        interface{} `json:"inputs"`
+	CreatedAt     float64     `json:"created_at"`
+	ComponentID   string      `json:"component_id"`
+	ComponentName string      `json:"component_name"`
+	ComponentType string      `json:"component_type"`
+	Thoughts      string      `json:"thoughts"`
 }
 
 // NodeFinishedData is the "data" payload for "node_finished" events.
 type NodeFinishedData struct {
-	Inputs       interface{} `json:"inputs"`
-	Outputs      interface{} `json:"outputs"`
-	ComponentID  string      `json:"component_id"`
-	ComponentName string     `json:"component_name"`
-	ComponentType string     `json:"component_type"`
-	Error        interface{} `json:"error"`
-	ElapsedTime  float64     `json:"elapsed_time"`
-	CreatedAt    float64     `json:"created_at"`
+	Inputs        interface{} `json:"inputs"`
+	Outputs       interface{} `json:"outputs"`
+	ComponentID   string      `json:"component_id"`
+	ComponentName string      `json:"component_name"`
+	ComponentType string      `json:"component_type"`
+	Error         interface{} `json:"error"`
+	ElapsedTime   float64     `json:"elapsed_time"`
+	CreatedAt     float64     `json:"created_at"`
 }
 
 // MessageEvent is the JSON payload for Type=="message" frames.

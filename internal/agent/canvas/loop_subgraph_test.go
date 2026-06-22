@@ -43,13 +43,13 @@ import (
 func TestCollectLoopMembers_UsesGroupedChildren(t *testing.T) {
 	c := &Canvas{
 		Components: map[string]CanvasComponent{
-			"Loop:InputUntil1":         {Obj: CanvasComponentObj{ComponentName: "Loop"}, Downstream: []string{"Message:LoopDone"}},
+			"Loop:InputUntil1":          {Obj: CanvasComponentObj{ComponentName: "Loop"}, Downstream: []string{"Message:LoopDone"}},
 			"LoopItem:InputUntil1Start": {Obj: CanvasComponentObj{ComponentName: "LoopItem"}},
-			"UserFillUp:LoopInput":     {Obj: CanvasComponentObj{ComponentName: "UserFillUp"}},
-			"Switch:LoopCheck":         {Obj: CanvasComponentObj{ComponentName: "Switch"}},
-			"ExitLoop:LoopExit":        {Obj: CanvasComponentObj{ComponentName: "ExitLoop"}},
-			"Message:LoopContinue":     {Obj: CanvasComponentObj{ComponentName: "Message"}},
-			"Message:LoopDone":         {Obj: CanvasComponentObj{ComponentName: "Message"}},
+			"UserFillUp:LoopInput":      {Obj: CanvasComponentObj{ComponentName: "UserFillUp"}},
+			"Switch:LoopCheck":          {Obj: CanvasComponentObj{ComponentName: "Switch"}},
+			"ExitLoop:LoopExit":         {Obj: CanvasComponentObj{ComponentName: "ExitLoop"}},
+			"Message:LoopContinue":      {Obj: CanvasComponentObj{ComponentName: "Message"}},
+			"Message:LoopDone":          {Obj: CanvasComponentObj{ComponentName: "Message"}},
 		},
 		NodeParents: map[string]string{
 			"LoopItem:InputUntil1Start": "Loop:InputUntil1",
