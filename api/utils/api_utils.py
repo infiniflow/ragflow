@@ -254,7 +254,11 @@ def build_error_result(code=RetCode.FORBIDDEN, message="success"):
     response = {"code": code, "message": message}
     response = _safe_jsonify(response)
     if hasattr(response, "status_code"):
-        response.status_code = code
+        try:
+            http_status = int(code)
+        except (TypeError, ValueError):
+            http_status = 400
+        response.status_code = http_status if 200 <= http_status <= 599 else 400
     return response
 
 
