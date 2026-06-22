@@ -736,6 +736,10 @@ func (s *DocumentService) BatchUpdateDocumentStatus(userID, datasetID, status st
 	if err != nil {
 		return nil, common.CodeDataError, fmt.Errorf("You don't own the dataset.")
 	}
+	statusInt, convErr := strconv.Atoi(status)
+	if convErr != nil {
+		return nil, common.CodeArgumentError, fmt.Errorf("invalid status: %s", status)
+	}
 
 	result := make(map[string]interface{}, len(documentIDs))
 	hasError := false
@@ -761,15 +765,19 @@ func (s *DocumentService) BatchUpdateDocumentStatus(userID, datasetID, status st
 			result[docID] = map[string]string{"status": status}
 			continue
 		}
+		previousStatus := interface{}(nil)
+		if doc.Status != nil {
+			previousStatus = *doc.Status
+		}
 		if err := s.documentDAO.UpdateByID(docID, map[string]interface{}{"status": status}); err != nil {
 			result[docID] = map[string]string{"error": "Database error (Document update)!"}
 			hasError = true
 			continue
 		}
 
-		statusInt, _ := strconv.Atoi(status)
 		if doc.ChunkNum > 0 {
 			if s.docEngine == nil {
+				_ = s.documentDAO.UpdateByID(docID, map[string]interface{}{"status": previousStatus})
 				result[docID] = map[string]string{"error": "Document store update failed: document engine not initialized"}
 				hasError = true
 				continue
@@ -782,6 +790,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(userID, datasetID, status st
 				doc.KbID,
 			)
 			if err != nil {
+				_ = s.documentDAO.UpdateByID(docID, map[string]interface{}{"status": previousStatus})
 				msg := err.Error()
 				if strings.Contains(msg, "3022") {
 					result[docID] = map[string]string{"error": "Document store table missing."}
