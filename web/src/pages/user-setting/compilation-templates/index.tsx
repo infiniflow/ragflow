@@ -2,6 +2,7 @@ import { CardContainer } from '@/components/card-container';
 import { Button } from '@/components/ui/button';
 import { SearchInput } from '@/components/ui/input';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import {
   useDeleteCompilationTemplate,
   useFetchCompilationTemplatesByPage,
@@ -26,6 +27,7 @@ export default function CompilationTemplates() {
   } = useFetchCompilationTemplatesByPage();
 
   const { deleteTemplate } = useDeleteCompilationTemplate();
+  const { navigateToCompilationTemplate } = useNavigatePage();
 
   const handlePageChange = useCallback(
     (page: number, pageSize?: number) => {
@@ -35,12 +37,15 @@ export default function CompilationTemplates() {
   );
 
   const handleAdd = useCallback(() => {
-    // TODO: integrate with add-template modal
-  }, []);
+    navigateToCompilationTemplate('create')();
+  }, [navigateToCompilationTemplate]);
 
-  const handleEdit = useCallback(() => {
-    // TODO: integrate with edit-template modal
-  }, []);
+  const handleEdit = useCallback(
+    (id: string) => {
+      navigateToCompilationTemplate(id)();
+    },
+    [navigateToCompilationTemplate],
+  );
 
   const handleDelete = useCallback(
     async (id: string) => {

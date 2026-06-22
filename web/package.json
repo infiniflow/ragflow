@@ -8,6 +8,8 @@
     "build": "vite build --mode production",
     "build-storybook": "storybook build",
     "dev": "vite --host",
+    "format": "prettier --write \"src/**/*.{ts,tsx}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx}\"",
     "lint": "eslint src --ext .ts,.tsx --report-unused-disable-directives",
     "prepare": "cd .. && husky web/.husky",
     "preview": "vite preview",

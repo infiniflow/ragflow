@@ -201,6 +201,21 @@ export const useNavigatePage = () => {
     navigate(`${Routes.UserSetting}${Routes.Model}`);
   }, [navigate]);
 
+  const navigateToCompilationTemplates = useCallback(() => {
+    navigate(`${Routes.UserSetting}${Routes.CompilationTemplates}`);
+  }, [navigate]);
+
+  const navigateToCompilationTemplate = useCallback(
+    (id?: string) => () => {
+      if (id) {
+        navigate(Routes.CompilationTemplate.replace(':id', id));
+      } else {
+        navigateToCompilationTemplates();
+      }
+    },
+    [navigate, navigateToCompilationTemplates],
+  );
+
   return {
     navigateToDatasetList,
     navigateToDataset,
@@ -228,5 +243,7 @@ export const useNavigatePage = () => {
     navigateToMemory,
     navigateToMemoryList,
     navigateToModelSetting,
+    navigateToCompilationTemplates,
+    navigateToCompilationTemplate,
   };
 };

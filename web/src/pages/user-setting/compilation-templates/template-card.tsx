@@ -11,7 +11,7 @@ import { useTranslation } from 'react-i18next';
 
 type TemplateCardProps = {
   data: ICompilationTemplate;
-  onEdit: () => void;
+  onEdit: (id: string) => void;
   onDelete: (id: string) => void;
 };
 
@@ -20,7 +20,7 @@ export function TemplateCard({ data, onEdit, onDelete }: TemplateCardProps) {
 
   return (
     <Card className="group">
-      <CardContent className="p-4">
+      <CardContent className="p-4 flex flex-col">
         <section className="flex justify-between gap-2">
           <h3 className="text-base font-normal truncate text-text-primary">
             {data.name}
@@ -31,7 +31,7 @@ export function TemplateCard({ data, onEdit, onDelete }: TemplateCardProps) {
               size="icon-xs"
               variant="ghost"
               aria-label={t('common.edit')}
-              onClick={() => onEdit()}
+              onClick={() => onEdit(data.id)}
             >
               <Pencil className="size-3.5" />
             </Button>
@@ -55,12 +55,12 @@ export function TemplateCard({ data, onEdit, onDelete }: TemplateCardProps) {
           </div>
         </section>
 
-        <p className="mt-1 text-sm text-text-secondary line-clamp-1">
+        <p className="mt-1 text-sm text-text-secondary line-clamp-1 flex-1">
           {data.description}
         </p>
 
-        <Badge variant="secondary" className="mt-3">
-          {data.kind}
+        <Badge variant="secondary" className="mt-3 w-fit">
+          {t(`knowledgeCompilation.kind.${data.kind}`)}
         </Badge>
       </CardContent>
     </Card>
