@@ -125,6 +125,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListInstanceModels(cmd)
 	case "admin_show_model":
 		return c.CommonShowModel(cmd)
+	case "admin_list_providers":
+		return c.AdminListProvidersCommand(cmd)
 	case "admin_list_all_models":
 		return c.ListAllModels(cmd)
 	case "list_admin_tasks":

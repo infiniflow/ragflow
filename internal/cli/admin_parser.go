@@ -81,7 +81,7 @@ func (p *Parser) parseAdminPingServer() (*Command, error) {
 // endregion
 
 // region LIST commands
-func (p *Parser) parseAdminListCommand() (*Command, error) {
+func (p *Parser) parseAdminListCommands() (*Command, error) {
 	p.nextToken() // consume LIST
 
 	switch p.curToken.Type {
@@ -103,6 +103,8 @@ func (p *Parser) parseAdminListCommand() (*Command, error) {
 		return p.parseListAvailableProviders()
 	case TokenProvider:
 		return p.parseAdminListProviderModels()
+	case TokenProviders:
+		return p.parseAdminListProviders()
 	case TokenModels:
 		return p.parseAdminListModels()
 	case TokenUser:
@@ -261,6 +263,16 @@ func (p *Parser) parseAdminListProviderModels() (*Command, error) {
 		p.nextToken()
 	}
 	return cmd, nil
+}
+
+// parseAdminListProviders parses LIST PROVIDERS command
+func (p *Parser) parseAdminListProviders() (*Command, error) {
+	p.nextToken() // consume PROVIDERS
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return NewCommand("admin_list_providers"), nil
 }
 
 func (p *Parser) parseAdminListModels() (*Command, error) {

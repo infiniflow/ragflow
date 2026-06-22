@@ -163,6 +163,27 @@ func (s *Service) ResetRoleDefaultModel(roleName, modelType string) (map[string]
 	}, nil
 }
 
+// ListModelProviders list model providers
+func (s *Service) ListModelProviders() ([]map[string]interface{}, error) {
+	return []map[string]interface{}{
+		{
+			"command": "list_model_providers",
+			"error":   "'list model providers' is implemented in enterprise edition",
+		},
+	}, nil
+}
+
+// AddModelProvider Add model provider
+func (s *Service) AddModelProvider(userID, providerName string) (map[string]interface{}, error) {
+
+	return map[string]interface{}{
+		"command":     "add_model_provider",
+		"user_id":     userID,
+		"provider_id": providerName,
+		"error":       "'add model provider' is implemented in enterprise edition",
+	}, nil
+}
+
 // ListAllModels list all models
 func (s *Service) ListAllModels() ([]map[string]interface{}, error) {
 	return []map[string]interface{}{

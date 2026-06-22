@@ -291,7 +291,7 @@ func (h *Handler) ResetRoleDefaultModel(c *gin.Context) {
 	success(c, result, "Role default model set successfully")
 }
 
-func (h *Handler) ListProviders(c *gin.Context) {
+func (h *Handler) ListModelProviders(c *gin.Context) {
 
 	keywords := ""
 	if queryKeywords := c.Query("available"); queryKeywords != "" {
@@ -300,23 +300,40 @@ func (h *Handler) ListProviders(c *gin.Context) {
 
 	// convert keywords to small case
 	keywords = strings.ToLower(keywords)
-	if keywords == "true" {
-		// list pool providers
-		providers, err := dao.GetModelProviderManager().ListProviders()
-		if err != nil {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeNotFound,
-				"message": err.Error(),
-			})
-			return
-		}
 
-		c.JSON(http.StatusOK, gin.H{
-			"code":    0,
-			"message": "success",
-			"data":    providers,
-		})
+	result, err := h.service.ListModelProviders()
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
 	}
+
+	success(c, result, "List model providers successfully")
+}
+
+type AddProviderRequest struct {
+	ProviderName string `json:"provider_name" binding:"required"`
+}
+
+func (h *Handler) AddModelProvider(c *gin.Context) {
+	var req AddProviderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+			"data":    false,
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	result, err := h.service.AddModelProvider(req.ProviderName, userID)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Model provider added successfully")
 }
 
 func (h *Handler) ShowProvider(c *gin.Context) {
