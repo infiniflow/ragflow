@@ -125,15 +125,15 @@ func (h *Handler) DropRole(c *gin.Context) {
 	success(c, role, "")
 }
 
-// GetRolePermission handle get role permission
-func (h *Handler) GetRolePermission(c *gin.Context) {
+// ShowRolePermission handle get role permission
+func (h *Handler) ShowRolePermission(c *gin.Context) {
 	roleName := c.Param("role_name")
 	if roleName == "" {
 		errorResponse(c, "Role name is required", 400)
 		return
 	}
 
-	permissions, err := h.service.GetRolePermission(roleName)
+	permissions, err := h.service.ShowRolePermission(roleName)
 	if err != nil {
 		errorResponse(c, err.Error(), 500)
 		return
@@ -1269,8 +1269,8 @@ func (h *Handler) PurgeUsersData(c *gin.Context) {
 	success(c, result, "")
 }
 
-// CreateUserAPIKey handle create tenant API key
-func (h *Handler) CreateUserAPIKey(c *gin.Context) {
+// GenerateUserAPIKey handle create tenant API key
+func (h *Handler) GenerateUserAPIKey(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeEmail(encodedUsername)
 	if err != nil {
@@ -1278,7 +1278,7 @@ func (h *Handler) CreateUserAPIKey(c *gin.Context) {
 		return
 	}
 
-	apiKey, err := h.service.CreateUserAPIKey(username)
+	apiKey, err := h.service.GenerateUserAPIKey(username)
 	if err != nil {
 		errorResponse(c, err.Error(), 500)
 		return

@@ -622,6 +622,23 @@ func (h *Handler) ShutdownService(c *gin.Context) {
 	success(c, result, "")
 }
 
+// StartService handle start service
+func (h *Handler) StartService(c *gin.Context) {
+	serviceID := c.Param("service_id")
+	if serviceID == "" {
+		errorResponse(c, "Service ID is required", 400)
+		return
+	}
+
+	result, err := h.service.StartService(serviceID)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "")
+}
+
 // RestartService handle restart service
 func (h *Handler) RestartService(c *gin.Context) {
 	serviceID := c.Param("service_id")

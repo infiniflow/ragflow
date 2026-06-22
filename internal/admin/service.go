@@ -534,12 +534,13 @@ func (s *Service) GetUserDetails(username string) (map[string]interface{}, error
 	}
 
 	return map[string]interface{}{
-		"id":          user.ID,
-		"email":       user.Email,
-		"nickname":    user.Nickname,
-		"is_active":   user.IsActive,
-		"create_time": user.CreateTime,
-		"update_time": user.UpdateTime,
+		"id":           user.ID,
+		"email":        user.Email,
+		"nickname":     user.Nickname,
+		"is_active":    user.IsActive,
+		"is_superuser": user.IsSuperuser,
+		"create_time":  user.CreateTime,
+		"update_time":  user.UpdateTime,
 	}, nil
 }
 
@@ -1412,17 +1413,27 @@ func (s *Service) checkTaskExecutorAlive(name string) (map[string]interface{}, e
 func (s *Service) ShutdownService(serviceID string) (map[string]interface{}, error) {
 	// TODO: Implement with proper service manager
 	return map[string]interface{}{
+		"command":    "shutdown service",
 		"service_id": serviceID,
-		"status":     "shutdown",
+		"error":      "shutdown service not implemented",
+	}, nil
+}
+
+// StartService start service
+func (s *Service) StartService(serviceID string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":    "start service",
+		"service_id": serviceID,
+		"error":      "command 'start service' isn't implemented",
 	}, nil
 }
 
 // RestartService restart service
 func (s *Service) RestartService(serviceID string) (map[string]interface{}, error) {
-	// TODO: Implement with proper service manager
 	return map[string]interface{}{
+		"command":    "restart service",
 		"service_id": serviceID,
-		"status":     "restarted",
+		"error":      "command 'restart service' isn't implemented",
 	}, nil
 }
 
