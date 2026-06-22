@@ -225,7 +225,14 @@ jobs:
           tar xzf "${simde_archive}" -C "${simde_dir}" --strip-components=1
 
           test -f "${simde_dir}/simde/x86/sse4.1.h"
-          echo "SIMDE_INCLUDE_DIR=$(cygpath -m "${simde_dir}")" >> "${github_env}"
+
+          # Install SIMDe headers into the MSYS2 toolchain include directory.
+          # CMake/Ninja invokes clang-scan-deps as a Windows-native executable;
+          # a POSIX-style include path like /c/a/_temp/simde may not be resolved
+          # there, so keep the headers under ${MINGW_PREFIX}/include instead.
+          rm -rf "${MINGW_PREFIX}/include/simde"
+          cp -R "${simde_dir}/simde" "${MINGW_PREFIX}/include/simde"
+          test -f "${MINGW_PREFIX}/include/simde/x86/sse4.1.h"
 
       - name: Configure Windows C compiler
         if: runner.os == 'Windows'
@@ -381,15 +388,14 @@ jobs:
           test -f "${cc_path}"
           test -f "${cxx_path}"
 
-          simde_include_dir="$(cygpath -u "${SIMDE_INCLUDE_DIR}")"
-          test -f "${simde_include_dir}/simde/x86/sse4.1.h"
+          test -f "${MINGW_PREFIX}/include/simde/x86/sse4.1.h"
 
           cmake -S internal/cpp -B internal/cpp/cmake-build-release -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER="$(cygpath -m "${cc_path}")" \
             -DCMAKE_CXX_COMPILER="$(cygpath -m "${cxx_path}")" \
-            -DCMAKE_C_FLAGS="-I${MINGW_PREFIX}/include -I${simde_include_dir}" \
-            -DCMAKE_CXX_FLAGS="-I${MINGW_PREFIX}/include -I${simde_include_dir}"
+            -DCMAKE_C_FLAGS="-I${MINGW_PREFIX}/include" \
+            -DCMAKE_CXX_FLAGS="-I${MINGW_PREFIX}/include"
 
           cmake --build internal/cpp/cmake-build-release --target rag_tokenizer_c_api --parallel
 
