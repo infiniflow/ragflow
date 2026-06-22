@@ -27,6 +27,7 @@ type IToolIcon =
   | Operator.PubMed
   | Operator.TavilyExtract
   | Operator.TavilySearch
+  | Operator.KeenableSearch
   | Operator.Wikipedia
   | Operator.YahooFinance
   | Operator.WenCai
