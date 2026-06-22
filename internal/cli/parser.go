@@ -108,19 +108,15 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 		return p.parseAdminUnsetCommand()
 	case TokenReset:
 		return p.parseAdminResetCommand()
-	case TokenGenerate:
-		return p.parseAdminGenerateCommand()
 	case TokenImport:
 		return p.parseAdminImportCommand()
-	case TokenRetrieve:
-		return p.parseAdminRetrieveCommand()
 	case TokenParse:
 		return p.parseAdminParseCommand()
 	case TokenBenchmark:
 		return p.parseAdminBenchmarkCommand()
 
-	case TokenStartup:
-		return p.parseAdminStartupCommand()
+	case TokenStart:
+		return p.parseAdminStartService()
 	case TokenShutdown:
 		return p.parseAdminShutdownCommand()
 	case TokenRestart:
@@ -189,8 +185,6 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseBenchmarkCommand()
 	case TokenRegister:
 		return p.parseRegisterCommand()
-	case TokenStartup:
-		return p.parseStartupCommand()
 	case TokenShutdown:
 		return p.parseShutdownCommand()
 	case TokenRestart:

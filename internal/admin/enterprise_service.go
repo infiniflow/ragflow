@@ -832,8 +832,8 @@ func (s *Service) PurgeUsersData(preview bool, days int, userPlan *string, userA
 	return result, nil
 }
 
-// CreateUserAPIKey create tenant API key for tenant
-func (s *Service) CreateUserAPIKey(username string) (map[string]interface{}, error) {
+// GenerateUserAPIKey create tenant API key for tenant
+func (s *Service) GenerateUserAPIKey(username string) (map[string]interface{}, error) {
 
 	user, err := s.userDAO.GetByEmail(username)
 	if err != nil {

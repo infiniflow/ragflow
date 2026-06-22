@@ -321,13 +321,13 @@ func (p *Parser) parseAdminShowCommand() (*Command, error) {
 
 func (p *Parser) parseAdminShowService() (*Command, error) {
 	p.nextToken() // consume SERVICE
-	serviceNum, err := p.parseNumber()
+	serviceIndex, err := p.parseNumber()
 	if err != nil {
 		return nil, err
 	}
 
 	cmd := NewCommand("admin_show_service")
-	cmd.Params["number"] = serviceNum
+	cmd.Params["service_index"] = serviceIndex
 
 	p.nextToken()
 	// Semicolon is optional
@@ -1388,8 +1388,6 @@ func (p *Parser) parseAdminSetCommand() (*Command, error) {
 		return p.parseAdminSetVariable()
 	case TokenDefault:
 		return p.parseAdminSetDefault()
-	case TokenToken:
-		return p.parseAdminSetToken()
 	default:
 		return nil, fmt.Errorf("unknown SET target: %s", p.curToken.Value)
 	}
@@ -1555,37 +1553,6 @@ func (p *Parser) parseAdminResetCommand() (*Command, error) {
 
 	cmd := NewCommand("reset_default_model")
 	cmd.Params["model_type"] = modelType
-
-	p.nextToken()
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseAdminGenerateCommand() (*Command, error) {
-	p.nextToken() // consume GENERATE
-	if p.curToken.Type != TokenToken {
-		return nil, fmt.Errorf("expected TOKEN")
-	}
-	p.nextToken()
-	if p.curToken.Type != TokenFor {
-		return nil, fmt.Errorf("expected FOR")
-	}
-	p.nextToken()
-	if p.curToken.Type != TokenUser {
-		return nil, fmt.Errorf("expected USER")
-	}
-	p.nextToken()
-
-	userName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("generate_token")
-	cmd.Params["user_name"] = userName
 
 	p.nextToken()
 	// Semicolon is optional
@@ -1792,20 +1759,21 @@ func (p *Parser) parseAdminUserStatement() (*Command, error) {
 	}
 }
 
-func (p *Parser) parseAdminStartupCommand() (*Command, error) {
-	p.nextToken() // consume STARTUP
+func (p *Parser) parseAdminStartService() (*Command, error) {
+	p.nextToken() // consume START
+
 	if p.curToken.Type != TokenService {
 		return nil, fmt.Errorf("expected SERVICE")
 	}
 	p.nextToken()
 
-	serviceNum, err := p.parseNumber()
+	serviceIndex, err := p.parseNumber()
 	if err != nil {
 		return nil, err
 	}
 
-	cmd := NewCommand("startup_service")
-	cmd.Params["number"] = serviceNum
+	cmd := NewCommand("admin_start_service")
+	cmd.Params["service_index"] = serviceIndex
 
 	p.nextToken()
 	// Semicolon is optional
@@ -1831,13 +1799,13 @@ func (p *Parser) parseAdminShutdownCommand() (*Command, error) {
 func (p *Parser) parseAdminShutdownServiceCommand() (*Command, error) {
 	p.nextToken() // consume SERVICE
 
-	serviceNum, err := p.parseNumber()
+	serviceIndex, err := p.parseNumber()
 	if err != nil {
 		return nil, err
 	}
 
 	cmd := NewCommand("shutdown_service")
-	cmd.Params["number"] = serviceNum
+	cmd.Params["service_index"] = serviceIndex
 
 	p.nextToken()
 	// Semicolon is optional
@@ -1873,13 +1841,13 @@ func (p *Parser) parseAdminRestartCommand() (*Command, error) {
 	}
 	p.nextToken()
 
-	serviceNum, err := p.parseNumber()
+	serviceIndex, err := p.parseNumber()
 	if err != nil {
 		return nil, err
 	}
 
 	cmd := NewCommand("restart_service")
-	cmd.Params["number"] = serviceNum
+	cmd.Params["service_index"] = serviceIndex
 
 	p.nextToken()
 	// Semicolon is optional

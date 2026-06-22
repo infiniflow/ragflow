@@ -697,26 +697,47 @@ func (c *CLI) AdminListServicesCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+// AdminStartServiceCommand starts a service (admin mode only)
+func (c *CLI) AdminStartServiceCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	serviceIndex := cmd.Params["service_index"].(int)
+
+	endPoint := fmt.Sprintf("/admin/services/%d", serviceIndex)
+
+	resp, err := c.AdminServerClient.Request("POST", endPoint, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start service: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to start service: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("start service failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
 // AdminShowService show service (admin mode only)
 func (c *CLI) AdminShowService(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	serviceIndex := cmd.Params["number"].(int)
-
-	// Check for benchmark iterations
-	iterations := 1
-	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
-		iterations = val
-	}
+	serviceIndex := cmd.Params["service_index"].(int)
 
 	endPoint := fmt.Sprintf("/admin/services/%d", serviceIndex)
-
-	if iterations > 1 {
-		// Benchmark mode - return raw result for benchmark stats
-		return c.AdminServerClient.RequestWithIterations("GET", endPoint, "admin", nil, nil, iterations)
-	}
 
 	resp, err := c.AdminServerClient.Request("GET", endPoint, "admin", nil, nil)
 	if err != nil {
@@ -1160,46 +1181,6 @@ func (c *CLI) ShowUserPermission(cmd *Command) (ResponseIf, error) {
 	for _, item := range result.Data {
 		delete(item, "extra")
 	}
-
-	result.Duration = resp.Duration
-	return &result, nil
-}
-
-// GenerateAdminToken generates an API token for a user (admin mode only)
-func (c *CLI) GenerateAdminToken(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	userName, ok := cmd.Params["user_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("user_name not provided")
-	}
-
-	encodedUserName := common.EncodeEmail(userName)
-	apiURL := fmt.Sprintf("/admin/users/%s/keys", encodedUserName)
-
-	resp, err := c.AdminServerClient.Request("POST", apiURL, "admin", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate token: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to generate token: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("generate token failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	delete(result.Data, "update_date")
-	delete(result.Data, "update_time")
-	delete(result.Data, "create_time")
 
 	result.Duration = resp.Duration
 	return &result, nil

@@ -1269,8 +1269,8 @@ func (h *Handler) PurgeUsersData(c *gin.Context) {
 	success(c, result, "")
 }
 
-// CreateUserAPIKey handle create tenant API key
-func (h *Handler) CreateUserAPIKey(c *gin.Context) {
+// GenerateUserAPIKey handle create tenant API key
+func (h *Handler) GenerateUserAPIKey(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeEmail(encodedUsername)
 	if err != nil {
@@ -1278,7 +1278,7 @@ func (h *Handler) CreateUserAPIKey(c *gin.Context) {
 		return
 	}
 
-	apiKey, err := h.service.CreateUserAPIKey(username)
+	apiKey, err := h.service.GenerateUserAPIKey(username)
 	if err != nil {
 		errorResponse(c, err.Error(), 500)
 		return

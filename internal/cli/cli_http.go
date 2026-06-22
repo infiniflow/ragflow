@@ -47,6 +47,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.RunBenchmark(cmd)
 	case "admin_list_services":
 		return c.AdminListServicesCommand(cmd)
+	case "admin_start_service":
+		return c.AdminStartServiceCommand(cmd)
 	case "admin_grant_user_admin":
 		return c.AdminGrantUserAdminCommand(cmd)
 	case "admin_revoke_user_admin":
@@ -101,8 +103,6 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminListResourcesCommand(cmd)
 	case "admin_list_roles_command":
 		return c.AdminListRolesCommand(cmd)
-	case "generate_token":
-		return c.GenerateAdminToken(cmd)
 	case "admin_list_available_providers":
 		return c.CommonAvailableProvidersCommand(cmd)
 	case "admin_show_provider":
