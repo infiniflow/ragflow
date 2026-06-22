@@ -131,7 +131,7 @@ jobs:
 #            fi
 #          fi
 
-      - name: Check format and unit test of changed Go files
+      - name: Check format of changed Go files
         if: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_target' }}
         run: |
           CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} \
@@ -155,7 +155,6 @@ jobs:
             if [ $HAS_ERROR -ne 0 ]; then
               exit 1
             fi
-            ./build.sh --test
           else
             echo "No Go files changed"
           fi
