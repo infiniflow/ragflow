@@ -1089,7 +1089,7 @@ func (p *Parser) parseAdminAlterUser() (*Command, error) {
 		cmd.Params["password"] = password
 
 		p.nextToken()
-		// Semicolon is optional for SHOW TOKEN
+		// Semicolon is optional
 		if p.curToken.Type == TokenSemicolon {
 			p.nextToken()
 		}
@@ -1128,18 +1128,47 @@ func (p *Parser) parseAdminAlterUser() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseAdminAlterRole() (*Command, error) {
-	p.nextToken() // consume ROLE
-	roleName, err := p.parseIdentifier()
+func (p *Parser) parseAdminActivateUser() (*Command, error) {
+	p.nextToken() // consume ACTIVE
+
+	userName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-
 	p.nextToken()
+
+	// Accept 'on' or 'off' as identifier
+	status := p.curToken.Value
+	if status != "on" && status != "off" {
+		return nil, fmt.Errorf("expected 'on' or 'off', got %s", p.curToken.Value)
+	}
+	p.nextToken()
+
+	cmd := NewCommand("admin_activate_user")
+	cmd.Params["user_name"] = userName
+	cmd.Params["activate_status"] = status
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminAlterRole() (*Command, error) {
+	p.nextToken() // consume ROLE
+
+	roleName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
 	if p.curToken.Type != TokenSet {
 		return nil, fmt.Errorf("expected SET")
 	}
 	p.nextToken()
+
 	if p.curToken.Type != TokenDescription {
 		return nil, fmt.Errorf("expected DESCRIPTION")
 	}
@@ -1149,13 +1178,13 @@ func (p *Parser) parseAdminAlterRole() (*Command, error) {
 	if err != nil {
 		return nil, err
 	}
+	p.nextToken()
 
-	cmd := NewCommand("alter_role")
+	cmd := NewCommand("admin_alter_role")
 	cmd.Params["role_name"] = roleName
 	cmd.Params["description"] = description
 
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1163,31 +1192,6 @@ func (p *Parser) parseAdminAlterRole() (*Command, error) {
 }
 
 // endregion ALTER commands
-func (p *Parser) parseAdminActivateUser() (*Command, error) {
-	p.nextToken() // consume ACTIVE
-	userName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	p.nextToken()
-	// Accept 'on' or 'off' as identifier
-	status := p.curToken.Value
-	if status != "on" && status != "off" {
-		return nil, fmt.Errorf("expected 'on' or 'off', got %s", p.curToken.Value)
-	}
-
-	cmd := NewCommand("admin_activate_user")
-	cmd.Params["user_name"] = userName
-	cmd.Params["activate_status"] = status
-
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
 
 func (p *Parser) parseAdminGrantCommand() (*Command, error) {
 	p.nextToken() // consume GRANT

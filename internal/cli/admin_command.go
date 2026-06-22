@@ -252,7 +252,7 @@ func (c *CLI) AdminAlterRole(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to alter role: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result SimpleResponse
+	var result CommonDataResponse
 
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("alter role failed: invalid JSON (%w)", err)
