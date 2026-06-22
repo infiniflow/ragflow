@@ -98,6 +98,14 @@ func (f *fakeSessionStore) UpdateByID(id string, updates map[string]interface{})
 			if str, ok := v.(string); ok {
 				s.Name = &str
 			}
+		case "message":
+			if raw, ok := v.([]byte); ok {
+				s.Message = append(json.RawMessage(nil), raw...)
+			}
+		case "reference":
+			if raw, ok := v.([]byte); ok {
+				s.Reference = append(json.RawMessage(nil), raw...)
+			}
 		}
 	}
 	return nil
@@ -589,11 +597,13 @@ func TestUpdateSession_ValidationErrors(t *testing.T) {
 		name    string
 		req     map[string]interface{}
 		message string
+		code    common.ErrorCode
 	}{
-		{name: "message", req: map[string]interface{}{"message": []interface{}{}}, message: "`messages` cannot be changed."},
-		{name: "messages", req: map[string]interface{}{"messages": []interface{}{}}, message: "`messages` cannot be changed."},
-		{name: "reference", req: map[string]interface{}{"reference": []interface{}{}}, message: "`reference` cannot be changed."},
-		{name: "empty name", req: map[string]interface{}{"name": "   "}, message: "`name` can not be empty."},
+		{name: "empty body", req: map[string]interface{}{}, message: "Request body cannot be empty", code: common.CodeArgumentError},
+		{name: "message", req: map[string]interface{}{"message": []interface{}{}}, message: "`messages` cannot be changed.", code: common.CodeDataError},
+		{name: "messages", req: map[string]interface{}{"messages": []interface{}{}}, message: "`messages` cannot be changed.", code: common.CodeDataError},
+		{name: "reference", req: map[string]interface{}{"reference": []interface{}{}}, message: "`reference` cannot be changed.", code: common.CodeDataError},
+		{name: "empty name", req: map[string]interface{}{"name": "   "}, message: "`name` can not be empty.", code: common.CodeDataError},
 	}
 
 	for _, tc := range cases {
@@ -602,7 +612,7 @@ func TestUpdateSession_ValidationErrors(t *testing.T) {
 			if err == nil || err.Error() != tc.message {
 				t.Fatalf("err=%v", err)
 			}
-			if code != common.CodeDataError {
+			if code != tc.code {
 				t.Fatalf("code=%v", code)
 			}
 		})
@@ -636,7 +646,7 @@ func TestCompletion_Success(t *testing.T) {
 	store := newFakeSessionStore()
 	session := &entity.ChatSession{
 		ID: "session-1", DialogID: "dialog-1",
-		Message:   json.RawMessage(`[]`),
+		Message:   json.RawMessage(`[{"role":"assistant","content":"Welcome!"}]`),
 		Reference: json.RawMessage(`[]`),
 	}
 	store.sessions["session-1"] = session
@@ -667,6 +677,20 @@ func TestCompletion_Success(t *testing.T) {
 	ans, _ := result["answer"].(string)
 	if ans != "Hello world" {
 		t.Fatalf("expected answer 'Hello world', got %q", ans)
+	}
+
+	got := parseMessages(store.sessions["session-1"].Message)
+	if len(got) != 3 {
+		t.Fatalf("stored messages=%#v", got)
+	}
+	if got[0]["role"] != "assistant" || got[0]["content"] != "Welcome!" {
+		t.Fatalf("stored prologue=%#v", got[0])
+	}
+	if got[1]["role"] != "user" || got[1]["content"] != "hi" {
+		t.Fatalf("stored user message=%#v", got[1])
+	}
+	if got[2]["role"] != "assistant" || got[2]["content"] != "Hello world" || got[2]["id"] != "msg-1" {
+		t.Fatalf("stored assistant message=%#v", got[2])
 	}
 }
 
@@ -787,7 +811,7 @@ func TestCompletionStream_Success(t *testing.T) {
 	store := newFakeSessionStore()
 	store.sessions["session-1"] = &entity.ChatSession{
 		ID: "session-1", DialogID: "dialog-1",
-		Message:   json.RawMessage(`[]`),
+		Message:   json.RawMessage(`{"messages":[{"role":"assistant","content":"Welcome!"}]}`),
 		Reference: json.RawMessage(`[]`),
 	}
 	store.dialogs["dialog-1"] = &entity.Chat{
@@ -831,6 +855,53 @@ func TestCompletionStream_Success(t *testing.T) {
 	}
 	if !finalFound {
 		t.Fatal("expected final=true signal in stream")
+	}
+
+	got := parseMessages(store.sessions["session-1"].Message)
+	if len(got) != 3 {
+		t.Fatalf("stored messages=%#v", got)
+	}
+	if got[0]["role"] != "assistant" || got[0]["content"] != "Welcome!" {
+		t.Fatalf("stored prologue=%#v", got[0])
+	}
+	if got[1]["role"] != "user" || got[1]["content"] != "hi" {
+		t.Fatalf("stored user message=%#v", got[1])
+	}
+	if got[2]["role"] != "assistant" || got[2]["content"] != "stream answer" || got[2]["id"] != "msg-1" {
+		t.Fatalf("stored assistant message=%#v", got[2])
+	}
+}
+
+func TestStructureAnswerWithConv_ParsesArrayMessages(t *testing.T) {
+	session := &entity.ChatSession{
+		ID:      "session-1",
+		Message: json.RawMessage(`[{"role":"assistant","content":"Welcome!"}]`),
+	}
+	svc := &ChatSessionService{}
+
+	ans := svc.structureAnswerWithConv(session, map[string]interface{}{
+		"answer":    "Final answer",
+		"reference": map[string]interface{}{"chunks": []interface{}{}},
+		"final":     true,
+	}, "msg-1", "session-1", []interface{}{map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}}})
+
+	if ans["id"] != "msg-1" || ans["session_id"] != "session-1" {
+		t.Fatalf("ans=%#v", ans)
+	}
+
+	got := parseMessages(session.Message)
+	if len(got) != 1 {
+		t.Fatalf("stored messages=%#v", got)
+	}
+	if got[0]["role"] != "assistant" || got[0]["content"] != "Final answer" || got[0]["id"] != "msg-1" {
+		t.Fatalf("stored assistant message=%#v", got[0])
+	}
+}
+
+func TestParseMessages_LegacyWrappedObject(t *testing.T) {
+	got := parseMessages(json.RawMessage(`{"messages":[{"role":"assistant","content":"legacy"}]}`))
+	if !reflect.DeepEqual(got, []map[string]interface{}{{"role": "assistant", "content": "legacy"}}) {
+		t.Fatalf("messages=%#v", got)
 	}
 }
 

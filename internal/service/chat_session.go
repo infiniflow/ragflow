@@ -315,6 +315,9 @@ func (s *ChatSessionService) UpdateSession(userID, chatID, sessionID string, req
 	if !ok {
 		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
 	}
+	if len(req) == 0 {
+		return nil, common.CodeArgumentError, errors.New("Request body cannot be empty")
+	}
 
 	if _, err := s.chatSessionDAO.GetBySessionIDAndChatID(sessionID, chatID); err != nil {
 		if isChatSessionNotFound(err) {
@@ -436,11 +439,17 @@ func parseMessages(raw json.RawMessage) []map[string]interface{} {
 	if len(raw) == 0 {
 		return messages
 	}
-	err := json.Unmarshal(raw, &messages)
-	if err != nil {
+	if err := json.Unmarshal(raw, &messages); err == nil {
+		return messages
+	}
+
+	var wrapped struct {
+		Messages []map[string]interface{} `json:"messages"`
+	}
+	if err := json.Unmarshal(raw, &wrapped); err != nil {
 		return nil
 	}
-	return messages
+	return wrapped.Messages
 }
 
 func parseReferenceList(raw json.RawMessage) []interface{} {
@@ -499,7 +508,7 @@ func (s *ChatSessionService) Completion(userID string, conversationID string, me
 		return nil, errors.New("Dialog not found")
 	}
 
-	// Deep copy messages to session
+	// Deep copy messages to session, preserving the stored prologue that handler strips from requests.
 	sessionMessages := s.buildSessionMessages(session, messages)
 
 	// Initialize reference if empty
@@ -551,6 +560,12 @@ func (s *ChatSessionService) Completion(userID string, conversationID string, me
 
 	// Update conversation if not embedded
 	if !isEmbedded {
+		sessionMessages = append(sessionMessages, map[string]interface{}{
+			"role":       "assistant",
+			"content":    answer.String(),
+			"id":         messageID,
+			"created_at": float64(time.Now().Unix()),
+		})
 		s.updateSessionMessages(session, sessionMessages, reference)
 	}
 
@@ -588,7 +603,7 @@ func (s *ChatSessionService) CompletionStream(ctx context.Context, userID string
 		return errors.New("Dialog not found")
 	}
 
-	// Deep copy messages to session
+	// Deep copy messages to session, preserving the stored prologue that handler strips from requests.
 	sessionMessages := s.buildSessionMessages(session, messages)
 
 	// Initialize reference if empty
@@ -653,6 +668,12 @@ func (s *ChatSessionService) CompletionStream(ctx context.Context, userID string
 
 	// Update conversation if not embedded
 	if !isEmbedded {
+		sessionMessages = append(sessionMessages, map[string]interface{}{
+			"role":       "assistant",
+			"content":    fullAnswer.String(),
+			"id":         messageID,
+			"created_at": float64(time.Now().Unix()),
+		})
 		s.updateSessionMessages(session, sessionMessages, reference)
 	}
 
@@ -662,13 +683,32 @@ func (s *ChatSessionService) CompletionStream(ctx context.Context, userID string
 // Helper methods
 
 func (s *ChatSessionService) buildSessionMessages(session *entity.ChatSession, messages []map[string]interface{}) []map[string]interface{} {
-	// Deep copy messages to session
-	sessionMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		sessionMessages[i] = make(map[string]interface{})
-		for k, v := range msg {
-			sessionMessages[i][k] = v
+	prefix := make([]map[string]interface{}, 0, 1)
+	existingMessages := parseMessages(session.Message)
+	if len(existingMessages) > 0 {
+		if role, _ := existingMessages[0]["role"].(string); role == "assistant" {
+			firstIncomingRole := ""
+			if len(messages) > 0 {
+				firstIncomingRole, _ = messages[0]["role"].(string)
+			}
+			if firstIncomingRole != "assistant" {
+				prologue := make(map[string]interface{}, len(existingMessages[0]))
+				for k, v := range existingMessages[0] {
+					prologue[k] = v
+				}
+				prefix = append(prefix, prologue)
+			}
 		}
+	}
+
+	sessionMessages := make([]map[string]interface{}, 0, len(prefix)+len(messages))
+	sessionMessages = append(sessionMessages, prefix...)
+	for _, msg := range messages {
+		cloned := make(map[string]interface{}, len(msg))
+		for k, v := range msg {
+			cloned[k] = v
+		}
+		sessionMessages = append(sessionMessages, cloned)
 	}
 	return sessionMessages
 }
@@ -708,9 +748,7 @@ func (s *ChatSessionService) structureAnswer(session *entity.ChatSession, answer
 
 func (s *ChatSessionService) updateSessionMessages(session *entity.ChatSession, messages []map[string]interface{}, reference []interface{}) {
 	// Update session with new messages and reference
-	messagesJSON, _ := json.Marshal(map[string]interface{}{
-		"messages": messages,
-	})
+	messagesJSON, _ := json.Marshal(messages)
 	referenceJSON, _ := json.Marshal(reference)
 
 	updates := map[string]interface{}{
@@ -718,6 +756,8 @@ func (s *ChatSessionService) updateSessionMessages(session *entity.ChatSession, 
 		"reference": referenceJSON,
 	}
 	s.chatSessionDAO.UpdateByID(session.ID, updates)
+	session.Message = messagesJSON
+	session.Reference = referenceJSON
 }
 
 // structureAnswerWithConv structures the answer with conversation update (like Python's structure_answer)
@@ -748,12 +788,8 @@ func (s *ChatSessionService) structureAnswerWithConv(session *entity.ChatSession
 		content = "</think>"
 	}
 
-	// Parse existing messages
-	var messagesObj map[string]interface{}
-	if len(session.Message) > 0 {
-		json.Unmarshal(session.Message, &messagesObj)
-	}
-	messages, _ := messagesObj["messages"].([]interface{})
+	// Parse existing messages. Keep backward compatibility with wrapped legacy rows.
+	messages := parseMessages(session.Message)
 
 	// Update or append assistant message
 	if len(messages) == 0 || s.getLastRole(messages) != "assistant" {
@@ -765,19 +801,19 @@ func (s *ChatSessionService) structureAnswerWithConv(session *entity.ChatSession
 		})
 	} else {
 		lastIdx := len(messages) - 1
-		lastMsg, _ := messages[lastIdx].(map[string]interface{})
-		if lastMsg != nil {
-			if ans["final"] == true && ans["answer"] != nil {
-				lastMsg["content"] = ans["answer"]
-			} else {
-				existing, _ := lastMsg["content"].(string)
-				lastMsg["content"] = existing + content
-			}
-			lastMsg["created_at"] = float64(time.Now().Unix())
-			lastMsg["id"] = messageID
-			messages[lastIdx] = lastMsg
+		lastMsg := messages[lastIdx]
+		if ans["final"] == true && ans["answer"] != nil {
+			lastMsg["content"] = ans["answer"]
+		} else {
+			existing, _ := lastMsg["content"].(string)
+			lastMsg["content"] = existing + content
 		}
+		lastMsg["created_at"] = float64(time.Now().Unix())
+		lastMsg["id"] = messageID
+		messages[lastIdx] = lastMsg
 	}
+
+	session.Message, _ = json.Marshal(messages)
 
 	// Update reference
 	if len(reference) > 0 {
@@ -788,16 +824,12 @@ func (s *ChatSessionService) structureAnswerWithConv(session *entity.ChatSession
 }
 
 // getLastRole gets the role of the last message
-func (s *ChatSessionService) getLastRole(messages []interface{}) string {
+func (s *ChatSessionService) getLastRole(messages []map[string]interface{}) string {
 	if len(messages) == 0 {
 		return ""
 	}
-	lastMsg, _ := messages[len(messages)-1].(map[string]interface{})
-	if lastMsg != nil {
-		role, _ := lastMsg["role"].(string)
-		return role
-	}
-	return ""
+	role, _ := messages[len(messages)-1]["role"].(string)
+	return role
 }
 
 // chunksFormat formats chunks for reference (simplified version)

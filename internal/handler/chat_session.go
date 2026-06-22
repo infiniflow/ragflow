@@ -360,8 +360,16 @@ func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {
 	chatID, sessionID := c.Param("chat_id"), c.Param("session_id")
 
 	req := map[string]any{}
-	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if errors.Is(err, io.EOF) {
+			jsonError(c, common.CodeArgumentError, "Request body cannot be empty")
+			return
+		}
 		jsonError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
+		return
+	}
+	if len(req) == 0 {
+		jsonError(c, common.CodeArgumentError, "Request body cannot be empty")
 		return
 	}
 
