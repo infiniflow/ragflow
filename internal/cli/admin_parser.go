@@ -759,6 +759,7 @@ func (p *Parser) parseAdminCheckLicense() (*Command, error) {
 	return cmd, nil
 }
 
+// STOP INGESTION TASKS 'task_id1 task_id2';
 func (p *Parser) parseAdminStopIngestionTasks() (*Command, error) {
 	p.nextToken() // consume STOP
 
