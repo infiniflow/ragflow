@@ -119,27 +119,28 @@ class SoMarkParser(RAGFlowPdfParser):
     CHECK_PATH = "/parse/async_check"
     USAGE_PATH = "/usage"
 
-    # 仅 SaaS 部署支持 /usage 配额查询；私有化部署走通用 HEAD 探活
+    # /usage quota check only works in SaaS; private deployments fall back
+    # to a generic HEAD health check.
     SAAS_BASE_URL = "https://somark.tech/api/v1"
-    USAGE_REQUEST_TIMEOUT = 10  # /usage 请求超时
+    USAGE_REQUEST_TIMEOUT = 10  # /usage request timeout
 
-    # SoMark 错误码
-    QPS_LIMIT_CODE = 1124  # 并发限流；提交阶段命中该码时按退避策略重试
-    INVALID_API_KEY_CODE = 1107  # /usage 校验时返回该码代表 API Key 无效
+    # SoMark error codes
+    QPS_LIMIT_CODE = 1124  # rate limited; retry with backoff when hit during submission
+    INVALID_API_KEY_CODE = 1107  # returned by /usage check when API key is invalid
 
-    # 提交阶段：对 "并发槽位已满" 的拒绝做有限重试
-    SUBMIT_BUDGET_SECONDS = 10 * 60  # 提交重试的总时间预算（10 分钟）
-    SUBMIT_BACKOFF_BASE_SECONDS = 1.0  # 起始退避时长
-    SUBMIT_BACKOFF_MAX_SECONDS = 10.0  # 单次退避上限
-    SUBMIT_BACKOFF_JITTER_SECONDS = 0.5  # 退避抖动，避免多并发调用同步撞车
-    SUBMIT_REQUEST_TIMEOUT = 60  # 单次提交请求超时
+    # Submission phase: retry "concurrency slots full" rejections within a fixed budget
+    SUBMIT_BUDGET_SECONDS = 10 * 60  # total submission retry budget (10 min)
+    SUBMIT_BACKOFF_BASE_SECONDS = 1.0  # initial backoff interval
+    SUBMIT_BACKOFF_MAX_SECONDS = 10.0  # max single backoff interval
+    SUBMIT_BACKOFF_JITTER_SECONDS = 0.5  # jitter to avoid thundering herd from concurrent callers
+    SUBMIT_REQUEST_TIMEOUT = 60  # single submit request timeout
 
-    # 轮询阶段：持续查询任务状态直至成功 / 失败 / 预算耗尽
-    POLL_BUDGET_SECONDS = 10 * 60  # 单任务的最长等待时长
-    POLL_INTERVAL_BASE_SECONDS = 2.0  # 轮询起始间隔
-    POLL_INTERVAL_MAX_SECONDS = 10.0  # 长任务的轮询间隔上限
-    POLL_INTERVAL_GROWTH = 1.5  # 每次轮询后的间隔放大倍数
-    POLL_REQUEST_TIMEOUT = 30  # 单次查询请求超时
+    # Polling phase: keep querying task status until success / failure / budget exhausted
+    POLL_BUDGET_SECONDS = 10 * 60  # max time to wait for a single task
+    POLL_INTERVAL_BASE_SECONDS = 2.0  # initial polling interval
+    POLL_INTERVAL_MAX_SECONDS = 10.0  # max polling interval for long-running tasks
+    POLL_INTERVAL_GROWTH = 1.5  # multiplier applied after each poll
+    POLL_REQUEST_TIMEOUT = 30  # single poll request timeout
 
     def __init__(
             self,
@@ -197,11 +198,11 @@ class SoMarkParser(RAGFlowPdfParser):
         if not self.base_url.startswith(("http://", "https://")):
             return False, "[SoMark] SOMARK_BASE_URL must start with http:// or https://."
 
-        # SaaS 部署：直接打 /usage，验证 API Key 是否有效 + 剩余配额是否够用。
+        # SaaS deployment: hit /usage to verify API key validity and remaining quota.
         if self.base_url == self.SAAS_BASE_URL:
             return self._check_saas_usage()
 
-        # 私有化部署：维持最便宜的 HEAD 探活。
+        # Private deployment: use a cheap HEAD health check.
         if not self._is_http_endpoint_valid(self.base_url):
             return False, f"[SoMark] server unreachable: {self.base_url}"
         return True, ""
@@ -210,7 +211,7 @@ class SoMarkParser(RAGFlowPdfParser):
         """Verify api_key and remaining quota against the hosted SoMark service.
 
         Treats two specific business outcomes as user-facing errors:
-          - ``code == 1107``: invalid API key (server returns "无效的API密钥").
+          - ``code == 1107``: invalid API key.
           - ``code == 0`` but both ``remaining_paid_pages`` and
             ``remaining_free_pages_this_month`` are 0: out of parse quota.
         """
@@ -237,7 +238,7 @@ class SoMarkParser(RAGFlowPdfParser):
         message = body.get("message") or ""
 
         if code == self.INVALID_API_KEY_CODE:
-            return False, f"[SoMark] {message or '无效的API密钥'}"
+            return False, f"[SoMark] {message or 'Invalid API key'}"
 
         if code != 0:
             return False, f"[SoMark] usage error code={code} message={message}"
@@ -247,7 +248,7 @@ class SoMarkParser(RAGFlowPdfParser):
         free = usage.get("remaining_free_pages_this_month") or 0
         if paid == 0 and free == 0:
             return False, (
-                "[SoMark] 解析页数不足 (remaining_paid_pages=0, "
+                "[SoMark] insufficient parse pages (remaining_paid_pages=0, "
                 "remaining_free_pages_this_month=0)"
             )
 
