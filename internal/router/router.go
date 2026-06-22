@@ -244,6 +244,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			chats := v1.Group("/chats")
 			{
 				chats.GET("", r.chatHandler.ListChats)
+				chats.DELETE("", r.chatHandler.BulkDeleteChats)
+				chats.DELETE("/:chat_id", r.chatHandler.DeleteChat)
 				chats.GET("/:chat_id", r.chatHandler.GetChat)
 				chats.GET("/:chat_id/sessions", r.chatSessionHandler.ListChatSessions)
 			}

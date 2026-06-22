@@ -644,6 +644,110 @@ func getEmbdIDs(kbs []*entity.Knowledgebase) []string {
 	return ids
 }
 
+func (s *ChatService) getOwnedValidChat(userID, chatID string) (*entity.Chat, error) {
+	chat, err := s.chatDAO.GetByIDAndStatus(chatID, string(entity.StatusValid))
+	if err != nil {
+		return nil, errors.New("no authorization")
+	}
+	if chat.TenantID != userID {
+		return nil, errors.New("no authorization")
+	}
+	return chat, nil
+}
+
+// DeleteChat soft deletes a single chat owned by the current user.
+func (s *ChatService) DeleteChat(userID, chatID string) error {
+	if _, err := s.getOwnedValidChat(userID, chatID); err != nil {
+		return err
+	}
+	if err := s.chatDAO.UpdateByID(chatID, map[string]interface{}{
+		"status": string(entity.StatusInvalid),
+	}); err != nil {
+		return fmt.Errorf("Failed to delete chat %s", chatID)
+	}
+
+	return nil
+}
+
+// BulkDeleteChatsRequest matches DELETE /api/v1/chats request semantics.
+type BulkDeleteChatsRequest struct {
+	IDs       []string `json:"ids,omitempty"`
+	DeleteAll bool     `json:"delete_all,omitempty"`
+	ChatID    string   `json:"chat_id,omitempty"`
+}
+
+// checkDuplicateChatIDs
+func checkDuplicateChatIDs(ids []string) ([]string, []string) {
+	idCount := make(map[string]int, len(ids))
+	uniqueIDs := make([]string, 0, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		idCount[id]++
+		if idCount[id] == 1 {
+			uniqueIDs = append(uniqueIDs, id)
+		}
+	}
+
+	duplicateMessages := make([]string, 0)
+	for id, count := range idCount {
+		if count > 1 {
+			duplicateMessages = append(duplicateMessages, fmt.Sprintf("Duplicate chat ids: %s", id))
+		}
+	}
+	return uniqueIDs, duplicateMessages
+}
+
+// BulkDeleteChats soft deletes chats owned by the current user with partial success semantics.
+func (s *ChatService) BulkDeleteChats(userID string, req *BulkDeleteChatsRequest) (map[string]interface{}, error) {
+	ids := req.IDs
+	if len(ids) == 0 && req.DeleteAll {
+		chats, err := s.chatDAO.ListByTenantID(userID, string(entity.StatusValid))
+		if err != nil {
+			return nil, err
+		}
+		for _, chat := range chats {
+			ids = append(ids, chat.ID)
+		}
+		if len(ids) == 0 {
+			return map[string]interface{}{}, nil
+		}
+	}
+
+	uniqueIDs, duplicateMessages := checkDuplicateChatIDs(ids)
+	errorsList := make([]string, 0, len(duplicateMessages))
+	errorsList = append(errorsList, duplicateMessages...)
+	successCount := 0
+
+	for _, chatID := range uniqueIDs {
+		if _, err := s.getOwnedValidChat(userID, chatID); err != nil {
+			errorsList = append(errorsList, fmt.Sprintf("Chat(%s) not found.", chatID))
+			continue
+		}
+		if err := s.chatDAO.UpdateByID(chatID, map[string]interface{}{
+			"status": string(entity.StatusInvalid),
+		}); err != nil {
+			errorsList = append(errorsList, fmt.Sprintf("Failed to delete chat %s", chatID))
+			continue
+		}
+		successCount++
+	}
+
+	if len(errorsList) == 0 {
+		return map[string]interface{}{"success_count": successCount}, nil
+	}
+	if successCount > 0 {
+		return map[string]interface{}{
+			"success_count": successCount,
+			"errors":        errorsList,
+		}, nil
+	}
+
+	return nil, errors.New(strings.Join(errorsList, "; "))
+}
+
 // RemoveChats removes dialogs by setting their status to invalid (soft delete)
 // Only the owner of the chat can perform this operation
 func (s *ChatService) RemoveChats(userID string, chatIDs []string) error {
