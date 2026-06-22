@@ -96,6 +96,49 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt install -y nodejs && \
     rm -rf /var/lib/apt/lists/*
 
+# stagehand-server-v3 (Node.js SEA binary used by Browser component
+# in local mode).
+#
+# The `v3.21.0` value below is the `stagehand-go/v3` Go module
+# version pinned in `go.mod`. It is used here only to compute the
+# `go_<ver>/` subdirectory that `local.go:cacheDir()` will look in
+# for the binary at runtime — that subdirectory name is keyed by
+# the Go module's own `internal.PackageVersion`, NOT by the server
+# binary's release tag.
+#
+# The server binary itself is fetched separately by `download_deps.py`
+# from the browserbase/stagehand GitHub releases. The two are
+# LOOSELY MATCHED — both stay on the v3.x line and remain protocol-
+# compatible, but the version numbers do NOT track each other (Go
+# SDK is at v3.21.0, server binary is at v3.7.2 today). On every
+# go.mod bump, refresh the server binary pin in `download_deps.py`
+# to the current latest server release; no version correspondence
+# is required to maintain.
+#
+# Drift on the Go SDK pin (this ARG vs go.mod) forces a fresh
+# GitHub download at process boot — a hard failure in air-gapped
+# deployments. CI cross-checks the two values.
+#
+# The binary is pre-fetched by `download_deps.py` and shipped via
+# the ragflow_deps image, then written directly to the stagehand-go
+# cache path that `local.go:cacheDir()` constructs at runtime —
+# `/root/.cache/stagehand/lib/go_<ver>/stagehand-server-v3-<arch>`.
+ARG STAGEHAND_GO_VERSION=v3.21.0
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
+    set -eux; \
+    arch="$(uname -m)"; \
+    case "$arch" in \
+        x86_64) stagehand_arch=x64 ;; \
+        aarch64|arm64) stagehand_arch=arm64 ;; \
+        *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
+    esac; \
+    stagehand_version="${STAGEHAND_GO_VERSION#v}"; \
+    stagehand_cache_dir="/root/.cache/stagehand/lib/go_${stagehand_version}"; \
+    mkdir -p "${stagehand_cache_dir}"; \
+    cp "/deps/stagehand-server-v3-linux-${stagehand_arch}" \
+       "${stagehand_cache_dir}/stagehand-server-v3-linux-${stagehand_arch}"; \
+    chmod +x "${stagehand_cache_dir}/stagehand-server-v3-linux-${stagehand_arch}"
+
 # Add msssql ODBC driver
 # macOS ARM64 environment, install msodbcsql18.
 # general x86_64 environment, install msodbcsql17.

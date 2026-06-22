@@ -365,7 +365,7 @@ func TestRunAgent_VersionNotFound(t *testing.T) {
 // — a spec that would pass for many wrong implementations
 // (channel with only a done event, channel with malformed events,
 // etc.). The hardened test now drains the channel synchronously
-// and asserts at least one MessageEvent carries an Answer whose
+// and asserts at least one MessageEvent carries Content whose
 // payload contains the canonical placeholder text.
 func TestRunAgent_NoVersionPublishedPlaceholder(t *testing.T) {
 	testDB := setupServiceTestDB(t)
@@ -410,7 +410,7 @@ func TestRunAgent_NoVersionPublishedPlaceholder(t *testing.T) {
 	// Drain the channel synchronously and assert the placeholder
 	// answer text is present. The driver emits at least one
 	// orchestrator (canvas.Runner) RunEvent with Type=="message" whose Data is a
-	// JSON-encoded MessageEvent with the placeholder Answer, plus
+	// JSON-encoded MessageEvent with the placeholder Content, plus
 	// a terminator RunEvent with Type=="done".
 	var (
 		gotAnswer       string
@@ -426,7 +426,7 @@ func TestRunAgent_NoVersionPublishedPlaceholder(t *testing.T) {
 					t.Fatal("placeholder channel closed before any MessageEvent was received")
 				}
 				if gotAnswer == "" {
-					t.Fatal("placeholder MessageEvent had empty Answer")
+					t.Fatal("placeholder MessageEvent had empty Content")
 				}
 				if !strings.Contains(gotAnswer, "canvas-empty") {
 					t.Errorf("placeholder answer %q does not mention canvas ID", gotAnswer)
@@ -446,7 +446,7 @@ func TestRunAgent_NoVersionPublishedPlaceholder(t *testing.T) {
 				if err := json.Unmarshal([]byte(ev.Data), &msg); err != nil {
 					t.Fatalf("message RunEvent had un-decodable Data %q: %v", ev.Data, err)
 				}
-				gotAnswer = msg.Answer
+				gotAnswer = msg.Content
 			case "done":
 				gotDoneEvent = true
 			}
@@ -1063,3 +1063,141 @@ func TestDBConnectionPortAcceptsStringAndNumber(t *testing.T) {
 
 // ptr returns a pointer to the given int64.
 func ptr(v int64) *int64 { return &v }
+
+// TestResetAgentServiceClearsPerRunState asserts the happy path: a
+// canvas that already accumulated per-run state (history, retrieval,
+// memory, path, dirty sys.* globals) comes back from ResetAgent with
+// every accumulator emptied, every sys.* key zeroed, and every env.*
+// key restored from its declared default — and the row in the DB is
+// updated in place (release flipped to false, no new version row).
+func TestResetAgentServiceClearsPerRunState(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	initialDSL := entity.JSONMap{
+		"graph": map[string]any{
+			"nodes": []any{map[string]any{"id": "begin"}},
+			"edges": []any{},
+		},
+		"components": map[string]any{
+			"begin": map[string]any{
+				"obj": map[string]any{"component_name": "Begin"},
+			},
+		},
+		"history":   []any{"m1", "m2"},
+		"retrieval": []any{map[string]any{"doc": "x"}},
+		"memory":    []any{"mem"},
+		"path":      []any{"begin", "llm"},
+		"variables": map[string]any{
+			"answer": map[string]any{
+				"type":  "string",
+				"value": "default-answer",
+			},
+		},
+		"globals": map[string]any{
+			"sys.query":    "stale query",
+			"sys.history":  []any{"a", "b"},
+			"env.answer":   "stale answer",
+			"env.leftover": "stale",
+		},
+	}
+	row := &entity.UserCanvas{
+		ID:             "canvas-1",
+		UserID:         "user-1",
+		Title:          sptr("Test Agent"),
+		CanvasCategory: "agent_canvas",
+		Release:        true, // pre-reset draft has a published version
+		DSL:            initialDSL,
+	}
+	if err := dao.DB.Create(row).Error; err != nil {
+		t.Fatalf("failed to seed canvas: %v", err)
+	}
+
+	got, err := NewAgentService().ResetAgent(context.Background(), "user-1", "canvas-1")
+	if err != nil {
+		t.Fatalf("ResetAgent failed: %v", err)
+	}
+
+	gotMap := map[string]any(got)
+	// Per-run accumulators.
+	if v, ok := gotMap["history"].([]any); !ok || len(v) != 0 {
+		t.Errorf("history = %v (%T), want empty []any", gotMap["history"], gotMap["history"])
+	}
+	if v, ok := gotMap["retrieval"].([]any); !ok || len(v) != 0 {
+		t.Errorf("retrieval = %v (%T), want empty []any", gotMap["retrieval"], gotMap["retrieval"])
+	}
+	if v, ok := gotMap["memory"].([]any); !ok || len(v) != 0 {
+		t.Errorf("memory = %v (%T), want empty []any", gotMap["memory"], gotMap["memory"])
+	}
+	if v, ok := gotMap["path"].([]any); !ok || len(v) != 0 {
+		t.Errorf("path = %v (%T), want empty []any", gotMap["path"], gotMap["path"])
+	}
+	globals, ok := gotMap["globals"].(map[string]any)
+	if !ok {
+		t.Fatalf("globals missing or wrong type: %T", gotMap["globals"])
+	}
+	if globals["sys.query"] != "" {
+		t.Errorf("sys.query = %v, want \"\"", globals["sys.query"])
+	}
+	if v, ok := globals["sys.history"].([]any); !ok || len(v) != 0 {
+		t.Errorf("sys.history = %v (%T), want empty []any", globals["sys.history"], globals["sys.history"])
+	}
+	if globals["env.answer"] != "default-answer" {
+		t.Errorf("env.answer = %v, want \"default-answer\" (restored from variables)", globals["env.answer"])
+	}
+	if globals["env.leftover"] != "" {
+		t.Errorf("env.leftover = %v, want \"\" (no declared default)", globals["env.leftover"])
+	}
+	// Static DSL must survive.
+	if gotMap["graph"] == nil {
+		t.Errorf("graph was removed by reset")
+	}
+	if gotMap["components"] == nil {
+		t.Errorf("components was removed by reset")
+	}
+
+	// DB row was updated in place; release flipped back to false.
+	persisted, err := dao.NewUserCanvasDAO().GetByID("canvas-1")
+	if err != nil {
+		t.Fatalf("failed to reload canvas: %v", err)
+	}
+	if persisted.Release {
+		t.Errorf("Release = true after reset, want false")
+	}
+	if persisted.DSL == nil {
+		t.Fatal("persisted DSL is nil after reset")
+	}
+	if v, ok := persisted.DSL["history"].([]any); !ok || len(v) != 0 {
+		t.Errorf("persisted history = %v (%T), want empty []any", persisted.DSL["history"], persisted.DSL["history"])
+	}
+}
+
+// TestResetAgentServiceNotFound asserts the same 404 path
+// loadCanvasForUser exposes for GetAgent / UpdateAgent: a missing
+// canvas surfaces as dao.ErrUserCanvasNotFound.
+func TestResetAgentServiceNotFound(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	_, err := NewAgentService().ResetAgent(context.Background(), "user-1", "missing")
+	if err == nil {
+		t.Fatal("expected error for missing canvas")
+	}
+	if !errors.Is(err, dao.ErrUserCanvasNotFound) {
+		t.Errorf("expected ErrUserCanvasNotFound, got %v", err)
+	}
+}
+
+// TestResetAgentServiceOtherTenant asserts the access-denied path:
+// a canvas owned by user-2 is not visible to user-1, so the same
+// not-found error type is returned. The service layer does not
+// distinguish "missing" from "not yours" because the Python
+// handler at api/apps/restful_apis/agent_api.py:1002 emits
+// "canvas not found." for both.
+func TestResetAgentServiceOtherTenant(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+	createAgentSessionTestCanvas(t, "canvas-1", "user-2")
+
+	_, err := NewAgentService().ResetAgent(context.Background(), "user-1", "canvas-1")
+	if !errors.Is(err, dao.ErrUserCanvasNotFound) {
+		t.Errorf("expected ErrUserCanvasNotFound for cross-tenant access, got %v", err)
+	}
+}

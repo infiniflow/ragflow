@@ -247,6 +247,7 @@ func (v *VariableAggregatorComponent) Stream(ctx context.Context, inputs map[str
 func (v *VariableAggregatorComponent) Inputs() map[string]string {
 	return map[string]string{
 		"variables": "Optional runtime override of the per-group variable selector list.",
+		"groups":    "Optional runtime override of the aggregator group configuration: [{group_name, variables}].",
 	}
 }
 

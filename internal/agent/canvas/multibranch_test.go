@@ -21,8 +21,9 @@
 // downstream children. This file exercises two layers:
 //
 //   1. Pure unit tests for makeSwitchBranchCondition — the closure
-//      that turns outputs["_next"] into an end-node key. These cover
-//      the missing/empty/unknown-key fallback paths in isolation.
+//      that turns outputs["_next"] into an end-node set (map[string]bool).
+//      These cover the missing/empty/unknown-key fallback paths in
+//      isolation.
 //
 //   2. End-to-end tests that BuildWorkflow a small canvas with a
 //      Switch → {childA, childB} topology, then invoke the compiled
@@ -46,16 +47,16 @@ import (
 )
 
 // TestMakeSwitchBranchCondition_MissingField: when `_next` is absent
-// from the parent's output, the condition returns "" so eino sees
-// no chosen end-node and skips routing.
+// from the parent's output, the condition returns nil so eino sees
+// no chosen end-nodes and skips routing.
 func TestMakeSwitchBranchCondition_MissingField(t *testing.T) {
 	cond := makeSwitchBranchCondition(map[string]bool{"a": true, "b": true})
 	got, err := cond(context.Background(), map[string]any{"other": "x"})
 	if err != nil {
 		t.Fatalf("cond: %v", err)
 	}
-	if got != "" {
-		t.Errorf("cond on missing _next = %q, want \"\"", got)
+	if len(got) != 0 {
+		t.Errorf("cond on missing _next = %v, want empty map", got)
 	}
 }
 
@@ -67,22 +68,23 @@ func TestMakeSwitchBranchCondition_EmptyString(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cond: %v", err)
 	}
-	if got != "" {
-		t.Errorf("cond on empty _next = %q, want \"\"", got)
+	if len(got) != 0 {
+		t.Errorf("cond on empty _next = %v, want empty map", got)
 	}
 }
 
-// TestMakeSwitchBranchCondition_WrongType: a non-string `_next`
-// value is treated as missing. The Switch component is the only
-// legitimate producer of `_next` and it always writes a string.
+// TestMakeSwitchBranchCondition_WrongType: a non-string/_next
+// value that is not []any is treated as missing. The Switch component
+// is the only legitimate producer of `_next` and it always writes
+// a []any (list of strings).
 func TestMakeSwitchBranchCondition_WrongType(t *testing.T) {
 	cond := makeSwitchBranchCondition(map[string]bool{"a": true})
-	got, err := cond(context.Background(), map[string]any{"_next": []string{"a"}})
+	got, err := cond(context.Background(), map[string]any{"_next": 42})
 	if err != nil {
 		t.Fatalf("cond: %v", err)
 	}
-	if got != "" {
-		t.Errorf("cond on non-string _next = %q, want \"\"", got)
+	if len(got) != 0 {
+		t.Errorf("cond on non-string _next = %v, want empty map", got)
 	}
 }
 
@@ -97,21 +99,49 @@ func TestMakeSwitchBranchCondition_UnknownKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cond: %v", err)
 	}
-	if got != "" {
-		t.Errorf("cond on unknown _next = %q, want \"\"", got)
+	if len(got) != 0 {
+		t.Errorf("cond on unknown _next = %v, want empty map", got)
 	}
 }
 
 // TestMakeSwitchBranchCondition_KnownKey: the happy path — a valid
-// cpn_id is passed through verbatim.
+// cpn_id is passed through as a single-entry map.
 func TestMakeSwitchBranchCondition_KnownKey(t *testing.T) {
 	cond := makeSwitchBranchCondition(map[string]bool{"a": true, "b": true})
 	got, err := cond(context.Background(), map[string]any{"_next": "b"})
 	if err != nil {
 		t.Fatalf("cond: %v", err)
 	}
-	if got != "b" {
-		t.Errorf("cond on _next=b = %q, want \"b\"", got)
+	if !got["b"] || len(got) != 1 {
+		t.Errorf("cond on _next=b = %v, want {b:true}", got)
+	}
+}
+
+// TestMakeSwitchBranchCondition_MultiTargetList: when `_next` is a
+// []any (list of strings — Python's multi-target "to" field), all
+// whitelisted entries are returned. Unknown entries are silently
+// dropped.
+func TestMakeSwitchBranchCondition_MultiTargetList(t *testing.T) {
+	cond := makeSwitchBranchCondition(map[string]bool{"a": true, "b": true})
+	got, err := cond(context.Background(), map[string]any{"_next": []any{"a", "b", "ghost"}})
+	if err != nil {
+		t.Fatalf("cond: %v", err)
+	}
+	if len(got) != 2 || !got["a"] || !got["b"] {
+		t.Errorf("cond on _next=[a,b,ghost] = %v, want {a:true,b:true}", got)
+	}
+}
+
+// TestMakeSwitchBranchCondition_EmptyList: a _next of []any{} is
+// treated as no branch chosen.
+func TestMakeSwitchBranchCondition_EmptyList(t *testing.T) {
+	cond := makeSwitchBranchCondition(map[string]bool{"a": true})
+	got, err := cond(context.Background(), map[string]any{"_next": []any{}})
+	if err != nil {
+		t.Fatalf("cond: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("cond on empty list _next = %v, want empty map", got)
 	}
 }
 
@@ -249,10 +279,10 @@ func TestWireMultiBranches_NilSafety(t *testing.T) {
 //
 // The actual *runtime* routing behaviour (which child fires when)
 // is covered indirectly by TestMakeSwitchBranchCondition_KnownKey
-// + the eino source-level guarantee that NewGraphBranch enforces
-// the endNodes whitelist. A full chat-invoker-driven e2e test lives
-// in the component package's switch_test.go where it can stub the
-// invoker from within the same package.
+// + the eino source-level guarantee that NewGraphMultiBranch
+// enforces the endNodes whitelist. A full chat-invoker-driven e2e
+// test lives in the component package's switch_test.go where it can
+// stub the invoker from within the same package.
 // ----------------------------------------------------------------------------
 
 // TestMultiBranch_CompileSucceeds: BuildWorkflow + Compile of a

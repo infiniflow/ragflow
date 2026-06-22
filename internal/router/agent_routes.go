@@ -15,7 +15,7 @@
 //
 
 // Package router contains the HTTP route registration helpers used by
-// cmd/ragflow. This file is the dedicated registration site for the 11
+// cmd/ragflow. This file is the dedicated registration site for the
 // agent canvas endpoints described in plan §4.8.
 package router
 
@@ -25,7 +25,7 @@ import (
 	"ragflow/internal/handler"
 )
 
-// RegisterAgentRoutes wires the 11 Phase 5 agent endpoints onto an
+// RegisterAgentRoutes wires the Phase 5 agent endpoints onto an
 // existing /agents RouterGroup. The orchestrator passes the v1 group's
 // "/agents" sub-group here, so the function does not know about the
 // v1 prefix itself.
@@ -54,6 +54,7 @@ func RegisterAgentRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
 	g.DELETE("/:canvas_id/run", h.CancelAgent)
 	g.POST("/:canvas_id/publish", h.PublishAgent)
 	g.PUT("/:canvas_id/tags", h.UpdateAgentTags)
+	g.POST("/:canvas_id/reset", h.ResetAgent)
 
 	// Versions.
 	g.GET("/:canvas_id/versions", h.ListVersions)

@@ -31,6 +31,8 @@ package service
 import (
 	"errors"
 	"testing"
+
+	agenttool "ragflow/internal/agent/tool"
 )
 
 // TestDecodeCanvasFromDSL_EmptyDSL pins the "empty DSL" branch:
@@ -209,6 +211,62 @@ func TestDecodeCanvasFromDSL_GlobalsPreserved(t *testing.T) {
 	}
 }
 
+func TestDecodeCanvasFromDSL_PreservesNodeParents(t *testing.T) {
+	t.Parallel()
+	dsl := map[string]any{
+		"graph": map[string]any{
+			"nodes": []any{
+				map[string]any{"id": "Iteration:IterateList"},
+				map[string]any{"id": "IterationItem:IterStart", "parentId": "Iteration:IterateList"},
+				map[string]any{"id": "StringTransform:FmtItem", "parentId": "Iteration:IterateList"},
+				map[string]any{"id": "Message:IterDone"},
+			},
+		},
+		"components": map[string]any{
+			"Iteration:IterateList": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Parallel",
+					"params":         map[string]any{"items_ref": "sys.items"},
+				},
+				"downstream": []any{"Message:IterDone"},
+			},
+			"IterationItem:IterStart": map[string]any{
+				"obj": map[string]any{
+					"component_name": "IterationItem",
+					"params":         map[string]any{},
+				},
+				"downstream": []any{"StringTransform:FmtItem"},
+			},
+			"StringTransform:FmtItem": map[string]any{
+				"obj": map[string]any{
+					"component_name": "StringTransform",
+					"params":         map[string]any{"method": "merge", "script": "{item}", "delimiters": []any{"|"}},
+				},
+			},
+			"Message:IterDone": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Message",
+					"params":         map[string]any{"content": []any{"done"}},
+				},
+			},
+		},
+	}
+
+	c, err := decodeCanvasFromDSL(dsl)
+	if err != nil {
+		t.Fatalf("decodeCanvasFromDSL: %v", err)
+	}
+	if c.NodeParents["IterationItem:IterStart"] != "Iteration:IterateList" {
+		t.Fatalf("IterationItem parent = %q, want Iteration:IterateList", c.NodeParents["IterationItem:IterStart"])
+	}
+	if c.NodeParents["StringTransform:FmtItem"] != "Iteration:IterateList" {
+		t.Fatalf("FmtItem parent = %q, want Iteration:IterateList", c.NodeParents["StringTransform:FmtItem"])
+	}
+	if _, ok := c.NodeParents["Message:IterDone"]; ok {
+		t.Fatalf("outer follower Message:IterDone should not be marked as a grouped child")
+	}
+}
+
 // TestNewAgentServiceWithOptions_NilOptions pins that the new
 // constructor accepts all-nil options and produces a usable
 // service (no panic on field init, no nil-deref when running
@@ -254,5 +312,17 @@ func TestNewAgentService_DefaultsToNilOptions(t *testing.T) {
 	}
 	if a.runTracker != b.runTracker {
 		t.Errorf("runTracker mismatch: %v vs %v", a.runTracker, b.runTracker)
+	}
+}
+
+func TestNewAgentService_RegistersSandboxClient(t *testing.T) {
+	t.Parallel()
+	agenttool.SetSandboxClient(nil)
+	t.Cleanup(func() { agenttool.SetSandboxClient(nil) })
+
+	_ = NewAgentService()
+
+	if stub, ok := agenttool.GetSandboxClient().(interface{ IsStubSandboxClient() bool }); ok && stub.IsStubSandboxClient() {
+		t.Fatal("sandbox client remained stub after NewAgentService boot wiring")
 	}
 }

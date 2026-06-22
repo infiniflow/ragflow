@@ -140,7 +140,11 @@ func (c *LoopComponent) Name() string { return componentNameLoop }
 // Inputs returns parameter metadata for tooling.
 func (c *LoopComponent) Inputs() map[string]string {
 	return map[string]string{
-		"cpn_id": "Stable component identifier — BuildWorkflow uses this to detect Loop and apply the workflowx.AddLoopNode macro expansion.",
+		"cpn_id":                     "Stable component identifier — BuildWorkflow uses this to detect Loop and apply the workflowx.AddLoopNode macro expansion.",
+		"loop_variables":             "List of variable initializers: [{variable, input_mode, value, type}].",
+		"loop_termination_condition": "List of termination conditions: [{variable, operator, value, input_mode}].",
+		"maximum_loop_count":         "Maximum iteration count. 0 = infinite. Optional.",
+		"logical_operator":           "Combines per-condition results: 'and' (default) or 'or'.",
 	}
 }
 

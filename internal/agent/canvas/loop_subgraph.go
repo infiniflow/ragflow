@@ -19,15 +19,15 @@
 // The RAGFlow DSL expresses a loop as a parent Loop component with a
 // chain of downstream body components. In the Go port we collapse this
 // to a SINGLE eino node by:
-//   1. Collecting the Loop's downstream descendants into a sub-graph
-//      (a *compose.Workflow[map[string]any, map[string]any]).
-//   2. Prepending a synthetic "LoopInit" lambda that resolves the DSL's
-//      `loop_variables` and writes them into the per-run CanvasState
-//      under `state.Outputs[loopID][name]`, then passes the outer input
-//      through.
-//   3. Translating the DSL's `loop_termination_condition` list into a
-//      `workflowx.LoopCondition[map[string]any]` closure that reads the
-//      same state slots via `state.GetVar` on every iteration.
+//  1. Collecting the Loop's downstream descendants into a sub-graph
+//     (a *compose.Workflow[map[string]any, map[string]any]).
+//  2. Prepending a synthetic "LoopInit" lambda that resolves the DSL's
+//     `loop_variables` and writes them into the per-run CanvasState
+//     under `state.Outputs[loopID][name]`, then passes the outer input
+//     through.
+//  3. Translating the DSL's `loop_termination_condition` list into a
+//     `workflowx.LoopCondition[map[string]any]` closure that reads the
+//     same state slots via `state.GetVar` on every iteration.
 //
 // The actual installation into the outer graph is done by BuildWorkflow
 // (canvas.go) via workflowx.AddLoopNode, which registers the resulting
@@ -47,10 +47,10 @@ import (
 // loopExpansion holds the two artefacts produced by buildLoopExpansion
 // and consumed by BuildWorkflow to install the loop node.
 type loopExpansion struct {
-	Sub         *compose.Workflow[map[string]any, map[string]any]
-	ShouldQuit  workflowx.LoopCondition[map[string]any]
-	MaxIters    int
-	Members     map[string]bool // cpn_ids consumed by the sub-graph; caller skips these in the main pass.
+	Sub        *compose.Workflow[map[string]any, map[string]any]
+	ShouldQuit workflowx.LoopCondition[map[string]any]
+	MaxIters   int
+	Members    map[string]bool // cpn_ids consumed by the sub-graph; caller skips these in the main pass.
 }
 
 // buildLoopExpansion constructs the sub-workflow + termination condition
@@ -81,7 +81,7 @@ func buildLoopExpansion(ctx context.Context, c *Canvas, loopID string) (*loopExp
 
 	loopComp := c.Components[loopID]
 
-	members := collectDescendants(c, loopID)
+	members := collectLoopMembers(c, loopID)
 
 	initValues, err := resolveInitialVariables(loopComp.Obj.Params)
 	if err != nil {
@@ -112,6 +112,14 @@ func buildLoopExpansion(ctx context.Context, c *Canvas, loopID string) (*loopExp
 // downstream edges, NOT including root itself. The BFS stops at the
 // back-edge to root (i.e. a node whose Downstream contains root). This
 // prevents infinite recursion on cyclic graphs.
+func collectLoopMembers(c *Canvas, loopID string) map[string]bool {
+	members := collectGroupedMembers(c, loopID)
+	if len(members) > 0 {
+		return members
+	}
+	return collectDescendants(c, loopID)
+}
+
 func collectDescendants(c *Canvas, root string) map[string]bool {
 	visited := make(map[string]bool)
 	queue := []string{}
@@ -280,8 +288,15 @@ func buildSubWorkflow(
 		}
 	}
 
+	// Loop body sub-graphs need the same runtime MultiBranch wiring as the
+	// outer workflow, otherwise in-body Switch/Categorize nodes fan out to
+	// every declared child and loop exit/continue semantics diverge.
+	wireMultiBranches(sub, subCanvasForMembers(c, members), nil)
+
 	// Wire END: every member that has no downstream within the
-	// sub-graph is a sub-graph terminal; wire sub.End() to it.
+	// sub-graph is a sub-graph terminal. Multi-terminal loop bodies
+	// need the same merge-node treatment as outer workflows; otherwise
+	// eino's END node rejects repeated output mappings during compile.
 	hasDownstream := make(map[string]bool, len(members))
 	for cpnID := range members {
 		for _, down := range c.Components[cpnID].Downstream {
@@ -291,18 +306,21 @@ func buildSubWorkflow(
 			}
 		}
 	}
-	hasEnd := false
+	terminals := make([]string, 0, len(members))
 	for cpnID := range members {
 		if hasDownstream[cpnID] {
 			continue
 		}
-		sub.End().AddInput(cpnID)
-		hasEnd = true
+		if isLegacyNoOp(c.Components[cpnID].Obj.ComponentName) {
+			if strings.EqualFold(c.Components[cpnID].Obj.ComponentName, "ExitLoop") {
+				terminals = append(terminals, cpnID)
+			}
+			continue
+		}
+		terminals = append(terminals, cpnID)
 	}
-	if !hasEnd {
-		// No body terminals — wire END to the init node so the
-		// sub-workflow at least echoes the input once.
-		sub.End().AddInput(loopInitKey)
+	if err := wireWorkflowTerminals(sub, terminals, loopInitKey, false); err != nil {
+		return nil, err
 	}
 
 	// Wire START. The synthetic init node is the sub-workflow's
@@ -313,6 +331,23 @@ func buildSubWorkflow(
 	initNode.AddInput(compose.START)
 
 	return sub, nil
+}
+
+func subCanvasForMembers(c *Canvas, members map[string]bool) *Canvas {
+	if c == nil {
+		return nil
+	}
+	sub := &Canvas{
+		Components: make(map[string]CanvasComponent, len(members)),
+	}
+	for id := range members {
+		comp, ok := c.Components[id]
+		if !ok {
+			continue
+		}
+		sub.Components[id] = comp
+	}
+	return sub
 }
 
 // loopInitKey is the synthetic cpn_id used for the LoopInit entry node

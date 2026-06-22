@@ -47,6 +47,12 @@ type Canvas struct {
 	History    []map[string]any           `json:"history,omitempty"`
 	Retrieval  map[string]any             `json:"retrieval,omitempty"`
 	Globals    map[string]any             `json:"globals,omitempty"`
+	// NodeParents preserves the front-end graph's grouping metadata
+	// (graph.nodes[*].parentId) for runtime-only subgraph expansion.
+	// The backend treats the incoming DSL as read-only; this is a
+	// decoder-side mirror used only to decide which nodes belong to a
+	// Loop / Parallel body during compilation.
+	NodeParents map[string]string `json:"-"`
 }
 
 // CanvasComponent is the in-memory DSL node. The Obj.ComponentName
