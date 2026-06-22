@@ -14,12 +14,15 @@
 #  limitations under the License.
 #
 
+import logging
 from typing import Any, Mapping, Tuple
 
 REST_API_MAX_PAGE_SIZE = 100
 
 DEFAULT_PAGE_NUMBER = 1
 DEFAULT_PAGE_SIZE = 30
+
+logger = logging.getLogger(__name__)
 
 
 def validate_rest_api_page_size(page_size: int) -> int:
@@ -42,8 +45,10 @@ def _parse_non_negative_int(args: Mapping[str, Any], key: str, default: int) -> 
     try:
         value = int(raw)
     except (TypeError, ValueError):
+        logger.warning("Invalid pagination argument: %s=%r is not an integer", key, raw)
         raise ValueError(f"{key} must be an integer")
     if value < 0:
+        logger.warning("Invalid pagination argument: %s=%r is negative", key, raw)
         raise ValueError(f"{key} must be greater than or equal to 0")
     return value
 
