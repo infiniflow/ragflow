@@ -48,9 +48,15 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 	case "admin_list_services":
 		return c.AdminListServicesCommand(cmd)
 	case "admin_grant_user_admin":
-		return c.GrantUserAdminCommand(cmd)
+		return c.AdminGrantUserAdminCommand(cmd)
 	case "admin_revoke_user_admin":
-		return c.RevokeUserAdminCommand(cmd)
+		return c.AdminRevokeUserAdminCommand(cmd)
+	case "admin_grant_role_permission":
+		return c.AdminGrantRolePermissionCommand(cmd)
+	case "admin_revoke_role_permission":
+		return c.AdminRevokeRolePermissionCommand(cmd)
+	case "admin_show_role_permission":
+		return c.AdminShowRolePermissionCommand(cmd)
 	case "admin_create_user":
 		return c.AdminCreateUserCommand(cmd)
 	case "admin_create_user_api_key":

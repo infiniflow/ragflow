@@ -125,15 +125,15 @@ func (h *Handler) DropRole(c *gin.Context) {
 	success(c, role, "")
 }
 
-// GetRolePermission handle get role permission
-func (h *Handler) GetRolePermission(c *gin.Context) {
+// ShowRolePermission handle get role permission
+func (h *Handler) ShowRolePermission(c *gin.Context) {
 	roleName := c.Param("role_name")
 	if roleName == "" {
 		errorResponse(c, "Role name is required", 400)
 		return
 	}
 
-	permissions, err := h.service.GetRolePermission(roleName)
+	permissions, err := h.service.ShowRolePermission(roleName)
 	if err != nil {
 		errorResponse(c, err.Error(), 500)
 		return

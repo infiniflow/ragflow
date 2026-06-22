@@ -1870,7 +1870,7 @@ func (p *Parser) parseIdentifierList() ([]string, error) {
 
 	for p.curToken.Type == TokenComma {
 		p.nextToken()
-		ident, err := p.parseIdentifier()
+		ident, err = p.parseIdentifier()
 		if err != nil {
 			return nil, err
 		}

@@ -99,9 +99,9 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 	case TokenAlter:
 		return p.parseAdminAlterCommands()
 	case TokenGrant:
-		return p.parseAdminGrantCommand()
+		return p.parseAdminGrantCommands()
 	case TokenRevoke:
-		return p.parseAdminRevokeCommand()
+		return p.parseAdminRevokeCommands()
 	case TokenSet:
 		return p.parseAdminSetCommand()
 	case TokenUnset:

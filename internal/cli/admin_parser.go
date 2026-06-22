@@ -50,7 +50,7 @@ func (p *Parser) parseAdminLoginUser() (*Command, error) {
 		p.nextToken()
 	}
 
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -61,7 +61,7 @@ func (p *Parser) parseAdminLoginUser() (*Command, error) {
 func (p *Parser) parseAdminLogout() (*Command, error) {
 	cmd := NewCommand("logout")
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -71,7 +71,7 @@ func (p *Parser) parseAdminLogout() (*Command, error) {
 func (p *Parser) parseAdminPingServer() (*Command, error) {
 	cmd := NewCommand("ping_server")
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -208,7 +208,7 @@ func (p *Parser) parseAdminListFiles() (*Command, error) {
 	cmd.Params["dataset_name"] = datasetName
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -232,7 +232,7 @@ func (p *Parser) parseAdminListIngestionTasks() (*Command, error) {
 
 	cmd := NewCommand("list_admin_ingestion_tasks")
 
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -330,7 +330,7 @@ func (p *Parser) parseAdminShowService() (*Command, error) {
 	cmd.Params["number"] = serviceNum
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -538,12 +538,19 @@ func (p *Parser) parseAdminShowRole() (*Command, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	cmd := NewCommand("admin_show_role")
-	cmd.Params["role_name"] = roleName
-
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+
+	var cmd *Command
+	if p.curToken.Type == TokenPermission {
+		p.nextToken()
+		cmd = NewCommand("admin_show_role_permission")
+		cmd.Params["role_name"] = roleName
+	} else {
+		cmd = NewCommand("admin_show_role")
+		cmd.Params["role_name"] = roleName
+	}
+
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -574,7 +581,7 @@ func (p *Parser) parseAdminShowVariable() (*Command, error) {
 	cmd.Params["var_name"] = varName
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -694,7 +701,7 @@ func (p *Parser) parseCommonShowPoolModel() (*Command, error) {
 		cmd := NewCommand("show_pool_provider")
 		cmd.Params["provider_name"] = providerName
 		p.nextToken()
-		// Semicolon is optional for UNSET TOKEN
+		// Semicolon is optional
 		if p.curToken.Type == TokenSemicolon {
 			p.nextToken()
 		}
@@ -718,7 +725,7 @@ func (p *Parser) parseCommonShowPoolModel() (*Command, error) {
 		cmd := NewCommand("show_pool_model")
 		cmd.Params["provider_name"] = providerName
 		cmd.Params["model_name"] = modelName
-		// Semicolon is optional for UNSET TOKEN
+		// Semicolon is optional
 		if p.curToken.Type == TokenSemicolon {
 			p.nextToken()
 		}
@@ -781,7 +788,7 @@ func (p *Parser) parseAdminStopIngestionTasks() (*Command, error) {
 		return nil, fmt.Errorf("expected USER or INGESTION")
 	}
 
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -808,7 +815,7 @@ func (p *Parser) parseAdminRemoveIngestionTasks() (*Command, error) {
 	cmd := NewCommand("admin_remove_ingestion_tasks")
 	cmd.Params["tasks"] = tasks
 
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -858,7 +865,7 @@ func (p *Parser) parseAdminCreateUser() (*Command, error) {
 		return nil, fmt.Errorf("expected password or KEY after USER, got %s", p.curToken.Value)
 	}
 
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -903,7 +910,7 @@ func (p *Parser) parseAdminCreateRole() (*Command, error) {
 		p.nextToken()
 	}
 
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -982,7 +989,7 @@ func (p *Parser) parseAdminDropRole() (*Command, error) {
 	cmd.Params["role_name"] = roleName
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1005,7 +1012,7 @@ func (p *Parser) parseAdminDropModelProvider() (*Command, error) {
 	cmd.Params["provider_name"] = providerName
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1023,7 +1030,7 @@ func (p *Parser) parseAdminDropDataset() (*Command, error) {
 	cmd.Params["dataset_name"] = datasetName
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1041,7 +1048,7 @@ func (p *Parser) parseAdminDropChat() (*Command, error) {
 	cmd.Params["chat_name"] = chatName
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1121,7 +1128,7 @@ func (p *Parser) parseAdminAlterUser() (*Command, error) {
 	cmd.Params["role_name"] = roleName
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1193,7 +1200,7 @@ func (p *Parser) parseAdminAlterRole() (*Command, error) {
 
 // endregion ALTER commands
 
-func (p *Parser) parseAdminGrantCommand() (*Command, error) {
+func (p *Parser) parseAdminGrantCommands() (*Command, error) {
 	p.nextToken() // consume GRANT
 
 	if p.curToken.Type == TokenAdmin {
@@ -1214,7 +1221,7 @@ func (p *Parser) parseAdminGrantAdmin() (*Command, error) {
 	cmd.Params["user_name"] = userName
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1222,50 +1229,53 @@ func (p *Parser) parseAdminGrantAdmin() (*Command, error) {
 }
 
 func (p *Parser) parseAdminGrantPermission() (*Command, error) {
-	actions, err := p.parseIdentifierList()
+	actionListStr, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
+	actions := strings.Split(actionListStr, ",")
+	p.nextToken()
 
 	if p.curToken.Type != TokenOn {
 		return nil, fmt.Errorf("expected ON")
 	}
 	p.nextToken()
 
-	resource, err := p.parseIdentifier()
+	resource, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-
 	p.nextToken()
+
 	if p.curToken.Type != TokenTo {
 		return nil, fmt.Errorf("expected TO")
 	}
 	p.nextToken()
+
 	if p.curToken.Type != TokenRole {
 		return nil, fmt.Errorf("expected ROLE")
 	}
 	p.nextToken()
 
-	roleName, err := p.parseIdentifier()
+	roleName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 
-	cmd := NewCommand("grant_permission")
+	cmd := NewCommand("admin_grant_role_permission")
 	cmd.Params["actions"] = actions
 	cmd.Params["resource"] = resource
 	cmd.Params["role_name"] = roleName
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
 	return cmd, nil
 }
 
-func (p *Parser) parseAdminRevokeCommand() (*Command, error) {
+func (p *Parser) parseAdminRevokeCommands() (*Command, error) {
 	p.nextToken() // consume REVOKE
 
 	if p.curToken.Type == TokenAdmin {
@@ -1286,7 +1296,7 @@ func (p *Parser) parseAdminRevokeAdmin() (*Command, error) {
 	cmd.Params["user_name"] = userName
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1294,17 +1304,19 @@ func (p *Parser) parseAdminRevokeAdmin() (*Command, error) {
 }
 
 func (p *Parser) parseAdminRevokePermission() (*Command, error) {
-	actions, err := p.parseIdentifierList()
+	actionListStr, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
+	actions := strings.Split(actionListStr, ",")
+	p.nextToken()
 
 	if p.curToken.Type != TokenOn {
 		return nil, fmt.Errorf("expected ON")
 	}
 	p.nextToken()
 
-	resource, err := p.parseIdentifier()
+	resource, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
@@ -1319,18 +1331,18 @@ func (p *Parser) parseAdminRevokePermission() (*Command, error) {
 	}
 	p.nextToken()
 
-	roleName, err := p.parseIdentifier()
+	roleName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 
-	cmd := NewCommand("revoke_permission")
+	cmd := NewCommand("admin_revoke_role_permission")
 	cmd.Params["actions"] = actions
 	cmd.Params["resource"] = resource
 	cmd.Params["role_name"] = roleName
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1433,7 +1445,7 @@ func (p *Parser) parseAdminSetVariable() (*Command, error) {
 	cmd.Params["var_value"] = varValue
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1481,7 +1493,7 @@ func (p *Parser) parseAdminSetDefault() (*Command, error) {
 	}
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1500,7 +1512,7 @@ func (p *Parser) parseAdminSetToken() (*Command, error) {
 	cmd.Params["token"] = tokenValue
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1539,7 +1551,7 @@ func (p *Parser) parseAdminResetCommand() (*Command, error) {
 	cmd.Params["model_type"] = modelType
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1604,7 +1616,7 @@ func (p *Parser) parseAdminImportCommand() (*Command, error) {
 	cmd.Params["dataset_name"] = datasetName
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1638,7 +1650,7 @@ func (p *Parser) parseAdminRetrieveCommand() (*Command, error) {
 	cmd.Params["datasets"] = datasets
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1677,7 +1689,7 @@ func (p *Parser) parseAdminParseDataset() (*Command, error) {
 	cmd.Params["method"] = method
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1710,7 +1722,7 @@ func (p *Parser) parseAdminParseDocs() (*Command, error) {
 	cmd.Params["dataset_name"] = datasetName
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1790,7 +1802,7 @@ func (p *Parser) parseAdminStartupCommand() (*Command, error) {
 	cmd.Params["number"] = serviceNum
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1822,7 +1834,7 @@ func (p *Parser) parseAdminShutdownServiceCommand() (*Command, error) {
 	cmd.Params["number"] = serviceNum
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1841,7 +1853,7 @@ func (p *Parser) parseAdminShutdownIngestorCommand() (*Command, error) {
 	cmd.Params["ingestor_name"] = ingestorName
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1864,7 +1876,7 @@ func (p *Parser) parseAdminRestartCommand() (*Command, error) {
 	cmd.Params["number"] = serviceNum
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1934,7 +1946,7 @@ func (p *Parser) parseStartIngestion() (*Command, error) {
 	cmd.Params["uri"] = uri
 	p.nextToken()
 
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1958,7 +1970,7 @@ func (p *Parser) parseStopIngestion() (*Command, error) {
 	cmd.Params["task_id"] = taskID
 	p.nextToken()
 
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1977,7 +1989,7 @@ func (p *Parser) parseAdminIngestCommand() (*Command, error) {
 	cmd.Params["uri"] = uri
 	p.nextToken()
 
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1991,7 +2003,7 @@ func (p *Parser) parseAdminUnsetCommand() (*Command, error) {
 	}
 	p.nextToken()
 
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}

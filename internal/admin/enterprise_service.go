@@ -85,14 +85,12 @@ func (s *Service) DropRole(roleName string) (map[string]interface{}, error) {
 	return result, nil
 }
 
-// GetRolePermission get role permissions
-func (s *Service) GetRolePermission(roleName string) ([]map[string]interface{}, error) {
-	result := []map[string]interface{}{
-		{
-			"command":   "get_role_permission",
-			"role_name": roleName,
-			"error":     "'get role permissions' is implemented in enterprise edition",
-		},
+// ShowRolePermission get role permissions
+func (s *Service) ShowRolePermission(roleName string) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command":   "show_role_permission",
+		"role_name": roleName,
+		"error":     "'show role permissions' is implemented in enterprise edition",
 	}
 
 	return result, nil
