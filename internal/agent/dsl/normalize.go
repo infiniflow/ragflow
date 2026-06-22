@@ -157,7 +157,6 @@ func normalize(dsl map[string]any, foldLegacy bool) map[string]any {
 	return out
 }
 
-
 // rewriteLegacyIterationAliases rewrites runtime-only references to the
 // legacy IterationItem child's synthetic outputs back to the modern
 // item/index aliases that CanvasState exposes. This runs only on the
@@ -203,6 +202,7 @@ func replaceLegacyIterationAliasRefs(s string) string {
 		}
 	})
 }
+
 // repairParallelLeaksForCanvas rewrites any historically leaked
 // runtime-only Parallel / parallelNode view back to the front-end's
 // Iteration / iterationNode protocol. This is a response-shape repair
