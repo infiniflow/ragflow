@@ -5,6 +5,32 @@ import (
 	"testing"
 )
 
+func TestParseChatMessageUsesCurrentModel(t *testing.T) {
+	p := NewParser("chat message 'hi';")
+	cmd, err := p.Parse(APIMode)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+
+	if cmd.Type != "chat_to_model" {
+		t.Fatalf("Command Type = %v, expected chat_to_model", cmd.Type)
+	}
+	if _, ok := cmd.Params["composite_model_name"]; ok {
+		t.Fatal("composite_model_name should not be set")
+	}
+	if _, ok := cmd.Params["model_id"]; ok {
+		t.Fatal("model_id should not be set")
+	}
+
+	gotMessages, ok := cmd.Params["messages"].([]string)
+	if !ok {
+		t.Fatalf("messages param has type %T, expected []string", cmd.Params["messages"])
+	}
+	if !reflect.DeepEqual(gotMessages, []string{"hi"}) {
+		t.Fatalf("messages = %v, expected [hi]", gotMessages)
+	}
+}
+
 func TestParseAddModelWithDimensions(t *testing.T) {
 	tests := []struct {
 		name     string

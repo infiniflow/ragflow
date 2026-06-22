@@ -29,6 +29,21 @@ func NewSearchDAO() *SearchDAO {
 	return &SearchDAO{}
 }
 
+// SearchDetailRow represents the joined detail payload used by the
+// share-detail endpoint.
+type SearchDetailRow struct {
+	ID           string         `gorm:"column:id"`
+	Avatar       *string        `gorm:"column:avatar"`
+	TenantID     string         `gorm:"column:tenant_id"`
+	Name         string         `gorm:"column:name"`
+	Description  *string        `gorm:"column:description"`
+	CreatedBy    string         `gorm:"column:created_by"`
+	SearchConfig entity.JSONMap `gorm:"column:search_config"`
+	UpdateTime   *int64         `gorm:"column:update_time"`
+	Nickname     *string        `gorm:"column:nickname"`
+	TenantAvatar *string        `gorm:"column:tenant_avatar"`
+}
+
 // ListByTenantIDs list searches by tenant IDs with pagination and filtering
 func (dao *SearchDAO) ListByTenantIDs(tenantIDs []string, userID string, page, pageSize int, orderby string, desc bool, keywords string) ([]*entity.Search, int64, error) {
 	var searches []*entity.Search
@@ -123,6 +138,35 @@ func (dao *SearchDAO) GetByID(id string) (*entity.Search, error) {
 		return nil, err
 	}
 	return &search, nil
+}
+
+// GetDetailByID retrieves the share-detail payload by joining the search app
+// with its owner profile, matching Python SearchService.get_detail.
+func (dao *SearchDAO) GetDetailByID(searchID string) (*SearchDetailRow, error) {
+	var detail SearchDetailRow
+	err := DB.Table("search").
+		Select(`
+			search.id,
+			search.avatar,
+			search.tenant_id,
+			search.name,
+			search.description,
+			search.created_by,
+			search.search_config,
+			search.update_time,
+			user.nickname,
+			user.avatar AS tenant_avatar
+		`).
+		Joins("JOIN user ON user.id = search.tenant_id AND user.status = ?", "1").
+		Where("search.id = ? AND search.status = ?", searchID, "1").
+		Scan(&detail).Error
+	if err != nil {
+		return nil, err
+	}
+	if detail.ID == "" {
+		return nil, nil
+	}
+	return &detail, nil
 }
 
 // GetByNameAndTenant gets search by name and tenant ID
