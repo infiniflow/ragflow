@@ -1758,7 +1758,7 @@ func (p *Parser) parseAdminAddCommand() (*Command, error) {
 	}
 }
 
-func (p *Parser) parseAdminDeleteCommand() (*Command, error) {
+func (p *Parser) parseAdminDeleteCommands() (*Command, error) {
 	p.nextToken() // consume DELETE
 	switch p.curToken.Type {
 	case TokenAPI:
@@ -1772,7 +1772,9 @@ func (p *Parser) parseAdminDeleteCommand() (*Command, error) {
 	}
 }
 
-// parseAdminDeleteProvider parses DELETE PROVIDER <name> command
+// DELETE PROVIDER <name> command
+// DELETE PROVIDER <name> INSTANCE <name> command
+// DELETE PROVIDER <name> INSTANCE <name> MODEL <name>
 func (p *Parser) parseAdminDeleteProvider() (*Command, error) {
 	p.nextToken() // consume PROVIDER
 
@@ -1780,11 +1782,63 @@ func (p *Parser) parseAdminDeleteProvider() (*Command, error) {
 	if err != nil {
 		return nil, fmt.Errorf("expected provider name: %w", err)
 	}
-
-	cmd := NewCommand("admin_delete_provider")
-	cmd.Params["provider_name"] = providerName
-
 	p.nextToken()
+
+	if p.curToken.Type == TokenInstance {
+		return p.parseAdminDeleteModelInstance(providerName)
+	}
+
+	cmd := NewCommand("admin_delete_model_providers")
+	cmd.Params["provider_names"] = []string{providerName}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// DELETE PROVIDER <name> INSTANCE <name> command
+// DELETE PROVIDER <name> INSTANCE <name> MODEL <name>
+func (p *Parser) parseAdminDeleteModelInstance(providerName string) (*Command, error) {
+	p.nextToken() // consume INSTANCE
+
+	instanceName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected model instance name: %w", err)
+	}
+	p.nextToken()
+
+	if p.curToken.Type == TokenModel {
+		return p.parseAdminDeleteModel(providerName, instanceName)
+	}
+
+	cmd := NewCommand("admin_delete_model_instance")
+	cmd.Params["provider_name"] = providerName
+	cmd.Params["instance_names"] = []string{instanceName}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// DELETE PROVIDER <name> INSTANCE <name> MODEL <name>
+func (p *Parser) parseAdminDeleteModel(providerName, instanceName string) (*Command, error) {
+	p.nextToken() // consume MODEL
+
+	modelName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected model name: %w", err)
+	}
+	p.nextToken()
+
+	cmd := NewCommand("admin_delete_model")
+	cmd.Params["provider_name"] = providerName
+	cmd.Params["instance_name"] = instanceName
+	cmd.Params["model_names"] = []string{modelName}
+
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()

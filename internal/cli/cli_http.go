@@ -229,8 +229,12 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminStopUserIngestionTasksCommand(cmd)
 	case "admin_remove_user_ingestion_tasks_command":
 		return c.AdminRemoveUserIngestionTasksCommand(cmd)
-	case "admin_delete_provider":
-		return c.AdminDeleteProviderCommand(cmd)
+	case "admin_delete_model_providers":
+		return c.AdminDeleteProvidersCommand(cmd)
+	case "admin_delete_model_instance":
+		return c.AdminDeleteInstancesCommand(cmd)
+	case "admin_delete_model":
+		return c.AdminDeleteModelsCommand(cmd)
 		// TODO: Implement other commands
 	case "show_admin_server":
 		return c.ShowAdminServer(cmd)

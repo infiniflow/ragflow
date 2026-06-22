@@ -123,7 +123,7 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 	case TokenAdd:
 		return p.parseAdminAddCommand()
 	case TokenDelete:
-		return p.parseAdminDeleteCommand()
+		return p.parseAdminDeleteCommands()
 	case TokenSave:
 		return p.parseAdminSaveCommand()
 	case TokenUse:

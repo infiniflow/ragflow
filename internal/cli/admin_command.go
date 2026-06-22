@@ -3225,8 +3225,48 @@ func (c *CLI) AdminRemoveUserIngestionTasksCommand(cmd *Command) (ResponseIf, er
 	return &result, nil
 }
 
-// AdminDeleteProviderCommand delete a provider
-func (c *CLI) AdminDeleteProviderCommand(cmd *Command) (ResponseIf, error) {
+// AdminDeleteProvidersCommand delete providers
+func (c *CLI) AdminDeleteProvidersCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	providerNames, ok := cmd.Params["provider_names"].([]string)
+	if !ok {
+		return nil, fmt.Errorf("provider_names not provided")
+	}
+
+	payload := map[string]interface{}{
+		"provider_names": providerNames,
+	}
+
+	apiURL := fmt.Sprintf("/admin/providers/")
+
+	resp, err := c.AdminServerClient.Request("DELETE", apiURL, "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to remove providers %s: %w", providerNames, err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to remove providers %s: HTTP %d, body: %s", providerNames, resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("remove providers %s failed: invalid JSON (%w)", providerNames, err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// AdminDeleteInstancesCommand delete instances
+func (c *CLI) AdminDeleteInstancesCommand(cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -3237,20 +3277,79 @@ func (c *CLI) AdminDeleteProviderCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("provider_name not provided")
 	}
 
-	apiURL := fmt.Sprintf("/admin/providers/%s", providerName)
+	instanceNames, ok := cmd.Params["instance_names"].([]string)
+	if !ok {
+		return nil, fmt.Errorf("instance_name not provided")
+	}
 
-	resp, err := c.AdminServerClient.Request("DELETE", apiURL, "admin", nil, nil)
+	payload := map[string]interface{}{
+		"instance_names": instanceNames,
+	}
+
+	apiURL := fmt.Sprintf("/admin/providers/%s/instances", providerName)
+
+	resp, err := c.AdminServerClient.Request("DELETE", apiURL, "admin", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to remove provider %s: %w", providerName, err)
+		return nil, fmt.Errorf("failed to remove instance %s: %w", instanceNames, err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to remove provider %s: HTTP %d, body: %s", providerName, resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to remove instance %s: HTTP %d, body: %s", instanceNames, resp.StatusCode, string(resp.Body))
 	}
 
 	var result CommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("remove provider %s failed: invalid JSON (%w)", providerName, err)
+		return nil, fmt.Errorf("remove instance %s failed: invalid JSON (%w)", instanceNames, err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// AdminDeleteModelsCommand delete models
+func (c *CLI) AdminDeleteModelsCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("provider_name not provided")
+	}
+
+	instanceName, ok := cmd.Params["instance_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("instance_name not provided")
+	}
+
+	modelNames, ok := cmd.Params["model_names"].([]string)
+	if !ok {
+		return nil, fmt.Errorf("model_names not provided")
+	}
+
+	payload := map[string]interface{}{
+		"model_names": modelNames,
+	}
+
+	apiURL := fmt.Sprintf("/admin/providers/%s/instances/%s/models", providerName, instanceName)
+
+	resp, err := c.AdminServerClient.Request("DELETE", apiURL, "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to remove model %s: %w", modelNames, err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to remove model %s: HTTP %d, body: %s", modelNames, resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("remove model %s failed: invalid JSON (%w)", modelNames, err)
 	}
 
 	if result.Code != 0 {
