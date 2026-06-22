@@ -120,7 +120,6 @@ jobs:
               mingw-w64-clang-x86_64-ninja
               mingw-w64-clang-x86_64-pcre2
               mingw-w64-clang-x86_64-pkgconf
-              mingw-w64-clang-x86_64-simde
             output_ext: .exe
           - goos: windows
             goarch: arm64
@@ -135,7 +134,6 @@ jobs:
               mingw-w64-clang-aarch64-ninja
               mingw-w64-clang-aarch64-pcre2
               mingw-w64-clang-aarch64-pkgconf
-              mingw-w64-clang-aarch64-simde
             output_ext: .exe
     runs-on: ${{ matrix.runner }}
     env:
@@ -177,8 +175,10 @@ jobs:
 
           python3 -m pip install --user --upgrade 'cmake>=4.0,<5' || \
             python3 -m pip install --user --break-system-packages --upgrade 'cmake>=4.0,<5'
-          echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
-          "${HOME}/.local/bin/cmake" --version
+          python_user_base="$(python3 -m site --user-base)"
+          echo "${python_user_base}/bin" >> "${GITHUB_PATH}"
+          export PATH="${python_user_base}/bin:${PATH}"
+          cmake --version
 
       - name: Download office_oxide native library
         if: runner.os != 'Windows'
@@ -209,14 +209,42 @@ jobs:
           install: ${{ matrix.msys2_packages }}
           path-type: inherit
 
+      - name: Install Windows SIMDe headers
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+
+          simde_dir="$(cygpath -u "${RUNNER_TEMP}")/simde"
+          simde_archive="$(cygpath -u "${RUNNER_TEMP}")/simde-v0.8.2.tar.gz"
+          github_env="$(cygpath -u "${GITHUB_ENV}")"
+
+          rm -rf "${simde_dir}"
+          mkdir -p "${simde_dir}"
+          curl -fsSL "https://github.com/simd-everywhere/simde/archive/refs/tags/v0.8.2.tar.gz" -o "${simde_archive}"
+          tar xzf "${simde_archive}" -C "${simde_dir}" --strip-components=1
+
+          test -f "${simde_dir}/simde/x86/sse4.1.h"
+          echo "SIMDE_INCLUDE_DIR=$(cygpath -m "${simde_dir}")" >> "${github_env}"
+
       - name: Configure Windows C compiler
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
           set -euo pipefail
 
-          cc_path="$(command -v clang.exe || command -v clang)"
-          cxx_path="$(command -v clang++.exe || command -v clang++)"
+          cc_path="$(command -v clang.exe 2>/dev/null || command -v clang)"
+          cxx_path="$(command -v clang++.exe 2>/dev/null || command -v clang++)"
+
+          if [[ ! -f "${cc_path}" && -f "${cc_path}.exe" ]]; then
+            cc_path="${cc_path}.exe"
+          fi
+          if [[ ! -f "${cxx_path}" && -f "${cxx_path}.exe" ]]; then
+            cxx_path="${cxx_path}.exe"
+          fi
+          test -f "${cc_path}"
+          test -f "${cxx_path}"
+
           cc="$(cygpath -m "${cc_path}")"
           cxx="$(cygpath -m "${cxx_path}")"
           github_env="$(cygpath -u "${GITHUB_ENV}")"
@@ -259,8 +287,19 @@ jobs:
 
           cd "${office_oxide_src}"
 
-          export CC="$(command -v clang.exe || command -v clang)"
-          export CXX="$(command -v clang++.exe || command -v clang++)"
+          cc_path="$(command -v clang.exe 2>/dev/null || command -v clang)"
+          cxx_path="$(command -v clang++.exe 2>/dev/null || command -v clang++)"
+          if [[ ! -f "${cc_path}" && -f "${cc_path}.exe" ]]; then
+            cc_path="${cc_path}.exe"
+          fi
+          if [[ ! -f "${cxx_path}" && -f "${cxx_path}.exe" ]]; then
+            cxx_path="${cxx_path}.exe"
+          fi
+          test -f "${cc_path}"
+          test -f "${cxx_path}"
+
+          export CC="${cc_path}"
+          export CXX="${cxx_path}"
           export AR="$(command -v llvm-ar || command -v ar)"
           export CARGO_BUILD_TARGET="${{ matrix.rust_target }}"
           export RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-fuse-ld=lld"
@@ -330,15 +369,27 @@ jobs:
         run: |
           set -euo pipefail
 
-          cc_path="$(command -v clang.exe || command -v clang)"
-          cxx_path="$(command -v clang++.exe || command -v clang++)"
+          cc_path="$(command -v clang.exe 2>/dev/null || command -v clang)"
+          cxx_path="$(command -v clang++.exe 2>/dev/null || command -v clang++)"
+
+          if [[ ! -f "${cc_path}" && -f "${cc_path}.exe" ]]; then
+            cc_path="${cc_path}.exe"
+          fi
+          if [[ ! -f "${cxx_path}" && -f "${cxx_path}.exe" ]]; then
+            cxx_path="${cxx_path}.exe"
+          fi
+          test -f "${cc_path}"
+          test -f "${cxx_path}"
+
+          simde_include_dir="$(cygpath -u "${SIMDE_INCLUDE_DIR}")"
+          test -f "${simde_include_dir}/simde/x86/sse4.1.h"
 
           cmake -S internal/cpp -B internal/cpp/cmake-build-release -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER="${cc_path}" \
-            -DCMAKE_CXX_COMPILER="${cxx_path}" \
-            -DCMAKE_C_FLAGS="-I${MINGW_PREFIX}/include" \
-            -DCMAKE_CXX_FLAGS="-I${MINGW_PREFIX}/include"
+            -DCMAKE_C_COMPILER="$(cygpath -m "${cc_path}")" \
+            -DCMAKE_CXX_COMPILER="$(cygpath -m "${cxx_path}")" \
+            -DCMAKE_C_FLAGS="-I${MINGW_PREFIX}/include -I${simde_include_dir}" \
+            -DCMAKE_CXX_FLAGS="-I${MINGW_PREFIX}/include -I${simde_include_dir}"
 
           cmake --build internal/cpp/cmake-build-release --target rag_tokenizer_c_api --parallel
 
