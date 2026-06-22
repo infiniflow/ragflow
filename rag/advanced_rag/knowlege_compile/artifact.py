@@ -42,6 +42,8 @@ from common.token_utils import num_tokens_from_string
 from rag.nlp import rag_tokenizer
 from rag.prompts.generator import INPUT_UTILIZATION, gen_json, message_fit_in, split_chunks
 
+import xxhash as _xxhash
+
 from ._common import (
     build_chunk_batches as _build_chunk_batches,
     bulk_dedup_items as _bulk_dedup_items,
@@ -50,6 +52,23 @@ from ._common import (
     run_chunked_pipeline as _run_chunked_pipeline,
     stable_row_id as _stable_row_id
 )
+
+
+# Global pipeline-rev — bumping this constant invalidates every cached
+# artifact_map_extract / artifact_reduce_result / artifact_compilation_plan
+# / artifact_page_draft / artifact_page row on the next re-run. Use it
+# when a prompt or extraction schema changes in a way that should
+# invalidate prior caches.
+_ARTIFACT_PIPELINE_REV = "v1"
+
+
+def _chunk_hash(content: str) -> str:
+    """xxh64 of a chunk's ``content_with_weight`` mixed with the global
+    pipeline rev. The mix-in means a prompt / schema bump invalidates
+    every cached row without us having to touch each row individually.
+    """
+    body = (content or "") + "|" + _ARTIFACT_PIPELINE_REV
+    return _xxhash.xxh64(body.encode("utf-8", "surrogatepass")).hexdigest()
 # Tiny parser_config helpers shared with the structure pipeline. Pulled in
 # here so the MAP entity/relation schemas and rules can be driven from the
 # same ``parser_config`` shape that ``compile_structure_from_text`` uses.
@@ -624,12 +643,17 @@ def _artifact_build_resume_doc(
     chunk_id: str,
     doc_id: str,
     per_chunk_extract: dict,
+    chunk_hash: str = "",
 ) -> dict:
     """Build the non-searchable ES doc that records a per-chunk MAP extract.
 
     Intentionally omits ``q_<dim>_vec`` / ``content_ltks`` / ``content_sm_ltks``
     so retrievers cannot surface this row; also sets ``available_int=0`` which
     most ragflow retrievers already filter on.
+
+    ``chunk_hash`` fingerprints the chunk's content as of extraction time.
+    The incremental MAP re-run reads it back and compares against the
+    current chunk's hash to decide whether to re-extract.
     """
     content_with_weight = json.dumps(per_chunk_extract, ensure_ascii=False)
     doc_id_str = str(doc_id)
@@ -638,14 +662,21 @@ def _artifact_build_resume_doc(
         "doc_id": doc_id_str,
         "compile_kwd": ARTIFACT_MAP_COMPILE_KWD,
         "source_chunk_ids": [chunk_id],
+        "chunk_hash_kwd": chunk_hash,
         "content_with_weight": content_with_weight,
         "available_int": 0,
     }
 
 
-async def _artifact_load_resume_set(doc_id: str, tenant_id: str, kb_id: str) -> set[str]:
-    """Query ES for chunk_ids that already have a artifact_map_extract row for
-    this doc. Returns the set of source chunk_ids to skip."""
+async def _artifact_load_resume_map(
+    doc_id: str, tenant_id: str, kb_id: str,
+) -> dict[str, str]:
+    """Query ES for chunks that already have a artifact_map_extract row for
+    this doc. Returns ``{chunk_id → chunk_hash}``.
+
+    ``chunk_hash`` may be empty for legacy rows that predate the field —
+    callers treat empty as "definitely re-MAP" (no hash to compare).
+    """
     from common import settings
     from common.doc_store.doc_store_base import OrderByExpr
     from rag.nlp import search as _rag_search
@@ -655,7 +686,7 @@ async def _artifact_load_resume_set(doc_id: str, tenant_id: str, kb_id: str) -> 
         "compile_kwd": [ARTIFACT_MAP_COMPILE_KWD],
         "doc_id": [str(doc_id)],
     }
-    select_fields = ["id", "source_chunk_ids"]
+    select_fields = ["id", "source_chunk_ids", "chunk_hash_kwd"]
     try:
         res = await thread_pool_exec(
             settings.docStoreConn.search,
@@ -664,17 +695,61 @@ async def _artifact_load_resume_set(doc_id: str, tenant_id: str, kb_id: str) -> 
         )
         field_map = settings.docStoreConn.get_fields(res, select_fields)
     except Exception:
-        logging.exception("artifact_map: failed to query resume set; will re-extract all chunks")
-        return set()
+        logging.exception("artifact_map: failed to query resume map; will re-extract all chunks")
+        return {}
 
-    seen: set[str] = set()
+    seen: dict[str, str] = {}
     for row in field_map.values():
         src = row.get("source_chunk_ids") or []
+        hh = row.get("chunk_hash_kwd")
+        if not isinstance(hh, str):
+            hh = ""
         if isinstance(src, list):
             for cid in src:
                 if isinstance(cid, str) and cid:
-                    seen.add(cid)
+                    # First-write-wins is fine: if a doc has two rows for
+                    # the same chunk_id (legacy / dirty state), we treat
+                    # the first as the canonical and let the changed-hash
+                    # path or the deletion sweep clean it up later.
+                    seen.setdefault(cid, hh)
     return seen
+
+
+async def _artifact_delete_map_rows(
+    doc_id: str, chunk_ids: list[str], tenant_id: str, kb_id: str,
+) -> int:
+    """Delete ``artifact_map_extract`` rows for ``(doc_id, chunk_id)`` pairs.
+
+    Used by the incremental MAP path:
+      * stale rows whose chunk content has changed → re-extracted next.
+      * rows whose chunk_id is gone from the doc (chunk deleted upstream).
+
+    Returns the number of distinct ``chunk_ids`` we attempted to drop;
+    the backend may delete more (e.g. duplicate rows) — we don't try to
+    track that precisely.
+    """
+    if not chunk_ids:
+        return 0
+    from common import settings
+    from rag.nlp import search as _rag_search
+
+    index = _rag_search.index_name(tenant_id)
+    condition = {
+        "compile_kwd": [ARTIFACT_MAP_COMPILE_KWD],
+        "doc_id": [str(doc_id)],
+        "source_chunk_ids": list(chunk_ids),
+    }
+    try:
+        await thread_pool_exec(
+            settings.docStoreConn.delete, condition, index, kb_id,
+        )
+    except Exception:
+        logging.exception(
+            "artifact_map: failed to delete %d stale extract row(s) for doc %s",
+            len(chunk_ids), doc_id,
+        )
+        return 0
+    return len(chunk_ids)
 
 
 async def _artifact_persist_extracts(
@@ -682,16 +757,26 @@ async def _artifact_persist_extracts(
     doc_id: str,
     tenant_id: str,
     kb_id: str,
+    chunk_hashes: Optional[dict[str, str]] = None,
 ) -> None:
-    """Write one non-searchable ES doc per source chunk_id."""
+    """Write one non-searchable ES doc per source chunk_id.
+
+    ``chunk_hashes`` (``{chunk_id → chunk_hash}``) is stamped onto each
+    row so the next incremental run can decide whether to re-MAP.
+    Missing entries default to '' (treated as "definitely re-MAP" by the
+    resume-map comparator).
+    """
     if not per_chunk:
         return
     from common import settings
     from rag.nlp import search as _rag_search
 
     index = _rag_search.index_name(tenant_id)
+    hashes = chunk_hashes or {}
     docs = [
-        _artifact_build_resume_doc(chunk_id, doc_id, extract)
+        _artifact_build_resume_doc(
+            chunk_id, doc_id, extract, chunk_hash=hashes.get(chunk_id, ""),
+        )
         for chunk_id, extract in per_chunk.items()
         if chunk_id
     ]
@@ -760,9 +845,16 @@ async def _artifact_process_batch(
     semaphore: Optional[asyncio.Semaphore],
     callback: Optional[Callable],
     parser_config: Optional[dict] = None,
+    chunk_hashes: Optional[dict[str, str]] = None,
 ) -> dict:
     """Run one batch end-to-end: LLM extract → split by source_chunk_id →
-    persist resume docs → return the merged batch extract."""
+    persist resume docs → return the merged batch extract.
+
+    ``chunk_hashes`` is the ``{chunk_id → chunk_hash}`` map captured at
+    the top of ``artifact_map_from_chunks``; threaded through so the
+    persisted resume rows record the right hash and the next
+    incremental run can compare cleanly.
+    """
     if not packed:
         return _artifact_empty_extract()
 
@@ -773,7 +865,9 @@ async def _artifact_process_batch(
             packed, doc_id, chat_mdl, language, timeout, parser_config=parser_config,
         )
         merged, per_chunk = _artifact_resolve_chunk_ids(raw_extract, label_to_id)
-        await _artifact_persist_extracts(per_chunk, doc_id, tenant_id, kb_id)
+        await _artifact_persist_extracts(
+            per_chunk, doc_id, tenant_id, kb_id, chunk_hashes=chunk_hashes,
+        )
         if callback:
             try:
                 n_items = sum(len(merged.get(k) or []) for k in _EXTRACT_LIST_KEYS)
@@ -847,12 +941,80 @@ async def artifact_map_from_chunks(
     _ = embd_mdl  # noqa: F841 — accepted for symmetry with downstream phases
 
     if not chunks:
-        return _artifact_empty_extract()
+        # Even with zero chunks we still want to sweep any orphaned MAP
+        # rows that point at chunks the doc no longer has — otherwise
+        # deletions never propagate.
+        prior_resume_map = await _artifact_load_resume_map(doc_id, tenant_id, kb_id)
+        if prior_resume_map:
+            await _artifact_delete_map_rows(
+                doc_id, list(prior_resume_map.keys()), tenant_id, kb_id,
+            )
+            logging.info(
+                "artifact_map: doc %s now has zero chunks; swept %d stale extract row(s)",
+                doc_id, len(prior_resume_map),
+            )
+        out = _artifact_empty_extract()
+        out["_meta"] = {
+            "doc_id": str(doc_id),
+            "new": 0,
+            "changed": 0,
+            "deleted": len(prior_resume_map),
+            "unchanged": 0,
+            "had_delta": bool(prior_resume_map),
+        }
+        return out
 
-    # Skip chunks already covered by a prior MAP run for this doc_id.
-    resume_set = await _artifact_load_resume_set(doc_id, tenant_id, kb_id)
-    if resume_set:
-        logging.info("artifact_map: resume — %d chunk(s) already extracted for doc %s", len(resume_set), doc_id)
+    # Incremental decision per current chunk:
+    #
+    #   * Compute the fresh chunk hash for every chunk in this call.
+    #   * Load the prior resume map (chunk_id → hash from the last MAP).
+    #   * NEW       — chunk_id not in prior     → MAP this chunk.
+    #   * UNCHANGED — chunk_id in prior, hash matches → skip (resume).
+    #   * CHANGED   — chunk_id in prior, hash differs → delete prior
+    #                 row, then MAP this chunk.
+    #   * DELETED   — chunk_id only in prior     → delete prior row
+    #                 (chunk was removed upstream).
+    #
+    # The "resume set" handed to ``_build_chunk_batches`` is just the
+    # UNCHANGED ids — those are the only ones the packer should skip.
+    current_chunk_hashes: dict[str, str] = {}
+    for chunk in chunks:
+        cid = chunk.get("id") or chunk.get("chunk_id")
+        if not isinstance(cid, str) or not cid:
+            continue
+        text = _artifact_pick_chunk_text(chunk) or ""
+        current_chunk_hashes[cid] = _chunk_hash(text)
+
+    prior_resume_map = await _artifact_load_resume_map(doc_id, tenant_id, kb_id)
+    unchanged_ids: set[str] = set()
+    changed_ids: list[str] = []
+    new_ids: list[str] = []
+    for cid, h in current_chunk_hashes.items():
+        prior_h = prior_resume_map.get(cid)
+        if prior_h is None:
+            new_ids.append(cid)
+        elif prior_h and prior_h == h:
+            unchanged_ids.add(cid)
+        else:
+            # Empty stored hash = legacy row written before chunk_hash_kwd
+            # existed → re-MAP. Differing hash = content changed → re-MAP.
+            changed_ids.append(cid)
+    deleted_ids = [cid for cid in prior_resume_map if cid not in current_chunk_hashes]
+
+    if changed_ids or deleted_ids:
+        await _artifact_delete_map_rows(
+            doc_id, list(set(changed_ids) | set(deleted_ids)), tenant_id, kb_id,
+        )
+
+    if unchanged_ids or changed_ids or deleted_ids or new_ids:
+        logging.info(
+            "artifact_map: doc %s — new=%d changed=%d unchanged=%d deleted=%d",
+            doc_id, len(new_ids), len(changed_ids), len(unchanged_ids), len(deleted_ids),
+        )
+
+    # The packer's "resume" set is the UNCHANGED ids only — NEW and
+    # CHANGED both need re-extraction.
+    resume_set = unchanged_ids
 
     # Defensive scrub: chunkers sometimes embed the chunk_id / doc_id into
     # the body (e.g. as a header). Without this the extraction LLM tends to
@@ -895,6 +1057,7 @@ async def artifact_map_from_chunks(
             semaphore=None,
             callback=callback,
             parser_config=parser_config,
+            chunk_hashes=current_chunk_hashes,
         )
 
     merged = await _run_chunked_pipeline(
@@ -914,6 +1077,17 @@ async def artifact_map_from_chunks(
         len(merged["relations"]),
         len(merged["topics"]),
     )
+    # Surface the incremental decisions to the orchestrator. ``had_delta``
+    # is the most useful summary: REDUCE/PLAN/REFINE can short-circuit
+    # KB-wide when no doc's MAP touched any rows on this run.
+    merged["_meta"] = {
+        "doc_id": str(doc_id),
+        "new": len(new_ids),
+        "changed": len(changed_ids),
+        "unchanged": len(unchanged_ids),
+        "deleted": len(deleted_ids),
+        "had_delta": bool(new_ids or changed_ids or deleted_ids),
+    }
     return merged
 
 
@@ -1012,15 +1186,84 @@ async def _artifact_load_all_map_extracts(tenant_id: str, kb_id: str) -> dict:
     return merged
 
 
-async def _artifact_load_reduce_resume(tenant_id: str, kb_id: str) -> Optional[dict]:
-    """Return the cached artifact_reduce_result for this KB, or None."""
+async def _artifact_compute_map_input_hash(tenant_id: str, kb_id: str) -> str:
+    """xxh64 fingerprint of the **current** ``artifact_map_extract`` rows for
+    this KB — used by REDUCE / PLAN to cache-bust when MAP changed.
+
+    Built from ``sorted((chunk_id, chunk_hash))`` so:
+      * adding a new chunk → new pair appears → hash flips.
+      * editing a chunk → MAP row deleted + re-inserted with new hash → flips.
+      * deleting a chunk → MAP row gone → its pair drops → flips.
+      * everything stable → identical hash.
+
+    Empty / missing ``chunk_hash_kwd`` (legacy rows) defaults to '' so a
+    legacy KB still produces a stable hash; once those rows are touched
+    by an incremental MAP run, the hash naturally upgrades.
+
+    Pages through ES in windows of ``PAGE_SIZE`` rows — single-shot
+    "give me everything" reads hit doc-store limits on KBs with many
+    chunks. The accumulated ``pairs`` are sorted once at the end so the
+    fingerprint is independent of page order.
+    """
+    from common import settings
+    from common.doc_store.doc_store_base import OrderByExpr
+    from rag.nlp import search as _rag_search
+
+    index = _rag_search.index_name(tenant_id)
+    condition = {"compile_kwd": [ARTIFACT_MAP_COMPILE_KWD]}
+    select_fields = ["id", "source_chunk_ids", "chunk_hash_kwd"]
+
+    PAGE_SIZE = 128
+    offset = 0
+    pairs: list[tuple[str, str]] = []
+    while True:
+        try:
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                select_fields, [], condition, [], OrderByExpr(),
+                offset, PAGE_SIZE, index, [kb_id],
+            )
+            field_map = settings.docStoreConn.get_fields(res, select_fields)
+        except Exception:
+            logging.exception(
+                "artifact: failed to compute MAP input hash for kb=%s (offset=%d)",
+                kb_id, offset,
+            )
+            # Partial scan → cannot trust the resulting hash; return ""
+            # so REDUCE / PLAN fall through to a full re-run rather than
+            # cache-hitting against an incomplete fingerprint.
+            return ""
+        if not field_map:
+            break
+        for row in field_map.values():
+            hh = row.get("chunk_hash_kwd")
+            if not isinstance(hh, str):
+                hh = ""
+            src = row.get("source_chunk_ids") or []
+            if isinstance(src, list):
+                for cid in src:
+                    if isinstance(cid, str) and cid:
+                        pairs.append((cid, hh))
+        if len(field_map) < PAGE_SIZE:
+            break
+        offset += PAGE_SIZE
+
+    pairs.sort()
+    body = "|".join(f"{cid}:{hh}" for cid, hh in pairs) + "|" + _ARTIFACT_PIPELINE_REV
+    return _xxhash.xxh64(body.encode("utf-8", "surrogatepass")).hexdigest()
+
+
+async def _artifact_load_reduce_resume(
+    tenant_id: str, kb_id: str,
+) -> Optional[tuple[dict, str]]:
+    """Return ``(cached_result, stored_input_hash)`` or None."""
     from common import settings
     from common.doc_store.doc_store_base import OrderByExpr
     from rag.nlp import search as _rag_search
 
     index = _rag_search.index_name(tenant_id)
     condition = {"compile_kwd": [ARTIFACT_REDUCE_COMPILE_KWD]}
-    select_fields = ["id", "content_with_weight"]
+    select_fields = ["id", "content_with_weight", "input_hash_kwd"]
     try:
         res = await thread_pool_exec(
             settings.docStoreConn.search,
@@ -1042,11 +1285,22 @@ async def _artifact_load_reduce_resume(tenant_id: str, kb_id: str) -> Optional[d
     except Exception:
         logging.debug("artifact_reduce: cached result unparseable; ignoring")
         return None
-    return cached if isinstance(cached, dict) else None
+    if not isinstance(cached, dict):
+        return None
+    stored_hash = row.get("input_hash_kwd")
+    if not isinstance(stored_hash, str):
+        stored_hash = ""
+    return cached, stored_hash
 
 
-async def _artifact_persist_reduce(reduced: dict, tenant_id: str, kb_id: str) -> None:
-    """Upsert the single non-searchable artifact_reduce_result row for this KB."""
+async def _artifact_persist_reduce(
+    reduced: dict, tenant_id: str, kb_id: str, input_hash: str = "",
+) -> None:
+    """Upsert the single non-searchable artifact_reduce_result row for this KB.
+
+    ``input_hash`` records the MAP-state fingerprint this reduction was
+    computed from; the next call compares it before re-running.
+    """
     from common import settings
     from rag.nlp import search as _rag_search
 
@@ -1060,6 +1314,7 @@ async def _artifact_persist_reduce(reduced: dict, tenant_id: str, kb_id: str) ->
         "doc_id": kb_id_str,            # sentinel — KB-scoped row, not a real document
         "compile_kwd": ARTIFACT_REDUCE_COMPILE_KWD,
         "source_id": [kb_id_str],
+        "input_hash_kwd": input_hash,
         "content_with_weight": content_with_weight,
         "available_int": 0,
     }
@@ -1133,15 +1388,26 @@ async def artifact_reduce_from_extracts(
           "topics":    [...],   # pass-through from MAP
         }
     """
+    # Incremental gate: the current MAP-state fingerprint is the union
+    # of every MAP row's (chunk_id, chunk_hash). If a cached REDUCE row
+    # exists AND its stored input_hash equals the current fingerprint,
+    # the upstream chunks haven't changed → cached output is still
+    # correct. ``force_rerun=True`` bypasses both checks for the
+    # legacy / admin "rebuild from scratch" path.
+    current_input_hash = await _artifact_compute_map_input_hash(tenant_id, kb_id)
     if not force_rerun:
-        cached = await _artifact_load_reduce_resume(tenant_id, kb_id)
-        if cached is not None:
-            if callback:
-                try:
-                    callback(1.0, "artifact REDUCE: cache hit")
-                except Exception:
-                    pass
-            return cached
+        cached_pair = await _artifact_load_reduce_resume(tenant_id, kb_id)
+        if cached_pair is not None:
+            cached, stored_hash = cached_pair
+            if stored_hash and stored_hash == current_input_hash:
+                if callback:
+                    try:
+                        callback(1.0, "artifact REDUCE: cache hit (input unchanged)")
+                    except Exception:
+                        pass
+                return cached
+            # Cache present but stale (no hash, or hash mismatch). Fall
+            # through to a full re-reduce and write a fresh stamp.
 
     if callback:
         try:
@@ -1164,7 +1430,7 @@ async def artifact_reduce_from_extracts(
     if not raw_entities and not raw_concepts:
         # Nothing to reduce; persist an empty result so resume can short-circuit.
         empty = _artifact_empty_extract()
-        await _artifact_persist_reduce(empty, tenant_id, kb_id)
+        await _artifact_persist_reduce(empty, tenant_id, kb_id, input_hash=current_input_hash)
         return empty
 
     if callback:
@@ -1223,7 +1489,7 @@ async def artifact_reduce_from_extracts(
             callback(0.9, "artifact REDUCE: persisting result")
         except Exception:
             pass
-    await _artifact_persist_reduce(reduced, tenant_id, kb_id)
+    await _artifact_persist_reduce(reduced, tenant_id, kb_id, input_hash=current_input_hash)
 
     logging.info(
         "artifact_reduce: kb=%s done — entities=%d concepts=%d claims=%d relations=%d topics=%d",
@@ -1720,15 +1986,34 @@ async def _artifact_load_reduce_result(tenant_id: str, kb_id: str) -> Optional[d
     return cached if isinstance(cached, dict) else None
 
 
-async def _artifact_load_plan_resume(tenant_id: str, kb_id: str) -> Optional[dict]:
-    """Return the cached artifact_compilation_plan for this KB, or None."""
+async def _artifact_load_reduce_input_hash(tenant_id: str, kb_id: str) -> str:
+    """Read just the ``input_hash_kwd`` off the REDUCE row (without
+    deserializing the body). Used by PLAN's incremental gate so we can
+    short-circuit without re-running the planner.
+    """
+    pair = await _artifact_load_reduce_resume(tenant_id, kb_id)
+    if pair is None:
+        return ""
+    _cached, stored_hash = pair
+    return stored_hash
+
+
+async def _artifact_load_plan_resume(
+    tenant_id: str, kb_id: str,
+) -> Optional[tuple[dict, str]]:
+    """Return ``(cached_plan, stored_input_hash)`` or None.
+
+    The stored hash is whatever REDUCE's ``input_hash_kwd`` was when this
+    plan was last written. PLAN's cache check compares it to the
+    current REDUCE input hash to decide whether to re-plan.
+    """
     from common import settings
     from common.doc_store.doc_store_base import OrderByExpr
     from rag.nlp import search as _rag_search
 
     index = _rag_search.index_name(tenant_id)
     condition = {"compile_kwd": [ARTIFACT_PLAN_COMPILE_KWD]}
-    select_fields = ["id", "content_with_weight"]
+    select_fields = ["id", "content_with_weight", "input_hash_kwd"]
     try:
         res = await thread_pool_exec(
             settings.docStoreConn.search,
@@ -1750,11 +2035,22 @@ async def _artifact_load_plan_resume(tenant_id: str, kb_id: str) -> Optional[dic
     except Exception:
         logging.debug("artifact_plan: cached plan unparseable; ignoring")
         return None
-    return cached if isinstance(cached, dict) else None
+    if not isinstance(cached, dict):
+        return None
+    stored_hash = row.get("input_hash_kwd")
+    if not isinstance(stored_hash, str):
+        stored_hash = ""
+    return cached, stored_hash
 
 
-async def _artifact_persist_plan(plan: dict, tenant_id: str, kb_id: str) -> None:
-    """Upsert the single non-searchable artifact_compilation_plan row for this KB."""
+async def _artifact_persist_plan(
+    plan: dict, tenant_id: str, kb_id: str, input_hash: str = "",
+) -> None:
+    """Upsert the single non-searchable artifact_compilation_plan row for this KB.
+
+    ``input_hash`` records the REDUCE-state fingerprint this plan was
+    derived from; the next call compares it before re-planning.
+    """
     from common import settings
     from rag.nlp import search as _rag_search
 
@@ -1767,6 +2063,7 @@ async def _artifact_persist_plan(plan: dict, tenant_id: str, kb_id: str) -> None
         "doc_id": kb_id_str,          # sentinel — KB-scoped row, not a real document
         "compile_kwd": ARTIFACT_PLAN_COMPILE_KWD,
         "source_id": [kb_id_str],
+        "input_hash_kwd": input_hash,
         "content_with_weight": content_with_weight,
         "available_int": 0,
     }
@@ -1838,15 +2135,21 @@ async def artifact_plan_from_reduction(
           "_reconciliation":     {name: {action, page_slug, page_id, similarity}, ...},
         }
     """
+    # Incremental gate: PLAN keys off REDUCE's input_hash. If the cached
+    # plan was stamped with the same hash REDUCE is currently exposing,
+    # nothing upstream has changed and the plan is still valid.
+    current_reduce_hash = await _artifact_load_reduce_input_hash(tenant_id, kb_id)
     if not force_rerun:
-        cached = await _artifact_load_plan_resume(tenant_id, kb_id)
-        if cached is not None:
-            if callback:
-                try:
-                    callback(1.0, "artifact PLAN: cache hit")
-                except Exception:
-                    pass
-            return cached
+        cached_pair = await _artifact_load_plan_resume(tenant_id, kb_id)
+        if cached_pair is not None:
+            cached, stored_hash = cached_pair
+            if stored_hash and stored_hash == current_reduce_hash:
+                if callback:
+                    try:
+                        callback(1.0, "artifact PLAN: cache hit (REDUCE unchanged)")
+                    except Exception:
+                        pass
+                return cached
 
     if callback:
         try:
@@ -1864,7 +2167,7 @@ async def artifact_plan_from_reduction(
             "_entities": [], "_concepts": [], "_claims": [], "_relations": [], "_topics": [],
             "_reconciliation": {},
         }
-        await _artifact_persist_plan(empty, tenant_id, kb_id)
+        await _artifact_persist_plan(empty, tenant_id, kb_id, input_hash=current_reduce_hash)
         return empty
 
     canonical_entities = reduced.get("entities") or []
@@ -1888,7 +2191,7 @@ async def artifact_plan_from_reduction(
             "_claims": raw_claims, "_relations": raw_relations, "_topics": raw_topics,
             "_reconciliation": {},
         }
-        await _artifact_persist_plan(empty, tenant_id, kb_id)
+        await _artifact_persist_plan(empty, tenant_id, kb_id, input_hash=current_reduce_hash)
         return empty
 
     if callback:
@@ -1951,7 +2254,7 @@ async def artifact_plan_from_reduction(
             callback(0.9, "artifact PLAN: persisting plan")
         except Exception:
             pass
-    await _artifact_persist_plan(plan, tenant_id, kb_id)
+    await _artifact_persist_plan(plan, tenant_id, kb_id, input_hash=current_reduce_hash)
 
     logging.info(
         "artifact_plan: kb=%s done — pages=%d (target=%d) updates=%d creates=%d",
@@ -2032,7 +2335,7 @@ ARTIFACT_REFINE_WRITER_SYSTEM = (
     "2. Sections with H2 headings, each starting with prose before sub-bullets.\n"
     "3. Bold key terms on first use; link them with [[ ]] artifactlinks.\n"
     "4. Examples or implications where the source provides them.\n"
-    "5. ## See also section at the end with artifactlinks to related pages.\n\n"
+    "5. ## See also section at the end with artifactlinks to highly related pages(less than 12).\n\n"
     "# What NOT to do\n"
     "- Do NOT dump raw bullet points from the source as the entire content.\n"
     "- Do NOT omit the opening prose paragraph.\n"
@@ -2080,6 +2383,7 @@ Write the complete artifact page in markdown based on the source text above.
 Cross-link to other pages using [[slug]] or [[slug|display text]] — ONLY
 use slugs from the "Available pages" list. Do NOT invent new slugs.
 Do NOT include Citations or Footnotes sections.
+MUST be in the language as the same as the source document text is.
 
 Return ONLY the markdown content, no other text.
 """
@@ -2648,17 +2952,20 @@ def _artifact_extract_summary(content_md: str, max_chars: int = 300) -> str:
     return " ".join(buf)[:max_chars]
 
 
-def _artifact_page_row_id(kb_id: str, slug: str) -> str:
-    """Stable id for a artifact_page row, scoped to KB + slug."""
-    return _stable_row_id(ARTIFACT_PAGE_COMPILE_KWD, kb_id, slug)
-
-
 def _artifact_draft_row_id(kb_id: str, slug: str) -> str:
     return _stable_row_id(ARTIFACT_DRAFT_COMPILE_KWD, kb_id, slug)
 
 
-async def _artifact_persist_draft(page: dict, tenant_id: str, kb_id: str) -> None:
-    """Upsert one non-searchable artifact_page_draft row (resume cache)."""
+async def _artifact_persist_draft(
+    page: dict, tenant_id: str, kb_id: str, plan_input_hash: str = "",
+) -> None:
+    """Upsert one non-searchable artifact_page_draft row (resume cache).
+
+    ``plan_input_hash`` is the PLAN's ``input_hash_kwd`` at the time this
+    draft was produced. The next REFINE re-entry compares it against the
+    current PLAN hash to decide whether the cached draft is still
+    valid; a mismatch forces a rewrite for that slug.
+    """
     from common import settings
     from rag.nlp import search as _rag_search
 
@@ -2673,6 +2980,7 @@ async def _artifact_persist_draft(page: dict, tenant_id: str, kb_id: str) -> Non
         "compile_kwd": ARTIFACT_DRAFT_COMPILE_KWD,
         "artifact_slug_kwd": slug,
         "source_id": [str(kb_id)],
+        "input_hash_kwd": plan_input_hash,
         "content_with_weight": content_with_weight,
         "available_int": 0,           # non-searchable
     }
@@ -2690,19 +2998,27 @@ async def _artifact_persist_draft(page: dict, tenant_id: str, kb_id: str) -> Non
         logging.exception("artifact_refine: failed to persist draft slug=%s", slug)
 
 
-async def _artifact_load_refine_resume(tenant_id: str, kb_id: str) -> dict[str, dict]:
-    """Load all cached artifact_page_draft rows for this KB. Returns {slug: page}."""
+async def _artifact_load_refine_resume(
+    tenant_id: str, kb_id: str,
+) -> dict[str, tuple[dict, str]]:
+    """Load all cached artifact_page_draft rows for this KB.
+
+    Returns ``{slug: (page, stored_plan_input_hash)}``. The hash lets
+    REFINE invalidate drafts whose upstream plan has shifted on a
+    re-run; legacy rows without the field show up as ``""`` and are
+    treated as always-stale.
+    """
     from common import settings
     from common.doc_store.doc_store_base import OrderByExpr
     from rag.nlp import search as _rag_search
 
     index = _rag_search.index_name(tenant_id)
     condition = {"compile_kwd": [ARTIFACT_DRAFT_COMPILE_KWD]}
-    select_fields = ["id", "artifact_slug_kwd", "content_with_weight"]
+    select_fields = ["id", "artifact_slug_kwd", "content_with_weight", "input_hash_kwd"]
 
     PAGE_SIZE = 500
     offset = 0
-    out: dict[str, dict] = {}
+    out: dict[str, tuple[dict, str]] = {}
     while True:
         try:
             res = await thread_pool_exec(
@@ -2726,7 +3042,10 @@ async def _artifact_load_refine_resume(tenant_id: str, kb_id: str) -> dict[str, 
             except Exception:
                 continue
             if isinstance(cached, dict):
-                out[slug] = cached
+                stored_hash = row.get("input_hash_kwd")
+                if not isinstance(stored_hash, str):
+                    stored_hash = ""
+                out[slug] = (cached, stored_hash)
         if len(field_map) < PAGE_SIZE:
             break
         offset += PAGE_SIZE
@@ -2790,9 +3109,13 @@ async def artifact_refine_from_plan(
         except Exception:
             pass
 
-    plan = await _artifact_load_plan_resume(tenant_id, kb_id)
-    if plan is None or not isinstance(plan, dict):
+    plan_pair = await _artifact_load_plan_resume(tenant_id, kb_id)
+    if plan_pair is None:
         logging.warning("artifact_refine: no artifact_compilation_plan found for kb=%s", kb_id)
+        return []
+    plan, plan_input_hash = plan_pair
+    if not isinstance(plan, dict):
+        logging.warning("artifact_refine: cached plan is not a dict for kb=%s", kb_id)
         return []
 
     pages_spec = plan.get("pages") or []
@@ -2859,12 +3182,24 @@ async def artifact_refine_from_plan(
             if isinstance(alias, str) and alias.strip():
                 concept_by_term.setdefault(alias.strip().lower(), c)
 
-    # Resume cache
+    # Resume cache — only honour drafts whose stored PLAN input_hash
+    # matches the current plan's. Mismatch (or missing on legacy rows)
+    # forces that slug to be rewritten. ``force_rerun`` still nukes
+    # everything for the admin "rebuild from scratch" path.
     cached: dict[str, dict] = {}
+    stale_drafts = 0
     if not force_rerun:
-        cached = await _artifact_load_refine_resume(tenant_id, kb_id)
-        if cached:
-            logging.info("artifact_refine: resume — %d cached page(s) for kb=%s", len(cached), kb_id)
+        all_drafts = await _artifact_load_refine_resume(tenant_id, kb_id)
+        for slug, (page, stored_hash) in all_drafts.items():
+            if plan_input_hash and stored_hash and stored_hash == plan_input_hash:
+                cached[slug] = page
+            else:
+                stale_drafts += 1
+        if cached or stale_drafts:
+            logging.info(
+                "artifact_refine: resume — %d fresh, %d stale draft(s) for kb=%s",
+                len(cached), stale_drafts, kb_id,
+            )
 
     pending = [p for p in pages_spec if p.get("slug") not in cached]
     total = max(1, len(pending))
@@ -2954,7 +3289,9 @@ async def artifact_refine_from_plan(
             # schema can be controlled in one place at the ingest layer.
             # REFINE now just builds the page dict and resume cache.
             try:
-                await _artifact_persist_draft(page, tenant_id, kb_id)
+                await _artifact_persist_draft(
+                    page, tenant_id, kb_id, plan_input_hash=plan_input_hash,
+                )
             except Exception:
                 logging.exception("artifact_refine: persist_draft failed for slug=%s", slug)
 
