@@ -112,7 +112,7 @@ jobs:
             runner: windows-latest
             native_asset: native-windows-x86_64.zip
             msystem: CLANG64
-            rust_target: x86_64-pc-windows-gnu
+            rust_target: x86_64-pc-windows-gnullvm
             msys2_packages: >-
               mingw-w64-clang-x86_64-clang
               mingw-w64-clang-x86_64-lld
@@ -120,6 +120,7 @@ jobs:
               mingw-w64-clang-x86_64-ninja
               mingw-w64-clang-x86_64-pcre2
               mingw-w64-clang-x86_64-pkgconf
+              mingw-w64-clang-x86_64-simde
             output_ext: .exe
           - goos: windows
             goarch: arm64
@@ -134,6 +135,7 @@ jobs:
               mingw-w64-clang-aarch64-ninja
               mingw-w64-clang-aarch64-pcre2
               mingw-w64-clang-aarch64-pkgconf
+              mingw-w64-clang-aarch64-simde
             output_ext: .exe
     runs-on: ${{ matrix.runner }}
     env:
@@ -167,10 +169,16 @@ jobs:
 
           if [[ "${{ matrix.goos }}" == "linux" ]]; then
             sudo apt-get update
-            sudo apt-get install -y cmake build-essential libpcre2-dev pkg-config
+            sudo apt-get install -y build-essential libpcre2-dev libsimde-dev pkg-config python3-pip
           elif [[ "${{ matrix.goos }}" == "darwin" ]]; then
             brew list pcre2 >/dev/null 2>&1 || brew install pcre2
+            brew list simde >/dev/null 2>&1 || brew install simde
           fi
+
+          python3 -m pip install --user --upgrade 'cmake>=4.0,<5' || \
+            python3 -m pip install --user --break-system-packages --upgrade 'cmake>=4.0,<5'
+          echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
+          "${HOME}/.local/bin/cmake" --version
 
       - name: Download office_oxide native library
         if: runner.os != 'Windows'
@@ -251,16 +259,16 @@ jobs:
 
           cd "${office_oxide_src}"
 
-          export CC="$(command -v clang)"
-          export CXX="$(command -v clang++)"
+          export CC="$(command -v clang.exe || command -v clang)"
+          export CXX="$(command -v clang++.exe || command -v clang++)"
           export AR="$(command -v llvm-ar || command -v ar)"
           export CARGO_BUILD_TARGET="${{ matrix.rust_target }}"
-          export RUSTFLAGS="-C target-feature=+crt-static"
+          export RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-fuse-ld=lld"
 
           case "${{ matrix.rust_target }}" in
-            x86_64-pc-windows-gnu)
-              export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER="${CC}"
-              export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_AR="${AR}"
+            x86_64-pc-windows-gnullvm)
+              export CARGO_TARGET_X86_64_PC_WINDOWS_GNULLVM_LINKER="${CC}"
+              export CARGO_TARGET_X86_64_PC_WINDOWS_GNULLVM_AR="${AR}"
               ;;
             aarch64-pc-windows-gnullvm)
               export CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER="${CC}"
@@ -271,6 +279,11 @@ jobs:
               exit 1
               ;;
           esac
+
+          # The release workflow only needs the static archive for cgo.
+          # Building cdylib on Windows pulls in extra MinGW runtime libraries,
+          # which can fail under the CLANG64/CLANGARM64 environments.
+          perl -0pi -e 's/crate-type\s*=\s*\[[^\]]+\]/crate-type = ["staticlib"]/s' Cargo.toml
 
           cargo build --release --lib --target "${CARGO_BUILD_TARGET}" --no-default-features
 
@@ -290,7 +303,23 @@ jobs:
         run: |
           set -euo pipefail
 
-          cmake -S internal/cpp -B internal/cpp/cmake-build-release -DCMAKE_BUILD_TYPE=Release
+          cmake_args=(
+            -S internal/cpp
+            -B internal/cpp/cmake-build-release
+            -DCMAKE_BUILD_TYPE=Release
+          )
+
+          if [[ "${{ matrix.goos }}" == "darwin" ]]; then
+            simde_prefix="$(brew --prefix simde)"
+            pcre2_prefix="$(brew --prefix pcre2)"
+            cmake_args+=(
+              -DCMAKE_PREFIX_PATH="${pcre2_prefix};${simde_prefix}"
+              -DCMAKE_C_FLAGS="-I${simde_prefix}/include"
+              -DCMAKE_CXX_FLAGS="-I${simde_prefix}/include"
+            )
+          fi
+
+          cmake "${cmake_args[@]}"
           cmake --build internal/cpp/cmake-build-release --target rag_tokenizer_c_api --parallel
 
           test -f internal/cpp/cmake-build-release/librag_tokenizer_c_api.a
@@ -301,10 +330,15 @@ jobs:
         run: |
           set -euo pipefail
 
+          cc_path="$(command -v clang.exe || command -v clang)"
+          cxx_path="$(command -v clang++.exe || command -v clang++)"
+
           cmake -S internal/cpp -B internal/cpp/cmake-build-release -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER="$(command -v clang)" \
-            -DCMAKE_CXX_COMPILER="$(command -v clang++)"
+            -DCMAKE_C_COMPILER="${cc_path}" \
+            -DCMAKE_CXX_COMPILER="${cxx_path}" \
+            -DCMAKE_C_FLAGS="-I${MINGW_PREFIX}/include" \
+            -DCMAKE_CXX_FLAGS="-I${MINGW_PREFIX}/include"
 
           cmake --build internal/cpp/cmake-build-release --target rag_tokenizer_c_api --parallel
 
