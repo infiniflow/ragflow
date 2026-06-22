@@ -85,14 +85,12 @@ func (s *Service) DropRole(roleName string) (map[string]interface{}, error) {
 	return result, nil
 }
 
-// GetRolePermission get role permissions
-func (s *Service) GetRolePermission(roleName string) ([]map[string]interface{}, error) {
-	result := []map[string]interface{}{
-		{
-			"command":   "get_role_permission",
-			"role_name": roleName,
-			"error":     "'get role permissions' is implemented in enterprise edition",
-		},
+// ShowRolePermission get role permissions
+func (s *Service) ShowRolePermission(roleName string) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command":   "show_role_permission",
+		"role_name": roleName,
+		"error":     "'show role permissions' is implemented in enterprise edition",
 	}
 
 	return result, nil
@@ -834,8 +832,8 @@ func (s *Service) PurgeUsersData(preview bool, days int, userPlan *string, userA
 	return result, nil
 }
 
-// CreateUserAPIKey create tenant API key for tenant
-func (s *Service) CreateUserAPIKey(username string) (map[string]interface{}, error) {
+// GenerateUserAPIKey create tenant API key for tenant
+func (s *Service) GenerateUserAPIKey(username string) (map[string]interface{}, error) {
 
 	user, err := s.userDAO.GetByEmail(username)
 	if err != nil {
