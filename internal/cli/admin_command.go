@@ -1131,6 +1131,50 @@ func (c *CLI) AdminSetRoleDefaultModelsCommand(cmd *Command) (ResponseIf, error)
 	return &result, nil
 }
 
+// AdminResetRoleDefaultModelsCommand reset role default models (admin mode only).
+func (c *CLI) AdminResetRoleDefaultModelsCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	roleName, ok := cmd.Params["role_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("role_name not provided")
+	}
+
+	modelType, ok := cmd.Params["model_type"].(string)
+	if !ok {
+		return nil, fmt.Errorf("model_type not provided")
+	}
+
+	payload := map[string]interface{}{
+		"model_type": modelType,
+	}
+
+	endPoint := fmt.Sprintf("/admin/roles/%s/default-models", roleName)
+
+	resp, err := c.AdminServerClient.Request("DELETE", endPoint, "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to reset role default models: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to reset role default models: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("reset role default models failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
 // AdminDropUserCommand deletes a user (admin mode only)
 func (c *CLI) AdminDropUserCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
@@ -1807,7 +1851,7 @@ func (c *CLI) AdminShowRoleDefaultModelsCommand(cmd *Command) (ResponseIf, error
 		return nil, fmt.Errorf("failed to show role default models: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonDataResponse
+	var result CommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("show role default models failed: invalid JSON (%w)", err)
 	}

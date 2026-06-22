@@ -1528,27 +1528,19 @@ func (p *Parser) parseAdminSetRoleDefaultModel() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseAdminSetToken() (*Command, error) {
-	p.nextToken() // consume TOKEN
+func (p *Parser) parseAdminResetCommand() (*Command, error) {
+	p.nextToken() // consume RESET
 
-	tokenValue, err := p.parseQuotedString()
+	if p.curToken.Type != TokenRole {
+		return nil, fmt.Errorf("expected ROLE")
+	}
+	p.nextToken()
+
+	roleName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-
-	cmd := NewCommand("set_token")
-	cmd.Params["token"] = tokenValue
-
 	p.nextToken()
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseAdminResetCommand() (*Command, error) {
-	p.nextToken() // consume RESET
 
 	if p.curToken.Type != TokenDefault {
 		return nil, fmt.Errorf("expected DEFAULT")
@@ -1574,151 +1566,12 @@ func (p *Parser) parseAdminResetCommand() (*Command, error) {
 	default:
 		return nil, fmt.Errorf("unknown model type: %s", p.curToken.Value)
 	}
+	p.nextToken()
 
-	cmd := NewCommand("reset_default_model")
+	cmd := NewCommand("admin_reset_role_default_model")
+	cmd.Params["role_name"] = roleName
 	cmd.Params["model_type"] = modelType
 
-	p.nextToken()
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseAdminImportCommand() (*Command, error) {
-	p.nextToken() // consume IMPORT
-	documentPaths, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	p.nextToken()
-	if p.curToken.Type != TokenInto {
-		return nil, fmt.Errorf("expected INTO")
-	}
-	p.nextToken()
-	if p.curToken.Type != TokenDataset {
-		return nil, fmt.Errorf("expected DATASET")
-	}
-	p.nextToken()
-
-	datasetName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("import_docs_into_dataset")
-	cmd.Params["document_paths"] = documentPaths
-	cmd.Params["dataset_name"] = datasetName
-
-	p.nextToken()
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseAdminRetrieveCommand() (*Command, error) {
-	p.nextToken() // consume SEARCH
-	question, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	p.nextToken()
-	if p.curToken.Type != TokenOn {
-		return nil, fmt.Errorf("expected ON")
-	}
-	p.nextToken()
-	if p.curToken.Type != TokenDatasets {
-		return nil, fmt.Errorf("expected DATASETS")
-	}
-	p.nextToken()
-
-	datasets, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("search_on_datasets")
-	cmd.Params["question"] = question
-	cmd.Params["datasets"] = datasets
-
-	p.nextToken()
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseAdminParseCommand() (*Command, error) {
-	p.nextToken() // consume PARSE
-
-	if p.curToken.Type == TokenDataset {
-		return p.parseParseDataset()
-	}
-
-	return p.parseParseDocs()
-}
-
-func (p *Parser) parseAdminParseDataset() (*Command, error) {
-	p.nextToken() // consume DATASET
-	datasetName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	p.nextToken()
-	var method string
-	if p.curToken.Type == TokenSync {
-		method = "sync"
-	} else if p.curToken.Type == TokenAsync {
-		method = "async"
-	} else {
-		return nil, fmt.Errorf("expected SYNC or ASYNC")
-	}
-
-	cmd := NewCommand("parse_dataset")
-	cmd.Params["dataset_name"] = datasetName
-	cmd.Params["method"] = method
-
-	p.nextToken()
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseAdminParseDocs() (*Command, error) {
-	documentNames, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	p.nextToken()
-	if p.curToken.Type != TokenOf {
-		return nil, fmt.Errorf("expected OF")
-	}
-	p.nextToken()
-	if p.curToken.Type != TokenDataset {
-		return nil, fmt.Errorf("expected DATASET")
-	}
-	p.nextToken()
-
-	datasetName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("parse_dataset_docs")
-	cmd.Params["document_names"] = documentNames
-	cmd.Params["dataset_name"] = datasetName
-
-	p.nextToken()
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()

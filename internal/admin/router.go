@@ -170,6 +170,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.GET("/roles/resource", r.handler.ListResources)
 			protected.GET("/roles/:role_name/default-models", r.handler.ShowRoleDefaultModels)
 			protected.PATCH("/roles/:role_name/default-models", r.handler.SetRoleDefaultModel)
+			protected.DELETE("/roles/:role_name/default-models", r.handler.ResetRoleDefaultModel)
 
 			// Providers and models
 			provider := protected.Group("/providers")

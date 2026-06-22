@@ -262,6 +262,35 @@ func (h *Handler) SetRoleDefaultModel(c *gin.Context) {
 	success(c, result, "Role default model set successfully")
 }
 
+type ResetRoleDefaultModelRequest struct {
+	ModelType string `json:"model_type" binding:"required"`
+}
+
+func (h *Handler) ResetRoleDefaultModel(c *gin.Context) {
+	roleName := c.Param("role_name")
+	if roleName == "" {
+		errorResponse(c, "Role name is required", 400)
+		return
+	}
+
+	var request ResetRoleDefaultModelRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"data":    nil,
+			"message": "Invalid request body: " + err.Error(),
+		})
+		return
+	}
+
+	result, err := h.service.ResetRoleDefaultModel(roleName, request.ModelType)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+	success(c, result, "Role default model set successfully")
+}
+
 func (h *Handler) ListProviders(c *gin.Context) {
 
 	keywords := ""

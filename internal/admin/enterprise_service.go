@@ -153,6 +153,16 @@ func (s *Service) SetRoleDefaultModel(roleName, modelID, modelType string) (map[
 	}, nil
 }
 
+// ResetRoleDefaultModel reset role default model
+func (s *Service) ResetRoleDefaultModel(roleName, modelType string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":    "reset_role_default_model",
+		"role_name":  roleName,
+		"model_type": modelType,
+		"error":      "'reset role default model' is implemented in enterprise edition",
+	}, nil
+}
+
 // ListAllModels list all models
 func (s *Service) ListAllModels() ([]map[string]interface{}, error) {
 	return []map[string]interface{}{

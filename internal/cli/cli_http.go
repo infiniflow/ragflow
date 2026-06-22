@@ -103,6 +103,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.SetVariable(cmd)
 	case "admin_set_role_default_model":
 		return c.AdminSetRoleDefaultModelsCommand(cmd)
+	case "admin_reset_role_default_model":
+		return c.AdminResetRoleDefaultModelsCommand(cmd)
 	case "list_user_datasets":
 		return c.ListUserDatasets(cmd)
 	case "admin_list_resources_command":
