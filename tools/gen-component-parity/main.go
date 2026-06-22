@@ -37,7 +37,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"sort"
@@ -101,11 +100,8 @@ func writeMarkdown() {
 			fmt.Printf("| %s | (build error: %s) |\n", name, err.Error())
 			continue
 		}
-		info, infoErr := bt.Info(context.Background())
-		surface := "no Info()"
-		if infoErr == nil && info != nil {
-			surface = fmt.Sprintf("name=%q desc=%q", info.Name, truncate(info.Desc, 80))
-		}
+		meta := bt.ToolMeta()
+		surface := fmt.Sprintf("name=%q desc=%q", meta.Name, truncate(meta.Description, 80))
 		fmt.Printf("| %s | %s |\n", name, surface)
 	}
 }
@@ -126,11 +122,8 @@ func writeTSV() {
 			fmt.Printf("B\t%s\tERROR:%s\n", name, err.Error())
 			continue
 		}
-		info, infoErr := bt.Info(context.Background())
-		surface := "no Info()"
-		if infoErr == nil && info != nil {
-			surface = info.Name
-		}
+		meta := bt.ToolMeta()
+		surface := meta.Name
 		fmt.Printf("B\t%s\t%s\n", name, surface)
 	}
 }

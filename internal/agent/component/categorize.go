@@ -10,9 +10,14 @@ package component
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
+
+	"ragflow/internal/agent/runtime"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 )
 
 // CategorizeComponent is an LLM classifier.
@@ -59,6 +64,19 @@ func (c *CategorizeComponent) Invoke(ctx context.Context, inputs map[string]any)
 	p := mergeCategorizeParam(c.param, inputs)
 	if p.ModelID == "" {
 		return nil, &ParamError{Field: "model_id", Reason: "required"}
+	}
+	// Split composite llm_id (e.g. "model@provider" or
+	// "model@instance@provider") into bare model name + driver.
+	if modelName, driver, hasDriver := splitCompositeLLMID(p.ModelID); hasDriver {
+		p.ModelID = modelName
+		if p.Driver == "" {
+			p.Driver = driver
+		}
+	}
+	// Resolve missing APIKey / BaseURL from the tenant DB when
+	// credentials were not provided directly in the DSL params.
+	if p.APIKey == "" && p.Driver != "" {
+		p = resolveCategorizeCredentials(ctx, p)
 	}
 	if len(p.Categories) == 0 {
 		return nil, &ParamError{Field: "categories", Reason: "at least one category is required"}
@@ -276,6 +294,66 @@ func stringMapFrom(inputs map[string]any, name string) (map[string]string, bool)
 		out[k] = ""
 	}
 	return out, true
+}
+
+// resolveCategorizeCredentials tries to populate APIKey and BaseURL from
+// the tenant's LLM configuration in the database when the DSL params did
+// not provide them directly.  Mirrors the server_main.go modelLocator
+// logic so unit tests without a boot-time modelLocator also work.
+func resolveCategorizeCredentials(ctx context.Context, p CategorizeParam) CategorizeParam {
+	if p.Driver == "" {
+		return p
+	}
+	tenantID := ""
+	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+		if tid, ok := state.Sys["tenant_id"].(string); ok {
+			tenantID = tid
+		}
+	}
+	if tenantID == "" {
+		return p
+	}
+	// 1) Try TenantLLM: unique index on (tenant_id, llm_factory, llm_name).
+	if dao.DB != nil {
+		var rec entity.TenantLLM
+		if err := dao.DB.Where("tenant_id = ? AND llm_factory = ? AND llm_name = ?",
+			tenantID, p.Driver, p.ModelID).First(&rec).Error; err == nil {
+			if rec.APIKey != nil {
+				p.APIKey = *rec.APIKey
+			}
+			if p.BaseURL == "" && rec.APIBase != nil {
+				p.BaseURL = *rec.APIBase
+			}
+			return p
+		}
+	}
+	// 2) Fall back to TenantModelInstance (provider-based).
+	if dao.DB != nil {
+		var provider entity.TenantModelProvider
+		if err := dao.DB.Where("tenant_id = ? AND provider_name = ?",
+			tenantID, p.Driver).First(&provider).Error; err == nil {
+			var inst entity.TenantModelInstance
+			// Try matching instance_name first, then any active instance.
+			err = dao.DB.Where("provider_id = ? AND instance_name = ?",
+				provider.ID, "default").First(&inst).Error
+			if err != nil {
+				err = dao.DB.Where("provider_id = ? AND status = ?",
+					provider.ID, "active").First(&inst).Error
+			}
+			if err == nil {
+				p.APIKey = inst.APIKey
+				if p.BaseURL == "" && inst.Extra != "" {
+					var extra struct {
+						BaseURL string `json:"base_url"`
+					}
+					if json.Unmarshal([]byte(inst.Extra), &extra) == nil && extra.BaseURL != "" {
+						p.BaseURL = extra.BaseURL
+					}
+				}
+			}
+		}
+	}
+	return p
 }
 
 // init registers CategorizeComponent with the orchestrator-owned registry.

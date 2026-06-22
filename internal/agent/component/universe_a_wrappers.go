@@ -33,6 +33,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 
 	agenttool "ragflow/internal/agent/tool"
 )
@@ -372,6 +373,155 @@ func (c *exesqlComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 
 func (c *exesqlComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
 	return nil, nil
+}
+
+// codeExecComponentDelegate wraps the CodeExec tool as a Component.
+// It delegates to agenttool.CodeExecTool.InvokableRun which handles
+// sandbox dispatch, argument resolution (including {{ref}} templates),
+// result normalization, and contract validation — matching the full
+// Python tool surface.
+type codeExecComponentDelegate struct {
+	params map[string]any // default DSL params (lang, script, arguments, outputs)
+}
+
+func (c *codeExecComponentDelegate) Name() string { return componentNameCodeExec }
+
+func (c *codeExecComponentDelegate) Inputs() map[string]string {
+	return map[string]string{
+		"lang":      "Programming language (python / nodejs).",
+		"script":    "Code to execute. Must define a main function.",
+		"arguments": "Arguments passed to the code (key-value map).",
+		"outputs":   "Expected output schema (e.g. {\"result\": {\"type\": \"Number\"}}).",
+	}
+}
+
+func (c *codeExecComponentDelegate) Outputs() map[string]string {
+	return map[string]string{
+		"result":      "Normalized return value of the executed code.",
+		"content":     "String representation of the result.",
+		"actual_type": "Detected type of the result (Number / String / List / …).",
+		"_ERROR":      "Error message when execution fails.",
+	}
+}
+
+func (c *codeExecComponentDelegate) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	// Resolve {{ref}} template patterns in argument values against
+	// the state snapshot passed via inputs["state"].  The snapshot
+	// maps cpn_id → param_name → value; a value like
+	// "UserFillUp:CodeInput@x" is resolved against it.
+	args := c.resolveArguments(inputs)
+
+	// Merge resolved arguments into the merged input map.
+	merged := make(map[string]any, len(c.params)+2)
+	for k, v := range c.params {
+		if k == "arguments" {
+			continue // replaced with resolved args
+		}
+		merged[k] = v
+	}
+	merged["arguments"] = args
+	// Override with runtime inputs (except state).
+	for k, v := range inputs {
+		if k == "state" || k == "arguments" {
+			continue
+		}
+		merged[k] = v
+	}
+
+	// Marshal merged params and delegate to the tool's InvokableRun.
+	tool := agenttool.NewCodeExecTool()
+	argsJSON, mErr := json.Marshal(merged)
+	if mErr != nil {
+		return nil, fmt.Errorf("CodeExec: marshal: %w", mErr)
+	}
+	raw, err := tool.InvokableRun(ctx, string(argsJSON))
+	parsed := parseToolEnvelope(raw)
+	// The tool outputs raw_result but the legacy component surface
+	// expects result.  Add an alias for backward compatibility.
+	if rawResult, ok := parsed["raw_result"]; ok {
+		parsed["result"] = rawResult
+	}
+	// Ensure _ERROR is always present (empty string = no error).
+	if _, has := parsed["_ERROR"]; !has {
+		parsed["_ERROR"] = ""
+	}
+	// Contract validation: check declared output types against the
+	// actual result.  The test declares "result": {"type": "Number"}
+	// and expects a mismatch when the sandbox returns a string.
+	if outputs, _ := c.params["outputs"].(map[string]any); outputs != nil {
+		if rschema, ok := outputs["result"].(map[string]any); ok {
+			if wantType, _ := rschema["type"].(string); wantType != "" {
+				gotType, _ := parsed["actual_type"].(string)
+				if gotType != "" && !strings.EqualFold(gotType, wantType) {
+					parsed["_ERROR"] = fmt.Sprintf("contract mismatch: expected type %s got %s", wantType, gotType)
+					delete(parsed, "result")
+					delete(parsed, "raw_result")
+				}
+			}
+		}
+	}
+	if err != nil {
+		return parsed, fmt.Errorf("CodeExec: %w", err)
+	}
+	return parsed, nil
+}
+
+// resolveArguments resolves bare refs (e.g. "UserFillUp:CodeInput@x")
+// in argument values against the state snapshot carried in
+// inputs["state"].  The snapshot shape is map[cpnID]map[param]value —
+// same as what statePre passes to component bodies.
+func (c *codeExecComponentDelegate) resolveArguments(inputs map[string]any) map[string]any {
+	defaults, _ := c.params["arguments"].(map[string]any)
+	runtime, _ := inputs["arguments"].(map[string]any)
+
+	// Build a flat lookup: cpn_id@param → value.
+	// inputs["state"] can be map[string]any (pre-statePre snapshot) or
+	// map[string]map[string]any (from tests that pass state directly).
+	lookup := make(map[string]any)
+	if stateRaw, ok := inputs["state"].(map[string]any); ok {
+		for cpnID, paramsAny := range stateRaw {
+			switch p := paramsAny.(type) {
+			case map[string]any:
+				for param, val := range p {
+					lookup[cpnID+"@"+param] = val
+				}
+			}
+		}
+	} else if stateRaw, ok := inputs["state"].(map[string]map[string]any); ok {
+		for cpnID, params := range stateRaw {
+			for param, val := range params {
+				lookup[cpnID+"@"+param] = val
+			}
+		}
+	}
+
+	out := make(map[string]any, len(defaults))
+	for k, v := range defaults {
+		out[k] = v
+	}
+	for k, v := range runtime {
+		out[k] = v
+	}
+	// Resolve bare ref strings against the lookup.
+	for k, v := range out {
+		s, ok := v.(string)
+		if !ok {
+			continue
+		}
+		if resolved, found := lookup[s]; found {
+			out[k] = resolved
+		}
+	}
+	return out
+}
+
+func (c *codeExecComponentDelegate) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
+}
+
+// newCodeExecComponent is the factory registered in fixture_stubs.go.
+func newCodeExecComponent(params map[string]any) (Component, error) {
+	return &codeExecComponentDelegate{params: params}, nil
 }
 
 // parseToolEnvelope decodes the JSON envelope returned by tool

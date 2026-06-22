@@ -210,6 +210,12 @@ func getDefaultChatInvoker() ChatInvoker {
 	return defaultChatInvoker
 }
 
+// GetDefaultChatInvokerForTest exposes the current package-level invoker so
+// tests can restore it after swapping in a stub.
+func GetDefaultChatInvokerForTest() ChatInvoker {
+	return getDefaultChatInvoker()
+}
+
 // it constructs a fresh
 // models.ChatModel per call and dispatches.
 type productionChatInvoker struct{}

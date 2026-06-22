@@ -55,7 +55,6 @@ func RegisterAgentRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
 	g.POST("/:canvas_id/publish", h.PublishAgent)
 	g.POST("/:canvas_id/reset", h.ResetAgent)
 	g.PUT("/:canvas_id/tags", h.UpdateAgentTags)
-	g.POST("/:canvas_id/reset", h.ResetAgent)
 
 	// Versions.
 	g.GET("/:canvas_id/versions", h.ListVersions)

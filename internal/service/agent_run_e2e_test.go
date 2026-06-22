@@ -48,7 +48,6 @@ import (
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/component"
-	_ "ragflow/internal/agent/component" // blank import: registers factories via component.init()
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 

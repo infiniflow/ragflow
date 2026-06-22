@@ -351,8 +351,11 @@ func startServer(config *server.Config) {
 	}
 	adminRuntimeHandler := handler.NewAdminRuntimeHandler(adminRuntimeSelector)
 
+	openaiChatSvc := service.NewOpenAIChatService()
+	openaiChatHandler := handler.NewOpenAIChatHandler(openaiChatSvc)
+
 	// Initialize router
-	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler, fileCommitHandler, adminRuntimeHandler)
+	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler, fileCommitHandler, adminRuntimeHandler, openaiChatHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()

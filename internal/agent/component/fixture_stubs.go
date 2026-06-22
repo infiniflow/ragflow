@@ -478,9 +478,10 @@ func (it *IterationItemStub) Outputs() map[string]string {
 // Each Register call panics on a duplicate (the registry enforces
 // uniqueness), so accidental double-registration in a later refactor
 // surfaces as a panic at init time, not as a silent override.
-func newCodeExecComponent(_ map[string]any) (Component, error) {
-	return nil, fmt.Errorf("CodeExec component not yet ported to harness")
-}
+// codeExecComponentDelegate is the real CodeExec component wrapper.
+// It is defined in universe_a_wrappers.go — the stub type is no longer needed.
+// The legacy Stub type has been replaced by the real wrapper in
+// universe_a_wrappers.go; this comment marks the cleanup boundary.
 
 func init() {
 	// Primary registration: Retrieval and ExeSQL go through the

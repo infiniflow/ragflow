@@ -33,6 +33,8 @@ import (
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/agent/sandbox"
+	"ragflow/internal/agent/tool"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -110,6 +112,8 @@ type AgentService struct {
 
 // NewAgentService create agent service
 func NewAgentService() *AgentService {
+	// Register the real sandbox client (overrides the package-level stub).
+	tool.SetSandboxClient(sandbox.NewManagerClient())
 	return NewAgentServiceWithOptions(nil, nil, nil)
 }
 
@@ -1205,6 +1209,91 @@ func extractBeginInputs(dsl map[string]any) map[string]any {
 		// Use the "value" field as the default value if present.
 		if v, ok := field["value"]; ok {
 			out[key] = v
+		}
+	}
+	return out
+}
+
+// ResetAgent clears the per-run state of a canvas (history, retrieval,
+// memory, path, dirty sys.* / env.* globals) and updates the stored DSL
+// in place.  env.* globals are restored from variables.{name}.default
+// when available; otherwise cleared.  The canvas Release flag is flipped
+// to false.  Returns the reset DSL map.
+func (s *AgentService) ResetAgent(ctx context.Context, userID, canvasID string) (entity.JSONMap, error) {
+	canvas, err := s.loadCanvasForUser(ctx, userID, canvasID)
+	if err != nil {
+		return nil, err
+	}
+	// Deep-copy the DSL so we mutate a fresh map.
+	dsl := deepCopyJSONMap(entity.JSONMap(canvas.DSL))
+	// Reset per-run accumulators.
+	dsl["history"] = []any{}
+	dsl["retrieval"] = []any{}
+	dsl["memory"] = []any{}
+	dsl["path"] = []any{}
+	// Load env.* default from variables.{name}.default.
+	envDefaults := make(map[string]any)
+	if variables, ok := dsl["variables"].(map[string]any); ok {
+		for name, raw := range variables {
+			cfg, _ := raw.(map[string]any)
+			if cfg == nil {
+				continue
+			}
+			if def, has := cfg["value"]; has {
+				envDefaults["env."+name] = def
+			}
+		}
+	}
+	// Reset globals.
+	if globals, ok := dsl["globals"].(map[string]any); ok {
+		for k := range globals {
+			if strings.HasPrefix(k, "sys.") {
+				// Zero by inferred type.
+				switch globals[k].(type) {
+				case []any:
+					globals[k] = []any{}
+				case []string:
+					globals[k] = []string{}
+				default:
+					globals[k] = ""
+				}
+			} else if strings.HasPrefix(k, "env.") {
+				if def, has := envDefaults[k]; has {
+					globals[k] = def
+				} else {
+					globals[k] = ""
+				}
+			}
+		}
+	}
+	// Flip release to false.
+	canvas.Release = false
+	canvas.DSL = entity.JSONMap(dsl)
+	if err := s.canvasDAO.Update(canvas); err != nil {
+		return nil, fmt.Errorf("ResetAgent: update: %w", err)
+	}
+	return entity.JSONMap(dsl), nil
+}
+
+// deepCopyJSONMap returns a deep copy of m (JSON-safe values only).
+func deepCopyJSONMap(m map[string]any) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		switch x := v.(type) {
+		case map[string]any:
+			out[k] = deepCopyJSONMap(x)
+		case []any:
+			cp := make([]any, len(x))
+			for i, item := range x {
+				if m2, ok := item.(map[string]any); ok {
+					cp[i] = deepCopyJSONMap(m2)
+				} else {
+					cp[i] = item
+				}
+			}
+			out[k] = cp
+		default:
+			out[k] = v
 		}
 	}
 	return out

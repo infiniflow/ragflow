@@ -82,7 +82,9 @@ type MessageEvent struct {
 // front-end can use it to surface the prompt or to attach the
 // follow-up to the right conversation turn.
 type WaitingForUserEvent struct {
-	CpnID string `json:"cpn_id"`
+	CpnID  string         `json:"cpn_id"`
+	Tips   string         `json:"tips,omitempty"`
+	Inputs map[string]any `json:"inputs,omitempty"`
 }
 
 // ErrorEvent is the JSON payload for Type=="error" frames.
