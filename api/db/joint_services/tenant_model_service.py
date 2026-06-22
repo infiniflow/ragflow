@@ -32,6 +32,7 @@ def _factory_model_types(llm: dict) -> list[str]:
     types: list[str] = model_type if isinstance(model_type, list) else ([model_type] if model_type else [])
     # Some factory entries carry IMAGE2TEXT in tags but omit it from model_type — derive it.
     if "IMAGE2TEXT" in llm.get("tags", "").upper() and "image2text" not in types:
+        logger.debug("_factory_model_types: deriving image2text from tags for model %r", llm.get("llm_name"))
         types = list(types) + ["image2text"]
     return types
 
