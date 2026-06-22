@@ -21,6 +21,7 @@ from quart import request
 
 from api.apps import login_required, current_user
 from api.utils.api_utils import get_json_result, get_data_error_result, get_request_json, server_error_response, validate_request
+from api.utils.pagination_utils import parse_pagination
 
 # manager is injected dynamically by api.apps.register_page() before this
 # module is exec'd. DO NOT assign manager = None here — it would overwrite
@@ -134,8 +135,7 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
     async def list_commits(entity_id):
         folder_id = _resolve(entity_id)
         try:
-            page = int(request.args.get("page", 1))
-            page_size = int(request.args.get("page_size", 15))
+            page, page_size = parse_pagination(request.args, default_page=1, default_page_size=15)
             order_by = request.args.get("order_by", "create_time")
             desc = request.args.get("desc", "true").lower() != "false"
             commits, total = FileCommitService.list_commits(folder_id, page, page_size, order_by, desc)
