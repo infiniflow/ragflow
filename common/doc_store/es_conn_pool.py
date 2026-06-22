@@ -53,6 +53,7 @@ class ElasticSearchConnectionPool:
 
     def _connect(self):
         if self.ES_CONFIG.get("api_key"):
+            logging.info("Connecting to Elasticsearch using API key authentication")
             self.es_conn = Elasticsearch(
                 self.ES_CONFIG["hosts"].split(","),
                 api_key=self.ES_CONFIG["api_key"],
@@ -60,6 +61,7 @@ class ElasticSearchConnectionPool:
                 timeout=600,
             )
         else:
+            logging.info("Connecting to Elasticsearch using basic authentication")
             self.es_conn = Elasticsearch(
                 self.ES_CONFIG["hosts"].split(","),
                 basic_auth=(self.ES_CONFIG["username"], self.ES_CONFIG[
