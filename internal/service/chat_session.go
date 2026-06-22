@@ -25,6 +25,8 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 )
@@ -33,6 +35,7 @@ import (
 
 type chatSessionStore interface {
 	GetByID(id string) (*entity.ChatSession, error)
+	GetBySessionIDAndChatID(sessionID, chatID string) (*entity.ChatSession, error)
 	Create(conv *entity.ChatSession) error
 	UpdateByID(id string, updates map[string]interface{}) error
 	DeleteByID(id string) error
@@ -128,16 +131,13 @@ func (s *ChatSessionService) SetChatSession(userID string, req *SetChatSessionRe
 		}
 	}
 
-	// Create initial message - store as JSON object with messages array
-	messagesObj := map[string]interface{}{
-		"messages": []map[string]interface{}{
-			{
-				"role":    "assistant",
-				"content": prologue,
-			},
+	// Store messages in the same list shape as Python Conversation.message.
+	messagesJSON, _ := json.Marshal([]map[string]interface{}{
+		{
+			"role":    "assistant",
+			"content": prologue,
 		},
-	}
-	messagesJSON, _ := json.Marshal(messagesObj)
+	})
 
 	// Create reference - store as JSON array
 	referenceJSON, _ := json.Marshal([]interface{}{})
@@ -218,6 +218,20 @@ type ListChatSessionsResponse struct {
 	Sessions []*entity.ChatSession
 }
 
+type ChatSessionPayload struct {
+	ID         string                   `json:"id"`
+	ChatID     string                   `json:"chat_id"`
+	Name       *string                  `json:"name,omitempty"`
+	Messages   []map[string]interface{} `json:"messages"`
+	Reference  []interface{}            `json:"reference"`
+	UserID     *string                  `json:"user_id,omitempty"`
+	Avatar     *string                  `json:"avatar,omitempty"`
+	CreateDate *time.Time               `json:"create_date,omitempty"`
+	UpdateDate *time.Time               `json:"update_date,omitempty"`
+	CreateTime *int64                   `json:"create_time,omitempty"`
+	UpdateTime *int64                   `json:"update_time,omitempty"`
+}
+
 // ListChatSessions lists chat sessions for a dialog
 func (s *ChatSessionService) ListChatSessions(userID string, chatID string) (*ListChatSessionsResponse, error) {
 	// Get user's tenants
@@ -261,6 +275,205 @@ func (s *ChatSessionService) ListChatSessions(userID string, chatID string) (*Li
 	}
 
 	return &ListChatSessionsResponse{Sessions: sessions}, nil
+}
+
+// GetSession returns one chat session after ownership validation.
+func (s *ChatSessionService) GetSession(userID, chatID, sessionID string) (*ChatSessionPayload, common.ErrorCode, error) {
+	ok, err := s.ensureOwnedChat(userID, chatID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	if !ok {
+		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
+	}
+
+	session, err := s.chatSessionDAO.GetByID(sessionID)
+	if err != nil {
+		if isChatSessionNotFound(err) {
+			return nil, common.CodeDataError, errors.New("Session not found!")
+		}
+		return nil, common.CodeServerError, err
+	}
+	if session.DialogID != chatID {
+		return nil, common.CodeDataError, errors.New("Session does not belong to this chat!")
+	}
+
+	dialog, err := s.chatSessionDAO.GetDialogByID(chatID)
+	if err != nil && !isChatSessionNotFound(err) {
+		return nil, common.CodeServerError, err
+	}
+
+	return s.buildSessionPayload(session, dialog, true), common.CodeSuccess, nil
+}
+
+// UpdateSession updates one chat session after Python-style field validation.
+func (s *ChatSessionService) UpdateSession(userID, chatID, sessionID string, req map[string]interface{}) (*ChatSessionPayload, common.ErrorCode, error) {
+	ok, err := s.ensureOwnedChat(userID, chatID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	if !ok {
+		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
+	}
+
+	if _, err := s.chatSessionDAO.GetBySessionIDAndChatID(sessionID, chatID); err != nil {
+		if isChatSessionNotFound(err) {
+			return nil, common.CodeDataError, errors.New("Session not found!")
+		}
+		return nil, common.CodeServerError, err
+	}
+
+	if _, ok := req["message"]; ok {
+		return nil, common.CodeDataError, errors.New("`messages` cannot be changed.")
+	}
+	if _, ok := req["messages"]; ok {
+		return nil, common.CodeDataError, errors.New("`messages` cannot be changed.")
+	}
+	if _, ok := req["reference"]; ok {
+		return nil, common.CodeDataError, errors.New("`reference` cannot be changed.")
+	}
+
+	if name, exists := req["name"]; exists && name != nil {
+		nameStr, ok := name.(string)
+		if !ok || strings.TrimSpace(nameStr) == "" {
+			return nil, common.CodeDataError, errors.New("`name` can not be empty.")
+		}
+		req["name"] = strings.TrimSpace(nameStr)
+		nameRunes := []rune(req["name"].(string))
+		if len(nameRunes) > 255 {
+			req["name"] = string(nameRunes[:255])
+		}
+	}
+
+	updateFields := make(map[string]interface{})
+	for k, v := range req {
+		switch k {
+		case "id", "dialog_id", "chat_id", "user_id":
+			continue
+		default:
+			updateFields[k] = v
+		}
+	}
+
+	if err := s.chatSessionDAO.UpdateByID(sessionID, updateFields); err != nil {
+		if isChatSessionNotFound(err) {
+			return nil, common.CodeDataError, errors.New("Session not found!")
+		}
+		return nil, common.CodeServerError, err
+	}
+
+	session, err := s.chatSessionDAO.GetByID(sessionID)
+	if err != nil {
+		if isChatSessionNotFound(err) {
+			return nil, common.CodeDataError, errors.New("Fail to update a session!")
+		}
+		return nil, common.CodeServerError, err
+	}
+
+	return s.buildSessionPayload(session, nil, false), common.CodeSuccess, nil
+}
+
+func (s *ChatSessionService) ensureOwnedChat(userID, chatID string) (bool, error) {
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
+	if err != nil {
+		return false, err
+	}
+
+	for _, tenantID := range tenantIDs {
+		exists, err := s.chatSessionDAO.CheckDialogExists(tenantID, chatID)
+		if err != nil {
+			return false, err
+		}
+		if exists {
+			return true, nil
+		}
+	}
+
+	exists, err := s.chatSessionDAO.CheckDialogExists(userID, chatID)
+	if err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
+func (s *ChatSessionService) buildSessionPayload(session *entity.ChatSession, dialog *entity.Chat, includeAvatar bool) *ChatSessionPayload {
+	var avatar *string
+	if includeAvatar {
+		value := ""
+		if dialog != nil && dialog.Icon != nil {
+			value = *dialog.Icon
+		}
+		avatar = &value
+	}
+
+	references := parseReferenceList(session.Reference)
+	for index, ref := range references {
+		refMap, ok := ref.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		refMap["chunks"] = formatReferenceChunks(refMap)
+		references[index] = refMap
+	}
+
+	return &ChatSessionPayload{
+		ID:         session.ID,
+		ChatID:     session.DialogID,
+		Name:       session.Name,
+		Messages:   parseMessages(session.Message),
+		Reference:  references,
+		UserID:     session.UserID,
+		Avatar:     avatar,
+		CreateDate: session.CreateDate,
+		UpdateDate: session.UpdateDate,
+		CreateTime: session.CreateTime,
+		UpdateTime: session.UpdateTime,
+	}
+}
+
+func parseMessages(raw json.RawMessage) []map[string]interface{} {
+	var messages []map[string]interface{}
+	if len(raw) == 0 {
+		return messages
+	}
+	err := json.Unmarshal(raw, &messages)
+	if err != nil {
+		return nil
+	}
+	return messages
+}
+
+func parseReferenceList(raw json.RawMessage) []interface{} {
+	var references []interface{}
+	if len(raw) == 0 {
+		return references
+	}
+	err := json.Unmarshal(raw, &references)
+	if err != nil {
+		return nil
+	}
+	return references
+}
+
+func formatReferenceChunks(reference map[string]interface{}) []FormattedChunk {
+	rawChunks, ok := reference["chunks"].([]interface{})
+	if !ok {
+		return []FormattedChunk{}
+	}
+
+	chunks := make([]map[string]interface{}, 0, len(rawChunks))
+	for _, item := range rawChunks {
+		chunk, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		chunks = append(chunks, chunk)
+	}
+	return formatChunks(chunks)
+}
+
+func isChatSessionNotFound(err error) bool {
+	return errors.Is(err, gorm.ErrRecordNotFound)
 }
 
 // Completion performs chat completion with full RAG support via ChatPipelineService.

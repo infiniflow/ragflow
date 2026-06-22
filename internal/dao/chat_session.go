@@ -20,6 +20,8 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
 	"ragflow/internal/entity"
 )
 
@@ -56,6 +58,16 @@ func (dao *ChatSessionDAO) GetByID(id string) (*entity.ChatSession, error) {
 	return &conv, nil
 }
 
+// GetBySessionIDAndChatID gets a chat session by session ID and chat ID.
+func (dao *ChatSessionDAO) GetBySessionIDAndChatID(sessionID, chatID string) (*entity.ChatSession, error) {
+	var conv entity.ChatSession
+	err := DB.Where("id = ? AND dialog_id = ?", sessionID, chatID).First(&conv).Error
+	if err != nil {
+		return nil, err
+	}
+	return &conv, nil
+}
+
 // Create creates a new chat session
 func (dao *ChatSessionDAO) Create(conv *entity.ChatSession) error {
 	return DB.Create(conv).Error
@@ -63,7 +75,14 @@ func (dao *ChatSessionDAO) Create(conv *entity.ChatSession) error {
 
 // UpdateByID updates a chat session by ID
 func (dao *ChatSessionDAO) UpdateByID(id string, updates map[string]interface{}) error {
-	return DB.Model(&entity.ChatSession{}).Where("id = ?", id).Updates(updates).Error
+	result := DB.Model(&entity.ChatSession{}).Where("id = ?", id).Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 // DeleteByID deletes a chat session by ID (hard delete)
