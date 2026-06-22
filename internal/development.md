@@ -519,7 +519,7 @@ RAGFlow(api/default)> GET METADATA OF DATASET 'test' 'test2'
 
 ### 6.29. Search datasets
 
-- Search datasets
+- Search datasets using SQL-like dataset search syntax:
 ```
 RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test';
 
@@ -549,5 +549,25 @@ RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test' WITH meta_data_filter '{"
 
 RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test' WITH meta_data_filter '{"method":"manual","conditions":[{"key":"author","op":"eq","value":"Luo"}]}';
 
+RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test' WITH top_k 50 similarity_threshold 0.5 vector_similarity_weight 0.5 use_kg true;
+```
+
+- Search datasets using filesystem-style search syntax:
+```
+RAGFlow(api/default)> search "AI"                             # search all datasets
+
+RAGFlow(api/default)> search "AI" datasets/test               # search only dataset 'test'
+
+RAGFlow(api/default)> search "AI" datasets/test -n 20         # return top 20 results
+
+RAGFlow(api/default)> search "AI" datasets 'test1' 'test2'    # search in datasets
+```
+
+> [!Note]
+>  - `search` is the simple filesystem search command and only accepts `query [path] [-n number]`.
+>  - `RETRIEVE` / `SEARCH ... ON DATASETS ...` is the SQL-like search command and supports full `WITH` option expansion.
+>  - `WITH` options include: `top_k`, `page_size`, `page`, `similarity_threshold`, `vector_similarity_weight`, `keyword`, `use_kg`, `rerank_id`, `search_id`, `cross_languages`, `doc_ids`, and `meta_data_filter`.
+  - Example with multiple options:
+```
 RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test' WITH top_k 50 similarity_threshold 0.5 vector_similarity_weight 0.5 use_kg true;
 ```
