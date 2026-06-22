@@ -252,7 +252,7 @@ func (c *CLI) AdminAlterRole(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to alter role: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result SimpleResponse
+	var result CommonDataResponse
 
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("alter role failed: invalid JSON (%w)", err)
@@ -265,8 +265,8 @@ func (c *CLI) AdminAlterRole(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// GrantAdmin grants admin privileges to a user (admin mode only)
-func (c *CLI) GrantAdmin(cmd *Command) (ResponseIf, error) {
+// AdminGrantUserAdminCommand grants admin privileges to a user (admin mode only)
+func (c *CLI) AdminGrantUserAdminCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -301,8 +301,8 @@ func (c *CLI) GrantAdmin(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// RevokeAdmin revokes admin privileges from a user (admin mode only)
-func (c *CLI) RevokeAdmin(cmd *Command) (ResponseIf, error) {
+// AdminRevokeUserAdminCommand revokes admin privileges from a user (admin mode only)
+func (c *CLI) AdminRevokeUserAdminCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -328,6 +328,140 @@ func (c *CLI) RevokeAdmin(cmd *Command) (ResponseIf, error) {
 
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("revoke admin failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// AdminGrantRolePermissionCommand grants permission to role (admin mode only)
+func (c *CLI) AdminGrantRolePermissionCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	actions, ok := cmd.Params["actions"].([]string)
+	if !ok {
+		return nil, fmt.Errorf("actions not provided")
+	}
+
+	resource, ok := cmd.Params["resource"].(string)
+	if !ok {
+		return nil, fmt.Errorf("resource not provided")
+	}
+
+	roleName, ok := cmd.Params["role_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("role_name not provided")
+	}
+
+	payload := map[string]interface{}{
+		"actions":  actions,
+		"resource": resource,
+	}
+
+	apiURL := fmt.Sprintf("/admin/roles/%s/permission", roleName)
+
+	resp, err := c.AdminServerClient.Request("POST", apiURL, "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to grant permission to role: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to grant permission to role: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("grant permission to role failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// AdminRevokeRolePermissionCommand revokes permission from role (admin mode only)
+func (c *CLI) AdminRevokeRolePermissionCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	actions, ok := cmd.Params["actions"].([]string)
+	if !ok {
+		return nil, fmt.Errorf("actions not provided")
+	}
+
+	resource, ok := cmd.Params["resource"].(string)
+	if !ok {
+		return nil, fmt.Errorf("resource not provided")
+	}
+
+	roleName, ok := cmd.Params["role_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("role_name not provided")
+	}
+
+	payload := map[string]interface{}{
+		"actions":  actions,
+		"resource": resource,
+	}
+
+	apiURL := fmt.Sprintf("/admin/roles/%s/permission", roleName)
+
+	resp, err := c.AdminServerClient.Request("DELETE", apiURL, "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to revoke permission from role: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to revoke permission from role: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("revoke permission from role failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// AdminShowRolePermissionCommand shows admin privileges from a user (admin mode only)
+func (c *CLI) AdminShowRolePermissionCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	roleName, ok := cmd.Params["role_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("role_name not provided")
+	}
+
+	apiURL := fmt.Sprintf("/admin/roles/%s/permission", roleName)
+
+	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to show role permission: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to show role permission: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("show role permission failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
@@ -563,26 +697,111 @@ func (c *CLI) AdminListServicesCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+// AdminStartServiceCommand starts a service (admin mode only)
+func (c *CLI) AdminStartServiceCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	serviceIndex := cmd.Params["service_index"].(int)
+
+	endPoint := fmt.Sprintf("/admin/services/%d", serviceIndex)
+
+	resp, err := c.AdminServerClient.Request("POST", endPoint, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start service: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to start service: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("start service failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// AdminRestartServiceCommand restarts a service (admin mode only)
+func (c *CLI) AdminRestartServiceCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	serviceIndex := cmd.Params["service_index"].(int)
+
+	endPoint := fmt.Sprintf("/admin/services/%d", serviceIndex)
+
+	resp, err := c.AdminServerClient.Request("PUT", endPoint, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to restart service: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to restart service: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("restart service failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// AdminShutdownServiceCommand shuts down a service (admin mode only)
+func (c *CLI) AdminShutdownServiceCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	serviceIndex := cmd.Params["service_index"].(int)
+
+	endPoint := fmt.Sprintf("/admin/services/%d", serviceIndex)
+
+	resp, err := c.AdminServerClient.Request("DELETE", endPoint, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to shutdown service: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to shutdown service: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("shutdown service failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
 // AdminShowService show service (admin mode only)
 func (c *CLI) AdminShowService(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	serviceIndex := cmd.Params["number"].(int)
-
-	// Check for benchmark iterations
-	iterations := 1
-	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
-		iterations = val
-	}
+	serviceIndex := cmd.Params["service_index"].(int)
 
 	endPoint := fmt.Sprintf("/admin/services/%d", serviceIndex)
-
-	if iterations > 1 {
-		// Benchmark mode - return raw result for benchmark stats
-		return c.AdminServerClient.RequestWithIterations("GET", endPoint, "admin", nil, nil, iterations)
-	}
 
 	resp, err := c.AdminServerClient.Request("GET", endPoint, "admin", nil, nil)
 	if err != nil {
@@ -855,6 +1074,107 @@ func (c *CLI) SetVariable(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+// AdminSetRoleDefaultModelsCommand set role default models (admin mode only).
+func (c *CLI) AdminSetRoleDefaultModelsCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	roleName, ok := cmd.Params["role_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("role_name not provided")
+	}
+
+	modelType, ok := cmd.Params["model_type"].(string)
+	if !ok {
+		return nil, fmt.Errorf("model_type not provided")
+	}
+
+	payload := map[string]interface{}{
+		"model_type": modelType,
+	}
+
+	var modelName string
+	modelID, ok := cmd.Params["model_id"].(string)
+	if ok {
+		payload["model_id"] = modelID
+	} else {
+		modelName, ok = cmd.Params["composite_model_name"].(string)
+		if ok {
+			payload["model_name"] = modelName
+		} else {
+			return nil, fmt.Errorf("model_id or model_name not provided")
+		}
+	}
+
+	endPoint := fmt.Sprintf("/admin/roles/%s/default-models", roleName)
+
+	resp, err := c.AdminServerClient.Request("PATCH", endPoint, "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to set role default models: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to set role default models: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("set role default models failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// AdminResetRoleDefaultModelsCommand reset role default models (admin mode only).
+func (c *CLI) AdminResetRoleDefaultModelsCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	roleName, ok := cmd.Params["role_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("role_name not provided")
+	}
+
+	modelType, ok := cmd.Params["model_type"].(string)
+	if !ok {
+		return nil, fmt.Errorf("model_type not provided")
+	}
+
+	payload := map[string]interface{}{
+		"model_type": modelType,
+	}
+
+	endPoint := fmt.Sprintf("/admin/roles/%s/default-models", roleName)
+
+	resp, err := c.AdminServerClient.Request("DELETE", endPoint, "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to reset role default models: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to reset role default models: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("reset role default models failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
 // AdminDropUserCommand deletes a user (admin mode only)
 func (c *CLI) AdminDropUserCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
@@ -1026,46 +1346,6 @@ func (c *CLI) ShowUserPermission(cmd *Command) (ResponseIf, error) {
 	for _, item := range result.Data {
 		delete(item, "extra")
 	}
-
-	result.Duration = resp.Duration
-	return &result, nil
-}
-
-// GenerateAdminToken generates an API token for a user (admin mode only)
-func (c *CLI) GenerateAdminToken(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	userName, ok := cmd.Params["user_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("user_name not provided")
-	}
-
-	encodedUserName := common.EncodeEmail(userName)
-	apiURL := fmt.Sprintf("/admin/users/%s/keys", encodedUserName)
-
-	resp, err := c.AdminServerClient.Request("POST", apiURL, "admin", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate token: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to generate token: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("generate token failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	delete(result.Data, "update_date")
-	delete(result.Data, "update_time")
-	delete(result.Data, "create_time")
 
 	result.Duration = resp.Duration
 	return &result, nil
@@ -1394,41 +1674,6 @@ func (c *CLI) UserShowMessageQueueCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) AdminRemoveServiceCommand(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-	serviceNumber, ok := cmd.Params["service_number"].(int)
-	if !ok {
-		return nil, fmt.Errorf("service_number not provided")
-	}
-
-	payload := map[string]interface{}{
-		"service_number": serviceNumber,
-	}
-
-	resp, err := c.AdminServerClient.Request("DELETE", "/admin/services", "admin", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to remove unavailable service: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to remove unavailable service: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result SimpleResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("remove unavailable service failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
-}
-
 // AdminCheckLicenseCommand check license command (admin mode only)
 func (c *CLI) AdminCheckLicenseCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
@@ -1577,6 +1822,38 @@ func (c *CLI) AdminShowRoleCommand(cmd *Command) (ResponseIf, error) {
 	var result CommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("show role failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// AdminShowRoleDefaultModelsCommand show role default models command (admin mode only)
+func (c *CLI) AdminShowRoleDefaultModelsCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	roleName := cmd.Params["role_name"].(string)
+
+	endPoint := fmt.Sprintf("/admin/roles/%s/default-models", roleName)
+
+	resp, err := c.AdminServerClient.Request("GET", endPoint, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to show role default models: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to show role default models: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("show role default models failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {

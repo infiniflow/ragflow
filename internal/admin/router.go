@@ -75,6 +75,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.GET("/services/:service_id", r.handler.GetService)
 			protected.DELETE("/services/:service_id", r.handler.ShutdownService)
 			protected.PUT("/services/:service_id", r.handler.RestartService)
+			protected.POST("/services/:service_id", r.handler.StartService)
 
 			// Variables/Settings
 			protected.GET("/variables", r.handler.ListVariables)
@@ -92,14 +93,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Log level
 			protected.GET("/log_level", r.handler.GetLogLevel)
 			protected.PUT("/log_level", r.handler.SetLogLevel)
-
-			provider := protected.Group("/providers")
-			{
-				provider.GET("/", r.handler.ListProviders)
-				provider.GET("/:provider_name", r.handler.ShowProvider)
-				provider.GET("/:provider_name/models", r.handler.ListModels)
-				provider.GET("/:provider_name/models/:model_name", r.handler.ShowModel)
-			}
 
 			queue := protected.Group("/queue")
 			{
@@ -156,7 +149,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.DELETE("/users/data", r.handler.PurgeUsersData)
 
 			// API Keys
-			protected.POST("/users/:username/keys", r.handler.CreateUserAPIKey)
+			protected.POST("/users/:username/keys", r.handler.GenerateUserAPIKey)
 			protected.DELETE("/users/:username/keys/:key", r.handler.DeleteUserAPIKey)
 			protected.GET("/users/:username/keys", r.handler.ListUserAPIKeys)
 
@@ -171,12 +164,37 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.GET("/roles/:role_name", r.handler.ShowRole)
 			protected.PUT("/roles/:role_name", r.handler.UpdateRole)
 			protected.DELETE("/roles/:role_name", r.handler.DropRole)
-			protected.GET("/roles/:role_name/permission", r.handler.GetRolePermission)
+			protected.GET("/roles/:role_name/permission", r.handler.ShowRolePermission)
 			protected.POST("/roles/:role_name/permission", r.handler.GrantRolePermission)
 			protected.DELETE("/roles/:role_name/permission", r.handler.RevokeRolePermission)
 			protected.GET("/roles/resource", r.handler.ListResources)
+			protected.GET("/roles/:role_name/default-models", r.handler.ShowRoleDefaultModels)
+			protected.PATCH("/roles/:role_name/default-models", r.handler.SetRoleDefaultModel)
+			protected.DELETE("/roles/:role_name/default-models", r.handler.ResetRoleDefaultModel)
 
-			// Models
+			// Providers and models
+			provider := protected.Group("/providers")
+			{
+				provider.GET("/", r.handler.ListProviders)
+				//	provider.PUT("/", r.handler.AddProvider)
+				provider.GET("/:provider_name", r.handler.ShowProvider)
+				//	provider.DELETE("/:provider_name", r.handler.DeleteProvider)
+				provider.GET("/:provider_name/models", r.handler.ListModels)
+				provider.GET("/:provider_name/models/:model_name", r.handler.ShowModel)
+				//	provider.POST("/:provider_name/instances", r.handler.CreateProviderInstance)
+				//	provider.GET("/:provider_name/instances", r.handler.ListProviderInstances)
+				//	provider.GET("/:provider_name/instances/:instance_name", r.handler.ShowProviderInstance)
+				//	provider.GET("/:provider_name/instances/:instance_name/balance", r.handler.ShowInstanceBalance)
+				//	provider.GET("/:provider_name/instances/:instance_name/connection", r.handler.CheckInstanceConnection)
+				//	provider.POST("/:provider_name/connection", r.handler.CheckProviderConnection)
+				//	provider.PUT("/:provider_name/instances/:instance_name", r.handler.AlterProviderInstance)
+				//	provider.DELETE("/:provider_name/instances", r.handler.DropProviderInstance)
+				//	provider.GET("/:provider_name/instances/:instance_name/models", r.handler.ListInstanceModels)
+				//	provider.PATCH("/:provider_name/instances/:instance_name/models/*model_name", r.handler.EnableOrDisableModel)
+				//	provider.POST("/:provider_name/instances/:instance_name/models", r.handler.AddModel)
+				//	provider.DELETE("/:provider_name/instances/:instance_name/models", r.handler.DropInstanceModels)
+			}
+
 			protected.GET("/all-models", r.handler.ListModelsOrShowModel)
 
 			// License

@@ -47,10 +47,22 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.RunBenchmark(cmd)
 	case "admin_list_services":
 		return c.AdminListServicesCommand(cmd)
-	case "grant_admin":
-		return c.GrantAdmin(cmd)
-	case "revoke_admin":
-		return c.RevokeAdmin(cmd)
+	case "admin_start_service":
+		return c.AdminStartServiceCommand(cmd)
+	case "admin_restart_service":
+		return c.AdminRestartServiceCommand(cmd)
+	case "admin_shutdown_service":
+		return c.AdminShutdownServiceCommand(cmd)
+	case "admin_grant_user_admin":
+		return c.AdminGrantUserAdminCommand(cmd)
+	case "admin_revoke_user_admin":
+		return c.AdminRevokeUserAdminCommand(cmd)
+	case "admin_grant_role_permission":
+		return c.AdminGrantRolePermissionCommand(cmd)
+	case "admin_revoke_role_permission":
+		return c.AdminRevokeRolePermissionCommand(cmd)
+	case "admin_show_role_permission":
+		return c.AdminShowRolePermissionCommand(cmd)
 	case "admin_create_user":
 		return c.AdminCreateUserCommand(cmd)
 	case "admin_create_user_api_key":
@@ -89,14 +101,16 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminSetLicenseConfigCommand(cmd)
 	case "set_variable":
 		return c.SetVariable(cmd)
+	case "admin_set_role_default_model":
+		return c.AdminSetRoleDefaultModelsCommand(cmd)
+	case "admin_reset_role_default_model":
+		return c.AdminResetRoleDefaultModelsCommand(cmd)
 	case "list_user_datasets":
 		return c.ListUserDatasets(cmd)
 	case "admin_list_resources_command":
 		return c.AdminListResourcesCommand(cmd)
 	case "admin_list_roles_command":
 		return c.AdminListRolesCommand(cmd)
-	case "generate_token":
-		return c.GenerateAdminToken(cmd)
 	case "admin_list_available_providers":
 		return c.CommonAvailableProvidersCommand(cmd)
 	case "admin_show_provider":
@@ -133,8 +147,6 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.UserPullMessageCommand(cmd)
 	case "user_show_message_queue_command":
 		return c.UserShowMessageQueueCommand(cmd)
-	case "admin_remove_service_command":
-		return c.AdminRemoveServiceCommand(cmd)
 	case "admin_check_license":
 		return c.AdminCheckLicenseCommand(cmd)
 	case "admin_show_fingerprint":
@@ -145,6 +157,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminShowUserCommand(cmd)
 	case "admin_show_role":
 		return c.AdminShowRoleCommand(cmd)
+	case "admin_show_role_default_models":
+		return c.AdminShowRoleDefaultModelsCommand(cmd)
 	case "admin_show_user_activity_command":
 		return c.AdminShowUserActivityCommand(cmd)
 	case "admin_show_user_summary_command":

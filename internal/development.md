@@ -324,19 +324,19 @@ Time: 1.680416
 
 ### 6.19. Set, reset, and list default models
 ```
-RAGFlow(api/default)> set default chat model 'zhipu-ai/test/glm-4.5-flash';
+RAGFlow(api/default)> set default chat model 'glm-4.5-flash@test@zhipu-ai';
 SUCCESS
-RAGFlow(api/default)> set default vision model 'zhipu-ai/test/glm-4.5v';
+RAGFlow(api/default)> set default vision model 'glm-4.5v@test@zhipu-ai';
 SUCCESS
-RAGFlow(api/default)> set default embedding model 'zhipu-ai/test/embedding-2';
+RAGFlow(api/default)> set default embedding model 'embedding-2@test@zhipu-ai';
 SUCCESS
-RAGFlow(api/default)> set default rerank model 'zhipu-ai/test/rerank';
+RAGFlow(api/default)> set default rerank model 'rerank@test@zhipu-ai';
 SUCCESS
-RAGFlow(api/default)> set default ocr model 'zhipu-ai/test/glm-ocr';
+RAGFlow(api/default)> set default ocr model 'glm-ocr@test@zhipu-ai';
 SUCCESS
-RAGFlow(api/default)> set default tts model 'zhipu-ai/test/glm-tts';
+RAGFlow(api/default)> set default tts model 'tts@test@zhipu-ai';
 SUCCESS
-RAGFlow(api/default)> set default asr model 'zhipu-ai/test/glm-asr-2512';
+RAGFlow(api/default)> set default asr model 'glm-asr-2512@test@zhipu-ai';
 SUCCESS
 RAGFlow(api/default)> list default models;
 +--------+----------------+---------------+----------------+------------+

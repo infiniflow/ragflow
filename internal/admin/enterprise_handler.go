@@ -20,7 +20,9 @@ import (
 	"errors"
 	"net/http"
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -125,15 +127,15 @@ func (h *Handler) DropRole(c *gin.Context) {
 	success(c, role, "")
 }
 
-// GetRolePermission handle get role permission
-func (h *Handler) GetRolePermission(c *gin.Context) {
+// ShowRolePermission handle get role permission
+func (h *Handler) ShowRolePermission(c *gin.Context) {
 	roleName := c.Param("role_name")
 	if roleName == "" {
 		errorResponse(c, "Role name is required", 400)
 		return
 	}
 
-	permissions, err := h.service.GetRolePermission(roleName)
+	permissions, err := h.service.ShowRolePermission(roleName)
 	if err != nil {
 		errorResponse(c, err.Error(), 500)
 		return
@@ -213,6 +215,189 @@ func (h *Handler) ListResources(c *gin.Context) {
 	}
 
 	success(c, resources, "")
+}
+
+func (h *Handler) ShowRoleDefaultModels(c *gin.Context) {
+	roleName := c.Param("role_name")
+	if roleName == "" {
+		errorResponse(c, "Role name is required", 400)
+		return
+	}
+
+	result, err := h.service.ShowRoleDefaultModels(roleName)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+	success(c, result, "Role default model set successfully")
+}
+
+type SetRoleDefaultModelRequest struct {
+	ModelID   string `json:"model_id"`
+	ModelType string `json:"model_type" binding:"required"`
+}
+
+func (h *Handler) SetRoleDefaultModel(c *gin.Context) {
+	roleName := c.Param("role_name")
+	if roleName == "" {
+		errorResponse(c, "Role name is required", 400)
+		return
+	}
+
+	var request SetRoleDefaultModelRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"data":    nil,
+			"message": "Invalid request body: " + err.Error(),
+		})
+		return
+	}
+
+	result, err := h.service.SetRoleDefaultModel(roleName, request.ModelID, request.ModelType)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+	success(c, result, "Role default model set successfully")
+}
+
+type ResetRoleDefaultModelRequest struct {
+	ModelType string `json:"model_type" binding:"required"`
+}
+
+func (h *Handler) ResetRoleDefaultModel(c *gin.Context) {
+	roleName := c.Param("role_name")
+	if roleName == "" {
+		errorResponse(c, "Role name is required", 400)
+		return
+	}
+
+	var request ResetRoleDefaultModelRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"data":    nil,
+			"message": "Invalid request body: " + err.Error(),
+		})
+		return
+	}
+
+	result, err := h.service.ResetRoleDefaultModel(roleName, request.ModelType)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+	success(c, result, "Role default model set successfully")
+}
+
+func (h *Handler) ListProviders(c *gin.Context) {
+
+	keywords := ""
+	if queryKeywords := c.Query("available"); queryKeywords != "" {
+		keywords = queryKeywords
+	}
+
+	// convert keywords to small case
+	keywords = strings.ToLower(keywords)
+	if keywords == "true" {
+		// list pool providers
+		providers, err := dao.GetModelProviderManager().ListProviders()
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeNotFound,
+				"message": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"code":    0,
+			"message": "success",
+			"data":    providers,
+		})
+	}
+}
+
+func (h *Handler) ShowProvider(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	provider, err := dao.GetModelProviderManager().GetProviderByName(providerName)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeNotFound,
+			"message": err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    provider,
+	})
+}
+
+func (h *Handler) ListModels(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+	models, err := dao.GetModelProviderManager().ListModels(providerName)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeNotFound,
+			"message": err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    models,
+	})
+}
+
+func (h *Handler) ShowModel(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+	modelName := c.Param("model_name")
+	if modelName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Model name is required",
+		})
+		return
+	}
+	model, err := dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeNotFound,
+			"message": err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    model,
+	})
 }
 
 type ListModelsOrShowModelRequest struct {
@@ -1269,8 +1454,8 @@ func (h *Handler) PurgeUsersData(c *gin.Context) {
 	success(c, result, "")
 }
 
-// CreateUserAPIKey handle create tenant API key
-func (h *Handler) CreateUserAPIKey(c *gin.Context) {
+// GenerateUserAPIKey handle create tenant API key
+func (h *Handler) GenerateUserAPIKey(c *gin.Context) {
 	encodedUsername := c.Param("username")
 	username, err := common.DecodeEmail(encodedUsername)
 	if err != nil {
@@ -1278,7 +1463,7 @@ func (h *Handler) CreateUserAPIKey(c *gin.Context) {
 		return
 	}
 
-	apiKey, err := h.service.CreateUserAPIKey(username)
+	apiKey, err := h.service.GenerateUserAPIKey(username)
 	if err != nil {
 		errorResponse(c, err.Error(), 500)
 		return

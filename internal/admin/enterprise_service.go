@@ -85,14 +85,12 @@ func (s *Service) DropRole(roleName string) (map[string]interface{}, error) {
 	return result, nil
 }
 
-// GetRolePermission get role permissions
-func (s *Service) GetRolePermission(roleName string) ([]map[string]interface{}, error) {
-	result := []map[string]interface{}{
-		{
-			"command":   "get_role_permission",
-			"role_name": roleName,
-			"error":     "'get role permissions' is implemented in enterprise edition",
-		},
+// ShowRolePermission get role permissions
+func (s *Service) ShowRolePermission(roleName string) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command":   "show_role_permission",
+		"role_name": roleName,
+		"error":     "'show role permissions' is implemented in enterprise edition",
 	}
 
 	return result, nil
@@ -132,6 +130,37 @@ func (s *Service) ListResources() (map[string]interface{}, error) {
 	}
 
 	return result, nil
+}
+
+func (s *Service) ShowRoleDefaultModels(roleName string) ([]map[string]interface{}, error) {
+	return []map[string]interface{}{
+		{
+			"command":   "show_role_default_models",
+			"role_name": roleName,
+			"error":     "'show role default models' is implemented in enterprise edition",
+		},
+	}, nil
+}
+
+// SetRoleDefaultModel set role default model
+func (s *Service) SetRoleDefaultModel(roleName, modelID, modelType string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":    "set_role_default_model",
+		"role_name":  roleName,
+		"model_id":   modelID,
+		"model_type": modelType,
+		"error":      "'set role default model' is implemented in enterprise edition",
+	}, nil
+}
+
+// ResetRoleDefaultModel reset role default model
+func (s *Service) ResetRoleDefaultModel(roleName, modelType string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":    "reset_role_default_model",
+		"role_name":  roleName,
+		"model_type": modelType,
+		"error":      "'reset role default model' is implemented in enterprise edition",
+	}, nil
 }
 
 // ListAllModels list all models
@@ -834,8 +863,8 @@ func (s *Service) PurgeUsersData(preview bool, days int, userPlan *string, userA
 	return result, nil
 }
 
-// CreateUserAPIKey create tenant API key for tenant
-func (s *Service) CreateUserAPIKey(username string) (map[string]interface{}, error) {
+// GenerateUserAPIKey create tenant API key for tenant
+func (s *Service) GenerateUserAPIKey(username string) (map[string]interface{}, error) {
 
 	user, err := s.userDAO.GetByEmail(username)
 	if err != nil {

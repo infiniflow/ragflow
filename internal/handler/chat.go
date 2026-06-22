@@ -282,6 +282,135 @@ func (h *ChatHandler) RemoveChats(c *gin.Context) {
 	})
 }
 
+// DeleteChat soft deletes a chat by ID.
+func (h *ChatHandler) DeleteChat(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+	userID := user.ID
+
+	chatID := c.Param("chat_id")
+	if chatID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"data":    nil,
+			"message": "chat_id is required",
+		})
+		return
+	}
+
+	if err := h.chatService.DeleteChat(userID, chatID); err != nil {
+		if err.Error() == "no authorization" {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeAuthenticationError,
+				"data":    false,
+				"message": "No authorization.",
+			})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"data":    nil,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    true,
+		"message": "success",
+	})
+}
+
+// BulkDeleteChats soft deletes multiple chats owned by the current user.
+func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+	userID := user.ID
+	if c.Request.Body == nil || c.Request.ContentLength == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeSuccess,
+			"data":    map[string]interface{}{},
+			"message": "success",
+		})
+		return
+	}
+
+	var req service.BulkDeleteChatsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"data":    nil,
+			"message": "Invalid request body: " + err.Error(),
+		})
+		return
+	}
+
+	if len(req.IDs) == 0 && !req.DeleteAll {
+		if req.ChatID != "" {
+			if err := h.chatService.DeleteChat(userID, req.ChatID); err != nil {
+				if err.Error() == "no authorization" {
+					c.JSON(http.StatusOK, gin.H{
+						"code":    common.CodeAuthenticationError,
+						"data":    false,
+						"message": "No authorization.",
+					})
+					return
+				}
+				c.JSON(http.StatusOK, gin.H{
+					"code":    common.CodeDataError,
+					"data":    nil,
+					"message": err.Error(),
+				})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeSuccess,
+				"data":    true,
+				"message": "success",
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeSuccess,
+			"data":    map[string]interface{}{},
+			"message": "success",
+		})
+		return
+	}
+
+	result, err := h.chatService.BulkDeleteChats(userID, &req)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"data":    nil,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	message := "success"
+	if errorsList, ok := result["errors"].([]string); ok && len(errorsList) > 0 {
+		if successCount, ok := result["success_count"].(int); ok {
+			message = "Partially deleted " + strconv.Itoa(successCount) + " chats with " + strconv.Itoa(len(errorsList)) + " errors"
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    result,
+		"message": message,
+	})
+}
+
 // GetChat get chat detail
 // @Summary Get Chat Detail
 // @Description Get detail of a chat by ID

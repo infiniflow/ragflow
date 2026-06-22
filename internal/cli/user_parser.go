@@ -1009,14 +1009,9 @@ optionsLoop:
 	return cmd, nil
 }
 
-// syntax: add admin server host '127.0.0.1:9333' user 'ccc' password 'ppp'
+// syntax: add admin host '127.0.0.1:9333' user 'ccc' password 'ppp'
 func (p *Parser) parseAddAdminServer() (*Command, error) {
 	p.nextToken() // consume ADMIN
-
-	if p.curToken.Type != TokenServer {
-		return nil, fmt.Errorf("expected server name")
-	}
-	p.nextToken() // consume SERVER
 
 	if p.curToken.Type != TokenHost {
 		return nil, fmt.Errorf("expected HOST")
@@ -1041,14 +1036,9 @@ func (p *Parser) parseAddAdminServer() (*Command, error) {
 	return cmd, nil
 }
 
-// syntax: add api server 'abc' host '127.0.0.1:9333' token 'xxx' user 'ccc' password 'ppp'
+// syntax: add api 'abc' host '127.0.0.1:9333' token 'xxx' user 'ccc' password 'ppp'
 func (p *Parser) parseAddAPIServer() (*Command, error) {
 	p.nextToken() // consume API
-
-	if p.curToken.Type != TokenServer {
-		return nil, fmt.Errorf("expected server name")
-	}
-	p.nextToken() // consume SERVER
 
 	serverName, err := p.parseQuotedString()
 	if err != nil {
@@ -1103,14 +1093,9 @@ optionsLoop:
 	return cmd, nil
 }
 
-// syntax: delete api server 'abc'
+// syntax: delete api 'abc'
 func (p *Parser) parseDeleteAPIServer() (*Command, error) {
 	p.nextToken() // consume API
-
-	if p.curToken.Type != TokenServer {
-		return nil, fmt.Errorf("expected server name")
-	}
-	p.nextToken() // consume SERVER
 
 	serverName, err := p.parseQuotedString()
 	if err != nil {
@@ -1870,7 +1855,7 @@ func (p *Parser) parseIdentifierList() ([]string, error) {
 
 	for p.curToken.Type == TokenComma {
 		p.nextToken()
-		ident, err := p.parseIdentifier()
+		ident, err = p.parseIdentifier()
 		if err != nil {
 			return nil, err
 		}
@@ -2845,12 +2830,14 @@ optionsLoop:
 	}
 	cmd := NewCommand("chat_to_model")
 
-	if common.IsCompositeModelName(modelNameOrID) {
-		cmd.Params["composite_model_name"] = modelNameOrID
-	} else if common.IsUUID(modelNameOrID) {
-		cmd.Params["model_id"] = modelNameOrID
-	} else {
-		return nil, fmt.Errorf("invalid format of model name or ID: %s", modelNameOrID)
+	if modelNameOrID != "" {
+		if common.IsCompositeModelName(modelNameOrID) {
+			cmd.Params["composite_model_name"] = modelNameOrID
+		} else if common.IsUUID(modelNameOrID) {
+			cmd.Params["model_id"] = modelNameOrID
+		} else {
+			return nil, fmt.Errorf("invalid format of model name or ID: %s", modelNameOrID)
+		}
 	}
 	cmd.Params["messages"] = messages
 	cmd.Params["images"] = images
@@ -3714,75 +3701,6 @@ func (p *Parser) parseUserStatement() (*Command, error) {
 	default:
 		return nil, fmt.Errorf("invalid user statement: %s", p.curToken.Value)
 	}
-}
-
-func (p *Parser) parseStartupCommand() (*Command, error) {
-	p.nextToken() // consume STARTUP
-	if p.curToken.Type != TokenService {
-		return nil, fmt.Errorf("expected SERVICE")
-	}
-	p.nextToken()
-
-	serviceNum, err := p.parseNumber()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("startup_service")
-	cmd.Params["number"] = serviceNum
-
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseShutdownCommand() (*Command, error) {
-	p.nextToken() // consume SHUTDOWN
-	if p.curToken.Type != TokenService {
-		return nil, fmt.Errorf("expected SERVICE")
-	}
-	p.nextToken()
-
-	serviceNum, err := p.parseNumber()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("shutdown_service")
-	cmd.Params["number"] = serviceNum
-
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseRestartCommand() (*Command, error) {
-	p.nextToken() // consume RESTART
-	if p.curToken.Type != TokenService {
-		return nil, fmt.Errorf("expected SERVICE")
-	}
-	p.nextToken()
-
-	serviceNum, err := p.parseNumber()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("restart_service")
-	cmd.Params["number"] = serviceNum
-
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
 }
 
 func (p *Parser) parseUnsetCommand() (*Command, error) {
