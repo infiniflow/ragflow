@@ -11,7 +11,7 @@ Key features, improvements and bug fixes in the latest releases.
 
 ## v0.26.1
 
-Released on June 16, 2026.
+Released on June 17, 2026.
 
 ### New features
 
@@ -26,7 +26,7 @@ Released on June 16, 2026.
 ### Bug fixes
 
 - **Model provider**: Fixes inaccurate token billing, corrects embedding truncation limits to prevent indexing failures, and refactors error handling to surface root error causes. [#15424](https://github.com/infiniflow/ragflow/pull/15424)
-- **API**: Adds a legacy mode to the `/chat/completions` endpoint to restore the v0.23.0 style `<think>` output for backward compatibility. [#16014](https://github.com/infiniflow/ragflow/pull/16014) See also [Converse with chat assistant](./references/http_api_reference.md#converse-with-chat-assistant)
+- **API**: Adds a legacy mode to the `/chat/completions` endpoint to restore the v0.23.0 style `<think>` output for backward compatibility. [#16014](https://github.com/infiniflow/ragflow/pull/16014) See also [Converse with chat assistant](./references/http_api_reference.md#converse-with-chat-assistant).
 
 ## v0.26.0
 

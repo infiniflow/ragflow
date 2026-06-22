@@ -211,8 +211,8 @@ func generateRandomHex(n int) string {
 }
 
 // ListUsers list all users
-func (s *Service) ListUsers() ([]map[string]interface{}, error) {
-	users, _, err := s.userDAO.List(0, 0)
+func (s *Service) ListUsers(page, pageSize int) ([]map[string]interface{}, error) {
+	users, _, err := s.userDAO.List(page*pageSize, pageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -1020,68 +1020,6 @@ func (s *Service) DeleteUserAPIToken(username, key string) error {
 	return nil
 }
 
-// Role management methods
-
-// ListRoles list all roles
-func (s *Service) ListRoles() ([]map[string]interface{}, error) {
-	// TODO: Implement list roles
-	return []map[string]interface{}{}, nil
-}
-
-// CreateRole create a new role
-func (s *Service) CreateRole(roleName, description string) (map[string]interface{}, error) {
-	// TODO: Implement create role
-	return map[string]interface{}{}, nil
-}
-
-// GetRole get role details
-func (s *Service) GetRole(roleName string) (map[string]interface{}, error) {
-	// TODO: Implement get role
-	return map[string]interface{}{}, nil
-}
-
-// UpdateRole update role
-func (s *Service) UpdateRole(roleName, description string) (map[string]interface{}, error) {
-	// TODO: Implement update role
-	return map[string]interface{}{}, nil
-}
-
-// DeleteRole delete role
-func (s *Service) DeleteRole(roleName string) error {
-	// TODO: Implement delete role
-	return nil
-}
-
-// GetRolePermission get role permissions
-func (s *Service) GetRolePermission(roleName string) ([]map[string]interface{}, error) {
-	// TODO: Implement get role permissions
-	return []map[string]interface{}{}, nil
-}
-
-// GrantRolePermission grant permission to role
-func (s *Service) GrantRolePermission(roleName string, actions []string, resource string) (map[string]interface{}, error) {
-	// TODO: Implement grant role permission
-	return map[string]interface{}{}, nil
-}
-
-// RevokeRolePermission revoke permission from role
-func (s *Service) RevokeRolePermission(roleName string, actions []string, resource string) (map[string]interface{}, error) {
-	// TODO: Implement revoke role permission
-	return map[string]interface{}{}, nil
-}
-
-// UpdateUserRole update user role
-func (s *Service) UpdateUserRole(username, roleName string) ([]map[string]interface{}, error) {
-	// TODO: Implement update user role
-	return []map[string]interface{}{}, nil
-}
-
-// GetUserPermission get user permissions
-func (s *Service) GetUserPermission(username string) ([]map[string]interface{}, error) {
-	// TODO: Implement get user permissions
-	return []map[string]interface{}{}, nil
-}
-
 // ListServices get all services
 func (s *Service) ListServices() ([]map[string]interface{}, error) {
 	allConfigs := server.GetAllConfigs()
@@ -1488,8 +1426,6 @@ func (s *Service) RestartService(serviceID string) (map[string]interface{}, erro
 	}, nil
 }
 
-// Variable/Settings methods
-
 // AdminException admin exception error
 type AdminException struct {
 	Message string
@@ -1580,9 +1516,9 @@ func (s *Service) GetVariable(varName string) ([]map[string]interface{}, error) 
 	return formatSystemSettings(settings), nil
 }
 
-// GetAllVariables get all variables
+// ListAllVariables list all variables
 // Returns all system settings from database
-func (s *Service) GetAllVariables() ([]map[string]interface{}, error) {
+func (s *Service) ListAllVariables() ([]map[string]interface{}, error) {
 	settings, err := s.systemSettingsDAO.GetAll()
 	if err != nil {
 		return nil, err
@@ -1626,18 +1562,17 @@ func (s *Service) SetVariable(varName, varValue string) error {
 
 // Config methods
 
-// GetAllConfigs get all configs
+// ListAllConfigs list all configs
 // Returns all service configurations from the config file
-func (s *Service) GetAllConfigs() ([]map[string]interface{}, error) {
+func (s *Service) ListAllConfigs() ([]map[string]interface{}, error) {
 	result := server.GetAllConfigs()
 	return result, nil
 }
 
 // Environment methods
 
-// GetAllEnvironments get all environments
-// Returns important environment variables
-func (s *Service) GetAllEnvironments() ([]map[string]interface{}, error) {
+// ListEnvironments list all environments
+func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 	result := make([]map[string]interface{}, 0)
 
 	// DOC_ENGINE

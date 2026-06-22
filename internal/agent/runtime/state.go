@@ -262,6 +262,28 @@ func (s *CanvasState) Snapshot() map[string]map[string]any {
 	return out
 }
 
+// SnapshotNamespaces returns shallow copies of the non-Outputs state
+// namespaces that components may read/write directly via GetVar /
+// writeVar, namely sys.*, env.*, and the iteration/global aliases.
+func (s *CanvasState) SnapshotNamespaces() (sys map[string]any, env map[string]any, globals map[string]any) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sys = make(map[string]any, len(s.Sys))
+	for k, v := range s.Sys {
+		sys[k] = v
+	}
+	env = make(map[string]any, len(s.Env))
+	for k, v := range s.Env {
+		env[k] = v
+	}
+	globals = make(map[string]any, len(s.Globals))
+	for k, v := range s.Globals {
+		globals[k] = v
+	}
+	return sys, env, globals
+}
+
 // RecordOutput stores payload under Outputs[cpnID][bucket]. Used by the
 // StatePostHandler to persist a node's result so downstream nodes can
 // resolve {{cpnID@bucket.x}} references against it.

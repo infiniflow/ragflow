@@ -30,11 +30,23 @@ package component
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
 	agenttool "ragflow/internal/agent/tool"
 )
+
+type codeExecSandboxRecorder struct {
+	req  agenttool.SandboxRequest
+	resp *agenttool.SandboxResponse
+	err  error
+}
+
+func (s *codeExecSandboxRecorder) ExecuteCode(_ context.Context, req agenttool.SandboxRequest) (*agenttool.SandboxResponse, error) {
+	s.req = req
+	return s.resp, s.err
+}
 
 // TestExeSQL_V1DSLParamsAccepted exercises the v1-DSL-compat
 // translator that turns v1 DSL ExeSQL params (database/username/
@@ -263,6 +275,230 @@ func TestSearchMyDataset_AllAliasesRegistered(t *testing.T) {
 		if !have[expected] {
 			t.Errorf("RegisteredNames() missing %q (search-mydataset alias surface regression)", expected)
 		}
+	}
+}
+
+// TestCodeExec_LegacyDSLWrapperRegistered pins the Universe A
+// registration for the legacy v1 DSL node label `CodeExec`.
+// Without this wrapper, DSLs like internal/agent/dsl/testdata/all.json
+// fail at buildNodeBody time with "unknown component".
+func TestCodeExec_LegacyDSLWrapperRegistered(t *testing.T) {
+	t.Parallel()
+
+	c, err := New(componentNameCodeExec, map[string]any{
+		"lang":   "python",
+		"script": "def main(): return 1",
+	})
+	if err != nil {
+		t.Fatalf("New(CodeExec) errored: %v", err)
+	}
+	if c == nil {
+		t.Fatal("New(CodeExec) returned nil")
+	}
+	if got := c.Name(); got != componentNameCodeExec {
+		t.Errorf("New(CodeExec).Name() = %q, want %q", got, componentNameCodeExec)
+	}
+}
+
+// TestCodeExec_LegacyDSLWrapperBridgesParamsAndOutputs verifies the
+// component wrapper preserves the frontend DSL surface (`lang`,
+// `script`, `arguments`) while translating the tool envelope back to
+// the legacy `result` field consumed by downstream templates.
+//
+// Not t.Parallel(): this test swaps the package-global sandbox client.
+func TestCodeExec_LegacyDSLWrapperBridgesParamsAndOutputs(t *testing.T) {
+	prev := agenttool.GetSandboxClient()
+	recorder := &codeExecSandboxRecorder{
+		resp: &agenttool.SandboxResponse{
+			ExitCode: 0,
+			Stdout:   "ok",
+			StructuredResult: map[string]any{
+				"present": true,
+				"value":   float64(14),
+			},
+		},
+	}
+	agenttool.SetSandboxClient(recorder)
+	t.Cleanup(func() { agenttool.SetSandboxClient(prev) })
+
+	c, err := New(componentNameCodeExec, map[string]any{
+		"lang": "python",
+		"script": "def main(x):\n" +
+			"    return int(x) * 2\n",
+		"arguments": map[string]any{
+			"x": "from-params",
+		},
+	})
+	if err != nil {
+		t.Fatalf("New(CodeExec): %v", err)
+	}
+
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"arguments": map[string]any{
+			"x": 7,
+		},
+	})
+	if err != nil {
+		t.Fatalf("CodeExec.Invoke: %v", err)
+	}
+
+	if recorder.req.Lang != "python" {
+		t.Errorf("sandbox lang = %q, want python", recorder.req.Lang)
+	}
+	if recorder.req.Script == "" {
+		t.Error("sandbox script should not be empty")
+	}
+	switch got := recorder.req.Arguments["x"].(type) {
+	case int:
+		if got != 7 {
+			t.Errorf("sandbox arguments[x] = %v, want 7", got)
+		}
+	case float64:
+		if got != 7 {
+			t.Errorf("sandbox arguments[x] = %v, want 7", got)
+		}
+	default:
+		t.Errorf("sandbox arguments[x] type = %T, want int/float64 carrying 7", got)
+	}
+	if got := out["result"]; got != float64(14) {
+		t.Errorf("CodeExec result = %v, want numeric 14", got)
+	}
+	if got := out["content"]; got != "14" {
+		t.Errorf("CodeExec content = %v, want 14", got)
+	}
+	if got := out["actual_type"]; got != "Number" {
+		t.Errorf("CodeExec actual_type = %v, want Number", got)
+	}
+	if got := out["_ERROR"]; got != "" {
+		t.Errorf("CodeExec _ERROR = %v, want empty string", got)
+	}
+}
+
+func TestCodeExec_LegacyDSLWrapperResolvesArgumentRefsFromState(t *testing.T) {
+	prev := agenttool.GetSandboxClient()
+	recorder := &codeExecSandboxRecorder{
+		resp: &agenttool.SandboxResponse{
+			ExitCode: 0,
+			StructuredResult: map[string]any{
+				"present": true,
+				"value":   float64(16),
+			},
+		},
+	}
+	agenttool.SetSandboxClient(recorder)
+	t.Cleanup(func() { agenttool.SetSandboxClient(prev) })
+
+	c, err := New(componentNameCodeExec, map[string]any{
+		"lang": "python",
+		"script": "def main(x):\n" +
+			"    return int(x) * 2\n",
+		"arguments": map[string]any{
+			"x": "UserFillUp:CodeInput@x",
+		},
+		"outputs": map[string]any{
+			"result": map[string]any{
+				"type": "Number",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New(CodeExec): %v", err)
+	}
+
+	out, err := c.Invoke(context.Background(), map[string]any{
+		"state": map[string]map[string]any{
+			"UserFillUp:CodeInput": {
+				"x": "8",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CodeExec.Invoke: %v", err)
+	}
+	if got := recorder.req.Arguments["x"]; got != "8" {
+		t.Fatalf("sandbox arguments[x] = %#v, want \"8\"", got)
+	}
+	if got := out["result"]; got != float64(16) {
+		t.Fatalf("CodeExec result = %v, want 16", got)
+	}
+}
+
+func TestCodeExec_LegacyDSLWrapperContractMismatchSetsError(t *testing.T) {
+	prev := agenttool.GetSandboxClient()
+	recorder := &codeExecSandboxRecorder{
+		resp: &agenttool.SandboxResponse{
+			ExitCode: 0,
+			StructuredResult: map[string]any{
+				"present": true,
+				"value":   "not-a-number",
+			},
+		},
+	}
+	agenttool.SetSandboxClient(recorder)
+	t.Cleanup(func() { agenttool.SetSandboxClient(prev) })
+
+	c, err := New(componentNameCodeExec, map[string]any{
+		"lang":   "python",
+		"script": "def main():\n    return \"not-a-number\"\n",
+		"outputs": map[string]any{
+			"result": map[string]any{
+				"type": "Number",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New(CodeExec): %v", err)
+	}
+
+	out, err := c.Invoke(context.Background(), map[string]any{})
+	if err != nil {
+		t.Fatalf("CodeExec.Invoke: %v", err)
+	}
+	if got := out["result"]; got != nil {
+		t.Errorf("CodeExec result = %v, want nil on contract mismatch", got)
+	}
+	if got := out["actual_type"]; got != "String" {
+		t.Errorf("CodeExec actual_type = %v, want String", got)
+	}
+	if got, _ := out["_ERROR"].(string); !strings.Contains(got, "expected type Number") {
+		t.Errorf("CodeExec _ERROR = %v, want contract mismatch message", out["_ERROR"])
+	}
+	if got := out["content"]; got != "not-a-number" {
+		t.Errorf("CodeExec content = %v, want raw canonical content", got)
+	}
+}
+
+func TestCodeExec_LegacyDSLWrapperPreservesExecutionError(t *testing.T) {
+	prev := agenttool.GetSandboxClient()
+	recorder := &codeExecSandboxRecorder{
+		resp: nil,
+		err:  fmt.Errorf("Container pool is busy"),
+	}
+	agenttool.SetSandboxClient(recorder)
+	t.Cleanup(func() { agenttool.SetSandboxClient(prev) })
+
+	c, err := New(componentNameCodeExec, map[string]any{
+		"lang":   "python",
+		"script": "def main(): return 16\n",
+		"outputs": map[string]any{
+			"result": map[string]any{
+				"type": "Number",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New(CodeExec): %v", err)
+	}
+
+	out, err := c.Invoke(context.Background(), map[string]any{})
+	if err == nil {
+		t.Fatal("CodeExec.Invoke: want wrapped execution error, got nil")
+	}
+	if got, _ := out["_ERROR"].(string); got != "Container pool is busy" {
+		t.Errorf("CodeExec _ERROR = %v, want sandbox execution error", out["_ERROR"])
+	}
+	if got := out["result"]; got != nil {
+		t.Errorf("CodeExec result = %v, want nil on execution error", got)
 	}
 }
 

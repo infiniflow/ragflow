@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { formatDate } from '@/utils/date';
 import { ColumnDef, Row, Table } from '@tanstack/react-table';
 import { ListChevronsDownUp, LucidePencil, Trash2 } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   getMetadataValueTypeLabel,
@@ -56,12 +56,6 @@ export const useMetadataColumns = ({
     Record<string, boolean>
   >({});
 
-  const isSettingsMode =
-    metadataType === MetadataType.Setting ||
-    metadataType === MetadataType.SingleFileSetting ||
-    metadataType === MetadataType.UpdateSingle;
-
-  const showTypeColumn = isSettingsMode;
   const handleEditValue = (field: string, value: string) => {
     setEditingValue({ field, value, newValue: value });
   };
@@ -193,6 +187,35 @@ export const useMetadataColumns = ({
             }));
           };
 
+          const handleToggleExpand = (e: React.MouseEvent) => {
+            e.stopPropagation();
+            toggleRowExpanded();
+          };
+
+          const handleDeleteValueClick =
+            (value: string): React.MouseEventHandler =>
+            (e) => {
+              e.stopPropagation();
+              setDeleteDialogContent({
+                visible: true,
+                title:
+                  t('common.delete') +
+                  ' ' +
+                  t('knowledgeDetails.metadata.value'),
+                name: value,
+                warnText:
+                  MetadataDeleteMap(t)[metadataType as MetadataType]
+                    .warnValueText,
+                onOk: () => {
+                  hideDeleteModal();
+                  handleDeleteSingleValue(row.getValue('field'), value);
+                },
+                onCancel: () => {
+                  hideDeleteModal();
+                },
+              });
+            };
+
           const displayedValues = isRowExpanded ? values : values.slice(0, 2);
           const hasMore = Array.isArray(values) && values.length > 2;
 
@@ -269,32 +292,7 @@ export const useMetadataColumns = ({
                           <Button
                             variant={'delete'}
                             className="p-0 bg-transparent"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              //   showDeleteDialogContent(value, row);
-                              setDeleteDialogContent({
-                                visible: true,
-                                title:
-                                  t('common.delete') +
-                                  ' ' +
-                                  t('knowledgeDetails.metadata.value'),
-                                name: value,
-                                warnText:
-                                  MetadataDeleteMap(t)[
-                                    metadataType as MetadataType
-                                  ].warnValueText,
-                                onOk: () => {
-                                  hideDeleteModal();
-                                  handleDeleteSingleValue(
-                                    row.getValue('field'),
-                                    value,
-                                  );
-                                },
-                                onCancel: () => {
-                                  hideDeleteModal();
-                                },
-                              });
-                            }}
+                            onClick={handleDeleteValueClick(value)}
                           >
                             <Trash2 />
                           </Button>
@@ -308,10 +306,7 @@ export const useMetadataColumns = ({
                 <Button
                   variant={'ghost'}
                   className="border border-border-button h-auto px-2 py-1"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleRowExpanded();
-                  }}
+                  onClick={handleToggleExpand}
                 >
                   <div className="text-text-secondary">
                     +{values.length - 2}
@@ -323,10 +318,7 @@ export const useMetadataColumns = ({
                 <Button
                   variant={'ghost'}
                   className="bg-transparent px-2 py-1"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleRowExpanded();
-                  }}
+                  onClick={handleToggleExpand}
                 >
                   <div className="text-text-secondary">
                     <ListChevronsDownUp size={14} />

@@ -306,7 +306,76 @@ class MarkdownElementExtractor:
             dels = self.get_delimiters(delimiter)
         if len(dels) > 0:
             text = "\n".join(self.lines)
-            return self._extract_delimited_elements(text, dels, include_meta)
+            sections = self._extract_delimited_elements(text, dels, include_meta)
+            # Attach lone header lines to the section that follows them so that
+            # "## Title\n" never becomes an isolated chunk when the delimiter
+            # splits at every newline.  A header is "lone" when it occupies a
+            # single line (no embedded newline after stripping).
+            def _is_lone_header(section_content):
+                stripped = section_content.strip()
+                return bool(re.match(r"^#{1,6}\s+\S", stripped)) and "\n" not in stripped
+
+            def _is_attachable_body(section_content):
+                """True when the following chunk is prose body, not code/table/list/etc."""
+                stripped = section_content.strip()
+                if not stripped:
+                    return False
+                first_line = stripped.split("\n", 1)[0]
+                if self._get_fence_marker(first_line):
+                    return False
+                if first_line.lstrip().startswith("|"):
+                    return False
+                if re.match(r"^\S+\s*\|", first_line):
+                    return False
+                if first_line.lstrip().startswith("<"):
+                    return False
+                if re.match(r"^\s*[-*+]\s+", first_line) or re.match(r"^\s*\d+\.\s+", first_line):
+                    return False
+                if first_line.lstrip().startswith(">"):
+                    return False
+                return True
+
+            merged = []
+            merged_header_count = 0
+            i = 0
+            while i < len(sections):
+                content = sections[i]["content"] if include_meta else sections[i]
+                if _is_lone_header(content):
+                    header_parts = [content.strip()]
+                    j = i + 1
+                    while j < len(sections):
+                        next_content = sections[j]["content"] if include_meta else sections[j]
+                        if not _is_lone_header(next_content):
+                            break
+                        header_parts.append(next_content.strip())
+                        j += 1
+                    if j < len(sections):
+                        body_content = sections[j]["content"] if include_meta else sections[j]
+                        if _is_attachable_body(body_content):
+                            combined = "\n".join(header_parts) + "\n" + body_content
+                            if include_meta:
+                                merged.append({
+                                    **sections[i],
+                                    "content": combined,
+                                    "end_line": sections[j]["end_line"],
+                                })
+                            else:
+                                merged.append(combined)
+                            merged_header_count += len(header_parts)
+                            i = j + 1
+                            continue
+                    for k in range(i, j):
+                        merged.append(sections[k])
+                    i = j
+                    continue
+                merged.append(sections[i])
+                i += 1
+            if merged_header_count:
+                logging.debug(
+                    "markdown_parser: merged %d lone header line(s) into following sections",
+                    merged_header_count,
+                )
+            return merged
         while i < len(self.lines):
             line = self.lines[i]
 

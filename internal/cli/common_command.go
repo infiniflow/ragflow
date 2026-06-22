@@ -250,7 +250,7 @@ func (c *CLI) Logout() (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) ListAvailableProviders(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonAvailableProvidersCommand(cmd *Command) (ResponseIf, error) {
 
 	var resp *Response
 	var err error
@@ -283,7 +283,7 @@ func (c *CLI) ListAvailableProviders(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) ShowProvider(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonShowProviderCommand(cmd *Command) (ResponseIf, error) {
 	providerName, ok := cmd.Params["provider_name"].(string)
 	if !ok {
 		return nil, fmt.Errorf("provider_name not provided")
@@ -323,7 +323,7 @@ func (c *CLI) ShowProvider(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) ListModels(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonListModelsCommand(cmd *Command) (ResponseIf, error) {
 
 	providerName, ok := cmd.Params["provider_name"].(string)
 	if !ok {
@@ -409,7 +409,7 @@ func (c *CLI) ListSupportedModels(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) ShowProviderModel(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonShowProviderModelCommand(cmd *Command) (ResponseIf, error) {
 	providerName, ok := cmd.Params["provider_name"].(string)
 	if !ok {
 		return nil, fmt.Errorf("provider_name not provided")
@@ -583,7 +583,7 @@ func (c *CLI) ListDefaultModels(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) ShowCommonCurrent(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonShowCurrent(cmd *Command) (ResponseIf, error) {
 	var result *CommonDataResponse
 
 	switch c.Config.CLIMode {
@@ -918,17 +918,22 @@ func (c *CLI) ListAllModels(cmd *Command) (ResponseIf, error) {
 		"page_size": pageSize,
 	}
 
+	var resp *Response
+	var err error
 	var httpClient *HTTPClient
 	switch c.Config.CLIMode {
 	case AdminMode:
 		httpClient = c.AdminServerClient
+		apiURL := "/admin/all-models"
+		resp, err = httpClient.Request("GET", apiURL, "web", nil, payload)
 	case APIMode:
 		httpClient = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+		apiURL := "/all-models"
+		resp, err = httpClient.Request("GET", apiURL, "web", nil, payload)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
 
-	resp, err := httpClient.Request("GET", "/all-models", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list all models: %w", err)
 	}
@@ -949,7 +954,7 @@ func (c *CLI) ListAllModels(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) ShowModel(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonShowModel(cmd *Command) (ResponseIf, error) {
 
 	modelName, ok := cmd.Params["model_name"].(string)
 	if !ok {
@@ -960,17 +965,20 @@ func (c *CLI) ShowModel(cmd *Command) (ResponseIf, error) {
 		"model_name": modelName,
 	}
 
+	var resp *Response
+	var err error
 	var httpClient *HTTPClient
 	switch c.Config.CLIMode {
 	case AdminMode:
 		httpClient = c.AdminServerClient
+		resp, err = httpClient.Request("GET", "/admin/all-models", "web", nil, payload)
 	case APIMode:
 		httpClient = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+		resp, err = httpClient.Request("GET", "/all-models", "web", nil, payload)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
 
-	resp, err := httpClient.Request("GET", "/all-models", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show model: %w", err)
 	}

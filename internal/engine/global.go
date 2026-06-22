@@ -27,6 +27,7 @@ import (
 	"ragflow/internal/engine/infinity"
 
 	"go.uber.org/zap"
+	"ragflow/internal/tokenizer"
 )
 
 var (
@@ -40,6 +41,10 @@ var (
 func Init(cfg *server.DocEngineConfig) error {
 	var initErr error
 	once.Do(func() {
+		tokenizer.RegisterEngineType(func() string {
+			return string(GetEngineType())
+		})
+
 		engineType = EngineType(cfg.Type)
 		var err error
 		switch engineType {

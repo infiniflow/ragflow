@@ -139,6 +139,56 @@ func (h *MCPHandler) ListMCPServers(c *gin.Context) {
 	})
 }
 
+func (h *MCPHandler) GetMCPServer(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	mcpID := c.Param("mcp_id")
+	if c.Query("mode") == "download" {
+		result, code, err := h.mcpService.ExportMCPServer(user.ID, mcpID)
+		if err != nil {
+			mcpDetailError(c, code, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeSuccess,
+			"message": "success",
+			"data":    result,
+		})
+		return
+	}
+
+	result, code, err := h.mcpService.GetMCPServer(user.ID, mcpID)
+	if err != nil {
+		mcpDetailError(c, code, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"message": "success",
+		"data":    newMCPServerResponse(result),
+	})
+}
+
+func mcpDetailError(c *gin.Context, code common.ErrorCode, err error) {
+	if code == common.CodeDataError {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"message": err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeExceptionError,
+		"message": err.Error(),
+		"data":    nil,
+	})
+}
+
+
 // UpdateMCPServer updates an MCP server for the current user.
 func (h *MCPHandler) UpdateMCPServer(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)

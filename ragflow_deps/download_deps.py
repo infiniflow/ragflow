@@ -9,6 +9,27 @@
 # ]
 # ///
 
+# This script downloads every artifact that the `infiniflow/ragflow_deps`
+# Docker image bakes in. Run it from anywhere — the `__main__` block
+# chdir's into this file's own directory, so all outputs land under
+# `ragflow_deps/` regardless of the caller's CWD.
+#
+# Build-context relationship: `ragflow_deps/Dockerfile` is built with
+# `ragflow_deps/` as its build context, so the files written here MUST
+# sit at the top of `ragflow_deps/`. The Dockerfile's COPY lines assume
+# top-level paths (`huggingface.co`, `nltk_data`, `cl100k_base.tiktoken`,
+# `*.deb`, `*.jar`, `*.tar.gz`, `stagehand-server-v3-linux-<arch>`).
+#
+# Typical workflow:
+#
+#   uv run ragflow_deps/download_deps.py            # download
+#   cd ragflow_deps
+#   docker build -f Dockerfile -t infiniflow/ragflow_deps .
+#
+# The main `Dockerfile` (built from the project root) pulls this image
+# via `--mount=type=bind,from=infiniflow/ragflow_deps:latest,...` and
+# is unaffected by where these files live locally.
+
 import argparse
 import os
 import urllib.request
@@ -30,6 +51,22 @@ def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
             ["https://registry.npmmirror.com/-/binary/chrome-for-testing/121.0.6167.85/linux64/chromedriver-linux64.zip", "chromedriver-linux64-121-0-6167-85"],
             "https://github.com/astral-sh/uv/releases/download/0.9.16/uv-x86_64-unknown-linux-gnu.tar.gz",
             "https://github.com/astral-sh/uv/releases/download/0.9.16/uv-aarch64-unknown-linux-gnu.tar.gz",
+            # stagehand-server-v3 Node.js SEA binaries (used by Browser
+            # component in local mode).
+            #
+            # The stagehand-go Go module (pinned in go.mod) and the
+            # stagehand-server binary (this release) are LOOSELY
+            # MATCHED — both stay on the v3.x line and remain
+            # protocol-compatible. The two version numbers do NOT
+            # track each other: the Go SDK is at v3.21.0 while the
+            # current latest server release is v3.7.2.
+            #
+            # On every go.mod bump, refresh this URL to the current
+            # latest server release. There is no version
+            # correspondence to maintain; "both on v3.x" is the
+            # compatibility contract.
+            "https://github.com/browserbase/stagehand/releases/download/stagehand-server-v3/v3.7.2/stagehand-server-v3-linux-x64",
+            "https://github.com/browserbase/stagehand/releases/download/stagehand-server-v3/v3.7.2/stagehand-server-v3-linux-arm64",
         ]
     else:
         return [
@@ -42,6 +79,22 @@ def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
             ["https://storage.googleapis.com/chrome-for-testing-public/121.0.6167.85/linux64/chromedriver-linux64.zip", "chromedriver-linux64-121-0-6167-85"],
             "https://github.com/astral-sh/uv/releases/download/0.9.16/uv-x86_64-unknown-linux-gnu.tar.gz",
             "https://github.com/astral-sh/uv/releases/download/0.9.16/uv-aarch64-unknown-linux-gnu.tar.gz",
+            # stagehand-server-v3 Node.js SEA binaries (used by Browser
+            # component in local mode).
+            #
+            # The stagehand-go Go module (pinned in go.mod) and the
+            # stagehand-server binary (this release) are LOOSELY
+            # MATCHED — both stay on the v3.x line and remain
+            # protocol-compatible. The two version numbers do NOT
+            # track each other: the Go SDK is at v3.21.0 while the
+            # current latest server release is v3.7.2.
+            #
+            # On every go.mod bump, refresh this URL to the current
+            # latest server release. There is no version
+            # correspondence to maintain; "both on v3.x" is the
+            # compatibility contract.
+            "https://github.com/browserbase/stagehand/releases/download/stagehand-server-v3/v3.7.2/stagehand-server-v3-linux-x64",
+            "https://github.com/browserbase/stagehand/releases/download/stagehand-server-v3/v3.7.2/stagehand-server-v3-linux-arm64",
         ]
 
 
@@ -58,6 +111,12 @@ def download_model(repository_id):
 
 
 if __name__ == "__main__":
+    # Anchor CWD to this file's directory so all relative outputs
+    # (huggingface.co/, nltk_data/, *.deb, *.jar, *.tar.gz, etc.) land
+    # at the top of ragflow_deps/ regardless of where the user invokes
+    # the script from. This is the build context for `ragflow_deps/Dockerfile`.
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
     parser = argparse.ArgumentParser(description="Download dependencies with optional China mirror support")
     parser.add_argument("--china-mirrors", action="store_true", help="Use China-accessible mirrors for downloads")
     args = parser.parse_args()

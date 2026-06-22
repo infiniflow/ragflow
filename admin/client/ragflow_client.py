@@ -56,7 +56,7 @@ class RAGFlowClient:
 
     def login_user(self, command):
         try:
-            response = self.http_client.request("GET", "/system/ping", use_api_base=False, auth_kind="web")
+            response = self.http_client.request("GET", "/system/ping", use_api_base=True, auth_kind="web")
             if response.status_code == 200 and response.content == b"pong":
                 pass
             else:
@@ -86,11 +86,11 @@ class RAGFlowClient:
     def ping_server(self, command):
         iterations = command.get("iterations", 1)
         if iterations > 1:
-            response = self.http_client.request("GET", "/system/ping", use_api_base=False, auth_kind="web",
+            response = self.http_client.request("GET", "/system/ping", use_api_base=True, auth_kind="web",
                                                 iterations=iterations)
             return response
         else:
-            response = self.http_client.request("GET", "/system/ping", use_api_base=False, auth_kind="web")
+            response = self.http_client.request("GET", "/system/ping", use_api_base=True, auth_kind="web")
             if response.status_code == 200 and response.content == b"pong":
                 print("Server is alive")
             else:
@@ -106,8 +106,8 @@ class RAGFlowClient:
         enc_password = encrypt_password(password)
         print(f"Register user: {nickname}, email: {username}, password: ******")
         payload = {"email": username, "nickname": nickname, "password": enc_password}
-        response = self.http_client.request(method="POST", path="/user/register",
-                                            json_body=payload, use_api_base=False, auth_kind="web")
+        response = self.http_client.request(method="POST", path="/users",
+                                            json_body=payload, use_api_base=True, auth_kind="web")
         res_json = response.json()
         if response.status_code == 200:
             if res_json["code"] == 0:
@@ -727,45 +727,133 @@ class RAGFlowClient:
     def create_model_provider(self, command):
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
-        llm_factory: str = command["provider_name"]
+            return
+        provider_name: str = command["provider_name"]
         api_key: str = command["provider_key"]
-        payload = {"api_key": api_key, "llm_factory": llm_factory}
-        response = self.http_client.request("POST", "/llm/set_api_key", json_body=payload, use_api_base=False,
-                                            auth_kind="web")
-        res_json = response.json()
-        if response.status_code == 200 and res_json["code"] == 0:
-            print(f"Success to add model provider {llm_factory}")
+
+        # Step 1: Add provider
+        provider_payload = {"provider_name": provider_name}
+        provider_response = self.http_client.request("PUT", "/providers", json_body=provider_payload,
+                                                     use_api_base=True, auth_kind="web")
+        provider_res = provider_response.json()
+        if provider_response.status_code == 200 and provider_res.get("code") == 0:
+            print(f"Success to add provider {provider_name}")
         else:
-            print(f"Fail to add model provider {llm_factory}, code: {res_json['code']}, message: {res_json['message']}")
+            msg = provider_res.get("message", "")
+            if "duplicated" in msg.lower() or "already exist" in msg.lower():
+                print(f"Note: provider {provider_name} already exists, continuing to add instance")
+            else:
+                print(f"Fail to add provider {provider_name}, code: {provider_res.get('code')}, message: {msg}")
+                return
+
+        # Step 2: Add instance
+        instance_payload = {
+            "instance_name": "default",
+            "api_key": api_key,
+            "region": "default",
+            "base_url": ""
+        }
+        instance_response = self.http_client.request("POST", f"/providers/{provider_name}/instances",
+                                                      json_body=instance_payload, use_api_base=True,
+                                                      auth_kind="web")
+        instance_res = instance_response.json()
+        if instance_response.status_code == 200 and instance_res.get("code") == 0:
+            print(f"Success to add instance for provider {provider_name}")
+        else:
+            msg = instance_res.get("message", "")
+            if "already exist" in msg.lower():
+                print(f"Note: instance for provider {provider_name} already exists, skipping")
+            else:
+                print(f"Fail to add instance for provider {provider_name}, code: {instance_res.get('code')}, message: {msg}")
 
     def drop_model_provider(self, command):
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
-        llm_factory: str = command["provider_name"]
-        payload = {"llm_factory": llm_factory}
-        response = self.http_client.request("POST", "/llm/delete_factory", json_body=payload, use_api_base=False,
+            return
+        provider_name: str = command["provider_name"]
+        response = self.http_client.request("DELETE", f"/providers/{provider_name}", use_api_base=True,
                                             auth_kind="web")
         res_json = response.json()
-        if response.status_code == 200 and res_json["code"] == 0:
-            print(f"Success to drop model provider {llm_factory}")
+        if response.status_code == 200 and res_json.get("code") == 0:
+            print(f"Success to drop model provider {provider_name}")
         else:
-            print(
-                f"Fail to drop model provider {llm_factory}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to drop model provider {provider_name}, code: {res_json.get('code')}, message: {res_json.get('message')}")
+
+    # Mapping from legacy model_type keys to API model_type values
+    _MODEL_TYPE_MAP = {
+        "llm_id": "chat",
+        "embd_id": "embedding",
+        "img2txt_id": "vision",
+        "reranker_id": "rerank",
+        "asr_id": "asr",
+        "tts_id": "tts",
+    }
 
     def set_default_model(self, command):
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
+            return
 
-        model_type: str = command["model_type"]
+        model_type_key: str = command["model_type"]
         model_id: str = command["model_id"]
-        self._set_default_models(model_type, model_id)
+
+        model_type = self._MODEL_TYPE_MAP.get(model_type_key)
+        if model_type is None:
+            print(f"Unknown model type: {model_type_key}")
+            return
+
+        model_name, model_instance, model_provider = self._parse_model_id(model_id)
+
+        payload = {
+            "model_provider": model_provider,
+            "model_instance": model_instance,
+            "model_type": model_type,
+            "model_name": model_name,
+        }
+        response = self.http_client.request("PATCH", "/models/default", json_body=payload, use_api_base=True,
+                                            auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200 and res_json.get("code") == 0:
+            print(f"Success to set default {model_type} to {model_id}")
+        else:
+            print(f"Fail to set default {model_type}, code: {res_json.get('code')}, message: {res_json.get('message')}")
 
     def reset_default_model(self, command):
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
+            return
 
-        model_type: str = command["model_type"]
-        self._set_default_models(model_type, "")
+        model_type_key: str = command["model_type"]
+        model_type = self._MODEL_TYPE_MAP.get(model_type_key)
+        if model_type is None:
+            print(f"Unknown model type: {model_type_key}")
+            return
+
+        payload = {"model_type": model_type}
+        response = self.http_client.request("PATCH", "/models/default", json_body=payload, use_api_base=True,
+                                            auth_kind="web")
+        res_json = response.json()
+        if response.status_code == 200 and res_json.get("code") == 0:
+            print(f"Success to reset default {model_type}")
+        else:
+            print(f"Fail to reset default {model_type}, code: {res_json.get('code')}, message: {res_json.get('message')}")
+
+    @staticmethod
+    def _parse_model_id(model_id: str):
+        """Parse model_id into (model_name, model_instance, model_provider).
+
+        Accepted formats:
+          - model_name@instance@provider  -> (model_name, instance, provider)
+          - model_name@provider            -> (model_name, "default", provider)
+          - model_name                     -> (model_name, "default", "")
+        """
+        parts = model_id.split("@")
+        if len(parts) >= 3:
+            return parts[0], parts[1], parts[-1]
+        elif len(parts) == 2:
+            return parts[0], "default", parts[1]
+        else:
+            return model_id, "default", ""
 
     def list_user_datasets(self, command):
         if self.server_type != "user":
@@ -1430,7 +1518,7 @@ class RAGFlowClient:
 
         payload = {
             "question": command_dict["question"],
-            "kb_id": dataset_ids,
+            "dataset_ids": dataset_ids,
             "similarity_threshold": 0.2,
             "vector_similarity_weight": 0.3,
             # "top_k": 1024,
@@ -1438,11 +1526,11 @@ class RAGFlowClient:
         }
         iterations = command_dict.get("iterations", 1)
         if iterations > 1:
-            response = self.http_client.request("POST", "/chunk/retrieval_test", json_body=payload, use_api_base=False,
+            response = self.http_client.request("POST", "/retrieval", json_body=payload, use_api_base=True,
                                                 auth_kind="web", iterations=iterations)
             return response
         else:
-            response = self.http_client.request("POST", "/chunk/retrieval_test", json_body=payload, use_api_base=False,
+            response = self.http_client.request("POST", "/retrieval", json_body=payload, use_api_base=True,
                                                 auth_kind="web")
             res_json = response.json()
             if response.status_code == 200:
@@ -1824,41 +1912,6 @@ class RAGFlowClient:
             else:
                 print(f"Fail to list chats, code: {res_json['code']}, message: {res_json['message']}")
                 return None
-
-    def _get_default_models(self):
-        response = self.http_client.request("GET", "/user/tenant_info", use_api_base=False, auth_kind="web")
-        res_json = response.json()
-        if response.status_code == 200:
-            if res_json["code"] == 0:
-                return res_json["data"]
-            else:
-                print(f"Fail to list user default models, code: {res_json['code']}, message: {res_json['message']}")
-                return None
-        else:
-            print(f"Fail to list user default models, HTTP code: {response.status_code}, message: {res_json}")
-            return None
-
-    def _set_default_models(self, model_type, model_id):
-        current_payload = self._get_default_models()
-        if current_payload is None:
-            return
-        else:
-            current_payload.update({model_type: model_id})
-        payload = {
-            "tenant_id": current_payload["tenant_id"],
-            "llm_id": current_payload["llm_id"],
-            "embd_id": current_payload["embd_id"],
-            "img2txt_id": current_payload["img2txt_id"],
-            "asr_id": current_payload["asr_id"],
-            "tts_id": current_payload["tts_id"],
-        }
-        response = self.http_client.request("POST", "/user/set_tenant_info", json_body=payload, use_api_base=False,
-                                            auth_kind="web")
-        res_json = response.json()
-        if response.status_code == 200 and res_json["code"] == 0:
-            print(f"Success to set default llm to {model_type}")
-        else:
-            print(f"Fail to set default llm to {model_type}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _format_service_detail_table(self, data):
         if isinstance(data, list):

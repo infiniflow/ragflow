@@ -9,7 +9,6 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { useTranslate } from '@/hooks/common-hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo } from 'react';
 import { useForm } from 'react-hook-form';
@@ -23,7 +22,6 @@ const FormSchema = z.object({
 });
 
 function SearXNGForm() {
-  const { t } = useTranslate('flow');
   const values = useValues();
 
   const form = useForm<z.infer<typeof FormSchema>>({

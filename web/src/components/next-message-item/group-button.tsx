@@ -85,6 +85,7 @@ export const AssistantGroupButton = ({
           <CopyToClipboard
             text={content}
             className="border-none hover:!bg-transparent"
+            avoidButtonWrapper
           ></CopyToClipboard>
         </ToggleGroupItem>
         {showLoudspeaker && (
@@ -189,7 +190,7 @@ export const UserGroupButton = ({
       className="space-x-1"
     >
       <ToggleGroupItem value="a">
-        <CopyToClipboard text={content}></CopyToClipboard>
+        <CopyToClipboard text={content} avoidButtonWrapper></CopyToClipboard>
       </ToggleGroupItem>
       {regenerateMessage && (
         <ToggleGroupItem
