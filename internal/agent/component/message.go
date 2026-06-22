@@ -179,14 +179,14 @@ func (m *MessageComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 	if text == "" {
 		text = m.text
 	}
-	resolved, err := runtime.ResolveTemplate(text, state)
-	if err != nil {
-		// ResolveTemplate surfaces unresolved references as errors, but
-		// the partial output (with empty-string substitutions) is still
-		// returned so the SSE consumer can choose to log it. Match
-		// the existing canvas package's contract here.
-		return nil, fmt.Errorf("Message: template resolve: %w", err)
-	}
+	// Message is a display node, not parameter binding. Use the
+	// tolerant resolver (nil refs render as empty string) instead
+	// of runtime.ResolveTemplate — matches the Python canvas.py
+	// soft-fail semantic so authoring patterns like
+	// {Component@head} for optional fields don't crash the run when
+	// the upstream list is empty. Parameter-binding call sites keep
+	// the loud-fail contract via runtime.ResolveTemplate.
+	resolved := runtime.ResolveTemplateForDisplay(text, state)
 
 	// Extract downloads. Walks inputs for download-info maps so
 	// callers can attach binaries to the message body.

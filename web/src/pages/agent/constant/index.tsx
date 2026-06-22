@@ -724,7 +724,7 @@ export const NodeMap = {
   [Operator.Crawler]: 'ragNode',
   [Operator.Invoke]: 'ragNode',
   [Operator.Email]: 'ragNode',
-  [Operator.Iteration]: 'group',
+  [Operator.Iteration]: 'iterationNode',
   [Operator.IterationStart]: 'iterationStartNode',
   [Operator.Code]: 'ragNode',
   [Operator.WaitingDialogue]: 'ragNode',

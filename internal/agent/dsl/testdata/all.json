@@ -1,11 +1,1366 @@
 {
+  "components": {
+    "Categorize:Demo": {
+      "downstream": [
+        "Message:CateLoop",
+        "Message:CateRetrieval",
+        "Message:CateOther"
+      ],
+      "obj": {
+        "component_name": "Categorize",
+        "params": {
+          "category_description": {
+            "Other": {
+              "description": "其它",
+              "examples": [
+                "随便"
+              ],
+              "to": [
+                "Message:CateOther"
+              ]
+            },
+            "Retrieval": {
+              "description": "知识库检索相关",
+              "examples": [
+                "帮我查一下知识库里的内容"
+              ],
+              "to": [
+                "Message:CateRetrieval"
+              ]
+            },
+            "打招呼": {
+              "description": "打招呼相关",
+              "examples": [
+                "你好啊",
+                "春节快乐啊"
+              ],
+              "to": [
+                "Message:CateLoop"
+              ]
+            }
+          },
+          "llm_id": "Qwen/Qwen3-8B@default@SILICONFLOW",
+          "message_history_window_size": 1,
+          "outputs": {
+            "category_name": {
+              "type": "string"
+            }
+          },
+          "query": "UserFillUp:CateInput@text",
+          "temperature": "0.1"
+        }
+      },
+      "upstream": [
+        "UserFillUp:CateInput"
+      ]
+    },
+    "CodeExec:Double": {
+      "downstream": [
+        "Message:CodeDone"
+      ],
+      "obj": {
+        "component_name": "CodeExec",
+        "params": {
+          "arguments": {
+            "x": "UserFillUp:CodeInput@x"
+          },
+          "lang": "python",
+          "outputs": {
+            "result": {
+              "type": "Number",
+              "value": ""
+            }
+          },
+          "script": "def main(x):\n    try:\n        n = int(x)\n    except Exception:\n        n = 0\n    return n * 2\n"
+        }
+      },
+      "upstream": [
+        "UserFillUp:CodeInput"
+      ]
+    },
+    "DataOperations:UpdateSample": {
+      "downstream": [
+        "ListOperations:Sort"
+      ],
+      "obj": {
+        "component_name": "DataOperations",
+        "params": {
+          "operations": "append_or_update",
+          "outputs": {
+            "result": {
+              "type": "Array<Object>"
+            }
+          },
+          "query": [
+            "env.sample_rows"
+          ],
+          "updates": [
+            {
+              "key": "tag",
+              "value": "demo"
+            }
+          ]
+        }
+      },
+      "upstream": [
+        "Switch:Route"
+      ]
+    },
+    "ExitLoop:LoopExit": {
+      "downstream": [],
+      "obj": {
+        "component_name": "ExitLoop",
+        "params": {}
+      },
+      "parent_id": "Loop:InputUntil1",
+      "upstream": [
+        "Switch:LoopCheck"
+      ]
+    },
+    "Iteration:IterateList": {
+      "downstream": [
+        "Message:IterDone"
+      ],
+      "obj": {
+        "component_name": "Iteration",
+        "params": {
+          "items_ref": "StringTransform:SplitCSV@result",
+          "outputs": {
+            "lines": {
+              "ref": "StringTransform:FmtItem@result",
+              "type": "Array<string>"
+            }
+          }
+        }
+      },
+      "upstream": [
+        "StringTransform:SplitCSV"
+      ]
+    },
+    "IterationItem:IterStart": {
+      "downstream": [
+        "StringTransform:FmtItem"
+      ],
+      "obj": {
+        "component_name": "IterationItem",
+        "params": {
+          "outputs": {
+            "index": {
+              "type": "integer"
+            },
+            "item": {
+              "type": "unknown"
+            }
+          }
+        }
+      },
+      "parent_id": "Iteration:IterateList",
+      "upstream": []
+    },
+    "ListOperations:Head2": {
+      "downstream": [
+        "Message:DataListDone"
+      ],
+      "obj": {
+        "component_name": "ListOperations",
+        "params": {
+          "filter": {
+            "operator": "contains",
+            "value": ""
+          },
+          "n": 2,
+          "operations": "head",
+          "outputs": {
+            "first": {
+              "type": "Object"
+            },
+            "last": {
+              "type": "Object"
+            },
+            "result": {
+              "type": "Array<Object>"
+            }
+          },
+          "query": "ListOperations:Sort@result",
+          "sort_method": "asc"
+        }
+      },
+      "upstream": [
+        "ListOperations:Sort"
+      ]
+    },
+    "ListOperations:Sort": {
+      "downstream": [
+        "ListOperations:Head2"
+      ],
+      "obj": {
+        "component_name": "ListOperations",
+        "params": {
+          "filter": {
+            "operator": "contains",
+            "value": ""
+          },
+          "operations": "sort",
+          "outputs": {
+            "result": {
+              "type": "Array<Object>"
+            }
+          },
+          "query": "DataOperations:UpdateSample@result",
+          "sort_by": "score",
+          "sort_method": "desc"
+        }
+      },
+      "upstream": [
+        "DataOperations:UpdateSample"
+      ]
+    },
+    "Loop:InputUntil1": {
+      "downstream": [
+        "Message:LoopDone"
+      ],
+      "obj": {
+        "component_name": "Loop",
+        "params": {
+          "logical_operator": "and",
+          "loop_termination_condition": [
+            {
+              "input_mode": "constant",
+              "operator": "is",
+              "value": "1",
+              "variable": "UserFillUp:LoopInput@value"
+            }
+          ],
+          "loop_variables": [
+            {
+              "input_mode": "constant",
+              "type": "string",
+              "value": "",
+              "variable": ""
+            }
+          ],
+          "maximum_loop_count": 50,
+          "outputs": {}
+        }
+      },
+      "upstream": [
+        "Switch:Route"
+      ]
+    },
+    "LoopItem:InputUntil1Start": {
+      "downstream": [
+        "UserFillUp:LoopInput"
+      ],
+      "obj": {
+        "component_name": "LoopItem",
+        "params": {}
+      },
+      "parent_id": "Loop:InputUntil1",
+      "upstream": []
+    },
+    "Message:AggDone": {
+      "downstream": [],
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": [
+            "picked={VariableAggregator:PickOne@picked} \n(a={env.a}, \nb={env.b}, \nc={env.c})"
+          ]
+        }
+      },
+      "upstream": [
+        "VariableAggregator:PickOne"
+      ]
+    },
+    "Message:CateLoop": {
+      "downstream": [],
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": [
+            "分类结果={Categorize:Demo@category_name} -> 打招呼"
+          ]
+        }
+      },
+      "upstream": [
+        "Categorize:Demo"
+      ]
+    },
+    "Message:CateOther": {
+      "downstream": [],
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": [
+            "分类结果={Categorize:Demo@category_name} -> Other"
+          ]
+        }
+      },
+      "upstream": [
+        "Categorize:Demo"
+      ]
+    },
+    "Message:CateRetrieval": {
+      "downstream": [],
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": [
+            "分类结果={Categorize:Demo@category_name} -> Retrieval"
+          ]
+        }
+      },
+      "upstream": [
+        "Categorize:Demo"
+      ]
+    },
+    "Message:CodeDone": {
+      "downstream": [],
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": [
+            "输入 x={UserFillUp:CodeInput@x}\nCodeExec.result={CodeExec:Double@result}\nERROR={CodeExec:Double@_ERROR}"
+          ]
+        }
+      },
+      "upstream": [
+        "CodeExec:Double"
+      ]
+    },
+    "Message:CondNo": {
+      "downstream": [],
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": [
+            "走 ELSE: x!=yes, x={UserFillUp:CondInput@x}"
+          ]
+        }
+      },
+      "upstream": [
+        "Switch:CondSwitch"
+      ]
+    },
+    "Message:CondYes": {
+      "downstream": [],
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": [
+            "命中 IF: x==yes"
+          ]
+        }
+      },
+      "upstream": [
+        "Switch:CondSwitch"
+      ]
+    },
+    "Message:DataListDone": {
+      "downstream": [],
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": [
+            "DataOperations 输出: {DataOperations:UpdateSample@result}\n\nListOperations Sort desc: {ListOperations:Sort@result}\n\nListOperations Head2: {ListOperations:Head2@result}\n\nfirst={ListOperations:Head2@first}\n\nlast={ListOperations:Head2@last}"
+          ]
+        }
+      },
+      "upstream": [
+        "ListOperations:Head2"
+      ]
+    },
+    "Message:Help": {
+      "downstream": [],
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": [
+            "未匹配到分支，请在菜单里选择一个 `demo` 选项。\n可选值: loop / iteration / retrieval / condition / data_ops / text / var_assigner / var_aggregator / categorize / code / message / wait_input"
+          ]
+        }
+      },
+      "upstream": [
+        "Switch:Route"
+      ]
+    },
+    "Message:IterDone": {
+      "downstream": [],
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": [
+            "迭代结束。\n输入数组: {StringTransform:SplitCSV@result}\n格式化输出(lines):{Iteration:IterateList@lines}"
+          ]
+        }
+      },
+      "upstream": [
+        "Iteration:IterateList"
+      ]
+    },
+    "Message:KBDone": {
+      "downstream": [],
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": [
+            "KB=\n{UserFillUp:KBInput@kb}\nquery=\n{UserFillUp:KBInput@query}\nERROR={Retrieval:KBSearch@_ERROR}\nformalized_content:\n{Retrieval:KBSearch@formalized_content}"
+          ]
+        }
+      },
+      "upstream": [
+        "Retrieval:KBSearch"
+      ]
+    },
+    "Message:LoopContinue": {
+      "downstream": [],
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": [
+            "继续循环中，你输入的是：{UserFillUp:LoopInput@value}"
+          ]
+        }
+      },
+      "parent_id": "Loop:InputUntil1",
+      "upstream": [
+        "Switch:LoopCheck"
+      ]
+    },
+    "Message:LoopDone": {
+      "downstream": [],
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": [
+            "循环结束。你最后一次输入为：{UserFillUp:LoopInput@value}"
+          ]
+        }
+      },
+      "upstream": [
+        "Loop:InputUntil1"
+      ]
+    },
+    "Message:Only": {
+      "downstream": [],
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": [
+            "这是 Message 节点演示。"
+          ]
+        }
+      },
+      "upstream": [
+        "Switch:Route"
+      ]
+    },
+    "Message:TextDone": {
+      "downstream": [],
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": [
+            "原始: {UserFillUp:TextInput@text}\nsplit: {StringTransform:SplitText@result}\nmerge: {StringTransform:JoinText@result}"
+          ]
+        }
+      },
+      "upstream": [
+        "StringTransform:JoinText"
+      ]
+    },
+    "Message:VarDone": {
+      "downstream": [],
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": [
+            "env.counter={env.counter}"
+          ]
+        }
+      },
+      "upstream": [
+        "VariableAssigner:IncCounter"
+      ]
+    },
+    "Message:WaitDone": {
+      "downstream": [],
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": [
+            "你输入的是：{UserFillUp:JustWait@anything}"
+          ]
+        }
+      },
+      "upstream": [
+        "UserFillUp:JustWait"
+      ]
+    },
+    "Retrieval:KBSearch": {
+      "downstream": [
+        "Message:KBDone"
+      ],
+      "obj": {
+        "component_name": "Retrieval",
+        "params": {
+          "cross_languages": [],
+          "empty_response": "(未检索到内容)",
+          "kb_ids": [],
+          "keywords_similarity_weight": 0.7,
+          "meta_data_filter": {},
+          "outputs": {
+            "formalized_content": {
+              "type": "string",
+              "value": ""
+            },
+            "json": {
+              "type": "Array<Object>",
+              "value": []
+            }
+          },
+          "query": "UserFillUp:   {UserFillUp:KBInput@kb}\nInput {UserFillUp:KBInput@query}\n",
+          "rerank_id": "",
+          "retrieval_from": "dataset",
+          "similarity_threshold": 0.2,
+          "toc_enhance": false,
+          "top_k": 512,
+          "top_n": 5,
+          "use_kg": false
+        }
+      },
+      "upstream": [
+        "UserFillUp:KBInput"
+      ]
+    },
+    "StringTransform:FmtItem": {
+      "downstream": [],
+      "obj": {
+        "component_name": "StringTransform",
+        "params": {
+          "delimiters": [
+            "|"
+          ],
+          "method": "merge",
+          "outputs": {
+            "result": {
+              "type": "string"
+            }
+          },
+          "script": "{IterationItem:IterStart@index}: {IterationItem:IterStart@item}",
+          "split_ref": ""
+        }
+      },
+      "parent_id": "Iteration:IterateList",
+      "upstream": [
+        "IterationItem:IterStart"
+      ]
+    },
+    "StringTransform:JoinText": {
+      "downstream": [
+        "Message:TextDone"
+      ],
+      "obj": {
+        "component_name": "StringTransform",
+        "params": {
+          "delimiters": [
+            "|"
+          ],
+          "method": "merge",
+          "outputs": {
+            "result": {
+              "type": "string"
+            }
+          },
+          "script": "{StringTransform:SplitText@result}",
+          "split_ref": ""
+        }
+      },
+      "upstream": [
+        "StringTransform:SplitText"
+      ]
+    },
+    "StringTransform:SplitCSV": {
+      "downstream": [
+        "Iteration:IterateList"
+      ],
+      "obj": {
+        "component_name": "StringTransform",
+        "params": {
+          "delimiters": [
+            ","
+          ],
+          "method": "split",
+          "outputs": {
+            "result": {
+              "type": "Array<string>"
+            }
+          },
+          "script": "",
+          "split_ref": "UserFillUp:IterInput@csv"
+        }
+      },
+      "upstream": [
+        "UserFillUp:IterInput"
+      ]
+    },
+    "StringTransform:SplitText": {
+      "downstream": [
+        "StringTransform:JoinText"
+      ],
+      "obj": {
+        "component_name": "StringTransform",
+        "params": {
+          "delimiters": [
+            " "
+          ],
+          "method": "split",
+          "outputs": {
+            "result": {
+              "type": "Array<string>"
+            }
+          },
+          "script": "",
+          "split_ref": "UserFillUp:TextInput@text"
+        }
+      },
+      "upstream": [
+        "UserFillUp:TextInput"
+      ]
+    },
+    "Switch:CondSwitch": {
+      "downstream": [
+        "Message:CondYes",
+        "Message:CondNo"
+      ],
+      "obj": {
+        "component_name": "Switch",
+        "params": {
+          "conditions": [
+            {
+              "items": [
+                {
+                  "cpn_id": "UserFillUp:CondInput@x",
+                  "operator": "=",
+                  "value": "yes"
+                }
+              ],
+              "logical_operator": "and",
+              "to": [
+                "Message:CondYes"
+              ]
+            }
+          ],
+          "end_cpn_ids": [
+            "Message:CondNo"
+          ]
+        }
+      },
+      "upstream": [
+        "UserFillUp:CondInput"
+      ]
+    },
+    "Switch:LoopCheck": {
+      "downstream": [
+        "ExitLoop:LoopExit",
+        "Message:LoopContinue"
+      ],
+      "obj": {
+        "component_name": "Switch",
+        "params": {
+          "conditions": [
+            {
+              "items": [
+                {
+                  "cpn_id": "UserFillUp:LoopInput@value",
+                  "operator": "=",
+                  "value": "1"
+                }
+              ],
+              "logical_operator": "and",
+              "to": [
+                "ExitLoop:LoopExit"
+              ]
+            }
+          ],
+          "end_cpn_ids": [
+            "Message:LoopContinue"
+          ]
+        }
+      },
+      "parent_id": "Loop:InputUntil1",
+      "upstream": [
+        "UserFillUp:LoopInput"
+      ]
+    },
+    "Switch:Route": {
+      "downstream": [
+        "Loop:InputUntil1",
+        "UserFillUp:IterInput",
+        "UserFillUp:KBInput",
+        "UserFillUp:CondInput",
+        "DataOperations:UpdateSample",
+        "UserFillUp:TextInput",
+        "VariableAssigner:SetCounter",
+        "UserFillUp:CateInput",
+        "UserFillUp:CodeInput",
+        "Message:Only",
+        "UserFillUp:JustWait",
+        "Message:Help",
+        "VariableAssigner:GoldMiceTurn"
+      ],
+      "obj": {
+        "component_name": "Switch",
+        "params": {
+          "conditions": [
+            {
+              "items": [
+                {
+                  "cpn_id": "UserFillUp:Menu@demo",
+                  "operator": "=",
+                  "value": "loop"
+                }
+              ],
+              "logical_operator": "and",
+              "to": [
+                "Loop:InputUntil1"
+              ]
+            },
+            {
+              "items": [
+                {
+                  "cpn_id": "UserFillUp:Menu@demo",
+                  "operator": "=",
+                  "value": "iteration"
+                }
+              ],
+              "logical_operator": "and",
+              "to": [
+                "UserFillUp:IterInput"
+              ]
+            },
+            {
+              "items": [
+                {
+                  "cpn_id": "UserFillUp:Menu@demo",
+                  "operator": "=",
+                  "value": "retrieval"
+                }
+              ],
+              "logical_operator": "and",
+              "to": [
+                "UserFillUp:KBInput"
+              ]
+            },
+            {
+              "items": [
+                {
+                  "cpn_id": "UserFillUp:Menu@demo",
+                  "operator": "=",
+                  "value": "condition"
+                }
+              ],
+              "logical_operator": "and",
+              "to": [
+                "UserFillUp:CondInput"
+              ]
+            },
+            {
+              "items": [
+                {
+                  "cpn_id": "UserFillUp:Menu@demo",
+                  "operator": "=",
+                  "value": "data_ops"
+                }
+              ],
+              "logical_operator": "and",
+              "to": [
+                "DataOperations:UpdateSample",
+                "CodeExec:FunnyBroomsShare"
+              ]
+            },
+            {
+              "items": [
+                {
+                  "cpn_id": "UserFillUp:Menu@demo",
+                  "operator": "=",
+                  "value": "text"
+                }
+              ],
+              "logical_operator": "and",
+              "to": [
+                "UserFillUp:TextInput"
+              ]
+            },
+            {
+              "items": [
+                {
+                  "cpn_id": "UserFillUp:Menu@demo",
+                  "operator": "=",
+                  "value": "var_assigner"
+                }
+              ],
+              "logical_operator": "and",
+              "to": [
+                "VariableAssigner:SetCounter"
+              ]
+            },
+            {
+              "items": [
+                {
+                  "cpn_id": "UserFillUp:Menu@demo",
+                  "operator": "=",
+                  "value": "var_aggregator"
+                }
+              ],
+              "logical_operator": "and",
+              "to": [
+                "VariableAssigner:GoldMiceTurn"
+              ]
+            },
+            {
+              "items": [
+                {
+                  "cpn_id": "UserFillUp:Menu@demo",
+                  "operator": "=",
+                  "value": "categorize"
+                }
+              ],
+              "logical_operator": "and",
+              "to": [
+                "UserFillUp:CateInput"
+              ]
+            },
+            {
+              "items": [
+                {
+                  "cpn_id": "UserFillUp:Menu@demo",
+                  "operator": "=",
+                  "value": "code"
+                }
+              ],
+              "logical_operator": "and",
+              "to": [
+                "UserFillUp:CodeInput"
+              ]
+            },
+            {
+              "items": [
+                {
+                  "cpn_id": "UserFillUp:Menu@demo",
+                  "operator": "=",
+                  "value": "message"
+                }
+              ],
+              "logical_operator": "and",
+              "to": [
+                "Message:Only"
+              ]
+            },
+            {
+              "items": [
+                {
+                  "cpn_id": "UserFillUp:Menu@demo",
+                  "operator": "=",
+                  "value": "wait_input"
+                }
+              ],
+              "logical_operator": "and",
+              "to": [
+                "UserFillUp:JustWait"
+              ]
+            }
+          ],
+          "end_cpn_ids": [
+            "Message:Help"
+          ]
+        }
+      },
+      "upstream": [
+        "UserFillUp:Menu"
+      ]
+    },
+    "UserFillUp:CateInput": {
+      "downstream": [
+        "Categorize:Demo"
+      ],
+      "obj": {
+        "component_name": "UserFillUp",
+        "params": {
+          "enable_tips": true,
+          "inputs": {
+            "text": {
+              "name": "Text",
+              "optional": false,
+              "options": [],
+              "type": "paragraph",
+              "value": "我想做循环演示"
+            }
+          },
+          "outputs": {
+            "text": {
+              "name": "Text",
+              "optional": false,
+              "options": [],
+              "type": "paragraph",
+              "value": "我想做循环演示"
+            }
+          },
+          "tips": "请输入一段话用于分类(需要可用LLM)："
+        }
+      },
+      "upstream": [
+        "Switch:Route"
+      ]
+    },
+    "UserFillUp:CodeInput": {
+      "downstream": [
+        "CodeExec:Double"
+      ],
+      "obj": {
+        "component_name": "UserFillUp",
+        "params": {
+          "enable_tips": true,
+          "inputs": {
+            "x": {
+              "name": "x",
+              "optional": false,
+              "options": [],
+              "type": "integer"
+            }
+          },
+          "outputs": {
+            "x": {
+              "name": "x",
+              "optional": false,
+              "options": [],
+              "type": "integer"
+            }
+          },
+          "tips": "请输入一个数字(需要Sandbox才能运行 CodeExec)："
+        }
+      },
+      "upstream": [
+        "Switch:Route"
+      ]
+    },
+    "UserFillUp:CondInput": {
+      "downstream": [
+        "Switch:CondSwitch"
+      ],
+      "obj": {
+        "component_name": "UserFillUp",
+        "params": {
+          "enable_tips": true,
+          "inputs": {
+            "x": {
+              "name": "x",
+              "optional": false,
+              "options": [],
+              "type": "line",
+              "value": "yes"
+            }
+          },
+          "outputs": {
+            "x": {
+              "name": "x",
+              "optional": false,
+              "options": [],
+              "type": "line",
+              "value": "yes"
+            }
+          },
+          "tips": "请输入 yes 或其它值："
+        }
+      },
+      "upstream": [
+        "Switch:Route"
+      ]
+    },
+    "UserFillUp:IterInput": {
+      "downstream": [
+        "StringTransform:SplitCSV"
+      ],
+      "obj": {
+        "component_name": "UserFillUp",
+        "params": {
+          "enable_tips": true,
+          "inputs": {
+            "csv": {
+              "name": "CSV",
+              "optional": false,
+              "options": [],
+              "type": "line",
+              "value": "a,b,c"
+            }
+          },
+          "outputs": {
+            "csv": {
+              "name": "CSV",
+              "optional": false,
+              "options": [],
+              "type": "line",
+              "value": "a,b,c"
+            }
+          },
+          "tips": "请输入一个逗号分隔列表，例如: a,b,c"
+        }
+      },
+      "upstream": [
+        "Switch:Route"
+      ]
+    },
+    "UserFillUp:JustWait": {
+      "downstream": [
+        "Message:WaitDone"
+      ],
+      "obj": {
+        "component_name": "UserFillUp",
+        "params": {
+          "enable_tips": true,
+          "inputs": {
+            "anything": {
+              "name": "anything",
+              "optional": false,
+              "options": [],
+              "type": "paragraph",
+              "value": ""
+            }
+          },
+          "outputs": {
+            "anything": {
+              "name": "anything",
+              "optional": false,
+              "options": [],
+              "type": "paragraph",
+              "value": ""
+            }
+          },
+          "tips": "这是等待输入(UserFillUp)演示，请随便填："
+        }
+      },
+      "upstream": [
+        "Switch:Route"
+      ]
+    },
+    "UserFillUp:KBInput": {
+      "downstream": [
+        "Retrieval:KBSearch"
+      ],
+      "obj": {
+        "component_name": "UserFillUp",
+        "params": {
+          "enable_tips": true,
+          "inputs": {
+            "kb": {
+              "name": "KB",
+              "optional": false,
+              "options": [],
+              "type": "line",
+              "value": ""
+            },
+            "query": {
+              "name": "Query",
+              "optional": false,
+              "options": [],
+              "type": "line",
+              "value": "ragflow 是什么"
+            }
+          },
+          "outputs": {
+            "kb": {
+              "name": "KB",
+              "optional": false,
+              "options": [],
+              "type": "line",
+              "value": ""
+            },
+            "query": {
+              "name": "Query",
+              "optional": false,
+              "options": [],
+              "type": "line",
+              "value": "ragflow 是什么"
+            }
+          },
+          "tips": "请输入知识库名称或ID，以及检索 query："
+        }
+      },
+      "upstream": [
+        "Switch:Route"
+      ]
+    },
+    "UserFillUp:LoopInput": {
+      "downstream": [
+        "Switch:LoopCheck"
+      ],
+      "obj": {
+        "component_name": "UserFillUp",
+        "params": {
+          "enable_tips": true,
+          "inputs": {
+            "value": {
+              "name": "值",
+              "optional": false,
+              "options": [],
+              "type": "line",
+              "value": ""
+            }
+          },
+          "outputs": {
+            "value": {
+              "name": "值",
+              "optional": false,
+              "options": [],
+              "type": "line",
+              "value": ""
+            }
+          },
+          "tips": "请输入任意内容，输入 `1` 则退出循环："
+        }
+      },
+      "parent_id": "Loop:InputUntil1",
+      "upstream": [
+        "LoopItem:InputUntil1Start"
+      ]
+    },
+    "UserFillUp:Menu": {
+      "downstream": [
+        "Switch:Route"
+      ],
+      "obj": {
+        "component_name": "UserFillUp",
+        "params": {
+          "enable_tips": true,
+          "inputs": {
+            "demo": {
+              "name": "演示模块",
+              "optional": false,
+              "options": [
+                "loop",
+                "iteration",
+                "retrieval",
+                "condition",
+                "data_ops",
+                "text",
+                "var_assigner",
+                "var_aggregator",
+                "categorize",
+                "code",
+                "message",
+                "wait_input"
+              ],
+              "type": "options",
+              "value": "loop"
+            }
+          },
+          "outputs": {
+            "demo": {
+              "name": "演示模块",
+              "optional": false,
+              "options": [
+                "loop",
+                "iteration",
+                "retrieval",
+                "condition",
+                "data_ops",
+                "text",
+                "var_assigner",
+                "var_aggregator",
+                "categorize",
+                "code",
+                "message",
+                "wait_input"
+              ],
+              "type": "options",
+              "value": "loop"
+            }
+          },
+          "tips": "请选择要演示的模块："
+        }
+      },
+      "upstream": [
+        "begin"
+      ]
+    },
+    "UserFillUp:TextInput": {
+      "downstream": [
+        "StringTransform:SplitText"
+      ],
+      "obj": {
+        "component_name": "UserFillUp",
+        "params": {
+          "enable_tips": true,
+          "inputs": {
+            "text": {
+              "name": "Text",
+              "optional": false,
+              "options": [],
+              "type": "line",
+              "value": "hello world ragflow"
+            }
+          },
+          "outputs": {
+            "text": {
+              "name": "Text",
+              "optional": false,
+              "options": [],
+              "type": "line",
+              "value": "hello world ragflow"
+            }
+          },
+          "tips": "请输入一段文本(按空格分词)："
+        }
+      },
+      "upstream": [
+        "Switch:Route"
+      ]
+    },
+    "VariableAggregator:PickOne": {
+      "downstream": [
+        "Message:AggDone"
+      ],
+      "obj": {
+        "component_name": "VariableAggregator",
+        "params": {
+          "groups": [
+            {
+              "group_name": "picked",
+              "type": "string",
+              "variables": [
+                {
+                  "value": "env.a"
+                },
+                {
+                  "value": "env.b"
+                },
+                {
+                  "value": "env.c"
+                }
+              ]
+            }
+          ],
+          "outputs": {
+            "picked": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "upstream": [
+        "VariableAssigner:GoldMiceTurn"
+      ]
+    },
+    "VariableAssigner:GoldMiceTurn": {
+      "downstream": [
+        "VariableAggregator:PickOne"
+      ],
+      "obj": {
+        "component_name": "VariableAssigner",
+        "params": {
+          "variables": [
+            {
+              "operator": "set",
+              "parameter": "1",
+              "variable": "env.a"
+            },
+            {
+              "operator": "set",
+              "parameter": "2",
+              "variable": "env.b"
+            },
+            {
+              "operator": "set",
+              "parameter": "c",
+              "variable": "env.c"
+            }
+          ]
+        }
+      },
+      "upstream": [
+        "Switch:Route"
+      ]
+    },
+    "VariableAssigner:IncCounter": {
+      "downstream": [
+        "Message:VarDone"
+      ],
+      "obj": {
+        "component_name": "VariableAssigner",
+        "params": {
+          "variables": [
+            {
+              "operator": "+=",
+              "parameter": 1,
+              "variable": "env.counter"
+            }
+          ]
+        }
+      },
+      "upstream": [
+        "VariableAssigner:SetCounter"
+      ]
+    },
+    "VariableAssigner:SetCounter": {
+      "downstream": [
+        "VariableAssigner:IncCounter"
+      ],
+      "obj": {
+        "component_name": "VariableAssigner",
+        "params": {
+          "variables": [
+            {
+              "operator": "overwrite",
+              "parameter": "env.zero",
+              "variable": "env.counter"
+            }
+          ]
+        }
+      },
+      "upstream": [
+        "Switch:Route"
+      ]
+    },
+    "begin": {
+      "downstream": [
+        "UserFillUp:Menu"
+      ],
+      "obj": {
+        "component_name": "Begin",
+        "params": {
+          "enablePrologue": true,
+          "inputs": {},
+          "mode": "conversational",
+          "outputs": {},
+          "prologue": "功能菜单 Demo：先选一个要演示的模块，只跑该分支，互不依赖。"
+        }
+      },
+      "upstream": []
+    }
+  },
   "globals": {
     "env.a": "",
     "env.b": "",
     "env.c": "",
     "env.counter": 0,
     "env.loop_done": false,
-    "env.sample_rows": [],
+    "env.sample_rows": [
+      {
+        "id": 2,
+        "score": 0.88,
+        "title": "Beta"
+      },
+      {
+        "id": 3,
+        "score": 0.76,
+        "title": "Gamma"
+      },
+      {
+        "id": 1,
+        "score": 0.91,
+        "title": "Alpha"
+      }
+    ],
     "env.zero": 0,
     "sys.conversation_turns": 0,
     "sys.date": "",
@@ -103,19 +1458,6 @@
         "source": "Switch:Route",
         "sourceHandle": "Case 5",
         "target": "DataOperations:UpdateSample",
-        "targetHandle": "end",
-        "type": "buttonEdge",
-        "zIndex": 1001
-      },
-      {
-        "data": {
-          "isHovered": false
-        },
-        "id": "xy-edge__Switch:RouteCase 6-ListOperations:Top2end",
-        "markerEnd": "logo",
-        "source": "Switch:Route",
-        "sourceHandle": "Case 6",
-        "target": "ListOperations:Top2",
         "targetHandle": "end",
         "type": "buttonEdge",
         "zIndex": 1001
@@ -256,6 +1598,7 @@
         },
         "id": "xy-edge__Switch:LoopCheckCase 1-ExitLoop:LoopExitend",
         "markerEnd": "logo",
+        "selected": false,
         "source": "Switch:LoopCheck",
         "sourceHandle": "Case 1",
         "target": "ExitLoop:LoopExit",
@@ -332,11 +1675,11 @@
         "data": {
           "isHovered": false
         },
-        "id": "xy-edge__DataOperations:UpdateSamplestart-ListOperations:Top2end",
+        "id": "xy-edge__DataOperations:UpdateSamplestart-ListOperations:Sortend",
         "markerEnd": "logo",
         "source": "DataOperations:UpdateSample",
         "sourceHandle": "start",
-        "target": "ListOperations:Top2",
+        "target": "ListOperations:Sort",
         "targetHandle": "end",
         "type": "buttonEdge",
         "zIndex": 1001
@@ -345,9 +1688,22 @@
         "data": {
           "isHovered": false
         },
-        "id": "xy-edge__ListOperations:Top2start-Message:DataListDoneend",
+        "id": "xy-edge__ListOperations:Sortstart-ListOperations:Head2end",
         "markerEnd": "logo",
-        "source": "ListOperations:Top2",
+        "source": "ListOperations:Sort",
+        "sourceHandle": "start",
+        "target": "ListOperations:Head2",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__ListOperations:Head2start-Message:DataListDoneend",
+        "markerEnd": "logo",
+        "source": "ListOperations:Head2",
         "sourceHandle": "start",
         "target": "Message:DataListDone",
         "targetHandle": "end",
@@ -656,7 +2012,6 @@
                   "retrieval",
                   "condition",
                   "data_ops",
-                  "list_ops",
                   "text",
                   "var_assigner",
                   "var_aggregator",
@@ -679,7 +2034,6 @@
                   "retrieval",
                   "condition",
                   "data_ops",
-                  "list_ops",
                   "text",
                   "var_assigner",
                   "var_aggregator",
@@ -706,6 +2060,7 @@
           "x": 280,
           "y": 200
         },
+        "selected": false,
         "sourcePosition": "right",
         "targetPosition": "left",
         "type": "ragNode"
@@ -778,20 +2133,6 @@
                 "to": [
                   "DataOperations:UpdateSample",
                   "CodeExec:FunnyBroomsShare"
-                ]
-              },
-              {
-                "items": [
-                  {
-                    "cpn_id": "UserFillUp:Menu@demo",
-                    "operator": "=",
-                    "value": "list_ops"
-                  }
-                ],
-                "logical_operator": "and",
-                "to": [
-                  "ListOperations:Top2",
-                  "CodeExec:FlatLemonsFilm"
                 ]
               },
               {
@@ -911,7 +2252,7 @@
         "data": {
           "form": {
             "content": [
-              "未匹配到分支，请在菜单里选择一个 `demo` 选项。\n可选值: loop / iteration / retrieval / condition / data_ops / list_ops / text / var_assigner / var_aggregator / categorize / code / message / wait_input"
+              "未匹配到分支，请在菜单里选择一个 `demo` 选项。\n可选值: loop / iteration / retrieval / condition / data_ops / text / var_assigner / var_aggregator / categorize / code / message / wait_input"
             ]
           },
           "label": "Message",
@@ -1102,7 +2443,7 @@
           "x": 378.56604475198424,
           "y": 128.49067127976258
         },
-        "selected": false,
+        "selected": true,
         "sourcePosition": "right",
         "targetPosition": "left",
         "type": "messageNode"
@@ -1124,6 +2465,7 @@
           "x": 380,
           "y": 220
         },
+        "selected": false,
         "sourcePosition": "right",
         "targetPosition": "left",
         "type": "exitLoopNode"
@@ -1236,7 +2578,7 @@
             }
           },
           "label": "Iteration",
-          "name": "迭代(遍历数组)"
+          "name": "Iteration"
         },
         "dragging": false,
         "height": 260,
@@ -1252,7 +2594,7 @@
         "selected": false,
         "sourcePosition": "right",
         "targetPosition": "left",
-        "type": "group",
+        "type": "iterationNode",
         "width": 560
       },
       {
@@ -1389,27 +2731,21 @@
               "operator": "contains",
               "value": ""
             },
-            "n": 2,
-            "operations": "topN",
+            "operations": "sort",
             "outputs": {
-              "first": {
-                "type": "Object"
-              },
-              "last": {
-                "type": "Object"
-              },
               "result": {
                 "type": "Array<Object>"
               }
             },
             "query": "DataOperations:UpdateSample@result",
-            "sort_method": "asc"
+            "sort_by": "score",
+            "sort_method": "desc"
           },
           "label": "ListOperations",
-          "name": "列表操作(Top2)"
+          "name": "列表操作(sort desc)"
         },
         "dragging": false,
-        "id": "ListOperations:Top2",
+        "id": "ListOperations:Sort",
         "measured": {
           "height": 73,
           "width": 200
@@ -1426,8 +2762,49 @@
       {
         "data": {
           "form": {
+            "filter": {
+              "operator": "contains",
+              "value": ""
+            },
+            "n": 2,
+            "operations": "head",
+            "outputs": {
+              "first": {
+                "type": "Object"
+              },
+              "last": {
+                "type": "Object"
+              },
+              "result": {
+                "type": "Array<Object>"
+              }
+            },
+            "query": "ListOperations:Sort@result",
+            "sort_method": "asc"
+          },
+          "label": "ListOperations",
+          "name": "列表操作(Head2)"
+        },
+        "dragging": false,
+        "id": "ListOperations:Head2",
+        "measured": {
+          "height": 73,
+          "width": 200
+        },
+        "position": {
+          "x": 1700,
+          "y": 720
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "listOperationsNode"
+      },
+      {
+        "data": {
+          "form": {
             "content": [
-              "DataOperations 输出: {DataOperations:UpdateSample@result}\n\nListOperations Top2: {ListOperations:Top2@result}\n\nfirst={ListOperations:Top2@first}\n\nlast={ListOperations:Top2@last}"
+              "DataOperations 输出: {DataOperations:UpdateSample@result}\n\nListOperations Sort desc: {ListOperations:Sort@result}\n\nListOperations Head2: {ListOperations:Head2@result}\n\nfirst={ListOperations:Head2@first}\n\nlast={ListOperations:Head2@last}"
             ]
           },
           "label": "Message",
@@ -1440,8 +2817,8 @@
           "width": 200
         },
         "position": {
-          "x": 1749.3740020360885,
-          "y": 674.9558701063063
+          "x": 1900,
+          "y": 700
         },
         "selected": false,
         "sourcePosition": "right",
@@ -2075,7 +3452,7 @@
         },
         "id": "Categorize:Demo",
         "measured": {
-          "height": 175,
+          "height": 177,
           "width": 200
         },
         "position": {
@@ -2354,7 +3731,7 @@
         "id": "Note:LemonAntsGo",
         "measured": {
           "height": 127,
-          "width": 241
+          "width": 267
         },
         "position": {
           "x": 1058.5760701931008,
@@ -2406,6 +3783,11 @@
       }
     ]
   },
+  "history": [],
+  "memory": [],
+  "messages": [],
+  "path": [],
+  "retrieval": [],
   "variables": {
     "a": {
       "description": "VariableAggregator 候选1(空)",
@@ -2441,7 +3823,23 @@
       "description": "DataOperations/ListOperations 的示例输入：Array<object>。",
       "name": "sample_rows",
       "type": "array<object>",
-      "value": []
+      "value": [
+        {
+          "id": 2,
+          "score": 0.88,
+          "title": "Beta"
+        },
+        {
+          "id": 3,
+          "score": 0.76,
+          "title": "Gamma"
+        },
+        {
+          "id": 1,
+          "score": 0.91,
+          "title": "Alpha"
+        }
+      ]
     },
     "zero": {
       "description": "用于 overwrite 重置(避免 parameter=0 被当成不完整)。",

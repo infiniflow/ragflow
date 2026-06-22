@@ -8,6 +8,7 @@ import { IChatChannelInfoMap } from '../interface';
 export enum ChatChannelKey {
   CLICKCLACK = 'clickclack',
   DISCORD = 'discord',
+  DINGTALK = 'dingtalk',
   FEISHU = 'feishu',
   GOOGLECHAT = 'googlechat',
   IRC = 'irc',
@@ -48,6 +49,7 @@ const channelIcon = (key: ChatChannelKey) => (
 const CHANNEL_NAMES: Record<ChatChannelKey, string> = {
   [ChatChannelKey.CLICKCLACK]: 'ClickClack',
   [ChatChannelKey.DISCORD]: 'Discord',
+  [ChatChannelKey.DINGTALK]: 'DingTalk',
   [ChatChannelKey.FEISHU]: 'Feishu / Lark',
   [ChatChannelKey.GOOGLECHAT]: 'Google Chat',
   [ChatChannelKey.IRC]: 'IRC',
@@ -158,6 +160,21 @@ export const ChatChannelFormFields: Record<ChatChannelKey, FormFieldConfig[]> =
         type: FormFieldType.Text,
         required: false,
         placeholder: '1234567890',
+      },
+    ],
+    [ChatChannelKey.DINGTALK]: [
+      {
+        label: 'Client ID',
+        name: 'config.credential.client_id',
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: 'dingxxxxxxxxxxxx',
+      },
+      {
+        label: 'Client Secret',
+        name: 'config.credential.client_secret',
+        type: FormFieldType.Password,
+        required: true,
       },
     ],
     [ChatChannelKey.FEISHU]: [
@@ -678,6 +695,8 @@ ChatChannelFormDefaultValues[ChatChannelKey.GOOGLECHAT].config.auth_mode =
 ChatChannelFormDefaultValues[
   ChatChannelKey.WECOM
 ].config.credential.connection_type = 'webhook';
+ChatChannelFormDefaultValues[ChatChannelKey.FEISHU].config.credential.domain =
+  'feishu';
 
 export const getChatChannelFields = (
   key?: ChatChannelKey,

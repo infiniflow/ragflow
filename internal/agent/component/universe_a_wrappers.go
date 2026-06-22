@@ -32,7 +32,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strconv"
+	"strings"
 
 	einotool "github.com/cloudwego/eino/components/tool"
 
@@ -376,6 +378,90 @@ func (c *exesqlComponent) Stream(_ context.Context, _ map[string]any) (<-chan ma
 	return nil, nil
 }
 
+// codeExecComponent delegates to internal/agent/tool/CodeExecTool.
+// The node-level params map carries the legacy v1 DSL surface
+// (`lang`, `script`, `arguments`, optional `timeout`). Per-call inputs
+// override those defaults so resolved canvas refs win at invocation
+// time, while static DSL-provided literals still flow through.
+type codeExecComponent struct {
+	inner   *agenttool.CodeExecTool
+	params  map[string]any
+	outputs map[string]any
+}
+
+func newCodeExecComponent(params map[string]any) (Component, error) {
+	cloned := make(map[string]any, len(params))
+	for k, v := range params {
+		cloned[k] = v
+	}
+	return &codeExecComponent{
+		inner:   agenttool.NewCodeExecTool(),
+		params:  cloned,
+		outputs: cloneAnyMap(asAnyMap(params["outputs"])),
+	}, nil
+}
+
+func (c *codeExecComponent) Name() string { return "CodeExec" }
+
+func (c *codeExecComponent) Inputs() map[string]string {
+	return map[string]string{
+		"lang":      "Programming language: python/python3/javascript/nodejs.",
+		"script":    "Code to execute. Should define main(...).",
+		"arguments": "Arguments passed to main(...) as keyword args / object fields.",
+		"timeout":   "Optional per-execution timeout in seconds.",
+	}
+}
+
+func (c *codeExecComponent) Outputs() map[string]string {
+	return map[string]string{
+		"result":      "The main(...) return value rendered as the legacy CodeExec result field.",
+		"content":     "Raw CodeExec tool content field.",
+		"_ERROR":      "Execution or sandbox error message.",
+		"actual_type": "Runtime type inferred by the sandbox bridge.",
+		"stdout":      "Captured stdout.",
+		"stderr":      "Captured stderr.",
+		"exit_code":   "Process exit code.",
+	}
+}
+
+func (c *codeExecComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	merged := make(map[string]any, len(c.params)+len(inputs))
+	for k, v := range c.params {
+		merged[k] = v
+	}
+	for k, v := range inputs {
+		merged[k] = v
+	}
+	if rawArgs, ok := merged["arguments"].(map[string]any); ok {
+		merged["arguments"] = resolveCodeExecArguments(rawArgs, merged)
+	}
+	log.Printf("DEBUG CodeExec wrapper invoke: params=%#v inputs=%#v merged=%#v", c.params, inputs, merged)
+	argsJSON, _ := json.Marshal(merged)
+	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
+	decoded := parseToolEnvelope(out)
+	if c.outputs != nil {
+		applyCodeExecBusinessOutputs(decoded, c.outputs)
+	} else if rawResult, ok := decoded["raw_result"]; ok {
+		decoded["result"] = rawResult
+		if _, ok := decoded["_ERROR"]; !ok {
+			decoded["_ERROR"] = ""
+		}
+	} else if content, ok := decoded["content"]; ok {
+		decoded["result"] = content
+		if _, ok := decoded["_ERROR"]; !ok {
+			decoded["_ERROR"] = ""
+		}
+	}
+	if err != nil {
+		return decoded, fmt.Errorf("canvas: CodeExec: %w", err)
+	}
+	return decoded, nil
+}
+
+func (c *codeExecComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
+}
+
 // parseToolEnvelope decodes the JSON envelope returned by eino tool
 // InvokableRun into a map[string]any. The result has whatever keys
 // the tool's result type carries (rows/columns/chunks/etc.).
@@ -387,6 +473,148 @@ func parseToolEnvelope(jsonStr string) map[string]any {
 		return map[string]any{"_raw": jsonStr}
 	}
 	return out
+}
+
+func applyCodeExecBusinessOutputs(decoded map[string]any, outputs map[string]any) {
+	if decoded == nil {
+		return
+	}
+	rawResult := resolveCodeExecBusinessResult(decoded)
+	log.Printf("DEBUG CodeExec wrapper: decoded=%#v resolved_raw_result=%#v content=%#v outputs=%#v",
+		decoded, rawResult, decoded["content"], outputs)
+	if existingErr, _ := decoded["_ERROR"].(string); strings.TrimSpace(existingErr) != "" {
+		for name := range outputs {
+			if isCodeExecSystemOutput(name) {
+				continue
+			}
+			decoded[name] = nil
+		}
+		if _, ok := decoded["actual_type"]; !ok {
+			decoded["actual_type"] = agenttool.InferCodeExecActualType(rawResult)
+		}
+		if _, ok := decoded["content"]; !ok {
+			decoded["content"] = agenttool.RenderCodeExecCanonicalContent(rawResult)
+		}
+		return
+	}
+	contract, err := agenttool.BuildCodeExecContract(outputs, rawResult)
+	if err != nil {
+		for name := range outputs {
+			if isCodeExecSystemOutput(name) {
+				continue
+			}
+			decoded[name] = nil
+		}
+		decoded["actual_type"] = agenttool.InferCodeExecActualType(rawResult)
+		decoded["_ERROR"] = err.Error()
+		if _, ok := decoded["content"]; !ok {
+			decoded["content"] = agenttool.RenderCodeExecCanonicalContent(rawResult)
+		}
+		return
+	}
+
+	decoded["_ERROR"] = ""
+	decoded["actual_type"] = contract.ActualType
+	decoded["content"] = contract.Content
+	decoded[contract.BusinessOutput] = contract.Value
+}
+
+func resolveCodeExecBusinessResult(decoded map[string]any) any {
+	if decoded == nil {
+		return nil
+	}
+	if rawResult, ok := decoded["raw_result"]; ok {
+		return rawResult
+	}
+	content, _ := decoded["content"].(string)
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil
+	}
+	var parsed any
+	if err := json.Unmarshal([]byte(content), &parsed); err == nil {
+		return parsed
+	}
+	return content
+}
+
+func isCodeExecSystemOutput(name string) bool {
+	switch name {
+	case "content", "actual_type", "attachments", "_ERROR", "_ARTIFACTS", "_ATTACHMENT_CONTENT", "raw_result", "_created_time", "_elapsed_time":
+		return true
+	default:
+		return false
+	}
+}
+
+func asAnyMap(v any) map[string]any {
+	if m, ok := v.(map[string]any); ok {
+		return m
+	}
+	return nil
+}
+
+func cloneAnyMap(in map[string]any) map[string]any {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func resolveCodeExecArguments(args map[string]any, merged map[string]any) map[string]any {
+	if args == nil {
+		return nil
+	}
+	out := make(map[string]any, len(args))
+	for k, v := range args {
+		out[k] = resolveCodeExecArgumentValue(v, merged)
+	}
+	return out
+}
+
+func resolveCodeExecArgumentValue(v any, merged map[string]any) any {
+	switch x := v.(type) {
+	case map[string]any:
+		return resolveCodeExecArguments(x, merged)
+	case []any:
+		out := make([]any, 0, len(x))
+		for _, item := range x {
+			out = append(out, resolveCodeExecArgumentValue(item, merged))
+		}
+		return out
+	case string:
+		if resolved, ok := lookupCodeExecArgumentRef(x, merged); ok {
+			return resolved
+		}
+		return x
+	default:
+		return v
+	}
+}
+
+func lookupCodeExecArgumentRef(ref string, merged map[string]any) (any, bool) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return nil, false
+	}
+	at := strings.Index(ref, "@")
+	if at <= 0 || at >= len(ref)-1 {
+		return nil, false
+	}
+	cpnID := ref[:at]
+	param := ref[at+1:]
+
+	stateByNode, _ := merged["state"].(map[string]map[string]any)
+	if bucket, ok := stateByNode[cpnID]; ok {
+		if v, ok := bucket[param]; ok {
+			return v, true
+		}
+	}
+	return nil, false
 }
 
 // toIntParam coerces a node-param int value to int. JSON-decoded
@@ -431,6 +659,7 @@ var (
 	_ Component = (*retrievalComponent)(nil)
 	_ Component = (*tavilySearchComponent)(nil)
 	_ Component = (*exesqlComponent)(nil)
+	_ Component = (*codeExecComponent)(nil)
 )
 
 // Compile-time check that the eino InvokableTool methods we call

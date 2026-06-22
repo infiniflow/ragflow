@@ -36,38 +36,33 @@
 // Go port test suite has `graph` and `components` but a slightly
 // different internal layout convention).
 //
-// NormalizeForCanvas is the single decoder-boundary entry point used by
-// all Go code paths (handler.AgentHandler, service.AgentService, and
-// indirectly the Compile path). It is the ONLY function this package
-// exports. The function:
+// NormalizeForCanvas is the decoder-boundary entry point for every
+// front-end-facing Go path (handler.AgentHandler, service.AgentService
+// create/update/publish/reset, version reads). The function:
 //
 //  1. Repairs React-Flow handle ids on whatever `graph.edges` are present
 //     (source/target handle ids: source=start, target=end).
 //  2. If `graph.nodes` is missing but `components` is non-empty, builds
 //     a default-layout graph from the components (deterministic order,
 //     50/200/350 px column layout).
-//  3. Folds legacy parent/child node pairs (Loop+LoopItem,
-//     Iteration+IterationItem) into a single Loop/Parallel node and
-//     drops the child. Renames "Iteration" to "Parallel" in `components`
-//     so downstream compile/expand paths only need to handle the modern
-//     node names. Uses `graph.nodes[*].parentId` (a React-Flow node-level
-//     field) to discover parent/child relationships; the field is not
-//     present in the v1 `components` map, so the fold is impossible to
-//     do correctly on the `*Canvas` struct alone — that's why this lives
-//     here at the decoder boundary, not inside the canvas layer.
-//  4. Returns a defensive copy of the input with all three transforms
+//  3. Repairs any historically leaked runtime-only Parallel /
+//     parallelNode canvas shape back to the front-end's Iteration /
+//     iterationNode protocol.
+//  4. Returns a defensive copy of the input with all transforms
 //     applied. Never mutates its input.
 //
 // The function never panics on malformed input; unparseable entries are
-// skipped and a best-effort graph is returned. Calling code is free to
-// serialise the result as JSON and re-merge with the original `data.dsl`
-// on the front-end (the front-end's NormalizeForCanvas fallback in
-// web/src/pages/agent/utils/dsl-bridge.ts mirrors this Go behaviour
-// for the reverse round-trip).
+// skipped and a best-effort graph is returned.
+//
+// IMPORTANT: this function preserves the front-end canvas protocol. It
+// must not leak runtime-only node kinds (for example "Parallel" /
+// "parallelNode") into `graph.nodes` or rewrite user-authored DSL
+// semantics. Runtime-only folding lives in NormalizeForRun.
 
 package dsl
 
 import (
+	"regexp"
 	"sort"
 )
 
@@ -83,20 +78,35 @@ const (
 	componentNameParallel      = "Parallel"
 )
 
+var legacyIterationAliasPattern = regexp.MustCompile(`IterationItem:[A-Za-z0-9_:-]+@(item|index)\b`)
+
 // NormalizeForCanvas returns a defensive copy of dsl with a derived
-// `graph.nodes`/`graph.edges` block (when missing) and legacy
-// LoopItem/IterationItem nodes folded away.
+// `graph.nodes`/`graph.edges` block when missing.
 //
 // Behaviour:
 //   - nil in, nil out.
 //   - graph.nodes already non-empty: handle ids are still repaired in
 //     place (idempotent). Otherwise graph is derived from components.
 //   - empty / components:{}: no-op, returns dsl as-is.
-//   - any components: builds graph + folds legacy loop variants.
+//   - any components: builds graph only.
+//   - any historically leaked Parallel / parallelNode canvas state is
+//     repaired back to Iteration / iterationNode.
 //
 // The function never panics on malformed input; unparseable entries are
 // skipped and a best-effort graph is returned.
 func NormalizeForCanvas(dsl map[string]any) map[string]any {
+	return normalize(dsl, false)
+}
+
+// NormalizeForRun prepares a DSL for the runtime/compiler path. Unlike
+// NormalizeForCanvas, it is allowed to fold legacy LoopItem /
+// IterationItem children away and rename Iteration to Parallel because
+// the returned map never goes back to the front-end.
+func NormalizeForRun(dsl map[string]any) map[string]any {
+	return normalize(dsl, true)
+}
+
+func normalize(dsl map[string]any, foldLegacy bool) map[string]any {
 	if dsl == nil {
 		return nil
 	}
@@ -125,15 +135,118 @@ func NormalizeForCanvas(dsl map[string]any) map[string]any {
 		}
 	}
 
-	// (3) Fold legacy Loop+LoopItem and Iteration+IterationItem pairs
-	// in place. This step uses graph.nodes[*].parentId to discover
-	// parent/child relationships; if `graph` is still missing the fold
-	// degrades to a pure rename (component_name: "Iteration" → "Parallel";
-	// LoopItem/IterationItem names stay in components but downstream
-	// compile/expand paths must tolerate them). See foldLegacyLoopVariants.
-	foldLegacyLoopVariants(out)
+	// (3) Repair any historically leaked runtime-only Parallel /
+	// parallelNode view back to the front-end's Iteration /
+	// iterationNode protocol. This keeps response payloads
+	// renderable without exposing backend implementation details.
+	repairParallelLeaksForCanvas(out)
+
+	if foldLegacy {
+		// (4) Runtime-only compatibility: fold legacy Loop+LoopItem and
+		// Iteration+IterationItem pairs in place. This step uses
+		// graph.nodes[*].parentId to discover parent/child
+		// relationships; if `graph` is still missing the fold degrades
+		// to a pure rename (component_name: "Iteration" → "Parallel";
+		// LoopItem/IterationItem names stay in components but
+		// downstream compile/expand paths must tolerate them).
+		foldLegacyLoopVariants(out)
+		rewriteLegacyIterationAliases(out)
+	}
 
 	return out
+}
+
+// rewriteLegacyIterationAliases rewrites runtime-only references to the
+// legacy IterationItem child's synthetic outputs back to the modern
+// item/index aliases that CanvasState exposes. This runs only on the
+// runtime-normalized copy, never on the front-end-facing canvas view.
+func rewriteLegacyIterationAliases(dsl map[string]any) {
+	for k, v := range dsl {
+		switch x := v.(type) {
+		case string:
+			dsl[k] = replaceLegacyIterationAliasRefs(x)
+		case map[string]any:
+			rewriteLegacyIterationAliases(x)
+		case []any:
+			rewriteLegacyIterationAliasesInSlice(x)
+		}
+	}
+}
+
+func rewriteLegacyIterationAliasesInSlice(items []any) {
+	for i, v := range items {
+		switch x := v.(type) {
+		case string:
+			items[i] = replaceLegacyIterationAliasRefs(x)
+		case map[string]any:
+			rewriteLegacyIterationAliases(x)
+		case []any:
+			rewriteLegacyIterationAliasesInSlice(x)
+		}
+	}
+}
+
+func replaceLegacyIterationAliasRefs(s string) string {
+	return legacyIterationAliasPattern.ReplaceAllStringFunc(s, func(match string) string {
+		sub := legacyIterationAliasPattern.FindStringSubmatch(match)
+		if len(sub) != 2 {
+			return match
+		}
+		alias := sub[1]
+		switch alias {
+		case "item", "index":
+			return alias
+		default:
+			return match
+		}
+	})
+}
+
+// repairParallelLeaksForCanvas rewrites any historically leaked
+// runtime-only Parallel / parallelNode view back to the front-end's
+// Iteration / iterationNode protocol. This is a response-shape repair
+// only; it does not perform parent/child folding.
+func repairParallelLeaksForCanvas(dsl map[string]any) {
+	rawComps, _ := dsl["components"].(map[string]any)
+	for _, raw := range rawComps {
+		comp, _ := raw.(map[string]any)
+		if comp == nil {
+			continue
+		}
+		if obj, ok := comp["obj"].(map[string]any); ok {
+			if obj["component_name"] == componentNameParallel {
+				obj["component_name"] = componentNameIteration
+			}
+		}
+		if comp["name"] == componentNameParallel {
+			comp["name"] = componentNameIteration
+		}
+	}
+
+	graph, _ := dsl["graph"].(map[string]any)
+	if graph == nil {
+		return
+	}
+	nodes, _ := graph["nodes"].([]any)
+	for _, raw := range nodes {
+		node, _ := raw.(map[string]any)
+		if node == nil {
+			continue
+		}
+		if node["type"] == "parallelNode" {
+			node["type"] = "iterationNode"
+		}
+		data, _ := node["data"].(map[string]any)
+		if data == nil {
+			continue
+		}
+		if data["label"] == componentNameParallel {
+			data["label"] = componentNameIteration
+		}
+		if data["name"] == componentNameParallel {
+			data["name"] = componentNameIteration
+		}
+	}
 }
 
 // enforceHandleIds rewrites graph.edges[*].sourceHandle / targetHandle

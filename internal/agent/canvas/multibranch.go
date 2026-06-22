@@ -136,7 +136,7 @@ func wireMultiBranches(
 			endNodesList = append(endNodesList, n)
 		}
 		cond := makeSwitchBranchCondition(endNodes)
-		wf.AddBranch(cpnID, compose.NewGraphBranch(cond, endNodes))
+		wf.AddBranch(cpnID, compose.NewGraphMultiBranch(cond, endNodes))
 		out = append(out, branchRegistration{
 			Parent:   cpnID,
 			EndNodes: endNodesList,
@@ -153,43 +153,58 @@ type branchRegistration struct {
 	EndNodes []string
 }
 
-// makeSwitchBranchCondition returns a GraphBranchCondition that
+// makeSwitchBranchCondition returns a GraphMultiBranchCondition that
 // drives eino's MultiBranch from the parent's outputs["_next"]
 // field. The condition:
 //
 //  1. Pulls `_next` out of the parent's output map (which the
 //     statePost handler has already written to state.Outputs and
 //     the lambda has returned).
-//  2. Validates the value against the endNodes whitelist. eino
-//     rejects unknown keys at runtime with "branch invocation
-//     returns unintended end node: <key>"; clamping here means a
-//     misconfigured Switch (e.g. `to: "ghost"` for a downstream
-//     that was deleted) degrades to "no branch chosen" instead of
-//     crashing the run.
-//  3. Falls back to empty string when `_next` is absent, empty, or
-//     not in the whitelist. eino treats an empty chosen list as
-//     "no successor" — the workflow simply doesn't continue past
-//     the parent on this path. This matches the Python semantics
-//     for a Switch whose default points to a non-existent node.
-func makeSwitchBranchCondition(endNodes map[string]bool) compose.GraphBranchCondition[map[string]any] {
-	return func(_ context.Context, in map[string]any) (string, error) {
+//  2. When `_next` is a []any (list of cpn_ids — Python's Switch
+//     can route to multiple targets simultaneously), all entries
+//     that are in the endNodes whitelist are returned as the chosen
+//     set. This mirrors the Python behavior where Switch's "to"
+//     field is a list and every listed cpn_id fires.
+//  3. When `_next` is a string (single target — legacy or default
+//     path), it is validated against the whitelist and returned as
+//     a single-entry map.
+//  4. Falls back to an empty map when `_next` is absent, empty, or
+//     contains no whitelisted entries. eino treats an empty chosen
+//     set as "no successor" — the workflow simply doesn't continue
+//     past the parent on this path.
+func makeSwitchBranchCondition(endNodes map[string]bool) compose.GraphMultiBranchCondition[map[string]any] {
+	return func(_ context.Context, in map[string]any) (map[string]bool, error) {
 		raw, ok := in["_next"]
 		if !ok {
-			return "", nil
+			return nil, nil
 		}
-		next, ok := raw.(string)
-		if !ok || next == "" {
-			return "", nil
+		chosen := make(map[string]bool, 1)
+		switch v := raw.(type) {
+		case string:
+			if v != "" && endNodes[v] {
+				chosen[v] = true
+			}
+		case []string:
+			for _, s := range v {
+				if s == "" {
+					continue
+				}
+				if endNodes[s] {
+					chosen[s] = true
+				}
+			}
+		case []any:
+			for _, item := range v {
+				s, ok := item.(string)
+				if !ok || s == "" {
+					continue
+				}
+				if endNodes[s] {
+					chosen[s] = true
+				}
+			}
 		}
-		if !endNodes[next] {
-			// _next resolved to something outside the
-			// whitelist. eino would error with "branch
-			// invocation returns unintended end node" —
-			// suppress that and exit gracefully so a
-			// misconfigured DSL doesn't take down the run.
-			return "", nil
-		}
-		return next, nil
+		return chosen, nil
 	}
 }
 

@@ -40,6 +40,43 @@ import (
 
 // ---- collectDescendants ----
 
+func TestCollectLoopMembers_UsesGroupedChildren(t *testing.T) {
+	c := &Canvas{
+		Components: map[string]CanvasComponent{
+			"Loop:InputUntil1":          {Obj: CanvasComponentObj{ComponentName: "Loop"}, Downstream: []string{"Message:LoopDone"}},
+			"LoopItem:InputUntil1Start": {Obj: CanvasComponentObj{ComponentName: "LoopItem"}},
+			"UserFillUp:LoopInput":      {Obj: CanvasComponentObj{ComponentName: "UserFillUp"}},
+			"Switch:LoopCheck":          {Obj: CanvasComponentObj{ComponentName: "Switch"}},
+			"ExitLoop:LoopExit":         {Obj: CanvasComponentObj{ComponentName: "ExitLoop"}},
+			"Message:LoopContinue":      {Obj: CanvasComponentObj{ComponentName: "Message"}},
+			"Message:LoopDone":          {Obj: CanvasComponentObj{ComponentName: "Message"}},
+		},
+		NodeParents: map[string]string{
+			"LoopItem:InputUntil1Start": "Loop:InputUntil1",
+			"UserFillUp:LoopInput":      "Loop:InputUntil1",
+			"Switch:LoopCheck":          "Loop:InputUntil1",
+			"ExitLoop:LoopExit":         "Loop:InputUntil1",
+			"Message:LoopContinue":      "Loop:InputUntil1",
+		},
+	}
+
+	got := collectLoopMembers(c, "Loop:InputUntil1")
+	for _, want := range []string{
+		"LoopItem:InputUntil1Start",
+		"UserFillUp:LoopInput",
+		"Switch:LoopCheck",
+		"ExitLoop:LoopExit",
+		"Message:LoopContinue",
+	} {
+		if !got[want] {
+			t.Fatalf("grouped loop member %q missing from %v", want, got)
+		}
+	}
+	if got["Message:LoopDone"] {
+		t.Fatalf("outer follower should not be a loop member: %v", got)
+	}
+}
+
 func TestCollectDescendants_DAG(t *testing.T) {
 	// 4-node chain: loop -> a -> b -> c -> d (d has no downstream).
 	c := &Canvas{
@@ -573,6 +610,86 @@ func TestBuildWorkflow_LegacyExitLoop(t *testing.T) {
 	}
 }
 
+func TestBuildWorkflow_LoopExitLoopDoesNotBecomeTerminal(t *testing.T) {
+	c := &Canvas{
+		Components: map[string]CanvasComponent{
+			"begin": {
+				Obj:        CanvasComponentObj{ComponentName: "Begin"},
+				Downstream: []string{"loop"},
+			},
+			"loop": {
+				Obj: CanvasComponentObj{
+					ComponentName: "Loop",
+					Params: map[string]any{
+						"logical_operator": "and",
+						"loop_termination_condition": []any{
+							map[string]any{
+								"input_mode": "constant",
+								"operator":   "is",
+								"value":      "1",
+								"variable":   "UserFillUp:LoopInput@value",
+							},
+						},
+					},
+				},
+				Downstream: []string{"done"},
+				Upstream:   []string{"begin"},
+			},
+			"loop_item": {
+				Obj:        CanvasComponentObj{ComponentName: "IterationItem"},
+				Downstream: []string{"input"},
+				Upstream:   []string{"loop"},
+			},
+			"input": {
+				Obj:        CanvasComponentObj{ComponentName: "UserFillUp", Params: map[string]any{"inputs": map[string]any{"value": map[string]any{"type": "line"}}}},
+				Downstream: []string{"check"},
+				Upstream:   []string{"loop_item"},
+			},
+			"check": {
+				Obj: CanvasComponentObj{
+					ComponentName: "Switch",
+					Params: map[string]any{
+						"conditions": []any{
+							map[string]any{
+								"logical_operator": "and",
+								"items": []any{
+									map[string]any{"cpn_id": "UserFillUp:LoopInput@value", "operator": "=", "value": "1"},
+								},
+								"to": []any{"exit"},
+							},
+						},
+						"end_cpn_ids": []any{"continue"},
+					},
+				},
+				Downstream: []string{"exit", "continue"},
+				Upstream:   []string{"input"},
+			},
+			"exit": {
+				Obj:      CanvasComponentObj{ComponentName: "ExitLoop"},
+				Upstream: []string{"check"},
+			},
+			"continue": {
+				Obj:      CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"content": []any{"continue"}}},
+				Upstream: []string{"check"},
+			},
+			"done": {
+				Obj:      CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"content": []any{"done"}}},
+				Upstream: []string{"loop"},
+			},
+		},
+		NodeParents: map[string]string{
+			"loop_item": "loop",
+			"input":     "loop",
+			"check":     "loop",
+			"exit":      "loop",
+			"continue":  "loop",
+		},
+	}
+	if _, err := BuildWorkflow(context.Background(), c); err != nil {
+		t.Fatalf("BuildWorkflow with grouped loop ExitLoop: %v", err)
+	}
+}
+
 func TestBuildWorkflow_UnknownComponentErrors(t *testing.T) {
 	// A component name that is neither in legacyNoOpNames nor in the
 	// isKnownPrimitive allowlist must produce a clear error from
@@ -746,6 +863,59 @@ func TestBuildWorkflow_LoopWithBody(t *testing.T) {
 	}
 	if _, err := BuildWorkflow(context.Background(), c); err != nil {
 		t.Fatalf("BuildWorkflow: %v", err)
+	}
+}
+
+func TestBuildWorkflow_LoopBodyWithMultiTerminalCompiles(t *testing.T) {
+	c := &Canvas{
+		Components: map[string]CanvasComponent{
+			"begin": {
+				Obj:        CanvasComponentObj{ComponentName: "Begin"},
+				Downstream: []string{"loop"},
+			},
+			"loop": {
+				Obj: CanvasComponentObj{
+					ComponentName: "Loop",
+					Params: map[string]any{
+						"loop_variables": []any{
+							map[string]any{
+								"variable":   "counter",
+								"input_mode": "constant",
+								"value":      0,
+								"type":       "number",
+							},
+						},
+						"loop_termination_condition": []any{
+							map[string]any{
+								"variable":   "counter",
+								"operator":   "≥",
+								"value":      1,
+								"input_mode": "constant",
+							},
+						},
+					},
+				},
+				Upstream:   []string{"begin"},
+				Downstream: []string{"branch"},
+			},
+			"branch": {
+				Obj:        CanvasComponentObj{ComponentName: "Categorize"},
+				Upstream:   []string{"loop"},
+				Downstream: []string{"left", "right"},
+			},
+			"left": {
+				Obj:      CanvasComponentObj{ComponentName: "Message"},
+				Upstream: []string{"branch"},
+			},
+			"right": {
+				Obj:      CanvasComponentObj{ComponentName: "Message"},
+				Upstream: []string{"branch"},
+			},
+		},
+	}
+
+	if _, err := BuildWorkflow(context.Background(), c); err != nil {
+		t.Fatalf("BuildWorkflow with loop multi-terminal body: %v", err)
 	}
 }
 

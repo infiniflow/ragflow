@@ -86,6 +86,26 @@ func TestStringTransform_Merge(t *testing.T) {
 	}
 }
 
+func TestStringTransform_MergeIterationAliases(t *testing.T) {
+	c, _ := NewStringTransformComponent(map[string]any{
+		"method":     "merge",
+		"delimiters": []string{","},
+		"script":     "{index}: {item}",
+	})
+	state := canvas.NewCanvasState("run-iter", "task-iter")
+	state.Globals["__item__"] = "beta"
+	state.Globals["__index__"] = 1
+	ctx := canvas.WithState(context.Background(), state)
+
+	out, err := c.Invoke(ctx, map[string]any{})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, want := out["result"], "1: beta"; got != want {
+		t.Errorf("merge iteration aliases: got %v, want %v", got, want)
+	}
+}
+
 // TestStringTransform_SplitFromStateRef: when "line" is absent, the
 // component reads the value from state[split_ref].
 func TestStringTransform_SplitFromStateRef(t *testing.T) {
