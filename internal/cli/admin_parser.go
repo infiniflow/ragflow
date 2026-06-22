@@ -797,7 +797,7 @@ func (p *Parser) parseAdminStopIngestionTasks() (*Command, error) {
 }
 
 func (p *Parser) parseAdminRemoveIngestionTasks() (*Command, error) {
-	p.nextToken() // consume Ingestion
+	p.nextToken() // consume INGESTION
 
 	if p.curToken.Type != TokenTasks {
 		return nil, fmt.Errorf("expected TASKS")
@@ -1433,7 +1433,8 @@ func (p *Parser) parseAdminSetLicense() (*Command, error) {
 
 func (p *Parser) parseAdminSetVariable() (*Command, error) {
 	p.nextToken() // consume VAR
-	varName, err := p.parseIdentifier()
+
+	varName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
@@ -1783,20 +1784,20 @@ func (p *Parser) parseAdminStartService() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseAdminShutdownCommand() (*Command, error) {
+func (p *Parser) parseAdminShutdownCommands() (*Command, error) {
 	p.nextToken() // consume SHUTDOWN
 
 	switch p.curToken.Type {
 	case TokenService:
-		return p.parseAdminShutdownServiceCommand()
+		return p.parseAdminShutdownService()
 	case TokenIngestor:
-		return p.parseAdminShutdownIngestorCommand()
+		return p.parseAdminShutdownIngestor()
 	default:
 		return nil, fmt.Errorf("expected SERVICE or INGESTOR")
 	}
 }
 
-func (p *Parser) parseAdminShutdownServiceCommand() (*Command, error) {
+func (p *Parser) parseAdminShutdownService() (*Command, error) {
 	p.nextToken() // consume SERVICE
 
 	serviceIndex, err := p.parseNumber()
@@ -1804,7 +1805,7 @@ func (p *Parser) parseAdminShutdownServiceCommand() (*Command, error) {
 		return nil, err
 	}
 
-	cmd := NewCommand("shutdown_service")
+	cmd := NewCommand("admin_shutdown_service")
 	cmd.Params["service_index"] = serviceIndex
 
 	p.nextToken()
@@ -1815,7 +1816,7 @@ func (p *Parser) parseAdminShutdownServiceCommand() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseAdminShutdownIngestorCommand() (*Command, error) {
+func (p *Parser) parseAdminShutdownIngestor() (*Command, error) {
 	p.nextToken() // consume INGESTOR
 
 	ingestorName, err := p.parseQuotedString()
@@ -1834,7 +1835,7 @@ func (p *Parser) parseAdminShutdownIngestorCommand() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseAdminRestartCommand() (*Command, error) {
+func (p *Parser) parseAdminRestart() (*Command, error) {
 	p.nextToken() // consume RESTART
 	if p.curToken.Type != TokenService {
 		return nil, fmt.Errorf("expected SERVICE")
@@ -1846,7 +1847,7 @@ func (p *Parser) parseAdminRestartCommand() (*Command, error) {
 		return nil, err
 	}
 
-	cmd := NewCommand("restart_service")
+	cmd := NewCommand("admin_restart_service")
 	cmd.Params["service_index"] = serviceIndex
 
 	p.nextToken()
@@ -2049,20 +2050,12 @@ func (p *Parser) parseMessageQueueCommand() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseAdminRemoveCommand() (*Command, error) {
-	p.nextToken() // consume MESSAGE_QUEUE
+// REMOVE INGESTION TASK 'task_id';
+// REMOVE USER 'user@example.com' INGESTION TASKS 'created';
+func (p *Parser) parseAdminRemoveCommands() (*Command, error) {
+	p.nextToken() // consume REMOVE
 
-	var cmd *Command
 	switch p.curToken.Type {
-	case TokenService:
-		p.nextToken() // consume SERVICE
-		serviceNum, err := p.parseNumber()
-		if err != nil {
-			return nil, fmt.Errorf("expected service number after SERVICE")
-		}
-		p.nextToken() // consume service number
-		cmd = NewCommand("admin_remove_service_command")
-		cmd.Params["service_number"] = serviceNum
 	case TokenIngestion:
 		return p.parseAdminRemoveIngestionTasks()
 	case TokenUser:
@@ -2070,11 +2063,6 @@ func (p *Parser) parseAdminRemoveCommand() (*Command, error) {
 	default:
 		return nil, fmt.Errorf("expected SERVICE")
 	}
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
 }
 
 // SHOW USERS SUMMARY;

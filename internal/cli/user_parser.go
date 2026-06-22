@@ -3716,52 +3716,6 @@ func (p *Parser) parseUserStatement() (*Command, error) {
 	}
 }
 
-func (p *Parser) parseShutdownCommand() (*Command, error) {
-	p.nextToken() // consume SHUTDOWN
-	if p.curToken.Type != TokenService {
-		return nil, fmt.Errorf("expected SERVICE")
-	}
-	p.nextToken()
-
-	serviceNum, err := p.parseNumber()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("shutdown_service")
-	cmd.Params["number"] = serviceNum
-
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseRestartCommand() (*Command, error) {
-	p.nextToken() // consume RESTART
-	if p.curToken.Type != TokenService {
-		return nil, fmt.Errorf("expected SERVICE")
-	}
-	p.nextToken()
-
-	serviceNum, err := p.parseNumber()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("restart_service")
-	cmd.Params["number"] = serviceNum
-
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
 func (p *Parser) parseUnsetCommand() (*Command, error) {
 	p.nextToken() // consume UNSET
 

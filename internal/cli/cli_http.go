@@ -49,6 +49,10 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminListServicesCommand(cmd)
 	case "admin_start_service":
 		return c.AdminStartServiceCommand(cmd)
+	case "admin_restart_service":
+		return c.AdminRestartServiceCommand(cmd)
+	case "admin_shutdown_service":
+		return c.AdminShutdownServiceCommand(cmd)
 	case "admin_grant_user_admin":
 		return c.AdminGrantUserAdminCommand(cmd)
 	case "admin_revoke_user_admin":
@@ -139,8 +143,6 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.UserPullMessageCommand(cmd)
 	case "user_show_message_queue_command":
 		return c.UserShowMessageQueueCommand(cmd)
-	case "admin_remove_service_command":
-		return c.AdminRemoveServiceCommand(cmd)
 	case "admin_check_license":
 		return c.AdminCheckLicenseCommand(cmd)
 	case "admin_show_fingerprint":

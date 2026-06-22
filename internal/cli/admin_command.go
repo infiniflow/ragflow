@@ -729,6 +729,70 @@ func (c *CLI) AdminStartServiceCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+// AdminRestartServiceCommand restarts a service (admin mode only)
+func (c *CLI) AdminRestartServiceCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	serviceIndex := cmd.Params["service_index"].(int)
+
+	endPoint := fmt.Sprintf("/admin/services/%d", serviceIndex)
+
+	resp, err := c.AdminServerClient.Request("PUT", endPoint, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to restart service: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to restart service: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("restart service failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// AdminShutdownServiceCommand shuts down a service (admin mode only)
+func (c *CLI) AdminShutdownServiceCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	serviceIndex := cmd.Params["service_index"].(int)
+
+	endPoint := fmt.Sprintf("/admin/services/%d", serviceIndex)
+
+	resp, err := c.AdminServerClient.Request("DELETE", endPoint, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to shutdown service: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to shutdown service: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("shutdown service failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
 // AdminShowService show service (admin mode only)
 func (c *CLI) AdminShowService(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
@@ -1499,41 +1563,6 @@ func (c *CLI) UserShowMessageQueueCommand(cmd *Command) (ResponseIf, error) {
 	var result CommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("show message queue failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
-}
-
-func (c *CLI) AdminRemoveServiceCommand(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-	serviceNumber, ok := cmd.Params["service_number"].(int)
-	if !ok {
-		return nil, fmt.Errorf("service_number not provided")
-	}
-
-	payload := map[string]interface{}{
-		"service_number": serviceNumber,
-	}
-
-	resp, err := c.AdminServerClient.Request("DELETE", "/admin/services", "admin", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to remove unavailable service: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to remove unavailable service: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result SimpleResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("remove unavailable service failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
