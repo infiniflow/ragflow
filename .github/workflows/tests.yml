@@ -240,12 +240,6 @@ jobs:
         # those failures are pre-existing and not caused by the diff.
         run: |
           set -euo pipefail
-          CHANGED_GO=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} \
-            | grep -E '\.go$' || true)
-          if [ -z "$CHANGED_GO" ]; then
-            echo "No Go files changed; skipping Go unit tests"
-            exit 0
-          fi
           PKGS=$(go list ./... 2>/dev/null | grep -v '/internal/storage$' || true)
           if [ -z "$PKGS" ]; then
             ./build.sh --test
@@ -679,12 +673,6 @@ jobs:
         # those failures are pre-existing and not caused by the diff.
         run: |
           set -euo pipefail
-          CHANGED_GO=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} \
-            | grep -E '\.go$' || true)
-          if [ -z "$CHANGED_GO" ]; then
-            echo "No Go files changed; skipping Go unit tests"
-            exit 0
-          fi
           PKGS=$(go list ./... 2>/dev/null | grep -v '/internal/storage$' || true)
           if [ -z "$PKGS" ]; then
             ./build.sh --test
