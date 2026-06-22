@@ -132,6 +132,37 @@ func (s *Service) ListResources() (map[string]interface{}, error) {
 	return result, nil
 }
 
+func (s *Service) ShowRoleDefaultModels(roleName string) ([]map[string]interface{}, error) {
+	return []map[string]interface{}{
+		{
+			"command":   "show_role_default_models",
+			"role_name": roleName,
+			"error":     "'show role default models' is implemented in enterprise edition",
+		},
+	}, nil
+}
+
+// SetRoleDefaultModel set role default model
+func (s *Service) SetRoleDefaultModel(roleName, modelID, modelType string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":    "set_role_default_model",
+		"role_name":  roleName,
+		"model_id":   modelID,
+		"model_type": modelType,
+		"error":      "'set role default model' is implemented in enterprise edition",
+	}, nil
+}
+
+// ResetRoleDefaultModel reset role default model
+func (s *Service) ResetRoleDefaultModel(roleName, modelType string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":    "reset_role_default_model",
+		"role_name":  roleName,
+		"model_type": modelType,
+		"error":      "'reset role default model' is implemented in enterprise edition",
+	}, nil
+}
+
 // ListAllModels list all models
 func (s *Service) ListAllModels() ([]map[string]interface{}, error) {
 	return []map[string]interface{}{

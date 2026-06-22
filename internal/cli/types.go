@@ -34,7 +34,6 @@ const (
 	TokenCreate
 	TokenService
 	TokenShutdown
-	TokenStartup
 	TokenRestart
 	TokenUsers
 	TokenDrop
