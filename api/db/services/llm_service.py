@@ -325,6 +325,7 @@ class LLMBundle(LLM4Tenant):
             if "images" in inspect.signature(base_fn).parameters:
                 return
         except (TypeError, ValueError):
+            logging.warning("LLMBundle: cannot inspect signature of %r; leaving 'images' kwarg as-is, which may reach the provider SDK.", base_fn)
             return
         # Local import to avoid a circular dependency (dialog_service imports LLMBundle).
         from api.db.services.dialog_service import convert_last_user_msg_to_multimodal
