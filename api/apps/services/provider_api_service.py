@@ -19,12 +19,12 @@ import logging
 import asyncio
 
 from common.constants import LLMType, ActiveStatusEnum
-from common.misc_utils import get_uuid
 from common.settings import FACTORY_LLM_INFOS
 from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, delete_models_by_instance_ids, delete_instances_by_provider_ids
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
 from api.db.services.tenant_model_service import TenantModelService
+from api.utils.model_utils import get_model_type_human, calculate_model_type
 from rag.llm import ChatModel, EmbeddingModel, ModelMeta, OcrModel, RerankModel, TTSModel
 
 
@@ -49,7 +49,6 @@ def _normalize_provider_base_url(provider_name: str, base_url: str | None):
     if not base_url.endswith("/v1"):
         base_url += "/v1"
     return base_url
-
 
 
 def _factory_llm_name(llm: dict) -> str:
@@ -331,6 +330,23 @@ async def create_provider_instance(tenant_id: str, provider_name: str, instance_
                 msg += _msg
         if msg:
             return False, msg
+    else:
+        factory_info = [f for f in FACTORY_LLM_INFOS if f["name"] == provider_name]
+        factory_llms = factory_info[0]["llm"]
+        for llm in factory_llms:
+            success, _msg = add_model_to_instance(tenant_id, provider_name, instance_name, **{
+                "model_type": _factory_model_types(llm),
+                "model_name": _factory_llm_name(llm),
+                "max_tokens": llm["max_tokens"],
+                "extra": {
+                    "is_tools": llm.get("is_tools", False),
+                    "thinking": "thinking" in llm.get("features", [])
+                }
+            })
+            if not success:
+                msg += _msg
+        if msg:
+            return False, msg
 
     return True, "success"
 
@@ -591,57 +607,6 @@ def drop_provider_instances(tenant_id: str, provider_name: str, instance_names: 
     return True, None
 
 
-def _hybrid_get_instance_models(provider_name: str, instance_id: str):
-    # List all models from the LLM dictionary for this provider
-    factory_info = [f for f in FACTORY_LLM_INFOS if f["name"] == provider_name]
-    if not factory_info:
-        return False, f"Provider '{provider_name}' not found"
-
-    # Get model records for this instance from tenant_model table
-    model_records = TenantModelService.get_models_by_instance_id(instance_id)
-    # Build a map of model_name -> status, type
-    model_info_map: dict = {}
-    model_unsupported_type_map = {}
-    for model_record in model_records:
-        if model_record.status == ActiveStatusEnum.UNSUPPORTED.value:
-            if model_unsupported_type_map.get(model_record.model_name):
-                model_unsupported_type_map[model_record.model_name].append(model_record.model_type)
-            else:
-                model_unsupported_type_map[model_record.model_name] = [model_record.model_type]
-            continue
-        if model_info_map.get(model_record.model_name):
-            model_info_map[model_record.model_name]["model_type"].append(model_record.model_type)
-        else:
-            model_info_map[model_record.model_name] = {
-                "status": model_record.status,
-                "model_type": [model_record.model_type],
-                "extra": model_record.extra
-            }
-
-    llms = factory_info[0].get("llm", [])
-    models = []
-    for llm in llms:
-        models.append({
-            "name": llm["llm_name"],
-            "model_type": list(
-                set(_factory_model_types(llm) + model_info_map.get(llm["llm_name"], {}).get("model_type", [])) - set(model_unsupported_type_map.get(llm["llm_name"], []))
-            ),
-            "max_tokens": llm.get("max_tokens"),
-            "status": model_info_map.get(llm["llm_name"], {}).get("status", "active"),
-        })
-    factory_models = [m["name"] for m in models]
-    for model_name, model_info_dict in model_info_map.items():
-        if model_name not in factory_models:
-            extra_fields = json.loads(model_info_dict["extra"]) if model_info_dict["extra"] else {}
-            models.append({
-                "name": model_name,
-                "model_type": set(model_info_dict["model_type"]) - set(model_unsupported_type_map.get(model_name, [])),
-                "max_tokens": extra_fields.get("max_tokens", 8192),
-                "status": model_info_dict["status"],
-            })
-    return True, models
-
-
 def list_instance_models(tenant_id: str, provider_name: str, instance_name: str, supported_only: bool = False):
     """
     List models for a provider instance.
@@ -675,8 +640,14 @@ def list_instance_models(tenant_id: str, provider_name: str, instance_name: str,
     instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
     if not instance_obj:
         return False, f"No instance found for provider '{provider_name}' and instance '{instance_name}'"
-
-    return _hybrid_get_instance_models(provider_name, instance_obj.id)
+    # Get models
+    model_objs = TenantModelService.get_models_by_instance_id(instance_obj.id)
+    return True, [{
+        "name": model.model_name,
+        "model_type": get_model_type_human(model.model_type),
+        "max_tokens": json.loads(model.extra).get("max_tokens", 8192) if model.extra else 8192,
+        "status": model.status
+    } for model in model_objs]
 
 
 def update_instance_models(tenant_id: str, provider_name: str, instance_name: str, model_names: list, model_types: list):
@@ -690,25 +661,16 @@ def update_instance_models(tenant_id: str, provider_name: str, instance_name: st
     if not instance_obj:
         return False, f"No instance found for provider '{provider_name}' and instance '{instance_name}'"
 
-    found, models = _hybrid_get_instance_models(provider_name, instance_obj.id)
-    if not found:
-        return False, models
-
-    model_info_map = {model["name"]: model for model in models}
-    not_exist_models = set(model_names) - set(model_info_map.keys())
+    model_objs = TenantModelService.get_models_by_instance_id(instance_obj.id)
+    not_exist_models = set(model_names) - {model_obj.model_name for model_obj in model_objs}
     if not_exist_models:
         return False, f"Models {not_exist_models} not found for provider '{provider_name}' and instance '{instance_name}'"
-    for model_name in model_names:
-        model_info = model_info_map.get(model_name, {})
-        TenantModelService.upsert_model_type(
-            provider_obj.id,
-            instance_obj.id,
-            model_name,
-            {
-                "add": list(set(model_types) - set(model_info["model_type"])),
-                "delete": list(set(model_info["model_type"]) - set(model_types))
-            }
-        )
+
+    target_model_type_bin = calculate_model_type(model_types)
+    to_update = [model_obj.id for model_obj in model_objs if model_obj.model_type != target_model_type_bin and model_obj.model_name in model_names]
+    if to_update:
+        TenantModelService.batch_update_model_type(to_update, target_model_type_bin)
+
     return True, "success"
 
 
@@ -729,20 +691,21 @@ def add_model_to_instance(tenant_id: str, provider_name: str, instance_name: str
     if isinstance(model_type, str):
         model_type = [model_type]
 
-    for _type in model_type:
-        extra_fields = {"max_tokens": max_tokens}
-        target_model = [llm for llm in llms if _type in _factory_model_types(llm) and llm["llm_name"] == model_name]
-        if target_model:
-            extra_fields.update({"is_tools": target_model[0].get("is_tools", False)})
-        if extra:
-            extra_fields.update(extra)
-        TenantModelService.insert(
-            model_name=model_name,
-            provider_id=provider_obj.id,
-            instance_id=instance_obj.id,
-            model_type=_type,
-            extra=json.dumps(extra_fields)
-        )
+    model_type_bin = calculate_model_type(model_type)
+    extra_fields = {"max_tokens": max_tokens}
+    target_model = [llm for llm in llms if llm["llm_name"] == model_name]
+    if target_model:
+        extra_fields.update({"is_tools": target_model[0].get("is_tools", False)})
+        extra_fields.update({"thinking": "thinking" in target_model[0].get("features", [])})
+    if extra:
+        extra_fields.update(extra)
+    TenantModelService.insert(
+        model_name=model_name,
+        provider_id=provider_obj.id,
+        instance_id=instance_obj.id,
+        model_type=model_type_bin,
+        extra=json.dumps(extra_fields)
+    )
 
     return True, "success"
 
@@ -776,41 +739,11 @@ def update_model_status(tenant_id: str, provider_name: str, instance_name: str, 
     if not instance_obj:
         return False, f"No instance found for provider '{provider_name}' and instance '{instance_name}'"
 
-    # Check if model record already exists in tenant_model table
-    model_obj_list = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(
-        provider_obj.id, instance_obj.id, model_name
-    )
+    model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(provider_obj.id, instance_obj.id, model_name)
+    if model_obj.status != status:
+        TenantModelService.update_model_status(model_obj.id, status)
 
-    if model_obj_list:
-        # Model record exists — update its status
-        TenantModelService.batch_update_model_status([m.id for m in model_obj_list if m.status != ActiveStatusEnum.UNSUPPORTED.value], status)
-    else:
-        # Model record does not exist
-        if status == ActiveStatusEnum.ACTIVE.value:
-            # Default is active, no need to add a record
-            return True, None
-        # status is "inactive" — create a record with inactive status
-        # Look up model schema from FACTORY_LLM_INFOS
-        factory_info = [f for f in FACTORY_LLM_INFOS if f["name"] == provider_name]
-        if not factory_info:
-            return False, f"Provider '{provider_name}' not found"
-        llms = factory_info[0].get("llm", [])
-        target_llm = [llm for llm in llms if llm["llm_name"] == model_name]
-        if not target_llm:
-            return False, f"provider {provider_name} model {model_name} not found"
-
-        for model_type in _factory_model_types(target_llm[0]):
-            TenantModelService.insert(
-                id=get_uuid(),
-                model_name=model_name,
-                model_type=model_type,
-                provider_id=provider_obj.id,
-                instance_id=instance_obj.id,
-                status=status,
-                extra=json.dumps({"max_tokens": target_llm[0].get("max_tokens", 8192), "is_tools": target_llm[0].get("is_tools", False)})
-            )
-
-    return True, None
+    return True, "success"
 
 
 async def chat_to_model(tenant_id: str, provider_name: str, instance_name: str, model_name: str, message: str, stream: bool = False, thinking: bool = False):
@@ -831,7 +764,7 @@ async def chat_to_model(tenant_id: str, provider_name: str, instance_name: str, 
     # Get model config
     composite_name = f"{model_name}@{instance_name}@{provider_name}"
     try:
-        model_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT.value, composite_name)
+        model_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT, composite_name)
     except LookupError:
         return False, f"Model '{composite_name}' not authorized"
 

@@ -1427,7 +1427,7 @@ class TenantModel(DataBaseModel):
     model_name = CharField(max_length=128, null=True, index=False, help_text="Model name")
     provider_id = CharField(max_length=32, null=False, index=False)
     instance_id = CharField(max_length=32, null=False, index=True)
-    model_type = CharField(max_length=32, null=False, index=False, help_text="Model type")
+    model_type = IntegerField(null=False, default=1, index=True, help_text="Bit flags (LSB->MSB): 1=chat, 2=embedding, 4=speech2text, 8=image2text, 16=rerank, 32=tts, 64=ocr")
     status = CharField(max_length=32, default="active", index=False)
     extra = CharField(max_length=1024, default="{}", index=False)
 

@@ -18,11 +18,12 @@ import os
 import enum
 import json
 from common import settings
-from common.constants import ActiveStatusEnum, LLMType, MINERU_DEFAULT_CONFIG, MINERU_ENV_KEYS, OPENDATALOADER_DEFAULT_CONFIG, OPENDATALOADER_ENV_KEYS, PADDLEOCR_DEFAULT_CONFIG, PADDLEOCR_ENV_KEYS
+from common.constants import ActiveStatusEnum, LLMType, ModelTypeBinary, MINERU_DEFAULT_CONFIG, MINERU_ENV_KEYS, OPENDATALOADER_DEFAULT_CONFIG, OPENDATALOADER_ENV_KEYS, PADDLEOCR_DEFAULT_CONFIG, PADDLEOCR_ENV_KEYS
 from api.db.services.tenant_llm_service import TenantService
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
 from api.db.services.tenant_model_service import TenantModelService
+from api.utils.model_utils import calculate_model_type, get_model_type_human
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ def _decode_api_key_config(raw_api_key: str) -> tuple[str, bool | None, str | No
 
 
 def get_first_provider_model_name(tenant_id: str, provider_name: str, model_type: str | enum.Enum) -> str | None:
-    model_type_val = model_type if isinstance(model_type, str) else model_type.value
+    model_type_bin = calculate_model_type(model_type)
     provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
     if not provider_obj:
         return None
@@ -61,7 +62,7 @@ def get_first_provider_model_name(tenant_id: str, provider_name: str, model_type
         if instance_obj.status != ActiveStatusEnum.ACTIVE.value:
             continue
         for model_obj in TenantModelService.get_models_by_instance_id(instance_obj.id):
-            if model_obj.model_type == model_type_val and model_obj.status == ActiveStatusEnum.ACTIVE.value:
+            if model_obj.model_type & model_type_bin and model_obj.status == ActiveStatusEnum.ACTIVE.value:
                 return f"{model_obj.model_name}@{instance_obj.instance_name}@{provider_name}"
     return None
 
@@ -107,7 +108,7 @@ def _ensure_ocr_provider_from_env(tenant_id: str, provider_name: str, model_name
             model_name=model_name,
             provider_id=provider_obj.id,
             instance_id=instance_obj.id,
-            model_type=LLMType.OCR.value,
+            model_type=ModelTypeBinary.OCR.value,
             extra=json.dumps({"max_tokens": 0}),
         )
 
@@ -223,7 +224,7 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
             "api_key": api_key,
             "llm_name": model_obj.model_name,
             "api_base": extra_fields.get("base_url", ""),
-            "model_type": model_obj.model_type,
+            "model_type": model_type_val,
             "is_tools": model_extra.get("is_tools", is_tool),
             "max_tokens": model_extra.get("max_tokens", 8192),
         }
@@ -232,32 +233,7 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
 
         return model_config
     else:
-        region = extra_fields.get("region", "default")
-        if region == "intl" and provider_name.lower() == "siliconflow":
-            target_factory_name = "siliconflow_intl"
-        else:
-            target_factory_name = provider_name
-        fac_list = [f for f in settings.FACTORY_LLM_INFOS if f["name"] == target_factory_name]
-        if not fac_list:
-            raise LookupError(f"Model provider config not found: {provider_name}")
-        llm_list = [llm for llm in fac_list[0]["llm"] if llm["llm_name"] == pure_model_name]
-        if not llm_list:
-            raise LookupError(f"Model config not found: {model_name}")
-        llm_info = llm_list[0]
-        if model_type_val not in _factory_model_types(llm_info):
-            raise LookupError(f"Model {model_name} is not a {model_type_val} model.")
-        model_config = {
-            "llm_factory": provider_obj.provider_name,
-            "api_key": api_key,
-            "llm_name": llm_info["llm_name"],
-            "api_base": extra_fields.get("base_url", ""),
-            "model_type": model_type_val,
-            "is_tools": llm_info.get("is_tools", is_tool),
-            "max_tokens": llm_info.get("max_tokens", 8192),
-        }
-        if api_key_payload is not None:
-            model_config["api_key_payload"] = api_key_payload
-        return model_config
+        raise LookupError(f"Model {model_name} not found for model {model_type_val}")
 
 
 def get_api_key(tenant_id: str, model_name: str):
@@ -282,23 +258,10 @@ def get_model_type_by_name(tenant_id: str, model_name: str):
     instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
     if not instance_obj:
         raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
-    model_objs = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(provider_obj.id, instance_obj.id, pure_model_name)
-    types_in_json = []
-    if not model_objs:
-        extra_fields = json.loads(instance_obj.extra) if instance_obj.extra else {}
-        region = extra_fields.get("region", "default")
-        if region == "intl" and provider_name.lower() == "siliconflow":
-            target_factory_name = "siliconflow_intl"
-        else:
-            target_factory_name = provider_name
-        fac_list = [f for f in settings.FACTORY_LLM_INFOS if f["name"] == target_factory_name]
-        if not fac_list:
-            raise LookupError(f"Model provider config not found: {provider_name}")
-        llm_list = [llm for llm in fac_list[0]["llm"] if llm["llm_name"] == pure_model_name]
-        if not llm_list:
-            raise LookupError(f"Model {pure_model_name} not found for model {model_name}.")
-        types_in_json = _factory_model_types(llm_list[0])
-    return list(set(types_in_json + [model_obj.model_type for model_obj in model_objs if model_obj.status != ActiveStatusEnum.UNSUPPORTED.value]) - {model_obj.model_type for model_obj in model_objs if model_obj.status == ActiveStatusEnum.UNSUPPORTED.value})
+    model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(provider_obj.id, instance_obj.id, pure_model_name)
+    if not model_obj:
+        raise LookupError(f"Model {model_name} not found.")
+    return get_model_type_human(model_obj.model_type)
 
 
 def delete_models_by_instance_ids(instance_ids: list[str]):
@@ -316,23 +279,3 @@ def ensure_opendataloader_from_env(tenant_id: str) -> str | None:
         "opendataloader-from-env",
         _collect_env_config(OPENDATALOADER_ENV_KEYS, OPENDATALOADER_DEFAULT_CONFIG),
     )
-
-
-def get_models_by_tenant_and_provider_and_model_type(tenant_id: str, provider_name: str, model_type: str):
-    """
-    Query TenantModel records by tenant_id, provider_name and model_name.
-    Returns all matching model records under all instances of the specified provider.
-    """
-    provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
-    if not provider_obj:
-        return []
-    instances = TenantModelInstanceService.get_all_by_provider_id(provider_obj.id)
-    if not instances:
-        return []
-    results = []
-    for inst in instances:
-        models = TenantModelService.get_by_provider_id_and_instance_id_and_model_type(provider_obj.id, inst.id, model_type)
-        supported = [model for model in models if model.status != ActiveStatusEnum.UNSUPPORTED.value]
-        if supported:
-            results.extend(supported)
-    return results
