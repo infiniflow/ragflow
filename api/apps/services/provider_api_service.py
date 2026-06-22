@@ -735,7 +735,11 @@ def add_model_to_instance(tenant_id: str, provider_name: str, instance_name: str
         if target_model:
             extra_fields.update({"is_tools": target_model[0].get("is_tools", False)})
         if extra:
-            extra_fields.update(extra)
+            has_ocr = LLMType.OCR.value in model_type
+            if has_ocr:
+                extra_fields["ocr_config"] = extra
+            else:
+                extra_fields.update(extra)
         TenantModelService.insert(
             model_name=model_name,
             provider_id=provider_obj.id,

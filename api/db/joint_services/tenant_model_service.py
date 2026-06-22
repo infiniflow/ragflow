@@ -228,7 +228,7 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
             "max_tokens": model_extra_fields.get("max_tokens", 8192),
             # SoMark/OCR factories read parser config (somark_*, parse_method, ...)
             # from model_config["extra"]; see tenant_llm_service.LLMBundle OCR path.
-            "extra": model_extra_fields,
+            "extra": model_extra_fields.get("ocr_config", model_extra_fields),
         }
         if api_key_payload is not None:
             model_config["api_key_payload"] = api_key_payload
