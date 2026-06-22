@@ -14,6 +14,7 @@ package component
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 
 	einotool "github.com/cloudwego/eino/components/tool"
@@ -26,6 +27,36 @@ import (
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/entity/models"
 )
+
+// agentLLMIDPattern matches `<model>@<provider>` and
+// `<model>@<instance>@<provider>` (the trailing `@<provider>` is
+// always the last segment — the segment just before the last `@`
+// is treated as the bare model name for upstream API calls). The
+// browser component has the same idea at browser.go:88-92, but
+// keeps the regex greedy for its 2-part fixture; we keep both
+// behaviours here via the in-function split below.
+
+// agentProviderLastSegmentSplit takes a composite llm_id and
+// returns (bareModelName, providerName, true) — or ("", "", false)
+// when no `@<provider>` suffix exists. The bare model name is
+// always `parts[0]` (the FIRST `@`-delimited segment); the
+// provider is `parts[1]` for the 2-part shape and `parts[2]` for
+// the 3+ shape. Any middle `@<seg>` segments (the "instance" in
+// Python's split_model_name) are intentionally dropped — the Go
+// drivers and the tenant_llm lookup both key on the bare model
+// name + factory, not on the instance.
+//
+// Mirrors Python's split_model_name at
+// api/db/joint_services/tenant_model_service.py:163-178:
+//   - "model"                     → ("model", "",       false)
+//   - "model@provider"            → ("model", "provider", true)
+//   - "model@instance@provider"   → ("model", "provider", true)
+//   - 4+ parts                    → ("parts[0]", "parts[2]", true) —
+//     the trailing segment wins, anything between instance and
+//     provider is dropped (Python uses parts[2] unconditionally).
+func agentProviderLastSegmentSplit(s string) (modelName, providerName string, hasProvider bool) {
+	return splitCompositeLLMID(s)
+}
 
 // AgentComponent is a multi-turn ReAct agent.
 type AgentComponent struct {
@@ -361,6 +392,30 @@ func (c *AgentComponent) Name() string { return "Agent" }
 // the output map.
 func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
 	p := mergeAgentParam(c.param, inputs)
+
+	// v3.6.1: derive the driver and bare model name from the
+	// composite llm_id when the Agent DSL didn't set `driver`. The
+	// Python side does the same in split_model_name at
+	// api/db/joint_services/tenant_model_service.py:163-178. We
+	// also use this opportunity to look up the tenant's LLM
+	// credentials from `tenant_llm` when the DSL omitted `api_key`
+	// — mirrors Python's get_model_config_from_provider_instance,
+	// which is how the Python canvas finds the tenant's
+	// provider-specific API key + base URL without storing them
+	// in the canvas DSL.
+	// Save the original composite llm_id before the split drops the
+	// instance-name segment. We need it for the tenant_model_instance
+	// fallback path below.
+	originalModelID := p.ModelID
+
+	if p.Driver == "" && p.ModelID != "" {
+		if m, prov, ok := agentProviderLastSegmentSplit(p.ModelID); ok {
+			p.Driver = prov
+			p.ModelID = m
+		}
+	}
+	p.APIKey, p.BaseURL = resolveTenantLLMConfig(ctx, p.Driver, p.ModelID, p.APIKey, p.BaseURL, originalModelID)
+
 	if p.ModelID == "" {
 		return nil, &ParamError{Field: "model_id", Reason: "required"}
 	}
@@ -412,6 +467,14 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	// grounding call is best-effort — on failure the original
 	// content is kept and the error is surfaced under
 	// outputs["grounding_error"].
+	// Diagnostic sentinel (temporary — see plan): log the post-
+	// agentRunner state right before the `msg.Content` deref so a
+	// subsequent panic shows whether the agent returned (nil, nil).
+	if msg == nil {
+		log.Printf("DEBUG agent.Invoke: msg is NIL after agentRunner — driver=%q modelID=%q userPrompt_len=%d err=%v", p.Driver, p.ModelID, len(p.UserPrompt), err)
+		return nil, fmt.Errorf("component: Agent.Invoke: agent runner returned nil message (driver=%q modelID=%q): %w", p.Driver, p.ModelID, err)
+	}
+	log.Printf("DEBUG agent.Invoke: msg OK driver=%q modelID=%q content_len=%d", p.Driver, p.ModelID, len(msg.Content))
 	content := msg.Content
 	var groundingStatus string
 	if p.Cite {
@@ -460,16 +523,19 @@ func (c *AgentComponent) Stream(ctx context.Context, inputs map[string]any) (<-c
 // Inputs returns parameter metadata for tooling.
 func (c *AgentComponent) Inputs() map[string]string {
 	return map[string]string{
-		"model_id":      "Provider-side model identifier (e.g. \"gpt-4o-mini\")",
-		"system_prompt": "Optional system prompt",
-		"user_prompt":   "User prompt; supports {{cpn_id@param}} references",
-		"top_p":         "Top-p (nucleus) sampling cutoff (0.0-1.0). Optional.",
-		"tools":         "List of tool names to make available to the ReAct agent.",
-		"tool_params":   "Optional node-level tool constructor params keyed by tool name (e.g. execute_sql DB config).",
-		"max_rounds":    "Maximum ReAct rounds (default 3).",
-		"driver":        "Provider driver name",
-		"api_key":       "Override API key for this call.",
-		"cite":          "When true, make a post-stream citation-grounding call (reads chunks from state.Retrieval).",
+		"model_id":                "Provider-side model identifier (e.g. \"gpt-4o-mini\")",
+		"system_prompt":           "Optional system prompt",
+		"user_prompt":             "User prompt; supports {{cpn_id@param}} references",
+		"top_p":                   "Top-p (nucleus) sampling cutoff (0.0-1.0). Optional.",
+		"tools":                   "List of tool names to make available to the ReAct agent.",
+		"tool_params":             "Optional node-level tool constructor params keyed by tool name (e.g. execute_sql DB config).",
+		"max_rounds":              "Maximum ReAct rounds (default 3).",
+		"optimize_multi_turn":     "When true (default), multi-turn history is condensed via full_question LLM call.",
+		"optimize_history_window": "Number of history turns to include in the optimization prompt (default 3).",
+		"driver":                  "Provider driver name",
+		"api_key":                 "Override API key for this call.",
+		"base_url":                "Override the driver default endpoint URL.",
+		"cite":                    "When true, make a post-stream citation-grounding call (reads chunks from state.Retrieval).",
 	}
 }
 
@@ -487,6 +553,27 @@ func (c *AgentComponent) Outputs() map[string]string {
 // resolving the driver through the RAGFlow provider manager.
 func buildAgentChatModel(p AgentParam) (*models.EinoChatModel, error) {
 	driver := p.Driver
+	modelID := p.ModelID
+
+	// When the Agent DSL omits `driver`, derive it from the composite
+	// llm_id format. The RAGFlow DSL stores the model identifier as
+	// "<model>@<instance>@<provider>" (mirrors Python's
+	// split_model_name at
+	// api/db/joint_services/tenant_model_service.py:163-178 and the
+	// Go-side SplitModelNameAndFactory at
+	// internal/service/tenant.go:168). Two-part
+	// "<model>@<provider>" and bare "<model>" are also accepted —
+	// bare means no driver known, which falls through to the dummy
+	// driver below. The trailing "@<provider>" suffix must also be
+	// stripped from the model id before passing to the driver — the
+	// upstream APIs (ZhipuAI, OpenAI, …) do not accept composite
+	// names and would 400 on the "@<provider>" tail.
+	if driver == "" && modelID != "" {
+		if bareModelName, providerName, ok := splitCompositeLLMID(modelID); ok {
+			driver = providerName
+			modelID = bareModelName
+		}
+	}
 	if driver == "" {
 		driver = "dummy"
 	}
@@ -509,7 +596,7 @@ func buildAgentChatModel(p AgentParam) (*models.EinoChatModel, error) {
 	}
 	apiKey := p.APIKey
 	cfg := &models.APIConfig{ApiKey: &apiKey}
-	cm := models.NewChatModel(d, &p.ModelID, cfg)
+	cm := models.NewChatModel(d, &modelID, cfg)
 	// ChatConfig construction is conditional on TopP being set, unlike
 	// the LLM path which always builds a ChatConfig (Temperature/MaxTokens
 	// pass-through). The asymmetry is intentional: AgentParam has no
@@ -642,6 +729,12 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 	}
 	if v, ok := nestedMapFrom(inputs, "tool_params"); ok {
 		p.ToolParams = v
+	}
+	if v, ok := boolFrom(inputs, "optimize_multi_turn"); ok {
+		p.OptimizeMultiTurn = v
+	}
+	if v, ok := intFrom(inputs, "optimize_history_window"); ok {
+		p.OptimizeHistoryWindow = v
 	}
 	if v, ok := boolFrom(inputs, "cite"); ok {
 		p.Cite = v

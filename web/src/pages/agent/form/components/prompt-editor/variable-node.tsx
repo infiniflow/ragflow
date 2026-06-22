@@ -1,5 +1,21 @@
-import { DecoratorNode, LexicalNode, NodeKey } from 'lexical';
+import {
+  DecoratorNode,
+  LexicalNode,
+  NodeKey,
+  SerializedLexicalNode,
+  Spread,
+} from 'lexical';
 import { ReactNode } from 'react';
+
+export type SerializedVariableNode = Spread<
+  {
+    type: 'variable';
+    version: 1;
+    value: string;
+    label: string;
+  },
+  SerializedLexicalNode
+>;
 
 export class VariableNode extends DecoratorNode<ReactNode> {
   __value: string;
@@ -19,6 +35,14 @@ export class VariableNode extends DecoratorNode<ReactNode> {
       node.__key,
       node.__parentLabel,
       node.__icon,
+    );
+  }
+
+  static importJSON(serializedNode: SerializedVariableNode): VariableNode {
+    return new VariableNode(
+      serializedNode.value,
+      serializedNode.label,
+      undefined,
     );
   }
 
@@ -72,6 +96,16 @@ export class VariableNode extends DecoratorNode<ReactNode> {
 
   getTextContent(): string {
     return `{${this.__value}}`;
+  }
+
+  exportJSON(): SerializedVariableNode {
+    return {
+      ...super.exportJSON(),
+      type: 'variable',
+      version: 1,
+      value: this.__value,
+      label: this.__label,
+    };
   }
 }
 

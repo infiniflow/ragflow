@@ -21,6 +21,16 @@
 // block keyed by the fixture name. The diff helper classifies
 // React-Flow internals automatically — no per-fixture work needed.
 
+jest.mock('../../utils', () => ({
+  buildDslComponentsByGraph: jest.fn(
+    (_nodes, _edges, oldDslComponents) => oldDslComponents ?? {},
+  ),
+  buildDslGlobalVariables: jest.fn((dsl, globalVariables) => ({
+    globals: dsl.globals,
+    variables: globalVariables ?? dsl.variables ?? {},
+  })),
+}));
+
 import * as bridge from '../dsl-bridge';
 const REACT_FLOW_NODE_INTERNALS = new Set(['dragging', 'selected', 'measured']);
 const REACT_FLOW_EDGE_INTERNALS = new Set(['isHovered']);
@@ -279,7 +289,7 @@ describe('dsl-bridge round-trip stability', () => {
       // to the empty seed; components from the input are NOT
       // propagated because the strict-graph contract only
       // renders what comes in via `graph`.
-      expect(out.components).toEqual({});
+      expect(out.components).toEqual(bridge.initialEmptyDsl(true).components);
     });
 
     it('_layout-only payload (legacy v1 export) → empty seed', () => {
@@ -369,5 +379,77 @@ describe('dsl-bridge round-trip stability', () => {
       ]),
     );
     expect(diff.failures).toEqual(['position.x: value (100 vs 999)']);
+  });
+
+  it('normalizes legacy iteration group nodes to the custom iteration node type', () => {
+    const legacyIterationDsl = {
+      graph: {
+        nodes: [
+          {
+            id: 'StringTransform:SplitCSV',
+            type: 'ragNode',
+            position: { x: 0, y: 0 },
+            data: { label: 'StringTransform', name: 'SplitCSV', form: {} },
+          },
+          {
+            id: 'Iteration:IterateList',
+            type: 'group',
+            position: { x: 100, y: 0 },
+            data: { label: 'Iteration', name: 'IterateList', form: {} },
+          },
+          {
+            id: 'Message:IterDone',
+            type: 'messageNode',
+            position: { x: 200, y: 0 },
+            data: { label: 'Message', name: 'IterDone', form: { content: [] } },
+          },
+        ],
+        edges: [
+          {
+            id: 'xy-edge__StringTransform:SplitCSVstart-Iteration:IterateListend',
+            source: 'StringTransform:SplitCSV',
+            sourceHandle: 'start',
+            target: 'Iteration:IterateList',
+            targetHandle: 'end',
+          },
+          {
+            id: 'xy-edge__Iteration:IterateListstart-Message:IterDoneend',
+            source: 'Iteration:IterateList',
+            sourceHandle: 'start',
+            target: 'Message:IterDone',
+            targetHandle: 'end',
+          },
+        ],
+      },
+      components: {
+        'StringTransform:SplitCSV': {
+          obj: { component_name: 'StringTransform', params: {} },
+          downstream: ['Iteration:IterateList'],
+          upstream: [],
+        },
+        'Iteration:IterateList': {
+          obj: { component_name: 'Iteration', params: {} },
+          downstream: ['Message:IterDone'],
+          upstream: ['StringTransform:SplitCSV'],
+        },
+        'Message:IterDone': {
+          obj: { component_name: 'Message', params: { content: [] } },
+          downstream: [],
+          upstream: ['Iteration:IterateList'],
+        },
+      },
+    };
+
+    const imported = bridge.importDsl(legacyIterationDsl as any, true) as any;
+    expect(
+      imported.graph.nodes.find(
+        (node: any) => node.id === 'Iteration:IterateList',
+      )?.type,
+    ).toBe('iterationNode');
+
+    const { nodes } = bridge.dslToGraph(imported);
+    expect(
+      nodes.find((node: any) => node.id === 'Iteration:IterateList')?.type,
+    ).toBe('iterationNode');
   });
 });

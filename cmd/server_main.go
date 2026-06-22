@@ -41,6 +41,7 @@ import (
 
 	"ragflow/internal/agent/audio"
 	"ragflow/internal/agent/canvas"
+	_ "ragflow/internal/agent/component" // blank import: registers every Component factory (Begin / Agent / LLM / Message / Retrieval / ...) into the shared runtime at package init
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"

@@ -334,13 +334,16 @@ func TestExeSQL_UnsupportedDB(t *testing.T) {
 	t.Parallel()
 
 	e := NewExeSQLTool(exesqlConnParams{
-		DBType:   "trino",
-		Host:     "h", Port: 8080, Database: "catalog",
+		DBType: "trino",
+		Host:   "h", Port: 8080, Database: "catalog",
 		Username: "u", Password: "p",
 	})
 	_, err := e.InvokableRun(context.Background(), `{"sql":"SELECT 1"}`)
-	if !errors.Is(err, ErrExeSQLUnsupportedDB) {
-		t.Fatalf("err = %v, want ErrExeSQLUnsupportedDB", err)
+	if err == nil {
+		t.Fatal("expected non-nil error for trino without registered driver")
+	}
+	if errors.Is(err, ErrExeSQLUnsupportedDB) {
+		t.Fatalf("err = %v, did not want ErrExeSQLUnsupportedDB after trino wiring", err)
 	}
 }
 

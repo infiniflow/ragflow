@@ -118,6 +118,14 @@ func (s *SiliconflowModel) ChatWithMessages(modelName string, messages []Message
 		if chatModelConfig.Stop != nil {
 			reqBody["stop"] = *chatModelConfig.Stop
 		}
+
+		if chatModelConfig.Thinking != nil {
+			// SiliconFlow's chat completions API expects a boolean
+			// `enable_thinking` field, not a `thinking: {type: ...}` map
+			// (the latter is the DeepSeek format and is silently ignored
+			// by SiliconFlow, breaking the thinking feature).
+			reqBody["enable_thinking"] = *chatModelConfig.Thinking
+		}
 	}
 
 	// Qwen3 family: disable thinking by default (matches Python's

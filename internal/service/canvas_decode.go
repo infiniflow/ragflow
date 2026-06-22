@@ -66,7 +66,8 @@ func decodeCanvasFromDSL(dsl map[string]any) (*canvas.Canvas, error) {
 		return nil, fmt.Errorf("decode canvas: no components: %w", ErrAgentStorageError)
 	}
 	c := &canvas.Canvas{
-		Components: make(map[string]canvas.CanvasComponent, len(rawComps)),
+		Components:  make(map[string]canvas.CanvasComponent, len(rawComps)),
+		NodeParents: make(map[string]string),
 	}
 	if p, ok := dsl["path"].([]any); ok {
 		c.Path = make([]string, 0, len(p))
@@ -78,6 +79,21 @@ func decodeCanvasFromDSL(dsl map[string]any) (*canvas.Canvas, error) {
 	}
 	if p, ok := dsl["globals"].(map[string]any); ok {
 		c.Globals = p
+	}
+	if graph, ok := dsl["graph"].(map[string]any); ok {
+		if nodes, ok := graph["nodes"].([]any); ok {
+			for _, raw := range nodes {
+				node, ok := raw.(map[string]any)
+				if !ok || node == nil {
+					continue
+				}
+				id, _ := node["id"].(string)
+				parentID, _ := node["parentId"].(string)
+				if id != "" && parentID != "" {
+					c.NodeParents[id] = parentID
+				}
+			}
+		}
 	}
 	for cpnID, raw := range rawComps {
 		comp, ok := raw.(map[string]any)

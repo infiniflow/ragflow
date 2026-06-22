@@ -244,14 +244,11 @@ func (s *StringTransformComponent) doSplit(_ context.Context, state *runtime.Can
 func (s *StringTransformComponent) doMerge(_ context.Context, state *runtime.CanvasState, inputs map[string]any) map[string]any {
 	script := s.param.Script
 
-	// First pass: state-level template resolution for any {{ref}} that
-	// is a valid cpn_id@param / sys.x / env.x reference. The Python
-	// _is_jinjia2 + template.render path is more general; for P1 we
-	// only support the simple state-resolvable form.
-	if strings.Contains(script, "{{") {
-		if resolved, err := runtime.ResolveTemplate(script, state); err == nil {
-			script = resolved
-		}
+	// First pass: state-level template resolution for any runtime ref
+	// syntax the canvas supports, including single-brace legacy refs and
+	// iteration aliases like {item}/{index}.
+	if resolved, err := runtime.ResolveTemplateAuto(script, state); err == nil {
+		script = resolved
 	}
 
 	// Second pass: {{name}} placeholders → values from inputs, then state.

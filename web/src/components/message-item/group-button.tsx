@@ -60,7 +60,12 @@ export const AssistantGroupButton = ({
         className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100"
         role="toolbar"
       >
-        <CopyToClipboard text={content} className="border-0" size="icon-xs" />
+        <CopyToClipboard
+          text={content}
+          className="border-0"
+          size="icon-xs"
+          avoidButtonWrapper
+        />
 
         {showLoudspeaker && (
           <>
@@ -156,7 +161,12 @@ export const UserGroupButton = ({
 
   return (
     <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-      <CopyToClipboard text={content} className="border-0" size="icon-xs" />
+      <CopyToClipboard
+        text={content}
+        className="border-0"
+        size="icon-xs"
+        avoidButtonWrapper
+      />
 
       {regenerateMessage && (
         <Tooltip>

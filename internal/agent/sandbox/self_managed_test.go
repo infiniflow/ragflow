@@ -146,7 +146,11 @@ func TestSelfManaged_ExecuteCode(t *testing.T) {
 		capturedPath = r.URL.Path
 		body, _ := io.ReadAll(r.Body)
 		capturedBody = body
-		handleRun(t, w, r, "hello", "world")
+		handleRunWithResult(t, w, r, "hello", "world", map[string]any{
+			"present": true,
+			"value":   2,
+			"type":    "json",
+		})
 	}))
 	defer srv.Close()
 
@@ -177,11 +181,11 @@ func TestSelfManaged_ExecuteCode(t *testing.T) {
 	if !strings.Contains(string(decoded), "def main(): return 1+1") {
 		t.Errorf("decoded code does not contain user script: %q", string(decoded))
 	}
-	if !strings.Contains(string(decoded), resultMarkerPrefix) {
-		t.Errorf("decoded code missing result marker")
+	if strings.Contains(string(decoded), resultMarkerPrefix) {
+		t.Errorf("decoded code should be raw user script, got wrapped payload: %q", string(decoded))
 	}
-	if !strings.Contains(string(decoded), `main(**{})`) {
-		t.Errorf("decoded code missing main(**args) call")
+	if strings.Contains(string(decoded), `main(**{})`) {
+		t.Errorf("decoded code should not contain client-side main(**args) wrapper: %q", string(decoded))
 	}
 
 	// Verify response parsing
@@ -190,6 +194,9 @@ func TestSelfManaged_ExecuteCode(t *testing.T) {
 	}
 	if !strings.Contains(result.Stderr, "world") {
 		t.Errorf("stderr = %q, want to contain 'world'", result.Stderr)
+	}
+	if got, ok := result.Metadata["structured_result"].(map[string]any); !ok || got["value"] != json.Number("2") {
+		t.Errorf("structured_result = %#v, want value 2 from HTTP result field", result.Metadata["structured_result"])
 	}
 }
 
@@ -227,11 +234,54 @@ func TestSelfManaged_ExecuteCode_JSWrapped(t *testing.T) {
 	// "module.exports = { main }" is added server-side by
 	// executor_manager (see handlers.py), not by our wrapper —
 	// so we look for the bits the wrapper actually emits.
-	if !strings.Contains(string(decoded), "const __ragflowArgs = {};") {
-		t.Errorf("decoded JS missing args binding: %q", string(decoded))
+	if strings.Contains(string(decoded), "const __ragflowArgs = {};") {
+		t.Errorf("decoded JS should be raw user script, got wrapped payload: %q", string(decoded))
 	}
-	if !strings.Contains(string(decoded), "module.exports && module.exports.main") {
-		t.Errorf("decoded JS missing main-resolution branch: %q", string(decoded))
+	if strings.Contains(string(decoded), "module.exports && module.exports.main") {
+		t.Errorf("decoded JS should not contain client-side wrapper logic: %q", string(decoded))
+	}
+}
+
+func TestSelfManaged_ExecuteCode_PrefersHTTPResultField(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"status":"SUCCESS",
+			"stdout":"",
+			"stderr":"",
+			"exit_code":0,
+			"artifacts":[],
+			"result":{"present":true,"value":16,"type":"json"}
+		}`))
+	}))
+	defer srv.Close()
+
+	p := newSelfManagedForTest(srv.URL)
+	p.initialized = true
+	inst, err := p.CreateInstance(context.Background(), "python")
+	if err != nil {
+		t.Fatalf("CreateInstance: %v", err)
+	}
+	result, err := p.ExecuteCode(context.Background(), inst, "def main(): return 16", "python", 10, nil)
+	if err != nil {
+		t.Fatalf("ExecuteCode: %v", err)
+	}
+	structured, ok := result.Metadata["structured_result"].(map[string]any)
+	if !ok {
+		t.Fatalf("structured_result type = %T, want map[string]any", result.Metadata["structured_result"])
+	}
+	if structured["present"] != true {
+		t.Fatalf("structured_result.present = %#v, want true", structured["present"])
+	}
+	if structured["value"] != json.Number("16") {
+		t.Fatalf("structured_result.value = %#v, want 16", structured["value"])
 	}
 }
 
@@ -415,6 +465,15 @@ func TestSelfManaged_ExecuteCode_OmitsEmptyBaseImage(t *testing.T) {
 // executor_manager /run result.
 func handleRun(t *testing.T, w http.ResponseWriter, _ *http.Request, stdout, stderr string) {
 	t.Helper()
+	handleRunWithResult(t, w, nil, stdout, stderr, map[string]any{
+		"present": false,
+		"value":   nil,
+		"type":    "json",
+	})
+}
+
+func handleRunWithResult(t *testing.T, w http.ResponseWriter, _ *http.Request, stdout, stderr string, result map[string]any) {
+	t.Helper()
 	resp := map[string]any{
 		"status":    "ok",
 		"stdout":    stdout,
@@ -422,7 +481,7 @@ func handleRun(t *testing.T, w http.ResponseWriter, _ *http.Request, stdout, std
 		"exit_code": 0,
 		"detail":    "",
 		"artifacts": []any{},
-		"result":    map[string]any{"present": false, "value": nil, "type": "json"},
+		"result":    result,
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
