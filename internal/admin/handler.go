@@ -748,13 +748,12 @@ func (h *Handler) ShowModel(c *gin.Context) {
 	})
 }
 
-// GetVariables handle get variables
-// Python logic: if request body is empty, list all variables; otherwise get single variable by var_name from body
-func (h *Handler) GetVariables(c *gin.Context) {
+// ListVariables handle list variables
+func (h *Handler) ListVariables(c *gin.Context) {
 	// Check if request has body content
 	if c.Request.ContentLength == 0 || c.Request.ContentLength == -1 {
 		// List all variables
-		variables, err := h.service.GetAllVariables()
+		variables, err := h.service.ListAllVariables()
 		if err != nil {
 			errorResponse(c, err.Error(), 500)
 			return
@@ -829,16 +828,10 @@ func (h *Handler) SetVariable(c *gin.Context) {
 	successNoData(c, "Set variable successfully")
 }
 
-// GetConfigs handle get configs
-// Python logic: return all service configurations
-func (h *Handler) GetConfigs(c *gin.Context) {
-	configs, err := h.service.GetAllConfigs()
+// ListConfigs handle list configs
+func (h *Handler) ListConfigs(c *gin.Context) {
+	configs, err := h.service.ListAllConfigs()
 	if err != nil {
-		// Check if it's an AdminException
-		if adminErr, ok := err.(*AdminException); ok {
-			errorResponse(c, adminErr.Message, 400)
-			return
-		}
 		errorResponse(c, err.Error(), 500)
 		return
 	}
@@ -846,16 +839,10 @@ func (h *Handler) GetConfigs(c *gin.Context) {
 	success(c, configs, "")
 }
 
-// GetEnvironments handle get environments
-// Python logic: return important environment variables
-func (h *Handler) GetEnvironments(c *gin.Context) {
-	environments, err := h.service.GetAllEnvironments()
+// ListEnvironments handle list environments
+func (h *Handler) ListEnvironments(c *gin.Context) {
+	environments, err := h.service.ListEnvironments()
 	if err != nil {
-		// Check if it's an AdminException
-		if adminErr, ok := err.(*AdminException); ok {
-			errorResponse(c, adminErr.Message, 400)
-			return
-		}
 		errorResponse(c, err.Error(), 500)
 		return
 	}

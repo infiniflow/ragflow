@@ -170,7 +170,7 @@ func (p *Parser) parseListCommand() (*Command, error) {
 	case TokenDefault:
 		return p.parseListDefaultModels()
 	case TokenAvailable:
-		return p.parseCommonListProviders()
+		return p.parseListAvailableProviders()
 	case TokenChats:
 		p.nextToken()
 		// Semicolon is optional for SHOW TOKEN
@@ -561,10 +561,6 @@ func (p *Parser) parseCreateCommand() (*Command, error) {
 	p.nextToken() // consume CREATE
 
 	switch p.curToken.Type {
-	case TokenUser:
-		return p.parseAdminCreateUserCommand()
-	case TokenRole:
-		return p.parseCreateRole()
 	case TokenModel:
 		return p.parseCreateModelProvider()
 	case TokenDataset:
@@ -1496,10 +1492,6 @@ func (p *Parser) parseAlterCommand() (*Command, error) {
 	p.nextToken() // consume ALTER
 
 	switch p.curToken.Type {
-	case TokenUser:
-		return p.parseAlterUser()
-	case TokenRole:
-		return p.parseAlterRole()
 	case TokenProvider:
 		return p.parseAlterProvider()
 	case TokenInstance:
@@ -1507,130 +1499,6 @@ func (p *Parser) parseAlterCommand() (*Command, error) {
 	default:
 		return nil, fmt.Errorf("unknown ALTER target: %s", p.curToken.Value)
 	}
-}
-
-func (p *Parser) parseAlterUser() (*Command, error) {
-	p.nextToken() // consume USER
-
-	if p.curToken.Type == TokenActive {
-		return p.parseActivateUser()
-	}
-
-	if p.curToken.Type == TokenPassword {
-		p.nextToken()
-		userName, err := p.parseQuotedString()
-		if err != nil {
-			return nil, err
-		}
-
-		p.nextToken()
-		password, err := p.parseQuotedString()
-		if err != nil {
-			return nil, err
-		}
-
-		cmd := NewCommand("alter_user")
-		cmd.Params["user_name"] = userName
-		cmd.Params["password"] = password
-
-		p.nextToken()
-		// Semicolon is optional for SHOW TOKEN
-		if p.curToken.Type == TokenSemicolon {
-			p.nextToken()
-		}
-		return cmd, nil
-	}
-
-	userName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	p.nextToken()
-	if p.curToken.Type != TokenSet {
-		return nil, fmt.Errorf("expected SET")
-	}
-	p.nextToken()
-	if p.curToken.Type != TokenRole {
-		return nil, fmt.Errorf("expected ROLE")
-	}
-	p.nextToken()
-
-	roleName, err := p.parseIdentifier()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("alter_user_role")
-	cmd.Params["user_name"] = userName
-	cmd.Params["role_name"] = roleName
-
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseActivateUser() (*Command, error) {
-	p.nextToken() // consume ACTIVE
-	userName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	p.nextToken()
-	// Accept 'on' or 'off' as identifier
-	status := p.curToken.Value
-	if status != "on" && status != "off" {
-		return nil, fmt.Errorf("expected 'on' or 'off', got %s", p.curToken.Value)
-	}
-
-	cmd := NewCommand("activate_user")
-	cmd.Params["user_name"] = userName
-	cmd.Params["activate_status"] = status
-
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseAlterRole() (*Command, error) {
-	p.nextToken() // consume ROLE
-	roleName, err := p.parseIdentifier()
-	if err != nil {
-		return nil, err
-	}
-
-	p.nextToken()
-	if p.curToken.Type != TokenSet {
-		return nil, fmt.Errorf("expected SET")
-	}
-	p.nextToken()
-	if p.curToken.Type != TokenDescription {
-		return nil, fmt.Errorf("expected DESCRIPTION")
-	}
-	p.nextToken()
-
-	description, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("alter_role")
-	cmd.Params["role_name"] = roleName
-	cmd.Params["description"] = description
-
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
 }
 
 // parseAlterProvider parses ALTER PROVIDER <name> NAME <new_name> command
@@ -1984,150 +1852,6 @@ func (p *Parser) parseDropInstanceModel() (*Command, error) {
 
 	p.nextToken()
 	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseGrantCommand() (*Command, error) {
-	p.nextToken() // consume GRANT
-
-	if p.curToken.Type == TokenAdmin {
-		return p.parseGrantAdmin()
-	}
-
-	return p.parseGrantPermission()
-}
-
-func (p *Parser) parseGrantAdmin() (*Command, error) {
-	p.nextToken() // consume ADMIN
-	userName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("grant_admin")
-	cmd.Params["user_name"] = userName
-
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseGrantPermission() (*Command, error) {
-	actions, err := p.parseIdentifierList()
-	if err != nil {
-		return nil, err
-	}
-
-	if p.curToken.Type != TokenOn {
-		return nil, fmt.Errorf("expected ON")
-	}
-	p.nextToken()
-
-	resource, err := p.parseIdentifier()
-	if err != nil {
-		return nil, err
-	}
-
-	p.nextToken()
-	if p.curToken.Type != TokenTo {
-		return nil, fmt.Errorf("expected TO")
-	}
-	p.nextToken()
-	if p.curToken.Type != TokenRole {
-		return nil, fmt.Errorf("expected ROLE")
-	}
-	p.nextToken()
-
-	roleName, err := p.parseIdentifier()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("grant_permission")
-	cmd.Params["actions"] = actions
-	cmd.Params["resource"] = resource
-	cmd.Params["role_name"] = roleName
-
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseRevokeCommand() (*Command, error) {
-	p.nextToken() // consume REVOKE
-
-	if p.curToken.Type == TokenAdmin {
-		return p.parseRevokeAdmin()
-	}
-
-	return p.parseRevokePermission()
-}
-
-func (p *Parser) parseRevokeAdmin() (*Command, error) {
-	p.nextToken() // consume ADMIN
-	userName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("revoke_admin")
-	cmd.Params["user_name"] = userName
-
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseRevokePermission() (*Command, error) {
-	actions, err := p.parseIdentifierList()
-	if err != nil {
-		return nil, err
-	}
-
-	if p.curToken.Type != TokenOn {
-		return nil, fmt.Errorf("expected ON")
-	}
-	p.nextToken()
-
-	resource, err := p.parseIdentifier()
-	if err != nil {
-		return nil, err
-	}
-
-	p.nextToken()
-	if p.curToken.Type != TokenFrom {
-		return nil, fmt.Errorf("expected FROM")
-	}
-	p.nextToken()
-	if p.curToken.Type != TokenRole {
-		return nil, fmt.Errorf("expected ROLE")
-	}
-	p.nextToken()
-
-	roleName, err := p.parseIdentifier()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("revoke_permission")
-	cmd.Params["actions"] = actions
-	cmd.Params["resource"] = resource
-	cmd.Params["role_name"] = roleName
-
-	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}

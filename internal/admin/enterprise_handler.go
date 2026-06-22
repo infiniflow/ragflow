@@ -108,15 +108,15 @@ func (h *Handler) UpdateRole(c *gin.Context) {
 	success(c, role, "")
 }
 
-// DeleteRole handle delete role
-func (h *Handler) DeleteRole(c *gin.Context) {
+// DropRole handle drop role
+func (h *Handler) DropRole(c *gin.Context) {
 	roleName := c.Param("role_name")
 	if roleName == "" {
 		errorResponse(c, "Role name is required", 400)
 		return
 	}
 
-	role, err := h.service.DeleteRole(roleName)
+	role, err := h.service.DropRole(roleName)
 	if err != nil {
 		errorResponse(c, "Role not found", 404)
 		return
@@ -686,6 +686,112 @@ func (h *Handler) ListUserFiles(c *gin.Context) {
 	}
 
 	success(c, files, "")
+}
+
+// ListUserProviders handle show user providers
+func (h *Handler) ListUserProviders(c *gin.Context) {
+	encodedUsername := c.Param("username")
+	username, err := common.DecodeEmail(encodedUsername)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
+	if username == "" {
+		errorResponse(c, "Username is required", 400)
+		return
+	}
+
+	providers, err := h.service.ListUserProviders(username)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, providers, "")
+}
+
+// ListUserProviderInstances handle show user provider instances
+func (h *Handler) ListUserProviderInstances(c *gin.Context) {
+	encodedUsername := c.Param("username")
+	userName, err := common.DecodeEmail(encodedUsername)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
+	if userName == "" {
+		errorResponse(c, "Username is required", 400)
+		return
+	}
+
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		errorResponse(c, "Provider name is required", 400)
+		return
+	}
+
+	instances, err := h.service.ListUserProviderInstances(userName, providerName)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, instances, "")
+}
+
+// ListUserProviderInstanceModels handle show user provider instance models
+func (h *Handler) ListUserProviderInstanceModels(c *gin.Context) {
+	encodedUsername := c.Param("username")
+	userName, err := common.DecodeEmail(encodedUsername)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
+	if userName == "" {
+		errorResponse(c, "Username is required", 400)
+		return
+	}
+
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		errorResponse(c, "Provider name is required", 400)
+		return
+	}
+
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		errorResponse(c, "Instance name is required", 400)
+		return
+	}
+
+	models, err := h.service.ListUserProviderInstanceModels(userName, providerName, instanceName)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, models, "")
+}
+
+// ListUserDefaultModels handle show user default models
+func (h *Handler) ListUserDefaultModels(c *gin.Context) {
+	encodedUsername := c.Param("username")
+	userName, err := common.DecodeEmail(encodedUsername)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
+	if userName == "" {
+		errorResponse(c, "Username is required", 400)
+		return
+	}
+
+	models, err := h.service.ListUserDefaultModels(userName)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, models, "")
 }
 
 // ShowUsersSummary handle show users summary

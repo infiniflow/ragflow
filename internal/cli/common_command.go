@@ -250,7 +250,7 @@ func (c *CLI) Logout() (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) ListAvailableProviders(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonAvailableProvidersCommand(cmd *Command) (ResponseIf, error) {
 
 	var resp *Response
 	var err error

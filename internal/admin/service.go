@@ -1516,9 +1516,9 @@ func (s *Service) GetVariable(varName string) ([]map[string]interface{}, error) 
 	return formatSystemSettings(settings), nil
 }
 
-// GetAllVariables get all variables
+// ListAllVariables list all variables
 // Returns all system settings from database
-func (s *Service) GetAllVariables() ([]map[string]interface{}, error) {
+func (s *Service) ListAllVariables() ([]map[string]interface{}, error) {
 	settings, err := s.systemSettingsDAO.GetAll()
 	if err != nil {
 		return nil, err
@@ -1562,18 +1562,17 @@ func (s *Service) SetVariable(varName, varValue string) error {
 
 // Config methods
 
-// GetAllConfigs get all configs
+// ListAllConfigs list all configs
 // Returns all service configurations from the config file
-func (s *Service) GetAllConfigs() ([]map[string]interface{}, error) {
+func (s *Service) ListAllConfigs() ([]map[string]interface{}, error) {
 	result := server.GetAllConfigs()
 	return result, nil
 }
 
 // Environment methods
 
-// GetAllEnvironments get all environments
-// Returns important environment variables
-func (s *Service) GetAllEnvironments() ([]map[string]interface{}, error) {
+// ListEnvironments list all environments
+func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 	result := make([]map[string]interface{}, 0)
 
 	// DOC_ENGINE

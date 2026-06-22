@@ -74,12 +74,12 @@ func (s *Service) UpdateRole(roleName, description string) (map[string]interface
 	return result, nil
 }
 
-// DeleteRole delete role
-func (s *Service) DeleteRole(roleName string) (map[string]interface{}, error) {
+// DropRole drop role
+func (s *Service) DropRole(roleName string) (map[string]interface{}, error) {
 	result := map[string]interface{}{
-		"command":   "delete_role",
+		"command":   "drop_role",
 		"role_name": roleName,
-		"error":     "'delete role' is implemented in enterprise edition",
+		"error":     "'drop role' is implemented in enterprise edition",
 	}
 
 	return result, nil
@@ -463,6 +463,93 @@ func (s *Service) ListUserFiles(email string) ([]map[string]interface{}, error) 
 			"email":    user.Email,
 			"nickname": user.Nickname,
 			"error":    "'list user files' is implemented in enterprise edition",
+		},
+	}
+
+	return result, nil
+}
+
+// ListUserProviders show user providers for enterprise edition
+func (s *Service) ListUserProviders(email string) ([]map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":  "list_user_providers",
+			"email":    user.Email,
+			"nickname": user.Nickname,
+			"error":    "'list user providers' is implemented in enterprise edition",
+		},
+	}
+
+	return result, nil
+}
+
+// ListUserProviderInstances show user provider instances for enterprise edition
+func (s *Service) ListUserProviderInstances(email, providerName string) ([]map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":       "list_user_provider_instances",
+			"email":         user.Email,
+			"nickname":      user.Nickname,
+			"provider_name": providerName,
+			"error":         "'list user provider instances' is implemented in enterprise edition",
+		},
+	}
+
+	return result, nil
+}
+
+// ListUserProviderInstanceModels show user provider instance models for enterprise edition
+func (s *Service) ListUserProviderInstanceModels(email, providerName, instanceName string) ([]map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":       "list_user_provider_instance_models",
+			"email":         user.Email,
+			"nickname":      user.Nickname,
+			"provider_name": providerName,
+			"instance_name": instanceName,
+			"error":         "'list user provider instance models' is implemented in enterprise edition",
+		},
+	}
+
+	return result, nil
+}
+
+// ListUserDefaultModels show user default models for enterprise edition
+func (s *Service) ListUserDefaultModels(email string) ([]map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":  "list_user_default_models",
+			"email":    user.Email,
+			"nickname": user.Nickname,
+			"error":    "'list user default models' is implemented in enterprise edition",
 		},
 	}
 
