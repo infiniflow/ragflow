@@ -612,6 +612,10 @@ func (e *parseTestDocEngine) GetHighlight([]map[string]interface{}, []string, st
 	return nil
 }
 
+func (e *parseTestDocEngine) RunSQL(context.Context, string, string, []string, string) ([]map[string]interface{}, error) {
+	return nil, nil
+}
+
 func (e *parseTestDocEngine) GetChunkIDs([]map[string]interface{}) []string {
 	return nil
 }
