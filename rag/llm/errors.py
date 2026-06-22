@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import re
 from enum import StrEnum
 
@@ -48,5 +49,7 @@ def classify_model_error(error) -> ModelErrorCode:
     ]
     for words, code in keywords_mapping:
         if re.search("({})".format("|".join(re.escape(w) for w in words)), error_str):
+            logging.debug("classify_model_error matched code=%s", code)
             return code
+    logging.debug("classify_model_error fell back to ERROR_GENERIC")
     return ModelErrorCode.ERROR_GENERIC
