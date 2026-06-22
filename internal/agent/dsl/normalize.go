@@ -150,11 +150,13 @@ func normalize(dsl map[string]any, foldLegacy bool) map[string]any {
 		// LoopItem/IterationItem names stay in components but
 		// downstream compile/expand paths must tolerate them).
 		foldLegacyLoopVariants(out)
+
 		rewriteLegacyIterationAliases(out)
 	}
 
 	return out
 }
+
 
 // rewriteLegacyIterationAliases rewrites runtime-only references to the
 // legacy IterationItem child's synthetic outputs back to the modern
@@ -201,7 +203,6 @@ func replaceLegacyIterationAliasRefs(s string) string {
 		}
 	})
 }
-
 // repairParallelLeaksForCanvas rewrites any historically leaked
 // runtime-only Parallel / parallelNode view back to the front-end's
 // Iteration / iterationNode protocol. This is a response-shape repair

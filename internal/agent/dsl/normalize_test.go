@@ -332,6 +332,7 @@ func TestNormalizeForRun_FoldsLoopAndIteration(t *testing.T) {
 	})
 }
 
+
 func TestNormalizeForRun_RewritesLegacyIterationAliases(t *testing.T) {
 	in := map[string]any{
 		"graph": map[string]any{
@@ -405,7 +406,6 @@ func TestNormalizeForRun_RewritesLegacyIterationAliases(t *testing.T) {
 		t.Fatalf("legacy iteration aliases: got %q, want %q", got, want)
 	}
 }
-
 // TestNormalizeForCanvas_PreservesIterationCanvasShape pins the
 // front-end protocol boundary: canvas-facing normalization may repair
 // graph structure, but it must not rename Iteration to Parallel or
