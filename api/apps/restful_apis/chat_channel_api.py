@@ -33,7 +33,7 @@ def _chat_channel_auth_error(channel_id: str, user_id: str):
 
 @manager.route("/chat-channels", methods=["POST"])  # noqa: F821
 @login_required
-@validate_request("name", "channel", "config")
+@validate_request("name", "channel")
 async def create_chat_channel():
     """Create a chat channel bot owned by the current tenant."""
     req = await get_request_json()
@@ -42,7 +42,7 @@ async def create_chat_channel():
         "tenant_id": current_user.id,
         "name": req["name"],
         "channel": req["channel"],
-        "config": req["config"],
+        "config": req.get("config") or {},
         "chat_id": req.get("chat_id") or None
     }
     ChatChannelService.insert(**channel)
@@ -115,3 +115,43 @@ def rm_chat_channel(channel_id):
 
     ChatChannelService.delete_by_id(channel_id)
     return get_json_result(data=True)
+
+
+@manager.route("/chat-channels/<channel_id>/runtime", methods=["GET"])  # noqa: F821
+@login_required
+def get_chat_channel_runtime(channel_id):
+    """Return live runtime metadata for a running chat channel."""
+    if not ChatChannelService.accessible(channel_id, current_user.id):
+        return _chat_channel_auth_error(channel_id, current_user.id)
+
+    e, conn = ChatChannelService.get_by_id(channel_id)
+    if not e:
+        return get_data_error_result(message="Can't find this chat channel!")
+
+    if conn.channel != "whatsapp":
+        return get_data_error_result(message="Runtime snapshot is only available for WhatsApp.")
+
+    try:
+        from api.channels.whatsapp.channel import get_runtime_snapshot
+    except Exception as ex:
+        LOGGER.error("failed to load whatsapp runtime helper: %s", ex, exc_info=True)
+        return get_data_error_result(message="WhatsApp runtime is unavailable.")
+
+    snapshot = get_runtime_snapshot(channel_id)
+    if snapshot is None:
+        return get_json_result(
+            data={
+                "account_id": channel_id,
+                "session_key": channel_id,
+                "status": "waiting",
+                "connected_at": None,
+                "qr_updated_at": None,
+                "qr_data_url": None,
+                "last_error": None,
+                "session_id": None,
+                "last_snapshot_at": None,
+                "gateway_base_url": None,
+                "event_cursor": 0,
+            }
+        )
+    return get_json_result(data=snapshot)

@@ -28,4 +28,7 @@ export const updateChatChannel = (id: string, data: Record<string, any>) =>
 export const deleteChatChannel = (id: string) =>
   request.delete(api.chatChannelDel(id));
 
+export const fetchChatChannelRuntime = (id: string) =>
+  request.get(api.chatChannelRuntime(id));
+
 export default chatChannelService;

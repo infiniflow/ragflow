@@ -93,6 +93,60 @@ export const useChatChannelInfo = () => {
   return { chatChannelInfo };
 };
 
+export const getChatChannelRuntimeStatusClass = (status?: string) => {
+  const normalized = (status || '').toLowerCase();
+  if (normalized === 'connected') {
+    return 'bg-state-success/10 text-state-success border-state-success/20';
+  }
+  if (
+    normalized === 'connecting' ||
+    normalized === 'reconnecting' ||
+    normalized === 'qr'
+  ) {
+    return 'bg-state-warning/10 text-state-warning border-state-warning/20';
+  }
+  if (normalized === 'waiting') {
+    return 'bg-state-warning/10 text-state-warning border-state-warning/20';
+  }
+  if (
+    normalized === 'error' ||
+    normalized === 'disconnected' ||
+    normalized === 'stopped'
+  ) {
+    return 'bg-state-error/10 text-state-error border-state-error/20';
+  }
+  return 'bg-gray-500/10 text-text-secondary border-border-button';
+};
+
+export const getChatChannelRuntimeStatusText = (status?: string) => {
+  const normalized = (status || '').toLowerCase();
+  if (normalized === 'connected') {
+    return 'Connected';
+  }
+  if (normalized === 'connecting') {
+    return 'Connecting...';
+  }
+  if (normalized === 'reconnecting') {
+    return 'Reconnecting...';
+  }
+  if (normalized === 'qr') {
+    return 'Scan the QR code below';
+  }
+  if (normalized === 'waiting') {
+    return 'Waiting for the channel to start';
+  }
+  if (normalized === 'error') {
+    return 'Runtime error';
+  }
+  if (normalized === 'disconnected') {
+    return 'Disconnected';
+  }
+  if (normalized === 'stopped') {
+    return 'Stopped';
+  }
+  return 'Waiting for runtime...';
+};
+
 const isPlainObject = (value: unknown): value is Record<string, any> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -697,7 +751,6 @@ ChatChannelFormDefaultValues[
 ].config.credential.connection_type = 'webhook';
 ChatChannelFormDefaultValues[ChatChannelKey.FEISHU].config.credential.domain =
   'feishu';
-
 export const getChatChannelFields = (
   key?: ChatChannelKey,
 ): FormFieldConfig[] => {

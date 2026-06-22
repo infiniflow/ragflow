@@ -33,7 +33,16 @@ import threading
 LOGGER = logging.getLogger(__name__)
 
 # Channel packages bundled under api/channels that self-register on import.
-_BUNDLED_CHANNELS = ("feishu", "discord", "telegram", "line", "wecom", "qqbot", "dingtalk")
+_BUNDLED_CHANNELS = (
+    "feishu",
+    "discord",
+    "telegram",
+    "line",
+    "wecom",
+    "qqbot",
+    "dingtalk",
+    "whatsapp",
+)
 
 # How often (seconds) to reconcile running channels against the database.
 _RECONCILE_INTERVAL_SECS = 10
@@ -227,6 +236,15 @@ async def _reconcile(running: dict, failed: dict) -> None:
     for account_id in list(failed.keys()):
         if account_id not in desired or desired[account_id][2] != failed[account_id]:
             failed.pop(account_id, None)
+
+    active_whatsapp = any(channel == "whatsapp" for channel, _, _ in desired.values())
+    if not active_whatsapp:
+        active_whatsapp = any(
+            entry["ch"].channel_id == "whatsapp" for entry in running.values()
+        )
+    from api.channels.whatsapp.gateway import sync_whatsapp_gateway
+
+    await sync_whatsapp_gateway(active_whatsapp)
 
     # Start channels that are new (skip ones already known to fail with this config).
     for account_id, (channel, credential, fp) in desired.items():
