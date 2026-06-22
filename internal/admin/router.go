@@ -176,7 +176,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			provider := protected.Group("/providers")
 			{
 				provider.GET("/", r.handler.ListModelProviders)
-				provider.PUT("/", r.handler.AddModelProvider)
+				provider.POST("/", r.handler.AddModelProvider)
 				provider.GET("/:provider_name", r.handler.ShowProvider)
 				provider.DELETE("/", r.handler.DeleteModelProvider)
 				provider.GET("/:provider_name/models", r.handler.ListModels)

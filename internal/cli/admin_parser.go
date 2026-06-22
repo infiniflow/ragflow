@@ -42,7 +42,8 @@ func (p *Parser) parseAdminLoginUser() (*Command, error) {
 	// Optional: PASSWORD 'password'
 	if p.curToken.Type == TokenPassword {
 		p.nextToken()
-		password, err := p.parseQuotedString()
+		var password string
+		password, err = p.parseQuotedString()
 		if err != nil {
 			return nil, err
 		}
@@ -1019,29 +1020,6 @@ func (p *Parser) parseAdminDropRole() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseAdminDropModelProvider() (*Command, error) {
-	p.nextToken() // consume MODEL
-	if p.curToken.Type != TokenProvider {
-		return nil, fmt.Errorf("expected PROVIDER")
-	}
-	p.nextToken()
-
-	providerName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("drop_model_provider")
-	cmd.Params["provider_name"] = providerName
-
-	p.nextToken()
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
 func (p *Parser) parseAdminDropDataset() (*Command, error) {
 	p.nextToken() // consume DATASET
 	datasetName, err := p.parseQuotedString()
@@ -1753,9 +1731,31 @@ func (p *Parser) parseAdminAddCommand() (*Command, error) {
 		return p.parseAddAPIServer()
 	case TokenAdmin:
 		return p.parseAddAdminServer()
+	case TokenProvider:
+		return p.parseAdminAddProvider()
 	default:
 		return nil, fmt.Errorf("unknown ADD target: %s", p.curToken.Value)
 	}
+}
+
+// ADD PROVIDER <name>
+func (p *Parser) parseAdminAddProvider() (*Command, error) {
+	p.nextToken() // consume PROVIDER
+
+	providerName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected provider name: %w", err)
+	}
+	p.nextToken()
+
+	cmd := NewCommand("admin_add_provider")
+	cmd.Params["provider_name"] = providerName
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
 }
 
 func (p *Parser) parseAdminDeleteCommands() (*Command, error) {
