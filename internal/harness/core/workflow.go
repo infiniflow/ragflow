@@ -134,7 +134,11 @@ func (a *workflowAgent) runSeq(ctx context.Context, gen *AsyncGenerator[*AgentEv
 				gen.Send(&AgentEvent{Err: cerr})
 				return nil
 			}
-			gen.Send(cancelTransition(ctx, "Sequential cancel", &workflowState{InterruptIdx: i}))
+			// createAndMarkHandled returned ok=false — a sibling
+			// wrapIterWithCancelCtx has already marked the context stDone.
+			// Emit the CancelError directly so the consumer sees the signal
+			// rather than a transition event with no Err field.
+			gen.Send(&AgentEvent{Err: cc.createError()})
 			return nil
 		}
 		var si *AsyncIterator[*AgentEvent]
@@ -208,7 +212,8 @@ func (a *workflowAgent) runLoop(ctx context.Context, gen *AsyncGenerator[*AgentE
 					gen.Send(&AgentEvent{Err: cerr})
 					return nil
 				}
-				gen.Send(cancelTransition(ctx, "Loop cancel", &workflowLoopState{Iter: i, Idx: j}))
+				// createAndMarkHandled returned ok=false — see runSeq above.
+				gen.Send(&AgentEvent{Err: cc.createError()})
 				return nil
 			}
 			var si *AsyncIterator[*AgentEvent]
@@ -306,7 +311,8 @@ func (a *workflowAgent) runPar(ctx context.Context, gen *AsyncGenerator[*AgentEv
 			gen.Send(&AgentEvent{Err: cerr})
 			return nil
 		}
-		gen.Send(cancelTransition(ctx, "Parallel cancel", &workflowParallelState{}))
+		// createAndMarkHandled returned ok=false — see runSeq above.
+		gen.Send(&AgentEvent{Err: cc.createError()})
 		return nil
 	}
 	for i := range a.subAgents {
@@ -409,10 +415,6 @@ func drainEvents(ai *AsyncIterator[*AgentEvent], gen *AsyncGenerator[*AgentEvent
 		gen.Send(ev)
 	}
 	return last
-}
-
-func cancelTransition(ctx context.Context, msg string, state any) *AgentEvent {
-	return &AgentEvent{Action: &AgentAction{Interrupted: &InterruptInfo{Data: msg}, internalInterrupted: &InterruptSignal{Info: msg, State: state}}}
 }
 
 func inputFromCtx(ctx context.Context) *AgentInput {

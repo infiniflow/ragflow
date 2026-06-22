@@ -372,7 +372,9 @@ run() {
 
 # Show help
 show_help() {
-    cat << EOF
+    # Quoted delimiter so backticks, `$var`, and `\$` in the help text are
+    # printed literally instead of being interpreted as command substitution.
+    cat << 'EOF'
 Usage: $0 [OPTIONS]
 
 Build script for RAGFlow Go server with C++ bindings.
