@@ -33,6 +33,7 @@ type Router struct {
 	chunkHandler         *handler.ChunkHandler
 	llmHandler           *handler.LLMHandler
 	chatHandler          *handler.ChatHandler
+	chatChannelHandler   *handler.ChatChannelHandler
 	openaiChatHandler    *handler.OpenAIChatHandler
 	chatSessionHandler   *handler.ChatSessionHandler
 	connectorHandler     *handler.ConnectorHandler
@@ -63,6 +64,7 @@ func NewRouter(
 	chunkHandler *handler.ChunkHandler,
 	llmHandler *handler.LLMHandler,
 	chatHandler *handler.ChatHandler,
+	chatChannelHandler *handler.ChatChannelHandler,
 	chatSessionHandler *handler.ChatSessionHandler,
 	connectorHandler *handler.ConnectorHandler,
 	searchHandler *handler.SearchHandler,
@@ -91,6 +93,7 @@ func NewRouter(
 		chunkHandler:         chunkHandler,
 		llmHandler:           llmHandler,
 		chatHandler:          chatHandler,
+		chatChannelHandler:   chatChannelHandler,
 		openaiChatHandler:    openaiChatHandler,
 		chatSessionHandler:   chatSessionHandler,
 		connectorHandler:     connectorHandler,
@@ -606,6 +609,16 @@ func (r *Router) Setup(engine *gin.Engine) {
 			chat.POST("/next", r.chatHandler.ListChatsNext)
 			chat.POST("/set", r.chatHandler.SetDialog)
 			chat.POST("/rm", r.chatHandler.RemoveChats)
+		}
+
+		// Chat Channel
+		chanChannel := v1.Group("/chat-channels")
+		{
+			chanChannel.POST("", r.chatChannelHandler.CreateChatChannel)
+			chanChannel.GET("", r.chatChannelHandler.ListChatChannel)
+			chanChannel.GET("/:channel_id", r.chatChannelHandler.GetChatChannel)
+			chanChannel.PATCH("/:channel_id", r.chatChannelHandler.UpdateChatChannel)
+			chanChannel.DELETE("/:channel_id", r.chatChannelHandler.DeleteChatChannel)
 		}
 
 		// Chat session (conversation) routes
