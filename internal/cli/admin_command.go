@@ -3265,6 +3265,101 @@ func (c *CLI) AdminAddProviderCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+// AdminAddModelInstanceCommand add model instance
+func (c *CLI) AdminAddModelInstanceCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("provider_name not provided")
+	}
+
+	instanceName, ok := cmd.Params["instance_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("instance_name not provided")
+	}
+
+	payload := map[string]interface{}{
+		"instance_name": instanceName,
+	}
+
+	apiURL := fmt.Sprintf("/admin/providers/%s/instances", providerName)
+
+	resp, err := c.AdminServerClient.Request("POST", apiURL, "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add model instance %s: %w", instanceName, err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to add model instance %s: HTTP %d, body: %s", instanceName, resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("add model instance %s failed: invalid JSON (%w)", instanceName, err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// AdminAddModelsCommand add models
+func (c *CLI) AdminAddModelsCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("provider_name not provided")
+	}
+
+	instanceName, ok := cmd.Params["instance_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("instance_name not provided")
+	}
+
+	modelNames, ok := cmd.Params["model_names"].([]string)
+	if !ok {
+		return nil, fmt.Errorf("model_names not provided")
+	}
+
+	payload := map[string]interface{}{
+		"model_names": modelNames,
+	}
+
+	apiURL := fmt.Sprintf("/admin/providers/%s/instances/%s/models", providerName, instanceName)
+
+	resp, err := c.AdminServerClient.Request("POST", apiURL, "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add models %s: %w", modelNames, err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to add models %s: HTTP %d, body: %s", modelNames, resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("add models %s failed: invalid JSON (%w)", modelNames, err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
 // AdminDeleteProvidersCommand delete providers
 func (c *CLI) AdminDeleteProvidersCommand(cmd *Command) (ResponseIf, error) {
 

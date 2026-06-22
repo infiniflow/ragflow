@@ -181,7 +181,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.DELETE("/", r.handler.DeleteModelProvider)
 				provider.GET("/:provider_name/models", r.handler.ListModels)
 				provider.GET("/:provider_name/models/:model_name", r.handler.ShowModel)
-				//	provider.POST("/:provider_name/instances", r.handler.CreateProviderInstance)
+				provider.POST("/:provider_name/instances", r.handler.AddModelInstance)
 				//	provider.GET("/:provider_name/instances", r.handler.ListProviderInstances)
 				//	provider.GET("/:provider_name/instances/:instance_name", r.handler.ShowProviderInstance)
 				//	provider.GET("/:provider_name/instances/:instance_name/balance", r.handler.ShowInstanceBalance)
@@ -191,7 +191,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.DELETE("/:provider_name/instances", r.handler.DeleteModelInstance)
 				//	provider.GET("/:provider_name/instances/:instance_name/models", r.handler.ListInstanceModels)
 				//	provider.PATCH("/:provider_name/instances/:instance_name/models/*model_name", r.handler.EnableOrDisableModel)
-				//	provider.POST("/:provider_name/instances/:instance_name/models", r.handler.AddModel)
+				provider.POST("/:provider_name/instances/:instance_name/models", r.handler.AddModels)
 				provider.DELETE("/:provider_name/instances/:instance_name/models", r.handler.DeleteModels)
 			}
 

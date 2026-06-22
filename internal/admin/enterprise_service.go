@@ -217,6 +217,19 @@ func (s *Service) DeleteModelInstances(userID, providerName string, instances []
 	}, nil
 }
 
+// AddModels Add models
+func (s *Service) AddModels(userID, providerName, instanceName string, modelNames []string) (map[string]interface{}, error) {
+
+	return map[string]interface{}{
+		"command":       "add_model",
+		"user_id":       userID,
+		"provider_id":   providerName,
+		"instance_name": instanceName,
+		"model_names":   modelNames,
+		"error":         "'add model' is implemented in enterprise edition",
+	}, nil
+}
+
 // DeleteModels delete models
 func (s *Service) DeleteModels(userID, providerName, instanceName string, models []string) (map[string]interface{}, error) {
 	return map[string]interface{}{

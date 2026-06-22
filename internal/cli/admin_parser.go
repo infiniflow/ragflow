@@ -1732,14 +1732,15 @@ func (p *Parser) parseAdminAddCommand() (*Command, error) {
 	case TokenAdmin:
 		return p.parseAddAdminServer()
 	case TokenProvider:
-		return p.parseAdminAddProvider()
+		return p.parseAdminAddModelProvider()
 	default:
 		return nil, fmt.Errorf("unknown ADD target: %s", p.curToken.Value)
 	}
 }
 
 // ADD PROVIDER <name>
-func (p *Parser) parseAdminAddProvider() (*Command, error) {
+// ADD PROVIDER <name> INSTANCE <name>
+func (p *Parser) parseAdminAddModelProvider() (*Command, error) {
 	p.nextToken() // consume PROVIDER
 
 	providerName, err := p.parseQuotedString()
@@ -1748,8 +1749,57 @@ func (p *Parser) parseAdminAddProvider() (*Command, error) {
 	}
 	p.nextToken()
 
+	if p.curToken.Type == TokenInstance {
+		return p.parseAdminAddModelInstance(providerName)
+	}
+
 	cmd := NewCommand("admin_add_provider")
 	cmd.Params["provider_name"] = providerName
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminAddModelInstance(providerName string) (*Command, error) {
+	p.nextToken() // consume INSTANCE
+
+	instanceName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected model instance name: %w", err)
+	}
+	p.nextToken()
+
+	if p.curToken.Type == TokenModel {
+		return p.parseAdminAddModel(providerName, instanceName)
+	}
+
+	cmd := NewCommand("admin_add_model_instance")
+	cmd.Params["provider_name"] = providerName
+	cmd.Params["instance_name"] = instanceName
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminAddModel(providerName, instanceName string) (*Command, error) {
+	p.nextToken() // consume MODEL
+
+	modelName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected model name: %w", err)
+	}
+	p.nextToken()
+
+	cmd := NewCommand("admin_add_models")
+	cmd.Params["provider_name"] = providerName
+	cmd.Params["instance_name"] = instanceName
+	cmd.Params["model_names"] = []string{modelName}
 
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {

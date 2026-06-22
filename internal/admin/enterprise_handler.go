@@ -443,7 +443,6 @@ func (h *Handler) ShowModel(c *gin.Context) {
 }
 
 type AddModelInstanceRequest struct {
-	ProviderName string `json:"provider_name" binding:"required"`
 	InstanceName string `json:"instance_name" binding:"required"`
 }
 
@@ -458,9 +457,18 @@ func (h *Handler) AddModelInstance(c *gin.Context) {
 		return
 	}
 
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
 	userID := c.GetString("user_id")
 
-	result, err := h.service.AddModelInstance(req.ProviderName, req.InstanceName, userID)
+	result, err := h.service.AddModelInstance(userID, providerName, req.InstanceName)
 	if err != nil {
 		errorResponse(c, err.Error(), 500)
 		return
@@ -501,6 +509,50 @@ func (h *Handler) DeleteModelInstance(c *gin.Context) {
 	}
 
 	success(c, result, "Model provider added successfully")
+}
+
+type AddModelsRequest struct {
+	ModelNames []string `json:"model_names" binding:"required"`
+}
+
+func (h *Handler) AddModels(c *gin.Context) {
+	var req AddModelsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+			"data":    false,
+		})
+		return
+	}
+
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	result, err := h.service.AddModels(userID, providerName, instanceName, req.ModelNames)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Models added successfully")
 }
 
 type DropModelsRequest struct {
