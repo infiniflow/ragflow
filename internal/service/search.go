@@ -55,6 +55,17 @@ type ListSearchAppsResponse struct {
 	Total      int64                    `json:"total"`
 }
 
+type SearchShareDetail struct {
+	ID           string                 `json:"id"`
+	Avatar       *string                `json:"avatar"`
+	TenantID     string                 `json:"tenant_id"`
+	Name         string                 `json:"name"`
+	Description  *string                `json:"description,omitempty"`
+	CreatedBy    string                 `json:"created_by"`
+	SearchConfig map[string]interface{} `json:"search_config"`
+	UpdateTime   *int64                 `json:"update_time,omitempty"`
+}
+
 // ListSearches list search apps with advanced filtering (equivalent to list_search_app)
 func (s *SearchService) ListSearches(userID string, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string) (*ListSearchAppsResponse, error) {
 	var searches []*entity.Search
@@ -222,6 +233,33 @@ func (s *SearchService) GetSearchDetail(userID string, searchID string) (*entity
 	}
 
 	return search, nil
+}
+
+// GetSearchShareDetail returns the joined share-detail payload for public
+// searchbot pages after verifying the caller can access the search app.
+func (s *SearchService) GetSearchShareDetail(userID, searchID string) (*SearchShareDetail, error) {
+	if _, err := s.GetSearchDetail(userID, searchID); err != nil {
+		return nil, err
+	}
+
+	detail, err := s.searchDAO.GetDetailByID(searchID)
+	if err != nil {
+		return nil, err
+	}
+	if detail == nil {
+		return nil, fmt.Errorf("can't find this Search App!")
+	}
+
+	return &SearchShareDetail{
+		ID:           detail.ID,
+		Avatar:       detail.Avatar,
+		TenantID:     detail.TenantID,
+		Name:         detail.Name,
+		Description:  detail.Description,
+		CreatedBy:    detail.CreatedBy,
+		SearchConfig: map[string]interface{}(detail.SearchConfig),
+		UpdateTime:   detail.UpdateTime,
+	}, nil
 }
 
 // DeleteSearch deletes a search app by ID

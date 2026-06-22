@@ -146,6 +146,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.GET("/system/version", r.systemHandler.GetVersion)
 		apiNoAuth.GET("/system/healthz", r.systemHandler.Healthz)
 
+		// searchbots
+		apiNoAuth.GET("/searchbots/detail", r.searchBotHandler.SearchbotDetail)
+
 		// User login channels endpoint
 		apiNoAuth.GET("/auth/login/channels", r.userHandler.GetLoginChannels)
 
