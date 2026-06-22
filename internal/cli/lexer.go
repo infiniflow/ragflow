@@ -205,8 +205,6 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenService, Value: ident}
 	case "SHUTDOWN":
 		return Token{Type: TokenShutdown, Value: ident}
-	case "STARTUP":
-		return Token{Type: TokenStartup, Value: ident}
 	case "RESTART":
 		return Token{Type: TokenRestart, Value: ident}
 	case "USERS":

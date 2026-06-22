@@ -101,6 +101,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminSetLicenseConfigCommand(cmd)
 	case "set_variable":
 		return c.SetVariable(cmd)
+	case "admin_set_role_default_model":
+		return c.AdminSetRoleDefaultModelsCommand(cmd)
 	case "list_user_datasets":
 		return c.ListUserDatasets(cmd)
 	case "admin_list_resources_command":
@@ -153,6 +155,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminShowUserCommand(cmd)
 	case "admin_show_role":
 		return c.AdminShowRoleCommand(cmd)
+	case "admin_show_role_default_models":
+		return c.AdminShowRoleDefaultModelsCommand(cmd)
 	case "admin_show_user_activity_command":
 		return c.AdminShowUserActivityCommand(cmd)
 	case "admin_show_user_summary_command":

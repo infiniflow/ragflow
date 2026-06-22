@@ -1074,6 +1074,63 @@ func (c *CLI) SetVariable(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+// AdminSetRoleDefaultModelsCommand set role default models (admin mode only).
+func (c *CLI) AdminSetRoleDefaultModelsCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	roleName, ok := cmd.Params["role_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("role_name not provided")
+	}
+
+	modelType, ok := cmd.Params["model_type"].(string)
+	if !ok {
+		return nil, fmt.Errorf("model_type not provided")
+	}
+
+	payload := map[string]interface{}{
+		"model_type": modelType,
+	}
+
+	var modelName string
+	modelID, ok := cmd.Params["model_id"].(string)
+	if ok {
+		payload["model_id"] = modelID
+	} else {
+		modelName, ok = cmd.Params["composite_model_name"].(string)
+		if ok {
+			payload["model_name"] = modelName
+		} else {
+			return nil, fmt.Errorf("model_id or model_name not provided")
+		}
+	}
+
+	endPoint := fmt.Sprintf("/admin/roles/%s/default-models", roleName)
+
+	resp, err := c.AdminServerClient.Request("PATCH", endPoint, "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to set role default models: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to set role default models: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("set role default models failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
 // AdminDropUserCommand deletes a user (admin mode only)
 func (c *CLI) AdminDropUserCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
@@ -1721,6 +1778,38 @@ func (c *CLI) AdminShowRoleCommand(cmd *Command) (ResponseIf, error) {
 	var result CommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("show role failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// AdminShowRoleDefaultModelsCommand show role default models command (admin mode only)
+func (c *CLI) AdminShowRoleDefaultModelsCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	roleName := cmd.Params["role_name"].(string)
+
+	endPoint := fmt.Sprintf("/admin/roles/%s/default-models", roleName)
+
+	resp, err := c.AdminServerClient.Request("GET", endPoint, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to show role default models: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to show role default models: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("show role default models failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
