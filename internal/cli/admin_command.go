@@ -3224,3 +3224,39 @@ func (c *CLI) AdminRemoveUserIngestionTasksCommand(cmd *Command) (ResponseIf, er
 	result.Duration = resp.Duration
 	return &result, nil
 }
+
+// AdminDeleteProviderCommand delete a provider
+func (c *CLI) AdminDeleteProviderCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("provider_name not provided")
+	}
+
+	apiURL := fmt.Sprintf("/admin/providers/%s", providerName)
+
+	resp, err := c.AdminServerClient.Request("DELETE", apiURL, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to remove provider %s: %w", providerName, err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to remove provider %s: HTTP %d, body: %s", providerName, resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("remove provider %s failed: invalid JSON (%w)", providerName, err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}

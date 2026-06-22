@@ -361,6 +361,27 @@ func (h *Handler) ShowProvider(c *gin.Context) {
 	})
 }
 
+func (h *Handler) DeleteModelProvider(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	result, err := h.service.DeleteModelProvider(providerName, userID)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Model provider added successfully")
+}
+
 func (h *Handler) ListModels(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {

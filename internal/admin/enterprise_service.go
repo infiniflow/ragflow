@@ -184,6 +184,16 @@ func (s *Service) AddModelProvider(userID, providerName string) (map[string]inte
 	}, nil
 }
 
+// DeleteModelProvider delete model provider
+func (s *Service) DeleteModelProvider(userID, providerName string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":     "delete_model_provider",
+		"user_id":     userID,
+		"provider_id": providerName,
+		"error":       "'delete model provider' is implemented in enterprise edition",
+	}, nil
+}
+
 // ListAllModels list all models
 func (s *Service) ListAllModels() ([]map[string]interface{}, error) {
 	return []map[string]interface{}{

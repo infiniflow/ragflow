@@ -1765,9 +1765,31 @@ func (p *Parser) parseAdminDeleteCommand() (*Command, error) {
 		return p.parseDeleteAPIServer()
 	case TokenAdmin:
 		return p.parseDeleteAdminServer()
+	case TokenProvider:
+		return p.parseAdminDeleteProvider()
 	default:
 		return nil, fmt.Errorf("unknown ADD target: %s", p.curToken.Value)
 	}
+}
+
+// parseAdminDeleteProvider parses DELETE PROVIDER <name> command
+func (p *Parser) parseAdminDeleteProvider() (*Command, error) {
+	p.nextToken() // consume PROVIDER
+
+	providerName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected provider name: %w", err)
+	}
+
+	cmd := NewCommand("admin_delete_provider")
+	cmd.Params["provider_name"] = providerName
+
+	p.nextToken()
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
 }
 
 func (p *Parser) parseAdminSaveCommand() (*Command, error) {
