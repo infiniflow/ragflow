@@ -18,8 +18,8 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
 	"ragflow/internal/common"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -34,6 +34,7 @@ type chunkService interface {
 	List(req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error)
 	UpdateChunk(req *service.UpdateChunkRequest, userID string) error
 	RemoveChunks(req *service.RemoveChunksRequest, userID string) (int64, error)
+	Parse(userID, datasetID string, req *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error)
 }
 
 // ChunkHandler chunk handler
@@ -99,7 +100,7 @@ func (h *ChunkHandler) RetrievalTest(c *gin.Context) {
 	// an empty result for blank questions rather than an error.
 	if strings.TrimSpace(req.Question) == "" {
 		c.JSON(http.StatusOK, gin.H{
-			"code":    int(common.CodeSuccess),
+			"code": int(common.CodeSuccess),
 			"data": &service.RetrievalTestResponse{
 				Chunks:  []map[string]interface{}{},
 				DocAggs: []map[string]interface{}{},
@@ -199,6 +200,59 @@ func (h *ChunkHandler) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"data":    resp.Chunk,
+		"message": "success",
+	})
+}
+
+// Parse reparse the datasets' files
+func (h *ChunkHandler) Parse(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	userID := strings.TrimSpace(user.ID)
+	if userID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeArgumentError,
+			"data":    nil,
+			"message": "user_id is required",
+		})
+		return
+	}
+	datasetId := strings.TrimSpace(c.Param("dataset_id"))
+	if datasetId == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": "dataset_id is required",
+		})
+		return
+	}
+
+	var req service.ParseFileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeArgumentError,
+			"data":    nil,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	data, code, err := h.chunkService.Parse(userID, datasetId, &req)
+	if code != common.CodeSuccess {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"data":    data,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    code,
+		"data":    data,
 		"message": "success",
 	})
 }
