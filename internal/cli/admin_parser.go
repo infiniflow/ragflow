@@ -1210,7 +1210,7 @@ func (p *Parser) parseAdminGrantAdmin() (*Command, error) {
 		return nil, err
 	}
 
-	cmd := NewCommand("grant_admin")
+	cmd := NewCommand("admin_grant_user_admin")
 	cmd.Params["user_name"] = userName
 
 	p.nextToken()
@@ -1282,7 +1282,7 @@ func (p *Parser) parseAdminRevokeAdmin() (*Command, error) {
 		return nil, err
 	}
 
-	cmd := NewCommand("revoke_admin")
+	cmd := NewCommand("admin_revoke_user_admin")
 	cmd.Params["user_name"] = userName
 
 	p.nextToken()

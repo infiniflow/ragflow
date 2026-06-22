@@ -265,8 +265,8 @@ func (c *CLI) AdminAlterRole(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// GrantAdmin grants admin privileges to a user (admin mode only)
-func (c *CLI) GrantAdmin(cmd *Command) (ResponseIf, error) {
+// GrantUserAdminCommand grants admin privileges to a user (admin mode only)
+func (c *CLI) GrantUserAdminCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -301,8 +301,8 @@ func (c *CLI) GrantAdmin(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// RevokeAdmin revokes admin privileges from a user (admin mode only)
-func (c *CLI) RevokeAdmin(cmd *Command) (ResponseIf, error) {
+// RevokeUserAdminCommand revokes admin privileges from a user (admin mode only)
+func (c *CLI) RevokeUserAdminCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
