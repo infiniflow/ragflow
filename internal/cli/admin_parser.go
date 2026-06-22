@@ -1235,6 +1235,9 @@ func (p *Parser) parseAdminGrantPermission() (*Command, error) {
 	}
 	actions := strings.Split(actionListStr, ",")
 	p.nextToken()
+	for idx, _ := range actions {
+		actions[idx] = strings.TrimSpace(actions[idx])
+	}
 
 	if p.curToken.Type != TokenOn {
 		return nil, fmt.Errorf("expected ON")
@@ -1310,6 +1313,9 @@ func (p *Parser) parseAdminRevokePermission() (*Command, error) {
 	}
 	actions := strings.Split(actionListStr, ",")
 	p.nextToken()
+	for idx, _ := range actions {
+		actions[idx] = strings.TrimSpace(actions[idx])
+	}
 
 	if p.curToken.Type != TokenOn {
 		return nil, fmt.Errorf("expected ON")
