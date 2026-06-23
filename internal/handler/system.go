@@ -136,6 +136,29 @@ func (h *SystemHandler) GetStatus(c *gin.Context) {
 	})
 }
 
+// OceanBaseStatus get OceanBase health status and performance metrics
+// @Summary Get OceanBase Status
+// @Description Get OceanBase health status and performance metrics
+// @Tags system
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/system/oceanbase/status [get]
+func (h *SystemHandler) OceanBaseStatus(c *gin.Context) {
+	if _, errorCode, errorMessage := GetUser(c); errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	data, code := h.systemService.GetOceanBaseStatus()
+	c.JSON(http.StatusOK, gin.H{
+		"code":    code,
+		"message": "success",
+		"data":    data,
+	})
+}
+
 // GetVersion get RAGFlow version
 // @Summary Get RAGFlow Version
 // @Description Get the current version of the application

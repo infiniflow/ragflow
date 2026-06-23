@@ -20,9 +20,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"ragflow/internal/engine/redis"
+	"os"
 	"strings"
 	"time"
+
+	"ragflow/internal/cache"
+	"ragflow/internal/common"
+	"ragflow/internal/engine/redis"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -83,6 +87,33 @@ func (s *SystemService) GetVersion() (*VersionResponse, error) {
 	return &VersionResponse{
 		Version: version,
 	}, nil
+}
+
+// GetOceanBaseStatus mirrors the Python get_oceanbase_status helper together
+// with its route wrapper (api/apps/restful_apis/system_api.py::oceanbase_status).
+//
+// OceanBase is not a supported document engine in the Go server: server config
+// loading rejects DOC_ENGINE=oceanbase as "not implemented", so there is no
+// OceanBase connection to probe. When OceanBase is not the configured engine we
+// return the same "not in use" error the Python API surfaces (code 500). When it
+// is requested we report a timeout, matching the Python connection-failure path.
+func (s *SystemService) GetOceanBaseStatus() (map[string]interface{}, common.ErrorCode) {
+	docEngine := strings.ToLower(strings.TrimSpace(os.Getenv("DOC_ENGINE")))
+	if docEngine == "" {
+		docEngine = "elasticsearch"
+	}
+
+	if docEngine != "oceanbase" {
+		return map[string]interface{}{
+			"status":  "error",
+			"message": "Failed to get OceanBase status: OceanBase is not in use.",
+		}, common.CodeServerError
+	}
+
+	return map[string]interface{}{
+		"status":  "timeout",
+		"message": "error: OceanBase connection is not available in the Go server.",
+	}, common.CodeSuccess
 }
 
 // ComponentStatus describes one dependency health check.

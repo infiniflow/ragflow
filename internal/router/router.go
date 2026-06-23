@@ -532,6 +532,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				system.GET("/configs", r.systemHandler.GetConfigs)
 				system.GET("/status", r.systemHandler.GetStatus)
 				system.GET("/stats", r.systemHandler.GetStats)
+				system.GET("/oceanbase/status", r.systemHandler.OceanBaseStatus)
 
 				config := system.Group("/config")
 				{
