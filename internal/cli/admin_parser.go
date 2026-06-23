@@ -103,7 +103,7 @@ func (p *Parser) parseAdminListCommands() (*Command, error) {
 	case TokenAvailable:
 		return p.parseListAvailableProviders()
 	case TokenProvider:
-		return p.parseAdminListProviderModels()
+		return p.parseAdminListProviderCommands()
 	case TokenProviders:
 		return p.parseAdminListProviders()
 	case TokenModels:
@@ -244,7 +244,7 @@ func (p *Parser) parseAdminListIngestionTasks() (*Command, error) {
 }
 
 // LIST PROVIDER 'provider_name' MODELS;
-func (p *Parser) parseAdminListProviderModels() (*Command, error) {
+func (p *Parser) parseAdminListProviderCommands() (*Command, error) {
 	p.nextToken() // consume PROVIDER
 
 	providerName, err := p.parseQuotedString()
@@ -253,10 +253,31 @@ func (p *Parser) parseAdminListProviderModels() (*Command, error) {
 	}
 	p.nextToken()
 
-	if p.curToken.Type != TokenModels {
-		return nil, fmt.Errorf("expected MODELS")
+	switch p.curToken.Type {
+	case TokenInstances:
+		return p.parseAdminListProviderInstances(providerName)
+	case TokenModels:
+		return p.parseAdminListProviderModels(providerName)
+	default:
+		return nil, fmt.Errorf("unknown LIST target: %s", p.curToken.Value)
 	}
+}
+
+// LIST PROVIDER 'provider_name' INSTANCES;
+func (p *Parser) parseAdminListProviderInstances(providerName string) (*Command, error) {
+	p.nextToken() // consume INSTANCES
+	cmd := NewCommand("admin_list_provider_instances")
+	cmd.Params["provider_name"] = providerName
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminListProviderModels(providerName string) (*Command, error) {
 	p.nextToken() // consume MODELS
+
 	cmd := NewCommand("admin_list_provider_models")
 	cmd.Params["provider_name"] = providerName
 
@@ -266,7 +287,7 @@ func (p *Parser) parseAdminListProviderModels() (*Command, error) {
 	return cmd, nil
 }
 
-// parseAdminListProviders parses LIST PROVIDERS command
+// LIST PROVIDERS
 func (p *Parser) parseAdminListProviders() (*Command, error) {
 	p.nextToken() // consume PROVIDERS
 	// Semicolon is optional

@@ -446,6 +446,27 @@ type AddModelInstanceRequest struct {
 	InstanceName string `json:"instance_name" binding:"required"`
 }
 
+func (h *Handler) ListModelInstances(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	result, err := h.service.ListModelInstances(userID, providerName)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Model instances listed successfully")
+}
+
 func (h *Handler) AddModelInstance(c *gin.Context) {
 	var req AddModelInstanceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

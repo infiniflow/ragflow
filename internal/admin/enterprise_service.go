@@ -194,6 +194,19 @@ func (s *Service) DeleteModelProviders(userID string, providerNames []string) (m
 	}, nil
 }
 
+// ListModelInstances list model instances
+func (s *Service) ListModelInstances(userID, providerName string) ([]map[string]interface{}, error) {
+
+	return []map[string]interface{}{
+		{
+			"command":     "list_model_instances",
+			"user_id":     userID,
+			"provider_id": providerName,
+			"error":       "'list model instances' is implemented in enterprise edition",
+		},
+	}, nil
+}
+
 // AddModelInstance Add model instance
 func (s *Service) AddModelInstance(userID, providerName, instanceName string) (map[string]interface{}, error) {
 
