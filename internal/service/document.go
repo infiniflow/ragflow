@@ -743,9 +743,19 @@ func (s *DocumentService) BatchUpdateDocumentStatus(userID, datasetID, status st
 
 	result := make(map[string]interface{}, len(documentIDs))
 	hasError := false
+
+	documents, err := s.documentDAO.GetByIDs(documentIDs)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to fetch documents: %w", err)
+	}
+	documentByID := make(map[string]*entity.Document, len(documents))
+	for _, doc := range documents {
+		documentByID[doc.ID] = doc
+	}
+
 	for _, docID := range documentIDs {
-		doc, err := s.documentDAO.GetByID(docID)
-		if err != nil {
+		doc, ok := documentByID[docID]
+		if !ok {
 			result[docID] = map[string]string{"error": "Document not found"}
 			hasError = true
 			continue
