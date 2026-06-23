@@ -1275,47 +1275,6 @@ func (c *CLI) CreateProviderInstance(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// ShowProviderInstance shows details of a specific instance
-// SHOW INSTANCE <name> FROM PROVIDER <name>
-func (c *CLI) ShowProviderInstance(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != APIMode {
-		return nil, fmt.Errorf("this command is only allowed in USER mode")
-	}
-
-	instanceName, ok := cmd.Params["instance_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("instance name not provided")
-	}
-
-	providerName, ok := cmd.Params["provider_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("provider name not provided")
-	}
-
-	url := fmt.Sprintf("/providers/%s/instances/%s", providerName, instanceName)
-
-	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", url, "web", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to show instance: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to show instance: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("show instance failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
-}
-
 // ShowInstanceBalance shows balance of a specific instance
 // SHOW BALANCE FROM PROVIDER <provider_name> <instance_name>
 func (c *CLI) ShowInstanceBalance(cmd *Command) (ResponseIf, error) {

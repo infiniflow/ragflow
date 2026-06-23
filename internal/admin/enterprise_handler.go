@@ -467,6 +467,34 @@ func (h *Handler) ListModelInstances(c *gin.Context) {
 	success(c, result, "Model instances listed successfully")
 }
 
+func (h *Handler) ShowProviderInstance(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+	userID := c.GetString("user_id")
+
+	result, err := h.service.ShowProviderInstance(userID, providerName, instanceName)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Model instance shown successfully")
+}
+
 func (h *Handler) AddModelInstance(c *gin.Context) {
 	var req AddModelInstanceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

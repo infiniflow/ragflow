@@ -323,6 +323,53 @@ func (c *CLI) CommonShowProviderCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+// CommonShowProviderInstanceCommand shows details of a specific instance
+func (c *CLI) CommonShowProviderInstanceCommand(cmd *Command) (ResponseIf, error) {
+	instanceName, ok := cmd.Params["instance_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("instance name not provided")
+	}
+
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("provider name not provided")
+	}
+
+	var resp *Response
+	var err error
+	var endPoint string
+	switch c.Config.CLIMode {
+	case AdminMode:
+		endPoint = fmt.Sprintf("/admin/providers/%s/instances/%s", providerName, instanceName)
+		resp, err = c.AdminServerClient.Request("GET", endPoint, "web", nil, nil)
+	case APIMode:
+		endPoint = fmt.Sprintf("/providers/%s/instances/%s", providerName, instanceName)
+		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", endPoint, "web", nil, nil)
+	default:
+		return nil, fmt.Errorf("invalid server type")
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to show instance: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to show instance: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("failed to show instance: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
 // CommonListProviderInstances lists all instances of a provider
 // LIST INSTANCES FROM PROVIDER <name>
 func (c *CLI) CommonListProviderInstances(cmd *Command) (ResponseIf, error) {

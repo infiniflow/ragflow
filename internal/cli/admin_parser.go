@@ -706,18 +706,38 @@ func (p *Parser) parseAdminShowProvider() (*Command, error) {
 	}
 	p.nextToken()
 
-	if p.curToken.Type == TokenModel {
-		// SHOW PROVIDER 'provider_name' MODEL 'model_name'
+	switch p.curToken.Type {
+	case TokenInstance:
+		return p.parseAdminShowProviderInstance(providerName)
+	case TokenModel:
 		return p.parseAdminShowProviderModel(providerName)
-	}
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
+	default:
 		p.nextToken()
 	}
 
 	cmd := NewCommand("admin_show_provider")
 	cmd.Params["provider_name"] = providerName
+	return cmd, nil
+}
+
+// SHOW PROVIDER 'provider_name' INSTANCE 'instance_name';
+func (p *Parser) parseAdminShowProviderInstance(providerName string) (*Command, error) {
+	p.nextToken() // consume INSTANCE
+
+	instanceName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected instance name: %w", err)
+	}
+	p.nextToken() // consume instance_name
+
+	cmd := NewCommand("admin_show_provider_instance")
+	cmd.Params["instance_name"] = instanceName
+	cmd.Params["provider_name"] = providerName
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
 	return cmd, nil
 }
 

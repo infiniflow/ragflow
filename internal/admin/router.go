@@ -183,7 +183,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.GET("/:provider_name/models/:model_name", r.handler.ShowModel)
 				provider.POST("/:provider_name/instances", r.handler.AddModelInstance)
 				provider.GET("/:provider_name/instances", r.handler.ListModelInstances)
-				//provider.GET("/:provider_name/instances/:instance_name", r.handler.ShowProviderInstance)
+				provider.GET("/:provider_name/instances/:instance_name", r.handler.ShowProviderInstance)
 				//	provider.GET("/:provider_name/instances/:instance_name/balance", r.handler.ShowInstanceBalance)
 				//	provider.GET("/:provider_name/instances/:instance_name/connection", r.handler.CheckInstanceConnection)
 				//	provider.POST("/:provider_name/connection", r.handler.CheckProviderConnection)

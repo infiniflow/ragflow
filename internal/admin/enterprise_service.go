@@ -207,6 +207,18 @@ func (s *Service) ListModelInstances(userID, providerName string) ([]map[string]
 	}, nil
 }
 
+// ShowProviderInstance show provider instance
+func (s *Service) ShowProviderInstance(userID, providerName, instanceName string) (map[string]interface{}, error) {
+
+	return map[string]interface{}{
+		"command":       "show_provider_instance",
+		"user_id":       userID,
+		"provider_id":   providerName,
+		"instance_name": instanceName,
+		"error":         "'show provider instance' is implemented in enterprise edition",
+	}, nil
+}
+
 // AddModelInstance Add model instance
 func (s *Service) AddModelInstance(userID, providerName, instanceName string) (map[string]interface{}, error) {
 
