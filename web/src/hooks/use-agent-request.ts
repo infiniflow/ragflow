@@ -336,7 +336,7 @@ export const useFetchAgent = (): {
     isFetching: loading,
     refetch,
   } = useQuery({
-    queryKey: [AgentApiAction.FetchAgentDetail],
+    queryKey: [AgentApiAction.FetchAgentDetail, sharedId || id],
     initialData: {} as IFlow,
     refetchOnReconnect: false,
     refetchOnMount: false,
@@ -426,7 +426,7 @@ export const useSetAgent = (showMessage: boolean = true) => {
         });
         if (agentId) {
           queryClient.invalidateQueries({
-            queryKey: [AgentApiAction.FetchAgentDetail],
+            queryKey: [AgentApiAction.FetchAgentDetail, agentId],
           });
         }
       }
