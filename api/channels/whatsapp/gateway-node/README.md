@@ -22,7 +22,7 @@ npm start
 
 - `POST /whatsapp/:sessionKey/start`
 - `GET /whatsapp/:sessionKey/status`
-- `GET /whatsapp/:sessionKey/events?after=<seq>`
+- `GET /whatsapp/:sessionKey/events/ws?after=<seq>` (WebSocket)
 - `POST /whatsapp/:sessionKey/send`
 - `POST /whatsapp/:sessionKey/stop`
 
@@ -32,4 +32,3 @@ npm start
 - Scan the QR code exposed in `status.qr_data_url`.
 - RAGFlow polls `status` and `events` and forwards inbound messages to the
   connected assistant.
-

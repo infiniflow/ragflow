@@ -4,7 +4,7 @@ import { Modal } from '@/components/ui/modal/modal';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { fetchChatChannelRuntime } from '@/services/chat-channel-service';
 import { Link2, QrCode, RefreshCw, Settings, Trash2 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ChatChannelKey,
@@ -45,6 +45,7 @@ export const AddedChannelCard = (props: IAddedChannelCardProps) => {
   const [qrData, setQrData] = useState<string>('');
   const [qrStatus, setQrStatus] = useState<string>('');
   const [qrError, setQrError] = useState<string>('');
+  const qrPollingInFlightRef = useRef(false);
 
   const handleEdit = async (id: string) => {
     const record = await fetchDetail(id);
@@ -62,16 +63,23 @@ export const AddedChannelCard = (props: IAddedChannelCardProps) => {
     if (!qrChannelId) {
       return;
     }
+    if (qrPollingInFlightRef.current) {
+      return;
+    }
+    qrPollingInFlightRef.current = true;
     setQrLoading(true);
     try {
       const { data } = await fetchChatChannelRuntime(qrChannelId);
       const snapshot = getRuntimeSnapshot(data);
-      if (snapshot?.qr_data_url) {
-        setQrData(snapshot.qr_data_url);
-      }
+      setQrData(snapshot?.qr_data_url || '');
       setQrStatus(snapshot?.status || '');
       setQrError(snapshot?.last_error || '');
+    } catch (error: any) {
+      setQrData('');
+      setQrStatus('');
+      setQrError(error?.message || 'Failed to load QR.');
     } finally {
+      qrPollingInFlightRef.current = false;
       setQrLoading(false);
     }
   }, [qrChannelId]);

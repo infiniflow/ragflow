@@ -101,7 +101,12 @@ class WhatsAppGatewayRuntime:
             "--no-audit",
             cwd=str(gateway_dir),
         )
-        code = await proc.wait()
+        try:
+            code = await asyncio.wait_for(proc.wait(), timeout=300)
+        except asyncio.TimeoutError as ex:
+            proc.kill()
+            await proc.wait()
+            raise RuntimeError("npm install timed out after 300s") from ex
         if code != 0:
             raise RuntimeError(f"npm install failed with exit code {code}")
         _deps_install_warned = False

@@ -13,7 +13,8 @@ import makeWASocket, {
 import QRCode from 'qrcode';
 
 const PORT = Number.parseInt(process.env.WHATSAPP_GATEWAY_PORT || '3005', 10);
-const HOST = process.env.WHATSAPP_GATEWAY_HOST || '0.0.0.0';
+const HOST = process.env.WHATSAPP_GATEWAY_HOST || '127.0.0.1';
+const AUTH_TOKEN = String(process.env.WHATSAPP_GATEWAY_TOKEN || '').trim();
 const WS_MAGIC = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const DATA_DIR =
   process.env.WHATSAPP_GATEWAY_DATA_DIR ||
@@ -94,6 +95,14 @@ function buildWsFrame(text) {
 
 function sendWsText(socket, payload) {
   socket.write(buildWsFrame(JSON.stringify(payload)));
+}
+
+function isAuthorized(req) {
+  if (!AUTH_TOKEN) {
+    return true;
+  }
+  const auth = String(req.headers.authorization || '').trim();
+  return auth === `Bearer ${AUTH_TOKEN}`;
 }
 
 class WhatsAppSession {
@@ -300,7 +309,13 @@ class WhatsAppSession {
       this.messageStore.set(key.id, message);
       this.broadcast({ type: 'event', data: event });
       if (this.events.length > 1000) {
+        const dropped = this.events.slice(0, this.events.length - 500);
         this.events = this.events.slice(-500);
+        for (const oldEvent of dropped) {
+          if (oldEvent.kind === 'message' && oldEvent.message_id) {
+            this.messageStore.delete(oldEvent.message_id);
+          }
+        }
       }
       this.lastSnapshotAt = now();
     }
@@ -366,6 +381,11 @@ function getSession(sessionKey) {
   return session;
 }
 
+function getExistingSession(sessionKey) {
+  const key = String(sessionKey || '').trim() || 'default';
+  return sessions.get(key) || null;
+}
+
 async function readBody(req) {
   const chunks = [];
   for await (const chunk of req) {
@@ -407,25 +427,41 @@ const server = http.createServer(async (req, res) => {
       return sendError(res, 404, 'not found');
     }
 
+    if (!isAuthorized(req)) {
+      return sendError(res, 401, 'unauthorized');
+    }
+
     const sessionKey = decodeURIComponent(parts[1]);
-    const session = getSession(sessionKey);
 
     if (req.method === 'POST' && parts.length === 3 && parts[2] === 'start') {
+      const session = getSession(sessionKey);
       await session.start();
       return sendJson(res, 200, { code: 0, message: '', data: session.snapshot() });
     }
 
     if (req.method === 'GET' && parts.length === 3 && parts[2] === 'status') {
+      const session = getExistingSession(sessionKey);
+      if (!session) {
+        return sendError(res, 404, 'session not found');
+      }
       return sendJson(res, 200, { code: 0, message: '', data: session.snapshot() });
     }
 
     if (req.method === 'POST' && parts.length === 3 && parts[2] === 'send') {
+      const session = getExistingSession(sessionKey);
+      if (!session) {
+        return sendError(res, 404, 'session not found');
+      }
       const body = await readBody(req);
       await session.send(body);
       return sendJson(res, 200, { code: 0, message: '', data: true });
     }
 
     if (req.method === 'POST' && parts.length === 3 && parts[2] === 'stop') {
+      const session = getExistingSession(sessionKey);
+      if (!session) {
+        return sendError(res, 404, 'session not found');
+      }
       await session.stop();
       sessions.delete(sessionKey);
       return sendJson(res, 200, { code: 0, message: '', data: true });
@@ -447,6 +483,10 @@ server.on('upgrade', (req, socket) => {
       socket.destroy();
       return;
     }
+    if (!isAuthorized(req)) {
+      socket.destroy();
+      return;
+    }
     const sessionKey = decodeURIComponent(parts[1]);
     const key = req.headers['sec-websocket-key'];
     if (!key) {
@@ -465,7 +505,11 @@ server.on('upgrade', (req, socket) => {
       ].join('\r\n'),
     );
     socket.setNoDelay(true);
-    const session = getSession(sessionKey);
+    const session = getExistingSession(sessionKey);
+    if (!session) {
+      socket.destroy();
+      return;
+    }
     const after = Number.parseInt(url.searchParams.get('after') || '0', 10) || 0;
     session.addSubscriber(socket, after);
     socket.on('end', () => {

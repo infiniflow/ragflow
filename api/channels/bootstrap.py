@@ -244,7 +244,13 @@ async def _reconcile(running: dict, failed: dict) -> None:
         )
     from api.channels.whatsapp.gateway import sync_whatsapp_gateway
 
-    await sync_whatsapp_gateway(active_whatsapp)
+    try:
+        LOGGER.info("syncing WhatsApp gateway enabled=%s", active_whatsapp)
+        await sync_whatsapp_gateway(active_whatsapp)
+    except Exception:
+        LOGGER.exception("failed to sync WhatsApp gateway enabled=%s", active_whatsapp)
+    else:
+        LOGGER.info("WhatsApp gateway sync finished enabled=%s", active_whatsapp)
 
     # Start channels that are new (skip ones already known to fail with this config).
     for account_id, (channel, credential, fp) in desired.items():

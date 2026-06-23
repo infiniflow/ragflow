@@ -3,7 +3,7 @@ import { Modal } from '@/components/ui/modal/modal';
 import { IModalProps } from '@/interfaces/common';
 import { fetchChatChannelRuntime } from '@/services/chat-channel-service';
 import { QrCode } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FieldValues } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import {
@@ -35,6 +35,7 @@ const AddChatChannelModal = ({
   const [runtimeStatus, setRuntimeStatus] = useState('');
   const [runtimeError, setRuntimeError] = useState('');
   const [runtimeQr, setRuntimeQr] = useState('');
+  const runtimePollingInFlightRef = useRef(false);
 
   useEffect(() => {
     if (channel) {
@@ -46,6 +47,10 @@ const AddChatChannelModal = ({
     if (channel?.id !== ChatChannelKey.WHATSAPP || !record?.id) {
       return;
     }
+    if (runtimePollingInFlightRef.current) {
+      return;
+    }
+    runtimePollingInFlightRef.current = true;
     try {
       const { data } = await fetchChatChannelRuntime(record.id);
       const snapshot = getRuntimeSnapshot(data);
@@ -54,6 +59,9 @@ const AddChatChannelModal = ({
       setRuntimeQr(snapshot?.qr_data_url || '');
     } catch (error: any) {
       setRuntimeError(error?.message || 'Failed to load QR.');
+      setRuntimeQr('');
+    } finally {
+      runtimePollingInFlightRef.current = false;
     }
   }, [channel?.id, record?.id]);
 
