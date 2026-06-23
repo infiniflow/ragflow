@@ -1054,8 +1054,8 @@ func (s *AgentService) markRunSucceeded(ctx context.Context, runID string) {
 	}
 	if err := s.runTracker.MarkSucceeded(ctx, runID); err != nil {
 		common.Warn("service: RunAgent runTracker.MarkSucceeded (best-effort, run not blocked)",
-		zap.String("run_id", runID),
-		zap.Error(err))
+			zap.String("run_id", runID),
+			zap.Error(err))
 	}
 }
 
@@ -1068,9 +1068,9 @@ func (s *AgentService) markRunFailed(ctx context.Context, runID, reason string) 
 	}
 	if err := s.runTracker.MarkFailed(ctx, runID, reason); err != nil {
 		common.Warn("service: RunAgent runTracker.MarkFailed (best-effort, run not blocked)",
-		zap.String("run_id", runID),
-		zap.String("reason", reason),
-		zap.Error(err))
+			zap.String("run_id", runID),
+			zap.String("reason", reason),
+			zap.Error(err))
 	}
 }
 

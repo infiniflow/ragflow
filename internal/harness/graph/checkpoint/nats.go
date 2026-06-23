@@ -23,18 +23,18 @@ import (
 //
 // Garbage Collection (two layers):
 //
-//   Layer 1 — Per-key version management (zero-touch):
-//     NATS KV's History=N automatically discards old versions per key.
-//     Each graph instance keeps only the latest N checkpoints.
-//     This handles the normal case: an active graph continuously writes,
-//     older versions are naturally evicted by NATS.
+//	Layer 1 — Per-key version management (zero-touch):
+//	  NATS KV's History=N automatically discards old versions per key.
+//	  Each graph instance keeps only the latest N checkpoints.
+//	  This handles the normal case: an active graph continuously writes,
+//	  older versions are naturally evicted by NATS.
 //
-//   Layer 2 — Completed graph instance cleanup (background):
-//     When a graph finishes execution (or crashes), its key becomes dormant.
-//     The background GC periodically scans all keys and purges those
-//     whose latest checkpoint is older than MaxGraphIdle.
-//     An idle key = a completed/abandoned graph instance.
-//     This prevents orphaned checkpoint data from accumulating.
+//	Layer 2 — Completed graph instance cleanup (background):
+//	  When a graph finishes execution (or crashes), its key becomes dormant.
+//	  The background GC periodically scans all keys and purges those
+//	  whose latest checkpoint is older than MaxGraphIdle.
+//	  An idle key = a completed/abandoned graph instance.
+//	  This prevents orphaned checkpoint data from accumulating.
 //
 // Multi-tenant:
 //   - All graph instances across all tenants share one KV bucket.

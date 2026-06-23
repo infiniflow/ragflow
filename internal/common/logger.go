@@ -105,15 +105,15 @@ func Init(level string, file FileOutput) error {
 	atomicLevel = zap.NewAtomicLevelAt(zapLevel)
 
 	encoderConfig := zapcore.EncoderConfig{
-		TimeKey:        "timestamp",
-		LevelKey:       "level",
-		NameKey:        "logger",
-		CallerKey:      "",
-		FunctionKey:    "",
-		MessageKey:     "msg",
-		StacktraceKey:  "stacktrace",
-		LineEnding:     zapcore.DefaultLineEnding,
-		EncodeLevel:    zapcore.LowercaseLevelEncoder,
+		TimeKey:       "timestamp",
+		LevelKey:      "level",
+		NameKey:       "logger",
+		CallerKey:     "",
+		FunctionKey:   "",
+		MessageKey:    "msg",
+		StacktraceKey: "stacktrace",
+		LineEnding:    zapcore.DefaultLineEnding,
+		EncodeLevel:   zapcore.LowercaseLevelEncoder,
 		// RFC 3339 with fixed-width millisecond precision and explicit
 		// timezone offset (UTC rendered as "Z", other zones as "+HH:MM"
 		// / "-HH:MM"). Easier to ingest than the default "2006-01-02

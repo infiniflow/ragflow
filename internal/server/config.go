@@ -162,7 +162,7 @@ type LogConfig struct {
 	MaxSize    int    `mapstructure:"max_size"`    // MB before rotation; default 100
 	MaxBackups int    `mapstructure:"max_backups"` // retained rotated files; default 10
 	MaxAge     int    `mapstructure:"max_age"`     // days; default 30
-	Compress   *bool  `mapstructure:"compress"`   // gzip rotated files; nil = default true
+	Compress   *bool  `mapstructure:"compress"`    // gzip rotated files; nil = default true
 }
 
 // DocEngineConfig document engine configuration

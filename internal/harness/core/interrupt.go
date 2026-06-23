@@ -50,8 +50,6 @@ const (
 	AddressSegmentTool  AddressSegmentType = "tool"
 )
 
-
-
 type InterruptCtx struct {
 	ID      string
 	Address Address
@@ -141,7 +139,9 @@ func getAddressSegments(ctx context.Context) []AddressSegment {
 // FromInterruptContexts builds an InterruptSignal tree from a flat slice of
 // InterruptCtx. Returns nil when ctxs is empty.
 func FromInterruptContexts(ctxs []*InterruptCtx) *InterruptSignal {
-	if len(ctxs) == 0 { return nil }
+	if len(ctxs) == 0 {
+		return nil
+	}
 	root := &InterruptSignal{}
 	buildFromCtxs(ctxs, root)
 	return root
@@ -212,8 +212,8 @@ func extractCheckpointTenant(ctx context.Context) string {
 // ---- Checkpoint integrity (HMAC) ----
 
 const (
-	hmacLen        = 32
-	envHMACKey     = "CHECKPOINT_HMAC_KEY"
+	hmacLen    = 32
+	envHMACKey = "CHECKPOINT_HMAC_KEY"
 )
 
 // checkpointHMACKey reads the HMAC key from the CHECKPOINT_HMAC_KEY env var
@@ -250,8 +250,12 @@ func computeCheckpointHMAC(payload []byte) []byte {
 
 func loadCheckpoint(store CheckPointStore, ctx context.Context, cid string) (context.Context, *runContext, *ResumeInfo, error) {
 	data, exist, err := store.Get(ctx, cid)
-	if err != nil { return nil, nil, nil, fmt.Errorf("checkpoint get: %w", err) }
-	if !exist { return nil, nil, nil, fmt.Errorf("checkpoint %s not found", cid) }
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("checkpoint get: %w", err)
+	}
+	if !exist {
+		return nil, nil, nil, fmt.Errorf("checkpoint %s not found", cid)
+	}
 
 	// Split: first 32 bytes = HMAC, rest = payload
 	if len(data) < hmacLen {
@@ -294,12 +298,14 @@ func loadCheckpoint(store CheckPointStore, ctx context.Context, cid string) (con
 
 	return ctx, p.RunCtx, &ResumeInfo{
 		EnableStreaming: p.EnableStreaming,
-		InterruptInfo:  p.Info,
+		InterruptInfo:   p.Info,
 	}, nil
 }
 
 func saveCheckpoint(store CheckPointStore, ctx context.Context, key string, enableStreaming bool, info *InterruptInfo, is *InterruptSignal) error {
-	if store == nil { return nil }
+	if store == nil {
+		return nil
+	}
 	rc := getRunCtx(ctx)
 	id2addr, id2state := signalToMaps(is)
 	tenantID := extractCheckpointTenant(ctx)
@@ -331,15 +337,23 @@ func saveCheckpoint(store CheckPointStore, ctx context.Context, key string, enab
 // by CompositeInterrupt/TypedCompositeInterrupt constructors.
 func signalToMaps(is *InterruptSignal) (map[string]Address, map[string]InterruptState) {
 	a, s := make(map[string]Address), make(map[string]InterruptState)
-	if is == nil { return a, s }
+	if is == nil {
+		return a, s
+	}
 	if is.ID != "" {
 		a[is.ID] = is.Address
-		if is.State != nil { s[is.ID] = InterruptState{State: is.State} }
+		if is.State != nil {
+			s[is.ID] = InterruptState{State: is.State}
+		}
 	}
 	for _, c := range is.Children {
 		ca, cs := signalToMaps(c)
-		for k, v := range ca { a[k] = v }
-		for k, v := range cs { s[k] = v }
+		for k, v := range ca {
+			a[k] = v
+		}
+		for k, v := range cs {
+			s[k] = v
+		}
 	}
 	return a, s
 }
