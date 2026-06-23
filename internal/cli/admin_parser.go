@@ -730,7 +730,26 @@ func (p *Parser) parseAdminShowProviderInstance(providerName string) (*Command, 
 	}
 	p.nextToken() // consume instance_name
 
+	if p.curToken.Type == TokenBalance {
+		return p.parseAdminShowProviderInstanceBalance(providerName, instanceName)
+	}
+
 	cmd := NewCommand("admin_show_provider_instance")
+	cmd.Params["instance_name"] = instanceName
+	cmd.Params["provider_name"] = providerName
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// SHOW PROVIDER 'provider_name' INSTANCE 'instance_name' BALANCE;
+func (p *Parser) parseAdminShowProviderInstanceBalance(providerName, instanceName string) (*Command, error) {
+	p.nextToken() // consume BALANCE
+
+	cmd := NewCommand("admin_show_provider_instance_balance")
 	cmd.Params["instance_name"] = instanceName
 	cmd.Params["provider_name"] = providerName
 

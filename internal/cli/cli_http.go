@@ -117,6 +117,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.CommonShowProviderCommand(cmd)
 	case "admin_show_provider_instance":
 		return c.CommonShowProviderInstanceCommand(cmd)
+	case "admin_show_provider_instance_balance":
+		return c.CommonShowProviderInstanceBalanceCommand(cmd)
 	case "admin_show_provider_model":
 		return c.CommonShowProviderModelCommand(cmd)
 	case "admin_list_provider_models":

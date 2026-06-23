@@ -219,6 +219,17 @@ func (s *Service) ShowProviderInstance(userID, providerName, instanceName string
 	}, nil
 }
 
+// ShowProviderInstanceBalance show provider instance balance
+func (s *Service) ShowProviderInstanceBalance(userID, providerName, instanceName string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":       "show_provider_instance_balance",
+		"user_id":       userID,
+		"provider_id":   providerName,
+		"instance_name": instanceName,
+		"error":         "'show provider instance balance' is implemented in enterprise edition",
+	}, nil
+}
+
 // AddModelInstance Add model instance
 func (s *Service) AddModelInstance(userID, providerName, instanceName string) (map[string]interface{}, error) {
 
