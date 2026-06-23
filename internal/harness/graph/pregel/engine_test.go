@@ -71,12 +71,10 @@ func TestEngine_RunSync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunSync failed: %v", err)
 	}
-	// result may be nil if the engine's goroutine closes the output channel
-	// before sending the final state event (channel timing). The graph still
-	// executed correctly — the state is consumed by the engine's channel system.
 	if result == nil {
-		t.Log("RunSync returned nil result (channel closed before EventTypeFinal)")
-	} else if m, ok := result.(map[string]interface{}); ok {
+		t.Fatal("expected non-nil result")
+	}
+	if m, ok := result.(map[string]interface{}); ok {
 		if m["value"] != "b" {
 			t.Errorf("expected value='b', got %v", m["value"])
 		}

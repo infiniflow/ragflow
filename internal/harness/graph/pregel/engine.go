@@ -1567,32 +1567,37 @@ func (e *Engine) saveDeferredCheckpoints(ctx context.Context) error {
 
 // RunSync executes the graph synchronously and returns the final state.
 // This is a convenience wrapper around Run() for callers that want a blocking API.
+//
+// RunSync first drains all events from outputCh (reading until it is closed),
+// then checks errCh for any execution error. This ordering avoids a race
+// between the EventTypeFinal arriving on outputCh and errCh being closed
+// (the defer calling close(errCh) runs AFTER close(outputCh)).
 func (e *Engine) RunSync(ctx context.Context, input interface{}) (interface{}, error) {
 	outputCh, errCh := e.Run(ctx, input, types.StreamModeValues)
 	var finalState interface{}
-	for {
-		select {
-		case result, ok := <-outputCh:
-			if !ok {
-				return finalState, nil
-			}
-			// Extract final state from StreamEvent wrapping
-			if se, ok := result.(*StreamEvent); ok && se.Type == EventTypeFinal {
-				if data, ok := se.Data.(map[string]interface{}); ok {
-					if state, ok := data["state"]; ok {
-						finalState = state
-					}
+
+	// Drain outputCh to capture the final state event.
+	// Must read until closed to avoid leaking the forward goroutine.
+	for result := range outputCh {
+		if se, ok := result.(*StreamEvent); ok && se.Type == EventTypeFinal {
+			if data, ok := se.Data.(map[string]interface{}); ok {
+				if state, ok := data["state"]; ok {
+					finalState = state
 				}
 			}
-		case err := <-errCh:
-			if err != nil {
-				return nil, err
-			}
-			return finalState, nil
-		case <-ctx.Done():
-			return nil, ctx.Err()
 		}
 	}
+
+	// Check for execution errors (non-blocking; errCh is closed after outputCh).
+	select {
+	case err := <-errCh:
+		if err != nil {
+			return nil, err
+		}
+	default:
+	}
+
+	return finalState, nil
 }
 
 // applyFieldMapping filters and remaps an output map according to FieldMapping rules.
