@@ -126,28 +126,21 @@ func (r *CommonDataResponse) orderedMetricTable() []map[string]interface{} {
 	return table
 }
 
-func (r *CommonDataResponse) printError() {
-	fmt.Println("ERROR")
-	fmt.Printf("%d, %s\n", r.Code, r.Message)
-}
-
 func (r *CommonDataResponse) PrintOut() {
 	if r.Code == 0 {
-		table := r.orderedMetricTable()
-		if len(table) > 0 {
-			PrintTableSimpleByFormat(table, r.OutputFormat)
-			return
-		}
-
+		table := make([]map[string]interface{}, 0)
 		for key, value := range r.Data {
-			table = append(table, map[string]interface{}{
+			elem := map[string]interface{}{
 				"field": key,
 				"value": value,
-			})
+			}
+			table = append(table, elem)
 		}
+		//table = append(table, r.Data)
 		PrintTableSimpleByFormat(table, r.OutputFormat)
 	} else {
-		r.printError()
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
 	}
 }
 
@@ -816,7 +809,8 @@ func (r *UserIndexResponse) Type() string {
 
 func (r *UserIndexResponse) PrintOut() {
 	if r.Code != 0 {
-		r.printError()
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
 		return
 	}
 
@@ -883,7 +877,8 @@ func (r *UserStorageResponse) Type() string {
 
 func (r *UserStorageResponse) PrintOut() {
 	if r.Code != 0 {
-		r.printError()
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
 		return
 	}
 
@@ -959,7 +954,8 @@ func (r *UserQuotaResponse) Type() string {
 
 func (r *UserQuotaResponse) PrintOut() {
 	if r.Code != 0 {
-		r.printError()
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
 		return
 	}
 
