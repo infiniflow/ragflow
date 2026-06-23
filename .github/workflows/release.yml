@@ -112,14 +112,28 @@ jobs:
             runner: windows-latest
             native_asset: native-windows-x86_64.zip
             msystem: CLANG64
-            msys2_packages: mingw-w64-clang-x86_64-clang mingw-w64-clang-x86_64-lld
+            rust_target: x86_64-pc-windows-gnullvm
+            msys2_packages: >-
+              mingw-w64-clang-x86_64-clang
+              mingw-w64-clang-x86_64-lld
+              mingw-w64-clang-x86_64-cmake
+              mingw-w64-clang-x86_64-ninja
+              mingw-w64-clang-x86_64-pcre2
+              mingw-w64-clang-x86_64-pkgconf
             output_ext: .exe
           - goos: windows
             goarch: arm64
             runner: windows-11-arm
             native_asset: native-windows-aarch64.zip
             msystem: CLANGARM64
-            msys2_packages: mingw-w64-clang-aarch64-clang mingw-w64-clang-aarch64-lld
+            rust_target: aarch64-pc-windows-gnullvm
+            msys2_packages: >-
+              mingw-w64-clang-aarch64-clang
+              mingw-w64-clang-aarch64-lld
+              mingw-w64-clang-aarch64-cmake
+              mingw-w64-clang-aarch64-ninja
+              mingw-w64-clang-aarch64-pcre2
+              mingw-w64-clang-aarch64-pkgconf
             output_ext: .exe
     runs-on: ${{ matrix.runner }}
     env:
@@ -145,6 +159,27 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Install Unix native build dependencies
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ matrix.goos }}" == "linux" ]]; then
+            sudo apt-get update
+            sudo apt-get install -y build-essential libpcre2-dev libsimde-dev pkg-config python3-pip
+          elif [[ "${{ matrix.goos }}" == "darwin" ]]; then
+            brew list pcre2 >/dev/null 2>&1 || brew install pcre2
+            brew list simde >/dev/null 2>&1 || brew install simde
+          fi
+
+          python3 -m pip install --user --upgrade 'cmake>=4.0,<5' || \
+            python3 -m pip install --user --break-system-packages --upgrade 'cmake>=4.0,<5'
+          python_user_base="$(python3 -m site --user-base)"
+          echo "${python_user_base}/bin" >> "${GITHUB_PATH}"
+          export PATH="${python_user_base}/bin:${PATH}"
+          cmake --version
+
       - name: Download office_oxide native library
         if: runner.os != 'Windows'
         shell: bash
@@ -165,31 +200,6 @@ jobs:
 
           echo "OFFICE_OXIDE_PREFIX=${OFFICE_OXIDE_PREFIX}" >> "${GITHUB_ENV}"
 
-      - name: Download office_oxide native library
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $officeOxidePrefix = Join-Path $env:RUNNER_TEMP "office_oxide"
-          $officeOxideUrl = "https://github.com/yfedoseev/office_oxide/releases/download/v$env:OFFICE_OXIDE_VERSION/${{ matrix.native_asset }}"
-          $archivePath = Join-Path $env:RUNNER_TEMP "${{ matrix.native_asset }}"
-
-          New-Item -ItemType Directory -Force -Path $officeOxidePrefix | Out-Null
-          Invoke-WebRequest -Uri $officeOxideUrl -OutFile $archivePath
-          Expand-Archive -Path $archivePath -DestinationPath $officeOxidePrefix -Force
-
-          if (-not (Test-Path (Join-Path $officeOxidePrefix "include\office_oxide_c\office_oxide.h"))) {
-            throw "office_oxide.h was not found"
-          }
-          if (-not (Test-Path (Join-Path $officeOxidePrefix "lib\office_oxide.lib"))) {
-            throw "office_oxide.lib was not found"
-          }
-
-          Copy-Item -Force `
-            -Path (Join-Path $officeOxidePrefix "include\office_oxide_c\office_oxide.h") `
-            -Destination (Join-Path $officeOxidePrefix "include\office_oxide.h")
-
-          "OFFICE_OXIDE_PREFIX=$officeOxidePrefix" >> $env:GITHUB_ENV
-
       - name: Set up MSYS2
         if: runner.os == 'Windows'
         uses: msys2/setup-msys2@v2
@@ -199,18 +209,197 @@ jobs:
           install: ${{ matrix.msys2_packages }}
           path-type: inherit
 
+      - name: Install Windows SIMDe headers
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+
+          simde_dir="$(cygpath -u "${RUNNER_TEMP}")/simde"
+          simde_archive="$(cygpath -u "${RUNNER_TEMP}")/simde-v0.8.2.tar.gz"
+          github_env="$(cygpath -u "${GITHUB_ENV}")"
+
+          rm -rf "${simde_dir}"
+          mkdir -p "${simde_dir}"
+          curl -fsSL "https://github.com/simd-everywhere/simde/archive/refs/tags/v0.8.2.tar.gz" -o "${simde_archive}"
+          tar xzf "${simde_archive}" -C "${simde_dir}" --strip-components=1
+
+          test -f "${simde_dir}/simde/x86/sse4.1.h"
+
+          # Install SIMDe headers into the MSYS2 toolchain include directory.
+          # CMake/Ninja invokes clang-scan-deps as a Windows-native executable;
+          # a POSIX-style include path like /c/a/_temp/simde may not be resolved
+          # there, so keep the headers under ${MINGW_PREFIX}/include instead.
+          rm -rf "${MINGW_PREFIX}/include/simde"
+          cp -R "${simde_dir}/simde" "${MINGW_PREFIX}/include/simde"
+          test -f "${MINGW_PREFIX}/include/simde/x86/sse4.1.h"
+
       - name: Configure Windows C compiler
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
           set -euo pipefail
 
-          cc_path="$(command -v clang.exe || command -v clang)"
+          cc_path="$(command -v clang.exe 2>/dev/null || command -v clang)"
+          cxx_path="$(command -v clang++.exe 2>/dev/null || command -v clang++)"
+
+          if [[ ! -f "${cc_path}" && -f "${cc_path}.exe" ]]; then
+            cc_path="${cc_path}.exe"
+          fi
+          if [[ ! -f "${cxx_path}" && -f "${cxx_path}.exe" ]]; then
+            cxx_path="${cxx_path}.exe"
+          fi
+          test -f "${cc_path}"
+          test -f "${cxx_path}"
+
           cc="$(cygpath -m "${cc_path}")"
+          cxx="$(cygpath -m "${cxx_path}")"
           github_env="$(cygpath -u "${GITHUB_ENV}")"
+
+          pcre2_libdir="$(pkg-config --variable=libdir libpcre2-8)"
+          pcre2_includedir="$(pkg-config --variable=includedir libpcre2-8)"
+
           echo "CC=${cc}" >> "${github_env}"
+          echo "CXX=${cxx}" >> "${github_env}"
+          echo "PCRE2_LIBDIR=$(cygpath -m "${pcre2_libdir}")" >> "${github_env}"
+          echo "PCRE2_INCLUDEDIR=$(cygpath -m "${pcre2_includedir}")" >> "${github_env}"
+
           echo "Resolved MSYS2 clang: ${cc}"
           "${cc_path}" --version
+          echo "Resolved MSYS2 clang++: ${cxx}"
+          "${cxx_path}" --version
+
+      - name: Set up Rust for Windows office_oxide staticlib
+        if: runner.os == 'Windows'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Build office_oxide native library for Windows GNU ABI
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+
+          office_oxide_prefix="$(cygpath -u "${RUNNER_TEMP}")/office_oxide"
+          office_oxide_src="$(cygpath -u "${RUNNER_TEMP}")/office_oxide-src"
+          archive_path="$(cygpath -u "${RUNNER_TEMP}")/office_oxide-v${OFFICE_OXIDE_VERSION}.tar.gz"
+          github_env="$(cygpath -u "${GITHUB_ENV}")"
+
+          rm -rf "${office_oxide_prefix}" "${office_oxide_src}"
+          mkdir -p "${office_oxide_prefix}/include/office_oxide_c" "${office_oxide_prefix}/lib" "${office_oxide_src}"
+
+          curl -fsSL "https://github.com/yfedoseev/office_oxide/archive/refs/tags/v${OFFICE_OXIDE_VERSION}.tar.gz" -o "${archive_path}"
+          tar xzf "${archive_path}" -C "${office_oxide_src}" --strip-components=1
+
+          cd "${office_oxide_src}"
+
+          cc_path="$(command -v clang.exe 2>/dev/null || command -v clang)"
+          cxx_path="$(command -v clang++.exe 2>/dev/null || command -v clang++)"
+          if [[ ! -f "${cc_path}" && -f "${cc_path}.exe" ]]; then
+            cc_path="${cc_path}.exe"
+          fi
+          if [[ ! -f "${cxx_path}" && -f "${cxx_path}.exe" ]]; then
+            cxx_path="${cxx_path}.exe"
+          fi
+          test -f "${cc_path}"
+          test -f "${cxx_path}"
+
+          export CC="${cc_path}"
+          export CXX="${cxx_path}"
+          export AR="$(command -v llvm-ar || command -v ar)"
+          export CARGO_BUILD_TARGET="${{ matrix.rust_target }}"
+          export RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-fuse-ld=lld"
+
+          case "${{ matrix.rust_target }}" in
+            x86_64-pc-windows-gnullvm)
+              export CARGO_TARGET_X86_64_PC_WINDOWS_GNULLVM_LINKER="${CC}"
+              export CARGO_TARGET_X86_64_PC_WINDOWS_GNULLVM_AR="${AR}"
+              ;;
+            aarch64-pc-windows-gnullvm)
+              export CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER="${CC}"
+              export CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_AR="${AR}"
+              ;;
+            *)
+              echo "Unsupported Rust target: ${{ matrix.rust_target }}"
+              exit 1
+              ;;
+          esac
+
+          # The release workflow only needs the static archive for cgo.
+          # Building cdylib on Windows pulls in extra MinGW runtime libraries,
+          # which can fail under the CLANG64/CLANGARM64 environments.
+          perl -0pi -e 's/crate-type\s*=\s*\[[^\]]+\]/crate-type = ["staticlib"]/s' Cargo.toml
+
+          cargo build --release --lib --target "${CARGO_BUILD_TARGET}" --no-default-features
+
+          cp "include/office_oxide_c/office_oxide.h" "${office_oxide_prefix}/include/office_oxide_c/office_oxide.h"
+          cp "include/office_oxide_c/office_oxide.h" "${office_oxide_prefix}/include/office_oxide.h"
+          cp "target/${CARGO_BUILD_TARGET}/release/liboffice_oxide.a" "${office_oxide_prefix}/lib/liboffice_oxide.a"
+
+          test -f "${office_oxide_prefix}/include/office_oxide_c/office_oxide.h"
+          test -f "${office_oxide_prefix}/include/office_oxide.h"
+          test -f "${office_oxide_prefix}/lib/liboffice_oxide.a"
+
+          echo "OFFICE_OXIDE_PREFIX=$(cygpath -m "${office_oxide_prefix}")" >> "${github_env}"
+
+      - name: Build rag tokenizer native library
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cmake_args=(
+            -S internal/cpp
+            -B internal/cpp/cmake-build-release
+            -DCMAKE_BUILD_TYPE=Release
+          )
+
+          if [[ "${{ matrix.goos }}" == "darwin" ]]; then
+            simde_prefix="$(brew --prefix simde)"
+            pcre2_prefix="$(brew --prefix pcre2)"
+            cmake_args+=(
+              -DCMAKE_PREFIX_PATH="${pcre2_prefix};${simde_prefix}"
+              -DCMAKE_C_FLAGS="-I${simde_prefix}/include"
+              -DCMAKE_CXX_FLAGS="-I${simde_prefix}/include"
+            )
+          fi
+
+          cmake "${cmake_args[@]}"
+          cmake --build internal/cpp/cmake-build-release --target rag_tokenizer_c_api --parallel
+
+          test -f internal/cpp/cmake-build-release/librag_tokenizer_c_api.a
+
+      - name: Build rag tokenizer native library
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+
+          cc_path="$(command -v clang.exe 2>/dev/null || command -v clang)"
+          cxx_path="$(command -v clang++.exe 2>/dev/null || command -v clang++)"
+
+          if [[ ! -f "${cc_path}" && -f "${cc_path}.exe" ]]; then
+            cc_path="${cc_path}.exe"
+          fi
+          if [[ ! -f "${cxx_path}" && -f "${cxx_path}.exe" ]]; then
+            cxx_path="${cxx_path}.exe"
+          fi
+          test -f "${cc_path}"
+          test -f "${cxx_path}"
+
+          test -f "${MINGW_PREFIX}/include/simde/x86/sse4.1.h"
+
+          cmake -S internal/cpp -B internal/cpp/cmake-build-release -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER="$(cygpath -m "${cc_path}")" \
+            -DCMAKE_CXX_COMPILER="$(cygpath -m "${cxx_path}")" \
+            -DCMAKE_C_FLAGS="-I${MINGW_PREFIX}/include" \
+            -DCMAKE_CXX_FLAGS="-I${MINGW_PREFIX}/include"
+
+          cmake --build internal/cpp/cmake-build-release --target rag_tokenizer_c_api --parallel
+
+          test -f internal/cpp/cmake-build-release/librag_tokenizer_c_api.a
 
       - name: Build Go CLI release binaries
         if: runner.os != 'Windows'
@@ -299,11 +488,27 @@ jobs:
             Write-Error "C compiler does not exist: $cc"
             exit 1
           }
+          if (-not (Test-Path "${officeOxidePrefix}/lib/liboffice_oxide.a")) {
+            Write-Error "liboffice_oxide.a does not exist: ${officeOxidePrefix}/lib/liboffice_oxide.a"
+            exit 1
+          }
+          if (-not (Test-Path "internal/cpp/cmake-build-release/librag_tokenizer_c_api.a")) {
+            Write-Error "librag_tokenizer_c_api.a does not exist"
+            exit 1
+          }
+          if ([string]::IsNullOrWhiteSpace($env:PCRE2_LIBDIR) -or -not (Test-Path $env:PCRE2_LIBDIR)) {
+            Write-Error "PCRE2_LIBDIR is not set or does not exist: $env:PCRE2_LIBDIR"
+            exit 1
+          }
+
+          $ragTokenizerLib = (Resolve-Path "internal/cpp/cmake-build-release/librag_tokenizer_c_api.a").Path -replace '\\', '/'
+          $pcre2LibDir = $env:PCRE2_LIBDIR -replace '\\', '/'
+          $pcre2IncludeDir = $env:PCRE2_INCLUDEDIR -replace '\\', '/'
 
           $env:CGO_ENABLED = "1"
           $env:CC = $cc
-          $env:CGO_CFLAGS = "-I${officeOxidePrefix}/include -I${officeOxidePrefix}/include/office_oxide_c"
-          $env:CGO_LDFLAGS = "${officeOxidePrefix}/lib/office_oxide.lib -lws2_32 -lntdll -luserenv"
+          $env:CGO_CFLAGS = "-I${officeOxidePrefix}/include -I${officeOxidePrefix}/include/office_oxide_c -I${pcre2IncludeDir}"
+          $env:CGO_LDFLAGS = "${officeOxidePrefix}/lib/liboffice_oxide.a ${ragTokenizerLib} -L${pcre2LibDir} -lpcre2-8 -lc++ -static -static-libgcc -static-libstdc++ -lws2_32 -lbcrypt -lntdll -luserenv -ladvapi32"
           $env:GOOS = "${{ matrix.goos }}"
           $env:GOARCH = "${{ matrix.goarch }}"
 

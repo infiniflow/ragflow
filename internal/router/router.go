@@ -33,6 +33,7 @@ type Router struct {
 	chunkHandler         *handler.ChunkHandler
 	llmHandler           *handler.LLMHandler
 	chatHandler          *handler.ChatHandler
+	chatChannelHandler   *handler.ChatChannelHandler
 	openaiChatHandler    *handler.OpenAIChatHandler
 	chatSessionHandler   *handler.ChatSessionHandler
 	connectorHandler     *handler.ConnectorHandler
@@ -63,6 +64,7 @@ func NewRouter(
 	chunkHandler *handler.ChunkHandler,
 	llmHandler *handler.LLMHandler,
 	chatHandler *handler.ChatHandler,
+	chatChannelHandler *handler.ChatChannelHandler,
 	chatSessionHandler *handler.ChatSessionHandler,
 	connectorHandler *handler.ConnectorHandler,
 	searchHandler *handler.SearchHandler,
@@ -91,6 +93,7 @@ func NewRouter(
 		chunkHandler:         chunkHandler,
 		llmHandler:           llmHandler,
 		chatHandler:          chatHandler,
+		chatChannelHandler:   chatChannelHandler,
 		openaiChatHandler:    openaiChatHandler,
 		chatSessionHandler:   chatSessionHandler,
 		connectorHandler:     connectorHandler,
@@ -142,6 +145,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.GET("/system/config", r.systemHandler.GetConfig)
 		apiNoAuth.GET("/system/version", r.systemHandler.GetVersion)
 		apiNoAuth.GET("/system/healthz", r.systemHandler.Healthz)
+
+		// searchbots
+		apiNoAuth.GET("/searchbots/detail", r.searchBotHandler.SearchbotDetail)
 
 		// User login channels endpoint
 		apiNoAuth.GET("/auth/login/channels", r.userHandler.GetLoginChannels)
@@ -241,6 +247,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			chats := v1.Group("/chats")
 			{
 				chats.GET("", r.chatHandler.ListChats)
+				chats.DELETE("", r.chatHandler.BulkDeleteChats)
+				chats.DELETE("/:chat_id", r.chatHandler.DeleteChat)
 				chats.GET("/:chat_id", r.chatHandler.GetChat)
 				chats.GET("/:chat_id/sessions", r.chatSessionHandler.ListChatSessions)
 			}
@@ -290,6 +298,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 				// Dataset document chunk
 				datasets.GET("/:dataset_id/documents/:document_id/chunks/:chunk_id", r.chunkHandler.Get)
+				datasets.POST("/:dataset_id/chunks", r.chunkHandler.Parse)
 				datasets.POST("/:dataset_id/documents/parse", r.documentHandler.StartIngestionTask)
 				datasets.GET("/ingestion/tasks", r.documentHandler.ListIngestionTasks)
 				datasets.PUT("/ingestion/tasks", r.documentHandler.StopIngestionTasks)
@@ -605,6 +614,16 @@ func (r *Router) Setup(engine *gin.Engine) {
 			chat.POST("/next", r.chatHandler.ListChatsNext)
 			chat.POST("/set", r.chatHandler.SetDialog)
 			chat.POST("/rm", r.chatHandler.RemoveChats)
+		}
+
+		// Chat Channel
+		chanChannel := v1.Group("/chat-channels")
+		{
+			chanChannel.POST("", r.chatChannelHandler.CreateChatChannel)
+			chanChannel.GET("", r.chatChannelHandler.ListChatChannel)
+			chanChannel.GET("/:channel_id", r.chatChannelHandler.GetChatChannel)
+			chanChannel.PATCH("/:channel_id", r.chatChannelHandler.UpdateChatChannel)
+			chanChannel.DELETE("/:channel_id", r.chatChannelHandler.DeleteChatChannel)
 		}
 
 		// Chat session (conversation) routes

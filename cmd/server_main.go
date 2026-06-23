@@ -41,6 +41,7 @@ import (
 
 	"ragflow/internal/agent/audio"
 	"ragflow/internal/agent/canvas"
+	_ "ragflow/internal/agent/component" // blank import: registers every Component factory (Begin / Agent / LLM / Message / Retrieval / ...) into the shared runtime at package init
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -211,6 +212,7 @@ func startServer(config *server.Config) {
 	llmService := service.NewLLMService()
 	tenantService := service.NewTenantService()
 	chatService := service.NewChatService()
+	chatChannelService := service.NewChatChannelService()
 	chatSessionService := service.NewChatSessionService()
 	openaiChatService := service.NewOpenAIChatService()
 	systemService := service.NewSystemService()
@@ -235,6 +237,7 @@ func startServer(config *server.Config) {
 	chunkHandler := handler.NewChunkHandler(chunkService, userService)
 	llmHandler := handler.NewLLMHandler(llmService, userService)
 	chatHandler := handler.NewChatHandler(chatService, userService)
+	chatChannelHandler := handler.NewChatChannelHandler(chatChannelService)
 	chatSessionHandler := handler.NewChatSessionHandler(chatSessionService, userService)
 	openaiChatHandler := handler.NewOpenAIChatHandler(openaiChatService)
 	connectorHandler := handler.NewConnectorHandler(connectorService, userService)
@@ -291,7 +294,6 @@ func startServer(config *server.Config) {
 		docDAO,
 		docEngine,
 	)
-
 	// Per-tenant canvas-runtime override selector, backed by the
 	// existing Redis client and the global logger. The handler is
 	// ALWAYS constructed, even when Redis is briefly unavailable at
@@ -309,7 +311,7 @@ func startServer(config *server.Config) {
 	adminRuntimeHandler := handler.NewAdminRuntimeHandler(adminRuntimeSelector)
 
 	// Initialize router
-	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler, fileCommitHandler, adminRuntimeHandler, openaiChatHandler)
+	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatChannelHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler, fileCommitHandler, adminRuntimeHandler, openaiChatHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()

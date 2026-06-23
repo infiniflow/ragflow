@@ -14,6 +14,12 @@ class ListOperationsParam(ComponentParamBase):
         self.n = 0
         self.strict = False
         self.sort_method = "asc"
+        # Comma-separated list of map keys to sort by (primary,
+        # tiebreak, ...). Empty / unset falls back to the legacy
+        # full-hashable-key behaviour (sort by the lexicographically
+        # first field). Mirrors internal/agent/component/list_operations.go
+        # parseSortByFieldList + opSort's SortBy path.
+        self.sort_by = ""
         self.filter = {
             "operator": "=",
             "value": ""
@@ -178,11 +184,20 @@ class ListOperations(ComponentBase,ABC):
         first = items[0]
 
         if isinstance(first, dict):
-            outputs = sorted(
-                items,
-                key=lambda x: self._hashable(x),
-                reverse=reverse,
-            )
+            sort_by_raw = getattr(self._param, "sort_by", "") or ""
+            sort_by = [k.strip() for k in sort_by_raw.split(",") if k.strip()]
+            if sort_by:
+                outputs = sorted(
+                    items,
+                    key=lambda x: tuple(x.get(k) for k in sort_by),
+                    reverse=reverse,
+                )
+            else:
+                outputs = sorted(
+                    items,
+                    key=lambda x: self._hashable(x),
+                    reverse=reverse,
+                )
         else:
             outputs = sorted(items, reverse=reverse)
 

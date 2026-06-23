@@ -41,73 +41,93 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.LoginUserByCommand(cmd)
 	case "logout":
 		return c.Logout()
-	case "ping":
+	case "ping_server":
 		return c.PingByCommand(cmd)
 	case "benchmark":
 		return c.RunBenchmark(cmd)
-	case "list_services":
-		return c.ListServices(cmd)
-	case "grant_admin":
-		return c.GrantAdmin(cmd)
-	case "revoke_admin":
-		return c.RevokeAdmin(cmd)
-	case "admin_create_user_command":
+	case "admin_list_services":
+		return c.AdminListServicesCommand(cmd)
+	case "admin_start_service":
+		return c.AdminStartServiceCommand(cmd)
+	case "admin_restart_service":
+		return c.AdminRestartServiceCommand(cmd)
+	case "admin_shutdown_service":
+		return c.AdminShutdownServiceCommand(cmd)
+	case "admin_grant_user_admin":
+		return c.AdminGrantUserAdminCommand(cmd)
+	case "admin_revoke_user_admin":
+		return c.AdminRevokeUserAdminCommand(cmd)
+	case "admin_grant_role_permission":
+		return c.AdminGrantRolePermissionCommand(cmd)
+	case "admin_revoke_role_permission":
+		return c.AdminRevokeRolePermissionCommand(cmd)
+	case "admin_show_role_permission":
+		return c.AdminShowRolePermissionCommand(cmd)
+	case "admin_create_user":
 		return c.AdminCreateUserCommand(cmd)
-	case "admin_create_user_api_key_command":
+	case "admin_create_user_api_key":
 		return c.AdminCreateUserAPIKeyCommand(cmd)
-	case "admin_create_role_command":
+	case "admin_create_role":
 		return c.AdminCreateRoleCommand(cmd)
-	case "activate_user":
-		return c.ActivateUser(cmd)
-	case "alter_user":
-		return c.AlterUserPassword(cmd)
-	case "admin_drop_user_command":
+	case "admin_activate_user":
+		return c.AdminActivateUser(cmd)
+	case "admin_alter_user":
+		return c.AdminAlterUserPassword(cmd)
+	case "admin_alter_role":
+		return c.AdminAlterRole(cmd)
+	case "admin_drop_user":
 		return c.AdminDropUserCommand(cmd)
-	case "admin_drop_user_api_key_command":
+	case "admin_drop_user_api_key":
 		return c.AdminDropUserAPIKeyCommand(cmd)
-	case "show_service":
-		return c.ShowService(cmd)
+	case "admin_drop_role":
+		return c.AdminDropRoleCommand(cmd)
+	case "admin_show_service":
+		return c.AdminShowService(cmd)
 	case "admin_show_version_command":
 		return c.AdminShowVersionCommand(cmd)
-	case "show_current":
-		return c.ShowCommonCurrent(cmd)
-	case "list_variables":
-		return c.ListVariables(cmd)
-	case "show_variable":
-		return c.ShowVariable(cmd)
+	case "admin_show_current":
+		return c.CommonShowCurrent(cmd)
+	case "admin_list_variables":
+		return c.AdminListVariablesCommand(cmd)
+	case "admin_list_configs":
+		return c.AdminListConfigsCommand(cmd)
+	case "admin_list_environments":
+		return c.AdminListEnvironmentsCommand(cmd)
+	case "admin_show_variable":
+		return c.AdminShowVariable(cmd)
 	case "admin_set_license_command":
 		return c.AdminSetLicenseCommand(cmd)
 	case "admin_set_license_config_command":
 		return c.AdminSetLicenseConfigCommand(cmd)
 	case "set_variable":
 		return c.SetVariable(cmd)
+	case "admin_set_role_default_model":
+		return c.AdminSetRoleDefaultModelsCommand(cmd)
+	case "admin_reset_role_default_model":
+		return c.AdminResetRoleDefaultModelsCommand(cmd)
 	case "list_user_datasets":
 		return c.ListUserDatasets(cmd)
-	case "list_agents":
-		return c.ListAgents(cmd)
 	case "admin_list_resources_command":
 		return c.AdminListResourcesCommand(cmd)
 	case "admin_list_roles_command":
 		return c.AdminListRolesCommand(cmd)
-	case "generate_token":
-		return c.GenerateAdminToken(cmd)
-	case "list_tokens":
-		return c.ListAdminTokens(cmd)
-	case "list_available_providers":
-		return c.ListAvailableProviders(cmd)
-	case "show_provider":
-		return c.ShowProvider(cmd)
-	case "list_provider_models":
-		return c.ListModels(cmd)
+	case "admin_list_available_providers":
+		return c.CommonAvailableProvidersCommand(cmd)
+	case "admin_show_provider":
+		return c.CommonShowProviderCommand(cmd)
+	case "admin_show_provider_model":
+		return c.CommonShowProviderModelCommand(cmd)
+	case "admin_list_provider_models":
+		return c.CommonListModelsCommand(cmd)
 	case "list_supported_models":
 		return c.ListSupportedModels(cmd)
 	case "list_instance_models":
 		return c.ListInstanceModels(cmd)
-	case "show_provider_model":
-		return c.ShowProviderModel(cmd)
-	case "show_model":
-		return c.ShowModel(cmd)
-	case "list_all_models":
+	case "admin_show_model":
+		return c.CommonShowModel(cmd)
+	case "admin_list_providers":
+		return c.AdminListProvidersCommand(cmd)
+	case "admin_list_all_models":
 		return c.ListAllModels(cmd)
 	case "list_admin_tasks":
 		return c.ListAdminTasks(cmd)
@@ -129,16 +149,18 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.UserPullMessageCommand(cmd)
 	case "user_show_message_queue_command":
 		return c.UserShowMessageQueueCommand(cmd)
-	case "admin_remove_service_command":
-		return c.AdminRemoveServiceCommand(cmd)
-	case "admin_check_license_command":
+	case "admin_check_license":
 		return c.AdminCheckLicenseCommand(cmd)
-	case "admin_show_fingerprint_command":
+	case "admin_show_fingerprint":
 		return c.AdminShowFingerprintCommand(cmd)
-	case "admin_show_license_command":
+	case "admin_show_license":
 		return c.AdminShowLicenseCommand(cmd)
-	case "admin_show_user_info_command":
-		return c.AdminShowUserInfoCommand(cmd)
+	case "admin_show_user":
+		return c.AdminShowUserCommand(cmd)
+	case "admin_show_role":
+		return c.AdminShowRoleCommand(cmd)
+	case "admin_show_role_default_models":
+		return c.AdminShowRoleDefaultModelsCommand(cmd)
 	case "admin_show_user_activity_command":
 		return c.AdminShowUserActivityCommand(cmd)
 	case "admin_show_user_summary_command":
@@ -161,17 +183,17 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminListUsersCommand(cmd)
 	case "admin_list_users_condition_command":
 		return c.AdminListUsersConditionCommand(cmd)
-	case "admin_show_quota_summary_command":
+	case "admin_show_quota_summary":
 		return c.AdminShowQuotaSummaryCommand(cmd)
-	case "admin_show_tasks_summary_command":
+	case "admin_show_tasks_summary":
 		return c.AdminShowTasksSummaryCommand(cmd)
-	case "admin_show_data_summary_command":
+	case "admin_show_data_summary":
 		return c.AdminShowDataSummaryCommand(cmd)
-	case "admin_show_data_orphan_command":
+	case "admin_show_data_orphan":
 		return c.AdminShowDataOrphanCommand(cmd)
-	case "admin_show_data_storage_command":
+	case "admin_show_data_storage":
 		return c.AdminShowDataStorageCommand(cmd)
-	case "admin_show_data_index_command":
+	case "admin_show_data_index":
 		return c.AdminShowDataIndexCommand(cmd)
 	case "admin_purge_orphan_command":
 		return c.AdminPurgeOrphanCommand(cmd)
@@ -179,27 +201,47 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminPurgeUserCommand(cmd)
 	case "admin_purge_users_command":
 		return c.AdminPurgeUsersCommand(cmd)
-	case "admin_list_user_ingestion_tasks_command":
+	case "admin_list_user_ingestion_tasks":
 		return c.AdminListUserIngestionTasksCommand(cmd)
-	case "admin_list_user_datasets_command":
+	case "admin_list_user_datasets":
 		return c.AdminListUserDatasetsCommand(cmd)
-	case "admin_list_user_agents_command":
+	case "admin_list_user_agents":
 		return c.AdminListUserAgentsCommand(cmd)
-	case "admin_list_user_chats_command":
+	case "admin_list_user_chats":
 		return c.AdminListUserChatsCommand(cmd)
-	case "admin_list_user_searches_command":
+	case "admin_list_user_searches":
 		return c.AdminListUserSearchesCommand(cmd)
-	case "admin_list_user_models_command":
+	case "admin_list_user_models":
 		return c.AdminListUserModelsCommand(cmd)
-	case "admin_list_user_files_command":
+	case "admin_list_user_files":
 		return c.AdminListUserFilesCommand(cmd)
-	case "admin_list_user_keys_command":
+	case "admin_list_user_keys":
 		return c.AdminListUserKeysCommand(cmd)
+	case "admin_list_user_providers":
+		return c.AdminListUserProvidersCommand(cmd)
+	case "admin_list_user_provider_instances":
+		return c.AdminListUserProviderInstancesCommand(cmd)
+	case "admin_list_user_provider_instance_models":
+		return c.AdminListUserProviderInstanceModelsCommand(cmd)
+	case "admin_list_user_default_models":
+		return c.AdminListUserDefaultModelsCommand(cmd)
 	case "admin_stop_user_ingestion_tasks_command":
 		return c.AdminStopUserIngestionTasksCommand(cmd)
 	case "admin_remove_user_ingestion_tasks_command":
 		return c.AdminRemoveUserIngestionTasksCommand(cmd)
-	// TODO: Implement other commands
+	case "admin_add_provider":
+		return c.AdminAddProviderCommand(cmd)
+	case "admin_add_model_instance":
+		return c.AdminAddModelInstanceCommand(cmd)
+	case "admin_add_models":
+		return c.AdminAddModelsCommand(cmd)
+	case "admin_delete_model_providers":
+		return c.AdminDeleteProvidersCommand(cmd)
+	case "admin_delete_model_instance":
+		return c.AdminDeleteInstancesCommand(cmd)
+	case "admin_delete_model":
+		return c.AdminDeleteModelsCommand(cmd)
+		// TODO: Implement other commands
 	case "show_admin_server":
 		return c.ShowAdminServer(cmd)
 	case "show_api_server":
@@ -232,7 +274,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.LoginUserByCommand(cmd)
 	case "logout":
 		return c.Logout()
-	case "ping":
+	case "ping_server":
 		return c.PingByCommand(cmd)
 	// Configuration commands
 	case "list_configs":
@@ -265,21 +307,21 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "show_version":
 		return c.ShowServerVersion(cmd)
 	case "show_current":
-		return c.ShowCommonCurrent(cmd)
+		return c.CommonShowCurrent(cmd)
 	case "list_available_providers":
-		return c.ListAvailableProviders(cmd)
+		return c.CommonAvailableProvidersCommand(cmd)
 	case "show_provider":
-		return c.ShowProvider(cmd)
+		return c.CommonShowProviderCommand(cmd)
 	case "list_provider_models":
-		return c.ListModels(cmd)
+		return c.CommonListModelsCommand(cmd)
 	case "list_supported_models":
 		return c.ListSupportedModels(cmd)
 	case "list_instance_models":
 		return c.ListInstanceModels(cmd)
 	case "show_provider_model":
-		return c.ShowProviderModel(cmd)
+		return c.CommonShowProviderModelCommand(cmd)
 	case "show_model":
-		return c.ShowModel(cmd)
+		return c.CommonShowModel(cmd)
 	case "list_all_models":
 		return c.ListAllModels(cmd)
 	// Provider commands

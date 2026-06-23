@@ -419,10 +419,6 @@ type ModelItem struct {
 	Enable        bool    `json:"enable"`
 }
 
-type DefaultModelResponse struct {
-	Models []ModelItem `json:"models,omitempty"`
-}
-
 // GetDefaultModelName returns the full default model ID for a tenant and model type
 // Format: modelName@instanceName@providerName or modelName@providerName
 // Returns empty string if no default model is set

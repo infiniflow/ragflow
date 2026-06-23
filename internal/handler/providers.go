@@ -144,7 +144,7 @@ func (h *ProviderHandler) DeleteProvider(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
-	errorCode, err := h.modelProviderService.DeleteModelProvider(providerName, userID)
+	errorCode, err := h.modelProviderService.DeleteModelProvider(userID, providerName)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    errorCode,
