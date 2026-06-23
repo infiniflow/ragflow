@@ -517,8 +517,13 @@ func (c *CLI) AdminCreateUserCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("password not provided")
 	}
 
+	publicKey, err := c.GetPublicKeyPEM()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get public key: %w", err)
+	}
+
 	// Encrypt password using RSA
-	encryptedPassword, err := EncryptPassword(password)
+	encryptedPassword, err := EncryptPassword(password, publicKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt password: %w", err)
 	}
@@ -658,8 +663,13 @@ func (c *CLI) AdminAlterUserPassword(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("password not provided")
 	}
 
+	publicKey, err := c.GetPublicKeyPEM()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get public key: %w", err)
+	}
+
 	// Encrypt password using RSA
-	encryptedPassword, err := EncryptPassword(password)
+	encryptedPassword, err := EncryptPassword(password, publicKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt password: %w", err)
 	}
