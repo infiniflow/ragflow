@@ -21,12 +21,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 )
 
 // ErrCodeExecSandboxMissing is returned when no sandbox client is
@@ -150,7 +152,11 @@ func (c *CodeExecTool) InvokableRun(ctx context.Context, argumentsInJSON string,
 		Arguments: args.Args,
 		Timeout:   args.Timeout,
 	}
-	log.Printf("DEBUG CodeExec tool invoke: lang=%q timeout=%d arguments=%#v script=%q", req.Lang, req.Timeout, req.Arguments, req.Script)
+	common.Debug("CodeExec tool invoke",
+		zap.String("lang", req.Lang),
+		zap.Int("timeout", req.Timeout),
+		zap.Any("arguments", req.Arguments),
+		zap.String("script", req.Script))
 	resp, err := client.ExecuteCode(ctx, req)
 	if err != nil {
 		return codeExecStubResult(err.Error()), err
@@ -213,8 +219,14 @@ func codeExecResultJSON(r *SandboxResponse) (string, error) {
 		out.ActualType = InferCodeExecActualType(out.RawResult)
 		out.Content = RenderCodeExecCanonicalContent(out.RawResult)
 	}
-	log.Printf("DEBUG CodeExec tool: structured_result=%#v resolved_value=%#v raw_result=%#v content=%q actual_type=%q stderr=%q stdout=%q",
-		r.StructuredResult, resolvedValue, out.RawResult, out.Content, out.ActualType, r.Stderr, r.Stdout)
+	common.Debug("CodeExec tool",
+		zap.Any("structured_result", r.StructuredResult),
+		zap.Any("resolved_value", resolvedValue),
+		zap.Any("raw_result", out.RawResult),
+		zap.String("content", out.Content),
+		zap.String("actual_type", out.ActualType),
+		zap.String("stderr", r.Stderr),
+		zap.String("stdout", r.Stdout))
 	b, err := json.Marshal(out)
 	if err != nil {
 		return "", fmt.Errorf("code_exec: marshal result: %w", err)

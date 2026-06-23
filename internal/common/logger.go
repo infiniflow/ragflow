@@ -17,23 +17,48 @@
 package common
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
+	"time"
 
+	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 var (
 	Logger      *zap.Logger
 	Sugar       *zap.SugaredLogger
-	levelMu     sync.RWMutex
 	atomicLevel zap.AtomicLevel
-	pkgLevels   map[string]string
+)
+
+// FileOutput describes the rotated log file destination.
+//
+// Path is required to enable file output; empty disables the file destination
+// (stdout only). When Path is set, the file is written under ./logs/<Path>
+// and rotated by lumberjack according to MaxSize / MaxBackups / MaxAge / Compress.
+//
+// Numeric zero values are replaced with defaults (100 MB / 10 / 30 days) inside
+// Init. Compress is left as the caller-provided value; the project default is
+// applied by callers (see resolveCompress) so that "not set" can be distinguished
+// from "explicitly false" via the *bool LogConfig.Compress field.
+type FileOutput struct {
+	Path       string
+	MaxSize    int
+	MaxBackups int
+	MaxAge     int
+	Compress   bool
+}
+
+const (
+	defaultMaxSizeMB  = 100
+	defaultMaxBackups = 10
+	defaultMaxAgeDays = 30
 )
 
 func parseZapLevel(level string) (zapcore.Level, error) {
@@ -62,111 +87,93 @@ func logLevelName(level zapcore.Level) string {
 	return strings.ToUpper(level.String())
 }
 
-func initPackageLogLevels(rootLevel zapcore.Level) {
-	levels := make(map[string]string)
-	for _, item := range strings.Split(os.Getenv("LOG_LEVELS"), ",") {
-		terms := strings.SplitN(item, "=", 2)
-		if len(terms) != 2 {
-			continue
-		}
-		pkgName := strings.TrimSpace(terms[0])
-		if pkgName == "" {
-			continue
-		}
-		level, err := parseZapLevel(terms[1])
-		if err != nil {
-			level = zapcore.InfoLevel
-		}
-		levels[pkgName] = logLevelName(level)
-	}
-	// I set it to align with python for now, we shall change it later before ragflow 1.0
-	if _, ok := levels["peewee"]; !ok {
-		levels["peewee"] = logLevelName(zapcore.WarnLevel)
-	}
-	if _, ok := levels["pdfminer"]; !ok {
-		levels["pdfminer"] = logLevelName(zapcore.WarnLevel)
-	}
-	if _, ok := levels["root"]; !ok {
-		levels["root"] = logLevelName(rootLevel)
-	}
-	pkgLevels = levels
-}
-
-// Init initializes the global logger
-// Note: This requires zap to be installed: go get go.uber.org/zap
-func Init(level string, logFile string) error {
+// Init initializes the global logger. stdout is always written. If file.Path
+// is non-empty, a rotated file is also written via lumberjack.
+//
+// Callers should pass a non-empty Path so that file logging is preserved
+// (each binary's hardcoded default goes through this parameter). The empty
+// path case is reserved for CLI mode where stdout is the only output.
+//
+// Numeric fields (MaxSize, MaxBackups, MaxAge) are defaulted to 100/10/30
+// when zero. Compress is taken as supplied.
+func Init(level string, file FileOutput) error {
 	zapLevel, err := parseZapLevel(level)
 	if err != nil {
 		zapLevel = zapcore.InfoLevel
 	}
 
-	// Create atomic level for dynamic updates
 	atomicLevel = zap.NewAtomicLevelAt(zapLevel)
 
-	// Custom encoder config to control output format
 	encoderConfig := zapcore.EncoderConfig{
 		TimeKey:        "timestamp",
 		LevelKey:       "level",
 		NameKey:        "logger",
-		CallerKey:      "", // Disable caller/line number
+		CallerKey:      "",
 		FunctionKey:    "",
 		MessageKey:     "msg",
 		StacktraceKey:  "stacktrace",
 		LineEnding:     zapcore.DefaultLineEnding,
 		EncodeLevel:    zapcore.LowercaseLevelEncoder,
-		EncodeTime:     zapcore.TimeEncoderOfLayout("2006-01-02 15:04:05"), // Human-readable time format
+		// RFC 3339 with fixed-width millisecond precision and explicit
+		// timezone offset (UTC rendered as "Z", other zones as "+HH:MM"
+		// / "-HH:MM"). Easier to ingest than the default "2006-01-02
+		// 15:04:05" layout — which had no ms and no zone — and avoids
+		// the variable-width output of RFC3339Nano.
+		EncodeTime:     zapcore.TimeEncoderOfLayout("2006-01-02T15:04:05.000Z07:00"),
 		EncodeDuration: zapcore.SecondsDurationEncoder,
-		EncodeCaller:   zapcore.ShortCallerEncoder, // Not used since CallerKey is empty
+		EncodeCaller:   zapcore.ShortCallerEncoder,
 	}
 
-	// Determine output paths
-	outputPaths := []string{"stdout"}
-	errorPaths := []string{"stderr"}
-	if logFile != "" {
-		logFile = filepath.Join("logs", logFile)
-		outputPaths = append(outputPaths, logFile)
-		errorPaths = append(errorPaths, logFile)
+	maxSize := file.MaxSize
+	if maxSize <= 0 {
+		maxSize = defaultMaxSizeMB
+	}
+	maxBackups := file.MaxBackups
+	if maxBackups <= 0 {
+		maxBackups = defaultMaxBackups
+	}
+	maxAge := file.MaxAge
+	if maxAge <= 0 {
+		maxAge = defaultMaxAgeDays
 	}
 
-	// Configure zap
-	config := zap.Config{
-		Level:            atomicLevel,
-		Development:      false,
-		Encoding:         "console",
-		EncoderConfig:    encoderConfig,
-		OutputPaths:      outputPaths,
-		ErrorOutputPaths: errorPaths,
+	syncers := []zapcore.WriteSyncer{zapcore.AddSync(os.Stdout)}
+	if file.Path != "" {
+		ljLogger := &lumberjack.Logger{
+			Filename:   filepath.Join("logs", file.Path),
+			MaxSize:    maxSize,
+			MaxBackups: maxBackups,
+			MaxAge:     maxAge,
+			Compress:   file.Compress,
+			LocalTime:  true,
+		}
+		syncers = append(syncers, zapcore.AddSync(ljLogger))
 	}
 
-	// Build logger
-	logger, err := config.Build(zap.AddCallerSkip(1))
-	if err != nil {
-		return err
-	}
+	core := zapcore.NewCore(
+		zapcore.NewConsoleEncoder(encoderConfig),
+		zap.CombineWriteSyncers(syncers...),
+		atomicLevel,
+	)
 
-	Logger = logger
-	Sugar = logger.Sugar()
-
-	levelMu.Lock()
-	initPackageLogLevels(zapLevel)
-	levelMu.Unlock()
+	Logger = zap.New(core, zap.AddCallerSkip(1))
+	Sugar = Logger.Sugar()
 
 	return nil
 }
 
-// Sync flushes any buffered log entries
+// Sync flushes any buffered log entries.
 func Sync() {
 	if Logger != nil {
 		_ = Logger.Sync()
 	}
 }
 
-// Fatal logs a fatal message using zap with caller info
+// Fatal logs a fatal message using zap with caller info, then calls os.Exit(1).
 func Fatal(msg string, fields ...zap.Field) {
 	if Logger == nil {
 		panic("logger not initialized")
 	}
-	// Get caller info (skip this function to get the actual caller)
 	_, file, line, ok := runtime.Caller(1)
 	if ok {
 		fields = append(fields, zap.String("caller", fmt.Sprintf("%s:%d", file, line)))
@@ -174,7 +181,7 @@ func Fatal(msg string, fields ...zap.Field) {
 	Logger.Fatal(msg, fields...)
 }
 
-// Info logs an info message using zap or standard logger
+// Info logs an info message.
 func Info(msg string, fields ...zap.Field) {
 	if Logger == nil {
 		return
@@ -182,15 +189,19 @@ func Info(msg string, fields ...zap.Field) {
 	Logger.Info(msg, fields...)
 }
 
-// Error logs an error message using zap or standard logger
-func Error(msg string, err error) {
+// Error logs an error message. err may be nil; if non-nil it is appended as
+// a zap.Error field. Additional fields follow.
+func Error(msg string, err error, fields ...zap.Field) {
 	if Logger == nil {
 		return
 	}
-	Logger.Error(msg, zap.Error(err))
+	if err != nil {
+		fields = append(fields, zap.Error(err))
+	}
+	Logger.Error(msg, fields...)
 }
 
-// Debug logs a debug message using zap or standard logger
+// Debug logs a debug message.
 func Debug(msg string, fields ...zap.Field) {
 	if Logger == nil {
 		return
@@ -198,7 +209,7 @@ func Debug(msg string, fields ...zap.Field) {
 	Logger.Debug(msg, fields...)
 }
 
-// Warn logs a warning message using zap or standard logger
+// Warn logs a warning message.
 func Warn(msg string, fields ...zap.Field) {
 	if Logger == nil {
 		return
@@ -206,63 +217,95 @@ func Warn(msg string, fields ...zap.Field) {
 	Logger.Warn(msg, fields...)
 }
 
-// IsDebugEnabled returns true if debug logging is enabled
+// IsDebugEnabled returns true if debug logging is enabled.
 func IsDebugEnabled() bool {
 	return atomicLevel.Enabled(zapcore.DebugLevel)
 }
 
-// GetLevel returns the current log level
+// GetLevel returns the current log level.
 func GetLevel() string {
-	levelMu.RLock()
-	defer levelMu.RUnlock()
 	return atomicLevel.String()
 }
 
-// GetLogLevels returns Python-compatible package log levels.
-func GetLogLevels() map[string]string {
-	levelMu.RLock()
-	defer levelMu.RUnlock()
-
-	levels := make(map[string]string, len(pkgLevels))
-	for pkgName, level := range pkgLevels {
-		levels[pkgName] = level
-	}
-	return levels
-}
-
-// SetLevel sets the log level at runtime
+// SetLevel sets the log level at runtime.
 func SetLevel(level string) error {
-	levelMu.Lock()
-	defer levelMu.Unlock()
-
 	zapLevel, err := parseZapLevel(level)
 	if err != nil {
 		return err
 	}
 	atomicLevel.SetLevel(zapLevel)
-	if pkgLevels == nil {
-		pkgLevels = make(map[string]string)
-	}
-	pkgLevels["root"] = logLevelName(zapLevel)
 	return nil
 }
 
-// SetPackageLogLevel sets a Python-compatible package log level at runtime.
-func SetPackageLogLevel(pkgName, level string) error {
-	zapLevel, err := parseZapLevel(level)
-	if err != nil {
-		return err
+// ResolveCompress applies the project default (true) when the config-level
+// Compress is nil. When non-nil, the operator's choice is used as-is.
+//
+// The project default is compression on; operators can opt out by setting
+// log.compress: false in service_conf.yaml. Because Go's bool zero value is
+// false and would otherwise be indistinguishable from "not set", the YAML
+// struct uses *bool and this helper resolves the defaulting at the cmd/
+// boundary. The *bool does not live in this file because FileOutput itself
+// takes a plain bool (the caller has already resolved the default by then).
+func ResolveCompress(c *bool) bool {
+	if c == nil {
+		return true
 	}
+	return *c
+}
 
-	levelMu.Lock()
-	defer levelMu.Unlock()
+// GinLogger returns a gin middleware that emits one log line per request
+// through Logger. Level is chosen by status:
+//
+//	5xx → Error (with err from c.Errors, or sentinel if none)
+//	4xx → Warn
+//	else → Info
+//
+// c.Errors content is always included as a zap.String("error", ...) field
+// when present, regardless of level. This is the project-standard HTTP
+// access log; it replaces gin.Logger() so every request line lands in the
+// same log file as the rest of the application.
+func GinLogger() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+		path := c.Request.URL.Path
+		raw := c.Request.URL.RawQuery
+		c.Next()
+		latency := time.Since(start)
+		status := c.Writer.Status()
+		if raw != "" {
+			path = path + "?" + raw
+		}
 
-	if pkgLevels == nil {
-		pkgLevels = make(map[string]string)
+		fields := []zap.Field{
+			zap.Int("status", status),
+			zap.String("method", c.Request.Method),
+			zap.String("path", path),
+			zap.Duration("latency", latency),
+			zap.String("client_ip", c.ClientIP()),
+			zap.Int("size", c.Writer.Size()),
+		}
+
+		var ginErr error
+		if len(c.Errors) > 0 {
+			last := c.Errors.Last()
+			fields = append(fields, zap.String("error", last.Error()))
+			ginErr = last.Err
+		}
+
+		msg := "HTTP request"
+		switch {
+		case status >= 500:
+			if ginErr == nil {
+				// Likely a panic recovered by gin.Recovery() with no c.Error attached.
+				// Use a sentinel so the err field is non-empty; operators can
+				// grep for this string in logs.
+				ginErr = errors.New("5xx response with no handler error attached")
+			}
+			Error(msg, ginErr, fields...)
+		case status >= 400:
+			Warn(msg, fields...)
+		default:
+			Info(msg, fields...)
+		}
 	}
-	pkgLevels[pkgName] = logLevelName(zapLevel)
-	if pkgName == "root" {
-		atomicLevel.SetLevel(zapLevel)
-	}
-	return nil
 }

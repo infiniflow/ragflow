@@ -4,13 +4,15 @@ package pregel
 import (
 	"context"
 	"fmt"
-	"log"
 	"reflect"
 	"sort"
 	"strings"
 	"sync"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	"ragflow/internal/harness/graph/checkpoint"
 	"ragflow/internal/harness/graph/channels"
 	"ragflow/internal/harness/graph/constants"
@@ -398,7 +400,7 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 					go func(cp map[string]interface{}, cpID string, s int) {
 						if err := e.saveCheckpoint(context.Background(), threadID, cpID, s, cp); err != nil {
 							// Log async error but don't fail execution
-							log.Printf("async checkpoint save failed: %v", err)
+							common.Error("async checkpoint save failed", err, zap.String("thread_id", threadID), zap.String("checkpoint_id", cpID), zap.Int("step", s))
 						}
 					}(checkpoint, checkpointID, step)
 				case types.DurabilityExit:

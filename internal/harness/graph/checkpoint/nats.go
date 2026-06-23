@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/harness/graph/constants"
+
 	"github.com/nats-io/nats.go/jetstream"
+	"go.uber.org/zap"
 )
 
 // NATSSaver implements BaseCheckpointer using NATS KV Store (JetStream-backed).
@@ -324,9 +326,7 @@ func (s *NATSSaver) collectGarbage() {
 	}
 
 	if purged > 0 {
-		// TODO: Replace with application-level structured logger when available.
-		// Using log.Printf as a lightweight fallback for GC events.
-		log.Printf("[NATSSaver] GC: purged %d completed graph instances (keys)", purged)
+		common.Info("NATSSaver GC purged completed graph instances", zap.Int("purged", purged))
 	}
 }
 
