@@ -297,17 +297,6 @@ async def add_llm():
     elif factory == "OpenDataLoader":
         api_key = apikey_json(["api_key", "provider_order"])
 
-    elif factory == "SoMark":
-        # Frontend sends api_key as a nested object containing the entire form
-        # payload (somark_base_url, somark_api_key, somark_*_format, switches, ...).
-        # Serialize it to JSON so the value round-trips correctly through the DB
-        # TextField; otherwise peewee falls back to Python's repr() which uses
-        # single quotes and is not JSON-loadable on read-back.
-        raw = req.get("api_key")
-        if isinstance(raw, dict):
-            req["api_key"] = json.dumps(raw, ensure_ascii=False)
-        api_key = req.get("api_key", "")
-
     llm = {
         "tenant_id": current_user.id,
         "llm_factory": factory,
@@ -431,8 +420,7 @@ async def add_llm():
             raise RuntimeError(f"Unknown model type: {model_type}")
 
     if req.get("verify", False):
-        stripped = msg.strip()
-        return get_json_result(data={"message": stripped, "success": len(stripped) == 0})
+        return get_json_result(data={"message": msg, "success": len(msg.strip()) == 0})
 
     if msg:
         return get_data_error_result(message=msg)

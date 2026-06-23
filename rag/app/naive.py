@@ -318,14 +318,9 @@ def by_somark(
     if tenant_id:
         if not somark_llm_name:
             try:
-                from api.db.services.tenant_llm_service import TenantLLMService
+                from api.db.joint_services.tenant_model_service import ensure_somark_from_env
 
-                env_name = TenantLLMService.ensure_somark_from_env(tenant_id)
-                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="SoMark", model_type=LLMType.OCR)
-                if candidates:
-                    somark_llm_name = candidates[0].llm_name
-                elif env_name:
-                    somark_llm_name = env_name
+                somark_llm_name = ensure_somark_from_env(tenant_id)
             except Exception as e:
                 logging.warning(f"fallback to env somark: {e}")
 

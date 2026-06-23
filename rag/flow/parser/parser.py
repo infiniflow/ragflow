@@ -514,12 +514,8 @@ class Parser(ProcessBase):
                 tenant_id = self._canvas._tenant_id
                 if not tenant_id:
                     return None
-                from api.db.services.tenant_llm_service import TenantLLMService
-                env_name = TenantLLMService.ensure_somark_from_env(tenant_id)
-                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="SoMark", model_type=LLMType.OCR.value)
-                if candidates:
-                    return candidates[0].llm_name
-                return env_name
+                from api.db.joint_services.tenant_model_service import ensure_somark_from_env
+                return ensure_somark_from_env(tenant_id)
 
             parser_model_name = resolve_somark_llm_name()
             if not parser_model_name:
