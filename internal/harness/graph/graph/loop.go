@@ -37,6 +37,17 @@ import (
 	"ragflow/internal/harness/graph/types"
 )
 
+// LoopStreamMode controls per-iteration streaming behaviour.
+// Default LoopStreamFinalOnly: only the final iteration result is returned.
+type LoopStreamMode int
+
+const (
+	// LoopStreamFinalOnly returns only the final iteration result (default).
+	LoopStreamFinalOnly LoopStreamMode = iota
+	// LoopStreamValues emits each iteration's output as a custom stream event.
+	LoopStreamValues
+)
+
 // LoopCondition is the per-iteration exit predicate invoked AFTER each
 // completed iteration. Return (true, nil) to terminate the loop; the
 // `next` value becomes the loop's final output.
@@ -49,6 +60,7 @@ type LoopOption func(*loopOptions)
 type loopOptions struct {
 	maxIterations      int
 	checkpointIDPrefix string
+	streamMode         LoopStreamMode
 }
 
 // WithLoopMaxIterations caps the loop at n iterations. Default 1024.
@@ -70,10 +82,21 @@ func WithLoopCheckpointIDPrefix(prefix string) LoopOption {
 	}
 }
 
+// WithLoopStream sets the loop's per-iteration streaming mode.
+// Default is LoopStreamFinalOnly (no intermediate events).
+func WithLoopStream(mode LoopStreamMode) LoopOption {
+	return func(o *loopOptions) {
+		if mode == LoopStreamValues || mode == LoopStreamFinalOnly {
+			o.streamMode = mode
+		}
+	}
+}
+
 func getLoopOptions(opts []LoopOption) *loopOptions {
 	o := &loopOptions{
 		maxIterations:      1024,
 		checkpointIDPrefix: "",
+		streamMode:         LoopStreamFinalOnly,
 	}
 	for _, opt := range opts {
 		opt(o)
@@ -89,12 +112,20 @@ var (
 )
 
 // loopStateCtxKey is the context key for storing loop sub-graph state
-// during checkpoint restore. It is separate from the interrupt resume
-// values so that UserFillUp's consumeNextResumeValue doesn't accidentally
-// consume the loop state instead of the user's follow-up input.
+// during checkpoint restore.
 type loopStateCtxKeyType struct{}
 
 var loopStateCtxKey = loopStateCtxKeyType{}
+
+// loopStreamWriterCtxKey is the context key for a StreamWriter that the
+// loop uses to emit per-iteration values.
+type loopStreamWriterCtxKey struct{}
+
+// WithLoopStreamWriter attaches a StreamWriter to the context so runLoop
+// can emit per-iteration stream events.
+func WithLoopStreamWriter(ctx context.Context, sw types.StreamWriter) context.Context {
+	return context.WithValue(ctx, loopStreamWriterCtxKey{}, sw)
+}
 
 // loopInterruptState is the JSON-serialised loop state saved when the
 // sub-graph emits an interrupt.
@@ -168,34 +199,28 @@ func runLoop(
 	} else {
 		current = input
 	}
-	// Guard against nil input. The sub-graph's inlineApplyInput
-	// (inlineToMap) fails on nil with "nil value". An empty map
-	// is safe and harmless for the first iteration.
+	// Guard against nil input.
 	if current == nil {
 		current = make(map[string]any)
 	}
 
 	iteration := startIteration
 
+	// Read optional stream writer from context.
+	streamWriter, _ := ctx.Value(loopStreamWriterCtxKey{}).(types.StreamWriter)
+
 	for {
 		// Build sub-checkpoint thread ID for this iteration.
 		subCheckpointID := fmt.Sprintf("%s:loop:%s:iter:%d", options.checkpointIDPrefix, key, iteration)
 
-		// Set up config for sub-graph invocation with per-iteration checkpoint.
+		// Set up config for sub-graph invocation.
 		subCfg := &types.RunnableConfig{Configurable: make(map[string]interface{})}
 		subCfg.Configurable["thread_id"] = subCheckpointID
 
 		// Invoke sub-graph.
 		next, invokeErr := sub.Invoke(ctx, current, subCfg)
 		if invokeErr != nil {
-			// Check if it's an interrupt from the sub-graph.
 			if interrupt.IsInterrupt(invokeErr) {
-				// Encode loop state and re-throw via interrupt.Interrupt
-				// so the outer engine receives a GraphInterrupt with a
-				// non-nil Interrupts list (required for the engine's
-				// IsGraphInterrupt→interrupt detection chain).  Preserve
-				// the original UserFillUp value inside the state so
-				// MustExtractInterruptContexts can extract tips/cpn_id.
 				currentJSON, mErr := json.Marshal(current)
 				if mErr != nil {
 					return nil, fmt.Errorf("graph: loop marshal state: %w", mErr)
@@ -212,9 +237,6 @@ func runLoop(
 					CurrentInput:    currentJSON,
 					UserFillUpValue: fillUpJSON,
 				}
-				// Marshal loopState to JSON so MustExtractInterruptContexts
-				// can decode it as map[string]any and extract the UserFillUp
-				// tips via the user_fill_up_value key.
 				loopRaw, mErr2 := json.Marshal(loopState)
 				if mErr2 != nil {
 					return nil, fmt.Errorf("graph: loop marshal interrupt state: %w", mErr2)
@@ -226,6 +248,15 @@ func runLoop(
 				return nil, interruptErr
 			}
 			return nil, fmt.Errorf("graph: loop iteration %d: %w", iteration, invokeErr)
+		}
+
+		// Emit per-iteration stream event when streaming is enabled.
+		if options.streamMode == LoopStreamValues && streamWriter != nil {
+			streamWriter(map[string]interface{}{
+				"node":      key,
+				"iteration": iteration,
+				"output":    next,
+			})
 		}
 
 		// Evaluate the quit predicate.
@@ -250,7 +281,6 @@ func runLoop(
 // during checkpoint restore). Falls back to interrupt resume values for
 // backward compatibility.
 func loadLoopSnapshot(ctx context.Context) (loopInterruptState, bool) {
-	// Check context key first (set by engine's checkpoint restore).
 	if ctx != nil {
 		if v := ctx.Value(interrupt.SubGraphStateCtxKey); v != nil {
 			switch tv := v.(type) {
@@ -262,8 +292,6 @@ func loadLoopSnapshot(ctx context.Context) (loopInterruptState, bool) {
 			}
 		}
 	}
-	// Fallback: interrupt resume values (deprecated, remove when
-	// engine.go and graph.go are migrated to loopStateCtxKey).
 	values := interrupt.GetResumeValues(ctx)
 	for _, v := range values {
 		switch tv := v.(type) {
