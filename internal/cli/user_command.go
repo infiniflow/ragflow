@@ -1316,56 +1316,6 @@ func (c *CLI) ShowInstanceBalance(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// AlterProviderInstance renames a provider instance
-// ALTER INSTANCE <name> NAME <new_name> FROM PROVIDER <name>
-func (c *CLI) AlterProviderInstance(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != APIMode {
-		return nil, fmt.Errorf("this command is only allowed in USER mode")
-	}
-
-	instanceName, ok := cmd.Params["instance_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("instance name not provided")
-	}
-
-	newName, ok := cmd.Params["new_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("new name not provided")
-	}
-
-	providerName, ok := cmd.Params["provider_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("provider name not provided")
-	}
-
-	url := fmt.Sprintf("/providers/%s/instances/%s", providerName, instanceName)
-
-	payload := map[string]interface{}{
-		"llm_name": newName,
-	}
-
-	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("PUT", url, "web", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to alter instance: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to alter instance: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result SimpleResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("alter instance failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
-}
-
 // DropProviderInstance deletes a provider instance
 // DROP INSTANCE <name> FROM PROVIDER <name>
 func (c *CLI) DropProviderInstance(cmd *Command) (ResponseIf, error) {
@@ -1457,50 +1407,6 @@ func (c *CLI) DropInstanceModel(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("%s", result.Message)
 	}
 
-	result.Duration = resp.Duration
-	return &result, nil
-}
-
-func (c *CLI) EnableOrDisableModel(cmd *Command, status string) (ResponseIf, error) {
-	if c.Config.CLIMode != APIMode {
-		return nil, fmt.Errorf("this command is only allowed in USER mode")
-	}
-
-	modelName, ok := cmd.Params["model_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("model name not provided")
-	}
-
-	instanceName, ok := cmd.Params["instance_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("instance name not provided")
-	}
-
-	providerName, ok := cmd.Params["provider_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("provider name not provided")
-	}
-
-	url := fmt.Sprintf("/providers/%s/instances/%s/models/%s", providerName, instanceName, modelName)
-
-	payload := map[string]interface{}{
-		"status": status,
-	}
-
-	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("PATCH", url, "web", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to enable/disable model: %w", err)
-	}
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to enable/disable model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-	var result SimpleResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("enable/disable model failed: invalid JSON (%w)", err)
-	}
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
 	result.Duration = resp.Duration
 	return &result, nil
 }

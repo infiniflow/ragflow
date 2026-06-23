@@ -253,6 +253,19 @@ func (s *Service) CheckProviderConnection(userID, providerName, region, apiKey, 
 	}, nil
 }
 
+// AlterProviderInstance alter provider instance
+func (s *Service) AlterProviderInstance(userID, providerName, instanceName, newInstanceName, newAPIKey string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":           "alter_provider_instance",
+		"user_id":           userID,
+		"provider_id":       providerName,
+		"instance_name":     instanceName,
+		"new_instance_name": newInstanceName,
+		"new_api_key":       newAPIKey,
+		"error":             "'alter provider instance' is implemented in enterprise edition",
+	}, nil
+}
+
 // AddModelInstance Add model instance
 func (s *Service) AddModelInstance(userID, providerName, instanceName string) (map[string]interface{}, error) {
 

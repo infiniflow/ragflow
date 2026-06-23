@@ -187,7 +187,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.GET("/:provider_name/instances/:instance_name/balance", r.handler.ShowProviderInstanceBalance)
 				provider.GET("/:provider_name/instances/:instance_name/connection", r.handler.CheckInstanceConnection)
 				provider.GET("/:provider_name/connection", r.handler.CheckProviderConnection)
-				//	provider.PUT("/:provider_name/instances/:instance_name", r.handler.AlterProviderInstance)
+				provider.PUT("/:provider_name/instances/:instance_name", r.handler.AlterProviderInstance)
 				provider.DELETE("/:provider_name/instances", r.handler.DeleteModelInstance)
 				provider.GET("/:provider_name/instances/:instance_name/models", r.handler.ListInstanceModels)
 				//	provider.PATCH("/:provider_name/instances/:instance_name/models/*model_name", r.handler.EnableOrDisableModel)

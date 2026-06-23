@@ -587,6 +587,57 @@ func (h *Handler) CheckProviderConnection(c *gin.Context) {
 	success(c, result, "Model instance connection checked successfully")
 }
 
+type AlterProviderInstanceRequest struct {
+	ModelName string `json:"model_name"`
+	APIKey    string `json:"api_key"`
+}
+
+func (h *Handler) AlterProviderInstance(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+
+	var req AlterProviderInstanceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+	if userID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeUnauthorized,
+			"message": "Unauthorized",
+		})
+		return
+	}
+
+	result, err := h.service.AlterProviderInstance(userID, providerName, instanceName, req.ModelName, req.APIKey)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Model instance altered successfully")
+}
+
 func (h *Handler) AddModelInstance(c *gin.Context) {
 	var req AddModelInstanceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

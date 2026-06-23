@@ -75,6 +75,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminAlterUserPassword(cmd)
 	case "admin_alter_role":
 		return c.AdminAlterRole(cmd)
+	case "admin_alter_provider_instance":
+		return c.CommonAlterProviderInstanceCommand(cmd)
 	case "admin_drop_user":
 		return c.AdminDropUserCommand(cmd)
 	case "admin_drop_user_api_key":
@@ -351,7 +353,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "show_instance_balance":
 		return c.ShowInstanceBalance(cmd)
 	case "alter_provider_instance":
-		return c.AlterProviderInstance(cmd)
+		return c.CommonAlterProviderInstanceCommand(cmd)
 	case "drop_provider_instance":
 		return c.DropProviderInstance(cmd)
 	case "drop_instance_model":

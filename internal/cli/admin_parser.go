@@ -1244,6 +1244,8 @@ func (p *Parser) parseAdminAlterCommands() (*Command, error) {
 		return p.parseAdminAlterUser()
 	case TokenRole:
 		return p.parseAdminAlterRole()
+	case TokenProvider:
+		return p.parseAdminAlterProvider()
 	default:
 		return nil, fmt.Errorf("unknown ALTER target: %s", p.curToken.Value)
 	}
@@ -1369,6 +1371,67 @@ func (p *Parser) parseAdminAlterRole() (*Command, error) {
 	cmd.Params["role_name"] = roleName
 	cmd.Params["description"] = description
 
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminAlterProvider() (*Command, error) {
+	p.nextToken() // consume PROVIDER
+
+	providerName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenInstance {
+		return nil, fmt.Errorf("expected INSTANCE")
+	}
+	p.nextToken()
+	instanceName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	newModelName := ""
+	newAPIKey := ""
+optionsLoop:
+	for {
+		switch p.curToken.Type {
+		case TokenName:
+			p.nextToken()
+			newModelName, err = p.parseQuotedString()
+			if err != nil {
+				return nil, fmt.Errorf("expected model name: %w", err)
+			}
+			p.nextToken()
+		case TokenKey:
+			p.nextToken()
+			newAPIKey, err = p.parseQuotedString()
+			if err != nil {
+				return nil, fmt.Errorf("expected API key: %w", err)
+			}
+			p.nextToken()
+		default:
+			break optionsLoop
+		}
+	}
+
+	if newModelName == "" && newAPIKey == "" {
+		return nil, fmt.Errorf("expected NAME or KEY after INSTANCE")
+	}
+
+	cmd := NewCommand("admin_alter_provider_instance")
+	cmd.Params["provider_name"] = providerName
+	cmd.Params["instance_name"] = instanceName
+	cmd.Params["new_model_name"] = newModelName
+	cmd.Params["new_api_key"] = newAPIKey
+
+	p.nextToken()
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
