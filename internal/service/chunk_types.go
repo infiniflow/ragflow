@@ -164,6 +164,7 @@ func (s *ChunkService) Get(req *GetChunkRequest, userID string) (*GetChunkRespon
 
 // ListChunksRequest request for listing chunks
 type ListChunksRequest struct {
+	DatasetID    string `json:"dataset_id,omitempty"`
 	DocID        string `json:"doc_id" binding:"required"`
 	Page         *int   `json:"page,omitempty"`
 	Size         *int   `json:"size,omitempty"`
@@ -203,6 +204,9 @@ func (s *ChunkService) List(req *ListChunksRequest, userID string) (*ListChunksR
 	docDAO := dao.NewDocumentDAO()
 	doc, err := docDAO.GetByID(req.DocID)
 	if err != nil || doc == nil {
+		return nil, fmt.Errorf("document not found")
+	}
+	if req.DatasetID != "" && doc.KbID != req.DatasetID {
 		return nil, fmt.Errorf("document not found")
 	}
 
