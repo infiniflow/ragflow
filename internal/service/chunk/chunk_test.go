@@ -1,17 +1,24 @@
 package chunk
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
+	"image"
+	"image/color"
+	"image/png"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/service"
+	"ragflow/internal/storage"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -629,6 +636,90 @@ func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
 	}
 }
 
+func TestAddChunkSkipsStatsForExistingChunk(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	userID, datasetID, documentID := "user-1", "kb-1", "doc-1"
+	insertChunkTestKB(t, datasetID, userID)
+	insertChunkTestDoc(t, documentID, datasetID)
+
+	var incrementCalls int
+	engine := &addChunkTestEngine{
+		getChunkResp: map[string]interface{}{"id": "existing"},
+	}
+	svc := &ChunkService{
+		docEngine:      engine,
+		kbDAO:          dao.NewKnowledgebaseDAO(),
+		documentDAO:    dao.NewDocumentDAO(),
+		accessibleFunc: func(string, string) bool { return true },
+		getKnowledgebaseByIDFunc: func(id string) (*entity.Knowledgebase, error) {
+			return &entity.Knowledgebase{ID: id, TenantID: userID, EmbdID: "embed-1"}, nil
+		},
+		getEmbeddingModelFunc: func(string, string) (*models.EmbeddingModel, error) {
+			driver := &stubEmbeddingDriver{
+				embeddings: []models.EmbeddingData{
+					{Embedding: []float64{1, 2}},
+					{Embedding: []float64{3, 4}},
+				},
+			}
+			modelName := "embed-1"
+			return models.NewEmbeddingModel(driver, &modelName, &models.APIConfig{}, 0), nil
+		},
+		incrementChunkStatsFunc: func(string, string, int64, int64, float64) error {
+			incrementCalls++
+			return nil
+		},
+		tokenizeFunc:            func(text string) (string, error) { return text, nil },
+		fineGrainedTokenizeFunc: func(text string) (string, error) { return text + "_fg", nil },
+		numTokensFunc:           func(text string) int { return len(text) },
+	}
+
+	_, err := svc.AddChunk(&service.AddChunkRequest{
+		DatasetID:  datasetID,
+		DocumentID: documentID,
+		Content:    "chunk body",
+	}, userID)
+	if err != nil {
+		t.Fatalf("AddChunk() error = %v", err)
+	}
+	if incrementCalls != 0 {
+		t.Fatalf("increment calls = %d, want 0", incrementCalls)
+	}
+}
+
+func TestDecodeChunkImageBase64RejectsOversizedPayload(t *testing.T) {
+	raw := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{'a'}, maxChunkImageBytes+1))
+	_, err := decodeChunkImageBase64(raw)
+	if err == nil || !strings.Contains(err.Error(), "exceeds the maximum allowed size") {
+		t.Fatalf("expected size limit error, got %v", err)
+	}
+}
+
+func TestStoreChunkImageRejectsOversizedCombinedImage(t *testing.T) {
+	oldImage := mustEncodePNG(t, image.Rect(0, 0, 4000, 3000))
+	newImage := mustEncodePNG(t, image.Rect(0, 0, 4000, 2001))
+	mockStorage := &chunkImageStorage{
+		exists:    true,
+		oldBinary: oldImage,
+	}
+
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() {
+		factory.SetStorage(originalStorage)
+	})
+
+	svc := &ChunkService{}
+	err := svc.storeChunkImage("kb-1", "chunk-1", newImage)
+	if err == nil || !strings.Contains(err.Error(), "exceed") {
+		t.Fatalf("expected combined image size error, got %v", err)
+	}
+	if mockStorage.putCalls != 0 {
+		t.Fatalf("unexpected put call count: %d", mockStorage.putCalls)
+	}
+}
+
 func setupChunkTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
@@ -843,6 +934,8 @@ type addChunkTestEngine struct {
 	insertIndex    string
 	insertDataset  string
 	insertErr      error
+	getChunkResp   interface{}
+	getChunkErr    error
 }
 
 func (e *addChunkTestEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, baseName string, datasetID string) ([]string, error) {
@@ -850,6 +943,51 @@ func (e *addChunkTestEngine) InsertChunks(_ context.Context, chunks []map[string
 	e.insertIndex = baseName
 	e.insertDataset = datasetID
 	return nil, e.insertErr
+}
+
+func (e *addChunkTestEngine) GetChunk(context.Context, string, string, []string) (interface{}, error) {
+	return e.getChunkResp, e.getChunkErr
+}
+
+type chunkImageStorage struct {
+	exists    bool
+	oldBinary []byte
+	putCalls  int
+}
+
+func (s *chunkImageStorage) Health() bool { return true }
+func (s *chunkImageStorage) Put(bucket, fnm string, binary []byte, tenantID ...string) error {
+	s.putCalls++
+	return nil
+}
+func (s *chunkImageStorage) Get(bucket, fnm string, tenantID ...string) ([]byte, error) {
+	return s.oldBinary, nil
+}
+func (s *chunkImageStorage) Remove(bucket, fnm string, tenantID ...string) error  { return nil }
+func (s *chunkImageStorage) ObjExist(bucket, fnm string, tenantID ...string) bool { return s.exists }
+func (s *chunkImageStorage) GetPresignedURL(bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
+	return "", nil
+}
+func (s *chunkImageStorage) BucketExists(bucket string) bool                           { return true }
+func (s *chunkImageStorage) RemoveBucket(bucket string) error                          { return nil }
+func (s *chunkImageStorage) Copy(srcBucket, srcPath, destBucket, destPath string) bool { return false }
+func (s *chunkImageStorage) Move(srcBucket, srcPath, destBucket, destPath string) bool { return false }
+
+func mustEncodePNG(t *testing.T, rect image.Rectangle) []byte {
+	t.Helper()
+
+	img := image.NewRGBA(rect)
+	for y := rect.Min.Y; y < rect.Max.Y; y++ {
+		for x := rect.Min.X; x < rect.Max.X; x++ {
+			img.Set(x, y, color.White)
+		}
+	}
+
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("encode png: %v", err)
+	}
+	return buf.Bytes()
 }
 
 type stubEmbeddingDriver struct {

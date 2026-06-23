@@ -512,11 +512,30 @@ func (h *ChunkHandler) AddChunk(c *gin.Context) {
 	userID := user.ID
 	datasetID, documentID := strings.TrimSpace(c.Param("dataset_id")), strings.TrimSpace(c.Param("document_id"))
 
-	req := service.AddChunkRequest{}
-	req.DatasetID, req.DocumentID = datasetID, documentID
-	if err := c.ShouldBindJSON(&req); err != nil {
+	type addChunkBody struct {
+		Content           string      `json:"content"`
+		ImportantKeywords []string    `json:"important_keywords,omitempty"`
+		Questions         []string    `json:"questions,omitempty"`
+		TagKwd            []string    `json:"tag_kwd,omitempty"`
+		TagFeas           interface{} `json:"tag_feas,omitempty"`
+		ImageBase64       *string     `json:"image_base64,omitempty"`
+	}
+
+	body := addChunkBody{}
+	if err := c.ShouldBindJSON(&body); err != nil {
 		jsonError(c, common.CodeArgumentError, err.Error())
 		return
+	}
+
+	req := service.AddChunkRequest{
+		DatasetID:         datasetID,
+		DocumentID:        documentID,
+		Content:           body.Content,
+		ImportantKeywords: body.ImportantKeywords,
+		Questions:         body.Questions,
+		TagKwd:            body.TagKwd,
+		TagFeas:           body.TagFeas,
+		ImageBase64:       body.ImageBase64,
 	}
 
 	resp, err := h.chunkService.AddChunk(&req, userID)

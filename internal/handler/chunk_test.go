@@ -347,6 +347,37 @@ func TestChunkHandlerAddChunkSuccess(t *testing.T) {
 	}
 }
 
+func TestChunkHandlerAddChunkPathIDsOverrideBody(t *testing.T) {
+	mock := &mockChunkSvc{
+		addChunkFn: func(req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
+			if req.DatasetID != "kb1" || req.DocumentID != "doc1" {
+				t.Fatalf("path IDs were not preserved: %#v", req)
+			}
+			if req.Content != "chunk body" {
+				t.Fatalf("unexpected content: %#v", req)
+			}
+			return &service.AddChunkResponse{Chunk: map[string]interface{}{"id": "chunk-1"}}, nil
+		},
+	}
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("user", &entity.User{ID: "user1"})
+	})
+	h := &ChunkHandler{chunkService: mock}
+	r.POST("/api/v1/datasets/:dataset_id/documents/:document_id/chunks", h.AddChunk)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/datasets/kb1/documents/doc1/chunks", strings.NewReader(`{"dataset_id":"evil-kb","document_id":"evil-doc","content":"chunk body"}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestChunkHandlerAddChunkCodedError(t *testing.T) {
 	mock := &mockChunkSvc{
 		addChunkFn: func(req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {

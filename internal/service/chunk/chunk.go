@@ -41,6 +41,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	_ "image/gif"
@@ -64,7 +65,11 @@ import (
 const (
 	maximumPageNumber     = 100000
 	maximumTaskPageNumber = maximumPageNumber * 1000
+	maxChunkImageBytes    = 10 << 20
+	maxChunkImagePixels   = 16_000_000
 )
+
+var chunkImageMergeMu sync.Map
 
 // ChunkService chunk service
 type ChunkService struct {
@@ -1587,6 +1592,11 @@ func (s *ChunkService) AddChunk(req *service.AddChunkRequest, userID string) (*s
 	}
 
 	chunkID := strconv.FormatUint(xxhash.Sum64([]byte(req.Content+req.DocumentID)), 16)
+	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
+	chunkExists, err := s.chunkExists(indexName, chunkID, req.DatasetID)
+	if err != nil {
+		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("check chunk existence: %v", err)}
+	}
 	contentLtks, err := s.tokenize(req.Content)
 	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("tokenize content: %v", err)}
@@ -1665,16 +1675,17 @@ func (s *ChunkService) AddChunk(req *service.AddChunkRequest, userID string) (*s
 	}
 	chunkData[fmt.Sprintf("q_%d_vec", len(mergedVec))] = mergedVec
 
-	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
 	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Second)
 	defer cancel()
 	if _, err := s.docEngine.InsertChunks(ctx, []map[string]interface{}{chunkData}, indexName, req.DatasetID); err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("insert chunk: %v", err)}
 	}
 
-	tokenNum := int64(s.numTokens(docName) + s.numTokens(embeddingText))
-	if err := s.incrementChunkStats(req.DocumentID, req.DatasetID, tokenNum, 1, 0); err != nil {
-		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("increment chunk stats: %v", err)}
+	if !chunkExists {
+		tokenNum := int64(s.numTokens(docName) + s.numTokens(embeddingText))
+		if err := s.incrementChunkStats(req.DocumentID, req.DatasetID, tokenNum, 1, 0); err != nil {
+			return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("increment chunk stats: %v", err)}
+		}
 	}
 
 	importantKeywords := req.ImportantKeywords
@@ -1764,7 +1775,23 @@ func decodeChunkImageBase64(raw string) ([]byte, error) {
 	if len(imageBinary) == 0 {
 		return nil, fmt.Errorf("`image_base64` is empty")
 	}
+	if len(imageBinary) > maxChunkImageBytes {
+		return nil, fmt.Errorf("`image_base64` exceeds the maximum allowed size")
+	}
 	return imageBinary, nil
+}
+
+func validateChunkImageBounds(width, height int) error {
+	if width <= 0 || height <= 0 {
+		return fmt.Errorf("invalid image dimensions")
+	}
+	if width > maxChunkImagePixels || height > maxChunkImagePixels {
+		return fmt.Errorf("image dimensions exceed the maximum allowed size")
+	}
+	if width > maxChunkImagePixels/height {
+		return fmt.Errorf("image dimensions exceed the maximum allowed size")
+	}
+	return nil
 }
 
 func mergeChunkEmbeddings(a, b []float64) ([]float64, error) {
@@ -1817,6 +1844,17 @@ func (s *ChunkService) getEmbeddingModel(tenantID, embdID string) (*models.Embed
 	return service.NewModelProviderService().GetEmbeddingModel(tenantID, embdID)
 }
 
+func (s *ChunkService) chunkExists(indexName, chunkID, datasetID string) (bool, error) {
+	if s.docEngine == nil {
+		return false, fmt.Errorf("doc engine not initialized")
+	}
+	chunk, err := s.docEngine.GetChunk(context.Background(), indexName, chunkID, []string{datasetID})
+	if err != nil {
+		return false, err
+	}
+	return chunk != nil, nil
+}
+
 func (s *ChunkService) incrementChunkStats(docID, kbID string, tokenNum, chunkNum int64, duration float64) error {
 	if s.incrementChunkStatsFunc != nil {
 		return s.incrementChunkStatsFunc(docID, kbID, tokenNum, chunkNum, duration)
@@ -1860,6 +1898,10 @@ func (s *ChunkService) storeChunkImage(bucket, chunkID string, imageBinary []byt
 	if storageImpl == nil {
 		return fmt.Errorf("storage not initialized")
 	}
+	lock, _ := chunkImageMergeMu.LoadOrStore(bucket+"/"+chunkID, &sync.Mutex{})
+	lock.(*sync.Mutex).Lock()
+	defer lock.(*sync.Mutex).Unlock()
+
 	if !storageImpl.ObjExist(bucket, chunkID) {
 		return storageImpl.Put(bucket, chunkID, imageBinary)
 	}
@@ -1868,6 +1910,29 @@ func (s *ChunkService) storeChunkImage(bucket, chunkID string, imageBinary []byt
 	if err != nil {
 		return err
 	}
+	oldCfg, _, err := image.DecodeConfig(bytes.NewReader(oldBinary))
+	if err != nil {
+		return err
+	}
+	if err := validateChunkImageBounds(oldCfg.Width, oldCfg.Height); err != nil {
+		return err
+	}
+	newCfg, _, err := image.DecodeConfig(bytes.NewReader(imageBinary))
+	if err != nil {
+		return err
+	}
+	if err := validateChunkImageBounds(newCfg.Width, newCfg.Height); err != nil {
+		return err
+	}
+	width := oldCfg.Width
+	if newCfg.Width > width {
+		width = newCfg.Width
+	}
+	height := oldCfg.Height + newCfg.Height
+	if err := validateChunkImageBounds(width, height); err != nil {
+		return err
+	}
+
 	oldImage, _, err := image.Decode(bytes.NewReader(oldBinary))
 	if err != nil {
 		return err
@@ -1877,11 +1942,11 @@ func (s *ChunkService) storeChunkImage(bucket, chunkID string, imageBinary []byt
 		return err
 	}
 	oldBounds, newBounds := oldImage.Bounds(), newImage.Bounds()
-	width := oldBounds.Dx()
+	width = oldBounds.Dx()
 	if newBounds.Dx() > width {
 		width = newBounds.Dx()
 	}
-	height := oldBounds.Dy() + newBounds.Dy()
+	height = oldBounds.Dy() + newBounds.Dy()
 	combined := image.NewRGBA(image.Rect(0, 0, width, height))
 	draw.Draw(combined, combined.Bounds(), &image.Uniform{C: color.White}, image.Point{}, draw.Src)
 	draw.Draw(combined, oldBounds, oldImage, oldBounds.Min, draw.Src)
