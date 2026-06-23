@@ -295,7 +295,7 @@ func (h *Handler) CreateUser(c *gin.Context) {
 // GetUser handle get user
 func (h *Handler) GetUser(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -321,7 +321,7 @@ func (h *Handler) GetUser(c *gin.Context) {
 // DeleteUser handle delete user
 func (h *Handler) DeleteUser(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -353,7 +353,7 @@ type ChangePasswordHTTPRequest struct {
 // ChangePassword handle change password
 func (h *Handler) ChangePassword(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -385,7 +385,7 @@ type UpdateActivateStatusHTTPRequest struct {
 // UpdateUserActivateStatus handle update user activate status
 func (h *Handler) UpdateUserActivateStatus(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -418,7 +418,7 @@ func (h *Handler) UpdateUserActivateStatus(c *gin.Context) {
 // GrantAdmin handle grant admin role
 func (h *Handler) GrantAdmin(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -446,7 +446,7 @@ func (h *Handler) GrantAdmin(c *gin.Context) {
 // RevokeAdmin handle revoke admin role
 func (h *Handler) RevokeAdmin(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -474,7 +474,7 @@ func (h *Handler) RevokeAdmin(c *gin.Context) {
 // ListUserAPITokens handle get user API keys
 func (h *Handler) ListUserAPITokens(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -496,7 +496,7 @@ func (h *Handler) ListUserAPITokens(c *gin.Context) {
 // GenerateUserAPIToken handle generate user API key
 func (h *Handler) GenerateUserAPIToken(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -518,7 +518,7 @@ func (h *Handler) GenerateUserAPIToken(c *gin.Context) {
 // DeleteUserAPIToken handle delete user API key
 func (h *Handler) DeleteUserAPIToken(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
