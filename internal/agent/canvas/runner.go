@@ -370,7 +370,7 @@ func (r *Runner) Run(
 			if errors.Is(runErr, context.Canceled) || errors.Is(runErr, errCancelled) {
 				return
 			}
-		if ctxs := MustExtractInterruptContexts(runErr); len(ctxs) > 0 {
+			if ctxs := MustExtractInterruptContexts(runErr); len(ctxs) > 0 {
 				cpnID := FirstInterruptID(ctxs)
 				r.saveInterruptID(canvasID, sessionID, cpnID)
 				common.Info("canvas runner interrupt",

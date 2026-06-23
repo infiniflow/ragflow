@@ -40,8 +40,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"ragflow/internal/common"
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 )
 
 // nodeBodyFn is the plain function shape for a canvas node body.
