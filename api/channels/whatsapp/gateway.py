@@ -47,6 +47,8 @@ class WhatsAppGatewayRuntime:
     def __init__(self) -> None:
         self._process: Optional[asyncio.subprocess.Process] = None
         self._lock = asyncio.Lock()
+        self._install_lock = asyncio.Lock()
+        self._sync_generation = 0
 
     def _config(self) -> WhatsAppGatewayConfig:
         workdir = os.getenv("WHATSAPP_GATEWAY_WORKDIR", "").strip()
@@ -63,53 +65,66 @@ class WhatsAppGatewayRuntime:
         cfg = self._config()
         should_run = bool(enabled and cfg.enabled and cfg.command)
         async with self._lock:
-            if should_run:
-                await self._ensure_dependencies_locked(cfg)
-                await self._start_locked(cfg)
-            else:
+            self._sync_generation += 1
+            generation = self._sync_generation
+            if not should_run:
                 await self._stop_locked()
+                return
+            if self.is_running():
+                return
 
-    async def _ensure_dependencies_locked(self, cfg: WhatsAppGatewayConfig) -> None:
+        await self._ensure_dependencies(cfg)
+
+        async with self._lock:
+            if generation != self._sync_generation:
+                return
+            if not should_run:
+                await self._stop_locked()
+                return
+            await self._start_locked(cfg)
+
+    async def _ensure_dependencies(self, cfg: WhatsAppGatewayConfig) -> None:
         global _deps_install_warned
         if not _env_flag("WHATSAPP_GATEWAY_AUTO_INSTALL", True):
             return
 
-        gateway_dir = Path(cfg.cwd)
-        node_modules = gateway_dir / "node_modules"
-        if node_modules.exists():
-            return
+        async with self._install_lock:
+            gateway_dir = Path(cfg.cwd)
+            node_modules = gateway_dir / "node_modules"
+            if node_modules.exists():
+                return
 
-        npm = shutil.which("npm")
-        if not npm:
-            if not _deps_install_warned:
-                LOGGER.warning(
-                    "npm is not available; WhatsApp gateway dependencies cannot be installed automatically"
-                )
-                _deps_install_warned = True
-            return
+            npm = shutil.which("npm")
+            if not npm:
+                if not _deps_install_warned:
+                    LOGGER.warning(
+                        "npm is not available; WhatsApp gateway dependencies cannot be installed automatically"
+                    )
+                    _deps_install_warned = True
+                return
 
-        package_json = gateway_dir / "package.json"
-        if not package_json.exists():
-            LOGGER.warning("WhatsApp gateway package.json not found in %s", gateway_dir)
-            return
+            package_json = gateway_dir / "package.json"
+            if not package_json.exists():
+                LOGGER.warning("WhatsApp gateway package.json not found in %s", gateway_dir)
+                return
 
-        LOGGER.info("installing WhatsApp gateway dependencies in %s", gateway_dir)
-        proc = await asyncio.create_subprocess_exec(
-            npm,
-            "install",
-            "--no-fund",
-            "--no-audit",
-            cwd=str(gateway_dir),
-        )
-        try:
-            code = await asyncio.wait_for(proc.wait(), timeout=300)
-        except asyncio.TimeoutError as ex:
-            proc.kill()
-            await proc.wait()
-            raise RuntimeError("npm install timed out after 300s") from ex
-        if code != 0:
-            raise RuntimeError(f"npm install failed with exit code {code}")
-        _deps_install_warned = False
+            LOGGER.info("installing WhatsApp gateway dependencies in %s", gateway_dir)
+            proc = await asyncio.create_subprocess_exec(
+                npm,
+                "install",
+                "--no-fund",
+                "--no-audit",
+                cwd=str(gateway_dir),
+            )
+            try:
+                code = await asyncio.wait_for(proc.wait(), timeout=300)
+            except asyncio.TimeoutError as ex:
+                proc.kill()
+                await proc.wait()
+                raise RuntimeError("npm install timed out after 300s") from ex
+            if code != 0:
+                raise RuntimeError(f"npm install failed with exit code {code}")
+            _deps_install_warned = False
 
     async def _start_locked(self, cfg: WhatsAppGatewayConfig) -> None:
         global _missing_command_warned

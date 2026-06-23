@@ -366,6 +366,9 @@ class WhatsAppSession {
     this.connectedAt = 0;
     this.sessionId = '';
     this.lastSnapshotAt = now();
+    this.subscribers.clear();
+    this.events = [];
+    this.messageStore.clear();
   }
 }
 

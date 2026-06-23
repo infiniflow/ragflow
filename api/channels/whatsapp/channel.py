@@ -53,6 +53,7 @@ class WhatsAppChannel(Channel):
         self.account_id = account.account_id
         self._task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
+        self._lifecycle_lock = asyncio.Lock()
         self._http_session: Optional[aiohttp.ClientSession] = None
         self._status: str = "stopped"
         self._last_error: str = ""
@@ -126,8 +127,13 @@ class WhatsAppChannel(Channel):
                 raise RuntimeError(f"status: {resp.status}, response: {text}")
             if not text.strip():
                 return {}
+            content_type = resp.headers.get("content-type", "")
+            if "application/json" not in content_type.lower():
+                raise RuntimeError(
+                    f"unexpected response content-type: {content_type or 'unknown'}, response: {text[:200]}"
+                )
             try:
-                return await resp.json(content_type=None)
+                return await resp.json()
             except Exception as ex:
                 raise RuntimeError(f"invalid json response: {text[:200]}") from ex
 
@@ -150,47 +156,50 @@ class WhatsAppChannel(Channel):
         return await self._request_json(method, path, payload)
 
     async def start(self) -> None:
-        if self._task and not self._task.done():
-            return
-        self._stop_event.clear()
-        _live_channels[self.account_id] = self
-        self._task = asyncio.create_task(self._run(), name=f"whatsapp-{self.account_id}")
-        LOGGER.info("[whatsapp:%s] starting gateway client", self.account_id)
+        async with self._lifecycle_lock:
+            if self._task and not self._task.done():
+                return
+            self._stop_event.clear()
+            _live_channels[self.account_id] = self
+            self._task = asyncio.create_task(self._run(), name=f"whatsapp-{self.account_id}")
+            LOGGER.info("[whatsapp:%s] starting gateway client", self.account_id)
 
     async def stop(self) -> None:
-        self._stop_event.set()
-        if self._task and not self._task.done():
-            self._task.cancel()
+        async with self._lifecycle_lock:
+            self._stop_event.set()
+            task = self._task
+            if task and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
             try:
-                await self._task
-            except (asyncio.CancelledError, Exception):
-                pass
-        try:
-            await self._request_json(
-                "POST",
-                f"whatsapp/{self._session_key()}/stop",
-                {"account_id": self.account_id, "session_key": self._session_key()},
-            )
-        except Exception:
-            LOGGER.debug("[whatsapp:%s] gateway stop failed", self.account_id, exc_info=True)
+                await self._request_json(
+                    "POST",
+                    f"whatsapp/{self._session_key()}/stop",
+                    {"account_id": self.account_id, "session_key": self._session_key()},
+                )
+            except Exception:
+                LOGGER.debug("[whatsapp:%s] gateway stop failed", self.account_id, exc_info=True)
 
-        try:
-            if self._http_session is not None and not self._http_session.closed:
-                await self._http_session.close()
-        finally:
-            self._http_session = None
+            try:
+                if self._http_session is not None and not self._http_session.closed:
+                    await self._http_session.close()
+            finally:
+                self._http_session = None
 
-        _live_channels.pop(self.account_id, None)
-        self._task = None
-        self._status = "stopped"
-        self._last_error = ""
-        self._qr_data_url = ""
-        self._qr_updated_at = 0.0
-        self._connected_at = 0.0
-        self._last_snapshot_at = 0.0
-        self._session_id = ""
-        self._event_cursor = 0
-        self._seen_message_ids.clear()
+            _live_channels.pop(self.account_id, None)
+            self._task = None
+            self._status = "stopped"
+            self._last_error = ""
+            self._qr_data_url = ""
+            self._qr_updated_at = 0.0
+            self._connected_at = 0.0
+            self._last_snapshot_at = 0.0
+            self._session_id = ""
+            self._event_cursor = 0
+            self._seen_message_ids.clear()
 
     async def send(self, message: OutgoingMessage) -> None:
         if not message.chat_id:
@@ -288,6 +297,11 @@ class WhatsAppChannel(Channel):
         try:
             obj = json.loads(payload)
         except json.JSONDecodeError:
+            LOGGER.warning(
+                "[whatsapp:%s] ignored invalid websocket payload: %r",
+                self.account_id,
+                payload[:200],
+            )
             return
 
         kind = str(obj.get("type") or "").strip()
