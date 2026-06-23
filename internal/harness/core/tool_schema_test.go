@@ -17,9 +17,9 @@ type weatherArgs struct {
 type emptyArgs struct{}
 
 type nestedArgs struct {
-	Query string      `json:"query" description:"Search query"`
-	Page  int         `json:"page" description:"Page number"`
-	Tags  []string    `json:"tags" description:"Filter tags"`
+	Query string   `json:"query" description:"Search query"`
+	Page  int      `json:"page" description:"Page number"`
+	Tags  []string `json:"tags" description:"Filter tags"`
 }
 
 // ======================== GenerateToolInfo ========================

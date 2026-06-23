@@ -328,8 +328,8 @@ func TestToolToInvokeFn(t *testing.T) {
 	invokeFn := ToolToInvokeFn(tool)
 
 	ictx := &ToolInvocationContext{
-		Name:    "echo",
-		CallID:  "call_1",
+		Name:      "echo",
+		CallID:    "call_1",
 		Arguments: &schema.ToolArgument{Arguments: `"hello"`},
 	}
 
@@ -347,8 +347,8 @@ func TestEnhancedToolToInvokeFn(t *testing.T) {
 	invokeFn := EnhancedToolToInvokeFn(et)
 
 	ictx := &ToolInvocationContext{
-		Name:    "enhanced_tool",
-		CallID:  "call_2",
+		Name:   "enhanced_tool",
+		CallID: "call_2",
 		Arguments: &schema.ToolArgument{
 			Name: "enhanced_tool", Arguments: `{}`, CallID: "call_2",
 		},
@@ -394,8 +394,8 @@ type simpleTestTool struct {
 }
 
 func newTestTool(name, desc string) *simpleTestTool { return &simpleTestTool{name: name, desc: desc} }
-func (t *simpleTestTool) Name() string { return t.name }
-func (t *simpleTestTool) Description() string { return t.desc }
+func (t *simpleTestTool) Name() string              { return t.name }
+func (t *simpleTestTool) Description() string       { return t.desc }
 func (t *simpleTestTool) Invoke(ctx context.Context, args string, opts ...ToolOption) (string, error) {
 	return "result: " + args, nil
 }
@@ -411,7 +411,7 @@ type simpleEnhancedTestTool struct {
 func newTestEnhancedTool(name, desc string) *simpleEnhancedTestTool {
 	return &simpleEnhancedTestTool{name: name, desc: desc}
 }
-func (t *simpleEnhancedTestTool) Name() string { return t.name }
+func (t *simpleEnhancedTestTool) Name() string        { return t.name }
 func (t *simpleEnhancedTestTool) Description() string { return t.desc }
 func (t *simpleEnhancedTestTool) Invoke(ctx context.Context, args string, opts ...ToolOption) (string, error) {
 	return "plain", nil

@@ -191,6 +191,11 @@ func (m *SubAgentMiddleware) ContributeTools(ctx context.Context) []core.Tool {
 }
 
 func (m *SubAgentMiddleware) ContributeToolInfos(ctx context.Context) []*schema.ToolInfo {
+	if m.parentCfg != nil {
+		m.ensureBuilt(ctx, m.parentCfg)
+	} else {
+		m.ensureBuiltSimple(ctx)
+	}
 	m.mu.Lock()
 	infos := make([]*schema.ToolInfo, len(m.builtInfos))
 	copy(infos, m.builtInfos)

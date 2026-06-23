@@ -52,10 +52,10 @@ type loopOptions struct {
 }
 
 // WithLoopMaxIterations caps the loop at n iterations. Default 1024.
-func WithLoopMaxIterations(n int) LoopOption {
+func WithLoopMaxIterations(maxIterations int) LoopOption {
 	return func(o *loopOptions) {
-		if n >= 0 {
-			o.maxIterations = n
+		if maxIterations >= 0 {
+			o.maxIterations = maxIterations
 		}
 	}
 }
@@ -212,11 +212,14 @@ func runLoop(
 					CurrentInput:    currentJSON,
 					UserFillUpValue: fillUpJSON,
 				}
-				stateJSON, mErr := json.Marshal(loopState)
-				if mErr != nil {
-					return nil, fmt.Errorf("graph: loop marshal interrupt state: %w", mErr)
+				// Marshal loopState to JSON so MustExtractInterruptContexts
+				// can decode it as map[string]any and extract the UserFillUp
+				// tips via the user_fill_up_value key.
+				loopRaw, mErr2 := json.Marshal(loopState)
+				if mErr2 != nil {
+					return nil, fmt.Errorf("graph: loop marshal interrupt state: %w", mErr2)
 				}
-				_, interruptErr := interrupt.Interrupt(ctx, stateJSON)
+				_, interruptErr := interrupt.Interrupt(ctx, loopRaw)
 				common.Debug("runLoop interruptErr",
 					zap.String("type", fmt.Sprintf("%T", interruptErr)),
 					zap.Any("error", interruptErr))

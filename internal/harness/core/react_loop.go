@@ -36,23 +36,21 @@ func (a *ReActAgent[M]) buildReActRunFunc() typedRunFunc[M] {
 		if p.historyModifier != nil && len(state.Messages) > 0 {
 			switch any(state.Messages[0]).(type) {
 			case *schema.Message:
-				msgs := make([]Message, len(state.Messages))
-				for i, m := range state.Messages {
-					msg, ok := any(m).(Message)
-					if !ok {
-						continue
+				// Collect only successfully asserted messages to avoid zero-value holes.
+				var msgs []Message
+				for _, m := range state.Messages {
+					if msg, ok := any(m).(Message); ok {
+						msgs = append(msgs, msg)
 					}
-					msgs[i] = msg
 				}
 				modified := p.historyModifier(ctx, msgs)
-				state.Messages = make([]M, len(modified))
-				for i, m := range modified {
-					msg, ok := any(m).(M)
-					if !ok {
-						continue
+				var stateMsgs []M
+				for _, m := range modified {
+					if msg, ok := any(m).(M); ok {
+						stateMsgs = append(stateMsgs, msg)
 					}
-					state.Messages[i] = msg
 				}
+				state.Messages = stateMsgs
 			}
 		}
 
@@ -82,6 +80,9 @@ func (a *ReActAgent[M]) buildReActRunFunc() typedRunFunc[M] {
 		if err := a.runBeforeAgent(&ctx, rc, p.generator); err != nil {
 			return
 		}
+		// Capture runtime tool/return-directly mutations made by BeforeAgent middleware.
+		allTools = rc.Tools
+		allRD = rc.ReturnDirectly
 
 		model := BuildModelWrapperChain(a.config.Model, nil, a.config, a.exeCtx.toolInfos)
 

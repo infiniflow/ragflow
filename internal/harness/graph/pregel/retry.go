@@ -25,7 +25,7 @@ func NewRetryExecutor(policy *types.RetryPolicy) *RetryExecutor {
 }
 
 // Execute executes a function with retry logic.
-func (e *RetryExecutor) Execute(ctx context.Context, name string, fn func(context.Context) (interface{}, error)) (output interface{}, err error) {
+func (e *RetryExecutor) Execute(ctx context.Context, name string, fn func(context.Context) (any, error)) (output any, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			output = nil
@@ -34,7 +34,7 @@ func (e *RetryExecutor) Execute(ctx context.Context, name string, fn func(contex
 	}()
 
 	var lastErr error
-	var lastOutput interface{}
+	var lastOutput any
 
 	for attempt := 1; attempt <= e.policy.MaxAttempts; attempt++ {
 		// Execute the function
@@ -94,7 +94,7 @@ type RetryExhaustedError struct {
 	NodeName   string
 	Attempts   int
 	LastErr    error
-	LastOutput interface{}
+	LastOutput any
 }
 
 // Error implements the error interface.

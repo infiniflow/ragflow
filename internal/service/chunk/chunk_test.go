@@ -643,3 +643,183 @@ func (e *parseTestDocEngine) GetType() string {
 func (e *parseTestDocEngine) FilterDocIdsByMetaPushdown(context.Context, []string, []map[string]interface{}, string) []string {
 	return nil
 }
+
+func TestSwitchChunksUpdatesDocEngineWithAvailableInt(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.UserTenant{}, &entity.Knowledgebase{}, &entity.Document{}); err != nil {
+		t.Fatalf("failed to migrate sqlite: %v", err)
+	}
+	previousDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = previousDB })
+
+	valid := string(entity.StatusValid)
+	if err := db.Create(&entity.UserTenant{
+		ID:       "ut-1",
+		UserID:   "user-1",
+		TenantID: "tenant-1",
+		Role:     "owner",
+		Status:   &valid,
+	}).Error; err != nil {
+		t.Fatalf("failed to create user_tenant: %v", err)
+	}
+	if err := db.Create(&entity.Knowledgebase{
+		ID:           "kb-1",
+		TenantID:     "tenant-1",
+		Name:         "dataset",
+		EmbdID:       "embed",
+		Permission:   string(entity.TenantPermissionMe),
+		CreatedBy:    "user-1",
+		ParserID:     string(entity.ParserTypeNaive),
+		ParserConfig: entity.JSONMap{},
+		Status:       &valid,
+	}).Error; err != nil {
+		t.Fatalf("failed to create knowledgebase: %v", err)
+	}
+	if err := db.Create(&entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		ParserID:     string(entity.ParserTypeNaive),
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "local",
+		Type:         "doc",
+		CreatedBy:    "user-1",
+		Suffix:       "txt",
+	}).Error; err != nil {
+		t.Fatalf("failed to create document: %v", err)
+	}
+
+	engine := &switchChunksEngineMock{}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+	}
+
+	if err := svc.SwitchChunks("user-1", "kb-1", "doc-1", 0, []string{"chunk-1", "chunk-2"}); err != nil {
+		t.Fatalf("SwitchChunks() error = %v", err)
+	}
+
+	if len(engine.updateCalls) != 2 {
+		t.Fatalf("UpdateChunks calls = %d, want 2", len(engine.updateCalls))
+	}
+	for i, call := range engine.updateCalls {
+		if call.indexName != "ragflow_tenant-1" {
+			t.Fatalf("call %d indexName = %q", i, call.indexName)
+		}
+		if call.datasetID != "kb-1" {
+			t.Fatalf("call %d datasetID = %q", i, call.datasetID)
+		}
+		wantID := []string{"chunk-1", "chunk-2"}[i]
+		if !reflect.DeepEqual(call.condition, map[string]interface{}{
+			"id":     wantID,
+			"doc_id": "doc-1",
+		}) {
+			t.Fatalf("call %d condition = %#v", i, call.condition)
+		}
+		if !reflect.DeepEqual(call.newValue, map[string]interface{}{"id": wantID, "available_int": 0}) {
+			t.Fatalf("call %d newValue = %#v", i, call.newValue)
+		}
+	}
+}
+
+type updateChunksCall struct {
+	condition map[string]interface{}
+	newValue  map[string]interface{}
+	indexName string
+	datasetID string
+}
+
+type switchChunksEngineMock struct {
+	updateCalls []updateChunksCall
+}
+
+func (m *switchChunksEngineMock) CreateChunkStore(context.Context, string, string, int, string) error {
+	return nil
+}
+func (m *switchChunksEngineMock) InsertChunks(context.Context, []map[string]interface{}, string, string) ([]string, error) {
+	return nil, nil
+}
+func (m *switchChunksEngineMock) UpdateChunks(_ context.Context, condition map[string]interface{}, newValue map[string]interface{}, indexName string, datasetID string) error {
+	m.updateCalls = append(m.updateCalls, updateChunksCall{
+		condition: copyMap(condition),
+		newValue:  copyMap(newValue),
+		indexName: indexName,
+		datasetID: datasetID,
+	})
+	return nil
+}
+func (m *switchChunksEngineMock) DeleteChunks(context.Context, map[string]interface{}, string, string) (int64, error) {
+	return 0, nil
+}
+func (m *switchChunksEngineMock) Search(context.Context, *types.SearchRequest) (*types.SearchResult, error) {
+	return nil, nil
+}
+func (m *switchChunksEngineMock) GetChunk(context.Context, string, string, []string) (interface{}, error) {
+	return nil, nil
+}
+func (m *switchChunksEngineMock) DropChunkStore(context.Context, string, string) error { return nil }
+func (m *switchChunksEngineMock) ChunkStoreExists(context.Context, string, string) (bool, error) {
+	return false, nil
+}
+func (m *switchChunksEngineMock) CreateMetadataStore(context.Context, string) error { return nil }
+func (m *switchChunksEngineMock) InsertMetadata(context.Context, []map[string]interface{}, string) ([]string, error) {
+	return nil, nil
+}
+func (m *switchChunksEngineMock) UpdateMetadata(context.Context, string, string, map[string]interface{}, string) error {
+	return nil
+}
+func (m *switchChunksEngineMock) DeleteMetadata(context.Context, map[string]interface{}, string) (int64, error) {
+	return 0, nil
+}
+func (m *switchChunksEngineMock) DeleteMetadataKeys(context.Context, string, string, []string, string) error {
+	return nil
+}
+func (m *switchChunksEngineMock) DropMetadataStore(context.Context, string) error { return nil }
+func (m *switchChunksEngineMock) MetadataStoreExists(context.Context, string) (bool, error) {
+	return false, nil
+}
+func (m *switchChunksEngineMock) SearchMetadata(context.Context, *types.SearchMetadataRequest) (*types.SearchMetadataResult, error) {
+	return nil, nil
+}
+func (m *switchChunksEngineMock) IndexDocument(context.Context, string, string, interface{}) error {
+	return nil
+}
+func (m *switchChunksEngineMock) DeleteDocument(context.Context, string, string) error { return nil }
+func (m *switchChunksEngineMock) BulkIndex(context.Context, string, []interface{}) (interface{}, error) {
+	return nil, nil
+}
+func (m *switchChunksEngineMock) GetFields([]map[string]interface{}, []string) map[string]map[string]interface{} {
+	return nil
+}
+func (m *switchChunksEngineMock) GetAggregation([]map[string]interface{}, string) []map[string]interface{} {
+	return nil
+}
+func (m *switchChunksEngineMock) GetHighlight([]map[string]interface{}, []string, string) map[string]string {
+	return nil
+}
+func (m *switchChunksEngineMock) RunSQL(context.Context, string, string, []string, string) ([]map[string]interface{}, error) {
+	return nil, nil
+}
+func (m *switchChunksEngineMock) GetChunkIDs([]map[string]interface{}) []string { return nil }
+func (m *switchChunksEngineMock) KNNScores(context.Context, []map[string]interface{}, []float64, int) (map[string]interface{}, error) {
+	return nil, nil
+}
+func (m *switchChunksEngineMock) GetScores(map[string]interface{}) map[string]float64 { return nil }
+func (m *switchChunksEngineMock) Ping(context.Context) error                          { return nil }
+func (m *switchChunksEngineMock) Close() error                                        { return nil }
+func (m *switchChunksEngineMock) GetType() string                                     { return "elasticsearch" }
+func (m *switchChunksEngineMock) FilterDocIdsByMetaPushdown(context.Context, []string, []map[string]interface{}, string) []string {
+	return nil
+}
+
+func copyMap(in map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{}, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}

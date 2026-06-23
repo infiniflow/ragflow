@@ -160,8 +160,14 @@ func (c *CLI) PingServer(iterations int) (ResponseIf, error) {
 
 // loginUser performs the actual login request
 func (c *CLI) loginUser(email, password string) (string, error) {
-	// Encrypt password using scrypt (same as Python implementation)
-	encryptedPassword, err := EncryptPassword(password)
+	publicKey, err := c.GetPublicKeyPEM()
+	if err != nil {
+		return "", fmt.Errorf("failed to get public key: %w", err)
+	}
+
+	// Encrypt password using RSA
+	encryptedPassword, err := EncryptPassword(password, publicKey)
+
 	if err != nil {
 		return "", fmt.Errorf("failed to encrypt password: %w", err)
 	}
@@ -1423,20 +1429,20 @@ func (c *CLI) CommonShowModel(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("model_name not provided")
 	}
 
-	payload := map[string]interface{}{
-		"model_name": modelName,
-	}
+	encodedModelName := common.EncodeToBase64(modelName)
 
 	var resp *Response
 	var err error
 	var httpClient *HTTPClient
 	switch c.Config.CLIMode {
 	case AdminMode:
+		baseURL := fmt.Sprintf("/admin/all-models/%s", encodedModelName)
 		httpClient = c.AdminServerClient
-		resp, err = httpClient.Request("GET", "/admin/all-models", "web", nil, payload)
+		resp, err = httpClient.Request("GET", baseURL, "web", nil, nil)
 	case APIMode:
+		baseURL := fmt.Sprintf("/all-models/%s", encodedModelName)
 		httpClient = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-		resp, err = httpClient.Request("GET", "/all-models", "web", nil, payload)
+		resp, err = httpClient.Request("GET", baseURL, "web", nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}

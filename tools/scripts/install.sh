@@ -19,7 +19,7 @@ set -eu
 
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 GITHUB_REPO="${GITHUB_REPO:-infiniflow/ragflow}"
-CLI_NAME="${CLI_NAME:-ragflow_cli}"
+CLI_NAME="${CLI_NAME:-ragflow-cli}"
 VERSION="${VERSION:-latest}"
 
 RELEASE_API="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"

@@ -221,7 +221,7 @@ func GetInterruptIndex(ctx context.Context) int {
 }
 
 // AppendResumeValue appends a resume value to the context.
-func AppendResumeValue(ctx context.Context, v interface{}) {
+func AppendResumeValue(ctx context.Context, value interface{}) {
 	var ic *interruptContext
 	if ctx != nil {
 		ic = GetInterruptContext(ctx)
@@ -229,7 +229,7 @@ func AppendResumeValue(ctx context.Context, v interface{}) {
 	if ic == nil {
 		ic = globalContext
 	}
-	ic.appendResumeValue(v)
+	ic.appendResumeValue(value)
 }
 
 // GetNullResume gets the null resume value from context.

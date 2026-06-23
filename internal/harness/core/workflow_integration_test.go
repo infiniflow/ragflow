@@ -82,12 +82,12 @@ func TestWorkflow_StreamCheckpointCancelResume(t *testing.T) {
 // ============================================================
 
 type panickingTool struct {
-	name     string
+	name    string
 	panicOn int32
 	callNum int32
 }
 
-func (t *panickingTool) Name() string { return t.name }
+func (t *panickingTool) Name() string        { return t.name }
 func (t *panickingTool) Description() string { return "tool that may panic" }
 
 func (t *panickingTool) Invoke(ctx context.Context, args string, opts ...ToolOption) (string, error) {
@@ -305,7 +305,7 @@ func TestWorkflow_ModelFailover_TimeoutChain(t *testing.T) {
 	agent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model: slowModel,
 		RetryConfig: &ModelRetryConfig{
-			MaxRetries:  3,
+			MaxRetries: 3,
 			ShouldRetry: func(ctx context.Context, rc *RetryContext) *RetryDecision {
 				return &RetryDecision{Retry: true}
 			},

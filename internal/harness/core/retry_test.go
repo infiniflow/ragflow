@@ -15,7 +15,9 @@ type countingModel struct {
 
 func (m *countingModel) Generate(ctx context.Context, msgs []Message, opts ...modelOption) (Message, error) {
 	m.calls++
-	if m.err != nil { return nil, m.err }
+	if m.err != nil {
+		return nil, m.err
+	}
 	return &schema.Message{Role: schema.RoleAssistant, Content: "ok"}, nil
 }
 func (m *countingModel) Stream(ctx context.Context, msgs []Message, opts ...modelOption) (*schema.StreamReader[Message], error) {
