@@ -524,8 +524,8 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 					why += fmt.Sprintf(" %s=%T(%v)", r.Name, r.Err, r.Err)
 				}
 				common.Debug("allFailed",
-				zap.Int("step", step),
-				zap.String("results", why))
+					zap.Int("step", step),
+					zap.String("results", why))
 				errCh <- fmt.Errorf("all %d tasks failed in step %d", len(results), step)
 				return
 			}
