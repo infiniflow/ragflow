@@ -22,8 +22,10 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"mime/multipart"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
@@ -41,6 +43,7 @@ import (
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -2086,4 +2089,380 @@ func mapDocumentRunStatus(run *string) string {
 	default:
 		return "UNSTART"
 	}
+}
+
+// MetadataUpdate is one update item: set key to value.
+type DocumentMetadataUpdate struct {
+	Key   string      `json:"key"`
+	Value interface{} `json:"value"`
+	Match interface{} `json:"match,omitempty"`
+}
+
+// MetadataDelete removes a whole key, or a specific value from a list field.
+type DocumentMetadataDelete struct {
+	Key   string      `json:"key"`
+	Value interface{} `json:"value,omitempty"`
+}
+
+// MetadataSelector selects which documents to target.
+type DocumentMetadataSelector struct {
+	DocumentIDs       []string               `json:"document_ids"`
+	MetadataCondition map[string]interface{} `json:"metadata_condition"`
+}
+
+// BatchUpdateDocumentMetadatasResponse summarises the operation.
+type BatchUpdateDocumentMetadatasResponse struct {
+	Updated     int `json:"updated"`
+	MatchedDocs int `json:"matched_docs"`
+}
+
+// BatchUpdateDocumentMetadatas implements the shared logic for
+// PATCH /datasets/:dataset_id/documents/metadatas  and
+// POST  /datasets/:dataset_id/metadata/update.
+func (s *DocumentService) BatchUpdateDocumentMetadatas(
+	datasetID string,
+	selector *DocumentMetadataSelector,
+	updates []DocumentMetadataUpdate,
+	deletes []DocumentMetadataDelete,
+) (*BatchUpdateDocumentMetadatasResponse, common.ErrorCode, error) {
+	if selector == nil {
+		selector = &DocumentMetadataSelector{}
+	}
+	if code, err := validateBatchUpdateDocumentMetadatasRequest(selector, updates, deletes); err != nil {
+		return nil, code, err
+	}
+
+	// Resolve which document IDs to target.
+	targetDocIDs := make(map[string]struct{})
+
+	if len(selector.DocumentIDs) > 0 {
+		// Validate that supplied IDs actually belong to this dataset.
+		allRows, err := s.documentDAO.GetAllDocIDsByKBIDs([]string{datasetID})
+		if err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("failed to list dataset documents: %w", err)
+		}
+		kbDocIDSet := make(map[string]struct{}, len(allRows))
+		for _, row := range allRows {
+			kbDocIDSet[row["id"]] = struct{}{}
+		}
+		var invalidIDs []string
+		for _, id := range selector.DocumentIDs {
+			if _, ok := kbDocIDSet[id]; !ok {
+				invalidIDs = append(invalidIDs, id)
+			}
+		}
+		if len(invalidIDs) > 0 {
+			return nil, common.CodeDataError, fmt.Errorf("these documents do not belong to dataset %s: %s",
+				datasetID, strings.Join(invalidIDs, ", "))
+		}
+		for _, id := range selector.DocumentIDs {
+			targetDocIDs[id] = struct{}{}
+		}
+	}
+
+	// Apply metadata_condition filter.
+	if len(selector.MetadataCondition) > 0 {
+		flattedMeta, err := s.metadataSvc.GetFlattedMetaByKBs([]string{datasetID})
+		if err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("failed to get flattened metadata: %w", err)
+		}
+
+		// ParseAndConvert mirrors Python convert_conditions: conditions arrive as
+		// {name, comparison_operator, value}, the operator is normalised, and the
+		// (possibly non-string) value is preserved. MetaFilter then matches against
+		// the common.MetaData returned by GetFlattedMetaByKBs.
+		filterInput := common.ParseAndConvert(selector.MetadataCondition)
+		filteredIDs := common.MetaFilter(flattedMeta, filterInput)
+
+		filteredSet := make(map[string]struct{}, len(filteredIDs))
+		for _, id := range filteredIDs {
+			filteredSet[id] = struct{}{}
+		}
+
+		if len(targetDocIDs) > 0 {
+			// Intersect with the document_ids restriction.
+			for id := range targetDocIDs {
+				if _, ok := filteredSet[id]; !ok {
+					delete(targetDocIDs, id)
+				}
+			}
+		} else {
+			targetDocIDs = filteredSet
+		}
+
+		// Early-exit when conditions given but nothing matched.
+		rawConds, _ := selector.MetadataCondition["conditions"]
+		if rawConds != nil && len(targetDocIDs) == 0 {
+			return &BatchUpdateDocumentMetadatasResponse{Updated: 0, MatchedDocs: 0}, common.CodeSuccess, nil
+		}
+	}
+
+	ids := make([]string, 0, len(targetDocIDs))
+	for id := range targetDocIDs {
+		ids = append(ids, id)
+	}
+
+	// Apply updates and deletes per document using Python's batch_update_metadata
+	// semantics instead of a simple merge-then-delete.
+	updated := 0
+	for _, docID := range ids {
+		currentMeta, err := s.GetDocumentMetadataByID(docID)
+		if err != nil {
+			common.Warn("BatchUpdateDocumentMetadata: get metadata failed",
+				zap.String("docID", docID), zap.Error(err))
+			continue
+		}
+
+		meta := cloneDocumentMetadata(currentMeta)
+		originalMeta := cloneDocumentMetadata(meta)
+
+		changed := applyDocumentMetadataUpdates(meta, updates)
+		if applyDocumentMetadataDeletes(meta, deletes) {
+			changed = true
+		}
+
+		if !changed || reflect.DeepEqual(originalMeta, meta) {
+			continue
+		}
+
+		if len(meta) == 0 {
+			if err := s.DeleteDocumentAllMetadata(docID); err != nil {
+				common.Warn("BatchUpdateDocumentMetadata: delete all metadata failed",
+					zap.String("docID", docID), zap.Error(err))
+				continue
+			}
+			updated++
+			continue
+		}
+
+		if err := s.replaceDocumentMetadata(docID, meta); err != nil {
+			common.Warn("BatchUpdateDocumentMetadata: replace metadata failed",
+				zap.String("docID", docID), zap.Error(err))
+			continue
+		}
+		updated++
+	}
+
+	return &BatchUpdateDocumentMetadatasResponse{Updated: updated, MatchedDocs: len(ids)}, common.CodeSuccess, nil
+}
+
+func (s *DocumentService) UploadDocumentInfos(userID string, files []*multipart.FileHeader) ([]map[string]interface{}, common.ErrorCode, error) {
+	fileSvc := &FileService{
+		fileDAO:          s.fileDAO,
+		file2DocumentDAO: s.file2DocumentDAO,
+	}
+	data, err := fileSvc.UploadInfos(userID, files)
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+	return data, common.CodeSuccess, nil
+}
+
+func (s *DocumentService) UploadDocumentInfoByURL(userID, rawURL string) (map[string]interface{}, common.ErrorCode, error) {
+	fileSvc := &FileService{
+		fileDAO:          s.fileDAO,
+		file2DocumentDAO: s.file2DocumentDAO,
+	}
+	data, err := fileSvc.UploadFromURL(userID, rawURL)
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+	return data, common.CodeSuccess, nil
+}
+
+func validateBatchUpdateDocumentMetadatasRequest(
+	selector *DocumentMetadataSelector,
+	updates []DocumentMetadataUpdate,
+	deletes []DocumentMetadataDelete,
+) (common.ErrorCode, error) {
+	for _, upd := range updates {
+		if strings.TrimSpace(upd.Key) == "" {
+			return common.CodeDataError, errors.New("Each update requires key and value.")
+		}
+	}
+	for _, del := range deletes {
+		if strings.TrimSpace(del.Key) == "" {
+			return common.CodeDataError, errors.New("Each delete requires key.")
+		}
+	}
+	if selector != nil && selector.MetadataCondition != nil {
+		if _, ok := selector.MetadataCondition["conditions"]; !ok && len(selector.MetadataCondition) > 0 {
+			return common.CodeDataError, errors.New("metadata_condition must be an object.")
+		}
+	}
+	return common.CodeSuccess, nil
+}
+
+func cloneDocumentMetadata(meta map[string]interface{}) map[string]interface{} {
+	if meta == nil {
+		return map[string]interface{}{}
+	}
+	cloned := make(map[string]interface{}, len(meta))
+	for k, v := range meta {
+		cloned[k] = cloneDocumentMetadataValue(v)
+	}
+	return cloned
+}
+
+func cloneDocumentMetadataValue(v interface{}) interface{} {
+	switch typed := v.(type) {
+	case []interface{}:
+		cp := make([]interface{}, len(typed))
+		copy(cp, typed)
+		return cp
+	case []string:
+		cp := make([]interface{}, 0, len(typed))
+		for _, item := range typed {
+			cp = append(cp, item)
+		}
+		return cp
+	default:
+		return typed
+	}
+}
+
+func applyDocumentMetadataUpdates(meta map[string]interface{}, updates []DocumentMetadataUpdate) bool {
+	changed := false
+	for _, upd := range updates {
+		key := strings.TrimSpace(upd.Key)
+		if key == "" {
+			continue
+		}
+		matchProvided := upd.Match != nil && !(fmt.Sprintf("%v", upd.Match) == "")
+		current, exists := meta[key]
+		if !exists {
+			if matchProvided {
+				continue
+			}
+			if listVal, ok := toMetadataInterfaceSlice(upd.Value); ok {
+				meta[key] = dedupeDocumentMetadataList(listVal)
+			} else {
+				meta[key] = upd.Value
+			}
+			changed = true
+			continue
+		}
+
+		if curList, ok := toMetadataInterfaceSlice(current); ok {
+			if !matchProvided {
+				newList := append([]interface{}{}, curList...)
+				if appendList, ok := toMetadataInterfaceSlice(upd.Value); ok {
+					newList = append(newList, appendList...)
+				} else {
+					newList = append(newList, upd.Value)
+				}
+				newList = dedupeDocumentMetadataList(newList)
+				if !reflect.DeepEqual(curList, newList) {
+					meta[key] = newList
+					changed = true
+				}
+				continue
+			}
+
+			replaced := false
+			newList := make([]interface{}, 0, len(curList))
+			for _, item := range curList {
+				if documentMetadataValuesEqual(item, upd.Match) {
+					newList = append(newList, upd.Value)
+					replaced = true
+				} else {
+					newList = append(newList, item)
+				}
+			}
+			newList = dedupeDocumentMetadataList(newList)
+			if replaced && !reflect.DeepEqual(curList, newList) {
+				meta[key] = newList
+				changed = true
+			}
+			continue
+		}
+
+		if !matchProvided {
+			if !reflect.DeepEqual(current, upd.Value) {
+				meta[key] = upd.Value
+				changed = true
+			}
+			continue
+		}
+		if documentMetadataValuesEqual(current, upd.Match) && !reflect.DeepEqual(current, upd.Value) {
+			meta[key] = upd.Value
+			changed = true
+		}
+	}
+	return changed
+}
+
+func applyDocumentMetadataDeletes(meta map[string]interface{}, deletes []DocumentMetadataDelete) bool {
+	changed := false
+	for _, del := range deletes {
+		key := strings.TrimSpace(del.Key)
+		current, exists := meta[key]
+		if key == "" || !exists {
+			continue
+		}
+
+		if curList, ok := toMetadataInterfaceSlice(current); ok {
+			if del.Value == nil {
+				delete(meta, key)
+				changed = true
+				continue
+			}
+			newList := make([]interface{}, 0, len(curList))
+			for _, item := range curList {
+				if !documentMetadataValuesEqual(item, del.Value) {
+					newList = append(newList, item)
+				}
+			}
+			if len(newList) != len(curList) {
+				if len(newList) == 0 {
+					delete(meta, key)
+				} else {
+					meta[key] = newList
+				}
+				changed = true
+			}
+			continue
+		}
+
+		if del.Value == nil || documentMetadataValuesEqual(current, del.Value) {
+			delete(meta, key)
+			changed = true
+		}
+	}
+	return changed
+}
+
+func toMetadataInterfaceSlice(v interface{}) ([]interface{}, bool) {
+	switch typed := v.(type) {
+	case []interface{}:
+		cp := make([]interface{}, len(typed))
+		copy(cp, typed)
+		return cp, true
+	case []string:
+		cp := make([]interface{}, 0, len(typed))
+		for _, item := range typed {
+			cp = append(cp, item)
+		}
+		return cp, true
+	default:
+		return nil, false
+	}
+}
+
+func dedupeDocumentMetadataList(items []interface{}) []interface{} {
+	result := make([]interface{}, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		key := fmt.Sprintf("%T:%v", item, item)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, item)
+	}
+	return result
+}
+
+func documentMetadataValuesEqual(a, b interface{}) bool {
+	return fmt.Sprintf("%v", a) == fmt.Sprintf("%v", b)
 }

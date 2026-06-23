@@ -20,8 +20,12 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"html"
 	"io"
 	"mime/multipart"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"ragflow/internal/common"
@@ -31,6 +35,7 @@ import (
 	"ragflow/internal/ingestion/parser"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
+	"regexp"
 	"strings"
 	"time"
 
@@ -155,6 +160,11 @@ const DatasetFolderName = ".knowledgebase"
 
 // FileSourceDataset represents dataset as file source
 const FileSourceDataset = "knowledgebase"
+
+var (
+	assertURLSafe    = utility.AssertURLSafe
+	pinnedHTTPClient = utility.PinnedHTTPClient
+)
 
 // toFileResponse converts file model to response format
 func (s *FileService) toFileResponse(file *entity.File) map[string]interface{} {
@@ -389,6 +399,45 @@ func (s *FileService) UploadFile(tenantID, parentID string, files []*multipart.F
 	}
 
 	return result, nil
+}
+
+// UploadInfos mirrors Python's upload_info file branch: store raw bytes in the
+// per-user downloads bucket and return lightweight upload descriptors instead
+// of creating full File rows in the file-management tree.
+func (s *FileService) UploadInfos(userID string, files []*multipart.FileHeader) ([]map[string]interface{}, error) {
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, fmt.Errorf("storage not initialized")
+	}
+
+	results := make([]map[string]interface{}, 0, len(files))
+	for _, fileHeader := range files {
+		filename := fileHeader.Filename
+		if err := s.checkUploadInfoHealth(userID, filename); err != nil {
+			return nil, err
+		}
+		src, err := fileHeader.Open()
+		if err != nil {
+			return nil, fmt.Errorf("failed to open uploaded file: %w", err)
+		}
+		data, readErr := io.ReadAll(src)
+		src.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read file data: %w", readErr)
+		}
+
+		contentType := fileHeader.Header.Get("Content-Type")
+		if contentType == "" {
+			contentType = http.DetectContentType(data)
+		}
+		filename, contentType, data = normalizeUploadInfoContent(filename, contentType, data)
+		resp, err := s.storeUploadInfoBlob(storageImpl, userID, filename, contentType, data)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, resp)
+	}
+	return results, nil
 }
 
 func (s *FileService) parseFilePath(filename string) []string {
@@ -1067,4 +1116,304 @@ func parseFileContent(filename string, data []byte) string {
 		return string(data)
 	}
 	return fp.String()
+}
+
+// toUploadInfoResponse converts a newly-uploaded file record to the shape
+// Python's upload_info endpoint returns.
+func (s *FileService) toUploadInfoResponse(file *entity.File, mimeType string) map[string]interface{} {
+	ext := ""
+	if idx := strings.LastIndex(file.Name, "."); idx >= 0 {
+		ext = strings.ToLower(file.Name[idx+1:])
+	}
+	return map[string]interface{}{
+		"id":          file.ID,
+		"name":        file.Name,
+		"size":        file.Size,
+		"extension":   ext,
+		"mime_type":   mimeType,
+		"created_by":  file.CreatedBy,
+		"created_at":  float64(time.Now().UnixMilli()) / 1000.0,
+		"preview_url": nil,
+	}
+}
+
+// maxRemoteFileSize bounds the body of a ?url= upload (100 MB).
+const maxRemoteFileSize = 100 << 20
+
+// UploadFromURL fetches a remote URL, saves the content to the tenant's root
+// folder, and returns the file metadata map — mirroring Python
+// FileService.upload_info(tenant_id, None, url).
+//
+// The remote fetch is SSRF-guarded (mirrors Python's assert_url_is_safe): the
+// scheme must be http/https and every address the host resolves to must be
+// globally routable; the validated IP is pinned for the actual connection — and
+// re-validated on each redirect hop — to defeat DNS-rebinding. The HTTP client
+// carries connect and overall timeouts, and the response body is bounded with
+// truncation detection so an oversized file is rejected rather than silently
+// clipped.
+func (s *FileService) UploadFromURL(tenantID, rawURL string) (map[string]interface{}, error) {
+	if rawURL == "" {
+		return nil, fmt.Errorf("url is required")
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" {
+		return nil, fmt.Errorf("invalid or unsafe URL")
+	}
+
+	data, headers, finalURL, err := fetchRemoteFileSafely(rawURL, maxRemoteFileSize)
+	if err != nil {
+		return nil, err
+	}
+
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, fmt.Errorf("storage not initialized")
+	}
+
+	contentType := headers.Get("Content-Type")
+	filename := normalizeRemoteUploadFilename(finalURL, contentType, data)
+	if err := s.checkUploadInfoHealth(tenantID, filename); err != nil {
+		return nil, err
+	}
+	filename, contentType, data = normalizeUploadInfoContent(filename, contentType, data)
+	return s.storeUploadInfoBlob(storageImpl, tenantID, filename, contentType, data)
+}
+
+// fetchRemoteFileSafely downloads rawURL with SSRF protection, connect/overall
+// timeouts, and a hard size cap that rejects (rather than truncates) oversized
+// bodies.
+func fetchRemoteFileSafely(rawURL string, maxSize int64) ([]byte, http.Header, string, error) {
+	currentURL := rawURL
+	for redirects := 0; redirects < 10; redirects++ {
+		hostname, resolvedIP, err := assertURLSafe(currentURL)
+		if err != nil {
+			return nil, nil, "", err
+		}
+		client := pinnedHTTPClient(hostname, resolvedIP, 10*time.Second)
+		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+
+		resp, err := client.Get(currentURL) // #nosec G107
+		if err != nil {
+			return nil, nil, "", fmt.Errorf("failed to fetch URL: %w", err)
+		}
+
+		if resp.StatusCode == http.StatusMovedPermanently ||
+			resp.StatusCode == http.StatusFound ||
+			resp.StatusCode == http.StatusSeeOther ||
+			resp.StatusCode == http.StatusTemporaryRedirect ||
+			resp.StatusCode == http.StatusPermanentRedirect {
+			location := resp.Header.Get("Location")
+			resp.Body.Close()
+			if location == "" {
+				return nil, nil, "", fmt.Errorf("redirect response missing Location header")
+			}
+			baseURL, parseErr := url.Parse(currentURL)
+			if parseErr != nil {
+				return nil, nil, "", parseErr
+			}
+			nextURL, resolveErr := baseURL.Parse(location)
+			if resolveErr != nil {
+				return nil, nil, "", resolveErr
+			}
+			currentURL = nextURL.String()
+			continue
+		}
+
+		if resp.StatusCode >= 400 {
+			resp.Body.Close()
+			return nil, nil, "", fmt.Errorf("remote URL returned HTTP %d", resp.StatusCode)
+		}
+
+		data, readErr := io.ReadAll(io.LimitReader(resp.Body, maxSize+1))
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, nil, "", fmt.Errorf("failed to read remote content: %w", readErr)
+		}
+		if int64(len(data)) > maxSize {
+			return nil, nil, "", fmt.Errorf("remote file exceeds the maximum allowed size of %d bytes", maxSize)
+		}
+		return data, resp.Header.Clone(), currentURL, nil
+	}
+	return nil, nil, "", fmt.Errorf("stopped after too many redirects")
+}
+
+// isPublicIP reports whether ip is a globally routable address. It mirrors the
+// allowlist intent of Python's assert_url_is_safe (which requires ip.is_global)
+// by rejecting loopback, private, link-local, multicast, unspecified, and
+// carrier-grade NAT ranges. IPv4-mapped IPv6 addresses are handled by the
+// stdlib predicates.
+func isPublicIP(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() ||
+		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsMulticast() || ip.IsInterfaceLocalMulticast() {
+		return false
+	}
+	// Carrier-grade NAT 100.64.0.0/10 (RFC 6598) — not covered by IsPrivate.
+	if ip4 := ip.To4(); ip4 != nil && ip4[0] == 100 && ip4[1]&0xc0 == 0x40 {
+		return false
+	}
+	return true
+}
+
+func (s *FileService) checkUploadInfoHealth(userID, filename string) error {
+	if filename == "" {
+		return fmt.Errorf("No file selected!")
+	}
+	maxFileNumPerUser := os.Getenv("MAX_FILE_NUM_PER_USER")
+	if maxFileNumPerUser != "" {
+		var maxNum int64
+		if _, err := fmt.Sscanf(maxFileNumPerUser, "%d", &maxNum); err == nil && maxNum > 0 {
+			docCount, err := s.GetDocCount(userID)
+			if err != nil {
+				return fmt.Errorf("failed to get document count: %w", err)
+			}
+			if docCount >= maxNum {
+				return fmt.Errorf("Exceed the maximum file number of a free user!")
+			}
+		}
+	}
+	if len([]byte(filename)) > 255 {
+		return fmt.Errorf("Exceed the maximum length of file name!")
+	}
+	return nil
+}
+
+func (s *FileService) storeUploadInfoBlob(storageImpl storage.Storage, userID, filename, contentType string, data []byte) (map[string]interface{}, error) {
+	location := common.GenerateUUID()
+	bucket := fmt.Sprintf("%s-downloads", userID)
+	if err := storageImpl.Put(bucket, location, data); err != nil {
+		return nil, fmt.Errorf("failed to store file: %w", err)
+	}
+	ext := ""
+	if idx := strings.LastIndex(filename, "."); idx >= 0 {
+		ext = strings.ToLower(filename[idx+1:])
+	}
+	return map[string]interface{}{
+		"id":          location,
+		"name":        filename,
+		"size":        int64(len(data)),
+		"extension":   ext,
+		"mime_type":   contentType,
+		"created_by":  userID,
+		"created_at":  float64(time.Now().UnixMilli()) / 1000.0,
+		"preview_url": nil,
+	}, nil
+}
+
+func normalizeRemoteUploadFilename(rawURL, contentType string, data []byte) string {
+	parsed, err := url.Parse(rawURL)
+	filename := "download"
+	if err == nil {
+		filename = sanitizeFilename(filepath.Base(parsed.Path))
+	}
+	ct := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+	if ct == "application/pdf" || bytesLooksLikePDF(data) {
+		if !strings.HasSuffix(strings.ToLower(filename), ".pdf") {
+			filename += ".pdf"
+		}
+	}
+	return filename
+}
+
+func normalizeUploadInfoContent(filename, contentType string, data []byte) (string, string, []byte) {
+	lowerCT := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+	if lowerCT == "" {
+		lowerCT = http.DetectContentType(data)
+	}
+
+	if lowerCT == "text/html" || lowerCT == "application/xhtml+xml" || looksLikeHTML(data) {
+		data = htmlToReadableMarkdown(data)
+		if lowerCT == "" {
+			lowerCT = "text/html"
+		}
+	}
+	if lowerCT == "application/pdf" || bytesLooksLikePDF(data) {
+		if !strings.HasSuffix(strings.ToLower(filename), ".pdf") {
+			filename += ".pdf"
+		}
+		lowerCT = "application/pdf"
+	}
+	return filename, lowerCT, data
+}
+
+func bytesLooksLikePDF(data []byte) bool {
+	return len(data) >= 4 && string(data[:4]) == "%PDF"
+}
+
+func looksLikeHTML(data []byte) bool {
+	snippet := strings.ToLower(string(data))
+	return strings.Contains(snippet, "<html") || strings.Contains(snippet, "<body") || strings.Contains(snippet, "<div")
+}
+
+var (
+	htmlScriptStyleRE = regexp.MustCompile(`(?is)<(script|style)[^>]*>.*?</(script|style)>`)
+	htmlTagRE         = regexp.MustCompile(`(?s)<[^>]+>`)
+	multiSpaceRE      = regexp.MustCompile(`[ \t]+`)
+	multiNewlineRE    = regexp.MustCompile(`\n{3,}`)
+)
+
+func htmlToReadableMarkdown(data []byte) []byte {
+	text := string(data)
+	text = htmlScriptStyleRE.ReplaceAllString(text, " ")
+	text = strings.ReplaceAll(text, "<br>", "\n")
+	text = strings.ReplaceAll(text, "<br/>", "\n")
+	text = strings.ReplaceAll(text, "<br />", "\n")
+	text = strings.ReplaceAll(text, "</p>", "\n\n")
+	text = strings.ReplaceAll(text, "</div>", "\n")
+	text = strings.ReplaceAll(text, "</li>", "\n")
+	text = htmlTagRE.ReplaceAllString(text, " ")
+	text = html.UnescapeString(text)
+	text = strings.ReplaceAll(text, "\r", "\n")
+	text = multiSpaceRE.ReplaceAllString(text, " ")
+	text = multiNewlineRE.ReplaceAllString(text, "\n\n")
+	text = strings.TrimSpace(text)
+	return []byte(text)
+}
+
+// reservedDeviceNames are Windows reserved filenames that must never be used.
+var reservedDeviceNames = map[string]bool{
+	"CON": true, "PRN": true, "AUX": true, "NUL": true,
+	"COM1": true, "COM2": true, "COM3": true, "COM4": true, "COM5": true,
+	"COM6": true, "COM7": true, "COM8": true, "COM9": true,
+	"LPT1": true, "LPT2": true, "LPT3": true, "LPT4": true, "LPT5": true,
+	"LPT6": true, "LPT7": true, "LPT8": true, "LPT9": true,
+}
+
+// sanitizeFilename produces a safe, filesystem-friendly filename from an
+// arbitrary URL path segment: it strips directory components, replaces unsafe /
+// control characters, rejects reserved names, bounds the length, and falls back
+// to "download".
+func sanitizeFilename(name string) string {
+	name = filepath.Base(name)
+	name = strings.TrimSpace(name)
+
+	name = strings.Map(func(r rune) rune {
+		switch r {
+		case '/', '\\', ':', '*', '?', '"', '<', '>', '|', 0:
+			return '_'
+		}
+		if r < 0x20 { // control characters
+			return '_'
+		}
+		return r
+	}, name)
+
+	// Strip leading/trailing dots and spaces to avoid hidden or reserved forms.
+	name = strings.Trim(name, ". ")
+
+	if name == "" || name == "." || name == ".." {
+		return "download"
+	}
+	if stem := strings.SplitN(strings.ToUpper(name), ".", 2)[0]; reservedDeviceNames[stem] {
+		return "download"
+	}
+	if len(name) > 255 {
+		name = name[:255]
+	}
+	return name
 }
