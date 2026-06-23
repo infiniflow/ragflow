@@ -40,7 +40,7 @@ Note: admin_server must be started first; otherwise, ragflow_server will encount
 ```
 ```bash
 # Run CLI
-./bin/ragflow_cli
+./bin/ragflow-cli
 ```
 
 ## 4. Start Frontend
@@ -67,10 +67,10 @@ After updating or implementing an API, update the frontend development environme
 
 You can use the following CLI commands to test the corresponding API implementations.
 
-### 6.1. Run ragflow_cli, register user, login, and logout:
+### 6.1. Run ragflow-cli, register user, login, and logout:
 
 ```
-$ ./ragflow_cli
+$ ./ragflow-cli
 Welcome to RAGFlow CLI
 Type \? for help, \q to quit
 
