@@ -21,7 +21,7 @@ This is the Go implementation of the RAGFlow command-line interface, compatible 
 ### Build and run
 
 ```bash
-go build -o ragflow-cli ./cmd/ragflow_cli.go
+go build -o ragflow-cli ./cmd/ragflow-cli.go
 ./ragflow-cli
 ```
 
