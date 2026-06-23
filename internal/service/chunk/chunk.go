@@ -43,7 +43,6 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
-	"ragflow/internal/engine/redis"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/service"
 	"ragflow/internal/service/nlp"
