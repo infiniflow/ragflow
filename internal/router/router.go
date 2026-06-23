@@ -272,6 +272,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.PUT("/:dataset_id", r.datasetsHandler.UpdateDataset)
 				datasets.GET("/:dataset_id/graph", r.datasetsHandler.GetKnowledgeGraph)
 				datasets.DELETE("/:dataset_id/tags", r.datasetsHandler.RemoveTags)
+				datasets.POST("/:dataset_id/documents/batch-update-status", r.documentHandler.BatchUpdateDocumentStatus)
 				datasets.GET("/:dataset_id/index", r.datasetsHandler.TraceIndex)
 				datasets.POST("/:dataset_id/index", r.datasetsHandler.RunIndex)
 				datasets.DELETE("/:dataset_id/graph", r.datasetsHandler.DeleteKnowledgeGraph)

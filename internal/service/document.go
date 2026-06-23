@@ -731,6 +731,85 @@ func (s *DocumentService) GetThumbnail(docID string) (*ThumbnailResponse, error)
 	return &result, nil
 }
 
+func (s *DocumentService) BatchUpdateDocumentStatus(userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
+	kb, err := s.kbDAO.GetByIDAndTenantID(datasetID, userID)
+	if err != nil {
+		return nil, common.CodeDataError, fmt.Errorf("You don't own the dataset.")
+	}
+	statusInt, convErr := strconv.Atoi(status)
+	if convErr != nil {
+		return nil, common.CodeArgumentError, fmt.Errorf("invalid status: %s", status)
+	}
+
+	result := make(map[string]interface{}, len(documentIDs))
+	hasError := false
+	for _, docID := range documentIDs {
+		doc, err := s.documentDAO.GetByID(docID)
+		if err != nil {
+			result[docID] = map[string]string{"error": "Document not found"}
+			hasError = true
+			continue
+		}
+
+		if doc.KbID != datasetID {
+			result[docID] = map[string]string{"error": "Document not found in this dataset."}
+			hasError = true
+			continue
+		}
+
+		currentStatus := ""
+		if doc.Status != nil {
+			currentStatus = *doc.Status
+		}
+		if currentStatus == status {
+			result[docID] = map[string]string{"status": status}
+			continue
+		}
+		previousStatus := interface{}(nil)
+		if doc.Status != nil {
+			previousStatus = *doc.Status
+		}
+		if err := s.documentDAO.UpdateByID(docID, map[string]interface{}{"status": status}); err != nil {
+			result[docID] = map[string]string{"error": "Database error (Document update)!"}
+			hasError = true
+			continue
+		}
+
+		if doc.ChunkNum > 0 {
+			if s.docEngine == nil {
+				_ = s.documentDAO.UpdateByID(docID, map[string]interface{}{"status": previousStatus})
+				result[docID] = map[string]string{"error": "Document store update failed: document engine not initialized"}
+				hasError = true
+				continue
+			}
+			err := s.docEngine.UpdateChunks(
+				context.Background(),
+				map[string]interface{}{"doc_id": docID},
+				map[string]interface{}{"available_int": statusInt},
+				fmt.Sprintf("ragflow_%s", kb.TenantID),
+				doc.KbID,
+			)
+			if err != nil {
+				_ = s.documentDAO.UpdateByID(docID, map[string]interface{}{"status": previousStatus})
+				msg := err.Error()
+				if strings.Contains(msg, "3022") {
+					result[docID] = map[string]string{"error": "Document store table missing."}
+				} else {
+					result[docID] = map[string]string{"error": "Document store update failed: " + msg}
+				}
+				hasError = true
+				continue
+			}
+		}
+		result[docID] = map[string]string{"status": status}
+	}
+
+	if hasError {
+		return result, common.CodeServerError, fmt.Errorf("Partial failure")
+	}
+	return result, common.CodeSuccess, nil
+}
+
 // ListDocumentsByDatasetID list documents by knowledge base ID
 func (s *DocumentService) ListDocumentsByDatasetID(kbID string, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
 	offset := (page - 1) * pageSize
