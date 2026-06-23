@@ -523,7 +523,7 @@ RAGFlow(api/default)> GET METADATA OF DATASET 'test' 'test2'
 ```
 RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test';
 
-RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test1' 'test2';
+RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test1, test2';
 
 RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test' WITH top_k 1;
 
