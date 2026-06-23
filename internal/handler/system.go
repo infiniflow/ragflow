@@ -192,8 +192,8 @@ type SetLogLevelRequest struct {
 // inspect `message` on the missing-field path keep working. On the
 // Go side `pkg_name` is no longer required (per-package filtering
 // is gone), but the message wording is unchanged for backward
-// compatibility — the field still has to be present in the JSON
-// payload for the client to call this endpoint at all.
+// compatibility — only `level` is enforced by binding; `pkg_name`
+// is accepted but ignored.
 func (h *SystemHandler) SetLogLevel(c *gin.Context) {
 	var req SetLogLevelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

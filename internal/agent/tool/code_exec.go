@@ -155,8 +155,8 @@ func (c *CodeExecTool) InvokableRun(ctx context.Context, argumentsInJSON string,
 	common.Debug("CodeExec tool invoke",
 		zap.String("lang", req.Lang),
 		zap.Int("timeout", req.Timeout),
-		zap.Any("arguments", req.Arguments),
-		zap.String("script", req.Script))
+		zap.Int("arguments_keys", len(req.Arguments)),
+		zap.Int("script_len", len(req.Script)))
 	resp, err := client.ExecuteCode(ctx, req)
 	if err != nil {
 		return codeExecStubResult(err.Error()), err
@@ -225,8 +225,9 @@ func codeExecResultJSON(r *SandboxResponse) (string, error) {
 		zap.Any("raw_result", out.RawResult),
 		zap.String("content", out.Content),
 		zap.String("actual_type", out.ActualType),
-		zap.String("stderr", r.Stderr),
-		zap.String("stdout", r.Stdout))
+		zap.Bool("stderr_present", r.Stderr != ""),
+		zap.Int("stderr_len", len(r.Stderr)),
+		zap.Int("stdout_len", len(r.Stdout)))
 	b, err := json.Marshal(out)
 	if err != nil {
 		return "", fmt.Errorf("code_exec: marshal result: %w", err)

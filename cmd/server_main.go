@@ -327,7 +327,10 @@ func startServer(config *server.Config) {
 	ginEngine := gin.New()
 
 	// Middleware
-	ginEngine.Use(common.GinLogger())
+	// Note: common.GinLogger() is registered inside router.Setup so the
+	// HTTP request log captures every endpoint the router owns (including
+	// those registered by Setup itself). Registering it here would run
+	// it twice for those endpoints and double every access-log line.
 	ginEngine.Use(gin.Recovery())
 
 	// Setup routes

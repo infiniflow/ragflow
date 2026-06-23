@@ -264,6 +264,13 @@ func ResolveCompress(c *bool) bool {
 // when present, regardless of level. This is the project-standard HTTP
 // access log; it replaces gin.Logger() so every request line lands in the
 // same log file as the rest of the application.
+//
+// The raw query string is intentionally NOT logged — the path field
+// carries only the URL path. Query parameters frequently carry secrets
+// (OAuth codes, SAML responses, signed state, API keys in callback
+// URLs, etc.) and there is no way to redact them generically. The
+// presence and length of a query string are recorded instead so
+// operators can still see that one was sent.
 func GinLogger() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
@@ -272,9 +279,6 @@ func GinLogger() gin.HandlerFunc {
 		c.Next()
 		latency := time.Since(start)
 		status := c.Writer.Status()
-		if raw != "" {
-			path = path + "?" + raw
-		}
 
 		fields := []zap.Field{
 			zap.Int("status", status),
@@ -283,6 +287,8 @@ func GinLogger() gin.HandlerFunc {
 			zap.Duration("latency", latency),
 			zap.String("client_ip", c.ClientIP()),
 			zap.Int("size", c.Writer.Size()),
+			zap.Bool("has_query", raw != ""),
+			zap.Int("query_len", len(raw)),
 		}
 
 		var ginErr error
