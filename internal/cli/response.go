@@ -821,18 +821,11 @@ func (r *UserIndexResponse) PrintOut() {
 	}
 
 	summaryTable := r.orderedMetricTable()
-	if len(summaryTable) > 0 {
-		PrintTableSimpleByFormat(summaryTable, r.OutputFormat)
-	}
-
+	indexColumns := []string{"index", "health", "status", "docs.count", "dataset.size", "store.size"}
+	indexTable := make([]map[string]interface{}, 0)
 	indicesRaw, hasIndices := r.Data["indices"]
 	if hasIndices {
-		indices, ok := indicesRaw.([]interface{})
-		if ok && len(indices) > 0 {
-			fmt.Println()
-			fmt.Println("Index Details:")
-			indexColumns := []string{"index", "health", "status", "docs.count", "dataset.size", "store.size"}
-			indexTable := make([]map[string]interface{}, 0)
+		if indices, ok := indicesRaw.([]interface{}); ok {
 			for _, idx := range indices {
 				if m, ok := idx.(map[string]interface{}); ok {
 					orderedRow := make(map[string]interface{})
@@ -846,11 +839,37 @@ func (r *UserIndexResponse) PrintOut() {
 					indexTable = append(indexTable, orderedRow)
 				}
 			}
-			PrintTableSimpleByFormatWithOrder(indexTable, indexColumns, r.OutputFormat)
-		} else if ok && len(indices) == 0 {
-			fmt.Println()
-			fmt.Println("No indices found for this user.")
 		}
+	}
+
+	if r.OutputFormat == OutputFormatJSON {
+		payload := make(map[string]interface{})
+		if len(summaryTable) > 0 {
+			payload["summary"] = summaryTable
+		}
+		if len(indexTable) > 0 {
+			payload["indices"] = indexTable
+		}
+		jsonData, err := json.MarshalIndent(payload, "", "  ")
+		if err != nil {
+			fmt.Printf("Error marshaling JSON: %v\n", err)
+			return
+		}
+		fmt.Println(string(jsonData))
+		return
+	}
+
+	if len(summaryTable) > 0 {
+		PrintTableSimpleByFormat(summaryTable, r.OutputFormat)
+	}
+
+	if len(indexTable) > 0 {
+		fmt.Println()
+		fmt.Println("Index Details:")
+		PrintTableSimpleByFormatWithOrder(indexTable, indexColumns, r.OutputFormat)
+	} else if hasIndices {
+		fmt.Println()
+		fmt.Println("No indices found for this user.")
 	}
 }
 
@@ -869,18 +888,11 @@ func (r *UserStorageResponse) PrintOut() {
 	}
 
 	summaryTable := r.orderedMetricTable()
-	if len(summaryTable) > 0 {
-		PrintTableSimpleByFormat(summaryTable, r.OutputFormat)
-	}
-
+	fileColumns := []string{"name", "size"}
+	fileTable := make([]map[string]interface{}, 0)
 	filesRaw, hasFiles := r.Data["files"]
 	if hasFiles {
-		files, ok := filesRaw.([]interface{})
-		if ok && len(files) > 0 {
-			fmt.Println()
-			fmt.Println("Files（Top 10）:")
-			fileColumns := []string{"name", "size"}
-			fileTable := make([]map[string]interface{}, 0)
+		if files, ok := filesRaw.([]interface{}); ok {
 			for _, f := range files {
 				if m, ok := f.(map[string]interface{}); ok {
 					orderedRow := make(map[string]interface{})
@@ -894,11 +906,37 @@ func (r *UserStorageResponse) PrintOut() {
 					fileTable = append(fileTable, orderedRow)
 				}
 			}
-			PrintTableSimpleByFormatWithOrder(fileTable, fileColumns, r.OutputFormat)
-		} else if ok && len(files) == 0 {
-			fmt.Println()
-			fmt.Println("No files found for this user.")
 		}
+	}
+
+	if r.OutputFormat == OutputFormatJSON {
+		payload := make(map[string]interface{})
+		if len(summaryTable) > 0 {
+			payload["summary"] = summaryTable
+		}
+		if len(fileTable) > 0 {
+			payload["files"] = fileTable
+		}
+		jsonData, err := json.MarshalIndent(payload, "", "  ")
+		if err != nil {
+			fmt.Printf("Error marshaling JSON: %v\n", err)
+			return
+		}
+		fmt.Println(string(jsonData))
+		return
+	}
+
+	if len(summaryTable) > 0 {
+		PrintTableSimpleByFormat(summaryTable, r.OutputFormat)
+	}
+
+	if len(fileTable) > 0 {
+		fmt.Println()
+		fmt.Println("Files（Top 10）:")
+		PrintTableSimpleByFormatWithOrder(fileTable, fileColumns, r.OutputFormat)
+	} else if hasFiles {
+		fmt.Println()
+		fmt.Println("No files found for this user.")
 	}
 }
 
