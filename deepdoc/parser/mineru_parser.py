@@ -146,6 +146,7 @@ class MinerUParser(RAGFlowPdfParser):
         self.mineru_api = mineru_api.rstrip("/")
         self.mineru_server_url = mineru_server_url.rstrip("/")
         self.outlines = []
+        self._table_fragment_index = {}
         self.logger = logging.getLogger(self.__class__.__name__)
 
     @staticmethod
@@ -349,18 +350,70 @@ class MinerUParser(RAGFlowPdfParser):
     def __images__(self, fnm, zoomin: int = 1, page_from=0, page_to=MAXIMUM_PAGE_NUMBER, callback=None):
         self.page_from = page_from
         self.page_to = page_to
+        self.zoomin = zoomin
         try:
             with pdfplumber.open(fnm) if isinstance(fnm, (str, PathLike)) else pdfplumber.open(BytesIO(fnm)) as pdf:
                 self.pdf = pdf
+                pages = self.pdf.pages[page_from:page_to]
                 self.page_images = [p.to_image(resolution=72 * zoomin, antialias=True).original for _, p in
-                                    enumerate(self.pdf.pages[page_from:page_to])]
+                                    enumerate(pages)]
+                # Capture each page's pixel size (at this zoom) so coordinate
+                # normalization in _line_tag still works if a page image is
+                # later unavailable. zoomin=1 -> 72 DPI -> 1px == 1 PDF point.
+                self.page_sizes = [(int(round(p.width * zoomin)), int(round(p.height * zoomin))) for p in pages]
         except Exception as e:
             self.page_images = None
+            self.page_sizes = None
             self.total_page = 0
             self.logger.exception(e)
 
+    # MinerU bbox coordinates are normalized to a 0-1000 range per axis.
+    MINERU_BBOX_SCALE = 1000.0
+    # Last-resort page size (A4 @ 72 DPI, points) used only when neither a
+    # rendered page image nor a captured page size is available, so highlights
+    # are still expressed in plausible display coordinates instead of raw
+    # 0-1000 values that the frontend would render wildly off-page.
+    DEFAULT_PAGE_SIZE = (595, 842)
+    # Cross-page table chaining thresholds (normalized 0-1000 space): a fragment
+    # whose bottom reaches near the page bottom is assumed to continue onto the
+    # next page when that page has a table fragment starting near its top.
+    TABLE_CONTINUES_BELOW = 850.0
+    TABLE_CONTINUES_FROM_TOP = 150.0
+
+    def _page_dims(self, page_idx):
+        """Return (width, height) in display units for a page, or (None, None).
+
+        Prefers the rendered page image; falls back to the page size captured
+        during ``__images__`` so coordinate conversion keeps working even if the
+        image is missing. Never returns raw 0-1000 coordinates to the caller.
+        """
+        imgs = getattr(self, "page_images", None)
+        if imgs and 0 <= page_idx < len(imgs):
+            return imgs[page_idx].size
+        sizes = getattr(self, "page_sizes", None)
+        if sizes and 0 <= page_idx < len(sizes):
+            return sizes[page_idx]
+        return (None, None)
+
+    def _scale_tag(self, page_idx, norm_bbox):
+        """Render a single ``@@page\\tx0\\tx1\\ttop\\tbott##`` tag, converting a
+        normalized 0-1000 bbox into page display coordinates."""
+        x0, top, x1, bott = norm_bbox
+        page_width, page_height = self._page_dims(page_idx)
+        if not (page_width and page_height):
+            page_width, page_height = self.DEFAULT_PAGE_SIZE
+            self.logger.warning(
+                "[MinerU] No page size for page_idx=%s; falling back to %s for highlight coordinates.",
+                page_idx,
+                self.DEFAULT_PAGE_SIZE,
+            )
+        x0 = (x0 / self.MINERU_BBOX_SCALE) * page_width
+        x1 = (x1 / self.MINERU_BBOX_SCALE) * page_width
+        top = (top / self.MINERU_BBOX_SCALE) * page_height
+        bott = (bott / self.MINERU_BBOX_SCALE) * page_height
+        return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format(page_idx + 1, x0, x1, top, bott)
+
     def _line_tag(self, bx):
-        pn = [bx["page_idx"] + 1]
         positions = bx.get("bbox", (0, 0, 0, 0))
         x0, top, x1, bott = positions
         # Normalize flipped coordinates (MinerU may report inverted bbox for flipped images)
@@ -369,14 +422,117 @@ class MinerUParser(RAGFlowPdfParser):
         if top > bott:
             top, bott = bott, top
 
-        if hasattr(self, "page_images") and self.page_images and len(self.page_images) > bx["page_idx"]:
-            page_width, page_height = self.page_images[bx["page_idx"]].size
-            x0 = (x0 / 1000.0) * page_width
-            x1 = (x1 / 1000.0) * page_width
-            top = (top / 1000.0) * page_height
-            bott = (bott / 1000.0) * page_height
+        page_idx = bx["page_idx"]
+        norm_bbox = [x0, top, x1, bott]
 
-        return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format("-".join([str(p) for p in pn]), x0, x1, top, bott)
+        # Cross-page tables: MinerU merges the table_body but keeps only the
+        # first fragment's bbox/page_idx (opendatalab/MinerU#3561), so the lone
+        # bbox lands in the continuation page's header band and the highlight /
+        # thumbnail miss the real rows. Recover the per-page fragments from
+        # middle.json and emit one tag per page so the highlight spans the
+        # whole table. Falls back to the single fragment when no chain is found,
+        # so non-table / single-page content is unchanged.
+        if bx.get("type") == MinerUContentType.TABLE:
+            chain = self._table_page_chain(page_idx, norm_bbox)
+        else:
+            chain = [(page_idx, norm_bbox)]
+
+        return "".join(self._scale_tag(pidx, nb) for pidx, nb in chain)
+
+    @staticmethod
+    def _normalize_bbox(bbox, page_width, page_height):
+        """Convert an absolute-pixel middle.json bbox into the 0-1000 normalized
+        space used by content_list bboxes. Returns None on malformed input."""
+        if not bbox or len(bbox) != 4 or not page_width or not page_height:
+            return None
+        x0, y0, x1, y1 = bbox
+        if x0 > x1:
+            x0, x1 = x1, x0
+        if y0 > y1:
+            y0, y1 = y1, y0
+        return [
+            x0 / page_width * MinerUParser.MINERU_BBOX_SCALE,
+            y0 / page_height * MinerUParser.MINERU_BBOX_SCALE,
+            x1 / page_width * MinerUParser.MINERU_BBOX_SCALE,
+            y1 / page_height * MinerUParser.MINERU_BBOX_SCALE,
+        ]
+
+    @staticmethod
+    def _bbox_iou(a, b):
+        """Intersection-over-union of two [x0, y0, x1, y1] boxes."""
+        ix0, iy0 = max(a[0], b[0]), max(a[1], b[1])
+        ix1, iy1 = min(a[2], b[2]), min(a[3], b[3])
+        inter = max(0.0, ix1 - ix0) * max(0.0, iy1 - iy0)
+        if inter <= 0:
+            return 0.0
+        area_a = max(0.0, a[2] - a[0]) * max(0.0, a[3] - a[1])
+        area_b = max(0.0, b[2] - b[0]) * max(0.0, b[3] - b[1])
+        union = area_a + area_b - inter
+        return inter / union if union > 0 else 0.0
+
+    def _build_table_fragment_index(self, middle_json):
+        """Map page_idx -> list of normalized table-fragment bboxes (sorted top
+        to bottom) from a parsed middle.json. Returns {} on any schema mismatch
+        so a format change can never break parsing."""
+        index = {}
+        try:
+            pages = middle_json.get("pdf_info", []) if isinstance(middle_json, dict) else []
+            for page in pages:
+                pidx = page.get("page_idx")
+                size = page.get("page_size") or []
+                if pidx is None or len(size) != 2:
+                    continue
+                page_width, page_height = size
+                fragments = []
+                for block in page.get("para_blocks", []) or []:
+                    if block.get("type") != MinerUContentType.TABLE:
+                        continue
+                    nb = self._normalize_bbox(block.get("bbox"), page_width, page_height)
+                    if nb:
+                        fragments.append(nb)
+                if fragments:
+                    fragments.sort(key=lambda b: b[1])
+                    index[int(pidx)] = fragments
+        except Exception as e:
+            self.logger.warning(f"[MinerU] Failed to build table fragment index: {e}")
+            return {}
+        return index
+
+    def _table_page_chain(self, page_idx, norm_bbox):
+        """Return ordered [(page_idx, norm_bbox), ...] covering a cross-page
+        table. Returns the single anchor unchanged when no continuation is
+        detected (or no middle.json index is available)."""
+        index = getattr(self, "_table_fragment_index", None)
+        single = [(page_idx, norm_bbox)]
+        if not index:
+            return single
+        fragments = index.get(page_idx)
+        if not fragments:
+            return single
+        # The content_list bbox is the first fragment's bbox; match it on this page.
+        anchor = max(fragments, key=lambda f: self._bbox_iou(f, norm_bbox))
+        if self._bbox_iou(anchor, norm_bbox) <= 0.0:
+            return single
+
+        chain = [(page_idx, anchor)]
+        cur_page, cur = page_idx, anchor
+        seen = {page_idx}
+        # Extend while the current fragment reaches the page bottom and the next
+        # page has a table fragment starting near its top.
+        while cur[3] >= self.TABLE_CONTINUES_BELOW:
+            next_page = cur_page + 1
+            if next_page in seen:
+                break
+            next_fragments = index.get(next_page)
+            if not next_fragments:
+                break
+            top_fragment = next_fragments[0]  # already sorted by top
+            if top_fragment[1] > self.TABLE_CONTINUES_FROM_TOP:
+                break
+            chain.append((next_page, top_fragment))
+            seen.add(next_page)
+            cur_page, cur = next_page, top_fragment
+        return chain
 
     def crop(self, text, ZM=1, need_position=False):
         imgs = []
@@ -654,6 +810,21 @@ class MinerUParser(RAGFlowPdfParser):
                     item[key] = str((subdir / item[key]).resolve())
         return data
 
+    def _read_middle_json(self, output_dir: Path) -> dict:
+        """Locate and load ``*_middle.json`` from the MinerU output, returning {}
+        if absent or unreadable. Used to recover per-page table fragments."""
+        try:
+            candidates = sorted(output_dir.glob("**/*_middle.json"))
+            if not candidates:
+                self.logger.info("[MinerU] No middle.json found; cross-page table positions unavailable.")
+                return {}
+            with open(candidates[0], "r", encoding="utf-8") as f:
+                self.logger.info(f"[MinerU] Loaded middle.json: {candidates[0]}")
+                return json.load(f)
+        except Exception as e:
+            self.logger.warning(f"[MinerU] Failed to read middle.json: {e}")
+            return {}
+
     def _transfer_to_sections(self, outputs: list[dict[str, Any]], parse_method: str = None, table_enable: bool = False):
         sections = []
         for output in outputs:
@@ -827,6 +998,9 @@ class MinerUParser(RAGFlowPdfParser):
             )
             final_out_dir = self._run_mineru(pdf, out_dir, options, callback=callback)
             outputs = self._read_output(final_out_dir, pdf.stem, method=mineru_method_raw_str, backend=backend)
+            # Build the per-page table-fragment index so cross-page tables get
+            # multi-page highlight positions (see _table_page_chain).
+            self._table_fragment_index = self._build_table_fragment_index(self._read_middle_json(final_out_dir))
             self.logger.info(f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
             if callback:
                 callback(0.75, f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
