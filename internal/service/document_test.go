@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -1538,6 +1539,25 @@ func TestBatchUpdateDocumentMetadatasNormalizesNumberValues(t *testing.T) {
 		}
 	default:
 		t.Fatalf("score type = %T, want numeric value", got)
+	}
+}
+
+func TestBatchUpdateDocumentMetadatasRejectsMissingValue(t *testing.T) {
+	svc := testDocumentService(t)
+	resp, code, err := svc.BatchUpdateDocumentMetadatas("kb-1", &DocumentMetadataSelector{}, []DocumentMetadataUpdate{
+		{Key: "status"},
+	}, nil)
+	if err == nil {
+		t.Fatal("expected validation error for missing value")
+	}
+	if resp != nil {
+		t.Fatalf("resp = %#v, want nil", resp)
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("code = %v, want data error", code)
+	}
+	if !strings.Contains(err.Error(), "Each update requires key and value.") {
+		t.Fatalf("err = %v", err)
 	}
 }
 

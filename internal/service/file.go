@@ -420,7 +420,7 @@ func (s *FileService) UploadInfos(userID string, files []*multipart.FileHeader) 
 		if err != nil {
 			return nil, fmt.Errorf("failed to open uploaded file: %w", err)
 		}
-		data, readErr := io.ReadAll(src)
+		data, readErr := readUploadInfoData(src)
 		src.Close()
 		if readErr != nil {
 			return nil, fmt.Errorf("failed to read file data: %w", readErr)
@@ -438,6 +438,18 @@ func (s *FileService) UploadInfos(userID string, files []*multipart.FileHeader) 
 		results = append(results, resp)
 	}
 	return results, nil
+}
+
+func readUploadInfoData(r io.Reader) ([]byte, error) {
+	limited := &io.LimitedReader{R: r, N: maxRemoteFileSize + 1}
+	data, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxRemoteFileSize {
+		return nil, fmt.Errorf("file size exceeds %d bytes", maxRemoteFileSize)
+	}
+	return data, nil
 }
 
 func (s *FileService) parseFilePath(filename string) []string {
@@ -1326,17 +1338,17 @@ func normalizeUploadInfoContent(filename, contentType string, data []byte) (stri
 		lowerCT = http.DetectContentType(data)
 	}
 
-	if lowerCT == "text/html" || lowerCT == "application/xhtml+xml" || looksLikeHTML(data) {
-		data = htmlToReadableMarkdown(data)
-		if lowerCT == "" {
-			lowerCT = "text/html"
-		}
-	}
 	if lowerCT == "application/pdf" || bytesLooksLikePDF(data) {
 		if !strings.HasSuffix(strings.ToLower(filename), ".pdf") {
 			filename += ".pdf"
 		}
 		lowerCT = "application/pdf"
+	}
+	if lowerCT == "text/html" || lowerCT == "application/xhtml+xml" || looksLikeHTML(data) {
+		data = htmlToReadableMarkdown(data)
+		if lowerCT == "" {
+			lowerCT = "text/html"
+		}
 	}
 	return filename, lowerCT, data
 }

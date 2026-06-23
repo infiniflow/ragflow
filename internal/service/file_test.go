@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -221,4 +222,41 @@ func TestFileService_UploadFromURL_HTMLNormalizesReadableContent(t *testing.T) {
 	if resp["mime_type"] != "text/html" {
 		t.Fatalf("mime_type = %#v", resp["mime_type"])
 	}
+}
+
+func TestNormalizeUploadInfoContent_PDFTakesPrecedenceOverHTML(t *testing.T) {
+	filename, contentType, data := normalizeUploadInfoContent(
+		"report",
+		"text/html",
+		[]byte("%PDF-1.7 fake pdf"),
+	)
+	if filename != "report.pdf" {
+		t.Fatalf("filename = %q, want report.pdf", filename)
+	}
+	if contentType != "application/pdf" {
+		t.Fatalf("contentType = %q, want application/pdf", contentType)
+	}
+	if !bytes.Equal(data, []byte("%PDF-1.7 fake pdf")) {
+		t.Fatalf("pdf bytes were unexpectedly transformed: %q", string(data))
+	}
+}
+
+func TestReadUploadInfoData_RejectsOversizedInput(t *testing.T) {
+	reader := io.LimitReader(zeroReader{}, maxRemoteFileSize+1)
+	_, err := readUploadInfoData(reader)
+	if err == nil {
+		t.Fatal("expected oversized input to be rejected")
+	}
+	if !strings.Contains(err.Error(), "file size exceeds") {
+		t.Fatalf("err = %v, want size limit message", err)
+	}
+}
+
+type zeroReader struct{}
+
+func (zeroReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = 0
+	}
+	return len(p), nil
 }

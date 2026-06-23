@@ -2293,7 +2293,7 @@ func validateBatchUpdateDocumentMetadatasRequest(
 	deletes []DocumentMetadataDelete,
 ) (common.ErrorCode, error) {
 	for _, upd := range updates {
-		if strings.TrimSpace(upd.Key) == "" {
+		if strings.TrimSpace(upd.Key) == "" || upd.Value == nil {
 			return common.CodeDataError, errors.New("Each update requires key and value.")
 		}
 	}
@@ -2377,19 +2377,19 @@ func applyDocumentMetadataUpdates(meta map[string]interface{}, updates []Documen
 				continue
 			}
 
-				replaced := false
-				newList := make([]interface{}, 0, len(curList))
-				for _, item := range curList {
-					if documentMetadataValuesEqual(item, upd.Match) {
-						if replacementList, ok := toMetadataInterfaceSlice(normalizedValue); ok {
-							newList = append(newList, replacementList...)
-						} else {
-							newList = append(newList, normalizedValue)
-						}
-						replaced = true
+			replaced := false
+			newList := make([]interface{}, 0, len(curList))
+			for _, item := range curList {
+				if documentMetadataValuesEqual(item, upd.Match) {
+					if replacementList, ok := toMetadataInterfaceSlice(normalizedValue); ok {
+						newList = append(newList, replacementList...)
 					} else {
-						newList = append(newList, item)
+						newList = append(newList, normalizedValue)
 					}
+					replaced = true
+				} else {
+					newList = append(newList, item)
+				}
 			}
 			newList = dedupeDocumentMetadataList(newList)
 			if replaced && !reflect.DeepEqual(curList, newList) {
