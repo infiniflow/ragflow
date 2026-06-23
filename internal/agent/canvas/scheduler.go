@@ -235,7 +235,9 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*graphpkg.StateGraph, error)
 	}
 
 	// Pass 2.5: install Branch edges for Switch/Categorize parents.
-	wireMultiBranches(sg, c, loopMembers)
+	if err := wireMultiBranches(sg, c, loopMembers); err != nil {
+		return nil, fmt.Errorf("canvas: wire branches: %w", err)
+	}
 
 	// Pass 3: wire start/end nodes.
 	for cpnID := range c.Components {

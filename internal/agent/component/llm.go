@@ -381,11 +381,12 @@ func invokeWithTools(ctx context.Context, req ChatInvokeRequest, driver string, 
 		return nil, fmt.Errorf("invokeWithTools: marshal: %w", err)
 	}
 
-	// Use independent timeout (not parent ctx) so the HTTP server's
-	// WriteTimeout (120s) doesn't cancel individual API calls. The
-	// component-level timeout (600s in realComponentBody, env
-	// COMPONENT_EXEC_TIMEOUT) governs the total execution time.
-	callCtx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
+	// Derive from caller's ctx so cancellation propagates (e.g. Agent
+	// run cancelled mid-request). The 300s inner timeout is a safety
+	// bound even if ctx never cancels. The component-level timeout
+	// (600s in realComponentBody, env COMPONENT_EXEC_TIMEOUT) governs
+	// the total execution time across all tool calls.
+	callCtx, cancel := context.WithTimeout(ctx, 300*time.Second)
 	defer cancel()
 
 	httpReq, err := http.NewRequestWithContext(callCtx, "POST", url, bytes.NewBuffer(jsonData))

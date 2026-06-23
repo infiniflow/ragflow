@@ -3,6 +3,7 @@ package pregel
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"reflect"
@@ -16,6 +17,7 @@ import (
 	"ragflow/internal/harness/graph/constants"
 	"ragflow/internal/harness/graph/errors"
 	"ragflow/internal/harness/graph/graph"
+	"ragflow/internal/harness/graph/interrupt"
 	"ragflow/internal/harness/graph/types"
 )
 
@@ -257,22 +259,74 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 		// Get thread ID for checkpointing
 		threadID := e.getThreadID()
 
-		// Load checkpoint only when resuming (input == nil).
-		// New executions (input != nil) start from scratch — checkpoint is not loaded,
-		// preventing state from bleeding across independent runs on the same Engine.
-		if input == nil && e.checkpointer != nil {
-			cpData, err := e.checkpointer.Get(ctx, map[string]interface{}{
+		// Load checkpoint when one exists for this thread_id, even when
+		// input is non-nil (resume from a previous run).  The canvas
+		// always passes a non-nil input ({"query": ...}) on resume, so
+		// a strict input==nil guard would prevent checkpoint recovery.
+		// We only skip checkpoint loading if the checkpointer reports
+		// no data (fresh start).
+		// When a checkpoint IS loaded, do NOT apply input — the
+		// channel values from the checkpoint already contain the
+		// state at the point of interruption.
+		var (
+			didLoadCheckpoint   bool
+			cpCompletedTasks    map[string]bool
+			cpLastCompletedNode string
+			cpData              map[string]interface{}
+		)
+		if e.checkpointer != nil {
+			var cpErr error
+			cpData, cpErr = e.checkpointer.Get(ctx, map[string]interface{}{
 				constants.ConfigKeyThreadID: threadID,
 			})
-			if err == nil && cpData != nil {
-				if err := channelRegistry.RestoreFromCheckpoint(cpData); err != nil {
-					errCh <- fmt.Errorf("failed to restore from checkpoint: %w", err)
-					return
+			if cpErr == nil && cpData != nil {
+				didLoadCheckpoint = true
+				log.Printf("DBG LOOP_CHECK: loaded checkpoint thread=%s has_sub=%v", threadID, cpData["__sub_state__"] != nil)
+				// Restore sub-state (e.g. Loop iteration, currentInput)
+				// and inject into interrupt context so Loop node can
+				// read it via loadLoopSnapshot on resume.
+				if raw, ok := cpData["__sub_state__"]; ok {
+					switch v := raw.(type) {
+					case []byte:
+						pipelineCtx = context.WithValue(pipelineCtx, interrupt.SubGraphStateCtxKey, v)
+					case string:
+						pipelineCtx = context.WithValue(pipelineCtx, interrupt.SubGraphStateCtxKey, []byte(v))
+					}
 				}
-				// Load checkpoint object
+				// Restore completed task tracking.
+				if raw, ok := cpData["__completed_tasks__"]; ok {
+					if s, ok := raw.(string); ok {
+						cpCompletedTasks = deserializeStringSet(s)
+					}
+				}
+				if raw, ok := cpData["__last_completed_node__"]; ok {
+					if s, ok := raw.(string); ok {
+						cpLastCompletedNode = s
+					}
+				}
+				// Only restore keys that correspond to registered channels.
+				filtered := make(map[string]interface{})
+				for k, v := range cpData {
+					if _, ok := channelRegistry.Get(k); ok {
+						filtered[k] = v
+					}
+				}
+				if len(filtered) > 0 {
+					if err := channelRegistry.RestoreFromCheckpoint(filtered); err != nil {
+						errCh <- fmt.Errorf("failed to restore from checkpoint: %w", err)
+						return
+					}
+				}
 				if cp, err := checkpoint.FromMap(cpData); err == nil {
 					e.currentCheckpoint = cp
 				}
+			}
+		}
+		// Apply input only when no checkpoint was loaded.
+		if !didLoadCheckpoint {
+			if err := e.applyInput(channelRegistry, input); err != nil {
+				errCh <- fmt.Errorf("failed to apply input: %w", err)
+				return
 			}
 		}
 
@@ -290,9 +344,33 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 
 		// Execute Pregel loop
 		step := 0
-		completedTasks := make(map[string]bool)
-		lastCompletedNode := ""
-		lastState := input
+		var completedTasks map[string]bool
+		lastCompletedNode := cpLastCompletedNode
+		if didLoadCheckpoint && cpCompletedTasks != nil {
+			completedTasks = cpCompletedTasks
+		} else {
+			completedTasks = make(map[string]bool)
+		}
+		var lastState interface{}
+		if didLoadCheckpoint {
+			if raw, ok := cpData["__last_state__"]; ok {
+				var jsonBytes []byte
+				switch v := raw.(type) {
+				case string:
+					jsonBytes = []byte(v)
+				case []byte:
+					jsonBytes = v
+				}
+				if jsonBytes != nil {
+					var decoded map[string]any
+					if json.Unmarshal(jsonBytes, &decoded) == nil {
+						lastState = decoded
+					}
+				}
+			}
+		} else {
+			lastState = input
+		}
 
 		for {
 			// Check context cancellation at each superstep.
@@ -313,7 +391,7 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 			streamManager.EmitCheckpoint(step, channelRegistry.CreateCheckpoint())
 
 			// Determine next tasks
-			tasks, triggers, err := e.prepareNextTasks(channelRegistry, completedTasks, lastCompletedNode, lastState)
+			tasks, triggers, err := e.prepareNextTasks(ctx, channelRegistry, completedTasks, lastCompletedNode, lastState)
 			if err != nil {
 				errCh <- fmt.Errorf("failed to prepare next tasks: %w", err)
 				return
@@ -379,17 +457,54 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 			}
 			// If any task was interrupted, handle the interrupt.
 			if len(interruptTaskNames) > 0 {
-				// Save checkpoint
+				log.Printf("DBG engine interrupt path: step=%d tasks=%v allFailed=%v", step, interruptTaskNames, allFailed)
+				// Save checkpoint with completed_tasks and sub_state.
 				if e.checkpointer != nil {
-					checkpoint := channelRegistry.CreateCheckpoint()
-					if err := e.saveCheckpoint(ctx, e.getThreadID(), "", step, map[string]interface{}{
-						"channel_values": checkpoint,
-					}); err != nil {
+					checkpointData := channelRegistry.CreateCheckpoint()
+					cpPayload := make(map[string]interface{}, len(checkpointData)+4)
+					for k, v := range checkpointData {
+						cpPayload[k] = v
+					}
+					cpPayload["__completed_tasks__"] = serializeStringSet(completedTasks)
+					cpPayload["__last_completed_node__"] = lastCompletedNode
+					cpPayload["__step__"] = float64(step)
+					// Persist lastState as string (not []byte) to avoid
+					// JSON double-base64-encoding when the checkpointer
+					// adapter serializes the whole payload.
+					if lastState != nil {
+						if ls, err := json.Marshal(lastState); err == nil {
+							cpPayload["__last_state__"] = string(ls)
+						}
+					}
+					// Extract sub-state from GraphInterrupt value.
+					for _, r := range results {
+						if gi, ok := r.Err.(*errors.GraphInterrupt); ok && len(gi.Interrupts) > 0 {
+							if intr, ok := gi.Interrupts[0].(*types.Interrupt); ok && intr.Value != nil {
+								if b, e := json.Marshal(intr.Value); e == nil {
+									cpPayload["__sub_state__"] = b
+								}
+							}
+							break
+						}
+					}
+					if err := e.checkpointer.Put(ctx, map[string]interface{}{
+						constants.ConfigKeyThreadID: e.getThreadID(),
+					}, cpPayload); err != nil {
 						errCh <- fmt.Errorf("failed to save checkpoint on interrupt: %w", err)
 						return
 					}
 				}
 				streamManager.EmitInterrupt(step, interruptTaskNames)
+				// Preserve the first interrupted task's GraphInterrupt value
+				// (with Interrupts populated) instead of creating a bare one,
+				// so MustExtractInterruptContexts can extract the original
+				// UserFillUp spec / tips / cpn_id from it.
+				for _, r := range results {
+					if gi, ok := r.Err.(*errors.GraphInterrupt); ok && len(gi.Interrupts) > 0 {
+						errCh <- gi
+						return
+					}
+				}
 				errCh <- &errors.GraphInterrupt{}
 				return
 			}
@@ -397,6 +512,11 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 			// Terminate immediately rather than infinitely re-scheduling the
 			// same failing nodes (e.g. a panicking node caught by recover()).
 			if allFailed {
+				var why string
+				for _, r := range results {
+					why += fmt.Sprintf(" %s=%T(%v)", r.Name, r.Err, r.Err)
+				}
+				log.Printf("DBG allFailed step=%d results=[%s]", step, why)
 				errCh <- fmt.Errorf("all %d tasks failed in step %d", len(results), step)
 				return
 			}
@@ -481,12 +601,13 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 // prepareNextTasks determines which tasks to execute next.
 // This is the standard version that prepares tasks for execution.
 func (e *Engine) prepareNextTasks(
+	ctx context.Context,
 	registry *channels.Registry,
 	completedTasks map[string]bool,
 	lastCompletedNode string,
 	currentState interface{},
 ) ([]*Task, map[string]struct{}, error) {
-	return e.prepareNextTasksWithMode(registry, completedTasks, lastCompletedNode, currentState, true)
+	return e.prepareNextTasksWithMode(ctx, registry, completedTasks, lastCompletedNode, currentState, true)
 }
 
 // prepareNextTasksWithMode determines which tasks to execute next with for_execution mode.
@@ -497,6 +618,7 @@ func (e *Engine) prepareNextTasks(
 // source nodes have completed. In AnyPredecessor (Pregel/BSP) mode (default), a node is
 // triggered when any predecessor completes. AllPredecessor does not support cycles.
 func (e *Engine) prepareNextTasksWithMode(
+	ctx context.Context,
 	registry *channels.Registry,
 	completedTasks map[string]bool,
 	lastCompletedNode string,
@@ -548,7 +670,7 @@ func (e *Engine) prepareNextTasksWithMode(
 
 	// AnyPredecessor (Pregel/BSP) mode: determine next nodes from the
 	// last completed node's outgoing edges.
-	nextNodes := e.getNextNodes(lastCompletedNode, currentState)
+	nextNodes := e.getNextNodes(ctx, lastCompletedNode, currentState)
 
 	for nodeName := range nextNodes {
 		node := e.getNode(nodeName)
@@ -1128,30 +1250,37 @@ func (e *Engine) getNode(name string) *graph.Node {
 	return n
 }
 
-func (e *Engine) getNextNodes(node string, state interface{}) map[string]bool {
+func (e *Engine) getNextNodes(ctx context.Context, node string, state interface{}) map[string]bool {
+	log.Printf("DBG getNextNodes: node=%q state=%v", node, state)
 	nextNodes := make(map[string]bool)
 
-	// Check conditional edges
+	// (1) Check conditional edges.  When a node has conditional edges,
+	// ONLY the matched target(s) are scheduled — the regular-edge
+	// fallback is skipped entirely so branchable nodes (Switch,
+	// Categorize) route exclusively via the _next value.
+	hasConditional := false
 	for _, condEdge := range e.graph.GetConditionalEdges() {
-		if condEdge.From == node {
-			conditionResult, err := condEdge.Condition(nil, state)
-			if err != nil {
-				continue
-			}
-			conditionKey := fmt.Sprintf("%v", conditionResult)
-			targetNode, ok := condEdge.Mapping[conditionKey]
-			if !ok {
-				continue
-			}
-			if targetNode == constants.End {
-				return nextNodes // Return empty to signal end
-			}
-			nextNodes[targetNode] = true
+		if condEdge.From != node {
+			continue
 		}
+		hasConditional = true
+		conditionResult, err := condEdge.Condition(ctx, state)
+		if err != nil {
+			continue
+		}
+		conditionKey := fmt.Sprintf("%v", conditionResult)
+		targetNode, ok := condEdge.Mapping[conditionKey]
+		if !ok {
+			continue
+		}
+		if targetNode == constants.End {
+			return nextNodes
+		}
+		nextNodes[targetNode] = true
 	}
 
-	// Check regular edges if no conditional edge was found
-	if len(nextNodes) == 0 {
+	// (2) Regular edges: ONLY when this node has no conditional edges.
+	if !hasConditional && len(nextNodes) == 0 {
 		for _, edge := range e.graph.GetEdges() {
 			if edge.From == node {
 				if edge.To == constants.End {
@@ -1162,10 +1291,36 @@ func (e *Engine) getNextNodes(node string, state interface{}) map[string]bool {
 		}
 	}
 
-	// Check branches
+	// (3) Resume fallback: when the last completed node has no outgoing
+	// edges but the graph state contains _next (persisted from a
+	// Switch/Categorize branch), route directly from _next.  This
+	// happens on checkpoint resume because the conditional edge is
+	// registered on the Switch node, not on __loop_init__.
+	if len(nextNodes) == 0 {
+		if st, ok := state.(map[string]any); ok {
+			if raw, has := st["_next"]; has && raw != nil {
+				switch tv := raw.(type) {
+				case string:
+					if _, exists := e.graph.GetNode(tv); exists {
+						nextNodes[tv] = true
+					}
+				case []any:
+					if len(tv) > 0 {
+						if s, ok := tv[0].(string); ok {
+							if _, exists := e.graph.GetNode(s); exists {
+								nextNodes[s] = true
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// (4) Branches: always included on top of whatever was scheduled.
 	for _, branch := range e.graph.GetBranches() {
 		if branch.From == node {
-			branchResult, err := branch.Condition(nil, state)
+			branchResult, err := branch.Condition(ctx, state)
 			if err != nil {
 				continue
 			}
@@ -1224,12 +1379,13 @@ func (e *Engine) createTaskInfo(node *graph.Node, state interface{}, channels []
 // PrepareNextTasksForInspection prepares tasks for inspection/planning only (for_execution=false).
 // This corresponds to Python's prepare_next_tasks with for_execution=False.
 func (e *Engine) PrepareNextTasksForInspection(
+	ctx context.Context,
 	registry *channels.Registry,
 	completedTasks map[string]bool,
 	lastCompletedNode string,
 	currentState interface{},
 ) ([]*Task, map[string]struct{}, error) {
-	return e.prepareNextTasksWithMode(registry, completedTasks, lastCompletedNode, currentState, false)
+	return e.prepareNextTasksWithMode(ctx, registry, completedTasks, lastCompletedNode, currentState, false)
 }
 
 func (e *Engine) applyInput(registry *channels.Registry, input interface{}) error {
@@ -1489,4 +1645,39 @@ func setNestedField(m map[string]interface{}, path string, val interface{}) {
 		}
 	}
 	m[parts[len(parts)-1]] = val
+}
+
+// serializeStringSet encodes a map[string]bool to a NUL-separated string
+// for storage in the checkpoint payload.
+func serializeStringSet(m map[string]bool) string {
+	if len(m) == 0 {
+		return ""
+	}
+	s := make([]string, 0, len(m))
+	for k := range m {
+		s = append(s, k)
+	}
+	sort.Strings(s)
+	out := make([]byte, 0, 256)
+	for i, k := range s {
+		if i > 0 {
+			out = append(out, 0)
+		}
+		out = append(out, k...)
+	}
+	return string(out)
+}
+
+// deserializeStringSet decodes a NUL-separated string back to a
+// map[string]bool.
+func deserializeStringSet(s string) map[string]bool {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, "\x00")
+	out := make(map[string]bool, len(parts))
+	for _, p := range parts {
+		out[p] = true
+	}
+	return out
 }

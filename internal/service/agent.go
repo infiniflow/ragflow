@@ -721,12 +721,33 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		for key, val := range extractBeginInputs(dsl) {
 			state.SetVar("begin", key, val)
 		}
+		// Load DSL globals into state.Env (env.* defaults).
+		// Without this, env.counter, env.zero etc. are missing
+		// and VariableAssigner operators fail with
+		// "ERROR:VARIABLE_NOT_NUMBER or PARAMETER_NOT_NUMBER".
+		if globals, ok := dsl["globals"].(map[string]any); ok {
+			for k, v := range globals {
+				if strings.HasPrefix(k, "env.") {
+					state.Env[strings.TrimPrefix(k, "env.")] = v
+				}
+			}
+		}
 		// Sys["query"] is the canonical Begin-node input key
 		// (BeginComponent.Invoke reads inputs["query"] and writes
 		// it into state.Sys["query"]). Pre-seeding it here lets
 		// the first Begin run see the user's input even before
 		// Begin writes back.
-		state.Sys["query"] = userInput
+		//
+		// On resume, DON'T overwrite Sys["query"] with the new user
+		// input — the checkpoint channel restore already has the
+		// original query, and overwriting would cause the
+		// UserFillUp:Menu dispatch to use the new input for routing
+		// instead of the original menu selection.  The new input is
+		// passed through AppendResumeValue for the interrupted
+		// UserFillUp component.
+		if _, resume := root["__resume_interrupt_id__"]; !resume {
+			state.Sys["query"] = userInput
+		}
 		if tid := tenantIDFromRoot(root); tid != "" {
 			state.Sys["tenant_id"] = tid
 		}
@@ -896,7 +917,7 @@ func normalisedDSLForRun(v *entity.UserCanvasVersion) map[string]any {
 	if v == nil || len(v.DSL) == 0 {
 		return nil
 	}
-	return dslpkg.NormalizeForCanvas(map[string]any(v.DSL))
+	return dslpkg.NormalizeForRun(map[string]any(v.DSL))
 }
 
 // extractComponentInfo builds component-type and component-name maps from

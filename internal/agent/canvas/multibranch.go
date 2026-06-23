@@ -15,6 +15,7 @@ package canvas
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	graphpkg "ragflow/internal/harness/graph/graph"
@@ -33,20 +34,22 @@ func isBranchableControl(name string) bool {
 	return branchableControlNames[strings.ToLower(name)]
 }
 
-// wireMultiBranches registers an harness AddBranch on every branchable
-// parent that has at least two declared downstream children.
+// wireMultiBranches registers AddConditionalEdges on every branchable
+// parent (Switch, Categorize) that has >= 2 downstream children.
 //
-// For harness, the branch condition receives the graph state (not the
-// node output map). The state carries the parent output through
-// CanvasState.Outputs[parentID], so the condition reads
-// state["state"]["_next"] (injected by statePre).
+// The condition reads the Switch/Categorize output (_next) from
+// CanvasState (attached to ctx) — the Pregel engine's graph state does
+// not carry per-node outputs because those live in CanvasState.Outputs.
+// When a branchable node has conditional edges, the engine's getNextNodes
+// does NOT fall back to AddEdge (regular edges), so only the routed
+// child executes.
 func wireMultiBranches(
 	sg *graphpkg.StateGraph,
 	c *Canvas,
 	loopMembers map[string]bool,
-) {
+) error {
 	if sg == nil || c == nil {
-		return
+		return nil
 	}
 	for cpnID, comp := range c.Components {
 		if loopMembers[cpnID] {
@@ -69,44 +72,46 @@ func wireMultiBranches(
 		if len(endNodes) < 2 {
 			continue
 		}
-		endNodesList := make([]string, 0, len(endNodes))
+
+		// Build mapping: every child maps to itself so the reachability
+		// check passes and the condition can return any child ID.
+		mapping := make(map[string]string, len(endNodes))
 		for n := range endNodes {
-			endNodesList = append(endNodesList, n)
+			mapping[n] = n
 		}
 
-		// Build condition: read _next from the state snapshot.
+		// Condition: read _next from the graph state (merged output of
+		// the last completed node — Switch/Categorize writes _next as a
+		// top-level key).  The graph state is available via the `state`
+		// parameter; CanvasState is NOT directly accessible because the
+		// engine's goroutine may wrap the context.
 		condition := func(ctx context.Context, state any) (any, error) {
-			st, ok := state.(map[string]any)
+			m, ok := state.(map[string]any)
 			if !ok {
 				return "", nil
 			}
-			stateVal, _ := st["state"].(map[string]map[string]any)
-			if stateVal == nil {
+			raw, has := m["_next"]
+			if !has || raw == nil {
 				return "", nil
 			}
-			parentOut, _ := stateVal[cpnID]
-			if parentOut == nil {
-				return "", nil
+			switch tv := raw.(type) {
+			case string:
+				if endNodes[tv] {
+					return tv, nil
+				}
+			case []any:
+				if len(tv) > 0 {
+					if s, ok := tv[0].(string); ok && endNodes[s] {
+						return s, nil
+					}
+				}
 			}
-			next, ok := parentOut["_next"].(string)
-			if !ok || next == "" || !endNodes[next] {
-				return "", nil
-			}
-			return next, nil
+			return "", nil
 		}
 
-		then := func(v interface{}) []string {
-			s, _ := v.(string)
-			if s == "" {
-				return nil
-			}
-			return []string{s}
-		}
-
-		if err := sg.AddBranch(cpnID, condition, then); err != nil {
-			// Log and continue — a misconfigured branch does not
-			// prevent the graph from running (it just won't branch).
-			_ = err
+		if err := sg.AddConditionalEdges(cpnID, condition, mapping); err != nil {
+			return fmt.Errorf("canvas: add conditional edges for %q: %w", cpnID, err)
 		}
 	}
+	return nil
 }

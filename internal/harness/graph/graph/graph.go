@@ -851,6 +851,12 @@ func (cg *CompiledGraph) inlineRun(ctx context.Context, input interface{}, confi
 
 		for _, result := range results {
 			if result.err != nil {
+				// Pass GraphInterrupt through unwrapped so the caller
+				// (e.g. runLoop in loop.go) can detect it via direct
+				// type assertion.  Wrapping it would prevent detection.
+				if errors.IsGraphInterrupt(result.err) {
+					return nil, result.err
+				}
 				return nil, fmt.Errorf("node %s failed: %w", result.nodeName, result.err)
 			}
 			completedTasks[result.nodeName] = true
@@ -973,26 +979,26 @@ func inlineGetNextTasks(ctx context.Context, registry *channels.Registry, comple
 	}
 	if lastCompletedNode != "" {
 		nextNodes := make(map[string]bool)
+		hasConditional := false
 		for _, condEdge := range g.conditionalEdges {
 			if condEdge.From == lastCompletedNode {
+				hasConditional = true
 				conditionResult, err := condEdge.Condition(ctx, currentState)
 				if err != nil {
-					return nil, fmt.Errorf("condition evaluation failed for node %s: %w", lastCompletedNode, err)
+					continue
 				}
 				conditionKey := fmt.Sprintf("%v", conditionResult)
 				targetNode, ok := condEdge.Mapping[conditionKey]
 				if !ok {
-					return nil, fmt.Errorf("no mapping for condition result %s from node %s", conditionKey, lastCompletedNode)
+					continue
 				}
 				if targetNode == constants.End {
 					return tasks, nil
 				}
-				// BSP mode: always schedule conditional edge targets, even if previously completed.
-				// The conditional router can dynamically route to different nodes each time.
 				nextNodes[targetNode] = true
 			}
 		}
-		if len(nextNodes) == 0 {
+		if !hasConditional && len(nextNodes) == 0 {
 			for _, edge := range g.edges {
 				if edge.From == lastCompletedNode {
 					if edge.To == constants.End {
@@ -1002,6 +1008,30 @@ func inlineGetNextTasks(ctx context.Context, registry *channels.Registry, comple
 					// completedTasks only prevents re-scheduling the SAME node,
 					// not nodes reached via outgoing edges (support loops).
 					nextNodes[edge.To] = true
+				}
+			}
+		}
+		// Resume fallback: when lastCompletedNode has no outgoing edges
+		// but currentState contains _next (persisted from Switch/Categorize),
+		// route directly from _next.  This handles checkpoint resume where
+		// the conditional edge is on a different node.
+		if len(nextNodes) == 0 {
+			if st, ok := currentState.(map[string]any); ok {
+				if raw, has := st["_next"]; has && raw != nil {
+					switch tv := raw.(type) {
+					case string:
+						if _, exists := g.GetNode(tv); exists {
+							nextNodes[tv] = true
+						}
+					case []any:
+						if len(tv) > 0 {
+							if s, ok := tv[0].(string); ok {
+								if _, exists := g.GetNode(s); exists {
+									nextNodes[s] = true
+								}
+							}
+						}
+					}
 				}
 			}
 		}

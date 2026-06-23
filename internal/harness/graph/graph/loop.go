@@ -29,6 +29,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 
 	"ragflow/internal/harness/graph/interrupt"
 	"ragflow/internal/harness/graph/types"
@@ -85,11 +86,20 @@ var (
 	ErrLoopResumeStateInvalid    = errors.New("graph: loop resume state invalid")
 )
 
+// loopStateCtxKey is the context key for storing loop sub-graph state
+// during checkpoint restore. It is separate from the interrupt resume
+// values so that UserFillUp's consumeNextResumeValue doesn't accidentally
+// consume the loop state instead of the user's follow-up input.
+type loopStateCtxKeyType struct{}
+
+var loopStateCtxKey = loopStateCtxKeyType{}
+
 // loopInterruptState is the JSON-serialised loop state saved when the
 // sub-graph emits an interrupt.
 type loopInterruptState struct {
-	Iteration    int    `json:"iteration"`
-	CurrentInput []byte `json:"current_input,omitempty"`
+	Iteration       int             `json:"iteration"`
+	CurrentInput    json.RawMessage `json:"current_input,omitempty"`
+	UserFillUpValue json.RawMessage `json:"user_fill_up_value,omitempty"`
 }
 
 // NewLoopNodeFunc wraps a compiled sub-graph into a NodeFunc that loops.
@@ -156,6 +166,12 @@ func runLoop(
 	} else {
 		current = input
 	}
+	// Guard against nil input. The sub-graph's inlineApplyInput
+	// (inlineToMap) fails on nil with "nil value". An empty map
+	// is safe and harmless for the first iteration.
+	if current == nil {
+		current = make(map[string]any)
+	}
 
 	iteration := startIteration
 
@@ -172,22 +188,35 @@ func runLoop(
 		if invokeErr != nil {
 			// Check if it's an interrupt from the sub-graph.
 			if interrupt.IsInterrupt(invokeErr) {
-				// Encode loop state and re-throw so the outer engine
-				// saves a checkpoint with our state attached.
+				// Encode loop state and re-throw via interrupt.Interrupt
+				// so the outer engine receives a GraphInterrupt with a
+				// non-nil Interrupts list (required for the engine's
+				// IsGraphInterrupt→interrupt detection chain).  Preserve
+				// the original UserFillUp value inside the state so
+				// MustExtractInterruptContexts can extract tips/cpn_id.
 				currentJSON, mErr := json.Marshal(current)
 				if mErr != nil {
 					return nil, fmt.Errorf("graph: loop marshal state: %w", mErr)
 				}
+				originalVal, _ := interrupt.GetInterruptValue(invokeErr)
+				var fillUpJSON json.RawMessage
+				if originalVal != nil {
+					if b, e := json.Marshal(originalVal); e == nil {
+						fillUpJSON = b
+					}
+				}
 				loopState := loopInterruptState{
-					Iteration:    iteration,
-					CurrentInput: currentJSON,
+					Iteration:       iteration,
+					CurrentInput:    currentJSON,
+					UserFillUpValue: fillUpJSON,
 				}
 				stateJSON, mErr := json.Marshal(loopState)
 				if mErr != nil {
 					return nil, fmt.Errorf("graph: loop marshal interrupt state: %w", mErr)
 				}
 				_, interruptErr := interrupt.Interrupt(ctx, stateJSON)
-				return nil, errors.Join(ErrLoopSubgraphInterrupted, interruptErr)
+				log.Printf("DBG runLoop interruptErr=%T %v", interruptErr, interruptErr)
+				return nil, interruptErr
 			}
 			return nil, fmt.Errorf("graph: loop iteration %d: %w", iteration, invokeErr)
 		}
@@ -210,8 +239,24 @@ func runLoop(
 	}
 }
 
-// loadLoopSnapshot reads the loop state from interrupt resume values.
+// loadLoopSnapshot reads the loop state from context (set by the engine
+// during checkpoint restore). Falls back to interrupt resume values for
+// backward compatibility.
 func loadLoopSnapshot(ctx context.Context) (loopInterruptState, bool) {
+	// Check context key first (set by engine's checkpoint restore).
+	if ctx != nil {
+		if v := ctx.Value(interrupt.SubGraphStateCtxKey); v != nil {
+			switch tv := v.(type) {
+			case []byte:
+				var st loopInterruptState
+				if err := json.Unmarshal(tv, &st); err == nil && st.Iteration > 0 {
+					return st, true
+				}
+			}
+		}
+	}
+	// Fallback: interrupt resume values (deprecated, remove when
+	// engine.go and graph.go are migrated to loopStateCtxKey).
 	values := interrupt.GetResumeValues(ctx)
 	for _, v := range values {
 		switch tv := v.(type) {

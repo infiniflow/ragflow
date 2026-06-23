@@ -648,10 +648,6 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	if p.ModelID == "" {
 		return nil, &ParamError{Field: "model_id", Reason: "required"}
 	}
-	if p.UserPrompt == "" && p.SystemPrompt == "" {
-		return nil, &ParamError{Field: "user_prompt", Reason: "at least one of user_prompt or system_prompt must be set"}
-	}
-
 	// Resolve {{cpn_id@var}} template references in system and user
 	// prompts against the canvas state. This MUST run BEFORE the
 	// user_prompt fallback — otherwise template refs like {{begin@query}}
@@ -683,6 +679,11 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	// Still empty → use a minimal placeholder.
 	if p.UserPrompt == "" {
 		p.UserPrompt = "Please process the instructions above."
+	}
+	// Validate AFTER fallback: both prompts may be empty before
+	// begin@query resolution runs (lines above).
+	if p.UserPrompt == "" && p.SystemPrompt == "" {
+		return nil, &ParamError{Field: "user_prompt", Reason: "at least one of user_prompt or system_prompt must be set"}
 	}
 
 	// Multi-turn conversation optimization. When the canvas state
@@ -987,15 +988,19 @@ func runSubAgent(ctx context.Context, cfg map[string]any, parentParam AgentParam
 	if paramsRaw == nil {
 		return `{"_ERROR": "sub-agent: missing params"}`
 	}
-	subParam := AgentParam{
-		Driver:  parentParam.Driver,
-		APIKey:  parentParam.APIKey,
-		BaseURL: parentParam.BaseURL,
-	}
+	subParam := AgentParam{}
 	if v, ok := stringFrom(paramsRaw, "llm_id"); ok {
 		subParam.ModelID = v
 	} else if v, ok := stringFrom(paramsRaw, "model_id"); ok {
 		subParam.ModelID = v
+	}
+	// Only inherit parent provider credentials when the sub-agent does
+	// NOT specify its own model — otherwise use the sub-agent's own
+	// provider chain (scheduler.go / service will resolve it).
+	if subParam.ModelID == "" {
+		subParam.Driver = parentParam.Driver
+		subParam.APIKey = parentParam.APIKey
+		subParam.BaseURL = parentParam.BaseURL
 	}
 	if v, ok := stringFrom(paramsRaw, "sys_prompt"); ok {
 		subParam.SystemPrompt = v

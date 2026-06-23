@@ -56,7 +56,7 @@ type NATSCheckPointStore struct {
 // js is a JetStream context from an active NATS connection.
 // bucket is the KV bucket name (created if missing).
 func NewNATSCheckPointStore(js jetstream.JetStream, bucket string) (*NATSCheckPointStore, error) {
-	kv, err := js.CreateKeyValue(context.Background(), jetstream.KeyValueConfig{
+	kv, err := js.CreateOrUpdateKeyValue(context.Background(), jetstream.KeyValueConfig{
 		Bucket:      bucket,
 		Description: "RAGFlow canvas checkpoint storage",
 		Storage:     jetstream.FileStorage,

@@ -356,14 +356,23 @@ func (r *Runner) Run(
 			if ctxs := MustExtractInterruptContexts(runErr); len(ctxs) > 0 {
 				cpnID := FirstInterruptID(ctxs)
 				r.saveInterruptID(canvasID, sessionID, cpnID)
-				payload, _ := json.Marshal(WaitingForUserEvent{CpnID: cpnID})
+				evt := WaitingForUserEvent{CpnID: cpnID}
+				if ctxs[0].Tips != "" {
+					evt.Tips = ctxs[0].Tips
+				}
+				if len(ctxs[0].Inputs) > 0 {
+					evt.Inputs = ctxs[0].Inputs
+				}
+				payload, _ := json.Marshal(evt)
 				push(out, RunEvent{Type: "waiting_for_user", Data: string(payload)})
+				push(out, RunEvent{Type: "done", Data: ""})
 				return
 			}
 			if IsInterruptError(runErr) {
 				r.saveInterruptID(canvasID, sessionID, runErr.Error())
 				payload, _ := json.Marshal(WaitingForUserEvent{CpnID: runErr.Error()})
 				push(out, RunEvent{Type: "waiting_for_user", Data: string(payload)})
+				push(out, RunEvent{Type: "done", Data: ""})
 				return
 			}
 			pushErr(out, runErr.Error())
