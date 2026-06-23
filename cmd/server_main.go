@@ -92,7 +92,7 @@ func main() {
 
 	// Initialize logger with default level
 	// logger.Init("info"); // set debug log level
-	if err := common.Init("info", "server_main.log"); err != nil {
+	if err := common.Init("info", common.FileOutput{Path: "server_main.log"}); err != nil {
 		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
 	}
 
@@ -122,7 +122,17 @@ func main() {
 		level = "debug"
 	}
 
-	if err := common.Init(level, "server_main.log"); err != nil {
+	fileOut := common.FileOutput{
+		Path:       "server_main.log",
+		MaxSize:    config.Log.MaxSize,
+		MaxBackups: config.Log.MaxBackups,
+		MaxAge:     config.Log.MaxAge,
+		Compress:   common.ResolveCompress(config.Log.Compress),
+	}
+	if config.Log.Path != "" {
+		fileOut.Path = config.Log.Path
+	}
+	if err := common.Init(level, fileOut); err != nil {
 		common.Error("Failed to reinitialize logger", err)
 	}
 	server.SetLogger(common.Logger)
@@ -317,9 +327,10 @@ func startServer(config *server.Config) {
 	ginEngine := gin.New()
 
 	// Middleware
-	if config.Server.Mode == "debug" {
-		ginEngine.Use(gin.Logger())
-	}
+	// Note: common.GinLogger() is registered inside router.Setup so the
+	// HTTP request log captures every endpoint the router owns (including
+	// those registered by Setup itself). Registering it here would run
+	// it twice for those endpoints and double every access-log line.
 	ginEngine.Use(gin.Recovery())
 
 	// Setup routes

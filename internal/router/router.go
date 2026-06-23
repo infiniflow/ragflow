@@ -19,6 +19,7 @@ package router
 import (
 	"github.com/gin-gonic/gin"
 
+	"ragflow/internal/common"
 	"ragflow/internal/handler"
 )
 
@@ -122,7 +123,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 	})
 
 	// Log all HTTP requests.
-	engine.Use(gin.Logger())
+	engine.Use(common.GinLogger())
 
 	// Health check
 	engine.GET("/health", r.systemHandler.Health)

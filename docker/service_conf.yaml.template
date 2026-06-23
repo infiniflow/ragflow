@@ -177,3 +177,11 @@ user_default_llm:
 #   secret_id: '${TENCENT_SECRET_ID}'
 #   secret_key: '${TENCENT_SECRET_KEY}'
 #   region: '${TENCENT_REGION}'
+# log:
+#   level: info              # debug | info | warn | error
+#   format: text             # text | json (reserved; text only today)
+#   path: server_main.log    # empty/missing = binary default (server_main.log / admin_server.log / ingestion_server.log)
+#   max_size: 100            # MB before rotation
+#   max_backups: 10          # retained rotated files
+#   max_age: 30              # days
+#   compress: true           # gzip rotated files; default true. Set false to disable.

@@ -1,4 +1,5 @@
 //go:build ignore
+
 //
 //  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
@@ -45,7 +46,7 @@ func main() {
 		logLevel = "info"
 	}
 
-	if err = common.Init(logLevel, ""); err != nil {
+	if err = common.Init(logLevel, common.FileOutput{}); err != nil {
 		fmt.Printf("Warning: Failed to initialize logger: %v\n", err)
 	}
 
