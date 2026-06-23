@@ -242,6 +242,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				documents.GET("/:id", r.documentHandler.GetDocumentByID)
 				documents.PUT("/:id", r.documentHandler.UpdateDocument)
 				documents.DELETE("/:id", r.documentHandler.DeleteDocument)
+				documents.POST("/ingest", r.documentHandler.Ingest)
 			}
 
 			// Chat routes

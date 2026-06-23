@@ -190,6 +190,7 @@ func (s *ChunkService) cancelAllTasksOfDoc(docID string) error {
 
 	redisClient := redis.Get()
 	if redisClient == nil {
+		common.Logger.Warn(fmt.Sprintf("Redis unavailable; cannot cancel tasks for document %s", docID))
 		return nil
 	}
 

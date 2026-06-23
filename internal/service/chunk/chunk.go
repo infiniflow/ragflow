@@ -587,6 +587,7 @@ func (s *ChunkService) cancelAllTasksOfDoc(docID string) error {
 
 	redisClient := redis.Get()
 	if redisClient == nil {
+		common.Warn(fmt.Sprintf("Redis unavailable; cannot cancel tasks for document %s", docID))
 		return nil
 	}
 
@@ -644,13 +645,17 @@ func (s *ChunkService) StopParsing(userID, datasetID string, req service.StopPar
 			return nil, common.CodeServerError, fmt.Errorf("failed to update document %s: %w", doc.ID, err)
 		}
 
-		exists, err := s.docEngine.ChunkStoreExists(ctx, indexName, datasetID)
-		if err != nil {
-			return nil, common.CodeServerError, fmt.Errorf("failed to check chunk store %s/%s: %w", indexName, datasetID, err)
-		}
-		if exists {
-			if _, err := s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": doc.ID}, indexName, datasetID); err != nil {
-				return nil, common.CodeServerError, fmt.Errorf("failed to delete chunks for document %s: %w", doc.ID, err)
+		if s.docEngine != nil {
+			exists, err := s.docEngine.ChunkStoreExists(ctx, indexName, datasetID)
+			if err != nil {
+				return nil, common.CodeServerError, fmt.Errorf("failed to check chunk store %s/%s: %w", indexName, datasetID, err)
+			}
+			if exists {
+				if _, err := s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": doc.ID}, indexName, datasetID); err != nil {
+					return nil, common.CodeServerError, fmt.Errorf("failed to delete chunks for document %s: %w", doc.ID, err)
+				}
+			} else {
+				common.Info(fmt.Sprintf("Skipping chunk delete during stop_parsing for doc %s: index %s/%s does not exist", doc.ID, indexName, datasetID))
 			}
 		} else {
 			common.Info(fmt.Sprintf("Skipping chunk delete during stop_parsing for doc %s: index %s/%s does not exist", doc.ID, indexName, datasetID))

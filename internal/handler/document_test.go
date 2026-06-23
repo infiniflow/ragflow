@@ -44,6 +44,19 @@ type fakeDocumentService struct {
 	metadataErr     error
 	metadataKBID    string
 	metadataDocIDs  []string
+	ingestCode      common.ErrorCode
+	ingestErr       error
+	ingestUserID    string
+	ingestReq       *service.IngestDocumentRequest
+}
+
+func (f *fakeDocumentService) Ingest(userID string, req *service.IngestDocumentRequest) (common.ErrorCode, error) {
+	f.ingestUserID = userID
+	f.ingestReq = req
+	if f.ingestCode != 0 || f.ingestErr != nil {
+		return f.ingestCode, f.ingestErr
+	}
+	return common.CodeSuccess, nil
 }
 
 func (f *fakeDocumentService) UpdateDatasetDocument(userID, datasetID, documentID string, req *service.UpdateDatasetDocumentRequest, present map[string]bool) (*service.UpdateDatasetDocumentResponse, common.ErrorCode, error) {
@@ -310,6 +323,77 @@ func TestDeleteDocumentsHandler_MissingDatasetID(t *testing.T) {
 	code, _ := resp["code"].(float64)
 	if code == float64(common.CodeSuccess) {
 		t.Fatal("expected error for missing dataset_id")
+	}
+}
+
+func TestDocumentHandlerIngestMatchesPythonResponseShape(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	fake := &fakeDocumentService{}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  service.NewDatasetService(),
+	}
+
+	c, w := setupGinContextWithUser("POST", "/api/v1/documents/ingest", `{"doc_ids":["doc-1"],"run":"1"}`)
+	h.Ingest(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected top-level code 0, got %v", resp["code"])
+	}
+	if resp["data"] != true {
+		t.Fatalf("expected top-level data=true, got %#v", resp["data"])
+	}
+	if _, ok := resp["data"].(map[string]interface{}); ok {
+		t.Fatalf("response must not nest code/message under data: %#v", resp["data"])
+	}
+	if fake.ingestUserID != "user-1" {
+		t.Fatalf("expected user-1, got %q", fake.ingestUserID)
+	}
+	if fake.ingestReq == nil || len(fake.ingestReq.DocIDs) != 1 || fake.ingestReq.DocIDs[0] != "doc-1" {
+		t.Fatalf("unexpected ingest request: %#v", fake.ingestReq)
+	}
+}
+
+func TestDocumentHandlerIngestPropagatesServiceErrorCode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	fake := &fakeDocumentService{
+		ingestCode: common.CodeAuthenticationError,
+		ingestErr:  fmt.Errorf("No authorization."),
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  service.NewDatasetService(),
+	}
+
+	c, w := setupGinContextWithUser("POST", "/api/v1/documents/ingest", `{"doc_ids":["doc-1"],"run":"1"}`)
+	h.Ingest(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["code"] != float64(common.CodeAuthenticationError) {
+		t.Fatalf("expected auth error code, got %v", resp["code"])
+	}
+	if resp["message"] != "No authorization." {
+		t.Fatalf("unexpected message: %v", resp["message"])
+	}
+	if resp["data"] != nil {
+		t.Fatalf("expected nil data, got %#v", resp["data"])
 	}
 }
 

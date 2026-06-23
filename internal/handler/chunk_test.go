@@ -23,6 +23,7 @@ type mockChunkSvc struct {
 	listFn          func(req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error)
 	switchChunksFn  func(userID, datasetID, documentID string, availableInt int, chunkIDs []string) error
 	updateChunkFn   func(req *service.UpdateChunkRequest, userID string) error
+	stopParsingFn   func(userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error)
 }
 
 func (m *mockChunkSvc) RetrievalTest(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
@@ -58,7 +59,10 @@ func (m *mockChunkSvc) UpdateChunk(req *service.UpdateChunkRequest, userID strin
 func (m *mockChunkSvc) RemoveChunks(*service.RemoveChunksRequest, string) (int64, error) {
 	panic("not implemented")
 }
-func (m *mockChunkSvc) StopParsing(string, string, service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
+func (m *mockChunkSvc) StopParsing(userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
+	if m.stopParsingFn != nil {
+		return m.stopParsingFn(userID, datasetID, req)
+	}
 	panic("not implemented")
 }
 func (m *mockChunkSvc) Parse(string, string, *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error) {
@@ -85,6 +89,18 @@ func setupChunkRetrievalTestNoAuth() *gin.Engine {
 	r := gin.New()
 	r.POST("/api/v1/datasets/search", h.RetrievalTest)
 	return r
+}
+
+func setupChunkStopParsingTest(userID string) (*gin.Engine, *mockChunkSvc) {
+	mock := &mockChunkSvc{}
+	h := &ChunkHandler{chunkService: mock}
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("user", &entity.User{ID: userID})
+	})
+	r.DELETE("/api/v1/datasets/:dataset_id/chunks", h.StopParsing)
+	return r, mock
 }
 
 func setupChunkHandlerWithUser(userID string, mock *mockChunkSvc) (*gin.Engine, *ChunkHandler) {
@@ -254,6 +270,76 @@ func TestChunkRetrieval_EmptyQuestion(t *testing.T) {
 	}
 	if total, _ := data["total"].(float64); total != 0 {
 		t.Errorf("expected total 0, got %v", total)
+	}
+}
+
+func TestChunkStopParsing_Success(t *testing.T) {
+	r, mock := setupChunkStopParsingTest("user1")
+	mock.stopParsingFn = func(userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
+		if userID != "user1" {
+			t.Fatalf("expected user1, got %q", userID)
+		}
+		if datasetID != "kb1" {
+			t.Fatalf("expected kb1, got %q", datasetID)
+		}
+		if len(req.DocumentIDs) != 2 || req.DocumentIDs[0] != "doc1" || req.DocumentIDs[1] != "doc2" {
+			t.Fatalf("unexpected document IDs: %#v", req.DocumentIDs)
+		}
+		return nil, common.CodeSuccess, nil
+	}
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("DELETE", "/api/v1/datasets/kb1/chunks", strings.NewReader(`{"document_ids":["doc1","doc2"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected code 0, got %v: %s", resp["code"], w.Body.String())
+	}
+	if resp["message"] != "success" {
+		t.Fatalf("expected success message, got %v", resp["message"])
+	}
+}
+
+func TestChunkStopParsing_InvalidStateIncludesPythonErrorCode(t *testing.T) {
+	r, mock := setupChunkStopParsingTest("user1")
+	mock.stopParsingFn = func(userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
+		return &service.StopParsingResponse{
+			Data: map[string]interface{}{"error_code": "DOC_STOP_PARSING_INVALID_STATE"},
+		}, common.CodeDataError, errors.New("Can't stop parsing document that has not started or already completed")
+	}
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("DELETE", "/api/v1/datasets/kb1/chunks", strings.NewReader(`{"document_ids":["doc1"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["code"] != float64(common.CodeDataError) {
+		t.Fatalf("expected data error, got %v: %s", resp["code"], w.Body.String())
+	}
+	data, ok := resp["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected data object, got %T", resp["data"])
+	}
+	if data["error_code"] != "DOC_STOP_PARSING_INVALID_STATE" {
+		t.Fatalf("unexpected error_code: %v", data["error_code"])
+	}
+	if resp["message"] != "Can't stop parsing document that has not started or already completed" {
+		t.Fatalf("unexpected message: %v", resp["message"])
 	}
 }
 

@@ -984,6 +984,107 @@ func (s *DocumentService) RemoveIngestionTasks(tasks []string, userID string) ([
 	return deletedTasks, nil
 }
 
+type IngestDocumentRequest struct {
+	DocIDs  []string    `json:"doc_ids" binding:"required"`
+	Run     interface{} `json:"run" binding:"required"`
+	Delete  bool        `json:"delete"`
+	ApplyKB bool        `json:"apply_kb"`
+}
+
+func (s *DocumentService) Ingest(userID string, req *IngestDocumentRequest) (common.ErrorCode, error) {
+	run := fmt.Sprint(req.Run)
+
+	docs, err := s.documentDAO.GetByIDs(req.DocIDs)
+	if err != nil {
+		return common.CodeExceptionError, fmt.Errorf("fail to get documents: %s", err.Error())
+	}
+
+	docsByID := make(map[string]*entity.Document, len(docs))
+	for _, doc := range docs {
+		if doc != nil {
+			docsByID[doc.ID] = doc
+		}
+	}
+
+	docsByKB := map[string][]string{}
+
+	for _, docID := range req.DocIDs {
+		doc := docsByID[docID]
+		if doc == nil {
+			return common.CodeDataError, fmt.Errorf("Document not found!")
+		}
+
+		kb, err := s.kbDAO.GetByID(doc.KbID)
+		if err != nil {
+			return common.CodeDataError, fmt.Errorf("Tenant not found!")
+		}
+
+		if !s.kbDAO.Accessible(kb.ID, userID) {
+			return common.CodeAuthenticationError, fmt.Errorf("No authorization.")
+		}
+
+		updates := map[string]interface{}{
+			"run":      run,
+			"progress": 0,
+		}
+
+		rerunWithDelete := run == string(entity.TaskStatusRunning) && req.Delete
+		if rerunWithDelete {
+			updates["progress_msg"] = ""
+			updates["chunk_num"] = 0
+			updates["token_num"] = 0
+		}
+
+		if run == string(entity.TaskStatusCancel) {
+			if err := s.cancelDocParse(doc); err != nil {
+				return common.CodeDataError, err
+			}
+		}
+
+		if err := s.documentDAO.UpdateByID(doc.ID, updates); err != nil {
+			return common.CodeExceptionError, err
+		}
+
+		if req.Delete {
+			_, _ = s.taskDAO.DeleteByDocIDs([]string{doc.ID})
+			indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
+			if s.docEngine != nil {
+				exists, err := s.docEngine.ChunkStoreExists(context.Background(), indexName, doc.KbID)
+				if err != nil {
+					return common.CodeExceptionError, err
+				}
+				if exists {
+					if _, err := s.docEngine.DeleteChunks(context.Background(), map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
+						return common.CodeExceptionError, err
+					}
+				}
+			}
+		}
+
+		if run == string(entity.TaskStatusRunning) {
+			if req.ApplyKB {
+				config := map[string]interface{}{
+					"llm_id":          kb.ParserConfig["llm_id"],
+					"enable_metadata": kb.ParserConfig["enable_metadata"],
+					"metadata":        kb.ParserConfig["metadata"],
+				}
+				if err := s.updateDocumentParserConfig(doc.ID, config); err != nil {
+					return common.CodeExceptionError, err
+				}
+			}
+			docsByKB[doc.KbID] = append(docsByKB[doc.KbID], doc.ID)
+		}
+	}
+
+	for kbID, docIDs := range docsByKB {
+		if _, err := s.IngestDocuments(kbID, userID, docIDs); err != nil {
+			return common.CodeExceptionError, err
+		}
+	}
+
+	return common.CodeSuccess, nil
+}
+
 func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []string) ([]*ParseDocumentResponse, error) {
 	// create document parse id
 	// save to task table
