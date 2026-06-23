@@ -1105,7 +1105,6 @@ func (c *CLI) DropMetadataStore(cmd *Command) (ResponseIf, error) {
 
 // AddProvider creates a new model provider
 // ADD PROVIDER <name>
-// ADD PROVIDER <name> <api_key>
 func (c *CLI) AddProvider(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")

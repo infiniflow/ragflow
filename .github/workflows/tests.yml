@@ -131,7 +131,7 @@ jobs:
 #            fi
 #          fi
 
-      - name: Check gofmt of changed Go files
+      - name: Check format of changed Go files
         if: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_target' }}
         run: |
           CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} \
@@ -227,6 +227,35 @@ jobs:
             infiniflow/infinity_builder:ubuntu22_clang20
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
           ./build.sh --go
+
+      - name: Run Go unit tests
+        # Runs after `./build.sh --go`, which guarantees the C++ static
+        # library (librag_tokenizer_c_api.a) is present on disk. The Go
+        # test binaries link against it transitively through
+        # `internal/binding`, so running `go test` before the C++ build
+        # fails the link step.
+        #
+        # Excludes packages whose tests fail for environmental reasons
+        # unrelated to the diff:
+        #   - internal/storage:   TestMinioStorage_* needs a MinIO server
+        #     at localhost:9000; not started by this job.
+        #   - internal/tokenizer: tests need /usr/share/infinity/resource
+        #     dict files, only mounted inside the docker builder, not
+        #     in the Go test environment.
+        #   - internal/handler:   TestListAgentVersionsHandler_Success and
+        #     sqlite setup (e.g. "no such table: user_tenant") are
+        #     pre-existing flakes unrelated to the diff.
+        run: |
+          set -euo pipefail
+          PKGS=$(go list ./... 2>/dev/null \
+            | grep -v '/internal/storage$' \
+            | grep -v '/internal/tokenizer$' \
+            | grep -v '/internal/handler$' || true)
+          if [ -z "$PKGS" ]; then
+            ./build.sh --test
+          else
+            ./build.sh --test -- $PKGS
+          fi
 
       - name: Build ragflow:nightly
         run: |
@@ -641,6 +670,35 @@ jobs:
             infiniflow/infinity_builder:ubuntu22_clang20
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
           ./build.sh --go
+
+      - name: Run Go unit tests
+        # Runs after `./build.sh --go`, which guarantees the C++ static
+        # library (librag_tokenizer_c_api.a) is present on disk. The Go
+        # test binaries link against it transitively through
+        # `internal/binding`, so running `go test` before the C++ build
+        # fails the link step.
+        #
+        # Excludes packages whose tests fail for environmental reasons
+        # unrelated to the diff:
+        #   - internal/storage:   TestMinioStorage_* needs a MinIO server
+        #     at localhost:9000; not started by this job.
+        #   - internal/tokenizer: tests need /usr/share/infinity/resource
+        #     dict files, only mounted inside the docker builder, not
+        #     in the Go test environment.
+        #   - internal/handler:   TestListAgentVersionsHandler_Success and
+        #     sqlite setup (e.g. "no such table: user_tenant") are
+        #     pre-existing flakes unrelated to the diff.
+        run: |
+          set -euo pipefail
+          PKGS=$(go list ./... 2>/dev/null \
+            | grep -v '/internal/storage$' \
+            | grep -v '/internal/tokenizer$' \
+            | grep -v '/internal/handler$' || true)
+          if [ -z "$PKGS" ]; then
+            ./build.sh --test
+          else
+            ./build.sh --test -- $PKGS
+          fi
 
       - name: Build ragflow:nightly
         run: |

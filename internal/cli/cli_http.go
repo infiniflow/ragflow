@@ -125,6 +125,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListInstanceModels(cmd)
 	case "admin_show_model":
 		return c.CommonShowModel(cmd)
+	case "admin_list_providers":
+		return c.AdminListProvidersCommand(cmd)
 	case "admin_list_all_models":
 		return c.ListAllModels(cmd)
 	case "list_admin_tasks":
@@ -227,7 +229,19 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminStopUserIngestionTasksCommand(cmd)
 	case "admin_remove_user_ingestion_tasks_command":
 		return c.AdminRemoveUserIngestionTasksCommand(cmd)
-	// TODO: Implement other commands
+	case "admin_add_provider":
+		return c.AdminAddProviderCommand(cmd)
+	case "admin_add_model_instance":
+		return c.AdminAddModelInstanceCommand(cmd)
+	case "admin_add_models":
+		return c.AdminAddModelsCommand(cmd)
+	case "admin_delete_model_providers":
+		return c.AdminDeleteProvidersCommand(cmd)
+	case "admin_delete_model_instance":
+		return c.AdminDeleteInstancesCommand(cmd)
+	case "admin_delete_model":
+		return c.AdminDeleteModelsCommand(cmd)
+		// TODO: Implement other commands
 	case "show_admin_server":
 		return c.ShowAdminServer(cmd)
 	case "show_api_server":
