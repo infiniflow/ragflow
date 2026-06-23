@@ -1201,7 +1201,12 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
 def docx_question_level(p, bull=-1):
     txt = re.sub(r"\u3000", " ", p.text).strip()
     if hasattr(p.style, 'name') and p.style.name and p.style.name.startswith('Heading'):
-        return int(p.style.name.split(' ')[-1]), txt
+        # Built-in heading styles are named "Heading 1".."Heading 9", but the base
+        # "Heading" style and custom "Heading*" styles may carry no trailing number
+        # (or none separated by a space). Extract the level digits safely and fall
+        # back to the top level instead of raising ValueError on int() (#16163).
+        m = re.search(r"\d+$", p.style.name)
+        return (int(m.group()) if m else 1), txt
     else:
         if bull < 0:
             return 0, txt
