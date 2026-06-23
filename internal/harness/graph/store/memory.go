@@ -496,7 +496,7 @@ func (s *InMemoryStore) ListNamespaces(ctx context.Context, conditions []MatchCo
 	}
 
 	// Apply offset and limit
-	if offset > 0 && offset < len(filtered) {
+	if offset > 0 {
 		filtered = filtered[offset:]
 	}
 	if limit > 0 && limit < len(filtered) {

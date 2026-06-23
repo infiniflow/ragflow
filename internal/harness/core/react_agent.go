@@ -271,15 +271,17 @@ func (a *ReActAgent[M]) prepareExecContext(ctx context.Context) (*execContext, e
 		mergedRD[k] = v
 	}
 
-	// Merge tool infos: config tools + ToolsConfig.Tools + contributor explicit infos.
-	configInfos := toolsToInfosTyped[M](a.config.Tools)
-	var tcInfos []*schema.ToolInfo
+	// Merge tool infos from a single source to avoid duplicates:
+	// when ToolsConfig is nil, NewReActAgent populates ToolsConfig.Tools with a.config.Tools,
+	// so building from both sources would produce duplicate entries.
+	var baseInfos []*schema.ToolInfo
 	if a.config.ToolsConfig != nil && len(a.config.ToolsConfig.Tools) > 0 {
-		tcInfos = toolsToInfosTyped[M](a.config.ToolsConfig.Tools)
+		baseInfos = toolsToInfosTyped[M](a.config.ToolsConfig.Tools)
+	} else {
+		baseInfos = toolsToInfosTyped[M](a.config.Tools)
 	}
-	allInfos := make([]*schema.ToolInfo, 0, len(configInfos)+len(tcInfos)+len(contribInfos))
-	allInfos = append(allInfos, configInfos...)
-	allInfos = append(allInfos, tcInfos...)
+	allInfos := make([]*schema.ToolInfo, 0, len(baseInfos)+len(contribInfos))
+	allInfos = append(allInfos, baseInfos...)
 	allInfos = append(allInfos, contribInfos...)
 
 	return &execContext{

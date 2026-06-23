@@ -209,11 +209,10 @@ func runParallel(
 			TotalCount:         totalCount,
 			ItemCheckpoints:    bridgeState.snapshot(),
 		}
-		stateJSON, sErr := json.Marshal(state)
-		if sErr != nil {
-			return nil, fmt.Errorf("graph: parallel marshal interrupt state: %w", sErr)
-		}
-		_, interruptErr := interrupt.Interrupt(ctx, stateJSON)
+		// Pass state directly — the checkpoint engine serializes
+		// interrupt values when persisting. Avoid double-serialization
+		// by not marshalling here.
+		_, interruptErr := interrupt.Interrupt(ctx, state)
 		return nil, interruptErr
 	}
 

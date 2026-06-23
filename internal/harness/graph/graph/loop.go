@@ -212,11 +212,10 @@ func runLoop(
 					CurrentInput:    currentJSON,
 					UserFillUpValue: fillUpJSON,
 				}
-				stateJSON, mErr := json.Marshal(loopState)
-				if mErr != nil {
-					return nil, fmt.Errorf("graph: loop marshal interrupt state: %w", mErr)
-				}
-				_, interruptErr := interrupt.Interrupt(ctx, stateJSON)
+				// Pass loopState directly — the checkpoint engine serializes
+				// interrupt values when persisting __sub_state__. Avoid
+				// double-serialization by not marshalling here.
+				_, interruptErr := interrupt.Interrupt(ctx, loopState)
 				common.Debug("runLoop interruptErr",
 					zap.String("type", fmt.Sprintf("%T", interruptErr)),
 					zap.Any("error", interruptErr))

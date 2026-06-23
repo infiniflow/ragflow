@@ -80,6 +80,12 @@ func (e *AsyncExecutor) Execute(ctx context.Context, name string, fn func(contex
 
 	go func() {
 		defer close(resultCh)
+		// Remove from activeTasks on ALL exit paths (success, ctx cancelled, etc.).
+		defer func() {
+			e.mu.Lock()
+			delete(e.activeTasks, task.ID)
+			e.mu.Unlock()
+		}()
 
 		startTime := time.Now()
 
@@ -107,10 +113,6 @@ func (e *AsyncExecutor) Execute(ctx context.Context, name string, fn func(contex
 			Duration: time.Since(startTime),
 		}
 
-		e.mu.Lock()
-		delete(e.activeTasks, task.ID)
-		e.mu.Unlock()
-
 		resultCh <- result
 	}()
 
@@ -121,6 +123,7 @@ func (e *AsyncExecutor) Execute(ctx context.Context, name string, fn func(contex
 func (e *AsyncExecutor) ExecuteBatch(ctx context.Context, tasks []asyncTask) <-chan *asyncTaskResult {
 	resultCh := make(chan *asyncTaskResult, len(tasks))
 
+	// Register all tasks in activeTasks before any goroutine starts.
 	for i := range tasks {
 		tasks[i].ID = uuid.New().String()
 		e.mu.Lock()
@@ -133,6 +136,11 @@ func (e *AsyncExecutor) ExecuteBatch(ctx context.Context, tasks []asyncTask) <-c
 		wg.Add(1)
 		go func(task *asyncTask) {
 			defer wg.Done()
+			defer func() {
+				e.mu.Lock()
+				delete(e.activeTasks, task.ID)
+				e.mu.Unlock()
+			}()
 
 			startTime := time.Now()
 
@@ -159,10 +167,6 @@ func (e *AsyncExecutor) ExecuteBatch(ctx context.Context, tasks []asyncTask) <-c
 				Err:      err,
 				Duration: time.Since(startTime),
 			}
-
-			e.mu.Lock()
-			delete(e.activeTasks, task.ID)
-			e.mu.Unlock()
 		}(&tasks[i])
 	}
 
@@ -196,7 +200,7 @@ func (e *AsyncExecutor) ExecuteWithRetry(ctx context.Context, name string, fn fu
 		executor := NewRetryExecutor(retryConfig.Policy)
 
 		startTime := time.Now()
-		output, err := executor.Execute(ctx, name, fn)
+		output, err := executor.Execute(task.Context, name, fn)
 
 		result := &asyncTaskResult{
 			TaskID:   task.ID,
@@ -287,6 +291,10 @@ func (p *AsyncPipeline) Start(ctx context.Context) context.Context {
 	if p.running {
 		return ctx
 	}
+
+	// Reinitialize channels that were closed by Stop().
+	p.events = make(chan any, 100)
+	p.errors = make(chan error, 10)
 
 	ctx, p.cancel = context.WithCancel(ctx)
 	p.running = true

@@ -985,12 +985,12 @@ func inlineGetNextTasks(ctx context.Context, registry *channels.Registry, comple
 				hasConditional = true
 				conditionResult, err := condEdge.Condition(ctx, currentState)
 				if err != nil {
-					continue
+					return nil, fmt.Errorf("conditional edge condition from '%s' failed: %w", lastCompletedNode, err)
 				}
 				conditionKey := fmt.Sprintf("%v", conditionResult)
 				targetNode, ok := condEdge.Mapping[conditionKey]
 				if !ok {
-					continue
+					return nil, fmt.Errorf("conditional edge from '%s': condition key '%v' not mapped", lastCompletedNode, conditionResult)
 				}
 				if targetNode == constants.End {
 					return tasks, nil
@@ -1024,10 +1024,10 @@ func inlineGetNextTasks(ctx context.Context, registry *channels.Registry, comple
 							nextNodes[tv] = true
 						}
 					case []any:
-						if len(tv) > 0 {
-							if s, ok := tv[0].(string); ok {
-								if _, exists := g.GetNode(s); exists {
-									nextNodes[s] = true
+						for _, item := range tv {
+							if str, ok := item.(string); ok {
+								if _, exists := g.GetNode(str); exists {
+									nextNodes[str] = true
 								}
 							}
 						}

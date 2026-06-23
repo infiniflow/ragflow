@@ -495,7 +495,7 @@ func (e *Engine) Run(ctx context.Context, input any, mode types.StreamMode) (<-c
 						}
 					}
 					if err := e.checkpointer.Put(ctx, map[string]any{
-						constants.ConfigKeyThreadID: e.getThreadID(),
+						constants.ConfigKeyThreadID: threadID,
 					}, cpPayload); err != nil {
 						errCh <- fmt.Errorf("failed to save checkpoint on interrupt: %w", err)
 						return

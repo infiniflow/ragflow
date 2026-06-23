@@ -400,7 +400,11 @@ func CoerceToInjectableRunnable(target interface{}, name string) (*InjectableRun
 		}), nil
 	default:
 		// Check if it's a function
-		if reflect.TypeOf(target).Kind() == reflect.Func {
+		targetType := reflect.TypeOf(target)
+		if targetType == nil {
+			return nil, fmt.Errorf("cannot coerce nil to InjectableRunnable")
+		}
+		if targetType.Kind() == reflect.Func {
 			return NewInjectableRunnable(name, target), nil
 		}
 		return nil, fmt.Errorf("cannot coerce %T to InjectableRunnable", target)

@@ -48,7 +48,9 @@ func (m *failoverModel[M]) Generate(ctx context.Context, input []M, opts ...Mode
 			return zero, fmt.Errorf("failover skipped: %w", lastErr)
 		}
 		r, err := model.Generate(ctx, input, opts...)
-		if err == nil { return r, nil }
+		if err == nil {
+			return r, nil
+		}
 		lastErr = fmt.Errorf("model[%d]: %w", i, err)
 	}
 	var zero M
@@ -62,7 +64,9 @@ func (m *failoverModel[M]) Stream(ctx context.Context, input []M, opts ...ModelO
 			return nil, fmt.Errorf("failover skipped: %w", lastErr)
 		}
 		s, err := model.Stream(ctx, input, opts...)
-		if err == nil { return s, nil }
+		if err == nil {
+			return s, nil
+		}
 		lastErr = fmt.Errorf("model[%d]: %w", i, err)
 	}
 	return nil, fmt.Errorf("all %d models failed to stream: %w", len(m.models), lastErr)
@@ -70,7 +74,9 @@ func (m *failoverModel[M]) Stream(ctx context.Context, input []M, opts ...ModelO
 
 func (m *failoverModel[M]) BindTools(tools []*schema.ToolInfo) error {
 	for _, model := range m.models {
-		if err := model.BindTools(tools); err != nil { return err }
+		if err := model.BindTools(tools); err != nil {
+			return err
+		}
 	}
 	return nil
 }

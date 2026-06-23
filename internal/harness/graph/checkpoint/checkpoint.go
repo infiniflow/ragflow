@@ -169,9 +169,9 @@ func (c *Checkpoint) Clone() *Checkpoint {
 		clone.PendingWrites[i].Value = deepCopy(pw.Value)
 	}
 
-	// Copy metadata
+	// Copy metadata — deep copy to avoid shared maps/slices.
 	for k, v := range c.Metadata.Metadata {
-		clone.Metadata.Metadata[k] = v
+		clone.Metadata.Metadata[k] = deepCopy(v)
 	}
 
 	return clone

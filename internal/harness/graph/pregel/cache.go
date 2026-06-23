@@ -160,7 +160,11 @@ func (c *MemoryCache) evict() {
 
 // GenerateCacheKey generates a cache key from the given input.
 func GenerateCacheKey(nodeName string, input any) string {
-	data, _ := json.Marshal(input)
+	data, err := json.Marshal(input)
+	if err != nil {
+		// Fall back to the type name so different inputs still produce different keys.
+		return fmt.Sprintf("%s:%T", nodeName, input)
+	}
 	hash := sha256.Sum256(data)
 	return fmt.Sprintf("%s:%s", nodeName, hex.EncodeToString(hash[:]))
 }
