@@ -160,8 +160,14 @@ func (c *CLI) PingServer(iterations int) (ResponseIf, error) {
 
 // loginUser performs the actual login request
 func (c *CLI) loginUser(email, password string) (string, error) {
-	// Encrypt password using scrypt (same as Python implementation)
-	encryptedPassword, err := EncryptPassword(password)
+	publicKey, err := c.GetPublicKeyPEM()
+	if err != nil {
+		return "", fmt.Errorf("failed to get public key: %w", err)
+	}
+
+	// Encrypt password using RSA
+	encryptedPassword, err := EncryptPassword(password, publicKey)
+
 	if err != nil {
 		return "", fmt.Errorf("failed to encrypt password: %w", err)
 	}
