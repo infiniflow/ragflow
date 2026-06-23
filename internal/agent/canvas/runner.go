@@ -52,10 +52,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
+
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 )
 
 // RunEvent is the unit the Runner pushes onto its output channel.
@@ -203,6 +207,19 @@ func (r *Runner) Run(
 				delete(r.runCancels, canvasID)
 			}
 			r.mu.Unlock()
+		}()
+		// Panic recovery: a panic anywhere in the run goroutine used to silently
+		// propagate, leaving the events channel closed-empty so the
+		// SSE handler streamed a 200 OK with an empty body. We now
+		// log the panic value + stack trace so the next failing run
+		// surfaces a clear root cause in the server log.
+		defer func() {
+			if rec := recover(); rec != nil {
+				common.Error("canvas runner PANIC", fmt.Errorf("%v", rec),
+					zap.String("canvas", canvasID),
+					zap.String("session", sessionID),
+					zap.String("stack", string(debug.Stack())))
+			}
 		}()
 
 		// Resume path: inject the previously-saved interrupt id and
@@ -353,9 +370,13 @@ func (r *Runner) Run(
 			if errors.Is(runErr, context.Canceled) || errors.Is(runErr, errCancelled) {
 				return
 			}
-			if ctxs := MustExtractInterruptContexts(runErr); len(ctxs) > 0 {
+		if ctxs := MustExtractInterruptContexts(runErr); len(ctxs) > 0 {
 				cpnID := FirstInterruptID(ctxs)
 				r.saveInterruptID(canvasID, sessionID, cpnID)
+				common.Info("canvas runner interrupt",
+					zap.String("canvas", canvasID),
+					zap.String("session", sessionID),
+					zap.String("cpn_id", cpnID))
 				evt := WaitingForUserEvent{CpnID: cpnID}
 				if ctxs[0].Tips != "" {
 					evt.Tips = ctxs[0].Tips
@@ -466,8 +487,20 @@ func safeInvoke(ctx context.Context, cancel chan struct{}, run RunFunc, root map
 		err   error
 	)
 	go func() {
+		// Recover here, inside the goroutine that actually invokes
+		// `run`. A panic from `run` would otherwise crash the process
+		// before any caller could observe it; converting it into a
+		// regular error keeps the SSE contract intact and lets the
+		// runner emit a terminal `done` event.
+		defer func() {
+			if rec := recover(); rec != nil {
+				common.Error("canvas runner PANIC", fmt.Errorf("%v", rec),
+					zap.String("stack", string(debug.Stack())))
+				err = fmt.Errorf("canvas runner panic: %v", rec)
+			}
+			close(done)
+		}()
 		state, err = run(ctx, root)
-		close(done)
 	}()
 	select {
 	case <-done:

@@ -16,7 +16,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"regexp"
 	"sort"
@@ -25,6 +24,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+
 	"ragflow/internal/agent/component/prompts"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
@@ -662,13 +662,13 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 		if resolved, rerr := runtime.ResolveTemplate(p.SystemPrompt, state); resolved != p.SystemPrompt || rerr == nil {
 			p.SystemPrompt = resolved
 			if rerr != nil {
-				log.Printf("component: LLM: resolve system_prompt: %v", rerr)
+				common.Warn("component: LLM: resolve system_prompt", zap.Error(rerr))
 			}
 		}
 		if resolved, rerr := runtime.ResolveTemplate(p.UserPrompt, state); resolved != p.UserPrompt || rerr == nil {
 			p.UserPrompt = resolved
 			if rerr != nil {
-				log.Printf("component: LLM: resolve user_prompt: %v", rerr)
+				common.Warn("component: LLM: resolve user_prompt", zap.Error(rerr))
 			}
 		}
 	}
@@ -763,7 +763,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 			out["json"] = parsed
 		} else {
 			// Surface a non-fatal warning — caller can still read "content".
-			log.Printf("component: LLM: json_output=true but content is not valid JSON: %v", err)
+			common.Warn("component: LLM: json_output=true but content is not valid JSON", zap.Error(err))
 		}
 	}
 	if p.OutputStructure != nil {
@@ -797,7 +797,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 			// downstream consumers reading "content" get the JSON text.
 			out["content"] = resp.Content
 		} else {
-			log.Printf("component: LLM: output_structure set but no parseable JSON after retry")
+			common.Warn("component: LLM: output_structure set but no parseable JSON after retry")
 		}
 	}
 	return out, nil

@@ -18,7 +18,6 @@ package dao
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"ragflow/internal/common"
@@ -176,7 +175,7 @@ func InitDB() error {
 
 	err = models.InitProviderManager("conf/models")
 	if err != nil {
-		log.Fatal("Failed to load model providers:", err)
+		common.Fatal("Failed to load model providers", zap.Error(err))
 	}
 
 	modelProviderManager = models.GetProviderManager()
@@ -207,10 +206,10 @@ func GetModelProviderManager() *models.ProviderManager {
 	}
 	modelConfigDir, err := findModelConfigDir()
 	if err != nil {
-		log.Fatal("Failed to locate model providers:", err)
+		common.Fatal("Failed to locate model providers", zap.Error(err))
 	}
 	if err := models.InitProviderManager(modelConfigDir); err != nil {
-		log.Fatal("Failed to load model providers:", err)
+		common.Fatal("Failed to load model providers", zap.Error(err))
 	}
 	modelProviderManager = models.GetProviderManager()
 	return modelProviderManager

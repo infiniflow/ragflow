@@ -5,13 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"reflect"
 	"sort"
 	"strings"
 	"sync"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	"ragflow/internal/harness/graph/channels"
 	"ragflow/internal/harness/graph/checkpoint"
 	"ragflow/internal/harness/graph/constants"
@@ -281,7 +283,9 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 			})
 			if cpErr == nil && cpData != nil {
 				didLoadCheckpoint = true
-				log.Printf("DBG LOOP_CHECK: loaded checkpoint thread=%s has_sub=%v", threadID, cpData["__sub_state__"] != nil)
+				common.Debug("LOOP_CHECK: loaded checkpoint",
+					zap.String("thread", threadID),
+					zap.Bool("has_sub", cpData["__sub_state__"] != nil))
 				// Restore sub-state (e.g. Loop iteration, currentInput)
 				// and inject into interrupt context so Loop node can
 				// read it via loadLoopSnapshot on resume.
@@ -457,7 +461,10 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 			}
 			// If any task was interrupted, handle the interrupt.
 			if len(interruptTaskNames) > 0 {
-				log.Printf("DBG engine interrupt path: step=%d tasks=%v allFailed=%v", step, interruptTaskNames, allFailed)
+				common.Debug("engine interrupt path",
+					zap.Int("step", step),
+					zap.Strings("tasks", interruptTaskNames),
+					zap.Bool("allFailed", allFailed))
 				// Save checkpoint with completed_tasks and sub_state.
 				if e.checkpointer != nil {
 					checkpointData := channelRegistry.CreateCheckpoint()
@@ -516,7 +523,9 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 				for _, r := range results {
 					why += fmt.Sprintf(" %s=%T(%v)", r.Name, r.Err, r.Err)
 				}
-				log.Printf("DBG allFailed step=%d results=[%s]", step, why)
+				common.Debug("allFailed",
+					zap.Int("step", step),
+					zap.String("results", why))
 				errCh <- fmt.Errorf("all %d tasks failed in step %d", len(results), step)
 				return
 			}
@@ -550,7 +559,7 @@ func (e *Engine) Run(ctx context.Context, input interface{}, mode types.StreamMo
 					go func(cp map[string]interface{}, cpID string, s int) {
 						if err := e.saveCheckpoint(context.Background(), threadID, cpID, s, cp); err != nil {
 							// Log async error but don't fail execution
-							log.Printf("async checkpoint save failed: %v", err)
+							common.Error("async checkpoint save failed", err, zap.String("thread_id", threadID), zap.String("checkpoint_id", cpID), zap.Int("step", s))
 						}
 					}(checkpoint, checkpointID, step)
 				case types.DurabilityExit:
@@ -1251,7 +1260,9 @@ func (e *Engine) getNode(name string) *graph.Node {
 }
 
 func (e *Engine) getNextNodes(ctx context.Context, node string, state interface{}) map[string]bool {
-	log.Printf("DBG getNextNodes: node=%q state=%v", node, state)
+	common.Debug("getNextNodes",
+		zap.String("node", node),
+		zap.Any("state", state))
 	nextNodes := make(map[string]bool)
 
 	// (1) Check conditional edges.  When a node has conditional edges,

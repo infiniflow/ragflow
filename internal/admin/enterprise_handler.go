@@ -291,7 +291,7 @@ func (h *Handler) ResetRoleDefaultModel(c *gin.Context) {
 	success(c, result, "Role default model set successfully")
 }
 
-func (h *Handler) ListProviders(c *gin.Context) {
+func (h *Handler) ListModelProviders(c *gin.Context) {
 
 	keywords := ""
 	if queryKeywords := c.Query("available"); queryKeywords != "" {
@@ -300,23 +300,40 @@ func (h *Handler) ListProviders(c *gin.Context) {
 
 	// convert keywords to small case
 	keywords = strings.ToLower(keywords)
-	if keywords == "true" {
-		// list pool providers
-		providers, err := dao.GetModelProviderManager().ListProviders()
-		if err != nil {
-			c.JSON(http.StatusOK, gin.H{
-				"code":    common.CodeNotFound,
-				"message": err.Error(),
-			})
-			return
-		}
 
-		c.JSON(http.StatusOK, gin.H{
-			"code":    0,
-			"message": "success",
-			"data":    providers,
-		})
+	result, err := h.service.ListModelProviders()
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
 	}
+
+	success(c, result, "List model providers successfully")
+}
+
+type AddProviderRequest struct {
+	ProviderName string `json:"provider_name" binding:"required"`
+}
+
+func (h *Handler) AddModelProvider(c *gin.Context) {
+	var req AddProviderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+			"data":    false,
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	result, err := h.service.AddModelProvider(req.ProviderName, userID)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Model provider added successfully")
 }
 
 func (h *Handler) ShowProvider(c *gin.Context) {
@@ -342,6 +359,31 @@ func (h *Handler) ShowProvider(c *gin.Context) {
 		"message": "success",
 		"data":    provider,
 	})
+}
+
+type DeleteProviderRequest struct {
+	ProviderNames []string `json:"provider_names" binding:"required"`
+}
+
+func (h *Handler) DeleteModelProvider(c *gin.Context) {
+	var req DeleteProviderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	result, err := h.service.DeleteModelProviders(userID, req.ProviderNames)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Model provider deleted successfully")
 }
 
 func (h *Handler) ListModels(c *gin.Context) {
@@ -398,6 +440,440 @@ func (h *Handler) ShowModel(c *gin.Context) {
 		"message": "success",
 		"data":    model,
 	})
+}
+
+func (h *Handler) ListModelInstances(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	result, err := h.service.ListModelInstances(userID, providerName)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Model instances listed successfully")
+}
+
+func (h *Handler) ShowProviderInstance(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+	userID := c.GetString("user_id")
+
+	result, err := h.service.ShowProviderInstance(userID, providerName, instanceName)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Model instance shown successfully")
+}
+
+func (h *Handler) ShowProviderInstanceBalance(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+	userID := c.GetString("user_id")
+
+	result, err := h.service.ShowProviderInstanceBalance(userID, providerName, instanceName)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Model instance balance shown successfully")
+}
+
+func (h *Handler) CheckInstanceConnection(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+	userID := c.GetString("user_id")
+
+	result, err := h.service.CheckInstanceConnection(userID, providerName, instanceName)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Model instance connection checked successfully")
+}
+
+type CheckConnectionRequest struct {
+	APIKey  string `json:"api_key"`
+	Region  string `json:"region"`
+	BaseURL string `json:"base_url"`
+}
+
+func (h *Handler) CheckProviderConnection(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	var req CheckConnectionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	result, err := h.service.CheckProviderConnection(userID, providerName, req.Region, req.APIKey, req.BaseURL)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Model instance connection checked successfully")
+}
+
+type AlterProviderInstanceRequest struct {
+	ModelName string `json:"model_name"`
+	APIKey    string `json:"api_key"`
+}
+
+func (h *Handler) AlterProviderInstance(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+
+	var req AlterProviderInstanceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+	if userID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeUnauthorized,
+			"message": "Unauthorized",
+		})
+		return
+	}
+
+	result, err := h.service.AlterProviderInstance(userID, providerName, instanceName, req.ModelName, req.APIKey)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Model instance altered successfully")
+}
+
+type AddModelInstanceRequest struct {
+	InstanceName string `json:"instance_name" binding:"required"`
+}
+
+func (h *Handler) AddModelInstance(c *gin.Context) {
+	var req AddModelInstanceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+			"data":    false,
+		})
+		return
+	}
+
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	result, err := h.service.AddModelInstance(userID, providerName, req.InstanceName)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Model instance added successfully")
+}
+
+type DropModelInstanceRequest struct {
+	InstanceNames []string `json:"instance_names" binding:"required"`
+}
+
+func (h *Handler) DeleteModelInstance(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	var req DropModelInstanceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	result, err := h.service.DeleteModelInstances(userID, providerName, req.InstanceNames)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Model provider added successfully")
+}
+
+func (h *Handler) ListInstanceModels(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	result, err := h.service.ListInstanceModels(userID, providerName, instanceName)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Models listed successfully")
+}
+
+type EnableOrDisableModelRequest struct {
+	ModelID string `json:"model_id"`
+	Status  string `json:"status"`
+}
+
+func (h *Handler) EnableOrDisableModel(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+
+	var req EnableOrDisableModelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		println("JSON bind error: %v (type: %T)", err, err)
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	modelID := strings.TrimSpace(req.ModelID)
+	modelName := strings.TrimPrefix(c.Param("model_name"), "/")
+	modelName = strings.TrimSpace(modelName)
+	if modelName == "" && modelID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": "model_name or model_id is required",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	result, err := h.service.EnableOrDisableModel(userID, providerName, instanceName, modelName, modelID, req.Status)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Models listed successfully")
+}
+
+type AddModelsRequest struct {
+	ModelNames []string `json:"model_names" binding:"required"`
+}
+
+func (h *Handler) AddModels(c *gin.Context) {
+	var req AddModelsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+			"data":    false,
+		})
+		return
+	}
+
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	result, err := h.service.AddModels(userID, providerName, instanceName, req.ModelNames)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Models added successfully")
+}
+
+type DropModelsRequest struct {
+	ModelNames []string `json:"model_names" binding:"required"`
+}
+
+func (h *Handler) DeleteModels(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+
+	var req DropModelsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	result, err := h.service.DeleteModels(userID, providerName, instanceName, req.ModelNames)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Model deleted successfully")
 }
 
 type ListModelsOrShowModelRequest struct {

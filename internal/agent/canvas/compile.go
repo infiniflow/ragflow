@@ -12,9 +12,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	graphpkg "ragflow/internal/harness/graph/graph"
 )
 
@@ -163,12 +165,16 @@ func foldLegacyComponents(c *Canvas) {
 		}
 		parentID, ok := parentOf[childID]
 		if !ok {
-			log.Printf("canvas: dropping orphan legacy node %q (%s) — no parent found", childID, comp.Obj.ComponentName)
+			common.Warn("canvas: dropping orphan legacy node",
+				zap.String("child_id", childID),
+				zap.String("component_name", comp.Obj.ComponentName))
 			targets = append(targets, foldTarget{childID: childID})
 			continue
 		}
 		if _, exists := c.Components[parentID]; !exists {
-			log.Printf("canvas: dropping legacy node %q — parent %q not in components", childID, parentID)
+			common.Warn("canvas: dropping legacy node — parent not found in components",
+				zap.String("child_id", childID),
+				zap.String("parent_id", parentID))
 			targets = append(targets, foldTarget{childID: childID})
 			continue
 		}
@@ -335,7 +341,7 @@ func Compile(ctx context.Context, c *Canvas, opts ...CompileOption) (*CompiledCa
 			}
 		}
 		if n > 0 {
-			log.Printf("canvas: Compile received Canvas with %d legacy LoopItem/IterationItem/Iteration nodes; this path bypassed dsl.NormalizeForCanvas — the fold step is not applied", n)
+			common.Info("canvas: Compile received Canvas with legacy LoopItem/IterationItem/Iteration nodes; this path bypassed dsl.NormalizeForCanvas — the fold step is not applied", zap.Int("n", n))
 		}
 		foldLegacyComponents(work)
 	}

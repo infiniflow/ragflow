@@ -19,6 +19,7 @@ package router
 import (
 	"github.com/gin-gonic/gin"
 
+	"ragflow/internal/common"
 	"ragflow/internal/handler"
 )
 
@@ -122,7 +123,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 	})
 
 	// Log all HTTP requests.
-	engine.Use(gin.Logger())
+	engine.Use(common.GinLogger())
 
 	// Health check
 	engine.GET("/health", r.systemHandler.Health)
@@ -432,13 +433,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.GET("/:provider_name/instances/:instance_name", r.providerHandler.ShowProviderInstance)
 				provider.GET("/:provider_name/instances/:instance_name/balance", r.providerHandler.ShowInstanceBalance)
 				provider.GET("/:provider_name/instances/:instance_name/connection", r.providerHandler.CheckInstanceConnection)
-				// Python's /providers/<name>/connection is POST — see
-				// api/apps/restful_apis/provider_api.py:359. The web front-end
-				// posts {api_key, base_url, region, model_info} there
-				// (web/src/services/llm-service.ts:45-48 method: 'post'). The
-				// Go handler body is already POST-shaped (ShouldBindJSON
-				// against CheckConnectionRequest), so the only thing missing
-				// was the routing method.
 				provider.POST("/:provider_name/connection", r.providerHandler.CheckConnection)
 				provider.GET("/:provider_name/instances/:instance_name/tasks", r.providerHandler.ListTasks)
 				provider.GET("/:provider_name/instances/:instance_name/tasks/:task_id", r.providerHandler.ShowTask)

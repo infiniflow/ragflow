@@ -163,6 +163,186 @@ func (s *Service) ResetRoleDefaultModel(roleName, modelType string) (map[string]
 	}, nil
 }
 
+// ListModelProviders list model providers
+func (s *Service) ListModelProviders() ([]map[string]interface{}, error) {
+	return []map[string]interface{}{
+		{
+			"command": "list_model_providers",
+			"error":   "'list model providers' is implemented in enterprise edition",
+		},
+	}, nil
+}
+
+// AddModelProvider Add model provider
+func (s *Service) AddModelProvider(userID, providerName string) (map[string]interface{}, error) {
+
+	return map[string]interface{}{
+		"command":     "add_model_provider",
+		"user_id":     userID,
+		"provider_id": providerName,
+		"error":       "'add model provider' is implemented in enterprise edition",
+	}, nil
+}
+
+// DeleteModelProviders delete model providers
+func (s *Service) DeleteModelProviders(userID string, providerNames []string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":        "delete_model_providers",
+		"user_id":        userID,
+		"provider_names": providerNames,
+		"error":          "'delete model providers' is implemented in enterprise edition",
+	}, nil
+}
+
+// ListModelInstances list model instances
+func (s *Service) ListModelInstances(userID, providerName string) ([]map[string]interface{}, error) {
+
+	return []map[string]interface{}{
+		{
+			"command":     "list_model_instances",
+			"user_id":     userID,
+			"provider_id": providerName,
+			"error":       "'list model instances' is implemented in enterprise edition",
+		},
+	}, nil
+}
+
+// ShowProviderInstance show provider instance
+func (s *Service) ShowProviderInstance(userID, providerName, instanceName string) (map[string]interface{}, error) {
+
+	return map[string]interface{}{
+		"command":       "show_provider_instance",
+		"user_id":       userID,
+		"provider_id":   providerName,
+		"instance_name": instanceName,
+		"error":         "'show provider instance' is implemented in enterprise edition",
+	}, nil
+}
+
+// ShowProviderInstanceBalance show provider instance balance
+func (s *Service) ShowProviderInstanceBalance(userID, providerName, instanceName string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":       "show_provider_instance_balance",
+		"user_id":       userID,
+		"provider_id":   providerName,
+		"instance_name": instanceName,
+		"error":         "'show provider instance balance' is implemented in enterprise edition",
+	}, nil
+}
+
+// CheckInstanceConnection check instance connection
+func (s *Service) CheckInstanceConnection(userID, providerName, instanceName string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":       "check_instance_connection",
+		"user_id":       userID,
+		"provider_id":   providerName,
+		"instance_name": instanceName,
+		"error":         "'check instance connection' is implemented in enterprise edition",
+	}, nil
+}
+
+// CheckProviderConnection check provider connection
+func (s *Service) CheckProviderConnection(userID, providerName, region, apiKey, baseURL string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":     "check_provider_connection",
+		"user_id":     userID,
+		"provider_id": providerName,
+		"region":      region,
+		"api_key":     apiKey,
+		"base_url":    baseURL,
+	}, nil
+}
+
+// AlterProviderInstance alter provider instance
+func (s *Service) AlterProviderInstance(userID, providerName, instanceName, newInstanceName, newAPIKey string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":           "alter_provider_instance",
+		"user_id":           userID,
+		"provider_id":       providerName,
+		"instance_name":     instanceName,
+		"new_instance_name": newInstanceName,
+		"new_api_key":       newAPIKey,
+		"error":             "'alter provider instance' is implemented in enterprise edition",
+	}, nil
+}
+
+// AddModelInstance Add model instance
+func (s *Service) AddModelInstance(userID, providerName, instanceName string) (map[string]interface{}, error) {
+
+	return map[string]interface{}{
+		"command":       "add_model_instance",
+		"user_id":       userID,
+		"provider_id":   providerName,
+		"instance_name": instanceName,
+		"error":         "'add model instance' is implemented in enterprise edition",
+	}, nil
+}
+
+// DeleteModelInstances delete model instances
+func (s *Service) DeleteModelInstances(userID, providerName string, instances []string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":     "delete_model_instances",
+		"user_id":     userID,
+		"provider_id": providerName,
+		"instances":   instances,
+		"error":       "'delete model instances' is implemented in enterprise edition",
+	}, nil
+}
+
+// ListInstanceModels list models for instance
+func (s *Service) ListInstanceModels(userID, providerName, instanceName string) ([]map[string]interface{}, error) {
+	return []map[string]interface{}{
+		{
+			"command":       "list_instance_models",
+			"user_id":       userID,
+			"provider_id":   providerName,
+			"instance_name": instanceName,
+			"error":         "'list instance models' is implemented in enterprise edition",
+		},
+	}, nil
+}
+
+func (s *Service) EnableOrDisableModel(userID, providerName, instanceName, modelName, modelID, status string) (map[string]interface{}, error) {
+
+	return map[string]interface{}{
+		"command":       "enable_or_disable_model",
+		"user_id":       userID,
+		"provider_id":   providerName,
+		"instance_name": instanceName,
+		"model_name":    modelName,
+		"model_id":      modelID,
+		"status":        status,
+		"error":         "'enable or disable model' is implemented in enterprise edition",
+	}, nil
+}
+
+// AddModel Add model
+
+// AddModels Add models
+func (s *Service) AddModels(userID, providerName, instanceName string, modelNames []string) (map[string]interface{}, error) {
+
+	return map[string]interface{}{
+		"command":       "add_model",
+		"user_id":       userID,
+		"provider_id":   providerName,
+		"instance_name": instanceName,
+		"model_names":   modelNames,
+		"error":         "'add model' is implemented in enterprise edition",
+	}, nil
+}
+
+// DeleteModels delete models
+func (s *Service) DeleteModels(userID, providerName, instanceName string, models []string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":       "delete_models",
+		"user_id":       userID,
+		"provider_id":   providerName,
+		"instance_name": instanceName,
+		"models":        models,
+		"error":         "'delete models' is implemented in enterprise edition",
+	}, nil
+}
+
 // ListAllModels list all models
 func (s *Service) ListAllModels() ([]map[string]interface{}, error) {
 	return []map[string]interface{}{

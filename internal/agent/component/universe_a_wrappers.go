@@ -36,6 +36,9 @@ import (
 	"strings"
 
 	agenttool "ragflow/internal/agent/tool"
+	"ragflow/internal/common"
+
+	"go.uber.org/zap"
 )
 
 // tavilySearchComponent delegates to internal/agent/tool/TavilyTool.
@@ -414,52 +417,44 @@ func (c *codeExecComponentDelegate) Invoke(ctx context.Context, inputs map[strin
 	// Merge resolved arguments into the merged input map.
 	merged := make(map[string]any, len(c.params)+2)
 	for k, v := range c.params {
-		if k == "arguments" {
-			continue // replaced with resolved args
-		}
+		merged[k] = v
+	}
+	for k, v := range inputs {
 		merged[k] = v
 	}
 	merged["arguments"] = args
-	// Override with runtime inputs (except state).
-	for k, v := range inputs {
-		if k == "state" || k == "arguments" {
-			continue
-		}
-		merged[k] = v
+
+	// Resolve code-exec-specific argument references against merged state.
+	if rawArgs, ok := merged["arguments"].(map[string]any); ok {
+		merged["arguments"] = resolveCodeExecArguments(rawArgs, merged)
 	}
 
-	// Marshal merged params and delegate to the tool's InvokableRun.
+	common.Debug("CodeExec wrapper invoke",
+		zap.Int("params_keys", len(c.params)),
+		zap.Int("inputs_keys", len(inputs)),
+		zap.Int("merged_keys", len(merged)),
+		zap.Bool("has_arguments", merged["arguments"] != nil))
+
 	tool := agenttool.NewCodeExecTool()
 	argsJSON, mErr := json.Marshal(merged)
 	if mErr != nil {
 		return nil, fmt.Errorf("CodeExec: marshal: %w", mErr)
 	}
+
 	raw, err := tool.InvokableRun(ctx, string(argsJSON))
 	parsed := parseToolEnvelope(raw)
-	// The tool outputs raw_result but the legacy component surface
-	// expects result.  Add an alias for backward compatibility.
-	if rawResult, ok := parsed["raw_result"]; ok {
-		parsed["result"] = rawResult
-	}
-	// Ensure _ERROR is always present (empty string = no error).
-	if _, has := parsed["_ERROR"]; !has {
-		parsed["_ERROR"] = ""
-	}
-	// Contract validation: check declared output types against the
-	// actual result.  The test declares "result": {"type": "Number"}
-	// and expects a mismatch when the sandbox returns a string.
+
 	if outputs, _ := c.params["outputs"].(map[string]any); outputs != nil {
-		if rschema, ok := outputs["result"].(map[string]any); ok {
-			if wantType, _ := rschema["type"].(string); wantType != "" {
-				gotType, _ := parsed["actual_type"].(string)
-				if gotType != "" && !strings.EqualFold(gotType, wantType) {
-					parsed["_ERROR"] = fmt.Sprintf("contract mismatch: expected type %s got %s", wantType, gotType)
-					delete(parsed, "result")
-					delete(parsed, "raw_result")
-				}
-			}
+		applyCodeExecBusinessOutputs(parsed, outputs)
+	} else {
+		if rawResult, ok := parsed["raw_result"]; ok {
+			parsed["result"] = rawResult
+		}
+		if _, has := parsed["_ERROR"]; !has {
+			parsed["_ERROR"] = ""
 		}
 	}
+
 	if err != nil {
 		return parsed, fmt.Errorf("CodeExec: %w", err)
 	}
@@ -535,6 +530,151 @@ func parseToolEnvelope(jsonStr string) map[string]any {
 		return map[string]any{"_raw": jsonStr}
 	}
 	return out
+}
+
+func applyCodeExecBusinessOutputs(decoded map[string]any, outputs map[string]any) {
+	if decoded == nil {
+		return
+	}
+	rawResult := resolveCodeExecBusinessResult(decoded)
+	common.Debug("CodeExec wrapper",
+		zap.Int("decoded_keys", len(decoded)),
+		zap.Bool("has_raw_result", rawResult != nil),
+		zap.Bool("has_content", decoded["content"] != nil),
+		zap.Int("outputs_keys", len(outputs)))
+	if existingErr, _ := decoded["_ERROR"].(string); strings.TrimSpace(existingErr) != "" {
+		for name := range outputs {
+			if isCodeExecSystemOutput(name) {
+				continue
+			}
+			decoded[name] = nil
+		}
+		if _, ok := decoded["actual_type"]; !ok {
+			decoded["actual_type"] = agenttool.InferCodeExecActualType(rawResult)
+		}
+		if _, ok := decoded["content"]; !ok {
+			decoded["content"] = agenttool.RenderCodeExecCanonicalContent(rawResult)
+		}
+		return
+	}
+	contract, err := agenttool.BuildCodeExecContract(outputs, rawResult)
+	if err != nil {
+		for name := range outputs {
+			if isCodeExecSystemOutput(name) {
+				continue
+			}
+			decoded[name] = nil
+		}
+		decoded["actual_type"] = agenttool.InferCodeExecActualType(rawResult)
+		decoded["_ERROR"] = err.Error()
+		if _, ok := decoded["content"]; !ok {
+			decoded["content"] = agenttool.RenderCodeExecCanonicalContent(rawResult)
+		}
+		return
+	}
+
+	decoded["_ERROR"] = ""
+	decoded["actual_type"] = contract.ActualType
+	decoded["content"] = contract.Content
+	decoded[contract.BusinessOutput] = contract.Value
+}
+
+func resolveCodeExecBusinessResult(decoded map[string]any) any {
+	if decoded == nil {
+		return nil
+	}
+	if rawResult, ok := decoded["raw_result"]; ok {
+		return rawResult
+	}
+	content, _ := decoded["content"].(string)
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil
+	}
+	var parsed any
+	if err := json.Unmarshal([]byte(content), &parsed); err == nil {
+		return parsed
+	}
+	return content
+}
+
+func isCodeExecSystemOutput(name string) bool {
+	switch name {
+	case "content", "actual_type", "attachments", "_ERROR", "_ARTIFACTS", "_ATTACHMENT_CONTENT", "raw_result", "_created_time", "_elapsed_time":
+		return true
+	default:
+		return false
+	}
+}
+
+func asAnyMap(v any) map[string]any {
+	if m, ok := v.(map[string]any); ok {
+		return m
+	}
+	return nil
+}
+
+func cloneAnyMap(in map[string]any) map[string]any {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func resolveCodeExecArguments(args map[string]any, merged map[string]any) map[string]any {
+	if args == nil {
+		return nil
+	}
+	out := make(map[string]any, len(args))
+	for k, v := range args {
+		out[k] = resolveCodeExecArgumentValue(v, merged)
+	}
+	return out
+}
+
+func resolveCodeExecArgumentValue(v any, merged map[string]any) any {
+	switch x := v.(type) {
+	case map[string]any:
+		return resolveCodeExecArguments(x, merged)
+	case []any:
+		out := make([]any, 0, len(x))
+		for _, item := range x {
+			out = append(out, resolveCodeExecArgumentValue(item, merged))
+		}
+		return out
+	case string:
+		if resolved, ok := lookupCodeExecArgumentRef(x, merged); ok {
+			return resolved
+		}
+		return x
+	default:
+		return v
+	}
+}
+
+func lookupCodeExecArgumentRef(ref string, merged map[string]any) (any, bool) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return nil, false
+	}
+	at := strings.Index(ref, "@")
+	if at <= 0 || at >= len(ref)-1 {
+		return nil, false
+	}
+	cpnID := ref[:at]
+	param := ref[at+1:]
+
+	stateByNode, _ := merged["state"].(map[string]map[string]any)
+	if bucket, ok := stateByNode[cpnID]; ok {
+		if v, ok := bucket[param]; ok {
+			return v, true
+		}
+	}
+	return nil, false
 }
 
 // toIntParam coerces a node-param int value to int. JSON-decoded

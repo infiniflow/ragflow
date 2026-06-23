@@ -33,12 +33,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	"ragflow/internal/agent/runtime"
 )
 
@@ -90,7 +92,9 @@ func buildNodeBody(cpnID, name string, params map[string]any) (nodeBodyFn, error
 		return UserFillUpNodeBody(cpnID, params), nil
 	}
 	if factory := runtime.DefaultFactory(); factory != nil {
-		log.Printf("DBG buildNodeBody: using real factory for cpn=%q name=%q", cpnID, name)
+		common.Debug("buildNodeBody: using real factory",
+			zap.String("cpn_id", cpnID),
+			zap.String("name", name))
 		comp, err := factory(name, params)
 		if err != nil {
 			return nil, fmt.Errorf("canvas: component %q (%s): factory: %w", cpnID, name, err)
@@ -106,7 +110,9 @@ func buildNodeBody(cpnID, name string, params map[string]any) (nodeBodyFn, error
 		// ComponentBase.Name() would have returned.
 		return realComponentBody(cpnID, name, comp), nil
 	}
-	log.Printf("DBG buildNodeBody: no factory for cpn=%q name=%q, using placeholder", cpnID, name)
+	common.Debug("buildNodeBody: no factory, using placeholder",
+		zap.String("cpn_id", cpnID),
+		zap.String("name", name))
 	// Fallback: no factory registered. This path is only exercised by
 	// canvas-only unit tests; production wiring always installs a
 	// factory via component.init().
@@ -176,7 +182,10 @@ func realComponentBody(cpnID, componentClass string, comp runtime.Component) nod
 		defer cancel()
 		out, err := comp.Invoke(cctx, inMap)
 		if err != nil {
-			log.Printf("DBG invoke error cpn=%q class=%q: %v", cpnID, componentClass, err)
+			common.Debug("invoke error",
+				zap.String("cpn_id", cpnID),
+				zap.String("class", componentClass),
+				zap.Error(err))
 			switch {
 			case errors.Is(err, context.DeadlineExceeded):
 				return nil, fmt.Errorf("canvas: component %q invoke: timeout after %s: %w",
@@ -193,7 +202,10 @@ func realComponentBody(cpnID, componentClass string, comp runtime.Component) nod
 		for k := range out {
 			outputKeys = append(outputKeys, k)
 		}
-		log.Printf("DBG invoke ok cpn=%q class=%q keys=%v", cpnID, componentClass, outputKeys)
+		common.Debug("invoke ok",
+			zap.String("cpn_id", cpnID),
+			zap.String("class", componentClass),
+			zap.Strings("keys", outputKeys))
 		out["__cpn_id__"] = cpnID
 		return out, nil
 	}

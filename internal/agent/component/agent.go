@@ -724,6 +724,21 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	// grounding call is best-effort — on failure the original
 	// content is kept and the error is surfaced under
 	// outputs["grounding_error"].
+	// Diagnostic sentinel (temporary — see plan): log the post-
+	// agentRunner state right before the `msg.Content` deref so a
+	// subsequent panic shows whether the agent returned (nil, nil).
+	if msg == nil {
+		common.Debug("agent.Invoke: msg is NIL after agentRunner",
+			zap.String("driver", p.Driver),
+			zap.String("modelID", p.ModelID),
+			zap.Int("userPrompt_len", len(p.UserPrompt)),
+			zap.Error(err))
+		return nil, fmt.Errorf("component: Agent.Invoke: agent runner returned nil message (driver=%q modelID=%q): %w", p.Driver, p.ModelID, err)
+	}
+	common.Debug("agent.Invoke: msg OK",
+		zap.String("driver", p.Driver),
+		zap.String("modelID", p.ModelID),
+		zap.Int("content_len", len(msg.Content)))
 	content := msg.Content
 	var groundingStatus string
 	if p.Cite {

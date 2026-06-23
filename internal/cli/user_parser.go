@@ -736,7 +736,6 @@ func (p *Parser) parseCreateModelProvider() (*Command, error) {
 
 // parseAddProvider parses ADD PROVIDER commands
 // ADD PROVIDER <name>
-// ADD PROVIDER <name> <api_key>
 func (p *Parser) parseAddProvider() (*Command, error) {
 	p.nextToken() // consume PROVIDER
 
@@ -749,16 +748,6 @@ func (p *Parser) parseAddProvider() (*Command, error) {
 	cmd.Params["provider_name"] = providerName
 
 	p.nextToken()
-
-	// Check if api_key is provided (optional)
-	if p.curToken.Type == TokenQuotedString {
-		apiKey, err := p.parseQuotedString()
-		if err != nil {
-			return nil, fmt.Errorf("expected api key: %w", err)
-		}
-		cmd.Params["api_key"] = apiKey
-		p.nextToken()
-	}
 
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
@@ -1721,19 +1710,36 @@ func (p *Parser) parseAlterInstance() (*Command, error) {
 	if err != nil {
 		return nil, fmt.Errorf("expected instance name: %w", err)
 	}
-
 	p.nextToken()
-	if p.curToken.Type != TokenName {
-		return nil, fmt.Errorf("expected NAME")
+
+	newModelName := ""
+	newAPIKey := ""
+optionsLoop:
+	for {
+		switch p.curToken.Type {
+		case TokenName:
+			p.nextToken()
+			newModelName, err = p.parseQuotedString()
+			if err != nil {
+				return nil, fmt.Errorf("expected model name: %w", err)
+			}
+			p.nextToken()
+		case TokenKey:
+			p.nextToken()
+			newAPIKey, err = p.parseQuotedString()
+			if err != nil {
+				return nil, fmt.Errorf("expected API key: %w", err)
+			}
+			p.nextToken()
+		default:
+			break optionsLoop
+		}
 	}
-	p.nextToken()
 
-	newName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, fmt.Errorf("expected new instance name: %w", err)
+	if newModelName == "" && newAPIKey == "" {
+		return nil, fmt.Errorf("expected NAME or KEY after INSTANCE")
 	}
 
-	p.nextToken()
 	if p.curToken.Type != TokenFrom {
 		return nil, fmt.Errorf("expected FROM")
 	}
@@ -1750,9 +1756,10 @@ func (p *Parser) parseAlterInstance() (*Command, error) {
 	}
 
 	cmd := NewCommand("alter_provider_instance")
-	cmd.Params["instance_name"] = instanceName
-	cmd.Params["new_name"] = newName
 	cmd.Params["provider_name"] = providerName
+	cmd.Params["instance_name"] = instanceName
+	cmd.Params["new_model_name"] = newModelName
+	cmd.Params["new_api_key"] = newAPIKey
 
 	p.nextToken()
 	// Semicolon is optional
@@ -2554,8 +2561,9 @@ func (p *Parser) parseListModelsOfProvider() (*Command, error) {
 	// If so, format is: LIST MODELS FROM <instance_name> <provider_name>
 	// If not, format is: LIST MODELS FROM <provider_name>
 	if p.curToken.Type == TokenQuotedString {
+		var instanceName string
 		// Two arguments: instance_name and provider_name
-		instanceName, err := p.parseQuotedString()
+		instanceName, err = p.parseQuotedString()
 		if err != nil {
 			return nil, err
 		}

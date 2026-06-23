@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 	"sync"
@@ -29,6 +28,7 @@ import (
 	"ragflow/internal/harness/graph/interrupt"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/canvas"
@@ -638,8 +638,20 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	if tenantIDs, terr := s.userTenantDAO.GetTenantIDsByUserID(userID); terr == nil && len(tenantIDs) > 0 {
 		root["tenant_id"] = tenantIDs[0]
 	} else if terr != nil {
-		log.Printf("service: RunAgent userTenantDAO.GetTenantIDsByUserID(%q): %v (best-effort, run not blocked)", userID, terr)
+		common.Warn("service: RunAgent userTenantDAO.GetTenantIDsByUserID (best-effort, run not blocked)",
+			zap.String("user_id", userID),
+			zap.Error(terr))
 	}
+	// v3.6.1 diagnostic: log what RunAgent put into root so we can
+	// confirm tenant_id / user_id / session_id / user_input all
+	// reached the buildRunFunc closure (which runs in the runner's
+	// goroutine, possibly after a context switch).
+	common.Debug("RunAgent root",
+		zap.String("canvasID", canvasID),
+		zap.String("userID", userID),
+		zap.String("sessionID", sessionID),
+		zap.Any("tenantID", root["tenant_id"]),
+		zap.Int("userInput_len", func() int { s, _ := root["user_input"].(string); return len(s) }()))
 
 	return s.runner.Run(ctx, run, canvasID, sessionID, userInput, root), nil
 }
@@ -801,6 +813,11 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			cc, err = canvas.Compile(ctx2, c)
 		}
 		if err != nil {
+			common.Debug("RunAgent compile err",
+				zap.String("canvas", canvasID),
+				zap.String("run", runID),
+				zap.String("type", fmt.Sprintf("%T", err)),
+				zap.Error(err))
 			s.markRunFailed(ctx2, runID, "compile: "+err.Error())
 			// Two-`%w` chain: ErrAgentStorageError first so
 			// errors.Is(returnedErr, ErrAgentStorageError) is
@@ -844,6 +861,11 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		}
 
 		if err != nil {
+			common.Debug("RunAgent invoke err",
+				zap.String("canvas", canvasID),
+				zap.String("run", runID),
+				zap.String("type", fmt.Sprintf("%T", err)),
+				zap.Error(err))
 			if canvas.IsInterruptError(err) {
 				// Interrupt: not a failure. Return state +
 				// interrupt error so Runner.Run can extract the
@@ -893,7 +915,9 @@ func (s *AgentService) markRunSucceeded(ctx context.Context, runID string) {
 		return
 	}
 	if err := s.runTracker.MarkSucceeded(ctx, runID); err != nil {
-		log.Printf("service: RunAgent runTracker.MarkSucceeded(%q): %v (best-effort, run not blocked)", runID, err)
+		common.Warn("service: RunAgent runTracker.MarkSucceeded (best-effort, run not blocked)",
+			zap.String("run_id", runID),
+			zap.Error(err))
 	}
 }
 
@@ -905,7 +929,10 @@ func (s *AgentService) markRunFailed(ctx context.Context, runID, reason string) 
 		return
 	}
 	if err := s.runTracker.MarkFailed(ctx, runID, reason); err != nil {
-		log.Printf("service: RunAgent runTracker.MarkFailed(%q, %q): %v (best-effort, run not blocked)", runID, reason, err)
+		common.Warn("service: RunAgent runTracker.MarkFailed (best-effort, run not blocked)",
+			zap.String("run_id", runID),
+			zap.String("reason", reason),
+			zap.Error(err))
 	}
 }
 

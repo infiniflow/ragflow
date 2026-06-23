@@ -29,8 +29,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	"ragflow/internal/harness/graph/interrupt"
 	"ragflow/internal/harness/graph/types"
 )
@@ -215,7 +217,9 @@ func runLoop(
 					return nil, fmt.Errorf("graph: loop marshal interrupt state: %w", mErr)
 				}
 				_, interruptErr := interrupt.Interrupt(ctx, stateJSON)
-				log.Printf("DBG runLoop interruptErr=%T %v", interruptErr, interruptErr)
+				common.Debug("runLoop interruptErr",
+					zap.String("type", fmt.Sprintf("%T", interruptErr)),
+					zap.Any("error", interruptErr))
 				return nil, interruptErr
 			}
 			return nil, fmt.Errorf("graph: loop iteration %d: %w", iteration, invokeErr)

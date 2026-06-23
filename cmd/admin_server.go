@@ -74,7 +74,7 @@ func main() {
 	}
 
 	// Initialize logger
-	if err := common.Init("info", "admin_server.log"); err != nil {
+	if err := common.Init("info", common.FileOutput{Path: "admin_server.log"}); err != nil {
 		panic("failed to initialize logger: " + err.Error())
 	}
 
@@ -96,7 +96,17 @@ func main() {
 		logLevel = "debug"
 	}
 
-	if err := common.Init(logLevel, "admin_server.log"); err != nil {
+	fileOut := common.FileOutput{
+		Path:       "admin_server.log",
+		MaxSize:    cfg.Log.MaxSize,
+		MaxBackups: cfg.Log.MaxBackups,
+		MaxAge:     cfg.Log.MaxAge,
+		Compress:   common.ResolveCompress(cfg.Log.Compress),
+	}
+	if cfg.Log.Path != "" {
+		fileOut.Path = cfg.Log.Path
+	}
+	if err := common.Init(logLevel, fileOut); err != nil {
 		common.Error("Failed to reinitialize logger with configured level", err)
 	}
 
@@ -158,15 +168,8 @@ func main() {
 	ginEngine := gin.New()
 
 	// Middleware
-	if cfg.Server.Mode == "debug" {
-		ginEngine.Use(gin.Logger())
-	}
+	ginEngine.Use(common.GinLogger())
 	ginEngine.Use(gin.Recovery())
-	// Log request URL for every request
-	ginEngine.Use(func(c *gin.Context) {
-		common.Info("HTTP Request", zap.String("url", c.Request.URL.String()), zap.String("method", c.Request.Method))
-		c.Next()
-	})
 
 	// Setup routes
 	r.Setup(ginEngine)

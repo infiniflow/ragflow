@@ -33,12 +33,12 @@ package component
 import (
 	"context"
 	"fmt"
-	"log"
 	"maps"
 	"regexp"
 
 	"ragflow/internal/agent/audio"
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 )
 
 const componentNameMessage = "Message"
@@ -283,7 +283,7 @@ func (m *MessageComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 			})
 			if saveErr != nil {
 				out["memory_error"] = saveErr.Error()
-				log.Printf("Message: memory_save failed: %v", saveErr)
+				common.Error("Message: memory_save failed", saveErr)
 			}
 		}
 	}
