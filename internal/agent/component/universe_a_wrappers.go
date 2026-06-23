@@ -438,9 +438,10 @@ func (c *codeExecComponent) Invoke(ctx context.Context, inputs map[string]any) (
 		merged["arguments"] = resolveCodeExecArguments(rawArgs, merged)
 	}
 	common.Debug("CodeExec wrapper invoke",
-		zap.Any("params", c.params),
-		zap.Any("inputs", inputs),
-		zap.Any("merged", merged))
+		zap.Int("params_keys", len(c.params)),
+		zap.Int("inputs_keys", len(inputs)),
+		zap.Int("merged_keys", len(merged)),
+		zap.Bool("has_arguments", merged["arguments"] != nil))
 	argsJSON, _ := json.Marshal(merged)
 	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
 	decoded := parseToolEnvelope(out)
@@ -486,10 +487,10 @@ func applyCodeExecBusinessOutputs(decoded map[string]any, outputs map[string]any
 	}
 	rawResult := resolveCodeExecBusinessResult(decoded)
 	common.Debug("CodeExec wrapper",
-		zap.Any("decoded", decoded),
-		zap.Any("resolved_raw_result", rawResult),
-		zap.Any("content", decoded["content"]),
-		zap.Any("outputs", outputs))
+		zap.Int("decoded_keys", len(decoded)),
+		zap.Bool("has_raw_result", rawResult != nil),
+		zap.Bool("has_content", decoded["content"] != nil),
+		zap.Int("outputs_keys", len(outputs)))
 	if existingErr, _ := decoded["_ERROR"].(string); strings.TrimSpace(existingErr) != "" {
 		for name := range outputs {
 			if isCodeExecSystemOutput(name) {

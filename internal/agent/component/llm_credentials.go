@@ -67,7 +67,7 @@ func resolveTenantLLMCredentials(tid, driver, modelID, baseURL string) (string, 
 	}
 	common.Debug("llm credentials: tenant_llm OK",
 		zap.Bool("api_key_present", apiKey != ""),
-		zap.String("base_url", baseURL))
+		zap.Bool("base_url_present", baseURL != ""))
 	return apiKey, baseURL, apiKey != ""
 }
 
@@ -127,7 +127,7 @@ func resolveTenantModelInstanceCredentials(tid, compositeLLMID, baseURL string) 
 		zap.String("provider", providerName),
 		zap.String("instance", instance.InstanceName),
 		zap.Bool("api_key_present", apiKey != ""),
-		zap.String("base_url", baseURL))
+		zap.Bool("base_url_present", baseURL != ""))
 	return apiKey, baseURL, apiKey != ""
 }
 

@@ -294,7 +294,16 @@ func GinLogger() gin.HandlerFunc {
 		var ginErr error
 		if len(c.Errors) > 0 {
 			last := c.Errors.Last()
-			fields = append(fields, zap.String("error", last.Error()))
+			// Only emit the string error field for non-5xx paths. The 5xx
+			// branch below routes ginErr through common.Error(), which
+			// already adds a structured zap.Error field; logging both
+			// creates two "error" fields in the same record and confuses
+			// log aggregation. 4xx / 2xx-3xx paths use Warn/Info which do
+			// not take an error arg, so the string form is their only
+			// way to surface c.Errors content.
+			if status < 500 {
+				fields = append(fields, zap.String("error", last.Error()))
+			}
 			ginErr = last.Err
 		}
 
