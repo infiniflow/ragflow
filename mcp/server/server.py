@@ -334,6 +334,7 @@ class RAGFlowConnector:
                     page_size = 30
                     doc_id_meta_list = []
                     docs = {}
+                    pagination_complete = False
                     while page:
                         # Pass page_size explicitly so the pagination math below stays consistent
                         # with the page size the server actually applies.
@@ -372,16 +373,21 @@ class RAGFlowConnector:
                             doc_id_meta_list.append((doc_id, doc_meta))
                             docs[doc_id] = doc_meta
 
-                        self._set_cached_document_metadata_by_dataset(dataset_id, doc_id_meta_list)
-
                         # Stop when the page came back empty (no more documents) or we have reached
                         # the reported total. Without the empty-page guard, a successful response
                         # carrying an empty ``docs`` list would leave ``page`` unchanged and refetch
                         # the same page forever (issue #16248).
                         if not page_docs or page * page_size >= data.get("total", len(doc_id_meta_list)):
                             page = None
+                            pagination_complete = True
                         else:
                             page += 1
+
+                    # Cache only after pagination finished cleanly. Writing the cache mid-loop would
+                    # persist a partial list for the full TTL if a later page failed (``not docs_res``
+                    # or a non-zero code), making lookups for the unfetched pages silently miss.
+                    if pagination_complete:
+                        self._set_cached_document_metadata_by_dataset(dataset_id, doc_id_meta_list)
                 if docs:
                     document_cache.update(docs)
 
