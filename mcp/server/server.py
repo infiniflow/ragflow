@@ -364,6 +364,9 @@ class RAGFlowConnector:
                             page += 1
                             if docs_data.get("data", {}).get("total", 0) - page * page_size <= 0:
                                 page = None
+                        else:
+                            # Empty docs page or non-zero code — stop paginating to avoid infinite loop
+                            break
 
                         self._set_cached_document_metadata_by_dataset(dataset_id, doc_id_meta_list)
                 if docs:
