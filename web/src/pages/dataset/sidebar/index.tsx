@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
+  LucideBookText,
   LucideFolderOpen,
   LucideLogs,
   LucideSettings,
@@ -54,6 +55,11 @@ export function SideBar({ dataset: data }: PropType) {
         icon: <LucideSettings className="size-[1em]" />,
         label: t(`knowledgeDetails.configuration`),
         key: Routes.DataSetSetting,
+      },
+      {
+        icon: <LucideBookText className="size-[1em]" />,
+        label: t(`knowledgeDetails.compilation`),
+        key: Routes.Compilation,
       },
     ];
 

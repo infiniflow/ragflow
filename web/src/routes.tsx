@@ -62,6 +62,7 @@ export enum Routes {
   Result = '/result',
   ResultView = `${Chunk}${Result}`,
   KnowledgeGraph = '/knowledge-graph',
+  Compilation = '/compilation',
   AgentLogPage = '/agent-log-page',
   AgentShare = '/agent/share',
   ChatShare = `${Chats}/share`,
@@ -325,6 +326,10 @@ const routeConfigOptions = [
   {
     path: `${Routes.SearchShare}`,
     Component: () => import('@/pages/next-search/share'),
+  },
+  {
+    path: `${Routes.DatasetBase}${Routes.Compilation}/:id`,
+    Component: () => import('@/pages/dataset/compilation'),
   },
   {
     path: Routes.Agent,
