@@ -17,6 +17,7 @@
 import importlib.util
 import json
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -61,6 +62,10 @@ def _stub_dataset_pages(monkeypatch, connector, datasets):
 
     monkeypatch.setattr(connector, "_get", _get)
     return requests
+
+
+def _dataset_response(dataset_id="dataset-1"):
+    return _FakeResponse({"code": 0, "data": [{"id": dataset_id, "name": "Dataset 1", "description": "Test dataset"}]})
 
 
 @pytest.mark.asyncio
@@ -115,3 +120,55 @@ async def test_list_datasets_clamps_explicit_page_size_to_rest_limit_and_preserv
         "id": "dataset-1",
         "name": "target",
     }
+
+
+@pytest.mark.p2
+@pytest.mark.asyncio
+async def test_document_metadata_cache_stops_on_empty_docs_page(monkeypatch, mcp_server):
+    connector = mcp_server.RAGFlowConnector(base_url=mcp_server.BASE_URL)
+    document_requests = []
+
+    async def _get(path, params=None, api_key=""):
+        if path == "/datasets":
+            return _dataset_response()
+        document_requests.append(path)
+        return _FakeResponse({"code": 0, "data": {"docs": [], "total": 0}})
+
+    monkeypatch.setattr(connector, "_get", _get)
+
+    document_cache, dataset_cache = await connector._get_document_metadata_cache(["dataset-1"], api_key="unit-key", force_refresh=True)
+
+    assert document_cache == {}
+    assert dataset_cache["dataset-1"]["name"] == "Dataset 1"
+    assert document_requests == ["/datasets/dataset-1/documents?page=1&page_size=30"]
+
+
+@pytest.mark.p2
+@pytest.mark.asyncio
+async def test_document_metadata_cache_paginates_with_page_size(monkeypatch, mcp_server):
+    connector = mcp_server.RAGFlowConnector(base_url=mcp_server.BASE_URL)
+    document_requests = []
+    pages = {
+        1: [{"id": "doc-1", "name": "Doc 1", "dataset_id": "dataset-1"}],
+        2: [{"id": "doc-2", "name": "Doc 2", "dataset_id": "dataset-1"}],
+    }
+
+    async def _get(path, params=None, api_key=""):
+        if path == "/datasets":
+            return _dataset_response()
+        document_requests.append(path)
+        query = parse_qs(urlsplit(path).query)
+        page = int(query["page"][0])
+        assert query["page_size"] == ["30"]
+        return _FakeResponse({"code": 0, "data": {"docs": pages[page], "total": 60}})
+
+    monkeypatch.setattr(connector, "_get", _get)
+
+    document_cache, _ = await connector._get_document_metadata_cache(["dataset-1"], api_key="unit-key", force_refresh=True)
+
+    assert sorted(document_cache) == ["doc-1", "doc-2"]
+    assert [document_cache["doc-1"]["name"], document_cache["doc-2"]["name"]] == ["Doc 1", "Doc 2"]
+    assert document_requests == [
+        "/datasets/dataset-1/documents?page=1&page_size=30",
+        "/datasets/dataset-1/documents?page=2&page_size=30",
+    ]
