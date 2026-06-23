@@ -529,6 +529,33 @@ func (r *TaskResponse) PrintOut() {
 	}
 }
 
+type ExplainResponse struct {
+	Code         int    `json:"code"`
+	Message      string `json:"message"`
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *ExplainResponse) Type() string {
+	return "explain"
+}
+
+func (r *ExplainResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *ExplainResponse) SetOutputFormat(format OutputFormat) {
+	r.OutputFormat = format
+}
+
+func (r *ExplainResponse) PrintOut() {
+	if r.Code == 0 {
+		fmt.Printf("\n%s\n", r.Message)
+	} else {
+		fmt.Printf("ERROR %d\n", r.Code)
+	}
+}
+
 // FileSystemResponse wraps the raw text output from executeFilesystem().
 type FileSystemResponse struct {
 	Output       string

@@ -64,23 +64,6 @@ const (
 	OutputFormatJSON  OutputFormat = "json"  // JSON format (reserved for future use)
 )
 
-// ConnectionArgs holds the parsed command line arguments
-type ConnectionArgs struct {
-	Host           string
-	Port           int
-	Password       string
-	APIToken       string
-	UserName       string
-	ConfigFilePath string   // Path to the config file (e.g., rf.yml)
-	Command        *string  // Original command string (for SQL mode)
-	CommandArgs    []string // Split command arguments (for ContextEngine mode)
-	IsSQLMode      bool     // true=SQL mode (quoted), false= ContextEngine mode (unquoted)
-	ShowHelp       bool
-	AdminMode      bool
-	OutputFormat   OutputFormat // Output format: table, plain, json
-	Verbose        bool         // Enable verbose logging
-}
-
 type CommandLineMode string
 
 const (
@@ -439,24 +422,6 @@ func parseHostPort(hostPort string) (string, int, error) {
 	return host, port, nil
 }
 
-// looksLikeSQL checks if a string looks like a SQL command
-func looksLikeSQL(s string) bool {
-	s = strings.ToUpper(strings.TrimSpace(s))
-	sqlPrefixes := []string{
-		"LIST ", "SHOW ", "CREATE ", "DROP ", "ALTER ",
-		"LOGIN ", "REGISTER ", "PING", "GRANT ", "REVOKE ",
-		"SET ", "UNSET ", "UPDATE ", "DELETE ", "INSERT ",
-		"SELECT ", "DESCRIBE ", "EXPLAIN ", "ADD ", "ENABLE ", "DISABLE ", "CHAT ", "USE", "THINK",
-		"REMOVE ",
-	}
-	for _, prefix := range sqlPrefixes {
-		if strings.HasPrefix(s, prefix) {
-			return true
-		}
-	}
-	return false
-}
-
 // PrintUsage prints the CLI usage information
 func PrintUsage() {
 	fmt.Println(`RAGFlow CLI Client
@@ -516,12 +481,8 @@ const historyFileName = ".ragflow_cli_history"
 
 // CLI represents the command line interface
 type CLI struct {
-	//client        *RAGFlowClient
-	//contextEngine *filesystem.Engine
-	running      bool
-	line         *liner.State
-	args         *ConnectionArgs
-	outputFormat OutputFormat // Output format
+	running bool
+	line    *liner.State
 
 	APIServerClientMap map[string]*HTTPClient
 	AdminServerClient  *HTTPClient
@@ -531,19 +492,13 @@ type CLI struct {
 	Config             *CommandLineConfig
 }
 
-// NewCLI creates a new CLI instance
-//func NewCLI() (*CLI, error) {
-//	return NewCLIWithArgs(nil)
-//}
-
 func NewCLIWithConfig(commandLineConfig *CommandLineConfig) (*CLI, error) {
 	// Create liner first
 	line := liner.NewLiner()
 
 	cli := &CLI{
-		line:         line,
-		Config:       commandLineConfig,
-		outputFormat: commandLineConfig.OutputFormat,
+		line:   line,
+		Config: commandLineConfig,
 	}
 
 	if commandLineConfig.CLIMode == APIMode {
@@ -608,7 +563,7 @@ func (c *CLI) NewRun() error {
 			// provider username but no password or api token
 			maxAttempts := 3
 			for attempt := 1; attempt <= maxAttempts; attempt++ {
-				fmt.Printf("Please input your password for '%s': ", *apiConfig.UserName)
+				fmt.Printf("Please input your password: ")
 
 				password, err := ReadPassword()
 
@@ -622,12 +577,12 @@ func (c *CLI) NewRun() error {
 
 				apiConfig.UserPassword = &password
 
-				if err = c.VerifyAuth(); err != nil {
+				if err = c.VerifyAuth(*apiConfig.UserName, *apiConfig.UserPassword); err != nil {
 					if attempt < maxAttempts {
-						fmt.Printf("Authentication failed: %v (%d/%d attempts)\n", err, attempt, maxAttempts)
+						fmt.Printf("Authentication failed (%d/%d attempts)\n", attempt, maxAttempts)
 						continue
 					}
-					return fmt.Errorf("authentication failed after %d attempts: %v", maxAttempts, err)
+					return fmt.Errorf("authentication failed after %d attempts", maxAttempts)
 				}
 
 				break
@@ -635,37 +590,39 @@ func (c *CLI) NewRun() error {
 		}
 
 	case AdminMode:
+		adminConfig := c.Config.AdminClientConfig
+		if adminConfig.AdminName != nil && adminConfig.AdminPassword == nil {
+			// provider username but no password or api token
+			maxAttempts := 3
+			for attempt := 1; attempt <= maxAttempts; attempt++ {
+				fmt.Printf("Please input your password: ")
+
+				password, err := ReadPassword()
+
+				if password == "" {
+					if attempt < maxAttempts {
+						fmt.Println("Password cannot be empty, please try again")
+						continue
+					}
+					return errors.New("no password provided after 3 attempts")
+				}
+
+				adminConfig.AdminPassword = &password
+
+				if err = c.VerifyAuth(*adminConfig.AdminName, *adminConfig.AdminPassword); err != nil {
+					if attempt < maxAttempts {
+						fmt.Printf("Authentication failed (%d/%d attempts)\n", attempt, maxAttempts)
+						continue
+					}
+					return fmt.Errorf("authentication failed after %d attempts", maxAttempts)
+				}
+
+				break
+			}
+		}
+
 	default:
 		return fmt.Errorf("unexpected CLI mode: %s", cliConfig.CLIMode)
-	}
-
-	if c.args != nil && c.args.UserName != "" && c.args.Password == "" && c.args.APIToken == "" {
-		maxAttempts := 3
-		for attempt := 1; attempt <= maxAttempts; attempt++ {
-			fmt.Print("Please input your password: ")
-
-			password, err := ReadPassword()
-
-			if password == "" {
-				if attempt < maxAttempts {
-					fmt.Println("Password cannot be empty, please try again")
-					continue
-				}
-				return errors.New("no password provided after 3 attempts")
-			}
-
-			c.args.Password = password
-
-			if err = c.VerifyAuth(); err != nil {
-				if attempt < maxAttempts {
-					fmt.Printf("Authentication failed: %v (%d/%d attempts)\n", err, attempt, maxAttempts)
-					continue
-				}
-				return fmt.Errorf("authentication failed after %d attempts: %v", maxAttempts, err)
-			}
-
-			break
-		}
 	}
 
 	c.running = true
@@ -750,62 +707,6 @@ func (c *CLI) executeNew(input string) error {
 	return err
 }
 
-func (c *CLI) execute(input string) error {
-	// Determine execution mode based on input and args
-	input = strings.TrimSpace(input)
-
-	// Handle meta commands (start with \)
-	if strings.HasPrefix(input, "\\") {
-		p := NewParser(input)
-		cmd, err := p.Parse(c.Config.CLIMode)
-		if err != nil {
-			return err
-		}
-		if cmd != nil && cmd.Type == "meta" {
-			return c.handleMetaCommand(cmd)
-		}
-	}
-
-	// Check if we should use SQL mode or Filesystem mode
-	isSQLMode := false
-	if c.args != nil && len(c.args.CommandArgs) > 0 {
-		// Non-interactive mode: use pre-determined mode from args
-		isSQLMode = c.args.IsSQLMode
-	} else {
-		// Interactive mode: determine based on input
-		isSQLMode = looksLikeSQL(input)
-	}
-
-	if isSQLMode {
-		// SQL mode: use parser
-		p := NewParser(input)
-		cmd, err := p.Parse(c.Config.CLIMode)
-		if err != nil {
-			return err
-		}
-		if cmd == nil {
-			return nil
-		}
-		// Execute SQL command using the client
-		var result ResponseIf
-		result, err = c.ExecuteCommand(cmd)
-		if result != nil {
-			result.SetOutputFormat(c.outputFormat)
-			result.PrintOut()
-		}
-		return err
-	}
-
-	// Filesystem mode: execute filesystem command
-	cmd := NewCommand("file_system_command")
-	cmd.Params["command"] = input
-	resp, ceErr := c.executeFilesystem(cmd)
-	if resp != nil {
-		resp.PrintOut()
-	}
-	return ceErr
-}
-
 // executeFilesystem executes a Filesystem command and returns a ResponseIf.
 func (c *CLI) executeFilesystem(cmd *Command) (ResponseIf, error) {
 	rawInput, _ := cmd.Params["command"].(string)
@@ -843,13 +744,8 @@ func (c *CLI) executeFilesystem(cmd *Command) (ResponseIf, error) {
 func (c *CLI) executeFilesystemInner(input string) error {
 	// Parse input into arguments
 	var args []string
-	if c.args != nil && len(c.args.CommandArgs) > 0 {
-		// Non-interactive mode: use pre-parsed args
-		args = c.args.CommandArgs
-	} else {
-		// Interactive mode: parse input
-		args = parseFilesystemArgs(input)
-	}
+	// Interactive mode: parse input
+	args = parseFilesystemArgs(input)
 
 	if len(args) == 0 {
 		return fmt.Errorf("no command provided")
@@ -936,7 +832,7 @@ func (c *CLI) executeFilesystemInner(input string) error {
 				return err
 			}
 			// Print skill search results with full details
-			c.printSkillSearchResults(result, c.outputFormat)
+			c.printSkillSearchResults(result, c.Config.OutputFormat)
 			return nil
 		}
 		ceCmd = &filesystem.Command{
@@ -1006,7 +902,7 @@ func (c *CLI) executeFilesystemInner(input string) error {
 
 	// Print result
 	// For search command, default to JSON format if not explicitly set to plain/table
-	format := c.outputFormat
+	format := c.Config.OutputFormat
 	if ceCmd.Type == filesystem.CommandSearch && format != OutputFormatPlain && format != OutputFormatTable {
 		format = OutputFormatJSON
 	}
@@ -1313,6 +1209,12 @@ func (c *CLI) handleMetaCommand(cmd *Command) error {
 		c.running = false
 	case "?", "h", "help":
 		c.printHelp()
+	case "pwd":
+		dir, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("get working directory: %w", err)
+		}
+		fmt.Println(dir)
 	default:
 		return fmt.Errorf("unknown meta command: \\%s", command)
 	}
@@ -1427,30 +1329,20 @@ func (c *CLI) NewVerifyAuth(username, password *string) error {
 }
 
 // VerifyAuth verifies authentication if needed
-func (c *CLI) VerifyAuth() error {
-	if c.args == nil {
-		return nil
-	}
-
-	// If API token is provided, use it for authentication
-	if c.args.APIToken != "" {
-		// TODO: Implement API token authentication
-		return nil
-	}
-
+func (c *CLI) VerifyAuth(username, password string) error {
 	// Otherwise, use username/password authentication
-	if c.args.UserName == "" {
+	if username == "" {
 		return fmt.Errorf("username is required")
 	}
 
-	if c.args.Password == "" {
+	if password == "" {
 		return fmt.Errorf("password is required")
 	}
 
 	// Create login command with username and password
 	cmd := NewCommand("login_user")
-	cmd.Params["email"] = c.args.UserName
-	cmd.Params["password"] = c.args.Password
+	cmd.Params["email"] = username
+	cmd.Params["password"] = password
 	_, err := c.ExecuteCommand(cmd)
 	return err
 }

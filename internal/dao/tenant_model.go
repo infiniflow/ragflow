@@ -110,3 +110,23 @@ func (dao *TenantModelDAO) GetModelsByInstanceID(instanceID string) ([]*entity.T
 	}
 	return models, nil
 }
+
+// GetModelsByProviderIDsAndInstanceIDs returns TenantModel rows whose
+// provider_id is in providerIDs and instance_id is in instanceIDs.
+// Mirrors Python's
+// TenantModelService.get_models_by_provider_ids_and_instance_ids and is
+// used to fetch per-tenant enable/disable overrides in bulk during
+// /api/v1/models response assembly. The Go port never WRITES to
+// tenant_model, so callers must treat an empty result as "use factory
+// defaults" — see ModelProviderService.ListTenantAddedModels.
+func (dao *TenantModelDAO) GetModelsByProviderIDsAndInstanceIDs(providerIDs, instanceIDs []string) ([]*entity.TenantModel, error) {
+	models := make([]*entity.TenantModel, 0)
+	if len(providerIDs) == 0 || len(instanceIDs) == 0 {
+		return models, nil
+	}
+	err := DB.Where("provider_id IN ? AND instance_id IN ?", providerIDs, instanceIDs).Find(&models).Error
+	if err != nil {
+		return nil, err
+	}
+	return models, nil
+}

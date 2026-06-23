@@ -16,7 +16,10 @@
 
 package cli
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Command parsers
 func (p *Parser) parseAdminLoginUser() (*Command, error) {
@@ -190,8 +193,6 @@ func (p *Parser) parseAdminListCommand() (*Command, error) {
 		return NewCommand("list_user_chats"), nil
 	case TokenFiles:
 		return p.parseAdminListFiles()
-	case TokenTasks:
-		return p.parseAdminListTasks()
 	case TokenIngestors:
 		return p.parseAdminListIngestors()
 	case TokenIngestion:
@@ -376,15 +377,68 @@ func (p *Parser) parseAdminListFiles() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseAdminListTasks() (*Command, error) {
-	p.nextToken() // consume TASKS
-	cmd := NewCommand("list_admin_tasks")
-	return cmd, nil
-}
-
 func (p *Parser) parseAdminListIngestors() (*Command, error) {
 	p.nextToken() // consume TASKS
 	cmd := NewCommand("admin_list_ingestors")
+
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminStopIngestionTasks() (*Command, error) {
+	p.nextToken() // consume STOP
+
+	if p.curToken.Type != TokenIngestion {
+		return nil, fmt.Errorf("expected INGESTION")
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenTasks {
+		return nil, fmt.Errorf("expected TASKS")
+	}
+	p.nextToken() // consume TASK
+
+	taskString, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+
+	tasks := strings.Split(taskString, " ")
+	p.nextToken() // consume TASK
+
+	cmd := NewCommand("admin_stop_ingestion_tasks")
+	cmd.Params["tasks"] = tasks
+
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminRemoveIngestionTasks() (*Command, error) {
+	p.nextToken() // consume Ingestion
+
+	if p.curToken.Type != TokenTasks {
+		return nil, fmt.Errorf("expected TASKS")
+	}
+	p.nextToken() // consume TASKS
+
+	taskString, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+
+	tasks := strings.Split(taskString, " ")
+	p.nextToken() // consume TASKS
+
+	cmd := NewCommand("admin_remove_ingestion_tasks")
+	cmd.Params["tasks"] = tasks
+
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
 
 	return cmd, nil
 }
@@ -395,8 +449,15 @@ func (p *Parser) parseAdminListIngestionTasks() (*Command, error) {
 	if p.curToken.Type != TokenTasks {
 		return nil, fmt.Errorf("expected TASKS")
 	}
+	p.nextToken() // consume TASKS
 
 	cmd := NewCommand("list_admin_ingestion_tasks")
+
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
 	return cmd, nil
 }
 
@@ -1674,6 +1735,18 @@ func (p *Parser) parseAdminSaveCommand() (*Command, error) {
 	}
 }
 
+func (p *Parser) parseAdminUseCommand() (*Command, error) {
+	p.nextToken() // consume USE
+	switch p.curToken.Type {
+	case TokenAPI:
+		return p.parseUseAPIServer()
+	case TokenAdmin:
+		return p.parseUseAdminServer()
+	default:
+		return nil, fmt.Errorf("expected MODEL or SKILL after USE")
+	}
+}
+
 func (p *Parser) parseStartIngestion() (*Command, error) {
 	p.nextToken() // consume Start
 
@@ -1740,7 +1813,6 @@ func (p *Parser) parseAdminIngestCommand() (*Command, error) {
 	}
 	return cmd, nil
 }
-
 func (p *Parser) parseAdminUnsetCommand() (*Command, error) {
 	p.nextToken() // consume UNSET
 
@@ -1754,4 +1826,95 @@ func (p *Parser) parseAdminUnsetCommand() (*Command, error) {
 		p.nextToken()
 	}
 	return NewCommand("unset_token"), nil
+}
+
+func (p *Parser) parseMessageQueueCommand() (*Command, error) {
+	p.nextToken() // consume MESSAGE_QUEUE
+
+	var cmd *Command
+	switch p.curToken.Type {
+	case TokenShow:
+		p.nextToken()
+		cmd = NewCommand("user_show_message_queue_command")
+
+	case TokenList:
+		p.nextToken() // consume LIST
+
+		cmd = NewCommand("user_list_message_queue_command")
+		if p.curToken.Type == TokenPending {
+			cmd.Params["pending"] = true
+			p.nextToken() // consume PENDING
+		} else {
+			cmd.Params["pending"] = false
+		}
+	case TokenPublish:
+		p.nextToken() // consume PUBLISH
+
+		message, err := p.parseQuotedString()
+		if err != nil {
+			return nil, fmt.Errorf("expected message after PUBLISH")
+		}
+		p.nextToken() // consume message
+
+		cmd = NewCommand("user_publish_message_command")
+		cmd.Params["message"] = message
+	case TokenPull:
+		p.nextToken() // consume PULL
+
+		messageCount, err := p.parseNumber()
+		if err != nil {
+			messageCount = 1
+		} else {
+			p.nextToken() // consume NUMBER
+		}
+
+		if messageCount <= 0 || messageCount > 100 {
+			return nil, fmt.Errorf("message count cannot be less than 0 or greater than 100")
+		}
+
+		cmd = NewCommand("user_pull_message_command")
+		cmd.Params["message_count"] = messageCount
+
+		if p.curToken.Type == TokenNoACK {
+			cmd.Params["ack_policy"] = "NOACK"
+			p.nextToken() // consume NOACK
+		} else {
+			cmd.Params["ack_policy"] = "ACK"
+		}
+
+	default:
+		return nil, fmt.Errorf("expected WITH")
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminRemoveCommand() (*Command, error) {
+	p.nextToken() // consume MESSAGE_QUEUE
+
+	var cmd *Command
+	switch p.curToken.Type {
+	case TokenService:
+		p.nextToken() // consume SERVICE
+		serviceNum, err := p.parseNumber()
+		if err != nil {
+			return nil, fmt.Errorf("expected service number after SERVICE")
+		}
+		p.nextToken() // consume service number
+		cmd = NewCommand("admin_remove_service_command")
+		cmd.Params["service_number"] = serviceNum
+	case TokenIngestion:
+		return p.parseAdminRemoveIngestionTasks()
+	default:
+		return nil, fmt.Errorf("expected SERVICE")
+	}
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
 }

@@ -1294,6 +1294,7 @@ export default {
       bulgarian: '保加利亞語',
       arabic: '阿拉伯語',
       turkish: '土耳其語',
+      korean: '韓語',
     },
     modal: {
       okText: '確認',

@@ -18,11 +18,23 @@ package handler
 
 import (
 	"net/http"
+
 	"ragflow/internal/common"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
+
+// jsonInternalError logs the original error while returning a generic message
+// to avoid exposing internal implementation details in API responses.
+func jsonInternalError(c *gin.Context, err error) {
+	common.Warn("handler internal error",
+		zap.Error(err),
+		zap.String("method", c.Request.Method),
+		zap.String("path", c.Request.URL.Path),
+	)
+	jsonError(c, common.CodeServerError, common.CodeServerError.Message())
+}
 
 // HandleNoRoute handles requests to undefined routes
 func HandleNoRoute(c *gin.Context) {

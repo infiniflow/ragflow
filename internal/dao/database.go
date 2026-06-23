@@ -149,6 +149,10 @@ func InitDB() error {
 		&entity.TenantModelGroupMapping{},
 		&entity.TenantModelProvider{},
 		&entity.TenantModelGroup{},
+		&entity.IngestionTask{},
+		&entity.IngestionTaskLog{},
+		&entity.IngestionTasklet{},
+		&entity.IngestionTaskletLog{},
 	}
 
 	for _, m := range dataModels {

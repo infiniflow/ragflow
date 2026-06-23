@@ -156,14 +156,38 @@ func (m *ModelProviderService) ListProvidersOfTenant(userID string) ([]map[strin
 
 	var result []map[string]interface{}
 	for _, providerName := range providerNames {
+		// Mirror Python's list_providers tenant branch: silently skip system-excluded
+		// factory names (e.g. "Builtin", "Youdao", "FastEmbed", "BAAI",
+		// "siliconflow_intl") and any stale entries whose factory is no longer in
+		// the system pool. See api/apps/services/provider_api_service.py:108.
+		if isExcludedTenantProvider(providerName) {
+			continue
+		}
 		provider, err := dao.GetModelProviderManager().GetProviderByName(providerName)
 		if err != nil {
+			// Treat "provider not found in system pool" as a stale tenant entry
+			// rather than a 500. Mirrors Python's factory_info_mapping.get(name)
+			// truthy gate in api/apps/services/provider_api_service.py:108.
+			if strings.Contains(err.Error(), "not found") {
+				continue
+			}
 			return nil, common.CodeServerError, err
 		}
 		result = append(result, provider)
 	}
 
 	return result, common.CodeSuccess, nil
+}
+
+// isExcludedTenantProvider returns true for system-pool names that the Python
+// implementation (api/apps/services/provider_api_service.py:108) intentionally
+// filters out when listing a tenant's providers.
+func isExcludedTenantProvider(name string) bool {
+	switch name {
+	case "Youdao", "FastEmbed", "BAAI", "Builtin", "siliconflow_intl":
+		return true
+	}
+	return false
 }
 
 func (m *ModelProviderService) DeleteModelProvider(providerName, userID string) (common.ErrorCode, error) {
@@ -247,12 +271,24 @@ func (m *ModelProviderService) ListSupportedModels(providerName, instanceName, u
 	var result []map[string]interface{}
 	for _, model := range modelList {
 		result = append(result, map[string]interface{}{
+			"name":          model.Name,
+			"max_dimension": model.MaxDimension,
+			"dimensions":    model.Dimensions,
+			"max_tokens":    model.MaxTokens,
+			"model_types":   model.ModelTypes,
+			"thinking":      model.Thinking,
+		})
+		modelData := map[string]interface{}{
 			"name":        model.Name,
-			"dimension":   model.Dimension,
+			"dimension":   model.MaxDimension,
 			"max_tokens":  model.MaxTokens,
 			"model_types": model.ModelTypes,
 			"thinking":    model.Thinking,
-		})
+		}
+		if len(model.Dimensions) > 0 {
+			modelData["dimensions"] = model.Dimensions
+		}
+		result = append(result, modelData)
 	}
 	return result, nil
 }
@@ -324,6 +360,16 @@ func (m *ModelProviderService) ListProviderInstances(providerName, userID string
 	// Check if provider exists
 	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
 	if err != nil {
+		// "provider not connected to this tenant" is a normal, expected state
+		// (e.g. demo tenant has never added SiliconFlow). Mirrors the Python
+		// contract in api/apps/services/provider_api_service.py:349-355 which
+		// returns (False, "No provider found for provider '<name>'") on this
+		// path. The REST layer maps that to get_error_data_result with
+		// code=RetCode.DATA_ERROR (=102), so the Go port must do the same —
+		// NOT a 500 server error.
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.CodeDataError, fmt.Errorf("No provider found for provider '%s'", providerName)
+		}
 		return nil, common.CodeServerError, err
 	}
 
@@ -333,7 +379,12 @@ func (m *ModelProviderService) ListProviderInstances(providerName, userID string
 		return nil, common.CodeServerError, err
 	}
 
-	var result []map[string]interface{}
+	// Always emit a non-nil slice so the JSON encoder serializes [] rather
+	// than null when the tenant has no instances on this provider. The
+	// front-end calls .map() / .forEach() on the response array (see
+	// web/src/pages/user-setting/setting-model/...) and would otherwise
+	// crash on a freshly created tenant.
+	result := make([]map[string]interface{}, 0, len(instances))
 	for _, instance := range instances {
 		// convert instance.Extra (json string) to map
 		var extra map[string]string
@@ -342,13 +393,22 @@ func (m *ModelProviderService) ListProviderInstances(providerName, userID string
 			return nil, common.CodeServerError, err
 		}
 
+		// Emit snake_case keys to match the IProviderInstance TypeScript
+		// contract (web/src/interfaces/database/llm.ts) and the Python
+		// `TenantModelInstanceService.query(joinedload(...))` response
+		// shape. The Go port previously emitted camelCase
+		// (`instanceName`/`providerID`/`apiKey`), which broke the
+		// `instance.instance_name` reads in
+		// web/src/pages/user-setting/setting-model/components/used-model.tsx
+		// and made `useFetchInstanceModels(providerName,
+		// instance.instance_name)` hit `/api/v1/providers/<p>/instances/undefined/models`.
 		result = append(result, map[string]interface{}{
-			"id":           instance.ID,
-			"instanceName": instance.InstanceName,
-			"providerID":   instance.ProviderID,
-			"apiKey":       instance.APIKey,
-			"status":       instance.Status,
-			"extra":        instance.Extra,
+			"id":            instance.ID,
+			"instance_name": instance.InstanceName,
+			"provider_id":   instance.ProviderID,
+			"api_key":       instance.APIKey,
+			"status":        instance.Status,
+			"extra":         instance.Extra,
 		})
 	}
 
@@ -387,14 +447,19 @@ func (m *ModelProviderService) ShowProviderInstance(providerName, instanceName, 
 		return nil, common.CodeServerError, err
 	}
 
+	// Emit snake_case keys to match the IProviderInstance TypeScript
+	// contract — see ListProviderInstances above. The previous shape
+	// mixed conventions (`apikey` lowercase, `instanceName`/`providerID`
+	// camelCase) and broke the front-end's `instance.api_key` /
+	// `instance.instance_name` reads.
 	result := map[string]interface{}{
-		"id":           instance.ID,
-		"instanceName": instance.InstanceName,
-		"providerID":   instance.ProviderID,
-		"status":       instance.Status,
-		"apikey":       instance.APIKey,
-		"region":       extra["region"],
-		"base_url":     extra["base_url"],
+		"id":            instance.ID,
+		"instance_name": instance.InstanceName,
+		"provider_id":   instance.ProviderID,
+		"status":        instance.Status,
+		"api_key":       instance.APIKey,
+		"region":        extra["region"],
+		"base_url":      extra["base_url"],
 	}
 
 	return result, common.CodeSuccess, nil
@@ -676,6 +741,174 @@ func (m *ModelProviderService) ShowTask(providerName, instanceName, taskID, user
 	return taskResponse, common.CodeSuccess, nil
 }
 
+// ListTenantAddedModels returns the list of models the tenant has "added"
+// across all of their provider instances. It is the Go port of Python's
+// models_api_service.list_tenant_added_models
+// (api/apps/services/models_api_service.py:300) and is the response
+// contract for GET /api/v1/models — the endpoint that
+// web/src/hooks/use-llm-request.tsx → useFetchAllAddedModels consumes.
+//
+// Per the Python algorithm, for each (provider × instance) we cross-
+// reference the factory catalog (internal/entity/models/model.go
+// ProviderManager.Providers) with the per-tenant overrides in
+// tenant_model:
+//   active_model_types   = tenant_model rows with status='active'
+//   inactive_model_types = tenant_model rows with status='inactive'
+//   factory_model_types  = provider.Models[i].ModelTypes
+//   model_types = (factory ∪ active) \ inactive
+//
+// The Go port never WRITES to tenant_model, so in practice every model
+// from the factory catalog is treated as added unless explicitly
+// disabled (which today can only happen via SQL — the Go port has no
+// enable/disable endpoint path that mutates tenant_model). This is
+// intentional: the previous Go contract mistakenly routed /api/v1/models
+// to ListTenantDefaultModels (which only enumerates the 6-7 default
+// tenant fields and returned `[]` for any tenant without defaults),
+// breaking the front-end's "View Models" list entirely.
+func (m *ModelProviderService) ListTenantAddedModels(userID, modelTypeFilter string) ([]map[string]interface{}, common.ErrorCode, error) {
+	// Resolve tenant. Match the convention used elsewhere in this file
+	// (see ListProviderInstances, DropProviderInstances): take the first
+	// tenant where the user has role=owner.
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	if len(tenants) == 0 {
+		// No tenant for the user → empty list, code=0. Python returns
+		// get_result(data=[]) for the same path.
+		return []map[string]interface{}{}, common.CodeSuccess, nil
+	}
+	tenantID := tenants[0].TenantID
+
+	if modelTypeFilter != "" {
+		modelTypeFilter = strings.ToLower(strings.TrimSpace(modelTypeFilter))
+	}
+
+	providers, err := m.modelProviderDAO.GetByTenantID(tenantID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	if len(providers) == 0 {
+		return []map[string]interface{}{}, common.CodeSuccess, nil
+	}
+
+	providerIDs := make([]string, 0, len(providers))
+	providerInfoByID := make(map[string]*entity.TenantModelProvider, len(providers))
+	for _, p := range providers {
+		providerIDs = append(providerIDs, p.ID)
+		providerInfoByID[p.ID] = p
+	}
+
+	instances, err := m.modelInstanceDAO.GetByProviderIDs(providerIDs)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	if len(instances) == 0 {
+		return []map[string]interface{}{}, common.CodeSuccess, nil
+	}
+
+	instanceIDs := make([]string, 0, len(instances))
+	instanceInfoByID := make(map[string]*entity.TenantModelInstance, len(instances))
+	for _, inst := range instances {
+		instanceIDs = append(instanceIDs, inst.ID)
+		instanceInfoByID[inst.ID] = inst
+	}
+
+	// Per-tenant enable/disable overrides. In the Go port this is
+	// typically empty (no writers), but we still honor active/inactive
+	// rows for correctness and parity.
+	modelRecords, err := m.modelDAO.GetModelsByProviderIDsAndInstanceIDs(providerIDs, instanceIDs)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	activeByKey := make(map[string][]string)
+	inactiveByKey := make(map[string][]string)
+	for _, rec := range modelRecords {
+		key := rec.ProviderID + "@" + rec.InstanceID + "@" + rec.ModelName
+		if rec.Status == "inactive" {
+			inactiveByKey[key] = append(inactiveByKey[key], rec.ModelType)
+		} else {
+			activeByKey[key] = append(activeByKey[key], rec.ModelType)
+		}
+	}
+
+	// Group instances by provider_name for the outer loop.
+	instancesByProviderName := make(map[string][]*entity.TenantModelInstance)
+	for _, inst := range instances {
+		p, ok := providerInfoByID[inst.ProviderID]
+		if !ok {
+			continue
+		}
+		instancesByProviderName[p.ProviderName] = append(instancesByProviderName[p.ProviderName], inst)
+	}
+
+	providerManager := dao.GetModelProviderManager()
+	added := make([]map[string]interface{}, 0)
+
+	// factory rank is not present in the Go entity.Provider struct, so we
+	// follow Python's stable ordering intent (factory rank desc, then
+	// provider_name, then instance_name) by simply iterating providers in
+	// the tenant's own order. With one provider today this is a no-op.
+	for _, p := range providers {
+		factory := providerManager.FindProvider(p.ProviderName)
+		if factory == nil {
+			// Factory not in the static catalog. The tenant has linked
+			// a provider we have no model list for. Skip — there is
+			// nothing to expose.
+			continue
+		}
+		factoryInstances := instancesByProviderName[p.ProviderName]
+		if len(factoryInstances) == 0 {
+			continue
+		}
+		for _, llm := range factory.Models {
+			if modelTypeFilter != "" {
+				match := false
+				for _, t := range llm.ModelTypes {
+					if strings.EqualFold(t, modelTypeFilter) {
+						match = true
+						break
+					}
+				}
+				if !match {
+					continue
+				}
+			}
+			for _, inst := range factoryInstances {
+				key := p.ID + "@" + inst.ID + "@" + llm.Name
+				// Set-based merge: factory types ∪ active overrides \ inactive overrides.
+				mergedSet := make(map[string]struct{}, len(llm.ModelTypes)+len(activeByKey[key]))
+				for _, t := range llm.ModelTypes {
+					mergedSet[t] = struct{}{}
+				}
+				for _, t := range activeByKey[key] {
+					mergedSet[t] = struct{}{}
+				}
+				for _, t := range inactiveByKey[key] {
+					delete(mergedSet, t)
+				}
+				if len(mergedSet) == 0 {
+					continue
+				}
+				merged := make([]string, 0, len(mergedSet))
+				for t := range mergedSet {
+					merged = append(merged, t)
+				}
+				added = append(added, map[string]interface{}{
+					"model_type":    merged,
+					"name":          llm.Name,
+					"provider_id":   inst.ProviderID,
+					"provider_name": p.ProviderName,
+					"instance_id":   inst.ID,
+					"instance_name": inst.InstanceName,
+				})
+			}
+		}
+	}
+
+	return added, common.CodeSuccess, nil
+}
+
 func (m *ModelProviderService) AlterProviderInstance(providerName, instanceName, newInstanceName, apiKey, userID string) (common.ErrorCode, error) {
 	return common.CodeSuccess, nil
 }
@@ -696,6 +929,15 @@ func (m *ModelProviderService) DropProviderInstances(providerName, userID string
 	// Check if provider exists
 	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
 	if err != nil {
+		// Tenant hasn't connected this provider. The DELETE request is a
+		// no-op in that case — mirrors Python's drop_provider_instances in
+		// api/apps/services/provider_api_service.py, which simply iterates
+		// the (empty) instance list. The previous contract bubbled
+		// "record not found" as a 500, which broke the front-end "remove
+		// instance" flow when the UI's snapshot was slightly stale.
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return common.CodeSuccess, nil
+		}
 		return common.CodeServerError, err
 	}
 
@@ -704,6 +946,12 @@ func (m *ModelProviderService) DropProviderInstances(providerName, userID string
 		var tenantModelInstance *entity.TenantModelInstance
 		tenantModelInstance, err = m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
 		if err != nil {
+			// The instance name isn't in the DB (e.g. UI holds a stale id
+			// after the user already removed it on another tab). Match
+			// Python and skip silently instead of returning 500.
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				continue
+			}
 			return common.CodeServerError, err
 		}
 
@@ -1108,6 +1356,36 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 	return common.CodeServerError, errors.New("model is disabled")
 }
 
+func validateEmbeddingDimension(model *modelModule.Model, requested int) error {
+	if requested <= 0 || model == nil {
+		return nil
+	}
+
+	if len(model.Dimensions) > 0 {
+		for _, dim := range model.Dimensions {
+			if dim == requested {
+				return nil
+			}
+		}
+		return fmt.Errorf(
+			"dimension %d is not supported by model %s, supported dimensions: %v",
+			requested,
+			model.Name,
+			model.Dimensions,
+		)
+	}
+	if model.MaxDimension != nil && requested > *model.MaxDimension {
+		return fmt.Errorf(
+			"dimension %d is not supported by model %s, max dimension: %d",
+			requested,
+			model.Name,
+			*model.MaxDimension,
+		)
+	}
+
+	return nil
+}
+
 // EmbedText sends texts to the embedding model
 func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, userID string, texts []string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.EmbeddingConfig) ([]modelModule.EmbeddingData, common.ErrorCode, error) {
 	if apiConfig == nil {
@@ -1167,6 +1445,10 @@ func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, 
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
 
+		if err := validateEmbeddingDimension(model, modelConfig.Dimension); err != nil {
+			return nil, common.CodeBadRequest, err
+		}
+
 		var response []modelModule.EmbeddingData
 		response, err = providerInfo.ModelDriver.Embed(&modelName, texts, apiConfig, modelConfig)
 		if err != nil {
@@ -1202,6 +1484,11 @@ func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, 
 		newProviderInfo, err := newModelDriverForBaseURL(providerInfo.ModelDriver, providerName, region, extra["base_url"])
 		if err != nil {
 			return nil, common.CodeServerError, err
+		}
+
+		modelSchema, _ := dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+		if err := validateEmbeddingDimension(modelSchema, modelConfig.Dimension); err != nil {
+			return nil, common.CodeBadRequest, err
 		}
 
 		var response []modelModule.EmbeddingData
@@ -1970,6 +2257,15 @@ func (m *ModelProviderService) GetChatModel(tenantID, compositeModelName string)
 		return nil, err
 	}
 	return modelModule.NewChatModel(driver, &modelName, apiConfig), nil
+}
+
+// GetRerankModel returns a RerankModel wrapper for the given tenant
+func (m *ModelProviderService) GetRerankModel(tenantID, compositeModelName string) (*modelModule.RerankModel, error) {
+	driver, modelName, apiConfig, _, err := m.getModelConfig(tenantID, compositeModelName)
+	if err != nil {
+		return nil, err
+	}
+	return modelModule.NewRerankModel(driver, &modelName, apiConfig), nil
 }
 
 type AddModelRequest struct {

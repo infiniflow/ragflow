@@ -125,7 +125,7 @@ func (h *SystemHandler) GetStatus(c *gin.Context) {
 
 	status, err := h.systemService.GetStatus()
 	if err != nil {
-		jsonError(c, common.CodeServerError, err.Error())
+		jsonInternalError(c, err)
 		return
 	}
 

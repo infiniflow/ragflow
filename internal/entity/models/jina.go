@@ -32,13 +32,16 @@ type JinaModel struct {
 }
 
 func NewJinaModel(baseURL map[string]string, urlSuffix URLSuffix) *JinaModel {
+	// Embed/Rerank/ListModels issue requests without a per-call context
+	// deadline, so keep an explicit 90s client-level timeout to bound them.
+	// Built on the shared transport via NewDriverHTTPClient.
+	client := NewDriverHTTPClient()
+	client.Timeout = 90 * time.Second
 	return &JinaModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
-			httpClient: &http.Client{
-				Timeout: time.Second * 90,
-			},
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: client,
 		},
 	}
 }
@@ -355,14 +358,16 @@ func (j *JinaModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error
 	}
 
 	// convert result["data"] to []map[string]interface{}
-	models := make([]ListModelResponse, 0)
+	models := make([]DSModel, 0, len(result["data"].([]interface{})))
 	for _, model := range result["data"].([]interface{}) {
-		modelMap := model.(map[string]interface{})
-		modelName := modelMap["name"].(string)
-		models = append(models, ListModelResponse{Name: modelName})
+		modelName := model.(map[string]interface{})["name"].(string)
+		models = append(models, DSModel{
+			ID:      modelName,
+			OwnedBy: "",
+		})
 	}
-
-	return models, nil
+	// Jina list models: `Jina AI: Jina Embeddings v5 Text Nano`
+	return ParseListModel(ModelList{Models: models}), nil
 }
 
 func (j *JinaModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

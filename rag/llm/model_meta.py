@@ -259,7 +259,7 @@ class LocalAI(Base):
                     context_length = model_info.get("model_info", {}).get("general.context_length", 8192)
                     res.append(
                         {
-                            "name": model["name"],
+                            "name": model["name"].rsplit(":", 1)[0],
                             "model_types": [capability_to_model_type_mapping[c] for c in model_info.get("capabilities", []) if c in capability_to_model_type_mapping],
                             "features": [capability_to_feature_mapping[c] for c in model_info.get("capabilities", []) if c in capability_to_feature_mapping],
                             "max_tokens": context_length or 8192,

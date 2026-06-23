@@ -28,6 +28,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"ragflow/internal/ingestion"
+	"ragflow/internal/ingestion/parser"
+	"ragflow/internal/utility"
 	"strings"
 	"time"
 )
@@ -2734,7 +2737,6 @@ func (c *CLI) AddCustomModel(cmd *Command) (ResponseIf, error) {
 
 }
 
-
 // InsertChunksFromFile inserts chunks from a JSON file
 func (c *CLI) InsertChunksFromFile(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
@@ -3215,6 +3217,63 @@ func (c *CLI) ParseDocumentsUserCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+func (c *CLI) UserParseLocalFile(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	filename, ok := cmd.Params["filename"].(string)
+	if !ok {
+		return nil, fmt.Errorf("filename not provided")
+	}
+	visionModel, ok := cmd.Params["vision_model"].(string)
+	if !ok {
+		visionModel = ""
+	}
+	chatModel, ok := cmd.Params["chat_model"].(string)
+	if !ok {
+		chatModel = ""
+	}
+	asrModel, ok := cmd.Params["asr_model"].(string)
+	if !ok {
+		asrModel = ""
+	}
+	ocrModel, ok := cmd.Params["ocr_model"].(string)
+	if !ok {
+		ocrModel = ""
+	}
+	embeddingModel, ok := cmd.Params["embedding_model"].(string)
+	if !ok {
+		embeddingModel = ""
+	}
+	docParseModel, ok := cmd.Params["doc_parse_model"].(string)
+	if !ok {
+		docParseModel = ""
+	}
+
+	fileType := utility.GetFileType(filename)
+
+	fileParser, err := parser.GetParser(fileType)
+	if err != nil {
+		return nil, err
+	}
+
+	fileContent, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read dsl file: %w", err)
+	}
+
+	if err = fileParser.Parse(filename, fileContent); err != nil {
+		return nil, formatRequestError("parse local file", err)
+	}
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = fmt.Sprintf("Success to parse local file %q, vision: %v, chat: %v, asr: %v, ocr: %v, embedding: %v, doc_parse: %v", filename, visionModel, chatModel, asrModel, ocrModel, embeddingModel, docParseModel)
+	fmt.Println(result.Message)
+	return &result, nil
+}
+
 // formatRequestError Uniformly handle and format network errors in HTTP requests
 func formatRequestError(action string, err error) error {
 	if err == nil {
@@ -3231,4 +3290,235 @@ func formatRequestError(action string, err error) error {
 	default:
 		return fmt.Errorf("%s failed: %w", action, err)
 	}
+}
+
+func (c *CLI) ListUserIngestionTasks(cmd *Command) (ResponseIf, error) {
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	datasetID, ok := cmd.Params["dataset_id"].(*string)
+	if !ok {
+		datasetID = nil
+	}
+
+	payload := map[string]interface{}{
+		"dataset_id": datasetID,
+	}
+
+	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", "/datasets/ingestion/tasks", "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list ingestion tasks: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list ingestion tasks:: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list ingestion tasks: failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *CLI) UserStartIngestionCommand(cmd *Command) (ResponseIf, error) {
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	documentID, ok := cmd.Params["document_id"].(string)
+	if !ok {
+		return nil, fmt.Errorf("document_id not provided")
+	}
+
+	datasetID, ok := cmd.Params["dataset_id"].(string)
+	if !ok {
+		return nil, fmt.Errorf("dataset_id not provided")
+	}
+
+	payload := map[string]interface{}{
+		"documents":  []string{documentID},
+		"dataset_id": datasetID,
+	}
+
+	url := fmt.Sprintf("/datasets/%s/documents/parse", datasetID)
+
+	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("POST", url, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to ingest file: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to ingest file: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("ingest file failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *CLI) UserStopIngestionCommand(cmd *Command) (ResponseIf, error) {
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	tasks, ok := cmd.Params["tasks"].([]string)
+	if !ok {
+		return nil, fmt.Errorf("uri not provided")
+	}
+	payload := map[string]interface{}{
+		"tasks": tasks,
+	}
+
+	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("PUT", "/datasets/ingestion/tasks", "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to ingest file: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to ingest file: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("ingest file failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *CLI) UserRemoveTaskCommand(cmd *Command) (ResponseIf, error) {
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	tasks, ok := cmd.Params["tasks"].([]string)
+	if !ok {
+		return nil, fmt.Errorf("tasks not provided")
+	}
+
+	payload := map[string]interface{}{
+		"tasks": tasks,
+	}
+
+	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("DELETE", "/datasets/ingestion/tasks", "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to remove tasks: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to remove tasks: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("remove tasks failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *CLI) ChunkCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	var result ExplainResponse
+	start := time.Now()
+
+	filename, ok := cmd.Params["filename"].(string)
+	if !ok {
+		return nil, fmt.Errorf("filename not provided")
+	}
+	dslFilename, ok := cmd.Params["dsl"].(string)
+	if !ok {
+		return nil, fmt.Errorf("dsl not provided")
+	}
+	dsl, err := os.ReadFile(dslFilename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read dsl file: %w", err)
+	}
+
+	explain, ok := cmd.Params["explain"].(bool)
+	if !ok {
+		explain = false
+	}
+
+	engine := ingestion.NewChunkEngine()
+	plan, err := engine.Compile(string(dsl))
+	if err != nil {
+		return nil, fmt.Errorf("compile failed: %w", err)
+	}
+
+	if explain {
+
+		explanation, err := engine.Explain(plan)
+		if err != nil {
+			return nil, fmt.Errorf("explain error: %w", err)
+		}
+
+		result.Message = explanation
+	} else {
+		fileToChunking, err := os.ReadFile(filename)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read file: %w", err)
+		}
+
+		chunkContext, err := engine.Execute(plan, string(fileToChunking))
+		if err != nil {
+			return nil, fmt.Errorf("chunking error: %w", err)
+		}
+
+		for _, resultChunk := range chunkContext.ResultChunks {
+			fmt.Printf("Chunk index: %d\n", resultChunk.Index)
+			fmt.Printf("Chunk size: %d\n", resultChunk.Size)
+			fmt.Printf("Chunk content: \n%s\n", resultChunk.Content)
+		}
+	}
+
+	result.Duration = time.Since(start).Seconds()
+	result.Code = 0
+	result.Message = fmt.Sprintf("Success to chunk %s", filename)
+	return &result, nil
 }

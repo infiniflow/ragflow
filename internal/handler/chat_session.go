@@ -285,6 +285,7 @@ func (h *ChatSessionHandler) Completion(c *gin.Context) {
 	// Call service
 	if req.Stream != nil && *req.Stream {
 		// Streaming response
+		disableWriteDeadlineForSSE(c)
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")
 		c.Header("Connection", "keep-alive")
@@ -292,9 +293,10 @@ func (h *ChatSessionHandler) Completion(c *gin.Context) {
 
 		// Create a channel for streaming data
 		streamChan := make(chan string)
+		reqCtx := c.Request.Context()
 		go func() {
 			defer close(streamChan)
-			err := h.chatSessionService.CompletionStream(userID, req.ConversationID, processedMessages, req.LLMID, chatModelConfig, messageID, streamChan)
+			err := h.chatSessionService.CompletionStream(reqCtx, userID, req.ConversationID, processedMessages, req.LLMID, chatModelConfig, messageID, streamChan)
 			if err != nil {
 				streamChan <- fmt.Sprintf("data: %s\n\n", err.Error())
 			}

@@ -29,7 +29,6 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.connector_service import Connector2KbService
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, TaskService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
-from api.db.services.tenant_llm_service import TenantLLMService
 from common.constants import FileSource, StatusEnum
 from api.utils.api_utils import deep_merge, get_parser_config, remap_dictionary_keys, verify_embedding_availability
 
@@ -144,12 +143,23 @@ async def delete_datasets(tenant_id: str, ids: list = None, delete_all: bool = F
                 errors.append(f"Remove document '{doc.id}' error for dataset '{kb_id}'")
                 continue
             f2d = File2DocumentService.get_by_document_id(doc.id)
-            FileService.filter_delete(
-                [
-                    File.source_type == FileSource.KNOWLEDGEBASE,
-                    File.id == f2d[0].file_id,
-                ]
-            )
+            if f2d:
+                FileService.filter_delete(
+                    [
+                        File.source_type == FileSource.KNOWLEDGEBASE,
+                        File.id == f2d[0].file_id,
+                    ]
+                )
+            else:
+                # Normal uploads create a File2Document row via FileService.add_file_from_kb.
+                # A missing row usually means stale/partial data (e.g. link removed earlier,
+                # failed post-insert file linkage, or legacy rows). Deletion still proceeds.
+                logging.warning(
+                    "delete_datasets: document %s in dataset %s has no File2Document row; "
+                    "skipping linked file delete",
+                    doc.id,
+                    kb_id,
+                )
             File2DocumentService.delete_by_document_id(doc.id)
         FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kb.name])
 
@@ -1276,7 +1286,7 @@ async def search_datasets(tenant_id: str, req: dict):
     :param req: search request containing dataset_ids and other params
     :return: (success, result) or (success, error_message)
     """
-    from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
+    from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, split_model_name
     from api.db.services.doc_metadata_service import DocMetadataService
     from api.db.services.llm_service import LLMBundle
     from api.db.services.search_service import SearchService
@@ -1315,7 +1325,7 @@ async def search_datasets(tenant_id: str, req: dict):
         return False, "Datasets not found!"
 
     # All datasets must use the same embedding model
-    embd_nms = list(set([TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]))
+    embd_nms = list(set([split_model_name(kb.embd_id)[0] for kb in kbs]))
     if len(embd_nms) != 1:
         return False, "Datasets use different embedding models."
 

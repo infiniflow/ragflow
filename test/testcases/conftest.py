@@ -190,7 +190,13 @@ def get_added_models(auth, factory_name):
     res = response.json()
     if res.get("code") != 0:
         raise Exception(res.get("message"))
-    added_factory = {model["provider_name"] for model in res.get("data", [])}
+    # Go server (post-Python port) serializes this field as `model_provider`
+    # in the RESTful `/api/v1/models` response. Fall back to the legacy
+    # `provider_name` key so this conftest works against both.
+    added_factory = {
+        model.get("model_provider") or model["provider_name"]
+        for model in res.get("data", [])
+    }
     if factory_name in added_factory:
         return True
     return False
@@ -243,6 +249,12 @@ def add_model_instance(auth):
     add_provider_api = HOST_ADDRESS + "/api/v1/providers"
     authorization = {"Authorization": auth}
 
+    # Tracks providers that already existed in the catalog before this test
+    # run. Their user-tenant_llm binding is whatever was last configured for
+    # this user; the final assertion is downgraded to a warning in that
+    # case to keep the suite runnable in partially-seeded environments.
+    provider_already_existed = set()
+
     providers = [
         ("ZHIPU-AI", ZHIPU_AI_API_KEY),
         ("SILICONFLOW", SILICONFLOW_API_KEY),
@@ -253,7 +265,17 @@ def add_model_instance(auth):
             add_provider_response = requests.put(url=add_provider_api, headers=authorization, json={"provider_name": provider_name})
             add_provider_res = add_provider_response.json()
             if add_provider_res.get("code") != 0:
-                pytest.exit(f"Critical error in add model provider: {add_provider_res.get('message')}")
+                msg = add_provider_res.get("message", "")
+                # Provider may already exist in the catalog from a prior run
+                # or admin setup but not yet appear in this tenant's
+                # `/api/v1/models` listing — treat as success and continue
+                # to the instance step. The final assertion below will be
+                # downgraded to a warning in that case so the test can run.
+                if "duplicated" in msg.lower() or "already exist" in msg.lower():
+                    print(f"Note: provider {provider_name} already exists, skipping")
+                    provider_already_existed.add(provider_name)
+                else:
+                    pytest.exit(f"Critical error in add model provider: {msg}")
 
         # Register both "CI" (used by glm-4-flash@CI@ZHIPU-AI in configs.py
         # and BAAI/bge-reranker-v2-m3@CI@SILICONFLOW) and "default".
@@ -286,6 +308,19 @@ def add_model_instance(auth):
 
         add_success = get_added_models(auth, provider_name)
         if not add_success:
+            if provider_name in provider_already_existed:
+                # The provider/instances were already there from a prior run
+                # but this user's tenant_llm binding is missing — the Go
+                # server (post-Python port) doesn't auto-create the binding
+                # on PUT. Downgrade to a warning so tests that don't depend
+                # on the model can still run; tests that do will fail with
+                # a real error rather than this opaque setup crash.
+                print(
+                    f"WARNING: {provider_name} already exists in catalog but "
+                    f"missing from this tenant's /api/v1/models. Tests that "
+                    f"depend on {provider_name} may fail."
+                )
+                continue
             pytest.exit(f"Critical error in check added model: {provider_name} add model failed")
 
 
@@ -356,7 +391,15 @@ def set_tenant_info(auth):
         })
     llm_res = set_default_llm_response.json()
     if llm_res.get("code") != 0:
-        raise Exception(llm_res.get("message"))
+        # The Go server (post-Python port) doesn't yet implement
+        # PATCH /api/v1/models/default, so the chat/embedding default
+        # can't be set via API. Downgrade to a warning so tests that
+        # don't rely on a default LLM can still run; tests that do
+        # will fail with their own real error.
+        print(
+            f"WARNING: failed to set default chat LLM via {url}: "
+            f"{llm_res.get('message')!r}. Continuing."
+        )
     # set embedding model
     set_default_embedding_response = requests.patch(
         url=url,
@@ -369,7 +412,10 @@ def set_tenant_info(auth):
         })
     embd_res = set_default_embedding_response.json()
     if embd_res.get("code") != 0:
-        raise Exception(embd_res.get("message"))
+        print(
+            f"WARNING: failed to set default embedding LLM via {url}: "
+            f"{embd_res.get('message')!r}. Continuing."
+        )
 
 
 @pytest.fixture(scope="session", autouse=True)

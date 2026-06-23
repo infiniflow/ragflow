@@ -118,4 +118,24 @@ func TestDocumentGetByIDs_NoMatch(t *testing.T) {
 	}
 }
 
+func TestDocumentGetByDocumentIDAndDatasetIDUsesKBID(t *testing.T) {
+	db := setupDocumentTestDB(t)
+	pushDocDB(t, db)
+
+	db.Create(&entity.Document{ID: "doc1", KbID: "kb1", Name: sp("Doc 1"), CreatedBy: "user1", ParserConfig: entity.JSONMap{}})
+	db.Create(&entity.Document{ID: "doc1-other", KbID: "kb2", Name: sp("Doc 2"), CreatedBy: "user1", ParserConfig: entity.JSONMap{}})
+
+	doc, err := NewDocumentDAO().GetByDocumentIDAndDatasetID("doc1", "kb1")
+	if err != nil {
+		t.Fatalf("GetByDocumentIDAndDatasetID failed: %v", err)
+	}
+	if doc.ID != "doc1" || doc.KbID != "kb1" {
+		t.Fatalf("unexpected document: id=%s kb_id=%s", doc.ID, doc.KbID)
+	}
+
+	if _, err := NewDocumentDAO().GetByDocumentIDAndDatasetID("doc1", "kb2"); err == nil {
+		t.Fatal("expected no match when document does not belong to dataset")
+	}
+}
+
 func sp(s string) *string { return &s }

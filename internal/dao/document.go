@@ -146,6 +146,13 @@ func (dao *DocumentDAO) GetByIDs(ids []string) ([]*entity.Document, error) {
 	return documents, nil
 }
 
+// GetByDocumentIDAndDatasetID retrieves a document by document ID and dataset/KB ID.
+func (dao *DocumentDAO) GetByDocumentIDAndDatasetID(documentID, datasetID string) (*entity.Document, error) {
+	var document entity.Document
+	err := DB.Where("id = ? AND kb_id = ?", documentID, datasetID).First(&document).Error
+	return &document, err
+}
+
 // CountByTenantID counts documents by tenant ID
 func (dao *DocumentDAO) CountByTenantID(tenantID string) (int64, error) {
 	var count int64

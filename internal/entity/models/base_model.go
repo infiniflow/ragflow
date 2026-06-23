@@ -17,9 +17,15 @@
 package models
 
 import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 type BaseModel struct {
@@ -77,4 +83,137 @@ func (b *BaseModel) GetBaseURL(apiConfig *APIConfig) (string, error) {
 	}
 
 	return baseURL, nil
+}
+
+// ParseSSEStream reads the body of an OpenAI-compatible Server-Sent Events
+// response and calls onEvent for each successfully-parsed JSON payload.
+// A malformed JSON payload after "data:" returns an error wrapped as
+// "invalid SSE event" so the caller cannot silently swallow truncated or
+// corrupted streams.
+func ParseSSEStream[T any](r io.Reader, onEvent func(event T) error) (done bool, err error) {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		data := strings.TrimSpace(line[5:])
+		if data == "" {
+			continue
+		}
+		if data == "[DONE]" {
+			return true, nil
+		}
+		var event T
+		if err := json.Unmarshal([]byte(data), &event); err != nil {
+			return false, fmt.Errorf("invalid SSE event: %w", err)
+		}
+		if err := onEvent(event); err != nil {
+			return false, err
+		}
+	}
+	return false, scanner.Err()
+}
+
+// ParseSSEStreamTolerant is like ParseSSEStream but silently skips
+// malformed JSON payloads. Use this only for drivers whose upstream is
+// known to interleave invalid frames the test suite documents as safe
+// to ignore.
+func ParseSSEStreamTolerant[T any](r io.Reader, onEvent func(event T) error) (done bool, err error) {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		data := strings.TrimSpace(line[5:])
+		if data == "" {
+			continue
+		}
+		if data == "[DONE]" {
+			return true, nil
+		}
+		var event T
+		if err := json.Unmarshal([]byte(data), &event); err != nil {
+			continue
+		}
+		if err := onEvent(event); err != nil {
+			return false, err
+		}
+	}
+	return false, scanner.Err()
+}
+
+// ParseListModel Parse model list. Empty/whitespace IDs are skipped so
+// upstream typos do not surface as blank entries in the UI.
+func ParseListModel(modelList ModelList) []ListModelResponse {
+	var models []ListModelResponse
+	pm := GetProviderManager()
+	for _, model := range modelList.Models {
+		modelName := strings.TrimSpace(model.ID)
+		if modelName == "" {
+			continue
+		}
+		var modelResponse ListModelResponse
+		var modelEntity *Model
+		if pm != nil {
+			modelEntity = pm.GetModelByNameOrAlias(modelName)
+		}
+		if model.OwnedBy != "" {
+			modelName = modelName + "@" + model.OwnedBy
+		}
+		modelResponse.Name = modelName
+		if modelEntity != nil {
+			modelResponse.MaxDimension = modelEntity.MaxDimension
+			modelResponse.Dimensions = modelEntity.Dimensions
+			modelResponse.MaxTokens = modelEntity.MaxTokens
+			modelResponse.ModelTypes = modelEntity.ModelTypes
+			modelResponse.Thinking = modelEntity.Thinking
+			modelResponse.Dimensions = modelEntity.Dimensions
+		}
+
+		models = append(models, modelResponse)
+	}
+	return models
+}
+
+// NewDriverHTTPClient returns an *http.Client with the standard connection-pool
+func NewDriverHTTPClient() *http.Client {
+	var t *http.Transport
+	if dt, ok := http.DefaultTransport.(*http.Transport); ok {
+		t = dt.Clone()
+	} else {
+		t = &http.Transport{Proxy: http.ProxyFromEnvironment}
+	}
+	t.MaxIdleConns = 100
+	t.MaxIdleConnsPerHost = 10
+	t.IdleConnTimeout = 90 * time.Second
+	t.DisableCompression = false
+	t.ResponseHeaderTimeout = 60 * time.Second
+	return &http.Client{Transport: t}
+}
+
+// PostJSONRequest marshals body to JSON, creates a POST request to url
+func PostJSONRequest(ctx context.Context, client *http.Client, url, auth string, body map[string]interface{}) (*http.Response, error) {
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(data))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
+	return client.Do(req)
+}
+
+// ReadErrorBody reads all bytes from r and returns them as a string suitable
+func ReadErrorBody(r io.Reader) string {
+	b, _ := io.ReadAll(r)
+	return string(b)
 }

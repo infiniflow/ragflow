@@ -60,6 +60,9 @@ redis:
   username: '${REDIS_USERNAME:-}'
   password: '${REDIS_PASSWORD:-infini_rag_flow}'
   host: '${REDIS_HOST:-redis}:6379'
+nats:
+  host: ${NATS_HOST:-0.0.0.0}
+  port: ${NATS_PORT:-4222}
 user_default_llm:
   default_models:
     embedding_model:

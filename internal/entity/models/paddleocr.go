@@ -39,14 +39,7 @@ func NewPaddleOCRModel(baseURL map[string]string, urlSuffix URLSuffix) *PaddleOC
 			BaseURL:          baseURL,
 			URLSuffix:        urlSuffix,
 			AllowEmptyAPIKey: true,
-			httpClient: &http.Client{
-				Transport: &http.Transport{
-					MaxIdleConns:        100,
-					MaxIdleConnsPerHost: 10,
-					IdleConnTimeout:     90 * time.Second,
-					DisableCompression:  false,
-				},
-			},
+			httpClient:       NewDriverHTTPClient(),
 		},
 	}
 }

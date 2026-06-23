@@ -731,6 +731,56 @@ class TestDocRoutesUnit:
         res = _run(module.stop_parsing.__wrapped__("tenant-1", "ds-1"))
         assert res["code"] == 0
 
+    def test_stop_parse_documents_cleans_partial_chunks(self, monkeypatch):
+        module = _load_doc_module(monkeypatch, module_basename="document_api")
+        updated = []
+        deleted = []
+
+        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: True)
+        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"document_ids": ["doc-1"]}))
+        monkeypatch.setattr(module, "check_duplicate_ids", lambda ids, _kind: (ids, []))
+        monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [object()])
+        monkeypatch.setattr(
+            module.DocumentService,
+            "get_by_id",
+            lambda _id: (True, _DummyDoc(doc_id="doc-1", run=module.TaskStatus.RUNNING.value)),
+        )
+        monkeypatch.setattr(module.TaskService, "query", lambda **_kwargs: [SimpleNamespace(progress=0.5)])
+        monkeypatch.setattr(module, "cancel_all_task_of", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(
+            module.DocumentService,
+            "update_by_id",
+            lambda doc_id, info: updated.append((doc_id, info)) or True,
+        )
+        _patch_docstore(
+            monkeypatch,
+            module,
+            index_exist=lambda *_args, **_kwargs: True,
+            delete=lambda condition, index, kb_id: deleted.append((condition, index, kb_id)),
+        )
+
+        res = _run(module.stop_parse_documents.__wrapped__("tenant-1", "ds-1"))
+
+        assert res["code"] == 0
+        assert res["data"]["success_count"] == 1
+        assert updated == [
+            (
+                "doc-1",
+                {
+                    "run": module.TaskStatus.CANCEL.value,
+                    "progress": 0,
+                    "chunk_num": 0,
+                },
+            )
+        ]
+        assert deleted == [({"doc_id": "doc-1"}, module.search.index_name("tenant-1"), "kb-1")]
+
+        deleted.clear()
+        _patch_docstore(monkeypatch, module, index_exist=lambda *_args, **_kwargs: False)
+        res = _run(module.stop_parse_documents.__wrapped__("tenant-1", "ds-1"))
+        assert res["code"] == 0
+        assert deleted == []
+
     def test_list_chunks_branches(self, monkeypatch):
         module = _load_restful_chunk_module(monkeypatch)
         monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: False)

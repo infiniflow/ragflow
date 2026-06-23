@@ -46,6 +46,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 		admin.POST("/reports", r.handler.Reports)
 
+		//admin.POST("/ingestion/tasks", r.handler.StartIngestionTask)
+		//admin.DELETE("/ingestion", r.handler.CancelIngestionTask) // cancel ingestion
+		//admin.GET("/ingestion/tasks", r.handler.ListIngestionTasks)
+
 		// Protected routes
 		protected := admin.Group("")
 		protected.Use(r.handler.AuthMiddleware())
@@ -54,9 +58,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.POST("/logout", r.handler.Logout)
 			// Auth
 			protected.GET("/auth", r.handler.AuthCheck)
-
-			// Tasks
-			protected.GET("/tasks", r.handler.ListTasks)
 
 			// User management
 			protected.GET("/users", r.handler.ListUsers)
@@ -137,12 +138,19 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.GET("/:provider_name/models/:model_name", r.handler.ShowModel)
 			}
 
+			queue := protected.Group("/queue")
+			{
+				queue.GET("/", r.handler.ShowMessageQueue)
+				queue.POST("/messages", r.handler.PublishMessageToQueue)
+				queue.GET("/messages", r.handler.ListMessagesFromQueue)
+				queue.PUT("/messages", r.handler.PullMessageFromQueue)
+			}
+
 			protected.GET("/ingestors", r.handler.ListIngestors)
 			protected.DELETE("/ingestors", r.handler.ShutdownIngestor)
-			protected.POST("/ingestion", r.handler.StartIngestionTask)  // start ingestion
-			protected.DELETE("/ingestion", r.handler.StopIngestionTask) // stop ingestion
+			protected.DELETE("/ingestion/tasks", r.handler.RemoveIngestionTasks)
+			protected.PUT("/ingestion/tasks", r.handler.StopIngestionTasks)
 			protected.GET("/ingestion/tasks", r.handler.ListIngestionTasks)
-
 		}
 	}
 

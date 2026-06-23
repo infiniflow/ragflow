@@ -98,32 +98,12 @@ type BedrockModel struct {
 }
 
 // NewBedrockModel creates a new Bedrock model instance.
-//
-// We clone http.DefaultTransport to keep Go's defaults for
-// ProxyFromEnvironment, DialContext (with KeepAlive), HTTP/2,
-// TLSHandshakeTimeout, and ExpectContinueTimeout, and only override
-// the connection-pool fields we care about.
-//
-// The Client itself has no overall Timeout because Bedrock
-// Converse-Stream is long-lived. http.Client.Timeout would also cap
-// time spent reading the response body, cutting off mid-stream.
-// Non-streaming callers wrap each request in context.WithTimeout
-// instead, and ResponseHeaderTimeout still caps connection setup.
 func NewBedrockModel(baseURL map[string]string, urlSuffix URLSuffix) *BedrockModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-	transport.ResponseHeaderTimeout = 60 * time.Second
-
 	return &BedrockModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
-			httpClient: &http.Client{
-				Transport: transport,
-			},
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }

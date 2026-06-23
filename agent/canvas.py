@@ -329,6 +329,11 @@ class Canvas(Graph):
         self.dsl["memory"] = self.memory
         return super().__str__()
 
+    def clear_history(self):
+        self.history = []
+        if isinstance(self.globals.get("sys.history"), list):
+            self.globals["sys.history"] = []
+
     def reset(self, mem=False):
         super().reset()
         if not mem:

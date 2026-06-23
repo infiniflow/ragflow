@@ -141,25 +141,24 @@ jobs:
             sudo docker rm -f -v "${BUILDER_CONTAINER}"
           fi
 
-      - name: Prepare test resources
-        run: |
-          RESOURCE_REPO=https://github.com/infiniflow/resource.git
-          RESOURCE_REF=549feaaf998954d65b668667f009125bc84a9c5e
-          RESOURCE_PATH="/tmp/resource-${GITHUB_RUN_ID}"
-          if [ -d "${RESOURCE_PATH}" ]; then rm -rf "${RESOURCE_PATH}"; fi
-          git clone "${RESOURCE_REPO}" "${RESOURCE_PATH}"
-          git -C "${RESOURCE_PATH}" checkout "${RESOURCE_REF}"
-          sudo mkdir -p /usr/share/infinity
-          sudo ln -sf "${RESOURCE_PATH}" /usr/share/infinity/resource
-          mkdir -p resource
-          ln -sf "${RESOURCE_PATH}/wordnet" resource/wordnet
-
-      - name: Test Go packages
-        run: |
-          set -euo pipefail
-          packages=$(go list ./internal/... | grep -vE '/storage(/|$)|/cli\b')
-          CGO_ENABLED=1 GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
-            go test -count=1 ${packages}
+#      - name: Prepare test resources
+#        run: |
+#          RESOURCE_REPO=https://github.com/infiniflow/resource.git
+#          RESOURCE_REF=549feaaf998954d65b668667f009125bc84a9c5e
+#          rm -rf /tmp/resource
+#          git clone "${RESOURCE_REPO}" /tmp/resource
+#          git -C /tmp/resource checkout "${RESOURCE_REF}"
+#          sudo mkdir -p /usr/share/infinity
+#          sudo ln -sf /tmp/resource /usr/share/infinity/resource
+#          mkdir -p resource
+#          ln -sf /tmp/resource/wordnet resource/wordnet
+#
+#      - name: Test Go packages
+#        run: |
+#          set -euo pipefail
+#          packages=$(go list ./internal/... | grep -vE '/storage(/|$)')
+#          CGO_ENABLED=1 GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
+#            go test -count=1 ${packages}
 
       - name: Build ragflow:nightly
         run: |

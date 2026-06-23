@@ -42,12 +42,33 @@ const ProviderModal = ({
   const { instanceNameSet } = useFetchInstanceNameSet(llmFactory);
   const hideWhenInstanceExists = useHideWhenInstanceExists(instanceNameSet);
   const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
+  const scrollAnchorRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     setVerifyResult(null);
     return () => {
       setVerifyResult(null);
     };
   }, [visible]);
+
+  // When a verify result comes back, the VerifyButton renders new log
+  // content below the existing form. Scroll the modal's scrollable area
+  // to the bottom so the user actually sees the result. We walk up the
+  // DOM from a ref inside the scrollable container (the Modal renders
+  // it via a Radix Portal) and use rAF to wait for the new content to
+  // be laid out before measuring scrollHeight.
+  useEffect(() => {
+    if (!verifyResult || !scrollAnchorRef.current) {
+      return;
+    }
+    const scrollContainer =
+      scrollAnchorRef.current.closest<HTMLElement>('.overflow-y-auto');
+    if (!scrollContainer) {
+      return;
+    }
+    requestAnimationFrame(() => {
+      scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    });
+  }, [verifyResult]);
 
   // Field config, default values, doc link, and the LIST_MODEL_PROVIDERS
   // flag are all derived from the current llmFactory / mode / initialValues.
@@ -123,9 +144,7 @@ const ProviderModal = ({
           max_tokens: item.max_tokens,
           extra: item.features
             ? {
-                is_tools:
-                  item.features.includes('tool_call') ||
-                  item.features.includes('function_call'),
+                is_tools: item.features.includes('is_tools'),
               }
             : undefined,
         });
@@ -203,12 +222,18 @@ const ProviderModal = ({
           />
         )}
 
-        <VerifyButton
-          onVerify={handleVerify}
-          verifyCallback={(result: VerifyResult | null) => {
-            setVerifyResult(result);
-          }}
-        />
+        <div ref={scrollAnchorRef}>
+          <VerifyButton
+            onVerify={handleVerify}
+            verifyCallback={(result: VerifyResult | null) => {
+              setVerifyResult(result);
+            }}
+            className={cn({
+              '!flex flex-col ![position:inherit] ':
+                verifyResult && docLinkText && config.docLink,
+            })}
+          />
+        </div>
         <div
           className={
             docLinkText

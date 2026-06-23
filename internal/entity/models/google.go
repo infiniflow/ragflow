@@ -26,12 +26,12 @@ import (
 )
 
 type googleModelPage struct {
-	items         []string
+	items         []DSModel
 	nextPageToken string
 }
 
 func collectGoogleModelNames(ctx context.Context, listPage func(context.Context, string) (googleModelPage, error)) ([]ListModelResponse, error) {
-	var modelNames []ListModelResponse
+	var models []DSModel
 	pageToken := ""
 
 	for {
@@ -40,13 +40,9 @@ func collectGoogleModelNames(ctx context.Context, listPage func(context.Context,
 			return nil, err
 		}
 
-		for _, modelName := range page.items {
-			modelNames = append(modelNames, ListModelResponse{
-				Name: modelName,
-			})
-		}
+		models = append(models, page.items...)
 		if page.nextPageToken == "" {
-			return modelNames, nil
+			return ParseListModel(ModelList{Models: models}), nil
 		}
 		pageToken = page.nextPageToken
 	}
@@ -64,9 +60,18 @@ var googleListModels = func(ctx context.Context, config *genai.ClientConfig) ([]
 			return googleModelPage{}, err
 		}
 
-		var modelNames []string
+		var modelNames []DSModel
 		for _, m := range models.Items {
-			modelNames = append(modelNames, m.Name)
+			modelName := strings.TrimSpace(m.DisplayName)
+			if modelName == "" {
+				modelName = strings.TrimSpace(m.Name)
+			}
+			if modelName != "" {
+				modelNames = append(modelNames, DSModel{
+					ID:      modelName,
+					OwnedBy: "Google",
+				})
+			}
 		}
 		return googleModelPage{items: modelNames, nextPageToken: models.NextPageToken}, nil
 	})

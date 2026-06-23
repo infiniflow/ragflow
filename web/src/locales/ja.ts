@@ -1209,6 +1209,7 @@ export default {
       bulgarian: 'ブルガリア語',
       arabic: 'アラビア語',
       turkish: 'トルコ語',
+      korean: '韓国語',
     },
   },
 };

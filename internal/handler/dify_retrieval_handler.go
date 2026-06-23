@@ -24,9 +24,9 @@ import (
 	"strconv"
 	"strings"
 
-	"ragflow/internal/common"
-	"gorm.io/gorm"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
+	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
@@ -71,16 +71,16 @@ type DocumentDAOIface interface {
 
 // difyRetrievalRequest is the JSON body / query params for the Dify retrieval endpoint.
 type difyRetrievalRequest struct {
-	KnowledgeID        string                  `json:"knowledge_id" form:"knowledge_id"`
-	Query              string                  `json:"query" form:"query"`
-	UseKG              bool                    `json:"use_kg" form:"use_kg"`
-	RetrievalSetting   *difyRetrievalSetting   `json:"retrieval_setting"`
-	MetadataCondition  *difyMetadataCondition  `json:"metadata_condition"`
+	KnowledgeID       string                 `json:"knowledge_id" form:"knowledge_id"`
+	Query             string                 `json:"query" form:"query"`
+	UseKG             bool                   `json:"use_kg" form:"use_kg"`
+	RetrievalSetting  *difyRetrievalSetting  `json:"retrieval_setting"`
+	MetadataCondition *difyMetadataCondition `json:"metadata_condition"`
 }
 
 type difyRetrievalSetting struct {
-	TopK            *int     `json:"top_k" form:"top_k"`
-	ScoreThreshold  *float64 `json:"score_threshold" form:"score_threshold"`
+	TopK           *int     `json:"top_k" form:"top_k"`
+	ScoreThreshold *float64 `json:"score_threshold" form:"score_threshold"`
 }
 
 // difyCondition is a Dify-format metadata filter condition.
@@ -108,8 +108,8 @@ func (c difyMetadataCondition) toMetaFilterConditions() []service.MetaFilterCond
 			v = fmt.Sprint(dc.Value)
 		}
 		result[i] = service.MetaFilterCondition{
-			Key: dc.Name,
-			Op:  dc.ComparisonOperator,
+			Key:   dc.Name,
+			Op:    dc.ComparisonOperator,
 			Value: v,
 		}
 	}
@@ -241,15 +241,15 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	metas, metaErr := h.metadataSvc.GetFlattedMetaByKBs([]string{req.KnowledgeID})
 	docIDs := make([]string, 0)
 	if metaErr == nil && req.MetadataCondition != nil {
-			logic := req.MetadataCondition.Logic
-			if logic == "" {
-				logic = "and"
-			}
-			filteredIDs := service.ApplyMetaFilter(metas, req.MetadataCondition.toMetaFilterConditions(), logic)
+		logic := req.MetadataCondition.Logic
+		if logic == "" {
+			logic = "and"
+		}
+		filteredIDs := service.ApplyMetaFilter(metas, req.MetadataCondition.toMetaFilterConditions(), logic)
 		docIDs = append(docIDs, filteredIDs...)
 	}
 	if len(docIDs) == 0 && req.MetadataCondition != nil {
-		docIDs = []string{"-999"}
+		docIDs = []string{service.NoMatchDocIDSentinel}
 	}
 
 	// Label question for rank features
@@ -258,15 +258,15 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 
 	// Chunk retrieval
 	sr := &nlp.RetrievalRequest{
-		Question:               req.Query,
-		TenantIDs:              []string{kb.TenantID},
-		KbIDs:                  []string{req.KnowledgeID},
-		DocIDs:                 docIDs,
-		Page:                   1,
-		PageSize:               pageSize,
-		Top:                    topK,
-		SimilarityThreshold:    scoreThreshold,
-		EmbeddingModel:         embModel,
+		Question:            req.Query,
+		TenantIDs:           []string{kb.TenantID},
+		KbIDs:               []string{req.KnowledgeID},
+		DocIDs:              docIDs,
+		Page:                1,
+		PageSize:            pageSize,
+		Top:                 topK,
+		SimilarityThreshold: scoreThreshold,
+		EmbeddingModel:      embModel,
 	}
 	if rankFeature != nil {
 		sr.RankFeature = &rankFeature

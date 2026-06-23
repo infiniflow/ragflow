@@ -1307,6 +1307,7 @@ func (c *CLI) ListAdminIngestors(cmd *Command) (ResponseIf, error) {
 	result.Duration = resp.Duration
 	return &result, nil
 }
+
 func (c *CLI) ListAdminIngestionTasks(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -1334,21 +1335,20 @@ func (c *CLI) ListAdminIngestionTasks(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) AdminStartIngestionCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminStopIngestionCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	fileURI, ok := cmd.Params["uri"].(string)
+	tasks, ok := cmd.Params["tasks"].([]string)
 	if !ok {
 		return nil, fmt.Errorf("uri not provided")
 	}
 	payload := map[string]interface{}{
-		"uri":  fileURI,
-		"from": "CLI",
+		"tasks": tasks,
 	}
 
-	resp, err := c.AdminServerClient.Request("POST", "/admin/ingestion", "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request("PUT", "/admin/ingestion/tasks", "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to ingest file: %w", err)
 	}
@@ -1357,7 +1357,7 @@ func (c *CLI) AdminStartIngestionCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to ingest file: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonDataResponse
+	var result CommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("ingest file failed: invalid JSON (%w)", err)
 	}
@@ -1370,21 +1370,20 @@ func (c *CLI) AdminStartIngestionCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) AdminStopIngestionCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminRemoveIngestionCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	taskID, ok := cmd.Params["task_id"].(string)
+	tasks, ok := cmd.Params["tasks"].([]string)
 	if !ok {
 		return nil, fmt.Errorf("uri not provided")
 	}
 	payload := map[string]interface{}{
-		"task_id": taskID,
-		"from":    "CLI",
+		"tasks": tasks,
 	}
 
-	resp, err := c.AdminServerClient.Request("DELETE", "/admin/ingestion", "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request("DELETE", "/admin/ingestion/tasks", "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to ingest file: %w", err)
 	}
@@ -1393,7 +1392,7 @@ func (c *CLI) AdminStopIngestionCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to ingest file: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonDataResponse
+	var result CommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("ingest file failed: invalid JSON (%w)", err)
 	}
@@ -1431,6 +1430,179 @@ func (c *CLI) AdminShutdownIngestor(cmd *Command) (ResponseIf, error) {
 	var result CommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("shutdown ingestor failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *CLI) UserListMessageQueueCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	pending, ok := cmd.Params["pending"].(bool)
+	if !ok {
+		return nil, fmt.Errorf("pending not provided")
+	}
+	payload := map[string]interface{}{
+		"pending": pending,
+	}
+
+	resp, err := c.AdminServerClient.Request("GET", "/admin/queue/messages", "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list tasks in message queue: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list tasks in message queue: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list tasks in message queue failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *CLI) UserPublishMessageCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	message, ok := cmd.Params["message"].(string)
+	if !ok {
+		return nil, fmt.Errorf("message not provided")
+	}
+	payload := map[string]interface{}{
+		"message": message,
+	}
+
+	resp, err := c.AdminServerClient.Request("POST", "/admin/queue/messages", "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to publish message: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to publish message: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("publish message failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *CLI) UserPullMessageCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	messageCount, ok := cmd.Params["message_count"].(int)
+	if !ok {
+		return nil, fmt.Errorf("message_count not provided")
+	}
+	ackPolicy, ok := cmd.Params["ack_policy"].(string)
+	if !ok {
+		return nil, fmt.Errorf("ack_policy not provided")
+	}
+
+	payload := map[string]interface{}{
+		"message_count": messageCount,
+		"ack_policy":    ackPolicy,
+	}
+
+	resp, err := c.AdminServerClient.Request("PUT", "/admin/queue/messages", "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to pull message: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to pull message: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("pull message failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *CLI) UserShowMessageQueueCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	resp, err := c.AdminServerClient.Request("GET", "/admin/queue", "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to show message queue: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to show message queue: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("show message queue failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *CLI) AdminRemoveServiceCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+	serviceNumber, ok := cmd.Params["service_number"].(int)
+	if !ok {
+		return nil, fmt.Errorf("service_number not provided")
+	}
+
+	payload := map[string]interface{}{
+		"service_number": serviceNumber,
+	}
+
+	resp, err := c.AdminServerClient.Request("DELETE", "/admin/services", "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to remove unavailable service: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to remove unavailable service: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("remove unavailable service failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
