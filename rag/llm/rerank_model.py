@@ -592,18 +592,18 @@ class FuturMixRerank(OpenAI_APIRerank):
 
 class RAGconRerank(Base):
     _FACTORY_NAME = "RAGcon"
-    
+
     def __init__(self, key, model_name, base_url=None, **kwargs):
         if not base_url:
             base_url = "https://connect.ragcon.com/v1"
-        
+
         self._api_key = key
         self._base_url = base_url
-        
+
         self.headers = {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}
         self.model_name = model_name
-        
-    
+
+
     def _compute_rank(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
         texts = [truncate(t, 500) for t in texts]
         data = {
@@ -622,4 +622,43 @@ class RAGconRerank(Base):
                 rank[d["index"]] = d["relevance_score"]
         except Exception as _e:
             log_exception(_e, res)
+        return rank, token_count
+
+
+class OpenRouterRerank(Base):
+    _FACTORY_NAME = "OpenRouter"
+
+    def __init__(self, key: str, model_name: str, base_url: str = "https://openrouter.ai/api/v1"):
+        self.api_key = key
+        self.model_name = model_name
+        self.base_url = base_url.rstrip('/')
+        self.headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+
+    def _compute_rank(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
+        """
+        Rerank documents using OpenRouter's rerank endpoint.
+        """
+        url = f"{self.base_url}/rerank"
+        payload = {
+            "model": self.model_name,
+            "query": query,
+            "documents": texts
+        }
+
+        response = requests.post(url, headers=self.headers, json=payload, timeout=60)
+        response.raise_for_status()
+        data = response.json()
+
+        # OpenRouter returns results in the same format as Cohere
+        results = data.get("results", [])
+        rank = np.zeros(len(texts), dtype=float)
+        for result in results:
+            index = result.get("index", 0)
+            score = result.get("relevance_score", 0.0)
+            if index < len(rank):
+                rank[index] = score
+        token_count = total_token_count_from_response(data)
         return rank, token_count
