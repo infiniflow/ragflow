@@ -54,7 +54,7 @@ type RetrievalTestRequest struct {
 	CrossLanguages         []string               `json:"cross_languages,omitempty"`
 	SearchID               *string                `json:"search_id,omitempty"`
 	Filter                 map[string]interface{} `json:"meta_data_filter,omitempty"`
-	TenantRerankID         *string                `json:"tenant_rerank_id,omitempty"`
+	TenantRerankID         *int                   `json:"tenant_rerank_id,omitempty"`
 	RerankID               *string                `json:"rerank_id,omitempty"`
 	Keyword                *bool                  `json:"keyword,omitempty"`
 	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
