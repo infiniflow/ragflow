@@ -90,3 +90,45 @@ def test_non_multiple_unchanged():
     chunks = RAGFlowExcelParser().html(_make_xlsx(13), chunk_rows=12)
     assert len(chunks) == 2
     assert all(not _chunk_has_no_data_cells(c) for c in chunks)
+
+
+class _FakeDataFrame:
+    """Minimal duck-typed stand-in for ``pandas.DataFrame``.
+
+    Only exposes what ``_dataframe_to_workbook`` touches: ``columns``,
+    ``values`` and ``apply`` (used by ``_clean_dataframe``).
+    """
+
+    def __init__(self, columns, rows):
+        self.columns = list(columns)
+        self.values = [tuple(r) for r in rows]
+
+    def apply(self, func):
+        # _clean_dataframe maps a string cleaner over cells; for these plain
+        # numeric/string values it is effectively a no-op.
+        return self
+
+
+@pytest.mark.p2
+def test_single_sheet_dict_builds_workbook():
+    # pandas.read_excel(sheet_name=None) always returns a dict keyed by sheet
+    # name, even when the file has a single sheet. The workbook builder must
+    # accept that single-entry dict instead of feeding it to _clean_dataframe.
+    df = _FakeDataFrame(["a", "b"], [(1, 2), (3, 4)])
+    wb = RAGFlowExcelParser._dataframe_to_workbook({"Sheet1": df})
+    assert "Sheet1" in wb.sheetnames
+    ws = wb["Sheet1"]
+    assert ws.cell(row=1, column=1).value == "a"
+    assert ws.cell(row=1, column=2).value == "b"
+    assert ws.cell(row=2, column=1).value == 1
+    assert ws.cell(row=3, column=2).value == 4
+
+
+@pytest.mark.p2
+def test_multi_sheet_dict_builds_workbook():
+    dfs = {
+        "S1": _FakeDataFrame(["a"], [(1,)]),
+        "S2": _FakeDataFrame(["b"], [(2,)]),
+    }
+    wb = RAGFlowExcelParser._dataframe_to_workbook(dfs)
+    assert wb.sheetnames == ["S1", "S2"]
