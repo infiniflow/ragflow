@@ -153,7 +153,10 @@ def _make_chat_handler(ch):
 
         answer_text = ""
         try:
-            async for ans in async_chat(dia, history, False, quote=False):
+            chat_kwargs = {"quote": False}
+            if "{knowledge}" in (dia.prompt_config or {}).get("system", ""):
+                chat_kwargs["knowledge"] = ""
+            async for ans in async_chat(dia, history, False, **chat_kwargs):
                 structure_answer(conv, ans, message_id, conv.id)
                 answer_text = (ans or {}).get("answer", "") or ""
                 ConversationService.update_by_id(conv.id, conv.to_dict())
@@ -245,12 +248,9 @@ async def _reconcile(running: dict, failed: dict) -> None:
     from api.channels.whatsapp.gateway import sync_whatsapp_gateway
 
     try:
-        LOGGER.info("syncing WhatsApp gateway enabled=%s", active_whatsapp)
         await sync_whatsapp_gateway(active_whatsapp)
     except Exception:
         LOGGER.exception("failed to sync WhatsApp gateway enabled=%s", active_whatsapp)
-    else:
-        LOGGER.info("WhatsApp gateway sync finished enabled=%s", active_whatsapp)
 
     # Start channels that are new (skip ones already known to fail with this config).
     for account_id, (channel, credential, fp) in desired.items():
