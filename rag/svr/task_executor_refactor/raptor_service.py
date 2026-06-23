@@ -50,6 +50,31 @@ from rag.utils.raptor_utils import (
 from rag.svr.task_executor_refactor.task_context import TaskContext
 
 
+def _sum_tree_text_tokens(tree) -> int:
+    """Count tokens across every ``title`` string in the RAPTOR tree.
+
+    Mirrors the legacy ``tk_count`` semantic (sum over summary texts)
+    so the orchestrator's downstream logging / billing keeps working
+    when the tree path replaces the per-summary rows. Walks the dict
+    iteratively to avoid recursion-limit issues on deep trees.
+    """
+    if not isinstance(tree, dict):
+        return 0
+    total = 0
+    stack = [tree]
+    while stack:
+        node = stack.pop()
+        if not isinstance(node, dict):
+            continue
+        title = node.get("title")
+        if isinstance(title, str) and title:
+            total += num_tokens_from_string(title)
+        children = node.get("children")
+        if isinstance(children, list):
+            stack.extend(children)
+    return total
+
+
 class RaptorService:
     """Service for RAPTOR summary generation.
 
@@ -418,12 +443,73 @@ class RaptorService:
             (content, vctr, [chunk_id] if chunk_id else [])
             for content, vctr, chunk_id in chunks
         ]
-        original_length = len(raptor_input)
-        processed_chunks, layers = await raptor(
-            raptor_input, raptor_config["random_seed"], self._task_context.progress_cb, ctx.id
-        )
 
         effective_doc_name = ctx.name if doc_id == GRAPH_RAPTOR_FAKE_DOC_ID else doc_info_by_id.get(doc_id, {}).get("name") or ctx.name
+
+        # Default path: ask RAPTOR for a single hierarchical tree dict
+        # and persist it as ONE non-searchable ES row. PSI's
+        # hyperedge-driven summarization can't form a strict
+        # parent-of relation, so __call__(is_tree=True) raises
+        # NotImplementedError there — catch and fall through to the
+        # legacy per-summary materialization below for that case.
+        try:
+            tree = await raptor(
+                raptor_input,
+                raptor_config["random_seed"],
+                self._task_context.progress_cb,
+                ctx.id,
+                is_tree=True,
+            )
+        except NotImplementedError:
+            return await self._generate_raptor_legacy_rows(
+                raptor, raptor_input, raptor_config, doc_id,
+                effective_doc_name, tree_builder, vctr_nm,
+            )
+
+        if tree is None:
+            return [], 0
+
+        row_id = xxhash.xxh64(
+            f"raptor_tree:{doc_id}:{tree_builder}".encode("utf-8", "surrogatepass"),
+        ).hexdigest()
+        row = {
+            "id": row_id,
+            "doc_id": doc_id,
+            "kb_id": [str(ctx.kb_id)],
+            "docnm_kwd": effective_doc_name,
+            "title_tks": rag_tokenizer.tokenize(effective_doc_name),
+            "raptor_kwd": "raptor_tree",
+            "extra": {"raptor_method": tree_builder},
+            "content_with_weight": json.dumps(tree, ensure_ascii=False),
+            "create_time": str(datetime.now()).replace("T", " ")[:19],
+            "create_timestamp_flt": datetime.now().timestamp(),
+            # Non-searchable: no ``q_<dim>_vec`` and ``available_int=0``
+            # so retrievers won't surface this row directly. Readers
+            # that want the tree filter on ``raptor_kwd=raptor_tree``.
+            "available_int": 0,
+        }
+        if ctx.pagerank:
+            row[PAGERANK_FLD] = int(ctx.pagerank)
+        return [row], _sum_tree_text_tokens(tree)
+
+    async def _generate_raptor_legacy_rows(
+        self, raptor, raptor_input, raptor_config, doc_id,
+        effective_doc_name, tree_builder, vctr_nm,
+    ) -> Tuple[List[Dict], int]:
+        """Legacy per-summary materialization, kept only for PSI builds.
+
+        PSI's hyperedge summaries don't map to a strict tree, so the
+        ``is_tree=True`` default in ``_generate_raptor`` raises and
+        falls through here. Same shape this function produced before
+        the tree migration — one ES row per appended summary, marked
+        ``raptor_kwd="raptor"``.
+        """
+        ctx = self._task_context
+        original_length = len(raptor_input)
+        processed_chunks, layers = await raptor(
+            raptor_input, raptor_config["random_seed"],
+            self._task_context.progress_cb, ctx.id,
+        )
 
         doc = {
             "doc_id": doc_id,
@@ -436,7 +522,6 @@ class RaptorService:
         if ctx.pagerank:
             doc[PAGERANK_FLD] = int(ctx.pagerank)
 
-        # Build index→layer mapping
         chunk_layer = {}
         for layer_idx, (layer_start, layer_end) in enumerate(layers):
             if layer_idx == 0:
@@ -447,9 +532,6 @@ class RaptorService:
         res = []
         tk_count = 0
         for idx, item in enumerate(processed_chunks[original_length:], start=original_length):
-            # Backward-compat unpack: RAPTOR returns the 3-tuple shape
-            # ``(text, vec, source_chunk_ids)`` for any input that came
-            # in 3-tuple shape, but defensive against future changes.
             if len(item) >= 3:
                 content, vctr, source_chunk_ids = item[0], item[1], item[2] or []
             else:
@@ -464,12 +546,6 @@ class RaptorService:
             d["content_ltks"] = rag_tokenizer.tokenize(content)
             d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
             d["raptor_layer_int"] = chunk_layer.get(idx, 1)
-            # Provenance: the original (leaf-level) chunk ids that
-            # contributed to this summary. RAPTOR has already done the
-            # order-preserving de-dup during the cluster merges, so we
-            # just persist whatever it produced. The list may be empty
-            # only if every leaf in the cluster had a missing id —
-            # legacy / defensive corner only.
             if source_chunk_ids:
                 d["source_chunk_ids"] = list(source_chunk_ids)
             res.append(d)
@@ -498,8 +574,13 @@ class RaptorService:
             return settings.docStoreConn.get_fields(res, fields)
 
         try:
+            # Accept both ``raptor`` (legacy per-summary rows, PSI
+            # builder still produces these) and ``raptor_tree`` (new
+            # single-row tree blob) so existing-method detection stays
+            # accurate across the migration.
             primary = await search_fields(
-                ["raptor_kwd", "extra"], {"doc_id": doc_id, "raptor_kwd": ["raptor"]}
+                ["raptor_kwd", "extra"],
+                {"doc_id": doc_id, "raptor_kwd": ["raptor", "raptor_tree"]},
             )
             if collect_raptor_chunk_ids(primary):
                 return collect_raptor_methods(primary)
@@ -614,6 +695,14 @@ class RaptorService:
         kb_id_str = str(ctx.kb_id)
         index_nm = search.index_name(tenant_id)
 
+        # NOTE: this reader still consumes the legacy per-summary
+        # ``raptor_kwd="raptor"`` rows (now produced only by the PSI
+        # builder). The default tree path emits a single
+        # ``raptor_kwd="raptor_tree"`` row whose ``content_with_weight``
+        # already IS the tree — a follow-up will repoint this builder
+        # at that row and drop the per-summary projection entirely. For
+        # now, non-PSI runs produce no rows here and this graph stays
+        # empty for the doc-structure-graph UI's RAPTOR tab.
         select_fields = ["content_with_weight", "raptor_layer_int", "source_chunk_ids"]
         try:
             res = await thread_pool_exec(
