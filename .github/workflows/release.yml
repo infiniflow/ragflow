@@ -138,7 +138,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     env:
       CLI_NAME: ragflow-cli
-      CLI_MAIN: ./cmd/ragflow-cli.go
+      CLI_MAIN: ./cmd/ragflow_cli.go
       DIST_DIR: dist/cli
       OFFICE_OXIDE_VERSION: "0.1.2"
       RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
