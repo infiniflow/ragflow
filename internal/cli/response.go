@@ -88,15 +88,7 @@ func (r *ModelsResponse) PrintOut() {
 	}
 }
 
-type UserIndexResponse struct {
-	InternalData CommonDataResponse
-}
-
-func (r *UserIndexResponse) TimeCost() float64 {
-	return r.InternalData.Duration
-}
-
-type CommonDataResponse struct {
+type baseDataResponse struct {
 	Code         int                    `json:"code"`
 	Data         map[string]interface{} `json:"data"`
 	Message      string                 `json:"message"`
@@ -104,33 +96,62 @@ type CommonDataResponse struct {
 	OutputFormat OutputFormat
 }
 
+func (r *baseDataResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *baseDataResponse) SetOutputFormat(format OutputFormat) {
+	r.OutputFormat = format
+}
+
+func (r *baseDataResponse) orderedMetricTable() []map[string]interface{} {
+	table := make([]map[string]interface{}, 0)
+	if orderRaw, ok := r.Data["_order"]; ok {
+		if orderSlice, ok := orderRaw.([]interface{}); ok {
+			for _, keyRaw := range orderSlice {
+				key := fmt.Sprintf("%v", keyRaw)
+				if value, exists := r.Data[key]; exists {
+					table = append(table, map[string]interface{}{
+						"Metric": key,
+						"Value":  value,
+					})
+				}
+			}
+		}
+	}
+	return table
+}
+
+func (r *baseDataResponse) printError() {
+	fmt.Println("ERROR")
+	fmt.Printf("%d, %s\n", r.Code, r.Message)
+}
+
+type CommonDataResponse struct {
+	baseDataResponse
+}
+
 func (r *CommonDataResponse) Type() string {
 	return "show"
 }
 
-func (r *CommonDataResponse) TimeCost() float64 {
-	return r.Duration
-}
-
-func (r *CommonDataResponse) SetOutputFormat(format OutputFormat) {
-	r.OutputFormat = format
-}
-
 func (r *CommonDataResponse) PrintOut() {
 	if r.Code == 0 {
-		table := make([]map[string]interface{}, 0)
+		table := r.orderedMetricTable()
+		if len(table) > 0 {
+			PrintTableSimpleByFormat(table, r.OutputFormat)
+			return
+		}
+
 		for key, value := range r.Data {
-			elem := map[string]interface{}{
+			table = append(table, map[string]interface{}{
 				"field": key,
 				"value": value,
-			}
-			table = append(table, elem)
+			})
 		}
-		//table = append(table, r.Data)
 		PrintTableSimpleByFormat(table, r.OutputFormat)
 	} else {
-		fmt.Println("ERROR")
-		fmt.Printf("%d, %s\n", r.Code, r.Message)
+		r.printError()
 	}
 }
 
@@ -789,6 +810,102 @@ func chunkDocName(c map[string]interface{}) string {
 	return ""
 }
 
+type UserIndexResponse struct {
+	baseDataResponse
+}
+
+func (r *UserIndexResponse) Type() string {
+	return "user_index"
+}
+
+func (r *UserIndexResponse) PrintOut() {
+	if r.Code != 0 {
+		r.printError()
+		return
+	}
+
+	summaryTable := r.orderedMetricTable()
+	if len(summaryTable) > 0 {
+		PrintTableSimpleByFormat(summaryTable, r.OutputFormat)
+	}
+
+	indicesRaw, hasIndices := r.Data["indices"]
+	if hasIndices {
+		indices, ok := indicesRaw.([]interface{})
+		if ok && len(indices) > 0 {
+			fmt.Println()
+			fmt.Println("Index Details:")
+			indexColumns := []string{"index", "health", "status", "docs.count", "dataset.size", "store.size"}
+			indexTable := make([]map[string]interface{}, 0)
+			for _, idx := range indices {
+				if m, ok := idx.(map[string]interface{}); ok {
+					orderedRow := make(map[string]interface{})
+					for _, col := range indexColumns {
+						if v, exists := m[col]; exists {
+							orderedRow[col] = v
+						} else {
+							orderedRow[col] = ""
+						}
+					}
+					indexTable = append(indexTable, orderedRow)
+				}
+			}
+			PrintTableSimpleByFormatWithOrder(indexTable, indexColumns, r.OutputFormat)
+		} else if ok && len(indices) == 0 {
+			fmt.Println()
+			fmt.Println("No indices found for this user.")
+		}
+	}
+}
+
+type UserStorageResponse struct {
+	baseDataResponse
+}
+
+func (r *UserStorageResponse) Type() string {
+	return "user_storage"
+}
+
+func (r *UserStorageResponse) PrintOut() {
+	if r.Code != 0 {
+		r.printError()
+		return
+	}
+
+	summaryTable := r.orderedMetricTable()
+	if len(summaryTable) > 0 {
+		PrintTableSimpleByFormat(summaryTable, r.OutputFormat)
+	}
+
+	filesRaw, hasFiles := r.Data["files"]
+	if hasFiles {
+		files, ok := filesRaw.([]interface{})
+		if ok && len(files) > 0 {
+			fmt.Println()
+			fmt.Println("Files（Top 10）:")
+			fileColumns := []string{"name", "size"}
+			fileTable := make([]map[string]interface{}, 0)
+			for _, f := range files {
+				if m, ok := f.(map[string]interface{}); ok {
+					orderedRow := make(map[string]interface{})
+					for _, col := range fileColumns {
+						if v, exists := m[col]; exists {
+							orderedRow[col] = v
+						} else {
+							orderedRow[col] = ""
+						}
+					}
+					fileTable = append(fileTable, orderedRow)
+				}
+			}
+			PrintTableSimpleByFormatWithOrder(fileTable, fileColumns, r.OutputFormat)
+		} else if ok && len(files) == 0 {
+			fmt.Println()
+			fmt.Println("No files found for this user.")
+		}
+	}
+}
+
 func truncateStr(s string, maxLen int) string {
 	s = strings.TrimSpace(s)
 	runes := []rune(s)
@@ -796,4 +913,33 @@ func truncateStr(s string, maxLen int) string {
 		return s
 	}
 	return string(runes[:maxLen]) + "..."
+}
+
+type UserQuotaResponse struct {
+	baseDataResponse
+}
+
+func (r *UserQuotaResponse) Type() string {
+	return "user_quota"
+}
+
+func (r *UserQuotaResponse) PrintOut() {
+	if r.Code != 0 {
+		r.printError()
+		return
+	}
+
+	summaryTable := make([]map[string]interface{}, 0)
+	if rowsRaw, ok := r.Data["rows"]; ok {
+		if rows, ok := rowsRaw.([]interface{}); ok {
+			for _, row := range rows {
+				if m, ok := row.(map[string]interface{}); ok {
+					summaryTable = append(summaryTable, m)
+				}
+			}
+		}
+	}
+	if len(summaryTable) > 0 {
+		PrintTableSimpleByFormatWithOrder(summaryTable, []string{"Metric", "Used", "Limit"}, r.OutputFormat)
+	}
 }

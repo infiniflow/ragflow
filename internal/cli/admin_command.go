@@ -2032,7 +2032,7 @@ func (c *CLI) AdminShowUserStorageCommand(cmd *Command) (ResponseIf, error) {
 	}
 
 	encodedUserName := common.EncodeEmail(email)
-	apiURL := fmt.Sprintf("/admin/users/%s/admin", encodedUserName)
+	apiURL := fmt.Sprintf("/admin/users/%s/storage", encodedUserName)
 
 	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
 	if err != nil {
@@ -2043,7 +2043,7 @@ func (c *CLI) AdminShowUserStorageCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to get user storage: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonDataResponse
+	var result UserStorageResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("get user storage failed: invalid JSON (%w)", err)
 	}
@@ -2079,9 +2079,9 @@ func (c *CLI) AdminShowUserQuotaCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to get user storage: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonDataResponse
+	var result UserQuotaResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("get user storage failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("get user quota failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
@@ -2115,9 +2115,9 @@ func (c *CLI) AdminShowUserIndexCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to get user storage: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonDataResponse
+	var result UserIndexResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("get user storage failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("get user index failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
