@@ -126,23 +126,24 @@ type Config struct {
 
 // SubAgentMiddleware injects sub-agents as dynamic tools into a parent ReAct agent.
 //
-// Key design: AgentTool wrappers are created in BindToConfig (not lazily),
-// and added to the parent's Tools list. ToolsConfig is set to nil to force
-// inline tool dispatch (executeInlineTools), which searches rc.Tools and
-// can find middleware-injected tools.
+// Tool contribution is now handled via the ToolContributor interface (ContributeTools).
+// This eliminates the need to call BindToConfig in most cases. For specs that need
+// middleware inheritance (InheritParentMiddlewares), call Init(ctx, parentConfig)
+// after adding the middleware to the config's Middlewares slice.
 //
-// BeforeModelRewrite injects ToolInfo entries so the LLM sees sub-agents as
-// available tools.
+// Deprecated: BindToConfig is retained for backward compatibility. Prefer using
+// Init or the ToolContributor interface directly.
 type SubAgentMiddleware struct {
 	core.BaseMiddleware[*schema.Message]
 
-	cfg       *Config
-	specs     []SubAgentSpec
-	mu        sync.Mutex
-	tools     []core.Tool // AgentTool wrappers, built in ensureBuilt
-	infos     []*schema.ToolInfo
+	cfg        *Config
+	specs      []SubAgentSpec
+	mu         sync.Mutex
+	tools      []core.Tool // AgentTool wrappers, built in ensureBuilt
+	infos      []*schema.ToolInfo
 	builtInfos []*schema.ToolInfo // only specs that were actually built
-	built     bool
+	built      bool
+	parentCfg  *core.ReActConfig[*schema.Message] // stored by Init for middleware inheritance
 }
 
 // New creates a SubAgentMiddleware. Pass nil for cfg to use defaults.
@@ -169,16 +170,99 @@ func New(specs []SubAgentSpec, cfg *Config) *SubAgentMiddleware {
 	}
 }
 
+// ---- ToolContributor interface ----
+//
+// ContributeTools returns AgentTool wrappers for all specs that can be built
+// without middleware inheritance. For specs needing InheritParentMiddlewares,
+// call Init(ctx, parentConfig) before the agent is built.
+func (m *SubAgentMiddleware) ContributeTools(ctx context.Context) []core.Tool {
+	// If Init was called with a parent config, ensureBuilt handles inheritance.
+	if m.parentCfg != nil {
+		m.ensureBuilt(ctx, m.parentCfg)
+	} else {
+		// No parent config: build simple agents (no middleware inheritance).
+		m.ensureBuiltSimple(ctx)
+	}
+	m.mu.Lock()
+	tools := make([]core.Tool, len(m.tools))
+	copy(tools, m.tools)
+	m.mu.Unlock()
+	return tools
+}
+
+func (m *SubAgentMiddleware) ContributeToolInfos(ctx context.Context) []*schema.ToolInfo {
+	m.mu.Lock()
+	infos := make([]*schema.ToolInfo, len(m.builtInfos))
+	copy(infos, m.builtInfos)
+	m.mu.Unlock()
+	return infos
+}
+
+func (m *SubAgentMiddleware) ContributeReturnDirectly(ctx context.Context) map[string]bool {
+	// Sub-agent tools should not cause the parent to return directly.
+	return nil
+}
+
+// ensureBuiltSimple builds all specs without middleware inheritance.
+func (m *SubAgentMiddleware) ensureBuiltSimple(ctx context.Context) {
+	m.mu.Lock()
+	if m.built {
+		m.mu.Unlock()
+		return
+	}
+	m.built = true
+	m.mu.Unlock()
+
+	for _, spec := range m.specs {
+		agent := m.resolveAgent(ctx, spec, nil)
+		if agent == nil {
+			continue
+		}
+		m.mu.Lock()
+		m.builtInfos = append(m.builtInfos, &schema.ToolInfo{
+			Name: spec.Name, Description: spec.Description,
+		})
+		opts := []core.AgentToolOption{}
+		if m.cfg.EmitInternalEvents {
+			opts = append(opts, core.WithEmitInternalEvents())
+		}
+		if m.cfg.MaxDepth > 0 {
+			opts = append(opts, core.WithMaxDepth(m.cfg.MaxDepth))
+		}
+		tool := core.NewAgentTool(ctx, agent, opts...)
+		m.tools = append(m.tools, tool)
+		m.mu.Unlock()
+	}
+}
+
+// Init initializes the middleware with the parent agent config, enabling
+// middleware inheritance for SubAgentSpecs with InheritParentMiddlewares.
+// Call this after adding the middleware to config.Middlewares, but before
+// calling NewReActAgent.
+//
+// Example:
+//
+//	mw := subagent.New(specs, &subagent.Config{EmitInternalEvents: true, MaxDepth: 5})
+//	cfg.Middlewares = append(cfg.Middlewares, mw)
+//	mw.Init(ctx, cfg)
+//	agent := core.NewReActAgent(cfg)
+func (m *SubAgentMiddleware) Init(ctx context.Context, config *core.ReActConfig[*schema.Message]) {
+	m.parentCfg = config
+	// ensureBuilt is deferred to ContributeTools (called during agent build).
+}
+
 // BindToConfig adds sub-agent tools to the parent agent config.
+//
+// Deprecated: Prefer using Init(ctx, config) or relying on the ToolContributor
+// interface (which is automatically collected during agent build). BindToConfig
+// has a timing dependency (must be called before NewReActAgent) and sets
+// config.ToolsConfig = nil as a side effect.
 //
 // For each spec, it:
 //  1. Builds the Agent from AgentConfig (if provided) or uses pre-built Agent.
 //  2. Applies middleware inheritance if InheritParentMiddlewares is true.
 //  3. Creates an AgentTool wrapper with MaxDepth and EmitInternalEvents.
 //  4. Appends the tool to config.Tools.
-//
-// It also sets config.ToolsConfig = nil to force inline tool dispatch,
-// which searches rc.Tools (including middleware-injected tools).
 //
 // MUST be called before agent.Run().
 // The ctx is used for sub-agent construction (AgentFactory calls, AgentTool wrapping).
@@ -257,7 +341,7 @@ func (m *SubAgentMiddleware) resolveAgent(ctx context.Context, spec SubAgentSpec
 }
 
 // buildConfig creates a ReActConfig from an AgentConfig, applying middleware
-// inheritance when InheritParentMiddlewares is true.
+// inheritance when InheritParentMiddlewares is true and parentCfg is non-nil.
 func (m *SubAgentMiddleware) buildConfig(spec SubAgentSpec, parentCfg *core.ReActConfig[*schema.Message]) *core.ReActConfig[*schema.Message] {
 	cfg := spec.AgentConfig
 	subCfg := &core.ReActConfig[*schema.Message]{
@@ -267,8 +351,8 @@ func (m *SubAgentMiddleware) buildConfig(spec SubAgentSpec, parentCfg *core.ReAc
 		MaxIterations: cfg.MaxIterations,
 	}
 
-	// Apply middleware inheritance.
-	if spec.InheritParentMiddlewares {
+	// Apply middleware inheritance when parent config is available.
+	if spec.InheritParentMiddlewares && parentCfg != nil {
 		subCfg.Middlewares = m.inheritedMiddlewares(parentCfg, spec.ExcludedParentMiddlewareNames)
 	}
 	// Append sub-agent's own middlewares.
