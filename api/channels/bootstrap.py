@@ -127,6 +127,15 @@ def _make_chat_handler(ch):
         e, dia = DialogService.get_by_id(cc.chat_id)
         if not e:
             LOGGER.warning("[%s:%s] connected dialog not found: %s", ch.channel_id, ch.account_id, cc.chat_id)
+            try:
+                ChatChannelService.update_by_id(ch.account_id, {"chat_id": None})
+            except Exception as ex:
+                LOGGER.warning(
+                    "[%s:%s] failed to clear stale dialog binding: %s",
+                    ch.channel_id,
+                    ch.account_id,
+                    ex,
+                )
             return
 
         conv = ConversationService.get_or_create_for_channel(cc.chat_id, ch.account_id, msg.chat_id)
