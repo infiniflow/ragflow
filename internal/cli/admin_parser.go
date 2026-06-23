@@ -848,17 +848,22 @@ func (p *Parser) parseCommonShowPoolModel() (*Command, error) {
 
 // endregion SHOW commands
 
-// parseAdminCheck
+// CHECK LICENSE
+// CHECK PROVIDER 'provider_name' REGION 'region_name' KEY 'api_key' [URL 'base_url'];
+// CHECK PROVIDER 'provider_name' INSTANCE 'instance_name';
 func (p *Parser) parseAdminCheck() (*Command, error) {
 	p.nextToken() // consume CHECK
 	switch p.curToken.Type {
 	case TokenLicense:
 		return p.parseAdminCheckLicense()
+	case TokenProvider:
+		return p.parseAdminCheckProvider()
 	default:
 		return nil, fmt.Errorf("unknown CHECK target: %s", p.curToken.Value)
 	}
 }
 
+// CHECK LICENSE;
 func (p *Parser) parseAdminCheckLicense() (*Command, error) {
 	p.nextToken() // consume LICENSE
 	cmd := NewCommand("admin_check_license")
@@ -867,6 +872,90 @@ func (p *Parser) parseAdminCheckLicense() (*Command, error) {
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
+	return cmd, nil
+}
+
+// CHECK PROVIDER 'provider_name' REGION 'region_name' KEY 'api_key' [URL 'base_url'];
+// CHECK PROVIDER 'provider_name' INSTANCE 'instance_name';
+func (p *Parser) parseAdminCheckProvider() (*Command, error) {
+	if p.curToken.Type != TokenProvider {
+		return nil, fmt.Errorf("expected PROVIDER after CHECK")
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenQuotedString {
+		return nil, fmt.Errorf("expected provider name after PROVIDER")
+	}
+	providerName := p.curToken.Value
+	p.nextToken()
+
+	if p.curToken.Type == TokenInstance {
+		return p.parseAdminCheckProviderInstance(providerName)
+	}
+
+	if p.curToken.Type != TokenRegion {
+		return nil, fmt.Errorf("expected REGION after provider name")
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenQuotedString {
+		return nil, fmt.Errorf("expected region name after REGION")
+	}
+	regionName := p.curToken.Value
+	p.nextToken()
+
+	if p.curToken.Type != TokenKey {
+		return nil, fmt.Errorf("expected KEY after region name")
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenQuotedString {
+		return nil, fmt.Errorf("expected API key after KEY")
+	}
+	apiKey := p.curToken.Value
+	p.nextToken()
+
+	baseURL := ""
+	if p.curToken.Type == TokenURL {
+		p.nextToken()
+		if p.curToken.Type != TokenQuotedString {
+			return nil, fmt.Errorf("expected base URL after URL")
+		}
+		baseURL = p.curToken.Value
+		p.nextToken()
+	}
+
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	if p.curToken.Type != TokenEOF {
+		return nil, fmt.Errorf("unexpected token: %s", p.curToken.Value)
+	}
+
+	cmd := NewCommand("admin_check_provider_with_key")
+	cmd.Params["provider_name"] = providerName
+	cmd.Params["region"] = regionName
+	cmd.Params["api_key"] = apiKey
+	if baseURL != "" {
+		cmd.Params["base_url"] = baseURL
+	}
+
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminCheckProviderInstance(providerName string) (*Command, error) {
+	if p.curToken.Type != TokenInstance {
+		return nil, fmt.Errorf("expected PROVIDER after CHECK")
+	}
+	p.nextToken()
+
+	instanceName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	cmd := NewCommand("admin_check_provider_instance")
+	cmd.Params["provider_name"] = providerName
+	cmd.Params["instance_name"] = instanceName
 	return cmd, nil
 }
 

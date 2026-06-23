@@ -230,6 +230,29 @@ func (s *Service) ShowProviderInstanceBalance(userID, providerName, instanceName
 	}, nil
 }
 
+// CheckInstanceConnection check instance connection
+func (s *Service) CheckInstanceConnection(userID, providerName, instanceName string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":       "check_instance_connection",
+		"user_id":       userID,
+		"provider_id":   providerName,
+		"instance_name": instanceName,
+		"error":         "'check instance connection' is implemented in enterprise edition",
+	}, nil
+}
+
+// CheckProviderConnection check provider connection
+func (s *Service) CheckProviderConnection(userID, providerName, region, apiKey, baseURL string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":     "check_provider_connection",
+		"user_id":     userID,
+		"provider_id": providerName,
+		"region":      region,
+		"api_key":     apiKey,
+		"base_url":    baseURL,
+	}, nil
+}
+
 // AddModelInstance Add model instance
 func (s *Service) AddModelInstance(userID, providerName, instanceName string) (map[string]interface{}, error) {
 

@@ -636,6 +636,143 @@ func (c *CLI) CommonShowProviderModelCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+func (c *CLI) CommonCheckProviderWithKey(cmd *Command) (ResponseIf, error) {
+
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok || providerName == "" {
+		return nil, fmt.Errorf("provider name not provided")
+	}
+	region, ok := cmd.Params["region"].(string)
+	if !ok || region == "" {
+		return nil, fmt.Errorf("region not provided")
+	}
+	apiKey, ok := cmd.Params["api_key"].(string)
+	if !ok {
+		return nil, fmt.Errorf("api_key not provided")
+	}
+	baseURL, _ := cmd.Params["base_url"].(string)
+
+	var apiKeyValue interface{}
+	if apiKey != "" {
+		apiKeyValue = apiKey
+	} else {
+		apiKeyValue = nil
+	}
+
+	payload := map[string]interface{}{
+		"region":  region,
+		"api_key": apiKeyValue,
+	}
+	if baseURL != "" {
+		payload["base_url"] = baseURL
+	}
+
+	var resp *Response
+	var err error
+	var endPoint string
+	switch c.Config.CLIMode {
+	case AdminMode:
+		endPoint = fmt.Sprintf("/admin/providers/%s/connection", providerName)
+		resp, err = c.AdminServerClient.Request("GET", endPoint, "web", nil, payload)
+	case APIMode:
+		endPoint = fmt.Sprintf("/providers/%s/connection", providerName)
+		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", endPoint, "web", nil, payload)
+	default:
+		return nil, fmt.Errorf("invalid server type")
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to check provider connection with key: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to check provider connection: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	switch c.Config.CLIMode {
+	case AdminMode:
+		var result CommonDataResponse
+		if err = json.Unmarshal(resp.Body, &result); err != nil {
+			return nil, fmt.Errorf("check provider connection failed: invalid JSON (%w)", err)
+		}
+		if result.Code != 0 {
+			return nil, fmt.Errorf("%s", result.Message)
+		}
+		result.Duration = resp.Duration
+		return &result, nil
+	case APIMode:
+		var result SimpleResponse
+		if err = json.Unmarshal(resp.Body, &result); err != nil {
+			return nil, fmt.Errorf("check provider connection failed: invalid JSON (%w)", err)
+		}
+		if result.Code != 0 {
+			return nil, fmt.Errorf("%s", result.Message)
+		}
+		result.Duration = resp.Duration
+		return &result, nil
+	default:
+		return nil, fmt.Errorf("invalid server type")
+	}
+}
+
+func (c *CLI) CommonCheckProviderConnection(cmd *Command) (ResponseIf, error) {
+
+	instanceName, ok := cmd.Params["instance_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("instance name not provided")
+	}
+
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("provider name not provided")
+	}
+
+	var resp *Response
+	var err error
+	var endPoint string
+	switch c.Config.CLIMode {
+	case AdminMode:
+		endPoint = fmt.Sprintf("/admin/providers/%s/instances/%s/connection", providerName, instanceName)
+		resp, err = c.AdminServerClient.Request("GET", endPoint, "web", nil, nil)
+	case APIMode:
+		endPoint = fmt.Sprintf("/providers/%s/instances/%s/connection", providerName, instanceName)
+		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", endPoint, "web", nil, nil)
+	default:
+		return nil, fmt.Errorf("invalid server type")
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to check provider connection: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to check provider connection: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	switch c.Config.CLIMode {
+	case AdminMode:
+		var result CommonDataResponse
+		if err = json.Unmarshal(resp.Body, &result); err != nil {
+			return nil, fmt.Errorf("check provider connection failed: invalid JSON (%w)", err)
+		}
+		if result.Code != 0 {
+			return nil, fmt.Errorf("%s", result.Message)
+		}
+		result.Duration = resp.Duration
+		return &result, nil
+	case APIMode:
+		var result SimpleResponse
+		if err = json.Unmarshal(resp.Body, &result); err != nil {
+			return nil, fmt.Errorf("check provider connection failed: invalid JSON (%w)", err)
+		}
+		if result.Code != 0 {
+			return nil, fmt.Errorf("%s", result.Message)
+		}
+		result.Duration = resp.Duration
+		return &result, nil
+	default:
+		return nil, fmt.Errorf("invalid server type")
+	}
+}
+
 func (c *CLI) SetDefaultModel(cmd *Command) (ResponseIf, error) {
 
 	modelType, ok := cmd.Params["model_type"].(string)

@@ -157,6 +157,10 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.UserShowMessageQueueCommand(cmd)
 	case "admin_check_license":
 		return c.AdminCheckLicenseCommand(cmd)
+	case "admin_check_provider_with_key":
+		return c.CommonCheckProviderWithKey(cmd)
+	case "admin_check_provider_instance":
+		return c.CommonCheckProviderConnection(cmd)
 	case "admin_show_fingerprint":
 		return c.AdminShowFingerprintCommand(cmd)
 	case "admin_show_license":
@@ -380,9 +384,9 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "parse_file_user_command":
 		return c.ParseFileUserCommand(cmd)
 	case "check_provider_connection":
-		return c.CheckProviderConnection(cmd)
+		return c.CommonCheckProviderConnection(cmd)
 	case "check_provider_with_key":
-		return c.CheckProviderWithKey(cmd)
+		return c.CommonCheckProviderWithKey(cmd)
 	case "use_model":
 		return c.UseModel(cmd)
 	case "use_api_server":
