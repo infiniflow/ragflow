@@ -109,13 +109,19 @@ type TenantListItem struct {
 // TenantLLMService tenant LLM service
 // This service handles operations related to tenant-specific LLM configurations
 type TenantLLMService struct {
-	tenantLLMDAO *dao.TenantLLMDAO
+	tenantLLMDAO     *dao.TenantLLMDAO
+	modelProviderDAO *dao.TenantModelProviderDAO
+	modelInstanceDAO *dao.TenantModelInstanceDAO
+	modelDAO         *dao.TenantModelDAO
 }
 
 // NewTenantLLMService creates a new TenantLLMService instance
 func NewTenantLLMService() *TenantLLMService {
 	return &TenantLLMService{
-		tenantLLMDAO: dao.NewTenantLLMDAO(),
+		tenantLLMDAO:     dao.NewTenantLLMDAO(),
+		modelProviderDAO: dao.NewTenantModelProviderDAO(),
+		modelInstanceDAO: dao.NewTenantModelInstanceDAO(),
+		modelDAO:         dao.NewTenantModelDAO(),
 	}
 }
 
@@ -174,6 +180,49 @@ func (s *TenantLLMService) SplitModelNameAndFactory(modelName string) (string, s
 		return strings.Join(arr[0:len(arr)-1], "@"), arr[len(arr)-1]
 	}
 	return arr[0], arr[1]
+}
+
+// GetAPIKeyFromInstance returns the API key for the given composite model name
+// by looking it up in the tenant_model_instance table. compositeModelName is in
+// "model@instance@provider" or "model@provider" format.
+func (s *TenantLLMService) GetAPIKeyFromInstance(tenantID, compositeModelName string) (string, error) {
+	parts := strings.Split(compositeModelName, "@")
+	if len(parts) < 2 {
+		return "", fmt.Errorf("invalid model name format: %s", compositeModelName)
+	}
+
+	var providerName, instanceName string
+	switch len(parts) {
+	case 2:
+		instanceName = "default"
+		providerName = parts[1]
+	case 3:
+		instanceName = parts[1]
+		providerName = parts[2]
+	default:
+		return "", fmt.Errorf("invalid model name format: %s", compositeModelName)
+	}
+
+	provider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return "", fmt.Errorf("provider %q not found: %w", providerName, err)
+	}
+	if provider == nil {
+		return "", fmt.Errorf("provider %q not found", providerName)
+	}
+
+	instance, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	if err != nil {
+		return "", fmt.Errorf("instance %q not found: %w", instanceName, err)
+	}
+	if instance == nil {
+		return "", fmt.Errorf("instance %q not found", instanceName)
+	}
+
+	if instance.APIKey == "" {
+		return "", fmt.Errorf("no API key configured for model %s", compositeModelName)
+	}
+	return instance.APIKey, nil
 }
 
 // EnsureTenantModelIDForParams ensures tenant model IDs are populated for LLM-related parameters
@@ -368,10 +417,6 @@ type ModelItem struct {
 	ModelName     *string `json:"model_name"`
 	ModelType     string  `json:"model_type"`
 	Enable        bool    `json:"enable"`
-}
-
-type DefaultModelResponse struct {
-	Models []ModelItem `json:"models,omitempty"`
 }
 
 // GetDefaultModelName returns the full default model ID for a tenant and model type

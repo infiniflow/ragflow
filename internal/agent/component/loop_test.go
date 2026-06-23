@@ -14,15 +14,16 @@
 //  limitations under the License.
 //
 
-// Package component — Loop unit tests (Phase 2 P2, plan §2.11.3 row 11).
+// Package component — Loop unit tests.
 //
-// LoopComponent is a no-op marker in the new architecture: real loop
-// execution is driven by workflowx.AddLoopNode, installed by
-// canvas.BuildWorkflow when it sees a Loop cpn in the DSL. The tests
-// in this file exercise the contract LoopComponent DOES expose —
-// registry / factory / param parsing / Name / Inputs / Outputs /
-// no-op Invoke / no-op Stream — and confirm the LoopItem / ExitLoop
-// names are gone from the registry.
+// LoopComponent is a no-op marker in the current architecture:
+// real loop execution is driven by workflowx.AddLoopNode,
+// installed by canvas.BuildWorkflow when it sees a Loop cpn in
+// the DSL. The tests in this file exercise the contract
+// LoopComponent DOES expose — registry / factory / param parsing
+// / Name / Inputs / Outputs / no-op Invoke / no-op Stream — and
+// confirm the LoopItem / ExitLoop names are gone from the
+// registry.
 package component
 
 import (
@@ -153,7 +154,7 @@ func TestLoop_ParamAsDict(t *testing.T) {
 		LoopVariables: []map[string]any{
 			{"variable": "x", "input_mode": "constant", "value": 0, "type": "number"},
 		},
-		LogicalOperator:   "and",
+		LogicalOperator:  "and",
 		MaximumLoopCount: 0,
 	}
 	d := p.AsDict()

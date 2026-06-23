@@ -1,5 +1,6 @@
 import message from '@/components/ui/message';
 import { Authorization } from '@/constants/authorization';
+import { ResponseType } from '@/interfaces/database/base';
 import { IReferenceObject } from '@/interfaces/database/chat';
 import { BeginQuery } from '@/pages/agent/interface';
 import { getAuthorization } from '@/utils/authorization-util';
@@ -122,8 +123,30 @@ export const useSendMessageBySSE = (url: string) => {
           body: JSON.stringify(body),
           signal: controller?.signal || sseRef.current?.signal,
         });
-
-        const res = response.clone().json();
+        if (!response.ok) {
+          let errorMessage = response.statusText || 'Request failed';
+          try {
+            const errorBody = (await response
+              .clone()
+              .json()) as Partial<ResponseType>;
+            if (typeof errorBody?.message === 'string' && errorBody.message) {
+              errorMessage = errorBody.message;
+            }
+          } catch {
+            // Non-JSON error body; fall back to the HTTP status text.
+          }
+          setDone(true);
+          resetAnswerList();
+          return {
+            response,
+            data: {
+              code: response.status,
+              data: null,
+              message: errorMessage,
+              status: response.status,
+            },
+          };
+        }
 
         const reader = response?.body
           ?.pipeThrough(new TextDecoderStream())
@@ -142,7 +165,24 @@ export const useSendMessageBySSE = (url: string) => {
                 break;
               }
               try {
-                const val = JSON.parse(value?.data || '');
+                const raw = (value?.data ?? '').trim();
+                // SSE end-of-stream sentinel — no payload, skip without
+                // surfacing a JSON.parse error to the console.
+                if (!raw) {
+                  continue;
+                }
+                // Some upstreams double-wrap the body in a `data:` prefix;
+                // strip one layer so JSON.parse sees a real object.
+                const payload = raw.startsWith('data:')
+                  ? raw.slice(5).trimStart()
+                  : raw;
+                // Check the sentinel after prefix stripping so a
+                // `data: [DONE]` payload is caught and the stream
+                // loop is terminated.
+                if (payload === '[DONE]') {
+                  break;
+                }
+                const val = JSON.parse(payload);
 
                 console.info('data:', val);
                 if (typeof val?.code === 'number' && val.code !== 0) {
@@ -168,7 +208,15 @@ export const useSendMessageBySSE = (url: string) => {
         console.info('done?');
         setDone(true);
         resetAnswerList();
-        return { data: await res, response };
+        return {
+          response,
+          data: {
+            code: 0,
+            data: true,
+            message: 'success',
+            status: response.status,
+          },
+        };
       } catch (e) {
         setDone(true);
         resetAnswerList();

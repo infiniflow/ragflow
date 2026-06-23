@@ -59,8 +59,8 @@ type searxngEnvelope struct {
 	Error   string          `json:"_ERROR,omitempty"`
 }
 
-// SearXNGTool is the Phase 3 batch 2 implementation of the SearXNG
-// meta-search tool (plan §2.11.4 row 16, §5 Phase 3 第 2 批). It calls
+// SearXNGTool is the SearXNG
+// meta-search tool. It calls
 // a self-hosted SearXNG instance via the shared HTTPHelper.
 type SearXNGTool struct {
 	helper *HTTPHelper

@@ -72,8 +72,8 @@ type duckduckgoEnvelope struct {
 	Error         string               `json:"_ERROR,omitempty"`
 }
 
-// DuckDuckGoTool is the Phase 3 batch 2 implementation of the DuckDuckGo
-// Instant Answer tool (plan §2.11.4 row 6, §5 Phase 3 第 2 批). It
+// DuckDuckGoTool is the DuckDuckGo
+// Instant Answer tool. It
 // performs a GET against the public Instant Answer endpoint using the
 // shared HTTPHelper and returns the abstract + a flat list of related
 // topics.

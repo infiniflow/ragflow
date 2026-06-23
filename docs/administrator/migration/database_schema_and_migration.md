@@ -43,7 +43,7 @@ The [db_schema_sync.py](https://github.com/infiniflow/ragflow/blob/main/tools/sc
 ### Key functions
 
 - **Change detection**: Compares Python model definitions in `api/db/db_models.py` against the live database to identify new tables, added fields, or type mismatches.
-- **Migration generation**: Automatically creates Python migration files (containing `migrate()` and `rollback()` logic) in version-specific directories (e.g., `tools/migrate/v0_26_0/`).
+- **Migration generation**: Automatically creates Python migration files (containing `migrate()` and `rollback()` logic) in version-specific directories (e.g., `tools/migrate/v0_26_1/`).
 - **Schema auditing**: Provides a `--diff` command to view structural discrepancies without applying changes.
 - **Execution management**: Applies pending migrations to the database to bring it up to date with the current software version.
 - **Safety controls**: Prevents accidental data loss by requiring an explicit `--drop` flag to generate `DROP COLUMN` statements for removed fields.

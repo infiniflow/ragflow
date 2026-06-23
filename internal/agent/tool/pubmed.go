@@ -68,8 +68,8 @@ var pubmedESearchEndpoint = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esear
 // as a package var so tests can substitute a httptest.Server URL.
 var pubmedESummaryEndpoint = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
 
-// PubMedTool is the Phase 3 batch 3 implementation of the PubMed
-// search tool (plan §2.11.4 row 13, §5 Phase 3 第 3 批). It uses NCBI
+// PubMedTool is the PubMed
+// search tool. It uses NCBI
 // E-utilities: esearch returns a list of PMIDs, then esummary fetches
 // the full records for those PMIDs.
 type PubMedTool struct {

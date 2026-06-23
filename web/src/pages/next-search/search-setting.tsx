@@ -3,8 +3,10 @@
 import AvatarNameDescription from '@/components/avatar-name-description';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
 import {
+  LLMIdFormField,
+  LlmSettingEnabledSchema,
   LlmSettingFieldItems,
-  LlmSettingSchema,
+  LlmSettingFieldSchema,
 } from '@/components/llm-setting-items/next';
 import {
   MetadataFilter,
@@ -65,10 +67,7 @@ const SearchSettingFormSchema = z
       use_rerank: z.boolean(),
       top_k: z.number(),
       summary: z.boolean(),
-      llm_setting: z.object({
-        ...LlmSettingSchema,
-        parameter: z.string().optional(),
-      }),
+      llm_setting: z.object({ ...LlmSettingFieldSchema, ...LLMIdFormField }),
       related_search: z.boolean(),
       query_mindmap: z.boolean(),
       doc_ids: z.array(z.string()),
@@ -84,6 +83,7 @@ const SearchSettingFormSchema = z
         .optional(),
       ...MetadataFilterSchema,
     }),
+    ...LlmSettingEnabledSchema,
   })
   .superRefine((data, ctx) => {
     if (data.search_config.use_rerank && !data.search_config.rerank_id) {
@@ -144,12 +144,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
           top_p: llm_setting?.top_p || 0,
           frequency_penalty: llm_setting?.frequency_penalty || 0,
           presence_penalty: llm_setting?.presence_penalty || 0,
-          temperatureEnabled: llm_setting?.temperature ? true : false,
-          topPEnabled: llm_setting?.top_p ? true : false,
-          presencePenaltyEnabled: llm_setting?.presence_penalty ? true : false,
-          frequencyPenaltyEnabled: llm_setting?.frequency_penalty
-            ? true
-            : false,
         },
         chat_settingcross_languages: [],
         highlight: false,
@@ -166,6 +160,10 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
               : undefined,
         },
       },
+      temperatureEnabled: llm_setting?.temperature !== undefined,
+      topPEnabled: llm_setting?.top_p !== undefined,
+      presencePenaltyEnabled: llm_setting?.presence_penalty !== undefined,
+      frequencyPenaltyEnabled: llm_setting?.frequency_penalty !== undefined,
     });
   }, [data, search_config, llm_setting, formMethods, descriptionDefaultValue]);
 
@@ -259,7 +257,27 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
   ) => {
     try {
       setFormSubmitLoading(true);
-      const { search_config, ...other_formdata } = formData;
+      const {
+        search_config,
+        temperatureEnabled: _temperatureEnabled,
+        topPEnabled: _topPEnabled,
+        presencePenaltyEnabled: _presencePenaltyEnabled,
+        frequencyPenaltyEnabled: _frequencyPenaltyEnabled,
+        maxTokensEnabled: _maxTokensEnabled,
+        ...other_formdata
+      } = formData as IUpdateSearchProps & {
+        tenant_id: string;
+        temperatureEnabled?: boolean;
+        topPEnabled?: boolean;
+        presencePenaltyEnabled?: boolean;
+        frequencyPenaltyEnabled?: boolean;
+        maxTokensEnabled?: boolean;
+      };
+      void _temperatureEnabled;
+      void _topPEnabled;
+      void _presencePenaltyEnabled;
+      void _frequencyPenaltyEnabled;
+      void _maxTokensEnabled;
       const {
         llm_setting,
         vector_similarity_weight,

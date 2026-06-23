@@ -70,8 +70,8 @@ type tavilyEnvelope struct {
 	Error   string         `json:"_ERROR,omitempty"`
 }
 
-// TavilyTool is the Phase 3 batch 2 implementation of the Tavily search
-// tool (plan §2.11.4 row 17, §5 Phase 3 第 2 批). It POSTs a search request
+// TavilyTool is the Tavily search
+// tool. It POSTs a search request
 // to https://api.tavily.com/search using the shared HTTPHelper and returns
 // the upstream `results` array as JSON.
 type TavilyTool struct {

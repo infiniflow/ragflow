@@ -33,7 +33,7 @@ import threading
 LOGGER = logging.getLogger(__name__)
 
 # Channel packages bundled under api/channels that self-register on import.
-_BUNDLED_CHANNELS = ("feishu", "discord", "telegram", "line", "wecom")
+_BUNDLED_CHANNELS = ("feishu", "discord", "telegram", "line", "wecom", "qqbot", "dingtalk")
 
 # How often (seconds) to reconcile running channels against the database.
 _RECONCILE_INTERVAL_SECS = 10
@@ -107,7 +107,7 @@ def _make_chat_handler(ch):
 
         # account_id == chat_channel.id; re-read so a re-connected dialog applies live.
         e, cc = ChatChannelService.get_by_id(ch.account_id)
-        if not e or not cc.dialog_id:
+        if not e or not cc.chat_id:
             LOGGER.info(
                 "[%s:%s] no dialog connected; ignoring message",
                 ch.channel_id,
@@ -115,12 +115,12 @@ def _make_chat_handler(ch):
             )
             return
 
-        e, dia = DialogService.get_by_id(cc.dialog_id)
+        e, dia = DialogService.get_by_id(cc.chat_id)
         if not e:
-            LOGGER.warning("[%s:%s] connected dialog not found: %s", ch.channel_id, ch.account_id, cc.dialog_id)
+            LOGGER.warning("[%s:%s] connected dialog not found: %s", ch.channel_id, ch.account_id, cc.chat_id)
             return
 
-        conv = ConversationService.get_or_create_for_channel(cc.dialog_id, ch.account_id, msg.chat_id)
+        conv = ConversationService.get_or_create_for_channel(cc.chat_id, ch.account_id, msg.chat_id)
         if conv is None:
             LOGGER.warning("[%s:%s] failed to get conversation for chat %s", ch.channel_id, ch.account_id, msg.chat_id)
             return

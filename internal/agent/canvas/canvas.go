@@ -1,6 +1,4 @@
 // Package canvas implements the RAGFlow agent canvas Go port.
-// See plan: .claude/plans/agent-go-port.md §2.5 (State + Workflow hybrid),
-// §2.6 (Redis-backed CheckPointStore + RunTracker), §4.2 (CanvasState shape).
 //
 // Shared runtime contracts (CanvasState, Component, ComponentFactory,
 // state context plumbing, template helpers) live in
@@ -44,19 +42,22 @@ func NewCanvasState(runID, taskID string) *CanvasState {
 // Canvas is the in-memory DSL representation loaded from a user_canvas row.
 // It is the input to compile.go which builds the eino Workflow.
 type Canvas struct {
-	Version    int                        `json:"version"`
 	Components map[string]CanvasComponent `json:"components"`
 	Path       []string                   `json:"path"`
 	History    []map[string]any           `json:"history,omitempty"`
 	Retrieval  map[string]any             `json:"retrieval,omitempty"`
 	Globals    map[string]any             `json:"globals,omitempty"`
+	// NodeParents preserves the front-end graph's grouping metadata
+	// (graph.nodes[*].parentId) for runtime-only subgraph expansion.
+	// The backend treats the incoming DSL as read-only; this is a
+	// decoder-side mirror used only to decide which nodes belong to a
+	// Loop / Parallel body during compilation.
+	NodeParents map[string]string `json:"-"`
 }
 
-// CanvasComponent is the v1-shape component node (Phase 1 uses v1; v2 lands
-// in Phase 2.5 per plan §2.5.3 and §5).
-//
-// The Obj.ComponentName matches agent/component/<name>.py's class name
-// (case-insensitive per dsl-v1-corner-cases.md §13).
+// CanvasComponent is the in-memory DSL node. The Obj.ComponentName
+// matches agent/component/<name>.py's class name (case-insensitive,
+// per Python v1 DSL semantics).
 type CanvasComponent struct {
 	Obj        CanvasComponentObj `json:"obj"`
 	Downstream []string           `json:"downstream"`

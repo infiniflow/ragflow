@@ -57,6 +57,7 @@ export default {
       add: '添加',
       remove: '移除',
       search: '搜索',
+      reset: '重置',
       noDataFound: '没有找到数据。',
       noData: '暂无数据',
       bedrockCredentialsHint:
@@ -1225,6 +1226,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       chatChannelDesc: {
         clickclack: '连接 ClickClack 机器人',
         discord: '连接 Discord 机器人',
+        dingtalk: '连接钉钉机器人',
         feishu: '连接飞书 / Lark 机器人',
         googlechat: '连接 Google Chat 机器人',
         irc: '连接 IRC 服务器',

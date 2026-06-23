@@ -61,8 +61,8 @@ type wikipediaEnvelope struct {
 	Error   string            `json:"_ERROR,omitempty"`
 }
 
-// WikipediaTool is the Phase 3 batch 2 implementation of the Wikipedia
-// search tool (plan §2.11.4 row 20, §5 Phase 3 第 2 批). It calls the
+// WikipediaTool is the Wikipedia
+// search tool. It calls the
 // public MediaWiki action API via the shared HTTPHelper and returns the
 // top N matches for the query.
 type WikipediaTool struct {

@@ -53,9 +53,10 @@ func TestAgentRoutes_AllElevenRegistered(t *testing.T) {
 		{http.MethodGet, "/api/v1/agents/abc/versions"},
 		{http.MethodGet, "/api/v1/agents/abc/versions/v1"},
 		{http.MethodDelete, "/api/v1/agents/abc/versions/v1"},
+		{http.MethodPost, "/api/v1/agents/abc/reset"},
 	}
-	if len(cases) != 11 {
-		t.Fatalf("expected 11 routes, listed %d", len(cases))
+	if len(cases) != 12 {
+		t.Fatalf("expected 12 routes, listed %d", len(cases))
 	}
 	for _, c := range cases {
 		w := httptest.NewRecorder()

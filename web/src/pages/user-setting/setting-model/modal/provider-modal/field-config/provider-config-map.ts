@@ -725,7 +725,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       {
         name: 'paddleocr_api_url',
         label: 'paddleocrApiUrl',
-        type: FormFieldType.Text,
+        type: 'inputSelect',
         required: true,
         placeholder: 'paddleocrApiUrlPlaceholder',
         validation: { message: 'paddleocrApiUrlMessage' },

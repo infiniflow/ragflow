@@ -33,6 +33,8 @@ type Router struct {
 	chunkHandler         *handler.ChunkHandler
 	llmHandler           *handler.LLMHandler
 	chatHandler          *handler.ChatHandler
+	chatChannelHandler   *handler.ChatChannelHandler
+	openaiChatHandler    *handler.OpenAIChatHandler
 	chatSessionHandler   *handler.ChatSessionHandler
 	connectorHandler     *handler.ConnectorHandler
 	searchHandler        *handler.SearchHandler
@@ -62,6 +64,7 @@ func NewRouter(
 	chunkHandler *handler.ChunkHandler,
 	llmHandler *handler.LLMHandler,
 	chatHandler *handler.ChatHandler,
+	chatChannelHandler *handler.ChatChannelHandler,
 	chatSessionHandler *handler.ChatSessionHandler,
 	connectorHandler *handler.ConnectorHandler,
 	searchHandler *handler.SearchHandler,
@@ -77,6 +80,7 @@ func NewRouter(
 	modelHandler *handler.ModelHandler,
 	fileCommitHandler *handler.FileCommitHandler,
 	adminRuntimeHandler *handler.AdminRuntimeHandler,
+	openaiChatHandler *handler.OpenAIChatHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -89,6 +93,8 @@ func NewRouter(
 		chunkHandler:         chunkHandler,
 		llmHandler:           llmHandler,
 		chatHandler:          chatHandler,
+		chatChannelHandler:   chatChannelHandler,
+		openaiChatHandler:    openaiChatHandler,
 		chatSessionHandler:   chatSessionHandler,
 		connectorHandler:     connectorHandler,
 		searchHandler:        searchHandler,
@@ -139,6 +145,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.GET("/system/config", r.systemHandler.GetConfig)
 		apiNoAuth.GET("/system/version", r.systemHandler.GetVersion)
 		apiNoAuth.GET("/system/healthz", r.systemHandler.Healthz)
+
+		// searchbots
+		apiNoAuth.GET("/searchbots/detail", r.searchBotHandler.SearchbotDetail)
 
 		// User login channels endpoint
 		apiNoAuth.GET("/auth/login/channels", r.userHandler.GetLoginChannels)
@@ -238,8 +247,16 @@ func (r *Router) Setup(engine *gin.Engine) {
 			chats := v1.Group("/chats")
 			{
 				chats.GET("", r.chatHandler.ListChats)
+				chats.DELETE("", r.chatHandler.BulkDeleteChats)
+				chats.DELETE("/:chat_id", r.chatHandler.DeleteChat)
 				chats.GET("/:chat_id", r.chatHandler.GetChat)
 				chats.GET("/:chat_id/sessions", r.chatSessionHandler.ListChatSessions)
+			}
+
+			// OpenAI-compatible chat completions route
+			openai := v1.Group("/openai")
+			{
+				openai.POST("/:chat_id/chat/completions", r.openaiChatHandler.OpenAIChatCompletions)
 			}
 
 			// Searchbot routes
@@ -252,8 +269,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				datasets.GET("", r.datasetsHandler.ListDatasets)
 				datasets.GET("/:dataset_id", r.datasetsHandler.GetDataset)
+				datasets.PUT("/:dataset_id", r.datasetsHandler.UpdateDataset)
 				datasets.GET("/:dataset_id/graph", r.datasetsHandler.GetKnowledgeGraph)
 				datasets.DELETE("/:dataset_id/tags", r.datasetsHandler.RemoveTags)
+				datasets.GET("/:dataset_id/index", r.datasetsHandler.TraceIndex)
+				datasets.POST("/:dataset_id/index", r.datasetsHandler.RunIndex)
 				datasets.DELETE("/:dataset_id/graph", r.datasetsHandler.DeleteKnowledgeGraph)
 				datasets.POST("", r.datasetsHandler.CreateDataset)
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
@@ -273,10 +293,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 				// Dataset documents
 				datasets.GET("/:dataset_id/documents", r.documentHandler.ListDocuments)
 				datasets.GET("/:dataset_id/documents/:document_id", r.documentHandler.DownloadDocument)
+				datasets.PATCH("/:dataset_id/documents/:document_id", r.documentHandler.UpdateDatasetDocument)
 				datasets.DELETE("/:dataset_id/documents", r.documentHandler.DeleteDocuments)
 
 				// Dataset document chunk
 				datasets.GET("/:dataset_id/documents/:document_id/chunks/:chunk_id", r.chunkHandler.Get)
+				datasets.POST("/:dataset_id/chunks", r.chunkHandler.Parse)
 				datasets.POST("/:dataset_id/documents/parse", r.documentHandler.StartIngestionTask)
 				datasets.GET("/ingestion/tasks", r.documentHandler.ListIngestionTasks)
 				datasets.PUT("/ingestion/tasks", r.documentHandler.StopIngestionTasks)
@@ -323,34 +345,32 @@ func (r *Router) Setup(engine *gin.Engine) {
 				commitFolders.GET("/:folder_id/changes", r.fileCommitHandler.GetUncommittedChanges)
 			}
 
-		// /workspace/{workspace_id}/commits — alias for /folders/ (workspace_id == folder_id)
-		commitWorkspace := v1.Group("/workspace")
-		{
-			commitWorkspace.POST("/:folder_id/commits", r.fileCommitHandler.CreateCommit)
-			commitWorkspace.GET("/:folder_id/commits", r.fileCommitHandler.ListCommits)
-			commitWorkspace.GET("/:folder_id/commits/diff", r.fileCommitHandler.DiffCommits)
-			commitWorkspace.GET("/:folder_id/commits/:commit_id", r.fileCommitHandler.GetCommit)
-			commitWorkspace.GET("/:folder_id/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
-			commitWorkspace.GET("/:folder_id/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
-			commitWorkspace.GET("/:folder_id/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
-			commitWorkspace.GET("/:folder_id/changes", r.fileCommitHandler.GetUncommittedChanges)
-		}
+			// /workspace/{workspace_id}/commits — alias for /folders/ (workspace_id == folder_id)
+			commitWorkspace := v1.Group("/workspace")
+			{
+				commitWorkspace.POST("/:folder_id/commits", r.fileCommitHandler.CreateCommit)
+				commitWorkspace.GET("/:folder_id/commits", r.fileCommitHandler.ListCommits)
+				commitWorkspace.GET("/:folder_id/commits/diff", r.fileCommitHandler.DiffCommits)
+				commitWorkspace.GET("/:folder_id/commits/:commit_id", r.fileCommitHandler.GetCommit)
+				commitWorkspace.GET("/:folder_id/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
+				commitWorkspace.GET("/:folder_id/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
+				commitWorkspace.GET("/:folder_id/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
+				commitWorkspace.GET("/:folder_id/changes", r.fileCommitHandler.GetUncommittedChanges)
+			}
 
-		// /datasets/{dataset_id}/commits — resolve dataset_id → folder_id via middleware
-		commitDatasets := v1.Group("/datasets/:dataset_id")
-		commitDatasets.Use(handler.CommitFolderResolver(r.fileCommitHandler, "datasets", "dataset_id"))
-		{
-			commitDatasets.POST("/commits", r.fileCommitHandler.CreateCommit)
-			commitDatasets.GET("/commits", r.fileCommitHandler.ListCommits)
-			commitDatasets.GET("/commits/diff", r.fileCommitHandler.DiffCommits)
-			commitDatasets.GET("/commits/:commit_id", r.fileCommitHandler.GetCommit)
-			commitDatasets.GET("/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
-			commitDatasets.GET("/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
-			commitDatasets.GET("/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
-			commitDatasets.GET("/changes", r.fileCommitHandler.GetUncommittedChanges)
-		}
-
-
+			// /datasets/{dataset_id}/commits — resolve dataset_id → folder_id via middleware
+			commitDatasets := v1.Group("/datasets/:dataset_id")
+			commitDatasets.Use(handler.CommitFolderResolver(r.fileCommitHandler, "datasets", "dataset_id"))
+			{
+				commitDatasets.POST("/commits", r.fileCommitHandler.CreateCommit)
+				commitDatasets.GET("/commits", r.fileCommitHandler.ListCommits)
+				commitDatasets.GET("/commits/diff", r.fileCommitHandler.DiffCommits)
+				commitDatasets.GET("/commits/:commit_id", r.fileCommitHandler.GetCommit)
+				commitDatasets.GET("/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
+				commitDatasets.GET("/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
+				commitDatasets.GET("/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
+				commitDatasets.GET("/changes", r.fileCommitHandler.GetUncommittedChanges)
+			}
 
 			// Author routes
 			authors := v1.Group("/authors")
@@ -373,6 +393,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			message := v1.Group("/messages")
 			{
 				message.DELETE("/:memory_message", r.memoryHandler.ForgetMessage)
+				message.PUT("/:memory_message", r.memoryHandler.UpdateMessage)
 			}
 
 			// Skill search routes
@@ -499,6 +520,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				mcp.POST("/servers", r.mcpHandler.CreateMCPServer)
 				mcp.GET("/servers", r.mcpHandler.ListMCPServers)
+				mcp.GET("/servers/:mcp_id", r.mcpHandler.GetMCPServer)
 				mcp.PUT("/servers/:mcp_id", r.mcpHandler.UpdateMCPServer)
 				mcp.DELETE("/servers/:mcp_id", r.mcpHandler.DeleteMCPServer)
 				mcp.POST("/servers/import", r.mcpHandler.ImportMCPServers)
@@ -592,6 +614,16 @@ func (r *Router) Setup(engine *gin.Engine) {
 			chat.POST("/next", r.chatHandler.ListChatsNext)
 			chat.POST("/set", r.chatHandler.SetDialog)
 			chat.POST("/rm", r.chatHandler.RemoveChats)
+		}
+
+		// Chat Channel
+		chanChannel := v1.Group("/chat-channels")
+		{
+			chanChannel.POST("", r.chatChannelHandler.CreateChatChannel)
+			chanChannel.GET("", r.chatChannelHandler.ListChatChannel)
+			chanChannel.GET("/:channel_id", r.chatChannelHandler.GetChatChannel)
+			chanChannel.PATCH("/:channel_id", r.chatChannelHandler.UpdateChatChannel)
+			chanChannel.DELETE("/:channel_id", r.chatChannelHandler.DeleteChatChannel)
 		}
 
 		// Chat session (conversation) routes

@@ -59,6 +59,7 @@ type documentServiceIface interface {
 	GetDocumentArtifact(filename string) (*service.ArtifactResponse, error)
 	GetDocumentPreview(docID string) (*service.DocumentPreview, error)
 	DownloadDocument(datasetID, docID string) (*service.DownloadDocumentResp, error)
+	UpdateDatasetDocument(userID, datasetID, documentID string, req *service.UpdateDatasetDocumentRequest, present map[string]bool) (*service.UpdateDatasetDocumentResponse, common.ErrorCode, error)
 	ListIngestionTasks(userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error)
 	IngestDocuments(datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
 	StopIngestionTasks(tasks []string, userID string) ([]*entity.IngestionTask, error)
@@ -1169,5 +1170,55 @@ func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
 		"code":    0,
 		"message": "success",
 		"data":    gin.H{"summary": summary},
+	})
+}
+
+func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := strings.TrimSpace(c.Param("dataset_id"))
+	if datasetID == "" {
+		jsonError(c, common.CodeArgumentError, "dataset_id is required")
+		return
+	}
+	documentID := strings.TrimSpace(c.Param("document_id"))
+	if documentID == "" {
+		jsonError(c, common.CodeArgumentError, "document_id is required")
+		return
+	}
+
+	body, err := c.GetRawData()
+	if err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+	present := make(map[string]bool, len(raw))
+	for key := range raw {
+		present[key] = true
+	}
+	var req service.UpdateDatasetDocumentRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	data, code, err := h.documentService.UpdateDatasetDocument(user.ID, datasetID, documentID, &req, present)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": common.CodeSuccess,
+		"data": data,
 	})
 }

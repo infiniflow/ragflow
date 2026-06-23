@@ -921,6 +921,15 @@ class OpenAI_APIChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
+class Xiaomi(Base):
+    _FACTORY_NAME = "Xiaomi"
+
+    def __init__(self, key, model_name, base_url, **kwargs):
+        if not base_url:
+            base_url = "https://api.xiaomimimo.com/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
 class LeptonAIChat(Base):
     _FACTORY_NAME = "LeptonAI"
 
