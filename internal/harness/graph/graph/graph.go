@@ -1031,6 +1031,12 @@ func inlineGetNextTasks(ctx context.Context, registry *channels.Registry, comple
 								}
 							}
 						}
+					case []string:
+						for _, str := range tv {
+							if _, exists := g.GetNode(str); exists {
+								nextNodes[str] = true
+							}
+						}
 					}
 				}
 			}
