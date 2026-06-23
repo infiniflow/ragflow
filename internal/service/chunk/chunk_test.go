@@ -7,6 +7,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	"ragflow/internal/entity/models"
 	"ragflow/internal/service"
 	"reflect"
 	"strings"
@@ -412,6 +413,222 @@ func TestParseQueuesAndBeginsDocument(t *testing.T) {
 	}
 }
 
+func TestAddChunkSuccess(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	userID, datasetID, documentID := "user-1", "kb-1", "doc-1"
+	insertChunkTestKB(t, datasetID, userID)
+	insertChunkTestDoc(t, documentID, datasetID)
+
+	engine := &addChunkTestEngine{}
+	var incrementTokenNum, incrementChunkNum int64
+	svc := &ChunkService{
+		docEngine:   engine,
+		kbDAO:       dao.NewKnowledgebaseDAO(),
+		documentDAO: dao.NewDocumentDAO(),
+		accessibleFunc: func(datasetIDArg, userIDArg string) bool {
+			return datasetIDArg == datasetID && userIDArg == userID
+		},
+		getKnowledgebaseByIDFunc: func(id string) (*entity.Knowledgebase, error) {
+			return &entity.Knowledgebase{ID: id, TenantID: userID, EmbdID: "embed-1"}, nil
+		},
+		getEmbeddingModelFunc: func(string, string) (*models.EmbeddingModel, error) {
+			driver := &stubEmbeddingDriver{
+				embeddings: []models.EmbeddingData{
+					{Embedding: []float64{1, 2}},
+					{Embedding: []float64{3, 4}},
+				},
+			}
+			modelName := "embed-1"
+			return models.NewEmbeddingModel(driver, &modelName, &models.APIConfig{}, 0), nil
+		},
+		incrementChunkStatsFunc: func(docID, kbID string, tokenNum, chunkNum int64, duration float64) error {
+			if docID != documentID || kbID != datasetID || duration != 0 {
+				t.Fatalf("unexpected increment args doc=%s kb=%s duration=%v", docID, kbID, duration)
+			}
+			incrementTokenNum = tokenNum
+			incrementChunkNum = chunkNum
+			return nil
+		},
+		tokenizeFunc:            func(text string) (string, error) { return text, nil },
+		fineGrainedTokenizeFunc: func(text string) (string, error) { return text + "_fg", nil },
+		numTokensFunc:           func(text string) int { return len(text) },
+	}
+
+	resp, err := svc.AddChunk(&service.AddChunkRequest{
+		DatasetID:         datasetID,
+		DocumentID:        documentID,
+		Content:           "chunk body",
+		ImportantKeywords: []string{"k1"},
+		Questions:         []string{" q1 ", ""},
+		TagKwd:            []string{"tag1"},
+		TagFeas:           map[string]interface{}{"tag1": float64(0.5)},
+	}, userID)
+	if err != nil {
+		t.Fatalf("AddChunk() error = %v", err)
+	}
+	if resp == nil || resp.Chunk == nil {
+		t.Fatalf("expected chunk response, got %#v", resp)
+	}
+	if resp.Chunk["dataset_id"] != datasetID || resp.Chunk["document_id"] != documentID {
+		t.Fatalf("unexpected response chunk: %#v", resp.Chunk)
+	}
+	if resp.Chunk["content"] != "chunk body" {
+		t.Fatalf("content = %v, want chunk body", resp.Chunk["content"])
+	}
+	if incrementChunkNum != 1 {
+		t.Fatalf("increment chunk num = %d, want 1", incrementChunkNum)
+	}
+	if incrementTokenNum <= 0 {
+		t.Fatalf("increment token num = %d, want > 0", incrementTokenNum)
+	}
+	if len(engine.insertedChunks) != 1 {
+		t.Fatalf("inserted chunks = %d, want 1", len(engine.insertedChunks))
+	}
+	inserted := engine.insertedChunks[0]
+	if inserted["doc_id"] != documentID || inserted["kb_id"] != datasetID {
+		t.Fatalf("unexpected inserted chunk: %#v", inserted)
+	}
+	if inserted["img_id"] != nil {
+		t.Fatalf("did not expect image id in inserted chunk: %#v", inserted)
+	}
+	vec, ok := inserted["q_2_vec"].([]float64)
+	if !ok {
+		t.Fatalf("expected q_2_vec []float64, got %T", inserted["q_2_vec"])
+	}
+	if len(vec) != 2 || vec[0] < 2.7999 || vec[0] > 2.8001 || vec[1] < 3.7999 || vec[1] > 3.8001 {
+		t.Fatalf("vector = %v, want approximately [2.8 3.8]", vec)
+	}
+}
+
+func TestAddChunkValidationErrors(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestKB(t, "kb-1", "user-1")
+	insertChunkTestDoc(t, "doc-1", "kb-1")
+
+	svc := &ChunkService{
+		docEngine:   &addChunkTestEngine{},
+		kbDAO:       dao.NewKnowledgebaseDAO(),
+		documentDAO: dao.NewDocumentDAO(),
+	}
+
+	tests := []struct {
+		name    string
+		req     *service.AddChunkRequest
+		setup   func(*ChunkService)
+		wantMsg string
+	}{
+		{
+			name:    "nil request",
+			req:     nil,
+			wantMsg: "invalid request payload",
+		},
+		{
+			name: "empty content",
+			req:  &service.AddChunkRequest{DatasetID: "kb-1", DocumentID: "doc-1", Content: " "},
+			setup: func(svc *ChunkService) {
+				svc.accessibleFunc = func(string, string) bool { return true }
+				svc.getKnowledgebaseByIDFunc = func(string) (*entity.Knowledgebase, error) {
+					return &entity.Knowledgebase{ID: "kb-1", TenantID: "user-1", EmbdID: "embed-1"}, nil
+				}
+			},
+			wantMsg: "`content` is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.setup != nil {
+				tt.setup(svc)
+			}
+			_, err := svc.AddChunk(tt.req, "user-1")
+			if err == nil || !strings.Contains(err.Error(), tt.wantMsg) {
+				t.Fatalf("error = %v, want substring %q", err, tt.wantMsg)
+			}
+		})
+	}
+}
+
+func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	userID, datasetID, documentID := "user-1", "kb-1", "doc-1"
+	insertChunkTestKB(t, datasetID, userID)
+	insertChunkTestDoc(t, documentID, datasetID)
+
+	storeCalls := 0
+	svc := &ChunkService{
+		docEngine:      &addChunkTestEngine{},
+		kbDAO:          dao.NewKnowledgebaseDAO(),
+		documentDAO:    dao.NewDocumentDAO(),
+		accessibleFunc: func(string, string) bool { return true },
+		getKnowledgebaseByIDFunc: func(id string) (*entity.Knowledgebase, error) {
+			return &entity.Knowledgebase{ID: id, TenantID: userID, EmbdID: "embed-1"}, nil
+		},
+		tokenizeFunc:            func(text string) (string, error) { return text, nil },
+		fineGrainedTokenizeFunc: func(text string) (string, error) { return text + "_fg", nil },
+		numTokensFunc:           func(text string) int { return len(text) },
+		getEmbeddingModelFunc: func(string, string) (*models.EmbeddingModel, error) {
+			driver := &stubEmbeddingDriver{
+				embeddings: []models.EmbeddingData{
+					{Embedding: []float64{1, 1}},
+					{Embedding: []float64{1, 1}},
+				},
+			}
+			modelName := "embed-1"
+			return models.NewEmbeddingModel(driver, &modelName, &models.APIConfig{}, 0), nil
+		},
+		incrementChunkStatsFunc: func(string, string, int64, int64, float64) error { return nil },
+		storeChunkImageFunc: func(bucket, chunkID string, imageBinary []byte) error {
+			storeCalls++
+			if bucket != datasetID || chunkID == "" || len(imageBinary) == 0 {
+				t.Fatalf("unexpected store args bucket=%s chunkID=%s len=%d", bucket, chunkID, len(imageBinary))
+			}
+			return nil
+		},
+	}
+
+	_, err := svc.AddChunk(&service.AddChunkRequest{
+		DatasetID:   datasetID,
+		DocumentID:  documentID,
+		Content:     "chunk body",
+		ImageBase64: strPtr("not-base64"),
+	}, userID)
+	if err == nil || !strings.Contains(err.Error(), "Invalid `image_base64`") {
+		t.Fatalf("expected invalid image error, got %v", err)
+	}
+
+	validJPEG := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2pRZ0AAAAASUVORK5CYII="
+
+	resp, err := svc.AddChunk(&service.AddChunkRequest{
+		DatasetID:  datasetID,
+		DocumentID: documentID,
+		Content:    "chunk body",
+		TagFeas:    map[string]interface{}{"tag1": "bad"},
+	}, userID)
+	if err == nil || !strings.Contains(err.Error(), "`tag_feas` values must be finite numbers") || resp != nil {
+		t.Fatalf("expected tag_feas validation error, got resp=%#v err=%v", resp, err)
+	}
+
+	resp, err = svc.AddChunk(&service.AddChunkRequest{
+		DatasetID:   datasetID,
+		DocumentID:  documentID,
+		Content:     "chunk body",
+		TagFeas:     map[string]interface{}{"tag1": float64(1)},
+		ImageBase64: strPtr(validJPEG),
+	}, userID)
+	if err != nil {
+		t.Fatalf("AddChunk() with image error = %v", err)
+	}
+	if storeCalls != 1 {
+		t.Fatalf("store image calls = %d, want 1", storeCalls)
+	}
+	if _, ok := resp.Chunk["image_id"]; !ok {
+		t.Fatalf("expected image_id in response, got %#v", resp.Chunk)
+	}
+}
+
 func setupChunkTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
@@ -618,6 +835,76 @@ func (e *parseTestDocEngine) RunSQL(context.Context, string, string, []string, s
 
 func (e *parseTestDocEngine) GetChunkIDs([]map[string]interface{}) []string {
 	return nil
+}
+
+type addChunkTestEngine struct {
+	parseTestDocEngine
+	insertedChunks []map[string]interface{}
+	insertIndex    string
+	insertDataset  string
+	insertErr      error
+}
+
+func (e *addChunkTestEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, baseName string, datasetID string) ([]string, error) {
+	e.insertedChunks = chunks
+	e.insertIndex = baseName
+	e.insertDataset = datasetID
+	return nil, e.insertErr
+}
+
+type stubEmbeddingDriver struct {
+	embeddings []models.EmbeddingData
+	embedErr   error
+}
+
+func (d *stubEmbeddingDriver) NewInstance(map[string]string) models.ModelDriver { return d }
+func (d *stubEmbeddingDriver) Name() string                                     { return "stub" }
+func (d *stubEmbeddingDriver) ChatWithMessages(string, []models.Message, *models.APIConfig, *models.ChatConfig) (*models.ChatResponse, error) {
+	return nil, nil
+}
+func (d *stubEmbeddingDriver) ChatStreamlyWithSender(string, []models.Message, *models.APIConfig, *models.ChatConfig, func(*string, *string) error) error {
+	return nil
+}
+func (d *stubEmbeddingDriver) Embed(*string, []string, *models.APIConfig, *models.EmbeddingConfig) ([]models.EmbeddingData, error) {
+	return d.embeddings, d.embedErr
+}
+func (d *stubEmbeddingDriver) Rerank(*string, string, []string, *models.APIConfig, *models.RerankConfig) (*models.RerankResponse, error) {
+	return nil, nil
+}
+func (d *stubEmbeddingDriver) TranscribeAudio(*string, *string, *models.APIConfig, *models.ASRConfig) (*models.ASRResponse, error) {
+	return nil, nil
+}
+func (d *stubEmbeddingDriver) TranscribeAudioWithSender(*string, *string, *models.APIConfig, *models.ASRConfig, func(*string, *string) error) error {
+	return nil
+}
+func (d *stubEmbeddingDriver) AudioSpeech(*string, *string, *models.APIConfig, *models.TTSConfig) (*models.TTSResponse, error) {
+	return nil, nil
+}
+func (d *stubEmbeddingDriver) AudioSpeechWithSender(*string, *string, *models.APIConfig, *models.TTSConfig, func(*string, *string) error) error {
+	return nil
+}
+func (d *stubEmbeddingDriver) OCRFile(*string, []byte, *string, *models.APIConfig, *models.OCRConfig) (*models.OCRFileResponse, error) {
+	return nil, nil
+}
+func (d *stubEmbeddingDriver) ParseFile(*string, []byte, *string, *models.APIConfig, *models.ParseFileConfig) (*models.ParseFileResponse, error) {
+	return nil, nil
+}
+func (d *stubEmbeddingDriver) ListModels(*models.APIConfig) ([]models.ListModelResponse, error) {
+	return nil, nil
+}
+func (d *stubEmbeddingDriver) Balance(*models.APIConfig) (map[string]interface{}, error) {
+	return nil, nil
+}
+func (d *stubEmbeddingDriver) CheckConnection(*models.APIConfig) error { return nil }
+func (d *stubEmbeddingDriver) ListTasks(*models.APIConfig) ([]models.ListTaskStatus, error) {
+	return nil, nil
+}
+func (d *stubEmbeddingDriver) ShowTask(string, *models.APIConfig) (*models.TaskResponse, error) {
+	return nil, nil
+}
+
+func strPtr(v string) *string {
+	return &v
 }
 
 func (e *parseTestDocEngine) KNNScores(context.Context, []map[string]interface{}, []float64, int) (map[string]interface{}, error) {

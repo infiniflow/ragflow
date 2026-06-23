@@ -19,6 +19,7 @@ import (
 // Only the methods actually called by the test are set; others panic.
 type mockChunkSvc struct {
 	retrievalTestFn func(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error)
+	addChunkFn      func(req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error)
 }
 
 func (m *mockChunkSvc) RetrievalTest(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
@@ -44,6 +45,12 @@ func (m *mockChunkSvc) RemoveChunks(*service.RemoveChunksRequest, string) (int64
 }
 func (m *mockChunkSvc) Parse(string, string, *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error) {
 	panic("not implemented")
+}
+func (m *mockChunkSvc) AddChunk(req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
+	if m.addChunkFn != nil {
+		return m.addChunkFn(req, userID)
+	}
+	return &service.AddChunkResponse{Chunk: map[string]interface{}{"id": "chunk-1"}}, nil
 }
 
 func setupChunkRetrievalTest(userID string) (*gin.Engine, *mockChunkSvc) {
@@ -291,5 +298,83 @@ func TestChunkRetrieval_ServiceError(t *testing.T) {
 	}
 	if strings.Contains(msg, "db connection refused") {
 		t.Errorf("internal error details leaked to response: %q", msg)
+	}
+}
+
+type addChunkTestError struct {
+	code common.ErrorCode
+	msg  string
+}
+
+func (e addChunkTestError) Error() string          { return e.msg }
+func (e addChunkTestError) Code() common.ErrorCode { return e.code }
+
+func TestChunkHandlerAddChunkSuccess(t *testing.T) {
+	mock := &mockChunkSvc{
+		addChunkFn: func(req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
+			if userID != "user1" {
+				t.Fatalf("userID = %q, want user1", userID)
+			}
+			if req.DatasetID != "kb1" || req.DocumentID != "doc1" || req.Content != "chunk body" {
+				t.Fatalf("unexpected request: %#v", req)
+			}
+			return &service.AddChunkResponse{Chunk: map[string]interface{}{"id": "chunk-1", "content": req.Content}}, nil
+		},
+	}
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("user", &entity.User{ID: "user1"})
+	})
+	h := &ChunkHandler{chunkService: mock}
+	r.POST("/api/v1/datasets/:dataset_id/documents/:document_id/chunks", h.AddChunk)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/datasets/kb1/documents/doc1/chunks", strings.NewReader(`{"content":"chunk body"}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected success code, got %v", resp["code"])
+	}
+}
+
+func TestChunkHandlerAddChunkCodedError(t *testing.T) {
+	mock := &mockChunkSvc{
+		addChunkFn: func(req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
+			return nil, addChunkTestError{code: common.CodeDataError, msg: "`content` is required"}
+		},
+	}
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("user", &entity.User{ID: "user1"})
+	})
+	h := &ChunkHandler{chunkService: mock}
+	r.POST("/api/v1/datasets/:dataset_id/documents/:document_id/chunks", h.AddChunk)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/datasets/kb1/documents/doc1/chunks", strings.NewReader(`{"content":" "}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["code"] != float64(common.CodeDataError) {
+		t.Fatalf("expected data error code, got %v", resp["code"])
 	}
 }

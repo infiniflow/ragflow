@@ -35,6 +35,7 @@ type chunkService interface {
 	UpdateChunk(req *service.UpdateChunkRequest, userID string) error
 	RemoveChunks(req *service.RemoveChunksRequest, userID string) (int64, error)
 	Parse(userID, datasetID string, req *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error)
+	AddChunk(req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error)
 }
 
 // ChunkHandler chunk handler
@@ -497,6 +498,40 @@ func (h *ChunkHandler) RemoveChunks(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"data":    deletedCount,
+		"message": "success",
+	})
+}
+
+func (h *ChunkHandler) AddChunk(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	userID := user.ID
+	datasetID, documentID := strings.TrimSpace(c.Param("dataset_id")), strings.TrimSpace(c.Param("document_id"))
+
+	req := service.AddChunkRequest{}
+	req.DatasetID, req.DocumentID = datasetID, documentID
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+
+	resp, err := h.chunkService.AddChunk(&req, userID)
+	if err != nil {
+		if codedErr, ok := err.(service.ErrorCoder); ok {
+			jsonError(c, codedErr.Code(), codedErr.Error())
+			return
+		}
+		jsonError(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"data":    resp,
 		"message": "success",
 	})
 }
