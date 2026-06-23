@@ -22,14 +22,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/agent/workflowx"
+	"ragflow/internal/common"
 
 	"github.com/cloudwego/eino/compose"
+	"go.uber.org/zap"
 )
 
 // ctxKey is the unexported context-key type for per-run metadata
@@ -233,7 +234,7 @@ func emitEventFromCtx(ctx context.Context, ev RunEvent) {
 // node_started RunEvent. Called from the per-node statePre wrapper.
 // Metadata (message/task/session ids) is read from ctx via RunMeta.
 func nodeStartedAt(ctx context.Context, state *CanvasState, cpnID, componentName, componentType string) {
-	log.Printf("DEBUG node_started: cpnID=%s componentName=%s", cpnID, componentName)
+	common.Debug("node_started", zap.String("cpnID", cpnID), zap.String("componentName", componentName))
 	if state == nil {
 		return
 	}

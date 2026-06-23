@@ -10,10 +10,12 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 
+	"ragflow/internal/common"
 	"ragflow/internal/harness/core/schema"
+
+	"go.uber.org/zap"
 )
 
 // ---- Resume types ----
@@ -236,7 +238,7 @@ func loadCheckpointHMACKey() []byte {
 	if _, err := rand.Read(k); err != nil {
 		panic("failed to generate checkpoint HMAC key: " + err.Error())
 	}
-	log.Printf("WARNING: %s not set — using random per-process key. Checkpoint resume across restarts will fail.", envHMACKey)
+	common.Warn("checkpoint HMAC env not set — using random per-process key; checkpoint resume across restarts will fail", zap.String("env", envHMACKey))
 	return k
 }
 
