@@ -137,18 +137,22 @@ func runParallel(
 	prev, isResume := loadParallelSnapshot(ctx)
 
 	effectiveItems := items
-	totalCount := len(effectiveItems)
-	outputs := make([]interface{}, totalCount)
-	indicesToProcess := make([]int, totalCount)
-	for i := range effectiveItems {
-		indicesToProcess[i] = i
-	}
-	bridgeState := newItemCheckpointStore(nil)
+	var totalCount int
+	outputs := make([]interface{}, 0)
+	indicesToProcess := make([]int, 0)
+	var bridgeState *itemCheckpointStore
 
 	if isResume && prev != nil {
+		// Restore original inputs from saved state for consistency.
+		if len(prev.OriginalInputsJSON) > 0 {
+			var restored []interface{}
+			if err := json.Unmarshal(prev.OriginalInputsJSON, &restored); err == nil {
+				effectiveItems = restored
+			}
+		}
 		totalCount = prev.TotalCount
 		outputs = make([]interface{}, totalCount)
-		// Replay completed results.
+		// Replay ALL completed results from ALL prior attempts.
 		for idx, v := range prev.CompletedResults {
 			if idx >= 0 && idx < totalCount {
 				outputs[idx] = v
@@ -157,6 +161,14 @@ func runParallel(
 		// Only re-process interrupted indices.
 		indicesToProcess = append([]int(nil), prev.InterruptedIndices...)
 		bridgeState = newItemCheckpointStore(prev.ItemCheckpoints)
+	} else {
+		totalCount = len(effectiveItems)
+		outputs = make([]interface{}, totalCount)
+		indicesToProcess = make([]int, totalCount)
+		for i := range effectiveItems {
+			indicesToProcess[i] = i
+		}
+		bridgeState = newItemCheckpointStore(nil)
 	}
 
 	if len(indicesToProcess) == 0 {
@@ -192,6 +204,16 @@ func runParallel(
 	}
 
 	if hasInterrupt {
+		// Merge completed results from previous attempts so they
+		// are not lost on repeated interrupt/resume cycles.
+		if isResume && prev != nil {
+			for idx, v := range prev.CompletedResults {
+				if _, exists := completedResults[idx]; !exists {
+					completedResults[idx] = v
+				}
+			}
+		}
+
 		inputsJSON, jErr := json.Marshal(effectiveItems)
 		if jErr != nil {
 			return nil, fmt.Errorf("graph: parallel marshal inputs: %w", jErr)
@@ -209,10 +231,13 @@ func runParallel(
 			TotalCount:         totalCount,
 			ItemCheckpoints:    bridgeState.snapshot(),
 		}
-		// Pass state directly — the checkpoint engine serializes
-		// interrupt values when persisting. Avoid double-serialization
-		// by not marshalling here.
-		_, interruptErr := interrupt.Interrupt(ctx, state)
+		// Marshal to JSON bytes so MustExtractInterruptContexts and
+		// loadParallelSnapshot can decode the value on resume.
+		stateJSON, jErr2 := json.Marshal(state)
+		if jErr2 != nil {
+			return nil, fmt.Errorf("graph: parallel marshal state: %w", jErr2)
+		}
+		_, interruptErr := interrupt.Interrupt(ctx, stateJSON)
 		return nil, interruptErr
 	}
 
