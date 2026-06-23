@@ -37,23 +37,30 @@ type Config = TypedConfig[*schema.Message]
 
 type middleware[M core.MessageType] struct {
 	core.BaseMiddleware[M]
-	cfg *TypedConfig[M]
-	mu  sync.Mutex
+	cfg        *TypedConfig[M]
+	mu         sync.Mutex
 	keyCounter int
 }
 
 func NewTyped[M core.MessageType](cfg *TypedConfig[M]) core.TypedReActMiddleware[M] {
-	if cfg == nil { cfg = &TypedConfig[M]{} }
-	if cfg.MaxToolOutputLen <= 0 { cfg.MaxToolOutputLen = 2000 }
-	if cfg.MaxToolCalls <= 0 { cfg.MaxToolCalls = 20 }
-	if cfg.MaxTokensForClear <= 0 { cfg.MaxTokensForClear = 100000 }
+	if cfg == nil {
+		cfg = &TypedConfig[M]{}
+	}
+	if cfg.MaxToolOutputLen <= 0 {
+		cfg.MaxToolOutputLen = 2000
+	}
+	if cfg.MaxToolCalls <= 0 {
+		cfg.MaxToolCalls = 20
+	}
+	if cfg.MaxTokensForClear <= 0 {
+		cfg.MaxTokensForClear = 100000
+	}
 	return &middleware[M]{cfg: cfg}
 }
 
 func New(cfg *Config) core.TypedReActMiddleware[*schema.Message] {
 	return NewTyped[*schema.Message](cfg)
 }
-
 
 // ---- Clear Phase (BeforeModelRewrite) ----
 
@@ -76,7 +83,9 @@ func (mw *middleware[M]) truncateToolOutputs(state *core.TypedReActAgentState[M]
 	toolCount := 0
 	for i, msg := range state.Messages {
 		m, ok := any(msg).(*schema.Message)
-		if !ok || m == nil || m.Role != schema.RoleTool { continue }
+		if !ok || m == nil || m.Role != schema.RoleTool {
+			continue
+		}
 		toolCount++
 		if mw.cfg.MaxToolCalls > 0 && toolCount > mw.cfg.MaxToolCalls {
 			m.Content = "..."
@@ -94,22 +103,30 @@ func (mw *middleware[M]) truncateToolOutputs(state *core.TypedReActAgentState[M]
 }
 
 func (mw *middleware[M]) clearOldToolCalls(state *core.TypedReActAgentState[M], totalTokens int) {
-	if mw.cfg.ClearAtLeast <= 0 { return }
+	if mw.cfg.ClearAtLeast <= 0 {
+		return
+	}
 	targetTokens := mw.cfg.MaxTokensForClear - mw.cfg.ClearAtLeast
-	if totalTokens <= targetTokens { return }
+	if totalTokens <= targetTokens {
+		return
+	}
 
 	freed := 0
 	toolCount := 0
 	for i, msg := range state.Messages {
 		m, ok := any(msg).(*schema.Message)
-		if !ok || m == nil || m.Role != schema.RoleTool { continue }
+		if !ok || m == nil || m.Role != schema.RoleTool {
+			continue
+		}
 		toolCount++
 		if mw.cfg.MaxToolCalls > 0 && toolCount > mw.cfg.MaxToolCalls {
 			before := len([]rune(m.Content))
 			m.Content = "..."
 			freed += before - 3
 			state.Messages[i] = any(m).(M)
-			if totalTokens-freed <= targetTokens { break }
+			if totalTokens-freed <= targetTokens {
+				break
+			}
 		}
 	}
 }
@@ -131,7 +148,9 @@ func (mw *middleware[M]) estimateTokens(msgs []M) int {
 }
 
 func (mw *middleware[M]) isExcluded(name string) bool {
-	if mw.cfg.ExcludeTools == nil { return false }
+	if mw.cfg.ExcludeTools == nil {
+		return false
+	}
 	return mw.cfg.ExcludeTools[name]
 }
 
@@ -143,6 +162,8 @@ func (mw *middleware[M]) nextKey() int {
 }
 
 func truncateText(s string, maxLen int) string {
-	if len(s) <= maxLen { return s }
+	if len(s) <= maxLen {
+		return s
+	}
 	return s[:maxLen]
 }

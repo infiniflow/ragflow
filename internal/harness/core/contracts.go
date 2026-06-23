@@ -52,9 +52,9 @@ type Tool interface {
 type ToolCapability int
 
 const (
-	ToolCapReadOnly   ToolCapability = iota // Safe to run in parallel
-	ToolCapWritesFiles                       // File mutation, serialize
-	ToolCapExecutesCode                      // Code execution, serialize
+	ToolCapReadOnly     ToolCapability = iota // Safe to run in parallel
+	ToolCapWritesFiles                        // File mutation, serialize
+	ToolCapExecutesCode                       // Code execution, serialize
 	ToolCapNetwork                            // Network access, serialize
 )
 
@@ -88,17 +88,19 @@ type ToolInfoProvider interface {
 
 // BaseTool provides a simple Tool implementation from a function.
 type BaseTool struct {
-	name    string
-	desc    string
+	name     string
+	desc     string
 	invokeFn func(ctx context.Context, args string) (string, error)
 }
 
 func NewBaseTool(name, desc string, fn func(ctx context.Context, args string) (string, error)) *BaseTool {
 	return &BaseTool{name: name, desc: desc, invokeFn: fn}
 }
-func (t *BaseTool) Name() string                                                 { return t.name }
-func (t *BaseTool) Description() string                                           { return t.desc }
-func (t *BaseTool) Invoke(ctx context.Context, args string, opts ...toolOption) (string, error)          { return t.invokeFn(ctx, args) }
+func (t *BaseTool) Name() string        { return t.name }
+func (t *BaseTool) Description() string { return t.desc }
+func (t *BaseTool) Invoke(ctx context.Context, args string, opts ...toolOption) (string, error) {
+	return t.invokeFn(ctx, args)
+}
 func (t *BaseTool) Stream(ctx context.Context, args string, opts ...toolOption) (*schema.StreamReader[string], error) {
 	return schema.StreamReaderFromArray([]string{""}), nil
 }
@@ -152,8 +154,18 @@ type (
 // Embed in custom middlewares to only override needed methods.
 type BaseMiddleware[M MessageType] struct{}
 
-func (b *BaseMiddleware[M]) BeforeAgent(ctx context.Context, rc *ReActAgentContext) (context.Context, *ReActAgentContext, error) { return ctx, rc, nil }
-func (b *BaseMiddleware[M]) AfterAgent(ctx context.Context, state *TypedReActAgentState[M]) (context.Context, error) { return ctx, nil }
-func (b *BaseMiddleware[M]) BeforeModelRewrite(ctx context.Context, state *TypedReActAgentState[M], mc *TypedModelContext[M]) (context.Context, *TypedReActAgentState[M], error) { return ctx, state, nil }
-func (b *BaseMiddleware[M]) AfterModelRewrite(ctx context.Context, state *TypedReActAgentState[M], mc *TypedModelContext[M]) (context.Context, *TypedReActAgentState[M], error) { return ctx, state, nil }
-func (b *BaseMiddleware[M]) WrapModel(_ context.Context, m Model[M], _ *TypedModelContext[M]) (Model[M], error) { return m, nil }
+func (b *BaseMiddleware[M]) BeforeAgent(ctx context.Context, rc *ReActAgentContext) (context.Context, *ReActAgentContext, error) {
+	return ctx, rc, nil
+}
+func (b *BaseMiddleware[M]) AfterAgent(ctx context.Context, state *TypedReActAgentState[M]) (context.Context, error) {
+	return ctx, nil
+}
+func (b *BaseMiddleware[M]) BeforeModelRewrite(ctx context.Context, state *TypedReActAgentState[M], mc *TypedModelContext[M]) (context.Context, *TypedReActAgentState[M], error) {
+	return ctx, state, nil
+}
+func (b *BaseMiddleware[M]) AfterModelRewrite(ctx context.Context, state *TypedReActAgentState[M], mc *TypedModelContext[M]) (context.Context, *TypedReActAgentState[M], error) {
+	return ctx, state, nil
+}
+func (b *BaseMiddleware[M]) WrapModel(_ context.Context, m Model[M], _ *TypedModelContext[M]) (Model[M], error) {
+	return m, nil
+}

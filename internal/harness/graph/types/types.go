@@ -156,9 +156,9 @@ func NewInterrupt(value interface{}, id string) *Interrupt {
 
 // StateUpdate represents an update to the graph state.
 type StateUpdate struct {
-	Values  map[string]interface{}
-	AsNode  string
-	TaskID  string
+	Values map[string]interface{}
+	AsNode string
+	TaskID string
 }
 
 // PregelTask represents a Pregel task.
@@ -184,18 +184,18 @@ type CacheKey struct {
 
 // PregelExecutableTask represents an executable task in Pregel.
 type PregelExecutableTask struct {
-	Name       string
-	Input      interface{}
-	Proc       interface{} // Runnable
-	Writes     [][2]interface{}
-	Config     map[string]interface{}
-	Triggers   []string
+	Name        string
+	Input       interface{}
+	Proc        interface{} // Runnable
+	Writes      [][2]interface{}
+	Config      map[string]interface{}
+	Triggers    []string
 	RetryPolicy []RetryPolicy
-	CacheKey   *CacheKey
-	ID         string
-	Path       []interface{}
-	Writers    []interface{}
-	Subgraphs  []interface{} // PregelProtocol
+	CacheKey    *CacheKey
+	ID          string
+	Path        []interface{}
+	Writers     []interface{}
+	Subgraphs   []interface{} // PregelProtocol
 }
 
 // StateSnapshot is a snapshot of the state of the graph at the beginning of a step.
@@ -290,7 +290,7 @@ func (c *Command) UpdateAsTuples() [][2]interface{} {
 	if c.Update == nil {
 		return nil
 	}
-	
+
 	switch v := c.Update.(type) {
 	case map[string]interface{}:
 		result := make([][2]interface{}, 0, len(v))

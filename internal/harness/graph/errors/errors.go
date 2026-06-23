@@ -73,27 +73,27 @@ func NewErrorContext(code ErrorCode, message string, cause error) *ErrorContext 
 // Error returns the error message with context.
 func (ec *ErrorContext) Error() string {
 	var sb strings.Builder
-	
+
 	sb.WriteString(fmt.Sprintf("[%s] %s", ec.ErrorCode, ec.Message))
-	
+
 	if ec.Cause != nil {
 		sb.WriteString(fmt.Sprintf("\nCaused by: %s", ec.Cause.Error()))
 	}
-	
+
 	if len(ec.StackTrace) > 0 {
 		sb.WriteString("\nStack trace:")
 		for _, frame := range ec.StackTrace {
 			sb.WriteString(fmt.Sprintf("\n  %s", frame))
 		}
 	}
-	
+
 	if len(ec.Metadata) > 0 {
 		sb.WriteString("\nMetadata:")
 		for k, v := range ec.Metadata {
 			sb.WriteString(fmt.Sprintf("\n  %s: %v", k, v))
 		}
 	}
-	
+
 	return sb.String()
 }
 
@@ -145,7 +145,7 @@ func WrapError(err error, code ErrorCode, message string) error {
 	if err == nil {
 		return nil
 	}
-	
+
 	// If it's already an ErrorContext, just add to it
 	if ec, ok := err.(*ErrorContext); ok {
 		return &ErrorContext{
@@ -156,7 +156,7 @@ func WrapError(err error, code ErrorCode, message string) error {
 			Metadata:   make(map[string]interface{}),
 		}
 	}
-	
+
 	return NewErrorContext(code, message, err)
 }
 
@@ -165,12 +165,12 @@ func GetErrorCode(err error) ErrorCode {
 	if err == nil {
 		return ""
 	}
-	
+
 	// Check for ErrorContext
 	if ec, ok := err.(*ErrorContext); ok {
 		return ec.ErrorCode
 	}
-	
+
 	// Check for specific error types
 	if IsGraphRecursionError(err) {
 		return ErrorCodeGraphRecursionLimit
@@ -181,7 +181,7 @@ func GetErrorCode(err error) ErrorCode {
 	if IsParentCommand(err) {
 		return ErrorCodeInvalidConcurrentGraphUpdate
 	}
-	
+
 	return ""
 }
 
@@ -190,11 +190,11 @@ func GetErrorStack(err error) []string {
 	if err == nil {
 		return nil
 	}
-	
+
 	if ec, ok := err.(*ErrorContext); ok {
 		return ec.StackTrace
 	}
-	
+
 	return nil
 }
 
@@ -203,25 +203,25 @@ func FormatError(err error) string {
 	if err == nil {
 		return ""
 	}
-	
+
 	var sb strings.Builder
-	
+
 	current := err
 	depth := 0
 	for current != nil && depth < 10 { // Prevent infinite loops
 		prefix := strings.Repeat("  ", depth)
 		sb.WriteString(fmt.Sprintf("%s%s\n", prefix, current.Error()))
-		
+
 		// Check for wrapped error
 		if unwrapped := fmt.Sprintf("%v", err); unwrapped != current.Error() {
 			current = fmt.Errorf("%s", unwrapped)
 		} else {
 			current = nil
 		}
-		
+
 		depth++
 	}
-	
+
 	return sb.String()
 }
 
@@ -230,11 +230,11 @@ func ChainError(base error, newErr error) error {
 	if newErr == nil {
 		return base
 	}
-	
+
 	if base == nil {
 		return newErr
 	}
-	
+
 	return fmt.Errorf("%s: %w", newErr, base)
 }
 
