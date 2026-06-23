@@ -1502,6 +1502,77 @@ func TestBatchUpdateDocumentMetadatasDeletesEmptyMetadataAndNoOps(t *testing.T) 
 	}
 }
 
+func TestBatchUpdateDocumentMetadatasNormalizesNumberValues(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc1.txt", 0, 0)
+
+	engine := newMetadataDocEngine(map[string]map[string]interface{}{}, map[string]string{"doc-1": "kb-1"})
+
+	svc := testDocumentService(t)
+	svc.docEngine = engine
+	svc.metadataSvc = &MetadataService{kbDAO: dao.NewKnowledgebaseDAO(), docEngine: engine}
+
+	resp, code, err := svc.BatchUpdateDocumentMetadatas("kb-1", &DocumentMetadataSelector{
+		DocumentIDs: []string{"doc-1"},
+	}, []DocumentMetadataUpdate{
+		{Key: "score", Value: "42", ValueType: "number"},
+	}, nil)
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("number batch failed: code=%v err=%v", code, err)
+	}
+	if resp.Updated != 1 || resp.MatchedDocs != 1 {
+		t.Fatalf("resp = %#v, want updated=1 matched=1", resp)
+	}
+
+	got := engine.records["doc-1"]["score"]
+	switch v := got.(type) {
+	case int64:
+		if v != 42 {
+			t.Fatalf("score = %v, want 42", v)
+		}
+	case float64:
+		if v != 42 {
+			t.Fatalf("score = %v, want 42", v)
+		}
+	default:
+		t.Fatalf("score type = %T, want numeric value", got)
+	}
+}
+
+func TestAggregateMetadataIgnoresNestedEmptyLists(t *testing.T) {
+	summary := aggregateMetadata([]map[string]interface{}{
+		{
+			"id":    "doc-1",
+			"kb_id": "kb-1",
+			"meta_fields": map[string]interface{}{
+				"score": []interface{}{[]interface{}{}, 7.0},
+				"name":  "alice",
+			},
+		},
+	})
+
+	scoreField, ok := summary["score"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("score summary missing: %#v", summary)
+	}
+	values, ok := scoreField["values"].([][2]interface{})
+	if !ok {
+		t.Fatalf("score values type = %T", scoreField["values"])
+	}
+	if len(values) != 1 || values[0][0] != "7" || values[0][1] != 1 {
+		t.Fatalf("score values = %#v, want [[\"7\",1]]", values)
+	}
+}
+
+func TestMergeFieldValuesKeepsNumericValues(t *testing.T) {
+	got := mergeFieldValues(1.0, 2.0)
+	if len(got) != 2 || got[0] != 1.0 || got[1] != 2.0 {
+		t.Fatalf("mergeFieldValues = %#v, want [1 2]", got)
+	}
+}
+
 func TestUpdateDatasetDocumentPipelineIDTakesPrecedenceOverChunkMethod(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)

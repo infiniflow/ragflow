@@ -1485,15 +1485,10 @@ func aggregateMetadata(chunks []map[string]interface{}) map[string]interface{} {
 				typeCounter[k][valueType] = typeCounter[k][valueType] + 1
 			}
 
-			// Aggregate value counts
-			values := v
-			if v, ok := v.([]interface{}); ok {
-				values = v
-			} else {
-				values = []interface{}{v}
-			}
-
-			for _, vv := range values.([]interface{}) {
+			// Aggregate value counts. Flatten nested arrays so malformed values do
+			// not surface in the UI as the literal string "[]".
+			values := flattenMetadataSummaryValues(v)
+			for _, vv := range values {
 				if vv == nil {
 					continue
 				}
@@ -1588,6 +1583,27 @@ func getMetaValueType(value interface{}) string {
 		return "string"
 	}
 	return "string"
+}
+
+func flattenMetadataSummaryValues(value interface{}) []interface{} {
+	switch typed := value.(type) {
+	case []interface{}:
+		result := make([]interface{}, 0, len(typed))
+		for _, item := range typed {
+			result = append(result, flattenMetadataSummaryValues(item)...)
+		}
+		return result
+	case []string:
+		result := make([]interface{}, 0, len(typed))
+		for _, item := range typed {
+			result = append(result, item)
+		}
+		return result
+	case nil:
+		return nil
+	default:
+		return []interface{}{typed}
+	}
 }
 
 // isTimeString checks if a string is an ISO 8601 datetime
@@ -2093,9 +2109,10 @@ func mapDocumentRunStatus(run *string) string {
 
 // MetadataUpdate is one update item: set key to value.
 type DocumentMetadataUpdate struct {
-	Key   string      `json:"key"`
-	Value interface{} `json:"value"`
-	Match interface{} `json:"match,omitempty"`
+	Key       string      `json:"key"`
+	Value     interface{} `json:"value"`
+	Match     interface{} `json:"match,omitempty"`
+	ValueType string      `json:"valueType,omitempty"`
 }
 
 // MetadataDelete removes a whole key, or a specific value from a list field.
@@ -2328,16 +2345,17 @@ func applyDocumentMetadataUpdates(meta map[string]interface{}, updates []Documen
 		if key == "" {
 			continue
 		}
+		normalizedValue := normalizeDocumentMetadataUpdateValue(upd.Value, upd.ValueType)
 		matchProvided := upd.Match != nil && !(fmt.Sprintf("%v", upd.Match) == "")
 		current, exists := meta[key]
 		if !exists {
 			if matchProvided {
 				continue
 			}
-			if listVal, ok := toMetadataInterfaceSlice(upd.Value); ok {
+			if listVal, ok := toMetadataInterfaceSlice(normalizedValue); ok {
 				meta[key] = dedupeDocumentMetadataList(listVal)
 			} else {
-				meta[key] = upd.Value
+				meta[key] = normalizedValue
 			}
 			changed = true
 			continue
@@ -2346,10 +2364,10 @@ func applyDocumentMetadataUpdates(meta map[string]interface{}, updates []Documen
 		if curList, ok := toMetadataInterfaceSlice(current); ok {
 			if !matchProvided {
 				newList := append([]interface{}{}, curList...)
-				if appendList, ok := toMetadataInterfaceSlice(upd.Value); ok {
+				if appendList, ok := toMetadataInterfaceSlice(normalizedValue); ok {
 					newList = append(newList, appendList...)
 				} else {
-					newList = append(newList, upd.Value)
+					newList = append(newList, normalizedValue)
 				}
 				newList = dedupeDocumentMetadataList(newList)
 				if !reflect.DeepEqual(curList, newList) {
@@ -2359,15 +2377,19 @@ func applyDocumentMetadataUpdates(meta map[string]interface{}, updates []Documen
 				continue
 			}
 
-			replaced := false
-			newList := make([]interface{}, 0, len(curList))
-			for _, item := range curList {
-				if documentMetadataValuesEqual(item, upd.Match) {
-					newList = append(newList, upd.Value)
-					replaced = true
-				} else {
-					newList = append(newList, item)
-				}
+				replaced := false
+				newList := make([]interface{}, 0, len(curList))
+				for _, item := range curList {
+					if documentMetadataValuesEqual(item, upd.Match) {
+						if replacementList, ok := toMetadataInterfaceSlice(normalizedValue); ok {
+							newList = append(newList, replacementList...)
+						} else {
+							newList = append(newList, normalizedValue)
+						}
+						replaced = true
+					} else {
+						newList = append(newList, item)
+					}
 			}
 			newList = dedupeDocumentMetadataList(newList)
 			if replaced && !reflect.DeepEqual(curList, newList) {
@@ -2378,14 +2400,14 @@ func applyDocumentMetadataUpdates(meta map[string]interface{}, updates []Documen
 		}
 
 		if !matchProvided {
-			if !reflect.DeepEqual(current, upd.Value) {
-				meta[key] = upd.Value
+			if !reflect.DeepEqual(current, normalizedValue) {
+				meta[key] = normalizedValue
 				changed = true
 			}
 			continue
 		}
-		if documentMetadataValuesEqual(current, upd.Match) && !reflect.DeepEqual(current, upd.Value) {
-			meta[key] = upd.Value
+		if documentMetadataValuesEqual(current, upd.Match) && !reflect.DeepEqual(current, normalizedValue) {
+			meta[key] = normalizedValue
 			changed = true
 		}
 	}
@@ -2465,4 +2487,90 @@ func dedupeDocumentMetadataList(items []interface{}) []interface{} {
 
 func documentMetadataValuesEqual(a, b interface{}) bool {
 	return fmt.Sprintf("%v", a) == fmt.Sprintf("%v", b)
+}
+
+func normalizeDocumentMetadataUpdateValue(value interface{}, valueType string) interface{} {
+	switch strings.ToLower(strings.TrimSpace(valueType)) {
+	case "list":
+		if list, ok := normalizeMetadataListValue(value); ok {
+			return list
+		}
+		return []interface{}{}
+	case "number":
+		scalar, ok := firstScalarMetadataValue(value)
+		if !ok {
+			return value
+		}
+		switch typed := scalar.(type) {
+		case float64, float32, int, int8, int16, int32, int64:
+			return typed
+		case json.Number:
+			if i, err := typed.Int64(); err == nil {
+				return i
+			}
+			if f, err := typed.Float64(); err == nil {
+				return f
+			}
+		case string:
+			trimmed := strings.TrimSpace(typed)
+			if trimmed == "" {
+				return ""
+			}
+			if i, err := strconv.ParseInt(trimmed, 10, 64); err == nil {
+				return i
+			}
+			if f, err := strconv.ParseFloat(trimmed, 64); err == nil {
+				return f
+			}
+			return trimmed
+		}
+		return scalar
+	case "string", "time":
+		if scalar, ok := firstScalarMetadataValue(value); ok {
+			return fmt.Sprintf("%v", scalar)
+		}
+		return ""
+	default:
+		return value
+	}
+}
+
+func normalizeMetadataListValue(value interface{}) ([]interface{}, bool) {
+	switch typed := value.(type) {
+	case []interface{}:
+		result := make([]interface{}, 0, len(typed))
+		for _, item := range typed {
+			if nested, ok := normalizeMetadataListValue(item); ok {
+				result = append(result, nested...)
+				continue
+			}
+			if item != nil {
+				result = append(result, item)
+			}
+		}
+		return result, true
+	case []string:
+		result := make([]interface{}, 0, len(typed))
+		for _, item := range typed {
+			result = append(result, item)
+		}
+		return result, true
+	default:
+		return nil, false
+	}
+}
+
+func firstScalarMetadataValue(value interface{}) (interface{}, bool) {
+	if list, ok := normalizeMetadataListValue(value); ok {
+		for _, item := range list {
+			if item != nil {
+				return item, true
+			}
+		}
+		return nil, false
+	}
+	if value == nil {
+		return nil, false
+	}
+	return value, true
 }
