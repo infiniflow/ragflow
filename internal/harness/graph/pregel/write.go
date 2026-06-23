@@ -12,11 +12,11 @@ import (
 // ChannelWrite represents a write operation to channels.
 // It encapsulates the logic for writing state updates to multiple channels.
 type ChannelWrite struct {
-	registry  *channels.Registry
-	entries   []*ChannelWriteEntry
+	registry    *channels.Registry
+	entries     []*ChannelWriteEntry
 	transformer WriteTransformer
-	validator WriteValidator
-	mu        sync.RWMutex
+	validator   WriteValidator
+	mu          sync.RWMutex
 }
 
 // ChannelWriteEntry represents a single write operation.
@@ -41,10 +41,10 @@ type WriteValidator interface {
 // NewChannelWrite creates a new channel write operation.
 func NewChannelWrite(registry *channels.Registry, opts ...ChannelWriteOption) *ChannelWrite {
 	cw := &ChannelWrite{
-		registry:  registry,
-		entries:   make([]*ChannelWriteEntry, 0),
+		registry:    registry,
+		entries:     make([]*ChannelWriteEntry, 0),
 		transformer: &IdentityWriteTransformer{},
-		validator: &NoOpValidator{},
+		validator:   &NoOpValidator{},
 	}
 
 	for _, opt := range opts {

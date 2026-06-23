@@ -19,7 +19,7 @@ type SubgraphManager struct {
 	parentEngine   *Engine
 	subgraphs      map[string]*Engine
 	namespaceStack []string
-	mu            sync.RWMutex
+	mu             sync.RWMutex
 	checkpointNS   map[string]string // maps thread_id to checkpoint namespace
 }
 
@@ -80,7 +80,7 @@ func (m *SubgraphManager) CreateSubgraph(config *SubgraphConfig) (*Engine, error
 func (m *SubgraphManager) GetSubgraph(name string) (*Engine, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	subgraph, exists := m.subgraphs[name]
 	return subgraph, exists
 }
@@ -122,7 +122,7 @@ func (m *SubgraphManager) ExecuteInSubgraph(
 func (m *SubgraphManager) PushNamespace(ns string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.namespaceStack = append(m.namespaceStack, ns)
 }
 
@@ -130,7 +130,7 @@ func (m *SubgraphManager) PushNamespace(ns string) {
 func (m *SubgraphManager) PopNamespace() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	if len(m.namespaceStack) > 0 {
 		m.namespaceStack = m.namespaceStack[:len(m.namespaceStack)-1]
 	}
@@ -140,7 +140,7 @@ func (m *SubgraphManager) PopNamespace() {
 func (m *SubgraphManager) CurrentNamespace() string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	if len(m.namespaceStack) > 0 {
 		return m.namespaceStack[len(m.namespaceStack)-1]
 	}
@@ -151,18 +151,18 @@ func (m *SubgraphManager) CurrentNamespace() string {
 func (m *SubgraphManager) BuildNamespacePath() string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	if len(m.namespaceStack) == 0 {
 		return ""
 	}
-	
+
 	return strings.Join(m.namespaceStack, string(constants.NSSep))
 }
 
 // withCheckpointNamespace adds the checkpoint namespace to the context.
 func (m *SubgraphManager) withCheckpointNamespace(ctx context.Context, ns string) context.Context {
 	path := m.BuildNamespacePath()
-	
+
 	// Create a new config and add namespace
 	// Note: Simplified implementation for compilation
 	_ = path // Mark as used for now
@@ -196,7 +196,7 @@ func (cm *CheckpointMigration) MigrateToSubgraph(
 
 	// Build subgraph namespace
 	subgraphNS := cm.manager.BuildNamespacePath() + string(constants.NSSep) + subgraphName
-	
+
 	// Build subgraph config
 	subgraphConfig := make(map[string]any)
 	subgraphConfig[constants.ConfigKeyCheckpointNS] = subgraphNS
@@ -261,9 +261,9 @@ func (m *SubgraphManager) ResolveParentCommand(
 
 // NamespaceIsolatedRegistry creates a channel registry with namespace isolation.
 type NamespaceIsolatedRegistry struct {
-	registry *channels.Registry
+	registry  *channels.Registry
 	namespace string
-	prefix   string
+	prefix    string
 }
 
 // NewNamespaceIsolatedRegistry creates a new namespace-isolated registry.
@@ -272,11 +272,11 @@ func NewNamespaceIsolatedRegistry(baseRegistry *channels.Registry, namespace str
 	if prefix != "" {
 		prefix += string(constants.NSSep)
 	}
-	
+
 	return &NamespaceIsolatedRegistry{
-		registry: baseRegistry,
+		registry:  baseRegistry,
 		namespace: namespace,
-		prefix:   prefix,
+		prefix:    prefix,
 	}
 }
 
@@ -301,11 +301,11 @@ func (r *NamespaceIsolatedRegistry) Register(name string, channel any) error {
 // CreateCheckpoint creates a checkpoint with namespace isolation.
 func (r *NamespaceIsolatedRegistry) CreateCheckpoint() map[string]any {
 	baseCheckpoint := r.registry.CreateCheckpoint()
-	
+
 	// Add namespace metadata
 	baseCheckpoint["namespace"] = r.namespace
 	baseCheckpoint["prefix"] = r.prefix
-	
+
 	return baseCheckpoint
 }
 
@@ -315,7 +315,7 @@ func (r *NamespaceIsolatedRegistry) GetValues() (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Filter to namespace-prefixed channels
 	filtered := make(map[string]any)
 	for key, value := range allValues {
@@ -324,14 +324,14 @@ func (r *NamespaceIsolatedRegistry) GetValues() (map[string]any, error) {
 			filtered[relKey] = value
 		}
 	}
-	
+
 	return filtered, nil
 }
 
 // RecursiveSubgraphExecutor handles recursive execution within subgraphs.
 type RecursiveSubgraphExecutor struct {
-	manager   *SubgraphManager
-	maxDepth  int
+	manager  *SubgraphManager
+	maxDepth int
 }
 
 // NewRecursiveSubgraphExecutor creates a new recursive subgraph executor.
@@ -353,7 +353,7 @@ func (e *RecursiveSubgraphExecutor) ExecuteRecursive(
 	if depth > e.maxDepth {
 		return nil, fmt.Errorf("recursion depth limit exceeded: %d > %d", depth, e.maxDepth)
 	}
-	
+
 	// Execute in subgraph
 	return e.manager.ExecuteInSubgraph(ctx, subgraphName, nodeName, input)
 }

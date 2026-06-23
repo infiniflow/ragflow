@@ -29,18 +29,18 @@ type MessageStream struct {
 
 // MessageChunk represents a chunk of a message.
 type MessageChunk struct {
-	Index       int
-	Content     string
-	Metadata    map[string]any
-	IsComplete  bool
-	Role        string
-	ToolCalls   []*ToolCall
+	Index      int
+	Content    string
+	Metadata   map[string]any
+	IsComplete bool
+	Role       string
+	ToolCalls  []*ToolCall
 }
 
 // ToolCall represents a tool call within a message.
 type ToolCall struct {
-	ID       string
-	Name     string
+	ID        string
+	Name      string
 	Arguments map[string]any
 }
 
@@ -298,11 +298,11 @@ func (a *MessageAggregator) AddEmitter(emitter MessageEmitter) {
 func StreamToChannel(ch *types.ChannelStream) MessageEmitter {
 	return func(ctx context.Context, node string, chunk *MessageChunk) error {
 		chunkData := map[string]any{
-			"node":      node,
-			"role":      chunk.Role,
-			"content":   chunk.Content,
-			"index":     chunk.Index,
-			"complete":  chunk.IsComplete,
+			"node":     node,
+			"role":     chunk.Role,
+			"content":  chunk.Content,
+			"index":    chunk.Index,
+			"complete": chunk.IsComplete,
 		}
 		if len(chunk.ToolCalls) > 0 {
 			chunkData["tool_calls"] = chunk.ToolCalls
@@ -370,8 +370,8 @@ func ExtractMessagesFromOutput(output any) ([]*MessageChunk, error) {
 				role = r
 			}
 			chunk := &MessageChunk{
-				Content: content,
-				Role:    role,
+				Content:  content,
+				Role:     role,
 				Metadata: make(map[string]any),
 			}
 			return []*MessageChunk{chunk}, nil
@@ -393,9 +393,9 @@ func ConvertToTaskResult(node string, chunks []*MessageChunk) *TaskResult {
 
 	// Merge chunks
 	merged := &MessageChunk{
-		Content:    "",
-		Metadata:   make(map[string]any),
-		ToolCalls:  make([]*ToolCall, 0),
+		Content:   "",
+		Metadata:  make(map[string]any),
+		ToolCalls: make([]*ToolCall, 0),
 	}
 
 	for _, chunk := range chunks {

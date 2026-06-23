@@ -9,13 +9,13 @@ import (
 
 // StreamChunk represents a single chunk of data from a stream.
 type StreamChunk struct {
-	Mode       StreamMode
-	Data       interface{}
-	Step       int
-	Node       string
-	Metadata   map[string]interface{}
-	Timestamp  int64
-	Index      int
+	Mode      StreamMode
+	Data      interface{}
+	Step      int
+	Node      string
+	Metadata  map[string]interface{}
+	Timestamp int64
+	Index     int
 }
 
 // StreamProtocol defines the interface for streaming output from graph execution.
@@ -50,11 +50,11 @@ type StreamIterator interface {
 
 // ChannelStream implements StreamProtocol using Go channels.
 type ChannelStream struct {
-	mode    StreamMode
-	ch      chan *StreamChunk
-	closed  bool
-	closer  chan struct{}
-	mu      sync.RWMutex
+	mode   StreamMode
+	ch     chan *StreamChunk
+	closed bool
+	closer chan struct{}
+	mu     sync.RWMutex
 }
 
 // NewChannelStream creates a new channel-based stream.

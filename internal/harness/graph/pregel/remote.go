@@ -114,15 +114,15 @@ func (r *RemoteRunnable) Execute(ctx context.Context, nodeName string, input any
 
 // RemoteExecuteRequest represents a request to execute a node remotely.
 type RemoteExecuteRequest struct {
-	Node   string                 `json:"node"`
-	Input  any            `json:"input"`
-	Config *types.RunnableConfig  `json:"config,omitempty"`
+	Node   string                `json:"node"`
+	Input  any                   `json:"input"`
+	Config *types.RunnableConfig `json:"config,omitempty"`
 }
 
 // RemoteExecuteResponse represents the response from a remote execution.
 type RemoteExecuteResponse struct {
-	Output any `json:"output,omitempty"`
-	Error  string      `json:"error,omitempty"`
+	Output any    `json:"output,omitempty"`
+	Error  string `json:"error,omitempty"`
 }
 
 // PregelProtocol defines the protocol for remote Pregel execution.
@@ -137,14 +137,14 @@ type PregelProtocol interface {
 
 // PregelMessage represents a message in the Pregel protocol.
 type PregelMessage struct {
-	Type      MessageType            `json:"type"`
-	ID        string                 `json:"id"`
-	NodeName  string                 `json:"node_name,omitempty"`
+	Type      MessageType    `json:"type"`
+	ID        string         `json:"id"`
+	NodeName  string         `json:"node_name,omitempty"`
 	Input     any            `json:"input,omitempty"`
 	Output    any            `json:"output,omitempty"`
-	Error     string                 `json:"error,omitempty"`
+	Error     string         `json:"error,omitempty"`
 	Metadata  map[string]any `json:"metadata,omitempty"`
-	Timestamp time.Time              `json:"timestamp"`
+	Timestamp time.Time      `json:"timestamp"`
 }
 
 // MessageType represents the type of a Pregel message.

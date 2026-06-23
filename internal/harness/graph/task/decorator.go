@@ -232,16 +232,16 @@ func Task(fn types.NodeFunc, opts ...DecoratorOption) types.NodeFunc {
 
 // Entrypoint marks a function as a graph entrypoint.
 type Entrypoint struct {
-	name           string
-	fn             types.NodeFunc
-	metadata       map[string]interface{}
-	checkpointer   interface{}
-	store          interface{}
-	configurable   map[string]interface{}
-	graph          *graph.StateGraph
-	compiledGraph  *graph.CompiledGraph
-	compileOnce    sync.Once
-	compileErr     error
+	name          string
+	fn            types.NodeFunc
+	metadata      map[string]interface{}
+	checkpointer  interface{}
+	store         interface{}
+	configurable  map[string]interface{}
+	graph         *graph.StateGraph
+	compiledGraph *graph.CompiledGraph
+	compileOnce   sync.Once
+	compileErr    error
 }
 
 // NewEntrypoint creates a new entrypoint.
@@ -450,7 +450,7 @@ func (e *Entrypoint) AStream(ctx context.Context, input interface{}, config *typ
 // Batch invokes the graph with multiple inputs.
 func (e *Entrypoint) Batch(ctx context.Context, inputs []interface{}, config *types.RunnableConfig) ([]interface{}, error) {
 	results := make([]interface{}, len(inputs))
-	
+
 	for i, input := range inputs {
 		output, err := e.Invoke(ctx, input, config)
 		if err != nil {
@@ -458,7 +458,7 @@ func (e *Entrypoint) Batch(ctx context.Context, inputs []interface{}, config *ty
 		}
 		results[i] = output
 	}
-	
+
 	return results, nil
 }
 

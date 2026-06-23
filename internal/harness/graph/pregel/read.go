@@ -384,10 +384,10 @@ func (t *ChannelChangedTrigger) ShouldTrigger(registry *channels.Registry) bool 
 
 // ReadContext represents the context of a channel read operation.
 type ReadContext struct {
-	Node      string
-	Step      int
-	Triggers  []Trigger
-	Readers   map[string]*ChannelRead
+	Node     string
+	Step     int
+	Triggers []Trigger
+	Readers  map[string]*ChannelRead
 }
 
 // NewReadContext creates a new read context.

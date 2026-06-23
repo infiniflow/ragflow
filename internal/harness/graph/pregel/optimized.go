@@ -340,12 +340,12 @@ func (e *PregelOptimizedEngine) getNamespace(ctx context.Context) string {
 
 // FinishNotification represents a task completion notification.
 type FinishNotification struct {
-	TaskName  string      `json:"task_name"`
-	Output    any `json:"output"`
-	Error     error       `json:"error,omitempty"`
-	Step      int         `json:"step"`
-	Timestamp time.Time   `json:"timestamp"`
-	Namespace string      `json:"namespace,omitempty"`
+	TaskName  string    `json:"task_name"`
+	Output    any       `json:"output"`
+	Error     error     `json:"error,omitempty"`
+	Step      int       `json:"step"`
+	Timestamp time.Time `json:"timestamp"`
+	Namespace string    `json:"namespace,omitempty"`
 }
 
 // TaskPriority represents task execution priority.

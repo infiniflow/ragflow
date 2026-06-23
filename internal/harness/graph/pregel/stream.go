@@ -86,18 +86,18 @@ func NewStreamManager(mode types.StreamMode, bufferSize int) *StreamManager {
 	if bufferSize <= 0 {
 		bufferSize = 100
 	}
-	
+
 	sm := &StreamManager{
-		mode:        mode,
-		eventCh:     make(chan *StreamEvent, bufferSize),
-		errorCh:     make(chan error, 10),
-		bufferSize:  bufferSize,
+		mode:          mode,
+		eventCh:       make(chan *StreamEvent, bufferSize),
+		errorCh:       make(chan error, 10),
+		bufferSize:    bufferSize,
 		includeFilter: make(map[StreamEventType]bool),
 	}
-	
+
 	// Set up include filter based on stream mode
 	sm.setupIncludeFilter()
-	
+
 	return sm
 }
 
@@ -107,21 +107,21 @@ func (sm *StreamManager) setupIncludeFilter() {
 	case types.StreamModeValues:
 		sm.includeFilter[EventTypeValues] = true
 		sm.includeFilter[EventTypeFinal] = true
-		
+
 	case types.StreamModeUpdates:
 		sm.includeFilter[EventTypeUpdate] = true
 		sm.includeFilter[EventTypeFinal] = true
-		
+
 	case types.StreamModeTasks:
 		sm.includeFilter[EventTypeTaskStart] = true
 		sm.includeFilter[EventTypeTaskEnd] = true
 		sm.includeFilter[EventTypeError] = true
 		sm.includeFilter[EventTypeFinal] = true
-		
+
 	case types.StreamModeCheckpoints:
 		sm.includeFilter[EventTypeCheckpoint] = true
 		sm.includeFilter[EventTypeFinal] = true
-		
+
 	case types.StreamModeDebug:
 		// Include all events in debug mode
 		sm.includeFilter[EventTypeCheckpoint] = true
@@ -133,7 +133,7 @@ func (sm *StreamManager) setupIncludeFilter() {
 		sm.includeFilter[EventTypeError] = true
 		sm.includeFilter[EventTypeDebug] = true
 		sm.includeFilter[EventTypeFinal] = true
-		
+
 	default:
 		// Default to values mode
 		sm.includeFilter[EventTypeValues] = true
@@ -153,12 +153,12 @@ func (sm *StreamManager) EmitCheckpoint(step int, checkpoint map[string]any) {
 	if !sm.shouldEmit(EventTypeCheckpoint) {
 		return
 	}
-	
+
 	event := NewStreamEvent(EventTypeCheckpoint, step)
 	event.Data = map[string]any{
 		"checkpoint": checkpoint,
 	}
-	
+
 	sm.emit(event)
 }
 
@@ -167,15 +167,15 @@ func (sm *StreamManager) EmitTaskStart(step int, node string, taskID string) {
 	if !sm.shouldEmit(EventTypeTaskStart) {
 		return
 	}
-	
+
 	event := NewStreamEvent(EventTypeTaskStart, step)
 	event.Node = node
 	event.TaskID = taskID
 	event.Data = map[string]any{
-		"node": node,
+		"node":    node,
 		"task_id": taskID,
 	}
-	
+
 	sm.emit(event)
 }
 
@@ -184,7 +184,7 @@ func (sm *StreamManager) EmitTaskEnd(step int, node string, taskID string, outpu
 	if !sm.shouldEmit(EventTypeTaskEnd) {
 		return
 	}
-	
+
 	event := NewStreamEvent(EventTypeTaskEnd, step)
 	event.Node = node
 	event.TaskID = taskID
@@ -195,7 +195,7 @@ func (sm *StreamManager) EmitTaskEnd(step int, node string, taskID string, outpu
 		"output":   output,
 		"duration": duration.String(),
 	}
-	
+
 	sm.emit(event)
 }
 
@@ -204,14 +204,14 @@ func (sm *StreamManager) EmitUpdate(step int, node string, output any) {
 	if !sm.shouldEmit(EventTypeUpdate) {
 		return
 	}
-	
+
 	event := NewStreamEvent(EventTypeUpdate, step)
 	event.Node = node
 	event.Data = map[string]any{
 		"node":   node,
 		"output": output,
 	}
-	
+
 	sm.emit(event)
 }
 
@@ -220,12 +220,12 @@ func (sm *StreamManager) EmitValues(step int, values map[string]any) {
 	if !sm.shouldEmit(EventTypeValues) {
 		return
 	}
-	
+
 	event := NewStreamEvent(EventTypeValues, step)
 	event.Data = map[string]any{
 		"values": values,
 	}
-	
+
 	sm.emit(event)
 }
 
@@ -234,12 +234,12 @@ func (sm *StreamManager) EmitInterrupt(step int, interrupts []string) {
 	if !sm.shouldEmit(EventTypeInterrupt) {
 		return
 	}
-	
+
 	event := NewStreamEvent(EventTypeInterrupt, step)
 	event.Data = map[string]any{
 		"interrupts": interrupts,
 	}
-	
+
 	sm.emit(event)
 }
 
@@ -248,7 +248,7 @@ func (sm *StreamManager) EmitError(step int, err error, node string) {
 	if !sm.shouldEmit(EventTypeError) {
 		return
 	}
-	
+
 	event := NewStreamEvent(EventTypeError, step)
 	event.Node = node
 	event.Error = err
@@ -256,7 +256,7 @@ func (sm *StreamManager) EmitError(step int, err error, node string) {
 		"node":  node,
 		"error": err.Error(),
 	}
-	
+
 	sm.emit(event)
 }
 
@@ -265,13 +265,13 @@ func (sm *StreamManager) EmitDebug(step int, message string, data any) {
 	if !sm.shouldEmit(EventTypeDebug) {
 		return
 	}
-	
+
 	event := NewStreamEvent(EventTypeDebug, step)
 	event.Data = map[string]any{
 		"message": message,
 		"data":    data,
 	}
-	
+
 	sm.emit(event)
 }
 
@@ -280,12 +280,12 @@ func (sm *StreamManager) EmitFinal(step int, state any) {
 	if !sm.shouldEmit(EventTypeFinal) {
 		return
 	}
-	
+
 	event := NewStreamEvent(EventTypeFinal, step)
 	event.Data = map[string]any{
 		"state": state,
 	}
-	
+
 	sm.emit(event)
 }
 
@@ -293,11 +293,11 @@ func (sm *StreamManager) EmitFinal(step int, state any) {
 func (sm *StreamManager) emit(event *StreamEvent) {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
-	
+
 	if sm.mu.closed {
 		return
 	}
-	
+
 	select {
 	case sm.eventCh <- event:
 		// Event sent
@@ -320,7 +320,7 @@ func (sm *StreamManager) Errors() <-chan error {
 func (sm *StreamManager) Close() {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-	
+
 	if !sm.mu.closed {
 		sm.mu.closed = true
 		close(sm.eventCh)
@@ -413,17 +413,17 @@ func (es *EventStream) Stream() (<-chan *StreamEvent, <-chan error) {
 
 // StreamProcessor processes stream events.
 type StreamProcessor struct {
-	filter  func(*StreamEvent) bool
+	filter    func(*StreamEvent) bool
 	transform func(*StreamEvent) (*StreamEvent, error)
-	handler func(*StreamEvent)
+	handler   func(*StreamEvent)
 }
 
 // NewStreamProcessor creates a new stream processor.
 func NewStreamProcessor() *StreamProcessor {
 	return &StreamProcessor{
-		filter: func(e *StreamEvent) bool { return true },
+		filter:    func(e *StreamEvent) bool { return true },
 		transform: func(e *StreamEvent) (*StreamEvent, error) { return e, nil },
-		handler: func(e *StreamEvent) {},
+		handler:   func(e *StreamEvent) {},
 	}
 }
 
@@ -450,12 +450,12 @@ func (sp *StreamProcessor) Process(event *StreamEvent) error {
 	if !sp.filter(event) {
 		return nil
 	}
-	
+
 	transformed, err := sp.transform(event)
 	if err != nil {
 		return err
 	}
-	
+
 	sp.handler(transformed)
 	return nil
 }

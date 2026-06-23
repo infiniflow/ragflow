@@ -34,10 +34,10 @@ type MemoryCache struct {
 }
 
 type cacheEntry struct {
-	value       any
-	expiration  time.Time
-	lastAccess  time.Time
-	hits        int64
+	value      any
+	expiration time.Time
+	lastAccess time.Time
+	hits       int64
 }
 
 // EvictionPolicy determines how entries are evicted when cache is full.
@@ -97,10 +97,10 @@ func (c *MemoryCache) Set(ctx context.Context, key string, value any, ttl time.D
 	}
 
 	c.data[key] = &cacheEntry{
-		value:       value,
-		expiration:  expiration,
-		lastAccess:  time.Now(),
-		hits:        0,
+		value:      value,
+		expiration: expiration,
+		lastAccess: time.Now(),
+		hits:       0,
 	}
 }
 

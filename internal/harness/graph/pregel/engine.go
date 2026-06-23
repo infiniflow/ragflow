@@ -467,11 +467,11 @@ func (e *Engine) Run(ctx context.Context, input any, mode types.StreamMode) (<-c
 					zap.Bool("allFailed", allFailed))
 				// Save checkpoint with completed_tasks and sub_state.
 				if e.checkpointer != nil {
-				checkpointData := channelRegistry.CreateCheckpoint()
-				cpPayload := make(map[string]any, len(checkpointData)+4)
-				for key, val := range checkpointData {
-					cpPayload[key] = val
-				}
+					checkpointData := channelRegistry.CreateCheckpoint()
+					cpPayload := make(map[string]any, len(checkpointData)+4)
+					for key, val := range checkpointData {
+						cpPayload[key] = val
+					}
 					cpPayload["__completed_tasks__"] = serializeStringSet(completedTasks)
 					cpPayload["__last_completed_node__"] = lastCompletedNode
 					cpPayload["__step__"] = float64(step)

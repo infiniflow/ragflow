@@ -76,11 +76,11 @@ type Injectable interface {
 
 // InjectableRunnable is a Runnable that supports dependency injection.
 type InjectableRunnable struct {
-	name            string
-	fn              interface{}
-	injectionCtx    *InjectionContext
-	paramInjector   *ParamInjector
-	schema          *RunnableSchema
+	name          string
+	fn            interface{}
+	injectionCtx  *InjectionContext
+	paramInjector *ParamInjector
+	schema        *RunnableSchema
 }
 
 // NewInjectableRunnable creates a new runnable with dependency injection support.

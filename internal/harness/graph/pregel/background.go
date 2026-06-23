@@ -33,23 +33,23 @@ type BackgroundTaskResult struct {
 
 // BackgroundExecutor executes tasks in a background worker pool.
 type BackgroundExecutor struct {
-	maxWorkers   int
-	taskQueue    chan *BackgroundTask
-	results      chan *BackgroundTaskResult
-	workers      []*backgroundWorker
-	mu           sync.RWMutex
-	running      bool
-	stopCh       chan struct{}
-	wg           sync.WaitGroup
-	activeTasks  map[string]*BackgroundTask
+	maxWorkers      int
+	taskQueue       chan *BackgroundTask
+	results         chan *BackgroundTaskResult
+	workers         []*backgroundWorker
+	mu              sync.RWMutex
+	running         bool
+	stopCh          chan struct{}
+	wg              sync.WaitGroup
+	activeTasks     map[string]*BackgroundTask
 	shutdownTimeout time.Duration
 }
 
 // backgroundWorker represents a worker goroutine.
 type backgroundWorker struct {
-	id      int
+	id       int
 	executor *BackgroundExecutor
-	stopCh  chan struct{}
+	stopCh   chan struct{}
 }
 
 // NewBackgroundExecutor creates a new background executor.
@@ -87,9 +87,9 @@ func (e *BackgroundExecutor) Start(ctx context.Context) {
 	// Start workers
 	for i := 0; i < e.maxWorkers; i++ {
 		worker := &backgroundWorker{
-			id:      i,
+			id:       i,
 			executor: e,
-			stopCh:  make(chan struct{}),
+			stopCh:   make(chan struct{}),
 		}
 		e.workers = append(e.workers, worker)
 		e.wg.Add(1)

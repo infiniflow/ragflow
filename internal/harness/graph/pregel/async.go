@@ -44,26 +44,26 @@ func NewAsyncExecutor(maxConcurrency int) *AsyncExecutor {
 	if maxConcurrency <= 0 {
 		maxConcurrency = 10 // Default concurrency
 	}
-	
+
 	exec := &AsyncExecutor{
 		maxConcurrency: maxConcurrency,
 		workerPool:     make(chan struct{}, maxConcurrency),
 		results:        make(chan *asyncTaskResult, 100),
 		activeTasks:    make(map[string]*asyncTask),
 	}
-	
+
 	// Pre-fill worker pool
 	for i := 0; i < maxConcurrency; i++ {
 		exec.workerPool <- struct{}{}
 	}
-	
+
 	return exec
 }
 
 // Execute executes a single task asynchronously.
 func (e *AsyncExecutor) Execute(ctx context.Context, name string, fn func(context.Context) (any, error)) <-chan *asyncTaskResult {
 	resultCh := make(chan *asyncTaskResult, 1)
-	
+
 	// Create cancellable context so Cancel() can stop running tasks.
 	taskCtx, cancel := context.WithCancel(ctx)
 	task := &asyncTask{
@@ -73,16 +73,16 @@ func (e *AsyncExecutor) Execute(ctx context.Context, name string, fn func(contex
 		Context: taskCtx,
 		Cancel:  cancel,
 	}
-	
+
 	e.mu.Lock()
 	e.activeTasks[task.ID] = task
 	e.mu.Unlock()
-	
+
 	go func() {
 		defer close(resultCh)
-		
+
 		startTime := time.Now()
-		
+
 		// Acquire worker slot
 		select {
 		case <-e.workerPool:
@@ -95,10 +95,10 @@ func (e *AsyncExecutor) Execute(ctx context.Context, name string, fn func(contex
 			}
 			return
 		}
-		
+
 		// Execute task
 		output, err := task.Func(task.Context)
-		
+
 		result := &asyncTaskResult{
 			TaskID:   task.ID,
 			Name:     task.Name,
@@ -106,36 +106,36 @@ func (e *AsyncExecutor) Execute(ctx context.Context, name string, fn func(contex
 			Err:      err,
 			Duration: time.Since(startTime),
 		}
-		
+
 		e.mu.Lock()
 		delete(e.activeTasks, task.ID)
 		e.mu.Unlock()
-		
+
 		resultCh <- result
 	}()
-	
+
 	return resultCh
 }
 
 // ExecuteBatch executes multiple tasks concurrently with controlled concurrency.
 func (e *AsyncExecutor) ExecuteBatch(ctx context.Context, tasks []asyncTask) <-chan *asyncTaskResult {
 	resultCh := make(chan *asyncTaskResult, len(tasks))
-	
+
 	for i := range tasks {
 		tasks[i].ID = uuid.New().String()
 		e.mu.Lock()
 		e.activeTasks[tasks[i].ID] = &tasks[i]
 		e.mu.Unlock()
 	}
-	
+
 	var wg sync.WaitGroup
 	for i := range tasks {
 		wg.Add(1)
 		go func(task *asyncTask) {
 			defer wg.Done()
-			
+
 			startTime := time.Now()
-			
+
 			// Acquire worker slot
 			select {
 			case <-e.workerPool:
@@ -148,10 +148,10 @@ func (e *AsyncExecutor) ExecuteBatch(ctx context.Context, tasks []asyncTask) <-c
 				}
 				return
 			}
-			
+
 			// Execute task
 			output, err := task.Func(task.Context)
-			
+
 			resultCh <- &asyncTaskResult{
 				TaskID:   task.ID,
 				Name:     task.Name,
@@ -159,25 +159,25 @@ func (e *AsyncExecutor) ExecuteBatch(ctx context.Context, tasks []asyncTask) <-c
 				Err:      err,
 				Duration: time.Since(startTime),
 			}
-			
+
 			e.mu.Lock()
 			delete(e.activeTasks, task.ID)
 			e.mu.Unlock()
 		}(&tasks[i])
 	}
-	
+
 	go func() {
 		wg.Wait()
 		close(resultCh)
 	}()
-	
+
 	return resultCh
 }
 
 // ExecuteWithRetry executes a task with retry logic.
 func (e *AsyncExecutor) ExecuteWithRetry(ctx context.Context, name string, fn func(context.Context) (any, error), retryConfig *RetryConfig) <-chan *asyncTaskResult {
 	resultCh := make(chan *asyncTaskResult, 1)
-	
+
 	taskCtx, cancel := context.WithCancel(ctx)
 	task := &asyncTask{
 		ID:      uuid.New().String(),
@@ -185,19 +185,19 @@ func (e *AsyncExecutor) ExecuteWithRetry(ctx context.Context, name string, fn fu
 		Context: taskCtx,
 		Cancel:  cancel,
 	}
-	
+
 	e.mu.Lock()
 	e.activeTasks[task.ID] = task
 	e.mu.Unlock()
-	
+
 	go func() {
 		defer close(resultCh)
-		
+
 		executor := NewRetryExecutor(retryConfig.Policy)
-		
+
 		startTime := time.Now()
 		output, err := executor.Execute(ctx, name, fn)
-		
+
 		result := &asyncTaskResult{
 			TaskID:   task.ID,
 			Name:     name,
@@ -205,14 +205,14 @@ func (e *AsyncExecutor) ExecuteWithRetry(ctx context.Context, name string, fn fu
 			Err:      err,
 			Duration: time.Since(startTime),
 		}
-		
+
 		e.mu.Lock()
 		delete(e.activeTasks, task.ID)
 		e.mu.Unlock()
-		
+
 		resultCh <- result
 	}()
-	
+
 	return resultCh
 }
 
@@ -220,7 +220,7 @@ func (e *AsyncExecutor) ExecuteWithRetry(ctx context.Context, name string, fn fu
 func (e *AsyncExecutor) Cancel() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	
+
 	for id, task := range e.activeTasks {
 		if task.Cancel != nil {
 			task.Cancel()
@@ -240,7 +240,7 @@ func (e *AsyncExecutor) GetActiveTaskCount() int {
 func (e *AsyncExecutor) Wait(ctx context.Context) error {
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -257,15 +257,15 @@ func (e *AsyncExecutor) Wait(ctx context.Context) error {
 type AsyncPipeline struct {
 	executor *AsyncExecutor
 	retryer  *RetryExecutor
-	
+
 	// Stream channels
-	events   chan any
-	errors   chan error
-	
+	events chan any
+	errors chan error
+
 	// Control
-	mu       sync.RWMutex
-	cancel   context.CancelFunc
-	running  bool
+	mu      sync.RWMutex
+	cancel  context.CancelFunc
+	running bool
 }
 
 // NewAsyncPipeline creates a new async pipeline.
@@ -283,14 +283,14 @@ func NewAsyncPipeline(maxConcurrency int, retryPolicy *types.RetryPolicy) *Async
 func (p *AsyncPipeline) Start(ctx context.Context) context.Context {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	
+
 	if p.running {
 		return ctx
 	}
-	
+
 	ctx, p.cancel = context.WithCancel(ctx)
 	p.running = true
-	
+
 	return ctx
 }
 
@@ -298,15 +298,15 @@ func (p *AsyncPipeline) Start(ctx context.Context) context.Context {
 func (p *AsyncPipeline) Stop() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	
+
 	if !p.running {
 		return
 	}
-	
+
 	if p.cancel != nil {
 		p.cancel()
 	}
-	
+
 	p.executor.Cancel()
 	close(p.events)
 	close(p.errors)
@@ -335,7 +335,7 @@ func (p *AsyncPipeline) Errors() <-chan error {
 func (p *AsyncPipeline) EmitEvent(event any) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	
+
 	if p.running {
 		select {
 		case p.events <- event:
@@ -349,7 +349,7 @@ func (p *AsyncPipeline) EmitEvent(event any) {
 func (p *AsyncPipeline) EmitError(err error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	
+
 	if p.running {
 		select {
 		case p.errors <- err:
@@ -383,7 +383,7 @@ func NewConcurrencyLimiter() *ConcurrencyLimiter {
 func (l *ConcurrencyLimiter) SetLimit(node string, limit int) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	
+
 	ch := make(chan struct{}, limit)
 	for i := 0; i < limit; i++ {
 		ch <- struct{}{}
@@ -396,12 +396,12 @@ func (l *ConcurrencyLimiter) Acquire(ctx context.Context, node string) error {
 	l.mu.RLock()
 	ch, ok := l.limits[node]
 	l.mu.RUnlock()
-	
+
 	if !ok {
 		// No limit set
 		return nil
 	}
-	
+
 	select {
 	case <-ch:
 		return nil
@@ -415,11 +415,11 @@ func (l *ConcurrencyLimiter) Release(node string) {
 	l.mu.RLock()
 	ch, ok := l.limits[node]
 	l.mu.RUnlock()
-	
+
 	if !ok {
 		return
 	}
-	
+
 	select {
 	case ch <- struct{}{}:
 	default:
@@ -459,12 +459,12 @@ func (e *PriorityExecutor) Submit(task PriorityTask) error {
 // Execute executes tasks in priority order.
 func (e *PriorityExecutor) Execute(ctx context.Context, maxConcurrency int) <-chan any {
 	resultCh := make(chan any, maxConcurrency)
-	
+
 	// Simple priority scheduling using multiple channels
 	// In a real implementation, you'd use a priority queue
 	go func() {
 		defer close(resultCh)
-		
+
 		// This is a simplified implementation
 		// A full implementation would use a heap-based priority queue
 		for {
@@ -481,6 +481,6 @@ func (e *PriorityExecutor) Execute(ctx context.Context, maxConcurrency int) <-ch
 			}
 		}
 	}()
-	
+
 	return resultCh
 }
