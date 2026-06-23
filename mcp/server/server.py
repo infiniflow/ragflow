@@ -366,6 +366,11 @@ class RAGFlowConnector:
                                 page = None
                         else:
                             # Empty docs page or non-zero code — stop paginating to avoid infinite loop
+                            resp_code = docs_data.get("code") if docs_res else None
+                            logging.debug(
+                                "Stopping document pagination for dataset %s at page %s (response code: %s)",
+                                dataset_id, page, resp_code,
+                            )
                             break
 
                         self._set_cached_document_metadata_by_dataset(dataset_id, doc_id_meta_list)
