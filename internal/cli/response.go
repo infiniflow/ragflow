@@ -88,7 +88,7 @@ func (r *ModelsResponse) PrintOut() {
 	}
 }
 
-type baseDataResponse struct {
+type CommonDataResponse struct {
 	Code         int                    `json:"code"`
 	Data         map[string]interface{} `json:"data"`
 	Message      string                 `json:"message"`
@@ -96,15 +96,19 @@ type baseDataResponse struct {
 	OutputFormat OutputFormat
 }
 
-func (r *baseDataResponse) TimeCost() float64 {
+func (r *CommonDataResponse) Type() string {
+	return "show"
+}
+
+func (r *CommonDataResponse) TimeCost() float64 {
 	return r.Duration
 }
 
-func (r *baseDataResponse) SetOutputFormat(format OutputFormat) {
+func (r *CommonDataResponse) SetOutputFormat(format OutputFormat) {
 	r.OutputFormat = format
 }
 
-func (r *baseDataResponse) orderedMetricTable() []map[string]interface{} {
+func (r *CommonDataResponse) orderedMetricTable() []map[string]interface{} {
 	table := make([]map[string]interface{}, 0)
 	if orderRaw, ok := r.Data["_order"]; ok {
 		if orderSlice, ok := orderRaw.([]interface{}); ok {
@@ -122,17 +126,9 @@ func (r *baseDataResponse) orderedMetricTable() []map[string]interface{} {
 	return table
 }
 
-func (r *baseDataResponse) printError() {
+func (r *CommonDataResponse) printError() {
 	fmt.Println("ERROR")
 	fmt.Printf("%d, %s\n", r.Code, r.Message)
-}
-
-type CommonDataResponse struct {
-	baseDataResponse
-}
-
-func (r *CommonDataResponse) Type() string {
-	return "show"
 }
 
 func (r *CommonDataResponse) PrintOut() {
@@ -811,7 +807,7 @@ func chunkDocName(c map[string]interface{}) string {
 }
 
 type UserIndexResponse struct {
-	baseDataResponse
+	CommonDataResponse
 }
 
 func (r *UserIndexResponse) Type() string {
@@ -859,7 +855,7 @@ func (r *UserIndexResponse) PrintOut() {
 }
 
 type UserStorageResponse struct {
-	baseDataResponse
+	CommonDataResponse
 }
 
 func (r *UserStorageResponse) Type() string {
@@ -916,7 +912,7 @@ func truncateStr(s string, maxLen int) string {
 }
 
 type UserQuotaResponse struct {
-	baseDataResponse
+	CommonDataResponse
 }
 
 func (r *UserQuotaResponse) Type() string {
