@@ -356,23 +356,23 @@ func FromMap(data map[string]interface{}) (*Checkpoint, error) {
 }
 
 // Helper functions
-func getString(m map[string]interface{}, key string) string {
-	if v, ok := m[key].(string); ok {
-		return v
+func getString(data map[string]any, key string) string {
+	if val, ok := data[key].(string); ok {
+		return val
 	}
 	return ""
 }
 
-func getInt(m map[string]interface{}, key string, defaultVal int) int {
-	if v, ok := m[key].(float64); ok {
-		return int(v)
+func getInt(data map[string]any, key string, defaultVal int) int {
+	if val, ok := data[key].(float64); ok {
+		return int(val)
 	}
 	return defaultVal
 }
 
-func getBool(m map[string]interface{}, key string, defaultVal bool) bool {
-	if v, ok := m[key].(bool); ok {
-		return v
+func getBool(data map[string]any, key string, defaultVal bool) bool {
+	if val, ok := data[key].(bool); ok {
+		return val
 	}
 	return defaultVal
 }
@@ -827,25 +827,25 @@ func (cm *CheckpointManager) ClearAll(ctx context.Context) error {
 // On serialization failure (channels, functions, circular references),
 // returns nil rather than a shared reference that would silently
 // propagate mutations between checkpoint and its clone.
-func deepCopy(v interface{}) interface{} {
-	if v == nil {
+func deepCopy(val any) any {
+	if val == nil {
 		return nil
 	}
-	
+
 	// Handle common collection types with dedicated helpers
-	if m, ok := v.(map[string]interface{}); ok {
+	if m, ok := val.(map[string]any); ok {
 		return deepCopyMap(m)
 	}
-	if s, ok := v.([]interface{}); ok {
-		return deepCopySlice(s)
+	if slice, ok := val.([]any); ok {
+		return deepCopySlice(slice)
 	}
-	
+
 	// For all other types, JSON round-trip provides reliable deep copy.
-	data, err := json.Marshal(v)
+	data, err := json.Marshal(val)
 	if err != nil {
 		return nil
 	}
-	var result interface{}
+	var result any
 	if err := json.Unmarshal(data, &result); err != nil {
 		return nil
 	}
@@ -853,19 +853,19 @@ func deepCopy(v interface{}) interface{} {
 }
 
 // deepCopyMap creates a deep copy of a map.
-func deepCopyMap(m map[string]interface{}) map[string]interface{} {
-	result := make(map[string]interface{}, len(m))
-	for k, v := range m {
-		result[k] = deepCopy(v)
+func deepCopyMap(src map[string]any) map[string]any {
+	result := make(map[string]any, len(src))
+	for key, val := range src {
+		result[key] = deepCopy(val)
 	}
 	return result
 }
 
 // deepCopySlice creates a deep copy of a slice.
-func deepCopySlice(s []interface{}) []interface{} {
-	result := make([]interface{}, len(s))
-	for i, v := range s {
-		result[i] = deepCopy(v)
+func deepCopySlice(slice []any) []any {
+	result := make([]any, len(slice))
+	for i, val := range slice {
+		result[i] = deepCopy(val)
 	}
 	return result
 }

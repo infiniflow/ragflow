@@ -17,22 +17,22 @@ func newTestGraph(t *testing.T) *graph.StateGraph {
 
 func newSimpleGraph(t *testing.T) *graph.StateGraph {
 	t.Helper()
-	sg := graph.NewStateGraph(map[string]interface{}{"value": ""})
+	sg := graph.NewStateGraph(map[string]any{"value": ""})
 	// Register a channel so the engine can write output
 	sg.AddChannel("value", channels.NewLastValue(""))
 
-	sg.AddNode("node_a", func(ctx context.Context, state interface{}) (interface{}, error) {
-		m, _ := state.(map[string]interface{})
+	sg.AddNode("node_a", func(ctx context.Context, state any) (any, error) {
+		m, _ := state.(map[string]any)
 		if m == nil {
-			m = map[string]interface{}{}
+			m = map[string]any{}
 		}
 		m["value"] = "a"
 		return m, nil
 	})
-	sg.AddNode("node_b", func(ctx context.Context, state interface{}) (interface{}, error) {
-		m, _ := state.(map[string]interface{})
+	sg.AddNode("node_b", func(ctx context.Context, state any) (any, error) {
+		m, _ := state.(map[string]any)
 		if m == nil {
-			m = map[string]interface{}{}
+			m = map[string]any{}
 		}
 		m["value"] = "b"
 		return m, nil
@@ -67,14 +67,14 @@ func TestEngine_RunSync(t *testing.T) {
 	sg := newSimpleGraph(t)
 	engine := NewEngine(sg, WithRecursionLimit(10))
 
-	result, err := engine.RunSync(context.Background(), map[string]interface{}{"value": "start"})
+	result, err := engine.RunSync(context.Background(), map[string]any{"value": "start"})
 	if err != nil {
 		t.Fatalf("RunSync failed: %v", err)
 	}
 	if result == nil {
 		t.Fatal("expected non-nil result")
 	}
-	if m, ok := result.(map[string]interface{}); ok {
+	if m, ok := result.(map[string]any); ok {
 		if m["value"] != "b" {
 			t.Errorf("expected value='b', got %v", m["value"])
 		}
@@ -82,13 +82,13 @@ func TestEngine_RunSync(t *testing.T) {
 }
 
 func TestEngine_RunSyncWithChannelRead(t *testing.T) {
-	sg := graph.NewStateGraph(map[string]interface{}{"name": ""})
+	sg := graph.NewStateGraph(map[string]any{"name": ""})
 	sg.AddChannel("name", channels.NewLastValue(""))
 
-	sg.AddNode("echo", func(ctx context.Context, state interface{}) (interface{}, error) {
-		m, ok := state.(map[string]interface{})
+	sg.AddNode("echo", func(ctx context.Context, state any) (any, error) {
+		m, ok := state.(map[string]any)
 		if !ok || m == nil {
-			m = map[string]interface{}{}
+			m = map[string]any{}
 		}
 		m["name"] = "echoed"
 		return m, nil
@@ -101,7 +101,7 @@ func TestEngine_RunSyncWithChannelRead(t *testing.T) {
 	}
 
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	result, err := engine.RunSync(context.Background(), map[string]interface{}{"name": "world"})
+	result, err := engine.RunSync(context.Background(), map[string]any{"name": "world"})
 	if err != nil {
 		t.Fatalf("RunSync failed: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestEngine_RecursionLimit(t *testing.T) {
 	sg.AddEdge("node_a", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(3))
-	_, err := engine.RunSync(context.Background(), map[string]interface{}{"value": "x"})
+	_, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
 	if err != nil {
 		// Engine runs successfully: node_a -> node_b -> node_a loops via self-edge
 		t.Logf("got error (expected from recursion limit): %v", err)
@@ -145,10 +145,10 @@ func TestEngine_ConfigPropagation(t *testing.T) {
 }
 
 func TestEngine_EmptyGraph(t *testing.T) {
-	sg := graph.NewStateGraph(map[string]interface{}{"x": ""})
+	sg := graph.NewStateGraph(map[string]any{"x": ""})
 	sg.AddChannel("x", channels.NewLastValue(""))
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	_, err := engine.RunSync(context.Background(), map[string]interface{}{"x": "1"})
+	_, err := engine.RunSync(context.Background(), map[string]any{"x": "1"})
 	if err == nil {
 		t.Fatal("expected error for graph with no entry point")
 	}

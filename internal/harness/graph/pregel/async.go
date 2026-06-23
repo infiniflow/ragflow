@@ -24,7 +24,7 @@ type AsyncExecutor struct {
 type asyncTask struct {
 	ID       string
 	Name     string
-	Func     func(context.Context) (interface{}, error)
+	Func     func(context.Context) (any, error)
 	Context  context.Context
 	Cancel   context.CancelFunc
 	Priority int
@@ -34,7 +34,7 @@ type asyncTask struct {
 type asyncTaskResult struct {
 	TaskID   string
 	Name     string
-	Output   interface{}
+	Output   any
 	Err      error
 	Duration time.Duration
 }
@@ -61,7 +61,7 @@ func NewAsyncExecutor(maxConcurrency int) *AsyncExecutor {
 }
 
 // Execute executes a single task asynchronously.
-func (e *AsyncExecutor) Execute(ctx context.Context, name string, fn func(context.Context) (interface{}, error)) <-chan *asyncTaskResult {
+func (e *AsyncExecutor) Execute(ctx context.Context, name string, fn func(context.Context) (any, error)) <-chan *asyncTaskResult {
 	resultCh := make(chan *asyncTaskResult, 1)
 	
 	// Create cancellable context so Cancel() can stop running tasks.
@@ -175,7 +175,7 @@ func (e *AsyncExecutor) ExecuteBatch(ctx context.Context, tasks []asyncTask) <-c
 }
 
 // ExecuteWithRetry executes a task with retry logic.
-func (e *AsyncExecutor) ExecuteWithRetry(ctx context.Context, name string, fn func(context.Context) (interface{}, error), retryConfig *RetryConfig) <-chan *asyncTaskResult {
+func (e *AsyncExecutor) ExecuteWithRetry(ctx context.Context, name string, fn func(context.Context) (any, error), retryConfig *RetryConfig) <-chan *asyncTaskResult {
 	resultCh := make(chan *asyncTaskResult, 1)
 	
 	taskCtx, cancel := context.WithCancel(ctx)
@@ -259,7 +259,7 @@ type AsyncPipeline struct {
 	retryer  *RetryExecutor
 	
 	// Stream channels
-	events   chan interface{}
+	events   chan any
 	errors   chan error
 	
 	// Control
@@ -273,7 +273,7 @@ func NewAsyncPipeline(maxConcurrency int, retryPolicy *types.RetryPolicy) *Async
 	return &AsyncPipeline{
 		executor: NewAsyncExecutor(maxConcurrency),
 		retryer:  NewRetryExecutor(retryPolicy),
-		events:   make(chan interface{}, 100),
+		events:   make(chan any, 100),
 		errors:   make(chan error, 10),
 		running:  false,
 	}
@@ -314,7 +314,7 @@ func (p *AsyncPipeline) Stop() {
 }
 
 // ExecuteNode executes a node in the pipeline.
-func (p *AsyncPipeline) ExecuteNode(ctx context.Context, name string, fn func(context.Context) (interface{}, error), retryConfig *RetryConfig) <-chan *asyncTaskResult {
+func (p *AsyncPipeline) ExecuteNode(ctx context.Context, name string, fn func(context.Context) (any, error), retryConfig *RetryConfig) <-chan *asyncTaskResult {
 	if retryConfig != nil {
 		return p.executor.ExecuteWithRetry(ctx, name, fn, retryConfig)
 	}
@@ -322,7 +322,7 @@ func (p *AsyncPipeline) ExecuteNode(ctx context.Context, name string, fn func(co
 }
 
 // Events returns the event channel.
-func (p *AsyncPipeline) Events() <-chan interface{} {
+func (p *AsyncPipeline) Events() <-chan any {
 	return p.events
 }
 
@@ -332,7 +332,7 @@ func (p *AsyncPipeline) Errors() <-chan error {
 }
 
 // EmitEvent emits an event to the pipeline.
-func (p *AsyncPipeline) EmitEvent(event interface{}) {
+func (p *AsyncPipeline) EmitEvent(event any) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	
@@ -429,7 +429,7 @@ func (l *ConcurrencyLimiter) Release(node string) {
 
 // PriorityTask represents a prioritized task.
 type PriorityTask struct {
-	Func     func(context.Context) (interface{}, error)
+	Func     func(context.Context) (any, error)
 	Priority int
 }
 
@@ -457,8 +457,8 @@ func (e *PriorityExecutor) Submit(task PriorityTask) error {
 }
 
 // Execute executes tasks in priority order.
-func (e *PriorityExecutor) Execute(ctx context.Context, maxConcurrency int) <-chan interface{} {
-	resultCh := make(chan interface{}, maxConcurrency)
+func (e *PriorityExecutor) Execute(ctx context.Context, maxConcurrency int) <-chan any {
+	resultCh := make(chan any, maxConcurrency)
 	
 	// Simple priority scheduling using multiple channels
 	// In a real implementation, you'd use a priority queue
@@ -473,7 +473,7 @@ func (e *PriorityExecutor) Execute(ctx context.Context, maxConcurrency int) <-ch
 				return
 			case task := <-e.tasks:
 				output, err := task.Func(ctx)
-				resultCh <- map[string]interface{}{
+				resultCh <- map[string]any{
 					"output":   output,
 					"error":    err,
 					"priority": task.Priority,

@@ -39,10 +39,10 @@ type parallelOptions struct {
 
 // WithParallelMaxConcurrency caps the number of concurrent sub-graph
 // invocations. ≤ 1 = sequential (no goroutines). Default 0 (sequential).
-func WithParallelMaxConcurrency(n int) ParallelOption {
+func WithParallelMaxConcurrency(maxConcurrency int) ParallelOption {
 	return func(o *parallelOptions) {
-		if n >= 0 {
-			o.maxConcurrency = n
+		if maxConcurrency >= 0 {
+			o.maxConcurrency = maxConcurrency
 		}
 	}
 }

@@ -48,7 +48,7 @@ type StreamEvent struct {
 	// TaskID is the task ID (for task events)
 	TaskID string
 	// Data is the event-specific data
-	Data interface{}
+	Data any
 	// Error is the error (for error events)
 	Error error
 }
@@ -59,7 +59,7 @@ func NewStreamEvent(eventType StreamEventType, step int) *StreamEvent {
 		Type:      eventType,
 		Timestamp: time.Now(),
 		Step:      step,
-		Data:      make(map[string]interface{}),
+		Data:      make(map[string]any),
 	}
 }
 
@@ -149,13 +149,13 @@ func (sm *StreamManager) shouldEmit(eventType StreamEventType) bool {
 }
 
 // EmitCheckpoint emits a checkpoint event.
-func (sm *StreamManager) EmitCheckpoint(step int, checkpoint map[string]interface{}) {
+func (sm *StreamManager) EmitCheckpoint(step int, checkpoint map[string]any) {
 	if !sm.shouldEmit(EventTypeCheckpoint) {
 		return
 	}
 	
 	event := NewStreamEvent(EventTypeCheckpoint, step)
-	event.Data = map[string]interface{}{
+	event.Data = map[string]any{
 		"checkpoint": checkpoint,
 	}
 	
@@ -171,7 +171,7 @@ func (sm *StreamManager) EmitTaskStart(step int, node string, taskID string) {
 	event := NewStreamEvent(EventTypeTaskStart, step)
 	event.Node = node
 	event.TaskID = taskID
-	event.Data = map[string]interface{}{
+	event.Data = map[string]any{
 		"node": node,
 		"task_id": taskID,
 	}
@@ -180,7 +180,7 @@ func (sm *StreamManager) EmitTaskStart(step int, node string, taskID string) {
 }
 
 // EmitTaskEnd emits a task end event.
-func (sm *StreamManager) EmitTaskEnd(step int, node string, taskID string, output interface{}, duration time.Duration, err error) {
+func (sm *StreamManager) EmitTaskEnd(step int, node string, taskID string, output any, duration time.Duration, err error) {
 	if !sm.shouldEmit(EventTypeTaskEnd) {
 		return
 	}
@@ -189,7 +189,7 @@ func (sm *StreamManager) EmitTaskEnd(step int, node string, taskID string, outpu
 	event.Node = node
 	event.TaskID = taskID
 	event.Error = err
-	event.Data = map[string]interface{}{
+	event.Data = map[string]any{
 		"node":     node,
 		"task_id":  taskID,
 		"output":   output,
@@ -200,14 +200,14 @@ func (sm *StreamManager) EmitTaskEnd(step int, node string, taskID string, outpu
 }
 
 // EmitUpdate emits a state update event.
-func (sm *StreamManager) EmitUpdate(step int, node string, output interface{}) {
+func (sm *StreamManager) EmitUpdate(step int, node string, output any) {
 	if !sm.shouldEmit(EventTypeUpdate) {
 		return
 	}
 	
 	event := NewStreamEvent(EventTypeUpdate, step)
 	event.Node = node
-	event.Data = map[string]interface{}{
+	event.Data = map[string]any{
 		"node":   node,
 		"output": output,
 	}
@@ -216,13 +216,13 @@ func (sm *StreamManager) EmitUpdate(step int, node string, output interface{}) {
 }
 
 // EmitValues emits state values event.
-func (sm *StreamManager) EmitValues(step int, values map[string]interface{}) {
+func (sm *StreamManager) EmitValues(step int, values map[string]any) {
 	if !sm.shouldEmit(EventTypeValues) {
 		return
 	}
 	
 	event := NewStreamEvent(EventTypeValues, step)
-	event.Data = map[string]interface{}{
+	event.Data = map[string]any{
 		"values": values,
 	}
 	
@@ -236,7 +236,7 @@ func (sm *StreamManager) EmitInterrupt(step int, interrupts []string) {
 	}
 	
 	event := NewStreamEvent(EventTypeInterrupt, step)
-	event.Data = map[string]interface{}{
+	event.Data = map[string]any{
 		"interrupts": interrupts,
 	}
 	
@@ -252,7 +252,7 @@ func (sm *StreamManager) EmitError(step int, err error, node string) {
 	event := NewStreamEvent(EventTypeError, step)
 	event.Node = node
 	event.Error = err
-	event.Data = map[string]interface{}{
+	event.Data = map[string]any{
 		"node":  node,
 		"error": err.Error(),
 	}
@@ -261,13 +261,13 @@ func (sm *StreamManager) EmitError(step int, err error, node string) {
 }
 
 // EmitDebug emits a debug event.
-func (sm *StreamManager) EmitDebug(step int, message string, data interface{}) {
+func (sm *StreamManager) EmitDebug(step int, message string, data any) {
 	if !sm.shouldEmit(EventTypeDebug) {
 		return
 	}
 	
 	event := NewStreamEvent(EventTypeDebug, step)
-	event.Data = map[string]interface{}{
+	event.Data = map[string]any{
 		"message": message,
 		"data":    data,
 	}
@@ -276,13 +276,13 @@ func (sm *StreamManager) EmitDebug(step int, message string, data interface{}) {
 }
 
 // EmitFinal emits final event with complete state.
-func (sm *StreamManager) EmitFinal(step int, state interface{}) {
+func (sm *StreamManager) EmitFinal(step int, state any) {
 	if !sm.shouldEmit(EventTypeFinal) {
 		return
 	}
 	
 	event := NewStreamEvent(EventTypeFinal, step)
-	event.Data = map[string]interface{}{
+	event.Data = map[string]any{
 		"state": state,
 	}
 	
@@ -345,13 +345,13 @@ func NewStreamWriter(sm *StreamManager, step int, node string) *StreamWriter {
 }
 
 // Write writes data to the stream.
-func (w *StreamWriter) Write(data interface{}) error {
+func (w *StreamWriter) Write(data any) error {
 	w.streamManager.EmitDebug(w.step, fmt.Sprintf("custom output from node %s", w.node), data)
 	return nil
 }
 
 // WriteJSON writes JSON data to the stream.
-func (w *StreamWriter) WriteJSON(data interface{}) error {
+func (w *StreamWriter) WriteJSON(data any) error {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		return err

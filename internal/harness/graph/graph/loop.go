@@ -52,10 +52,10 @@ type loopOptions struct {
 }
 
 // WithLoopMaxIterations caps the loop at n iterations. Default 1024.
-func WithLoopMaxIterations(n int) LoopOption {
+func WithLoopMaxIterations(maxIterations int) LoopOption {
 	return func(o *loopOptions) {
-		if n >= 0 {
-			o.maxIterations = n
+		if maxIterations >= 0 {
+			o.maxIterations = maxIterations
 		}
 	}
 }

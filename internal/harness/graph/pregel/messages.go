@@ -31,7 +31,7 @@ type MessageStream struct {
 type MessageChunk struct {
 	Index       int
 	Content     string
-	Metadata    map[string]interface{}
+	Metadata    map[string]any
 	IsComplete  bool
 	Role        string
 	ToolCalls   []*ToolCall
@@ -41,7 +41,7 @@ type MessageChunk struct {
 type ToolCall struct {
 	ID       string
 	Name     string
-	Arguments map[string]interface{}
+	Arguments map[string]any
 }
 
 // FlushTrigger determines when to flush aggregated messages.
@@ -104,7 +104,7 @@ func (h *StreamMessagesHandler) OnChunk(ctx context.Context, node string, chunk 
 	if ms.current == nil || ms.current.IsComplete {
 		ms.current = &MessageChunk{
 			Index:    len(ms.chunks),
-			Metadata: make(map[string]interface{}),
+			Metadata: make(map[string]any),
 		}
 	}
 
@@ -114,7 +114,7 @@ func (h *StreamMessagesHandler) OnChunk(ctx context.Context, node string, chunk 
 	// Update metadata
 	if chunk.Metadata != nil {
 		if ms.current.Metadata == nil {
-			ms.current.Metadata = make(map[string]interface{})
+			ms.current.Metadata = make(map[string]any)
 		}
 		for k, v := range chunk.Metadata {
 			ms.current.Metadata[k] = v
@@ -297,7 +297,7 @@ func (a *MessageAggregator) AddEmitter(emitter MessageEmitter) {
 // StreamToChannel emits messages to a stream channel.
 func StreamToChannel(ch *types.ChannelStream) MessageEmitter {
 	return func(ctx context.Context, node string, chunk *MessageChunk) error {
-		chunkData := map[string]interface{}{
+		chunkData := map[string]any{
 			"node":      node,
 			"role":      chunk.Role,
 			"content":   chunk.Content,
@@ -351,7 +351,7 @@ func StreamModeMessages(opts ...StreamMessagesOption) *StreamMessagesHandler {
 }
 
 // ExtractMessagesFromOutput extracts messages from node output.
-func ExtractMessagesFromOutput(output interface{}) ([]*MessageChunk, error) {
+func ExtractMessagesFromOutput(output any) ([]*MessageChunk, error) {
 	// Check if output is already a MessageChunk
 	if chunk, ok := output.(*MessageChunk); ok {
 		return []*MessageChunk{chunk}, nil
@@ -363,7 +363,7 @@ func ExtractMessagesFromOutput(output interface{}) ([]*MessageChunk, error) {
 	}
 
 	// Try to extract from map
-	if m, ok := output.(map[string]interface{}); ok {
+	if m, ok := output.(map[string]any); ok {
 		if content, ok := m["content"].(string); ok {
 			role := "assistant"
 			if r, ok := m["role"].(string); ok {
@@ -372,7 +372,7 @@ func ExtractMessagesFromOutput(output interface{}) ([]*MessageChunk, error) {
 			chunk := &MessageChunk{
 				Content: content,
 				Role:    role,
-				Metadata: make(map[string]interface{}),
+				Metadata: make(map[string]any),
 			}
 			return []*MessageChunk{chunk}, nil
 		}
@@ -394,7 +394,7 @@ func ConvertToTaskResult(node string, chunks []*MessageChunk) *TaskResult {
 	// Merge chunks
 	merged := &MessageChunk{
 		Content:    "",
-		Metadata:   make(map[string]interface{}),
+		Metadata:   make(map[string]any),
 		ToolCalls:  make([]*ToolCall, 0),
 	}
 
@@ -412,7 +412,7 @@ func ConvertToTaskResult(node string, chunks []*MessageChunk) *TaskResult {
 	}
 
 	// Convert to map for output
-	output := map[string]interface{}{
+	output := map[string]any{
 		"messages": []*MessageChunk{merged},
 		"content":  merged.Content,
 		"role":     merged.Role,

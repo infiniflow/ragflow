@@ -389,8 +389,8 @@ func (t *Tracer) Clear() {
 // - Functions: wrapped with NewInjectableRunnable
 // - Runnable: wrapped to support injection
 // - InjectableRunnable: returned as-is
-func CoerceToInjectableRunnable(v interface{}, name string) (*InjectableRunnable, error) {
-	switch r := v.(type) {
+func CoerceToInjectableRunnable(target interface{}, name string) (*InjectableRunnable, error) {
+	switch r := target.(type) {
 	case *InjectableRunnable:
 		return r, nil
 	case Runnable[any, any]:
@@ -400,10 +400,10 @@ func CoerceToInjectableRunnable(v interface{}, name string) (*InjectableRunnable
 		}), nil
 	default:
 		// Check if it's a function
-		if reflect.TypeOf(v).Kind() == reflect.Func {
-			return NewInjectableRunnable(name, v), nil
+		if reflect.TypeOf(target).Kind() == reflect.Func {
+			return NewInjectableRunnable(name, target), nil
 		}
-		return nil, fmt.Errorf("cannot coerce %T to InjectableRunnable", v)
+		return nil, fmt.Errorf("cannot coerce %T to InjectableRunnable", target)
 	}
 }
 

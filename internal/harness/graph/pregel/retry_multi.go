@@ -28,14 +28,14 @@ func NewMultiPolicyRetryExecutor(policies ...types.RetryPolicy) *MultiPolicyRetr
 func (e *MultiPolicyRetryExecutor) Execute(
 	ctx context.Context,
 	name string,
-	fn func(context.Context) (interface{}, error),
-) (interface{}, error) {
+	fn func(context.Context) (any, error),
+) (any, error) {
 	if len(e.policies) == 0 {
 		return fn(ctx)
 	}
 
 	var lastErr error
-	var lastOutput interface{}
+	var lastOutput any
 	attempt := 0
 
 	for {

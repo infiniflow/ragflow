@@ -651,13 +651,13 @@ func (r *Runtime) Override(overrides map[string]interface{}) *Runtime {
 	return newRuntime
 }
 
-func cloneMap(m map[string]interface{}) map[string]interface{} {
-	if m == nil {
+func cloneMap(src map[string]any) map[string]any {
+	if src == nil {
 		return nil
 	}
-	clone := make(map[string]interface{}, len(m))
-	for k, v := range m {
-		clone[k] = v
+	clone := make(map[string]any, len(src))
+	for key, val := range src {
+		clone[key] = val
 	}
 	return clone
 }

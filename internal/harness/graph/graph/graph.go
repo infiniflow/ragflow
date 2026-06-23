@@ -1132,43 +1132,43 @@ func inlineBuildOutput(registry *channels.Registry, lastState interface{}) (inte
 	return lastState, nil
 }
 
-func inlineMergeStates(existing, new interface{}) interface{} {
+func inlineMergeStates(existing, next any) any {
 	if existing == nil {
-		return new
+		return next
 	}
-	if new == nil {
+	if next == nil {
 		return existing
 	}
-	existingMap, ok1 := existing.(map[string]interface{})
-	newMap, ok2 := new.(map[string]interface{})
+	existingMap, ok1 := existing.(map[string]any)
+	nextMap, ok2 := next.(map[string]any)
 	if ok1 && ok2 {
-		result := make(map[string]interface{})
-		for k, v := range existingMap {
-			result[k] = v
+		result := make(map[string]any)
+		for key, val := range existingMap {
+			result[key] = val
 		}
-		for k, v := range newMap {
-			result[k] = v
+		for key, val := range nextMap {
+			result[key] = val
 		}
 		return result
 	}
-	return new
+	return next
 }
 
-func inlineToMap(v interface{}) (map[string]interface{}, error) {
-	if v == nil {
+func inlineToMap(val any) (map[string]any, error) {
+	if val == nil {
 		return nil, fmt.Errorf("nil value")
 	}
-	if m, ok := v.(map[string]interface{}); ok {
+	if m, ok := val.(map[string]any); ok {
 		return m, nil
 	}
-	rv := reflect.ValueOf(v)
+	rv := reflect.ValueOf(val)
 	if rv.Kind() == reflect.Ptr {
 		rv = rv.Elem()
 	}
 	if rv.Kind() != reflect.Struct && rv.Kind() != reflect.Map {
-		return map[string]interface{}{"__root__": v}, nil
+		return map[string]any{"__root__": val}, nil
 	}
-	result := make(map[string]interface{})
+	result := make(map[string]any)
 	if rv.Kind() == reflect.Map {
 		for _, key := range rv.MapKeys() {
 			result[fmt.Sprintf("%v", key.Interface())] = rv.MapIndex(key).Interface()

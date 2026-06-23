@@ -59,7 +59,7 @@ func NewRemoteRunnable(config *RemoteConfig) *RemoteRunnable {
 }
 
 // Execute sends a request to the remote server to execute a node.
-func (r *RemoteRunnable) Execute(ctx context.Context, nodeName string, input interface{}, config *types.RunnableConfig) (interface{}, error) {
+func (r *RemoteRunnable) Execute(ctx context.Context, nodeName string, input any, config *types.RunnableConfig) (any, error) {
 	// Build request
 	reqBody := &RemoteExecuteRequest{
 		Node:   nodeName,
@@ -115,13 +115,13 @@ func (r *RemoteRunnable) Execute(ctx context.Context, nodeName string, input int
 // RemoteExecuteRequest represents a request to execute a node remotely.
 type RemoteExecuteRequest struct {
 	Node   string                 `json:"node"`
-	Input  interface{}            `json:"input"`
+	Input  any            `json:"input"`
 	Config *types.RunnableConfig  `json:"config,omitempty"`
 }
 
 // RemoteExecuteResponse represents the response from a remote execution.
 type RemoteExecuteResponse struct {
-	Output interface{} `json:"output,omitempty"`
+	Output any `json:"output,omitempty"`
 	Error  string      `json:"error,omitempty"`
 }
 
@@ -140,10 +140,10 @@ type PregelMessage struct {
 	Type      MessageType            `json:"type"`
 	ID        string                 `json:"id"`
 	NodeName  string                 `json:"node_name,omitempty"`
-	Input     interface{}            `json:"input,omitempty"`
-	Output    interface{}            `json:"output,omitempty"`
+	Input     any            `json:"input,omitempty"`
+	Output    any            `json:"output,omitempty"`
 	Error     string                 `json:"error,omitempty"`
-	Metadata  map[string]interface{} `json:"metadata,omitempty"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
 	Timestamp time.Time              `json:"timestamp"`
 }
 
@@ -270,7 +270,7 @@ func NewRemoteNode(runnable *RemoteRunnable, nodeName string) *RemoteNode {
 }
 
 // Execute executes the remote node.
-func (n *RemoteNode) Execute(ctx context.Context, input interface{}) (interface{}, error) {
+func (n *RemoteNode) Execute(ctx context.Context, input any) (any, error) {
 	return n.runnable.Execute(ctx, n.nodeName, input, nil)
 }
 

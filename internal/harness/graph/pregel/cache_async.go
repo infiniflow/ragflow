@@ -16,7 +16,7 @@ type AsyncCache interface {
 	
 	// ASet asynchronously stores a value in the cache.
 	// Returns a channel that will be closed when the operation completes.
-	ASet(ctx context.Context, key string, value interface{}, ttl time.Duration) <-chan error
+	ASet(ctx context.Context, key string, value any, ttl time.Duration) <-chan error
 	
 	// ADelete asynchronously removes a value from the cache.
 	// Returns a channel that will be closed when the operation completes.
@@ -25,7 +25,7 @@ type AsyncCache interface {
 
 // CacheResult represents the result of an asynchronous cache get operation.
 type CacheResult struct {
-	Value interface{}
+	Value any
 	Found bool
 	Error error
 }
@@ -42,7 +42,7 @@ type asyncCacheOp struct {
 	ctx    context.Context
 	opType string // "get", "set", "delete"
 	key    string
-	value  interface{}
+	value  any
 	ttl    time.Duration
 	result chan<- CacheResult
 	done   chan<- error
@@ -121,7 +121,7 @@ func (c *AsyncMemoryCache) AGet(ctx context.Context, key string) <-chan CacheRes
 }
 
 // ASet asynchronously stores a value in the cache.
-func (c *AsyncMemoryCache) ASet(ctx context.Context, key string, value interface{}, ttl time.Duration) <-chan error {
+func (c *AsyncMemoryCache) ASet(ctx context.Context, key string, value any, ttl time.Duration) <-chan error {
 	doneCh := make(chan error, 1)
 	
 	select {
@@ -168,7 +168,7 @@ func (c *AsyncMemoryCache) Stop() {
 // AsyncCachePolicy configures async cache behavior.
 type AsyncCachePolicy struct {
 	// KeyFunc generates the cache key.
-	KeyFunc func(context.Context, interface{}) string
+	KeyFunc func(context.Context, any) string
 	
 	// TTL is the time-to-live for cached values.
 	TTL *time.Duration
@@ -195,9 +195,9 @@ func NewAsyncCachedExecutor(cache AsyncCache, policy *AsyncCachePolicy) *AsyncCa
 func (e *AsyncCachedExecutor) Execute(
 	ctx context.Context,
 	nodeName string,
-	input interface{},
-	fn func(context.Context, interface{}) (interface{}, error),
-) (interface{}, error) {
+	input any,
+	fn func(context.Context, any) (any, error),
+) (any, error) {
 	// Generate cache key
 	var key string
 	if e.cachePolicy != nil && e.cachePolicy.KeyFunc != nil {

@@ -144,7 +144,7 @@ func TestFinishNotification(t *testing.T) {
 		// For now, just verify the structure
 		notification := &FinishNotification{
 			TaskName:  "test_node",
-			Output:    map[string]interface{}{"result": "success"},
+			Output:    map[string]any{"result": "success"},
 			Step:       1,
 			Namespace:  "test_namespace",
 		}
@@ -354,7 +354,7 @@ func TestOptimizedApplyWrites(t *testing.T) {
 		registry.Register("key", ch)
 		
 		results := []*TaskResult{
-			{Name: "task1", Output: map[string]interface{}{"key": "value"}},
+			{Name: "task1", Output: map[string]any{"key": "value"}},
 		}
 		
 		updatedChannels, err := optimized.OptimizedApplyWrites(

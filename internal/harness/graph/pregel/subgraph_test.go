@@ -166,7 +166,7 @@ func TestRecursiveSubgraphExecutor(t *testing.T) {
 
 func TestCheckpointMigration(t *testing.T) {
 	mockCheckpointer := &MockCheckpointSaver{
-		checkpoints: make(map[string]map[string]interface{}),
+		checkpoints: make(map[string]map[string]any),
 		tuples:     make(map[string]*checkpoint.CheckpointTuple),
 		mu:         sync.RWMutex{},
 	}
@@ -183,7 +183,7 @@ func TestCheckpointMigration(t *testing.T) {
 		ctx := context.Background()
 		
 		// Create parent checkpoint
-		parentCP := map[string]interface{}{
+		parentCP := map[string]any{
 			"channel1": "value1",
 			"channel2": "value2",
 		}
@@ -217,7 +217,7 @@ func TestCheckpointMigration(t *testing.T) {
 		ctx := context.Background()
 		
 		// Create subgraph checkpoint
-		subgraphCP := map[string]interface{}{
+		subgraphCP := map[string]any{
 			"channel1": "updated_value1",
 			"channel2": "updated_value2",
 		}
@@ -389,12 +389,12 @@ func TestNamespaceSeparator(t *testing.T) {
 
 // MockCheckpointSaver is a mock implementation of CheckpointSaver for testing.
 type MockCheckpointSaver struct {
-	checkpoints map[string]map[string]interface{}
+	checkpoints map[string]map[string]any
 	tuples     map[string]*checkpoint.CheckpointTuple
 	mu         sync.RWMutex
 }
 
-func (m *MockCheckpointSaver) Put(ctx context.Context, config map[string]interface{}, checkpoint map[string]interface{}) error {
+func (m *MockCheckpointSaver) Put(ctx context.Context, config map[string]any, checkpoint map[string]any) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	
@@ -403,7 +403,7 @@ func (m *MockCheckpointSaver) Put(ctx context.Context, config map[string]interfa
 	return nil
 }
 
-func (m *MockCheckpointSaver) Get(ctx context.Context, config map[string]interface{}) (map[string]interface{}, error) {
+func (m *MockCheckpointSaver) Get(ctx context.Context, config map[string]any) (map[string]any, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	
@@ -415,15 +415,15 @@ func (m *MockCheckpointSaver) Get(ctx context.Context, config map[string]interfa
 	return cp, nil
 }
 
-func (m *MockCheckpointSaver) List(ctx context.Context, config map[string]interface{}, limit int) ([]map[string]interface{}, error) {
+func (m *MockCheckpointSaver) List(ctx context.Context, config map[string]any, limit int) ([]map[string]any, error) {
 	return nil, nil
 }
 
-func (m *MockCheckpointSaver) PutWrites(ctx context.Context, config map[string]interface{}, writes []*checkpoint.PendingWrite) error {
+func (m *MockCheckpointSaver) PutWrites(ctx context.Context, config map[string]any, writes []*checkpoint.PendingWrite) error {
 	return nil
 }
 
-func (m *MockCheckpointSaver) GetTuple(ctx context.Context, config map[string]interface{}) (*checkpoint.CheckpointTuple, error) {
+func (m *MockCheckpointSaver) GetTuple(ctx context.Context, config map[string]any) (*checkpoint.CheckpointTuple, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	
@@ -448,8 +448,8 @@ type MockNode struct {
 	name string
 }
 
-func (n *MockNode) Invoke(ctx context.Context, input interface{}) (interface{}, error) {
-	return map[string]interface{}{
+func (n *MockNode) Invoke(ctx context.Context, input any) (any, error) {
+	return map[string]any{
 		"output": n.name + "_result",
 	}, nil
 }
@@ -457,7 +457,7 @@ func (n *MockNode) Invoke(ctx context.Context, input interface{}) (interface{}, 
 // MockGraph is a mock implementation of a graph for testing.
 type MockGraph struct{}
 
-func (g *MockGraph) AddNode(name string, node interface{}) {
+func (g *MockGraph) AddNode(name string, node any) {
 	// Mock implementation
 }
 

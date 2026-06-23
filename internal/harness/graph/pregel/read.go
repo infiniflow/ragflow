@@ -24,7 +24,7 @@ type ChannelSelector interface {
 
 // ChannelTransformer transforms the raw channel values.
 type ChannelTransformer interface {
-	Transform(values map[string]interface{}) (map[string]interface{}, error)
+	Transform(values map[string]any) (map[string]any, error)
 }
 
 // NewChannelRead creates a new channel read operation.
@@ -60,7 +60,7 @@ func WithTransformer(transformer ChannelTransformer) ChannelReadOption {
 }
 
 // Read performs the read operation.
-func (cr *ChannelRead) Read(ctx context.Context) (map[string]interface{}, error) {
+func (cr *ChannelRead) Read(ctx context.Context) (map[string]any, error) {
 	cr.mu.RLock()
 	defer cr.mu.RUnlock()
 
@@ -71,7 +71,7 @@ func (cr *ChannelRead) Read(ctx context.Context) (map[string]interface{}, error)
 	}
 
 	// Read values from channels
-	values := make(map[string]interface{})
+	values := make(map[string]any)
 	for _, name := range channelNames {
 		if ch, ok := cr.registry.Get(name); ok {
 			val, err := ch.Get()
@@ -94,7 +94,7 @@ func (cr *ChannelRead) Read(ctx context.Context) (map[string]interface{}, error)
 }
 
 // ReadChannel reads a single channel by name.
-func (cr *ChannelRead) ReadChannel(ctx context.Context, name string) (interface{}, error) {
+func (cr *ChannelRead) ReadChannel(ctx context.Context, name string) (any, error) {
 	cr.mu.RLock()
 	defer cr.mu.RUnlock()
 
@@ -189,7 +189,7 @@ func (s *AvailableChannelsSelector) Select(registry *channels.Registry) ([]strin
 // IdentityTransformer returns values as-is.
 type IdentityTransformer struct{}
 
-func (t *IdentityTransformer) Transform(values map[string]interface{}) (map[string]interface{}, error) {
+func (t *IdentityTransformer) Transform(values map[string]any) (map[string]any, error) {
 	return values, nil
 }
 
@@ -203,8 +203,8 @@ func NewMappingTransformer(mappings map[string]string) *MappingTransformer {
 	return &MappingTransformer{mappings: mappings}
 }
 
-func (t *MappingTransformer) Transform(values map[string]interface{}) (map[string]interface{}, error) {
-	result := make(map[string]interface{})
+func (t *MappingTransformer) Transform(values map[string]any) (map[string]any, error) {
+	result := make(map[string]any)
 	for oldName, value := range values {
 		newName := oldName
 		if mapped, ok := t.mappings[oldName]; ok {
@@ -229,8 +229,8 @@ func NewFilterTransformer(keep ...string) *FilterTransformer {
 	return &FilterTransformer{filter: filter}
 }
 
-func (t *FilterTransformer) Transform(values map[string]interface{}) (map[string]interface{}, error) {
-	result := make(map[string]interface{})
+func (t *FilterTransformer) Transform(values map[string]any) (map[string]any, error) {
+	result := make(map[string]any)
 	for name, value := range values {
 		if t.filter[name] {
 			result[name] = value
@@ -241,16 +241,16 @@ func (t *FilterTransformer) Transform(values map[string]interface{}) (map[string
 
 // DefaultTransformer provides default values for missing channels.
 type DefaultTransformer struct {
-	defaults map[string]interface{}
+	defaults map[string]any
 }
 
 // NewDefaultTransformer creates a transformer with default values.
-func NewDefaultTransformer(defaults map[string]interface{}) *DefaultTransformer {
+func NewDefaultTransformer(defaults map[string]any) *DefaultTransformer {
 	return &DefaultTransformer{defaults: defaults}
 }
 
-func (t *DefaultTransformer) Transform(values map[string]interface{}) (map[string]interface{}, error) {
-	result := make(map[string]interface{})
+func (t *DefaultTransformer) Transform(values map[string]any) (map[string]any, error) {
+	result := make(map[string]any)
 	for name, defValue := range t.defaults {
 		if value, ok := values[name]; ok {
 			result[name] = value
@@ -270,20 +270,20 @@ func (t *DefaultTransformer) Transform(values map[string]interface{}) (map[strin
 // MergingTransformer merges channels into a single value.
 type MergingTransformer struct {
 	target string
-	merger func([]interface{}) (interface{}, error)
+	merger func([]any) (any, error)
 }
 
 // NewMergingTransformer creates a transformer that merges channels.
-func NewMergingTransformer(target string, merger func([]interface{}) (interface{}, error)) *MergingTransformer {
+func NewMergingTransformer(target string, merger func([]any) (any, error)) *MergingTransformer {
 	return &MergingTransformer{
 		target: target,
 		merger: merger,
 	}
 }
 
-func (t *MergingTransformer) Transform(values map[string]interface{}) (map[string]interface{}, error) {
+func (t *MergingTransformer) Transform(values map[string]any) (map[string]any, error) {
 	// Collect all values
-	items := make([]interface{}, 0, len(values))
+	items := make([]any, 0, len(values))
 	for _, value := range values {
 		items = append(items, value)
 	}
@@ -295,7 +295,7 @@ func (t *MergingTransformer) Transform(values map[string]interface{}) (map[strin
 	}
 
 	// Return merged value under target key
-	return map[string]interface{}{t.target: merged}, nil
+	return map[string]any{t.target: merged}, nil
 }
 
 // ==================== Triggers ====================
@@ -426,8 +426,8 @@ func (rc *ReadContext) ShouldExecute(registry *channels.Registry) bool {
 }
 
 // ReadAll executes all readers and combines their results.
-func (rc *ReadContext) ReadAll(ctx context.Context) (map[string]interface{}, error) {
-	combined := make(map[string]interface{})
+func (rc *ReadContext) ReadAll(ctx context.Context) (map[string]any, error) {
+	combined := make(map[string]any)
 	for name, reader := range rc.Readers {
 		values, err := reader.Read(ctx)
 		if err != nil {

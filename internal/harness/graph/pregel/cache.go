@@ -16,9 +16,9 @@ import (
 // Cache is the interface for caching node outputs.
 type Cache interface {
 	// Get retrieves a value from the cache.
-	Get(ctx context.Context, key string) (interface{}, bool)
+	Get(ctx context.Context, key string) (any, bool)
 	// Set stores a value in the cache.
-	Set(ctx context.Context, key string, value interface{}, ttl time.Duration)
+	Set(ctx context.Context, key string, value any, ttl time.Duration)
 	// Delete removes a value from the cache.
 	Delete(ctx context.Context, key string)
 	// Clear clears all values from the cache.
@@ -34,7 +34,7 @@ type MemoryCache struct {
 }
 
 type cacheEntry struct {
-	value       interface{}
+	value       any
 	expiration  time.Time
 	lastAccess  time.Time
 	hits        int64
@@ -62,7 +62,7 @@ func NewMemoryCache(maxSize int, eviction EvictionPolicy) *MemoryCache {
 }
 
 // Get retrieves a value from the cache.
-func (c *MemoryCache) Get(ctx context.Context, key string) (interface{}, bool) {
+func (c *MemoryCache) Get(ctx context.Context, key string) (any, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -82,7 +82,7 @@ func (c *MemoryCache) Get(ctx context.Context, key string) (interface{}, bool) {
 }
 
 // Set stores a value in the cache.
-func (c *MemoryCache) Set(ctx context.Context, key string, value interface{}, ttl time.Duration) {
+func (c *MemoryCache) Set(ctx context.Context, key string, value any, ttl time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -159,7 +159,7 @@ func (c *MemoryCache) evict() {
 }
 
 // GenerateCacheKey generates a cache key from the given input.
-func GenerateCacheKey(nodeName string, input interface{}) string {
+func GenerateCacheKey(nodeName string, input any) string {
 	data, _ := json.Marshal(input)
 	hash := sha256.Sum256(data)
 	return fmt.Sprintf("%s:%s", nodeName, hex.EncodeToString(hash[:]))
@@ -180,7 +180,7 @@ func NewCachedExecutor(cache Cache, policy *types.CachePolicy) *CachedExecutor {
 }
 
 // Execute executes a function with caching.
-func (e *CachedExecutor) Execute(ctx context.Context, nodeName string, input interface{}, fn func(context.Context, interface{}) (interface{}, error)) (interface{}, error) {
+func (e *CachedExecutor) Execute(ctx context.Context, nodeName string, input any, fn func(context.Context, any) (any, error)) (any, error) {
 	// Generate cache key
 	var key string
 	if e.cachePolicy != nil && e.cachePolicy.KeyFunc != nil {
@@ -214,12 +214,12 @@ func (e *CachedExecutor) Execute(ctx context.Context, nodeName string, input int
 type NoopCache struct{}
 
 // Get always returns false.
-func (n *NoopCache) Get(ctx context.Context, key string) (interface{}, bool) {
+func (n *NoopCache) Get(ctx context.Context, key string) (any, bool) {
 	return nil, false
 }
 
 // Set is a no-op.
-func (n *NoopCache) Set(ctx context.Context, key string, value interface{}, ttl time.Duration) {}
+func (n *NoopCache) Set(ctx context.Context, key string, value any, ttl time.Duration) {}
 
 // Delete is a no-op.
 func (n *NoopCache) Delete(ctx context.Context, key string) {}

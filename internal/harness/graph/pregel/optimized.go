@@ -120,7 +120,7 @@ func (e *PregelOptimizedEngine) BumpStep(
 func (e *PregelOptimizedEngine) FinishNotification(
 	ctx context.Context,
 	taskName string,
-	result interface{},
+	result any,
 	err error,
 	completedStep int,
 ) {
@@ -205,7 +205,7 @@ func (e *PregelOptimizedEngine) OptimizedApplyWrites(
 	})
 
 	// Group and apply writes
-	writesByChannel := make(map[string][]interface{})
+	writesByChannel := make(map[string][]any)
 
 	for _, result := range results {
 		if result.Err != nil {
@@ -233,7 +233,7 @@ func (e *PregelOptimizedEngine) OptimizedApplyWrites(
 			continue
 		}
 
-		filtered := make([]interface{}, 0, len(values))
+		filtered := make([]any, 0, len(values))
 		for _, v := range values {
 			if v != nil {
 				filtered = append(filtered, v)
@@ -341,7 +341,7 @@ func (e *PregelOptimizedEngine) getNamespace(ctx context.Context) string {
 // FinishNotification represents a task completion notification.
 type FinishNotification struct {
 	TaskName  string      `json:"task_name"`
-	Output    interface{} `json:"output"`
+	Output    any `json:"output"`
 	Error     error       `json:"error,omitempty"`
 	Step      int         `json:"step"`
 	Timestamp time.Time   `json:"timestamp"`
@@ -396,8 +396,8 @@ func (tp *TaskPriority) Compare(other *TaskPriority) int {
 // callers to integrate into custom execution flows.
 func (e *PregelOptimizedEngine) OptimizedRun(
 	ctx context.Context,
-	input interface{},
-) (interface{}, error) {
+	input any,
+) (any, error) {
 	return e.RunSync(ctx, input)
 }
 
@@ -598,10 +598,10 @@ func (e *PregelOptimizedEngine) getCurrentNamespace() string {
 // which handles entry points, conditional edges, regular edges, and branches.
 func (e *PregelOptimizedEngine) PrepareNextTasksOptimized(
 	ctx context.Context,
-	registry interface{},
+	registry any,
 	visited map[string]bool,
 	trigger string,
-	currentState interface{},
+	currentState any,
 ) ([]*Task, map[string]struct{}, error) {
 	if e.Engine == nil || e.Engine.graph == nil {
 		return nil, nil, fmt.Errorf("PrepareNextTasksOptimized: engine not initialized")

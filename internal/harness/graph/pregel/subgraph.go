@@ -27,10 +27,10 @@ type SubgraphManager struct {
 type SubgraphConfig struct {
 	Name         string
 	ParentEngine *Engine
-	Graph        interface{} // Use interface{} to accept any graph type
-	Configurable interface{}
-	Store        interface{}
-	Writer       interface{}
+	Graph        any // Use any to accept any graph type
+	Configurable any
+	Store        any
+	Writer       any
 }
 
 // NewSubgraphManager creates a new subgraph manager.
@@ -90,8 +90,8 @@ func (m *SubgraphManager) ExecuteInSubgraph(
 	ctx context.Context,
 	subgraphName string,
 	nodeName string,
-	input interface{},
-) (interface{}, error) {
+	input any,
+) (any, error) {
 	subgraph, exists := m.GetSubgraph(subgraphName)
 	if !exists {
 		return nil, fmt.Errorf("subgraph '%s' not found", subgraphName)
@@ -172,12 +172,12 @@ func (m *SubgraphManager) withCheckpointNamespace(ctx context.Context, ns string
 // CheckpointMigration handles checkpoint migration between parent and subgraphs.
 type CheckpointMigration struct {
 	manager      *SubgraphManager
-	checkpointer interface{} // Changed from checkpoint.CheckpointSaver to avoid type issues
+	checkpointer any // Changed from checkpoint.CheckpointSaver to avoid type issues
 	mu           sync.Mutex
 }
 
 // NewCheckpointMigration creates a new checkpoint migration handler.
-func NewCheckpointMigration(manager *SubgraphManager, checkpointer interface{}) *CheckpointMigration {
+func NewCheckpointMigration(manager *SubgraphManager, checkpointer any) *CheckpointMigration {
 	return &CheckpointMigration{
 		manager:      manager,
 		checkpointer: checkpointer,
@@ -198,7 +198,7 @@ func (cm *CheckpointMigration) MigrateToSubgraph(
 	subgraphNS := cm.manager.BuildNamespacePath() + string(constants.NSSep) + subgraphName
 	
 	// Build subgraph config
-	subgraphConfig := make(map[string]interface{})
+	subgraphConfig := make(map[string]any)
 	subgraphConfig[constants.ConfigKeyCheckpointNS] = subgraphNS
 	subgraphConfig[constants.ConfigKeyCheckpointID] = uuid.New().String()
 	subgraphConfig["task_path"] = parentCheckpointID + string(constants.NSEnd) + subgraphName
@@ -281,13 +281,13 @@ func NewNamespaceIsolatedRegistry(baseRegistry *channels.Registry, namespace str
 }
 
 // Get retrieves a channel with namespace prefix.
-func (r *NamespaceIsolatedRegistry) Get(name string) (interface{}, bool) {
+func (r *NamespaceIsolatedRegistry) Get(name string) (any, bool) {
 	fullName := r.prefix + name
 	return r.registry.Get(fullName)
 }
 
 // Register registers a channel with namespace prefix.
-func (r *NamespaceIsolatedRegistry) Register(name string, channel interface{}) error {
+func (r *NamespaceIsolatedRegistry) Register(name string, channel any) error {
 	fullName := r.prefix + name
 	// Check if channel implements channels.Channel
 	if ch, ok := channel.(channels.Channel); ok {
@@ -299,7 +299,7 @@ func (r *NamespaceIsolatedRegistry) Register(name string, channel interface{}) e
 }
 
 // CreateCheckpoint creates a checkpoint with namespace isolation.
-func (r *NamespaceIsolatedRegistry) CreateCheckpoint() map[string]interface{} {
+func (r *NamespaceIsolatedRegistry) CreateCheckpoint() map[string]any {
 	baseCheckpoint := r.registry.CreateCheckpoint()
 	
 	// Add namespace metadata
@@ -310,14 +310,14 @@ func (r *NamespaceIsolatedRegistry) CreateCheckpoint() map[string]interface{} {
 }
 
 // GetValues retrieves all channel values with namespace isolation.
-func (r *NamespaceIsolatedRegistry) GetValues() (map[string]interface{}, error) {
+func (r *NamespaceIsolatedRegistry) GetValues() (map[string]any, error) {
 	allValues, err := r.registry.GetValues()
 	if err != nil {
 		return nil, err
 	}
 	
 	// Filter to namespace-prefixed channels
-	filtered := make(map[string]interface{})
+	filtered := make(map[string]any)
 	for key, value := range allValues {
 		if strings.HasPrefix(key, r.prefix) {
 			relKey := strings.TrimPrefix(key, r.prefix)
@@ -347,9 +347,9 @@ func (e *RecursiveSubgraphExecutor) ExecuteRecursive(
 	ctx context.Context,
 	subgraphName string,
 	nodeName string,
-	input interface{},
+	input any,
 	depth int,
-) (interface{}, error) {
+) (any, error) {
 	if depth > e.maxDepth {
 		return nil, fmt.Errorf("recursion depth limit exceeded: %d > %d", depth, e.maxDepth)
 	}
@@ -362,9 +362,9 @@ func (e *RecursiveSubgraphExecutor) ExecuteRecursive(
 func (e *RecursiveSubgraphExecutor) executeRecursive(
 	ctx context.Context,
 	subgraphName string,
-	input interface{},
+	input any,
 	depth int,
-) (interface{}, error) {
+) (any, error) {
 	// Simplified version for testing
 	if depth > e.maxDepth {
 		return nil, fmt.Errorf("recursion depth limit exceeded: %d > %d", depth, e.maxDepth)

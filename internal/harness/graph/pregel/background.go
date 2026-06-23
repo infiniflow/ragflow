@@ -14,7 +14,7 @@ import (
 type BackgroundTask struct {
 	ID       string
 	Name     string
-	Func     func(context.Context) (interface{}, error)
+	Func     func(context.Context) (any, error)
 	Context  context.Context
 	Result   chan *BackgroundTaskResult
 	Cancel   context.CancelFunc
@@ -26,7 +26,7 @@ type BackgroundTask struct {
 type BackgroundTaskResult struct {
 	TaskID   string
 	Name     string
-	Output   interface{}
+	Output   any
 	Err      error
 	Duration time.Duration
 }
@@ -127,7 +127,7 @@ func (e *BackgroundExecutor) Stop() {
 }
 
 // Submit submits a task for background execution.
-func (e *BackgroundExecutor) Submit(ctx context.Context, name string, fn func(context.Context) (interface{}, error), priority int) (*BackgroundTask, error) {
+func (e *BackgroundExecutor) Submit(ctx context.Context, name string, fn func(context.Context) (any, error), priority int) (*BackgroundTask, error) {
 	e.mu.RLock()
 	if !e.running {
 		e.mu.RUnlock()

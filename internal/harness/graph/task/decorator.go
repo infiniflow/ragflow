@@ -554,8 +554,8 @@ func Final(value interface{}, save ...bool) *EntrypointFinal {
 }
 
 // IsFinal checks if a value is an EntrypointFinal.
-func IsFinal(v interface{}) (*EntrypointFinal, bool) {
-	if f, ok := v.(*EntrypointFinal); ok {
+func IsFinal(val any) (*EntrypointFinal, bool) {
+	if f, ok := val.(*EntrypointFinal); ok {
 		return f, true
 	}
 	return nil, false
