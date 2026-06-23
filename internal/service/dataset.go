@@ -82,6 +82,9 @@ const (
 	graphRaptorQueueDocID = "graph_raptor_x"
 	maximumTaskPageNumber = int64(100000000)
 	serverQueueNamePrefix = "te"
+
+	graphPhaseResolutionDone = "resolution_done"
+	graphPhaseCommunityDone  = "community_done"
 )
 
 // DatasetService implements the RESTful dataset APIs from dataset_api.py.
@@ -165,6 +168,7 @@ func (s *DatasetService) UpdateDocumentMetadataConfig(userID, datasetID, documen
 	return updatedDoc, common.CodeSuccess, nil
 }
 
+// checkType reports whether indexType is supported by dataset index APIs.
 func checkType(indexType string) bool {
 	haveType := false
 	for _, t := range validIndexTypes {
@@ -318,6 +322,19 @@ func datasetIndexTaskIDColumn(indexType string) string {
 	}
 }
 
+func datasetIndexTaskFinishAtColumn(indexType string) string {
+	switch indexType {
+	case "graph":
+		return "graphrag_task_finish_at"
+	case "raptor":
+		return "raptor_task_finish_at"
+	case "mindmap":
+		return "mindmap_task_finish_at"
+	default:
+		return ""
+	}
+}
+
 func checkIndexTaskType(taskType string) bool {
 	switch taskType {
 	case "graphrag", "raptor", "mindmap":
@@ -377,6 +394,25 @@ func datasetIndexTaskIDs(kb *entity.Knowledgebase) []string {
 
 func datasetIndexQueueName(priority int) string {
 	return fmt.Sprintf("%s.%d.common", serverQueueNamePrefix, priority)
+}
+
+func interfaceSlice(items ...string) []interface{} {
+	result := make([]interface{}, len(items))
+	for i, item := range items {
+		result[i] = item
+	}
+	return result
+}
+
+func clearGraphPhaseMarkers(redisClient *redisengine.RedisClient, datasetID string) {
+	if redisClient == nil || datasetID == "" {
+		return
+	}
+	for _, phase := range []string{graphPhaseResolutionDone, graphPhaseCommunityDone} {
+		if !redisClient.Delete(fmt.Sprintf("graphrag:phase:%s:%s", datasetID, phase)) {
+			common.Warn("Failed to clear GraphRAG phase marker", zap.String("dataset_id", datasetID), zap.String("phase", phase))
+		}
+	}
 }
 
 // RunIndex Run an indexing task (graph/raptor/mindmap) for a dataset.
@@ -526,6 +562,85 @@ func (s *DatasetService) TraceIndex(datasetID, userID, indexType string) (*entit
 	}
 
 	return task, common.CodeSuccess, nil
+}
+
+func (s *DatasetService) DeleteIndex(userID, datasetID, indexType string, wipe bool) (common.ErrorCode, error) {
+	if !checkType(indexType) {
+		return common.CodeArgumentError, fmt.Errorf("Invalid index type '%s'", indexType)
+	}
+
+	if datasetID == "" {
+		return common.CodeDataError, errors.New(`Lack of "Dataset ID"`)
+	}
+
+	if !s.kbDAO.Accessible(datasetID, userID) {
+		return common.CodeDataError, errors.New("No authorization.")
+	}
+
+	kb, err := s.kbDAO.GetByID(datasetID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return common.CodeDataError, errors.New("Invalid Dataset ID")
+		}
+		return common.CodeDataError, errors.New("Internal server error")
+	}
+
+	taskIDField := datasetIndexTaskIDColumn(indexType)
+	taskFinishAtField := datasetIndexTaskFinishAtColumn(indexType)
+	taskID := datasetIndexTaskID(kb, indexType)
+
+	common.Info("delete_index", zap.String("dataset_id", datasetID), zap.String("index_type", indexType), zap.Bool("wipe", wipe))
+
+	if taskID != "" {
+		redisClient := redisengine.Get()
+		if redisClient == nil || !redisClient.Set(fmt.Sprintf("%s-cancel", taskID), "x", 0) {
+			common.Warn("Failed to set dataset index cancellation marker", zap.String("dataset_id", datasetID), zap.String("task_id", taskID))
+		}
+		if err := dao.DB.Unscoped().Where("id = ?", taskID).Delete(&entity.Task{}).Error; err != nil {
+			common.Warn("Failed to delete dataset index task", zap.String("dataset_id", datasetID), zap.String("task_id", taskID), zap.Error(err))
+			return common.CodeDataError, errors.New("Internal server error")
+		}
+	}
+
+	if wipe && indexType == "graph" {
+		if s.docEngine == nil {
+			return common.CodeServerError, errors.New("Document engine is not initialized")
+		}
+		indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
+		_, err = s.docEngine.DeleteChunks(context.Background(), map[string]interface{}{
+			"knowledge_graph_kwd": interfaceSlice("graph", "subgraph", "entity", "relation", "community_report"),
+			"kb_id":               datasetID,
+		}, indexName, datasetID)
+		if err != nil {
+			common.Warn("Failed to delete GraphRAG artefacts", zap.String("dataset_id", datasetID), zap.Error(err))
+			return common.CodeDataError, errors.New("Internal server error")
+		}
+		clearGraphPhaseMarkers(redisengine.Get(), datasetID)
+		common.Info("delete_index: cleared GraphRAG artefacts and phase markers", zap.String("dataset_id", datasetID))
+	} else if wipe && indexType == "raptor" {
+		if s.docEngine == nil {
+			return common.CodeServerError, errors.New("Document engine is not initialized")
+		}
+		indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
+		_, err = s.docEngine.DeleteChunks(context.Background(), map[string]interface{}{
+			"raptor_kwd": interfaceSlice("raptor"),
+			"kb_id":      datasetID,
+		}, indexName, datasetID)
+		if err != nil {
+			common.Warn("Failed to delete RAPTOR artefacts", zap.String("dataset_id", datasetID), zap.Error(err))
+			return common.CodeDataError, errors.New("Internal server error")
+		}
+	}
+
+	if err := dao.DB.Model(&entity.Knowledgebase{}).Where("id = ?", kb.ID).Updates(map[string]interface{}{
+		taskIDField:       "",
+		taskFinishAtField: nil,
+	}).Error; err != nil {
+		common.Warn("Failed to clear dataset index task fields", zap.String("dataset_id", datasetID), zap.String("index_type", indexType), zap.Error(err))
+		return common.CodeDataError, errors.New("Internal server error")
+	}
+
+	return common.CodeSuccess, nil
 }
 
 // SearchDatasetsRequest is the request structure for searching chunks across datasets.
