@@ -44,8 +44,8 @@ func TestRetrieval_StubsErrorWhenServiceMissing(t *testing.T) {
 	if !got.Stub {
 		t.Errorf("Stub = false, want true")
 	}
-	if !strings.Contains(got.Error, "Phase 5 wiring") {
-		t.Errorf("Error = %q, want to mention 'Phase 5 wiring'", got.Error)
+	if !strings.Contains(got.Error, "service not yet implemented") {
+		t.Errorf("Error = %q, want to mention 'service not yet implemented'", got.Error)
 	}
 }
 
@@ -98,9 +98,8 @@ func TestRetrieval_EmptyArgsIsHandled(t *testing.T) {
 
 	rt := NewRetrievalTool()
 	// Empty arguments should still return a stub error (not panic) — the
-	// Python tool defaults to empty_response in this case, but in Phase 3
-	// batch 1 we don't have wiring, so we surface the service-missing
-	// error.
+	// Python tool defaults to empty_response in this case. Without
+	// wiring, the Go side surfaces the service-missing error.
 	_, err := rt.InvokableRun(context.Background(), "")
 	if !errors.Is(err, ErrRetrievalServiceMissing) {
 		t.Fatalf("err = %v, want ErrRetrievalServiceMissing", err)

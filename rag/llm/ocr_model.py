@@ -117,7 +117,7 @@ class PaddleOCROcrModel(Base, PaddleOCRParser):
             # lower-case keys (UI), upper-case PADDLEOCR_* (env auto-provision), env vars
             return config.get(key, config.get(env_key, os.environ.get(env_key, default)))
 
-        self.paddleocr_api_url = _resolve_config("paddleocr_api_url", "PADDLEOCR_API_URL", "")
+        self.paddleocr_base_url = _resolve_config("paddleocr_base_url", "PADDLEOCR_BASE_URL", "") or _resolve_config("paddleocr_api_url", "PADDLEOCR_API_URL", "")
         self.paddleocr_algorithm = _resolve_config("paddleocr_algorithm", "PADDLEOCR_ALGORITHM", "PaddleOCR-VL")
         self.paddleocr_access_token = _resolve_config("paddleocr_access_token", "PADDLEOCR_ACCESS_TOKEN", None)
 
@@ -132,7 +132,7 @@ class PaddleOCROcrModel(Base, PaddleOCRParser):
 
         PaddleOCRParser.__init__(
             self,
-            api_url=self.paddleocr_api_url,
+            base_url=self.paddleocr_base_url or None,
             access_token=self.paddleocr_access_token,
             algorithm=self.paddleocr_algorithm,
         )
@@ -147,6 +147,16 @@ class PaddleOCROcrModel(Base, PaddleOCRParser):
 
         sections, tables = PaddleOCRParser.parse_pdf(self, filepath=filepath, binary=binary, callback=callback, parse_method=parse_method, **kwargs)
         return sections, tables
+
+    def parse_image(self, filepath: str, binary=None, callback=None, **kwargs) -> str:
+        ok, reason = self.check_available()
+        if not ok:
+            raise RuntimeError(f"PaddleOCR server not accessible: {reason}")
+
+        logging.info(f"PaddleOCR parse_image start: {filepath}")
+        result = PaddleOCRParser.parse_image(self, filepath=filepath, binary=binary, callback=callback, **kwargs)
+        logging.info(f"PaddleOCR parse_image done: {filepath}, text length: {len(result)}")
+        return result
 
 
 class OpenDataLoaderOcrModel(Base, OpenDataLoaderParser):

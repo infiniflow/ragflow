@@ -158,12 +158,12 @@ func (c *HTTPClient) Request(method, path string, authKind string, headers map[s
 		return nil, err
 	}
 	defer resp.Body.Close()
-	duration := time.Since(startTime).Seconds()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
+	duration := time.Since(startTime).Seconds()
 
 	return &Response{
 		StatusCode: resp.StatusCode,

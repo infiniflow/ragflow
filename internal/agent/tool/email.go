@@ -49,8 +49,8 @@ type emailEnvelope struct {
 	Error string `json:"_ERROR,omitempty"`
 }
 
-// EmailTool is the Phase 3 batch 3 implementation of the SMTP email
-// sender tool (plan §2.11.4 row 7, §5 Phase 3 第 3 批). It composes an
+// EmailTool is the SMTP email
+// sender tool. It composes an
 // RFC 822 message and submits it via the stdlib net/smtp client. All
 // authentication modes supported by net/smtp.Auth are available
 // (PLAIN, LOGIN, CRAM-MD5) by selecting the appropriate creds.

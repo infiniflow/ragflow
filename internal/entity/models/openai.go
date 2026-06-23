@@ -73,21 +73,27 @@ func (o *OpenAIModel) ChatWithMessages(modelName string, messages []Message, api
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, o.baseModel.URLSuffix.Chat)
 
-	// Convert messages to the format expected by the API
+	// Convert messages to API format (supports multimodal content)
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
+		apiMsg := map[string]interface{}{
 			"role":    msg.Role,
 			"content": msg.Content,
 		}
+		if msg.ToolCallID != "" {
+			apiMsg["tool_call_id"] = msg.ToolCallID
+		}
+		if len(msg.ToolCalls) > 0 {
+			apiMsg["tool_calls"] = msg.ToolCalls
+		}
+		apiMessages[i] = apiMsg
 	}
 
 	// Build request body
 	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      false,
-		"temperature": 1,
+		"model":    modelName,
+		"messages": apiMessages,
+		"stream":   false,
 	}
 
 	if chatModelConfig != nil {
@@ -106,6 +112,21 @@ func (o *OpenAIModel) ChatWithMessages(modelName string, messages []Message, api
 		if chatModelConfig.Stop != nil {
 			reqBody["stop"] = *chatModelConfig.Stop
 		}
+
+		if chatModelConfig.Tools != nil {
+			reqBody["tools"] = chatModelConfig.Tools
+			tc := "auto"
+			if chatModelConfig.ToolChoice != nil {
+				tc = *chatModelConfig.ToolChoice
+			}
+			reqBody["tool_choice"] = tc
+		}
+	}
+
+	// Qwen3 family: disable thinking by default (matches Python's
+	// _apply_model_family_policies in rag/llm/chat_model.py:119-121).
+	if strings.Contains(strings.ToLower(modelName), "qwen3") && (chatModelConfig == nil || chatModelConfig.Thinking == nil) {
+		reqBody["enable_thinking"] = false
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -160,9 +181,9 @@ func (o *OpenAIModel) ChatWithMessages(modelName string, messages []Message, api
 		return nil, fmt.Errorf("invalid message format")
 	}
 
-	content, ok := messageMap["content"].(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid content format")
+	var content string
+	if c, ok := messageMap["content"].(string); ok {
+		content = c
 	}
 
 	// OpenAI reasoning models (o-series and similar) return reasoning text in
@@ -175,9 +196,19 @@ func (o *OpenAIModel) ChatWithMessages(modelName string, messages []Message, api
 		}
 	}
 
+	var toolCalls []map[string]interface{}
+	if tcs, ok := messageMap["tool_calls"].([]interface{}); ok {
+		for _, tc := range tcs {
+			if tcMap, ok := tc.(map[string]interface{}); ok {
+				toolCalls = append(toolCalls, tcMap)
+			}
+		}
+	}
+
 	chatResponse := &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
 	}
 
 	return chatResponse, nil
@@ -200,13 +231,20 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, o.baseModel.URLSuffix.Chat)
 
-	// Convert messages to API format (supports multimodal content)
+	// Convert messages to API format (supports multimodal content and tool messages)
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
+		apiMsg := map[string]interface{}{
 			"role":    msg.Role,
 			"content": msg.Content,
 		}
+		if msg.ToolCallID != "" {
+			apiMsg["tool_call_id"] = msg.ToolCallID
+		}
+		if len(msg.ToolCalls) > 0 {
+			apiMsg["tool_calls"] = msg.ToolCalls
+		}
+		apiMessages[i] = apiMsg
 	}
 
 	// Build request body with streaming on by default
@@ -236,6 +274,20 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		if chatModelConfig.Stop != nil {
 			reqBody["stop"] = *chatModelConfig.Stop
 		}
+
+		if chatModelConfig.Tools != nil {
+			reqBody["tools"] = chatModelConfig.Tools
+			tc := "auto"
+			if chatModelConfig.ToolChoice != nil {
+				tc = *chatModelConfig.ToolChoice
+			}
+			reqBody["tool_choice"] = tc
+		}
+	}
+
+	// Qwen3 family: disable thinking by default.
+	if strings.Contains(strings.ToLower(modelName), "qwen3") && (chatModelConfig == nil || chatModelConfig.Thinking == nil) {
+		reqBody["enable_thinking"] = false
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -263,20 +315,75 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	}
 
 	sawTerminal := false
-	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
+	accumulatedToolCalls := make(map[int]map[string]interface{})
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		// SSE data line starts with "data:"
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+
+		// Extract JSON after "data:"
+		data := strings.TrimSpace(line[5:])
+
+		// [DONE] marks the end of the stream
+		if data == "[DONE]" {
+			sawTerminal = true
+			break
+		}
+
+		// Parse the JSON event
+		var event map[string]interface{}
+		if err = json.Unmarshal([]byte(data), &event); err != nil {
+			continue
+		}
+
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
-			return nil
+			continue
 		}
 
 		firstChoice, ok := choices[0].(map[string]interface{})
 		if !ok {
-			return nil
+			continue
 		}
 
 		delta, ok := firstChoice["delta"].(map[string]interface{})
 		if !ok {
-			return nil
+			continue
+		}
+
+		// Accumulate streaming tool_call deltas (mirrors Python's
+		// async_chat_streamly_with_tools in rag/llm/chat_model.py:500-509).
+		if tcs, ok := delta["tool_calls"].([]interface{}); ok {
+			for _, tc := range tcs {
+				if tcMap, ok := tc.(map[string]interface{}); ok {
+					idxF, ok := tcMap["index"].(float64)
+					if !ok {
+						continue
+					}
+					idx := int(idxF)
+					existing, hasExisting := accumulatedToolCalls[idx]
+					if hasExisting {
+						if fn, ok := tcMap["function"].(map[string]interface{}); ok {
+							if args, ok := fn["arguments"].(string); ok {
+								if ef, ok := existing["function"].(map[string]interface{}); ok {
+									if ea, ok := ef["arguments"].(string); ok {
+										ef["arguments"] = ea + args
+									} else {
+										ef["arguments"] = args
+									}
+								}
+							}
+						}
+					} else {
+						accumulatedToolCalls[idx] = cloneMap(tcMap)
+					}
+				}
+			}
+			continue // tool_call deltas don't carry content
 		}
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
@@ -297,13 +404,21 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		if ok && finishReason != "" {
 			sawTerminal = true
 		}
-		return nil
-	})
-	if err != nil {
+	}
+	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
-	if !done && !sawTerminal {
+	if !sawTerminal {
 		return fmt.Errorf("openai: stream ended before [DONE] or finish_reason")
+	}
+
+	// Populate ToolCallsResult with accumulated streaming tool_calls.
+	if len(accumulatedToolCalls) > 0 && chatModelConfig != nil {
+		tcs := make([]map[string]interface{}, 0, len(accumulatedToolCalls))
+		for _, tc := range accumulatedToolCalls {
+			tcs = append(tcs, tc)
+		}
+		chatModelConfig.ToolCallsResult = &tcs
 	}
 
 	// Send the [DONE] marker for OpenAI compatibility
@@ -906,4 +1021,12 @@ func (o *OpenAIModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) 
 
 func (o *OpenAIModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", o.Name())
+}
+
+func cloneMap(m map[string]interface{}) map[string]interface{} {
+	cp := make(map[string]interface{}, len(m))
+	for k, v := range m {
+		cp[k] = v
+	}
+	return cp
 }

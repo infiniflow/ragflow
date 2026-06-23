@@ -1,19 +1,30 @@
-// Package canvas — eino Workflow topology builder (Worker A, Phase 1).
+// Package canvas — eino Workflow topology builder.
 //
-// BuildWorkflow turns a Canvas (DSL) into a *compose.Workflow whose nodes
-// are placeholder lambda stubs in Phase 1 (real Begin/Message/LLM components
-// land in Phase 2 P0). The topology — pass-through for "begin" nodes with
-// no upstream, lambda for every other component, AddInput edge for every
-// upstream — is the Phase 1 deliverable; component bodies are deferred.
+// BuildWorkflow turns a Canvas (DSL) into a *compose.Workflow. The
+// routing rules per cpn are centralised in buildNodeBody
+// (node_body.go): legacy no-op names go to a dedicated echo
+// lambda; UserFillUp goes to the eino interrupt-based body; every
+// other name delegates to the runtime factory.
 //
-// State pre/post handlers are wired here as NODE options (GraphAddNodeOpt),
-// NOT compile options. This is the eino v0.9.2 fix documented in plan §2.6.
+// State pre/post handlers are wired here as NODE options
+// (GraphAddNodeOpt), NOT compile options.
+//
+// Cycle policy: eino's compose.Workflow is strictly a DAG and
+// rejects any cycle at Compile() time. The frontend
+// (`hasCanvasCycle` in web/src/pages/agent/hooks.tsx) prevents
+// cycle-creating edges in user-facing canvases at the React Flow
+// layer, so production graphs arriving at BuildWorkflow are
+// guaranteed acyclic. No defensive cycle detection is needed
+// here — let eino's Compile error surface naturally.
 package canvas
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
+	"time"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/agent/workflowx"
@@ -21,12 +32,44 @@ import (
 	"github.com/cloudwego/eino/compose"
 )
 
-// placeholderLambda is the Phase 1 stand-in for every real component body.
-// It copies the input map into the output map untouched, which lets
-// BuildWorkflow validate the topology (compile + edge wiring) without
-// depending on any real component implementation. Real component bodies land
-// in Phase 2 P0; once they exist, BuildWorkflow will switch on
-// comp.Obj.ComponentName and look up the registered body.
+// ctxKey is the unexported context-key type for per-run metadata
+// (events channel, message/task/session ids) so the statePre/statePost
+// wrappers can emit node_started/node_finished without depending on
+// the service package.
+type ctxKey string
+
+const ctxKeyRunMeta ctxKey = "canvas_run_meta"
+const terminalMergeNodeID = "__canvas_terminal_merge__"
+
+// RunMeta carries the per-run metadata that node lifecycle hooks need.
+type RunMeta struct {
+	Events    chan RunEvent
+	MessageID string
+	TaskID    string
+	SessionID string
+}
+
+// WithRunMeta attaches run metadata to the context for consumption by
+// the per-node statePre/statePost wrappers in BuildWorkflow.
+func WithRunMeta(ctx context.Context, m *RunMeta) context.Context {
+	return context.WithValue(ctx, ctxKeyRunMeta, m)
+}
+
+// GetRunMeta extracts run metadata previously attached with WithRunMeta.
+// Returns nil when absent (test paths without a full service harness).
+func GetRunMeta(ctx context.Context) *RunMeta {
+	m, _ := ctx.Value(ctxKeyRunMeta).(*RunMeta)
+	return m
+}
+
+// placeholderLambda is the canvas-package-only fallback for component
+// bodies when no factory is registered. It copies the input map into
+// the output map untouched, which lets BuildWorkflow validate the
+// topology (compile + edge wiring) without depending on any real
+// component implementation. Production runs always have a factory
+// installed via component.init() → runtime.SetDefaultFactory(component.New);
+// this fallback is exercised by canvas-only unit tests that do not
+// import the component package.
 func placeholderLambda(_ context.Context, in map[string]any) (map[string]any, error) {
 	out := make(map[string]any, len(in))
 	for k, v := range in {
@@ -39,12 +82,10 @@ func placeholderLambda(_ context.Context, in map[string]any) (map[string]any, er
 // in canvas.go). The set names the DSL v1 sentinel components that
 // the Go port accepts but does not implement — e.g. "ExitLoop".
 // Encountering one routes the node to a no-op echo body so the
-// workflow still compiles. Phase 2 P0 will also gate the
-// component-allowlist on this same name set so adding a new legacy
-// name to canvas.go is the single source of truth.
+// workflow still compiles.
 //
 // The lookup is case-insensitive: legacyNoOpNames stores keys
-// lowercase, but the DSL preserves user case (see canvas.go:92
+// lowercase, but the DSL preserves user case (see canvas.go
 // "matches agent/component/<name>.py's class name
 // (case-insensitive)"). All callers go through this predicate so
 // the case-normalization is in exactly one place.
@@ -54,26 +95,20 @@ func placeholderLambda(_ context.Context, in map[string]any) (map[string]any, er
 // component-name check is intentionally NOT performed here. The
 // unknown-component error path is exercised by the explicit
 // TestBuildWorkflow_UnknownComponentErrors test using a name that
-// is neither in the legacy set nor any of the known DSL primitives
-// (Begin / Message / LLM / Categorize / Invoke / etc. are
-// implicitly accepted by the placeholder phase). This mirrors the
-// Phase 1 contract documented in scheduler.go's package comment.
+// is neither in the legacy set nor any of the known DSL primitives.
 func isLegacyNoOp(name string) bool {
 	return legacyNoOpNames[strings.ToLower(name)]
 }
 
 // isKnownPrimitive reports whether name is a real component the Go
-// port can route to a body. In Phase 1 the allowlist is explicit
-// (mirror of the names referenced in the test fixtures) so that an
-// unknown component name surfaces a clear error from BuildWorkflow
-// instead of silently producing a no-op node. In Phase 2 P0 this
-// becomes a registry lookup against the component package.
-//
-// We keep the signature and call shape stable so swapping the body
-// to a registry check is a one-line change. The Phase 1 set
-// matches the names already used by existing fixtures and is
-// over-approximated to land any in-flight component port; tighten
-// it back to the registry-derived set when Phase 2 P0 lands.
+// port can route to a body. The allowlist is a mirror of the names
+// referenced in the test fixtures so that an unknown component
+// name surfaces a clear error from BuildWorkflow instead of
+// silently producing a no-op node. The component-name check is
+// intentionally a separate path from the runtime factory
+// lookup — the factory is the source of truth in production, and
+// this allowlist only matters for canvas-only unit tests that
+// don't import the component package.
 func isKnownPrimitive(name string) bool {
 	if name == "" {
 		return false
@@ -88,7 +123,7 @@ func isKnownPrimitive(name string) bool {
 	case "begin", "message", "llm", "categorize", "switch",
 		"agent", "invoke", "dataoperations", "listoperations",
 		"stringtransform", "variableaggregator", "variableassigner",
-		"loop": // Loop is a macro in BuildWorkflow; the pre-pass absorbs it.
+		"loop", "parallel": // macros in BuildWorkflow; the pre-pass absorbs them.
 		return true
 	}
 	return false
@@ -119,6 +154,16 @@ func statePre(ctx context.Context, in map[string]any, state *CanvasState) (map[s
 				for k, v := range bucket {
 					ctxState.SetVar(cpnID, k, v)
 				}
+			}
+			sysNS, envNS, globalsNS := state.SnapshotNamespaces()
+			for k, v := range sysNS {
+				ctxState.Sys[k] = v
+			}
+			for k, v := range envNS {
+				ctxState.Env[k] = v
+			}
+			for k, v := range globalsNS {
+				ctxState.Globals[k] = v
 			}
 		}
 	}
@@ -164,7 +209,112 @@ func statePost(ctx context.Context, out map[string]any, state *CanvasState) (map
 			ctxState.SetVar(cpnID, k, v)
 		}
 	}
+	if ctxState != nil && state != nil && ctxState != state {
+		sysNS, envNS, globalsNS := ctxState.SnapshotNamespaces()
+		state.Sys = sysNS
+		state.Env = envNS
+		state.Globals = globalsNS
+	}
 	return out, nil
+}
+
+// emitEventFromCtx reads the events channel from the RunMeta attached to
+// ctx (via WithRunMeta) and pushes the event. No-op when no metadata is
+// present (test paths without a full service harness).
+func emitEventFromCtx(ctx context.Context, ev RunEvent) {
+	meta := GetRunMeta(ctx)
+	if meta == nil || meta.Events == nil {
+		return
+	}
+	PushEvent(meta.Events, ev)
+}
+
+// nodeStartedAt records the per-node start time in state.Sys and emits a
+// node_started RunEvent. Called from the per-node statePre wrapper.
+// Metadata (message/task/session ids) is read from ctx via RunMeta.
+func nodeStartedAt(ctx context.Context, state *CanvasState, cpnID, componentName, componentType string) {
+	log.Printf("DEBUG node_started: cpnID=%s componentName=%s", cpnID, componentName)
+	if state == nil {
+		return
+	}
+	now := float64(time.Now().UnixNano()) / 1e9
+	if state.Sys != nil {
+		state.Sys["_node_start_"+cpnID] = now
+	}
+	nsData, _ := json.Marshal(NodeStartedData{
+		Inputs:        nil,
+		CreatedAt:     now,
+		ComponentID:   cpnID,
+		ComponentName: componentName,
+		ComponentType: componentType,
+		Thoughts:      "",
+	})
+	meta := GetRunMeta(ctx)
+	msgID, taskID, sessionID := "", "", ""
+	if meta != nil {
+		msgID, taskID, sessionID = meta.MessageID, meta.TaskID, meta.SessionID
+	}
+	emitEventFromCtx(ctx, RunEvent{
+		Type: "node_started", Data: string(nsData),
+		MessageID: msgID, CreatedAt: time.Now().Unix(),
+		TaskID: taskID, SessionID: sessionID,
+	})
+}
+
+// nodeFinishedNow emits a node_finished RunEvent. Called from the per-node
+// statePost wrapper. The elapsed time is computed from the time recorded
+// by nodeStartedAt. Metadata is read from ctx via RunMeta.
+func nodeFinishedNow(ctx context.Context, state *CanvasState, cpnID, componentName, componentType string, nodeErr error) {
+	if state == nil {
+		return
+	}
+	now := float64(time.Now().UnixNano()) / 1e9
+	var elapsed float64
+	if state.Sys != nil {
+		if start, ok := state.Sys["_node_start_"+cpnID].(float64); ok {
+			elapsed = now - start
+		}
+	}
+	if elapsed < 0 {
+		elapsed = 0
+	}
+
+	// Collect outputs from the state's Outputs bucket for this cpn.
+	var outputs map[string]any
+	if state.Outputs != nil {
+		if bucket, ok := state.Outputs[cpnID]; ok && len(bucket) > 0 {
+			outputs = make(map[string]any, len(bucket))
+			for k, v := range bucket {
+				outputs[k] = v
+			}
+		}
+	}
+
+	var nfErr interface{}
+	if nodeErr != nil {
+		nfErr = nodeErr.Error()
+	}
+
+	nfData, _ := json.Marshal(NodeFinishedData{
+		Inputs:        map[string]any{},
+		Outputs:       outputs,
+		ComponentID:   cpnID,
+		ComponentName: componentName,
+		ComponentType: componentType,
+		Error:         nfErr,
+		ElapsedTime:   elapsed,
+		CreatedAt:     now,
+	})
+	meta := GetRunMeta(ctx)
+	msgID, taskID, sessionID := "", "", ""
+	if meta != nil {
+		msgID, taskID, sessionID = meta.MessageID, meta.TaskID, meta.SessionID
+	}
+	emitEventFromCtx(ctx, RunEvent{
+		Type: "node_finished", Data: string(nfData),
+		MessageID: msgID, CreatedAt: time.Now().Unix(),
+		TaskID: taskID, SessionID: sessionID,
+	})
 }
 
 // BuildWorkflow assembles a *compose.Workflow from a Canvas DSL.
@@ -192,80 +342,90 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	// GenLocalState seeds each run with a fresh *CanvasState. eino calls
 	// this once per run and threads the result through StatePre/Post
 	// handlers via context.
+	//
+	// The initial env/sys values come from c.Globals (the DSL-level
+	// "globals" map) so that env.* references like "env.counter" resolve
+	// to their declared defaults rather than nil. The Go port splits
+	// "sys.*" and "env.*" dotted keys into separate Sys/Env maps so
+	// GetVar("env.counter") can look up Env["counter"] directly;
+	// seeding here mirrors the Python canvas.__init__ →
+	// self.globals["env.counter"] = 0 path.
+	globals := c.Globals
 	genState := func(_ context.Context) *CanvasState {
-		return NewCanvasState("", "")
+		st := NewCanvasState("", "")
+		if globals != nil {
+			for k, v := range globals {
+				if strings.HasPrefix(k, "sys.") {
+					st.Sys[strings.TrimPrefix(k, "sys.")] = v
+				} else if strings.HasPrefix(k, "env.") {
+					st.Env[strings.TrimPrefix(k, "env.")] = v
+				} else {
+					st.Globals[k] = v
+				}
+			}
+		}
+		return st
 	}
 
 	wf := compose.NewWorkflow[map[string]any, map[string]any](
 		compose.WithGenLocalState(genState),
 	)
 
-	// Cycle pre-pass. eino's compose.Workflow is a strict DAG: any
-	// data or control edge that closes a cycle makes Compile() fail
-	// with "DAG is invalid, has loop". Several v1 fixtures
-	// (exesql.json, headhunter_zh.json) intentionally carry cycles
-	// that model "wait for the next user turn" — the Python v1
-	// engine resolves them iteratively. The Go port wraps the whole
-	// canvas in a synthetic Loop node driven by workflowx.AddLoopNode
-	// (see cycle_wrap.go) so the OUTER graph is acyclic; the
-	// cycle-causing edges live inside the loop's sub-workflow. Phase
-	// 5's real orchestrator will replace this with a proper
-	// iterative driver.
-	if hasCycle(c) {
-		exp, err := buildSyntheticLoop(ctx, c)
-		if err != nil {
-			return nil, fmt.Errorf("canvas: build synthetic loop: %w", err)
-		}
-		node, err := compileSyntheticLoop(ctx, wf, exp)
-		if err != nil {
-			return nil, err
-		}
-		// The synthetic loop is the only node the outer workflow
-		// needs to know about. Wire it as both START and END so
-		// eino's "start node not set" / "end node not set" checks
-		// pass — the loop body runs once via shouldQuit, and the
-		// outer graph exits with the sub-workflow's terminal
-		// output.
-		node.AddInput(compose.START)
-		wf.End().AddInput(syntheticLoopKey)
-		return wf, nil
-	}
-
-	// Pre-pass: Loop macro expansion. For each Loop cpn, build a
-	// sub-workflow from its downstream descendants and install a
-	// workflowx.AddLoopNode in the outer graph in place of the Loop
-	// subtree. The sub-graph members are tracked in `loopMembers` so
-	// the main pass skips them.
-	loopMembers := make(map[string]bool)
-	loopNodes := make(map[string]*compose.WorkflowNode)
+	// Pre-pass: runtime-control macro expansion. Loop and Parallel are
+	// both compiled as single outer nodes backed by a sub-workflow.
+	// Their body members are tracked in `macroMembers` so the main pass
+	// skips those nodes in the outer graph.
+	macroMembers := make(map[string]bool)
+	macroNodes := make(map[string]*compose.WorkflowNode)
 	for cpnID, comp := range c.Components {
-		if !strings.EqualFold(comp.Obj.ComponentName, "Loop") {
-			continue
-		}
-		exp, err := buildLoopExpansion(ctx, c, cpnID)
-		if err != nil {
-			return nil, err
-		}
-		var opts []workflowx.LoopOption
-		if exp.MaxIters > 0 {
-			opts = append(opts, workflowx.WithLoopMaxIterations(exp.MaxIters))
-		}
-		node, err := workflowx.AddLoopNode[map[string]any](
-			ctx, wf, cpnID, exp.Sub, exp.ShouldQuit, opts...,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("canvas: install loop %q: %w", cpnID, err)
-		}
-		loopNodes[cpnID] = node
-		for m := range exp.Members {
-			loopMembers[m] = true
+		switch {
+		case strings.EqualFold(comp.Obj.ComponentName, "Loop"):
+			exp, err := buildLoopExpansion(ctx, c, cpnID)
+			if err != nil {
+				return nil, err
+			}
+			var opts []workflowx.LoopOption
+			if exp.MaxIters > 0 {
+				opts = append(opts, workflowx.WithLoopMaxIterations(exp.MaxIters))
+			}
+			node, err := workflowx.AddLoopNode[map[string]any](
+				ctx, wf, cpnID, exp.Sub, exp.ShouldQuit, opts...,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("canvas: install loop %q: %w", cpnID, err)
+			}
+			macroNodes[cpnID] = node
+			for m := range exp.Members {
+				macroMembers[m] = true
+			}
+		case strings.EqualFold(comp.Obj.ComponentName, "Parallel"):
+			exp, err := buildParallelExpansion(ctx, c, cpnID)
+			if err != nil {
+				return nil, err
+			}
+			node := wf.AddGraphNode(cpnID, exp.Graph,
+				compose.WithNodeName(cpnID),
+				compose.WithStatePreHandler[map[string]any, *CanvasState](func(ctx context.Context, in map[string]any, state *CanvasState) (map[string]any, error) {
+					nodeStartedAt(ctx, state, cpnID, comp.Obj.ComponentName, comp.Obj.ComponentName)
+					return statePre(ctx, in, state)
+				}),
+				compose.WithStatePostHandler[map[string]any, *CanvasState](func(ctx context.Context, out map[string]any, state *CanvasState) (map[string]any, error) {
+					result, postErr := statePost(ctx, out, state)
+					nodeFinishedNow(ctx, state, cpnID, comp.Obj.ComponentName, comp.Obj.ComponentName, postErr)
+					return result, postErr
+				}),
+			)
+			macroNodes[cpnID] = node
+			for m := range exp.Members {
+				macroMembers[m] = true
+			}
 		}
 	}
 
 	// Pass 1: register every node and remember its upstream list so we can
 	// wire edges in a second pass (Compose disallows AddInput before the
-	// upstream exists). Skip Loop cpns and their sub-graph members —
-	// they live in `loopNodes` and inside the sub-workflow respectively.
+	// upstream exists). Skip macro cpns and their sub-graph members —
+	// they live in `macroNodes` and inside the sub-workflow respectively.
 	//
 	// Component-routing rules per cpn (centralised in buildNodeBody):
 	//
@@ -283,16 +443,16 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	pending := make([]pendingEdge, 0, 4*len(c.Components))
 	nodes := make(map[string]*compose.WorkflowNode, len(c.Components))
 	for cpnID := range c.Components {
-		// Loop cpns are already registered as workflowx nodes in
-		// loopNodes (pre-pass). We still need to record their
-		// upstream edges so Pass 2 can wire `upstream → loop`.
-		if _, isLoop := loopNodes[cpnID]; isLoop {
+		// Macro cpns are already registered in the pre-pass. We
+		// still need to record their upstream edges so Pass 2 can wire
+		// `upstream -> macro`.
+		if _, isMacro := macroNodes[cpnID]; isMacro {
 			for _, up := range c.Components[cpnID].Upstream {
 				pending = append(pending, pendingEdge{cpn: cpnID, up: up})
 			}
 			continue
 		}
-		if loopMembers[cpnID] {
+		if macroMembers[cpnID] {
 			continue
 		}
 		name := c.Components[cpnID].Obj.ComponentName
@@ -303,10 +463,26 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 		if err != nil {
 			return nil, err
 		}
+		// Per-node statePre/statePost wrappers close over cpnID and
+		// component metadata so they can emit node_started /
+		// node_finished events at the correct per-node lifecycle
+		// points. The events channel and run metadata are read from
+		// the context via WithRunMeta / GetRunMeta (populated by the
+		// service layer before invoke).
+		componentName := c.Components[cpnID].Obj.ComponentName
+		nodePre := func(ctx context.Context, in map[string]any, state *CanvasState) (map[string]any, error) {
+			nodeStartedAt(ctx, state, cpnID, componentName, componentName)
+			return statePre(ctx, in, state)
+		}
+		nodePost := func(ctx context.Context, out map[string]any, state *CanvasState) (map[string]any, error) {
+			result, postErr := statePost(ctx, out, state)
+			nodeFinishedNow(ctx, state, cpnID, componentName, componentName, postErr)
+			return result, postErr
+		}
 		lambda := compose.InvokableLambda[map[string]any, map[string]any](body)
 		node := wf.AddLambdaNode(cpnID, lambda,
-			compose.WithStatePreHandler[map[string]any, *CanvasState](statePre),
-			compose.WithStatePostHandler[map[string]any, *CanvasState](statePost),
+			compose.WithStatePreHandler[map[string]any, *CanvasState](nodePre),
+			compose.WithStatePostHandler[map[string]any, *CanvasState](nodePost),
 			compose.WithNodeName(cpnID),
 		)
 		nodes[cpnID] = node
@@ -325,9 +501,10 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	// "entire output has already been mapped"). For diamond / merge
 	// topologies, the first upstream carries data; the rest register as
 	// exec-only dependencies via AddDependency so the node waits for
-	// them but doesn't try to consume a second data source. Phase 2 P0
-	// component bodies will switch to explicit FieldMapping when they
-	// need to merge multi-source inputs.
+	// them but doesn't try to consume a second data source. Component
+	// bodies that need to merge multi-source inputs switch to explicit
+	// FieldMapping via the StatePreHandler (see scheduler.go's
+	// statePre implementation).
 	//
 	// An upstream may be a regular node OR a Loop node (registered in
 	// the pre-pass). Both are valid edge sources. Symmetrically, the
@@ -337,7 +514,7 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 		if n, ok := nodes[id]; ok {
 			return n
 		}
-		if n, ok := loopNodes[id]; ok {
+		if n, ok := macroNodes[id]; ok {
 			return n
 		}
 		return nil
@@ -362,58 +539,146 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 		}
 	}
 
+	// Pass 2.5: install MultiBranch edges for runtime-control parents.
+	// Switch / Categorize produce a `_next` output identifying which
+	// downstream child should run at runtime. Without this pass every
+	// declared child fires unconditionally (Pass 2 wired AddInput from
+	// parent to every child); the branch adds a control-only gate so
+	// only the chosen child is executed. The AddInput edges stay in
+	// place — they carry the data path; the branch carries the control
+	// path. See multibranch.go for the full rationale.
+	wireMultiBranches(wf, c, macroMembers)
+
 	// Pass 3: wire start nodes (no upstream) from compose.START, and wire
-	// terminal nodes (no downstream) to compose.END via wf.End(). eino
+	// terminal nodes (no downstream) to compose.END. eino
 	// tracks start/end membership by these explicit wirings — without
 	// them, Compile() returns "start node not set" / "end node not set".
 	//
-	// Multi-terminal case: when two or more components have empty
-	// Downstream, eino's END node complains "entire output has already
-	// been mapped for node: end" unless each terminal is wired with a
-	// distinct compose.ToField(cpnID) mapping. We always include the
-	// FieldMapping argument (per terminal) so the count of inputs
-	// matters only to eino's bookkeeping, not to our wire code.
+	// Multi-terminal case: eino's END node is stricter than regular
+	// workflow nodes about repeated output mappings. Instead of wiring
+	// multiple terminals directly into END, route them through one
+	// synthetic merge node. The merge node consumes one terminal as its
+	// data input and treats the rest as exec-only dependencies, mirroring
+	// the same "first input carries data; the rest are dependencies"
+	// policy used in Pass 2.
 	//
 	// A "start" node with no upstream gets an empty input from START so
 	// eino registers it as a workflow entry point. FieldMapping is nil
-	// because Phase 1 placeholder lambdas just echo whatever they receive.
+	// because the placeholder lambdas just echo whatever they receive.
 	//
 	// Loop nodes are wired here too: a Loop is START if it has no
 	// upstream; it is END if it has no downstream in the outer graph
 	// (a downstream that's also a sub-graph member doesn't count — that
 	// node is part of the loop's body, not the outer graph's edge).
+	terminals := make([]string, 0, len(c.Components))
 	for cpnID, comp := range c.Components {
-		if node, isLoop := loopNodes[cpnID]; isLoop {
-			// Loops with no upstream are START nodes. Loops WITH
-			// upstream had their AddInput wired in Pass 2 already.
+		if node, isMacro := macroNodes[cpnID]; isMacro {
+			// Macro parents with no upstream are START nodes. Parents
+			// with upstream had their AddInput wired in Pass 2 already.
 			if len(comp.Upstream) == 0 && !first[cpnID] {
 				node.AddInput(compose.START)
 			}
 			hasOuterDownstream := false
 			for _, down := range comp.Downstream {
-				if loopMembers[down] {
+				if macroMembers[down] {
 					continue
 				}
 				hasOuterDownstream = true
 				break
 			}
 			if !hasOuterDownstream {
-				wf.End().AddInput(cpnID, compose.ToField(cpnID))
+				terminals = append(terminals, cpnID)
 			}
 			continue
 		}
-		if loopMembers[cpnID] {
+		if macroMembers[cpnID] {
 			continue
 		}
 		if len(comp.Upstream) == 0 {
 			nodes[cpnID].AddInput(compose.START)
 		}
 		if len(comp.Downstream) == 0 {
-			wf.End().AddInput(cpnID, compose.ToField(cpnID))
+			terminals = append(terminals, cpnID)
 		}
 	}
 
+	if err := wireWorkflowTerminals(wf, terminals, "", true); err != nil {
+		return nil, err
+	}
+
 	return wf, nil
+}
+
+func wireWorkflowTerminals(
+	wf *compose.Workflow[map[string]any, map[string]any],
+	terminals []string,
+	fallback string,
+	useFieldMapping bool,
+) error {
+	if len(terminals) == 0 {
+		if fallback == "" {
+			return fmt.Errorf("canvas: end node not set")
+		}
+		terminals = []string{fallback}
+	}
+
+	addEndInput := func(nodeID string) {
+		if useFieldMapping {
+			wf.End().AddInput(nodeID, compose.ToField(nodeID))
+			return
+		}
+		wf.End().AddInput(nodeID)
+	}
+
+	if len(terminals) == 1 {
+		addEndInput(terminals[0])
+		return nil
+	}
+
+	// Sub-workflows wire END without field mappings. These multi-terminal
+	// shapes commonly come from mutually exclusive branches (for example a
+	// loop body Switch choosing either continue or exit). We therefore
+	// create a small field-mapped gather node that forwards whichever
+	// branch actually produced output, instead of the outer workflow's
+	// dependency-based merge node that would incorrectly wait for every
+	// terminal to execute in the same run.
+	if !useFieldMapping {
+		gatherNode := wf.AddLambdaNode(
+			terminalMergeNodeID,
+			compose.InvokableLambda[map[string]any, map[string]any](
+				func(_ context.Context, in map[string]any) (map[string]any, error) {
+					for _, terminalID := range terminals {
+						if v, ok := in[terminalID].(map[string]any); ok && v != nil {
+							return v, nil
+						}
+					}
+					return in, nil
+				},
+			),
+			compose.WithNodeName(terminalMergeNodeID),
+		)
+		for _, terminalID := range terminals {
+			gatherNode.AddInput(terminalID, compose.ToField(terminalID))
+		}
+		addEndInput(terminalMergeNodeID)
+		return nil
+	}
+
+	mergeNode := wf.AddLambdaNode(
+		terminalMergeNodeID,
+		compose.InvokableLambda[map[string]any, map[string]any](
+			func(_ context.Context, in map[string]any) (map[string]any, error) {
+				return in, nil
+			},
+		),
+		compose.WithNodeName(terminalMergeNodeID),
+	)
+	mergeNode.AddInput(terminals[0])
+	for _, terminalID := range terminals[1:] {
+		mergeNode.AddDependency(terminalID)
+	}
+	addEndInput(terminalMergeNodeID)
+	return nil
 }
 
 // snapshotOutputs is retained as a thin wrapper around state.Snapshot()

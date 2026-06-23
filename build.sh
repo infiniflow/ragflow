@@ -16,6 +16,7 @@ CPP_DIR="$PROJECT_ROOT/internal/cpp"
 BUILD_DIR="$CPP_DIR/cmake-build-release"
 RAGFLOW_SERVER_BINARY="$PROJECT_ROOT/bin/ragflow_server"
 ADMIN_SERVER_BINARY="$PROJECT_ROOT/bin/admin_server"
+INGESTOR_BINARY="$PROJECT_ROOT/bin/ingestor"
 RAGFLOW_CLI_BINARY="$PROJECT_ROOT/bin/ragflow_cli"
 
 # office_oxide native library settings
@@ -226,9 +227,9 @@ build_cpp_test() {
 # Build Go server
 build_go() {
     print_section "Building RAGFlow go"
-    
+
     cd "$PROJECT_ROOT"
-    
+
     # Check if C++ library exists
     if [ ! -f "$BUILD_DIR/librag_tokenizer_c_api.a" ]; then
         echo -e "${RED}Error: C++ static library not found. Run with --cpp first.${NC}"
@@ -252,22 +253,18 @@ build_go() {
         eval "$install_cmd"
     fi
 
-    # Check / install office_oxide native library
-    check_office_oxide_deps
+    setup_cgo_env
 
-    # Export CGO flags so go build can find office_oxide headers and library
-    export CGO_CFLAGS="-I${OFFICE_OXIDE_PREFIX}/include/office_oxide_c${CGO_CFLAGS:+ $CGO_CFLAGS}"
-    echo "Exporting CGO_CFLAGS: $CGO_CFLAGS"
-    export CGO_LDFLAGS="-L${OFFICE_OXIDE_PREFIX}/lib -loffice_oxide -Wl,-rpath,${OFFICE_OXIDE_PREFIX}/lib${CGO_LDFLAGS:+ $CGO_LDFLAGS}"
-    echo "Exporting CGO_LDFLAGS: $CGO_LDFLAGS"
-
-    echo "Building RAGFlow binary: $RAGFLOW_SERVER_BINARY, $ADMIN_SERVER_BINARY, and $RAGFLOW_CLI_BINARY"
+    echo "Building RAGFlow binary: $RAGFLOW_SERVER_BINARY, $ADMIN_SERVER_BINARY, $INGESTOR_BINARY, and $RAGFLOW_CLI_BINARY"
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
         go build -o "$RAGFLOW_SERVER_BINARY" cmd/server_main.go
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
         go build -o "$ADMIN_SERVER_BINARY" cmd/admin_server.go
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
+        CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
+        go build -o "$INGESTOR_BINARY" cmd/ingestor.go
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
         go build -o "$RAGFLOW_CLI_BINARY" cmd/ragflow_cli.go
@@ -282,9 +279,44 @@ build_go() {
         exit 1
     fi
 
+    if [ ! -f "$INGESTOR_BINARY" ]; then
+        echo -e "${RED}Error: Failed to build Ingestor binary${NC}"
+        exit 1
+    fi
+
     echo -e "${GREEN}✓ Go ragflow_server built successfully: $RAGFLOW_SERVER_BINARY${NC}"
     echo -e "${GREEN}✓ Go admin_server built successfully: $ADMIN_SERVER_BINARY${NC}"
     echo -e "${GREEN}✓ Go ragflow_cli built successfully: $RAGFLOW_CLI_BINARY${NC}"
+    echo -e "${GREEN}✓ Go ingestor built successfully: $INGESTOR_BINARY${NC}"
+}
+
+# Configure CGO flags for the office_oxide native library and the runtime
+# rpath used by test binaries. Call before any `go build` / `go test` step
+# that links against office_oxide.
+setup_cgo_env() {
+    check_office_oxide_deps
+    export CGO_CFLAGS="-I${OFFICE_OXIDE_PREFIX}/include/office_oxide_c${CGO_CFLAGS:+ $CGO_CFLAGS}"
+    echo "Exporting CGO_CFLAGS: $CGO_CFLAGS"
+    export CGO_LDFLAGS="-L${OFFICE_OXIDE_PREFIX}/lib -loffice_oxide -Wl,-rpath,${OFFICE_OXIDE_PREFIX}/lib${CGO_LDFLAGS:+ $CGO_LDFLAGS}"
+    echo "Exporting CGO_LDFLAGS: $CGO_LDFLAGS"
+    # Make the .so discoverable to test binaries spawned without rpath.
+    export LD_LIBRARY_PATH="${OFFICE_OXIDE_PREFIX}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+}
+
+# Run Go unit tests with the same CGO env as `build_go`. Pass any extra args
+# to `go test`, e.g. `./build.sh --test -run TestFoo ./internal/admin/...`.
+run_go_tests() {
+    print_section "Running Go tests"
+
+    cd "$PROJECT_ROOT"
+    setup_cgo_env
+
+    if [ "$#" -eq 0 ]; then
+        set -- ./...
+    fi
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
+        CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
+        go test -count=1 "$@"
 }
 
 # Clean build artifacts
@@ -294,6 +326,8 @@ clean() {
     rm -rf "$BUILD_DIR"
     rm -f "$RAGFLOW_SERVER_BINARY"
     rm -f "$ADMIN_SERVER_BINARY"
+    rm -f "$INGESTOR_BINARY"
+    rm -f "$RAGFLOW_CLI_BINARY"
 
     echo -e "${GREEN}✓ Build artifacts cleaned${NC}"
 }
@@ -306,6 +340,10 @@ run() {
     fi
     if [ ! -f "$RAGFLOW_SERVER_BINARY" ]; then
         echo -e "${RED}Error: $RAGFLOW_SERVER_BINARY not found. Build first with --all or --go${NC}"
+        exit 1
+    fi
+    if [ ! -f "$INGESTOR_BINARY" ]; then
+        echo -e "${RED}Error: $INGESTOR_BINARY not found. Build first with --all or --go${NC}"
         exit 1
     fi
 
@@ -322,13 +360,21 @@ run() {
     # ragflow_server starts sending heartbeats to it.
     sleep 1
 
+    print_section "Starting ingestor (background)"
+    "$INGESTOR_BINARY" &
+    INGESTOR_PID=$!
+    trap 'kill "$INGESTOR_PID" 2>/dev/null || true' EXIT INT TERM
+    sleep 1
+
     print_section "Starting RAGFlow server (foreground)"
     "$RAGFLOW_SERVER_BINARY"
 }
 
 # Show help
 show_help() {
-    cat << EOF
+    # Quoted delimiter so backticks, `$var`, and `\$` in the help text are
+    # printed literally instead of being interpreted as command substitution.
+    cat << 'EOF'
 Usage: $0 [OPTIONS]
 
 Build script for RAGFlow Go server with C++ bindings.
@@ -338,6 +384,9 @@ OPTIONS:
     --cpp, -c       Build only C++ static library
     --cpp-test      Build C++ test executable (requires --cpp first)
     --go, -g        Build only Go server (requires C++ library to be built)
+    --test, -t      Run Go unit tests (sets up CGO env for office_oxide).
+                    Pass extra args after `--` to forward to `go test`, e.g.
+                    `$0 --test -- -run TestFoo ./internal/admin/...`
     --clean, -C     Clean all build artifacts
     --run, -r       Build and run the server
     --help, -h      Show this help message
@@ -347,6 +396,8 @@ EXAMPLES:
     $0 --cpp        # Build only C++ library
     $0 --go         # Build only Go server
     $0 --cpp-test   # Build C++ test executable
+    $0 --test       # Run all Go tests
+    $0 --test -- -run TestFoo ./internal/admin/...   # Targeted Go tests
     $0 --run        # Build and run
     $0 --clean      # Clean build artifacts
 
@@ -377,6 +428,16 @@ main() {
             check_go_deps
             build_go
             ;;
+        --test|-t)
+            check_go_deps
+            # Forward any args after `--` to `go test`.
+            if [ "${2:-}" = "--" ]; then
+                shift 2
+                run_go_tests "$@"
+            else
+                run_go_tests
+            fi
+            ;;
         --clean|-C)
             clean
             ;;
@@ -396,7 +457,7 @@ main() {
             build_cpp
             build_go
             echo -e "\n${GREEN}=== Build completed successfully! ===${NC}"
-            echo "Binary: $RAGFLOW_SERVER_BINARY, $ADMIN_SERVER_BINARY"
+            echo "Binary: $RAGFLOW_SERVER_BINARY, $ADMIN_SERVER_BINARY, $INGESTOR_BINARY, $RAGFLOW_CLI_BINARY"
             ;;
         *)
             echo -e "${RED}Unknown option: $1${NC}"

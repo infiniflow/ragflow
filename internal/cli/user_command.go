@@ -32,6 +32,7 @@ import (
 	"ragflow/internal/ingestion"
 	"ragflow/internal/ingestion/parser"
 	"ragflow/internal/utility"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -1104,7 +1105,6 @@ func (c *CLI) DropMetadataStore(cmd *Command) (ResponseIf, error) {
 
 // AddProvider creates a new model provider
 // ADD PROVIDER <name>
-// ADD PROVIDER <name> <api_key>
 func (c *CLI) AddProvider(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
@@ -3643,4 +3643,331 @@ func (c *CLI) ChunkCommand(cmd *Command) (ResponseIf, error) {
 	result.Code = 0
 	result.Message = fmt.Sprintf("Success to chunk %s", filename)
 	return &result, nil
+}
+
+// OpenaiChat dispatches the parsed OPENAI_CHAT command to either a
+// non-streaming oneshot call or a streaming SSE call, depending on the
+// `stream` option.
+func (c *CLI) OpenaiChat(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("OPENAI_CHAT is only allowed in USER mode")
+	}
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+	if httpClient.APIToken == nil && httpClient.LoginToken == nil {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+
+	body, err := buildOpenaiChatRequestBody(cmd)
+	if err != nil {
+		return nil, err
+	}
+
+	chatID, _ := cmd.Params["chat_id"].(string)
+	url := fmt.Sprintf("/openai/%s/chat/completions", chatID)
+
+	stream, _ := cmd.Params["stream"].(bool)
+	if stream {
+		return c.streamOpenaiChat(url, body)
+	}
+	return c.oneshotOpenaiChat(url, body)
+}
+
+// allowedExtraBodyKeys enumerates every top-level key the server
+// accepts under `extra_body`. Anything else is rejected at CLI
+// build time so the user gets a clear error before the request
+// goes over the wire.
+var allowedExtraBodyKeys = map[string]struct{}{
+	"reference":          {},
+	"reference_metadata": {},
+	"metadata_condition": {},
+}
+
+// validateExtraBody checks the shape of an extra_body payload
+// supplied by the user. It rejects:
+//
+//   - Unknown top-level keys (typos and unsupported fields).
+//   - reference_metadata that's not an object, or whose
+//     sub-fields have the wrong type.
+//   - metadata_condition that's not an object, or whose
+//     conditions are missing required fields.
+//
+// The error message names the offending path so the user can
+// fix the JSON literal in their command without having to read
+// the server source.
+func validateExtraBody(eb map[string]interface{}) error {
+	for k := range eb {
+		if _, ok := allowedExtraBodyKeys[k]; !ok {
+			return fmt.Errorf("OPENAI_CHAT extra_body: unknown field %q (valid: reference, reference_metadata, metadata_condition)", k)
+		}
+	}
+
+	// reference_metadata: { include?: bool, fields?: string[] }
+	if v, present := eb["reference_metadata"]; present {
+		rm, ok := v.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("OPENAI_CHAT extra_body.reference_metadata must be an object, got %T", v)
+		}
+		if inc, ok := rm["include"]; ok {
+			if _, ok := inc.(bool); !ok {
+				return fmt.Errorf("OPENAI_CHAT extra_body.reference_metadata.include must be a boolean, got %T", inc)
+			}
+		}
+		if fields, ok := rm["fields"]; ok {
+			arr, ok := fields.([]interface{})
+			if !ok {
+				return fmt.Errorf("OPENAI_CHAT extra_body.reference_metadata.fields must be an array, got %T", fields)
+			}
+			for i, item := range arr {
+				if _, ok := item.(string); !ok {
+					return fmt.Errorf("OPENAI_CHAT extra_body.reference_metadata.fields[%d] must be a string, got %T", i, item)
+				}
+			}
+		}
+	}
+
+	// metadata_condition: { logic?: "and"|"or", conditions?: [{key, operator, value}, ...] }
+	if v, present := eb["metadata_condition"]; present {
+		mc, ok := v.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("OPENAI_CHAT extra_body.metadata_condition must be an object, got %T", v)
+		}
+		if logic, ok := mc["logic"]; ok {
+			s, ok := logic.(string)
+			if !ok {
+				return fmt.Errorf("OPENAI_CHAT extra_body.metadata_condition.logic must be a string, got %T", logic)
+			}
+			if s != "and" && s != "or" {
+				return fmt.Errorf("OPENAI_CHAT extra_body.metadata_condition.logic must be \"and\" or \"or\", got %q", s)
+			}
+		}
+		if conds, ok := mc["conditions"]; ok {
+			arr, ok := conds.([]interface{})
+			if !ok {
+				return fmt.Errorf("OPENAI_CHAT extra_body.metadata_condition.conditions must be an array, got %T", conds)
+			}
+			for i, item := range arr {
+				cond, ok := item.(map[string]interface{})
+				if !ok {
+					return fmt.Errorf("OPENAI_CHAT extra_body.metadata_condition.conditions[%d] must be an object, got %T", i, item)
+				}
+				if _, ok := cond["key"]; !ok {
+					return fmt.Errorf("OPENAI_CHAT extra_body.metadata_condition.conditions[%d] missing required field 'key'", i)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// buildOpenaiChatRequestBody assembles the JSON payload that
+// /api/v1/openai/<chat_id>/chat/completions expects
+//
+// RAGFlow-specific knobs (e.g. `reference`, `reference_metadata`,
+// `metadata_condition`) flow in via the user-supplied `extra_body`
+// JSON literal, which is validated against the `allowedExtraBodyKeys`
+// allowlist above before the request goes out. `stop` and `user` are
+// not first-class CLI options — the Python server does not inspect
+// them, and the Go server has dropped them from its request struct;
+// the parser rejects them as "unknown option" so there is exactly
+// one place to set them.
+//
+// The `messages` array is built from three optional sources, in
+// this order:
+//  1. `system`         — single system message (if supplied)
+//  2. `history`        — prior turns encoded as
+//     "user:...,assistant:..." (if supplied)
+//  3. positional <msg> — always the trailing user turn
+func buildOpenaiChatRequestBody(cmd *Command) (map[string]interface{}, error) {
+	msg, _ := cmd.Params["message"].(string)
+	model, _ := cmd.Params["model"].(string)
+	temp, _ := cmd.Params["temperature"].(float64)
+	maxTokens, _ := cmd.Params["max_tokens"].(int)
+	stream, _ := cmd.Params["stream"].(bool)
+
+	messages := make([]map[string]interface{}, 0, 4)
+	if v, ok := cmd.Params["system"].(string); ok && v != "" {
+		messages = append(messages, map[string]interface{}{"role": "system", "content": v})
+	}
+	if v, ok := cmd.Params["history_raw"].(string); ok && v != "" {
+		delimiter, _ := cmd.Params["history_delimiter"].(string)
+		turns, err := parseHistory(v, delimiter)
+		if err != nil {
+			return nil, fmt.Errorf("OPENAI_CHAT history: %w", err)
+		}
+		for _, t := range turns {
+			messages = append(messages, map[string]interface{}{
+				"role":    t["role"],
+				"content": t["content"],
+			})
+		}
+	}
+	messages = append(messages, map[string]interface{}{"role": "user", "content": msg})
+
+	body := map[string]interface{}{
+		"model":    model,
+		"messages": messages,
+		"stream":   stream,
+	}
+	// Only emit generation params when the user actually set them
+	// (zero is the parser-default for "unset" and matches Python's
+	// behavior of dropping the field).
+	if temp != 0.0 {
+		body["temperature"] = temp
+	}
+	if maxTokens != 0 {
+		body["max_tokens"] = maxTokens
+	}
+	if v, ok := cmd.Params["top_p"].(float64); ok && v != 0.0 {
+		body["top_p"] = v
+	}
+	if v, ok := cmd.Params["frequency_penalty"].(float64); ok && v != 0.0 {
+		body["frequency_penalty"] = v
+	}
+	if v, ok := cmd.Params["presence_penalty"].(float64); ok && v != 0.0 {
+		body["presence_penalty"] = v
+	}
+
+	var extraBody map[string]interface{}
+	if v, ok := cmd.Params["extra_body"].(string); ok && v != "" {
+		if err := json.Unmarshal([]byte(v), &extraBody); err != nil {
+			return nil, fmt.Errorf("OPENAI_CHAT extra_body: invalid JSON: %w", err)
+		}
+	}
+	// Validate the user's extra_body against the server's accepted
+	// schema before the request goes over the wire.
+	if err := validateExtraBody(extraBody); err != nil {
+		return nil, err
+	}
+	if len(extraBody) > 0 {
+		body["extra_body"] = extraBody
+	}
+
+	return body, nil
+}
+
+// oneshotOpenaiChat performs a non-streaming POST and returns an
+// OpenAIChatResponse parsed from the JSON envelope. It calls the
+// same HTTPClient.Request used by every other CLI command.
+func (c *CLI) oneshotOpenaiChat(url string, body map[string]interface{}) (ResponseIf, error) {
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+	resp, err := httpClient.Request("POST", url, "web", nil, body)
+	if err != nil {
+		return nil, fmt.Errorf("openai_chat request: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		// Python wraps errors as `{"code":..., "message":...}`. Surface
+		// the body verbatim so the user can read the upstream error.
+		return &OpenAIChatResponse{
+			Code:    resp.StatusCode,
+			Message: string(resp.Body),
+			raw:     resp.Body,
+		}, nil
+	}
+	out := &OpenAIChatResponse{
+		Duration: resp.Duration,
+		raw:      resp.Body,
+	}
+	var wrapped struct {
+		Code    int             `json:"code"`
+		Message string          `json:"message"`
+		Data    *openAIChatData `json:"data"`
+	}
+	if err := json.Unmarshal(resp.Body, &wrapped); err == nil && wrapped.Data != nil {
+		out.Code = wrapped.Code
+		out.Message = wrapped.Message
+		out.Data = wrapped.Data
+		if len(wrapped.Data.Choices) > 0 {
+			out.Reasoning = wrapped.Data.Choices[0].Message.ReasoningContent
+		}
+		return out, nil
+	}
+	// Unwrapped (Go handler) shape.
+	if err := json.Unmarshal(resp.Body, &out.Data); err != nil {
+		return nil, fmt.Errorf("openai_chat: invalid response JSON: %w", err)
+	}
+	if out.Data != nil && len(out.Data.Choices) > 0 {
+		out.Reasoning = out.Data.Choices[0].Message.ReasoningContent
+	}
+	return out, nil
+}
+
+// streamOpenaiChat performs a streaming POST and prints SSE chunks to
+// stdout as they arrive
+func (c *CLI) streamOpenaiChat(url string, body map[string]interface{}) (ResponseIf, error) {
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+	resp, err := httpClient.Request("POST", url, "web", nil, body)
+	if err != nil {
+		return nil, fmt.Errorf("openai_chat stream: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return &OpenAIChatResponse{
+			Code:     resp.StatusCode,
+			Message:  string(resp.Body),
+			Duration: resp.Duration,
+			raw:      resp.Body,
+		}, nil
+	}
+	full := string(resp.Body)
+	var (
+		fullContent string
+		fullReason  string
+		resolvedMod string
+	)
+	for _, line := range strings.Split(full, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if payload == "" || payload == "[DONE]" {
+			continue
+		}
+		var chunk struct {
+			Model   string `json:"model"`
+			Choices []struct {
+				Delta struct {
+					Content          string `json:"content"`
+					ReasoningContent string `json:"reasoning_content"`
+				} `json:"delta"`
+				FinishReason string `json:"finish_reason"`
+			} `json:"choices"`
+			Usage *openAIChatUsage `json:"usage"`
+		}
+		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+			continue
+		}
+		if chunk.Model != "" {
+			resolvedMod = chunk.Model
+		}
+		if len(chunk.Choices) > 0 {
+			if d := chunk.Choices[0].Delta.Content; d != "" {
+				fullContent += d
+			}
+			if r := chunk.Choices[0].Delta.ReasoningContent; r != "" {
+				fullReason += r
+			}
+		}
+	}
+
+	fullContent = strings.TrimLeft(fullContent, "\n\r")
+	fullReason = strings.TrimLeft(fullReason, "\n\r")
+	fullContent = stripThinkTags(fullContent)
+	fullReason = stripThinkTags(fullReason)
+	return &OpenAIChatResponse{
+		Duration:  resp.Duration,
+		Reasoning: fullReason,
+		Data: &openAIChatData{
+			Model:   resolvedMod,
+			Choices: []openAIChatChoice{{Message: openAIChatMessage{Content: fullContent, ReasoningContent: fullReason}}},
+		},
+		streamed: true,
+		raw:      resp.Body,
+	}, nil
+}
+
+// stripThinkTags removes <think>…</think> wrappers from a streamed answer
+func stripThinkTags(s string) string {
+	var thinkTagRE = regexp.MustCompile(`(?s)<think>.*?</think>`)
+	return thinkTagRE.ReplaceAllString(s, "")
 }

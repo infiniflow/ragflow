@@ -52,8 +52,8 @@ type jin10Envelope struct {
 	Error string `json:"_ERROR,omitempty"`
 }
 
-// Jin10Tool is the Phase 3 batch 4 stub implementation of the Jin10
-// flash-news tool (plan §2.11.4 row 12, §5 Phase 3 第 4 批).
+// Jin10Tool is the Jin10
+// flash-news tool.
 //
 // Jin10 (https://www.jin10.com) has no public API; subscribers receive
 // data via a private WebSocket connection with token authentication.

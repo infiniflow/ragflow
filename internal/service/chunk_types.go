@@ -24,7 +24,6 @@ import (
 	"ragflow/internal/server"
 	"strings"
 
-
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
@@ -43,10 +42,9 @@ type ChunkService struct {
 	searchService  *SearchService
 }
 
-
 // RetrievalTestRequest retrieval test request
 type RetrievalTestRequest struct {
-	Datasets               common.StringSlice      `json:"dataset_ids" binding:"required"` // string or []string
+	Datasets               common.StringSlice     `json:"dataset_ids" binding:"required"` // string or []string
 	Question               string                 `json:"question"`
 	Page                   *int                   `json:"page,omitempty"`
 	Size                   *int                   `json:"size,omitempty"`
@@ -79,6 +77,11 @@ type GetChunkRequest struct {
 // GetChunkResponse response for getting a chunk
 type GetChunkResponse struct {
 	Chunk map[string]interface{} `json:"chunk"`
+}
+
+// ParseFileRequest is the request body for reparsing documents in a dataset.
+type ParseFileRequest struct {
+	DocumentIDs []string `json:"document_ids"`
 }
 
 // Get retrieves a chunk by ID

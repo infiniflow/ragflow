@@ -144,7 +144,7 @@ func (h *ProviderHandler) DeleteProvider(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
-	errorCode, err := h.modelProviderService.DeleteModelProvider(providerName, userID)
+	errorCode, err := h.modelProviderService.DeleteModelProvider(userID, providerName)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    errorCode,
@@ -452,7 +452,7 @@ func (h *ProviderHandler) CheckInstanceConnection(c *gin.Context) {
 		return
 	}
 
-	apikey, _ := instanceInfo["apikey"].(string)
+	apikey, _ := instanceInfo["api_key"].(string)
 	region, _ := instanceInfo["region"].(string)
 	baseURL, _ := instanceInfo["base_url"].(string)
 
@@ -628,10 +628,10 @@ func (h *ProviderHandler) DropProviderInstance(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
-	_, err := h.modelProviderService.DropProviderInstances(providerName, userID, req.Instances)
+	code, err := h.modelProviderService.DropProviderInstances(providerName, userID, req.Instances)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
+			"code":    code,
 			"message": err.Error(),
 		})
 		return
@@ -704,7 +704,8 @@ func (h *ProviderHandler) ListInstanceModels(c *gin.Context) {
 }
 
 type EnableOrDisableModelRequest struct {
-	Status string `json:"status" binding:"required"`
+	ModelID string `json:"model_id"`
+	Status  string `json:"status"`
 }
 
 func (h *ProviderHandler) EnableOrDisableModel(c *gin.Context) {
@@ -726,18 +727,6 @@ func (h *ProviderHandler) EnableOrDisableModel(c *gin.Context) {
 		return
 	}
 
-	modelName := c.Param("model_name")
-	if modelName != "" {
-		modelName = strings.TrimPrefix(modelName, "/")
-	}
-	if modelName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Model name is required",
-		})
-		return
-	}
-
 	var req EnableOrDisableModelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		println("JSON bind error: %v (type: %T)", err, err)
@@ -749,11 +738,30 @@ func (h *ProviderHandler) EnableOrDisableModel(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
+	modelID := strings.TrimSpace(req.ModelID)
+	modelName := strings.TrimPrefix(c.Param("model_name"), "/")
+	modelName = strings.TrimSpace(modelName)
+	if modelName == "" && modelID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": "model_name or model_id is required",
+		})
+		return
+	}
 
-	_, err := h.modelProviderService.UpdateModelStatus(providerName, instanceName, modelName, userID, req.Status)
+	status := strings.TrimSpace(req.Status)
+	if status != "active" && status != "inactive" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": "Status must be active or inactive",
+		})
+		return
+	}
+
+	code, err := h.modelProviderService.UpdateModelStatus(providerName, instanceName, modelName, userID, modelID, status)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
+			"code":    code,
 			"message": err.Error(),
 		})
 		return
@@ -846,7 +854,8 @@ func (h *ProviderHandler) AddModel(c *gin.Context) {
 }
 
 type DropInstanceModelRequest struct {
-	Models []string `json:"models" binding:"required"`
+	ModelIDs []string `json:"model_ids"`
+	Models   []string `json:"models"`
 }
 
 func (h *ProviderHandler) DropInstanceModels(c *gin.Context) {
@@ -875,13 +884,20 @@ func (h *ProviderHandler) DropInstanceModels(c *gin.Context) {
 		})
 		return
 	}
+	if len(req.ModelIDs) == 0 && len(req.Models) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": "model_ids or models is required",
+		})
+		return
+	}
 
 	userID := c.GetString("user_id")
 
-	_, err := h.modelProviderService.DropInstanceModels(providerName, instanceName, userID, req.Models)
+	code, err := h.modelProviderService.DropInstanceModels(providerName, instanceName, userID, req.ModelIDs, req.Models)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
+			"code":    code,
 			"message": err.Error(),
 		})
 		return

@@ -70,8 +70,8 @@ func (s *MetadataService) GetTenantIDByKBIDs(kbIDs []string) (string, error) {
 
 // SearchMetadataResponse holds the result of a metadata search
 type SearchMetadataResponse struct {
-	IndexName string
-	MetadataRecords   []map[string]interface{}
+	IndexName       string
+	MetadataRecords []map[string]interface{}
 }
 
 // SearchMetadata searches the metadata index with the given parameters
@@ -92,8 +92,8 @@ func (s *MetadataService) SearchMetadata(kbID, tenantID string, docIDs []string,
 	}
 
 	return &SearchMetadataResponse{
-		IndexName: BuildMetadataIndexName(tenantID),
-		MetadataRecords:   searchResult.MetadataRecords,
+		IndexName:       BuildMetadataIndexName(tenantID),
+		MetadataRecords: searchResult.MetadataRecords,
 	}, nil
 }
 
@@ -123,8 +123,8 @@ func (s *MetadataService) SearchMetadataByKBs(kbIDs []string, size int) (*Search
 	}
 
 	return &SearchMetadataResponse{
-		IndexName: BuildMetadataIndexName(tenantID),
-		MetadataRecords:   searchResult.MetadataRecords,
+		IndexName:       BuildMetadataIndexName(tenantID),
+		MetadataRecords: searchResult.MetadataRecords,
 	}, nil
 }
 
@@ -242,7 +242,7 @@ func CollectDocIDsByKB(chunks []map[string]interface{}) KBDocIDsMap {
 	seen := make(map[string]struct{})
 	result := make(KBDocIDsMap)
 	for _, chunk := range chunks {
-		kbID, _ := chunk["kb_id"].(string)
+		kbID := extractKBID(chunk)
 		docID := extractDocID(chunk)
 		if kbID == "" || docID == "" {
 			continue
@@ -298,6 +298,9 @@ func AttachDocMetaToChunks(chunks []map[string]interface{}, metaByDoc DocMetaMap
 	}
 	for _, chunk := range chunks {
 		docID := extractDocID(chunk)
+		if docID == "" {
+			continue
+		}
 		meta, ok := metaByDoc[docID]
 		if !ok {
 			continue
@@ -333,6 +336,17 @@ func (s *MetadataService) EnrichChunksWithDocMetadata(chunks []map[string]interf
 		return
 	}
 	AttachDocMetaToChunks(chunks, metaByDoc, metadataFields)
+}
+
+// extractKBID extracts the KB ID from a chunk, checking common field names.
+func extractKBID(chunk map[string]interface{}) string {
+	if id, ok := chunk["kb_id"].(string); ok && id != "" {
+		return id
+	}
+	if id, ok := chunk["dataset_id"].(string); ok && id != "" {
+		return id
+	}
+	return ""
 }
 
 // extractDocID extracts the document ID from a chunk, checking both id and doc_id.

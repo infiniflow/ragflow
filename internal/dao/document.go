@@ -109,6 +109,86 @@ func (dao *DocumentDAO) ListByKBID(kbID string, offset, limit int) ([]*entity.Do
 	return documents, total, err
 }
 
+// GetByKBID retrieves all documents in a knowledge base ordered by create time.
+func (dao *DocumentDAO) GetByKBID(kbID string) ([]*entity.Document, int64, error) {
+	var documents []*entity.Document
+	var total int64
+
+	query := DB.Model(&entity.Document{}).Where("kb_id = ?", kbID)
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	err := query.Order("create_time ASC").Find(&documents).Error
+	return documents, total, err
+}
+
+// GetChunkingConfig returns the document, dataset, and tenant fields used to
+// build a parsing task digest, mirroring DocumentService.get_chunking_config.
+func (dao *DocumentDAO) GetChunkingConfig(docID string) (map[string]interface{}, error) {
+	var row struct {
+		ID           string         `gorm:"column:id"`
+		KbID         string         `gorm:"column:kb_id"`
+		ParserID     string         `gorm:"column:parser_id"`
+		ParserConfig entity.JSONMap `gorm:"column:parser_config"`
+		Size         int64          `gorm:"column:size"`
+		ContentHash  *string        `gorm:"column:content_hash"`
+		Language     *string        `gorm:"column:language"`
+		EmbdID       string         `gorm:"column:embd_id"`
+		TenantID     string         `gorm:"column:tenant_id"`
+		Img2TxtID    string         `gorm:"column:img2txt_id"`
+		ASRID        string         `gorm:"column:asr_id"`
+		LLMID        string         `gorm:"column:llm_id"`
+	}
+
+	err := DB.Table("document").
+		Select(`
+			document.id,
+			document.kb_id,
+			document.parser_id,
+			document.parser_config,
+			document.size,
+			document.content_hash,
+			knowledgebase.language,
+			knowledgebase.embd_id,
+			tenant.id AS tenant_id,
+			tenant.img2txt_id,
+			tenant.asr_id,
+			tenant.llm_id
+		`).
+		Joins("JOIN knowledgebase ON document.kb_id = knowledgebase.id").
+		Joins("JOIN tenant ON knowledgebase.tenant_id = tenant.id").
+		Where("document.id = ?", docID).
+		Take(&row).Error
+	if err != nil {
+		return nil, err
+	}
+
+	config := map[string]interface{}{
+		"id":            row.ID,
+		"kb_id":         row.KbID,
+		"parser_id":     row.ParserID,
+		"parser_config": row.ParserConfig,
+		"size":          row.Size,
+		"embd_id":       row.EmbdID,
+		"tenant_id":     row.TenantID,
+		"img2txt_id":    row.Img2TxtID,
+		"asr_id":        row.ASRID,
+		"llm_id":        row.LLMID,
+	}
+	if row.ContentHash != nil {
+		config["content_hash"] = *row.ContentHash
+	} else {
+		config["content_hash"] = nil
+	}
+	if row.Language != nil {
+		config["language"] = *row.Language
+	} else {
+		config["language"] = nil
+	}
+	return config, nil
+}
+
 // DeleteByTenantID deletes all documents by tenant ID (hard delete)
 func (dao *DocumentDAO) DeleteByTenantID(tenantID string) (int64, error) {
 	result := DB.Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.Document{})
@@ -210,4 +290,10 @@ func (dao *DocumentDAO) GetParsingStatusByKBID(kbID string) (map[string]int64, e
 		}
 	}
 	return result, nil
+}
+
+func (dao *DocumentDAO) GetByNameAndKBID(name, kbID string) ([]*entity.Document, error) {
+	var docs []*entity.Document
+	err := DB.Where("name = ? AND kb_id = ?", name, kbID).Find(&docs).Error
+	return docs, err
 }

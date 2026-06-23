@@ -39,6 +39,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
+	"ragflow/internal/agent/audio"
+	"ragflow/internal/agent/canvas"
+	_ "ragflow/internal/agent/component" // blank import: registers every Component factory (Begin / Agent / LLM / Message / Retrieval / ...) into the shared runtime at package init
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -54,12 +57,16 @@ func printHelp() {
 	fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS]\n\n", os.Args[0])
 	fmt.Fprintf(os.Stderr, "RAGFlow Server - Open-source RAG engine based on deep document understanding\n\n")
 	fmt.Fprintf(os.Stderr, "Options:\n")
-	fmt.Fprintf(os.Stderr, "  -p, --port int\tServer port (overrides config file)\n")
-	fmt.Fprintf(os.Stderr, "  -h, --help   \tShow this help message and exit\n")
+	fmt.Fprintf(os.Stderr, "  -p, --port int\t\tServer port (overrides config file)\n")
+	fmt.Fprintf(os.Stderr, "  -v, --version  \tPrint version information and exit\n")
+	fmt.Fprintf(os.Stderr, "  --debug        \tEnable debug-level logging\n")
+	fmt.Fprintf(os.Stderr, "  -h, --help     \tShow this help message and exit\n")
 	fmt.Fprintf(os.Stderr, "\nExamples:\n")
-	fmt.Fprintf(os.Stderr, "  %s           # Start server with config file port\n", os.Args[0])
-	fmt.Fprintf(os.Stderr, "  %s -p 8080   # Start server on port 8080\n", os.Args[0])
-	fmt.Fprintf(os.Stderr, "  %s --port 8080 # Start server on port 8080\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "  %s           \t\t# Start server with config file port\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "  %s -p 8080   \t\t# Start server on port 8080\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "  %s --port 8080 \t# Start server on port 8080\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "  %s --version  \t# Show version and exit\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "  %s --debug    \t# Start server with debug logging\n", os.Args[0])
 }
 
 func main() {
@@ -67,11 +74,21 @@ func main() {
 	var portFlag int
 	flag.IntVar(&portFlag, "port", 0, "Server port (overrides config file)")
 	flag.IntVar(&portFlag, "p", 0, "Server port (shorthand, overrides config file)")
+	var debugFlag bool
+	flag.BoolVar(&debugFlag, "debug", false, "Enable debug-level logging")
+	var versionFlag bool
+	flag.BoolVar(&versionFlag, "version", false, "Print version information and exit")
 
 	// Custom help message
 	flag.Usage = printHelp
 
 	flag.Parse()
+
+	// Handle --version flag: print version and exit immediately
+	if versionFlag {
+		fmt.Printf("RAGFlow version: %s\n", utility.GetRAGFlowVersion())
+		return
+	}
 
 	// Initialize logger with default level
 	// logger.Init("info"); // set debug log level
@@ -100,6 +117,11 @@ func main() {
 	if level == "" {
 		level = "info"
 	}
+
+	if debugFlag {
+		level = "debug"
+	}
+
 	if err := common.Init(level, "server_main.log"); err != nil {
 		common.Error("Failed to reinitialize logger", err)
 	}
@@ -190,7 +212,9 @@ func startServer(config *server.Config) {
 	llmService := service.NewLLMService()
 	tenantService := service.NewTenantService()
 	chatService := service.NewChatService()
+	chatChannelService := service.NewChatChannelService()
 	chatSessionService := service.NewChatSessionService()
+	openaiChatService := service.NewOpenAIChatService()
 	systemService := service.NewSystemService()
 	connectorService := service.NewConnectorService()
 	searchService := service.NewSearchService()
@@ -213,7 +237,9 @@ func startServer(config *server.Config) {
 	chunkHandler := handler.NewChunkHandler(chunkService, userService)
 	llmHandler := handler.NewLLMHandler(llmService, userService)
 	chatHandler := handler.NewChatHandler(chatService, userService)
+	chatChannelHandler := handler.NewChatChannelHandler(chatChannelService)
 	chatSessionHandler := handler.NewChatSessionHandler(chatSessionService, userService)
+	openaiChatHandler := handler.NewOpenAIChatHandler(openaiChatService)
 	connectorHandler := handler.NewConnectorHandler(connectorService, userService)
 	searchHandler := handler.NewSearchHandler(searchService, userService)
 	fileHandler := handler.NewFileHandler(fileService, userService)
@@ -221,7 +247,29 @@ func startServer(config *server.Config) {
 	mcpHandler := handler.NewMCPHandler(mcpService)
 	skillSearchHandler := handler.NewSkillSearchHandler(docEngine)
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
-	agentHandler := handler.NewAgentHandler(service.NewAgentService(), fileService)
+	// Install the agent service's Redis-backed run infrastructure
+	// (CheckPointStore / StateSerializer / RunTracker). When Redis
+	// is unreachable (degraded boot, stand-alone mode, no-redis CI)
+	// the constructors return errors and we fall through to the
+	// in-memory / no-tracking path: the agent service treats nil
+	// options as the in-memory test path, so graceful degradation
+	// is a 1-line if-not-nil pass-through — no separate "boot" mode
+	// required.
+	agentOpts := buildAgentRunOptions()
+	agentHandler := handler.NewAgentHandler(service.NewAgentServiceWithOptions(
+		agentOpts.checkpointStore,
+		agentOpts.stateSerializer,
+		agentOpts.runTracker,
+	), fileService)
+
+	// Wire the TTS synthesizer to the per-tenant model-provider
+	// dispatch. SynthesizeRequest is routed through
+	// ModelProviderService.AudioSpeech, which fans out to the
+	// tenant's configured TTS model driver. When the model
+	// provider is unconfigured, the synthesizer falls back to a
+	// no-op echo (the audio package contract), so this is always
+	// safe to call.
+	configureTTSSynthesizer(modelProviderService)
 	searchBotLLM := &handler.SearchBotRealLLM{Svc: modelProviderService}
 	searchBotHandler := handler.NewSearchBotHandler(
 		searchService,
@@ -246,17 +294,16 @@ func startServer(config *server.Config) {
 		docDAO,
 		docEngine,
 	)
-
-	// Phase 6 per-tenant canvas-runtime override. The selector is backed by
-	// the existing Redis client and the global logger. The handler is
-	// ALWAYS constructed, even when Redis is briefly unavailable at startup,
-	// so the POST /api/v1/admin/canvas-runtime/:tenant_id endpoint stays
-	// registered and returns the explicit ErrSelectorNotConfigured (HTTP 500)
-	// path until Redis recovers. The previous behaviour — skipping handler
-	// construction when rdb == nil — silently removed the route until the
-	// next process restart, so a transient Redis blip at boot stranded
-	// canary operators with a 404 they could not diagnose from the client
-	// side. Review follow-up: keep the route hot.
+	// Per-tenant canvas-runtime override selector, backed by the
+	// existing Redis client and the global logger. The handler is
+	// ALWAYS constructed, even when Redis is briefly unavailable at
+	// startup, so the POST /api/v1/admin/canvas-runtime/:tenant_id
+	// endpoint stays registered and returns the explicit
+	// ErrSelectorNotConfigured (HTTP 500) path until Redis recovers.
+	// Skipping handler construction when rdb == nil silently removed
+	// the route until the next process restart, so a transient
+	// Redis blip at boot stranded canary operators with a 404 they
+	// could not diagnose from the client side. Keep the route hot.
 	var adminRuntimeSelector *runtime.Selector
 	if rdb := redis.Get().GetClient(); rdb != nil {
 		adminRuntimeSelector = runtime.NewSelector(rdb, common.Logger)
@@ -264,7 +311,7 @@ func startServer(config *server.Config) {
 	adminRuntimeHandler := handler.NewAdminRuntimeHandler(adminRuntimeSelector)
 
 	// Initialize router
-	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler, fileCommitHandler, adminRuntimeHandler)
+	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatChannelHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler, fileCommitHandler, adminRuntimeHandler, openaiChatHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()
@@ -351,4 +398,73 @@ func startServer(config *server.Config) {
 	if err = srv.Shutdown(ctx); err != nil {
 		common.Fatal("Server forced to shutdown", zap.Error(err))
 	}
+}
+
+// agentRunOptions bundles the three optional injection slots the
+// agent service accepts via NewAgentServiceWithOptions: the Redis-
+// backed CheckPointStore, StateSerializer, and RunTracker. The
+// fields stay nil when the underlying constructors fail (Redis
+// unreachable, etc.); the agent service treats nil as "in-memory
+// / no-tracking" so the server continues to serve traffic without
+// requiring Redis to be up.
+type agentRunOptions struct {
+	checkpointStore canvas.CheckPointStore
+	stateSerializer canvas.StateSerializer
+	runTracker      *canvas.RunTracker
+}
+
+// buildAgentRunOptions installs the Redis-backed run infrastructure
+// when Redis is available. The Redis client is the one already
+// initialised at the top of main; the TTL is a conservative 24h for
+// both the checkpoint store and the run tracker. On any error
+// (Redis down at boot, constructor panic, nil-Redis fallback) we
+// log and return a zero-value struct — the agent service falls back
+// to the in-memory path transparently.
+func buildAgentRunOptions() agentRunOptions {
+	var out agentRunOptions
+	if !redis.IsEnabled() || redis.Get() == nil {
+		common.Info("agent: redis client not initialised; agent run infra in in-memory mode (no checkpoints, no run tracker)")
+		return out
+	}
+	cp := canvas.NewRedisCheckPointStore(24 * time.Hour)
+	out.checkpointStore = cp
+	// stateSerializer is intentionally left nil. eino's default
+	// InternalSerializer (used when no compose.WithSerializer is
+	// passed at compile time) already knows how to round-trip
+	// runtime.CanvasState because the runtime package registers
+	// it via compose.RegisterSerializableType[CanvasState] in
+	// init(). Overriding with RAGFlow's plain-JSON
+	// CanvasStateSerializer (json.Marshal/Unmarshal) produces
+	// bytes the InternalSerializer cannot decode on the resume
+	// pass — the UserFillUp two-node pattern surfaces this as
+	// "load checkpoint from store fail: cannot unmarshal object
+	// into Go struct field checkpoint.Channels of type
+	// compose.channel". Rely on eino's default instead.
+	rt := canvas.NewRunTracker(24 * time.Hour)
+	out.runTracker = rt
+	common.Info("agent: redis-backed run infra installed (24h TTL on checkpoint store + run tracker; eino default serializer)")
+	return out
+}
+
+// configureTTSSynthesizer installs the audio.ModelProviderFunc
+// that dispatches Synthesize requests through the project's
+// ModelProviderService. The model provider's AudioSpeech method
+// (internal/service/model_service.go) resolves the per-tenant TTS
+// model driver, sends the request upstream, and returns
+// synthesized audio bytes.
+//
+// The audio package's NewTTSDispatchFunc helper converts the
+// audio.SynthesizeRequest shape into the model's dispatch shape
+// (audioContent = req.Text, voice/lang → TTSConfig.Params,
+// ModelName from req.Engine). When the model provider is
+// unconfigured (nil dispatcher) the helper returns nil, which
+// reverts the audio package to its default stub.
+func configureTTSSynthesizer(modelProviderService *service.ModelProviderService) {
+	if modelProviderService == nil {
+		common.Info("agent: model provider service not initialised; TTS in no-op echo mode")
+		audio.SetModelProviderSynthesizer(nil)
+		return
+	}
+	audio.SetModelProviderSynthesizer(audio.NewTTSDispatchFunc(modelProviderService))
+	common.Info("agent: TTS model-provider dispatch installed (audio.Synthesize → ModelProviderService.AudioSpeech)")
 }

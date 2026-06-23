@@ -9,8 +9,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 const CopyToClipboard = ({
   text,
   className,
+  avoidButtonWrapper = false,
   ...buttonProps
-}: { text: string } & ButtonProps) => {
+}: { text: string; avoidButtonWrapper?: boolean } & ButtonProps) => {
   const [copied, setCopied] = useState(false);
   const { t } = useTranslate('common');
 
@@ -21,19 +22,32 @@ const CopyToClipboard = ({
     }, 2000);
   };
 
+  const icon = copied ? <LucideCheck /> : <LucideCopy />;
+  const trigger = avoidButtonWrapper ? (
+    <Button
+      asChild
+      variant="transparent"
+      size="icon-sm"
+      {...buttonProps}
+      className={cn(className, copied && '!text-state-success')}
+    >
+      <span aria-label={copied ? t('copied') : t('copy')}>{icon}</span>
+    </Button>
+  ) : (
+    <Button
+      variant="transparent"
+      size="icon-sm"
+      {...buttonProps}
+      className={cn(className, copied && '!text-state-success')}
+    >
+      {icon}
+    </Button>
+  );
+
   return (
     <Tooltip open={copied ? true : undefined}>
       <Clipboard text={text} onCopy={handleCopy}>
-        <TooltipTrigger asChild>
-          <Button
-            variant="transparent"
-            size="icon-sm"
-            {...buttonProps}
-            className={cn(className, copied && '!text-state-success')}
-          >
-            {copied ? <LucideCheck /> : <LucideCopy />}
-          </Button>
-        </TooltipTrigger>
+        <TooltipTrigger asChild>{trigger}</TooltipTrigger>
       </Clipboard>
       <TooltipContent>{copied ? t('copied') : t('copy')}</TooltipContent>
     </Tooltip>
