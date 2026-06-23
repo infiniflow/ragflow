@@ -142,6 +142,32 @@ async def test_document_metadata_cache_stops_on_empty_docs_page(monkeypatch, mcp
     assert dataset_cache["dataset-1"]["name"] == "Dataset 1"
     assert document_requests == ["/datasets/dataset-1/documents?page=1&page_size=30"]
 
+    cached_document_cache, _ = await connector._get_document_metadata_cache(["dataset-1"], api_key="unit-key")
+
+    assert cached_document_cache == {}
+    assert document_requests == ["/datasets/dataset-1/documents?page=1&page_size=30"]
+
+
+@pytest.mark.p2
+@pytest.mark.asyncio
+async def test_document_metadata_cache_stops_on_backend_error(monkeypatch, mcp_server):
+    connector = mcp_server.RAGFlowConnector(base_url=mcp_server.BASE_URL)
+    document_requests = []
+
+    async def _get(path, params=None, api_key=""):
+        if path == "/datasets":
+            return _dataset_response()
+        document_requests.append(path)
+        return _FakeResponse({"code": 102, "message": "backend error", "data": {}})
+
+    monkeypatch.setattr(connector, "_get", _get)
+
+    document_cache, dataset_cache = await connector._get_document_metadata_cache(["dataset-1"], api_key="unit-key", force_refresh=True)
+
+    assert document_cache == {}
+    assert dataset_cache["dataset-1"]["name"] == "Dataset 1"
+    assert document_requests == ["/datasets/dataset-1/documents?page=1&page_size=30"]
+
 
 @pytest.mark.p2
 @pytest.mark.asyncio
