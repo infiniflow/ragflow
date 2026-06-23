@@ -19,7 +19,7 @@ import logging
 from peewee import IntegrityError
 from langfuse import Langfuse
 from common import settings
-from common.constants import MINERU_DEFAULT_CONFIG, MINERU_ENV_KEYS, OPENDATALOADER_DEFAULT_CONFIG, OPENDATALOADER_ENV_KEYS, PADDLEOCR_DEFAULT_CONFIG, PADDLEOCR_ENV_KEYS, SOMARK_DEFAULT_CONFIG, SOMARK_ENV_KEYS, LLMType
+from common.constants import MINERU_DEFAULT_CONFIG, MINERU_ENV_KEYS, OPENDATALOADER_DEFAULT_CONFIG, OPENDATALOADER_ENV_KEYS, PADDLEOCR_DEFAULT_CONFIG, PADDLEOCR_ENV_KEYS, LLMType
 from api.db.db_models import DB, LLMFactories, TenantLLM
 from api.db.services.common_service import CommonService
 from api.db.services.langfuse_service import TenantLangfuseService
@@ -480,82 +480,6 @@ class TenantLLMService(CommonService):
             except IntegrityError:
                 logging.warning("OpenDataLoader env model %s already exists for tenant %s, retry with next name", candidate, tenant_id)
                 used_names.add(candidate)
-                idx += 1
-                continue
-
-    @classmethod
-    def _collect_somark_env_config(cls) -> dict | None:
-        # SoMark requires an API key; refuse to auto-provision a tenant
-        # OCR model from env unless real credentials are supplied, otherwise
-        # the model is registered but fails at request time.
-        api_key = os.environ.get("SOMARK_API_KEY")
-        if not api_key:
-            return None
-        cfg = dict(SOMARK_DEFAULT_CONFIG)
-        for key in SOMARK_ENV_KEYS:
-            val = os.environ.get(key)
-            if val:
-                cfg[key] = val
-        return cfg
-
-    @classmethod
-    @DB.connection_context()
-    def ensure_somark_from_env(cls, tenant_id: str) -> str | None:
-        """
-        Ensure a SoMark OCR model exists for the tenant if env variables are present.
-        Return the existing or newly created llm_name, or None if env not set.
-        """
-        cfg = cls._collect_somark_env_config()
-        if not cfg:
-            return None
-
-        def _parse_api_key(raw: str) -> dict:
-            try:
-                return json.loads(raw or "{}")
-            except Exception:
-                return {}
-
-        def _find_matching(models) -> str | None:
-            for item in models:
-                api_cfg = _parse_api_key(item.api_key)
-                normalized = {k: api_cfg.get(k, SOMARK_DEFAULT_CONFIG.get(k)) for k in SOMARK_ENV_KEYS}
-                if normalized == cfg:
-                    return item.llm_name
-            return None
-
-        saved_models = cls.query(tenant_id=tenant_id, llm_factory="SoMark", model_type=LLMType.OCR.value)
-        matched = _find_matching(saved_models)
-        if matched:
-            return matched
-
-        used_names = {item.llm_name for item in saved_models}
-        idx = 1
-        base_name = "somark-from-env"
-        while True:
-            candidate = f"{base_name}-{idx}"
-            if candidate in used_names:
-                idx += 1
-                continue
-            try:
-                cls.save(
-                    tenant_id=tenant_id,
-                    llm_factory="SoMark",
-                    llm_name=candidate,
-                    model_type=LLMType.OCR.value,
-                    api_key=json.dumps(cfg),
-                    api_base="",
-                    max_tokens=0,
-                )
-                return candidate
-            except IntegrityError:
-                logging.warning("SoMark env model %s already exists for tenant %s, re-checking for a matching row", candidate, tenant_id)
-                # A concurrent worker may have just inserted an identical row;
-                # reuse it instead of creating a duplicate under the next name.
-                refreshed = cls.query(tenant_id=tenant_id, llm_factory="SoMark", model_type=LLMType.OCR.value)
-                matched = _find_matching(refreshed)
-                if matched:
-                    return matched
-                used_names = {item.llm_name for item in refreshed}
                 idx += 1
                 continue
 

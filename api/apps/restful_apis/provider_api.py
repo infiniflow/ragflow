@@ -343,29 +343,11 @@ async def create_provider_instance(tenant_id: str = None, provider_name: str = N
     base_url = data.get("base_url", "")
     region = data.get("region", "")
     model_info = data.get("model_info", [])
-    # Build model_info from flat payload when the frontend sends model
-    # fields at the top level (SoMark-style). Needed because providers
-    # with empty static model lists (like SoMark) rely on model_info
-    # to discover the model type and name for verify/create.
-    if not model_info and data.get("model_type"):
-        model_name = data.get("llm_name") or data.get("model_name", "")
-        model_type = data["model_type"]
-        max_tokens_val = data.get("max_tokens", 0)
-        extra = {
-            k: v
-            for k, v in data.items()
-            if k.startswith("somark_") and k not in {"somark_api_key", "somark_base_url"}
-        }
-        model_info = [{
-            "model_name": model_name,
-            "model_type": [model_type] if not isinstance(model_type, list) else model_type,
-            "max_tokens": max_tokens_val,
-            "extra": extra,
-        }]
 
     try:
         success, msg = await provider_api_service.create_provider_instance(
-            tenant_id, provider_name, instance_name, api_key, base_url, region, model_info
+            tenant_id, provider_name, instance_name, api_key, base_url, region, model_info,
+            flat_config=data
         )
         if success:
             return get_result(message=msg)
@@ -432,27 +414,11 @@ async def verify_provider_api_key(provider_name: str = None):
     api_key = data["api_key"]
     region = data.get("region", "default")
     model_info = data.get("model_info", [])
-    # Build model_info from flat payload when the frontend sends model
-    # fields at the top level. See create_provider_instance for explanation.
-    if not model_info and data.get("model_type"):
-        model_name = data.get("llm_name") or data.get("model_name", "")
-        model_type = data["model_type"]
-        max_tokens_val = data.get("max_tokens", 0)
-        extra = {
-            k: v
-            for k, v in data.items()
-            if k.startswith("somark_") and k not in {"somark_api_key", "somark_base_url"}
-        }
-        model_info = [{
-            "model_name": model_name,
-            "model_type": [model_type] if not isinstance(model_type, list) else model_type,
-            "max_tokens": max_tokens_val,
-            "extra": extra,
-        }]
 
     try:
         success, msg = await provider_api_service.verify_api_key(
-            provider_name, api_key, base_url, region, model_info
+            provider_name, api_key, base_url, region, model_info,
+            flat_config=data
         )
         if success:
             return get_result(message=msg)
