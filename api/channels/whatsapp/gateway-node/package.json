@@ -1,0 +1,12 @@
+{
+  "name": "ragflow-whatsapp-gateway",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "baileys": "7.0.0-rc13",
+    "qrcode": "^1.5.4"
+  }
+}
