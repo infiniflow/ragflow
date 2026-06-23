@@ -115,3 +115,59 @@ async def test_list_datasets_clamps_explicit_page_size_to_rest_limit_and_preserv
         "id": "dataset-1",
         "name": "target",
     }
+
+
+@pytest.mark.asyncio
+async def test_document_metadata_cache_stops_on_empty_documents_page(monkeypatch, mcp_server):
+    connector = mcp_server.RAGFlowConnector(base_url=mcp_server.BASE_URL)
+    requests = []
+
+    async def _get(path, params=None, api_key=""):
+        requests.append({"path": path, "params": dict(params or {}), "api_key": api_key})
+        if path == "/datasets":
+            return _FakeResponse({"code": 0, "data": [{"id": "dataset-1", "name": "Dataset 1"}]})
+        if path == "/datasets/dataset-1/documents":
+            return _FakeResponse({"code": 0, "data": {"docs": [], "total": 0}})
+        raise AssertionError(f"unexpected path: {path}")
+
+    monkeypatch.setattr(connector, "_get", _get)
+
+    document_cache, dataset_cache = await connector._get_document_metadata_cache(
+        ["dataset-1"],
+        api_key="unit-key",
+        force_refresh=True,
+    )
+
+    assert document_cache == {}
+    assert dataset_cache == {"dataset-1": {"name": "Dataset 1", "description": ""}}
+    assert requests == [
+        {"path": "/datasets", "params": {"id": "dataset-1", "page_size": 1}, "api_key": "unit-key"},
+        {"path": "/datasets/dataset-1/documents", "params": {"page": 1, "page_size": 30}, "api_key": "unit-key"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_document_metadata_cache_fetches_final_partial_page(monkeypatch, mcp_server):
+    connector = mcp_server.RAGFlowConnector(base_url=mcp_server.BASE_URL)
+    requests = []
+
+    async def _get(path, params=None, api_key=""):
+        requests.append({"path": path, "params": dict(params or {}), "api_key": api_key})
+        if path == "/datasets":
+            return _FakeResponse({"code": 0, "data": [{"id": "dataset-1", "name": "Dataset 1"}]})
+        if path == "/datasets/dataset-1/documents":
+            page = params["page"]
+            docs = [{"id": f"doc-{idx}", "name": f"Doc {idx}"} for idx in range((page - 1) * 30, min(page * 30, 31))]
+            return _FakeResponse({"code": 0, "data": {"docs": docs, "total": 31}})
+        raise AssertionError(f"unexpected path: {path}")
+
+    monkeypatch.setattr(connector, "_get", _get)
+
+    document_cache, _ = await connector._get_document_metadata_cache(
+        ["dataset-1"],
+        api_key="unit-key",
+        force_refresh=True,
+    )
+
+    assert len(document_cache) == 31
+    assert [request["params"].get("page") for request in requests if request["path"].endswith("/documents")] == [1, 2]
