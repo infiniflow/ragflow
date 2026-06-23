@@ -434,7 +434,7 @@ func parseHostPort(hostPort string) (string, int, error) {
 func PrintUsage() {
 	fmt.Println(`RAGFlow CLI Client
 
-Usage: ragflow_cli [options] [command]
+Usage: ragflow-cli [options] [command]
 
 Options:
   -h, --host string      RAGFlow service address (host:port, default "127.0.0.1:9380")
@@ -796,11 +796,11 @@ Filesystem Commands (no quotes):
                                  Note: cat datasets or cat datasets/kb1 will error
 
 Examples:
-  ragflow_cli -f rf.yml "LIST USERS"           # SQL mode (with quotes)
-  ragflow_cli -f rf.yml ls datasets            # Filesystem mode (no quotes)
-  ragflow_cli -f rf.yml ls files               # List files in root
-  ragflow_cli -f rf.yml cat datasets           # Error: datasets is a directory
-  ragflow_cli -f rf.yml ls files/myfolder      # List folder contents
+  ragflow-cli -f rf.yml "LIST USERS"           # SQL mode (with quotes)
+  ragflow-cli -f rf.yml ls datasets            # Filesystem mode (no quotes)
+  ragflow-cli -f rf.yml ls files               # List files in root
+  ragflow-cli -f rf.yml cat datasets           # Error: datasets is a directory
+  ragflow-cli -f rf.yml ls files/myfolder      # List folder contents
 
 For more information, see documentation.
 `
