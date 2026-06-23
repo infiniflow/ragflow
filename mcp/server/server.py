@@ -343,7 +343,10 @@ class RAGFlowConnector:
                         if docs_data.get("code") != 0:
                             # API error: stop instead of re-requesting the same page forever.
                             break
-                        page_docs = docs_data.get("data", {}).get("docs") or []
+                        docs_payload = docs_data.get("data", {}) or {}
+                        page_docs = docs_payload.get("docs") or []
+                        if not page_docs:
+                            break
                         for doc in page_docs:
                             doc_id = doc.get("id")
                             if not doc_id:
@@ -364,7 +367,6 @@ class RAGFlowConnector:
                             }
                             doc_id_meta_list.append((doc_id, doc_meta))
                             docs[doc_id] = doc_meta
-
                         self._set_cached_document_metadata_by_dataset(dataset_id, doc_id_meta_list)
 
                         # A page smaller than page_size (including an empty one) is the
