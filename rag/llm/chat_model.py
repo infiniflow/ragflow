@@ -1427,6 +1427,7 @@ class LiteLLMBase(ABC):
         "OpenAI",
         "Azure-OpenAI",
         "Tencent Hunyuan",
+        "Starveri",
     ]
 
     def __init__(self, key, model_name, base_url=None, **kwargs):
