@@ -351,6 +351,38 @@ async def create_provider_instance(tenant_id: str, provider_name: str, instance_
     return True, "success"
 
 
+async def create_name_only_provider_instance(tenant_id: str, provider_name: str, instance_name: str):
+    """
+    Create a provider instance with only a name (no api_key/base_url validation).
+
+    :param tenant_id: tenant ID
+    :param provider_name: provider/factory name
+    :param instance_name: instance name (used as a logical identifier)
+    :return: (success, result_or_error_message)
+    """
+    if not provider_name:
+        return False, "Provider name is required"
+
+    if instance_name == "default":
+        return False, "Instance name cannot be 'default'"
+
+    allowed_factories = [f["name"] for f in FACTORY_LLM_INFOS]
+    if provider_name not in allowed_factories:
+        return False, f"Provider '{provider_name}' is not allowed"
+
+    provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
+    if not provider_obj:
+        return False, f"Provider '{provider_name}' does not exist"
+
+    TenantModelInstanceService.create_instance(
+        provider_id=provider_obj.id,
+        instance_name=instance_name,
+        api_key="",
+        extra=json.dumps({})
+    )
+    return True, "success"
+
+
 def list_provider_instances(tenant_id: str, provider_name: str):
     """
     List provider instances for a tenant.
@@ -742,6 +774,35 @@ def update_model_status(tenant_id: str, provider_name: str, instance_name: str, 
     model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(provider_obj.id, instance_obj.id, model_name)
     if model_obj.status != status:
         TenantModelService.update_model_status(model_obj.id, status)
+
+    return True, "success"
+
+
+async def delete_models_from_instance(tenant_id: str, provider_name: str, instance_name: str, model_name: list[str]):
+    """
+    Delete models from instance.
+
+    :param tenant_id: tenant ID
+    :param provider_name: provider/factory name
+    :param instance_name: instance name
+    :param model_name: list of model name
+    """
+    # Check if provider exists for this tenant
+    provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
+    if not provider_obj:
+        return False, f"No provider found for provider '{provider_name}'"
+
+    # Check if instance exists
+    instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
+    if not instance_obj:
+        return False, f"No instance found for provider '{provider_name}' and instance '{instance_name}'"
+
+    model_objs = TenantModelService.get_models_by_instance_id(instance_obj.id)
+    not_exist_models = set(model_name) - {model_obj.model_name for model_obj in model_objs}
+    if not_exist_models:
+        return False, f"Models {not_exist_models} not found for provider '{provider_name}' and instance '{instance_name}'"
+
+    TenantModelService.delete_by_ids([model_obj.id for model_obj in model_objs if model_obj.model_name in model_name])
 
     return True, "success"
 

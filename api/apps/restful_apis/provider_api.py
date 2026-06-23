@@ -336,10 +336,22 @@ async def create_provider_instance(tenant_id: str = None, provider_name: str = N
           type: object
     """
     data = await request.get_json()
-    if not data or "instance_name" not in data or "api_key" not in data:
-        return get_error_argument_result(message="instance_name and api_key are required")
+    if not data or "instance_name" not in data:
+        return get_error_argument_result(message="instance_name is required")
 
     instance_name = data["instance_name"]
+    # data only contains instance_name — no api_key/base_url needed
+    if "api_key" not in data:
+        try:
+            success, msg = await provider_api_service.create_name_only_provider_instance(tenant_id, provider_name, instance_name)
+            if success:
+                return get_result(message=msg)
+            else:
+                return get_error_data_result(message=msg)
+        except Exception as e:
+            logging.exception(e)
+            return get_error_data_result(message="Internal server error")
+
     api_key = data["api_key"]
     base_url = data.get("base_url", "")
     region = data.get("region", "")
@@ -756,6 +768,65 @@ async def add_model_to_instance(tenant_id: str, provider_name: str, instance_nam
         success, result = provider_api_service.add_model_to_instance(
             tenant_id, provider_name, instance_name, model_name, model_type, max_tokens, extra
         )
+        if success:
+            return get_result(message=result)
+        else:
+            return get_error_data_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/providers/<provider_name>/instances/<instance_name>/models", methods=["DELETE"]) # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def delete_models_from_instance(tenant_id: str, provider_name: str, instance_name: str):
+    """
+    Delete models from an instance.
+    ---
+    tags:
+      - Providers
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: provider_name
+        type: string
+        required: true
+        description: Provider name.
+      - in: path
+        name: instance_name
+        type: string
+        required: true
+        description: Instance name.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+      - in: body
+        name: body
+        description: Model details.
+        required: true
+        schema:
+          type: object
+          required:
+            - model_name
+            - model_type
+          properties:
+            model_name:
+              type: list of string
+              description: Model name.
+    responses:
+      200:
+        description: Model deleted successfully.
+    """
+    data = await request.get_json()
+    if not data or "model_name" not in data:
+        return get_error_argument_result(message="model_name is required")
+    model_name = data["model_name"]
+    try:
+        success, result = provider_api_service.delete_models_from_instance(tenant_id, provider_name, instance_name, model_name)
         if success:
             return get_result(message=result)
         else:
