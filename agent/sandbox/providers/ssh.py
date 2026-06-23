@@ -19,6 +19,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import logging
 import mimetypes
 import os
 import posixpath
@@ -91,6 +92,8 @@ class SSHProvider(SandboxProvider):
         self.max_artifacts = int(config.get("max_artifacts", 20) or 20)
         self.max_artifact_bytes = int(config.get("max_artifact_bytes", 10 * 1024 * 1024) or 10 * 1024 * 1024)
 
+        logging.info("ssh: initializing SSH provider for %s@%s:%d", self.username, self.host, self.port)
+
         is_valid, error_message = self.validate_config(
             {
                 "host": self.host,
@@ -114,6 +117,7 @@ class SSHProvider(SandboxProvider):
         self._assert_connectivity()
 
         self._initialized = True
+        logging.info("ssh: provider initialized for %s@%s:%d", self.username, self.host, self.port)
         return True
 
     def create_instance(self, template: str = "python") -> SandboxInstance:
@@ -121,6 +125,7 @@ class SSHProvider(SandboxProvider):
             raise RuntimeError("Provider not initialized. Call initialize() first.")
 
         language = self._normalize_language(template)
+        logging.debug("ssh: creating instance for language=%s on %s", language, self.host)
         client = self._create_ssh_client()
         sftp = client.open_sftp()
 
@@ -148,6 +153,7 @@ class SSHProvider(SandboxProvider):
             "language": language,
         }
 
+        logging.info("ssh: created instance %s (lang=%s, dir=%s)", instance_id, language, remote_work_dir)
         return SandboxInstance(
             instance_id=instance_id,
             provider="ssh",
@@ -188,10 +194,12 @@ class SSHProvider(SandboxProvider):
             raise RuntimeError(f"Execution timeout must be greater than 0 seconds, got {requested_timeout}.")
         exec_timeout = min(requested_timeout, self.timeout)
 
+        logging.debug("ssh: executing %s code on instance %s (timeout=%ds)", normalized_lang, instance_id, exec_timeout)
         start_time = time.time()
         stdout, stderr, exit_code = self._run_remote_command(client, command, timeout=exec_timeout)
         execution_time = time.time() - start_time
 
+        logging.debug("ssh: instance %s exit_code=%d execution_time=%.2fs", instance_id, exit_code, execution_time)
         self._validate_output_size(stdout, stderr)
         stdout, structured_result = extract_structured_result(stdout)
 
@@ -228,6 +236,7 @@ class SSHProvider(SandboxProvider):
         sftp: paramiko.SFTPClient = instance["sftp"]
         remote_work_dir: str = instance["remote_work_dir"]
 
+        logging.debug("ssh: destroying instance %s (dir=%s)", instance_id, remote_work_dir)
         cleanup_error: Optional[Exception] = None
         try:
             stdout, stderr, exit_code = self._run_remote_command(
@@ -246,17 +255,22 @@ class SSHProvider(SandboxProvider):
                 client.close()
 
         if cleanup_error is not None:
+            logging.warning("ssh: failed to clean remote workspace %s: %s", remote_work_dir, cleanup_error)
             raise RuntimeError(f"Failed to clean remote workspace {remote_work_dir}: {cleanup_error}")
+        logging.info("ssh: instance %s destroyed", instance_id)
         return True
 
     def health_check(self) -> bool:
         try:
             self._assert_connectivity()
+            logging.debug("ssh: health check passed for %s@%s:%d", self.username, self.host, self.port)
             return True
-        except Exception:
+        except Exception as exc:
+            logging.warning("ssh: health check failed for %s@%s:%d: %s", self.username, self.host, self.port, exc)
             return False
 
     def _assert_connectivity(self) -> None:
+        logging.debug("ssh: checking connectivity to %s@%s:%d", self.username, self.host, self.port)
         try:
             client = self._create_ssh_client()
             try:
@@ -275,6 +289,7 @@ class SSHProvider(SandboxProvider):
         except SandboxProviderConfigError:
             raise
         except Exception as exc:
+            logging.warning("ssh: connectivity check failed for %s@%s:%d: %s", self.username, self.host, self.port, exc)
             raise SandboxProviderConfigError(
                 f"Failed to connect to SSH host {self.username}@{self.host}:{self.port}: {exc}"
             ) from exc
@@ -435,7 +450,15 @@ class SSHProvider(SandboxProvider):
     def _create_ssh_client(self) -> paramiko.SSHClient:
         paramiko = _get_paramiko_module()
         client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        # Load system/user known_hosts and reject unknown keys to prevent MITM.
+        client.load_system_host_keys()
+        known_hosts_path = os.path.expanduser("~/.ssh/known_hosts")
+        if os.path.isfile(known_hosts_path):
+            try:
+                client.load_host_keys(known_hosts_path)
+            except Exception as exc:
+                logging.warning("ssh: could not load known_hosts from %s: %s", known_hosts_path, exc)
+        client.set_missing_host_key_policy(paramiko.RejectPolicy())
 
         connect_kwargs: dict[str, Any] = {
             "hostname": self.host,
@@ -552,13 +575,22 @@ class SSHProvider(SandboxProvider):
 
         stdout_chunks: list[bytes] = []
         stderr_chunks: list[bytes] = []
+        total_bytes = 0
         deadline = time.time() + timeout
+
+        def _append_checked(chunks: list[bytes], chunk: bytes) -> None:
+            nonlocal total_bytes
+            total_bytes += len(chunk)
+            if total_bytes > self.max_output_bytes:
+                channel.close()
+                raise RuntimeError(f"SSH execution output exceeded {self.max_output_bytes} bytes.")
+            chunks.append(chunk)
 
         while True:
             while channel.recv_ready():
-                stdout_chunks.append(channel.recv(65536))
+                _append_checked(stdout_chunks, channel.recv(65536))
             while channel.recv_stderr_ready():
-                stderr_chunks.append(channel.recv_stderr(65536))
+                _append_checked(stderr_chunks, channel.recv_stderr(65536))
 
             if channel.exit_status_ready():
                 break
@@ -568,9 +600,9 @@ class SSHProvider(SandboxProvider):
             time.sleep(0.1)
 
         while channel.recv_ready():
-            stdout_chunks.append(channel.recv(65536))
+            _append_checked(stdout_chunks, channel.recv(65536))
         while channel.recv_stderr_ready():
-            stderr_chunks.append(channel.recv_stderr(65536))
+            _append_checked(stderr_chunks, channel.recv_stderr(65536))
 
         exit_code = channel.recv_exit_status()
         stdout = b"".join(stdout_chunks).decode("utf-8", errors="replace")

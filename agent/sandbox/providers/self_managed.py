@@ -27,9 +27,23 @@ import time
 import uuid
 from typing import Dict, Any, List, Optional
 
+import logging
+
 import requests
 
 from .base import SandboxProvider, SandboxInstance, ExecutionResult
+
+
+def _env_int(name: str, default: int) -> int:
+    """Return the env var as int, falling back to default on missing or non-numeric value."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        logging.warning("self_managed: invalid integer env var %s=%r, using default %d", name, raw, default)
+        return default
 
 
 class SelfManagedProvider(SandboxProvider):
@@ -284,7 +298,7 @@ class SelfManagedProvider(SandboxProvider):
                 "type": "integer",
                 "required": False,
                 "label": "Container Pool Size",
-                "default": int(os.getenv("SANDBOX_EXECUTOR_MANAGER_POOL_SIZE", "3")),
+                "default": _env_int("SANDBOX_EXECUTOR_MANAGER_POOL_SIZE", 3),
                 "min": 1,
                 "max": 100,
                 "description": "Container pool size used by sandbox-executor-manager.",
@@ -313,7 +327,7 @@ class SelfManagedProvider(SandboxProvider):
                 "type": "integer",
                 "required": False,
                 "label": "Executor Manager Port",
-                "default": int(os.getenv("SANDBOX_EXECUTOR_MANAGER_PORT", "9385")),
+                "default": _env_int("SANDBOX_EXECUTOR_MANAGER_PORT", 9385),
                 "min": 1,
                 "max": 65535,
                 "description": "Host port exposed by sandbox-executor-manager.",

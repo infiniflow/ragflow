@@ -14,20 +14,35 @@
 #  limitations under the License.
 #
 
+import hashlib
 import json
 import logging
 import random
+import secrets
 import time
 from collections import OrderedDict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from functools import wraps
 from typing import Any
+from urllib.parse import urlencode
 
 import click
 import httpx
 import mcp.types as types
+from mcp.server.auth.provider import (
+    AccessToken,
+    AuthorizationCode,
+    AuthorizationParams,
+    AuthorizeError,
+    OAuthAuthorizationServerProvider,
+    RefreshToken,
+)
+from mcp.server.auth.routes import create_auth_routes
+from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
 from mcp.server.lowlevel import Server
+from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
+from pydantic import AnyHttpUrl
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.responses import JSONResponse, Response
@@ -38,6 +53,7 @@ from enum import StrEnum
 class LaunchMode(StrEnum):
     SELF_HOST = "self-host"
     HOST = "host"
+    OAUTH = "oauth"
 
 
 class Transport(StrEnum):
@@ -53,6 +69,13 @@ MODE = ""
 TRANSPORT_SSE_ENABLED = True
 TRANSPORT_STREAMABLE_HTTP_ENABLED = True
 JSON_RESPONSE = True
+
+# OAuth / OIDC delegation config (used only when MODE == LaunchMode.OAUTH)
+OAUTH_ISSUER_URL = ""          # Public URL of *this* MCP server, e.g. https://mcp.example.com
+OIDC_ISSUER = ""               # External OIDC provider base URL, e.g. https://accounts.google.com
+OIDC_CLIENT_ID = ""            # Client ID registered with the OIDC provider
+OIDC_CLIENT_SECRET = ""        # Client secret registered with the OIDC provider
+OIDC_SCOPES = "openid email"   # Space-separated scopes to request from the OIDC provider
 
 
 class RAGFlowConnector:
@@ -399,6 +422,363 @@ class RAGFlowConnector:
         return mapped
 
 
+class _OIDCAuthCode(AuthorizationCode):
+    """AuthorizationCode extended to carry the PKCE verifier state used mid-flow."""
+
+    oidc_state: str  # opaque value we pass to the OIDC provider to bind callbacks
+
+
+class _OIDCAccessToken(AccessToken):
+    """AccessToken extended to carry the resolved RAGFlow API key."""
+
+    ragflow_api_key: str
+
+
+class OIDCDelegatingProvider(OAuthAuthorizationServerProvider):
+    """
+    OAuth 2.1 authorization server that delegates identity to an external OIDC provider.
+
+    Flow:
+      1. MCP client → /authorize  →  redirect to OIDC provider
+      2. OIDC provider → /oauth/callback  →  exchange code, resolve API key
+      3. /oauth/callback → redirect to MCP client redirect_uri with our own auth code
+      4. MCP client → /token  →  exchange our auth code for our access token
+      5. MCP tool call uses access token; server maps it back to the RAGFlow API key
+    """
+
+    _ACCESS_TOKEN_TTL = 3600   # 1 hour
+    _AUTH_CODE_TTL = 300       # 5 minutes
+
+    def __init__(self, oidc_issuer: str, oidc_client_id: str, oidc_client_secret: str, oidc_scopes: str, oauth_issuer_url: str):
+        self._oidc_issuer = oidc_issuer.rstrip("/")
+        self._oidc_client_id = oidc_client_id
+        self._oidc_client_secret = oidc_client_secret
+        self._oidc_scopes = oidc_scopes
+        self._oauth_issuer_url = oauth_issuer_url.rstrip("/")
+
+        # In-memory stores (sufficient for a single-process deployment; swap for
+        # Redis-backed stores in a horizontally-scaled deployment).
+        self._clients: dict[str, OAuthClientInformationFull] = {}
+        self._auth_codes: dict[str, _OIDCAuthCode] = {}
+        self._access_tokens: dict[str, _OIDCAccessToken] = {}
+        self._refresh_tokens: dict[str, RefreshToken] = {}
+
+        # Maps MCP auth code → resolved RAGFlow API key (consumed once during token exchange)
+        self._auth_code_to_api_key: dict[str, str] = {}
+
+        # Pending OIDC state → (mcp_client_id, mcp_authorization_params)
+        # Keyed by the `state` we forward to the OIDC provider.
+        self._pending_oidc: dict[str, tuple[str, AuthorizationParams]] = {}
+
+        self._http: httpx.AsyncClient | None = None
+
+    async def _get_http(self) -> httpx.AsyncClient:
+        if self._http is None:
+            self._http = httpx.AsyncClient(timeout=httpx.Timeout(30.0))
+        return self._http
+
+    async def close(self):
+        if self._http is not None:
+            await self._http.aclose()
+            self._http = None
+
+    # ------------------------------------------------------------------
+    # OIDC provider discovery
+    # ------------------------------------------------------------------
+
+    async def _discover_oidc(self) -> dict:
+        """Fetch OIDC discovery document from the provider."""
+        http = await self._get_http()
+        url = f"{self._oidc_issuer}/.well-known/openid-configuration"
+        resp = await http.get(url)
+        resp.raise_for_status()
+        return resp.json()
+
+    # ------------------------------------------------------------------
+    # OAuthAuthorizationServerProvider protocol
+    # ------------------------------------------------------------------
+
+    async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
+        return self._clients.get(client_id)
+
+    async def register_client(self, client_info: OAuthClientInformationFull) -> None:
+        self._clients[client_info.client_id] = client_info
+        logging.info("oauth: registered dynamic client %s", client_info.client_id)
+
+    async def authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str:
+        """
+        Build the OIDC authorization URL and stash enough state to reconstruct the
+        MCP authorization code after the callback.
+        """
+        try:
+            discovery = await self._discover_oidc()
+        except Exception as exc:
+            logging.error("oauth: OIDC discovery failed: %s", exc)
+            raise AuthorizeError(error="server_error", error_description="OIDC provider discovery failed") from exc
+
+        authorization_endpoint = discovery.get("authorization_endpoint")
+        if not authorization_endpoint:
+            raise AuthorizeError(error="server_error", error_description="OIDC provider has no authorization_endpoint")
+
+        oidc_state = secrets.token_urlsafe(32)
+        self._pending_oidc[oidc_state] = (client.client_id, params)
+
+        callback_url = f"{self._oauth_issuer_url}/oauth/callback"
+        qs = urlencode({
+            "response_type": "code",
+            "client_id": self._oidc_client_id,
+            "redirect_uri": callback_url,
+            "scope": self._oidc_scopes,
+            "state": oidc_state,
+        })
+        redirect = f"{authorization_endpoint}?{qs}"
+        logging.debug("oauth: redirecting to OIDC provider: %s", redirect)
+        return redirect
+
+    async def handle_oidc_callback(self, oidc_code: str, oidc_state: str) -> tuple[str, str, str]:
+        """
+        Called by the /oauth/callback route.
+
+        Exchanges the OIDC code for tokens, resolves the RAGFlow API key from the
+        user's identity, mints our own authorization code, and returns
+        (redirect_uri, mcp_code, state_part) so the route can redirect the MCP client.
+        """
+        entry = self._pending_oidc.pop(oidc_state, None)
+        if entry is None:
+            raise ValueError(f"Unknown or expired OIDC state: {oidc_state!r}")
+
+        mcp_client_id, mcp_params = entry
+        client = self._clients.get(mcp_client_id)
+        if client is None:
+            raise ValueError(f"Unknown MCP client_id after OIDC callback: {mcp_client_id!r}")
+
+        # Exchange OIDC code for tokens
+        try:
+            discovery = await self._discover_oidc()
+        except Exception as exc:
+            raise RuntimeError("OIDC discovery failed during callback") from exc
+
+        token_endpoint = discovery.get("token_endpoint")
+        if not token_endpoint:
+            raise RuntimeError("OIDC provider has no token_endpoint")
+
+        callback_url = f"{self._oauth_issuer_url}/oauth/callback"
+        http = await self._get_http()
+        token_resp = await http.post(
+            token_endpoint,
+            data={
+                "grant_type": "authorization_code",
+                "code": oidc_code,
+                "redirect_uri": callback_url,
+                "client_id": self._oidc_client_id,
+                "client_secret": self._oidc_client_secret,
+            },
+        )
+        if token_resp.status_code != 200:
+            raise RuntimeError(f"OIDC token exchange failed: {token_resp.status_code} {token_resp.text}")
+
+        oidc_tokens = token_resp.json()
+        id_token = oidc_tokens.get("id_token")
+        oidc_access_token = oidc_tokens.get("access_token")
+
+        # Resolve the user's email / subject from the UserInfo endpoint
+        userinfo_endpoint = discovery.get("userinfo_endpoint")
+        email = None
+        if userinfo_endpoint and oidc_access_token:
+            try:
+                ui_resp = await http.get(userinfo_endpoint, headers={"Authorization": f"Bearer {oidc_access_token}"})
+                if ui_resp.status_code == 200:
+                    ui = ui_resp.json()
+                    email = ui.get("email") or ui.get("sub")
+            except Exception as exc:
+                logging.warning("oauth: userinfo fetch failed: %s", exc)
+
+        if not email:
+            # Fall back to decoding the id_token subject without verification
+            # (verification is left to the IdP; we trust the code exchange result)
+            if id_token:
+                try:
+                    import base64 as _b64
+                    payload_b64 = id_token.split(".")[1]
+                    padding = 4 - len(payload_b64) % 4
+                    payload = json.loads(_b64.urlsafe_b64decode(payload_b64 + "=" * padding))
+                    email = payload.get("email") or payload.get("sub")
+                except Exception as exc:
+                    logging.warning("oauth: id_token decode failed: %s", exc)
+
+        if not email:
+            raise RuntimeError("Could not determine user identity from OIDC response")
+
+        # Resolve the RAGFlow API key for this user identity
+        ragflow_api_key = await self._resolve_ragflow_api_key(email)
+
+        # Mint our own MCP authorization code
+        mcp_code = secrets.token_urlsafe(32)
+        auth_code = _OIDCAuthCode(
+            code=mcp_code,
+            scopes=mcp_params.scopes or [],
+            expires_at=time.time() + self._AUTH_CODE_TTL,
+            client_id=mcp_client_id,
+            code_challenge=mcp_params.code_challenge,
+            redirect_uri=mcp_params.redirect_uri,
+            redirect_uri_provided_explicitly=mcp_params.redirect_uri_provided_explicitly,
+            resource=mcp_params.resource,
+            oidc_state=oidc_state,
+        )
+        self._auth_codes[mcp_code] = auth_code
+        self._auth_code_to_api_key[mcp_code] = ragflow_api_key
+        logging.info("oauth: minted MCP auth code for user sha256:%s (client %s)", _obfuscate_email(email), mcp_client_id)
+
+        redirect_uri = str(mcp_params.redirect_uri)
+        state_part = f"&state={mcp_params.state}" if mcp_params.state else ""
+        return redirect_uri, mcp_code, state_part
+
+    async def _resolve_ragflow_api_key(self, email: str) -> str:
+        """
+        Map an OIDC-authenticated email to a RAGFlow API key.
+
+        Strategy: call /api/v1/user/setting with the email as a lookup. If no
+        matching API key exists, raise so the caller surfaces a 401.
+        Operators can pre-provision API keys in RAGFlow for each SSO user.
+        """
+        http = await self._get_http()
+        try:
+            resp = await http.get(
+                f"{BASE_URL}/api/v1/user/oauth_api_key",
+                params={"email": email},
+                headers={"Authorization": f"Bearer {HOST_API_KEY}"} if HOST_API_KEY else {},
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("code") == 0:
+                    api_key = data.get("data", {}).get("api_key")
+                    if api_key:
+                        logging.debug("oauth: resolved API key for user sha256:%s", _obfuscate_email(email))
+                        return api_key
+        except Exception as exc:
+            logging.warning("oauth: API key resolution request failed for sha256:%s: %s", _obfuscate_email(email), exc)
+
+        # Fallback: if a global HOST_API_KEY is configured, use it (useful for
+        # single-org deployments where all SSO users share one tenant).
+        if HOST_API_KEY:
+            logging.debug("oauth: no per-user API key found for sha256:%s; using HOST_API_KEY", _obfuscate_email(email))
+            return HOST_API_KEY
+
+        raise RuntimeError(f"No RAGFlow API key found for SSO user: {email}")
+
+    async def load_authorization_code(self, client: OAuthClientInformationFull, authorization_code: str) -> _OIDCAuthCode | None:
+        code = self._auth_codes.get(authorization_code)
+        if code is None:
+            return None
+        if time.time() > code.expires_at:
+            del self._auth_codes[authorization_code]
+            return None
+        if code.client_id != client.client_id:
+            return None
+        return code
+
+    async def exchange_authorization_code(self, client: OAuthClientInformationFull, authorization_code: _OIDCAuthCode) -> OAuthToken:
+        del self._auth_codes[authorization_code.code]
+
+        # Re-resolve API key from the auth code's stored email isn't available here,
+        # but we stashed the ragflow_api_key inside the access token we're about to mint.
+        # We look it up again from the OIDC callback path where we stored it implicitly
+        # via the access token map. Here we need to reconstruct it — so we stored it
+        # in _pending_oidc during callback. Instead, store api_key in auth code.
+        # We work around this by stashing in a side dict keyed by auth code.
+        api_key = self._auth_code_to_api_key.pop(authorization_code.code, HOST_API_KEY or "")
+
+        access_token_str = secrets.token_urlsafe(32)
+        refresh_token_str = secrets.token_urlsafe(32)
+        expires_at = int(time.time()) + self._ACCESS_TOKEN_TTL
+
+        at = _OIDCAccessToken(
+            token=access_token_str,
+            client_id=client.client_id,
+            scopes=authorization_code.scopes,
+            expires_at=expires_at,
+            ragflow_api_key=api_key,
+        )
+        self._access_tokens[access_token_str] = at
+
+        rt = RefreshToken(
+            token=refresh_token_str,
+            client_id=client.client_id,
+            scopes=authorization_code.scopes,
+        )
+        self._refresh_tokens[refresh_token_str] = rt
+
+        logging.info("oauth: issued access token for client %s", client.client_id)
+        return OAuthToken(
+            access_token=access_token_str,
+            token_type="Bearer",
+            expires_in=self._ACCESS_TOKEN_TTL,
+            refresh_token=refresh_token_str,
+            scope=" ".join(authorization_code.scopes),
+        )
+
+    async def load_refresh_token(self, client: OAuthClientInformationFull, refresh_token: str) -> RefreshToken | None:
+        rt = self._refresh_tokens.get(refresh_token)
+        if rt is None or rt.client_id != client.client_id:
+            return None
+        return rt
+
+    async def exchange_refresh_token(self, client: OAuthClientInformationFull, refresh_token: RefreshToken, scopes: list[str]) -> OAuthToken:
+        del self._refresh_tokens[refresh_token.token]
+
+        # Locate the existing access token for this client to get the api_key
+        api_key = HOST_API_KEY or ""
+        for at in list(self._access_tokens.values()):
+            if at.client_id == client.client_id:
+                api_key = at.ragflow_api_key
+                break
+
+        effective_scopes = scopes if scopes else refresh_token.scopes
+        access_token_str = secrets.token_urlsafe(32)
+        new_refresh_token_str = secrets.token_urlsafe(32)
+        expires_at = int(time.time()) + self._ACCESS_TOKEN_TTL
+
+        at = _OIDCAccessToken(
+            token=access_token_str,
+            client_id=client.client_id,
+            scopes=effective_scopes,
+            expires_at=expires_at,
+            ragflow_api_key=api_key,
+        )
+        self._access_tokens[access_token_str] = at
+        self._refresh_tokens[new_refresh_token_str] = RefreshToken(
+            token=new_refresh_token_str,
+            client_id=client.client_id,
+            scopes=effective_scopes,
+        )
+        return OAuthToken(
+            access_token=access_token_str,
+            token_type="Bearer",
+            expires_in=self._ACCESS_TOKEN_TTL,
+            refresh_token=new_refresh_token_str,
+            scope=" ".join(effective_scopes),
+        )
+
+    async def load_access_token(self, token: str) -> _OIDCAccessToken | None:
+        at = self._access_tokens.get(token)
+        if at is None:
+            return None
+        if at.expires_at and time.time() > at.expires_at:
+            del self._access_tokens[token]
+            return None
+        return at
+
+    async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
+        if isinstance(token, AccessToken):
+            self._access_tokens.pop(token.token, None)
+        else:
+            self._refresh_tokens.pop(token.token, None)
+
+
+# Module-level singleton for the OAuth provider (created in main() when MODE==oauth)
+_oauth_provider: OIDCDelegatingProvider | None = None
+
+
 class RAGFlowCtx:
     def __init__(self, connector: RAGFlowConnector):
         self.conn = connector
@@ -424,6 +804,11 @@ def _to_text(value: Any) -> str:
     if isinstance(value, bytes):
         return value.decode(errors="ignore")
     return str(value)
+
+
+def _obfuscate_email(email: str) -> str:
+    """Return a short SHA-256 prefix of the email to avoid logging PII."""
+    return hashlib.sha256(email.encode()).hexdigest()[:12]
 
 
 def _extract_token_from_headers(headers: Any) -> str | None:
@@ -485,6 +870,14 @@ def with_api_key(required: bool = True):
                 api_key = _extract_token_from_request(getattr(ctx, "request", None)) or ""
                 if required and not api_key:
                     raise ValueError("RAGFlow API key or Bearer token is required.")
+            elif MODE == LaunchMode.OAUTH and _oauth_provider is not None:
+                bearer = _extract_token_from_request(getattr(ctx, "request", None)) or ""
+                if bearer:
+                    at = await _oauth_provider.load_access_token(bearer)
+                    if at is not None:
+                        api_key = at.ragflow_api_key
+                if required and not api_key:
+                    raise ValueError("Valid OAuth access token is required.")
 
             return await func(*args, connector=connector, api_key=api_key, **kwargs)
 
@@ -633,6 +1026,46 @@ def create_starlette_app():
 
         middleware = [Middleware(AuthMiddleware)]
 
+    elif MODE == LaunchMode.OAUTH and _oauth_provider is not None:
+        # Add RFC 8414 / RFC 7591 / PKCE OAuth routes from the MCP SDK
+        oauth_routes = create_auth_routes(
+            provider=_oauth_provider,
+            issuer_url=AnyHttpUrl(OAUTH_ISSUER_URL),
+            client_registration_options=ClientRegistrationOptions(
+                enabled=True,
+                valid_scopes=["ragflow"],
+                default_scopes=["ragflow"],
+            ),
+            revocation_options=RevocationOptions(enabled=True),
+        )
+        routes.extend(oauth_routes)
+
+        # OIDC callback route — the external IdP redirects here after user login
+        async def handle_oidc_callback(request):
+            code = request.query_params.get("code")
+            state = request.query_params.get("state")
+            error = request.query_params.get("error")
+
+            if error:
+                logging.warning("oauth: OIDC callback error: %s", error)
+                return JSONResponse({"error": error, "error_description": request.query_params.get("error_description", "")}, status_code=400)
+
+            if not code or not state:
+                return JSONResponse({"error": "invalid_request", "error_description": "Missing code or state"}, status_code=400)
+
+            try:
+                redirect_uri, mcp_code, state_part = await _oauth_provider.handle_oidc_callback(code, state)
+            except Exception as exc:
+                logging.error("oauth: OIDC callback processing failed: %s", exc)
+                return JSONResponse({"error": "server_error", "error_description": str(exc)}, status_code=500)
+
+            sep = "&" if "?" in redirect_uri else "?"
+            location = f"{redirect_uri}{sep}code={mcp_code}{state_part}"
+            from starlette.responses import RedirectResponse
+            return RedirectResponse(url=location, status_code=302)
+
+        routes.append(Route("/oauth/callback", endpoint=handle_oidc_callback, methods=["GET"]))
+
     # Add SSE routes if enabled
     if TRANSPORT_SSE_ENABLED:
         from mcp.server.sse import SseServerTransport
@@ -700,11 +1133,16 @@ def create_starlette_app():
 @click.option("--port", type=int, default=9382, help="Port to bind the RAGFlow MCP server")
 @click.option(
     "--mode",
-    type=click.Choice(["self-host", "host"]),
+    type=click.Choice(["self-host", "host", "oauth"]),
     default="self-host",
-    help=("Launch mode:\n  self-host: run MCP for a single tenant (requires --api-key)\n  host: multi-tenant mode, users must provide Authorization headers"),
+    help=(
+        "Launch mode:\n"
+        "  self-host: run MCP for a single tenant (requires --api-key)\n"
+        "  host: multi-tenant mode, users must provide Authorization headers\n"
+        "  oauth: OAuth 2.1/OIDC delegation mode (requires --oidc-issuer, --oidc-client-id, --oidc-client-secret, --oauth-issuer-url)"
+    ),
 )
-@click.option("--api-key", type=str, default="", help="API key to use when in self-host mode")
+@click.option("--api-key", type=str, default="", help="API key to use when in self-host mode (also used as fallback in oauth mode)")
 @click.option(
     "--transport-sse-enabled/--no-transport-sse-enabled",
     default=True,
@@ -720,7 +1158,13 @@ def create_starlette_app():
     default=True,
     help="Enable or disable JSON response mode for streamable-http (default: enabled)",
 )
-def main(base_url, host, port, mode, api_key, transport_sse_enabled, transport_streamable_http_enabled, json_response):
+@click.option("--oauth-issuer-url", type=str, default="", envvar="RAGFLOW_MCP_OAUTH_ISSUER_URL", help="Public HTTPS URL of this MCP server (used as OAuth issuer, e.g. https://mcp.example.com). Required for --mode=oauth.")
+@click.option("--oidc-issuer", type=str, default="", envvar="RAGFLOW_MCP_OIDC_ISSUER", help="External OIDC provider base URL (e.g. https://accounts.google.com). Required for --mode=oauth.")
+@click.option("--oidc-client-id", type=str, default="", envvar="RAGFLOW_MCP_OIDC_CLIENT_ID", help="Client ID registered with the OIDC provider. Required for --mode=oauth.")
+@click.option("--oidc-client-secret", type=str, default="", envvar="RAGFLOW_MCP_OIDC_CLIENT_SECRET", help="Client secret registered with the OIDC provider. Required for --mode=oauth.")
+@click.option("--oidc-scopes", type=str, default="openid email", envvar="RAGFLOW_MCP_OIDC_SCOPES", help="Space-separated OIDC scopes to request (default: 'openid email').")
+def main(base_url, host, port, mode, api_key, transport_sse_enabled, transport_streamable_http_enabled, json_response,
+         oauth_issuer_url, oidc_issuer, oidc_client_id, oidc_client_secret, oidc_scopes):
     import os
 
     import uvicorn
@@ -733,6 +1177,8 @@ def main(base_url, host, port, mode, api_key, transport_sse_enabled, transport_s
         return str(val).strip().lower() in ("1", "true", "yes", "on")
 
     global BASE_URL, HOST, PORT, MODE, HOST_API_KEY, TRANSPORT_SSE_ENABLED, TRANSPORT_STREAMABLE_HTTP_ENABLED, JSON_RESPONSE
+    global OAUTH_ISSUER_URL, OIDC_ISSUER, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, OIDC_SCOPES
+    global _oauth_provider
     BASE_URL = os.environ.get("RAGFLOW_MCP_BASE_URL", base_url)
     HOST = os.environ.get("RAGFLOW_MCP_HOST", host)
     PORT = os.environ.get("RAGFLOW_MCP_PORT", str(port))
@@ -741,9 +1187,26 @@ def main(base_url, host, port, mode, api_key, transport_sse_enabled, transport_s
     TRANSPORT_SSE_ENABLED = parse_bool_flag("RAGFLOW_MCP_TRANSPORT_SSE_ENABLED", transport_sse_enabled)
     TRANSPORT_STREAMABLE_HTTP_ENABLED = parse_bool_flag("RAGFLOW_MCP_TRANSPORT_STREAMABLE_ENABLED", transport_streamable_http_enabled)
     JSON_RESPONSE = parse_bool_flag("RAGFLOW_MCP_JSON_RESPONSE", json_response)
+    OAUTH_ISSUER_URL = oauth_issuer_url
+    OIDC_ISSUER = oidc_issuer
+    OIDC_CLIENT_ID = oidc_client_id
+    OIDC_CLIENT_SECRET = oidc_client_secret
+    OIDC_SCOPES = oidc_scopes
 
     if MODE == LaunchMode.SELF_HOST and not HOST_API_KEY:
         raise click.UsageError("--api-key is required when --mode is 'self-host'")
+
+    if MODE == LaunchMode.OAUTH:
+        missing = [name for name, val in [("--oauth-issuer-url", OAUTH_ISSUER_URL), ("--oidc-issuer", OIDC_ISSUER), ("--oidc-client-id", OIDC_CLIENT_ID), ("--oidc-client-secret", OIDC_CLIENT_SECRET)] if not val]
+        if missing:
+            raise click.UsageError(f"--mode=oauth requires: {', '.join(missing)}")
+        _oauth_provider = OIDCDelegatingProvider(
+            oidc_issuer=OIDC_ISSUER,
+            oidc_client_id=OIDC_CLIENT_ID,
+            oidc_client_secret=OIDC_CLIENT_SECRET,
+            oidc_scopes=OIDC_SCOPES,
+            oauth_issuer_url=OAUTH_ISSUER_URL,
+        )
 
     if not TRANSPORT_STREAMABLE_HTTP_ENABLED and JSON_RESPONSE:
         JSON_RESPONSE = False
@@ -762,6 +1225,13 @@ __  __  ____ ____       ____  _____ ______     _______ ____
     print(f"MCP host: {HOST}", flush=True)
     print(f"MCP port: {PORT}", flush=True)
     print(f"MCP base_url: {BASE_URL}", flush=True)
+    if MODE == LaunchMode.OAUTH:
+        print(f"OAuth issuer URL: {OAUTH_ISSUER_URL}", flush=True)
+        print(f"OIDC provider: {OIDC_ISSUER}", flush=True)
+        print(f"OIDC client ID: {OIDC_CLIENT_ID}", flush=True)
+        print(f"OIDC scopes: {OIDC_SCOPES}", flush=True)
+        print(f"OAuth metadata: {OAUTH_ISSUER_URL}/.well-known/oauth-authorization-server", flush=True)
+        print(f"OIDC callback URL: {OAUTH_ISSUER_URL}/oauth/callback", flush=True)
 
     if not any([TRANSPORT_SSE_ENABLED, TRANSPORT_STREAMABLE_HTTP_ENABLED]):
         print("At least one transport should be enabled, enable streamable-http automatically", flush=True)
@@ -806,19 +1276,34 @@ if __name__ == "__main__":
             --base-url=http://127.0.0.1:9380 \
             --mode=host
 
-    3. Disable legacy SSE (only streamable HTTP will be active):
+    3. OAuth 2.1/OIDC delegation mode (e.g. Keycloak, Entra ID, Okta):
+        uv run mcp/server/server.py --host=0.0.0.0 --port=9382 \
+            --base-url=http://127.0.0.1:9380 \
+            --mode=oauth \
+            --oauth-issuer-url=https://mcp.example.com \
+            --oidc-issuer=https://accounts.example.com/realms/myrealm \
+            --oidc-client-id=ragflow-mcp \
+            --oidc-client-secret=changeme \
+            --oidc-scopes="openid email profile"
+
+        Environment variable equivalents:
+            RAGFLOW_MCP_OAUTH_ISSUER_URL, RAGFLOW_MCP_OIDC_ISSUER,
+            RAGFLOW_MCP_OIDC_CLIENT_ID, RAGFLOW_MCP_OIDC_CLIENT_SECRET,
+            RAGFLOW_MCP_OIDC_SCOPES
+
+    4. Disable legacy SSE (only streamable HTTP will be active):
         uv run mcp/server/server.py --no-transport-sse-enabled \
             --mode=self-host --api-key=ragflow-xxxxx
 
-    4. Disable streamable HTTP (only legacy SSE will be active):
+    5. Disable streamable HTTP (only legacy SSE will be active):
         uv run mcp/server/server.py --no-transport-streamable-http-enabled \
             --mode=self-host --api-key=ragflow-xxxxx
 
-    5. Use streamable HTTP with SSE-style events (disable JSON response):
+    6. Use streamable HTTP with SSE-style events (disable JSON response):
         uv run mcp/server/server.py --transport-streamable-http-enabled --no-json-response \
             --mode=self-host --api-key=ragflow-xxxxx
 
-    6. Disable both transports (for testing):
+    7. Disable both transports (for testing):
         uv run mcp/server/server.py --no-transport-sse-enabled --no-transport-streamable-http-enabled \
             --mode=self-host --api-key=ragflow-xxxxx
     """

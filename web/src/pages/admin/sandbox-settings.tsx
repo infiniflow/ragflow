@@ -144,19 +144,15 @@ function AdminSandboxSettings() {
   useEffect(() => {
     if (currentConfig) {
       setSelectedProvider(currentConfig.provider_type);
-      setConfigValues(currentConfig.config || {});
+      const config = currentConfig.config || {};
+      setConfigValues(config);
+      // Auto-detect auth mode only from the saved config, not from live edits.
+      if (currentConfig.provider_type === 'ssh') {
+        const hasPrivateKey = Boolean(String(config.private_key ?? '').trim());
+        setSshAuthMode(hasPrivateKey ? 'private_key' : 'password');
+      }
     }
   }, [currentConfig]);
-
-  useEffect(() => {
-    if (selectedProvider !== 'ssh') {
-      return;
-    }
-    const hasPrivateKey = Boolean(
-      String(configValues.private_key ?? '').trim(),
-    );
-    setSshAuthMode(hasPrivateKey ? 'private_key' : 'password');
-  }, [selectedProvider, configValues.private_key]);
 
   // Apply schema defaults when provider schema changes
   useEffect(() => {
@@ -588,7 +584,9 @@ function AdminSandboxSettings() {
                                 <CollapsibleTrigger className="group w-full text-left">
                                   <div className="flex items-center justify-between rounded-md border border-border-button px-4 py-3 transition-colors hover:bg-bg-card">
                                     <h4 className="text-sm font-medium text-text-primary">
-                                      Runtime Settings
+                                      {t(
+                                        'admin.sandboxSettingsPage.runtimeSettings',
+                                      )}
                                     </h4>
                                     <LucideChevronDown className="size-4 text-text-secondary transition-transform group-data-[state=open]:rotate-180" />
                                   </div>
@@ -631,12 +629,18 @@ function AdminSandboxSettings() {
                                                 schema.max !== undefined) && (
                                                 <p className="text-xs text-text-disabled">
                                                   {schema.min !== undefined &&
-                                                    `Minimum: ${schema.min}`}
+                                                    t(
+                                                      'admin.sandboxSettingsPage.minimumValue',
+                                                      { value: schema.min },
+                                                    )}
                                                   {schema.min !== undefined &&
                                                     schema.max !== undefined &&
                                                     ' • '}
                                                   {schema.max !== undefined &&
-                                                    `Maximum: ${schema.max}`}
+                                                    t(
+                                                      'admin.sandboxSettingsPage.maximumValue',
+                                                      { value: schema.max },
+                                                    )}
                                                 </p>
                                               )}
                                           </div>
@@ -652,11 +656,14 @@ function AdminSandboxSettings() {
                                               <span className="text-state-error">
                                                 *
                                               </span>
-                                              Authentication
+                                              {t(
+                                                'admin.sandboxSettingsPage.ssh.authenticationTitle',
+                                              )}
                                             </h4>
                                             <p className="text-xs text-text-secondary mt-1">
-                                              Choose one authentication method
-                                              for the SSH connection.
+                                              {t(
+                                                'admin.sandboxSettingsPage.ssh.authenticationDescription',
+                                              )}
                                             </p>
                                           </div>
 
@@ -673,10 +680,14 @@ function AdminSandboxSettings() {
                                           >
                                             <TabsList className="grid w-full grid-cols-2">
                                               <TabsTrigger value="password">
-                                                Password
+                                                {t(
+                                                  'admin.sandboxSettingsPage.ssh.passwordTab',
+                                                )}
                                               </TabsTrigger>
                                               <TabsTrigger value="private_key">
-                                                Private Key
+                                                {t(
+                                                  'admin.sandboxSettingsPage.ssh.privateKeyTab',
+                                                )}
                                               </TabsTrigger>
                                             </TabsList>
 
@@ -759,9 +770,9 @@ function AdminSandboxSettings() {
                                                     {fieldName ===
                                                       'passphrase' && (
                                                       <p className="text-xs text-text-secondary">
-                                                        Only required when the
-                                                        private key itself is
-                                                        encrypted.
+                                                        {t(
+                                                          'admin.sandboxSettingsPage.ssh.passphraseHint',
+                                                        )}
                                                       </p>
                                                     )}
                                                   </div>
@@ -776,12 +787,14 @@ function AdminSandboxSettings() {
                                         <div className="space-y-4 rounded-md border border-border-button p-4">
                                           <div>
                                             <h4 className="text-sm font-medium text-text-primary">
-                                              Execution
+                                              {t(
+                                                'admin.sandboxSettingsPage.ssh.executionTitle',
+                                              )}
                                             </h4>
                                             <p className="text-xs text-text-secondary mt-1">
-                                              Configure the remote workspace and
-                                              language runtimes used on the SSH
-                                              host.
+                                              {t(
+                                                'admin.sandboxSettingsPage.ssh.executionDescription',
+                                              )}
                                             </p>
                                           </div>
 
@@ -851,12 +864,18 @@ function AdminSandboxSettings() {
                                           schema.max !== undefined) && (
                                           <p className="text-xs text-text-disabled">
                                             {schema.min !== undefined &&
-                                              `Minimum: ${schema.min}`}
+                                              t(
+                                                'admin.sandboxSettingsPage.minimumValue',
+                                                { value: schema.min },
+                                              )}
                                             {schema.min !== undefined &&
                                               schema.max !== undefined &&
                                               ' • '}
                                             {schema.max !== undefined &&
-                                              `Maximum: ${schema.max}`}
+                                              t(
+                                                'admin.sandboxSettingsPage.maximumValue',
+                                                { value: schema.max },
+                                              )}
                                           </p>
                                         )}
                                     </div>
@@ -871,12 +890,14 @@ function AdminSandboxSettings() {
                                   <div className="flex items-center justify-between rounded-md border border-border-button px-4 py-3 transition-colors hover:bg-bg-card">
                                     <div>
                                       <h4 className="text-sm font-medium">
-                                        Deployment Defaults
+                                        {t(
+                                          'admin.sandboxSettingsPage.deploymentDefaults',
+                                        )}
                                       </h4>
                                       <p className="text-xs text-text-secondary mt-1">
-                                        Read-only values loaded from the current
-                                        environment for the default
-                                        executor-manager deployment.
+                                        {t(
+                                          'admin.sandboxSettingsPage.deploymentDefaultsDescription',
+                                        )}
                                       </p>
                                     </div>
                                     <LucideChevronDown className="size-4 text-text-secondary transition-transform group-data-[state=open]:rotate-180" />
@@ -907,12 +928,18 @@ function AdminSandboxSettings() {
                                             schema.max !== undefined) && (
                                             <p className="text-xs text-text-disabled">
                                               {schema.min !== undefined &&
-                                                `Minimum: ${schema.min}`}
+                                                t(
+                                                  'admin.sandboxSettingsPage.minimumValue',
+                                                  { value: schema.min },
+                                                )}
                                               {schema.min !== undefined &&
                                                 schema.max !== undefined &&
                                                 ' • '}
                                               {schema.max !== undefined &&
-                                                `Maximum: ${schema.max}`}
+                                                t(
+                                                  'admin.sandboxSettingsPage.maximumValue',
+                                                  { value: schema.max },
+                                                )}
                                             </p>
                                           )}
                                       </div>

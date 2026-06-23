@@ -3121,6 +3121,26 @@ Important structured information may include: names, dates, locations, events, k
 
         testConnection: 'Test connection',
         testing: 'Testing...',
+
+        runtimeSettings: 'Runtime settings',
+        deploymentDefaults: 'Deployment defaults',
+        deploymentDefaultsDescription:
+          'Read-only values loaded from the current environment for the default executor-manager deployment.',
+        minimumValue: 'Minimum: {{value}}',
+        maximumValue: 'Maximum: {{value}}',
+
+        ssh: {
+          authenticationTitle: 'Authentication',
+          authenticationDescription:
+            'Choose one authentication method for the SSH connection.',
+          passwordTab: 'Password',
+          privateKeyTab: 'Private key',
+          passphraseHint:
+            'Only required when the private key itself is encrypted.',
+          executionTitle: 'Execution',
+          executionDescription:
+            'Configure the remote workspace and language runtimes used on the SSH host.',
+        },
       },
 
       selectFile: 'Select file',
