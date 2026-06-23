@@ -87,7 +87,7 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 	case TokenPing:
 		return p.parseAdminPingServer()
 	case TokenList:
-		return p.parseAdminListCommand()
+		return p.parseAdminListCommands()
 	case TokenShow:
 		return p.parseAdminShowCommands()
 	case TokenCheck:
@@ -123,7 +123,7 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 	case TokenAdd:
 		return p.parseAdminAddCommand()
 	case TokenDelete:
-		return p.parseAdminDeleteCommand()
+		return p.parseAdminDeleteCommands()
 	case TokenSave:
 		return p.parseAdminSaveCommand()
 	case TokenUse:

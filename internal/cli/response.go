@@ -88,6 +88,14 @@ func (r *ModelsResponse) PrintOut() {
 	}
 }
 
+type UserIndexResponse struct {
+	InternalData CommonDataResponse
+}
+
+func (r *UserIndexResponse) TimeCost() float64 {
+	return r.InternalData.Duration
+}
+
 type CommonDataResponse struct {
 	Code         int                    `json:"code"`
 	Data         map[string]interface{} `json:"data"`
