@@ -714,7 +714,10 @@ func TestSwitchChunksUpdatesDocEngineWithAvailableInt(t *testing.T) {
 			t.Fatalf("call %d datasetID = %q", i, call.datasetID)
 		}
 		wantID := []string{"chunk-1", "chunk-2"}[i]
-		if !reflect.DeepEqual(call.condition, map[string]interface{}{"id": wantID}) {
+		if !reflect.DeepEqual(call.condition, map[string]interface{}{
+			"id":     wantID,
+			"doc_id": "doc-1",
+		}) {
 			t.Fatalf("call %d condition = %#v", i, call.condition)
 		}
 		if !reflect.DeepEqual(call.newValue, map[string]interface{}{"id": wantID, "available_int": 0}) {
