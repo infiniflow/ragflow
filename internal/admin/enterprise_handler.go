@@ -532,6 +532,36 @@ func (h *Handler) DeleteModelInstance(c *gin.Context) {
 	success(c, result, "Model provider added successfully")
 }
 
+func (h *Handler) ListInstanceModels(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	result, err := h.service.ListInstanceModels(userID, providerName, instanceName)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Models listed successfully")
+}
+
 type AddModelsRequest struct {
 	ModelNames []string `json:"model_names" binding:"required"`
 }

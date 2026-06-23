@@ -2543,8 +2543,9 @@ func (p *Parser) parseListModelsOfProvider() (*Command, error) {
 	// If so, format is: LIST MODELS FROM <instance_name> <provider_name>
 	// If not, format is: LIST MODELS FROM <provider_name>
 	if p.curToken.Type == TokenQuotedString {
+		var instanceName string
 		// Two arguments: instance_name and provider_name
-		instanceName, err := p.parseQuotedString()
+		instanceName, err = p.parseQuotedString()
 		if err != nil {
 			return nil, err
 		}

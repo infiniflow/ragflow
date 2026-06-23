@@ -256,11 +256,39 @@ func (p *Parser) parseAdminListProviderCommands() (*Command, error) {
 	switch p.curToken.Type {
 	case TokenInstances:
 		return p.parseAdminListProviderInstances(providerName)
+	case TokenInstance:
+		return p.parseAdminListProviderInstance(providerName)
 	case TokenModels:
 		return p.parseAdminListProviderModels(providerName)
 	default:
 		return nil, fmt.Errorf("unknown LIST target: %s", p.curToken.Value)
 	}
+}
+
+// LIST PROVIDER 'provider_name' INSTANCE 'instance_name' MODELS;
+func (p *Parser) parseAdminListProviderInstance(providerName string) (*Command, error) {
+	p.nextToken() // consume INSTANCE
+
+	instanceName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenModels {
+		return nil, fmt.Errorf("expected MODELS")
+	}
+	p.nextToken()
+
+	cmd := NewCommand("admin_list_provider_instance_models")
+	cmd.Params["provider_name"] = providerName
+	cmd.Params["instance_name"] = instanceName
+
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
 }
 
 // LIST PROVIDER 'provider_name' INSTANCES;
