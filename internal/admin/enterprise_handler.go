@@ -442,10 +442,6 @@ func (h *Handler) ShowModel(c *gin.Context) {
 	})
 }
 
-type AddModelInstanceRequest struct {
-	InstanceName string `json:"instance_name" binding:"required"`
-}
-
 func (h *Handler) ListModelInstances(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
@@ -638,6 +634,10 @@ func (h *Handler) AlterProviderInstance(c *gin.Context) {
 	success(c, result, "Model instance altered successfully")
 }
 
+type AddModelInstanceRequest struct {
+	InstanceName string `json:"instance_name" binding:"required"`
+}
+
 func (h *Handler) AddModelInstance(c *gin.Context) {
 	var req AddModelInstanceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -725,6 +725,62 @@ func (h *Handler) ListInstanceModels(c *gin.Context) {
 	userID := c.GetString("user_id")
 
 	result, err := h.service.ListInstanceModels(userID, providerName, instanceName)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Models listed successfully")
+}
+
+type EnableOrDisableModelRequest struct {
+	ModelID string `json:"model_id"`
+	Status  string `json:"status"`
+}
+
+func (h *Handler) EnableOrDisableModel(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+
+	var req EnableOrDisableModelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		println("JSON bind error: %v (type: %T)", err, err)
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	modelID := strings.TrimSpace(req.ModelID)
+	modelName := strings.TrimPrefix(c.Param("model_name"), "/")
+	modelName = strings.TrimSpace(modelName)
+	if modelName == "" && modelID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": "model_name or model_id is required",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	result, err := h.service.EnableOrDisableModel(userID, providerName, instanceName, modelName, modelID, req.Status)
 	if err != nil {
 		errorResponse(c, err.Error(), 500)
 		return

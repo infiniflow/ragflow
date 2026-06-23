@@ -2136,6 +2136,112 @@ func (p *Parser) parseAdminDeleteModel(providerName, instanceName string) (*Comm
 	return cmd, nil
 }
 
+func (p *Parser) parseAdminEnableCommand() (*Command, error) {
+	p.nextToken() // consume ENABLE
+	switch p.curToken.Type {
+	case TokenProvider:
+		return p.parseAdminEnableModel()
+	default:
+		return nil, fmt.Errorf("unknown ENABLE target: %s", p.curToken.Value)
+	}
+}
+
+func (p *Parser) parseAdminEnableModel() (*Command, error) {
+	p.nextToken() // consume PROVIDER
+
+	providerName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected provider name: %w", err)
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenInstance {
+		return nil, fmt.Errorf("expected INSTANCE")
+	}
+	p.nextToken()
+
+	instanceName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected model instance name: %w", err)
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenModel {
+		return nil, fmt.Errorf("expected MODEL")
+	}
+	p.nextToken()
+
+	modelName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected model name: %w", err)
+	}
+	p.nextToken()
+
+	cmd := NewCommand("admin_enable_model")
+	cmd.Params["provider_name"] = providerName
+	cmd.Params["instance_name"] = instanceName
+	cmd.Params["model_name"] = modelName
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminDisableCommand() (*Command, error) {
+	p.nextToken() // consume DISABLE
+	switch p.curToken.Type {
+	case TokenProvider:
+		return p.parseAdminDisableModel()
+	default:
+		return nil, fmt.Errorf("unknown DISABLE target: %s", p.curToken.Value)
+	}
+}
+
+func (p *Parser) parseAdminDisableModel() (*Command, error) {
+	p.nextToken() // consume PROVIDER
+
+	providerName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected provider name: %w", err)
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenInstance {
+		return nil, fmt.Errorf("expected INSTANCE")
+	}
+	p.nextToken()
+
+	instanceName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected model instance name: %w", err)
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenModel {
+		return nil, fmt.Errorf("expected MODEL")
+	}
+	p.nextToken()
+
+	modelName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected model name: %w", err)
+	}
+	p.nextToken()
+
+	cmd := NewCommand("admin_disable_model")
+	cmd.Params["provider_name"] = providerName
+	cmd.Params["instance_name"] = instanceName
+	cmd.Params["model_name"] = modelName
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
 func (p *Parser) parseAdminSaveCommand() (*Command, error) {
 	p.nextToken() // consume SAVE
 	switch p.curToken.Type {

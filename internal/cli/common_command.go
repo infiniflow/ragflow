@@ -673,10 +673,10 @@ func (c *CLI) CommonCheckProviderWithKey(cmd *Command) (ResponseIf, error) {
 	switch c.Config.CLIMode {
 	case AdminMode:
 		endPoint = fmt.Sprintf("/admin/providers/%s/connection", providerName)
-		resp, err = c.AdminServerClient.Request("GET", endPoint, "web", nil, payload)
+		resp, err = c.AdminServerClient.Request("POST", endPoint, "web", nil, payload)
 	case APIMode:
 		endPoint = fmt.Sprintf("/providers/%s/connection", providerName)
-		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", endPoint, "web", nil, payload)
+		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("POST", endPoint, "web", nil, payload)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
@@ -732,10 +732,10 @@ func (c *CLI) CommonCheckProviderConnection(cmd *Command) (ResponseIf, error) {
 	switch c.Config.CLIMode {
 	case AdminMode:
 		endPoint = fmt.Sprintf("/admin/providers/%s/instances/%s/connection", providerName, instanceName)
-		resp, err = c.AdminServerClient.Request("GET", endPoint, "web", nil, nil)
+		resp, err = c.AdminServerClient.Request("POST", endPoint, "web", nil, nil)
 	case APIMode:
 		endPoint = fmt.Sprintf("/providers/%s/instances/%s/connection", providerName, instanceName)
-		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", endPoint, "web", nil, nil)
+		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("POST", endPoint, "web", nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
@@ -846,10 +846,7 @@ func (c *CLI) CommonAlterProviderInstanceCommand(cmd *Command) (ResponseIf, erro
 	}
 }
 
-func (c *CLI) EnableOrDisableModel(cmd *Command, status string) (ResponseIf, error) {
-	if c.Config.CLIMode != APIMode {
-		return nil, fmt.Errorf("this command is only allowed in USER mode")
-	}
+func (c *CLI) CommonEnableOrDisableModel(cmd *Command, status string) (ResponseIf, error) {
 
 	modelName, ok := cmd.Params["model_name"].(string)
 	if !ok {
@@ -866,28 +863,55 @@ func (c *CLI) EnableOrDisableModel(cmd *Command, status string) (ResponseIf, err
 		return nil, fmt.Errorf("provider name not provided")
 	}
 
-	url := fmt.Sprintf("/providers/%s/instances/%s/models/%s", providerName, instanceName, modelName)
-
 	payload := map[string]interface{}{
 		"status": status,
 	}
 
-	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("PATCH", url, "web", nil, payload)
+	var resp *Response
+	var err error
+	var endPoint string
+	switch c.Config.CLIMode {
+	case AdminMode:
+		endPoint = fmt.Sprintf("/admin/providers/%s/instances/%s/models/%s", providerName, instanceName, modelName)
+		resp, err = c.AdminServerClient.Request("PATCH", endPoint, "web", nil, payload)
+	case APIMode:
+		endPoint = fmt.Sprintf("/providers/%s/instances/%s/models/%s", providerName, instanceName, modelName)
+		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("PATCH", endPoint, "web", nil, payload)
+	default:
+		return nil, fmt.Errorf("invalid server type")
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to enable/disable model: %w", err)
 	}
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("failed to enable/disable model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
-	var result SimpleResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("enable/disable model failed: invalid JSON (%w)", err)
+
+	switch c.Config.CLIMode {
+	case AdminMode:
+		var result CommonDataResponse
+		if err = json.Unmarshal(resp.Body, &result); err != nil {
+			return nil, fmt.Errorf("check provider connection failed: invalid JSON (%w)", err)
+		}
+		if result.Code != 0 {
+			return nil, fmt.Errorf("%s", result.Message)
+		}
+		result.Duration = resp.Duration
+		return &result, nil
+	case APIMode:
+		var result SimpleResponse
+		if err = json.Unmarshal(resp.Body, &result); err != nil {
+			return nil, fmt.Errorf("check provider connection failed: invalid JSON (%w)", err)
+		}
+		if result.Code != 0 {
+			return nil, fmt.Errorf("%s", result.Message)
+		}
+		result.Duration = resp.Duration
+		return &result, nil
+	default:
+		return nil, fmt.Errorf("invalid server type")
 	}
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-	return &result, nil
 }
 
 func (c *CLI) SetDefaultModel(cmd *Command) (ResponseIf, error) {

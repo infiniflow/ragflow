@@ -124,6 +124,10 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 		return p.parseAdminAddCommand()
 	case TokenDelete:
 		return p.parseAdminDeleteCommands()
+	case TokenEnable:
+		return p.parseAdminEnableCommand()
+	case TokenDisable:
+		return p.parseAdminDisableCommand()
 	case TokenSave:
 		return p.parseAdminSaveCommand()
 	case TokenUse:

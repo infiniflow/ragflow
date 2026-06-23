@@ -302,6 +302,22 @@ func (s *Service) ListInstanceModels(userID, providerName, instanceName string) 
 	}, nil
 }
 
+func (s *Service) EnableOrDisableModel(userID, providerName, instanceName, modelName, modelID, status string) (map[string]interface{}, error) {
+
+	return map[string]interface{}{
+		"command":       "enable_or_disable_model",
+		"user_id":       userID,
+		"provider_id":   providerName,
+		"instance_name": instanceName,
+		"model_name":    modelName,
+		"model_id":      modelID,
+		"status":        status,
+		"error":         "'enable or disable model' is implemented in enterprise edition",
+	}, nil
+}
+
+// AddModel Add model
+
 // AddModels Add models
 func (s *Service) AddModels(userID, providerName, instanceName string, modelNames []string) (map[string]interface{}, error) {
 

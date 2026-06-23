@@ -253,6 +253,10 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminDeleteInstancesCommand(cmd)
 	case "admin_delete_model":
 		return c.AdminDeleteModelsCommand(cmd)
+	case "admin_enable_model":
+		return c.CommonEnableOrDisableModel(cmd, "enable")
+	case "admin_disable_model":
+		return c.CommonEnableOrDisableModel(cmd, "disable")
 		// TODO: Implement other commands
 	case "show_admin_server":
 		return c.ShowAdminServer(cmd)
@@ -359,9 +363,9 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "drop_instance_model":
 		return c.DropInstanceModel(cmd)
 	case "enable_model":
-		return c.EnableOrDisableModel(cmd, "enable")
+		return c.CommonEnableOrDisableModel(cmd, "enable")
 	case "disable_model":
-		return c.EnableOrDisableModel(cmd, "disable")
+		return c.CommonEnableOrDisableModel(cmd, "disable")
 	case "add_custom_model":
 		return c.AddCustomModel(cmd)
 	case "chat_to_model":
