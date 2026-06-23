@@ -1392,6 +1392,16 @@ class FuturMixChat(Base):
         logging.info("[FuturMix] Chat initialized with model %s", model_name)
 
 
+class AtlasChat(Base):
+    _FACTORY_NAME = "Atlas"
+
+    def __init__(self, key, model_name, base_url="https://api.atlascloud.ai/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api.atlascloud.ai/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+        logging.info("[Atlas] Chat initialized with model %s", model_name)
+
+
 class LiteLLMBase(ABC):
     _FACTORY_NAME = [
         "Tongyi-Qianwen",
