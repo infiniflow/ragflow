@@ -473,7 +473,7 @@ RAGFlow(api/default)> DROP CHUNK STORE FOR DATASET 'test'
 
 - Search chunks
 ```
-RAGFlow(api/default)> SEARCH 'AI' ON DATASETS 'test'
+RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test'
 ```
 
 - Get chunks
