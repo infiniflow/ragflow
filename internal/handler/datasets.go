@@ -513,7 +513,8 @@ func (h *DatasetsHandler) DeleteKnowledgeGraph(c *gin.Context) {
 
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
 	if _, err := docEngine.DeleteChunks(c.Request.Context(), map[string]interface{}{
-		"knowledge_graph_kwd": []string{"graph", "subgraph", "entity", "relation", "community_report"},
+		"knowledge_graph_kwd": []interface{}{"graph", "subgraph", "entity", "relation", "community_report"},
+		"kb_id":               datasetID,
 	}, indexName, datasetID); err != nil {
 		jsonInternalError(c, err)
 		return
@@ -696,6 +697,47 @@ func (h *DatasetsHandler) TraceIndex(c *gin.Context) {
 		"data":    result,
 		"message": "success",
 	})
+}
+
+// DeleteIndex Delete an indexing task (graph/raptor/mindmap) for a dataset.
+func (h *DatasetsHandler) DeleteIndex(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := strings.TrimSpace(c.Param("dataset_id"))
+	if datasetID == "" {
+		jsonError(c, common.CodeDataError, "dataset_id is required")
+		return
+	}
+
+	userID := strings.TrimSpace(user.ID)
+	if userID == "" {
+		jsonError(c, common.CodeDataError, "user_id is required")
+		return
+	}
+
+	indexType := strings.ToLower(strings.TrimSpace(c.Param("index_type")))
+	if indexType == "" {
+		indexType = strings.ToLower(strings.TrimSpace(c.Query("type")))
+	}
+
+	wipeArg := strings.ToLower(strings.TrimSpace(c.DefaultQuery("wipe", "true")))
+	wipe := true
+	switch wipeArg {
+	case "false", "0", "no", "off":
+		wipe = false
+	}
+
+	code, err := h.datasetsService.DeleteIndex(userID, datasetID, indexType, wipe)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, map[string]interface{}{}, "success")
 }
 
 // ListMetadataFlattened handles GET /api/v1/datasets/metadata/flattened.
