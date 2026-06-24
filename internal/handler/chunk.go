@@ -363,19 +363,13 @@ func (h *ChunkHandler) StopParsing(c *gin.Context) {
 
 	datasetID := c.Param("dataset_id")
 	if datasetID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "dataset_id is required",
-		})
+		jsonError(c, common.CodeDataError, "dataset_id is required")
 		return
 	}
 
 	var req service.StopParsingRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": err.Error(),
-		})
+		jsonError(c, common.CodeDataError, err.Error())
 		return
 	}
 
