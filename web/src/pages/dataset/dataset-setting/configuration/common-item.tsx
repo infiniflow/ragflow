@@ -67,8 +67,10 @@ export function ChunkMethodItem(props: IProps) {
       control={form.control}
       name={name}
       render={({ field }) => (
-        <FormItem className=" items-center space-y-1">
-          <div className={line === 1 ? 'flex items-center' : ''}>
+        <FormItem className="items-center gap-1">
+          <div
+            className={line === 1 ? 'flex items-center' : 'flex flex-col gap-1'}
+          >
             <FormLabel
               required
               tooltip={t('chunkMethodTip')}
