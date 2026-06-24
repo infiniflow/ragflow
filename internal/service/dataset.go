@@ -33,8 +33,8 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	redisengine "ragflow/internal/engine/redis"
-	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/engine/types"
+	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/server"
@@ -97,9 +97,6 @@ const (
 	maximumTaskPageNumber    = int64(100000000)
 	serverQueueNamePrefix    = "te"
 	defaultEmbeddingCheckNum = 5
-	graphRaptorQueueDocID = "graph_raptor_x"
-	maximumTaskPageNumber = int64(100000000)
-	serverQueueNamePrefix = "te"
 
 	graphPhaseResolutionDone = "resolution_done"
 	graphPhaseCommunityDone  = "community_done"
