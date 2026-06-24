@@ -313,7 +313,7 @@ func (p *Parser) parseAPIListProviders() (*Command, error) {
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
-	return NewCommand("list_providers"), nil
+	return NewCommand("api_list_providers"), nil
 }
 
 // LIST PROVIDER 'provider_name' INSTANCES
@@ -350,6 +350,7 @@ func (p *Parser) parseListProviderInstances(providerName string) (*Command, erro
 }
 
 // LIST PROVIDER 'provider_name' INSTANCE 'instance_name' MODELS
+// LIST PROVIDER 'provider_name' INSTANCE 'instance_name' MODELS SYNC, get model list by API from remote server
 func (p *Parser) parseListProviderInstanceModels(providerName string) (*Command, error) {
 	p.nextToken() // consume INSTANCE
 
@@ -364,11 +365,15 @@ func (p *Parser) parseListProviderInstanceModels(providerName string) (*Command,
 	}
 	p.nextToken()
 
+	cmd := NewCommand("api_list_provider_instance_models")
+	if p.curToken.Type == TokenSync {
+		cmd = NewCommand("api_list_provider_instance_models_sync")
+	}
+
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
-	cmd := NewCommand("api_list_provider_instance_models")
 	cmd.Params["provider_name"] = providerName
 	cmd.Params["instance_name"] = instanceName
 	return cmd, nil
