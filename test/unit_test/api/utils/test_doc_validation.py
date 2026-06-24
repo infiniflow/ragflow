@@ -190,6 +190,32 @@ def test_validate_immutable_fields_zero_values_must_match():
 
 
 @pytest.mark.p2
+def test_validate_immutable_fields_zero_token_count_mismatch_when_chunk_count_matches():
+    update_doc_req = UpdateDocumentReq(chunk_count=0, token_count=0, progress=0.0)
+    doc = Mock()
+    doc.chunk_num = 0
+    doc.token_num = 100
+    doc.progress = 0.0
+
+    error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
+    assert error_msg == "Can't change `token_count`."
+    assert error_code == RetCode.DATA_ERROR
+
+
+@pytest.mark.p2
+def test_validate_immutable_fields_zero_progress_mismatch_when_counts_match():
+    update_doc_req = UpdateDocumentReq(chunk_count=0, token_count=0, progress=0.0)
+    doc = Mock()
+    doc.chunk_num = 0
+    doc.token_num = 0
+    doc.progress = 0.5
+
+    error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
+    assert error_msg == "Can't change `progress`."
+    assert error_code == RetCode.DATA_ERROR
+
+
+@pytest.mark.p2
 def test_validate_immutable_fields_zero_values_matching_doc():
     update_doc_req = UpdateDocumentReq(chunk_count=0, token_count=0, progress=0.0)
     doc = Mock()
