@@ -65,7 +65,7 @@ export function ConfirmDeleteDialog({
       <AlertDialogContent
         onSelect={(e) => e.preventDefault()}
         onClick={(e) => e.stopPropagation()}
-        className="bg-bg-base "
+        className="bg-bg-base"
         data-testid={testId ?? 'confirm-delete-dialog'}
       >
         <AlertDialogHeader className="space-y-5">
@@ -82,7 +82,7 @@ export function ConfirmDeleteDialog({
             <>
               <Separator className="w-[calc(100%+48px)] -translate-x-6"></Separator>
               <AlertDialogDescription className="mt-5">
-                <div className="flex flex-col gap-5  text-base mb-10 px-5">
+                <div className="flex flex-col gap-2 text-base mb-10 px-5">
                   <div className="text-text-primary">
                     {content.title || t('common.deleteModalTitle')}
                   </div>
