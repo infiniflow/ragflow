@@ -1961,7 +1961,7 @@ func (s *DatasetService) AggregateTags(datasetIDs []string, userID string) ([]ma
 		if rawID == "" {
 			continue
 		}
-		datasetID, err := normalizeDatasetUUID1(rawID)
+		datasetID, err := normalizeDatasetID(rawID)
 		if err != nil {
 			return nil, common.CodeDataError, err
 		}
