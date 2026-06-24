@@ -65,8 +65,8 @@ type yahooFinanceEnvelope struct {
 // package var so tests can substitute a httptest.Server URL.
 var yahooFinanceEndpoint = "https://query1.finance.yahoo.com/v7/finance/quote"
 
-// YahooFinanceTool is the Phase 3 batch 3 implementation of the
-// Yahoo Finance quote tool (plan §2.11.4 row 22, §5 Phase 3 第 3 批).
+// YahooFinanceTool is the
+// Yahoo Finance quote tool.
 // It performs an unauthenticated GET against the public quote API
 // via the shared HTTPHelper and returns the parsed quote records.
 type YahooFinanceTool struct {

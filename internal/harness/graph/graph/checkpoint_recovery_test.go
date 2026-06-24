@@ -150,7 +150,7 @@ func TestCheckpoint_ConcurrentSaves(t *testing.T) {
 	for i := 0; i < threads; i++ {
 		go func(id int) {
 			config := map[string]interface{}{
-				"thread_id": "concurrent-save",
+				"thread_id":     "concurrent-save",
 				"checkpoint_id": "cp-" + string(rune('A'+id)),
 			}
 			cp := map[string]interface{}{

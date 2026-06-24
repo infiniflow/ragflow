@@ -41,13 +41,40 @@ import (
 	"ragflow/internal/server"
 )
 
+func printHelp() {
+	fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS]\n\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "RAGFlow Admin Server\n\n")
+	fmt.Fprintf(os.Stderr, "Options:\n")
+	fmt.Fprintf(os.Stderr, "  --config string\tPath to configuration file\n")
+	fmt.Fprintf(os.Stderr, "  -v, --version  \tPrint version information and exit\n")
+	fmt.Fprintf(os.Stderr, "  --debug        \tEnable debug-level logging\n")
+	fmt.Fprintf(os.Stderr, "  --init-superuser\tInitialize superuser account\n")
+	fmt.Fprintf(os.Stderr, "  -h, --help     \tShow this help message and exit\n")
+}
+
 func main() {
 	var configPath string
 	flag.StringVar(&configPath, "config", "", "Path to configuration file")
+	var debugFlag bool
+	flag.BoolVar(&debugFlag, "debug", false, "Enable debug-level logging")
+	var versionFlag bool
+	flag.BoolVar(&versionFlag, "version", false, "Print version information and exit")
+	var initSuperuser bool
+	flag.BoolVar(&initSuperuser, "init-superuser", false, "Initialize superuser account")
+
+	// Custom help message
+	flag.Usage = printHelp
+
 	flag.Parse()
 
+	// Handle --version flag: print version and exit immediately
+	if versionFlag {
+		fmt.Printf("RAGFlow version: %s\n", utility.GetRAGFlowVersion())
+		return
+	}
+
 	// Initialize logger
-	if err := common.Init("info", "admin_server.log"); err != nil {
+	if err := common.Init("info", common.FileOutput{Path: "admin_server.log"}); err != nil {
 		panic("failed to initialize logger: " + err.Error())
 	}
 
@@ -60,10 +87,27 @@ func main() {
 	cfg := server.GetConfig()
 
 	// Reinitialize logger with configured level if different
-	if cfg.Log.Level != "" && cfg.Log.Level != "info" {
-		if err := common.Init(cfg.Log.Level, "admin_server.log"); err != nil {
-			common.Error("Failed to reinitialize logger with configured level", err)
-		}
+	logLevel := cfg.Log.Level
+	if logLevel == "" {
+		logLevel = "info"
+	}
+
+	if debugFlag {
+		logLevel = "debug"
+	}
+
+	fileOut := common.FileOutput{
+		Path:       "admin_server.log",
+		MaxSize:    cfg.Log.MaxSize,
+		MaxBackups: cfg.Log.MaxBackups,
+		MaxAge:     cfg.Log.MaxAge,
+		Compress:   common.ResolveCompress(cfg.Log.Compress),
+	}
+	if cfg.Log.Path != "" {
+		fileOut.Path = cfg.Log.Path
+	}
+	if err := common.Init(logLevel, fileOut); err != nil {
+		common.Error("Failed to reinitialize logger with configured level", err)
 	}
 
 	// Set logger for server package
@@ -109,9 +153,12 @@ func main() {
 	adminService := admin.NewService()
 	adminHandler := admin.NewHandler(adminService)
 
-	// Initialize default admin user
-	if err := adminService.InitDefaultAdmin(); err != nil {
-		common.Error("Failed to initialize default admin user", err)
+	if initSuperuser {
+		// Initialize default admin user
+		if err := adminService.InitDefaultAdmin(); err != nil {
+			common.Error("Failed to initialize default admin user", err)
+		}
+
 	}
 
 	// Initialize router
@@ -121,15 +168,8 @@ func main() {
 	ginEngine := gin.New()
 
 	// Middleware
-	if cfg.Server.Mode == "debug" {
-		ginEngine.Use(gin.Logger())
-	}
+	ginEngine.Use(common.GinLogger())
 	ginEngine.Use(gin.Recovery())
-	// Log request URL for every request
-	ginEngine.Use(func(c *gin.Context) {
-		common.Info("HTTP Request", zap.String("url", c.Request.URL.String()), zap.String("method", c.Request.Method))
-		c.Next()
-	})
 
 	// Setup routes
 	r.Setup(ginEngine)

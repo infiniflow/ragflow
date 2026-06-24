@@ -242,8 +242,6 @@ export const useUpdateAgentSetting = () => {
         queryClient.invalidateQueries({
           queryKey: [AgentApiAction.FetchAgentListByPage],
         });
-      } else {
-        message.error(ret?.data?.data);
       }
       return ret?.data?.code;
     },
@@ -338,7 +336,7 @@ export const useFetchAgent = (): {
     isFetching: loading,
     refetch,
   } = useQuery({
-    queryKey: [AgentApiAction.FetchAgentDetail],
+    queryKey: [AgentApiAction.FetchAgentDetail, sharedId || id],
     initialData: {} as IFlow,
     refetchOnReconnect: false,
     refetchOnMount: false,
@@ -428,7 +426,7 @@ export const useSetAgent = (showMessage: boolean = true) => {
         });
         if (agentId) {
           queryClient.invalidateQueries({
-            queryKey: [AgentApiAction.FetchAgentDetail],
+            queryKey: [AgentApiAction.FetchAgentDetail, agentId],
           });
         }
       }
@@ -1043,11 +1041,9 @@ export const useExportAgentLog = () => {
     mutationFn: async (searchParams: IAgentLogsRequest) => {
       const { data } = await fetchAgentLogsByCanvasId(id as string, {
         ...searchParams,
-        page: 1,
-        page_size: 100000,
       });
 
-      return data?.data?.sessions ?? [];
+      return data?.data ?? [];
     },
   });
 

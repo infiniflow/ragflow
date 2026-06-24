@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-// Package tool — ExeSQL tool (Phase 3 batch 1).
+// Package tool — ExeSQL tool.
 //
 // ExeSQL lets an Agent component execute a SQL statement on a
 // user-configured external database and return the rows as
@@ -59,9 +59,9 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-// ExeSQL-specific errors. The previous Phase 3 batch 1 stub returned
-// ErrExeSQLDAOMissing because the implementation was a no-op pending
-// the (now rejected) GORM wiring. With the real `database/sql`
+// ExeSQL-specific errors. ErrExeSQLDAOMissing is surfaced when
+// no DAO is registered. The current implementation routes
+// through `database/sql` (see openSQLDB below).
 // implementation in place, the error surface is:
 //   - ErrExeSQLNotSelect: SQL failed the SELECT-only safety filter.
 //   - ErrExeSQLNoCredentials: the tool has no db_type/host/etc. set
@@ -101,6 +101,48 @@ type exesqlConnParams struct {
 	Port       int
 	Password   string
 	MaxRecords int
+}
+
+// ExeSQLConnParams is the public alias of exesqlConnParams for
+// external callers (e.g. internal/agent/component/Universe A
+// delegation wrappers). The internal lowercase name stays for
+// backward-compat with existing in-package callers.
+type ExeSQLConnParams = exesqlConnParams
+
+// NewExeSQLConnParams decodes a canvas-node params map into an
+// ExeSQLConnParams. Returns an error if any required field
+// (db_type, host, database, username) is missing.
+//
+// Callers (e.g. the Universe A exesqlComponent wrapper) build the
+// params map from the canvas DSL; the tool-side decoding stays
+// in this package so the schema lives next to the type.
+func NewExeSQLConnParams(params map[string]any) (ExeSQLConnParams, error) {
+	conn := ExeSQLConnParams{}
+	if v, ok := params["db_type"].(string); ok {
+		conn.DBType = v
+	}
+	if v, ok := params["database"].(string); ok {
+		conn.Database = v
+	}
+	if v, ok := params["username"].(string); ok {
+		conn.Username = v
+	}
+	if v, ok := params["host"].(string); ok {
+		conn.Host = v
+	}
+	if v, ok := params["port"].(int); ok {
+		conn.Port = v
+	}
+	if v, ok := params["password"].(string); ok {
+		conn.Password = v
+	}
+	if v, ok := params["max_records"].(int); ok {
+		conn.MaxRecords = v
+	}
+	if conn.DBType == "" || conn.Host == "" || conn.Username == "" || conn.Database == "" {
+		return conn, fmt.Errorf("ExeSQL: missing required connection params (db_type/host/database/username)")
+	}
+	return conn, nil
 }
 
 // exesqlArgs is the JSON shape the model sends in. Matches the Python
@@ -143,7 +185,7 @@ func defaultExeSQLDialer(driver, dsn string) (*sql.DB, error) {
 	return db, nil
 }
 
-// ExeSQLTool is the Phase 3 batch 1 implementation of the ExeSQL tool.
+// ExeSQLTool is the ExeSQL tool.
 // It validates SELECT-only at the parser level and executes the
 // statement against a user-configured external DB via `database/sql`.
 type ExeSQLTool struct {
@@ -433,7 +475,7 @@ func exesqlDriverAndDSN(c exesqlConnParams) (driver, dsn string, err error) {
 			c.Host, c.Port, c.Username, c.Password, c.Database,
 		), nil
 	case "trino":
-		return "", "", fmt.Errorf("%w: trino", ErrExeSQLUnsupportedDB)
+		return "trino", trinoDSN(c), nil
 	case "ibm db2":
 		return "", "", fmt.Errorf("%w: ibm db2", ErrExeSQLUnsupportedDB)
 	default:
@@ -470,18 +512,18 @@ var leadingKeywordRe = regexp.MustCompile(`^[\s,;(]*([A-Za-z]+)`)
 var nonSelectKeywords = map[string]struct{}{
 	"INSERT": {}, "UPDATE": {}, "DELETE": {}, "REPLACE": {},
 	"TRUNCATE": {},
-	"CREATE": {}, "DROP": {}, "ALTER": {}, "RENAME": {},
+	"CREATE":   {}, "DROP": {}, "ALTER": {}, "RENAME": {},
 	"GRANT": {}, "REVOKE": {},
 	"LOCK": {}, "UNLOCK": {},
 	"CALL": {}, "EXEC": {}, "EXECUTE": {},
-	"COPY": {},
+	"COPY":   {},
 	"VACUUM": {}, "ANALYZE": {},
 	"SET": {}, "RESET": {},
-	"USE":  {},
-	"KILL": {},
-	"LOAD": {},
+	"USE":        {},
+	"KILL":       {},
+	"LOAD":       {},
 	"CHECKPOINT": {},
-	"BEGIN": {}, "COMMIT": {}, "ROLLBACK": {}, "START": {},
+	"BEGIN":      {}, "COMMIT": {}, "ROLLBACK": {}, "START": {},
 	"SHUTDOWN": {},
 }
 
@@ -489,7 +531,7 @@ var nonSelectKeywords = map[string]struct{}{
 // heuristic is intentionally narrow: strip line + block comments and
 // string literals, scan the first keyword, and reject if it's a
 // DML/DDL/DCL verb. SQL parsers in Go stdlib don't exist; this matches
-// the safety bar the Go shell needs in Phase 3 batch 1.
+// the safety bar the Go shell needs.
 func isSelectStatement(sql string) bool {
 	cleaned := stripSQLComments(sql)
 	cleaned = stripSQLStrings(cleaned)

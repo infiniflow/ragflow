@@ -14,20 +14,22 @@
 //  limitations under the License.
 //
 
-// Package component — Switch component (T2, plan §2.11.3 row 7).
+// Package component — Switch component (T2).
 //
 // Switch is a multi-condition router implemented in pure Go (no eino
 // Lambda dependency). It walks a list of AND/OR-combined condition
 // groups against the current *CanvasState, picks the first matching
 // group's downstream cpn_id, and returns it as outputs["_next"]. The
 // downstream cpn_id for a matching group is taken from the optional
-// "to" field; if absent, the P0 fallback is the index-based
+// "to" field; if absent, the fallback is the index-based
 // "matched_<i>" naming used in the spec's example assertions.
 //
-// Mirrors the Python agent/component/switch.py behavior. The Phase 5
-// eino `compose.NewGraphMultiBranch` integration (per plan §2.11.6
-// entry for Switch) is a thinner pass-through: the hard routing
-// decision lives here, MultiBranch just wires the edges.
+// Switch's runtime choice is consumed by the canvas scheduler's
+// MultiBranch wiring (see canvas/multibranch.go). The eino
+// `compose.NewGraphMultiBranch` integration is a thin pass-through:
+// the routing decision lives here, MultiBranch just wires the edges.
+//
+// Mirrors the Python agent/component/switch.py behavior.
 package component
 
 import (
@@ -35,6 +37,7 @@ import (
 	"fmt"
 	"maps"
 	"strconv"
+	"strings"
 
 	"ragflow/internal/agent/runtime"
 )
@@ -44,24 +47,37 @@ const componentNameSwitch = "Switch"
 // SwitchComponent implements the Switch routing node. It is stateless
 // across invocations: the inputs map carries everything it needs.
 type SwitchComponent struct {
-	name string
+	name   string
+	params map[string]any
 }
 
-// NewSwitchComponent constructs a Switch component. params is unused
-// in P0 (Switch config lives in the inputs map at Invoke time).
-func NewSwitchComponent(_ map[string]any) (Component, error) {
-	return &SwitchComponent{name: componentNameSwitch}, nil
+// NewSwitchComponent constructs a Switch component from the DSL params.
+// Invoke merges these static params with any dynamic input overrides.
+func NewSwitchComponent(params map[string]any) (Component, error) {
+	cp := make(map[string]any, len(params))
+	for k, v := range params {
+		cp[k] = v
+	}
+	return &SwitchComponent{name: componentNameSwitch, params: cp}, nil
 }
 
 // Name returns the registered component name.
 func (s *SwitchComponent) Name() string { return s.name }
 
 // Invoke evaluates the conditions list in order, returns the first
-// matching group's downstream cpn_id at outputs["_next"]. If no group
-// matches, outputs["_next"] = inputs["default"] (a free-form string —
-// Phase 5 will resolve it to a real cpn_id via the eino multi-branch
-// wiring). Unknown / empty inputs are tolerated: an absent "conditions"
+// matching group's downstream cpn_ids at outputs["_next"]. If no
+// group matches, outputs["_next"] = inputs["default"] (a
+// free-form string — resolved to a real cpn_id by the canvas
+// scheduler's MultiBranch wiring in canvas/multibranch.go).
+// Unknown / empty inputs are tolerated: an absent "conditions"
 // list yields outputs["_next"] = inputs["default"].
+//
+// The "to" field in each condition group can be a single string
+// or a list of strings — Python's Switch routes to ALL targets
+// in the "to" list simultaneously. The Go port mirrors this by
+// returning "_next" as a []any (list of cpn_ids). The canvas
+// scheduler's MultiBranch condition consumes this list via
+// NewGraphMultiBranch so every declared target fires.
 func (s *SwitchComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
 	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 	if err != nil {
@@ -71,8 +87,19 @@ func (s *SwitchComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 		return nil, fmt.Errorf("Switch: nil canvas state")
 	}
 
-	defaultNext, _ := inputs["default"].(string)
-	if raw, ok := inputs["conditions"].([]any); ok {
+	merged := make(map[string]any, len(s.params)+len(inputs))
+	for k, v := range s.params {
+		merged[k] = v
+	}
+	for k, v := range inputs {
+		merged[k] = v
+	}
+
+	defaultNext, _ := merged["default"].(string)
+	if defaultNext == "" {
+		defaultNext = legacySwitchDefaultTarget(merged)
+	}
+	if raw, ok := merged["conditions"].([]any); ok {
 		for i, item := range raw {
 			group, ok := item.(map[string]any)
 			if !ok {
@@ -85,14 +112,24 @@ func (s *SwitchComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 			if !matched {
 				continue
 			}
-			next, hasTo := group["to"].(string)
-			if !hasTo || next == "" {
-				next = "matched_" + strconv.Itoa(i)
+			targets := switchGroupTargets(group)
+			if len(targets) == 0 {
+				targets = []string{"matched_" + strconv.Itoa(i)}
 			}
-			return map[string]any{"_next": next}, nil
+			// Return all targets as a list. Python's Switch routes
+			// to every cpn_id in the "to" list; the canvas
+			// scheduler's MultiBranch condition uses
+			// NewGraphMultiBranch to fire all of them.
+			nextAny := make([]any, len(targets))
+			for j, t := range targets {
+				nextAny[j] = t
+			}
+			return map[string]any{"_next": nextAny}, nil
 		}
 	}
-	return map[string]any{"_next": defaultNext}, nil
+	// Default: single target. Wrap as a one-element list so the
+	// MultiBranch condition can still consume it uniformly.
+	return map[string]any{"_next": []any{defaultNext}}, nil
 }
 
 // Stream is a synchronous facade over Invoke for P0. Switch is a
@@ -128,8 +165,7 @@ func (s *SwitchComponent) Outputs() map[string]string {
 // returns true if the group matches. It is the lock-free inner of
 // Switch.Invoke; caller must not hold state.mu.
 func evaluateGroup(group map[string]any, state *runtime.CanvasState) (bool, error) {
-	op, _ := group["op"].(string)
-	clauses, _ := group["clauses"].([]any)
+	op, clauses := normalizeLegacyGroup(group)
 	if op == "" {
 		op = "and"
 	}
@@ -157,10 +193,148 @@ func evaluateGroup(group map[string]any, state *runtime.CanvasState) (bool, erro
 	return op == "and", nil
 }
 
+func normalizeLegacyGroup(group map[string]any) (string, []any) {
+	if group == nil {
+		return "", nil
+	}
+	if clauses, ok := group["clauses"].([]any); ok {
+		op, _ := group["op"].(string)
+		return op, clauses
+	}
+
+	op, _ := group["logical_operator"].(string)
+	rawItems, _ := group["items"].([]any)
+	if len(rawItems) == 0 {
+		return op, nil
+	}
+	clauses := make([]any, 0, len(rawItems))
+	for _, raw := range rawItems {
+		item, ok := raw.(map[string]any)
+		if !ok || item == nil {
+			continue
+		}
+		left := legacySwitchLeft(item)
+		operator, _ := item["operator"].(string)
+		clause := map[string]any{
+			"left": left,
+			"op":   normalizeLegacySwitchOperator(operator),
+		}
+		if v, ok := item["value"]; ok {
+			clause["right"] = v
+		}
+		clauses = append(clauses, clause)
+	}
+	return op, clauses
+}
+
+func legacySwitchLeft(item map[string]any) string {
+	left, _ := item["left"].(string)
+	if left != "" {
+		return left
+	}
+	cpnRef, _ := item["cpn_id"].(string)
+	if cpnRef == "" {
+		return ""
+	}
+	if runtime.VarRefPattern.MatchString(cpnRef) {
+		return "{{" + cpnRef + "}}"
+	}
+	if strings.Contains(cpnRef, "@") || strings.HasPrefix(cpnRef, "sys.") || strings.HasPrefix(cpnRef, "env.") {
+		return "{{" + cpnRef + "}}"
+	}
+	return cpnRef
+}
+
+func normalizeLegacySwitchOperator(op string) string {
+	switch op {
+	case "", "=":
+		return "=="
+	case "<>":
+		return "!="
+	default:
+		return op
+	}
+}
+
+// switchGroupTargets returns all cpn_ids from the group's "to" field.
+// The "to" field can be a single string or a list of strings —
+// Python's Switch routes to ALL targets simultaneously, and the
+// Go port mirrors this via NewGraphMultiBranch in the canvas
+// scheduler. Returns nil when "to" is absent or empty.
+func switchGroupTargets(group map[string]any) []string {
+	if group == nil {
+		return nil
+	}
+	// Single string: "to": "DataOperations:UpdateSample"
+	if next, ok := group["to"].(string); ok && next != "" {
+		return []string{next}
+	}
+	// List: "to": ["DataOperations:UpdateSample", "ListOperations:Top2"]
+	if raw, ok := group["to"].([]any); ok {
+		out := make([]string, 0, len(raw))
+		for _, item := range raw {
+			if next, ok := item.(string); ok && next != "" {
+				out = append(out, next)
+			}
+		}
+		return out
+	}
+	if raw, ok := group["to"].([]string); ok {
+		out := make([]string, 0, len(raw))
+		for _, next := range raw {
+			if next != "" {
+				out = append(out, next)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// switchGroupTarget returns the first cpn_id from the group's "to"
+// field. Kept for backward compat with single-target callers; the
+// main Invoke path now uses switchGroupTargets.
+func switchGroupTarget(group map[string]any) (string, bool) {
+	targets := switchGroupTargets(group)
+	if len(targets) > 0 {
+		return targets[0], true
+	}
+	return "", false
+}
+
+func legacySwitchDefaultTarget(merged map[string]any) string {
+	if merged == nil {
+		return ""
+	}
+	if raw, ok := merged["end_cpn_ids"].([]any); ok {
+		for _, item := range raw {
+			if next, ok := item.(string); ok && next != "" {
+				return next
+			}
+		}
+	}
+	if raw, ok := merged["end_cpn_ids"].([]string); ok {
+		for _, next := range raw {
+			if next != "" {
+				return next
+			}
+		}
+	}
+	return ""
+}
+
 // evaluateClause resolves a single clause. left is a {{...}} reference
 // (passed through runtime.ResolveTemplate); op is one of
-// "==", "!=", ">", "<", "contains", "empty". The "empty" operator
-// ignores right.
+// "==", "!=", ">", "<", ">=", "<=", "contains", "not contains",
+// "start with", "end with", "empty", "not empty". The "empty" /
+// "not empty" operators ignore right.
+//
+// String operators (==, !=, contains, not contains, start with,
+// end with) are case-insensitive — they lowercase both sides
+// before comparing. The Python agent's Categorize / Switch
+// nodes do the same; v1 ported case-insensitive matching for
+// user-facing labels where "Hello" and "hello" should be
+// treated as the same value.
 func evaluateClause(clause map[string]any, state *runtime.CanvasState) (bool, error) {
 	left, _ := clause["left"].(string)
 	op, _ := clause["op"].(string)
@@ -168,9 +342,12 @@ func evaluateClause(clause map[string]any, state *runtime.CanvasState) (bool, er
 		op = "=="
 	}
 
-	// "empty" is the only operator that does not read `right`.
+	// "empty" / "not empty" don't read `right`.
 	if op == "empty" {
 		return isEmptyValue(leftValue(left, state)), nil
+	}
+	if op == "not empty" {
+		return !isEmptyValue(leftValue(left, state)), nil
 	}
 
 	right := clause["right"]
@@ -178,26 +355,39 @@ func evaluateClause(clause map[string]any, state *runtime.CanvasState) (bool, er
 
 	switch op {
 	case "==":
-		return equalValues(lv, right), nil
+		return equalFoldValues(lv, right), nil
 	case "!=":
-		return !equalValues(lv, right), nil
+		return !equalFoldValues(lv, right), nil
 	case "contains":
-		// Treat the right-hand side as a string needle.
 		ls, rs := fmt.Sprintf("%v", lv), fmt.Sprintf("%v", right)
-		return containsString(ls, rs), nil
-	case ">", "<":
+		return containsString(strings.ToLower(ls), strings.ToLower(rs)), nil
+	case "not contains":
+		ls, rs := fmt.Sprintf("%v", lv), fmt.Sprintf("%v", right)
+		return !containsString(strings.ToLower(ls), strings.ToLower(rs)), nil
+	case "start with":
+		ls, rs := fmt.Sprintf("%v", lv), fmt.Sprintf("%v", right)
+		return strings.HasPrefix(strings.ToLower(ls), strings.ToLower(rs)), nil
+	case "end with":
+		ls, rs := fmt.Sprintf("%v", lv), fmt.Sprintf("%v", right)
+		return strings.HasSuffix(strings.ToLower(ls), strings.ToLower(rs)), nil
+	case ">", "<", ">=", "<=":
 		ln, lok := numericize(lv)
 		rn, rok := numericize(right)
 		if !lok || !rok {
 			return false, fmt.Errorf("operator %q requires numeric operands (left=%T, right=%T)", op, lv, right)
 		}
-		if op == ">" {
+		switch op {
+		case ">":
 			return ln > rn, nil
+		case "<":
+			return ln < rn, nil
+		case ">=":
+			return ln >= rn, nil
+		case "<=":
+			return ln <= rn, nil
 		}
-		return ln < rn, nil
-	default:
-		return false, fmt.Errorf("unknown operator %q", op)
 	}
+	return false, fmt.Errorf("unknown operator %q", op)
 }
 
 // leftValue resolves a {{...}} reference against state. References
@@ -231,6 +421,27 @@ func equalValues(a, b any) bool {
 	}
 	// Stringify then compare — covers most canvas-DSL comparisons.
 	return fmt.Sprintf("%v", a) == fmt.Sprintf("%v", b)
+}
+
+// equalFoldValues is the case-insensitive variant of equalValues.
+// Used by the "==" / "!=" operators in evaluateClause so user-facing
+// labels like "Hello" and "hello" compare equal — matches Python's
+// Categorize / Switch node semantics.
+func equalFoldValues(a, b any) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	as := fmt.Sprintf("%v", a)
+	bs := fmt.Sprintf("%v", b)
+	// Numeric strings should still numeric-compare (so "1" == 1 holds
+	// at the DSL level), but otherwise fall back to case-folded string
+	// compare.
+	if an, ok := numericize(as); ok {
+		if bn, ok2 := numericize(bs); ok2 {
+			return an == bn
+		}
+	}
+	return strings.EqualFold(as, bs)
 }
 
 func containsString(haystack, needle string) bool {

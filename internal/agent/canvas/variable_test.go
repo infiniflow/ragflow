@@ -1,21 +1,23 @@
-// Package canvas — variable resolver unit tests (Phase 1).
+// Package canvas — variable resolver unit tests.
 //
-// Scope: tests the 3 reference forms documented in plan §4.2:
+// Scope: tests the 3 reference forms documented in
+// docs/develop/agent-go-port-design.md appendix D:
 //   - cpn_id@param     (e.g. "llm_0@content", "begin_0@query")
 //   - sys.<name>       (e.g. "sys.query", "sys.user_id")
 //   - env.<name>       (e.g. "env.max_tokens")
 //
-// Out of scope for Phase 1 (deferred to Phase 2 P2 Iteration/Loop batch):
-//   - {{item}} / {{index}} aliases — base.py:369 has a separate
-//     iteration_alias_patt consulted only by iteration components.
+// Additional supported aliases:
+//   - {{item}} / {{index}} iteration aliases
+//
+// Out of scope:
 //   - nested dot paths (cpn_0@result.answer) — base.py:400-410 does this
 //     in canvas.get_value_with_variable AFTER the regex match succeeds.
 //   - list indexing (xs.0) — same nested-path machinery.
 //
-// Cpn IDs in tests use underscores (e.g. "llm_0") which is the real RAGFlow
-// naming convention; the plan's documented regex `[a-zA-Z:0-9]+` did not
-// allow underscores — a documentation bug fixed in this Phase 1 deliverable
-// (see variable.go VarRefPattern comment).
+// Cpn IDs in tests use underscores (e.g. "llm_0") which is the real
+// RAGFlow naming convention; the original documented regex
+// `[a-zA-Z:0-9]+` did not allow underscores — see variable.go
+// VarRefPattern comment.
 package canvas
 
 import (
@@ -92,12 +94,13 @@ func TestVariableResolver(t *testing.T) {
 			want:     "plain text only",
 		},
 		{
-			// Phase 1 Go behavior: ResolveTemplate returns an error on
-			// unresolved refs (loud-fail; see variable.go ResolveTemplate
-			// doc). Python's canvas.py:177-178 silently returns "" — the
-			// Go port trades Python's silent soft-fail for a Go-idiomatic
-			// error return so Phase 2 parameter binding can surface
-			// misconfigured canvases early.
+			// Go behavior: ResolveTemplate returns an error on
+			// unresolved refs (loud-fail; see variable.go
+			// ResolveTemplate doc). Python's canvas.py:177-178
+			// silently returns "" — the Go port trades Python's
+			// silent soft-fail for a Go-idiomatic error return so
+			// parameter binding can surface misconfigured canvases
+			// early.
 			name:     "unresolved cpn ref returns error (loud-fail, Go port deviation)",
 			template: "x={{missing@thing}}y",
 			setup:    func(s *CanvasState) {},
@@ -110,16 +113,20 @@ func TestVariableResolver(t *testing.T) {
 			wantErr:  true,
 		},
 		{
-			name:     "iteration alias NOT in v1 regex (matches base.py:368)",
+			name:     "iteration item alias resolves from globals",
 			template: "{{item}}",
-			setup:    func(s *CanvasState) {},
-			want:     "{{item}}",
+			setup: func(s *CanvasState) {
+				s.Globals["__item__"] = "alpha"
+			},
+			want: "alpha",
 		},
 		{
-			name:     "iteration index alias passes through unchanged",
+			name:     "iteration index alias resolves from globals",
 			template: "i={{index}}",
-			setup:    func(s *CanvasState) {},
-			want:     "i={{index}}",
+			setup: func(s *CanvasState) {
+				s.Globals["__index__"] = 3
+			},
+			want: "i=3",
 		},
 		{
 			name:     "garbage ref (no @ or sys/env prefix) passes through unchanged",
@@ -180,9 +187,6 @@ func TestVarRefPattern_MatchesPythonDrift(t *testing.T) {
 	negative := []string{
 		"plain text",
 		"",
-		"{{item}}",            // iteration alias — not in v1 regex
-		"{{index}}",           // iteration alias — not in v1 regex
-		"{{ cpn_0@content }}", // inner spaces around cpn_id — regex does not allow
 	}
 	for _, s := range negative {
 		if VarRefPattern.MatchString(s) {

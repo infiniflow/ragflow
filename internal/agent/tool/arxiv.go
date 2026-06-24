@@ -84,10 +84,9 @@ type arxivLink struct {
 	Type string `xml:"type,attr"`
 }
 
-// ArxivTool is the Phase 3 batch 2 implementation of the ArXiv academic
-// search tool (plan §2.11.4 row 2, §5 Phase 3 第 2 批). It performs a GET
-// against the public ArXiv API and parses the Atom XML response using
-// the stdlib encoding/xml package.
+// ArxivTool is the ArXiv academic search tool. It performs a GET
+// against the public ArXiv API and parses the Atom XML response
+// using the stdlib encoding/xml package.
 type ArxivTool struct {
 	helper *HTTPHelper
 }

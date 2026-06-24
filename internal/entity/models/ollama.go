@@ -460,30 +460,20 @@ func (o *OllamaModel) ParseFile(modelName *string, content []byte, url *string, 
 
 func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 
-	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
+	baseURL, err := o.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	baseURL := resolvedBaseURL
 	if baseURL == "" {
-		baseURL = resolvedBaseURL
-	}
-	if baseURL == "" {
-		return nil, fmt.Errorf("missing base URL: please configure the local access address for Ollama (e.g., http://127.0.0.1:11434/v1)")
+		return nil, fmt.Errorf("missing base URL: please configure the local access address for Ollama (e.g., http://127.0.0.1:11434)")
 	}
 
-	url := fmt.Sprintf("%s/%s", baseURL, o.baseModel.URLSuffix.Models)
-	reqBody := map[string]interface{}{}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), o.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -505,21 +495,34 @@ func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, err
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
-	var result map[string]interface{}
+	// Ollama's /api/tags returns {"models":[{"name":...,"model":...}]}, a shape
+	// that differs from the OpenAI list. Decode it into a local struct, map the
+	// names into ModelList, then enrich through the shared ParseListModel helper
+	// (issue #15853). Using a typed struct also avoids the previous unchecked
+	// type assertions, which panicked when "models" was absent or malformed.
+	var result struct {
+		Models []struct {
+			Name  string `json:"name"`
+			Model string `json:"model"`
+		} `json:"models"`
+	}
 	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	// convert result["data"] to []map[string]interface{}
-	models := make([]ListModelResponse, 0)
-	for _, model := range result["models"].([]interface{}) {
-		modelMap := model.(map[string]interface{})
-		modelName := modelMap["name"].(string)
-		models = append(models, ListModelResponse{Name: modelName})
+	modelList := ModelList{Object: "list"}
+	for _, m := range result.Models {
+		name := strings.TrimSpace(m.Name)
+		if name == "" {
+			name = strings.TrimSpace(m.Model)
+		}
+		if name == "" {
+			continue
+		}
+		modelList.Models = append(modelList.Models, DSModel{ID: name})
 	}
 
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 func (o *OllamaModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

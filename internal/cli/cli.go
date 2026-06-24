@@ -38,6 +38,7 @@ type APIServerConfig struct {
 	UserName     *string `yaml:"user_name"`
 	UserPassword *string `yaml:"password"`
 	ApiToken     *string `yaml:"api_token"`
+	KeyFile      *string `yaml:"key_file"`
 	IP           string
 	Port         int
 }
@@ -86,6 +87,7 @@ type AdminModeConfig struct {
 	AdminPort     int
 	AdminName     *string
 	AdminPassword *string
+	KeyFile       *string
 	//AdminCommand  *string
 }
 
@@ -217,6 +219,11 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 					}
 					i++
 				}
+			case "-k", "--key":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+					defaultApiServerConfig.KeyFile = &args[i+1]
+					i++
+				}
 			default:
 				// Non-flag argument (command)
 				if !strings.HasPrefix(arg, "-") {
@@ -333,6 +340,11 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 					AdminConfig.AdminName = &args[i+1]
 					i++
 				}
+			case "-k", "--key":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+					AdminConfig.KeyFile = &args[i+1]
+					i++
+				}
 			case "-p", "--password":
 				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
 					AdminConfig.AdminPassword = &args[i+1]
@@ -422,7 +434,7 @@ func parseHostPort(hostPort string) (string, int, error) {
 func PrintUsage() {
 	fmt.Println(`RAGFlow CLI Client
 
-Usage: ragflow_cli [options] [command]
+Usage: ragflow-cli [options] [command]
 
 Options:
   -h, --host string      RAGFlow service address (host:port, default "127.0.0.1:9380")
@@ -754,10 +766,10 @@ Commands (User Mode):
   LIST TOKENS;                                           - List API tokens
   LIST PROVIDERS;                                        - List available LLM providers
   CREATE TOKEN;                                          - Create new API token
-  ADD PROVIDER 'name';                                - Create a provider without API key
-  ADD PROVIDER 'name' 'api_key';                      - Create a provider with API key
+  ADD PROVIDER 'name';                                   - Create a provider without API key
+  ADD PROVIDER 'name' 'api_key';                         - Create a provider with API key
   DROP TOKEN 'token_value';                              - Delete an API token
-  DELETE PROVIDER 'name';                                  - Delete a provider
+  DELETE PROVIDER 'name';                                - Delete a provider
   SET TOKEN 'token_value';                               - Set and validate API token
   SHOW TOKEN;                                            - Show current API token
   SHOW PROVIDER 'name';                                  - Show provider details
@@ -767,6 +779,8 @@ Commands (User Mode):
   USE MODEL 'provider/instance/model';                   - Set current model for chat
   CHAT 'message';                                        - Chat using current model
   CHAT 'provider/instance/model' 'message';              - Chat with specified model
+  OPENAI_CHAT 'chat_id' 'message' [options] ;            - OpenAI-compatible chat 
+                                                           (run openai_chat -h for detailed options)
 
 Filesystem Commands (no quotes):
   ls [path]                    - List resources
@@ -782,11 +796,11 @@ Filesystem Commands (no quotes):
                                  Note: cat datasets or cat datasets/kb1 will error
 
 Examples:
-  ragflow_cli -f rf.yml "LIST USERS"           # SQL mode (with quotes)
-  ragflow_cli -f rf.yml ls datasets            # Filesystem mode (no quotes)
-  ragflow_cli -f rf.yml ls files               # List files in root
-  ragflow_cli -f rf.yml cat datasets           # Error: datasets is a directory
-  ragflow_cli -f rf.yml ls files/myfolder      # List folder contents
+  ragflow-cli -f rf.yml "LIST USERS"           # SQL mode (with quotes)
+  ragflow-cli -f rf.yml ls datasets            # Filesystem mode (no quotes)
+  ragflow-cli -f rf.yml ls files               # List files in root
+  ragflow-cli -f rf.yml cat datasets           # Error: datasets is a directory
+  ragflow-cli -f rf.yml ls files/myfolder      # List folder contents
 
 For more information, see documentation.
 `
@@ -849,6 +863,27 @@ func (c *CLI) VerifyAuth(username, password string) error {
 	cmd.Params["password"] = password
 	_, err := c.ExecuteCommand(cmd)
 	return err
+}
+
+func (c *CLI) GetPublicKeyPEM() ([]byte, error) {
+
+	var publicKeyFile *string = nil
+	switch c.Config.CLIMode {
+	case AdminMode:
+		publicKeyFile = c.Config.AdminClientConfig.KeyFile
+	case APIMode:
+		publicKeyFile = c.Config.APIClientConfig.APIServerMap[c.Config.APIClientConfig.CurrentAPIServer].KeyFile
+	}
+	if publicKeyFile == nil {
+		result := "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArq9XTUSeYr2+N1h3Afl/\nz8Dse/2yD0ZGrKwx+EEEcdsBLca9Ynmx3nIB5obmLlSfmskLpBo0UACBmB5rEjBp\n2Q2f3AG3Hjd4B+gNCG6BDaawuDlgANIhGnaTLrIqWrrcm4EMzJOnAOI1fgzJRsOO\nUEfaS318Eq9OVO3apEyCCt0lOQK6PuksduOjVxtltDav+guVAA068NrPYmRNabVK\nRNLJpL8w4D44sfth5RvZ3q9t+6RTArpEtc5sh5ChzvqPOzKGMXW83C95TxmXqpbK\n6olN4RevSfVjEAgCydH6HN6OhtOQEcnrU97r9H0iZOWwbw3pVrZiUkuRD1R56Wzs\n2wIDAQAB\n-----END PUBLIC KEY-----"
+		return []byte(result), nil
+	}
+
+	publicKeyPEM, err := os.ReadFile(*publicKeyFile)
+	if err != nil {
+		return []byte(""), fmt.Errorf("failed to read public key: %w", err)
+	}
+	return publicKeyPEM, nil
 }
 
 // printSearchHelp prints help for the search command
@@ -916,6 +951,58 @@ Datasets syntax (full filter set):
         doc_ids ['d1', 'd2'];
     search 'manual' on datasets 'kb1' with
         meta_data_filter '{"method":"manual","conditions":[{"key":"author","op":"eq","value":"Luo"}]}';
+`
+	fmt.Println(help)
+}
+
+// printOpenaiChatHelp prints help for the OPENAI_CHAT command.
+func printOpenaiChatHelp() {
+	help := `OPENAI_CHAT — hit POST /api/v1/openai/<chat_id>/chat/completions
+
+Syntax:
+  OPENAI_CHAT 'chat_id' 'message'
+       [system "..."]
+       [history "user:...;assistant:...;user:..."]
+       [history_delimiter "<char>"]
+       [model <string>]
+       [temperature <float>] [max_tokens <int>] [stream <bool>]
+       [top_p <float>] [frequency_penalty <float>] [presence_penalty <float>]
+       [extra_body <json>] ;
+
+Required positional:
+  'chat_id'   the dialog id (becomes the URL path segment)
+  'message'   the user message content
+
+Named options (any order; all optional with defaults):
+  system            '...'           override the system prompt
+  history           '...'           prior turns: user:...;assistant:...;user:...
+  history_delimiter '...'           turn separator for history (default ';')
+  model             '...'           'model' (sentinel) or composite (default 'model')
+  temperature       <float>         0..2  (default 0)
+  max_tokens        <int>           (default 0 = server/model default)
+  stream            <bool>          true|false  (default false)
+  top_p             <float>         0..1
+  frequency_penalty <float>         -2..2
+  presence_penalty  <float>         -2..2
+  extra_body        <json>          '{"reference":true,...}'
+
+Defaults:
+  model       'model'  — server resolves to the dialog's configured LLM
+  stream      false
+  temperature 0
+  history_delimiter ';'      — commas in content survive unchanged
+
+extra_body allowlist:
+  reference            bool
+  reference_metadata   { include?: bool, fields?: string[] }
+  metadata_condition   { logic?: "and"|"or", conditions?: [{key, operator, value}] }
+
+Examples:
+  OPENAI_CHAT 'cid' 'Hello, how are you?';
+  OPENAI_CHAT 'cid' 'Hello' model 'Qwen/Qwen3-8B@ling@SILICONFLOW' temperature 0.7 max_tokens 512;
+  OPENAI_CHAT 'cid' 'Hello' stream true;
+  OPENAI_CHAT 'cid' 'next' system 'You are concise.' history 'user:q1;assistant:a1';
+  OPENAI_CHAT 'cid' 'Hello' extra_body '{"reference":true,"metadata_condition":{"logic":"and","conditions":[{"key":"doc_type","operator":"is","value":"faq"}]}}';
 `
 	fmt.Println(help)
 }

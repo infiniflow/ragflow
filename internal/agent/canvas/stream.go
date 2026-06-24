@@ -14,17 +14,16 @@
 //  limitations under the License.
 //
 
-// stream.go defines the SSE event channel and the helper that formats
-// events in the Python agent_api.py wire format. See plan §4.10.
-//
-// Phase 1 scope is the in-process channel and the SSE serializer. The
-// HTTP writer wrapper (http.Flusher + chunked transfer) is deferred to
-// Phase 5 when the canvas HTTP handler lands.
+// stream.go defines the SSE event channel and the helper that
+// formats events in the Python agent_api.py wire format.
 package canvas
 
 import (
 	"encoding/json"
-	"log"
+
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 )
 
 // StreamEvent is the unit emitted by canvas components to the SSE writer.
@@ -73,8 +72,9 @@ func (e *channelEmitter) Emit(ev StreamEvent) error {
 	case e.ch <- ev:
 		return nil
 	default:
-		log.Printf("canvas stream: dropping event %q for task %q (buffer full)",
-			ev.Event, ev.TaskID)
+		common.Warn("canvas stream: dropping event (buffer full)",
+			zap.String("event", ev.Event),
+			zap.String("task", ev.TaskID))
 		return nil
 	}
 }

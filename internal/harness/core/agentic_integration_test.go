@@ -11,10 +11,14 @@ import (
 // ======================== Tests: Sequential Workflow ========================
 
 func TestWorkflow_SequentialAgent(t *testing.T) {
-	m1 := &mockModel{}; m1.addResp("A1")
-	m2 := &mockModel{}; m2.addResp("A2")
-	a1 := reActAgentSetup(m1, nil); a1.name = "seq_a1"
-	a2 := reActAgentSetup(m2, nil); a2.name = "seq_a2"
+	m1 := &mockModel{}
+	m1.addResp("A1")
+	m2 := &mockModel{}
+	m2.addResp("A2")
+	a1 := reActAgentSetup(m1, nil)
+	a1.name = "seq_a1"
+	a2 := reActAgentSetup(m2, nil)
+	a2.name = "seq_a2"
 
 	ctx := context.Background()
 	wf, err := NewSequential(ctx, &SequentialConfig{
@@ -32,10 +36,14 @@ func TestWorkflow_SequentialAgent(t *testing.T) {
 }
 
 func TestWorkflow_ParallelAgent(t *testing.T) {
-	m1 := &mockModel{}; m1.addResp("P1")
-	m2 := &mockModel{}; m2.addResp("P2")
-	a1 := reActAgentSetup(m1, nil); a1.name = "par_a1"
-	a2 := reActAgentSetup(m2, nil); a2.name = "par_a2"
+	m1 := &mockModel{}
+	m1.addResp("P1")
+	m2 := &mockModel{}
+	m2.addResp("P2")
+	a1 := reActAgentSetup(m1, nil)
+	a1.name = "par_a1"
+	a2 := reActAgentSetup(m2, nil)
+	a2.name = "par_a2"
 
 	ctx := context.Background()
 	wf, err := NewParallel(ctx, &ParallelConfig{
@@ -53,12 +61,17 @@ func TestWorkflow_ParallelAgent(t *testing.T) {
 }
 
 func TestWorkflow_NestedParallel(t *testing.T) {
-	m1 := &mockModel{}; m1.addResp("inner1")
-	m2 := &mockModel{}; m2.addResp("inner2")
-	m3 := &mockModel{}; m3.addResp("outer")
+	m1 := &mockModel{}
+	m1.addResp("inner1")
+	m2 := &mockModel{}
+	m2.addResp("inner2")
+	m3 := &mockModel{}
+	m3.addResp("outer")
 
-	a1 := reActAgentSetup(m1, nil); a1.name = "inner_a"
-	a2 := reActAgentSetup(m2, nil); a2.name = "inner_b"
+	a1 := reActAgentSetup(m1, nil)
+	a1.name = "inner_a"
+	a2 := reActAgentSetup(m2, nil)
+	a2.name = "inner_b"
 
 	innerPar, err := NewParallel(context.Background(), &ParallelConfig{
 		Name: "inner-par", Description: "inner parallel", SubAgents: []Agent{a1, a2},
@@ -67,7 +80,8 @@ func TestWorkflow_NestedParallel(t *testing.T) {
 		t.Fatalf("NewParallel: %v", err)
 	}
 
-	a3 := reActAgentSetup(m3, nil); a3.name = "outer"
+	a3 := reActAgentSetup(m3, nil)
+	a3.name = "outer"
 	wf, err := NewSequential(context.Background(), &SequentialConfig{
 		Name: "nested", Description: "nested parallel", SubAgents: []Agent{innerPar, a3},
 	})
@@ -84,8 +98,10 @@ func TestWorkflow_NestedParallel(t *testing.T) {
 }
 
 func TestWorkflow_LoopAgent(t *testing.T) {
-	m := &mockModel{}; m.addResp("loop body")
-	body := reActAgentSetup(m, nil); body.name = "loop_body"
+	m := &mockModel{}
+	m.addResp("loop body")
+	body := reActAgentSetup(m, nil)
+	body.name = "loop_body"
 
 	ctx := context.Background()
 	wf, err := NewLoop(ctx, &LoopConfig{
@@ -111,7 +127,7 @@ func TestWorkflow_UnsupportedMode(t *testing.T) {
 	}
 	if ev.Err == nil {
 		t.Error("expected error for unsupported mode")
-	} else 	if ev.Err.Error() != "unsupported mode 0" {
+	} else if ev.Err.Error() != "unsupported mode 0" {
 		t.Errorf("expected 'unsupported mode 0', got %v", ev.Err)
 	}
 }
@@ -119,7 +135,8 @@ func TestWorkflow_UnsupportedMode(t *testing.T) {
 // ======================== Tests: Agentic Integration ========================
 
 func TestAgenticIntegration_BasicGenerate(t *testing.T) {
-	model := &mockModel{}; model.addResp("Hello!")
+	model := &mockModel{}
+	model.addResp("Hello!")
 	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model}).WithName("e2e")
 
 	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("Hi")}})
@@ -162,7 +179,8 @@ func TestAgenticIntegration_StreamingOutput(t *testing.T) {
 }
 
 func TestAgenticIntegration_EmptyInput(t *testing.T) {
-	model := &mockModel{}; model.addResp("response")
+	model := &mockModel{}
+	model.addResp("response")
 	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model}).WithName("empty")
 
 	ctx := context.Background()

@@ -34,7 +34,7 @@ class ChatChannelService(CommonService):
             cls.model.id,
             cls.model.name,
             cls.model.channel,
-            cls.model.dialog_id,
+            cls.model.chat_id,
             cls.model.status,
             Dialog.name.alias("dialog_name"),
         ]
@@ -43,7 +43,7 @@ class ChatChannelService(CommonService):
             .join(
                 Dialog,
                 join_type=JOIN.LEFT_OUTER,
-                on=(Dialog.id == cls.model.dialog_id),
+                on=(Dialog.id == cls.model.chat_id),
             )
             .where(cls.model.tenant_id == tenant_id)
             .order_by(cls.model.create_time.desc())
