@@ -90,6 +90,21 @@ def test_call_keeps_zero_and_false_cells():
 
 
 @pytest.mark.p2
+def test_call_keeps_empty_string_cells(monkeypatch):
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["Note"])
+    ws.append([""])
+
+    monkeypatch.setattr(RAGFlowExcelParser, "_load_excel_to_workbook", lambda _file: wb)
+    lines = RAGFlowExcelParser()(b"unused")
+    assert len(lines) == 1
+    assert "Note：" in lines[0]
+
+
+@pytest.mark.p2
 def test_exact_multiple_does_not_emit_header_only_chunk():
     # 12 data rows with chunk_rows=12 (the value rag/app/naive.py uses).
     chunks = RAGFlowExcelParser().html(_make_xlsx(12), chunk_rows=12)
