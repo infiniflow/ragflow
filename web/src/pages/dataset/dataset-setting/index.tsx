@@ -111,6 +111,7 @@ export default function DatasetSettings() {
           additionalProperties: false,
         },
         built_in_metadata: [],
+        compilation_template_ids: [],
         enable_metadata: false,
         llm_id: '',
       },

@@ -23,82 +23,18 @@ import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 
-import { EmptyType } from '@/components/empty/constant';
-import Empty from '@/components/empty/empty';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import {
   useFetchKnowledgeBaseConfiguration,
   useFetchKnowledgeGraph,
 } from '@/hooks/use-knowledge-request';
+import KnowledgeForceGraph from '@/pages/dataset/compilation/knowledge-force-graph';
 import { LucideFileText, SquarePen, Upload } from 'lucide-react';
 
 enum ViewMode {
   Graph = 'graph',
   LlmWiki = 'llm-wiki',
 }
-
-const mockGraphData = {
-  graph: {
-    nodes: [
-      {
-        id: 'iPhone 17',
-        entity_type: 'Product',
-        communities: ['C1'],
-        description: 'Next-generation AI-native smartphone',
-        rank: 10,
-        size: 120,
-      },
-      {
-        id: 'A19 Pro',
-        entity_type: 'Chip',
-        communities: ['C1'],
-        description: '3nm+ mobile processor',
-        rank: 8,
-        size: 80,
-      },
-      {
-        id: 'Core Agent OS',
-        entity_type: 'Software',
-        communities: ['C2'],
-        description: 'Agent-first operating system',
-        rank: 7,
-        size: 80,
-      },
-      {
-        id: 'Photonic Sensor Array',
-        entity_type: 'Hardware',
-        communities: ['C2'],
-        description: 'Next-gen camera sensor',
-        rank: 6,
-        size: 70,
-      },
-      {
-        id: 'Quantum-Ready 6G',
-        entity_type: 'Connectivity',
-        communities: ['C1'],
-        description: 'Future connectivity standard',
-        rank: 5,
-        size: 60,
-      },
-      {
-        id: 'Neural Engine',
-        entity_type: 'Component',
-        communities: ['C2'],
-        description: '15B parameter on-device inference',
-        rank: 6,
-        size: 70,
-      },
-    ],
-    edges: [
-      { source: 'iPhone 17', target: 'A19 Pro', weight: 5 },
-      { source: 'iPhone 17', target: 'Core Agent OS', weight: 4 },
-      { source: 'iPhone 17', target: 'Photonic Sensor Array', weight: 3 },
-      { source: 'iPhone 17', target: 'Quantum-Ready 6G', weight: 2 },
-      { source: 'A19 Pro', target: 'Neural Engine', weight: 4 },
-      { source: 'Core Agent OS', target: 'Neural Engine', weight: 3 },
-    ],
-  },
-};
 
 const mockMarkdown = `# iPhone 17: The AI-Native Evolution
 
@@ -147,11 +83,6 @@ export default function Compilation() {
     setLeftTab(value as LeftPanelTab);
   }, []);
 
-  const graphData =
-    knowledgeGraph?.graph && Object.keys(knowledgeGraph.graph).length > 0
-      ? knowledgeGraph.graph
-      : mockGraphData.graph;
-
   return (
     <section className="min-h-screen w-full flex flex-col p-4 gap-4 bg-bg-base">
       <header className="space-y-5">
@@ -195,21 +126,14 @@ export default function Compilation() {
       </header>
 
       {viewMode === ViewMode.Graph ? (
-        <div className="size-full flex items-center justify-center">
-          <Empty
-            type={EmptyType.Data}
-            text={t('knowledgeDetails.graphPlaceholder')}
-          />
+        <div className="flex-1 min-h-0 flex flex-col">
+          <KnowledgeForceGraph data={knowledgeGraph?.graph} show />
         </div>
       ) : (
         <Card className="flex-1 min-h-0 overflow-hidden flex bg-bg-card border-border-button rounded-xl">
           <ResizablePanelGroup direction="horizontal">
             <ResizablePanel defaultSize={33} minSize={20} maxSize={50}>
-              <WikiLeftPanel
-                tab={leftTab}
-                onTabChange={handleLeftTabChange}
-                graphData={graphData}
-              />
+              <WikiLeftPanel tab={leftTab} onTabChange={handleLeftTabChange} />
             </ResizablePanel>
             <ResizableHandle withHandle />
             <ResizablePanel>

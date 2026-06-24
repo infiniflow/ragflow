@@ -45,6 +45,7 @@ export const CompilationTemplateKeys = {
     [CompilationTemplateApiAction.FetchCompilationTemplate, id] as const,
   builtins: () =>
     [CompilationTemplateApiAction.FetchBuiltinCompilationTemplates] as const,
+  all: () => [CompilationTemplateApiAction.FetchCompilationTemplates] as const,
 };
 
 export const useFetchCompilationTemplatesByPage = () => {
@@ -263,4 +264,23 @@ export const useDeleteCompilationTemplate = () => {
   );
 
   return { data, loading, deleteTemplate };
+};
+
+export const useFetchAllCompilationTemplates = () => {
+  const { data, isFetching: loading } = useQuery<ICompilationTemplate[]>({
+    queryKey: CompilationTemplateKeys.all(),
+    initialData: [],
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await compilationTemplateService.listTemplates(
+        {
+          params: { keywords: '', page: 1, page_size: 100 },
+        },
+        true,
+      );
+      return (data?.data?.templates ?? []) as ICompilationTemplate[];
+    },
+  });
+
+  return { templates: data ?? [], loading };
 };

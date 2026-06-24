@@ -4,7 +4,8 @@ import { cn } from '@/lib/utils';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import ForceGraph from '@/pages/dataset/knowledge-graph/force-graph';
+import { useFetchKnowledgeGraph } from '@/hooks/use-knowledge-request';
+import KnowledgeForceGraph from './knowledge-force-graph';
 
 export enum LeftPanelTab {
   Contents = 'contents',
@@ -33,7 +34,6 @@ const mockContents: ContentsItem[] = [
 type LeftPanelProps = {
   tab: LeftPanelTab;
   onTabChange: (value: string) => void;
-  graphData: any;
 };
 
 function ContentsList() {
@@ -81,8 +81,9 @@ function ContentsList() {
   );
 }
 
-export function WikiLeftPanel({ tab, onTabChange, graphData }: LeftPanelProps) {
+export function WikiLeftPanel({ tab, onTabChange }: LeftPanelProps) {
   const { t } = useTranslation();
+  const { data } = useFetchKnowledgeGraph();
 
   return (
     <aside className="size-full flex flex-col">
@@ -99,7 +100,9 @@ export function WikiLeftPanel({ tab, onTabChange, graphData }: LeftPanelProps) {
 
       <div className="flex-1 min-h-0 relative">
         {tab === LeftPanelTab.Contents && <ContentsList />}
-        {tab === LeftPanelTab.Graph && <ForceGraph data={graphData} show />}
+        {tab === LeftPanelTab.Graph && (
+          <KnowledgeForceGraph data={data?.graph} show />
+        )}
       </div>
     </aside>
   );

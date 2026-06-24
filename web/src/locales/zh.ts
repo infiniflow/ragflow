@@ -799,6 +799,7 @@ export default {
         '在 RAPTOR 中，数据块会根据它们的语义相似性进行聚类。阈值设定了数据块被分到同一组所需的最小相似度。阈值越高，每个聚类中的数据块越少；阈值越低，则每个聚类中的数据块越多。',
       maxClusterTip: '最多可创建的聚类数。',
       entityTypes: '实体类型',
+      compilationTemplate: '编译模板',
       pageRank: '页面排名',
       pageRankTip: `知识库检索时，你可以为特定知识库设置较高的 PageRank 分数，该知识库中匹配文本块的混合相似度得分会自动叠加 PageRank 分数，从而提升排序权重。详见 https://ragflow.io/docs/dev/set_page_rank。`,
       tagName: '标签',
