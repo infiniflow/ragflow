@@ -74,11 +74,11 @@ func ExtractCompositeName(modelName string) (string, string, string, error) {
 	return parts[0], parts[1], parts[2], nil
 }
 
-func EncodeEmail(email string) string {
+func EncodeToBase64(email string) string {
 	return base64.StdEncoding.EncodeToString([]byte(email))
 }
 
-func DecodeEmail(encoded string) (string, error) {
+func DecodeFromBase64(encoded string) (string, error) {
 	decoded, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
 		return "", err

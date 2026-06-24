@@ -892,7 +892,7 @@ func (m *ModelProviderService) ListTenantAddedModels(userID, modelTypeFilter str
 	return added, common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) AlterProviderInstance(providerName, instanceName, newInstanceName, apiKey, userID string) (common.ErrorCode, error) {
+func (m *ModelProviderService) AlterProviderInstance(userID, providerName, instanceName, newInstanceName, apiKey string) (common.ErrorCode, error) {
 	return common.CodeSuccess, nil
 }
 

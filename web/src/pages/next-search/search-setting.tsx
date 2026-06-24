@@ -378,8 +378,8 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                       }}
                     />
                   </FormControl>
-                  <FormLabel tooltip="Display document metadata (e.g., title, page number, upload date) alongside retrieved text chunks">
-                    Show chunk metadata
+                  <FormLabel tooltip={t('chat.showChunkMetadataTip')}>
+                    {t('chat.showChunkMetadata')}
                   </FormLabel>
                 </FormItem>
               )}
@@ -390,15 +390,15 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                 name="search_config.reference_metadata.fields"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel tooltip="Select which metadata fields to display with each chunk">
-                      Metadata fields
+                    <FormLabel tooltip={t('chat.metadataFieldsTip')}>
+                      {t('chat.metadataFields')}
                     </FormLabel>
                     <FormControl className="bg-bg-input">
                       <MultiSelect
                         options={metadataFieldOptions}
                         onValueChange={field.onChange}
                         showSelectAll={false}
-                        placeholder="Please select"
+                        placeholder={t('common.pleaseSelect')}
                         maxCount={20}
                         defaultValue={
                           Array.isArray(field.value) ? field.value : []

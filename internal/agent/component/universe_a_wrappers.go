@@ -32,13 +32,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 
 	einotool "github.com/cloudwego/eino/components/tool"
 
 	agenttool "ragflow/internal/agent/tool"
+	"ragflow/internal/common"
+
+	"go.uber.org/zap"
 )
 
 // tavilySearchComponent delegates to internal/agent/tool/TavilyTool.
@@ -435,7 +437,11 @@ func (c *codeExecComponent) Invoke(ctx context.Context, inputs map[string]any) (
 	if rawArgs, ok := merged["arguments"].(map[string]any); ok {
 		merged["arguments"] = resolveCodeExecArguments(rawArgs, merged)
 	}
-	log.Printf("DEBUG CodeExec wrapper invoke: params=%#v inputs=%#v merged=%#v", c.params, inputs, merged)
+	common.Debug("CodeExec wrapper invoke",
+		zap.Int("params_keys", len(c.params)),
+		zap.Int("inputs_keys", len(inputs)),
+		zap.Int("merged_keys", len(merged)),
+		zap.Bool("has_arguments", merged["arguments"] != nil))
 	argsJSON, _ := json.Marshal(merged)
 	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
 	decoded := parseToolEnvelope(out)
@@ -480,8 +486,11 @@ func applyCodeExecBusinessOutputs(decoded map[string]any, outputs map[string]any
 		return
 	}
 	rawResult := resolveCodeExecBusinessResult(decoded)
-	log.Printf("DEBUG CodeExec wrapper: decoded=%#v resolved_raw_result=%#v content=%#v outputs=%#v",
-		decoded, rawResult, decoded["content"], outputs)
+	common.Debug("CodeExec wrapper",
+		zap.Int("decoded_keys", len(decoded)),
+		zap.Bool("has_raw_result", rawResult != nil),
+		zap.Bool("has_content", decoded["content"] != nil),
+		zap.Int("outputs_keys", len(outputs)))
 	if existingErr, _ := decoded["_ERROR"].(string); strings.TrimSpace(existingErr) != "" {
 		for name := range outputs {
 			if isCodeExecSystemOutput(name) {

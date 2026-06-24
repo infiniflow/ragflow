@@ -19,6 +19,7 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -47,6 +48,15 @@ type fakeDocumentService struct {
 }
 
 func (f *fakeDocumentService) UpdateDatasetDocument(userID, datasetID, documentID string, req *service.UpdateDatasetDocumentRequest, present map[string]bool) (*service.UpdateDatasetDocumentResponse, common.ErrorCode, error) {
+	return nil, common.CodeSuccess, nil
+}
+func (f *fakeDocumentService) BatchUpdateDocumentMetadatas(datasetID string, selector *service.DocumentMetadataSelector, updates []service.DocumentMetadataUpdate, deletes []service.DocumentMetadataDelete) (*service.BatchUpdateDocumentMetadatasResponse, common.ErrorCode, error) {
+	return nil, common.CodeSuccess, nil
+}
+func (f *fakeDocumentService) UploadDocumentInfos(userID string, files []*multipart.FileHeader) ([]map[string]interface{}, common.ErrorCode, error) {
+	return nil, common.CodeSuccess, nil
+}
+func (f *fakeDocumentService) UploadDocumentInfoByURL(userID, rawURL string) (map[string]interface{}, common.ErrorCode, error) {
 	return nil, common.CodeSuccess, nil
 }
 
@@ -110,6 +120,9 @@ func (f *fakeDocumentService) ListDocuments(page, pageSize int) ([]*service.Docu
 }
 func (f *fakeDocumentService) ListDocumentsByDatasetID(kbID string, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
 	return nil, 0, nil
+}
+func (f *fakeDocumentService) BatchUpdateDocumentStatus(userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
+	return map[string]interface{}{}, common.CodeSuccess, nil
 }
 func (f *fakeDocumentService) GetThumbnail(docID string) (*service.ThumbnailResponse, error) {
 	return nil, nil

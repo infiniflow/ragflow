@@ -13,12 +13,12 @@ import (
 // InMemoryStore is an in-memory implementation of BaseStore.
 // It is not thread-safe by default, use NewInMemoryStore() for a thread-safe version.
 type InMemoryStore struct {
-	mu           sync.RWMutex
-	data         map[string]map[string]map[string]interface{}
-	ttl          map[string]time.Time
-	indexes      map[string]map[string][]float64 // namespaceKey -> key -> embedding vector
-	indexConfigs map[string]IndexConfig          // namespaceKey -> index config
-	closed       bool
+	mu            sync.RWMutex
+	data          map[string]map[string]map[string]interface{}
+	ttl           map[string]time.Time
+	indexes       map[string]map[string][]float64 // namespaceKey -> key -> embedding vector
+	indexConfigs  map[string]IndexConfig          // namespaceKey -> index config
+	closed        bool
 	cleanupTicker *time.Ticker
 	stopCleanup   chan struct{}
 }
@@ -336,12 +336,12 @@ func (s *InMemoryStore) PutItem(ctx context.Context, namespace []string, key str
 		s.data[nsKey] = make(map[string]map[string]interface{})
 	}
 	s.data[nsKey][key] = s.copyValue(value)
-	
+
 	if ttl != nil {
 		fullKey := s.fullKey(nsKey, key)
 		s.ttl[fullKey] = time.Now().Add(*ttl)
 	}
-	
+
 	// Handle indexing
 	if index != nil {
 		switch idx := index.(type) {
@@ -473,7 +473,7 @@ func (s *InMemoryStore) ListNamespaces(ctx context.Context, conditions []MatchCo
 			}
 		}
 	}
-	
+
 	// Apply conditions
 	filtered := make([][]string, 0)
 	for _, nsParts := range namespaceSet {
@@ -483,7 +483,7 @@ func (s *InMemoryStore) ListNamespaces(ctx context.Context, conditions []MatchCo
 			}
 		}
 	}
-	
+
 	// Apply maxDepth
 	if maxDepth != nil {
 		filtered2 := make([][]string, 0)
@@ -494,15 +494,15 @@ func (s *InMemoryStore) ListNamespaces(ctx context.Context, conditions []MatchCo
 		}
 		filtered = filtered2
 	}
-	
+
 	// Apply offset and limit
-	if offset > 0 && offset < len(filtered) {
+	if offset > 0 {
 		filtered = filtered[offset:]
 	}
 	if limit > 0 && limit < len(filtered) {
 		filtered = filtered[:limit]
 	}
-	
+
 	return filtered, nil
 }
 
@@ -611,7 +611,7 @@ func (s *InMemoryStore) matchFilter(value map[string]interface{}, filter map[str
 		if !exists {
 			return false
 		}
-		
+
 		// Handle nested operators
 		if condMap, ok := condition.(map[string]interface{}); ok {
 			for op, opValue := range condMap {

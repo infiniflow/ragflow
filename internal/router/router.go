@@ -19,6 +19,7 @@ package router
 import (
 	"github.com/gin-gonic/gin"
 
+	"ragflow/internal/common"
 	"ragflow/internal/handler"
 )
 
@@ -122,7 +123,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 	})
 
 	// Log all HTTP requests.
-	engine.Use(gin.Logger())
+	engine.Use(common.GinLogger())
 
 	// Health check
 	engine.GET("/health", r.systemHandler.Health)
@@ -235,6 +236,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			documents := v1.Group("/documents")
 			{
 				documents.POST("", r.documentHandler.CreateDocument)
+				documents.POST("/upload", r.documentHandler.UploadInfo)
 				documents.GET("", r.documentHandler.ListDocuments)
 				documents.GET("/artifact/:filename", r.documentHandler.GetDocumentArtifact)
 				documents.GET("/:id/preview", r.documentHandler.GetDocumentPreview)
@@ -268,13 +270,17 @@ func (r *Router) Setup(engine *gin.Engine) {
 			datasets := v1.Group("/datasets")
 			{
 				datasets.GET("", r.datasetsHandler.ListDatasets)
+				datasets.GET("/tags/aggregation", r.datasetsHandler.AggregateTags)
 				datasets.GET("/:dataset_id", r.datasetsHandler.GetDataset)
 				datasets.PUT("/:dataset_id", r.datasetsHandler.UpdateDataset)
 				datasets.GET("/:dataset_id/graph", r.datasetsHandler.GetKnowledgeGraph)
 				datasets.DELETE("/:dataset_id/tags", r.datasetsHandler.RemoveTags)
+				datasets.POST("/:dataset_id/documents/batch-update-status", r.documentHandler.BatchUpdateDocumentStatus)
 				datasets.GET("/:dataset_id/index", r.datasetsHandler.TraceIndex)
 				datasets.POST("/:dataset_id/index", r.datasetsHandler.RunIndex)
-				datasets.DELETE("/:dataset_id/graph", r.datasetsHandler.DeleteKnowledgeGraph)
+				datasets.DELETE("/:dataset_id/index", r.datasetsHandler.DeleteIndex)
+				datasets.DELETE("/:dataset_id/:index_type", r.datasetsHandler.DeleteIndex)
+				//datasets.DELETE("/:dataset_id/graph", r.datasetsHandler.DeleteKnowledgeGraph)
 				datasets.POST("", r.datasetsHandler.CreateDataset)
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
 				datasets.POST("/search", r.datasetsHandler.SearchDatasets)
@@ -298,8 +304,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.POST("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.AddChunk)
 
 				// Dataset document chunk
+				datasets.GET("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.ListChunks)
+				datasets.PATCH("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.SwitchChunks)
 				datasets.GET("/:dataset_id/documents/:document_id/chunks/:chunk_id", r.chunkHandler.Get)
 				datasets.POST("/:dataset_id/chunks", r.chunkHandler.Parse)
+				datasets.PATCH("/:dataset_id/documents/:document_id/chunks/:chunk_id", r.chunkHandler.UpdateChunk)
 				datasets.POST("/:dataset_id/documents/parse", r.documentHandler.StartIngestionTask)
 				datasets.GET("/ingestion/tasks", r.documentHandler.ListIngestionTasks)
 				datasets.PUT("/ingestion/tasks", r.documentHandler.StopIngestionTasks)
@@ -308,6 +317,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 				//datasets.POST("/:dataset_id/documents/stop", r.documentHandler.StopParseDocuments)
 				datasets.DELETE("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.RemoveChunks)
 				datasets.PUT("/:dataset_id/documents/:document_id/metadata/config", r.datasetsHandler.UpdateDocumentMetadataConfig)
+				datasets.POST("/:dataset_id/metadata/update", r.documentHandler.MetadataBatchUpdate)
+				datasets.PATCH("/:dataset_id/documents/metadatas", r.documentHandler.UpdateDocumentMetadatas)
 			}
 
 			// Search routes
@@ -433,13 +444,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.GET("/:provider_name/instances/:instance_name", r.providerHandler.ShowProviderInstance)
 				provider.GET("/:provider_name/instances/:instance_name/balance", r.providerHandler.ShowInstanceBalance)
 				provider.GET("/:provider_name/instances/:instance_name/connection", r.providerHandler.CheckInstanceConnection)
-				// Python's /providers/<name>/connection is POST — see
-				// api/apps/restful_apis/provider_api.py:359. The web front-end
-				// posts {api_key, base_url, region, model_info} there
-				// (web/src/services/llm-service.ts:45-48 method: 'post'). The
-				// Go handler body is already POST-shaped (ShouldBindJSON
-				// against CheckConnectionRequest), so the only thing missing
-				// was the routing method.
 				provider.POST("/:provider_name/connection", r.providerHandler.CheckConnection)
 				provider.GET("/:provider_name/instances/:instance_name/tasks", r.providerHandler.ListTasks)
 				provider.GET("/:provider_name/instances/:instance_name/tasks/:task_id", r.providerHandler.ShowTask)

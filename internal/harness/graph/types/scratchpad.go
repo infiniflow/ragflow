@@ -14,12 +14,12 @@ type PregelScratchpad struct {
 	metadata         map[string]interface{}
 	createdAt        time.Time
 	lastAccess       time.Time
-	step             int64               // current step number
-	stop             bool                // stop flag
-	callCounter      int64               // number of calls
-	interruptCounter int64               // number of interrupts
-	resume           bool                // resume flag
-	subgraphCounter  int64               // subgraph invocation count
+	step             int64 // current step number
+	stop             bool  // stop flag
+	callCounter      int64 // number of calls
+	interruptCounter int64 // number of interrupts
+	resume           bool  // resume flag
+	subgraphCounter  int64 // subgraph invocation count
 }
 
 // NewPregelScratchpad creates a new scratchpad.
@@ -434,19 +434,19 @@ func (p *PregelScratchpad) Stats() ScratchpadStats {
 	defer p.mu.RUnlock()
 
 	return ScratchpadStats{
-		DataSize:       len(p.data),
+		DataSize:      len(p.data),
 		CountersCount: len(p.counters),
-		MetadataSize:   len(p.metadata),
-		CreatedAt:      p.createdAt,
-		LastAccess:     p.lastAccess,
+		MetadataSize:  len(p.metadata),
+		CreatedAt:     p.createdAt,
+		LastAccess:    p.lastAccess,
 	}
 }
 
 // ScratchpadStats represents statistics about a scratchpad.
 type ScratchpadStats struct {
-	DataSize       int
-	CountersCount  int
-	MetadataSize   int
-	CreatedAt      time.Time
-	LastAccess     time.Time
+	DataSize      int
+	CountersCount int
+	MetadataSize  int
+	CreatedAt     time.Time
+	LastAccess    time.Time
 }
