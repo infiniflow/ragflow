@@ -137,12 +137,7 @@ func (p *Parser) parseAPIListCommands() (*Command, error) {
 	case TokenAgents:
 		return p.parseListAgents()
 	case TokenChats:
-		p.nextToken()
-		// Semicolon is optional for SHOW TOKEN
-		if p.curToken.Type == TokenSemicolon {
-			p.nextToken()
-		}
-		return NewCommand("list_user_chats"), nil
+		return p.parseListChats()
 	case TokenTokens:
 		return p.parseListTokens()
 	case TokenModel:
@@ -227,6 +222,17 @@ func (p *Parser) parseListAgents() (*Command, error) {
 	}
 
 	return NewCommand("api_list_agents"), nil
+}
+
+func (p *Parser) parseListChats() (*Command, error) {
+	p.nextToken() // consume CHATS
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return NewCommand("api_list_chats"), nil
 }
 
 func (p *Parser) parseGetMetadata() (*Command, error) {

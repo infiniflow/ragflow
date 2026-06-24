@@ -54,6 +54,7 @@ type ChatWithKBNames struct {
 
 // ListChatsResponse list chats response
 type ListChatsResponse struct {
+	Total int64              `json:"total"`
 	Chats []*ChatWithKBNames `json:"chats"`
 }
 
@@ -107,6 +108,7 @@ func (s *ChatService) ListChats(userID, status, keywords string, page, pageSize 
 	}
 
 	return &ListChatsResponse{
+		Total: total,
 		Chats: chatsWithKBNames,
 	}, nil
 }
