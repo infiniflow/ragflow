@@ -100,8 +100,7 @@ def test_call_keeps_empty_string_cells(monkeypatch):
 
     monkeypatch.setattr(RAGFlowExcelParser, "_load_excel_to_workbook", lambda _file: wb)
     lines = RAGFlowExcelParser()(b"unused")
-    assert len(lines) == 1
-    assert "Note：" in lines[0]
+    assert lines == ["Note："]
 
 
 @pytest.mark.p2
