@@ -329,6 +329,8 @@ func (p *Parser) parseAPIListProviderCommands() (*Command, error) {
 	switch p.curToken.Type {
 	case TokenInstances:
 		return p.parseListProviderInstances(providerName)
+	case TokenInstance:
+		return p.parseListProviderInstanceModels(providerName)
 	default:
 		return nil, fmt.Errorf("unknown LIST target: %s", p.curToken.Value)
 	}
@@ -344,6 +346,31 @@ func (p *Parser) parseListProviderInstances(providerName string) (*Command, erro
 	}
 	cmd := NewCommand("api_list_provider_instances")
 	cmd.Params["provider_name"] = providerName
+	return cmd, nil
+}
+
+// LIST PROVIDER 'provider_name' INSTANCE 'instance_name' MODELS
+func (p *Parser) parseListProviderInstanceModels(providerName string) (*Command, error) {
+	p.nextToken() // consume INSTANCE
+
+	instanceName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenModels {
+		return nil, fmt.Errorf("expected MODELS")
+	}
+	p.nextToken()
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	cmd := NewCommand("api_list_provider_instance_models")
+	cmd.Params["provider_name"] = providerName
+	cmd.Params["instance_name"] = instanceName
 	return cmd, nil
 }
 

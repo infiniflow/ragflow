@@ -340,7 +340,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.CommonListModelsCommand(cmd)
 	case "list_supported_models":
 		return c.ListSupportedModels(cmd)
-	case "list_instance_models":
+	case "api_list_provider_instance_models":
 		return c.CommonListInstanceModels(cmd)
 	case "show_provider_model":
 		return c.CommonShowProviderModelCommand(cmd)
