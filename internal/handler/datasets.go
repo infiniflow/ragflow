@@ -479,6 +479,77 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 	jsonResponse(c, common.CodeSuccess, result, "success")
 }
 
+// ListTags handles GET /api/v1/datasets/:dataset_id/tags.
+// @Summary List dataset tags
+// @Description List tags for a dataset
+// @Tags datasets
+// @Produce json
+// @Security ApiKeyAuth
+// @Param dataset_id path string true "Dataset ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/datasets/{dataset_id}/tags [get]
+func (h *DatasetsHandler) ListTags(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := strings.TrimSpace(c.Param("dataset_id"))
+	result, code, err := h.datasetsService.ListTags(datasetID, user.ID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, result, "success")
+}
+
+type renameTagRequest struct {
+	FromTag string `json:"from_tag"`
+	ToTag   string `json:"to_tag"`
+}
+
+func (h *DatasetsHandler) RenameTag(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+	datasetID := strings.TrimSpace(c.Param("dataset_id"))
+
+	var payload map[string]interface{}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		jsonError(c, common.CodeDataError, "Lack of from_tag or to_tag in request body")
+		return
+	}
+	fromTagValue, hasFrom := payload["from_tag"]
+	toTagValue, hasTo := payload["to_tag"]
+	if !hasFrom || !hasTo {
+		jsonError(c, common.CodeDataError, "Lack of from_tag or to_tag in request body")
+		return
+	}
+	fromTag, okFrom := fromTagValue.(string)
+	toTag, okTo := toTagValue.(string)
+	if !okFrom || !okTo {
+		jsonError(c, common.CodeArgumentError, "from_tag and to_tag must be strings")
+		return
+	}
+	req := renameTagRequest{FromTag: fromTag, ToTag: toTag}
+	if strings.TrimSpace(req.FromTag) == "" || strings.TrimSpace(req.ToTag) == "" {
+		jsonError(c, common.CodeArgumentError, "from_tag and to_tag must not be empty")
+		return
+	}
+
+	result, code, err := h.datasetsService.RenameTag(datasetID, user.ID, req.FromTag, req.ToTag)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, result, "success")
+}
+
 // DeleteKnowledgeGraph handles DELETE /api/v1/datasets/:dataset_id/graph.
 func (h *DatasetsHandler) DeleteKnowledgeGraph(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
