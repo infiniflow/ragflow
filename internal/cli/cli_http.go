@@ -299,8 +299,8 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.SetLogLevel(cmd)
 	case "benchmark":
 		return c.RunBenchmark(cmd)
-	case "list_datasets":
-		return c.ListDatasets(cmd)
+	case "api_list_datasets":
+		return c.APIListDatasetsCommand(cmd)
 	case "api_list_dataset_documents":
 		return c.APIListDatasetDocumentsCommand(cmd)
 	case "list_dataset_documents":

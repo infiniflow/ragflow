@@ -135,7 +135,7 @@ func (p *Parser) parseListCommand() (*Command, error) {
 		}
 		return NewCommand("api_list_configs"), nil
 	case TokenDatasets:
-		return p.parseListDatasets()
+		return p.parseAPIListDatasets()
 	case TokenDataset:
 		return p.parseAPIListDatasetDocuments()
 	case TokenAgents:
@@ -176,8 +176,8 @@ func (p *Parser) parseListCommand() (*Command, error) {
 	}
 }
 
-func (p *Parser) parseListDatasets() (*Command, error) {
-	cmd := NewCommand("list_datasets")
+func (p *Parser) parseAPIListDatasets() (*Command, error) {
+	cmd := NewCommand("api_list_datasets")
 	p.nextToken() // consume DATASETS
 
 	// Semicolon is optional for UNSET TOKEN
