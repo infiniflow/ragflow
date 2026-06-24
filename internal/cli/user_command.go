@@ -431,6 +431,51 @@ func (c *CLI) APIListDatasetDocumentsCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+// APIListAgentsCommand lists agents
+func (c *CLI) APIListAgentsCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+
+	// Determine auth kind based on whether API token is being used
+	if httpClient.LoginToken == nil && !c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIToken {
+		return nil, fmt.Errorf("no authorization")
+	}
+
+	authKind := "web"
+	if httpClient.useAPIToken {
+		authKind = "api"
+	}
+
+	if httpClient.LoginToken != nil {
+		authKind = "web"
+	}
+
+	// Normal mode
+	resp, err := httpClient.Request("GET", "/agents", authKind, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list agents: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list agents: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result ListAgentsResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list agents failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+
+	return &result, nil
+}
+
 // ListDatasetDocumentUserCommand lists dataset documents
 func (c *CLI) ListDatasetDocumentUserCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {

@@ -303,6 +303,8 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.APIListDatasetsCommand(cmd)
 	case "api_list_dataset_documents":
 		return c.APIListDatasetDocumentsCommand(cmd)
+	case "api_list_agents":
+		return c.APIListAgentsCommand(cmd)
 	case "list_dataset_documents":
 		return c.ListDatasetDocumentUserCommand(cmd)
 	case "search_on_datasets":

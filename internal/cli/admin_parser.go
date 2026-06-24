@@ -1837,35 +1837,6 @@ func (p *Parser) parseAdminBenchmarkCommand() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseAdminUserStatement() (*Command, error) {
-	switch p.curToken.Type {
-	case TokenPing:
-		return p.parseAdminPingServer()
-	case TokenShow:
-		return p.parseShowCommand()
-	case TokenCreate:
-		return p.parseCreateCommand()
-	case TokenDrop:
-		return p.parseDropCommand()
-	case TokenSet:
-		return p.parseSetCommand()
-	case TokenUnset:
-		return p.parseUnsetCommand()
-	case TokenReset:
-		return p.parseResetCommand()
-	case TokenList:
-		return p.parseListCommand()
-	case TokenParse:
-		return p.parseParseCommand()
-	case TokenImport:
-		return p.parseImportCommand()
-	case TokenRetrieve:
-		return p.parseRetrieveCommand()
-	default:
-		return nil, fmt.Errorf("invalid user statement: %s", p.curToken.Value)
-	}
-}
-
 func (p *Parser) parseAdminStartService() (*Command, error) {
 	p.nextToken() // consume START
 

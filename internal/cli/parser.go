@@ -149,7 +149,7 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 	case TokenPing:
 		return p.parseAPIPingServer()
 	case TokenList:
-		return p.parseListCommand()
+		return p.parseAPIListCommands()
 	case TokenShow:
 		return p.parseShowCommand()
 	case TokenCreate:
