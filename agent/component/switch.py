@@ -97,6 +97,8 @@ class Switch(ComponentBase, ABC):
         self.set_output("_next", self._param.end_cpn_ids)
 
     def process_operator(self, input: Any, operator: str, value: Any) -> bool:
+        if operator in ("contains", "not contains", "start with", "end with") and input is None:
+            input = ""
         if operator == "contains":
             return True if value.lower() in input.lower() else False
         elif operator == "not contains":
