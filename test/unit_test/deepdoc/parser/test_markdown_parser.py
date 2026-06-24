@@ -153,6 +153,7 @@ class TestMarkdownElementExtractorTables:
             "After",
         ]
 
+    @pytest.mark.p2
     def test_custom_delimiter_preserves_gfm_short_separator_table(self, markdown_element_extractor):
         text = "Before\n| Name | Value |\n| :-- | --: |\n| A | 1 |\nAfter"
 
