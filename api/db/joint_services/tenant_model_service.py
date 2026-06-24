@@ -33,6 +33,8 @@ def _factory_model_types(llm: dict) -> list[str]:
     if isinstance(model_type, list):
         return model_type
     return [model_type] if model_type else []
+
+
 def _decode_api_key_config(raw_api_key: str) -> tuple[str, bool | None, str | None]:
     if not raw_api_key:
         return raw_api_key, None, None

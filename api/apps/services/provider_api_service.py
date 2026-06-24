@@ -17,10 +17,11 @@ import os
 import json
 import logging
 import asyncio
+from json.decoder import JSONDecodeError
 
 from common.constants import LLMType, ActiveStatusEnum
 from common.settings import FACTORY_LLM_INFOS
-from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, delete_models_by_instance_ids, delete_instances_by_provider_ids
+from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, delete_models_by_instance_ids, delete_instances_by_provider_ids, _decode_api_key_config
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
 from api.db.services.tenant_model_service import TenantModelService
@@ -601,11 +602,15 @@ def show_provider_instance(tenant_id: str, provider_name: str, instance_name: st
         return False, f"No instance found for provider '{provider_name}' and instance '{instance_name}'"
 
     extra_fields = json.loads(instance_obj.extra) if instance_obj.extra else {}
+    api_key, _, _ = _decode_api_key_config(instance_obj.api_key)
+
     return True, {
         "id": instance_obj.id,
         "instance_name": instance_obj.instance_name,
         "provider_id": provider_id,
         "region": extra_fields.get("region", ""),
+        "base_url": extra_fields.get("base_url", ""),
+        "api_key": api_key,
         "status": instance_obj.status
     }
 
