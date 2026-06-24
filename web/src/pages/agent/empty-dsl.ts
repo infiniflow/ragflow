@@ -1,14 +1,6 @@
-const FILE_ID = 'File';
+import { FileId, initialParserValues } from '@/pages/agent/constant/pipeline';
+
 const FILE_OPERATOR = 'File';
-const INITIAL_PARSER_VALUES = {
-  outputs: {
-    markdown: { type: 'string', value: '' },
-    text: { type: 'string', value: '' },
-    html: { type: 'string', value: '' },
-    json: { type: 'Array<object>', value: [] },
-  },
-  setups: [],
-};
 
 // Dataflow seed DSL. Kept separate from UI hooks so pure DSL helpers
 // can import it without pulling React modules into tests/runtime.
@@ -16,7 +8,7 @@ export const DataflowEmptyDsl = {
   graph: {
     nodes: [
       {
-        id: FILE_ID,
+        id: FileId,
         type: 'beginNode',
         position: {
           x: 50,
@@ -31,7 +23,7 @@ export const DataflowEmptyDsl = {
       },
       {
         data: {
-          form: INITIAL_PARSER_VALUES,
+          form: initialParserValues,
           label: 'Parser',
           name: 'Parser_0',
         },
@@ -54,7 +46,7 @@ export const DataflowEmptyDsl = {
     edges: [
       {
         id: 'xy-edge__Filestart-Parser:HipSignsRhymeend',
-        source: FILE_ID,
+        source: FileId,
         sourceHandle: 'start',
         target: 'Parser:HipSignsRhyme',
         targetHandle: 'end',
