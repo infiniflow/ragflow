@@ -23,6 +23,7 @@ from test_common import (
     document_infos,
     document_metadata_summary,
     document_metadata_update,
+    document_thumbnail,
     document_update_metadata_setting,
     bulk_upload_documents,
     delete_document,
@@ -53,6 +54,15 @@ class TestAuthorization:
         res = document_infos(invalid_auth, "kb_id", {"doc_ids": ["doc_id"]})
         assert res["code"] == expected_code, res
         assert expected_fragment in res["message"], res
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize("invalid_auth, expected_code, expected_fragment", INVALID_AUTH_CASES)
+    def test_thumbnail_auth_invalid(self, invalid_auth, expected_code, expected_fragment, add_document_func):
+        """E2E: anonymous and bad-token requests to the thumbnail endpoint must be rejected."""
+        _, doc_id = add_document_func
+        res = document_thumbnail(invalid_auth, doc_id)
+        assert res.status_code == expected_code, res.text
+        assert expected_fragment in res.text, res.text
 
     ## The inputs has been changed to add 'doc_ids'
     ## TODO: 
@@ -450,8 +460,9 @@ class TestDocumentMetadataUnit:
         assert res["code"] == 500
         assert "download boom" in res["message"]
 
-    @pytest.mark.p2
-    def test_get_document_image_content_type_from_object_extension_unit(self, document_app_module, monkeypatch):
+
+    def test_get_document_image_authz_and_validation_unit(self, document_app_module, monkeypatch):
+        """Covers the auth/validation gates added for issue #14763."""
         module = document_app_module
 
         class _Headers(dict):
@@ -463,100 +474,35 @@ class TestDocumentMetadataUnit:
                 self.data = data
                 self.headers = _Headers()
 
-        png_bytes = (
-            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
-            b"\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
-            b"\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01"
-            b"\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
-        )
-
-        async def fake_thread_pool_exec(*_args, **_kwargs):
-            return png_bytes
-
-        async def fake_make_response(data):
-            return _ImageResponse(data)
-
-        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
-        monkeypatch.setattr(module, "make_response", fake_make_response)
-        res = _run(module.get_document_image("kb1-object.png"))
-        assert isinstance(res, _ImageResponse)
-        assert res.headers["Content-Type"] == "image/png"
-
-    @pytest.mark.p2
-    def test_get_document_image_content_type_from_magic_bytes_unit(self, document_app_module, monkeypatch):
-        module = document_app_module
-
-        class _Headers(dict):
-            def set(self, key, value):
-                self[key] = value
-
-        class _ImageResponse:
-            def __init__(self, data):
-                self.data = data
-                self.headers = _Headers()
-
-        png_bytes = (
-            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
-            b"\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
-            b"\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01"
-            b"\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
-        )
-
-        async def fake_thread_pool_exec(*_args, **_kwargs):
-            return png_bytes
-
-        async def fake_make_response(data):
-            return _ImageResponse(data)
-
-        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
-        monkeypatch.setattr(module, "make_response", fake_make_response)
-        res = _run(module.get_document_image("kb1-a1b2c3d4e5f6"))
-        assert isinstance(res, _ImageResponse)
-        assert res.headers["Content-Type"] == "image/png"
-
-    @pytest.mark.p2
-    def test_get_document_image_missing_blob_unit(self, document_app_module, monkeypatch):
-        module = document_app_module
-
-        async def fake_thread_pool_exec(*_args, **_kwargs):
-            return None
-
-        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
-        res = _run(module.get_document_image("kb1-object-key"))
-        assert res["code"] == RetCode.DATA_ERROR
-        assert res["message"] == "Image not found."
-
-    @pytest.mark.p2
-    def test_get_preview_missing_blob_unit(self, document_app_module, monkeypatch):
-        module = document_app_module
-
-        async def fake_thread_pool_exec(*_args, **_kwargs):
-            return None
-
-        monkeypatch.setattr(module.DocumentService, "accessible", lambda _doc_id, _user_id: True)
+        # Malformed image_id (no hyphen split) -> "Image not found." before any
+        # storage call.
+        accessible_calls = []
         monkeypatch.setattr(
-            module.DocumentService,
-            "get_by_id",
-            lambda _doc_id: (True, SimpleNamespace(name="report.pdf", type=module.FileType.OTHER.value)),
+            module.KnowledgebaseService,
+            "accessible",
+            lambda kb_id, user_id: accessible_calls.append((kb_id, user_id)) or True,
         )
-        monkeypatch.setattr(module.File2DocumentService, "get_storage_address", lambda **_kwargs: ("bucket", "name"))
-        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
-        res = _run(module.get("doc1"))
+        res = _run(module.get_document_image("nohyphen"))
         assert res["code"] == RetCode.DATA_ERROR
-        assert res["message"] == "This file is empty."
+        assert "Image not found." in res["message"]
 
-    @pytest.mark.skip(reason="Moved to /api/v1/documents/images/<image_id>")
-    def test_get_image_success_and_exception_unit(self, document_app_module, monkeypatch):
-        module = document_app_module
+        # Confused-deputy attempt: a thumbnail filename or raw doc filename in
+        # the key half MUST be rejected before any access or storage call so
+        # the endpoint can't be coerced into serving arbitrary objects.
+        for bad_key in ("thumbnail_abc.png", "report.pdf", "AAAAAAAAAAAAAAAA", "deadbeefcafebabe1"):
+            res = _run(module.get_document_image(f"kb1-{bad_key}"))
+            assert res["code"] == RetCode.DATA_ERROR
+            assert "Image not found." in res["message"]
+        assert accessible_calls == [], "key validation must run before access check"
 
-        class _Headers(dict):
-            def set(self, key, value):
-                self[key] = value
+        # Cross-tenant denial on a well-formed chunk image_id.
+        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda kb_id, user_id: False)
+        res = _run(module.get_document_image("kb1-deadbeefcafebabe"))
+        assert res["code"] == RetCode.DATA_ERROR
+        assert "No authorization." in res["message"]
 
-        class _ImageResponse:
-            def __init__(self, data):
-                self.data = data
-                self.headers = _Headers()
+        # Authorized happy path.
+        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda kb_id, user_id: True)
 
         async def fake_thread_pool_exec(*_args, **_kwargs):
             return b"image-bytes"
@@ -567,7 +513,7 @@ class TestDocumentMetadataUnit:
         monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
         monkeypatch.setattr(module, "make_response", fake_make_response)
         monkeypatch.setattr(module.settings, "STORAGE_IMPL", SimpleNamespace(get=lambda *_args, **_kwargs: b"image-bytes"))
-        res = _run(module.get_image("bucket-name"))
+        res = _run(module.get_document_image("kb1-deadbeefcafebabe"))
         assert isinstance(res, _ImageResponse)
         assert res.data == b"image-bytes"
         assert res.headers["Content-Type"] == "image/JPEG"
@@ -577,12 +523,11 @@ class TestDocumentMetadataUnit:
 
         monkeypatch.setattr(module, "thread_pool_exec", raise_error)
         monkeypatch.setattr(module, "server_error_response", lambda e: {"code": 500, "message": str(e)})
-        res = _run(module.get_image("bucket-name"))
+        res = _run(module.get_document_image("kb1-deadbeefcafebabe"))
         assert res["code"] == 500
         assert "image boom" in res["message"]
 
-    def test_get_document_image_hyphenated_object_key(self, document_app_module, monkeypatch):
-        """Hyphenated thumbnail keys are parsed with split('-', 1) and return correct MIME type."""
+    def test_get_document_thumbnail_authz_and_success_unit(self, document_app_module, monkeypatch):
         module = document_app_module
 
         class _Headers(dict):
@@ -594,35 +539,134 @@ class TestDocumentMetadataUnit:
                 self.data = data
                 self.headers = _Headers()
 
-        storage_calls = []
+        # Cross-tenant access denied -> "No authorization." before any storage
+        # lookup. Stub get_by_id to a valid document so this test only passes
+        # via the accessible() early return.
+        accessible_calls = []
 
-        def _storage_get(bkt, nm):
-            storage_calls.append((bkt, nm))
-            return b"png-bytes"
+        def fake_accessible_denied(doc_id, user_id):
+            accessible_calls.append((doc_id, user_id))
+            return False
 
-        async def fake_thread_pool_exec(fn, *args, **kwargs):
-            return fn(*args, **kwargs)
+        monkeypatch.setattr(module.DocumentService, "accessible", fake_accessible_denied)
+        monkeypatch.setattr(
+            module.DocumentService,
+            "get_by_id",
+            lambda _doc_id: (True, SimpleNamespace(id="doc1", kb_id="kb1")),
+        )
+        res = _run(module.get_document_thumbnail("doc1"))
+        assert res["code"] == RetCode.DATA_ERROR
+        assert "No authorization." in res["message"]
+        assert accessible_calls == [("doc1", "user-1")]
+
+        # Authorized but document missing.
+        monkeypatch.setattr(module.DocumentService, "accessible", lambda _doc_id, _user_id: True)
+        monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _doc_id: (False, None))
+        res = _run(module.get_document_thumbnail("doc1"))
+        assert res["code"] == RetCode.DATA_ERROR
+        assert "Document not found." in res["message"]
+
+        # Authorized and document exists, but storage returns no thumbnail.
+        monkeypatch.setattr(
+            module.DocumentService,
+            "get_by_id",
+            lambda _doc_id: (True, SimpleNamespace(id="doc1", kb_id="kb1")),
+        )
+
+        async def fake_thread_pool_exec_empty(*_args, **_kwargs):
+            return b""
 
         async def fake_make_response(data):
             return _ImageResponse(data)
 
-        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
+        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec_empty)
         monkeypatch.setattr(module, "make_response", fake_make_response)
+        monkeypatch.setattr(module.settings, "STORAGE_IMPL", SimpleNamespace(get=lambda *_args, **_kwargs: b""))
+        res = _run(module.get_document_thumbnail("doc1"))
+        assert res["code"] == RetCode.DATA_ERROR
+        assert "Thumbnail not found." in res["message"]
+
+        # Happy path: storage returns thumbnail bytes; storage key is derived
+        # from doc.id (not user input), and Content-Type is image/png.
+        storage_calls = []
+
+        def capture_storage_get(bucket, key, *_args, **_kwargs):
+            storage_calls.append((bucket, key))
+            return b"thumb-bytes"
+
+        async def fake_thread_pool_exec_ok(func, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec_ok)
+        monkeypatch.setattr(module.settings, "STORAGE_IMPL", SimpleNamespace(get=capture_storage_get))
+        res = _run(module.get_document_thumbnail("doc1"))
+        assert isinstance(res, _ImageResponse)
+        assert res.data == b"thumb-bytes"
+        assert res.headers["Content-Type"] == "image/png"
+        assert storage_calls == [("kb1", "thumbnail_doc1.png")]
+
+        # Exception path.
+        async def raise_error(*_args, **_kwargs):
+            raise RuntimeError("thumb boom")
+
+        monkeypatch.setattr(module, "thread_pool_exec", raise_error)
+        monkeypatch.setattr(module, "server_error_response", lambda e: {"code": 500, "message": str(e)})
+        res = _run(module.get_document_thumbnail("doc1"))
+        assert res["code"] == 500
+        assert "thumb boom" in res["message"]
+
+    def test_list_thumbnails_filters_inaccessible_docs_unit(self, document_app_module, monkeypatch):
+        """`/thumbnails` must only return entries for docs the caller can access."""
+        module = document_app_module
+
+        monkeypatch.setattr(module, "request", _DummyRequest(args={"doc_ids": ["doc-ok", "doc-deny"]}))
+
+        accessible_calls = []
+
+        def fake_accessible(doc_id, user_id):
+            accessible_calls.append((doc_id, user_id))
+            return doc_id == "doc-ok"
+
+        monkeypatch.setattr(module.DocumentService, "accessible", fake_accessible)
+
+        thumbnail_calls = []
+
+        def fake_get_thumbnails(doc_ids):
+            thumbnail_calls.append(list(doc_ids))
+            return [{"id": "doc-ok", "kb_id": "kb1", "thumbnail": "thumbnail_doc-ok.png"}]
+
+        monkeypatch.setattr(module.DocumentService, "get_thumbnails", fake_get_thumbnails)
+
+        res = module.list_thumbnails()
+        assert res["code"] == 0
+        assert res["data"] == {"doc-ok": "/api/v1/documents/doc-ok/thumbnail"}
+        assert thumbnail_calls == [["doc-ok"]], "denied doc must not be passed to get_thumbnails"
+        assert ("doc-deny", "user-1") in accessible_calls
+
+        # All denied -> empty map, no storage lookup at all.
+        thumbnail_calls.clear()
+        monkeypatch.setattr(module.DocumentService, "accessible", lambda *_a, **_kw: False)
+        res = module.list_thumbnails()
+        assert res["code"] == 0
+        assert res["data"] == {}
+        assert thumbnail_calls == []
+
+    def test_list_thumbnails_missing_doc_ids_unit(self, document_app_module, monkeypatch):
+        """`/thumbnails` must reject empty input before any access check."""
+        module = document_app_module
+        monkeypatch.setattr(module, "request", _DummyRequest(args={}))
+
+        accessible_calls = []
         monkeypatch.setattr(
-            module.settings,
-            "STORAGE_IMPL",
-            SimpleNamespace(get=_storage_get),
+            module.DocumentService,
+            "accessible",
+            lambda doc_id, user_id: accessible_calls.append((doc_id, user_id)) or True,
         )
 
-        image_id = "kb12345678901234567890123456789012-page-1.png"
-        res = _run(module.get_document_image(image_id))
-        assert isinstance(res, _ImageResponse)
-        assert storage_calls == [("kb12345678901234567890123456789012", "page-1.png")]
-        assert res.headers["Content-Type"] == "image/png"
-
-        res = _run(module.get_document_image("only-one-part"))
-        assert res["code"] == RetCode.DATA_ERROR
-        assert "Image not found" in res["message"]
+        res = module.list_thumbnails()
+        assert res["code"] == RetCode.ARGUMENT_ERROR
+        assert 'Lack of "Document ID"' in res["message"]
+        assert accessible_calls == [], "no access checks should run when input is invalid"
 
 
 class TestDocumentBatchChangeStatus:
