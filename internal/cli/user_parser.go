@@ -127,31 +127,17 @@ func (p *Parser) parseListCommand() (*Command, error) {
 	p.nextToken() // consume LIST
 
 	switch p.curToken.Type {
-	case TokenVars:
-		p.nextToken()
-		// Semicolon is optional for SHOW TOKEN
-		if p.curToken.Type == TokenSemicolon {
-			p.nextToken()
-		}
-		return NewCommand("list_variables"), nil
 	case TokenConfigs:
 		p.nextToken()
 		// Semicolon is optional for SHOW TOKEN
 		if p.curToken.Type == TokenSemicolon {
 			p.nextToken()
 		}
-		return NewCommand("list_configs"), nil
-	case TokenEnvs:
-		p.nextToken()
-		// Semicolon is optional for SHOW TOKEN
-		if p.curToken.Type == TokenSemicolon {
-			p.nextToken()
-		}
-		return NewCommand("list_environments"), nil
+		return NewCommand("api_list_configs"), nil
 	case TokenDatasets:
 		return p.parseListDatasets()
-	case TokenDocuments:
-		return p.parseListDatasetDocuments()
+	case TokenDataset:
+		return p.parseAPIListDatasetDocuments()
 	case TokenAgents:
 		return p.parseListAgents()
 	case TokenTokens:
@@ -201,13 +187,9 @@ func (p *Parser) parseListDatasets() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseListDatasetDocuments() (*Command, error) {
-	p.nextToken() // consume DOCUMENTS
-
-	if p.curToken.Type != TokenFrom {
-		return nil, fmt.Errorf("expected FROM")
-	}
-	p.nextToken()
+// LIST DATASET 'dataset_name' DOCUMENTS;
+func (p *Parser) parseAPIListDatasetDocuments() (*Command, error) {
+	p.nextToken() // consume DATASET
 
 	datasetID, err := p.parseQuotedString()
 	if err != nil {
@@ -215,14 +197,17 @@ func (p *Parser) parseListDatasetDocuments() (*Command, error) {
 	}
 	p.nextToken()
 
-	cmd := NewCommand("list_dataset_documents")
+	if p.curToken.Type != TokenDocuments {
+		return nil, fmt.Errorf("expected DOCUMENTS")
+	}
+
+	cmd := NewCommand("api_list_dataset_documents")
 	cmd.Params["dataset_id"] = datasetID
 
 	// Semicolon is optional for UNSET TOKEN
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
-
 	return cmd, nil
 }
 

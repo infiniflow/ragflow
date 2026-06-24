@@ -293,7 +293,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "api_ping_server":
 		return c.PingByCommand(cmd)
 	// Configuration commands
-	case "list_configs":
+	case "api_list_configs":
 		return c.ListConfigs(cmd)
 	case "set_log_level":
 		return c.SetLogLevel(cmd)
@@ -301,6 +301,8 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.RunBenchmark(cmd)
 	case "list_datasets":
 		return c.ListDatasets(cmd)
+	case "api_list_dataset_documents":
+		return c.APIListDatasetDocumentsCommand(cmd)
 	case "list_dataset_documents":
 		return c.ListDatasetDocumentUserCommand(cmd)
 	case "search_on_datasets":
