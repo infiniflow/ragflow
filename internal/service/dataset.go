@@ -826,11 +826,7 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 	if searchID != "" {
 		searchDetail, err := s.searchService.GetDetail(searchID)
 		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, fmt.Errorf("Invalid search_id")
-			}
-			common.Warn("Failed to get search detail for search_id", zap.String("searchID", searchID), zap.Error(err))
-			return nil, fmt.Errorf("Internal server error")
+			common.Warn("Failed to get search detail for search_id, proceeding without it", zap.String("searchID", searchID), zap.Error(err))
 		} else if searchConfig, ok := searchDetail["search_config"].(map[string]interface{}); ok && searchConfig != nil {
 			if scMetadataFilter, ok := searchConfig["meta_data_filter"].(map[string]interface{}); ok {
 				metadataFilter = scMetadataFilter

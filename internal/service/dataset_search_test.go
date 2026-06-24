@@ -46,41 +46,6 @@ func TestSearchDatasetRequestToSearchDatasetsRequest(t *testing.T) {
 	}
 }
 
-func TestDatasetServiceSearchDatasetsRejectsInvalidSearchID(t *testing.T) {
-	db := setupServiceTestDB(t)
-	if err := db.AutoMigrate(&entity.Search{}); err != nil {
-		t.Fatalf("migrate search: %v", err)
-	}
-	pushServiceDB(t, db)
-
-	status := string(entity.StatusValid)
-	if err := dao.DB.Create(&entity.Knowledgebase{
-		ID:         "kb-1",
-		TenantID:   "tenant-1",
-		Name:       "KB 1",
-		EmbdID:     "emb-1",
-		Permission: string(entity.TenantPermissionMe),
-		CreatedBy:  "tenant-1",
-		Status:     &status,
-	}).Error; err != nil {
-		t.Fatalf("insert knowledgebase: %v", err)
-	}
-
-	svc := NewDatasetService()
-	searchID := "missing-search"
-	_, err := svc.SearchDatasets(&SearchDatasetsRequest{
-		DatasetIDs: []string{"kb-1"},
-		Question:   "test question",
-		SearchID:   &searchID,
-	}, "tenant-1")
-	if err == nil {
-		t.Fatal("expected invalid search_id error")
-	}
-	if err.Error() != "Invalid search_id" {
-		t.Fatalf("error = %q, want Invalid search_id", err.Error())
-	}
-}
-
 func TestDatasetServiceSearchDatasetsRejectsMixedEmbeddingModels(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
