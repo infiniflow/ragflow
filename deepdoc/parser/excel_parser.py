@@ -283,7 +283,10 @@ class RAGFlowExcelParser:
             for r in list(rows[1:]):
                 fields = []
                 for i, c in enumerate(r):
-                    if not c.value:
+                    # Skip only genuinely empty cells. A falsy check would also
+                    # drop real values like 0, 0.0 and False (mirrors the None
+                    # guard used by html() above).
+                    if c.value is None or str(c.value).strip() == "":
                         continue
                     t = str(ti[i].value) if i < len(ti) else ""
                     t += ("：" if t else "") + str(c.value)
