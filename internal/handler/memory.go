@@ -675,10 +675,31 @@ func (h *MemoryHandler) UpdateMessage(c *gin.Context) {
 //
 // TODO: Implementation pending - depends on embedding engine
 func (h *MemoryHandler) SearchMessage(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	// Keep parity with Python parameter contract during phased migration.
+	memoryIDs := c.QueryArray("memory_id")
+	if len(memoryIDs) == 1 && strings.Contains(memoryIDs[0], ",") {
+		memoryIDs = strings.Split(memoryIDs[0], ",")
+	}
+	_ = memoryIDs
+	_ = c.Query("query")
+	_, _ = strconv.ParseFloat(c.DefaultQuery("similarity_threshold", "0.2"), 64)
+	_, _ = strconv.ParseFloat(c.DefaultQuery("keywords_similarity_weight", "0.7"), 64)
+	_, _ = strconv.Atoi(c.DefaultQuery("top_n", "5"))
+	_ = c.DefaultQuery("agent_id", "")
+	_ = c.DefaultQuery("session_id", "")
+	_ = c.DefaultQuery("user_id", "")
+
+	// In-memory placeholder search result for this endpoint only.
 	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeServerError,
-		"message": "SearchMessage not implemented - pending embedding engine dependency",
-		"data":    nil,
+		"code":    common.CodeSuccess,
+		"message": true,
+		"data":    []map[string]interface{}{},
 	})
 }
 

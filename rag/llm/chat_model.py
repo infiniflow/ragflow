@@ -22,14 +22,20 @@ import re
 import time
 from abc import ABC
 from copy import deepcopy
+from json.decoder import JSONDecodeError
 from urllib.parse import urljoin
 
 import json_repair
-from json.decoder import JSONDecodeError
-import litellm
 import openai
 from openai import AsyncOpenAI, OpenAI
 from enum import StrEnum
+
+try:
+    import litellm
+    _LITELLM_IMPORT_ERROR = None
+except ImportError as e:  # pragma: no cover - depends on installed optional dependency state
+    litellm = None
+    _LITELLM_IMPORT_ERROR = e
 
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
@@ -1493,6 +1499,13 @@ class LiteLLMBase(ABC):
         else:
             self.group_id = ""
 
+    def _require_litellm(self):
+        if litellm is None:
+            raise ImportError(
+                "LiteLLM is unavailable or incompatible with the current environment. "
+                "Please install a compatible litellm version."
+            ) from _LITELLM_IMPORT_ERROR
+
     def _get_delay(self):
         return self.base_delay * random.uniform(10, 150)
 
@@ -1533,6 +1546,7 @@ class LiteLLMBase(ABC):
         return self.provider == SupportedLiteLLMProvider.DeepSeek
 
     async def async_chat(self, system, history, gen_conf, **kwargs):
+        self._require_litellm()
         hist = list(history) if history else []
         if system:
             if not hist or hist[0].get("role") != "system":
@@ -1572,6 +1586,7 @@ class LiteLLMBase(ABC):
         assert False, "Shouldn't be here."
 
     async def async_chat_streamly(self, system, history, gen_conf, **kwargs):
+        self._require_litellm()
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
@@ -1756,6 +1771,7 @@ class LiteLLMBase(ABC):
         self.tools = tools
 
     async def async_chat_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
+        self._require_litellm()
         gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
         if system and history and history[0].get("role") != "system":
@@ -1836,6 +1852,7 @@ class LiteLLMBase(ABC):
         assert False, "Shouldn't be here."
 
     async def async_chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
+        self._require_litellm()
         gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
         tools = self.tools

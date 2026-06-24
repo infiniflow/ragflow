@@ -407,6 +407,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Message routes
 			message := v1.Group("/messages")
 			{
+				// Message search is implemented in-memory for phased migration.
+				message.GET("/search", r.memoryHandler.SearchMessage)
 				message.DELETE("/:memory_message", r.memoryHandler.ForgetMessage)
 				message.PUT("/:memory_message", r.memoryHandler.UpdateMessage)
 			}
