@@ -341,9 +341,9 @@ func TestParser_Parse(t *testing.T) {
 	}
 
 	engine := &mockEngine{chars: byPage, pageCount: maxPage + 1}
-	cfg := DefaultConfig()
-	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), engine)
+	cfg := DefaultParserConfig()
+	p := NewParser(cfg, &MockDocAnalyzer{Healthy: true, Model: ModelSaas})
+result, err := p.Parse(context.Background(), engine)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}

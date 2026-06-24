@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"regexp"
 	"sort"
 	"testing"
 )
@@ -38,49 +37,6 @@ func makeMockBoxes() []TextBox {
 	}
 }
 
-// ── gatherTSR ──────────────────────────────────────────────────────────
-
-func TestGatherTSR(t *testing.T) {
-	cells := makeMockTableCells()
-
-	t.Run("header", func(t *testing.T) {
-		result := gatherTSR(cells, reTableHeader)
-		// 2 column headers + 1 spanning cell (spans are not header-only)
-		if len(result) != 2 {
-			t.Errorf("expected 2 header cells, got %d", len(result))
-		}
-		for _, c := range result {
-			if c.Label != "table column header" {
-				t.Errorf("unexpected label: %s", c.Label)
-			}
-		}
-	})
-
-	t.Run("row or header", func(t *testing.T) {
-		result := gatherTSR(cells, reTableRowHdr)
-		// 2 column headers + 4 rows = 6
-		if len(result) != 6 {
-			t.Errorf("expected 6 (row|header) cells, got %d", len(result))
-		}
-	})
-
-	t.Run("spanning", func(t *testing.T) {
-		result := gatherTSR(cells, reTableSpan)
-		if len(result) != 1 {
-			t.Errorf("expected 1 spanning cell, got %d", len(result))
-		}
-	})
-
-	t.Run("no match", func(t *testing.T) {
-		re := regexp.MustCompile(`.*xyzzy`)
-		result := gatherTSR(cells, re)
-		if len(result) != 0 {
-			t.Errorf("expected 0 matches, got %d", len(result))
-		}
-	})
-}
-
-// ── sortYFirstly ───────────────────────────────────────────────────────
 
 func TestSortYFirstly(t *testing.T) {
 	t.Run("basic sort", func(t *testing.T) {
@@ -190,7 +146,7 @@ func TestAnnotateTableBoxes(t *testing.T) {
 	cells := makeMockTableCells()
 	boxes := makeMockBoxes()
 
-	annotateTableBoxes(boxes, cells)
+	annotateTableBoxes(boxes, groupTSRCellsToRowsLabeled(cells))
 
 	b := boxes[0]
 
@@ -259,7 +215,7 @@ func TestAnnotateTableBoxes_PixelSpace(t *testing.T) {
 		{X0: 150, Y0: 350, X1: 750, Y1: 380, Label: "table row"},
 		{X0: 150, Y0: 380, X1: 750, Y1: 420, Label: "table row"},
 	}
-	annotateTableBoxes(boxes, cells)
+	annotateTableBoxes(boxes, groupTSRCellsToRowsLabeled(cells))
 	if boxes[0].R < 0 {
 		t.Error("row index should be set (pixel-space matching)")
 	}
@@ -545,7 +501,7 @@ func TestAnnotateTableBoxes_RealTSRLabels(t *testing.T) {
 		{X0: 110, X1: 190, Top: 35, Bottom: 65, Text: "E", LayoutType: "table"},
 		{X0: 210, X1: 290, Top: 35, Bottom: 65, Text: "F", LayoutType: "table"},
 	}
-	annotateTableBoxes(boxes, cells)
+	annotateTableBoxes(boxes, groupTSRCellsToRowsLabeled(cells))
 
 	// Verify R (row) assignments — should be 0 for top row, 1 for bottom row.
 	for i, b := range boxes {

@@ -67,20 +67,19 @@ func (e *Engine) ExtractChars(pageNum int) ([]Char, error) {
 	rotation180 := false
 
 	if dimSwapped {
-		// Dimensions are swapped → effective page is landscape but
-		// pdf_oxide reports portrait (or vice versa).  Rotation is
-		// required.  Use the explicit /Rotate value for direction
-		// when available; default to 90° CW (most common case).
 		needsRotate = true
 		if rawRot == 270 {
 			rotation90 = false
 		} else {
 			rotation90 = true
 		}
+	} else if rawRot == 90 || rawRot == 270 {
+		// Explicit /Rotate found but dimension-swap check failed
+		// (e.g. CropBox alters effective dimensions).  Trust the
+		// explicit /Rotate value.
+		needsRotate = true
+		rotation90 = (rawRot != 270)
 	} else if rawRot == 180 {
-		// Dimensions match (both 595×842) — 180° rotation cannot
-		// be detected by size comparison but is self-correcting
-		// (applying it twice restores the original orientation).
 		needsRotate = true
 		rotation180 = true
 	}
@@ -96,6 +95,27 @@ func (e *Engine) ExtractChars(pageNum int) ([]Char, error) {
 			cropDX = -realCrop[0]
 			cropDY = -(oxideCropH - realCrop[3])
 		}
+	}
+
+	// When rotation is applied, the crop shift must be applied AFTER
+	// rotation, using the correct axes for the rotated coordinate space.
+	rotateCropDX, rotateCropDY := cropDX, cropDY
+	if needsRotate && (cropDX != 0 || cropDY != 0) {
+		switch {
+		case rotation90:
+			// rotate(x+cropDX,y+cropDY) = (rawH-(y+cropDY),x+cropDX)
+			// = rotate(x,y) + (-cropDY, +cropDX)
+			// cropDX=-30,cropDY=-10 => post-rotate shift = (+10,-30)
+			rotateCropDX = -cropDY
+			rotateCropDY = cropDX
+		case rotation180:
+			rotateCropDX = -cropDX
+			rotateCropDY = -cropDY
+		default: // 270 CW
+			rotateCropDX = cropDY
+			rotateCropDY = -cropDX
+		}
+		cropDX, cropDY = 0, 0
 	}
 
 	result := make([]Char, len(chars))
@@ -130,7 +150,6 @@ func (e *Engine) ExtractChars(pageNum int) ([]Char, error) {
 				bottom = rawW - origX0
 			}
 
-			// Normalize: rotation may swap x0/x1 or top/bottom.
 			if x0 > x1 {
 				x0, x1 = x1, x0
 			}
@@ -138,6 +157,12 @@ func (e *Engine) ExtractChars(pageNum int) ([]Char, error) {
 				top, bottom = bottom, top
 			}
 		}
+
+		// Apply crop correction in the final coordinate space.
+		x0 += rotateCropDX
+		x1 += rotateCropDX
+		top += rotateCropDY
+		bottom += rotateCropDY
 
 		result[i] = Char{
 			X0: x0, X1: x1, Top: top, Bottom: bottom,

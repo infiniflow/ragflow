@@ -47,7 +47,7 @@ func TestBatchResults(t *testing.T) {
 	}
 	pdfs := all[:min(count, len(all))]
 
-	ddClient := NewDeepDocClient(os.Getenv("DEEPDOC_URL"))
+	ddClient, err := NewDeepDocClient(os.Getenv("DEEPDOC_URL")); if err != nil { t.Fatal(err) }
 	if !ddClient.Health() {
 		t.Fatalf("DeepDoc service not available at %s (DLA+TSR required)", ddClient.baseURL)
 	}
@@ -229,11 +229,9 @@ func parseOne(pdfDir, name string, deepDoc DocAnalyzer, skipOCR bool) (*parseOne
 	pageCount, _ := eng.PageCount()
 	chars, _ := extractPageStats(eng)
 
-	cfg := DefaultConfig()
+	cfg := DefaultParserConfig()
 	cfg.SkipOCR = skipOCR
-	p := NewParser(cfg)
-	p.DeepDoc = deepDoc
-
+	p := NewParser(cfg, deepDoc)
 	t0 := time.Now()
 	parsed, err := p.Parse(context.Background(), eng)
 	elapsed := time.Since(t0).Seconds()

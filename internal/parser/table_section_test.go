@@ -40,8 +40,7 @@ func TestTableSection_TextFromTSR(t *testing.T) {
 			{X0: 200, Y0: 100, X1: 460, Y1: 220, Text: "25", Label: "table row"},
 		},
 	}
-	p := NewParser(DefaultConfig())
-	p.DeepDoc = mock
+	p := NewParser(DefaultParserConfig(), mock)
 
 	result, err := p.Parse(context.Background(), eng)
 	if err != nil {
@@ -84,7 +83,6 @@ func TestTableSection_TextFromTSR(t *testing.T) {
 // runs DLA on pages that have images but zero embedded chars (boxes).
 // Regression test for test.pdf (Go 0 tables, Py 1 table).
 func TestEnrichWithDeepDoc_ImageOnlyPage(t *testing.T) {
-	p := NewParser(DefaultConfig())
 	mock := &MockDocAnalyzer{
 		Healthy: true,
 		DLARegions: []DLARegion{
@@ -94,7 +92,7 @@ func TestEnrichWithDeepDoc_ImageOnlyPage(t *testing.T) {
 			{X0: 0, Y0: 0, X1: 200, Y1: 100, Text: "A", Label: "table row"},
 		},
 	}
-	p.DeepDoc = mock
+	p := NewParser(DefaultParserConfig(), mock)
 
 	// 0 text boxes, but page 0 has a rendered image.
 	boxes := []TextBox{}
@@ -173,8 +171,7 @@ func TestFigureCaption_MergedIntoFigure(t *testing.T) {
 			{X0: 100, Y0: 310, X1: 500, Y1: 340, Label: "figure caption", Confidence: 0.9},
 		},
 	}
-	p := NewParser(DefaultConfig())
-	p.DeepDoc = mock
+	p := NewParser(DefaultParserConfig(), mock)
 
 	result, err := p.Parse(context.Background(), eng)
 	if err != nil {
@@ -233,8 +230,7 @@ func TestTableCaption_MergedIntoTable(t *testing.T) {
 			{X0: 200, Y0: 0, X1: 460, Y1: 100, Text: "B", Label: "table row"},
 		},
 	}
-	p := NewParser(DefaultConfig())
-	p.DeepDoc = mock
+	p := NewParser(DefaultParserConfig(), mock)
 
 	result, err := p.Parse(context.Background(), eng)
 	if err != nil {
@@ -291,8 +287,7 @@ func TestTextSectionsInsideTableRegion_Suppressed(t *testing.T) {
 			{X0: 200, Y0: 0, X1: 460, Y1: 100, Text: "年龄", Label: "table row"},
 		},
 	}
-	p := NewParser(DefaultConfig())
-	p.DeepDoc = mock
+	p := NewParser(DefaultParserConfig(), mock)
 
 	result, err := p.Parse(context.Background(), eng)
 	if err != nil {
@@ -332,7 +327,7 @@ func TestTextSectionsInsideTableRegion_Suppressed(t *testing.T) {
 // TestEmptyDoc_NoCrash verifies Parse handles edge cases gracefully.
 func TestEmptyDoc_NoCrash(t *testing.T) {
 	eng := &mockEngine{pageCount: 0}
-	p := NewParser(DefaultConfig())
+	p := NewParser(DefaultParserConfig(), &MockDocAnalyzer{Healthy: true, Model: ModelSaas})
 	result, err := p.Parse(context.Background(), eng)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
@@ -345,7 +340,7 @@ func TestEmptyDoc_NoCrash(t *testing.T) {
 // TestNilChars_handled verifies zero-chars pages don't crash.
 func TestNilChars_Handled(t *testing.T) {
 	eng := &mockEngine{pageCount: 1, renderW: 200, renderH: 200}
-	p := NewParser(DefaultConfig())
+	p := NewParser(DefaultParserConfig(), &MockDocAnalyzer{Healthy: true, Model: ModelSaas})
 	result, err := p.Parse(context.Background(), eng)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)

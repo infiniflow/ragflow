@@ -28,7 +28,7 @@ func TestTableRotation_Integration(t *testing.T) {
 	if baseURL == "" {
 		baseURL = "http://localhost:8000"
 	}
-	dd := NewDeepDocClient(baseURL)
+	dd, err := NewDeepDocClient(baseURL); if err != nil { t.Fatal(err) }
 	if !dd.Health() {
 		t.Skipf("DeepDoc not available at %s", baseURL)
 	}
@@ -124,7 +124,7 @@ func TestTableRotation_Stability(t *testing.T) {
 	if baseURL == "" {
 		baseURL = "http://localhost:8000"
 	}
-	dd := NewDeepDocClient(baseURL)
+	dd, err := NewDeepDocClient(baseURL); if err != nil { t.Fatal(err) }
 	if !dd.Health() {
 		t.Skipf("DeepDoc not available at %s", baseURL)
 	}

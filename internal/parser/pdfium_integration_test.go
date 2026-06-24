@@ -46,9 +46,9 @@ func TestParse_PdfiumRender(t *testing.T) {
 
 	// Run Parse with pdfium rendering — BATCH_SKIP_DEEPDOC=1 to avoid HTTP calls.
 	t.Setenv("BATCH_SKIP_DEEPDOC", "1")
-	cfg := DefaultConfig()
-	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), eng)
+	cfg := DefaultParserConfig()
+	p := NewParser(cfg, &MockDocAnalyzer{Healthy: true, Model: ModelSaas})
+result, err := p.Parse(context.Background(), eng)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}

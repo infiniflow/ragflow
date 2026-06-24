@@ -18,19 +18,22 @@ import (
 type DeepDocClient struct {
 	baseURL    string
 	httpClient *http.Client
+	model      ModelType
+	modelOK    bool
 }
 
-// NewDeepDocClient creates a client (default baseURL: http://localhost:8000).
-func NewDeepDocClient(baseURL string) *DeepDocClient {
+// NewDeepDocClient creates a client.  baseURL must be provided by the caller
+// (e.g. from the DEEPDOC_URL environment variable).  Returns an error if empty.
+func NewDeepDocClient(baseURL string) (*DeepDocClient, error) {
 	if baseURL == "" {
-		baseURL = "http://localhost:8000"
+		return nil, fmt.Errorf("deepdoc client: baseURL is required (set DEEPDOC_URL)")
 	}
 	return &DeepDocClient{
 		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: 120 * time.Second,
 		},
-	}
+	}, nil
 }
 
 // tsrLabels maps DLABEL class IDs to label strings.
@@ -220,6 +223,49 @@ func (c *DeepDocClient) Health() bool {
 	return resp.StatusCode == 200
 }
 
+// ModelType probes the DeepDoc /model endpoint once and caches the model flavour.
+// The /model endpoint is expected to return JSON like {"model":"oss","version":"1.0"}.
+// When the endpoint is unreachable or model is not "oss", ModelSaas is returned.
+func (c *DeepDocClient) ModelType() ModelType {
+	if c.modelOK {
+		return c.model
+	}
+	c.modelOK = true
+	c.model = ModelSaas
+	resp, err := c.httpClient.Get(c.baseURL + "/model")
+	if err != nil {
+		return c.model
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return c.model
+	}
+	var h struct {
+		Model string `json:"model"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&h); err != nil {
+		slog.Warn("deepdoc /model: failed to decode response, falling back to SaaS",
+			"err", err)
+		return c.model
+	}
+	switch h.Model {
+	case "oss":
+		c.model = ModelOSS
+	}
+	return c.model
+}
+
+// NewTableBuilderFor creates the right TableBuilder for the given
+// DocAnalyzer, chosen by ModelType().
+func NewTableBuilderFor(doc DocAnalyzer) TableBuilder {
+	switch doc.ModelType() {
+	case ModelOSS:
+		return NewOssDeepDocTableBuilder(doc)
+	default:
+		return NewSaasDeepDocTableBuilder(doc)
+	}
+}
+
 func (c *DeepDocClient) post(endpoint string, imgData []byte, filename string, result interface{}, extraFields ...string) error {
 	var body bytes.Buffer
 	w := multipart.NewWriter(&body)
@@ -255,4 +301,3 @@ func (c *DeepDocClient) post(endpoint string, imgData []byte, filename string, r
 	}
 	return json.NewDecoder(resp.Body).Decode(result)
 }
-

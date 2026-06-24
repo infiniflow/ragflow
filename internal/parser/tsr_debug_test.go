@@ -47,7 +47,7 @@ func TestTSR_DumpTableImage(t *testing.T) {
 	t.Log("Page image saved to /tmp/tsr_debug_page.png")
 
 	// Get DLA regions.
-	dd := NewDeepDocClient("")
+	url := os.Getenv("DEEPDOC_URL"); if url == "" { t.Skip("DEEPDOC_URL not set") }; dd, err := NewDeepDocClient(url); if err != nil { t.Fatal(err) }
 	if !dd.Health() {
 		t.Fatal("DeepDoc not available")
 	}

@@ -118,7 +118,7 @@ func TestBoxesToSections(t *testing.T) {
 }
 
 func TestDefaultConfig(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := DefaultParserConfig()
 	if cfg.Zoom != 3 {
 		t.Error("default zoom should be 3")
 	}

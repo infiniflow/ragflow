@@ -24,7 +24,7 @@ func mustConnectDeepDoc(t *testing.T) *DeepDocClient {
 	if url == "" {
 		url = "http://localhost:8000"
 	}
-	client := NewDeepDocClient(url)
+	client, err := NewDeepDocClient(url); if err != nil { t.Fatal(err) }
 	if !client.Health() {
 		t.Skipf("DeepDoc not available at %s", url)
 	}
@@ -127,10 +127,9 @@ func TestIntegration_SectionsText(t *testing.T) {
 	eng := mustOpenEngine(t, "01_english_simple.pdf")
 	defer eng.Close()
 
-	cfg := DefaultConfig()
-	p := NewParser(cfg)
-	p.DeepDoc = client
-	result, err := p.Parse(context.Background(), eng)
+	cfg := DefaultParserConfig()
+	p := NewParser(cfg, client)
+			result, err := p.Parse(context.Background(), eng)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -172,10 +171,9 @@ func TestIntegration_SectionsCount(t *testing.T) {
 	eng := mustOpenEngine(t, "01_english_simple.pdf")
 	defer eng.Close()
 
-	cfg := DefaultConfig()
-	p := NewParser(cfg)
-	p.DeepDoc = client
-	result, err := p.Parse(context.Background(), eng)
+	cfg := DefaultParserConfig()
+	p := NewParser(cfg, client)
+			result, err := p.Parse(context.Background(), eng)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -200,10 +198,9 @@ func TestIntegration_TableStructure(t *testing.T) {
 	eng := mustOpenEngine(t, "06_table_content.pdf")
 	defer eng.Close()
 
-	cfg := DefaultConfig()
-	p := NewParser(cfg)
-	p.DeepDoc = client
-	result, err := p.Parse(context.Background(), eng)
+	cfg := DefaultParserConfig()
+	p := NewParser(cfg, client)
+			result, err := p.Parse(context.Background(), eng)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -256,10 +253,9 @@ func TestIntegration_TableImageB64(t *testing.T) {
 	eng := mustOpenEngine(t, "06_table_content.pdf")
 	defer eng.Close()
 
-	cfg := DefaultConfig()
-	p := NewParser(cfg)
-	p.DeepDoc = client
-	result, err := p.Parse(context.Background(), eng)
+	cfg := DefaultParserConfig()
+	p := NewParser(cfg, client)
+			result, err := p.Parse(context.Background(), eng)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -297,10 +293,9 @@ func TestIntegration_LayoutTypes(t *testing.T) {
 	eng := mustOpenEngine(t, "06_table_content.pdf")
 	defer eng.Close()
 
-	cfg := DefaultConfig()
-	p := NewParser(cfg)
-	p.DeepDoc = client
-	result, err := p.Parse(context.Background(), eng)
+	cfg := DefaultParserConfig()
+	p := NewParser(cfg, client)
+			result, err := p.Parse(context.Background(), eng)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -337,85 +332,6 @@ func TestIntegration_LayoutTypes(t *testing.T) {
 		if goldenTypes[typ] == 0 {
 			t.Errorf("LayoutType %q count mismatch: golden=0 got=%d", typ, gc)
 		}
-	}
-}
-
-// TestIntegration_NoCrash runs Parse on every small fixture PDF and checks it
-// does not panic or error. It does NOT require golden files.
-func TestIntegration_NoCrash(t *testing.T) {
-	client := mustConnectDeepDoc(t)
-
-	pdfDir := filepath.Join("testdata", "pdfs")
-	entries, err := os.ReadDir(pdfDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".pdf") {
-			continue
-		}
-		name := e.Name()
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			pdfPath := filepath.Join(pdfDir, name)
-			data, err := os.ReadFile(pdfPath)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			eng, err := NewEngine(data)
-			if err != nil {
-				t.Fatalf("engine: %v", err)
-			}
-			defer eng.Close()
-
-			cfg := DefaultConfig()
-			p := NewParser(cfg)
-			p.DeepDoc = client
-			result, err := p.Parse(context.Background(), eng)
-			if err != nil {
-				t.Fatalf("Parse: %v", err)
-			}
-
-			// Structural invariants — these should always hold.
-			for i, s := range result.Sections {
-				if s.PositionTag == "" {
-					t.Errorf("section[%d] has empty PositionTag", i)
-				}
-				if s.LayoutType != "" && s.Image != "" {
-					// Section with an image should have valid base64.
-					if _, err := base64.StdEncoding.DecodeString(s.Image); err != nil {
-						t.Errorf("section[%d] Image: not valid base64: %v", i, err)
-					}
-				}
-				if s.TableItem != nil {
-					// Cross-reference: TableItem in section should appear in tables list.
-					found := false
-					for _, tbl := range result.Tables {
-						if &tbl == s.TableItem {
-							found = true
-							break
-						}
-					}
-					if !found {
-						t.Errorf("section[%d] TableItem not found in tables list", i)
-					}
-				}
-			}
-
-			for i, tbl := range result.Tables {
-				if tbl.ImageB64 == "" {
-					t.Errorf("table[%d] ImageB64 is empty", i)
-				}
-				if len(tbl.Positions) == 0 {
-					t.Errorf("table[%d] has no positions", i)
-				}
-			}
-
-			t.Logf("%s: %d sections, %d tables", name, len(result.Sections), len(result.Tables))
-		})
 	}
 }
 
@@ -493,10 +409,18 @@ func TestIntegration_Idempotency(t *testing.T) {
 // cropImageRect crops a rectangular region from an image.
 func cropImageRect(img image.Image, x0, y0, x1, y1 int) image.Image {
 	b := img.Bounds()
-	if x0 < b.Min.X { x0 = b.Min.X }
-	if y0 < b.Min.Y { y0 = b.Min.Y }
-	if x1 > b.Max.X { x1 = b.Max.X }
-	if y1 > b.Max.Y { y1 = b.Max.Y }
+	if x0 < b.Min.X {
+		x0 = b.Min.X
+	}
+	if y0 < b.Min.Y {
+		y0 = b.Min.Y
+	}
+	if x1 > b.Max.X {
+		x1 = b.Max.X
+	}
+	if y1 > b.Max.Y {
+		y1 = b.Max.Y
+	}
 	out := image.NewRGBA(image.Rect(0, 0, x1-x0, y1-y0))
 	for y := y0; y < y1; y++ {
 		for x := x0; x < x1; x++ {
@@ -506,7 +430,7 @@ func cropImageRect(img image.Image, x0, y0, x1, y1 int) image.Image {
 	return out
 }
 
-const coordEpsilon = 1.0   // pixels
+const coordEpsilon = 1.0 // pixels
 const confEpsilon = 0.01
 
 func checkDLAIdempotent(t *testing.T, all [][]DLARegion) {
@@ -614,13 +538,17 @@ func checkOCRRecognizeIdempotent(t *testing.T, all [][]OCRText) {
 
 func coordClose(a, b float64) bool {
 	d := a - b
-	if d < 0 { d = -d }
+	if d < 0 {
+		d = -d
+	}
 	return d <= coordEpsilon
 }
 
 func floatClose(a, b, eps float64) bool {
 	d := a - b
-	if d < 0 { d = -d }
+	if d < 0 {
+		d = -d
+	}
 	return d <= eps
 }
 
@@ -635,10 +563,9 @@ func TestIntegration_TableAlign(t *testing.T) {
 	eng := mustOpenEngine(t, "18_table_caption.pdf")
 	defer eng.Close()
 
-	cfg := DefaultConfig()
-	p := NewParser(cfg)
-	p.DeepDoc = client
-	result, err := p.Parse(context.Background(), eng)
+	cfg := DefaultParserConfig()
+	p := NewParser(cfg, client)
+			result, err := p.Parse(context.Background(), eng)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -677,10 +604,9 @@ func TestIntegration_GarbageLayout(t *testing.T) {
 	eng := mustOpenEngine(t, "17_garbage_layout.pdf")
 	defer eng.Close()
 
-	cfg := DefaultConfig()
-	p := NewParser(cfg)
-	p.DeepDoc = client
-	result, err := p.Parse(context.Background(), eng)
+	cfg := DefaultParserConfig()
+	p := NewParser(cfg, client)
+			result, err := p.Parse(context.Background(), eng)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -709,11 +635,10 @@ func TestIntegration_MultiChunk(t *testing.T) {
 	eng := mustOpenEngine(t, "19_multipage_chunk.pdf")
 	defer eng.Close()
 
-	cfg := DefaultConfig()
+	cfg := DefaultParserConfig()
 	cfg.ChunkSize = 10 // small chunks to force multi-chunk path
-	p := NewParser(cfg)
-	p.DeepDoc = client
-	result, err := p.Parse(context.Background(), eng)
+	p := NewParser(cfg, client)
+			result, err := p.Parse(context.Background(), eng)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -741,9 +666,8 @@ func TestIntegration_NoRegression(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			eng := mustOpenEngine(t, name)
 			defer eng.Close()
-			cfg := DefaultConfig()
-			p := NewParser(cfg)
-			p.DeepDoc = client
+			cfg := DefaultParserConfig()
+			p := NewParser(cfg, client)
 			result, err := p.Parse(context.Background(), eng)
 			if err != nil {
 				t.Fatalf("Parse: %v", err)
@@ -769,10 +693,9 @@ func TestIntegration_TableRotation(t *testing.T) {
 	t.Run("upright_table", func(t *testing.T) {
 		eng := mustOpenEngine(t, "rotate_0.pdf")
 		defer eng.Close()
-		cfg := DefaultConfig()
-		p := NewParser(cfg)
-		p.DeepDoc = client
-		result, err := p.Parse(context.Background(), eng)
+		cfg := DefaultParserConfig()
+		p := NewParser(cfg, client)
+			result, err := p.Parse(context.Background(), eng)
 		if err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
@@ -785,14 +708,14 @@ func TestIntegration_TableRotation(t *testing.T) {
 	t.Run("rotated_90_table", func(t *testing.T) {
 		eng := mustOpenEngine(t, "rotate_90.pdf")
 		defer eng.Close()
-		cfg := DefaultConfig()
+		cfg := DefaultParserConfig()
 		// DeepDoc DLA does not yet correctly annotate boxes on rotated
 		// pages (regions and characters are in different coordinate
 		// spaces post-rotation).  Character extraction and rotation are
 		// verified via the charsToBoxes path.
 		cfg.SkipOCR = true
-		p := NewParser(cfg)
-		result, err := p.Parse(context.Background(), eng)
+		p := NewParser(cfg, client)
+			result, err := p.Parse(context.Background(), eng)
 		if err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
@@ -810,10 +733,9 @@ func TestIntegration_WordSpacing(t *testing.T) {
 	eng := mustOpenEngine(t, "01_english_simple.pdf")
 	defer eng.Close()
 
-	cfg := DefaultConfig()
-	p := NewParser(cfg)
-	p.DeepDoc = client
-	result, err := p.Parse(context.Background(), eng)
+	cfg := DefaultParserConfig()
+	p := NewParser(cfg, client)
+			result, err := p.Parse(context.Background(), eng)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}

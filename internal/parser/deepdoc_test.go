@@ -234,16 +234,9 @@ func TestEnrichWithDeepDoc_Noop(t *testing.T) {
 	}
 	eng := &mockEngine{pageCount: 1}
 
-	p := NewParser(DefaultConfig())
+	p := NewParser(DefaultParserConfig(), &MockDocAnalyzer{Healthy: false, Model: ModelSaas})
 	tables := p.enrichWithDeepDoc(eng, boxes, nil)
 	if len(tables) != 0 {
-		t.Error("nil DeepDoc → 0 Tables")
-	}
-
-	p2 := NewParser(DefaultConfig())
-	p2.DeepDoc = &MockDocAnalyzer{Healthy: false}
-	tables2 := p2.enrichWithDeepDoc(eng, boxes, nil)
-	if len(tables2) != 0 {
 		t.Error("unhealthy DeepDoc → 0 Tables")
 	}
 }
@@ -269,8 +262,7 @@ func TestExtractTableBoxes_Mock(t *testing.T) {
 			{X0: 600, Y0: 410, X1: 1240, Y1: 800, Text: "B2"},
 		},
 	}
-	p := NewParser(DefaultConfig())
-	p.DeepDoc = mock
+	p := NewParser(DefaultParserConfig(), mock)
 	dummyImg := image.NewRGBA(image.Rect(0, 0, 2000, 3000))
 
 	tables := p.extractTableBoxesFromImage(boxes, dummyImg, 0, 0)
@@ -292,8 +284,7 @@ func TestExtractTableBoxes_Mock(t *testing.T) {
 
 func TestExtractTableBoxes_NoTables(t *testing.T) {
 	mock := &MockDocAnalyzer{Healthy: true, DLARegions: []DLARegion{}}
-	p := NewParser(DefaultConfig())
-	p.DeepDoc = mock
+	p := NewParser(DefaultParserConfig(), mock)
 	dummy := image.NewRGBA(image.Rect(0, 0, 1000, 1000))
 	tables := p.extractTableBoxesFromImage(nil, dummy, 0, 0)
 	if len(tables) != 0 {
@@ -309,8 +300,7 @@ func TestExtractTableBoxes_NonTableRegions(t *testing.T) {
 			{X0: 150, Y0: 600, X1: 1650, Y1: 900, Label: "figure", Confidence: 0.8},
 		},
 	}
-	p := NewParser(DefaultConfig())
-	p.DeepDoc = mock
+	p := NewParser(DefaultParserConfig(), mock)
 	dummy := image.NewRGBA(image.Rect(0, 0, 2000, 2000))
 	tables := p.extractTableBoxesFromImage(nil, dummy, 0, 0)
 	if len(tables) != 0 {
@@ -328,8 +318,7 @@ func TestExtractTableBoxes_NoOverlap(t *testing.T) {
 			{X0: 150, Y0: 1500, X1: 1500, Y1: 2300, Label: "table", Confidence: 0.95},
 		},
 	}
-	p := NewParser(DefaultConfig())
-	p.DeepDoc = mock
+	p := NewParser(DefaultParserConfig(), mock)
 	dummy := image.NewRGBA(image.Rect(0, 0, 2000, 3000))
 	tables := p.extractTableBoxesFromImage(boxes, dummy, 0, 0)
 	if len(tables) != 0 {
@@ -348,8 +337,7 @@ func TestExtractTableBoxes_TSRError(t *testing.T) {
 		},
 		TSRCells: nil, // TSR returns nothing
 	}
-	p := NewParser(DefaultConfig())
-	p.DeepDoc = mock
+	p := NewParser(DefaultParserConfig(), mock)
 	dummy := image.NewRGBA(image.Rect(0, 0, 2000, 3000))
 	tables := p.extractTableBoxesFromImage(boxes, dummy, 0, 0)
 	if len(tables) != 1 {
@@ -407,8 +395,7 @@ func TestExtractTableBoxes_DLAError(t *testing.T) {
 	mock := &MockDocAnalyzer{Healthy: true, DLARegions: []DLARegion{
 		{X0: 0, Y0: 0, X1: 100, Y1: 100, Label: "text", Confidence: 0.9},
 	}}
-	p := NewParser(DefaultConfig())
-	p.DeepDoc = mock
+	p := NewParser(DefaultParserConfig(), mock)
 	dummy := image.NewRGBA(image.Rect(0, 0, 1000, 1000))
 	tables := p.extractTableBoxesFromImage(nil, dummy, 0, 0)
 	if len(tables) != 0 {
@@ -639,14 +626,14 @@ func TestCropImageRegion(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		// With 30px margin: x0=0, y0=0, x1=130, y1=180 → 130x180
-		if cropped.Bounds().Dx() != 130 || cropped.Bounds().Dy() != 180 {
-			t.Errorf("size %v, want 130x180", cropped.Bounds())
+		// 3% proportional margin: 90×3%≈3px, 130×3%≈4px → 95×137
+		if cropped.Bounds().Dx() != 95 || cropped.Bounds().Dy() != 137 {
+			t.Errorf("size %v, want 95x137", cropped.Bounds())
 		}
 	})
 
 	t.Run("x0 >= x1 returns error", func(t *testing.T) {
-		// With 30px margin, need gap > 60 for error (110-30 >= 50+30).
+		// 3% proportional margin on each side: if the gap is too small after margin expansion, x0 ≥ x1 triggers error.
 		r := DLARegion{X0: 110, Y0: 20, X1: 50, Y1: 150}
 		_, err := cropImageRegion(img, r)
 		if err == nil {
@@ -683,8 +670,7 @@ func TestExtractTableBoxes_InvalidRegion(t *testing.T) {
 			{X0: 500, Y0: 100, X1: 100, Y1: 300, Label: "table", Confidence: 0.9},
 		},
 	}
-	p := NewParser(DefaultConfig())
-	p.DeepDoc = mock
+	p := NewParser(DefaultParserConfig(), mock)
 	dummy := image.NewRGBA(image.Rect(0, 0, 1000, 1000))
 	tables := p.extractTableBoxesFromImage(nil, dummy, 0, 0)
 	if len(tables) != 0 {
@@ -705,8 +691,7 @@ eng := &mockEngine{pageCount: 1, chars: map[int][]TextChar{0: {{X0: 50, X1: 550,
 			{X0: 50, Y0: 200, X1: 2000, Y1: 1000, Label: "figure", Confidence: 0.85},
 		},
 	}
-	p := NewParser(DefaultConfig())
-	p.DeepDoc = mock
+	p := NewParser(DefaultParserConfig(), mock)
 
 	result, err := p.Parse(context.Background(), eng)
 	if err != nil {
@@ -735,8 +720,7 @@ func TestParse_NoFigures(t *testing.T) {
 			{X0: 150, Y0: 300, X1: 1500, Y1: 600, Label: "text", Confidence: 0.8},
 		},
 	}
-	p := NewParser(DefaultConfig())
-	p.DeepDoc = mock
+	p := NewParser(DefaultParserConfig(), mock)
 
 	result, err := p.Parse(context.Background(), eng)
 	if err != nil {
@@ -748,19 +732,17 @@ func TestParse_NoFigures(t *testing.T) {
 }
 
 func TestParse_NoDeepDoc_NoFigures(t *testing.T) {
-	// Parse() without DeepDoc → Figures should be nil (not empty slice).
+	// Parse() with mock DeepDoc → Figures should be empty (no DLA-detected figures).
 
 	eng := &mockEngine{pageCount: 1, chars: map[int][]TextChar{0: {{X0: 50, X1: 550, Top: 100, Bottom: 112, Text: "text"}}}}
-	p := NewParser(DefaultConfig())
-	// p.DeepDoc is nil
-	p.DeepDoc = nil
+	p := NewParser(DefaultParserConfig(), &MockDocAnalyzer{Healthy: true, Model: ModelSaas})
 
 	result, err := p.Parse(context.Background(), eng)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 	if len(result.Figures) != 0 {
-		t.Fatalf("expected 0 Figures (no DeepDoc), got %d", len(result.Figures))
+		t.Fatalf("expected 0 Figures (no DLA-detected figures), got %d", len(result.Figures))
 	}
 }
 
@@ -781,8 +763,7 @@ func TestParse_UsesOCRDetectForEmbeddedChars(t *testing.T) {
 			{X0: 5, Y0: 5, X1: 50, Y1: 5, X2: 50, Y2: 50, X3: 5, Y3: 50},
 		},
 	}
-	p := NewParser(DefaultConfig())
-	p.DeepDoc = mock
+	p := NewParser(DefaultParserConfig(), mock)
 
 	result, err := p.Parse(context.Background(), eng)
 	if err != nil {
@@ -806,8 +787,7 @@ func TestParse_FallsBackToCharsToBoxes_NoDeepDoc(t *testing.T) {
 			{X0: 10, X1: 30, Top: 10, Bottom: 30, Text: "Hello", PageNumber: 0},
 		}},
 	}
-	p := NewParser(DefaultConfig())
-	p.DeepDoc = nil
+	p := NewParser(DefaultParserConfig(), &MockDocAnalyzer{Healthy: true, Model: ModelSaas})
 
 	result, err := p.Parse(context.Background(), eng)
 	if err != nil {
@@ -830,8 +810,7 @@ func TestParse_FallsBackToCharsToBoxes_EmptyOCRBoxes(t *testing.T) {
 		Healthy:  true,
 		OCRBoxes: []OCRBox{}, // empty detect
 	}
-	p := NewParser(DefaultConfig())
-	p.DeepDoc = mock
+	p := NewParser(DefaultParserConfig(), mock)
 
 	result, err := p.Parse(context.Background(), eng)
 	if err != nil {

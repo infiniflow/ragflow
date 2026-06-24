@@ -287,8 +287,8 @@ func headerSetWithBlockType(rows [][]TSRCell) map[int]bool {
 			if maxType == "Nu" && bt == "Nu" {
 				continue
 			}
-			// Python: H marker OR (max_type == "Nu" and cell btype != "Nu") → header
-			if reTableHeader.MatchString(cell.Label) || (maxType == "Nu" && bt != "Nu") {
+			// Python: max_type == "Nu" and cell btype != "Nu" → header
+			if maxType == "Nu" && bt != "Nu" {
 				h++
 			}
 		}
@@ -296,11 +296,12 @@ func headerSetWithBlockType(rows [][]TSRCell) map[int]bool {
 			hdrs[ri] = true
 		}
 	}
-	// Fallback: if no headers detected, use TSR label-based detection.
+	// Fallback: if block-type found no headers, check for model-agnostic
+	// "header" substring in cell labels (works across different TSR models).
 	if len(hdrs) == 0 {
 		for ri, row := range rows {
 			for _, cell := range row {
-				if reTableHeader.MatchString(cell.Label) {
+				if strings.Contains(cell.Label, "header") || strings.Contains(cell.Label, "Header") {
 					hdrs[ri] = true
 					break
 				}

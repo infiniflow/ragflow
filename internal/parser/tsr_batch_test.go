@@ -18,7 +18,7 @@ import (
 // TestTSRBatchGo runs pdf_oxide render + DeepDoc TSR, per-PDF output.
 // Set BATCH_COUNT env to limit first N PDFs (default: all).
 func TestTSRBatchGo(t *testing.T) {
-	client := NewDeepDocClient("")
+	url := os.Getenv("DEEPDOC_URL"); if url == "" { t.Skip("DEEPDOC_URL not set") }; client, err := NewDeepDocClient(url); if err != nil { t.Fatal(err) }
 	if !client.Health() {
 		t.Skip("DeepDoc not available")
 	}
@@ -171,7 +171,7 @@ func cropImage(img image.Image, x0, y0, x1, y1 int) image.Image {
 
 // TestTSRCompare renders a known page and crops table regions for TSR comparison.
 func TestTSRCompare(t *testing.T) {
-	client := NewDeepDocClient("")
+	url := os.Getenv("DEEPDOC_URL"); if url == "" { t.Skip("DEEPDOC_URL not set") }; client, err := NewDeepDocClient(url); if err != nil { t.Fatal(err) }
 	if !client.Health() {
 		t.Skip("DeepDoc not available")
 	}

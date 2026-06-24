@@ -13,9 +13,8 @@ import (
 
 // enrichWithDeepDoc runs DLA+TSR via p.DeepDoc and returns detected tables.
 // pageImages optionally provides pre-rendered page images to avoid re-rendering.
-// No-op when DeepDoc is nil or unhealthy.
 func (p *Parser) enrichWithDeepDoc(engine PDFEngine, boxes []TextBox, pageImages map[int]image.Image) []TableItem {
-	if p.DeepDoc == nil || !p.DeepDoc.Health() {
+	if !p.DeepDoc.Health() {
 		return nil
 	}
 	// Group boxes by page for annotation write-back.
@@ -55,18 +54,7 @@ func (p *Parser) enrichWithDeepDoc(engine PDFEngine, boxes []TextBox, pageImages
 				boxes[idx].LayoutType = pageBoxes[i].LayoutType
 				boxes[idx].LayoutNo = pageBoxes[i].LayoutNo
 			}
-			boxes[idx].R = pageBoxes[i].R
-			boxes[idx].C = pageBoxes[i].C
-			boxes[idx].RTop = pageBoxes[i].RTop
-			boxes[idx].RBott = pageBoxes[i].RBott
-			boxes[idx].H = pageBoxes[i].H
-			boxes[idx].HTop = pageBoxes[i].HTop
-			boxes[idx].HBott = pageBoxes[i].HBott
-			boxes[idx].HLeft = pageBoxes[i].HLeft
-			boxes[idx].HRight = pageBoxes[i].HRight
-			boxes[idx].CLeft = pageBoxes[i].CLeft
-			boxes[idx].CRight = pageBoxes[i].CRight
-			boxes[idx].SP = pageBoxes[i].SP
+			copyBoxAnnotations(&boxes[idx], &pageBoxes[i])
 		}
 
 	}
@@ -74,9 +62,6 @@ func (p *Parser) enrichWithDeepDoc(engine PDFEngine, boxes []TextBox, pageImages
 }
 
 func (p *Parser) extractTableBoxes(boxes []TextBox, engine PDFEngine, pageNum int, pageImages map[int]image.Image, tableBaseIdx int) []TableItem {
-	if p.DeepDoc == nil {
-		return nil
-	}
 	pageImg, ok := pageImages[pageNum]
 	if !ok {
 		var err error
@@ -90,9 +75,6 @@ func (p *Parser) extractTableBoxes(boxes []TextBox, engine PDFEngine, pageNum in
 }
 
 func (p *Parser) extractTableBoxesFromImage(boxes []TextBox, pageImg image.Image, pageNum int, tableBaseIdx int) []TableItem {
-	if p.DeepDoc == nil {
-		return nil
-	}
 	regions, err := p.DeepDoc.DLA(pageImg)
 	if err != nil {
 		slog.Warn("DLA failed", "page", pageNum, "err", err)
@@ -155,12 +137,14 @@ func (p *Parser) extractTableBoxesFromImage(boxes []TextBox, pageImg image.Image
 			slog.Warn("table PNG encode failed", "page", pageNum, "err", encErr)
 		}
 
-		cells, err := p.DeepDoc.TSR(tsrImg)
-		if err != nil {
-			slog.Warn("TSR failed", "page", pageNum, "err", err)
+		var cells []TSRCell
+		var tsrErr error
+		cells, tsrErr = p.tableBuilder.DetectCells(tsrImg)
+		if tsrErr != nil {
+			slog.Warn("TSR failed", "page", pageNum, "err", tsrErr)
 		}
 		// Collect TSR raw cells for debug comparison.
-		if err == nil {
+		if tsrErr == nil {
 			for _, c := range cells {
 				p.debugTSR = append(p.debugTSR, TSRRawCell{
 					TableIndex: tableBaseIdx + len(items), Page: pageNum,
@@ -178,7 +162,8 @@ func (p *Parser) extractTableBoxesFromImage(boxes []TextBox, pageImg image.Image
 		cropOffY := math.Max(0, tm.region.Y0-marginY)
 		cropScale := scale
 
-		if err == nil && len(cells) > 0 {
+		var boxInCrop []TextBox
+		if tsrErr == nil && len(cells) > 0 {
 			if bestAngle != 0 {
 				// OCR on rotated image before mapping cells back.
 				// Cells are in rotated-pixel space; OCR works best
@@ -203,21 +188,13 @@ func (p *Parser) extractTableBoxesFromImage(boxes []TextBox, pageImg image.Image
 			if firstCellTop == 1e9 {
 				firstCellTop = cells[0].Y0 // fallback if all cells have Y0 < 0
 			}
-			boxInCrop := make([]TextBox, 0, len(tm.boxIdx))
+			boxInCrop = make([]TextBox, 0, len(tm.boxIdx))
 			for _, idx := range tm.boxIdx {
 				b := boxes[idx]
 				if b.Bottom*scale-cropOffY < firstCellTop {
 					continue // caption box above first TSR cell
 				}
-				boxInCrop = append(boxInCrop, TextBox{
-					X0: b.X0*scale - cropOffX, X1: b.X1*scale - cropOffX,
-					Top: b.Top*scale - cropOffY, Bottom: b.Bottom*scale - cropOffY,
-					Text: b.Text,
-				})
-			}
-			fillCellTextFromBoxes(cells, boxInCrop)
-			if bestAngle == 0 && !p.Config.SkipOCR {
-				ocrTableCells(cells, tsrImg, p.DeepDoc)
+				boxInCrop = append(boxInCrop, boxToCropSpace(b, scale, cropOffX, cropOffY))
 			}
 		}
 		var positions []Position
@@ -229,9 +206,40 @@ func (p *Parser) extractTableBoxesFromImage(boxes []TextBox, pageImg image.Image
 				Top: b.Top, Bottom: b.Bottom,
 			})
 		}
+		// Pre-compute grid from raw TSR cells (without crop offset).
+		// Stored in TableItem for constructTable; annotateTableBoxes
+		// recomputes with offset cells for spatial matching precision.
+		var grid [][]TSRCell
+		if len(cells) > 0 {
+			grid = p.tableBuilder.GroupCells(cells)
+			// Fill cell text from boxes in crop space. Works for both
+			// SaasDeepDoc (cells rearranged) and OssDeepDoc (cross-product creates new cells).
+			if len(grid) > 0 {
+				flat := flattenGrid(grid)
+				fillCellTextFromBoxes(flat, boxInCrop)
+				idx := 0
+				for ri := range grid {
+					for ci := range grid[ri] {
+						grid[ri][ci].Text = flat[idx].Text
+						idx++
+					}
+				}
+				if bestAngle == 0 && !p.Config.SkipOCR {
+					ocrTableCells(flat, tsrImg, p.DeepDoc)
+					idx = 0
+					for ri := range grid {
+						for ci := range grid[ri] {
+							grid[ri][ci].Text = flat[idx].Text
+							idx++
+						}
+					}
+				}
+			}
+		}
 		items = append(items, TableItem{
 			ImageB64:  imgB64,
 			Cells:     cells,
+			Grid:      grid,
 			Positions: positions,
 			Scale:     cropScale,
 			CropOffX:  cropOffX,
@@ -247,12 +255,8 @@ func (p *Parser) extractTableBoxesFromImage(boxes []TextBox, pageImg image.Image
 		// this table's cells — no cross-table cell contamination.
 		{
 			tableCells := make([]TSRCell, len(cells))
-			for k := range cells {
-				tableCells[k] = TSRCell{
-					X0: cells[k].X0 + cropOffX, Y0: cells[k].Y0 + cropOffY,
-					X1: cells[k].X1 + cropOffX, Y1: cells[k].Y1 + cropOffY,
-					Text: cells[k].Text, Label: cells[k].Label,
-				}
+		for k := range cells {
+				tableCells[k] = cellAddOffset(cells[k], cropOffX, cropOffY)
 			}
 			tblBoxes := make([]TextBox, len(tm.boxIdx))
 			for k, idx := range tm.boxIdx {
@@ -264,7 +268,8 @@ func (p *Parser) extractTableBoxesFromImage(boxes []TextBox, pageImg image.Image
 					Text:       b.Text,
 				}
 			}
-			annotateTableBoxes(tblBoxes, tableCells)
+			annotGrid := p.tableBuilder.GroupCells(tableCells)
+			annotateTableBoxes(tblBoxes, annotGrid)
 			// Write back per-box annotations scaled to PDF space.
 			for k, idx := range tm.boxIdx {
 				bp := &tblBoxes[k]
@@ -665,9 +670,17 @@ func constructTable(cells []TSRCell, boxes []TextBox, caption string, item *Tabl
 	stripCaptionFromCells(cells)
 
 
-	// Primary: cells with pre-merge spatial fill (best grid structure for current engine).
-	if len(cells) > 0 && hasAnyText(cells) {
-		rows := groupTSRCellsToRowsLabeled(cells)
+	// Use the pre-computed grid from TableBuilder.GroupCells.
+	// Falls back to cell-level grouping only when called directly by
+	// tests without a pre-computed Grid (production always sets it).
+	var rows [][]TSRCell
+	if item != nil {
+		rows = item.Grid
+	}
+	if rows == nil && len(cells) > 0 && hasAnyText(cells) {
+		rows = groupTSRCellsToRowsLabeled(cells)
+	}
+	if len(rows) > 0 && hasText(rows) {
 		hdrs := headerSetWithBlockType(rows)
 		if item != nil {
 			item.Rows = rowsToStrings(rows)
@@ -696,20 +709,6 @@ func constructTable(cells []TSRCell, boxes []TextBox, caption string, item *Tabl
 		}
 	}
 	return ""
-}
-
-// headerSet returns rows that contain cells with header TSR labels.
-func headerSet(cells []TSRCell, rows [][]TSRCell) map[int]bool {
-	hdrs := make(map[int]bool)
-	for ri, row := range rows {
-		for _, cell := range row {
-			if reTableHeader.MatchString(cell.Label) {
-				hdrs[ri] = true
-				break
-			}
-		}
-	}
-	return hdrs
 }
 
 // boxHeaderSet returns rows that contain boxes with H annotations.
@@ -1238,18 +1237,9 @@ func extractTableAndReplace(boxes []TextBox, tables []TableItem) []TextBox {
 				continue
 			}
 			s := tables[ti].Scale
-			pageGlobalCells := make([]TSRCell, len(tables[ti].Cells))
-			for ci, c := range tables[ti].Cells {
-				pageGlobalCells[ci] = TSRCell{
-					X0: (c.X0 + tables[ti].CropOffX) / s,
-					Y0: (c.Y0 + tables[ti].CropOffY) / s,
-					X1: (c.X1 + tables[ti].CropOffX) / s,
-					Y1: (c.Y1 + tables[ti].CropOffY) / s,
-					Text: c.Text, Label: c.Label,
-				}
-			}
-			var tableBoxes []TextBox
-			html := constructTable(pageGlobalCells, tableBoxes, tables[ti].Caption, &tables[ti])
+		pageGlobalCells := cellSliceToPageSpace(tables[ti].Cells, tables[ti].CropOffX, tables[ti].CropOffY, s)
+		var tableBoxes []TextBox
+		html := constructTable(pageGlobalCells, tableBoxes, tables[ti].Caption, &tables[ti])
 			if html != "" {
 				out = append(out, TextBox{
 					Text: html, LayoutType: "table", PageNumber: 0,
@@ -1341,18 +1331,8 @@ func extractTableAndReplace(boxes []TextBox, tables []TableItem) []TextBox {
 		// matching Python's coordinate space.  Text boxes are already in
 		// page-global 72 DPI (from ocrMergeChars), so no conversion needed.
 		s := tables[ti].Scale
-		pageGlobalCells := make([]TSRCell, len(tables[ti].Cells))
-		for ci, c := range tables[ti].Cells {
-			pageGlobalCells[ci] = TSRCell{
-				X0: (c.X0 + tables[ti].CropOffX) / s,
-				Y0: (c.Y0 + tables[ti].CropOffY) / s,
-				X1: (c.X1 + tables[ti].CropOffX) / s,
-				Y1: (c.Y1 + tables[ti].CropOffY) / s,
-				Text:  c.Text,
-				Label: c.Label,
-			}
-		}
-		// Collect only table-labelled boxes (Python: filters by layout_type).
+		pageGlobalCells := cellSliceToPageSpace(tables[ti].Cells, tables[ti].CropOffX, tables[ti].CropOffY, s)
+	// Collect only table-labelled boxes (Python: filters by layout_type).
 		var tableBoxes []TextBox
 		for i := range boxes {
 			if boxes[i].LayoutType != "table" {
@@ -1493,6 +1473,59 @@ func boxOverlapsPosition(box TextBox, pos Position) bool {
 		box.Top <= pos.Bottom+margin && box.Bottom >= pos.Top-margin
 }
 
+// ── coordinate space conversion helpers ──────────────────────────────
+
+// cellToPageSpace converts from crop-pixel space to page-global 72-DPI space.
+func cellToPageSpace(c TSRCell, cropOffX, cropOffY, scale float64) TSRCell {
+	return TSRCell{
+		X0: (c.X0 + cropOffX) / scale, Y0: (c.Y0 + cropOffY) / scale,
+		X1: (c.X1 + cropOffX) / scale, Y1: (c.Y1 + cropOffY) / scale,
+		Text: c.Text, Label: c.Label,
+	}
+}
+
+// cellAddOffset applies a crop offset to cell coordinates (stays in pixel space).
+func cellAddOffset(c TSRCell, offX, offY float64) TSRCell {
+	return TSRCell{
+		X0: c.X0 + offX, Y0: c.Y0 + offY, X1: c.X1 + offX, Y1: c.Y1 + offY,
+		Text: c.Text, Label: c.Label,
+	}
+}
+
+// cellSliceToPageSpace converts a slice of cells from crop-pixel to page DPI space.
+func cellSliceToPageSpace(cells []TSRCell, cropOffX, cropOffY, scale float64) []TSRCell {
+	out := make([]TSRCell, len(cells))
+	for i, c := range cells {
+		out[i] = cellToPageSpace(c, cropOffX, cropOffY, scale)
+	}
+	return out
+}
+
+// boxToCropSpace converts a TextBox from PDF-point space to crop-pixel space.
+func boxToCropSpace(b TextBox, scale, cropOffX, cropOffY float64) TextBox {
+	return TextBox{
+		X0: b.X0*scale - cropOffX, X1: b.X1*scale - cropOffX,
+		Top: b.Top*scale - cropOffY, Bottom: b.Bottom*scale - cropOffY,
+		Text: b.Text,
+	}
+}
+
+// copyBoxAnnotations copies the DLA/TSR annotation fields from src to dst.
+func copyBoxAnnotations(dst, src *TextBox) {
+	dst.R = src.R
+	dst.C = src.C
+	dst.RTop = src.RTop
+	dst.RBott = src.RBott
+	dst.H = src.H
+	dst.HTop = src.HTop
+	dst.HBott = src.HBott
+	dst.HLeft = src.HLeft
+	dst.HRight = src.HRight
+	dst.CLeft = src.CLeft
+	dst.CRight = src.CRight
+	dst.SP = src.SP
+}
+
 // rowsToHTML converts grouped TSR cell rows to an HTML table string.
 // spanInfo maps (row,col) → (colspan, rowspan) for spanning cells;
 // covered marks cells hidden by a span. Both may be nil.
@@ -1549,6 +1582,19 @@ func rowsToHTML(rows [][]TSRCell, caption string, headerRows map[int]bool, spanI
 // calSpans computes colspan and rowspan for spanning cells in the grid.
 // Returns spanInfo (row,col → colspan,rowspan) and covered (cells hidden by spans).
 // Matches Python's __cal_spans (table_structure_recognizer.py:535).
+// flattenGrid flattens a 2D grid into a 1D slice for fillCellTextFromBoxes.
+func flattenGrid(grid [][]TSRCell) []TSRCell {
+	n := 0
+	for _, row := range grid {
+		n += len(row)
+	}
+	flat := make([]TSRCell, 0, n)
+	for _, row := range grid {
+		flat = append(flat, row...)
+	}
+	return flat
+}
+
 func calSpans(rows [][]TSRCell) (map[[2]int][2]int, map[[2]int]bool) {
 	spanInfo := make(map[[2]int][2]int)
 	covered := make(map[[2]int]bool)
@@ -1576,12 +1622,10 @@ func calSpans(rows [][]TSRCell) (map[[2]int][2]int, map[[2]int]bool) {
 		for j, cell := range row {
 			if j >= nCols {
 				continue
-				}
-			// Exclude spanning/header cells from column boundary
-			// calculations — their extended bounds pollute the center
-			// points of regular columns (Python: uses cols/rows
-			// sub-groups that naturally exclude spanning cells).
-			if reTableSpan.MatchString(cell.Label) || reTableHeader.MatchString(cell.Label) {
+			}
+			// Exclude spanning cells from column/row boundary calculations.
+			// Use label-based detection (O(1), no dependency on column midpoints).
+			if strings.Contains(cell.Label, "spanning") {
 				continue
 			}
 			if cell.X0 < colLeft[j] {

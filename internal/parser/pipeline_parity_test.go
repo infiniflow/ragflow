@@ -48,9 +48,9 @@ func TestPipelineParity(t *testing.T) {
 		}
 
 		// Run Go pipeline (SKIP_OCR — no DeepDoc)
-		cfg := DefaultConfig()
+		cfg := DefaultParserConfig()
 		cfg.SortByTop = true
-		p := NewParser(cfg)
+		p := NewParser(cfg, &MockDocAnalyzer{Healthy: true, Model: ModelSaas})
 		result, err := p.Parse(context.Background(), engine)
 		if err != nil {
 			t.Errorf("%s: Parse: %v", name, err)

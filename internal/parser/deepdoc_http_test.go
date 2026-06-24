@@ -12,6 +12,17 @@ import (
 	"testing"
 )
 
+// mustNewDeepDocClient wraps NewDeepDocClient for test convenience.
+// Fails the test if the URL is empty.
+func mustNewDeepDocClient(t *testing.T, baseURL string) *DeepDocClient {
+	t.Helper()
+	client, err := NewDeepDocClient(baseURL)
+	if err != nil {
+		t.Fatalf("NewDeepDocClient(%q): %v", baseURL, err)
+	}
+	return client
+}
+
 // testImage creates a small 10x10 red image for HTTP client tests.
 func testImage() image.Image {
 	img := image.NewRGBA(image.Rect(0, 0, 10, 10))
@@ -55,7 +66,7 @@ func TestDeepDocHTTP_DLA(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewDeepDocClient(srv.URL)
+	client := mustNewDeepDocClient(t, srv.URL)
 	regions, err := client.DLA(testImage())
 	if err != nil {
 		t.Fatal(err)
@@ -89,7 +100,7 @@ func TestDeepDocHTTP_TSR(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewDeepDocClient(srv.URL)
+	client := mustNewDeepDocClient(t, srv.URL)
 	cells, err := client.TSR(testImage())
 	if err != nil {
 		t.Fatal(err)
@@ -135,7 +146,7 @@ func TestDeepDocHTTP_OCRDetect(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewDeepDocClient(srv.URL)
+	client := mustNewDeepDocClient(t, srv.URL)
 	boxes, err := client.OCRDetect(testImage())
 	if err != nil {
 		t.Fatal(err)
@@ -175,7 +186,7 @@ func TestDeepDocHTTP_OCRRecognize(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewDeepDocClient(srv.URL)
+	client := mustNewDeepDocClient(t, srv.URL)
 	texts, err := client.OCRRecognize(testImage())
 	if err != nil {
 		t.Fatal(err)
@@ -203,7 +214,7 @@ func TestDeepDocHTTP_Health(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewDeepDocClient(srv.URL)
+	client := mustNewDeepDocClient(t, srv.URL)
 	if !client.Health() {
 		t.Error("Health() = false, want true")
 	}
@@ -213,7 +224,7 @@ func TestDeepDocHTTP_Health(t *testing.T) {
 
 func TestDeepDocHTTP_HealthDown(t *testing.T) {
 	// Connection refused — no server running.
-	client := NewDeepDocClient("http://127.0.0.1:1")
+	client := mustNewDeepDocClient(t, "http://127.0.0.1:1")
 	if client.Health() {
 		t.Error("Health() = true for unreachable server, want false")
 	}
@@ -226,7 +237,7 @@ func TestDeepDocHTTP_ServerError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewDeepDocClient(srv.URL)
+	client := mustNewDeepDocClient(t, srv.URL)
 
 	_, err := client.DLA(testImage())
 	if err == nil {
@@ -248,7 +259,7 @@ func TestDeepDocHTTP_MalformedJSON(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewDeepDocClient(srv.URL)
+	client := mustNewDeepDocClient(t, srv.URL)
 
 	_, err := client.DLA(testImage())
 	if err == nil {
@@ -267,7 +278,7 @@ func TestDeepDocHTTP_EmptyResponse(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewDeepDocClient(srv.URL)
+	client := mustNewDeepDocClient(t, srv.URL)
 
 	regions, err := client.DLA(testImage())
 	if err != nil {
@@ -298,7 +309,7 @@ func TestDeepDocHTTP_ShortBBox(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewDeepDocClient(srv.URL)
+	client := mustNewDeepDocClient(t, srv.URL)
 	regions, err := client.DLA(testImage())
 	if err != nil {
 		t.Fatal(err)

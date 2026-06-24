@@ -7,10 +7,10 @@ import (
 	"log/slog"
 	"math"
 	"math/rand/v2"
-	"sync"
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // dlaDPI is the DPI used for rendering page images for DeepDoc DLA/OCR.
@@ -20,20 +20,21 @@ const dlaDPI = 216
 // It corresponds to RAGFlowPdfParser in pdf_parser.py.
 // Parser is stateless after construction — safe to reuse across documents.
 type Parser struct {
-	Config Config
+	Config ParserConfig
 
-	// DeepDoc is the optional document layout / OCR / table recognition
-	// service.  When nil (default), only text extraction is performed —
-	// matching Python's stubbed OCR behaviour.
-	//
-	// TODO: Move to ModelDriver registration (Plan A) so tenants can
-	// configure DeepDoc through the model provider system.
+	// DeepDoc is the required document layout / OCR / table recognition
+	// service. Set at construction time by NewParser.
 	DeepDoc DocAnalyzer
 
 	// SampleChars samples up to n chars from a page for English detection.
 	// Defaults to random sampling (matching Python's random.choices).
 	// Inject a deterministic sampler for reproducible tests.
 	SampleChars SampleFunc
+
+	// tableBuilder is the TSR model adapter. Set at construction time
+	// by NewParser from DeepDoc.ModelType(). Callers can inject a
+	// different implementation via Config.TableBuilder.
+	tableBuilder TableBuilder
 
 	// debugDLA and debugTSR collect intermediates for comparison with Python.
 	// Set before Parse(), read from ParseResult after, cleared by Parse().
@@ -78,10 +79,16 @@ type Tokenizer interface {
 // random.choices).  Tests can inject a deterministic sampler.
 type SampleFunc func(chars []TextChar, n int) string
 
-// NewParser creates a new Parser.
-func NewParser(cfg Config) *Parser {
+// NewParser creates a new Parser with the required DeepDoc service.
+func NewParser(cfg ParserConfig, doc DocAnalyzer) *Parser {
+	tb := cfg.TableBuilder
+	if tb == nil {
+		tb = NewTableBuilderFor(doc)
+	}
 	return &Parser{
-		Config: cfg,
+		Config:       cfg,
+		DeepDoc:      doc,
+		tableBuilder: tb,
 	}
 }
 
@@ -130,11 +137,11 @@ func (p *Parser) Parse(ctx context.Context, engine PDFEngine) (*ParseResult, err
 		prescanMedianW[pg] = MedianCharWidth(chars)
 	}
 	isEnglish := detectEnglish(prescanChars, totalPages, p.SampleChars)
-	scanNoise := p.DeepDoc != nil && isScanNoise(fullTextFromChars(prescanChars))
+	scanNoise := isScanNoise(fullTextFromChars(prescanChars))
 
 	// ── Small document: process all at once (no chunking overhead) ──
 	if totalPages <= chunkSize {
-		return p.processChunk(ctx, engine, fromPage, toPage,
+		return p.processPages(ctx, engine, fromPage, toPage,
 			prescanChars, prescanMedianH, prescanMedianW, isEnglish, scanNoise)
 	}
 
@@ -157,7 +164,7 @@ func (p *Parser) Parse(ctx context.Context, engine PDFEngine) (*ParseResult, err
 			chunkMW[pg] = prescanMedianW[pg]
 		}
 
-		chunk, err := p.processChunk(ctx, engine, start, end,
+		chunk, err := p.processPages(ctx, engine, start, end,
 			chunkChars, chunkMH, chunkMW, isEnglish, scanNoise)
 		if err != nil {
 			return nil, err
@@ -179,224 +186,229 @@ func (p *Parser) Parse(ctx context.Context, engine PDFEngine) (*ParseResult, err
 	return result, nil
 }
 
-// processChunk runs the full pipeline on pages [fromPage, toPage].
-// prescanChars provides pre-extracted chars (avoids double extraction).
-func (p *Parser) processChunk(ctx context.Context, engine PDFEngine,
+// extractPages runs per-page OCR (detect + recognize) for the given page
+// range, returning text boxes, char data, and whether any page used OCR.
+func (p *Parser) extractPages(ctx context.Context, engine PDFEngine,
 	fromPage, toPage int,
 	prescanChars map[int][]TextChar,
 	medianHeights, medianWidths map[int]float64,
-	isEnglish, isScanNoiseDoc bool,
-) (*ParseResult, error) {
-	result := &ParseResult{PageImages: make(map[int]image.Image)}
-
+	pageImages map[int]image.Image,
+) ([]TextBox, map[int][]TextChar, bool) {
 	var boxes []TextBox
-	pageChars := make(map[int][]TextChar) // may be modified by OCR
+	pageChars := make(map[int][]TextChar)
+	ocrUsedAny := false
 
-	// Per-page extraction
-		// Per-page extraction (parallel when MaxOCRConcurrency > 0).
-		ocrUsedAny := false
-		type pr struct {
-			pg       int
-			ocrBoxes []TextBox
-			chars    []TextChar
-			ocrUsed  bool
-			pageImg  image.Image
-			err      error
-		}
-		pageCount := toPage - fromPage + 1
-		results := make([]pr, pageCount)
+	type pr struct {
+		pg       int
+		ocrBoxes []TextBox
+		chars    []TextChar
+		ocrUsed  bool
+		pageImg  image.Image
+		err      error
+	}
+	pageCount := toPage - fromPage + 1
+	results := make([]pr, pageCount)
 
-		// Semaphore cap: 0 → sequential; >0 → bounded parallelism.
-		cap := p.Config.MaxOCRConcurrency
-		if cap <= 0 {
-			cap = 1
-		}
-		sem := make(chan struct{}, cap)
-		var wg sync.WaitGroup
+	// Semaphore cap: 0 → sequential; >0 → bounded parallelism.
+	cap := p.Config.MaxOCRConcurrency
+	if cap <= 0 {
+		cap = 1
+	}
+	sem := make(chan struct{}, cap)
+	var wg sync.WaitGroup
 
-		for i := 0; i < pageCount; i++ {
-			pg := fromPage + i
-			chars := prescanChars[pg]
+	for i := 0; i < pageCount; i++ {
+		pg := fromPage + i
+		chars := prescanChars[pg]
 
-			// Fast path: pages with embedded chars → sequential inline (no HTTP OCR).
-			if len(chars) > 0 && !isGarbledPage(chars) {
-				pageImg, renderErr := renderPageToImage(engine, pg)
-				if renderErr == nil && pageImg != nil {
-					result.PageImages[pg] = pageImg
-				}
-				var ocrBoxes []TextBox
-				ocrUsed := false
-				if p.DeepDoc != nil && !p.Config.SkipOCR && renderErr == nil && pageImg != nil {
-					ocrBoxes = ocrMergeChars(pageImg, chars, p.DeepDoc, pg)
-					if ocrBoxes == nil {
-						ocrBoxes = charsToBoxes(chars, pg, p.Config.SortByTop)
-					} else {
-						ocrUsed = true
-						ocrUsedAny = true
-					}
+		// Fast path: pages with embedded chars → sequential inline (no HTTP OCR).
+		if len(chars) > 0 && !isGarbledPage(chars) {
+			pageImg, renderErr := renderPageToImage(engine, pg)
+			if renderErr == nil && pageImg != nil {
+				pageImages[pg] = pageImg
+			}
+			var ocrBoxes []TextBox
+			ocrUsed := false
+			if !p.Config.SkipOCR && renderErr == nil && pageImg != nil {
+				ocrBoxes = ocrMergeChars(pageImg, chars, p.DeepDoc, pg)
+				if ocrBoxes == nil {
+					ocrBoxes = charsToBoxes(chars, pg, p.Config.SortByTop)
 				} else {
+					ocrUsed = true
+					ocrUsedAny = true
+				}
+			} else {
+				ocrBoxes = charsToBoxes(chars, pg, p.Config.SortByTop)
+			}
+			results[i] = pr{pg: pg, ocrBoxes: ocrBoxes, chars: chars, ocrUsed: ocrUsed}
+			continue
+		}
+
+		// OCR path: render + detect + recognize (potentially parallel).
+		wg.Add(1)
+		go func(i, pg int, chars []TextChar) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			pageImg, err := renderPageToImage(engine, pg)
+			if err != nil {
+				results[i] = pr{pg: pg, err: err}
+				return
+			}
+
+			var ocrBoxes []TextBox
+			ocrUsed := false
+			if !p.Config.SkipOCR {
+				label := "scan page"
+				if len(chars) > 0 {
+					label = "garbled page"
+				}
+				ocrBoxes = ocrDetectAndRecognize(pageImg, p.DeepDoc, pg, label)
+				if ocrBoxes != nil {
+					for j := range ocrBoxes {
+						for _, r := range ocrBoxes[j].Text {
+							chars = append(chars, TextChar{Text: string(r), PageNumber: pg})
+							break
+						}
+					}
+					ocrUsed = true
+				}
+			}
+			// Merged OCR path for pages with both embedded and OCR chars.
+			if !ocrUsed && len(chars) > 0 && !p.Config.SkipOCR {
+				ocrBoxes = ocrMergeChars(pageImg, chars, p.DeepDoc, pg)
+				if ocrBoxes != nil {
+					ocrUsed = true
+				}
+			}
+			if !ocrUsed {
+				if len(chars) > 0 {
 					ocrBoxes = charsToBoxes(chars, pg, p.Config.SortByTop)
 				}
-				results[i] = pr{pg: pg, ocrBoxes: ocrBoxes, chars: chars, ocrUsed: ocrUsed}
-				continue
 			}
-
-			// OCR path: render + detect + recognize (potentially parallel).
-			wg.Add(1)
-			go func(i, pg int, chars []TextChar) {
-				defer wg.Done()
-				sem <- struct{}{}
-				defer func() { <-sem }()
-
-				pageImg, err := renderPageToImage(engine, pg)
-				if err != nil {
-					results[i] = pr{pg: pg, err: err}
-					return
-				}
-
-				var ocrBoxes []TextBox
-				ocrUsed := false
-				if p.DeepDoc != nil && !p.Config.SkipOCR {
-					label := "scan page"
-					if len(chars) > 0 {
-						label = "garbled page"
-					}
-					ocrBoxes = ocrDetectAndRecognize(pageImg, p.DeepDoc, pg, label)
-					if ocrBoxes != nil {
-						for j := range ocrBoxes {
-							for _, r := range ocrBoxes[j].Text {
-								chars = append(chars, TextChar{Text: string(r), PageNumber: pg})
-								break
-							}
-						}
-						ocrUsed = true
-					}
-				}
-				// Merged OCR path for pages with both embedded and OCR chars.
-				if !ocrUsed && len(chars) > 0 && p.DeepDoc != nil && !p.Config.SkipOCR {
-					ocrBoxes = ocrMergeChars(pageImg, chars, p.DeepDoc, pg)
-					if ocrBoxes != nil {
-						ocrUsed = true
-					}
-				}
-				if !ocrUsed {
-					if len(chars) > 0 {
-						ocrBoxes = charsToBoxes(chars, pg, p.Config.SortByTop)
-					}
-				}
-				results[i] = pr{pg: pg, ocrBoxes: ocrBoxes, chars: chars, ocrUsed: ocrUsed, pageImg: pageImg}
-			}(i, pg, chars)
-		}
-		wg.Wait()
-
-		// Merge results in page order.
-		for i := 0; i < pageCount; i++ {
-			r := results[i]
-			if r.err != nil {
-				if r.err != nil {
-					slog.Warn("page OCR failed", "page", r.pg, "err", r.err)
-				}
-				continue
-			}
-			if r.ocrUsed {
-				boxes = append(boxes, r.ocrBoxes...)
-				ocrUsedAny = true
-			} else if len(r.ocrBoxes) > 0 {
-				boxes = append(boxes, r.ocrBoxes...)
-			}
-			if r.pageImg != nil {
-				result.PageImages[r.pg] = r.pageImg
-			}
-			pageChars[r.pg] = r.chars
-			if r.ocrUsed {
-				medianHeights[r.pg] = MedianCharHeight(r.chars)
-				medianWidths[r.pg] = MedianCharWidth(r.chars)
-			}
-		}
-	// Scan noise: re-OCR all pages in this chunk.
-	if isScanNoiseDoc {
-		slog.Warn("scan noise: OCR retry for chunk", "from", fromPage, "to", toPage)
-		boxes = nil
-		for pg := fromPage; pg <= toPage; pg++ {
-			// Reuse page image from per-page loop when available.
-			img := result.PageImages[pg]
-			if img == nil {
-				var err error
-				img, err = renderPageToImage(engine, pg)
-				if err != nil {
-					slog.Warn("scan noise: page render failed for OCR retry", "page", pg, "err", err)
-					continue
-				}
-			}
-			ocrBoxes := ocrDetectAndRecognize(img, p.DeepDoc, pg, "scan page")
-			if ocrBoxes == nil {
-				slog.Warn("scan noise: page OCR retry returned empty", "page", pg)
-				continue
-			}
-			boxes = append(boxes, ocrBoxes...)
-			var chars []TextChar
-			for _, b := range ocrBoxes {
-				for _, r := range b.Text {
-					chars = append(chars, TextChar{Text: string(r), Top: b.Top, Bottom: b.Bottom, PageNumber: pg})
-					break
-				}
-			}
-			pageChars[pg] = chars
-			medianHeights[pg] = MedianCharHeight(chars)
-			medianWidths[pg] = MedianCharWidth(chars)
-		}
-		ocrUsedAny = true
-		slog.Debug("scan noise OCR retry complete", "pages", toPage-fromPage+1, "boxes", len(boxes))
+			results[i] = pr{pg: pg, ocrBoxes: ocrBoxes, chars: chars, ocrUsed: ocrUsed, pageImg: pageImg}
+		}(i, pg, chars)
 	}
+	wg.Wait()
 
-	// Zoom retry: if OCR produced zero boxes and zoom < 9, re-render at
-	// higher resolution and re-run OCR.  Matches Python's __images__ retry
-	// (pdf_parser.py:1517-1518).
-	if len(boxes) == 0 && p.Config.Zoom < 9 && p.DeepDoc != nil && !p.Config.SkipOCR {
-		retryZoom := p.Config.Zoom * 3
-		retryDPI := retryZoom * 72
-		slog.Info("zoom retry: 0 boxes, re-rendering", "oldZoom", p.Config.Zoom, "newZoom", retryZoom)
-		for pg := fromPage; pg <= toPage; pg++ {
-			img, err := engine.RenderPageImage(pg, retryDPI)
-			if err != nil {
-				slog.Warn("zoom retry: render failed", "page", pg, "err", err)
-				continue
-			}
-			result.PageImages[pg] = img
-			ocrBoxes := ocrDetectAndRecognize(img, p.DeepDoc, pg, "zoom retry")
-			if ocrBoxes == nil {
-				continue
-			}
-			// Scale boxes from retryZoom to config.Zoom space.
-			scaleFactor := retryZoom / p.Config.Zoom
-			for i := range ocrBoxes {
-				ocrBoxes[i].X0 /= scaleFactor
-				ocrBoxes[i].X1 /= scaleFactor
-				ocrBoxes[i].Top /= scaleFactor
-				ocrBoxes[i].Bottom /= scaleFactor
-			}
-			boxes = append(boxes, ocrBoxes...)
+	// Merge results in page order.
+	for i := 0; i < pageCount; i++ {
+		r := results[i]
+		if r.err != nil {
+			slog.Warn("page OCR failed", "page", r.pg, "err", r.err)
+			continue
+		}
+		if r.ocrUsed {
+			boxes = append(boxes, r.ocrBoxes...)
 			ocrUsedAny = true
+		} else if len(r.ocrBoxes) > 0 {
+			boxes = append(boxes, r.ocrBoxes...)
+		}
+		if r.pageImg != nil {
+			pageImages[r.pg] = r.pageImg
+		}
+		pageChars[r.pg] = r.chars
+		if r.ocrUsed {
+			medianHeights[r.pg] = MedianCharHeight(r.chars)
+			medianWidths[r.pg] = MedianCharWidth(r.chars)
 		}
 	}
+	return boxes, pageChars, ocrUsedAny
+}
 
-	if len(boxes) == 0 {
-		return result, nil
+// retryScanNoise re-runs OCR on all pages when prescan detects scan noise,
+// overwriting page-level state with fresh detect+recognize results.
+func (p *Parser) retryScanNoise(engine PDFEngine,
+	fromPage, toPage int,
+	pageImages map[int]image.Image,
+	pageChars map[int][]TextChar,
+	medianHeights, medianWidths map[int]float64,
+	ocrUsedAny bool,
+) ([]TextBox, map[int][]TextChar, bool) {
+	slog.Warn("scan noise: OCR retry", "from", fromPage, "to", toPage)
+	var boxes []TextBox
+	for pg := fromPage; pg <= toPage; pg++ {
+		img := pageImages[pg]
+		if img == nil {
+			var err error
+			img, err = renderPageToImage(engine, pg)
+			if err != nil {
+				slog.Warn("scan noise: page render failed", "page", pg, "err", err)
+				continue
+			}
+		}
+		ocrBoxes := ocrDetectAndRecognize(img, p.DeepDoc, pg, "scan page")
+		if ocrBoxes == nil {
+			slog.Warn("scan noise: page OCR empty", "page", pg)
+			continue
+		}
+		boxes = append(boxes, ocrBoxes...)
+		var chars []TextChar
+		for _, b := range ocrBoxes {
+			for _, r := range b.Text {
+				chars = append(chars, TextChar{Text: string(r), Top: b.Top, Bottom: b.Bottom, PageNumber: pg})
+				break
+			}
+		}
+		pageChars[pg] = chars
+		medianHeights[pg] = MedianCharHeight(chars)
+		medianWidths[pg] = MedianCharWidth(chars)
 	}
+	slog.Debug("scan noise OCR retry complete", "pages", toPage-fromPage+1, "boxes", len(boxes))
+	return boxes, pageChars, true
+}
 
+// retryZoom re-renders pages at higher resolution and re-runs OCR when the
+// initial extraction produced zero boxes.  Box coordinates are scaled back
+// to Config.Zoom space.  Matches Python's __images__ retry.
+func (p *Parser) retryZoom(engine PDFEngine,
+	fromPage, toPage int,
+	pageImages map[int]image.Image,
+	boxes []TextBox, ocrUsedAny bool,
+) ([]TextBox, bool) {
+	retryZoom := p.Config.Zoom * 3
+	retryDPI := retryZoom * 72
+	slog.Info("zoom retry: re-rendering", "oldZoom", p.Config.Zoom, "newZoom", retryZoom)
+	for pg := fromPage; pg <= toPage; pg++ {
+		img, err := engine.RenderPageImage(pg, retryDPI)
+		if err != nil {
+			slog.Warn("zoom retry: render failed", "page", pg, "err", err)
+			continue
+		}
+		pageImages[pg] = img
+		ocrBoxes := ocrDetectAndRecognize(img, p.DeepDoc, pg, "zoom retry")
+		if ocrBoxes == nil {
+			continue
+		}
+		scaleFactor := retryZoom / p.Config.Zoom
+		for i := range ocrBoxes {
+			ocrBoxes[i].X0 /= scaleFactor
+			ocrBoxes[i].X1 /= scaleFactor
+			ocrBoxes[i].Top /= scaleFactor
+			ocrBoxes[i].Bottom /= scaleFactor
+		}
+		boxes = append(boxes, ocrBoxes...)
+		ocrUsedAny = true
+	}
+	return boxes, ocrUsedAny
+}
+
+// buildLayout runs the DLA → TSR → Column → TextMerge → VM → Section
+// pipeline and populates result.Metrics, result.Tables, result.Sections,
+// and result.Figures.  Matches Python's _parse_loaded_window_into_bboxes
+// order.
+func (p *Parser) buildLayout(ctx context.Context,
+	result *ParseResult, engine PDFEngine,
+	boxes []TextBox, pageChars map[int][]TextChar,
+	medianHeights, medianWidths map[int]float64,
+	fromPage, toPage int, ocrUsedAny bool, isEnglish bool,
+) {
+	_ = ctx
 	result.Metrics.BoxesInitial = len(boxes)
-
-	// ---- Layout pipeline (matches Python order: DLA→TSR→TextMerge→VM) ----
-	//
-	// DLA+TSR must run first: enrichWithDeepDoc sets LayoutType and LayoutNo
-	// on boxes via annotateBoxLayouts, which TextMerge and NaiveVerticalMerge
-	// gate on to prevent cross-layout merges (Python _layouts_rec → _text_merge).
 
 	result.Tables = p.enrichWithDeepDoc(engine, boxes, result.PageImages)
 	result.Metrics.TablesCount = len(result.Tables)
-
-		// Merge tables across consecutive pages (Python _extract_table_figure).
-		result.Metrics.TablesCount = len(result.Tables)
 
 	boxes = AssignColumn(boxes, p.Config.Zoom)
 	boxes = TextMerge(boxes, medianHeights, p.Config.Zoom)
@@ -404,19 +416,14 @@ func (p *Parser) processChunk(ctx context.Context, engine PDFEngine,
 
 	sortByPageThenY(boxes, p.Config.SortByTop)
 
-	// Re-evaluate isEnglish if any page was OCR-enriched (scanned documents).
 	if ocrUsedAny {
 		isEnglish = detectEnglish(pageChars, toPage-fromPage+1, p.SampleChars)
 	}
 	boxes = NaiveVerticalMerge(boxes, medianHeights, medianWidths, isEnglish)
 	result.Metrics.BoxesVertMerge = len(boxes)
 
-	// Pop table boxes and replace with consolidated HTML (Python _extract_table_figure).
 	boxes = extractTableAndReplace(boxes, result.Tables)
-
-		// Consolidate figure boxes: merge same-layoutno figure boxes into one
-		// per figure region (Python insert_table_figures behavior).
-		boxes = consolidateFigures(boxes)
+	boxes = consolidateFigures(boxes)
 
 	pageHeights := make(map[int]float64, len(result.PageImages))
 	for pg, img := range result.PageImages {
@@ -425,17 +432,43 @@ func (p *Parser) processChunk(ctx context.Context, engine PDFEngine,
 	result.Sections = boxesToSections(boxes, pageHeights)
 	result.Metrics.BoxesFinal = len(result.Sections)
 	result.Figures = CollectFigures(result.Sections)
-
-	// Merge captions into their parent figure/table and remove caption
-	// sections. For table sections, caption text is prepended before the
-	// HTML table, matching Python's _extract_table_figure caption handling.
 	result.Sections = mergeCaptions(result.Sections, result.Figures)
+}
 
-	// Crop images for each section.
-	// Table sections use the pre-cropped DLA region image (TableItem.ImageB64)
-	// stored during enrichWithDeepDoc, matching Python's cropout behavior.
-	// Figure sections use DLA-aware cropping first (matching Python's
-	// cropout which crops from DLA region boundaries for figures).
+// processPages runs the full pipeline on pages [fromPage, toPage].
+// prescanChars provides pre-extracted chars (avoids double extraction).
+func (p *Parser) processPages(ctx context.Context, engine PDFEngine,
+	fromPage, toPage int,
+	prescanChars map[int][]TextChar,
+	medianHeights, medianWidths map[int]float64,
+	isEnglish, isScanNoiseDoc bool,
+) (*ParseResult, error) {
+	result := &ParseResult{PageImages: make(map[int]image.Image)}
+
+	// 1. OCR extraction — per-page detect + recognize + char merge.
+	boxes, pageChars, ocrUsedAny := p.extractPages(ctx, engine,
+		fromPage, toPage, prescanChars,
+		medianHeights, medianWidths, result.PageImages)
+	// 2. Scan noise retry — re-OCR all pages when prescan detects scan noise.
+	if isScanNoiseDoc {
+		boxes, pageChars, ocrUsedAny = p.retryScanNoise(engine,
+			fromPage, toPage, result.PageImages,
+			pageChars, medianHeights, medianWidths, ocrUsedAny)
+	}
+
+	// 3. Zoom retry — re-render at higher resolution if OCR produced zero boxes.
+	if len(boxes) == 0 && p.Config.Zoom < 9 && !p.Config.SkipOCR {
+		boxes, ocrUsedAny = p.retryZoom(engine, fromPage, toPage,
+			result.PageImages, boxes, ocrUsedAny)
+	}
+
+	if len(boxes) == 0 {
+		return result, nil
+	}
+
+	// 4. Layout pipeline — DLA → TSR → Column → TextMerge → VM → Sections.
+	p.buildLayout(ctx, result, engine, boxes, pageChars,
+		medianHeights, medianWidths, fromPage, toPage, ocrUsedAny, isEnglish)
 	// Text sections use cropSectionImage based on their PositionTag.
 	if len(result.PageImages) > 0 {
 		// Build lookup: DLA region → TableItem index for image matching.
@@ -718,21 +751,21 @@ func boxesToSections(boxes []TextBox, pageHeights map[int]float64) []Section {
 		bottom := b.Bottom
 		if pageHeights != nil {
 			if ph, ok := pageHeights[b.PageNumber]; ok && ph > 0 && b.Bottom > ph {
-			remaining := b.Bottom
-			for remaining > ph {
-				if nextPh, ok := pageHeights[toPage+1]; ok {
-					remaining -= ph
-					ph = nextPh
-					toPage++
-				} else {
-					// Next page height unknown — assume same height.
-					remaining -= ph
-					toPage++
-					break
+				remaining := b.Bottom
+				for remaining > ph {
+					if nextPh, ok := pageHeights[toPage+1]; ok {
+						remaining -= ph
+						ph = nextPh
+						toPage++
+					} else {
+						// Next page height unknown — assume same height.
+						remaining -= ph
+						toPage++
+						break
+					}
 				}
+				bottom = remaining
 			}
-			bottom = remaining
-		}
 		}
 		var posTag string
 		var pageNums []int
@@ -875,7 +908,6 @@ func sectionPosKey(s Section) string {
 	return fmt.Sprintf("%04d_%06.1f_%06.1f", p.PageNumbers[0], p.Top, p.Left)
 }
 
-
 // sortByPageThenY sorts boxes by page → vertical key → x0.
 func sortByPageThenY(boxes []TextBox, sortByTop bool) {
 	key := func(b TextBox) float64 { return b.Bottom }
@@ -1002,21 +1034,20 @@ func lineToTextBox(chars []TextChar) TextBox {
 	return box
 }
 
-
 // projMatch checks whether a text line matches a title/heading pattern,
 // returning a priority number (lower = stronger title) or 0 if no match.
 // Python: pdf_parser.py:1248-1270 proj_match()
 //
 // Patterns (priority 1-12):
-//   1. 第X章     — Chinese chapter header
-//   2. 第X条/节  — Chinese article/section
-//   3. X、       — Chinese numbered item
-//   4. (X)       — Chinese parenthesized number
-//   5. 1. / 1、  — Arabic numeral + separator
-//   6. 1.1       — Dotted decimal (2 levels)
-//   7. 1.1.1     — Dotted decimal (3 levels)
-//   8. 1.1.1.1   — Dotted decimal (4 levels)
-//   9. ...:/?    — Short line ending with colon/question (≤48 chars)
+//  1. 第X章     — Chinese chapter header
+//  2. 第X条/节  — Chinese article/section
+//  3. X、       — Chinese numbered item
+//  4. (X)       — Chinese parenthesized number
+//  5. 1. / 1、  — Arabic numeral + separator
+//  6. 1.1       — Dotted decimal (2 levels)
+//  7. 1.1.1     — Dotted decimal (3 levels)
+//  8. 1.1.1.1   — Dotted decimal (4 levels)
+//  9. ...:/?    — Short line ending with colon/question (≤48 chars)
 //  10. 1)        — Arabic numeral + right paren
 //  11. (1)       — Arabic numeral in parens
 //  12. X是 / bullets — Chinese "是" suffix or bullet characters

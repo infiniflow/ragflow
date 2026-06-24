@@ -1,0 +1,49 @@
+# Reuse SaaS deepdoc image as base (has Python 3.11, system deps, litserve, etc.)
+FROM 192.168.1.51/infiniflow-ai/deepdoc_cpu:latest
+
+ENV PYTHONPATH=/app
+
+# ── Replace with OSS vision modules (all .py files) ──
+RUN mkdir -p /app/deepdoc/vision
+COPY deepdoc/vision/ /app/deepdoc/vision/
+
+# Replace __init__.py with minimal version (avoid pdfplumber, beartype)
+COPY deepdoc/servers/_docker_vision_init.py /app/deepdoc/vision/__init__.py
+
+# Replace deepdoc/__init__.py (avoid beartype dependency)
+COPY deepdoc/servers/_docker_deepdoc_init.py /app/deepdoc/__init__.py
+
+# Stub huggingface_hub (models are local, no HF download needed)
+RUN mkdir -p /app/huggingface_hub
+COPY deepdoc/servers/_docker_hf_stub.py /app/huggingface_hub/__init__.py
+
+# Stub common and rag modules
+RUN mkdir -p /app/common /app/rag/nlp
+COPY deepdoc/servers/_docker_common_init.py /app/common/__init__.py
+COPY deepdoc/servers/_docker_file_utils.py /app/common/file_utils.py
+COPY deepdoc/servers/_docker_misc_utils.py /app/common/misc_utils.py
+COPY deepdoc/servers/_docker_rag_init.py /app/rag/__init__.py
+COPY deepdoc/servers/_docker_rag_nlp.py /app/rag/nlp/__init__.py
+RUN mkdir -p /app/rag/utils
+COPY deepdoc/servers/_docker_lazy_image.py /app/rag/utils/lazy_image.py
+
+# ── OSS server code ──
+RUN mkdir -p /app/deepdoc/servers/endpoints /app/deepdoc/servers/adapters
+COPY deepdoc/servers/deepdoc_svr.py /app/deepdoc/servers/
+COPY deepdoc/servers/endpoints/ /app/deepdoc/servers/endpoints/
+COPY deepdoc/servers/adapters/ /app/deepdoc/servers/adapters/
+
+# ── OSS models ──
+RUN mkdir -p /app/rag/res/deepdoc
+COPY rag/res/deepdoc/layout.onnx /app/rag/res/deepdoc/
+COPY rag/res/deepdoc/det.onnx /app/rag/res/deepdoc/
+COPY rag/res/deepdoc/rec.onnx /app/rag/res/deepdoc/
+COPY rag/res/deepdoc/ocr.res /app/rag/res/deepdoc/
+COPY rag/res/deepdoc/tsr.onnx /app/rag/res/deepdoc/
+
+EXPOSE 8124
+
+HEALTHCHECK --interval=10s --timeout=10s --retries=5 \
+    CMD curl -f http://localhost:8124/health || exit 1
+
+ENTRYPOINT ["/app/.venv/bin/python3", "/app/deepdoc/servers/deepdoc_svr.py", "--model-dir", "/app/rag/res/deepdoc"]

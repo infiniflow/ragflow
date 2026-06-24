@@ -171,12 +171,17 @@ type TableItem struct {
 	// the next box is a caption/title/reference, indicating the table
 	// group ended and should not merge with its continuation.
 	NoMerge bool
+
+	// Grid is the row-column grid produced by TableBuilder.GroupCells.
+	// Consumed by constructTable Path 1 and annotateTableBoxes.
+	// Nil for tables without TSR cells (fallback paths use boxes instead).
+	Grid [][]TSRCell
 }
 
-// Config holds parser configuration.
+// ParserConfig holds parser configuration.
 //
 // Python equivalent: kwargs merged with parser_config in task_executor.py
-type Config struct {
+type ParserConfig struct {
 	Zoom               float64 // zoom factor for page rendering, default 3
 	FromPage            int     // 0-based start page
 	ToPage              int     // 0-based end page (-1 = all)
@@ -188,11 +193,12 @@ type Config struct {
 	ChunkSize           int   // pages per chunk (0 = default 50, matching Python batch_size)
 	SkipOCR             bool  // true = DLA+TSR only, no image OCR (matching Python SKIP_OCR=1)
 	MaxOCRConcurrency   int   // max concurrent OCR pages (0 = sequential); matches Python PARALLEL_DEVICES
+	TableBuilder        TableBuilder // TSR model adapter; injected by caller via NewTableBuilderFor
 }
 
-// DefaultConfig returns a Config with sensible defaults.
-func DefaultConfig() Config {
-	return Config{
+// DefaultParserConfig returns a ParserConfig with sensible defaults.
+func DefaultParserConfig() ParserConfig {
+	return ParserConfig{
 		Zoom:              3,
 		FromPage:           0,
 		ToPage:             -1,
@@ -225,6 +231,14 @@ func HasColor(c TextChar) bool {
 
 // ── DeepDoc interfaces (shared between cgo and non-cgo builds) ──────────
 
+// ModelType identifies the DeepDoc TSR model flavour.
+type ModelType string
+
+const (
+	ModelSaas ModelType = "saas" // cpu DeepDoc — cell-level TSR output
+	ModelOSS  ModelType = "oss"  // oss DeepDoc — column/row line TSR output
+)
+
 // DocAnalyzer abstracts DeepDoc vision operations so the Parser can
 // work with either a live service or a test mock.
 type DocAnalyzer interface {
@@ -234,6 +248,7 @@ type DocAnalyzer interface {
 	OCRRecognize(cropped image.Image) ([]OCRText, error)
 	OCRRecognizeBatch(cropped []image.Image) ([][]OCRText, []error)
 	Health() bool
+	ModelType() ModelType
 }
 
 // OCRBox represents a detected text region from DeepDoc OCR detection.

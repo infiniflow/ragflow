@@ -64,9 +64,8 @@ func TestDumpTextOutput(t *testing.T) {
 			continue
 		}
 
-		cfg := DefaultConfig()
-		p := NewParser(cfg)
-
+		cfg := DefaultParserConfig()
+		p := NewParser(cfg, &MockDocAnalyzer{Healthy: true, Model: ModelSaas})
 		result, err := p.Parse(context.Background(), eng)
 		eng.Close()
 		if err != nil {

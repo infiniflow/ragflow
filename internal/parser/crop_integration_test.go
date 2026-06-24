@@ -25,9 +25,9 @@ func TestParse_CropSectionImages(t *testing.T) {
 	}
 	defer eng.Close()
 
-	cfg := DefaultConfig()
-	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), eng)
+	cfg := DefaultParserConfig()
+	p := NewParser(cfg, &MockDocAnalyzer{Healthy: true, Model: ModelSaas})
+result, err := p.Parse(context.Background(), eng)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -78,7 +78,8 @@ func TestCrop_Regression_SnapshotPDFs(t *testing.T) {
 			}
 			defer eng.Close()
 
-			result, err := NewParser(DefaultConfig()).Parse(context.Background(), eng)
+			p := NewParser(DefaultParserConfig(), &MockDocAnalyzer{Healthy: true, Model: ModelSaas})
+			result, err := p.Parse(context.Background(), eng)
 			if err != nil {
 				t.Fatalf("Parse: %v", err)
 			}

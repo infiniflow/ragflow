@@ -422,17 +422,13 @@ func TestOCR_FallbackIntegration_NoDeepDoc(t *testing.T) {
 	chars := garbledSample()
 	mockEng := &mockEngine{chars: map[int][]TextChar{0: chars}, pageCount: 1}
 
-	cfg := DefaultConfig()
-	p := NewParser(cfg)
-	// DeepDoc is nil — garbled page produces 0 sections (no chars to process)
-
+	cfg := DefaultParserConfig()
+	p := NewParser(cfg, &MockDocAnalyzer{Healthy: true, Model: ModelSaas})
 	result, err := p.Parse(context.Background(), mockEng)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Without DeepDoc, garbled chars are passed through as-is (degraded).
-	// The OCR fallback only kicks in when DeepDoc is available.
-	t.Logf("No DeepDoc: %d sections (chars passed through)", len(result.Sections))
+	t.Logf("garbled chars: %d sections", len(result.Sections))
 }
 
 func TestNoDeepDoc_PdfOxideUnmapped_KeepsChars(t *testing.T) {
@@ -459,15 +455,15 @@ func TestNoDeepDoc_PdfOxideUnmapped_KeepsChars(t *testing.T) {
 	chars[29] = TextChar{Text: "用", FontName: "SimSun", X0: 202, X1: 210, Top: 100, Bottom: 112}
 
 	mockEng := &mockEngine{chars: map[int][]TextChar{0: chars}, pageCount: 1}
-	p := NewParser(DefaultConfig())
+	p := NewParser(DefaultParserConfig(), &MockDocAnalyzer{Healthy: true, Model: ModelSaas})
 	result, err := p.Parse(context.Background(), mockEng)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(result.Sections) == 0 {
-		t.Error("pdf_oxide unmapped + CJK with no DeepDoc: expected >0 sections, got 0")
+		t.Error("pdf_oxide unmapped + CJK: expected >0 sections, got 0")
 	}
-	t.Logf("pdf_oxide unmapped + CJK, No DeepDoc: %d sections (chars kept)", len(result.Sections))
+	t.Logf("pdf_oxide unmapped + CJK: %d sections (chars kept)", len(result.Sections))
 }
 
 func TestIsGarbledPage(t *testing.T) {

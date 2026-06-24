@@ -25,6 +25,7 @@ func (m *mockRotationDoc) DLA(_ image.Image) ([]DLARegion, error)  { return nil,
 func (m *mockRotationDoc) TSR(_ image.Image) ([]TSRCell, error)    { return nil, nil }
 func (m *mockRotationDoc) OCR(_ image.Image) (string, error)       { return "", nil }
 func (m *mockRotationDoc) Health() bool                            { return true }
+func (m *mockRotationDoc) ModelType() ModelType                    { return ModelSaas }
 
 func (m *mockRotationDoc) currentAngle() int {
 	idx := m.callSeq % len(rotationOrder)

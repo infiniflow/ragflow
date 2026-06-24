@@ -17,6 +17,7 @@ type MockDocAnalyzer struct {
 	// OCRBatchErr makes OCRRecognizeBatch return an error for image i.
 	OCRBatchErr func(i int) error
 	Healthy      bool
+	Model        ModelType
 }
 
 func (m *MockDocAnalyzer) DLA(image.Image) ([]DLARegion, error)   { return m.DLARegions, nil }
@@ -45,3 +46,4 @@ func (m *MockDocAnalyzer) OCRRecognizeBatch(cropped []image.Image) ([][]OCRText,
 	return results, errs
 }
 func (m *MockDocAnalyzer) Health() bool { return m.Healthy }
+func (m *MockDocAnalyzer) ModelType() ModelType { return m.Model }

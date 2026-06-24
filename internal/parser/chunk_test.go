@@ -28,9 +28,9 @@ func TestParse_ChunkEquivalence(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer eng.Close()
-		cfg := DefaultConfig()
+		cfg := DefaultParserConfig()
 		cfg.ChunkSize = chunkSize
-		p := NewParser(cfg)
+		p := NewParser(cfg, &MockDocAnalyzer{Healthy: true, Model: ModelSaas})
 		result, err := p.Parse(context.Background(), eng)
 		if err != nil {
 			t.Fatal(err)

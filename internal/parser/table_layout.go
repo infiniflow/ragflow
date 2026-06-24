@@ -2,33 +2,10 @@ package parser
 
 import (
 	"math"
-	"regexp"
 	"sort"
 )
 
 // ── Post-TSR layout annotation (Python: pdf_parser.py gather/layouts_cleanup) ──
-
-// Pre-compiled label patterns — compiled once at package init.
-var (
-	reTableHeader = regexp.MustCompile(`.*header$`)
-	reTableRowHdr = regexp.MustCompile(`table$|.* (row|header)`)
-	// "table$" catches the default TSR label "table" (class 0), matching
-	// Python's behavior which uses all cells regardless of label.
-	reTableSpan   = regexp.MustCompile(`.*spanning`)
-	reTableColumn = regexp.MustCompile(`table column$`)
-)
-
-// gatherTSR filters cells by label regex pattern. Matching Python's
-// gather() which uses re.match(kwd, r["label"]).
-func gatherTSR(cells []TSRCell, re *regexp.Regexp) []TSRCell {
-	var result []TSRCell
-	for _, c := range cells {
-		if re.MatchString(c.Label) {
-			result = append(result, c)
-		}
-	}
-	return result
-}
 
 // sortYFirstly sorts cells by top, with fuzzy threshold: if two cells are
 // within threshold Y pixels, sort by X instead (same-row ordering).
@@ -221,34 +198,35 @@ func findHorizontallyTightestFit(box TextBox, clmns []TSRCell) int {
 // TSR cell labels. Matching Python's R/H/C/SP annotation logic.
 //
 // Python: pdf_parser.py:518-554
-func annotateTableBoxes(boxes []TextBox, cells []TSRCell) {
-	headers := gatherTSR(cells, reTableHeader)
+func annotateTableBoxes(boxes []TextBox, grid [][]TSRCell) {
+	// grid[0] is the header row.  Spans are computed by calSpans later.
+	var headers, spans []TSRCell
+	var clmns []TSRCell
+	if len(grid) > 0 {
+		headers = grid[0]
+		clmns = append(clmns, grid[0]...)
+	}
 	sortYFirstly(headers, 10)
-	headers = layoutCleanup(headers, boxes, 5, 0.6)
-
-	rows := gatherTSR(cells, reTableRowHdr)
-	sortYFirstly(rows, 10)
-	rows = layoutCleanup(rows, boxes, 5, 0.6)
-
-	spans := gatherTSR(cells, reTableSpan)
-	sortYFirstly(spans, 10)
-
-	clmns := gatherTSR(cells, reTableColumn)
 	sortXFirstly(clmns, 10)
-	clmns = layoutCleanup(clmns, boxes, 5, 0.5)
 
-	// Group cells into rows by Y proximity for grid-aligned R indices.
-	rowGroups := groupTSRCellsToRows(rows)
 	for i := range boxes {
 		if boxes[i].LayoutType != "table" {
 			continue
 		}
-		// Find which row GROUP (not flat cell index) this box overlaps.
-		for ri, rowGroup := range rowGroups {
-			if findOverlappedWithThreshold(boxes[i], rowGroup, 0.3) >= 0 {
+		// Grid-based R/C: match box to the row and column it overlaps.
+		for ri, row := range grid {
+			if idx := findOverlappedWithThreshold(boxes[i], row, 0.3); idx >= 0 {
 				boxes[i].R = ri
-				boxes[i].RTop = rowGroup[0].Y0
-				boxes[i].RBott = rowGroup[0].Y1
+				boxes[i].RTop = row[0].Y0
+				boxes[i].RBott = row[0].Y1
+				for ci, cell := range row {
+					if tsrBoxOverlap(boxes[i], cell) {
+						boxes[i].C = ci
+						boxes[i].CLeft = cell.X0
+						boxes[i].CRight = cell.X1
+						break
+					}
+				}
 				break
 			}
 		}
@@ -290,94 +268,3 @@ func annotateTableBoxes(boxes []TextBox, cells []TSRCell) {
 	}
 }
 
-// groupTSRCellsToRowsLabeled groups TSR cells into rows using labels
-// (header, row, spanning) instead of just Y proximity. Matching Python's
-// gather-based approach.
-func groupTSRCellsToRowsLabeled(cells []TSRCell) [][]TSRCell {
-	rows := gatherTSR(cells, reTableRowHdr)
-	spans := gatherTSR(cells, reTableSpan)
-	clmns := gatherTSR(cells, reTableColumn)
-
-	if len(rows) == 0 && len(spans) == 0 {
-		// Fallback to Y-based grouping if no labels match
-		return groupTSRCellsToRows(cells)
-	}
-
-	sortYFirstly(rows, 10)
-	sortXFirstly(clmns, 10)
-
-	// Group rows by Y proximity
-	var grouped [][]TSRCell
-	var curRow []TSRCell
-	curY := 0.0
-	rowThreshold := 0.0
-	if len(rows) > 0 {
-		// Calculate median row height for threshold
-		heights := make([]float64, len(rows))
-		for i, r := range rows {
-			heights[i] = r.Y1 - r.Y0
-		}
-		sort.Float64s(heights)
-		rowThreshold = heights[len(heights)/2] * 0.5
-		if rowThreshold <= 0 {
-			rowThreshold = 10
-		}
-	}
-
-	for _, c := range rows {
-		if len(curRow) == 0 {
-			curRow = append(curRow, c)
-			curY = c.Y0
-			continue
-		}
-		if c.Y0-curY > rowThreshold {
-			grouped = append(grouped, curRow)
-			curRow = []TSRCell{c}
-			curY = c.Y0
-		} else {
-			curRow = append(curRow, c)
-		}
-	}
-	if len(curRow) > 0 {
-		grouped = append(grouped, curRow)
-	}
-
-	// Add spanning cells to the first row they overlap
-	for _, s := range spans {
-		for ri, row := range grouped {
-			if len(row) > 0 && s.Y0 <= row[0].Y1 && s.Y1 >= row[0].Y0 {
-				grouped[ri] = append(grouped[ri], s)
-				break
-			}
-		}
-	}
-
-	// Sort each row by X
-	for _, row := range grouped {
-		sortXFirstly(row, 10)
-	}
-
-	// Pad all rows to the same column count (Python construct_table alignment).
-	maxCols := 0
-	for _, row := range grouped {
-		if len(row) > maxCols {
-			maxCols = len(row)
-		}
-	}
-	for i := range grouped {
-		for len(grouped[i]) < maxCols {
-			// Pad with a cell at the right edge so X-sort order is preserved.
-			// Inherit Y range from the row so row center calculation in calSpans is correct.
-			lastX := 0.0
-			rowY0, rowY1 := 0.0, 0.0
-			if len(grouped[i]) > 0 {
-				lastX = grouped[i][len(grouped[i])-1].X1 + 10
-				rowY0 = grouped[i][0].Y0
-				rowY1 = grouped[i][0].Y1
-			}
-			grouped[i] = append(grouped[i], TSRCell{X0: lastX, X1: lastX + 1, Y0: rowY0, Y1: rowY1})
-		}
-	}
-
-	return grouped
-}

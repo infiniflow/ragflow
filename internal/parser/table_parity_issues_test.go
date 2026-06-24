@@ -176,7 +176,7 @@ func TestConstructTable_BlockTypeChangesHeaderDetection(t *testing.T) {
 		{X0: 101, Y0: 105, X1: 200, Y1: 135, Text: "28", Label: "table row"},
 	}
 
-	html := constructTable(cells, nil, "", nil)
+	html := constructTable(cells, nil, "", &TableItem{Grid: groupTSRCellsToRowsLabeled(cells)})
 
 	// blockType analysis:
 	// "姓名"(Tx), "年龄"(Tx), "张三"(Ot), "25"(Nu), "李四"(Ot), "30"(Nu), "王五"(Ot), "28"(Nu)
@@ -413,8 +413,7 @@ func TestFigureInsertion_EndToEnd(t *testing.T) {
 			{X0: 100, Y0: 80, X1: 500, Y1: 600, Label: "figure", Confidence: 0.9},
 		},
 	}
-	p := NewParser(DefaultConfig())
-	p.DeepDoc = mock
+	p := NewParser(DefaultParserConfig(), mock)
 
 	result, err := p.Parse(context.Background(), eng)
 	if err != nil {
