@@ -316,12 +316,12 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "search_help":
 		printSearchHelp()
 		return nil, nil
-	case "create_token":
-		return c.CreateToken(cmd)
-	case "list_tokens":
-		return c.ListTokens(cmd)
-	case "drop_token":
-		return c.DropToken(cmd)
+	case "api_create_api_key":
+		return c.APICreateAPIKeyCommand(cmd)
+	case "api_list_api_keys":
+		return c.APIListAPIKeysCommand(cmd)
+	case "api_delete_api_key":
+		return c.APIDeleteAPIKeyCommand(cmd)
 	case "set_token":
 		return c.SetToken(cmd)
 	case "show_token":

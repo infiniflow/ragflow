@@ -140,8 +140,8 @@ func (p *Parser) parseAPIListCommands() (*Command, error) {
 		return p.parseAPIListChats()
 	case TokenSearches:
 		return p.parseAPIListSearches()
-	case TokenTokens:
-		return p.parseListTokens()
+	case TokenKeys:
+		return p.parseAPIListAPIKeys()
 	case TokenModel:
 		return p.parseListModelProviders()
 	case TokenSupported:
@@ -296,10 +296,10 @@ func (p *Parser) parseGetMetadata() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseListTokens() (*Command, error) {
-	p.nextToken() // consume TOKENS
-	cmd := NewCommand("list_tokens")
-	// Semicolon is optional for UNSET TOKEN
+func (p *Parser) parseAPIListAPIKeys() (*Command, error) {
+	p.nextToken() // consume KEYS
+	cmd := NewCommand("api_list_api_keys")
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -562,8 +562,8 @@ func (p *Parser) parseCreateCommand() (*Command, error) {
 		return p.parseCreateDataset()
 	case TokenChat:
 		return p.parseCreateChat()
-	case TokenToken:
-		return p.parseCreateToken()
+	case TokenKey:
+		return p.parseAPICreateKey()
 	case TokenChunkStore:
 		return p.parseCreateChunkStore()
 	case TokenMetadata:
@@ -591,15 +591,15 @@ func (p *Parser) parseAddCommand() (*Command, error) {
 	}
 }
 
-func (p *Parser) parseCreateToken() (*Command, error) {
-	p.nextToken() // consume TOKEN
+func (p *Parser) parseAPICreateKey() (*Command, error) {
+	p.nextToken() // consume KEY
 
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional for UNSET KEY
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
 
-	return NewCommand("create_token"), nil
+	return NewCommand("api_create_api_key"), nil
 }
 
 // Internal CLI for GO
@@ -1208,8 +1208,8 @@ func (p *Parser) parseDropCommand() (*Command, error) {
 		return p.parseDropDataset()
 	case TokenChat:
 		return p.parseDropChat()
-	case TokenToken:
-		return p.parseDropToken()
+	case TokenKey:
+		return p.parseAPIDeleteAPIKey()
 	case TokenChunkStore:
 		return p.parseDropChunkStore()
 	case TokenMetadata:
@@ -1257,30 +1257,18 @@ func (p *Parser) parseRemoveCommand() (*Command, error) {
 	}
 }
 
-func (p *Parser) parseDropToken() (*Command, error) {
-	p.nextToken() // consume TOKEN
+func (p *Parser) parseAPIDeleteAPIKey() (*Command, error) {
+	p.nextToken() // consume KEY
 
-	tokenValue, err := p.parseQuotedString()
+	apiKey, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-
-	p.nextToken()
-	if p.curToken.Type != TokenOf {
-		return nil, fmt.Errorf("expected OF")
-	}
 	p.nextToken()
 
-	userName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
+	cmd := NewCommand("api_delete_api_key")
+	cmd.Params["api_key"] = apiKey
 
-	cmd := NewCommand("drop_token")
-	cmd.Params["token"] = tokenValue
-	cmd.Params["user_name"] = userName
-
-	p.nextToken()
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
