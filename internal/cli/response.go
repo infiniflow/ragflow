@@ -261,7 +261,7 @@ type ListSearchesResponse struct {
 }
 
 func (r *ListSearchesResponse) Type() string {
-	return "list_chats"
+	return "list_searches"
 }
 
 func (r *ListSearchesResponse) TimeCost() float64 {
