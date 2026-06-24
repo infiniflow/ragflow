@@ -102,6 +102,8 @@ export default {
   chatChannelDetail: (id: string) => `${restAPIv1}/chat-channels/${id}`,
   chatChannelUpdate: (id: string) => `${restAPIv1}/chat-channels/${id}`,
   chatChannelDel: (id: string) => `${restAPIv1}/chat-channels/${id}`,
+  chatChannelRuntime: (id: string) =>
+    `${restAPIv1}/chat-channels/${id}/runtime`,
 
   // plugin
   llmTools: `${restAPIv1}/plugin/tools`,

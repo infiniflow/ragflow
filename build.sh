@@ -17,7 +17,7 @@ BUILD_DIR="$CPP_DIR/cmake-build-release"
 RAGFLOW_SERVER_BINARY="$PROJECT_ROOT/bin/ragflow_server"
 ADMIN_SERVER_BINARY="$PROJECT_ROOT/bin/admin_server"
 INGESTOR_BINARY="$PROJECT_ROOT/bin/ingestor"
-RAGFLOW_CLI_BINARY="$PROJECT_ROOT/bin/ragflow_cli"
+RAGFLOW_CLI_BINARY="$PROJECT_ROOT/bin/ragflow-cli"
 
 # office_oxide native library settings
 OFFICE_OXIDE_PREFIX="${HOME}/.office_oxide"
@@ -267,7 +267,7 @@ build_go() {
         go build -o "$INGESTOR_BINARY" cmd/ingestor.go
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go build -o "$RAGFLOW_CLI_BINARY" cmd/ragflow_cli.go
+        go build -o "$RAGFLOW_CLI_BINARY" cmd/ragflow-cli.go
 
     if [ ! -f "$RAGFLOW_SERVER_BINARY" ]; then
         echo -e "${RED}Error: Failed to build RAGFlow server binary${NC}"
@@ -286,7 +286,7 @@ build_go() {
 
     echo -e "${GREEN}✓ Go ragflow_server built successfully: $RAGFLOW_SERVER_BINARY${NC}"
     echo -e "${GREEN}✓ Go admin_server built successfully: $ADMIN_SERVER_BINARY${NC}"
-    echo -e "${GREEN}✓ Go ragflow_cli built successfully: $RAGFLOW_CLI_BINARY${NC}"
+    echo -e "${GREEN}✓ Go ragflow-cli built successfully: $RAGFLOW_CLI_BINARY${NC}"
     echo -e "${GREEN}✓ Go ingestor built successfully: $INGESTOR_BINARY${NC}"
 }
 

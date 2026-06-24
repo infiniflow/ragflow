@@ -555,57 +555,77 @@ func TestGraphChannel_CheckpointRoundTrip(t *testing.T) {
 
 	cases := []testCase{
 		{
-			name: "LastValue",
+			name:   "LastValue",
 			makeCh: func() channels.Channel { ch := channels.NewLastValue(""); ch.SetKey("lv"); return ch },
-			setup: func(ch channels.Channel) { ch.Update([]interface{}{"stored"}) },
+			setup:  func(ch channels.Channel) { ch.Update([]interface{}{"stored"}) },
 			verify: func(ch channels.Channel, t *testing.T) {
 				v, _ := ch.Get()
-				if v != "stored" { t.Errorf("expected 'stored', got %v", v) }
+				if v != "stored" {
+					t.Errorf("expected 'stored', got %v", v)
+				}
 			},
 		},
 		{
 			name: "BinaryOperatorAggregate",
-			makeCh: func() channels.Channel { ch := channels.NewBinaryOperatorAggregate(int(0), channels.IntAdd); ch.SetKey("bo"); return ch },
+			makeCh: func() channels.Channel {
+				ch := channels.NewBinaryOperatorAggregate(int(0), channels.IntAdd)
+				ch.SetKey("bo")
+				return ch
+			},
 			setup: func(ch channels.Channel) { ch.Update([]interface{}{7, 3}) },
 			verify: func(ch channels.Channel, t *testing.T) {
 				v, _ := ch.Get()
-				if v != 10 { t.Errorf("expected 10, got %v", v) }
+				if v != 10 {
+					t.Errorf("expected 10, got %v", v)
+				}
 			},
 		},
 		{
 			name: "NamedBarrierValue",
-			makeCh: func() channels.Channel { ch := channels.NewNamedBarrierValue(nil, []string{"x", "y"}); ch.SetKey("nb"); return ch },
+			makeCh: func() channels.Channel {
+				ch := channels.NewNamedBarrierValue(nil, []string{"x", "y"})
+				ch.SetKey("nb")
+				return ch
+			},
 			setup: func(ch channels.Channel) { ch.Update([]interface{}{"x", "y"}) },
 			verify: func(ch channels.Channel, t *testing.T) {
-				if !ch.IsAvailable() { t.Error("barrier should be available") }
+				if !ch.IsAvailable() {
+					t.Error("barrier should be available")
+				}
 			},
 		},
 		{
-			name: "Topic",
+			name:   "Topic",
 			makeCh: func() channels.Channel { ch := channels.NewTopic("", true); ch.SetKey("tp"); return ch },
-			setup: func(ch channels.Channel) { ch.Update([]interface{}{"a", "b"}) },
+			setup:  func(ch channels.Channel) { ch.Update([]interface{}{"a", "b"}) },
 			verify: func(ch channels.Channel, t *testing.T) {
 				v, _ := ch.Get()
 				items := v.([]interface{})
-				if len(items) != 2 { t.Errorf("expected 2 items, got %d", len(items)) }
+				if len(items) != 2 {
+					t.Errorf("expected 2 items, got %d", len(items))
+				}
 			},
 		},
 		{
-			name: "EphemeralValue",
+			name:   "EphemeralValue",
 			makeCh: func() channels.Channel { ch := channels.NewEphemeralValue("", true); ch.SetKey("ev"); return ch },
-			setup: func(ch channels.Channel) { ch.Update([]interface{}{"temp"}) },
+			setup:  func(ch channels.Channel) { ch.Update([]interface{}{"temp"}) },
 			verify: func(ch channels.Channel, t *testing.T) {
 				v, _ := ch.Get()
-				if v != "temp" { t.Errorf("expected 'temp', got %v", v) }
+				if v != "temp" {
+					t.Errorf("expected 'temp', got %v", v)
+				}
 			},
 		},
 		{
-			name: "AnyValue",
+			name:   "AnyValue",
 			makeCh: func() channels.Channel { ch := channels.NewAnyValue(""); ch.SetKey("av"); return ch },
-			setup: func(ch channels.Channel) { ch.Update([]interface{}{"stored"}) },
+			setup:  func(ch channels.Channel) { ch.Update([]interface{}{"stored"}) },
 			verify: func(ch channels.Channel, t *testing.T) {
 				v, _ := ch.Get()
-				if v != "stored" { t.Errorf("expected 'stored', got %v", v) }
+				if v != "stored" {
+					t.Errorf("expected 'stored', got %v", v)
+				}
 			},
 		},
 		{
@@ -619,7 +639,9 @@ func TestGraphChannel_CheckpointRoundTrip(t *testing.T) {
 			setup: func(ch channels.Channel) { ch.Update([]interface{}{5, 3}) },
 			verify: func(ch channels.Channel, t *testing.T) {
 				v, _ := ch.Get()
-				if v != 8 { t.Errorf("expected 8, got %v", v) }
+				if v != 8 {
+					t.Errorf("expected 8, got %v", v)
+				}
 			},
 		},
 	}

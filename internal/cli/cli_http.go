@@ -75,6 +75,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminAlterUserPassword(cmd)
 	case "admin_alter_role":
 		return c.AdminAlterRole(cmd)
+	case "admin_alter_provider_instance":
+		return c.CommonAlterProviderInstanceCommand(cmd)
 	case "admin_drop_user":
 		return c.AdminDropUserCommand(cmd)
 	case "admin_drop_user_api_key":
@@ -115,14 +117,20 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.CommonAvailableProvidersCommand(cmd)
 	case "admin_show_provider":
 		return c.CommonShowProviderCommand(cmd)
+	case "admin_show_provider_instance":
+		return c.CommonShowProviderInstanceCommand(cmd)
+	case "admin_show_provider_instance_balance":
+		return c.CommonShowProviderInstanceBalanceCommand(cmd)
 	case "admin_show_provider_model":
 		return c.CommonShowProviderModelCommand(cmd)
 	case "admin_list_provider_models":
 		return c.CommonListModelsCommand(cmd)
+	case "admin_list_provider_instance_models":
+		return c.CommonListInstanceModels(cmd)
+	case "admin_list_provider_instances":
+		return c.CommonListProviderInstances(cmd)
 	case "list_supported_models":
 		return c.ListSupportedModels(cmd)
-	case "list_instance_models":
-		return c.ListInstanceModels(cmd)
 	case "admin_show_model":
 		return c.CommonShowModel(cmd)
 	case "admin_list_providers":
@@ -151,6 +159,10 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.UserShowMessageQueueCommand(cmd)
 	case "admin_check_license":
 		return c.AdminCheckLicenseCommand(cmd)
+	case "admin_check_provider_with_key":
+		return c.CommonCheckProviderWithKey(cmd)
+	case "admin_check_provider_instance":
+		return c.CommonCheckProviderConnection(cmd)
 	case "admin_show_fingerprint":
 		return c.AdminShowFingerprintCommand(cmd)
 	case "admin_show_license":
@@ -241,6 +253,10 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminDeleteInstancesCommand(cmd)
 	case "admin_delete_model":
 		return c.AdminDeleteModelsCommand(cmd)
+	case "admin_enable_model":
+		return c.CommonEnableOrDisableModel(cmd, "enable")
+	case "admin_disable_model":
+		return c.CommonEnableOrDisableModel(cmd, "disable")
 		// TODO: Implement other commands
 	case "show_admin_server":
 		return c.ShowAdminServer(cmd)
@@ -317,7 +333,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "list_supported_models":
 		return c.ListSupportedModels(cmd)
 	case "list_instance_models":
-		return c.ListInstanceModels(cmd)
+		return c.CommonListInstanceModels(cmd)
 	case "show_provider_model":
 		return c.CommonShowProviderModelCommand(cmd)
 	case "show_model":
@@ -335,21 +351,21 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "create_provider_instance":
 		return c.CreateProviderInstance(cmd)
 	case "list_provider_instances":
-		return c.ListProviderInstances(cmd)
+		return c.CommonListProviderInstances(cmd)
 	case "show_provider_instance":
-		return c.ShowProviderInstance(cmd)
+		return c.CommonShowProviderInstanceCommand(cmd)
 	case "show_instance_balance":
 		return c.ShowInstanceBalance(cmd)
 	case "alter_provider_instance":
-		return c.AlterProviderInstance(cmd)
+		return c.CommonAlterProviderInstanceCommand(cmd)
 	case "drop_provider_instance":
 		return c.DropProviderInstance(cmd)
 	case "drop_instance_model":
 		return c.DropInstanceModel(cmd)
 	case "enable_model":
-		return c.EnableOrDisableModel(cmd, "enable")
+		return c.CommonEnableOrDisableModel(cmd, "enable")
 	case "disable_model":
-		return c.EnableOrDisableModel(cmd, "disable")
+		return c.CommonEnableOrDisableModel(cmd, "disable")
 	case "add_custom_model":
 		return c.AddCustomModel(cmd)
 	case "chat_to_model":
@@ -374,9 +390,9 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "parse_file_user_command":
 		return c.ParseFileUserCommand(cmd)
 	case "check_provider_connection":
-		return c.CheckProviderConnection(cmd)
+		return c.CommonCheckProviderConnection(cmd)
 	case "check_provider_with_key":
-		return c.CheckProviderWithKey(cmd)
+		return c.CommonCheckProviderWithKey(cmd)
 	case "use_model":
 		return c.UseModel(cmd)
 	case "use_api_server":

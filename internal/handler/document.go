@@ -64,6 +64,7 @@ type documentServiceIface interface {
 	IngestDocuments(datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
 	StopIngestionTasks(tasks []string, userID string) ([]*entity.IngestionTask, error)
 	RemoveIngestionTasks(tasks []string, userID string) ([]map[string]string, error)
+	BatchUpdateDocumentStatus(userID, datasetID, status string, DocumentIDs []string) (map[string]interface{}, common.ErrorCode, error)
 }
 
 // DocumentHandler document handler
@@ -396,6 +397,79 @@ func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
 	}
 
 	jsonResponse(c, common.CodeSuccess, map[string]interface{}{"deleted": deleted}, "success")
+}
+
+// BatchUpdateDocumentStatus Batch update status of documents within a dataset.
+func (h *DocumentHandler) BatchUpdateDocumentStatus(c *gin.Context) {
+	user, code, errorMessage := GetUser(c)
+	if code != common.CodeSuccess {
+		jsonError(c, code, errorMessage)
+		return
+	}
+
+	userID := strings.TrimSpace(user.ID)
+	if userID == "" {
+		jsonError(c, common.CodeArgumentError, "invalid user id")
+		return
+	}
+
+	datasetID := strings.TrimSpace(c.Param("dataset_id"))
+	if datasetID == "" {
+		jsonError(c, common.CodeArgumentError, "dataset_id is required")
+		return
+	}
+
+	var req struct {
+		DocumentIDs []interface{} `json:"doc_ids"`
+		Status      interface{}   `json:"status"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	if req.DocumentIDs == nil || len(req.DocumentIDs) == 0 {
+		jsonError(c, common.CodeArgumentError, `"doc_ids" must be a non-empty list.`)
+		return
+	}
+	documentIDs := make([]string, 0, len(req.DocumentIDs))
+	for _, rawDocID := range req.DocumentIDs {
+		docID, ok := rawDocID.(string)
+		if !ok || strings.TrimSpace(docID) == "" {
+			jsonError(c, common.CodeArgumentError, `"doc_ids" must contain non-empty document IDs.`)
+			return
+		}
+		documentIDs = append(documentIDs, docID)
+	}
+
+	status := "-1"
+	if req.Status != nil {
+		status = fmt.Sprint(req.Status)
+	}
+	if status != "0" && status != "1" {
+		jsonError(c, common.CodeArgumentError, fmt.Sprintf(`"Status" must be either 0 or 1:%s!`, status))
+		return
+	}
+
+	result, code, err := h.documentService.BatchUpdateDocumentStatus(userID, datasetID, status, documentIDs)
+	if err != nil {
+		message := err.Error()
+		if code == common.CodeServerError {
+			message = "Partial failure"
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"data":    result,
+			"message": message,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    code,
+		"data":    result,
+		"message": "success",
+	})
 }
 
 // ListDocuments document list

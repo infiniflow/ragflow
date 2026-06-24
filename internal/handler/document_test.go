@@ -111,6 +111,9 @@ func (f *fakeDocumentService) ListDocuments(page, pageSize int) ([]*service.Docu
 func (f *fakeDocumentService) ListDocumentsByDatasetID(kbID string, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
 	return nil, 0, nil
 }
+func (f *fakeDocumentService) BatchUpdateDocumentStatus(userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
+	return map[string]interface{}{}, common.CodeSuccess, nil
+}
 func (f *fakeDocumentService) GetThumbnail(docID string) (*service.ThumbnailResponse, error) {
 	return nil, nil
 }

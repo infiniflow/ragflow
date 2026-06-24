@@ -38,6 +38,7 @@ type APIServerConfig struct {
 	UserName     *string `yaml:"user_name"`
 	UserPassword *string `yaml:"password"`
 	ApiToken     *string `yaml:"api_token"`
+	KeyFile      *string `yaml:"key_file"`
 	IP           string
 	Port         int
 }
@@ -86,6 +87,7 @@ type AdminModeConfig struct {
 	AdminPort     int
 	AdminName     *string
 	AdminPassword *string
+	KeyFile       *string
 	//AdminCommand  *string
 }
 
@@ -217,6 +219,11 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 					}
 					i++
 				}
+			case "-k", "--key":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+					defaultApiServerConfig.KeyFile = &args[i+1]
+					i++
+				}
 			default:
 				// Non-flag argument (command)
 				if !strings.HasPrefix(arg, "-") {
@@ -333,6 +340,11 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 					AdminConfig.AdminName = &args[i+1]
 					i++
 				}
+			case "-k", "--key":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+					AdminConfig.KeyFile = &args[i+1]
+					i++
+				}
 			case "-p", "--password":
 				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
 					AdminConfig.AdminPassword = &args[i+1]
@@ -422,7 +434,7 @@ func parseHostPort(hostPort string) (string, int, error) {
 func PrintUsage() {
 	fmt.Println(`RAGFlow CLI Client
 
-Usage: ragflow_cli [options] [command]
+Usage: ragflow-cli [options] [command]
 
 Options:
   -h, --host string      RAGFlow service address (host:port, default "127.0.0.1:9380")
@@ -784,11 +796,11 @@ Filesystem Commands (no quotes):
                                  Note: cat datasets or cat datasets/kb1 will error
 
 Examples:
-  ragflow_cli -f rf.yml "LIST USERS"           # SQL mode (with quotes)
-  ragflow_cli -f rf.yml ls datasets            # Filesystem mode (no quotes)
-  ragflow_cli -f rf.yml ls files               # List files in root
-  ragflow_cli -f rf.yml cat datasets           # Error: datasets is a directory
-  ragflow_cli -f rf.yml ls files/myfolder      # List folder contents
+  ragflow-cli -f rf.yml "LIST USERS"           # SQL mode (with quotes)
+  ragflow-cli -f rf.yml ls datasets            # Filesystem mode (no quotes)
+  ragflow-cli -f rf.yml ls files               # List files in root
+  ragflow-cli -f rf.yml cat datasets           # Error: datasets is a directory
+  ragflow-cli -f rf.yml ls files/myfolder      # List folder contents
 
 For more information, see documentation.
 `
@@ -851,6 +863,27 @@ func (c *CLI) VerifyAuth(username, password string) error {
 	cmd.Params["password"] = password
 	_, err := c.ExecuteCommand(cmd)
 	return err
+}
+
+func (c *CLI) GetPublicKeyPEM() ([]byte, error) {
+
+	var publicKeyFile *string = nil
+	switch c.Config.CLIMode {
+	case AdminMode:
+		publicKeyFile = c.Config.AdminClientConfig.KeyFile
+	case APIMode:
+		publicKeyFile = c.Config.APIClientConfig.APIServerMap[c.Config.APIClientConfig.CurrentAPIServer].KeyFile
+	}
+	if publicKeyFile == nil {
+		result := "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArq9XTUSeYr2+N1h3Afl/\nz8Dse/2yD0ZGrKwx+EEEcdsBLca9Ynmx3nIB5obmLlSfmskLpBo0UACBmB5rEjBp\n2Q2f3AG3Hjd4B+gNCG6BDaawuDlgANIhGnaTLrIqWrrcm4EMzJOnAOI1fgzJRsOO\nUEfaS318Eq9OVO3apEyCCt0lOQK6PuksduOjVxtltDav+guVAA068NrPYmRNabVK\nRNLJpL8w4D44sfth5RvZ3q9t+6RTArpEtc5sh5ChzvqPOzKGMXW83C95TxmXqpbK\n6olN4RevSfVjEAgCydH6HN6OhtOQEcnrU97r9H0iZOWwbw3pVrZiUkuRD1R56Wzs\n2wIDAQAB\n-----END PUBLIC KEY-----"
+		return []byte(result), nil
+	}
+
+	publicKeyPEM, err := os.ReadFile(*publicKeyFile)
+	if err != nil {
+		return []byte(""), fmt.Errorf("failed to read public key: %w", err)
+	}
+	return publicKeyPEM, nil
 }
 
 // printSearchHelp prints help for the search command

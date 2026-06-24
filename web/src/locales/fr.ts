@@ -81,6 +81,8 @@ export default {
       selected: 'Sélectionné',
       seeAll: 'Voir tout',
       bulkOperate: 'Opération en masse',
+      owner: 'Propriétaire',
+      running: 'En cours...',
     },
     login: {
       loginTitle: 'Connexion à votre compte',
@@ -468,7 +470,6 @@ export default {
       metadata: {
         fields: 'Champs',
         selectFiles: '{{count}} fichiers sélectionnés',
-        type: 'Type',
         fieldNameInvalid:
           'Le nom du champ ne peut contenir que des lettres ou des underscores.',
         builtIn: 'Intégré',
@@ -500,6 +501,7 @@ export default {
         value: 'Valeur',
         action: 'Action',
         field: 'Champ',
+        type: 'Type',
         description: 'Description',
         fieldName: 'Nom du champ',
         editMetadata: 'Modifier les métadonnées',
@@ -895,6 +897,8 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       size: 'Taille',
       uploadedTime: 'Date de téléversement',
       chunk: 'Segment',
+      createChunk: 'Créer un segment',
+      editChunk: 'Modifier le segment',
       bulk: 'En masse',
       selectAll: 'Tout sélectionner',
       enabledSelected: 'Activer la sélection',
@@ -1115,6 +1119,12 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       batchDeleteSessions: 'Suppression en masse',
       deleteSelectedConfirm:
         'Supprimer les {{count}} session(s) sélectionnée(s) ?',
+      showChunkMetadata: 'Afficher les métadonnées du segment',
+      showChunkMetadataTip:
+        "Afficher les métadonnées du document (titre, numéro de page, date d'upload, etc.) à côté des segments de texte récupérés",
+      metadataFields: 'Champs de métadonnées',
+      metadataFieldsTip:
+        'Sélectionnez les champs de métadonnées à afficher pour chaque segment',
     },
     language: {
       english: 'Anglais',
@@ -2892,6 +2902,8 @@ Ce processus agrège des variables de plusieurs branches en une seule variable p
       news: 'Actualités',
       text: 'Texte',
       userId: 'ID utilisateur',
+      tags: 'Étiquettes',
+      canvasCategory: 'Catégorie de canvas',
     },
     llmTools: {
       bad_calculator: {
@@ -2978,6 +2990,7 @@ Mémoire procédurale : compétences acquises, habitudes et procédures automati
       cancelText: 'Annuler',
       chooseDataset:
         'Veuillez sélectionner une base de connaissances en premier',
+      selectLocalePlaceholder: 'Sélectionner une langue',
     },
     pagination: {
       total: 'Total {{total}}',

@@ -15,30 +15,30 @@ import (
 // This corresponds to Python's CompiledStateGraph in graph/state.py
 type CompiledStateGraph struct {
 	*CompiledGraph
-	
+
 	// subgraphs maps subgraph names to their compiled graphs
 	subgraphs map[string]*CompiledStateGraph
-	
+
 	// parent is the parent graph (nil for root graph)
 	parent *CompiledStateGraph
-	
+
 	// namespace is the checkpoint namespace for this graph
 	namespace string
-	
+
 	// checkpointMap maps parent checkpoint IDs to child checkpoint IDs
 	checkpointMap map[string]string
-	
+
 	mu sync.RWMutex
 }
 
 // NewCompiledStateGraph creates a new compiled state graph.
 func NewCompiledStateGraph(base *CompiledGraph) *CompiledStateGraph {
 	return &CompiledStateGraph{
-		CompiledGraph:   base,
-		subgraphs:       make(map[string]*CompiledStateGraph),
-		parent:          nil,
-		namespace:       "",
-		checkpointMap:   make(map[string]string),
+		CompiledGraph: base,
+		subgraphs:     make(map[string]*CompiledStateGraph),
+		parent:        nil,
+		namespace:     "",
+		checkpointMap: make(map[string]string),
 	}
 }
 
@@ -141,13 +141,13 @@ func (c *CompiledStateGraph) MigrateCheckpoint(
 		if c.parent == nil {
 			return "", fmt.Errorf("no parent graph to migrate to")
 		}
-		
+
 		// Get parent checkpoint ID from map
 		parentCheckpointID, exists := c.checkpointMap[checkpointID]
 		if !exists {
 			return "", fmt.Errorf("no parent checkpoint mapping found for %s", checkpointID)
 		}
-		
+
 		return parentCheckpointID, nil
 	}
 
@@ -159,7 +159,7 @@ func (c *CompiledStateGraph) MigrateCheckpoint(
 
 	// Create new checkpoint ID for subgraph
 	newCheckpointID := generateCheckpointID()
-	
+
 	// Store mapping
 	subgraph.checkpointMap[newCheckpointID] = checkpointID
 	c.checkpointMap[checkpointID] = newCheckpointID
