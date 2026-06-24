@@ -150,12 +150,10 @@ func (p *Parser) parseAPIListCommands() (*Command, error) {
 		return p.parseAPIListProviders()
 	case TokenProvider:
 		return p.parseAPIListProviderCommands()
-	case TokenInstances:
-		return p.parseListInstances()
 	case TokenIngestion:
-		return p.parseUserListIngestionTasks()
+		return p.parseAPIListIngestionTasks()
 	case TokenDefault:
-		return p.parseListDefaultModels()
+		return p.parseAPIListDefaultModels()
 	case TokenAvailable:
 		return p.parseAPIListAvailableProviders()
 	case TokenFiles:
@@ -379,7 +377,7 @@ func (p *Parser) parseListProviderInstanceModels(providerName string) (*Command,
 	return cmd, nil
 }
 
-func (p *Parser) parseListDefaultModels() (*Command, error) {
+func (p *Parser) parseAPIListDefaultModels() (*Command, error) {
 	p.nextToken() // consume DEFAULT
 	if p.curToken.Type != TokenModels {
 		return nil, fmt.Errorf("expected MODELS")
@@ -389,7 +387,7 @@ func (p *Parser) parseListDefaultModels() (*Command, error) {
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
-	return NewCommand("list_user_default_models"), nil
+	return NewCommand("api_list_default_models"), nil
 }
 
 func (p *Parser) parseAPIListAvailableProviders() (*Command, error) {
@@ -1591,31 +1589,6 @@ optionsLoop:
 	if region != "" {
 		cmd.Params["region"] = region
 	}
-
-	p.nextToken()
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-// parseListInstances parses LIST INSTANCES FROM PROVIDER <name> command
-func (p *Parser) parseListInstances() (*Command, error) {
-	p.nextToken() // consume INSTANCES
-
-	if p.curToken.Type != TokenFrom {
-		return nil, fmt.Errorf("expected FROM")
-	}
-	p.nextToken()
-
-	providerName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, fmt.Errorf("expected provider name after FROM PROVIDER: %w", err)
-	}
-
-	cmd := NewCommand("list_provider_instances")
-	cmd.Params["provider_name"] = providerName
 
 	p.nextToken()
 	// Semicolon is optional
@@ -4203,7 +4176,7 @@ func (p *Parser) parseUserStopIngestion() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseUserListIngestionTasks() (*Command, error) {
+func (p *Parser) parseAPIListIngestionTasks() (*Command, error) {
 	p.nextToken() // consume Ingestion
 
 	if p.curToken.Type != TokenTasks {
@@ -4211,7 +4184,7 @@ func (p *Parser) parseUserListIngestionTasks() (*Command, error) {
 	}
 	p.nextToken() // consume TASKS
 
-	cmd := NewCommand("user_list_ingestion_tasks")
+	cmd := NewCommand("api_list_ingestion_tasks")
 
 	if p.curToken.Type == TokenFrom {
 		p.nextToken()

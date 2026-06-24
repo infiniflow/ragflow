@@ -409,7 +409,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.SetDefaultModel(cmd)
 	case "reset_default_model":
 		return c.ResetDefaultModel(cmd)
-	case "list_user_default_models":
+	case "api_list_default_models":
 		return c.ListDefaultModels(cmd)
 	case "list_tasks_user_command":
 		return c.ListTasksUserCommand(cmd)
@@ -447,7 +447,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.UserStartIngestionCommand(cmd)
 	case "user_stop_ingestion_command":
 		return c.UserStopIngestionCommand(cmd)
-	case "user_list_ingestion_tasks":
+	case "api_list_ingestion_tasks":
 		return c.ListUserIngestionTasks(cmd)
 	case "user_remove_task_command":
 		return c.UserRemoveTaskCommand(cmd)
