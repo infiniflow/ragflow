@@ -175,8 +175,8 @@ async def test_document_metadata_cache_paginates_with_page_size(monkeypatch, mcp
     connector = mcp_server.RAGFlowConnector(base_url=mcp_server.BASE_URL)
     document_requests = []
     pages = {
-        1: [{"id": "doc-1", "name": "Doc 1", "dataset_id": "dataset-1"}],
-        2: [{"id": "doc-2", "name": "Doc 2", "dataset_id": "dataset-1"}],
+        1: [{"id": f"doc-{i}", "name": f"Doc {i}", "dataset_id": "dataset-1"} for i in range(1, 31)],
+        2: [{"id": "doc-31", "name": "Doc 31", "dataset_id": "dataset-1"}],
     }
 
     async def _get(path, params=None, api_key=""):
@@ -192,8 +192,9 @@ async def test_document_metadata_cache_paginates_with_page_size(monkeypatch, mcp
 
     document_cache, _ = await connector._get_document_metadata_cache(["dataset-1"], api_key="unit-key", force_refresh=True)
 
-    assert sorted(document_cache) == ["doc-1", "doc-2"]
-    assert [document_cache["doc-1"]["name"], document_cache["doc-2"]["name"]] == ["Doc 1", "Doc 2"]
+    assert len(document_cache) == 31
+    assert document_cache["doc-1"]["name"] == "Doc 1"
+    assert document_cache["doc-31"]["name"] == "Doc 31"
     assert document_requests == [
         "/datasets/dataset-1/documents?page=1&page_size=30",
         "/datasets/dataset-1/documents?page=2&page_size=30",
