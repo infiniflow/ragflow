@@ -22,7 +22,7 @@ import { useSearchParams } from 'react-router';
 import { AgentCard } from './agent-card';
 import { CreateAgentDialog } from './create-agent-dialog';
 import { useCreateAgentOrPipeline } from './hooks/use-create-agent';
-import { useSelectFilters } from './hooks/use-selelct-filters';
+import { useSelectFilters } from './hooks/use-select-filters';
 import { UploadAgentDialog } from './upload-agent-dialog';
 import { useHandleImportJsonFile } from './use-import-json';
 import { useRenameAgent } from './use-rename-agent';
