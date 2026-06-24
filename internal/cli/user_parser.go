@@ -133,7 +133,7 @@ func (p *Parser) parseAPIListCommands() (*Command, error) {
 	case TokenDatasets:
 		return p.parseAPIListDatasets()
 	case TokenDataset:
-		return p.parseAPIListDatasetDocuments()
+		return p.parseAPIListDatasetCommands()
 	case TokenAgents:
 		return p.parseAPIListAgents()
 	case TokenChats:
@@ -190,7 +190,7 @@ func (p *Parser) parseAPIListDatasets() (*Command, error) {
 }
 
 // LIST DATASET 'dataset_name' DOCUMENTS;
-func (p *Parser) parseAPIListDatasetDocuments() (*Command, error) {
+func (p *Parser) parseAPIListDatasetCommands() (*Command, error) {
 	p.nextToken() // consume DATASET
 
 	datasetID, err := p.parseQuotedString()
@@ -199,17 +199,58 @@ func (p *Parser) parseAPIListDatasetDocuments() (*Command, error) {
 	}
 	p.nextToken()
 
-	if p.curToken.Type != TokenDocuments {
-		return nil, fmt.Errorf("expected DOCUMENTS")
+	switch p.curToken.Type {
+	case TokenDocuments:
+		return p.parseAPIListDatasetDocuments(datasetID)
+	case TokenFiles:
+		return p.parseAPIListDatasetFiles(datasetID)
+	case TokenIngestion:
+		return p.parseAPIListDatasetIngestionTasks(datasetID)
+	default:
+		return nil, fmt.Errorf("unknown LIST target: %s", p.curToken.Value)
+	}
+}
+
+func (p *Parser) parseAPIListDatasetDocuments(datasetID string) (*Command, error) {
+	p.nextToken() // consume DOCUMENTS
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 
 	cmd := NewCommand("api_list_dataset_documents")
 	cmd.Params["dataset_id"] = datasetID
+	return cmd, nil
+}
 
-	// Semicolon is optional for UNSET TOKEN
+func (p *Parser) parseAPIListDatasetFiles(datasetName string) (*Command, error) {
+	p.nextToken() // consume FILES
+
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
+
+	cmd := NewCommand("api_list_dataset_files")
+	cmd.Params["dataset_name"] = datasetName
+	return cmd, nil
+}
+
+func (p *Parser) parseAPIListDatasetIngestionTasks(datasetName string) (*Command, error) {
+	p.nextToken() // consume INGESTION
+
+	if p.curToken.Type != TokenTasks {
+		return nil, fmt.Errorf("expected TASKS")
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("api_list_ingestion_tasks")
+	cmd.Params["dataset_name"] = datasetName
 	return cmd, nil
 }
 
