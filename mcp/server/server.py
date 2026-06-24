@@ -334,37 +334,59 @@ class RAGFlowConnector:
                     page_size = 30
                     doc_id_meta_list = []
                     docs = {}
+                    pagination_complete = False
                     while page:
-                        docs_res = await self._get(f"/datasets/{dataset_id}/documents?page={page}", api_key=api_key)
+                        # Pass page_size explicitly so the pagination math below stays consistent
+                        # with the page size the server actually applies.
+                        docs_res = await self._get(f"/datasets/{dataset_id}/documents?page={page}&page_size={page_size}", api_key=api_key)
                         if not docs_res:
                             break
                         docs_data = docs_res.json()
-                        if docs_data.get("code") == 0 and docs_data.get("data", {}).get("docs"):
-                            for doc in docs_data["data"]["docs"]:
-                                doc_id = doc.get("id")
-                                if not doc_id:
-                                    continue
-                                doc_meta = {
-                                    "document_id": doc_id,
-                                    "name": doc.get("name", ""),
-                                    "location": doc.get("location", ""),
-                                    "type": doc.get("type", ""),
-                                    "size": doc.get("size"),
-                                    "chunk_count": doc.get("chunk_count"),
-                                    "create_date": doc.get("create_date", ""),
-                                    "update_date": doc.get("update_date", ""),
-                                    "token_count": doc.get("token_count"),
-                                    "thumbnail": doc.get("thumbnail", ""),
-                                    "dataset_id": doc.get("dataset_id", dataset_id),
-                                    "meta_fields": doc.get("meta_fields", {}),
-                                }
-                                doc_id_meta_list.append((doc_id, doc_meta))
-                                docs[doc_id] = doc_meta
+                        if docs_data.get("code") != 0:
+                            logging.warning(
+                                "Stopped paginating documents for dataset %s: API returned code=%s message=%r",
+                                dataset_id,
+                                docs_data.get("code"),
+                                docs_data.get("message"),
+                            )
+                            break
+                        data = docs_data.get("data") or {}
+                        page_docs = data.get("docs") or []
+                        for doc in page_docs:
+                            doc_id = doc.get("id")
+                            if not doc_id:
+                                continue
+                            doc_meta = {
+                                "document_id": doc_id,
+                                "name": doc.get("name", ""),
+                                "location": doc.get("location", ""),
+                                "type": doc.get("type", ""),
+                                "size": doc.get("size"),
+                                "chunk_count": doc.get("chunk_count"),
+                                "create_date": doc.get("create_date", ""),
+                                "update_date": doc.get("update_date", ""),
+                                "token_count": doc.get("token_count"),
+                                "thumbnail": doc.get("thumbnail", ""),
+                                "dataset_id": doc.get("dataset_id", dataset_id),
+                                "meta_fields": doc.get("meta_fields", {}),
+                            }
+                            doc_id_meta_list.append((doc_id, doc_meta))
+                            docs[doc_id] = doc_meta
 
+                        # Stop when the page came back empty (no more documents) or we have reached
+                        # the reported total. Without the empty-page guard, a successful response
+                        # carrying an empty ``docs`` list would leave ``page`` unchanged and refetch
+                        # the same page forever (issue #16248).
+                        if not page_docs or page * page_size >= data.get("total", len(doc_id_meta_list)):
+                            page = None
+                            pagination_complete = True
+                        else:
                             page += 1
-                            if docs_data.get("data", {}).get("total", 0) - page * page_size <= 0:
-                                page = None
 
+                    # Cache only after pagination finished cleanly. Writing the cache mid-loop would
+                    # persist a partial list for the full TTL if a later page failed (``not docs_res``
+                    # or a non-zero code), making lookups for the unfetched pages silently miss.
+                    if pagination_complete:
                         self._set_cached_document_metadata_by_dataset(dataset_id, doc_id_meta_list)
                 if docs:
                     document_cache.update(docs)
