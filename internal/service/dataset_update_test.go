@@ -118,9 +118,10 @@ func TestDatasetServiceUpdateDatasetUpdatesFields(t *testing.T) {
 func TestDatasetServiceGetDatasetReturnsEmptyConnectorList(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
-	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	datasetID := "11111111111141118111111111111111"
+	insertDatasetUpdateKB(t, datasetID, "tenant-1", "Original")
 
-	result, code, err := testDatasetUpdateService(t).GetDataset("kb-1", "tenant-1")
+	result, code, err := testDatasetUpdateService(t).GetDataset("11111111-1111-4111-8111-111111111111", "tenant-1")
 	if err != nil {
 		t.Fatalf("GetDataset failed: %v", err)
 	}
