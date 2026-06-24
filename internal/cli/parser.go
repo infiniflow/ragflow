@@ -143,11 +143,11 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 
 	switch p.curToken.Type {
 	case TokenLogin:
-		return p.parseLoginUser()
+		return p.parseAPILoginUser()
 	case TokenLogout:
-		return p.parseLogout()
+		return p.parseAPILogout()
 	case TokenPing:
-		return p.parsePingServer()
+		return p.parseAPIPingServer()
 	case TokenList:
 		return p.parseListCommand()
 	case TokenShow:
@@ -181,7 +181,7 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 	case TokenBenchmark:
 		return p.parseBenchmarkCommand()
 	case TokenRegister:
-		return p.parseRegisterCommand()
+		return p.parseAPIRegisterCommand()
 	case TokenEnable:
 		return p.parseEnableCommand()
 	case TokenDisable:

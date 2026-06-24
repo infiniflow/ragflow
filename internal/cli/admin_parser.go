@@ -24,7 +24,7 @@ import (
 
 // region AUTH commands
 func (p *Parser) parseAdminLoginUser() (*Command, error) {
-	cmd := NewCommand("login_user")
+	cmd := NewCommand("admin_login_user")
 
 	p.nextToken() // consume LOGIN
 	if p.curToken.Type != TokenAdmin {
@@ -60,7 +60,7 @@ func (p *Parser) parseAdminLoginUser() (*Command, error) {
 }
 
 func (p *Parser) parseAdminLogout() (*Command, error) {
-	cmd := NewCommand("logout")
+	cmd := NewCommand("admin_logout")
 	p.nextToken()
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
@@ -70,7 +70,7 @@ func (p *Parser) parseAdminLogout() (*Command, error) {
 }
 
 func (p *Parser) parseAdminPingServer() (*Command, error) {
-	cmd := NewCommand("ping_server")
+	cmd := NewCommand("admin_ping_server")
 	p.nextToken()
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
@@ -1840,7 +1840,7 @@ func (p *Parser) parseAdminBenchmarkCommand() (*Command, error) {
 func (p *Parser) parseAdminUserStatement() (*Command, error) {
 	switch p.curToken.Type {
 	case TokenPing:
-		return p.parsePingServer()
+		return p.parseAdminPingServer()
 	case TokenShow:
 		return p.parseShowCommand()
 	case TokenCreate:

@@ -17,8 +17,8 @@ func tokenTypeDescription(t int, tok Token) string {
 }
 
 // Command parsers
-func (p *Parser) parseLogout() (*Command, error) {
-	cmd := NewCommand("logout")
+func (p *Parser) parseAPILogout() (*Command, error) {
+	cmd := NewCommand("api_logout")
 	p.nextToken()
 	// Semicolon is optional for UNSET TOKEN
 	if p.curToken.Type == TokenSemicolon {
@@ -27,8 +27,8 @@ func (p *Parser) parseLogout() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseLoginUser() (*Command, error) {
-	cmd := NewCommand("login_user")
+func (p *Parser) parseAPILoginUser() (*Command, error) {
+	cmd := NewCommand("api_login_user")
 
 	p.nextToken() // consume LOGIN
 	if p.curToken.Type != TokenUser {
@@ -46,7 +46,8 @@ func (p *Parser) parseLoginUser() (*Command, error) {
 	// Optional: PASSWORD 'password'
 	if p.curToken.Type == TokenPassword {
 		p.nextToken()
-		password, err := p.parseQuotedString()
+		var password string
+		password, err = p.parseQuotedString()
 		if err != nil {
 			return nil, err
 		}
@@ -62,8 +63,8 @@ func (p *Parser) parseLoginUser() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parsePingServer() (*Command, error) {
-	cmd := NewCommand("ping_server")
+func (p *Parser) parseAPIPingServer() (*Command, error) {
+	cmd := NewCommand("api_ping_server")
 	p.nextToken()
 	// Semicolon is optional for UNSET TOKEN
 	if p.curToken.Type == TokenSemicolon {
@@ -72,8 +73,8 @@ func (p *Parser) parsePingServer() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseRegisterCommand() (*Command, error) {
-	cmd := NewCommand("register_user")
+func (p *Parser) parseAPIRegisterCommand() (*Command, error) {
+	cmd := NewCommand("api_register_user")
 
 	if err := p.expectPeek(TokenUser); err != nil {
 		return nil, err
@@ -3647,7 +3648,7 @@ func (p *Parser) parseBenchmarkCommand() (*Command, error) {
 func (p *Parser) parseUserStatement() (*Command, error) {
 	switch p.curToken.Type {
 	case TokenPing:
-		return p.parsePingServer()
+		return p.parseAPIPingServer()
 	case TokenDelete:
 		return p.parseDeleteCommand()
 	case TokenShow:

@@ -37,11 +37,11 @@ func (c *CLI) ExecuteCommand(cmd *Command) (ResponseIf, error) {
 
 func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 	switch cmd.Type {
-	case "login_user":
+	case "admin_login_user":
 		return c.LoginUserByCommand(cmd)
-	case "logout":
+	case "admin_logout":
 		return c.Logout()
-	case "ping_server":
+	case "admin_ping_server":
 		return c.PingByCommand(cmd)
 	case "benchmark":
 		return c.RunBenchmark(cmd)
@@ -284,13 +284,13 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 }
 func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	switch cmd.Type {
-	case "register_user":
+	case "api_register_user":
 		return c.RegisterUser(cmd)
-	case "login_user":
+	case "api_login_user":
 		return c.LoginUserByCommand(cmd)
-	case "logout":
+	case "api_logout":
 		return c.Logout()
-	case "ping_server":
+	case "api_ping_server":
 		return c.PingByCommand(cmd)
 	// Configuration commands
 	case "list_configs":

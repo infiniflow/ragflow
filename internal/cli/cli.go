@@ -828,25 +828,6 @@ func (c *CLI) RunSingleCommand(command *string) error {
 }
 
 // VerifyAuth verifies authentication if needed
-func (c *CLI) NewVerifyAuth(username, password *string) error {
-	// Otherwise, use username/password authentication
-	if username == nil {
-		return fmt.Errorf("username is required")
-	}
-
-	if password == nil {
-		return fmt.Errorf("password is required")
-	}
-
-	// Create login command with username and password
-	cmd := NewCommand("login_user")
-	cmd.Params["email"] = *username
-	cmd.Params["password"] = *password
-	_, err := c.ExecuteCommand(cmd)
-	return err
-}
-
-// VerifyAuth verifies authentication if needed
 func (c *CLI) VerifyAuth(username, password string) error {
 	// Otherwise, use username/password authentication
 	if username == "" {
@@ -858,10 +839,11 @@ func (c *CLI) VerifyAuth(username, password string) error {
 	}
 
 	// Create login command with username and password
-	cmd := NewCommand("login_user")
+	cmd := NewCommand("login_user_on_startup")
 	cmd.Params["email"] = username
 	cmd.Params["password"] = password
-	_, err := c.ExecuteCommand(cmd)
+
+	_, err := c.LoginUserByCommand(cmd)
 	return err
 }
 
