@@ -20,8 +20,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	models "ragflow/internal/entity/models"
 	"strconv"
 	"strings"
 	"time"
@@ -29,6 +31,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
+	"ragflow/internal/service/nlp"
 )
 
 const (
@@ -793,7 +796,7 @@ func (s *MemoryService) ForgetMessage(ctx context.Context, userID string, memory
 	condition := map[string]interface{}{
 		"id": messageDocID,
 	}
-	indexName := fmt.Sprintf("memory_%s", memory.TenantID)
+	indexName := memoryIndexName(memory.TenantID)
 
 	if err := s.docEngine.UpdateChunks(ctx, condition, updates, indexName, memoryID); err != nil {
 		if isMessageDocumentNotFound(err) {
@@ -805,6 +808,420 @@ func (s *MemoryService) ForgetMessage(ctx context.Context, userID string, memory
 	}
 
 	return nil
+}
+
+func (s *MemoryService) UpdateMessage(ctx context.Context, userID, memoryID string, messageID int64, status bool) (bool, error) {
+	memory, err := s.requireMemoryAccess(ctx, userID, memoryID)
+	if err != nil {
+		return false, err
+	}
+
+	if s.docEngine == nil {
+		return false, errors.New("message store is not initialized")
+	}
+
+	messageDocID := fmt.Sprintf("%s_%d", memoryID, messageID)
+	statusValue := 0
+	if status {
+		statusValue = 1
+	}
+	updates := map[string]interface{}{
+		"status": statusValue,
+	}
+	condition := map[string]interface{}{
+		"id": messageDocID,
+	}
+	indexName := memoryIndexName(memory.TenantID)
+	if err := s.docEngine.UpdateChunks(ctx, condition, updates, indexName, memoryID); err != nil {
+		if isMessageDocumentNotFound(err) {
+			return false, fmt.Errorf("failed to set status for message '%d' in memory '%s': %w", messageID, memoryID, err)
+		}
+		return false, fmt.Errorf("failed to set status for message '%d' in memory '%s': %w", messageID, memoryID, err)
+	}
+
+	return true, nil
+}
+
+func (s *MemoryService) SearchMessage(ctx context.Context, userID string, filterDict, params map[string]interface{}) ([]map[string]interface{}, common.ErrorCode, error) {
+	memoryIDs := splitFilterValues(filterDict["memory_id"])
+	memories, err := s.filterAccessibleMemories(ctx, userID, memoryIDs)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	if len(memories) == 0 {
+		return []map[string]interface{}{}, common.CodeSuccess, nil
+	}
+
+	return s.queryMessage(ctx, memories, filterDict, params)
+}
+
+func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Memory, filterDict, params map[string]interface{}) ([]map[string]interface{}, common.ErrorCode, error) {
+	if s.docEngine == nil {
+		return nil, common.CodeServerError, errors.New("message store is not initialized")
+	}
+
+	topN := memoryIntParam(params["top_n"], 5)
+	if topN <= 0 {
+		topN = 5
+	}
+	similarityThreshold := memoryFloatParam(params["similarity_threshold"], 0.2)
+	keywordsSimilarityWeight := memoryFloatParam(params["keywords_similarity_weight"], 0.7)
+	question := strings.TrimSpace(memoryStringParam(params["query"]))
+
+	memoryIDs := make([]string, 0, len(memories))
+	conditionDict := make(map[string]interface{})
+	for _, memory := range memories {
+		if memory == nil {
+			continue
+		}
+		memoryIDs = append(memoryIDs, memory.ID)
+	}
+	conditionDict["memory_id"] = memoryIDs
+	for _, key := range []string{"agent_id", "session_id", "user_id"} {
+		value := strings.TrimSpace(memoryStringParam(filterDict[key]))
+		if value != "" {
+			conditionDict[key] = value
+		}
+	}
+	if _, ok := conditionDict["status"]; !ok {
+		conditionDict["status"] = 1
+	}
+
+	matchExprs := make([]interface{}, 0, 3)
+	if question != "" {
+		matchText := memoryMessageTextExpr(question, similarityThreshold)
+		matchDense, err := s.memoryMessageDenseExpr(question, memories[0], topN, similarityThreshold)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+		fusionExpr := &enginetypes.FusionExpr{
+			Method: "weighted_sum",
+			TopN:   topN,
+			FusionParams: map[string]interface{}{
+				"weights": fmt.Sprintf("%g,%g", 1-keywordsSimilarityWeight, keywordsSimilarityWeight),
+			},
+		}
+		matchExprs = append(matchExprs, matchText, matchDense, fusionExpr)
+	}
+
+	searchReq := &enginetypes.SearchRequest{
+		IndexNames:   memorySearchIndexNames(memories),
+		Offset:       0,
+		Limit:        topN,
+		SelectFields: memoryMessageSelectFields(),
+		Filter:       conditionDict,
+		MatchExprs:   matchExprs,
+		OrderBy:      (&enginetypes.OrderByExpr{}).Desc("valid_at"),
+	}
+
+	searchResult, err := s.docEngine.Search(ctx, searchReq)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	if searchResult == nil || searchResult.Total == 0 {
+		return []map[string]interface{}{}, common.CodeSuccess, nil
+	}
+
+	messages := make([]map[string]interface{}, 0, len(searchResult.Chunks))
+	for _, chunk := range searchResult.Chunks {
+		message := make(map[string]interface{}, len(chunk))
+		for _, field := range memoryMessageSelectFields() {
+			if value, ok := chunk[field]; ok {
+				message[field] = value
+			}
+		}
+		messages = append(messages, message)
+	}
+	return common.ConvertFloatsToPyFormat(messages).([]map[string]interface{}), common.CodeSuccess, nil
+}
+
+func (s *MemoryService) filterAccessibleMemories(ctx context.Context, userID string, memoryIDs []string) ([]*entity.Memory, error) {
+	memoryIDs = splitFilterValues(memoryIDs)
+	if len(memoryIDs) == 0 {
+		return []*entity.Memory{}, nil
+	}
+
+	memories, err := s.memoryDAO.GetByIDs(memoryIDs)
+	if err != nil {
+		return nil, err
+	}
+	if len(memories) == 0 {
+		return []*entity.Memory{}, nil
+	}
+
+	joinedTenantIDs := map[string]struct{}{userID: {}}
+	needsTeamLookup := false
+	for _, memory := range memories {
+		if memory != nil && memory.TenantID != userID && memory.Permissions == string(TenantPermissionTeam) {
+			needsTeamLookup = true
+			break
+		}
+	}
+	if needsTeamLookup {
+		userTenants, err := NewUserTenantService().GetUserTenantRelationByUserIDWithContext(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		for _, tenant := range userTenants {
+			if tenant != nil && tenant.TenantID != "" {
+				joinedTenantIDs[tenant.TenantID] = struct{}{}
+			}
+		}
+	}
+
+	accessible := make([]*entity.Memory, 0, len(memories))
+	for _, memory := range memories {
+		if memory == nil {
+			continue
+		}
+		if memory.TenantID == userID {
+			accessible = append(accessible, memory)
+			continue
+		}
+		if memory.Permissions != string(TenantPermissionTeam) {
+			continue
+		}
+		if _, ok := joinedTenantIDs[memory.TenantID]; ok {
+			accessible = append(accessible, memory)
+		}
+	}
+	return accessible, nil
+}
+
+func splitFilterValues(values interface{}) []string {
+	if values == nil {
+		return []string{}
+	}
+
+	var list []string
+
+	switch v := values.(type) {
+	case string:
+		list = []string{v}
+	case []string:
+		list = v
+	case []interface{}:
+		for _, x := range v {
+			if s, ok := x.(string); ok {
+				list = append(list, s)
+			}
+		}
+	default:
+		return []string{}
+	}
+
+	res := make([]string, 0)
+	for _, item := range list {
+		if item == "" {
+			continue
+		}
+		parts := strings.Split(item, ",")
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				res = append(res, p)
+			}
+		}
+	}
+	return res
+}
+
+func memoryStringParam(value interface{}) string {
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case fmt.Stringer:
+		return typed.String()
+	default:
+		if typed == nil {
+			return ""
+		}
+		return fmt.Sprintf("%v", typed)
+	}
+}
+
+func memoryFloatParam(value interface{}, fallback float64) float64 {
+	switch typed := value.(type) {
+	case float64:
+		return typed
+	case float32:
+		return float64(typed)
+	case int:
+		return float64(typed)
+	case int64:
+		return float64(typed)
+	case string:
+		if parsed, err := strconv.ParseFloat(strings.TrimSpace(typed), 64); err == nil {
+			return parsed
+		}
+	}
+	return fallback
+}
+
+func memoryIntParam(value interface{}, fallback int) int {
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int64:
+		return int(typed)
+	case float64:
+		return int(typed)
+	case string:
+		if parsed, err := strconv.Atoi(strings.TrimSpace(typed)); err == nil {
+			return parsed
+		}
+	}
+	return fallback
+}
+
+func memoryMessageSelectFields() []string {
+	return []string{
+		"message_id", "message_type", "source_id", "memory_id", "user_id", "agent_id", "session_id",
+		"valid_at", "invalid_at", "forget_at", "status", "content",
+	}
+}
+
+func memoryIndexName(tenantID string) string {
+	prefix := strings.TrimSpace(os.Getenv("ES_INDEX_PREFIX"))
+	if prefix == "" {
+		return fmt.Sprintf("memory_%s", tenantID)
+	}
+	return fmt.Sprintf("memory_%s_%s", prefix, tenantID)
+}
+
+func memorySearchIndexNames(memories []*entity.Memory) []string {
+	seen := make(map[string]struct{}, len(memories))
+	indexNames := make([]string, 0, len(memories))
+	for _, memory := range memories {
+		if memory == nil {
+			continue
+		}
+		indexName := memoryIndexName(memory.TenantID)
+		if engine.GetEngineType() == engine.EngineInfinity {
+			indexName = fmt.Sprintf("%s_%s", indexName, memory.ID)
+		}
+		if _, ok := seen[indexName]; ok {
+			continue
+		}
+		seen[indexName] = struct{}{}
+		indexNames = append(indexNames, indexName)
+	}
+	return indexNames
+}
+
+func memoryMessageTextExpr(question string, similarityThreshold float64) *enginetypes.MatchTextExpr {
+	matchText := &enginetypes.MatchTextExpr{
+		Fields:       []string{"content"},
+		MatchingText: question,
+		TopN:         100,
+		ExtraOptions: map[string]interface{}{"original_query": question},
+	}
+
+	queryBuilder := nlp.GetQueryBuilder()
+	if queryBuilder == nil {
+		queryBuilder = nlp.NewQueryBuilder()
+	}
+	if built, _ := queryBuilder.Question(question, "messages", similarityThreshold); built != nil {
+		matchText.MatchingText = built.MatchingText
+		matchText.ExtraOptions = built.ExtraOptions
+		if matchText.ExtraOptions == nil {
+			matchText.ExtraOptions = map[string]interface{}{}
+		}
+		matchText.ExtraOptions["original_query"] = question
+	}
+	matchText.Fields = []string{"content"}
+	matchText.TopN = 100
+	return matchText
+}
+
+func (s *MemoryService) memoryMessageDenseExpr(question string, memory *entity.Memory, topN int, similarityThreshold float64) (*enginetypes.MatchDenseExpr, error) {
+	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().GetModelConfigFromProviderInstance(memory.TenantID, entity.ModelTypeEmbedding, memory.EmbdID)
+	if err != nil {
+		return nil, err
+	}
+	embeddingModel := models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
+	embeddings, err := embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, []string{question}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0})
+	if err != nil {
+		return nil, err
+	}
+	if len(embeddings) == 0 || len(embeddings[0].Embedding) == 0 {
+		return nil, errors.New("embedding response is empty")
+	}
+
+	vector := embeddings[0].Embedding
+	return &enginetypes.MatchDenseExpr{
+		VectorColumnName:  fmt.Sprintf("q_%d_vec", len(vector)),
+		EmbeddingData:     vector,
+		EmbeddingDataType: "float",
+		DistanceType:      "cosine",
+		TopN:              topN,
+		ExtraOptions:      map[string]interface{}{"similarity": similarityThreshold},
+	}, nil
+}
+
+func (s *MemoryService) GetMessages(ctx context.Context, memoryIDs []string, userID, agentID, sessionID string, limit int) ([]map[string]interface{}, common.ErrorCode, error) {
+	memories, err := s.filterAccessibleMemories(ctx, userID, memoryIDs)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	if len(memories) == 0 {
+		return []map[string]interface{}{}, common.CodeSuccess, nil
+	}
+	return s.getRecentMessage(ctx, memories, agentID, sessionID, limit)
+}
+
+func (s *MemoryService) getRecentMessage(ctx context.Context, memories []*entity.Memory, agentID, sessionID string, limit int) ([]map[string]interface{}, common.ErrorCode, error) {
+	if s.docEngine == nil {
+		return nil, common.CodeServerError, errors.New("doc engine is nil")
+	}
+	if limit <= 0 {
+		limit = 10
+	}
+	indexNames := memorySearchIndexNames(memories)
+	memoryIDs := make([]string, 0, len(memories))
+	for _, memory := range memories {
+		if memory == nil || strings.TrimSpace(memory.ID) == "" {
+			continue
+		}
+		memoryIDs = append(memoryIDs, memory.ID)
+	}
+
+	conditionDict := map[string]interface{}{"memory_id": memoryIDs}
+	if agentID = strings.TrimSpace(agentID); agentID != "" {
+		conditionDict["agent_id"] = agentID
+	}
+	if sessionID = strings.TrimSpace(sessionID); sessionID != "" {
+		conditionDict["session_id"] = sessionID
+	}
+	req := &enginetypes.SearchRequest{
+		IndexNames:   indexNames,
+		Offset:       0,
+		Limit:        limit,
+		SelectFields: memoryMessageSelectFields(),
+		Filter:       conditionDict,
+		MatchExprs:   []interface{}{},
+		OrderBy:      (&enginetypes.OrderByExpr{}).Desc("valid_at"),
+	}
+
+	result, err := s.docEngine.Search(ctx, req)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	if result == nil || result.Total == 0 {
+		return []map[string]interface{}{}, common.CodeSuccess, nil
+	}
+
+	messages := make([]map[string]interface{}, 0, len(result.Chunks))
+	for _, chunk := range result.Chunks {
+		msg := make(map[string]interface{}, len(chunk))
+		for _, field := range memoryMessageSelectFields() {
+			if val, ok := chunk[field]; ok {
+				msg[field] = val
+			}
+		}
+		messages = append(messages, msg)
+	}
+	return common.ConvertFloatsToPyFormat(messages).([]map[string]interface{}), common.CodeSuccess, nil
 }
 
 func isMessageDocumentNotFound(err error) bool {
