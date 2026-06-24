@@ -253,6 +253,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 				chats.DELETE("/:chat_id", r.chatHandler.DeleteChat)
 				chats.GET("/:chat_id", r.chatHandler.GetChat)
 				chats.GET("/:chat_id/sessions", r.chatSessionHandler.ListChatSessions)
+				chats.GET("/:chat_id/sessions/:session_id", r.chatSessionHandler.GetSession)
+				chats.PATCH("/:chat_id/sessions/:session_id", r.chatSessionHandler.UpdateSession)
 			}
 
 			// OpenAI-compatible chat completions route

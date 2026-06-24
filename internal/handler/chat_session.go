@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -328,4 +329,54 @@ func (h *ChatSessionHandler) Completion(c *gin.Context) {
 			"message": "",
 		})
 	}
+}
+
+func (h *ChatSessionHandler) GetSession(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	userID := user.ID
+	chatID, sessionID := c.Param("chat_id"), c.Param("session_id")
+
+	result, code, err := h.chatSessionService.GetSession(userID, chatID, sessionID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+	jsonResponse(c, common.CodeSuccess, result, "success")
+}
+
+func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	userID := user.ID
+	chatID, sessionID := c.Param("chat_id"), c.Param("session_id")
+
+	req := map[string]any{}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if errors.Is(err, io.EOF) {
+			jsonError(c, common.CodeArgumentError, "Request body cannot be empty")
+			return
+		}
+		jsonError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
+		return
+	}
+	if len(req) == 0 {
+		jsonError(c, common.CodeArgumentError, "Request body cannot be empty")
+		return
+	}
+
+	result, code, err := h.chatSessionService.UpdateSession(userID, chatID, sessionID, req)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+	jsonResponse(c, common.CodeSuccess, result, "success")
 }
