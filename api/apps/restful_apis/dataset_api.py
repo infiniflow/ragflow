@@ -684,6 +684,70 @@ async def get_artifact_page(tenant_id, dataset_id, page_type, slug):
         return get_error_data_result(message="Internal server error")
 
 
+@manager.route("/datasets/<dataset_id>/any_skill", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def has_any_skill(tenant_id, dataset_id):
+    """Probe whether this dataset has a compiled Corpus2Skill tree.
+
+    GET /api/v1/datasets/<dataset_id>/any_skill
+    Success: {"code": 0, "data": {"has": bool}}
+    """
+    try:
+        success, result = await dataset_api_service.has_any_skill(dataset_id, tenant_id)
+        if success:
+            return get_result(data=result)
+        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/skills", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def get_skill_tree(tenant_id, dataset_id):
+    """Fetch the aggregate recursive Corpus2Skill tree for this dataset.
+
+    GET /api/v1/datasets/<dataset_id>/skills
+    Success: {"code": 0, "data": skill_all_row | null}
+    """
+    try:
+        success, result = await dataset_api_service.get_skill_tree(
+            dataset_id, tenant_id,
+        )
+        if success:
+            return get_result(data=result)
+        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route(
+    "/datasets/<dataset_id>/skills/<path:skill_kwd>",
+    methods=["GET"],
+)  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def get_skill_page(tenant_id, dataset_id, skill_kwd):
+    """Fetch full markdown for one Corpus2Skill node by skill_kwd.
+
+    GET /api/v1/datasets/<dataset_id>/skills/<skill_kwd>
+    Success: {"code": 0, "data": skill_row | null}
+    """
+    try:
+        success, result = await dataset_api_service.get_skill_page(
+            dataset_id, tenant_id, skill_kwd,
+        )
+        if success:
+            return get_result(data=result)
+        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
 @manager.route(
     "/datasets/<dataset_id>/artifacts/<page_type>/<path:slug>/commits",
     methods=["GET"],

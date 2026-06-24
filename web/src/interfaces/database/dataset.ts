@@ -25,6 +25,10 @@ export interface IDataset {
   size?: number;
   graphrag_task_finish_at: string;
   graphrag_task_id: Nullable<string>;
+  artifact_task_finish_at: string;
+  artifact_task_id: Nullable<string>;
+  skill_task_finish_at: string;
+  skill_task_id: Nullable<string>;
   id: string;
   language: string;
   mindmap_task_finish_at: null;

@@ -137,6 +137,7 @@ TASK_TYPE_TO_PIPELINE_TASK_TYPE = {
     "mindmap": PipelineTaskType.MINDMAP,
     "memory": PipelineTaskType.MEMORY,
     "artifact": PipelineTaskType.ARTIFACT,
+    "skill": PipelineTaskType.SKILL,
 }
 
 UNACKED_ITERATOR = None
@@ -1540,6 +1541,9 @@ async def do_handle_task(task):
         progress_callback(1, "place holder")
         pass
         return
+    elif task_type == "skill":
+        progress_callback(-1, "Skill generation requires the refactored task executor (TE_RUN_MODE=0).")
+        return
     else:
         # Standard chunking methods
         task["llm_id"] = doc_task_llm_id
@@ -1748,7 +1752,7 @@ async def handle_task():
     finally:
         if not task.get("dataflow_id", ""):
             referred_document_id = None
-            if task_type in ["graphrag", "raptor", "mindmap", "artifact"]:
+            if task_type in ["graphrag", "raptor", "mindmap", "artifact", "skill"]:
                 # KB-level fan-out tasks store the participating doc list in
                 # task["doc_ids"]; the first entry is used as a referent so
                 # the pipeline operation log has something to anchor to.

@@ -68,9 +68,10 @@ class PipelineTaskType(StrEnum):
     GRAPH_RAG = "GraphRAG"
     MINDMAP = "Mindmap"
     ARTIFACT = "Artifact"
+    SKILL = "Skill"
 
 
-VALID_PIPELINE_TASK_TYPES = {PipelineTaskType.PARSE, PipelineTaskType.DOWNLOAD, PipelineTaskType.RAPTOR, PipelineTaskType.GRAPH_RAG, PipelineTaskType.MINDMAP, PipelineTaskType.ARTIFACT}
+VALID_PIPELINE_TASK_TYPES = {PipelineTaskType.PARSE, PipelineTaskType.DOWNLOAD, PipelineTaskType.RAPTOR, PipelineTaskType.GRAPH_RAG, PipelineTaskType.MINDMAP, PipelineTaskType.ARTIFACT, PipelineTaskType.SKILL}
 
 
 # KB-level fan-out task types: their Task row uses GRAPH_RAPTOR_FAKE_DOC_ID as a
@@ -79,7 +80,7 @@ VALID_PIPELINE_TASK_TYPES = {PipelineTaskType.PARSE, PipelineTaskType.DOWNLOAD, 
 # the join through Document → Knowledgebase → Tenant resolves and tenant_id /
 # kb_id / language are hydrated onto the task dict. Add new fan-out task types
 # here or TaskContext will raise "Task must contain 'tenant_id'".
-PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES = {PipelineTaskType.RAPTOR.lower(), PipelineTaskType.GRAPH_RAG.lower(), PipelineTaskType.MINDMAP.lower(), PipelineTaskType.ARTIFACT.lower()}
+PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES = {PipelineTaskType.RAPTOR.lower(), PipelineTaskType.GRAPH_RAG.lower(), PipelineTaskType.MINDMAP.lower(), PipelineTaskType.ARTIFACT.lower(), PipelineTaskType.SKILL.lower()}
 
 
 KNOWLEDGEBASE_FOLDER_NAME=".knowledgebase"

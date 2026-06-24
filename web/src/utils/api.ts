@@ -341,6 +341,17 @@ export default {
   getDatasetArtifactCommit: (datasetId: string, commitId: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts/commits/${encodeURIComponent(commitId)}`,
 
+  // dataset skills (Corpus2Skill tree)
+  hasAnySkill: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/any_skill`,
+  getDatasetSkillTree: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/skills`,
+  getDatasetSkillPage: (datasetId: string, skillKwd: string) =>
+    `${restAPIv1}/datasets/${datasetId}/skills/${skillKwd
+      .split('/')
+      .map((s) => encodeURIComponent(s))
+      .join('/')}`,
+
   // next-search
   createSearch: `${restAPIv1}/searches`,
   getSearchList: `${restAPIv1}/searches`,

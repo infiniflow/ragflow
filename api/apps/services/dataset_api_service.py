@@ -33,13 +33,14 @@ from common.constants import FileSource, StatusEnum
 from api.utils.api_utils import deep_merge, get_parser_config, remap_dictionary_keys, verify_embedding_availability
 from common.misc_utils import thread_pool_exec
 
-_VALID_INDEX_TYPES = {"graph", "raptor", "mindmap", "artifact"}
+_VALID_INDEX_TYPES = {"graph", "raptor", "mindmap", "artifact", "skill"}
 
 _INDEX_TYPE_TO_TASK_TYPE = {
     "graph": "graphrag",
     "raptor": "raptor",
     "mindmap": "mindmap",
     "artifact": "artifact",
+    "skill": "skill",
 }
 
 _INDEX_TYPE_TO_TASK_ID_FIELD = {
@@ -47,6 +48,7 @@ _INDEX_TYPE_TO_TASK_ID_FIELD = {
     "raptor": "raptor_task_id",
     "mindmap": "mindmap_task_id",
     "artifact": "artifact_task_id",
+    "skill": "skill_task_id",
 }
 
 _INDEX_TYPE_TO_DISPLAY_NAME = {
@@ -54,6 +56,7 @@ _INDEX_TYPE_TO_DISPLAY_NAME = {
     "raptor": "RAPTOR",
     "mindmap": "Mindmap",
     "artifact": "Artifact",
+    "skill": "Skill",
 }
 
 
@@ -847,6 +850,10 @@ def delete_index(dataset_id: str, tenant_id: str, index_type: str, wipe: bool = 
         from rag.nlp import search
 
         settings.docStoreConn.delete({"raptor_kwd": ["raptor"]}, search.index_name(kb.tenant_id), dataset_id)
+    elif wipe and index_type == "skill":
+        from rag.nlp import search
+
+        settings.docStoreConn.delete({"compile_kwd": ["skill", "skill_all"]}, search.index_name(kb.tenant_id), dataset_id)
 
     KnowledgebaseService.update_by_id(kb.id, {task_id_field: "", task_finish_at_field: None})
     return True, {}
@@ -1465,9 +1472,11 @@ async def search_datasets(tenant_id: str, req: dict):
 # ---------------------------------------------------------------------------
 
 _ARTIFACT_COMPILE_KWD = "artifact_page"
+_SKILL_COMPILE_KWD = "skill"
+_SKILL_ALL_COMPILE_KWD = "skill_all"
 
 
-def _artifact_index_or_none(tenant_id: str, kb_id: str):
+def _compiled_index_or_none(tenant_id: str, kb_id: str):
     """Return (index_name, search_module) when the tenant index exists,
     else ``None``. Avoids 500s on brand-new tenants whose ES index hasn't
     been created yet."""
@@ -1477,6 +1486,14 @@ def _artifact_index_or_none(tenant_id: str, kb_id: str):
     if not settings.docStoreConn.index_exist(index_nm, kb_id):
         return None
     return index_nm, _rag_search
+
+
+def _artifact_index_or_none(tenant_id: str, kb_id: str):
+    return _compiled_index_or_none(tenant_id, kb_id)
+
+
+def _skill_index_or_none(tenant_id: str, kb_id: str):
+    return _compiled_index_or_none(tenant_id, kb_id)
 
 
 async def has_any_artifact(dataset_id: str, tenant_id: str):
@@ -1651,6 +1668,128 @@ async def get_artifact_page(
         "related_kb_pages": row.get("related_kb_pages_kwd") or [],
         "source_chunk_ids": row.get("source_chunk_ids") or [],
         "source_doc_ids": row.get("source_doc_ids") or [],
+    }
+
+
+async def has_any_skill(dataset_id: str, tenant_id: str):
+    """Fast existence probe for the dataset Skills sidebar entry."""
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+
+    pack = _skill_index_or_none(kb.tenant_id, dataset_id)
+    if pack is None:
+        return True, {"has": False}
+    index_nm, _ = pack
+
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    try:
+        res = settings.docStoreConn.search(
+            select_fields=["id"], highlight_fields=[],
+            condition={"compile_kwd": [_SKILL_ALL_COMPILE_KWD]},
+            match_expressions=[], order_by=OrderByExpr(),
+            offset=0, limit=1,
+            index_names=index_nm, knowledgebase_ids=[dataset_id],
+        )
+    except Exception:
+        logging.exception("has_any_skill: docStore search failed for kb=%s", dataset_id)
+        return True, {"has": False}
+
+    total = settings.docStoreConn.get_total(res)
+    return True, {"has": bool(total)}
+
+
+async def get_skill_tree(dataset_id: str, tenant_id: str):
+    """Fetch the one-shot recursive skill tree for this dataset."""
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+
+    pack = _skill_index_or_none(kb.tenant_id, dataset_id)
+    if pack is None:
+        return True, None
+    index_nm, _ = pack
+
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    select_fields = ["id", "kb_id", "doc_id", "compile_kwd", "skill_with_weight"]
+    try:
+        res = settings.docStoreConn.search(
+            select_fields=select_fields, highlight_fields=[],
+            condition={"compile_kwd": [_SKILL_ALL_COMPILE_KWD]},
+            match_expressions=[], order_by=OrderByExpr(),
+            offset=0, limit=1,
+            index_names=index_nm, knowledgebase_ids=[dataset_id],
+        )
+        field_map = settings.docStoreConn.get_fields(res, select_fields)
+    except Exception:
+        logging.exception("get_skill_tree: docStore search failed for kb=%s", dataset_id)
+        return True, None
+
+    if not field_map:
+        return True, None
+
+    _, row = next(iter(field_map.items()))
+    return True, {
+        "id": row.get("id"),
+        "kb_id": row.get("kb_id") or dataset_id,
+        "doc_id": row.get("doc_id") or dataset_id,
+        "compile_kwd": row.get("compile_kwd") or _SKILL_ALL_COMPILE_KWD,
+        "skill_with_weight": json.loads(row.get("skill_with_weight")) or [],
+    }
+
+
+async def get_skill_page(dataset_id: str, tenant_id: str, skill_kwd: str):
+    """Fetch the full markdown body for a single skill node."""
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+
+    pack = _skill_index_or_none(kb.tenant_id, dataset_id)
+    if pack is None:
+        return True, None
+    index_nm, _ = pack
+
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    select_fields = [
+        "id", "kb_id", "doc_id", "compile_kwd", "skill_kwd",
+        "depth_int", "children_kwd", "source_doc_ids", "md_with_weight",
+    ]
+    try:
+        res = settings.docStoreConn.search(
+            select_fields=select_fields, highlight_fields=[],
+            condition={
+                "compile_kwd": [_SKILL_COMPILE_KWD],
+                "skill_kwd": [skill_kwd],
+            },
+            match_expressions=[], order_by=OrderByExpr(),
+            offset=0, limit=1,
+            index_names=index_nm, knowledgebase_ids=[dataset_id],
+        )
+        field_map = settings.docStoreConn.get_fields(res, select_fields)
+    except Exception:
+        logging.exception(
+            "get_skill_page: docStore search failed for kb=%s skill=%s",
+            dataset_id, skill_kwd,
+        )
+        return True, None
+
+    if not field_map:
+        return True, None
+
+    _, row = next(iter(field_map.items()))
+    return True, {
+        "id": row.get("id"),
+        "kb_id": row.get("kb_id") or dataset_id,
+        "doc_id": row.get("doc_id") or dataset_id,
+        "compile_kwd": row.get("compile_kwd") or _SKILL_COMPILE_KWD,
+        "skill_kwd": row.get("skill_kwd") or skill_kwd,
+        "depth_int": row.get("depth_int") or 0,
+        "children_kwd": row.get("children_kwd") or [],
+        "source_doc_ids": row.get("source_doc_ids") or [],
+        "md_with_weight": row.get("md_with_weight") or "",
     }
 
 

@@ -8,6 +8,7 @@ import {
   LucideFolderOpen,
   LucideLogs,
   LucideSettings,
+  LucideSparkles,
   LucideTextSearch,
 } from 'lucide-react';
 
@@ -16,6 +17,7 @@ import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import { useSecondPathName } from '@/hooks/route-hook';
 import { useHasAnyArtifact } from '@/hooks/use-dataset-artifact-request';
+import { useHasAnySkill } from '@/hooks/use-dataset-skill-request';
 import { useFetchKnowledgeGraph } from '@/hooks/use-knowledge-request';
 import { cn, formatBytes } from '@/lib/utils';
 import { Routes } from '@/routes';
@@ -34,6 +36,7 @@ export function SideBar({ dataset: data }: PropType) {
   const { id } = useParams();
   const { data: routerData } = useFetchKnowledgeGraph();
   const { data: artifactProbe } = useHasAnyArtifact();
+  const { data: skillProbe } = useHasAnySkill();
   const { t } = useTranslation();
 
   const items = useMemo(() => {
@@ -76,8 +79,16 @@ export function SideBar({ dataset: data }: PropType) {
       });
     }
 
+    if (skillProbe?.has) {
+      list.push({
+        icon: <LucideSparkles className="size-[1em]" />,
+        label: t(`knowledgeDetails.skills`),
+        key: Routes.DatasetSkills,
+      });
+    }
+
     return list;
-  }, [t, routerData, artifactProbe]);
+  }, [t, routerData, artifactProbe, skillProbe]);
 
   return (
     <aside className="flex flex-col w-64 relative">

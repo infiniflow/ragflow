@@ -35,11 +35,13 @@ export enum GenerateType {
   KnowledgeGraph = 'KnowledgeGraph',
   Raptor = 'Raptor',
   Artifact = 'Artifact',
+  ToSkills = 'ToSkills',
 }
 export const GenerateTypeMap = {
   [GenerateType.KnowledgeGraph]: ProcessingType.knowledgeGraph,
   [GenerateType.Raptor]: ProcessingType.raptor,
   [GenerateType.Artifact]: ProcessingType.artifact,
+  [GenerateType.ToSkills]: ProcessingType.skill,
 };
 const MenuItem: React.FC<{
   name: GenerateType;
@@ -64,6 +66,7 @@ const MenuItem: React.FC<{
     KnowledgeGraph: 'knowledgegraph',
     Raptor: 'dataflow-01',
     Artifact: 'book-open-01',
+    ToSkills: 'spark',
   };
   const status = useMemo(() => {
     if (!data) {
@@ -196,7 +199,9 @@ const Generate: React.FC<GenerateProps> = (props) => {
   // tasks may exist on the KB from before the per-doc move) but it's
   // no longer surfaced in this dropdown — the RAPTOR menu item was
   // removed. Drop it from the destructure to keep lint happy.
-  const { graphRunData, artifactRunData } = useTraceGenerate({ open });
+  const { graphRunData, artifactRunData, skillRunData } = useTraceGenerate({
+    open,
+  });
   const { runGenerate, pauseGenerate } = useDatasetGenerate();
   const handleOpenChange = (isOpen: boolean) => {
     setOpen(isOpen);
@@ -241,7 +246,9 @@ const Generate: React.FC<GenerateProps> = (props) => {
             const data = (
               name === GenerateType.KnowledgeGraph
                 ? graphRunData
-                : artifactRunData
+                : name === GenerateType.Artifact
+                  ? artifactRunData
+                  : skillRunData
             ) as ITraceInfo;
             return (
               <div key={name}>
@@ -293,25 +300,21 @@ export const GenerateLogButton = (props: IGenerateLogProps) => {
     }
   };
 
+  const typeLabel = type
+    ? t(`knowledgeDetails.${lowerFirst(type)}`)
+    : t('knowledgeDetails.raptor');
+
   const handleDelete = () => {
     Modal.show({
       visible: true,
       className: '!w-[560px]',
-      title:
-        t('common.delete') +
-        ' ' +
-        (type === GenerateType.KnowledgeGraph
-          ? t('knowledgeDetails.knowledgeGraph')
-          : t('knowledgeDetails.raptor')),
+      title: t('common.delete') + ' ' + typeLabel,
       children: (
         <div
           className="text-sm text-text-secondary"
           dangerouslySetInnerHTML={{
             __html: t('knowledgeConfiguration.deleteGenerateModalContent', {
-              type:
-                type === GenerateType.KnowledgeGraph
-                  ? t('knowledgeDetails.knowledgeGraph')
-                  : t('knowledgeDetails.raptor'),
+              type: typeLabel,
             }),
           }}
         ></div>

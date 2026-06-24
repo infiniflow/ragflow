@@ -450,6 +450,8 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'Performs recursive clustering and summarization of document chunks to build a hierarchical tree structure, enabling more context-aware retrieval across lengthy documents.',
       generateArtifact:
         'Compiles artifact pages (entity / concept / topic wiki) from every document configured with a knowledge compilation template. Only newly added chunks are processed on each run.',
+      generateToSkills:
+        'Builds a hierarchical skill tree from this dataset and stores the generated skill pages for search and reuse.',
       generate: 'Generate',
       raptor: 'RAPTOR',
       processingType: 'Processing type',
@@ -487,6 +489,8 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       configuration: 'Configuration',
       knowledgeGraph: 'Knowledge graph',
       artifact: 'Artifact',
+      skills: 'Skills',
+      toSkills: 'To skills',
       name: 'Name',
       namePlaceholder: 'Please input name!',
       doc: 'Docs',
@@ -2983,6 +2987,13 @@ Important structured information may include: names, dates, locations, events, k
         next: 'Next',
         page: 'Page {{page}} of {{total}}',
       },
+    },
+    datasetSkill: {
+      folders: 'Folders',
+      currentFolder: 'Current folder',
+      empty: 'No skills have been generated for this dataset yet.',
+      selectFolder: 'Select a skill folder',
+      noContent: 'Skill content is unavailable.',
     },
     knowledgeCompilation: {
       title: 'Knowledge compilation',

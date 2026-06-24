@@ -287,6 +287,10 @@ class KnowledgebaseService(CommonService):
             cls.model.raptor_task_finish_at,
             cls.model.mindmap_task_id,
             cls.model.mindmap_task_finish_at,
+            cls.model.artifact_task_id,
+            cls.model.artifact_task_finish_at,
+            cls.model.skill_task_id,
+            cls.model.skill_task_finish_at,
             cls.model.create_time,
             cls.model.update_time
             ]

@@ -62,6 +62,7 @@ export enum Routes {
   ResultView = `${Chunk}${Result}`,
   KnowledgeGraph = '/knowledge-graph',
   Artifact = '/artifact',
+  DatasetSkills = '/skills',
   AgentLogPage = '/agent-log-page',
   AgentShare = '/agent/share',
   ChatShare = `${Chats}/share`,
@@ -200,6 +201,10 @@ const routeConfigOptions = [
           {
             path: `${Routes.DatasetBase}${Routes.Artifact}/:id`,
             Component: () => import('@/pages/dataset/artifact'),
+          },
+          {
+            path: `${Routes.DatasetBase}${Routes.DatasetSkills}/:id`,
+            Component: () => import('@/pages/dataset/skills'),
           },
           {
             path: `${Routes.DatasetBase}${Routes.DataSetOverview}/:id`,

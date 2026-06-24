@@ -309,6 +309,12 @@ export const getDatasetLogsTableColumns = (
               className="text-text-secondary"
             ></IconFontFill>
           )}
+          {ProcessingType.skill === row.original.task_type && (
+            <IconFontFill
+              name={`spark`}
+              className="text-text-secondary"
+            ></IconFontFill>
+          )}
           {ProcessingTypeMap[row.original.task_type as ProcessingType] ||
             row.original.task_type}
         </div>
