@@ -115,6 +115,30 @@ func TestDatasetServiceUpdateDatasetUpdatesFields(t *testing.T) {
 	}
 }
 
+func TestDatasetServiceGetDatasetReturnsEmptyConnectorList(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	result, code, err := testDatasetUpdateService(t).GetDataset("kb-1", "tenant-1")
+	if err != nil {
+		t.Fatalf("GetDataset failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+	connectors, ok := result["connectors"].([]*dao.ConnectorDatasetListItem)
+	if !ok {
+		t.Fatalf("expected connector list, got %#v", result["connectors"])
+	}
+	if connectors == nil {
+		t.Fatal("expected empty connector list, got nil")
+	}
+	if len(connectors) != 0 {
+		t.Fatalf("expected empty connector list, got %#v", connectors)
+	}
+}
+
 func TestDatasetServiceUpdateDatasetRejectsMissingDataset(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
@@ -313,6 +337,7 @@ func testDatasetUpdateService(t *testing.T) *DatasetService {
 
 	return &DatasetService{
 		kbDAO:        dao.NewKnowledgebaseDAO(),
+		documentDAO:  dao.NewDocumentDAO(),
 		connectorDAO: dao.NewConnectorDAO(),
 	}
 }

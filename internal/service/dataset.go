@@ -1396,7 +1396,7 @@ func (s *DatasetService) GetDataset(datasetID, userID string) (map[string]interf
 	if err != nil {
 		return nil, common.CodeServerError, errors.New("Database operation failed")
 	}
-	data["connectors"] = connectors
+	data["connectors"] = datasetConnectorsOrEmpty(connectors)
 
 	return data, common.CodeSuccess, nil
 }
@@ -1643,8 +1643,15 @@ func (s *DatasetService) UpdateDataset(datasetID, tenantID string, req UpdateDat
 	if err != nil {
 		return nil, common.CodeServerError, errors.New("Database operation failed")
 	}
-	data["connectors"] = linkedConnectors
+	data["connectors"] = datasetConnectorsOrEmpty(linkedConnectors)
 	return data, common.CodeSuccess, nil
+}
+
+func datasetConnectorsOrEmpty(connectors []*dao.ConnectorDatasetListItem) []*dao.ConnectorDatasetListItem {
+	if connectors == nil {
+		return make([]*dao.ConnectorDatasetListItem, 0)
+	}
+	return connectors
 }
 
 func datasetUpdateParserID(req UpdateDatasetRequest) (string, bool, error) {
