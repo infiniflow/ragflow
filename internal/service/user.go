@@ -18,20 +18,17 @@ package service
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/sha512"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"hash"
 	"os"
-	"ragflow/internal/cache"
 	"ragflow/internal/common"
+	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	"ragflow/internal/server"
 	"regexp"
@@ -125,25 +122,19 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		return nil, common.CodeServerError, fmt.Errorf("failed to check existing user: %w", err)
 	}
 
-	decryptedPassword, err := s.decryptPasswordForRegister(req.Password)
+	decryptedPassword, err := common.DecryptPassword(req.Password)
 	if err != nil {
 		return nil, common.CodeExceptionError, err
 	}
 
 	var hashedPassword string
-	hashedPassword, err = s.HashPassword(decryptedPassword)
+	hashedPassword, err = common.GenerateWerkzeugPasswordHash(decryptedPassword)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	userID, err := utility.GenerateUUID1()
-	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to generate user id: %w", err)
-	}
-	accessToken, err := utility.GenerateUUID1()
-	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to generate access token: %w", err)
-	}
+	userID := utility.GenerateToken()
+	accessToken := utility.GenerateToken()
 	status := "1"
 	loginChannel := "password"
 	isSuperuser := false
@@ -192,6 +183,14 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 	if rerankID == "" {
 		rerankID = ""
 	}
+	ttsID := cfg.UserDefaultLLM.DefaultModels.TTSModel.Name
+	if ttsID == "" {
+		ttsID = ""
+	}
+	ocrID := cfg.UserDefaultLLM.DefaultModels.OCRModel.Name
+	if ocrID == "" {
+		ocrID = ""
+	}
 
 	tenant := &entity.Tenant{
 		ID:        userID,
@@ -201,13 +200,12 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		ASRID:     asrID,
 		Img2TxtID: img2txtID,
 		RerankID:  rerankID,
+		TTSID:     ttsID,
+		OCRID:     ocrID,
 		ParserIDs: "naive:General,Q&A:Q&A,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
 		Status:    &status,
 	}
-	userTenantID, err := utility.GenerateUUID1()
-	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to generate user tenant id: %w", err)
-	}
+	userTenantID := utility.GenerateToken()
 	userTenant := &entity.UserTenant{
 		ID:        userTenantID,
 		UserID:    userID,
@@ -216,10 +214,7 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		InvitedBy: userID,
 		Status:    &status,
 	}
-	fileID, err := utility.GenerateUUID1()
-	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to generate file id: %w", err)
-	}
+	fileID := utility.GenerateToken()
 	file__ := ""
 	rootFile := &entity.File{
 		ID:        fileID,
@@ -364,7 +359,7 @@ func (s *UserService) Login(req *LoginRequest) (*entity.User, common.ErrorCode, 
 	}
 
 	// Decrypt password using RSA
-	decryptedPassword, err := s.decryptPassword(req.Password)
+	decryptedPassword, err := common.DecryptPassword(req.Password)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to decrypt password: %w", err)
 	}
@@ -401,7 +396,7 @@ func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*entity.User, common
 		return nil, common.CodeAuthenticationError, fmt.Errorf("email: %s is not registered!", req.Email)
 	}
 
-	decryptedPassword, err := s.decryptPassword(req.Password)
+	decryptedPassword, err := common.DecryptPassword(req.Password)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("fail to crypt password")
 	}
@@ -473,31 +468,6 @@ func (s *UserService) ListUsers(page, pageSize int) ([]*UserResponse, int64, com
 	}
 
 	return responses, total, common.CodeSuccess, nil
-}
-
-// HashPassword generate password hash using scrypt (werkzeug compatible)
-// The password should already be base64 encoded (from decrypt process)
-// Werkzeug default format: scrypt:32768:8:1$base64(salt)$hex(hash)
-// IMPORTANT: werkzeug uses the base64-encoded salt string as UTF-8 bytes, NOT the decoded bytes
-func (s *UserService) HashPassword(password string) (string, error) {
-	// Generate random bytes (12 bytes will produce 16-char base64 string)
-	randomBytes, err := s.generateSalt()
-	if err != nil {
-		return "", fmt.Errorf("failed to generate salt: %w", err)
-	}
-
-	// Encode to base64 string (this will be 16 characters)
-	saltB64 := base64.StdEncoding.EncodeToString(randomBytes)
-
-	// Use scrypt with werkzeug default parameters: N=32768, r=8, p=1, keyLen=64
-	// IMPORTANT: werkzeug uses the base64 string as UTF-8 bytes, NOT the decoded bytes
-	hash, err := scrypt.Key([]byte(password), []byte(saltB64), 32768, 8, 1, 64)
-	if err != nil {
-		return "", fmt.Errorf("failed to compute scrypt hash: %w", err)
-	}
-
-	// Format: scrypt:n:r:p$base64(salt)$hex(hash)
-	return fmt.Sprintf("scrypt:32768:8:1$%s$%x", saltB64, hash), nil
 }
 
 // VerifyPassword verify password
@@ -620,15 +590,6 @@ func (s *UserService) verifyScryptPassword(hashedPassword, password string) bool
 	return s.constantTimeCompare(expectedHash, computed)
 }
 
-// generateSalt generates a random 12-byte salt (werkzeug default)
-func (s *UserService) generateSalt() ([]byte, error) {
-	salt := make([]byte, 12)
-	if _, err := rand.Read(salt); err != nil {
-		return nil, fmt.Errorf("failed to generate random salt: %w", err)
-	}
-	return salt, nil
-}
-
 // constantTimeCompare constant time comparison
 func (s *UserService) constantTimeCompare(a, b []byte) bool {
 	if len(a) != len(b) {
@@ -643,95 +604,6 @@ func (s *UserService) constantTimeCompare(a, b []byte) bool {
 	return result == 0
 }
 
-// loadPrivateKey loads and decrypts the RSA private key from conf/private.pem
-// nolint:static check // DecryptPEMBlock is deprecated but still works for traditional PEM encryption
-func (s *UserService) loadPrivateKey() (*rsa.PrivateKey, error) {
-	// Read private key file
-	keyData, err := os.ReadFile("conf/private.pem")
-	if err != nil {
-		return nil, fmt.Errorf("failed to read private key file: %w", err)
-	}
-
-	// Parse PEM block
-	block, _ := pem.Decode(keyData)
-	if block == nil {
-		return nil, errors.New("failed to decode PEM block")
-	}
-
-	// Decrypt the PEM block if it's encrypted
-	var privateKey interface{}
-	if block.Headers["Proc-Type"] == "4,ENCRYPTED" {
-		// Decrypt using password "Welcome"
-		// Note: DecryptPEMBlock is deprecated but still functional for traditional PEM encryption
-		decryptedData, err := x509.DecryptPEMBlock(block, []byte("Welcome"))
-		if err != nil {
-			return nil, fmt.Errorf("failed to decrypt private key: %w", err)
-		}
-
-		// Parse the decrypted key
-		privateKey, err = x509.ParsePKCS1PrivateKey(decryptedData)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse private key: %w", err)
-		}
-	} else {
-		// Not encrypted, parse directly
-		privateKey, err = x509.ParsePKCS1PrivateKey(block.Bytes)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse private key: %w", err)
-		}
-	}
-
-	rsaPrivateKey, ok := privateKey.(*rsa.PrivateKey)
-	if !ok {
-		return nil, errors.New("not an RSA private key")
-	}
-
-	return rsaPrivateKey, nil
-}
-
-// decryptPassword decrypts the password using RSA private key
-func (s *UserService) decryptPassword(encryptedPassword string) (string, error) {
-	// Try to decode base64
-	ciphertext, err := base64.StdEncoding.DecodeString(encryptedPassword)
-	if err != nil {
-		// If base64 decoding fails, assume it's already a plain password
-		return encryptedPassword, nil
-	}
-
-	// Load private key
-	privateKey, err := s.loadPrivateKey()
-	if err != nil {
-		return "", err
-	}
-
-	// Decrypt using PKCS#1 v1.5
-	plaintext, err := rsa.DecryptPKCS1v15(nil, privateKey, ciphertext)
-	if err != nil {
-		// If decryption fails, assume it's already a plain password
-		return encryptedPassword, nil
-	}
-
-	return string(plaintext), nil
-}
-
-func (s *UserService) decryptPasswordForRegister(encryptedPassword string) (string, error) {
-	ciphertext, err := base64.StdEncoding.DecodeString(encryptedPassword)
-	if err != nil {
-		return "", fmt.Errorf("Error('Incorrect padding')")
-	}
-
-	privateKey, err := s.loadPrivateKey()
-	if err != nil {
-		return "", err
-	}
-
-	plaintext, err := rsa.DecryptPKCS1v15(nil, privateKey, ciphertext)
-	if err != nil {
-		return "Fail to decrypt password!", nil
-	}
-	return string(plaintext), nil
-}
-
 func defaultUserLanguage() string {
 	if strings.Contains(os.Getenv("LANG"), "zh_CN") {
 		return "Chinese"
@@ -744,7 +616,7 @@ func defaultUserLanguage() string {
 // using itsdangerous URLSafeTimedSerializer to get the actual access_token
 func (s *UserService) GetUserByToken(authorization string) (*entity.User, common.ErrorCode, error) {
 	// Get secret key from config
-	secretKey, err := server.GetSecretKey(cache.Get())
+	secretKey, err := server.GetSecretKey(redis.Get())
 	if err != nil {
 		return nil, common.CodeUnauthorized, err
 	}
@@ -900,7 +772,7 @@ func (s *UserService) UpdateUserSettings(user *entity.User, req *UpdateSettingsR
 		if err != nil {
 			return common.CodeExceptionError, fmt.Errorf("Error('Incorrect padding')")
 		}
-		privateKey, err := s.loadPrivateKey()
+		privateKey, err := common.LoadPrivateKey()
 		if err != nil {
 			return common.CodeExceptionError, err
 		}
@@ -923,7 +795,7 @@ func (s *UserService) UpdateUserSettings(user *entity.User, req *UpdateSettingsR
 				return common.CodeExceptionError, err
 			}
 
-			hashedPassword, err := s.HashPassword(string(newPasswordBytes))
+			hashedPassword, err := common.GenerateWerkzeugPasswordHash(string(newPasswordBytes))
 			if err != nil {
 				return common.CodeExceptionError, err
 			}
@@ -969,7 +841,7 @@ func (s *UserService) ChangePassword(user *entity.User, req *ChangePasswordReque
 
 	// If new password is provided, update password
 	if req.NewPassword != nil {
-		hashedPassword, err := s.HashPassword(*req.NewPassword)
+		hashedPassword, err := common.GenerateWerkzeugPasswordHash(*req.NewPassword)
 		if err != nil {
 			return common.CodeServerError, fmt.Errorf("failed to hash new password: %w", err)
 		}
@@ -1194,6 +1066,48 @@ func (s *UserService) GetUserByAPIToken(authorization string) (*entity.User, com
 
 }
 
+// GetUserByBetaAPIToken gets user by beta access key from Authorization
+// header. This mirrors Python's AUTH_BETA flow used by public bot endpoints.
+func (s *UserService) GetUserByBetaAPIToken(authorization string) (*entity.User, common.ErrorCode, error) {
+	authorization = strings.TrimSpace(authorization)
+	if authorization == "" {
+		return nil, common.CodeUnauthorized, fmt.Errorf("authorization header is empty")
+	}
+
+	parts := strings.Fields(authorization)
+	var token string
+	if len(parts) == 2 {
+		token = parts[1]
+	} else if len(parts) == 1 {
+		if strings.EqualFold(parts[0], "Bearer") {
+			return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization format")
+		}
+		token = parts[0]
+	} else {
+		return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization format")
+	}
+	if token == "" {
+		return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization format")
+	}
+
+	apiTokenDAO := dao.NewAPITokenDAO()
+	userToken, err := apiTokenDAO.GetByBeta(token)
+	if err != nil {
+		return nil, common.CodeUnauthorized, fmt.Errorf("invalid beta access token")
+	}
+
+	user, err := s.userDAO.GetByTenantID(userToken.TenantID)
+	if err != nil {
+		return nil, common.CodeUnauthorized, fmt.Errorf("user not found for this beta access token")
+	}
+
+	if user.AccessToken == nil || *user.AccessToken == "" {
+		return nil, common.CodeUnauthorized, fmt.Errorf("user has empty access_token in database")
+	}
+
+	return user, common.CodeSuccess, nil
+}
+
 // ---- Forgot-password flow (mirrors api/apps/restful_apis/user_api.py
 // `/auth/password/...` endpoints, fixes #15282) -------------------------
 
@@ -1218,7 +1132,7 @@ func (s *UserService) ForgotIssueCaptcha(email string) (captchaID, imageDataURL 
 		return "", "", common.CodeServerError, err
 	}
 	captchaID = utility.GenerateToken()
-	if ok := cache.Get().Set(utility.CaptchaIDRedisKey(captchaID), text, 60*time.Second); !ok {
+	if ok := redis.Get().Set(utility.CaptchaIDRedisKey(captchaID), text, 60*time.Second); !ok {
 		return "", "", common.CodeServerError, fmt.Errorf("failed to store captcha")
 	}
 	imageDataURL = utility.RenderCaptchaPNGDataURL(text)
@@ -1238,7 +1152,7 @@ func (s *UserService) ForgotSendOTP(email, captchaID, captcha string) (common.Er
 		return common.CodeDataError, fmt.Errorf("invalid email")
 	}
 
-	rc := cache.Get()
+	rc := redis.Get()
 	captchaKey := utility.CaptchaIDRedisKey(captchaID)
 	stored, _ := rc.Get(captchaKey)
 	if stored == "" {
@@ -1337,7 +1251,7 @@ func (s *UserService) ForgotVerifyOTP(email, otp string) (common.ErrorCode, erro
 		return common.CodeDataError, fmt.Errorf("invalid email")
 	}
 
-	rc := cache.Get()
+	rc := redis.Get()
 	codeKey, attemptsKey, lastSentKey, lockKey := utility.OTPRedisKeys(email)
 
 	if locked, _ := rc.Get(lockKey); locked != "" {
@@ -1407,17 +1321,17 @@ func (s *UserService) ForgotResetPassword(req *ForgotResetPasswordRequest) (*ent
 		return nil, common.CodeArgumentError, fmt.Errorf("email and passwords are required")
 	}
 
-	rc := cache.Get()
+	rc := redis.Get()
 	verifiedKey := utility.OTPVerifiedRedisKey(req.Email)
 	if v, _ := rc.Get(verifiedKey); v != "1" {
 		return nil, common.CodeAuthenticationError, fmt.Errorf("email not verified")
 	}
 
-	plain, err := s.decryptPassword(req.NewPassword)
+	plain, err := common.DecryptPassword(req.NewPassword)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("fail to decrypt password")
 	}
-	confirm, err := s.decryptPassword(req.ConfirmNewPassword)
+	confirm, err := common.DecryptPassword(req.ConfirmNewPassword)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("fail to decrypt password")
 	}
@@ -1430,7 +1344,7 @@ func (s *UserService) ForgotResetPassword(req *ForgotResetPasswordRequest) (*ent
 		return nil, common.CodeDataError, fmt.Errorf("invalid email")
 	}
 
-	hashed, err := s.HashPassword(plain)
+	hashed, err := common.GenerateWerkzeugPasswordHash(plain)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to hash new password: %w", err)
 	}

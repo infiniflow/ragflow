@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 from datetime import datetime
 from functools import partial
 from timeit import default_timer as timer
-from langfuse import Langfuse
+from langfuse import Langfuse, propagate_attributes
 from peewee import fn
 from api.db.services.file_service import FileService
 from common.constants import LLMType, ParserType, StatusEnum
@@ -286,7 +286,7 @@ class DialogService(CommonService):
         return list(objs)
 
 
-async def async_chat_solo(dialog, messages, stream=True):
+async def async_chat_solo(dialog, messages, stream=True, session_id=None):
     llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
     attachments = ""
     image_attachments = []
@@ -303,14 +303,14 @@ async def async_chat_solo(dialog, messages, stream=True):
     else:
         model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 
-    chat_mdl = LLMBundle(dialog.tenant_id, model_config)
+    chat_mdl = LLMBundle(dialog.tenant_id, model_config, langfuse_session_id=session_id)
     factory = model_config.get("llm_factory", "") if model_config else ""
 
     prompt_config = dialog.prompt_config
     tts_mdl = None
     if prompt_config.get("tts"):
         default_tts_model = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.TTS)
-        tts_mdl = LLMBundle(dialog.tenant_id, default_tts_model)
+        tts_mdl = LLMBundle(dialog.tenant_id, default_tts_model, trace_context=chat_mdl.trace_context, langfuse_session_id=session_id)
     msg = [{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])} for m in messages if m["role"] != "system"]
     if attachments and msg:
         msg[-1]["content"] += attachments
@@ -337,7 +337,7 @@ async def async_chat_solo(dialog, messages, stream=True):
         yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, answer), "prompt": "", "created_at": time.time()}
 
 
-def get_models(dialog):
+def get_models(dialog, trace_context=None, langfuse_session_id=None):
     embd_mdl, chat_mdl, rerank_mdl, tts_mdl = None, None, None, None
     kbs = KnowledgebaseService.get_by_ids(dialog.kb_ids)
     embedding_list = list(set([kb.embd_id for kb in kbs]))
@@ -347,7 +347,7 @@ def get_models(dialog):
     if embedding_list:
         embd_owner_tenant_id = kbs[0].tenant_id
         embd_model_config = get_model_config_from_provider_instance(embd_owner_tenant_id, LLMType.EMBEDDING, embedding_list[0])
-        embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config)
+        embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config, trace_context=trace_context, langfuse_session_id=langfuse_session_id)
         if not embd_mdl:
             raise LookupError("Embedding model(%s) not found" % embedding_list[0])
 
@@ -356,15 +356,15 @@ def get_models(dialog):
     else:
         chat_model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 
-    chat_mdl = LLMBundle(dialog.tenant_id, chat_model_config)
+    chat_mdl = LLMBundle(dialog.tenant_id, chat_model_config, trace_context=trace_context, langfuse_session_id=langfuse_session_id)
 
     if dialog.rerank_id:
         rerank_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.RERANK, dialog.rerank_id)
-        rerank_mdl = LLMBundle(dialog.tenant_id, rerank_model_config)
+        rerank_mdl = LLMBundle(dialog.tenant_id, rerank_model_config, trace_context=trace_context, langfuse_session_id=langfuse_session_id)
 
     if dialog.prompt_config.get("tts"):
         default_tts_model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.TTS)
-        tts_mdl = LLMBundle(dialog.tenant_id, default_tts_model_config)
+        tts_mdl = LLMBundle(dialog.tenant_id, default_tts_model_config, trace_context=trace_context, langfuse_session_id=langfuse_session_id)
     return kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl
 
 
@@ -541,10 +541,11 @@ def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
 async def async_chat(dialog, messages, stream=True, **kwargs):
     logging.debug("Begin async_chat")
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
+    session_id = kwargs.get("session_id")
     use_web_search = _should_use_web_search(dialog.prompt_config, kwargs.get("internet"))
     logging.debug("web_search kb=%s tavily=%s internet=%r enabled=%s", bool(dialog.kb_ids), bool(dialog.prompt_config.get("tavily_api_key")), kwargs.get("internet"), use_web_search)
     if not dialog.kb_ids and not use_web_search:
-        async for ans in async_chat_solo(dialog, messages, stream):
+        async for ans in async_chat_solo(dialog, messages, stream, session_id=session_id):
             yield ans
         return
 
@@ -579,7 +580,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             pass
 
     check_langfuse_tracer_ts = timer()
-    kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl = get_models(dialog)
+    kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl = get_models(dialog, trace_context=trace_context, langfuse_session_id=session_id)
     toolcall_session, tools = kwargs.get("toolcall_session"), kwargs.get("tools")
     if toolcall_session and tools:
         chat_mdl.bind_tools(toolcall_session, tools)
@@ -737,7 +738,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                 kbinfos["doc_aggs"].extend(tav_res["doc_aggs"])
             if prompt_config.get("use_kg"):
                 default_chat_model = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
-                ck = await settings.kg_retriever.retrieval(" ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl, LLMBundle(dialog.tenant_id, default_chat_model))
+                ck = await settings.kg_retriever.retrieval(" ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl, LLMBundle(dialog.tenant_id, default_chat_model, trace_context=trace_context, langfuse_session_id=session_id))
                 if ck["content_with_weight"]:
                     kbinfos["chunks"].insert(0, ck)
 
@@ -758,10 +759,19 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         yield {"answer": empty_res, "reference": kbinfos, "prompt": "\n\n### Query:\n%s" % " ".join(questions), "audio_binary": tts(tts_mdl, empty_res), "final": True}
         return
 
-    kwargs["knowledge"] = "\n------\n" + "\n\n------\n\n".join(knowledges)
+    # Only overwrite kwargs["knowledge"] when retrieval produced something;
+    # otherwise preserve any caller-supplied value.
+    knowledge_text = "\n\n------\n\n".join(knowledges)
+    if knowledge_text:
+        kwargs["knowledge"] = "\n------\n" + knowledge_text
     gen_conf = dialog.llm_setting
 
-    msg = [{"role": "system", "content": prompt_config["system"].format(**kwargs) + attachments_}]
+    system_content = prompt_config["system"].format(**kwargs) + attachments_
+    # If knowledge was retrieved but the template has no {knowledge}
+    # placeholder, auto-append it so the LLM still sees the context.
+    if knowledges and "{knowledge}" not in prompt_config.get("system", ""):
+        system_content += kwargs["knowledge"]
+    msg = [{"role": "system", "content": system_content}]
     prompt4citation = ""
     if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
         prompt4citation = citation_prompt()
@@ -866,13 +876,18 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
 
     if langfuse_tracer:
         try:
-            langfuse_generation = langfuse_tracer.start_observation(
-                as_type="generation",
-                trace_context=trace_context,
-                name="chat",
-                model=llm_model_config["llm_name"],
-                input={"prompt": prompt, "prompt4citation": prompt4citation, "messages": msg},
-            )
+            observation_kwargs = {
+                "as_type": "generation",
+                "trace_context": trace_context,
+                "name": "chat",
+                "model": llm_model_config["llm_name"],
+                "input": {"prompt": prompt, "prompt4citation": prompt4citation, "messages": msg},
+            }
+            if session_id:
+                with propagate_attributes(session_id=session_id):
+                    langfuse_generation = langfuse_tracer.start_observation(**observation_kwargs)
+            else:
+                langfuse_generation = langfuse_tracer.start_observation(**observation_kwargs)
         except Exception as e:  # noqa: BLE001 - tracing must not break chat flow
             logger.warning("Langfuse start_observation failed; continuing without tracing: %s", e)
             langfuse_tracer = None
@@ -896,6 +911,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             final = await decorate_answer(_extract_visible_answer(thought + full_answer))
             final["final"] = True
             final["audio_binary"] = None
+            final["answer"] = ""
             yield final
     else:
         if llm_model_config["model_type"] == "chat":
@@ -1049,7 +1065,9 @@ RULES:
    - Question mentions "not null" or "excluding null"
    - Add NULL check for count specific column
    - DO NOT add NULL check for COUNT(*) queries (COUNT(*) counts all rows including nulls)
-7. Output ONLY the SQL, no explanations"""
+7. json_extract_string() returns JSON-quoted strings ("value"), so WHERE comparisons MUST wrap values in double-quotes inside single-quotes (no spaces between quotes): '"value"' (e.g. WHERE json_extract_string(chunk_data, '$.name') = '"Alice"')
+8. For partial text search, use LIKE with wildcards: '"%value%"' (e.g. WHERE json_extract_string(chunk_data, '$.name') LIKE '"%Alice%"')
+9. Output ONLY the SQL, no explanations"""
         user_prompt = """Table: {}
 Fields (EXACT case): {}
 {}
@@ -1121,9 +1139,13 @@ Write SQL using exact field names above. Include doc_id, docnm_kwd for data quer
         logging.debug(f"use_sql: Executing SQL retrieval (attempt {tried_times})")
         tbl = settings.retriever.sql_retrieval(sql, format="json")
         if tbl is None:
-            logging.debug("use_sql: SQL retrieval returned None")
+            logging.debug("use_sql: SQL retrieval failed (returned None)")
             return None, sql
-        logging.debug(f"use_sql: SQL retrieval completed, got {len(tbl.get('rows', []))} rows")
+        row_count = len(tbl.get("rows", []))
+        if row_count == 0:
+            logging.debug("use_sql: SQL execution succeeded but returned 0 rows")
+        else:
+            logging.debug(f"use_sql: SQL retrieval completed, got {row_count} rows")
         return tbl, sql
 
     async def repair_table_for_missing_source_columns(previous_sql):
@@ -1711,6 +1733,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     full_answer = last_state.full_text if last_state else ""
     final = await decorate_answer(_extract_visible_answer(full_answer))
     final["final"] = True
+    final["answer"] = ""
     yield final
 
 

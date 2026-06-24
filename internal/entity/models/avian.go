@@ -309,7 +309,7 @@ func (a *AvianModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, erro
 	}
 
 	var modelList ModelList
-	if err = json.Unmarshal(body, &modelList); err != nil {
+	if err = json.Unmarshal(body, &modelList.Models); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 

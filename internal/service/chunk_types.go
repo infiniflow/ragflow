@@ -24,7 +24,6 @@ import (
 	"ragflow/internal/server"
 	"strings"
 
-
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
@@ -43,10 +42,9 @@ type ChunkService struct {
 	searchService  *SearchService
 }
 
-
 // RetrievalTestRequest retrieval test request
 type RetrievalTestRequest struct {
-	Datasets               common.StringSlice      `json:"dataset_ids" binding:"required"` // string or []string
+	Datasets               common.StringSlice     `json:"dataset_ids" binding:"required"` // string or []string
 	Question               string                 `json:"question"`
 	Page                   *int                   `json:"page,omitempty"`
 	Size                   *int                   `json:"size,omitempty"`
@@ -79,6 +77,11 @@ type GetChunkRequest struct {
 // GetChunkResponse response for getting a chunk
 type GetChunkResponse struct {
 	Chunk map[string]interface{} `json:"chunk"`
+}
+
+// ParseFileRequest is the request body for reparsing documents in a dataset.
+type ParseFileRequest struct {
+	DocumentIDs []string `json:"document_ids"`
 }
 
 // Get retrieves a chunk by ID
@@ -161,6 +164,7 @@ func (s *ChunkService) Get(req *GetChunkRequest, userID string) (*GetChunkRespon
 
 // ListChunksRequest request for listing chunks
 type ListChunksRequest struct {
+	DatasetID    string `json:"dataset_id,omitempty"`
 	DocID        string `json:"doc_id" binding:"required"`
 	Page         *int   `json:"page,omitempty"`
 	Size         *int   `json:"size,omitempty"`
@@ -200,6 +204,9 @@ func (s *ChunkService) List(req *ListChunksRequest, userID string) (*ListChunksR
 	docDAO := dao.NewDocumentDAO()
 	doc, err := docDAO.GetByID(req.DocID)
 	if err != nil || doc == nil {
+		return nil, fmt.Errorf("document not found")
+	}
+	if req.DatasetID != "" && doc.KbID != req.DatasetID {
 		return nil, fmt.Errorf("document not found")
 	}
 

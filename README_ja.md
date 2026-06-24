@@ -25,7 +25,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.26.0">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.26.1">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -68,6 +68,7 @@
 
 ## 🔥 最新情報
 
+- 2026-06-15 Feishu、Discord、Telegram、Lineなどの複数のチャットチャンネルをサポートします。
 - 2026-04-24 DeepSeek v4 をサポート。
 - 2026-03-24 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — OpenClaw経由でRAGFlowデータセットにアクセスする公式スキルを提供。
 - 2025-12-26 AIエージェントの「メモリ」機能をサポート。
@@ -78,10 +79,8 @@
 - 2025-08-08 OpenAI の最新 GPT-5 シリーズモデルをサポートします。
 - 2025-08-01 エージェントワークフローとMCPをサポート。
 - 2025-05-23 エージェントに Python/JS コードエグゼキュータコンポーネントを追加しました。
-- 2025-05-05 言語間クエリをサポートしました。
 - 2025-03-19 PDFまたはDOCXファイル内の画像を理解するために、多モーダルモデルを使用することをサポートします。
-- 2024-12-18 DeepDoc のドキュメント レイアウト分析モデルをアップグレードします。
-- 2024-08-22 RAG を介して SQL ステートメントへのテキストをサポートします。
+
 
 ## 🎉 続きを楽しみに
 
@@ -173,12 +172,12 @@
 > 現在、公式に提供されているすべての Docker イメージは x86 アーキテクチャ向けにビルドされており、ARM64 用の Docker イメージは提供されていません。
 > ARM64 アーキテクチャのオペレーティングシステムを使用している場合は、[このドキュメント](https://ragflow.io/docs/dev/build_docker_image)を参照して Docker イメージを自分でビルドしてください。
 
-> 以下のコマンドは、RAGFlow Docker イメージの v0.26.0 エディションをダウンロードします。異なる RAGFlow エディションの説明については、以下の表を参照してください。v0.26.0 とは異なるエディションをダウンロードするには、docker/.env ファイルの RAGFLOW_IMAGE 変数を適宜更新し、docker compose を使用してサーバーを起動してください。
+> 以下のコマンドは、RAGFlow Docker イメージの v0.26.1 エディションをダウンロードします。異なる RAGFlow エディションの説明については、以下の表を参照してください。v0.26.1 とは異なるエディションをダウンロードするには、docker/.env ファイルの RAGFLOW_IMAGE 変数を適宜更新し、docker compose を使用してサーバーを起動してください。
 
 ```bash
    $ cd ragflow/docker
 
-   # git checkout v0.26.0
+   # git checkout v0.26.1
    # 任意: 安定版タグを利用 (一覧: https://github.com/infiniflow/ragflow/releases)
    # この手順は、コード内の entrypoint.sh ファイルが Docker イメージのバージョンと一致していることを確認します。
 
@@ -304,7 +303,7 @@ docker build --platform linux/amd64 \
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
    uv sync --python 3.13 # install RAGFlow dependent python modules
-   uv run python3 download_deps.py
+   uv run python3 ragflow_deps/download_deps.py
    pre-commit install
    ```
 3. Docker Compose を使用して依存サービス（MinIO、Elasticsearch、Redis、MySQL）を起動する:

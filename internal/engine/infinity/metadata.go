@@ -24,11 +24,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	infinity "github.com/infiniflow/infinity-go-sdk"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/utility"
+
+	infinity "github.com/infiniflow/infinity-go-sdk"
 
 	"go.uber.org/zap"
 )
@@ -568,25 +569,113 @@ func (e *infinityEngine) SearchMetadata(ctx context.Context, req *types.SearchMe
 		}, nil
 	}
 
-	// Build search request for metadata - simpler than chunk search, no match expressions
-	searchReq := &types.SearchRequest{
-		IndexNames:   []string{tableName},
-		Offset:       req.Offset,
-		Limit:        req.Limit,
-		SelectFields: req.SelectFields,
-		Filter:       req.Filter,
-		MatchExprs:   nil, // No match expressions for metadata
-		OrderBy:      req.OrderBy,
-		RankFeature:  nil,
+	// Build output columns: use caller-specified fields, or "*" for all columns
+	var outputColumns []string
+	if len(req.SelectFields) > 0 {
+		outputColumns = req.SelectFields
+	} else {
+		outputColumns = []string{"*"}
 	}
 
-	result, err := e.Search(ctx, searchReq)
-	if err != nil {
-		return nil, err
+	// Pagination defaults
+	pageSize := req.Limit
+	if pageSize <= 0 {
+		pageSize = 30
 	}
+	offset := req.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	// Build filter from req.Filter
+	var filterStr string
+	if req.Filter != nil {
+		filterStr = equivalentConditionToStr(req.Filter)
+	}
+
+	// Get database and table
+	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get database: %w", err)
+	}
+
+	tbl, err := db.GetTable(tableName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get metadata table %s: %w", tableName, err)
+	}
+
+	// Build Infinity query (chainable API)
+	table := tbl.Output(outputColumns)
+	if filterStr != "" {
+		table = table.Filter(filterStr)
+	}
+
+	// Add order_by if provided
+	if req.OrderBy != nil && len(req.OrderBy.Fields) > 0 {
+		var sortFields [][2]interface{}
+		for _, orderField := range req.OrderBy.Fields {
+			sortType := infinity.SortTypeAsc
+			if orderField.Type == types.SortDesc {
+				sortType = infinity.SortTypeDesc
+			}
+			sortFields = append(sortFields, [2]interface{}{orderField.Field, sortType})
+		}
+		table = table.Sort(sortFields)
+	}
+
+	table = table.Limit(pageSize)
+	if offset > 0 {
+		table = table.Offset(offset)
+	}
+	table = table.Option(map[string]interface{}{"total_hits_count": true})
+
+	// Execute query
+	df, err := table.ToDataFrame()
+	if err != nil {
+		common.Warn("Infinity SearchMetadata query failed",
+			zap.String("tableName", tableName),
+			zap.Error(err))
+		return nil, fmt.Errorf("metadata query failed: %w", err)
+	}
+
+	// Convert column-oriented DataFrame to row-oriented records
+	records := make([]map[string]interface{}, 0)
+	for colName, colData := range df.ColumnData {
+		for i, val := range colData {
+			for len(records) <= i {
+				records = append(records, make(map[string]interface{}))
+			}
+			records[i][colName] = val
+		}
+	}
+
+	// Handle ROW_ID -> row_id() mapping (Infinity internal column)
+	for _, rec := range records {
+		if val, ok := rec["ROW_ID"]; ok {
+			rec["row_id()"] = val
+			delete(rec, "ROW_ID")
+		}
+	}
+
+	// Realign meta_fields column for multi-row queries (Infinity may
+	// concatenate values into one blob with 4-byte length prefix)
+	realignMetaFieldsColumn(records)
+
+	// Parse total_hits_count from ExtraInfo
+	var totalHits int64
+	if df.ExtraInfo != "" {
+		if t, ok := totalHitsFromInfinityExtraInfo(df.ExtraInfo); ok {
+			totalHits = t
+		}
+	}
+
+	common.Debug("SearchMetadata in Infinity completed",
+		zap.Int("rows", len(records)),
+		zap.Int64("total", totalHits))
+
 	return &types.SearchMetadataResult{
-		MetadataRecords: result.Chunks,
-		Total:           result.Total,
+		MetadataRecords: records,
+		Total:           totalHits,
 	}, nil
 }
 

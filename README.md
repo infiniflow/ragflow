@@ -25,7 +25,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.26.0">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.26.1">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -87,6 +87,7 @@ Try our cloud service at [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
 ## 🔥 Latest Updates
 
+- 2026-06-15 Support multiple chat channels such as Feishu, Discord, Telegram, Line, etc.
 - 2026-04-24 Supports DeepSeek v4.
 - 2026-03-24 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — Provides an official skill for accessing RAGFlow datasets via OpenClaw.
 - 2025-12-26 Supports 'Memory' for AI agent.
@@ -97,7 +98,6 @@ Try our cloud service at [https://cloud.ragflow.io](https://cloud.ragflow.io).
 - 2025-08-08 Supports OpenAI's latest GPT-5 series models.
 - 2025-08-01 Supports agentic workflow and MCP.
 - 2025-05-23 Adds a Python/JavaScript code executor component to Agent.
-- 2025-05-05 Supports cross-language query.
 - 2025-03-19 Supports using a multi-modal model to make sense of images within PDF or DOCX files.
 
 ## 🎉 Stay Tuned
@@ -193,12 +193,12 @@ releases! 🌟
 > All Docker images are built for x86 platforms. We don't currently offer Docker images for ARM64.
 > If you are on an ARM64 platform, follow [this guide](https://ragflow.io/docs/dev/build_docker_image) to build a Docker image compatible with your system.
 
-> The command below downloads the `v0.26.0` edition of the RAGFlow Docker image. See the following table for descriptions of different RAGFlow editions. To download a RAGFlow edition different from `v0.26.0`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server.
+> The command below downloads the `v0.26.1` edition of the RAGFlow Docker image. See the following table for descriptions of different RAGFlow editions. To download a RAGFlow edition different from `v0.26.1`, update the `RAGFLOW_IMAGE` variable accordingly in **docker/.env** before using `docker compose` to start the server.
 
 ```bash
    $ cd ragflow/docker
 
-   # git checkout v0.26.0
+   # git checkout v0.26.1
    # Optional: use a stable tag (see releases: https://github.com/infiniflow/ragflow/releases)
    # This step ensures the **entrypoint.sh** file in the code matches the Docker image version.
 
@@ -330,7 +330,7 @@ docker build --platform linux/amd64 \
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
    uv sync --python 3.13 # install RAGFlow dependent python modules
-   uv run python3 download_deps.py
+   uv run python3 ragflow_deps/download_deps.py
    pre-commit install
    ```
 3. Launch the dependent services (MinIO, Elasticsearch, Redis, and MySQL) using Docker Compose:

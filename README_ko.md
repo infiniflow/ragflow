@@ -25,7 +25,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.26.0">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.26.1">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -69,6 +69,7 @@
 
 ## 🔥 업데이트
 
+- 2026-06-15 Feishu, Discord, Telegram, Line 등 다양한 채팅 채널을 지원합니다.
 - 2026-04-24 DeepSeek v4를 지원합니다.
 - 2026-03-24 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — OpenClaw를 통해 RAGFlow 데이터셋에 접근하는 공식 스킬 제공.
 - 2025-12-26 AI 에이전트의 '메모리' 기능 지원.
@@ -79,10 +80,8 @@
 - 2025-08-08 OpenAI의 최신 GPT-5 시리즈 모델을 지원합니다.
 - 2025-08-01 에이전트 워크플로우와 MCP를 지원합니다.
 - 2025-05-23 Agent에 Python/JS 코드 실행기 구성 요소를 추가합니다.
-- 2025-05-05 언어 간 쿼리를 지원합니다.
 - 2025-03-19 PDF 또는 DOCX 파일 내의 이미지를 이해하기 위해 다중 모드 모델을 사용하는 것을 지원합니다.
-- 2024-12-18 DeepDoc의 문서 레이아웃 분석 모델 업그레이드.
-- 2024-08-22 RAG를 통해 SQL 문에 텍스트를 지원합니다.
+
 
 ## 🎉 계속 지켜봐 주세요
 
@@ -175,12 +174,12 @@
 > 모든 Docker 이미지는 x86 플랫폼을 위해 빌드되었습니다. 우리는 현재 ARM64 플랫폼을 위한 Docker 이미지를 제공하지 않습니다.
 > ARM64 플랫폼을 사용 중이라면, [시스템과 호환되는 Docker 이미지를 빌드하려면 이 가이드를 사용해 주세요](https://ragflow.io/docs/dev/build_docker_image).
 
-   > 아래 명령어는 RAGFlow Docker 이미지의 v0.26.0 버전을 다운로드합니다. 다양한 RAGFlow 버전에 대한 설명은 다음 표를 참조하십시오. v0.26.0와 다른 RAGFlow 버전을 다운로드하려면, docker/.env 파일에서 RAGFLOW_IMAGE 변수를 적절히 업데이트한 후 docker compose를 사용하여 서버를 시작하십시오.
+   > 아래 명령어는 RAGFlow Docker 이미지의 v0.26.1 버전을 다운로드합니다. 다양한 RAGFlow 버전에 대한 설명은 다음 표를 참조하십시오. v0.26.1와 다른 RAGFlow 버전을 다운로드하려면, docker/.env 파일에서 RAGFLOW_IMAGE 변수를 적절히 업데이트한 후 docker compose를 사용하여 서버를 시작하십시오.
 
    ```bash
    $ cd ragflow/docker
 
-   # git checkout v0.26.0
+   # git checkout v0.26.1
    # Optional: use a stable tag (see releases: https://github.com/infiniflow/ragflow/releases)
    # 이 단계는 코드의 entrypoint.sh 파일이 Docker 이미지 버전과 일치하도록 보장합니다.
 
@@ -299,7 +298,7 @@ docker build --platform linux/amd64 \
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
    uv sync --python 3.13 # install RAGFlow dependent python modules
-   uv run python3 download_deps.py
+   uv run python3 ragflow_deps/download_deps.py
    pre-commit install
    ```
 

@@ -458,14 +458,32 @@ func (t *TokenHubModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, e
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
-	// Parse response
-	var modelList ModelList
-	if err = json.Unmarshal(body, &modelList); err != nil {
+	// Parse response. Tokenhub returns `data` as a heterogeneous array
+	// where some items omit `id` or are not objects at all. Decode into
+	// a generic envelope so a single bad row cannot fail the whole list,
+	// then keep only the entries that carry a string `id`.
+	var envelope struct {
+		Data interface{} `json:"data"`
+	}
+	if err = json.Unmarshal(body, &envelope); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-	if modelList.Models == nil {
+	rawItems, ok := envelope.Data.([]interface{})
+	if !ok {
 		return nil, fmt.Errorf("invalid models list format")
+	}
+	modelList := ModelList{Models: make([]DSModel, 0, len(rawItems))}
+	for _, raw := range rawItems {
+		item, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		id, ok := item["id"].(string)
+		if !ok || strings.TrimSpace(id) == "" {
+			continue
+		}
+		ownedBy, _ := item["owned_by"].(string)
+		modelList.Models = append(modelList.Models, DSModel{ID: id, OwnedBy: ownedBy})
 	}
 
 	return ParseListModel(modelList), nil

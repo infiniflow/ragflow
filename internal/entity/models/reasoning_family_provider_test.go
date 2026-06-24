@@ -88,7 +88,7 @@ func TestSiliconflowChatExtractsProviderPrefixedQwenThinkingFromInlineContent(t 
 		if body["model"] != "qwen/qwen3-8b" {
 			t.Errorf("model=%v, want qwen/qwen3-8b", body["model"])
 		}
-		if !assertThinkingEnabled(t, body) {
+		if !assertSiliconflowThinkingEnabled(t, body) {
 			return
 		}
 
@@ -118,6 +118,24 @@ func TestSiliconflowChatExtractsProviderPrefixedQwenThinkingFromInlineContent(t 
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
 	assertThinkingResponse(t, resp)
+}
+
+// SiliconFlow's wire format uses a boolean `enable_thinking` field rather than
+// the DeepSeek-style `thinking: {type: "enabled"}` object. See siliconflow.go
+// for the rationale.
+func assertSiliconflowThinkingEnabled(t *testing.T, body map[string]interface{}) bool {
+	t.Helper()
+
+	et, ok := body["enable_thinking"].(bool)
+	if !ok {
+		t.Errorf("enable_thinking=%#v, want true", body["enable_thinking"])
+		return false
+	}
+	if !et {
+		t.Errorf("enable_thinking=%v, want true", et)
+		return false
+	}
+	return true
 }
 
 func assertThinkingEnabled(t *testing.T, body map[string]interface{}) bool {

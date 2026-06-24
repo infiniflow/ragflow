@@ -11,23 +11,30 @@ import { get, isEmpty } from 'lodash';
 import { ReactNode } from 'react';
 
 export function filterAllUpstreamNodeIds(edges: Edge[], nodeIds: string[]) {
-  return nodeIds.reduce<string[]>((pre, nodeId) => {
-    const currentEdges = edges.filter((x) => x.target === nodeId);
-
-    const upstreamNodeIds: string[] = currentEdges.map((x) => x.source);
-
-    const ids = upstreamNodeIds.concat(
-      filterAllUpstreamNodeIds(edges, upstreamNodeIds),
-    );
-
-    ids.forEach((x) => {
-      if (pre.every((y) => y !== x)) {
-        pre.push(x);
+  // Iterative BFS with a visited set so cycles in the upstream graph
+  // (e.g. answer:0 ↔ exesql:0 in the v1 exesql.json fixture) cannot
+  // recurse forever. The previous recursive implementation had no cycle
+  // detection and would blow the stack on any cyclic dsl.
+  const visited = new Set<string>(nodeIds);
+  const result: string[] = [];
+  let frontier = [...nodeIds];
+  while (frontier.length) {
+    const next: string[] = [];
+    for (const nodeId of frontier) {
+      const upstreamIds = edges
+        .filter((x) => x.target === nodeId)
+        .map((x) => x.source);
+      for (const id of upstreamIds) {
+        if (!visited.has(id)) {
+          visited.add(id);
+          result.push(id);
+          next.push(id);
+        }
       }
-    });
-
-    return pre;
-  }, []);
+    }
+    frontier = next;
+  }
+  return result;
 }
 
 export function filterChildNodeIds(nodes: BaseNode[], nodeId?: string) {

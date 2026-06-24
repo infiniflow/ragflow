@@ -25,7 +25,7 @@
         <img alt="Lencana Daring" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.26.0">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.26.1">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Rilis%20Terbaru" alt="Rilis Terbaru">
@@ -87,6 +87,7 @@ Coba layanan cloud kami di [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
 ## 🔥 Pembaruan Terbaru
 
+- 2026-06-15 Mendukung berbagai saluran obrolan seperti Feishu, Discord, Telegram, Line, dll.
 - 2026-04-24 Mendukung DeepSeek v4.
 - 2026-03-24 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — Menyediakan skill resmi untuk mengakses dataset RAGFlow melalui OpenClaw.
 - 2025-12-26 Mendukung 'Memori' untuk agen AI.
@@ -97,10 +98,7 @@ Coba layanan cloud kami di [https://cloud.ragflow.io](https://cloud.ragflow.io).
 - 2025-08-08 Mendukung model seri GPT-5 terbaru dari OpenAI.
 - 2025-08-01 Mendukung alur kerja agen dan MCP.
 - 2025-05-23 Menambahkan komponen pelaksana kode Python/JS ke Agen.
-- 2025-05-05 Mendukung kueri lintas bahasa.
 - 2025-03-19 Mendukung penggunaan model multi-modal untuk memahami gambar di dalam file PDF atau DOCX.
-- 2024-12-18 Meningkatkan model Analisis Tata Letak Dokumen di DeepDoc.
-- 2024-08-22 Dukungan untuk teks ke pernyataan SQL melalui RAG.
 
 ## 🎉 Tetap Terkini
 
@@ -193,12 +191,12 @@ Coba layanan cloud kami di [https://cloud.ragflow.io](https://cloud.ragflow.io).
 > Semua gambar Docker dibangun untuk platform x86. Saat ini, kami tidak menawarkan gambar Docker untuk ARM64.
 > Jika Anda menggunakan platform ARM64, [silakan gunakan panduan ini untuk membangun gambar Docker yang kompatibel dengan sistem Anda](https://ragflow.io/docs/dev/build_docker_image).
 
-> Perintah di bawah ini mengunduh edisi v0.26.0 dari gambar Docker RAGFlow. Silakan merujuk ke tabel berikut untuk deskripsi berbagai edisi RAGFlow. Untuk mengunduh edisi RAGFlow yang berbeda dari v0.26.0, perbarui variabel RAGFLOW_IMAGE di docker/.env sebelum menggunakan docker compose untuk memulai server.
+> Perintah di bawah ini mengunduh edisi v0.26.1 dari gambar Docker RAGFlow. Silakan merujuk ke tabel berikut untuk deskripsi berbagai edisi RAGFlow. Untuk mengunduh edisi RAGFlow yang berbeda dari v0.26.1, perbarui variabel RAGFLOW_IMAGE di docker/.env sebelum menggunakan docker compose untuk memulai server.
 
 ```bash
    $ cd ragflow/docker
 
-   # git checkout v0.26.0
+   # git checkout v0.26.1
    # Opsional: gunakan tag stabil (lihat releases: https://github.com/infiniflow/ragflow/releases)
    # This steps ensures the **entrypoint.sh** file in the code matches the Docker image version.
 
@@ -304,7 +302,7 @@ docker build --platform linux/amd64 \
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
    uv sync --python 3.13 # install RAGFlow dependent python modules
-   uv run python3 download_deps.py
+   uv run python3 ragflow_deps/download_deps.py
    pre-commit install
    ```
 3. Jalankan aplikasi yang diperlukan (MinIO, Elasticsearch, Redis, dan MySQL) menggunakan Docker Compose:

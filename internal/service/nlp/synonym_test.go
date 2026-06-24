@@ -70,6 +70,7 @@ func (m *MockRedisClient) Set(key, value string) {
 
 // TestNewSynonym tests the constructor
 func TestNewSynonym(t *testing.T) {
+	requireWordNetData(t)
 	t.Run("without redis", func(t *testing.T) {
 		s := NewSynonym(nil, "", testSynonymWordNetDir)
 		if s == nil {

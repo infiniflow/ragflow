@@ -214,6 +214,8 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
     if model_obj:
         if model_obj.status == ActiveStatusEnum.INACTIVE.value:
             raise LookupError(f"Model {model_name} is disabled.")
+        if model_obj.status == ActiveStatusEnum.UNSUPPORTED.value:
+            raise LookupError(f"Model {model_name} cannot be used as {model_type_val} model.")
 
         model_extra = json.loads(model_obj.extra) if model_obj.extra else {}
         model_config = {
@@ -281,6 +283,7 @@ def get_model_type_by_name(tenant_id: str, model_name: str):
     if not instance_obj:
         raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
     model_objs = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(provider_obj.id, instance_obj.id, pure_model_name)
+    types_in_json = []
     if not model_objs:
         extra_fields = json.loads(instance_obj.extra) if instance_obj.extra else {}
         region = extra_fields.get("region", "default")
@@ -294,8 +297,8 @@ def get_model_type_by_name(tenant_id: str, model_name: str):
         llm_list = [llm for llm in fac_list[0]["llm"] if llm["llm_name"] == pure_model_name]
         if not llm_list:
             raise LookupError(f"Model {pure_model_name} not found for model {model_name}.")
-        return _factory_model_types(llm_list[0])
-    return [model_obj.model_type for model_obj in model_objs]
+        types_in_json = _factory_model_types(llm_list[0])
+    return list(set(types_in_json + [model_obj.model_type for model_obj in model_objs if model_obj.status != ActiveStatusEnum.UNSUPPORTED.value]) - {model_obj.model_type for model_obj in model_objs if model_obj.status == ActiveStatusEnum.UNSUPPORTED.value})
 
 
 def delete_models_by_instance_ids(instance_ids: list[str]):
@@ -329,6 +332,7 @@ def get_models_by_tenant_and_provider_and_model_type(tenant_id: str, provider_na
     results = []
     for inst in instances:
         models = TenantModelService.get_by_provider_id_and_instance_id_and_model_type(provider_obj.id, inst.id, model_type)
-        if models:
-            results.extend(models)
+        supported = [model for model in models if model.status != ActiveStatusEnum.UNSUPPORTED.value]
+        if supported:
+            results.extend(supported)
     return results

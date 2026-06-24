@@ -232,8 +232,10 @@ class SyncBase:
 
             docs = []
             for doc in document_batch:
+                legacy_doc_id = hash128(f"{task['connector_id']}:{doc.id}")
+                new_doc_id = hash128(f"{task['kb_id']}:{task['connector_id']}:{doc.id}")
                 d = {
-                    "id": hash128(f"{task['connector_id']}:{doc.id}"),
+                    "id": legacy_doc_id if legacy_doc_id in existing_doc_ids else new_doc_id,
                     "connector_id": task["connector_id"],
                     "source": self.SOURCE_NAME,
                     "semantic_identifier": doc.semantic_identifier,
@@ -401,8 +403,9 @@ class _BlobLikeBase(SyncBase):
             if key_record.deleted:
                 continue
 
-            doc_id = hash128(key_record.key)
-            stored = existing_fingerprints.get(doc_id, "")
+            legacy_doc_id = hash128(f"{task['connector_id']}:{key_record.key}")
+            new_doc_id = hash128(f"{task['kb_id']}:{task['connector_id']}:{key_record.key}")
+            stored = existing_fingerprints.get(legacy_doc_id, "") or existing_fingerprints.get(new_doc_id, "")
             if key_record.fingerprint and stored and key_record.fingerprint == stored:
                 bypass_count += 1
                 continue

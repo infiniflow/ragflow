@@ -19,8 +19,8 @@ package handler
 import (
 	"fmt"
 	"net/http"
-	"ragflow/internal/cache"
 	"ragflow/internal/common"
+	"ragflow/internal/engine/redis"
 	"ragflow/internal/server"
 	"ragflow/internal/server/local"
 	"ragflow/internal/utility"
@@ -78,7 +78,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 		return
 	}
 
-	secretKey, err := server.GetSecretKey(cache.Get())
+	secretKey, err := server.GetSecretKey(redis.Get())
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeServerError,
@@ -142,7 +142,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 	}
 
 	// Sign the access_token using itsdangerous (compatible with Python)
-	secretKey, err := server.GetSecretKey(cache.Get())
+	secretKey, err := server.GetSecretKey(redis.Get())
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeServerError,
@@ -217,7 +217,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 		return
 	}
 
-	secretKey, err := server.GetSecretKey(cache.Get())
+	secretKey, err := server.GetSecretKey(redis.Get())
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeServerError,
@@ -628,6 +628,7 @@ func joinStrings(values []string) string {
 	}
 	return result
 }
+
 // ---- Forgot-password flow (fixes #15282) -----------------------------
 //
 // Mirrors api/apps/restful_apis/user_api.py /auth/password/... endpoints.
@@ -813,7 +814,7 @@ func (h *UserHandler) ForgotResetPassword(c *gin.Context) {
 		return
 	}
 
-	secretKey, err := server.GetSecretKey(cache.Get())
+	secretKey, err := server.GetSecretKey(redis.Get())
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeServerError,

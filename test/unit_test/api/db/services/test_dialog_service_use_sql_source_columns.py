@@ -295,7 +295,7 @@ def test_async_chat_uses_all_docs_when_no_doc_ids_selected(monkeypatch):
     monkeypatch.setattr(
         dialog_service,
         "get_models",
-        lambda _dialog: ([SimpleNamespace(tenant_id="tenant-id")], object(), None, chat_model, None),
+        lambda _dialog, **_kwargs: ([SimpleNamespace(tenant_id="tenant-id")], object(), None, chat_model, None),
     )
     monkeypatch.setattr(dialog_service.KnowledgebaseService, "get_field_map", lambda _kb_ids: {})
     monkeypatch.setattr(dialog_service, "label_question", lambda _question, _kbs: None)

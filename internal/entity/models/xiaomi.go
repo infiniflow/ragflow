@@ -297,7 +297,7 @@ func (x *XiaomiModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	}
 
 	// SSE parsing: read line by line
-	if _, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
+	if _, err := ParseSSEStreamTolerant[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
 			return nil
@@ -574,7 +574,7 @@ func decodeXiaomiASRResponse(body []byte) (*ASRResponse, error) {
 }
 
 func readXiaomiASRStream(body io.Reader, sender func(*string, *string) error) error {
-	if _, err := ParseSSEStream[xiaomiChatCompletionChunk](body, func(chunk xiaomiChatCompletionChunk) error {
+	if _, err := ParseSSEStreamTolerant[xiaomiChatCompletionChunk](body, func(chunk xiaomiChatCompletionChunk) error {
 		if len(chunk.Choices) == 0 {
 			return nil
 		}
@@ -771,7 +771,7 @@ func decodeXiaomiTTSResponse(body []byte) (*TTSResponse, error) {
 }
 
 func readXiaomiTTSStream(body io.Reader, sender func(*string, *string) error) error {
-	if _, err := ParseSSEStream[xiaomiChatCompletionChunk](body, func(chunk xiaomiChatCompletionChunk) error {
+	if _, err := ParseSSEStreamTolerant[xiaomiChatCompletionChunk](body, func(chunk xiaomiChatCompletionChunk) error {
 		if len(chunk.Choices) == 0 || chunk.Choices[0].Delta.Audio == nil || chunk.Choices[0].Delta.Audio.Data == "" {
 			return nil
 		}

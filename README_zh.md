@@ -25,7 +25,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.26.0">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.26.1">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -87,6 +87,7 @@
 
 ## 🔥 近期更新
 
+- 2026-06-15 支持飞书、Discord、Telegram、Line 等多种聊天渠道。
 - 2026-04-24 支持 DeepSeek v4.
 - 2026-03-24 发布 [RAGFlow 官方 Skill](https://clawhub.ai/yingfeng/ragflow-skill) — 提供官方 Skill 以通过 OpenClaw 访问 RAGFlow 数据集。
 - 2025-12-26 支持 AI 代理的"记忆"功能。
@@ -97,10 +98,8 @@
 - 2025-08-08 支持 OpenAI 最新的 GPT-5 系列模型。
 - 2025-08-01 支持 agentic workflow 和 MCP。
 - 2025-05-23 Agent 新增 Python/JS 代码执行器组件。
-- 2025-05-05 支持跨语言查询。
 - 2025-03-19 PDF 和 DOCX 中的图支持用多模态大模型去解析得到描述。
-- 2024-12-18 升级了 DeepDoc 的文档布局分析模型。
-- 2024-08-22 支持用 RAG 技术实现从自然语言到 SQL 语句的转换。
+
 
 ## 🎉 关注项目
 
@@ -193,12 +192,12 @@
 > 请注意，目前官方提供的所有 Docker 镜像均基于 x86 架构构建，并不提供基于 ARM64 的 Docker 镜像。
 > 如果你的操作系统是 ARM64 架构，请参考[这篇文档](https://ragflow.io/docs/dev/build_docker_image)自行构建 Docker 镜像。
 
-   > 运行以下命令会自动下载 RAGFlow Docker 镜像 `v0.26.0`。请参考下表查看不同 Docker 发行版的描述。如需下载不同于 `v0.26.0` 的 Docker 镜像，请在运行 `docker compose` 启动服务之前先更新 **docker/.env** 文件内的 `RAGFLOW_IMAGE` 变量。
+   > 运行以下命令会自动下载 RAGFlow Docker 镜像 `v0.26.1`。请参考下表查看不同 Docker 发行版的描述。如需下载不同于 `v0.26.1` 的 Docker 镜像，请在运行 `docker compose` 启动服务之前先更新 **docker/.env** 文件内的 `RAGFLOW_IMAGE` 变量。
 
    ```bash
    $ cd ragflow/docker
 
-   # git checkout v0.26.0
+   # git checkout v0.26.1
    # 可选：使用稳定版本标签（查看发布：https://github.com/infiniflow/ragflow/releases）
    # 这一步确保代码中的 entrypoint.sh 文件与 Docker 镜像的版本保持一致。
 
@@ -331,7 +330,7 @@ docker build --platform linux/amd64 \
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
    uv sync --python 3.13 # install RAGFlow dependent python modules
-   uv run python3 download_deps.py
+   uv run python3 ragflow_deps/download_deps.py
    pre-commit install
    ```
 

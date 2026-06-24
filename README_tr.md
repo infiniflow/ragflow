@@ -25,7 +25,7 @@
         <img alt="Çevrimiçi Demo" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.26.0">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.26.1">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Son%20Sürüm" alt="Son Sürüm">
@@ -87,6 +87,7 @@ Bulut hizmetimizi [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinde
 
 ## 🔥 Son Güncellemeler
 
+- 2026-06-15 Feishu, Discord, Telegram, Line vb. gibi birden fazla sohbet kanalını destekleyin.
 - 2026-04-24 DeepSeek v4 desteği.
 - 2026-03-24 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — OpenClaw üzerinden RAGFlow veri setlerine erişmek için resmi bir skill sağlar.
 - 2025-12-26 Yapay zeka ajanı için 'Bellek' desteği eklendi.
@@ -97,7 +98,6 @@ Bulut hizmetimizi [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinde
 - 2025-08-08 OpenAI'ın en yeni GPT-5 serisi modelleri için destek eklendi.
 - 2025-08-01 Ajanlı iş akışı ve MCP desteği eklendi.
 - 2025-05-23 Ajana Python/JavaScript kod çalıştırıcı bileşeni eklendi.
-- 2025-05-05 Diller arası sorgu desteği eklendi.
 - 2025-03-19 PDF veya DOCX dosyalarındaki görselleri yorumlamak için çok modlu model desteği eklendi.
 
 ## 🎉 Bizi Takip Edin
@@ -191,12 +191,12 @@ Bulut hizmetimizi [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinde
 > Tüm Docker imajları x86 platformları için oluşturulmuştur. Şu anda ARM64 için Docker imajı sunmuyoruz.
 > ARM64 platformundaysanız, sisteminizle uyumlu bir Docker imajı oluşturmak için [bu kılavuzu](https://ragflow.io/docs/dev/build_docker_image) takip edin.
 
-> Aşağıdaki komut RAGFlow Docker imajının `v0.26.0` sürümünü indirir. Farklı RAGFlow sürümleri için aşağıdaki tabloya bakın. `v0.26.0` dışında bir sürüm indirmek için, `docker compose` ile sunucuyu başlatmadan önce **docker/.env** dosyasındaki `RAGFLOW_IMAGE` değişkenini güncelleyin.
+> Aşağıdaki komut RAGFlow Docker imajının `v0.26.1` sürümünü indirir. Farklı RAGFlow sürümleri için aşağıdaki tabloya bakın. `v0.26.1` dışında bir sürüm indirmek için, `docker compose` ile sunucuyu başlatmadan önce **docker/.env** dosyasındaki `RAGFLOW_IMAGE` değişkenini güncelleyin.
 
 ```bash
    $ cd ragflow/docker
 
-   # git checkout v0.26.0
+   # git checkout v0.26.1
    # İsteğe bağlı: Kararlı bir etiket kullanın (sürümler: https://github.com/infiniflow/ragflow/releases)
    # Bu adım, koddaki **entrypoint.sh** dosyasının Docker imaj sürümüyle eşleşmesini sağlar.
 
@@ -325,7 +325,7 @@ docker build --platform linux/amd64 \
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
    uv sync --python 3.13 # RAGFlow'un bağımlı Python modüllerini yükler
-   uv run python3 download_deps.py
+   uv run python3 ragflow_deps/download_deps.py
    pre-commit install
    ```
 3. Bağımlı hizmetleri (MinIO, Elasticsearch, Redis ve MySQL) Docker Compose kullanarak başlatın:
