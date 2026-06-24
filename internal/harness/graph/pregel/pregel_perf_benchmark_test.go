@@ -27,20 +27,11 @@ func benchmarkSimpleGraph() *graphPkg.StateGraph {
 	sg.AddChannel("value", channels.NewLastValue(""))
 
 	sg.AddNode("node_a", func(ctx context.Context, state any) (any, error) {
-		m, _ := state.(map[string]any)
-		if m == nil {
-			m = map[string]any{}
-		}
-		m["value"] = "a"
-		return m, nil
+		// Return a fresh map copy to avoid sharing mutable state across runs.
+		return map[string]any{"value": "a"}, nil
 	})
 	sg.AddNode("node_b", func(ctx context.Context, state any) (any, error) {
-		m, _ := state.(map[string]any)
-		if m == nil {
-			m = map[string]any{}
-		}
-		m["value"] = "b"
-		return m, nil
+		return map[string]any{"value": "b"}, nil
 	})
 	_ = sg.AddEdge(constants.Start, "node_a")
 	_ = sg.AddEdge("node_a", "node_b")

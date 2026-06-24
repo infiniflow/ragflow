@@ -28,6 +28,7 @@ type tracedEngineConfig struct {
 	recordArguments bool
 	recordResults   bool
 	eventFilter     func(string) bool
+	callbacks       *CallbackManager
 }
 
 func defaultTracingConfig() *tracedEngineConfig {
@@ -78,15 +79,16 @@ func NewTracedEngine(inner *Engine, opts ...TracedEngineOption) *TracedEngine {
 	if cfg.enabled {
 		te.tracer = otel.Tracer(tracedEngineTracerName)
 	}
+	if cfg.callbacks != nil {
+		te.callbacks = cfg.callbacks
+	}
 	return te
 }
 
 // WithEngineCallbacks sets the callback manager for the traced engine.
-// This is separate from the Engine's own callback support.
 func WithEngineCallbacks(cb *CallbackManager) TracedEngineOption {
 	return func(c *tracedEngineConfig) {
-		// We need a way to pass this back to the TracedEngine.
-		// Use a workaround: store in config for capture after construction.
+		c.callbacks = cb
 	}
 }
 
@@ -117,8 +119,12 @@ func (te *TracedEngine) Run(ctx context.Context, input any, mode types.StreamMod
 	// Start root tracing span.
 	var graphSpan trace.Span
 	if te.tracer != nil {
+		nodeCount := 0
+		if te.inner.graph != nil {
+			nodeCount = len(te.inner.graph.GetNodes())
+		}
 		attrs := []attribute.KeyValue{
-			attribute.Int(AttrGraphNodes, len(te.inner.graph.GetNodes())),
+			attribute.Int(AttrGraphNodes, nodeCount),
 			attribute.Int(AttrRecursionLimit, te.inner.recursionLimit),
 			attribute.String(AttrStreamMode, string(mode)),
 		}

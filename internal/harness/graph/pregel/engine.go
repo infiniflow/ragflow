@@ -282,14 +282,25 @@ func (e *Engine) Run(ctx context.Context, input any, mode types.StreamMode) (<-c
 				constants.ConfigKeyThreadID: threadID,
 			}
 			// Support loading a specific checkpoint_id for replay/fork.
+			var requestedCPID string
 			if e.config != nil && e.config.Configurable != nil {
 				if cpid, ok := e.config.Configurable[constants.ConfigKeyCheckpointID]; ok {
 					if cpidStr, ok := cpid.(string); ok && cpidStr != "" {
 						cpConfig[constants.ConfigKeyCheckpointID] = cpidStr
+						requestedCPID = cpidStr
 					}
 				}
 			}
 			cpData, cpErr = e.checkpointer.Get(ctx, cpConfig)
+			// When a specific checkpoint_id was requested, fail on missing data.
+			if requestedCPID != "" && (cpErr != nil || cpData == nil) {
+				cpErrMsg := "checkpoint not found"
+				if cpErr != nil {
+					cpErrMsg = cpErr.Error()
+				}
+				errCh <- fmt.Errorf("requested checkpoint_id %s: %s", requestedCPID, cpErrMsg)
+				return
+			}
 			if cpErr == nil && cpData != nil {
 				didLoadCheckpoint = true
 				common.Debug("LOOP_CHECK: loaded checkpoint",

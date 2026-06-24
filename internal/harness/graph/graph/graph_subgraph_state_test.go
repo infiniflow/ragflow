@@ -40,6 +40,9 @@ func TestSubgraphState_GetState_NoRun(t *testing.T) {
 		if err != nil {
 			return nil, fmt.Errorf("subgraph invoke: %w", err)
 		}
+		// NOTE: This bypasses the registered AddSubgraph path for simplicity.
+		// Full subgraph execution via CompiledStateGraph requires the Pregel engine.
+		// The AddSubgraph setup (lines below) validates namespace/checkpoint plumbing.
 		m := state.(map[string]any)
 		if subMap, ok := subResult.(map[string]any); ok {
 			for k, v := range subMap {
@@ -69,7 +72,7 @@ func TestSubgraphState_GetState_NoRun(t *testing.T) {
 		t.Fatalf("GetState before run: %v", err)
 	}
 	if snap != nil {
-		t.Log("expected nil snapshot before first run, got non-nil")
+		t.Fatal("expected nil snapshot before first run, got non-nil")
 	}
 }
 
@@ -100,6 +103,9 @@ func TestSubgraphState_GetState_AfterExecution(t *testing.T) {
 		if err != nil {
 			return nil, fmt.Errorf("subgraph invoke: %w", err)
 		}
+		// NOTE: This bypasses the registered AddSubgraph path for simplicity.
+		// Full subgraph execution via CompiledStateGraph requires the Pregel engine.
+		// The AddSubgraph setup (lines below) validates namespace/checkpoint plumbing.
 		m := state.(map[string]any)
 		if subMap, ok := subResult.(map[string]any); ok {
 			for k, v := range subMap {
@@ -271,6 +277,9 @@ func TestSubgraphState_CheckpointMigration(t *testing.T) {
 		if err != nil {
 			return nil, fmt.Errorf("subgraph invoke: %w", err)
 		}
+		// NOTE: This bypasses the registered AddSubgraph path for simplicity.
+		// Full subgraph execution via CompiledStateGraph requires the Pregel engine.
+		// The AddSubgraph setup (lines below) validates namespace/checkpoint plumbing.
 		m := state.(map[string]any)
 		if subMap, ok := subResult.(map[string]any); ok {
 			for k, v := range subMap {

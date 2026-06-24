@@ -571,13 +571,7 @@ func (p *PregelScratchpad) Snapshot() *ScratchpadSnapshot {
 		if len(k) > 10 && k[:10] == "_node_ctx:" {
 			continue // skip node-local contexts
 		}
-		// Basic copy for simple types; maps get recursively copied.
-		switch val := v.(type) {
-		case map[string]interface{}:
-			dataCopy[k] = deepCopyMap(val)
-		default:
-			dataCopy[k] = v
-		}
+		dataCopy[k] = deepCopyValue(v)
 	}
 	countersCopy := make(map[string]int64, len(p.counters))
 	for k, v := range p.counters {
@@ -585,7 +579,7 @@ func (p *PregelScratchpad) Snapshot() *ScratchpadSnapshot {
 	}
 	metaCopy := make(map[string]interface{}, len(p.metadata))
 	for k, v := range p.metadata {
-		metaCopy[k] = v
+		metaCopy[k] = deepCopyValue(v)
 	}
 
 	return &ScratchpadSnapshot{
@@ -618,7 +612,7 @@ func (p *PregelScratchpad) Restore(snap *ScratchpadSnapshot) {
 
 	p.data = make(map[string]interface{}, len(snap.Data))
 	for k, v := range snap.Data {
-		p.data[k] = v
+		p.data[k] = deepCopyValue(v)
 	}
 	// Restore node contexts.
 	for k, v := range nodeCtxs {
@@ -649,38 +643,56 @@ func (p *PregelScratchpad) MergeFrom(other *PregelScratchpad) {
 	if other == nil {
 		return
 	}
-	other.mu.RLock()
-	p.mu.Lock()
-	defer func() {
-		p.mu.Unlock()
-		other.mu.RUnlock()
-	}()
 
-	// Merge data (other wins conflicts).
+	// Snapshot other under its read lock first, then release.
+	other.mu.RLock()
+	otherData := make(map[string]interface{}, len(other.data))
 	for k, v := range other.data {
 		if len(k) > 10 && k[:10] == "_node_ctx:" {
-			continue // skip node contexts
+			continue
 		}
+		otherData[k] = deepCopyValue(v)
+	}
+	otherCounters := make(map[string]int64, len(other.counters))
+	for k, v := range other.counters {
+		otherCounters[k] = v
+	}
+	otherMeta := make(map[string]interface{}, len(other.metadata))
+	for k, v := range other.metadata {
+		otherMeta[k] = deepCopyValue(v)
+	}
+	otherStep := other.step
+	otherCallCounter := other.callCounter
+	otherInterruptCounter := other.interruptCounter
+	otherSubgraphCounter := other.subgraphCounter
+	other.mu.RUnlock()
+
+	// Now acquire p's lock and apply.
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// Merge data (other wins conflicts).
+	for k, v := range otherData {
 		p.data[k] = v
 	}
 
 	// Merge counters (sum).
-	for k, v := range other.counters {
+	for k, v := range otherCounters {
 		p.counters[k] += v
 	}
 
 	// Merge metadata (other wins conflicts).
-	for k, v := range other.metadata {
+	for k, v := range otherMeta {
 		p.metadata[k] = v
 	}
 
 	// Merge step-related fields (take max).
-	if other.step > p.step {
-		p.step = other.step
+	if otherStep > p.step {
+		p.step = otherStep
 	}
-	p.callCounter += other.callCounter
-	p.interruptCounter += other.interruptCounter
-	p.subgraphCounter += other.subgraphCounter
+	p.callCounter += otherCallCounter
+	p.interruptCounter += otherInterruptCounter
+	p.subgraphCounter += otherSubgraphCounter
 	p.lastAccess = time.Now()
 }
 
@@ -767,11 +779,38 @@ func (p *PregelScratchpad) ClearExpired() bool {
 		return false
 	}
 
-	// Expired: clear ephemeral data.
+	// Expired: clear ephemeral data and timeout metadata so newly
+	// written data is not immediately treated as expired.
 	p.data = make(map[string]interface{})
 	p.counters = make(map[string]int64)
+	delete(p.metadata, "_timeout_ttl")
+	delete(p.metadata, "_timeout_start")
 	p.lastAccess = time.Now()
 	return true
+}
+
+// deepCopyValue recursively clones a value, handling map[string]interface{}
+// and []interface{} containers to prevent aliasing.
+func deepCopyValue(v interface{}) interface{} {
+	if v == nil {
+		return nil
+	}
+	switch val := v.(type) {
+	case map[string]interface{}:
+		dst := make(map[string]interface{}, len(val))
+		for k, v2 := range val {
+			dst[k] = deepCopyValue(v2)
+		}
+		return dst
+	case []interface{}:
+		dst := make([]interface{}, len(val))
+		for i, v2 := range val {
+			dst[i] = deepCopyValue(v2)
+		}
+		return dst
+	default:
+		return v
+	}
 }
 
 // deepCopyMap recursively copies a string-keyed map.
@@ -781,12 +820,7 @@ func deepCopyMap(src map[string]interface{}) map[string]interface{} {
 	}
 	dst := make(map[string]interface{}, len(src))
 	for k, v := range src {
-		switch val := v.(type) {
-		case map[string]interface{}:
-			dst[k] = deepCopyMap(val)
-		default:
-			dst[k] = v
-		}
+		dst[k] = deepCopyValue(v)
 	}
 	return dst
 }

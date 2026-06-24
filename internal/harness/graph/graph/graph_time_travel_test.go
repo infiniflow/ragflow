@@ -123,13 +123,17 @@ func TestTimeTravel_Replay_Basic(t *testing.T) {
 
 	// Find earliest checkpoint (entry 0 is latest, so last entry is earliest).
 	earliestEntry := history[len(history)-1]
-	if earliestEntry.Config == nil {
+	if earliestEntry.Config == nil || earliestEntry.Config.Configurable == nil {
 		t.Skip("earliest entry has no Config")
+	}
+	earliestCPID, _ := earliestEntry.Config.Configurable[constants.ConfigKeyCheckpointID].(string)
+	if earliestCPID == "" {
+		t.Skip("earliest entry has no checkpoint_id")
 	}
 
 	// Replay from earliest checkpoint via ForkThread.
 	replayTID := tid + "-replay"
-	_, err = cg.ForkThread(ctx, tid, replayTID, "")
+	_, err = cg.ForkThread(ctx, tid, replayTID, earliestCPID)
 	if err != nil {
 		t.Fatalf("ForkThread for replay: %v", err)
 	}

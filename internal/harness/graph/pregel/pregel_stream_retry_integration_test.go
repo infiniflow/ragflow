@@ -285,20 +285,17 @@ func TestRetry_CustomPolicy(t *testing.T) {
 func TestRetry_WithCheckpointer(t *testing.T) {
 	var attempts atomic.Int32
 
-	sg := newSimpleGraph(t)
-	// Override node_a to be flaky.
+	// Build standalone graph to avoid duplicate edges from newSimpleGraph.
+	sg := graphPkg.NewStateGraph(map[string]any{})
+	sg.AddChannel("value", channels.NewLastValue(""))
 	sg.AddNode("flaky_node", func(ctx context.Context, state any) (any, error) {
 		n := attempts.Add(1)
 		if n < 2 {
 			return nil, fmt.Errorf("transient %d", n)
 		}
-		m, _ := state.(map[string]any)
-		m["value"] = "retried"
-		return m, nil
+		return map[string]any{"value": "retried"}, nil
 	})
 	_ = sg.AddEdge(constants.Start, "flaky_node")
-	// Remove original edges and add new ones.
-	// Since AddEdge is idempotent for same-direction edges, we just add.
 	_ = sg.AddEdge("flaky_node", constants.End)
 
 	ms := checkpoint.NewMemorySaver()
@@ -332,15 +329,13 @@ func TestEngine_50NodeChain(t *testing.T) {
 	prev := constants.Start
 	for i := 0; i < 50; i++ {
 		name := fmt.Sprintf("n_%d", i)
+		iCopy := i // capture loop variable
 		sg.AddNode(name, func(ctx context.Context, state any) (any, error) {
 			m, _ := state.(map[string]any)
 			if m == nil {
 				m = map[string]any{}
 			}
-			if m == nil {
-				m = map[string]any{}
-			}
-			m["value"] = i
+			m["value"] = iCopy
 			return m, nil
 		})
 		_ = sg.AddEdge(prev, name)

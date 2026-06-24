@@ -449,10 +449,11 @@ func TestEnterprise_PartialFailureDegradation(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	_, err = cg.Invoke(ctx, map[string]any{})
 	if err == nil {
-		t.Log("all nodes succeeded (depends on skip behavior)")
+		t.Fatal("expected failure from partial node errors")
 	}
 }
 

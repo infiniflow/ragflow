@@ -60,6 +60,10 @@ type StateInspector interface {
 	// This enables manual state injection (time travel, interrupt resolution).
 	// Returns the config for the new checkpoint created by the update.
 	UpdateState(ctx context.Context, config *types.RunnableConfig, update *StateUpdate) (*types.RunnableConfig, error)
+
+	// ForkThread clones a checkpoint from one thread to another.
+	// sourceCheckpointID: empty = latest checkpoint in source thread.
+	ForkThread(ctx context.Context, sourceThreadID, newThreadID string, sourceCheckpointID string) (*types.RunnableConfig, error)
 }
 
 // Ensure CompiledGraph implements StateInspector.
@@ -192,11 +196,9 @@ func (cg *CompiledGraph) UpdateState(ctx context.Context, config *types.Runnable
 		cpData[key] = val
 	}
 
-	// 3. Save as a new checkpoint (parent = current checkpoint).
-	//    The new checkpoint will be picked up by the next Run/Resume call.
+	// 3. Determine new thread ID and parent checkpoint ID.
 	//    Note: Do NOT inject metadata keys (like __update_as_node__) into cpData,
 	//    because inline Pregel will try to restore them as channels.
-	parentID, _ := cpConfig[constants.ConfigKeyCheckpointID].(string)
 	newThreadID := update.ThreadID
 	if newThreadID == "" {
 		if id, ok := cpConfig[constants.ConfigKeyThreadID].(string); ok {
@@ -206,6 +208,8 @@ func (cg *CompiledGraph) UpdateState(ctx context.Context, config *types.Runnable
 	if newThreadID == "" {
 		return nil, fmt.Errorf("thread_id is required for UpdateState")
 	}
+	parentID, _ := cpConfig[constants.ConfigKeyCheckpointID].(string)
+
 	newConfig := map[string]interface{}{
 		constants.ConfigKeyThreadID:     newThreadID,
 		"parent_checkpoint_id":          parentID,
@@ -215,7 +219,7 @@ func (cg *CompiledGraph) UpdateState(ctx context.Context, config *types.Runnable
 		return nil, fmt.Errorf("failed to save updated checkpoint: %w", err)
 	}
 
-	// 5. Return the config for the new checkpoint.
+	// 4. Return the config for the new checkpoint.
 	listCfg := map[string]interface{}{
 		constants.ConfigKeyThreadID: newThreadID,
 	}
@@ -252,6 +256,9 @@ func buildCheckpointerConfig(config *types.RunnableConfig) map[string]interface{
 		if cpid, ok := config.Configurable[constants.ConfigKeyCheckpointID]; ok {
 			cpConfig[constants.ConfigKeyCheckpointID] = cpid
 		}
+		if ns, ok := config.Configurable[constants.ConfigKeyCheckpointNS]; ok {
+			cpConfig[constants.ConfigKeyCheckpointNS] = ns
+		}
 	}
 	return cpConfig
 }
@@ -271,11 +278,8 @@ func extractMeta(cpData map[string]interface{}) map[string]interface{} {
 // determineNextFromCheckpoint reads the checkpoint and checkpoint data
 // to determine which nodes would run next.
 func (cg *CompiledGraph) determineNextFromCheckpoint(cpData map[string]interface{}) []string {
-	// In a full implementation, this would replay the edge logic.
-	// For now, return the last completed node if available.
-	if node, ok := cpData["__last_completed_node__"].(string); ok {
-		return []string{node}
-	}
+	// Return nil because the stored __last_completed_node__ is already
+	// finished, not pending. Full edge replay is not yet implemented.
 	return nil
 }
 

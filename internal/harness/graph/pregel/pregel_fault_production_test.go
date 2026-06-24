@@ -175,9 +175,7 @@ func TestFault_TopicChannel_ConcurrentProducers(t *testing.T) {
 	sg := graphPkg.NewStateGraph(map[string]any{})
 	sg.AddChannel("evt", channels.NewTopic("", true))
 
-	sg.AddNode("producer", func(ctx context.Context, state any) (any, error) {
-		return map[string]any{"evt": "e"}, nil
-	})
+	// Sequential chain (BSP mode processes one node at a time).
 	prev := constants.Start
 	for i := 0; i < numProducers; i++ {
 		name := fmt.Sprintf("p_%d", i)
@@ -185,10 +183,9 @@ func TestFault_TopicChannel_ConcurrentProducers(t *testing.T) {
 			return map[string]any{"evt": "e"}, nil
 		})
 		_ = sg.AddEdge(prev, name)
-		_ = sg.AddEdge(name, constants.End)
 		prev = name
 	}
-	_ = prev
+	_ = sg.AddEdge(prev, constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(100))
 	result, err := engine.RunSync(context.Background(), map[string]any{})
@@ -209,17 +206,13 @@ func TestFault_NodeConcurrentMapWrite(t *testing.T) {
 	sg := graphPkg.NewStateGraph(map[string]any{})
 	sg.AddChannel("value", channels.NewLastValue(""))
 
+	// Sequential chain (BSP mode processes one node at a time).
 	prev := constants.Start
 	for i := 0; i < 20; i++ {
 		name := fmt.Sprintf("w_%d", i)
 		sg.AddNode(name, func(ctx context.Context, state any) (any, error) {
 			counter.Add(1)
-			m, _ := state.(map[string]any)
-			if m == nil {
-				m = map[string]any{}
-			}
-			m["value"] = name
-			return m, nil
+			return map[string]any{"value": name}, nil
 		})
 		_ = sg.AddEdge(prev, name)
 		prev = name

@@ -216,7 +216,7 @@ func TestFaultInjection_ParallelFanOutWithFailures(t *testing.T) {
 	sg := graphPkg.NewStateGraph(State{})
 	sg.AddChannel("__root__", channels.NewLastValue(State{}))
 
-	// Worker nodes: some succeed, some fail.
+	// Simulate fan-out via sequential chain (BSP mode processes one node at a time).
 	for i := 0; i < 10; i++ {
 		name := fmt.Sprintf("worker_%d", i)
 		iCopy := i
