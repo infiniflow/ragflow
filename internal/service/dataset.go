@@ -662,6 +662,43 @@ type SearchDatasetsRequest struct {
 	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
 }
 
+// SearchDatasetRequest is the request structure for searching within a single dataset.
+type SearchDatasetRequest struct {
+	Question               string                 `json:"question" binding:"required"`
+	Page                   *int                   `json:"page,omitempty"`
+	Size                   *int                   `json:"size,omitempty"`
+	DocIDs                 []string               `json:"doc_ids,omitempty"`
+	UseKG                  *bool                  `json:"use_kg,omitempty"`
+	TopK                   *int                   `json:"top_k,omitempty"`
+	CrossLanguages         []string               `json:"cross_languages,omitempty"`
+	SearchID               *string                `json:"search_id,omitempty"`
+	MetadataFilter         map[string]interface{} `json:"meta_data_filter,omitempty"`
+	RerankID               *string                `json:"rerank_id,omitempty"`
+	Keyword                *bool                  `json:"keyword,omitempty"`
+	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
+	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
+}
+
+// ToSearchDatasetsRequest adapts the single-dataset request to the shared multi-dataset service request.
+func (r *SearchDatasetRequest) ToSearchDatasetsRequest(datasetID string) SearchDatasetsRequest {
+	return SearchDatasetsRequest{
+		DatasetIDs:             []string{datasetID},
+		Question:               r.Question,
+		Page:                   r.Page,
+		Size:                   r.Size,
+		DocIDs:                 r.DocIDs,
+		UseKG:                  r.UseKG,
+		TopK:                   r.TopK,
+		CrossLanguages:         r.CrossLanguages,
+		SearchID:               r.SearchID,
+		MetadataFilter:         r.MetadataFilter,
+		RerankID:               r.RerankID,
+		Keyword:                r.Keyword,
+		SimilarityThreshold:    r.SimilarityThreshold,
+		VectorSimilarityWeight: r.VectorSimilarityWeight,
+	}
+}
+
 // SearchDatasetsResponse is the response structure for dataset search results.
 type SearchDatasetsResponse struct {
 	Chunks  []map[string]interface{} `json:"chunks"`
@@ -789,7 +826,11 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 	if searchID != "" {
 		searchDetail, err := s.searchService.GetDetail(searchID)
 		if err != nil {
-			common.Warn("Failed to get search detail for search_id, proceeding without it", zap.String("searchID", searchID), zap.Error(err))
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, fmt.Errorf("Invalid search_id")
+			}
+			common.Warn("Failed to get search detail for search_id", zap.String("searchID", searchID), zap.Error(err))
+			return nil, fmt.Errorf("Internal server error")
 		} else if searchConfig, ok := searchDetail["search_config"].(map[string]interface{}); ok && searchConfig != nil {
 			if scMetadataFilter, ok := searchConfig["meta_data_filter"].(map[string]interface{}); ok {
 				metadataFilter = scMetadataFilter

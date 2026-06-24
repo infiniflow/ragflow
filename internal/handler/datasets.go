@@ -852,59 +852,22 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 
 	var req service.SearchDatasetsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": err.Error(),
-		})
+		jsonError(c, common.CodeArgumentError, err.Error())
 		return
 	}
 
-	if req.Page == nil {
-		defaultPage := 1
-		req.Page = &defaultPage
-	}
-	if req.Size == nil {
-		defaultSize := 30
-		req.Size = &defaultSize
-	}
-	if req.TopK == nil {
-		defaultTopK := 1024
-		req.TopK = &defaultTopK
-	}
-	if req.UseKG == nil {
-		defaultUseKG := false
-		req.UseKG = &defaultUseKG
-	}
-
-	if req.Question == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "question is required",
-		})
+	if strings.TrimSpace(req.Question) == "" {
+		jsonError(c, common.CodeArgumentError, "question is required")
 		return
 	}
-	if req.DatasetIDs == nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "kb_id is required",
-		})
-		return
-	}
-
 	if len(req.DatasetIDs) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "kb_id array cannot be empty",
-		})
+		jsonError(c, common.CodeArgumentError, "dataset_ids is required")
 		return
 	}
 
 	resp, err := h.datasetsService.SearchDatasets(&req, user.ID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": err.Error(),
-		})
+		jsonError(c, common.CodeDataError, datasetSearchErrorMessage(err))
 		return
 	}
 
@@ -912,6 +875,70 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		"code": 0,
 		"data": resp,
 	})
+}
+
+// SearchDataset searches chunks within a single dataset based on a question.
+// @Summary Search Dataset
+// @Description Search for relevant chunks within a dataset based on a question
+// @Tags datasets
+// @Accept json
+// @Produce json
+// @Param dataset_id path string true "dataset ID"
+// @Param request body service.SearchDatasetRequest true "search parameters"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/datasets/{dataset_id}/search [post]
+func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := strings.TrimSpace(c.Param("dataset_id"))
+	if datasetID == "" {
+		jsonError(c, common.CodeArgumentError, "dataset_id is required")
+		return
+	}
+
+	var req service.SearchDatasetRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+	if strings.TrimSpace(req.Question) == "" {
+		jsonError(c, common.CodeArgumentError, "question is required")
+		return
+	}
+
+	searchReq := req.ToSearchDatasetsRequest(datasetID)
+	resp, err := h.datasetsService.SearchDatasets(&searchReq, user.ID)
+	if err != nil {
+		jsonError(c, common.CodeDataError, datasetSearchErrorMessage(err))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": resp,
+	})
+}
+
+func datasetSearchErrorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	message := err.Error()
+	if strings.Contains(message, "not_found") {
+		return "No chunk found! Check the chunk status please!"
+	}
+	if strings.HasPrefix(message, "Only owner of dataset ") ||
+		message == "Datasets not found!" ||
+		message == "Datasets use different embedding models." ||
+		message == "Invalid search_id" {
+		return message
+	}
+	return "Internal server error"
 }
 
 func firstStringValue(value interface{}) string {
