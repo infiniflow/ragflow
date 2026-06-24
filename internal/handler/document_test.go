@@ -179,6 +179,21 @@ func setupGinContextWithUser(method, path, body string) (*gin.Context, *httptest
 	return c, w
 }
 
+func setupDocumentIngestRoute(userID string, svc *fakeDocumentService) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	h := &DocumentHandler{
+		documentService: svc,
+		datasetService:  service.NewDatasetService(),
+	}
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("user", &entity.User{ID: userID})
+		c.Set("user_id", userID)
+	})
+	r.POST("/api/v1/documents/ingest", h.Ingest)
+	return r
+}
+
 func TestDeleteDocumentsHandler_Success(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -360,6 +375,45 @@ func TestDocumentHandlerIngestMatchesPythonResponseShape(t *testing.T) {
 	}
 	if fake.ingestReq == nil || len(fake.ingestReq.DocIDs) != 1 || fake.ingestReq.DocIDs[0] != "doc-1" {
 		t.Fatalf("unexpected ingest request: %#v", fake.ingestReq)
+	}
+}
+
+func TestDocumentIngestRoutePassesPythonBodyToService(t *testing.T) {
+	fake := &fakeDocumentService{}
+	r := setupDocumentIngestRoute("user-1", fake)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/api/v1/documents/ingest", strings.NewReader(`{"doc_ids":["doc-1","doc-2"],"run":1,"delete":true,"apply_kb":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["code"] != float64(common.CodeSuccess) || resp["data"] != true {
+		t.Fatalf("unexpected response: %s", w.Body.String())
+	}
+	if fake.ingestUserID != "user-1" {
+		t.Fatalf("userID = %q, want user-1", fake.ingestUserID)
+	}
+	if fake.ingestReq == nil {
+		t.Fatal("service did not receive ingest request")
+	}
+	if len(fake.ingestReq.DocIDs) != 2 || fake.ingestReq.DocIDs[0] != "doc-1" || fake.ingestReq.DocIDs[1] != "doc-2" {
+		t.Fatalf("doc_ids = %#v, want [doc-1 doc-2]", fake.ingestReq.DocIDs)
+	}
+	if fmt.Sprint(fake.ingestReq.Run) != "1" {
+		t.Fatalf("run = %#v, want 1", fake.ingestReq.Run)
+	}
+	if !fake.ingestReq.Delete {
+		t.Fatal("delete = false, want true")
+	}
+	if !fake.ingestReq.ApplyKB {
+		t.Fatal("apply_kb = false, want true")
 	}
 }
 

@@ -308,6 +308,33 @@ func TestChunkStopParsing_Success(t *testing.T) {
 	}
 }
 
+func TestChunkStopParsingRouteRequiresDocumentIDs(t *testing.T) {
+	r, mock := setupChunkStopParsingTest("user1")
+	mock.stopParsingFn = func(userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
+		t.Fatal("service should not be called when document_ids is missing")
+		return nil, common.CodeSuccess, nil
+	}
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("DELETE", "/api/v1/datasets/kb1/chunks", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["code"] != float64(common.CodeDataError) {
+		t.Fatalf("expected data error, got %v: %s", resp["code"], w.Body.String())
+	}
+	if resp["message"] != "`document_ids` is required" {
+		t.Fatalf("unexpected message: %v", resp["message"])
+	}
+}
+
 func TestChunkStopParsing_InvalidStateIncludesPythonErrorCode(t *testing.T) {
 	r, mock := setupChunkStopParsingTest("user1")
 	mock.stopParsingFn = func(userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {

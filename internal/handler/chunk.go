@@ -372,6 +372,10 @@ func (h *ChunkHandler) StopParsing(c *gin.Context) {
 		jsonError(c, common.CodeDataError, err.Error())
 		return
 	}
+	if len(req.DocumentIDs) == 0 {
+		jsonError(c, common.CodeDataError, "`document_ids` is required")
+		return
+	}
 
 	resp, code, err := h.chunkService.StopParsing(user.ID, datasetID, req)
 	if err != nil {
