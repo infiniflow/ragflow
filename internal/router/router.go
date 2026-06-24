@@ -236,6 +236,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			documents := v1.Group("/documents")
 			{
 				documents.POST("", r.documentHandler.CreateDocument)
+				documents.POST("/upload", r.documentHandler.UploadInfo)
 				documents.GET("", r.documentHandler.ListDocuments)
 				documents.GET("/artifact/:filename", r.documentHandler.GetDocumentArtifact)
 				documents.GET("/:id/preview", r.documentHandler.GetDocumentPreview)
@@ -315,6 +316,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 				//datasets.POST("/:dataset_id/documents/stop", r.documentHandler.StopParseDocuments)
 				datasets.DELETE("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.RemoveChunks)
 				datasets.PUT("/:dataset_id/documents/:document_id/metadata/config", r.datasetsHandler.UpdateDocumentMetadataConfig)
+				datasets.POST("/:dataset_id/metadata/update", r.documentHandler.MetadataBatchUpdate)
+				datasets.PATCH("/:dataset_id/documents/metadatas", r.documentHandler.UpdateDocumentMetadatas)
 			}
 
 			// Search routes
