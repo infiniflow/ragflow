@@ -101,7 +101,7 @@ func (p *Parser) parseAdminListCommands() (*Command, error) {
 	case TokenEnvs:
 		return p.parseAdminListEnvironments()
 	case TokenAvailable:
-		return p.parseListAvailableProviders()
+		return p.parseAdminListAvailableProviders()
 	case TokenProvider:
 		return p.parseAdminListProviderCommands()
 	case TokenProviders:
@@ -181,7 +181,7 @@ func (p *Parser) parseAdminListEnvironments() (*Command, error) {
 	return NewCommand("admin_list_environments"), nil
 }
 
-func (p *Parser) parseListAvailableProviders() (*Command, error) {
+func (p *Parser) parseAdminListAvailableProviders() (*Command, error) {
 	p.nextToken() // consume AVAILABLE
 
 	if p.curToken.Type != TokenProviders {

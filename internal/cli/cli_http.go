@@ -332,7 +332,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowServerVersion(cmd)
 	case "show_current":
 		return c.CommonShowCurrent(cmd)
-	case "list_available_providers":
+	case "api_list_available_providers":
 		return c.CommonAvailableProvidersCommand(cmd)
 	case "show_provider":
 		return c.CommonShowProviderCommand(cmd)
@@ -358,7 +358,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	// Provider instance commands
 	case "create_provider_instance":
 		return c.CreateProviderInstance(cmd)
-	case "list_provider_instances":
+	case "api_list_provider_instances":
 		return c.CommonListProviderInstances(cmd)
 	case "show_provider_instance":
 		return c.CommonShowProviderInstanceCommand(cmd)
