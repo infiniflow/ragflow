@@ -17,10 +17,15 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -29,7 +34,59 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	"ragflow/internal/storage"
+	"ragflow/internal/utility"
 )
+
+type fakeUploadStorage struct {
+	objects map[string][]byte
+}
+
+func newFakeUploadStorage() *fakeUploadStorage {
+	return &fakeUploadStorage{objects: map[string][]byte{}}
+}
+
+func (f *fakeUploadStorage) Health() bool                  { return true }
+func (f *fakeUploadStorage) key(bucket, fnm string) string { return bucket + "/" + fnm }
+func (f *fakeUploadStorage) Put(bucket, fnm string, binary []byte, tenantID ...string) error {
+	f.objects[f.key(bucket, fnm)] = append([]byte(nil), binary...)
+	return nil
+}
+func (f *fakeUploadStorage) Get(bucket, fnm string, tenantID ...string) ([]byte, error) {
+	v, ok := f.objects[f.key(bucket, fnm)]
+	if !ok {
+		return nil, errors.New("not found")
+	}
+	return append([]byte(nil), v...), nil
+}
+func (f *fakeUploadStorage) Remove(bucket, fnm string, tenantID ...string) error {
+	delete(f.objects, f.key(bucket, fnm))
+	return nil
+}
+func (f *fakeUploadStorage) ObjExist(bucket, fnm string, tenantID ...string) bool {
+	_, ok := f.objects[f.key(bucket, fnm)]
+	return ok
+}
+func (f *fakeUploadStorage) GetPresignedURL(bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
+	return "", nil
+}
+func (f *fakeUploadStorage) BucketExists(bucket string) bool  { return true }
+func (f *fakeUploadStorage) RemoveBucket(bucket string) error { return nil }
+func (f *fakeUploadStorage) Copy(srcBucket, srcPath, destBucket, destPath string) bool {
+	v, ok := f.objects[f.key(srcBucket, srcPath)]
+	if !ok {
+		return false
+	}
+	f.objects[f.key(destBucket, destPath)] = append([]byte(nil), v...)
+	return true
+}
+func (f *fakeUploadStorage) Move(srcBucket, srcPath, destBucket, destPath string) bool {
+	if !f.Copy(srcBucket, srcPath, destBucket, destPath) {
+		return false
+	}
+	delete(f.objects, f.key(srcBucket, srcPath))
+	return true
+}
 
 type fakeChatDocEngine struct{}
 
@@ -189,6 +246,32 @@ func testDocumentService(t *testing.T) *DocumentService {
 		docEngine:        nil,
 		metadataSvc:      nil, // nil engine → metadata ops skipped
 	}
+}
+
+func makeTestFileHeader(t *testing.T, field, filename string, content []byte) *multipart.FileHeader {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile(field, filename)
+	if err != nil {
+		t.Fatalf("create form file: %v", err)
+	}
+	if _, err := part.Write(content); err != nil {
+		t.Fatalf("write form file: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	if err := req.ParseMultipartForm(int64(len(content) + 1024)); err != nil {
+		t.Fatalf("parse multipart form: %v", err)
+	}
+	fhs := req.MultipartForm.File[field]
+	if len(fhs) != 1 {
+		t.Fatalf("expected 1 file header, got %d", len(fhs))
+	}
+	return fhs[0]
 }
 
 // sptr returns a pointer to the given string.
@@ -396,6 +479,164 @@ func TestDeleteDocumentFull_SharedFilePreserved(t *testing.T) {
 	mappings, _ = f2dDAO.GetByDocumentID("doc-2")
 	if len(mappings) != 1 {
 		t.Fatalf("expected 1 f2d mapping for doc-2, got %d", len(mappings))
+	}
+}
+
+func TestSelectUploadParser_MirrorsPython(t *testing.T) {
+	tests := []struct {
+		name         string
+		docType      utility.FileType
+		filename     string
+		defaultValue string
+		want         string
+	}{
+		{name: "visual", docType: utility.FileTypeVISUAL, filename: "img.png", defaultValue: "naive", want: "picture"},
+		{name: "aural", docType: utility.FileTypeAURAL, filename: "audio.mp3", defaultValue: "naive", want: "audio"},
+		{name: "presentation by ext", docType: utility.FileTypeDOC, filename: "deck.pptx", defaultValue: "naive", want: "presentation"},
+		{name: "email by ext", docType: utility.FileTypeDOC, filename: "mail.eml", defaultValue: "naive", want: "email"},
+		{name: "fallback default", docType: utility.FileTypeDOC, filename: "notes.txt", defaultValue: "manual", want: "manual"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := selectUploadParser(tt.docType, tt.filename, tt.defaultValue); got != tt.want {
+				t.Fatalf("selectUploadParser(%q)=%q, want %q", tt.filename, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestContentHashHex_MatchesPythonXXH128(t *testing.T) {
+	tests := []struct {
+		data []byte
+		want string
+	}{
+		{data: []byte("abc"), want: "06b05ab6733a618578af5f94892f3950"},
+		{data: []byte(""), want: "99aa06d3014798d86001c324468d497f"},
+	}
+	for _, tt := range tests {
+		if got := contentHashHex(tt.data); got != tt.want {
+			t.Fatalf("contentHashHex(%q)=%s, want %s", tt.data, got, tt.want)
+		}
+	}
+}
+
+func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	mockStorage := newFakeUploadStorage()
+	factory := storage.GetStorageFactory()
+	origStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() { factory.SetStorage(origStorage) })
+
+	pipelineID := "pipe-1"
+	kb := &entity.Knowledgebase{
+		ID:         "kb-upload",
+		TenantID:   "tenant-1",
+		Name:       "kb-upload",
+		ParserID:   "naive",
+		PipelineID: &pipelineID,
+		ParserConfig: entity.JSONMap{
+			"existing": "value",
+		},
+	}
+	if err := dao.DB.Create(kb).Error; err != nil {
+		t.Fatalf("insert kb: %v", err)
+	}
+	if err := dao.DB.Create(&entity.Document{
+		ID:           "doc-existing",
+		KbID:         kb.ID,
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		Name:         sptr("deck.pptx"),
+		Status:       sptr("1"),
+	}).Error; err != nil {
+		t.Fatalf("insert existing doc: %v", err)
+	}
+
+	svc := testDocumentService(t)
+	fh := makeTestFileHeader(t, "file", "deck.pptx", []byte("abc"))
+	got, errs := svc.UploadLocalDocuments(kb, "user-1", []*multipart.FileHeader{fh}, "nested/path", map[string]interface{}{
+		"table_column_mode": "assist",
+	})
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errs: %v", errs)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 uploaded doc, got %d", len(got))
+	}
+	doc := got[0]
+	if doc["name"] != "deck(1).pptx" {
+		t.Fatalf("name=%v, want deck(1).pptx", doc["name"])
+	}
+	if doc["location"] != "nested/path/deck(1).pptx" {
+		t.Fatalf("location=%v, want nested/path/deck(1).pptx", doc["location"])
+	}
+	if doc["parser_id"] != "presentation" {
+		t.Fatalf("parser_id=%v, want presentation", doc["parser_id"])
+	}
+	if doc["content_hash"] != "06b05ab6733a618578af5f94892f3950" {
+		t.Fatalf("content_hash=%v", doc["content_hash"])
+	}
+	cfg := doc["parser_config"].(map[string]interface{})
+	if cfg["existing"] != "value" || cfg["table_column_mode"] != "assist" {
+		t.Fatalf("parser_config=%v", cfg)
+	}
+
+	storedBlob, err := mockStorage.Get(kb.ID, "nested/path/deck(1).pptx")
+	if err != nil {
+		t.Fatalf("blob not stored: %v", err)
+	}
+	if string(storedBlob) != "abc" {
+		t.Fatalf("stored blob=%q, want abc", storedBlob)
+	}
+}
+
+func TestUploadEmptyDocument_CreatesVirtualDocumentAndFileLink(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	pipelineID := "pipe-2"
+	kb := &entity.Knowledgebase{
+		ID:         "kb-empty",
+		TenantID:   "tenant-1",
+		Name:       "kb-empty",
+		ParserID:   "manual",
+		PipelineID: &pipelineID,
+		ParserConfig: entity.JSONMap{
+			"foo": "bar",
+		},
+	}
+	if err := dao.DB.Create(kb).Error; err != nil {
+		t.Fatalf("insert kb: %v", err)
+	}
+
+	svc := testDocumentService(t)
+	got, code, err := svc.UploadEmptyDocument(kb, "user-1", "draft.md")
+	if err != nil {
+		t.Fatalf("UploadEmptyDocument error: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code=%v, want success", code)
+	}
+	if got["type"] != "virtual" || got["parser_id"] != "manual" || got["size"] != int64(0) {
+		t.Fatalf("unexpected doc map: %v", got)
+	}
+
+	var docCount int64
+	if err := dao.DB.Model(&entity.Document{}).Where("kb_id = ?", kb.ID).Count(&docCount).Error; err != nil {
+		t.Fatalf("count docs: %v", err)
+	}
+	if docCount != 1 {
+		t.Fatalf("doc count=%d, want 1", docCount)
+	}
+	var linkCount int64
+	if err := dao.DB.Model(&entity.File2Document{}).Count(&linkCount).Error; err != nil {
+		t.Fatalf("count links: %v", err)
+	}
+	if linkCount != 1 {
+		t.Fatalf("link count=%d, want 1", linkCount)
 	}
 }
 

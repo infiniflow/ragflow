@@ -539,8 +539,6 @@ func (s *FileService) checkFileTeamPermission(file *entity.File, uid string) boo
 	}
 
 	kbDAO := dao.NewKnowledgebaseDAO()
-	userTenantDAO := dao.NewUserTenantDAO()
-
 	for _, datasetID := range datasetIDs {
 		ds, err := kbDAO.GetByID(datasetID)
 		if err != nil || ds == nil {
@@ -548,7 +546,7 @@ func (s *FileService) checkFileTeamPermission(file *entity.File, uid string) boo
 		}
 
 		// Check KB tenant permission
-		if s.checkDatasetTeamPermission(ds, uid, userTenantDAO) {
+		if s.checkDatasetTeamPermission(ds, uid) {
 			return true
 		}
 	}
@@ -558,31 +556,8 @@ func (s *FileService) checkFileTeamPermission(file *entity.File, uid string) boo
 
 // checkDatasetTeamPermission checks if user has permission to access the dataset
 // Matches Python's check_kb_team_permission function
-func (s *FileService) checkDatasetTeamPermission(ds *entity.Knowledgebase, uid string, userTenantDAO *dao.UserTenantDAO) bool {
-	// KB's tenant directly authorized
-	if ds.TenantID == uid {
-		return true
-	}
-
-	// Check permission type
-	permission := ds.Permission
-	if permission != string(entity.TenantPermissionTeam) {
-		return false
-	}
-
-	// Check if user joined the tenant
-	joinedTenantIDs, err := userTenantDAO.GetTenantIDsByUserID(uid)
-	if err != nil || len(joinedTenantIDs) == 0 {
-		return false
-	}
-
-	for _, tenantID := range joinedTenantIDs {
-		if tenantID == ds.TenantID {
-			return true
-		}
-	}
-
-	return false
+func (s *FileService) checkDatasetTeamPermission(ds *entity.Knowledgebase, uid string) bool {
+	return hasKBTeamPermission(ds, uid, dao.NewTenantDAO())
 }
 
 // deleteSingleFile deletes a single file (not folder)
