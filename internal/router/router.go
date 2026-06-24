@@ -243,6 +243,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				documents.GET("/:id", r.documentHandler.GetDocumentByID)
 				documents.PUT("/:id", r.documentHandler.UpdateDocument)
 				documents.DELETE("/:id", r.documentHandler.DeleteDocument)
+				documents.POST("/ingest", r.documentHandler.Ingest)
 			}
 
 			// Chat routes
@@ -320,6 +321,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.DELETE("/ingestion/tasks", r.documentHandler.RemoveIngestionTasks)
 				//datasets.POST("/:dataset_id/documents/parse", r.documentHandler.ParseDocuments)
 				//datasets.POST("/:dataset_id/documents/stop", r.documentHandler.StopParseDocuments)
+				datasets.DELETE("/:dataset_id/chunks", r.chunkHandler.StopParsing)
 				datasets.DELETE("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.RemoveChunks)
 				datasets.PUT("/:dataset_id/documents/:document_id/metadata/config", r.datasetsHandler.UpdateDocumentMetadataConfig)
 				datasets.POST("/:dataset_id/metadata/update", r.documentHandler.MetadataBatchUpdate)
