@@ -1429,20 +1429,20 @@ func (c *CLI) CommonShowModel(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("model_name not provided")
 	}
 
-	payload := map[string]interface{}{
-		"model_name": modelName,
-	}
+	encodedModelName := common.EncodeToBase64(modelName)
 
 	var resp *Response
 	var err error
 	var httpClient *HTTPClient
 	switch c.Config.CLIMode {
 	case AdminMode:
+		baseURL := fmt.Sprintf("/admin/all-models/%s", encodedModelName)
 		httpClient = c.AdminServerClient
-		resp, err = httpClient.Request("GET", "/admin/all-models", "web", nil, payload)
+		resp, err = httpClient.Request("GET", baseURL, "web", nil, nil)
 	case APIMode:
+		baseURL := fmt.Sprintf("/all-models/%s", encodedModelName)
 		httpClient = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-		resp, err = httpClient.Request("GET", "/all-models", "web", nil, payload)
+		resp, err = httpClient.Request("GET", baseURL, "web", nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}

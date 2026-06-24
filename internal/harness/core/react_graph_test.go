@@ -8,8 +8,8 @@ import (
 
 	"ragflow/internal/harness/core/schema"
 	"ragflow/internal/harness/graph/checkpoint"
-	"ragflow/internal/harness/graph/graph"
 	harnesserrors "ragflow/internal/harness/graph/errors"
+	"ragflow/internal/harness/graph/graph"
 	"ragflow/internal/harness/graph/types"
 )
 
@@ -28,7 +28,7 @@ func TestReActGraph_CheckpointInterruptResume(t *testing.T) {
 	tool := &mockTool{name: "approve", desc: "approval"}
 	agent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model: model, Tools: []Tool{tool},
-		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool}},
+		ToolsConfig:   &ToolsNodeConfig{Tools: []Tool{tool}},
 		MaxIterations: 2,
 	})
 	agent.name = "interrupt_agent"
@@ -36,7 +36,7 @@ func TestReActGraph_CheckpointInterruptResume(t *testing.T) {
 	rg, err := NewReActGraph(agent, &ReActGraphConfig{
 		Checkpointer:   checkpoint.NewMemorySaver(),
 		RecursionLimit: 20,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("NewReActGraph: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestReActGraph_CheckpointInterruptResume(t *testing.T) {
 // TestReActGraph_StreamWithInterrupt verifies streaming events include checkpoints.
 func TestReActGraph_StreamWithInterrupt(t *testing.T) {
 	model := &forcedToolModel{
-		inner:     &mockModel{},
+		inner: &mockModel{},
 		toolCalls: []schema.ToolCall{{ID: "s1",
 			Function: schema.ToolCallFunction{Name: "tool_s", Arguments: "{}"},
 		}},
@@ -68,7 +68,7 @@ func TestReActGraph_StreamWithInterrupt(t *testing.T) {
 	tool := &mockTool{name: "tool_s", desc: "stream test"}
 	agent := NewReActAgent(&ReActConfig[*schema.Message]{
 		Model: model, Tools: []Tool{tool},
-		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool}},
+		ToolsConfig:   &ToolsNodeConfig{Tools: []Tool{tool}},
 		MaxIterations: 2,
 	})
 	agent.name = "stream_agent"
@@ -77,7 +77,7 @@ func TestReActGraph_StreamWithInterrupt(t *testing.T) {
 		Checkpointer:    checkpoint.NewMemorySaver(),
 		InterruptBefore: []string{},
 		RecursionLimit:  20,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("NewReActGraph: %v", err)
 	}
@@ -103,10 +103,10 @@ func TestReActGraph_StreamWithInterrupt(t *testing.T) {
 
 // TestReActGraph_FullCheckpointInterruptResume verifies the COMPLETE lifecycle:
 //
-//	1. Build graph with checkpoint + interrupt
-//	2. Invoke → reaches tool call → pauses at execute_tools (interrupt)
-//	3. Resume from checkpoint → executes tool → completes
-//	4. Verify final state is correct
+//  1. Build graph with checkpoint + interrupt
+//  2. Invoke → reaches tool call → pauses at execute_tools (interrupt)
+//  3. Resume from checkpoint → executes tool → completes
+//  4. Verify final state is correct
 func TestReActGraph_FullCheckpointInterruptResume(t *testing.T) {
 	t.Skip("requires Pregel engine — run from harness root: go test ./...")
 
@@ -124,9 +124,9 @@ func TestReActGraph_FullCheckpointInterruptResume(t *testing.T) {
 	}
 	tool := &mockTool{name: "calculator", desc: "math tool"}
 	agent := NewReActAgent(&ReActConfig[*schema.Message]{
-		Model:       model,
-		Tools:       []Tool{tool},
-		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool}},
+		Model:         model,
+		Tools:         []Tool{tool},
+		ToolsConfig:   &ToolsNodeConfig{Tools: []Tool{tool}},
 		MaxIterations: 3,
 	})
 	agent.name = "full_cycle_agent"
@@ -136,7 +136,7 @@ func TestReActGraph_FullCheckpointInterruptResume(t *testing.T) {
 		Checkpointer:    saver,
 		RecursionLimit:  20,
 		InterruptBefore: []string{"execute_tools"}, // pause before tool execution
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("NewReActGraph: %v", err)
 	}
@@ -191,9 +191,9 @@ func TestReActGraph_SerialCheckpointCycles(t *testing.T) {
 	tool2 := &mockTool{name: "step2", desc: "second step"}
 
 	agent := NewReActAgent(&ReActConfig[*schema.Message]{
-		Model:       model,
-		Tools:       []Tool{tool1, tool2},
-		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool1, tool2}},
+		Model:         model,
+		Tools:         []Tool{tool1, tool2},
+		ToolsConfig:   &ToolsNodeConfig{Tools: []Tool{tool1, tool2}},
 		MaxIterations: 5,
 	})
 	agent.name = "serial_cycle"
@@ -202,7 +202,7 @@ func TestReActGraph_SerialCheckpointCycles(t *testing.T) {
 	rg, err := NewReActGraph(agent, &ReActGraphConfig{
 		Checkpointer:   saver,
 		RecursionLimit: 30,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("NewReActGraph: %v", err)
 	}
@@ -234,9 +234,9 @@ func TestReActGraph_SerialCheckpointCycles(t *testing.T) {
 // checkpoint events at each node boundary.
 func TestReActGraph_StreamingCheckpointEvents(t *testing.T) {
 	model := &forcedToolModel{
-		inner:     &mockModel{},
+		inner: &mockModel{},
 		toolCalls: []schema.ToolCall{{
-			ID: "stream_cp",
+			ID:       "stream_cp",
 			Function: schema.ToolCallFunction{Name: "stream_tool", Arguments: "{}"},
 		}},
 		finalResp: "streaming done",
@@ -244,9 +244,9 @@ func TestReActGraph_StreamingCheckpointEvents(t *testing.T) {
 	}
 	tool := &mockTool{name: "stream_tool", desc: "stream test"}
 	agent := NewReActAgent(&ReActConfig[*schema.Message]{
-		Model:       model,
-		Tools:       []Tool{tool},
-		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool}},
+		Model:         model,
+		Tools:         []Tool{tool},
+		ToolsConfig:   &ToolsNodeConfig{Tools: []Tool{tool}},
 		MaxIterations: 2,
 	})
 	agent.name = "stream_cp_agent"
@@ -256,7 +256,7 @@ func TestReActGraph_StreamingCheckpointEvents(t *testing.T) {
 		Checkpointer:    saver,
 		InterruptBefore: []string{},
 		RecursionLimit:  20,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("NewReActGraph: %v", err)
 	}
@@ -298,7 +298,7 @@ func TestReActGraph_ConcurrentCheckpoints(t *testing.T) {
 			m := &mockModel{}
 			m.addResp("concurrent result")
 			agent := NewReActAgent(&ReActConfig[*schema.Message]{
-				Model:  m,
+				Model:         m,
 				MaxIterations: 1,
 			}).WithName("concurrent_cp_agent")
 
@@ -306,7 +306,7 @@ func TestReActGraph_ConcurrentCheckpoints(t *testing.T) {
 				Checkpointer:    checkpoint.NewMemorySaver(),
 				InterruptBefore: []string{},
 				RecursionLimit:  10,
-			})
+			}, nil)
 			if err != nil {
 				errs <- err
 				return

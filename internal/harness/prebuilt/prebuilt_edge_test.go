@@ -152,8 +152,8 @@ func TestPrebuiltAgent_MaxIterations(t *testing.T) {
 						return "result", nil
 					}},
 			},
-			Model:        mock,
-			SystemPrompt: "test",
+			Model:         mock,
+			SystemPrompt:  "test",
 			MaxIterations: 3,
 		}
 

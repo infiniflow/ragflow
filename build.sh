@@ -267,7 +267,7 @@ build_go() {
         go build -o "$INGESTOR_BINARY" cmd/ingestor.go
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go build -o "$RAGFLOW_CLI_BINARY" cmd/ragflow_cli.go
+        go build -o "$RAGFLOW_CLI_BINARY" cmd/ragflow-cli.go
 
     if [ ! -f "$RAGFLOW_SERVER_BINARY" ]; then
         echo -e "${RED}Error: Failed to build RAGFlow server binary${NC}"
