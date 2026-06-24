@@ -97,6 +97,12 @@ class Switch(ComponentBase, ABC):
         self.set_output("_next", self._param.end_cpn_ids)
 
     def process_operator(self, input: Any, operator: str, value: Any) -> bool:
+        # Upstream variables may resolve to None; treat them as empty so the
+        # string operators below don't raise AttributeError on None.lower().
+        if input is None:
+            input = ""
+        if value is None:
+            value = ""
         if operator == "contains":
             return True if value.lower() in input.lower() else False
         elif operator == "not contains":
