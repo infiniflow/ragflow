@@ -592,6 +592,44 @@ func (h *DatasetsHandler) RemoveTags(c *gin.Context) {
 	jsonResponse(c, common.CodeSuccess, true, "success")
 }
 
+// AggregateTags handles GET /api/v1/datasets/tags/aggregation.
+// @Summary Aggregate dataset tags
+// @Description Aggregate tags across multiple datasets
+// @Tags datasets
+// @Produce json
+// @Security ApiKeyAuth
+// @Param dataset_ids query string true "Comma-separated dataset IDs"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/datasets/tags/aggregation [get]
+func (h *DatasetsHandler) AggregateTags(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	rawIDs := strings.Split(c.Query("dataset_ids"), ",")
+	datasetIDs := make([]string, 0, len(rawIDs))
+
+	for _, rawID := range rawIDs {
+		tempID := strings.TrimSpace(rawID)
+		if tempID != "" {
+			datasetIDs = append(datasetIDs, tempID)
+		}
+	}
+	if len(datasetIDs) == 0 {
+		jsonError(c, common.CodeDataError, "Lack of dataset_ids in query parameters")
+		return
+	}
+
+	result, code, err := h.datasetsService.AggregateTags(datasetIDs, user.ID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+	jsonResponse(c, common.CodeSuccess, result, "success")
+}
+
 // RunIndex Run an indexing task (graph/raptor/mindmap) for a dataset.
 func (h *DatasetsHandler) RunIndex(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)

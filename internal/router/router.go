@@ -269,6 +269,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			datasets := v1.Group("/datasets")
 			{
 				datasets.GET("", r.datasetsHandler.ListDatasets)
+				datasets.GET("/tags/aggregation", r.datasetsHandler.AggregateTags)
 				datasets.GET("/:dataset_id", r.datasetsHandler.GetDataset)
 				datasets.PUT("/:dataset_id", r.datasetsHandler.UpdateDataset)
 				datasets.GET("/:dataset_id/graph", r.datasetsHandler.GetKnowledgeGraph)

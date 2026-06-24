@@ -25,6 +25,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	redisengine "ragflow/internal/engine/redis"
+	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/server"
@@ -1829,6 +1830,90 @@ func (s *DatasetService) UpdateMetadataConfig(datasetID, tenantID string, req *M
 // Accessible checks if a knowledge base is accessible by a user
 func (s *DatasetService) Accessible(kbID, userID string) bool {
 	return s.kbDAO.Accessible(kbID, userID)
+}
+
+func (s *DatasetService) AggregateTags(datasetIDs []string, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
+	if len(datasetIDs) == 0 {
+		return nil, common.CodeDataError, errors.New("Lack of dataset_ids in query parameters")
+	}
+	if s.docEngine == nil {
+		return nil, common.CodeServerError, errors.New("Document engine is not initialized")
+	}
+
+	datasetIDsByTenant := make(map[string][]string)
+	for _, rawID := range datasetIDs {
+		rawID = strings.TrimSpace(rawID)
+		if rawID == "" {
+			continue
+		}
+		datasetID, err := normalizeDatasetUUID1(rawID)
+		if err != nil {
+			return nil, common.CodeDataError, err
+		}
+		if !s.kbDAO.Accessible(datasetID, userID) {
+			return nil, common.CodeDataError, fmt.Errorf("No authorization for dataset '%s'", datasetID)
+		}
+		kb, err := s.kbDAO.GetByID(datasetID)
+		if err != nil {
+			if dao.IsNotFoundErr(err) {
+				return nil, common.CodeDataError, fmt.Errorf("Invalid Dataset ID '%s'", datasetID)
+			}
+			return nil, common.CodeServerError, errors.New("Database operation failed")
+		}
+		if kb.DocNum <= 0 {
+			continue
+		}
+		datasetIDsByTenant[kb.TenantID] = append(datasetIDsByTenant[kb.TenantID], datasetID)
+	}
+
+	const pageSize = 10000
+	merged := make(map[string]int)
+	for tenantID, kbIDs := range datasetIDsByTenant {
+		for offset := 0; ; offset += pageSize {
+			searchResp, err := s.docEngine.Search(context.Background(), &types.SearchRequest{
+				IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
+				KbIDs:        kbIDs,
+				Offset:       offset,
+				Limit:        pageSize,
+				SelectFields: []string{"tag_kwd"},
+			})
+			if err != nil {
+				return nil, common.CodeServerError, fmt.Errorf("failed to aggregate tags: %w", err)
+			}
+			for _, agg := range s.docEngine.GetAggregation(searchResp.Chunks, "tag_kwd") {
+				tag, _ := agg["key"].(string)
+				if tag == "" {
+					continue
+				}
+				switch count := agg["count"].(type) {
+				case int:
+					merged[tag] += count
+				case int32:
+					merged[tag] += int(count)
+				case int64:
+					merged[tag] += int(count)
+				case float64:
+					merged[tag] += int(count)
+				}
+			}
+
+			chunkCount := len(searchResp.Chunks)
+			if chunkCount == 0 || chunkCount < pageSize {
+				break
+			}
+			if searchResp.Total > 0 && int64(offset+chunkCount) >= searchResp.Total {
+				break
+			}
+		}
+	}
+	result := make([]map[string]interface{}, 0, len(merged))
+	for tag, count := range merged {
+		result = append(result, map[string]interface{}{
+			"value": tag,
+			"count": count,
+		})
+	}
+	return result, common.CodeSuccess, nil
 }
 
 // GetIngestionSummary returns dataset-level ingestion counters together with
