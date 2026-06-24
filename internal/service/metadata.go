@@ -422,7 +422,13 @@ func mergeFieldValues(existing, new interface{}) []interface{} {
 			if val != "" {
 				result = append(result, val)
 			}
+		case float64, float32, int, int8, int16, int32, int64, bool:
+			result = append(result, val)
 		case []interface{}:
+			for _, item := range val {
+				addValue(item)
+			}
+		case []string:
 			for _, item := range val {
 				addValue(item)
 			}

@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"mime"
+	"mime/multipart"
 	"net/http"
 	"path/filepath"
 	"ragflow/internal/common"
@@ -60,9 +61,13 @@ type documentServiceIface interface {
 	GetDocumentPreview(docID string) (*service.DocumentPreview, error)
 	DownloadDocument(datasetID, docID string) (*service.DownloadDocumentResp, error)
 	UpdateDatasetDocument(userID, datasetID, documentID string, req *service.UpdateDatasetDocumentRequest, present map[string]bool) (*service.UpdateDatasetDocumentResponse, common.ErrorCode, error)
+	BatchUpdateDocumentMetadatas(datasetID string, selector *service.DocumentMetadataSelector, updates []service.DocumentMetadataUpdate, deletes []service.DocumentMetadataDelete) (*service.BatchUpdateDocumentMetadatasResponse, common.ErrorCode, error)
+	UploadDocumentInfos(userID string, files []*multipart.FileHeader) ([]map[string]interface{}, common.ErrorCode, error)
+	UploadDocumentInfoByURL(userID, rawURL string) (map[string]interface{}, common.ErrorCode, error)
 	ListIngestionTasks(userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error)
 	IngestDocuments(datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
 	StopIngestionTasks(tasks []string, userID string) ([]*entity.IngestionTask, error)
+	Ingest(userID string, req *service.IngestDocumentRequest) (common.ErrorCode, error)
 	RemoveIngestionTasks(tasks []string, userID string) ([]map[string]string, error)
 	BatchUpdateDocumentStatus(userID, datasetID, status string, DocumentIDs []string) (map[string]interface{}, common.ErrorCode, error)
 }
@@ -485,7 +490,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	userID := c.GetString("user_id")
 
 	if !h.datasetService.Accessible(datasetID, userID) {
-		jsonError(c, common.CodeAuthenticationError, "No authorization.")
+		jsonError(c, common.CodeAuthenticationError, "No authorization to access the dataset.")
 		return
 	}
 
@@ -865,6 +870,37 @@ func (h *DocumentHandler) SetMeta(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
+		"message": "success",
+		"data":    true,
+	})
+}
+
+func (h *DocumentHandler) Ingest(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	userID := strings.TrimSpace(user.ID)
+	if userID == "" {
+		jsonError(c, common.CodeAuthenticationError, "No Authentication")
+		return
+	}
+
+	var req service.IngestDocumentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeBadRequest, err.Error())
+		return
+	}
+
+	if code, err := h.documentService.Ingest(userID, &req); err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
 		"message": "success",
 		"data":    true,
 	})
@@ -1294,5 +1330,125 @@ func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code": common.CodeSuccess,
 		"data": data,
+	})
+}
+
+func (h *DocumentHandler) UploadInfo(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	form, err := c.MultipartForm()
+	if err != nil && !strings.Contains(err.Error(), "request Content-Type isn't multipart/form-data") {
+		jsonError(c, common.CodeArgumentError, "Failed to parse multipart form: "+err.Error())
+		return
+	}
+
+	var fileHeaders []*multipart.FileHeader
+	if form != nil && form.File != nil {
+		fileHeaders = form.File["file"]
+	}
+	rawURL := strings.TrimSpace(c.Query("url"))
+
+	if len(fileHeaders) > 0 && rawURL != "" {
+		jsonError(c, common.CodeArgumentError, "Provide either multipart file(s) or ?url=..., not both.")
+		return
+	}
+	if len(fileHeaders) == 0 && rawURL == "" {
+		jsonError(c, common.CodeArgumentError, "Missing input: provide multipart file(s) or url")
+		return
+	}
+
+	if rawURL != "" {
+		data, code, err := h.documentService.UploadDocumentInfoByURL(user.ID, rawURL)
+		if err != nil {
+			jsonError(c, code, err.Error())
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeSuccess,
+			"data":    data,
+			"message": "success",
+		})
+		return
+	}
+
+	data, code, err := h.documentService.UploadDocumentInfos(user.ID, fileHeaders)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	var payload interface{}
+	if len(data) == 1 {
+		payload = data[0]
+	} else {
+		payload = data
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    payload,
+		"message": "success",
+	})
+}
+
+type documentMetadataBatchRequest struct {
+	Selector *service.DocumentMetadataSelector `json:"selector"`
+	Updates  []service.DocumentMetadataUpdate  `json:"updates"`
+	Deletes  []service.DocumentMetadataDelete  `json:"deletes"`
+}
+
+func (h *DocumentHandler) MetadataBatchUpdate(c *gin.Context) {
+	h.handleBatchUpdateDocumentMetadatas(c)
+}
+
+func (h *DocumentHandler) UpdateDocumentMetadatas(c *gin.Context) {
+	h.handleBatchUpdateDocumentMetadatas(c)
+}
+
+func (h *DocumentHandler) handleBatchUpdateDocumentMetadatas(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := strings.TrimSpace(c.Param("dataset_id"))
+	if datasetID == "" {
+		jsonError(c, common.CodeArgumentError, "dataset_id is required")
+		return
+	}
+	if !h.datasetService.Accessible(datasetID, user.ID) {
+		jsonError(c, common.CodeDataError, "You don't own the dataset "+datasetID+".")
+		return
+	}
+
+	var req documentMetadataBatchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+	if req.Selector == nil {
+		req.Selector = &service.DocumentMetadataSelector{}
+	}
+	if req.Updates == nil {
+		req.Updates = []service.DocumentMetadataUpdate{}
+	}
+	if req.Deletes == nil {
+		req.Deletes = []service.DocumentMetadataDelete{}
+	}
+
+	resp, code, err := h.documentService.BatchUpdateDocumentMetadatas(datasetID, req.Selector, req.Updates, req.Deletes)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    resp,
+		"message": "success",
 	})
 }

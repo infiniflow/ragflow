@@ -173,7 +173,17 @@ def _normalize_agent_session(conv):
         messages = [message for i, message in enumerate(conv["message"]) if i != 0 and message["role"] != "user"]
         for message, reference in zip(messages, conv["reference"]):
             chunks = reference.get("chunks", [])
-            message["reference"] = [_normalize_agent_reference_chunk(chunk) for chunk in chunks]
+            if isinstance(chunks, dict):
+                refs = []
+                for citation_id, chunk in chunks.items():
+                    ref = _normalize_agent_reference_chunk(chunk)
+                    ref["citation_id"] = str(citation_id)
+                    refs.append(ref)
+                message["reference"] = refs
+            elif isinstance(chunks, list):
+                message["reference"] = [_normalize_agent_reference_chunk(chunk) for chunk in chunks]
+            else:
+                message["reference"] = []
     del conv["reference"]
     return conv
 
