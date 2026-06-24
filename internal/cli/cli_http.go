@@ -322,17 +322,17 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.APIListAPIKeysCommand(cmd)
 	case "api_delete_api_key":
 		return c.APIDeleteAPIKeyCommand(cmd)
-	case "set_token":
-		return c.SetToken(cmd)
+	case "api_set_api_key":
+		return c.APISetAPIKey(cmd)
 	case "show_token":
 		return c.ShowToken(cmd)
-	case "unset_token":
-		return c.UnsetToken(cmd)
+	case "api_unset_api_key":
+		return c.APIUnsetAPIKey(cmd)
 	case "show_version":
 		return c.ShowServerVersion(cmd)
 	case "show_current":
 		return c.CommonShowCurrent(cmd)
-	case "list_available_providers":
+	case "api_list_available_providers":
 		return c.CommonAvailableProvidersCommand(cmd)
 	case "show_provider":
 		return c.CommonShowProviderCommand(cmd)
@@ -340,7 +340,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.CommonListModelsCommand(cmd)
 	case "list_supported_models":
 		return c.ListSupportedModels(cmd)
-	case "list_instance_models":
+	case "api_list_provider_instance_models":
 		return c.CommonListInstanceModels(cmd)
 	case "show_provider_model":
 		return c.CommonShowProviderModelCommand(cmd)
@@ -358,7 +358,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	// Provider instance commands
 	case "create_provider_instance":
 		return c.CreateProviderInstance(cmd)
-	case "list_provider_instances":
+	case "api_list_provider_instances":
 		return c.CommonListProviderInstances(cmd)
 	case "show_provider_instance":
 		return c.CommonShowProviderInstanceCommand(cmd)

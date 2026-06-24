@@ -101,7 +101,7 @@ func (p *Parser) parseAdminListCommands() (*Command, error) {
 	case TokenEnvs:
 		return p.parseAdminListEnvironments()
 	case TokenAvailable:
-		return p.parseListAvailableProviders()
+		return p.parseAdminListAvailableProviders()
 	case TokenProvider:
 		return p.parseAdminListProviderCommands()
 	case TokenProviders:
@@ -181,7 +181,7 @@ func (p *Parser) parseAdminListEnvironments() (*Command, error) {
 	return NewCommand("admin_list_environments"), nil
 }
 
-func (p *Parser) parseListAvailableProviders() (*Command, error) {
+func (p *Parser) parseAdminListAvailableProviders() (*Command, error) {
 	p.nextToken() // consume AVAILABLE
 
 	if p.curToken.Type != TokenProviders {
@@ -2300,20 +2300,6 @@ func (p *Parser) parseAdminIngestCommand() (*Command, error) {
 		p.nextToken()
 	}
 	return cmd, nil
-}
-func (p *Parser) parseAdminUnsetCommand() (*Command, error) {
-	p.nextToken() // consume UNSET
-
-	if p.curToken.Type != TokenToken {
-		return nil, fmt.Errorf("expected TOKEN after UNSET")
-	}
-	p.nextToken()
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return NewCommand("unset_token"), nil
 }
 
 func (p *Parser) parseMessageQueueCommand() (*Command, error) {
