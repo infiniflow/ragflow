@@ -447,6 +447,351 @@ type ScratchpadStats struct {
 	DataSize      int
 	CountersCount int
 	MetadataSize  int
+	NodeContexts  int
 	CreatedAt     time.Time
 	LastAccess    time.Time
+}
+
+// ===== Node-local context =====
+
+// NodeContext provides per-node temporary storage.
+// Data is automatically cleared when the node completes.
+type NodeContext struct {
+	mu   sync.RWMutex
+	data map[string]interface{}
+}
+
+// NewNodeContext creates a new node-local context.
+func NewNodeContext() *NodeContext {
+	return &NodeContext{data: make(map[string]interface{})}
+}
+
+// Get retrieves a value from the node context.
+func (nc *NodeContext) Get(key string) (interface{}, bool) {
+	nc.mu.RLock()
+	defer nc.mu.RUnlock()
+	v, ok := nc.data[key]
+	return v, ok
+}
+
+// Set stores a value in the node context.
+func (nc *NodeContext) Set(key string, value interface{}) {
+	nc.mu.Lock()
+	defer nc.mu.Unlock()
+	nc.data[key] = value
+}
+
+// Delete removes a value.
+func (nc *NodeContext) Delete(key string) {
+	nc.mu.Lock()
+	defer nc.mu.Unlock()
+	delete(nc.data, key)
+}
+
+// Clear removes all values from this node context.
+func (nc *NodeContext) Clear() {
+	nc.mu.Lock()
+	defer nc.mu.Unlock()
+	nc.data = make(map[string]interface{})
+}
+
+// GetAll returns a copy of all data.
+func (nc *NodeContext) GetAll() map[string]interface{} {
+	nc.mu.RLock()
+	defer nc.mu.RUnlock()
+	result := make(map[string]interface{}, len(nc.data))
+	for k, v := range nc.data {
+		result[k] = v
+	}
+	return result
+}
+
+// NodeContext gets or creates a node-local context by node name.
+// When the node completes, call ClearNodeContext to free the storage.
+func (p *PregelScratchpad) NodeContext(nodeName string) *NodeContext {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	key := "_node_ctx:" + nodeName
+	raw, ok := p.data[key]
+	if !ok {
+		nc := NewNodeContext()
+		p.data[key] = nc
+		return nc
+	}
+	nc, ok := raw.(*NodeContext)
+	if !ok {
+		nc = NewNodeContext()
+		p.data[key] = nc
+	}
+	return nc
+}
+
+// ClearNodeContext clears the node-local context for the given node.
+func (p *PregelScratchpad) ClearNodeContext(nodeName string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	delete(p.data, "_node_ctx:"+nodeName)
+}
+
+// ClearAllNodeContexts clears all node-local contexts.
+func (p *PregelScratchpad) ClearAllNodeContexts() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for k := range p.data {
+		if len(k) > 10 && k[:10] == "_node_ctx:" {
+			delete(p.data, k)
+		}
+	}
+}
+
+// ===== Snapshot / Restore =====
+
+// ScratchpadSnapshot captures the full state of the scratchpad for later restore.
+// This is useful for checkpointing scratchpad state across graph resumptions.
+type ScratchpadSnapshot struct {
+	Data       map[string]interface{} `json:"data"`
+	Counters   map[string]int64       `json:"counters,omitempty"`
+	Metadata   map[string]interface{} `json:"metadata,omitempty"`
+	Step       int64                  `json:"step"`
+	CallCount  int64                  `json:"call_count"`
+	Interrupts int64                  `json:"interrupts"`
+	SubGraphs  int64                  `json:"subgraphs"`
+}
+
+// Snapshot captures the current scratchpad state.
+// Node-local contexts are NOT included (they are ephemeral).
+func (p *PregelScratchpad) Snapshot() *ScratchpadSnapshot {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	// Deep copy data, excluding internal node-context keys.
+	dataCopy := make(map[string]interface{}, len(p.data))
+	for k, v := range p.data {
+		if len(k) > 10 && k[:10] == "_node_ctx:" {
+			continue // skip node-local contexts
+		}
+		// Basic copy for simple types; maps get recursively copied.
+		switch val := v.(type) {
+		case map[string]interface{}:
+			dataCopy[k] = deepCopyMap(val)
+		default:
+			dataCopy[k] = v
+		}
+	}
+	countersCopy := make(map[string]int64, len(p.counters))
+	for k, v := range p.counters {
+		countersCopy[k] = v
+	}
+	metaCopy := make(map[string]interface{}, len(p.metadata))
+	for k, v := range p.metadata {
+		metaCopy[k] = v
+	}
+
+	return &ScratchpadSnapshot{
+		Data:       dataCopy,
+		Counters:   countersCopy,
+		Metadata:   metaCopy,
+		Step:       p.step,
+		CallCount:  p.callCounter,
+		Interrupts: p.interruptCounter,
+		SubGraphs:  p.subgraphCounter,
+	}
+}
+
+// Restore restores the scratchpad state from a snapshot.
+// Current node-local contexts are preserved (not overwritten).
+func (p *PregelScratchpad) Restore(snap *ScratchpadSnapshot) {
+	if snap == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// Preserve node-local contexts before overwriting data.
+	nodeCtxs := make(map[string]interface{})
+	for k, v := range p.data {
+		if len(k) > 10 && k[:10] == "_node_ctx:" {
+			nodeCtxs[k] = v
+		}
+	}
+
+	p.data = make(map[string]interface{}, len(snap.Data))
+	for k, v := range snap.Data {
+		p.data[k] = v
+	}
+	// Restore node contexts.
+	for k, v := range nodeCtxs {
+		p.data[k] = v
+	}
+
+	p.counters = make(map[string]int64, len(snap.Counters))
+	for k, v := range snap.Counters {
+		p.counters[k] = v
+	}
+	p.metadata = make(map[string]interface{}, len(snap.Metadata))
+	for k, v := range snap.Metadata {
+		p.metadata[k] = v
+	}
+	p.step = snap.Step
+	p.callCounter = snap.CallCount
+	p.interruptCounter = snap.Interrupts
+	p.subgraphCounter = snap.SubGraphs
+}
+
+// ===== Merge (for parallel branches) =====
+
+// MergeFrom merges data from another scratchpad into this one.
+// When keys collide, the values from the 'other' scratchpad take precedence.
+// Node-local contexts are NOT merged (they are per-node).
+// Counters are added together.
+func (p *PregelScratchpad) MergeFrom(other *PregelScratchpad) {
+	if other == nil {
+		return
+	}
+	other.mu.RLock()
+	p.mu.Lock()
+	defer func() {
+		p.mu.Unlock()
+		other.mu.RUnlock()
+	}()
+
+	// Merge data (other wins conflicts).
+	for k, v := range other.data {
+		if len(k) > 10 && k[:10] == "_node_ctx:" {
+			continue // skip node contexts
+		}
+		p.data[k] = v
+	}
+
+	// Merge counters (sum).
+	for k, v := range other.counters {
+		p.counters[k] += v
+	}
+
+	// Merge metadata (other wins conflicts).
+	for k, v := range other.metadata {
+		p.metadata[k] = v
+	}
+
+	// Merge step-related fields (take max).
+	if other.step > p.step {
+		p.step = other.step
+	}
+	p.callCounter += other.callCounter
+	p.interruptCounter += other.interruptCounter
+	p.subgraphCounter += other.subgraphCounter
+	p.lastAccess = time.Now()
+}
+
+// ===== Timeout / Expiry =====
+
+// TimeoutConfig configures automatic scratchpad expiry.
+type TimeoutConfig struct {
+	// TTL is the maximum time a scratchpad lives before auto-clear.
+	TTL time.Duration
+	// ResetOnAccess resets the TTL timer on every read/write.
+	ResetOnAccess bool
+	// AutoClearData clears only data (not counters/metadata) on timeout.
+	AutoClearData bool
+}
+
+// defaultTimeoutConfig returns the default timeout configuration.
+func defaultTimeoutConfig() *TimeoutConfig {
+	return &TimeoutConfig{
+		TTL:           5 * time.Minute,
+		ResetOnAccess: true,
+		AutoClearData: true,
+	}
+}
+
+// SetTimeout configures the scratchpad to auto-clear after the given duration.
+func (p *PregelScratchpad) SetTimeout(d time.Duration) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.metadata["_timeout_ttl"] = d
+	p.metadata["_timeout_start"] = time.Now()
+}
+
+// IsExpired returns true if the scratchpad has timed out.
+func (p *PregelScratchpad) IsExpired() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	rawTTL, ok := p.metadata["_timeout_ttl"]
+	if !ok {
+		return false
+	}
+	ttl, ok := rawTTL.(time.Duration)
+	if !ok || ttl <= 0 {
+		return false
+	}
+	rawStart, ok := p.metadata["_timeout_start"]
+	if !ok {
+		return false
+	}
+	start, ok := rawStart.(time.Time)
+	if !ok {
+		return false
+	}
+	return time.Since(start) > ttl
+}
+
+// ClearExpired checks if the scratchpad has expired and clears it if so.
+// Returns true if the scratchpad was cleared.
+func (p *PregelScratchpad) ClearExpired() bool {
+	if !p.IsExpired() {
+		return false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// Check once more under write lock.
+	rawTTL, ok := p.metadata["_timeout_ttl"]
+	if !ok {
+		return false
+	}
+	ttl, ok := rawTTL.(time.Duration)
+	if !ok || ttl <= 0 {
+		return false
+	}
+	rawStart, ok := p.metadata["_timeout_start"]
+	if !ok {
+		return false
+	}
+	start, ok := rawStart.(time.Time)
+	if !ok {
+		return false
+	}
+	if time.Since(start) <= ttl {
+		return false
+	}
+
+	// Expired: clear ephemeral data.
+	p.data = make(map[string]interface{})
+	p.counters = make(map[string]int64)
+	p.lastAccess = time.Now()
+	return true
+}
+
+// deepCopyMap recursively copies a string-keyed map.
+func deepCopyMap(src map[string]interface{}) map[string]interface{} {
+	if src == nil {
+		return nil
+	}
+	dst := make(map[string]interface{}, len(src))
+	for k, v := range src {
+		switch val := v.(type) {
+		case map[string]interface{}:
+			dst[k] = deepCopyMap(val)
+		default:
+			dst[k] = v
+		}
+	}
+	return dst
+}
+
+func init() {
+	// Ensure scratchpad reset on init.
+	_ = defaultTimeoutConfig
 }
