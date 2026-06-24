@@ -1745,7 +1745,7 @@ func (s *ChunkService) AddChunk(req *service.AddChunkRequest, userID string) (*s
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("insert chunk: %v", err)}
 	}
 
-	tokenNum := int64(s.numTokens(docName) + s.numTokens(embeddingText))
+	tokenNum := int64(s.numTokens(req.Content))
 	if err := s.incrementChunkStats(req.DocumentID, req.DatasetID, tokenNum, 1, 0); err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("increment chunk stats: %v", err)}
 	}
