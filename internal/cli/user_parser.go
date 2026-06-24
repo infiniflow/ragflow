@@ -1025,7 +1025,7 @@ func (p *Parser) parseAddAdminServer() (*Command, error) {
 	return cmd, nil
 }
 
-// syntax: add api 'abc' host '127.0.0.1:9333' token 'xxx' user 'ccc' password 'ppp'
+// syntax: ADD API 'abc' HOST '127.0.0.1:9333';
 func (p *Parser) parseAddAPIServer() (*Command, error) {
 	p.nextToken() // consume API
 
@@ -1036,7 +1036,7 @@ func (p *Parser) parseAddAPIServer() (*Command, error) {
 	p.nextToken() // consume model name
 
 	if p.curToken.Type != TokenHost {
-		return nil, fmt.Errorf("expected TO")
+		return nil, fmt.Errorf("expected HOST")
 	}
 	p.nextToken()
 
@@ -1051,33 +1051,10 @@ func (p *Parser) parseAddAPIServer() (*Command, error) {
 		return nil, err
 	}
 
-	var token string
-
-optionsLoop:
-	for {
-		switch p.curToken.Type {
-		case TokenToken:
-			p.nextToken()
-			token, err = p.parseQuotedString()
-			if err != nil {
-				return nil, err
-			}
-		case TokenSemicolon:
-			p.nextToken()
-			break optionsLoop // done
-		default:
-			// No more options to process
-			break optionsLoop
-		}
-	}
-
 	cmd := NewCommand("add_api_server")
 	cmd.Params["server_name"] = serverName
 	cmd.Params["server_ip"] = ip
 	cmd.Params["server_port"] = port
-	if token != "" {
-		cmd.Params["server_token"] = token
-	}
 
 	return cmd, nil
 }
@@ -1106,11 +1083,6 @@ func (p *Parser) parseDeleteAPIServer() (*Command, error) {
 // syntax: delete admin server 'abc'
 func (p *Parser) parseDeleteAdminServer() (*Command, error) {
 	p.nextToken() // consume ADMIN
-
-	if p.curToken.Type != TokenServer {
-		return nil, fmt.Errorf("expected server name")
-	}
-	p.nextToken() // consume SERVER
 
 	cmd := NewCommand("delete_admin_server")
 
