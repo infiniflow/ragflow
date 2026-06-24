@@ -34,8 +34,8 @@ import (
 
 // DatasetsHandler handles the RESTful dataset endpoints.
 type DatasetsHandler struct {
-	datasetsService *service.DatasetService
-	metadataService *service.MetadataService
+	datasetsService      *service.DatasetService
+	metadataService      *service.MetadataService
 	searchDatasetService searchDatasetService
 }
 
