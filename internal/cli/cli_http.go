@@ -37,11 +37,11 @@ func (c *CLI) ExecuteCommand(cmd *Command) (ResponseIf, error) {
 
 func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 	switch cmd.Type {
-	case "login_user":
+	case "admin_login_user":
 		return c.LoginUserByCommand(cmd)
-	case "logout":
+	case "admin_logout":
 		return c.Logout()
-	case "ping_server":
+	case "admin_ping_server":
 		return c.PingByCommand(cmd)
 	case "benchmark":
 		return c.RunBenchmark(cmd)
@@ -284,23 +284,31 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 }
 func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	switch cmd.Type {
-	case "register_user":
+	case "api_register_user":
 		return c.RegisterUser(cmd)
-	case "login_user":
+	case "api_login_user":
 		return c.LoginUserByCommand(cmd)
-	case "logout":
+	case "api_logout":
 		return c.Logout()
-	case "ping_server":
+	case "api_ping_server":
 		return c.PingByCommand(cmd)
 	// Configuration commands
-	case "list_configs":
+	case "api_list_configs":
 		return c.ListConfigs(cmd)
 	case "set_log_level":
 		return c.SetLogLevel(cmd)
 	case "benchmark":
 		return c.RunBenchmark(cmd)
-	case "list_datasets":
-		return c.ListDatasets(cmd)
+	case "api_list_datasets":
+		return c.APIListDatasetsCommand(cmd)
+	case "api_list_dataset_documents":
+		return c.APIListDatasetDocumentsCommand(cmd)
+	case "api_list_agents":
+		return c.APIListAgentsCommand(cmd)
+	case "api_list_chats":
+		return c.APIListChatsCommand(cmd)
+	case "api_list_searches":
+		return c.APIListSearchesCommand(cmd)
 	case "list_dataset_documents":
 		return c.ListDatasetDocumentUserCommand(cmd)
 	case "search_on_datasets":
@@ -308,23 +316,23 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "search_help":
 		printSearchHelp()
 		return nil, nil
-	case "create_token":
-		return c.CreateToken(cmd)
-	case "list_tokens":
-		return c.ListTokens(cmd)
-	case "drop_token":
-		return c.DropToken(cmd)
-	case "set_token":
-		return c.SetToken(cmd)
+	case "api_create_api_key":
+		return c.APICreateAPIKeyCommand(cmd)
+	case "api_list_api_keys":
+		return c.APIListAPIKeysCommand(cmd)
+	case "api_delete_api_key":
+		return c.APIDeleteAPIKeyCommand(cmd)
+	case "api_set_api_key":
+		return c.APISetAPIKey(cmd)
 	case "show_token":
 		return c.ShowToken(cmd)
-	case "unset_token":
-		return c.UnsetToken(cmd)
+	case "api_unset_api_key":
+		return c.APIUnsetAPIKey(cmd)
 	case "show_version":
 		return c.ShowServerVersion(cmd)
 	case "show_current":
 		return c.CommonShowCurrent(cmd)
-	case "list_available_providers":
+	case "api_list_available_providers":
 		return c.CommonAvailableProvidersCommand(cmd)
 	case "show_provider":
 		return c.CommonShowProviderCommand(cmd)
@@ -332,7 +340,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.CommonListModelsCommand(cmd)
 	case "list_supported_models":
 		return c.ListSupportedModels(cmd)
-	case "list_instance_models":
+	case "api_list_provider_instance_models":
 		return c.CommonListInstanceModels(cmd)
 	case "show_provider_model":
 		return c.CommonShowProviderModelCommand(cmd)
@@ -350,7 +358,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	// Provider instance commands
 	case "create_provider_instance":
 		return c.CreateProviderInstance(cmd)
-	case "list_provider_instances":
+	case "api_list_provider_instances":
 		return c.CommonListProviderInstances(cmd)
 	case "show_provider_instance":
 		return c.CommonShowProviderInstanceCommand(cmd)

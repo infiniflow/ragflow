@@ -38,6 +38,7 @@ type chunkService interface {
 	UpdateChunk(req *service.UpdateChunkRequest, userID string) error
 	RemoveChunks(req *service.RemoveChunksRequest, userID string) (int64, error)
 	Parse(userID, datasetID string, req *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error)
+	StopParsing(userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error)
 }
 
 // ChunkHandler chunk handler
@@ -224,8 +225,8 @@ func (h *ChunkHandler) Parse(c *gin.Context) {
 		})
 		return
 	}
-	datasetID := strings.TrimSpace(c.Param("dataset_id"))
-	if datasetID == "" {
+	datasetId := strings.TrimSpace(c.Param("dataset_id"))
+	if datasetId == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    common.CodeBadRequest,
 			"message": "dataset_id is required",
@@ -243,7 +244,7 @@ func (h *ChunkHandler) Parse(c *gin.Context) {
 		return
 	}
 
-	data, code, err := h.chunkService.Parse(userID, datasetID, &req)
+	data, code, err := h.chunkService.Parse(userID, datasetId, &req)
 	if code != common.CodeSuccess {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    code,
@@ -351,6 +352,59 @@ func parseAvailableQuery(raw string) (int, bool, error) {
 	default:
 		return 0, true, fmt.Errorf("available must be one of: true, false, 1, 0")
 	}
+}
+
+func (h *ChunkHandler) StopParsing(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := c.Param("dataset_id")
+	if datasetID == "" {
+		jsonError(c, common.CodeDataError, "dataset_id is required")
+		return
+	}
+
+	var req service.StopParsingRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+	if len(req.DocumentIDs) == 0 {
+		jsonError(c, common.CodeDataError, "`document_ids` is required")
+		return
+	}
+
+	resp, code, err := h.chunkService.StopParsing(user.ID, datasetID, req)
+	if err != nil {
+		var data interface{}
+		if resp != nil {
+			data = resp.Data
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"data":    data,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	message := "success"
+	var data interface{}
+	if resp != nil {
+		if resp.Message != "" {
+			message = resp.Message
+		}
+		data = resp.Data
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    data,
+		"message": message,
+	})
 }
 
 // List retrieves chunks for a document.

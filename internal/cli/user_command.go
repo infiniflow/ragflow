@@ -329,9 +329,9 @@ func (c *CLI) RegisterUser(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// ListDatasets lists datasets for current user (user mode)
+// APIListDatasetsCommand lists datasets for current user (user mode)
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
-func (c *CLI) ListDatasets(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APIListDatasetsCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
@@ -344,13 +344,13 @@ func (c *CLI) ListDatasets(cmd *Command) (ResponseIf, error) {
 
 	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
 
-	// Determine auth kind based on whether API token is being used
-	if httpClient.LoginToken == nil && !c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIToken {
+	// Determine auth kind based on whether API key is being used
+	if httpClient.LoginToken == nil && !c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIKey {
 		return nil, fmt.Errorf("no authorization")
 	}
 
 	authKind := "web"
-	if httpClient.useAPIToken {
+	if httpClient.useAPIKey {
 		authKind = "api"
 	}
 
@@ -386,6 +386,186 @@ func (c *CLI) ListDatasets(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+func (c *CLI) APIListDatasetDocumentsCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+	// Determine auth kind based on whether API key is being used
+	if httpClient.LoginToken == nil && !httpClient.useAPIKey {
+		return nil, fmt.Errorf("no authorization")
+	}
+
+	datasetID, ok := cmd.Params["dataset_id"].(string)
+	if !ok {
+		return nil, fmt.Errorf("no dataset id")
+	}
+
+	page := 1
+	pageSize := 10
+	keywords := ""
+	returnEmptyMetadata := "true"
+	url := fmt.Sprintf("/datasets/%s/documents?page=%d&page_size=%d&keywords=%s&return_empty_metadata=%s", datasetID, page, pageSize, keywords, returnEmptyMetadata)
+
+	// Normal mode
+	resp, err := httpClient.Request("GET", url, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list documents: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list documents: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result ListDocumentsResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list documents failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+
+	return &result, nil
+}
+
+// APIListAgentsCommand lists agents
+func (c *CLI) APIListAgentsCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+
+	// Determine auth kind based on whether API key is being used
+	if httpClient.LoginToken == nil && !c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIKey {
+		return nil, fmt.Errorf("no authorization")
+	}
+
+	authKind := "web"
+	if httpClient.useAPIKey {
+		authKind = "api"
+	}
+
+	if httpClient.LoginToken != nil {
+		authKind = "web"
+	}
+
+	// Normal mode
+	resp, err := httpClient.Request("GET", "/agents", authKind, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list agents: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list agents: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result ListAgentsResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list agents failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+
+	return &result, nil
+}
+
+// APIListChatsCommand lists chats
+func (c *CLI) APIListChatsCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+
+	// Determine auth kind based on whether API key is being used
+	if httpClient.LoginToken == nil && !c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIKey {
+		return nil, fmt.Errorf("no authorization")
+	}
+
+	authKind := "web"
+	if httpClient.useAPIKey {
+		authKind = "api"
+	}
+
+	if httpClient.LoginToken != nil {
+		authKind = "web"
+	}
+
+	// Normal mode
+	resp, err := httpClient.Request("GET", "/chats", authKind, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list chats: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list chats: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result ListChatsResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list chats failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+
+	return &result, nil
+}
+
+// APIListSearchesCommand lists searches
+func (c *CLI) APIListSearchesCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+
+	// Determine auth kind based on whether API key is being used
+	if httpClient.LoginToken == nil && !c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIKey {
+		return nil, fmt.Errorf("no authorization")
+	}
+
+	authKind := "web"
+	if httpClient.useAPIKey {
+		authKind = "api"
+	}
+
+	if httpClient.LoginToken != nil {
+		authKind = "web"
+	}
+
+	// Normal mode
+	resp, err := httpClient.Request("GET", "/searches", authKind, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list searches: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list searches: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result ListSearchesResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list searches failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+
+	return &result, nil
+}
+
 // ListDatasetDocumentUserCommand lists dataset documents
 func (c *CLI) ListDatasetDocumentUserCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
@@ -399,8 +579,8 @@ func (c *CLI) ListDatasetDocumentUserCommand(cmd *Command) (ResponseIf, error) {
 	}
 
 	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-	// Determine auth kind based on whether API token is being used
-	if httpClient.LoginToken == nil && !httpClient.useAPIToken {
+	// Determine auth kind based on whether API key is being used
+	if httpClient.LoginToken == nil && !httpClient.useAPIKey {
 		return nil, fmt.Errorf("no authorization")
 	}
 
@@ -734,25 +914,25 @@ func (c *CLI) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
 	return nil, nil
 }
 
-// CreateToken creates a new API token
-func (c *CLI) CreateToken(cmd *Command) (ResponseIf, error) {
+// APICreateAPIKeyCommand creates a new API key
+func (c *CLI) APICreateAPIKeyCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
 	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-	resp, err := httpClient.Request("POST", "/system/tokens", "web", nil, nil)
+	resp, err := httpClient.Request("POST", "/system/keys", "web", nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create token: %w", err)
+		return nil, fmt.Errorf("failed to create key: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to create token: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to create key: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	var createResult CommonDataResponse
 	if err = json.Unmarshal(resp.Body, &createResult); err != nil {
-		return nil, fmt.Errorf("create token failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("create key failed: invalid JSON (%w)", err)
 	}
 
 	if createResult.Code != 0 {
@@ -761,30 +941,30 @@ func (c *CLI) CreateToken(cmd *Command) (ResponseIf, error) {
 
 	var result SimpleResponse
 	result.Code = 0
-	result.Message = "Token created successfully"
+	result.Message = "API Key created successfully"
 	result.Duration = resp.Duration
 	return &result, nil
 }
 
-// ListTokens lists all API tokens for the current user
-func (c *CLI) ListTokens(cmd *Command) (ResponseIf, error) {
+// APIListAPIKeysCommand lists all API keys for the current user
+func (c *CLI) APIListAPIKeysCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
 	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-	resp, err := httpClient.Request("GET", "/system/tokens", "web", nil, nil)
+	resp, err := httpClient.Request("GET", "/system/keys", "web", nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list tokens: %w", err)
+		return nil, fmt.Errorf("failed to list keys: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list tokens: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to list keys: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	var result CommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list tokens failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("list keys failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
@@ -794,29 +974,29 @@ func (c *CLI) ListTokens(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// DropToken deletes an API token
-func (c *CLI) DropToken(cmd *Command) (ResponseIf, error) {
+// APIDeleteAPIKeyCommand deletes an API key
+func (c *CLI) APIDeleteAPIKeyCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	token, ok := cmd.Params["token"].(string)
+	apiKey, ok := cmd.Params["api_key"].(string)
 	if !ok {
-		return nil, fmt.Errorf("token not provided")
+		return nil, fmt.Errorf("key not provided")
 	}
 
-	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("DELETE", fmt.Sprintf("/system/tokens/%s", token), "web", nil, nil)
+	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("DELETE", fmt.Sprintf("/system/keys/%s", apiKey), "web", nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to drop token: %w", err)
+		return nil, fmt.Errorf("failed to delete key: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to drop token: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to delete key: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	var result SimpleResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("drop token failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("delete key failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
@@ -826,104 +1006,104 @@ func (c *CLI) DropToken(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// SetToken sets the API token after validating it
-func (c *CLI) SetToken(cmd *Command) (ResponseIf, error) {
+// APISetAPIKey sets the API key after validating it
+func (c *CLI) APISetAPIKey(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	token, ok := cmd.Params["token"].(string)
+	apiKey, ok := cmd.Params["api_key"].(string)
 	if !ok {
-		return nil, fmt.Errorf("token not provided")
+		return nil, fmt.Errorf("key not provided")
 	}
 
 	// Save current token to restore if validation fails
-	savedToken := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken
-	savedUseAPIToken := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIToken
+	savedToken := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey
+	savedUseAPIToken := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIKey
 
-	// Set the new token temporarily for validation
-	c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken = &token
-	c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIToken = true
+	// Set the new key temporarily for validation
+	c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey = &apiKey
+	c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIKey = true
 
 	// Validate token by calling list tokens API
-	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", "/tokens", "api", nil, nil)
+	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", "/system/tokens", "api", nil, nil)
 	if err != nil {
 		// Restore original token on error
-		c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken = savedToken
-		c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIToken = savedUseAPIToken
+		c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey = savedToken
+		c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIKey = savedUseAPIToken
 		return nil, fmt.Errorf("failed to validate token: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
 		// Restore original token on error
-		c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken = savedToken
-		c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIToken = savedUseAPIToken
+		c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey = savedToken
+		c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIKey = savedUseAPIToken
 		return nil, fmt.Errorf("token validation failed: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	var result CommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		// Restore original token on error
-		c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken = savedToken
-		c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIToken = savedUseAPIToken
+		c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey = savedToken
+		c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIKey = savedUseAPIToken
 		return nil, fmt.Errorf("token validation failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
 		// Restore original token on error
-		c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken = savedToken
-		c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIToken = savedUseAPIToken
+		c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey = savedToken
+		c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIKey = savedUseAPIToken
 		return nil, fmt.Errorf("token validation failed: %s", result.Message)
 	}
 
 	// Token is valid, keep it set
 	var successResult SimpleResponse
 	successResult.Code = 0
-	successResult.Message = "API token set successfully"
+	successResult.Message = "API key set successfully"
 	successResult.Duration = resp.Duration
 	return &successResult, nil
 }
 
-// ShowToken displays the current API token
+// ShowToken displays the current API key
 func (c *CLI) ShowToken(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken == nil {
-		return nil, fmt.Errorf("no API token is currently set")
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil {
+		return nil, fmt.Errorf("no API key is currently set")
 	}
 
-	//fmt.Printf("Token: %s\n", c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken)
+	//fmt.Printf("Token: %s\n", c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey)
 
 	var result CommonResponse
 	result.Code = 0
 	result.Message = ""
 	result.Data = []map[string]interface{}{
 		{
-			"token": c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken,
+			"token": c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey,
 		},
 	}
 	result.Duration = 0
 	return &result, nil
 }
 
-// UnsetToken removes the current API token
-func (c *CLI) UnsetToken(cmd *Command) (ResponseIf, error) {
+// APIUnsetAPIKey removes the current API key
+func (c *CLI) APIUnsetAPIKey(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken == nil {
-		return nil, fmt.Errorf("no API token is currently set")
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil {
+		return nil, fmt.Errorf("no API key is currently set")
 	}
 
-	c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken = nil
-	c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIToken = false
+	c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey = nil
+	c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIKey = false
 
 	var result SimpleResponse
 	result.Code = 0
-	result.Message = "API token unset successfully"
+	result.Message = "API key unset successfully"
 	result.Duration = 0
 	return &result, nil
 }
@@ -1693,8 +1873,8 @@ func (c *CLI) ChatToModel(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) EmbedUserText(cmd *Command) (ResponseIf, error) {
-	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
-		return nil, fmt.Errorf("API token not set. Please login first")
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
 	}
 
 	if c.Config.CLIMode != APIMode {
@@ -1776,8 +1956,8 @@ func (c *CLI) EmbedUserText(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) RerankUserDocument(cmd *Command) (ResponseIf, error) {
-	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
-		return nil, fmt.Errorf("API token not set. Please login first")
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
 	}
 
 	if c.Config.CLIMode != APIMode {
@@ -1865,8 +2045,8 @@ func (c *CLI) RerankUserDocument(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) TTSUserCommand(cmd *Command) (ResponseIf, error) {
-	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
-		return nil, fmt.Errorf("API token not set. Please login first")
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
 	}
 
 	if c.Config.CLIMode != APIMode {
@@ -2073,8 +2253,8 @@ func (c *CLI) TTSUserCommand(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) ASRUserCommand(cmd *Command) (ResponseIf, error) {
-	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
-		return nil, fmt.Errorf("API token not set. Please login first")
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
 	}
 
 	if c.Config.CLIMode != APIMode {
@@ -2177,8 +2357,8 @@ func (c *CLI) ASRUserCommand(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) OCRUserCommand(cmd *Command) (ResponseIf, error) {
-	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
-		return nil, fmt.Errorf("API token not set. Please login first")
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
 	}
 
 	if c.Config.CLIMode != APIMode {
@@ -2273,8 +2453,8 @@ func (c *CLI) OCRUserCommand(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) ParseFileUserCommand(cmd *Command) (ResponseIf, error) {
-	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
-		return nil, fmt.Errorf("API token not set. Please login first")
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
 	}
 
 	if c.Config.CLIMode != APIMode {
@@ -2375,8 +2555,8 @@ func (c *CLI) ParseFileUserCommand(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) ListTasksUserCommand(cmd *Command) (ResponseIf, error) {
-	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
-		return nil, fmt.Errorf("API token not set. Please login first")
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
 	}
 
 	if c.Config.CLIMode != APIMode {
@@ -2418,8 +2598,8 @@ func (c *CLI) ListTasksUserCommand(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) ShowTaskUserCommand(cmd *Command) (ResponseIf, error) {
-	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
-		return nil, fmt.Errorf("API token not set. Please login first")
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
 	}
 
 	if c.Config.CLIMode != APIMode {
@@ -2467,8 +2647,8 @@ func (c *CLI) ShowTaskUserCommand(cmd *Command) (ResponseIf, error) {
 
 // UseModel sets the current model for chat
 func (c *CLI) UseModel(cmd *Command) (ResponseIf, error) {
-	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
-		return nil, fmt.Errorf("API token not set. Please login first")
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
 	}
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
@@ -2507,8 +2687,8 @@ func (c *CLI) UseModel(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) AddCustomModel(cmd *Command) (ResponseIf, error) {
-	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
-		return nil, fmt.Errorf("API token not set. Please login first")
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
 	}
 
 	if c.Config.CLIMode != APIMode {
@@ -2990,8 +3170,8 @@ func (c *CLI) RemoveChunks(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) ParseDocumentsUserCommand(cmd *Command) (ResponseIf, error) {
-	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
-		return nil, fmt.Errorf("API token not set. Please login first")
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
 	}
 
 	if c.Config.CLIMode != APIMode {
@@ -3115,8 +3295,8 @@ func formatRequestError(action string, err error) error {
 }
 
 func (c *CLI) ListUserIngestionTasks(cmd *Command) (ResponseIf, error) {
-	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
-		return nil, fmt.Errorf("API token not set. Please login first")
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
 	}
 
 	if c.Config.CLIMode != APIMode {
@@ -3155,8 +3335,8 @@ func (c *CLI) ListUserIngestionTasks(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) UserStartIngestionCommand(cmd *Command) (ResponseIf, error) {
-	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
-		return nil, fmt.Errorf("API token not set. Please login first")
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
 	}
 
 	if c.Config.CLIMode != APIMode {
@@ -3203,8 +3383,8 @@ func (c *CLI) UserStartIngestionCommand(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) UserStopIngestionCommand(cmd *Command) (ResponseIf, error) {
-	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
-		return nil, fmt.Errorf("API token not set. Please login first")
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
 	}
 
 	if c.Config.CLIMode != APIMode {
@@ -3242,8 +3422,8 @@ func (c *CLI) UserStopIngestionCommand(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) UserRemoveTaskCommand(cmd *Command) (ResponseIf, error) {
-	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
-		return nil, fmt.Errorf("API token not set. Please login first")
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
 	}
 
 	if c.Config.CLIMode != APIMode {
@@ -3353,8 +3533,8 @@ func (c *CLI) OpenaiChat(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("OPENAI_CHAT is only allowed in USER mode")
 	}
 	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-	if httpClient.APIToken == nil && httpClient.LoginToken == nil {
-		return nil, fmt.Errorf("API token not set. Please login first")
+	if httpClient.APIKey == nil && httpClient.LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
 	}
 
 	body, err := buildOpenaiChatRequestBody(cmd)

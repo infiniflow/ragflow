@@ -236,12 +236,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 			documents := v1.Group("/documents")
 			{
 				documents.POST("", r.documentHandler.CreateDocument)
+				documents.POST("/upload", r.documentHandler.UploadInfo)
 				documents.GET("", r.documentHandler.ListDocuments)
 				documents.GET("/artifact/:filename", r.documentHandler.GetDocumentArtifact)
 				documents.GET("/:id/preview", r.documentHandler.GetDocumentPreview)
 				documents.GET("/:id", r.documentHandler.GetDocumentByID)
 				documents.PUT("/:id", r.documentHandler.UpdateDocument)
 				documents.DELETE("/:id", r.documentHandler.DeleteDocument)
+				documents.POST("/ingest", r.documentHandler.Ingest)
 			}
 
 			// Chat routes
@@ -252,6 +254,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 				chats.DELETE("/:chat_id", r.chatHandler.DeleteChat)
 				chats.GET("/:chat_id", r.chatHandler.GetChat)
 				chats.GET("/:chat_id/sessions", r.chatSessionHandler.ListChatSessions)
+				chats.GET("/:chat_id/sessions/:session_id", r.chatSessionHandler.GetSession)
+				chats.PATCH("/:chat_id/sessions/:session_id", r.chatSessionHandler.UpdateSession)
 			}
 
 			// OpenAI-compatible chat completions route
@@ -269,14 +273,21 @@ func (r *Router) Setup(engine *gin.Engine) {
 			datasets := v1.Group("/datasets")
 			{
 				datasets.GET("", r.datasetsHandler.ListDatasets)
+				datasets.GET("/tags/aggregation", r.datasetsHandler.AggregateTags)
 				datasets.GET("/:dataset_id", r.datasetsHandler.GetDataset)
 				datasets.PUT("/:dataset_id", r.datasetsHandler.UpdateDataset)
 				datasets.GET("/:dataset_id/graph", r.datasetsHandler.GetKnowledgeGraph)
+				datasets.GET("/:dataset_id/tags", r.datasetsHandler.ListTags)
+				datasets.PUT("/:dataset_id/tags", r.datasetsHandler.RenameTag)
 				datasets.DELETE("/:dataset_id/tags", r.datasetsHandler.RemoveTags)
+				datasets.POST("/:dataset_id/embedding", r.datasetsHandler.RunEmbedding)
+				datasets.POST("/:dataset_id/embedding/check", r.datasetsHandler.CheckEmbedding)
 				datasets.POST("/:dataset_id/documents/batch-update-status", r.documentHandler.BatchUpdateDocumentStatus)
 				datasets.GET("/:dataset_id/index", r.datasetsHandler.TraceIndex)
 				datasets.POST("/:dataset_id/index", r.datasetsHandler.RunIndex)
-				datasets.DELETE("/:dataset_id/graph", r.datasetsHandler.DeleteKnowledgeGraph)
+				datasets.DELETE("/:dataset_id/index", r.datasetsHandler.DeleteIndex)
+				datasets.DELETE("/:dataset_id/:index_type", r.datasetsHandler.DeleteIndex)
+				//datasets.DELETE("/:dataset_id/graph", r.datasetsHandler.DeleteKnowledgeGraph)
 				datasets.POST("", r.datasetsHandler.CreateDataset)
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
 				datasets.POST("/search", r.datasetsHandler.SearchDatasets)
@@ -310,8 +321,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.DELETE("/ingestion/tasks", r.documentHandler.RemoveIngestionTasks)
 				//datasets.POST("/:dataset_id/documents/parse", r.documentHandler.ParseDocuments)
 				//datasets.POST("/:dataset_id/documents/stop", r.documentHandler.StopParseDocuments)
+				datasets.DELETE("/:dataset_id/chunks", r.chunkHandler.StopParsing)
 				datasets.DELETE("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.RemoveChunks)
 				datasets.PUT("/:dataset_id/documents/:document_id/metadata/config", r.datasetsHandler.UpdateDocumentMetadataConfig)
+				datasets.POST("/:dataset_id/metadata/update", r.documentHandler.MetadataBatchUpdate)
+				datasets.PATCH("/:dataset_id/documents/metadatas", r.documentHandler.UpdateDocumentMetadatas)
 			}
 
 			// Search routes
@@ -548,11 +562,21 @@ func (r *Router) Setup(engine *gin.Engine) {
 				tokens := system.Group("/tokens")
 				{
 					// list tokens /api/v1/system/tokens GET
-					tokens.GET("", r.systemHandler.ListTokens)
+					tokens.GET("", r.systemHandler.ListAPIKeys)
 					// create token /api/v1/system/tokens POST
-					tokens.POST("", r.systemHandler.CreateToken)
-					// delete token /api/v1/system/tokens/:token DELETE
-					tokens.DELETE("/:token", r.systemHandler.DeleteToken)
+					tokens.POST("", r.systemHandler.CreateKey)
+					// delete token /api/v1/system/tokens/:key DELETE
+					tokens.DELETE("/:key", r.systemHandler.DeleteKey)
+				}
+
+				keys := system.Group("/keys")
+				{
+					// list keys /api/v1/system/keys GET
+					keys.GET("", r.systemHandler.ListAPIKeys)
+					// create key /api/v1/system/keys POST
+					keys.POST("", r.systemHandler.CreateKey)
+					// delete key /api/v1/system/keys/:key DELETE
+					keys.DELETE("/:key", r.systemHandler.DeleteKey)
 				}
 			}
 		}
