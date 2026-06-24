@@ -1,3 +1,5 @@
+import pytest
+
 from agent.component.switch import Switch, SwitchParam
 
 
@@ -59,6 +61,7 @@ def test_switch_non_empty_and_condition_still_matches():
     assert cpn.output("next") == ["case_target"]
 
 
+@pytest.mark.p1
 def test_switch_none_input_contains_falls_through_to_else():
     param = SwitchParam()
     param.conditions = [
