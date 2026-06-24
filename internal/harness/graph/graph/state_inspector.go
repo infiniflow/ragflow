@@ -11,7 +11,6 @@ import (
 
 	"ragflow/internal/harness/graph/channels"
 	"ragflow/internal/harness/graph/constants"
-	"ragflow/internal/harness/graph/errors"
 	"ragflow/internal/harness/graph/types"
 )
 
@@ -130,15 +129,15 @@ func (cg *CompiledGraph) GetStateHistory(ctx context.Context, config *types.Runn
 		// Build a config that points to this specific checkpoint.
 		cpID, _ := entry[constants.ConfigKeyCheckpointID].(string)
 		snapConfig := &types.RunnableConfig{}
-	if config != nil {
-		snapConfig = &types.RunnableConfig{}
-		if config.Configurable != nil {
-			snapConfig.Configurable = make(map[string]interface{}, len(config.Configurable))
-			for k, v := range config.Configurable {
-				snapConfig.Configurable[k] = v
+		if config != nil {
+			snapConfig = &types.RunnableConfig{}
+			if config.Configurable != nil {
+				snapConfig.Configurable = make(map[string]interface{}, len(config.Configurable))
+				for k, v := range config.Configurable {
+					snapConfig.Configurable[k] = v
+				}
 			}
 		}
-	}
 		if snapConfig.Configurable == nil {
 			snapConfig.Configurable = make(map[string]interface{})
 		}
@@ -193,12 +192,10 @@ func (cg *CompiledGraph) UpdateState(ctx context.Context, config *types.Runnable
 		cpData[key] = val
 	}
 
-	// 3. Marshal updated state into checkpoint metadata.
-	//    Use AsNode so the next run sees it as if that node emitted the update.
-	cpData["__update_as_node__"] = asNode
-
-	// 4. Save as a new checkpoint (parent = current checkpoint).
+	// 3. Save as a new checkpoint (parent = current checkpoint).
 	//    The new checkpoint will be picked up by the next Run/Resume call.
+	//    Note: Do NOT inject metadata keys (like __update_as_node__) into cpData,
+	//    because inline Pregel will try to restore them as channels.
 	parentID, _ := cpConfig[constants.ConfigKeyCheckpointID].(string)
 	newThreadID := update.ThreadID
 	if newThreadID == "" {
@@ -210,8 +207,8 @@ func (cg *CompiledGraph) UpdateState(ctx context.Context, config *types.Runnable
 		return nil, fmt.Errorf("thread_id is required for UpdateState")
 	}
 	newConfig := map[string]interface{}{
-		constants.ConfigKeyThreadID: newThreadID,
-		"parent_checkpoint_id":      parentID,
+		constants.ConfigKeyThreadID:     newThreadID,
+		"parent_checkpoint_id":          parentID,
 		constants.ConfigKeyCheckpointID: "",
 	}
 	if err := cg.checkpointer.Put(ctx, newConfig, cpData); err != nil {
@@ -268,9 +265,6 @@ func extractMeta(cpData map[string]interface{}) map[string]interface{} {
 	if v, ok := cpData["__last_completed_node__"]; ok {
 		meta["last_completed_node"] = v
 	}
-	if v, ok := cpData["__update_as_node__"]; ok {
-		meta["updated_as_node"] = v
-	}
 	return meta
 }
 
@@ -325,8 +319,61 @@ func (e *CheckpointConflictError) Error() string {
 	return e.Message
 }
 
+// ForkThread clones a checkpoint from one thread to another.
+// This enables "time travel fork": creating a new thread whose initial
+// state is a copy of the given checkpoint. Returns the RunnableConfig
+// for the new thread.
+//
+// To use: invoke on a CompiledGraph with a checkpointer configured.
+// sourceCheckpointID: empty = latest checkpoint in source thread.
+func (cg *CompiledGraph) ForkThread(ctx context.Context, sourceThreadID, newThreadID string, sourceCheckpointID string) (*types.RunnableConfig, error) {
+	if cg.checkpointer == nil {
+		return nil, fmt.Errorf("checkpointer is required for ForkThread")
+	}
+
+	// 1. Read source checkpoint.
+	cpConfig := map[string]interface{}{
+		constants.ConfigKeyThreadID: sourceThreadID,
+	}
+	if sourceCheckpointID != "" {
+		cpConfig[constants.ConfigKeyCheckpointID] = sourceCheckpointID
+	}
+	cpData, err := cg.checkpointer.Get(ctx, cpConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get source checkpoint: %w", err)
+	}
+	if cpData == nil {
+		return nil, fmt.Errorf("no checkpoint found for thread %s", sourceThreadID)
+	}
+
+	// 2. Write to new thread as a fresh checkpoint (no parent).
+	newConfig := map[string]interface{}{
+		constants.ConfigKeyThreadID: newThreadID,
+	}
+	if err := cg.checkpointer.Put(ctx, newConfig, cpData); err != nil {
+		return nil, fmt.Errorf("failed to write forked checkpoint: %w", err)
+	}
+
+	// 3. Return config pointing to the new thread.
+	entries, err := cg.checkpointer.List(ctx, newConfig, 1)
+	if err != nil || len(entries) == 0 {
+		return &types.RunnableConfig{
+			Configurable: map[string]interface{}{
+				constants.ConfigKeyThreadID: newThreadID,
+			},
+		}, nil
+	}
+
+	newCPID, _ := entries[0][constants.ConfigKeyCheckpointID].(string)
+	result := types.NewRunnableConfig()
+	result.Configurable = make(map[string]interface{})
+	result.Configurable[constants.ConfigKeyThreadID] = newThreadID
+	if newCPID != "" {
+		result.Configurable[constants.ConfigKeyCheckpointID] = newCPID
+	}
+	return result, nil
+}
+
 func init() {
-	// Register types for checkpoint serialization.
-	pkgErrs := errors.ErrorCode("")
-	_ = pkgErrs
+	_ = (*CheckpointConflictError)(nil)
 }

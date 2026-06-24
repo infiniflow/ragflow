@@ -72,8 +72,8 @@ func NewTracedEngine(inner *Engine, opts ...TracedEngineOption) *TracedEngine {
 		opt(cfg)
 	}
 	te := &TracedEngine{
-		inner:  inner,
-		cfg:    cfg,
+		inner: inner,
+		cfg:   cfg,
 	}
 	if cfg.enabled {
 		te.tracer = otel.Tracer(tracedEngineTracerName)

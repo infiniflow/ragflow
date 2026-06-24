@@ -332,15 +332,17 @@ func TestEngine_50NodeChain(t *testing.T) {
 	prev := constants.Start
 	for i := 0; i < 50; i++ {
 		name := fmt.Sprintf("n_%d", i)
-	sg.AddNode(name, func(ctx context.Context, state any) (any, error) {
-		m, _ := state.(map[string]any)
-		if m == nil {
-			m = map[string]any{}
-		}
-		if m == nil { m = map[string]any{} }
+		sg.AddNode(name, func(ctx context.Context, state any) (any, error) {
+			m, _ := state.(map[string]any)
+			if m == nil {
+				m = map[string]any{}
+			}
+			if m == nil {
+				m = map[string]any{}
+			}
 			m["value"] = i
-		return m, nil
-	})
+			return m, nil
+		})
 		_ = sg.AddEdge(prev, name)
 		prev = name
 	}
@@ -365,15 +367,17 @@ func TestEngine_ChainOf100(t *testing.T) {
 	prev := constants.Start
 	for i := 0; i < 100; i++ {
 		name := fmt.Sprintf("n_%d", i)
-	sg.AddNode(name, func(ctx context.Context, state any) (any, error) {
-		m, _ := state.(map[string]any)
-		if m == nil {
-			m = map[string]any{}
-		}
-		if m == nil { m = map[string]any{} }
+		sg.AddNode(name, func(ctx context.Context, state any) (any, error) {
+			m, _ := state.(map[string]any)
+			if m == nil {
+				m = map[string]any{}
+			}
+			if m == nil {
+				m = map[string]any{}
+			}
 			m["value"] = i
-		return m, nil
-	})
+			return m, nil
+		})
 		_ = sg.AddEdge(prev, name)
 		prev = name
 	}

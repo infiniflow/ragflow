@@ -67,12 +67,12 @@ type GraphCallback interface {
 // CallbackManager manages a collection of callbacks.
 // All methods are safe for concurrent use.
 type CallbackManager struct {
-	mu            sync.RWMutex
-	runCallbacks          []RunCallback
-	stepCallbacks         []StepCallback
-	nodeCallbacks         []NodeCallback
-	checkpointCallbacks   []CheckpointCallback
-	interruptCallbacks    []InterruptCallback
+	mu                  sync.RWMutex
+	runCallbacks        []RunCallback
+	stepCallbacks       []StepCallback
+	nodeCallbacks       []NodeCallback
+	checkpointCallbacks []CheckpointCallback
+	interruptCallbacks  []InterruptCallback
 }
 
 // NewCallbackManager creates a new callback manager.
@@ -243,24 +243,24 @@ func (m *CallbackManager) Resume(ctx context.Context, threadID string) {
 // NoopCallback implements GraphCallback with empty methods.
 type NoopCallback struct{}
 
-func (NoopCallback) OnRunStart(_ context.Context, _, _ string)         {}
-func (NoopCallback) OnRunEnd(_ context.Context, _, _ string, _ error) {}
-func (NoopCallback) OnStepStart(_ context.Context, _ int, _ int)      {}
-func (NoopCallback) OnStepEnd(_ context.Context, _ int, _ error)      {}
-func (NoopCallback) OnNodeStart(_ context.Context, _ string, _ int)   {}
+func (NoopCallback) OnRunStart(_ context.Context, _, _ string)                            {}
+func (NoopCallback) OnRunEnd(_ context.Context, _, _ string, _ error)                     {}
+func (NoopCallback) OnStepStart(_ context.Context, _ int, _ int)                          {}
+func (NoopCallback) OnStepEnd(_ context.Context, _ int, _ error)                          {}
+func (NoopCallback) OnNodeStart(_ context.Context, _ string, _ int)                       {}
 func (NoopCallback) OnNodeEnd(_ context.Context, _ string, _ int, _ interface{}, _ error) {}
-func (NoopCallback) OnCheckpointSave(_ context.Context, _, _ string, _ int)  {}
-func (NoopCallback) OnCheckpointLoad(_ context.Context, _, _ string, _ int)  {}
-func (NoopCallback) OnCheckpointUpdate(_ context.Context, _, _ string)        {}
-func (NoopCallback) OnInterrupt(_ context.Context, _ []string, _ int)        {}
-func (NoopCallback) OnResume(_ context.Context, _ string)                    {}
+func (NoopCallback) OnCheckpointSave(_ context.Context, _, _ string, _ int)               {}
+func (NoopCallback) OnCheckpointLoad(_ context.Context, _, _ string, _ int)               {}
+func (NoopCallback) OnCheckpointUpdate(_ context.Context, _, _ string)                    {}
+func (NoopCallback) OnInterrupt(_ context.Context, _ []string, _ int)                     {}
+func (NoopCallback) OnResume(_ context.Context, _ string)                                 {}
 
 // Ensure noop implements the interfaces.
 var (
-	_ RunCallback          = NoopCallback{}
-	_ StepCallback         = NoopCallback{}
-	_ NodeCallback         = NoopCallback{}
-	_ CheckpointCallback   = NoopCallback{}
-	_ InterruptCallback    = NoopCallback{}
-	_ GraphCallback        = NoopCallback{}
+	_ RunCallback        = NoopCallback{}
+	_ StepCallback       = NoopCallback{}
+	_ NodeCallback       = NoopCallback{}
+	_ CheckpointCallback = NoopCallback{}
+	_ InterruptCallback  = NoopCallback{}
+	_ GraphCallback      = NoopCallback{}
 )

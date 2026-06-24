@@ -528,5 +528,3 @@ func TestDurabilityExit_ConfigPropagation(t *testing.T) {
 		}
 	}
 }
-
-

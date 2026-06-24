@@ -134,15 +134,15 @@ func (m *NoopCallbackMock) OnRunEnd(ctx context.Context, grp, tid string, err er
 		m.onRunEnd(ctx, grp, tid, err)
 	}
 }
-func (m *NoopCallbackMock) OnStepStart(_ context.Context, _, _ int)          {}
-func (m *NoopCallbackMock) OnStepEnd(_ context.Context, _ int, _ error)      {}
-func (m *NoopCallbackMock) OnNodeStart(_ context.Context, _ string, _ int)   {}
+func (m *NoopCallbackMock) OnStepStart(_ context.Context, _, _ int)                              {}
+func (m *NoopCallbackMock) OnStepEnd(_ context.Context, _ int, _ error)                          {}
+func (m *NoopCallbackMock) OnNodeStart(_ context.Context, _ string, _ int)                       {}
 func (m *NoopCallbackMock) OnNodeEnd(_ context.Context, _ string, _ int, _ interface{}, _ error) {}
-func (m *NoopCallbackMock) OnCheckpointSave(_ context.Context, _, _ string, _ int)   {}
-func (m *NoopCallbackMock) OnCheckpointLoad(_ context.Context, _, _ string, _ int)   {}
-func (m *NoopCallbackMock) OnCheckpointUpdate(_ context.Context, _, _ string)         {}
-func (m *NoopCallbackMock) OnInterrupt(_ context.Context, _ []string, _ int)          {}
-func (m *NoopCallbackMock) OnResume(_ context.Context, _ string)                       {}
+func (m *NoopCallbackMock) OnCheckpointSave(_ context.Context, _, _ string, _ int)               {}
+func (m *NoopCallbackMock) OnCheckpointLoad(_ context.Context, _, _ string, _ int)               {}
+func (m *NoopCallbackMock) OnCheckpointUpdate(_ context.Context, _, _ string)                    {}
+func (m *NoopCallbackMock) OnInterrupt(_ context.Context, _ []string, _ int)                     {}
+func (m *NoopCallbackMock) OnResume(_ context.Context, _ string)                                 {}
 
 // CheckpointCallbackMock implements CheckpointCallback with overridable hooks.
 type CheckpointCallbackMock struct {
@@ -164,6 +164,6 @@ func (m *CheckpointCallbackMock) OnCheckpointUpdate(_ context.Context, _, _ stri
 
 // Ensure mock implements interfaces.
 var (
-	_ GraphCallback     = (*NoopCallbackMock)(nil)
+	_ GraphCallback      = (*NoopCallbackMock)(nil)
 	_ CheckpointCallback = (*CheckpointCallbackMock)(nil)
 )

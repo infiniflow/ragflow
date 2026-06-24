@@ -93,7 +93,7 @@ func TestFaultInjection_CheckpointCorruption(t *testing.T) {
 		constants.ConfigKeyThreadID: defaultTestThreadID,
 	}
 	ms.Put(ctx, corruptConfig, map[string]interface{}{
-		"value":   nil,
+		"value":       nil,
 		"__corrupt__": "garbage",
 	})
 

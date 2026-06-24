@@ -233,7 +233,7 @@ func TestConditionalEdge_Fallback(t *testing.T) {
 			return "unknown", nil
 		},
 		map[string]string{
-			"valid":    "valid",
+			"valid":   "valid",
 			"unknown": "fallback",
 		},
 	)

@@ -441,7 +441,7 @@ func TestCheckpoint_NestedEmptyMap(t *testing.T) {
 		"nil_value": nil,
 		"nested": map[string]interface{}{
 			"also_empty": map[string]interface{}{},
-			"value":     42,
+			"value":      42,
 		},
 	}
 

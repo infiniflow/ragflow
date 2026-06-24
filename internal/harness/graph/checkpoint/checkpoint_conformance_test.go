@@ -331,13 +331,13 @@ func (suite *ConformanceTestSuite) TestPutPreservesData(t *testing.T) {
 
 	tid := "test-thread-types"
 	data := map[string]interface{}{
-		"string":   "hello",
-		"int":      42,
-		"float":    3.14,
-		"bool":     true,
-		"list":     []interface{}{1, "two", 3.0},
-		"map":      map[string]interface{}{"nested": "value", "num": 1},
-		"nil_val":  nil,
+		"string":    "hello",
+		"int":       42,
+		"float":     3.14,
+		"bool":      true,
+		"list":      []interface{}{1, "two", 3.0},
+		"map":       map[string]interface{}{"nested": "value", "num": 1},
+		"nil_val":   nil,
 		"empty_str": "",
 	}
 
