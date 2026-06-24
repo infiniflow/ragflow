@@ -309,13 +309,14 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         if len(reduced_embeddings) == 0:
             return 0, []
 
-        # Degrade too much
-        # n_neighbors = int((len(embeddings) - 1) ** 0.8)
-        # reduced_embeddings = umap.UMAP(
-        #    n_neighbors=max(2, n_neighbors),
-        #    n_components=min(12, len(embeddings) - 2),
-        #    metric="cosine",
-        # ).fit_transform(embeddings)
+        # Degrade too much ??
+        n_neighbors = int((len(embeddings) - 1) ** 0.8)
+        import umap
+        reduced_embeddings = umap.UMAP(
+            n_neighbors=max(2, n_neighbors),
+            n_components=min(12, len(embeddings) - 2),
+            metric="cosine",
+        ).fit_transform(embeddings)
         if self._clustering_method == AHC_CLUSTERING_METHOD:
             logging.info("RAPTOR: using clustering_method=%s before _get_clusters_ahc", self._clustering_method)
             raw_labels = self._get_clusters_ahc(reduced_embeddings, task_id=task_id)
@@ -770,7 +771,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 src = [s for s in src if s]
             else:
                 src = [src] if src else []
-            return (text, vec, list(src))
+            return (text, vec, list(src), "")
 
         normalized = [t for t in (_normalize(c) for c in chunks) if t is not None]
         if len(normalized) <= 1:
@@ -887,7 +888,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             end = len(chunks)
 
         if is_tree:
-            return self._materialize_tree(chunks, layers, parent_child_map, n_originals)
+            return self._materialize_tree(chunks, layers, parent_child_map, n_originals), []
         return chunks, layers
 
     @staticmethod

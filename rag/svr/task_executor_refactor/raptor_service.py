@@ -404,6 +404,7 @@ class RaptorService:
         clustering_method: str,
         max_errors: int,
         doc_info_by_id: Dict,
+        is_tree: bool = False,
     ) -> Tuple[List[Dict], int]:
         """Run RAPTOR and generate summary chunks.
 
@@ -452,13 +453,14 @@ class RaptorService:
         # parent-of relation, so __call__(is_tree=True) raises
         # NotImplementedError there — catch and fall through to the
         # legacy per-summary materialization below for that case.
+        original_length = len(chunks)
         try:
-            tree = await raptor(
+            processed_chunks, layers = await raptor(
                 raptor_input,
                 raptor_config["random_seed"],
                 self._task_context.progress_cb,
                 ctx.id,
-                is_tree=True,
+                is_tree=is_tree,
             )
         except NotImplementedError:
             return await self._generate_raptor_legacy_rows(
@@ -466,31 +468,57 @@ class RaptorService:
                 effective_doc_name, tree_builder, vctr_nm,
             )
 
-        if tree is None:
+        if processed_chunks is None:
             return [], 0
+        doc = {
+            "doc_id": doc_id,
+            "kb_id": [str(ctx.kb_id)],
+            "docnm_kwd": effective_doc_name,
+            "title_tks": rag_tokenizer.tokenize(effective_doc_name),
+            "raptor_kwd": "raptor",
+            "extra": {"raptor_method": tree_builder},
+            "create_time": str(datetime.now()).replace("T", " ")[:19],
+            "create_timestamp_flt": datetime.now().timestamp(),
+        }
+        if ctx.pagerank:
+            doc[PAGERANK_FLD] = int(ctx.pagerank)
+
+        if not is_tree:
+            # Build index→layer mapping
+            chunk_layer = {}
+            for layer_idx, (layer_start, layer_end) in enumerate(layers):
+                if layer_idx == 0:
+                    continue
+                for ci in range(layer_start, layer_end):
+                    chunk_layer[ci] = layer_idx
+
+            res = []
+            tk_count = 0
+            for idx, (content, vctr, _, _) in enumerate(processed_chunks[original_length:], start=original_length):
+                d = copy.deepcopy(doc)
+                d["id"] = make_raptor_summary_chunk_id(content, doc_id)
+                d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
+                d["create_timestamp_flt"] = datetime.now().timestamp()
+                d[vctr_nm] = vctr.tolist()
+                d["content_with_weight"] = content
+                d["content_ltks"] = rag_tokenizer.tokenize(content)
+                d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
+                d["raptor_layer_int"] = chunk_layer.get(idx, 1)
+                res.append(d)
+                tk_count += num_tokens_from_string(content)
+            return res, tk_count
 
         row_id = xxhash.xxh64(
             f"raptor_tree:{doc_id}:{tree_builder}".encode("utf-8", "surrogatepass"),
         ).hexdigest()
         row = {
+            **doc,
             "id": row_id,
-            "doc_id": doc_id,
-            "kb_id": [str(ctx.kb_id)],
-            "docnm_kwd": effective_doc_name,
-            "title_tks": rag_tokenizer.tokenize(effective_doc_name),
             "raptor_kwd": "raptor_tree",
-            "extra": {"raptor_method": tree_builder},
-            "content_with_weight": json.dumps(tree, ensure_ascii=False),
-            "create_time": str(datetime.now()).replace("T", " ")[:19],
-            "create_timestamp_flt": datetime.now().timestamp(),
-            # Non-searchable: no ``q_<dim>_vec`` and ``available_int=0``
-            # so retrievers won't surface this row directly. Readers
-            # that want the tree filter on ``raptor_kwd=raptor_tree``.
+            "content_with_weight": json.dumps(processed_chunks, ensure_ascii=False),
             "available_int": 0,
         }
-        if ctx.pagerank:
-            row[PAGERANK_FLD] = int(ctx.pagerank)
-        return [row], _sum_tree_text_tokens(tree)
+        return [row], _sum_tree_text_tokens(processed_chunks)
 
     async def _generate_raptor_legacy_rows(
         self, raptor, raptor_input, raptor_config, doc_id,
