@@ -36,6 +36,11 @@ import (
 type DatasetsHandler struct {
 	datasetsService *service.DatasetService
 	metadataService *service.MetadataService
+	searchDatasetService searchDatasetService
+}
+
+type searchDatasetService interface {
+	SearchDataset(datasetID, userID string, req *service.SearchDatasetRequest) (*service.SearchDatasetsResponse, error)
 }
 
 type listDatasetsExt struct {
@@ -46,10 +51,14 @@ type listDatasetsExt struct {
 
 // NewDatasetsHandler creates a new datasets handler.
 func NewDatasetsHandler(datasetsService *service.DatasetService, metadataService *service.MetadataService) *DatasetsHandler {
-	return &DatasetsHandler{
+	h := &DatasetsHandler{
 		datasetsService: datasetsService,
 		metadataService: metadataService,
 	}
+	if datasetsService != nil {
+		h.searchDatasetService = datasetsService
+	}
+	return h
 }
 
 // ListDatasets handles GET /api/v1/datasets.
@@ -900,6 +909,72 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 	}
 
 	resp, err := h.datasetsService.SearchDatasets(&req, user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": resp,
+	})
+}
+
+// SearchDataset searches chunks within a single dataset based on a question.
+// @Summary Search Dataset
+// @Description Search for relevant chunks within one dataset based on a question
+// @Tags datasets
+// @Accept json
+// @Produce json
+// @Param dataset_id path string true "dataset id"
+// @Param request body service.SearchDatasetRequest true "search parameters"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/datasets/{dataset_id}/search [post]
+func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := c.Param("dataset_id")
+	if datasetID == "" {
+		jsonError(c, common.CodeDataError, "dataset_id is required")
+		return
+	}
+
+	var req service.SearchDatasetRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": err.Error(),
+		})
+		return
+	}
+	if req.Question == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "question is required",
+		})
+		return
+	}
+
+	searchService := h.searchDatasetService
+	if searchService == nil {
+		searchService = h.datasetsService
+	}
+	if searchService == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "dataset service is not initialized",
+		})
+		return
+	}
+
+	resp, err := searchService.SearchDataset(datasetID, user.ID, &req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,

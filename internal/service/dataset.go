@@ -670,6 +670,54 @@ type SearchDatasetsResponse struct {
 	Total   int64                    `json:"total"`
 }
 
+// SearchDatasetRequest is the request structure for searching chunks within one dataset.
+type SearchDatasetRequest struct {
+	Question               string                 `json:"question"`
+	Page                   *int                   `json:"page,omitempty"`
+	Size                   *int                   `json:"size,omitempty"`
+	DocIDs                 []string               `json:"doc_ids,omitempty"`
+	UseKG                  *bool                  `json:"use_kg,omitempty"`
+	TopK                   *int                   `json:"top_k,omitempty"`
+	CrossLanguages         []string               `json:"cross_languages,omitempty"`
+	SearchID               *string                `json:"search_id,omitempty"`
+	MetadataFilter         map[string]interface{} `json:"meta_data_filter,omitempty"`
+	RerankID               *string                `json:"rerank_id,omitempty"`
+	Keyword                *bool                  `json:"keyword,omitempty"`
+	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
+	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
+}
+
+// ToSearchDatasetsRequest converts a single-dataset search request into the multi-dataset form.
+func (req *SearchDatasetRequest) ToSearchDatasetsRequest(datasetID string) *SearchDatasetsRequest {
+	if req == nil {
+		return &SearchDatasetsRequest{DatasetIDs: []string{datasetID}}
+	}
+	return &SearchDatasetsRequest{
+		DatasetIDs:             []string{datasetID},
+		Question:               req.Question,
+		Page:                   req.Page,
+		Size:                   req.Size,
+		DocIDs:                 req.DocIDs,
+		UseKG:                  req.UseKG,
+		TopK:                   req.TopK,
+		CrossLanguages:         req.CrossLanguages,
+		SearchID:               req.SearchID,
+		MetadataFilter:         req.MetadataFilter,
+		RerankID:               req.RerankID,
+		Keyword:                req.Keyword,
+		SimilarityThreshold:    req.SimilarityThreshold,
+		VectorSimilarityWeight: req.VectorSimilarityWeight,
+	}
+}
+
+// SearchDataset searches chunks within one knowledge base based on a question.
+func (s *DatasetService) SearchDataset(datasetID, userID string, req *SearchDatasetRequest) (*SearchDatasetsResponse, error) {
+	if datasetID == "" {
+		return nil, fmt.Errorf("dataset_id is required")
+	}
+	return s.SearchDatasets(req.ToSearchDatasetsRequest(datasetID), userID)
+}
+
 // SearchDatasets searches chunks across one or more knowledge bases based on a question.
 // It retrieves relevant chunks using embedding and optional reranking, applying filters,
 // cross-language translation, and keyword extraction as configured.
