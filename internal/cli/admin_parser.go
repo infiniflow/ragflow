@@ -2260,7 +2260,7 @@ func (p *Parser) parseAdminUseCommand() (*Command, error) {
 	case TokenAdmin:
 		return p.parseUseAdminServer()
 	default:
-		return nil, fmt.Errorf("expected MODEL or SKILL after USE")
+		return nil, fmt.Errorf("expected API or ADMIN after USE")
 	}
 }
 
