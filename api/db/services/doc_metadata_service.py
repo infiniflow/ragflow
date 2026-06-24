@@ -237,7 +237,8 @@ class DocMetadataService:
                 offset=page * page_size,
                 limit=page_size,
                 index_names=index_name,
-                knowledgebase_ids=[kb_id]
+                knowledgebase_ids=[kb_id],
+                track_total_hits=True,
             )
 
             # Handle different result formats
@@ -776,17 +777,29 @@ class DocMetadataService:
             order_by = OrderByExpr()
 
             # Query with large limit
-            results = settings.docStoreConn.search(
-                select_fields=["*"],  # Get all fields
-                highlight_fields=[],
-                condition=condition,
-                match_expressions=[],
-                order_by=order_by,
-                offset=0,
-                limit=10000,
-                index_names=index_name,
-                knowledgebase_ids=kb_ids
-            )
+            page_size = 1000
+            offset = 0
+            all_results = []
+            while True:
+                batch = settings.docStoreConn.search(
+                    select_fields=["*"],
+                    highlight_fields=[],
+                    condition=condition,
+                    match_expressions=[],
+                    order_by=order_by,
+                    offset=offset,
+                    limit=page_size,
+                    index_names=index_name,
+                    knowledgebase_ids=kb_ids
+                )
+                # Use existing helper to extract docs
+                batch_docs = list(cls._iter_search_results(batch))
+                if not batch_docs:
+                    break
+                all_results.extend(batch_docs)
+                if len(batch_docs) < page_size:
+                    break
+                offset += page_size
 
             logging.debug(f"[get_flatted_meta_by_kbs] index_name: {index_name}, kb_ids: {kb_ids}")
             logging.debug(f"[get_flatted_meta_by_kbs] results type: {type(results)}")
@@ -796,7 +809,7 @@ class DocMetadataService:
             doc_count = 0
 
             # Use helper to iterate over results in any format
-            for doc_id, doc in cls._iter_search_results(results):
+            for doc_id, doc in all_results:
                 doc_count += 1
                 # Extract metadata fields (exclude system fields)
                 doc_meta = cls._extract_metadata(doc)
