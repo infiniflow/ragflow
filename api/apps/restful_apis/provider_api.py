@@ -839,9 +839,9 @@ async def delete_models_from_instance(tenant_id: str, provider_name: str, instan
 @manager.route("/providers/<provider_name>/instances/<instance_name>/models/<path:model_name>", methods=["PATCH"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def enable_or_disable_model(tenant_id: str = None, provider_name: str = None, instance_name: str = None, model_name: str = None):
+async def alter_model(tenant_id: str = None, provider_name: str = None, instance_name: str = None, model_name: str = None):
     """
-    Enable or disable a model.
+    Enable or disable a model, or update max_tokens
     ---
     tags:
       - Providers
@@ -888,15 +888,15 @@ async def enable_or_disable_model(tenant_id: str = None, provider_name: str = No
           type: object
     """
     data = await request.get_json()
-    if not data or "status" not in data:
-        return get_error_argument_result(message="status is required")
+    if not data or ("status" not in data and "max_tokens" not in data):
+        return get_error_argument_result(message="status or max_tokens required.")
 
-    status = data["status"]
-    if status not in ("active", "inactive"):
+    update_dict = {k: data[k] for k in ["status", "max_tokens"] if k in data}
+    if update_dict.get("status") and update_dict["status"] not in ("active", "inactive"):
         return get_error_argument_result(message="status must be 'active' or 'inactive'")
 
     try:
-        success, msg = provider_api_service.update_model_status(tenant_id, provider_name, instance_name, model_name, status)
+        success, msg = provider_api_service.update_model(tenant_id, provider_name, instance_name, model_name, update_dict)
         if success:
             return get_result(message=msg)
         else:

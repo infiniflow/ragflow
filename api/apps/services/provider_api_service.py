@@ -747,7 +747,7 @@ def add_model_to_instance(tenant_id: str, provider_name: str, instance_name: str
     return True, "success"
 
 
-def update_model_status(tenant_id: str, provider_name: str, instance_name: str, model_name: str, status: str):
+def update_model(tenant_id: str, provider_name: str, instance_name: str, model_name: str, update_dict: dict):
     """
     Enable or disable a model for a provider instance.
 
@@ -760,10 +760,12 @@ def update_model_status(tenant_id: str, provider_name: str, instance_name: str, 
     :param provider_name: provider/factory name
     :param instance_name: instance name
     :param model_name: model name
-    :param status: "active" or "inactive" (ActiveStatusEnum values)
+    :param update_dict:
+        status: "active" or "inactive" (ActiveStatusEnum values)
+        max_tokens: > 0
     :return: (success, result_or_error_message)
     """
-    if status not in (ActiveStatusEnum.ACTIVE.value, ActiveStatusEnum.INACTIVE.value):
+    if update_dict.get("status") and update_dict["status"] not in (ActiveStatusEnum.ACTIVE.value, ActiveStatusEnum.INACTIVE.value):
         return False, f"status must be '{ActiveStatusEnum.ACTIVE.value}' or '{ActiveStatusEnum.INACTIVE.value}'"
 
     # Check if provider exists for this tenant
@@ -777,8 +779,16 @@ def update_model_status(tenant_id: str, provider_name: str, instance_name: str, 
         return False, f"No instance found for provider '{provider_name}' and instance '{instance_name}'"
 
     model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(provider_obj.id, instance_obj.id, model_name)
-    if model_obj.status != status:
-        TenantModelService.update_model_status(model_obj.id, status)
+    to_update = {}
+    if update_dict.get("status") != model_obj.status:
+        to_update.update({"status": update_dict["status"]})
+    if "max_tokens" in update_dict:
+        db_extra = json.loads(model_obj.extra)
+        db_extra.update({"max_tokens": update_dict["max_tokens"]})
+        to_update.update({"extra": json.dumps(db_extra)})
+
+    if to_update:
+        TenantModelService.update_model(model_obj.id, to_update)
 
     return True, "success"
 

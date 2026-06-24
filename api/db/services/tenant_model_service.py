@@ -66,8 +66,8 @@ class TenantModelService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def update_model_status(cls, model_id, status):
-        return cls.model.update(status=status).where(cls.model.id == model_id).execute()
+    def update_model(cls, model_id, update_dict):
+        return cls.model.update(**update_dict).where(cls.model.id == model_id).execute()
 
     @classmethod
     @DB.connection_context()
