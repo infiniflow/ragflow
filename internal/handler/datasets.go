@@ -479,6 +479,77 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 	jsonResponse(c, common.CodeSuccess, result, "success")
 }
 
+// ListTags handles GET /api/v1/datasets/:dataset_id/tags.
+// @Summary List dataset tags
+// @Description List tags for a dataset
+// @Tags datasets
+// @Produce json
+// @Security ApiKeyAuth
+// @Param dataset_id path string true "Dataset ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/datasets/{dataset_id}/tags [get]
+func (h *DatasetsHandler) ListTags(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := strings.TrimSpace(c.Param("dataset_id"))
+	result, code, err := h.datasetsService.ListTags(datasetID, user.ID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, result, "success")
+}
+
+type renameTagRequest struct {
+	FromTag string `json:"from_tag"`
+	ToTag   string `json:"to_tag"`
+}
+
+func (h *DatasetsHandler) RenameTag(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+	datasetID := strings.TrimSpace(c.Param("dataset_id"))
+
+	var payload map[string]interface{}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		jsonError(c, common.CodeDataError, "Lack of from_tag or to_tag in request body")
+		return
+	}
+	fromTagValue, hasFrom := payload["from_tag"]
+	toTagValue, hasTo := payload["to_tag"]
+	if !hasFrom || !hasTo {
+		jsonError(c, common.CodeDataError, "Lack of from_tag or to_tag in request body")
+		return
+	}
+	fromTag, okFrom := fromTagValue.(string)
+	toTag, okTo := toTagValue.(string)
+	if !okFrom || !okTo {
+		jsonError(c, common.CodeArgumentError, "from_tag and to_tag must be strings")
+		return
+	}
+	req := renameTagRequest{FromTag: fromTag, ToTag: toTag}
+	if strings.TrimSpace(req.FromTag) == "" || strings.TrimSpace(req.ToTag) == "" {
+		jsonError(c, common.CodeArgumentError, "from_tag and to_tag must not be empty")
+		return
+	}
+
+	result, code, err := h.datasetsService.RenameTag(datasetID, user.ID, req.FromTag, req.ToTag)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, result, "success")
+}
+
 // DeleteKnowledgeGraph handles DELETE /api/v1/datasets/:dataset_id/graph.
 func (h *DatasetsHandler) DeleteKnowledgeGraph(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
@@ -513,7 +584,8 @@ func (h *DatasetsHandler) DeleteKnowledgeGraph(c *gin.Context) {
 
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
 	if _, err := docEngine.DeleteChunks(c.Request.Context(), map[string]interface{}{
-		"knowledge_graph_kwd": []string{"graph", "subgraph", "entity", "relation", "community_report"},
+		"knowledge_graph_kwd": []interface{}{"graph", "subgraph", "entity", "relation", "community_report"},
+		"kb_id":               datasetID,
 	}, indexName, datasetID); err != nil {
 		jsonInternalError(c, err)
 		return
@@ -592,6 +664,44 @@ func (h *DatasetsHandler) RemoveTags(c *gin.Context) {
 	jsonResponse(c, common.CodeSuccess, true, "success")
 }
 
+// AggregateTags handles GET /api/v1/datasets/tags/aggregation.
+// @Summary Aggregate dataset tags
+// @Description Aggregate tags across multiple datasets
+// @Tags datasets
+// @Produce json
+// @Security ApiKeyAuth
+// @Param dataset_ids query string true "Comma-separated dataset IDs"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/datasets/tags/aggregation [get]
+func (h *DatasetsHandler) AggregateTags(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	rawIDs := strings.Split(c.Query("dataset_ids"), ",")
+	datasetIDs := make([]string, 0, len(rawIDs))
+
+	for _, rawID := range rawIDs {
+		tempID := strings.TrimSpace(rawID)
+		if tempID != "" {
+			datasetIDs = append(datasetIDs, tempID)
+		}
+	}
+	if len(datasetIDs) == 0 {
+		jsonError(c, common.CodeDataError, "Lack of dataset_ids in query parameters")
+		return
+	}
+
+	result, code, err := h.datasetsService.AggregateTags(datasetIDs, user.ID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+	jsonResponse(c, common.CodeSuccess, result, "success")
+}
+
 // RunIndex Run an indexing task (graph/raptor/mindmap) for a dataset.
 func (h *DatasetsHandler) RunIndex(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
@@ -658,6 +768,47 @@ func (h *DatasetsHandler) TraceIndex(c *gin.Context) {
 		"data":    result,
 		"message": "success",
 	})
+}
+
+// DeleteIndex Delete an indexing task (graph/raptor/mindmap) for a dataset.
+func (h *DatasetsHandler) DeleteIndex(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := strings.TrimSpace(c.Param("dataset_id"))
+	if datasetID == "" {
+		jsonError(c, common.CodeDataError, "dataset_id is required")
+		return
+	}
+
+	userID := strings.TrimSpace(user.ID)
+	if userID == "" {
+		jsonError(c, common.CodeDataError, "user_id is required")
+		return
+	}
+
+	indexType := strings.ToLower(strings.TrimSpace(c.Param("index_type")))
+	if indexType == "" {
+		indexType = strings.ToLower(strings.TrimSpace(c.Query("type")))
+	}
+
+	wipeArg := strings.ToLower(strings.TrimSpace(c.DefaultQuery("wipe", "true")))
+	wipe := true
+	switch wipeArg {
+	case "false", "0", "no", "off":
+		wipe = false
+	}
+
+	code, err := h.datasetsService.DeleteIndex(userID, datasetID, indexType, wipe)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, map[string]interface{}{}, "success")
 }
 
 // ListMetadataFlattened handles GET /api/v1/datasets/metadata/flattened.

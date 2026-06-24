@@ -25,6 +25,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	redisengine "ragflow/internal/engine/redis"
+	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/server"
@@ -82,6 +83,9 @@ const (
 	graphRaptorQueueDocID = "graph_raptor_x"
 	maximumTaskPageNumber = int64(100000000)
 	serverQueueNamePrefix = "te"
+
+	graphPhaseResolutionDone = "resolution_done"
+	graphPhaseCommunityDone  = "community_done"
 )
 
 // DatasetService implements the RESTful dataset APIs from dataset_api.py.
@@ -165,6 +169,7 @@ func (s *DatasetService) UpdateDocumentMetadataConfig(userID, datasetID, documen
 	return updatedDoc, common.CodeSuccess, nil
 }
 
+// checkType reports whether indexType is supported by dataset index APIs.
 func checkType(indexType string) bool {
 	haveType := false
 	for _, t := range validIndexTypes {
@@ -318,6 +323,19 @@ func datasetIndexTaskIDColumn(indexType string) string {
 	}
 }
 
+func datasetIndexTaskFinishAtColumn(indexType string) string {
+	switch indexType {
+	case "graph":
+		return "graphrag_task_finish_at"
+	case "raptor":
+		return "raptor_task_finish_at"
+	case "mindmap":
+		return "mindmap_task_finish_at"
+	default:
+		return ""
+	}
+}
+
 func checkIndexTaskType(taskType string) bool {
 	switch taskType {
 	case "graphrag", "raptor", "mindmap":
@@ -377,6 +395,25 @@ func datasetIndexTaskIDs(kb *entity.Knowledgebase) []string {
 
 func datasetIndexQueueName(priority int) string {
 	return fmt.Sprintf("%s.%d.common", serverQueueNamePrefix, priority)
+}
+
+func interfaceSlice(items ...string) []interface{} {
+	result := make([]interface{}, len(items))
+	for i, item := range items {
+		result[i] = item
+	}
+	return result
+}
+
+func clearGraphPhaseMarkers(redisClient *redisengine.RedisClient, datasetID string) {
+	if redisClient == nil || datasetID == "" {
+		return
+	}
+	for _, phase := range []string{graphPhaseResolutionDone, graphPhaseCommunityDone} {
+		if !redisClient.Delete(fmt.Sprintf("graphrag:phase:%s:%s", datasetID, phase)) {
+			common.Warn("Failed to clear GraphRAG phase marker", zap.String("dataset_id", datasetID), zap.String("phase", phase))
+		}
+	}
 }
 
 // RunIndex Run an indexing task (graph/raptor/mindmap) for a dataset.
@@ -526,6 +563,85 @@ func (s *DatasetService) TraceIndex(datasetID, userID, indexType string) (*entit
 	}
 
 	return task, common.CodeSuccess, nil
+}
+
+func (s *DatasetService) DeleteIndex(userID, datasetID, indexType string, wipe bool) (common.ErrorCode, error) {
+	if !checkType(indexType) {
+		return common.CodeArgumentError, fmt.Errorf("Invalid index type '%s'", indexType)
+	}
+
+	if datasetID == "" {
+		return common.CodeDataError, errors.New(`Lack of "Dataset ID"`)
+	}
+
+	if !s.kbDAO.Accessible(datasetID, userID) {
+		return common.CodeDataError, errors.New("No authorization.")
+	}
+
+	kb, err := s.kbDAO.GetByID(datasetID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return common.CodeDataError, errors.New("Invalid Dataset ID")
+		}
+		return common.CodeDataError, errors.New("Internal server error")
+	}
+
+	taskIDField := datasetIndexTaskIDColumn(indexType)
+	taskFinishAtField := datasetIndexTaskFinishAtColumn(indexType)
+	taskID := datasetIndexTaskID(kb, indexType)
+
+	common.Info("delete_index", zap.String("dataset_id", datasetID), zap.String("index_type", indexType), zap.Bool("wipe", wipe))
+
+	if taskID != "" {
+		redisClient := redisengine.Get()
+		if redisClient == nil || !redisClient.Set(fmt.Sprintf("%s-cancel", taskID), "x", 0) {
+			common.Warn("Failed to set dataset index cancellation marker", zap.String("dataset_id", datasetID), zap.String("task_id", taskID))
+		}
+		if err := dao.DB.Unscoped().Where("id = ?", taskID).Delete(&entity.Task{}).Error; err != nil {
+			common.Warn("Failed to delete dataset index task", zap.String("dataset_id", datasetID), zap.String("task_id", taskID), zap.Error(err))
+			return common.CodeDataError, errors.New("Internal server error")
+		}
+	}
+
+	if wipe && indexType == "graph" {
+		if s.docEngine == nil {
+			return common.CodeServerError, errors.New("Document engine is not initialized")
+		}
+		indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
+		_, err = s.docEngine.DeleteChunks(context.Background(), map[string]interface{}{
+			"knowledge_graph_kwd": interfaceSlice("graph", "subgraph", "entity", "relation", "community_report"),
+			"kb_id":               datasetID,
+		}, indexName, datasetID)
+		if err != nil {
+			common.Warn("Failed to delete GraphRAG artefacts", zap.String("dataset_id", datasetID), zap.Error(err))
+			return common.CodeDataError, errors.New("Internal server error")
+		}
+		clearGraphPhaseMarkers(redisengine.Get(), datasetID)
+		common.Info("delete_index: cleared GraphRAG artefacts and phase markers", zap.String("dataset_id", datasetID))
+	} else if wipe && indexType == "raptor" {
+		if s.docEngine == nil {
+			return common.CodeServerError, errors.New("Document engine is not initialized")
+		}
+		indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
+		_, err = s.docEngine.DeleteChunks(context.Background(), map[string]interface{}{
+			"raptor_kwd": interfaceSlice("raptor"),
+			"kb_id":      datasetID,
+		}, indexName, datasetID)
+		if err != nil {
+			common.Warn("Failed to delete RAPTOR artefacts", zap.String("dataset_id", datasetID), zap.Error(err))
+			return common.CodeDataError, errors.New("Internal server error")
+		}
+	}
+
+	if err := dao.DB.Model(&entity.Knowledgebase{}).Where("id = ?", kb.ID).Updates(map[string]interface{}{
+		taskIDField:       "",
+		taskFinishAtField: nil,
+	}).Error; err != nil {
+		common.Warn("Failed to clear dataset index task fields", zap.String("dataset_id", datasetID), zap.String("index_type", indexType), zap.Error(err))
+		return common.CodeDataError, errors.New("Internal server error")
+	}
+
+	return common.CodeSuccess, nil
 }
 
 // SearchDatasetsRequest is the request structure for searching chunks across datasets.
@@ -1831,6 +1947,197 @@ func (s *DatasetService) Accessible(kbID, userID string) bool {
 	return s.kbDAO.Accessible(kbID, userID)
 }
 
+func (s *DatasetService) AggregateTags(datasetIDs []string, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
+	if len(datasetIDs) == 0 {
+		return nil, common.CodeDataError, errors.New("Lack of dataset_ids in query parameters")
+	}
+	if s.docEngine == nil {
+		return nil, common.CodeServerError, errors.New("Document engine is not initialized")
+	}
+
+	datasetIDsByTenant := make(map[string][]string)
+	for _, rawID := range datasetIDs {
+		rawID = strings.TrimSpace(rawID)
+		if rawID == "" {
+			continue
+		}
+		datasetID, err := normalizeDatasetID(rawID)
+		if err != nil {
+			return nil, common.CodeDataError, err
+		}
+		if !s.kbDAO.Accessible(datasetID, userID) {
+			return nil, common.CodeDataError, fmt.Errorf("No authorization for dataset '%s'", datasetID)
+		}
+		kb, err := s.kbDAO.GetByID(datasetID)
+		if err != nil {
+			if dao.IsNotFoundErr(err) {
+				return nil, common.CodeDataError, fmt.Errorf("Invalid Dataset ID '%s'", datasetID)
+			}
+			return nil, common.CodeServerError, errors.New("Database operation failed")
+		}
+		if kb.DocNum <= 0 {
+			continue
+		}
+		datasetIDsByTenant[kb.TenantID] = append(datasetIDsByTenant[kb.TenantID], datasetID)
+	}
+
+	const pageSize = 10000
+	merged := make(map[string]int)
+	for tenantID, kbIDs := range datasetIDsByTenant {
+		for offset := 0; ; offset += pageSize {
+			searchResp, err := s.docEngine.Search(context.Background(), &types.SearchRequest{
+				IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
+				KbIDs:        kbIDs,
+				Offset:       offset,
+				Limit:        pageSize,
+				SelectFields: []string{"tag_kwd"},
+			})
+			if err != nil {
+				return nil, common.CodeServerError, fmt.Errorf("failed to aggregate tags: %w", err)
+			}
+			for _, agg := range s.docEngine.GetAggregation(searchResp.Chunks, "tag_kwd") {
+				tag, _ := agg["key"].(string)
+				if tag == "" {
+					continue
+				}
+				switch count := agg["count"].(type) {
+				case int:
+					merged[tag] += count
+				case int32:
+					merged[tag] += int(count)
+				case int64:
+					merged[tag] += int(count)
+				case float64:
+					merged[tag] += int(count)
+				}
+			}
+
+			chunkCount := len(searchResp.Chunks)
+			if chunkCount == 0 || chunkCount < pageSize {
+				break
+			}
+			if searchResp.Total > 0 && int64(offset+chunkCount) >= searchResp.Total {
+				break
+			}
+		}
+	}
+	result := make([]map[string]interface{}, 0, len(merged))
+	for tag, count := range merged {
+		result = append(result, map[string]interface{}{
+			"value": tag,
+			"count": count,
+		})
+	}
+	return result, common.CodeSuccess, nil
+}
+
+func (s *DatasetService) ListTags(datasetID, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
+	datasetID = strings.TrimSpace(datasetID)
+	if datasetID == "" {
+		return nil, common.CodeDataError, errors.New("Lack of \"Dataset ID\"")
+	}
+
+	normalizedID, err := normalizeDatasetID(datasetID)
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+	datasetID = normalizedID
+
+	if !s.kbDAO.Accessible(datasetID, userID) {
+		return nil, common.CodeDataError, errors.New("No authorization.")
+	}
+	if s.docEngine == nil {
+		return nil, common.CodeServerError, errors.New("Document engine is not initialized")
+	}
+
+	kb, err := s.kbDAO.GetByID(datasetID)
+	if err != nil || kb == nil {
+		return nil, common.CodeDataError, errors.New("Invalid Dataset ID")
+	}
+
+	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	exists, err := s.docEngine.ChunkStoreExists(ctx, indexName, datasetID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to inspect chunk store: %w", err)
+	}
+	if !exists {
+		return []map[string]interface{}{}, common.CodeSuccess, nil
+	}
+
+	const pageSize = 10000
+	counts := make(map[string]int)
+	for offset := 0; ; offset += pageSize {
+		if err := ctx.Err(); err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("list tags timeout or canceled: %w", err)
+		}
+
+		searchResp, err := s.docEngine.Search(ctx, &types.SearchRequest{
+			IndexNames:   []string{indexName},
+			KbIDs:        []string{datasetID},
+			Offset:       offset,
+			Limit:        pageSize,
+			SelectFields: []string{"tag_kwd"},
+		})
+		if err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("failed to list tags: %w", err)
+		}
+
+		for _, agg := range s.docEngine.GetAggregation(searchResp.Chunks, "tag_kwd") {
+			tag, _ := agg["key"].(string)
+			if tag == "" {
+				continue
+			}
+			switch count := agg["count"].(type) {
+			case int:
+				counts[tag] += count
+			case int32:
+				counts[tag] += int(count)
+			case int64:
+				counts[tag] += int(count)
+			case float64:
+				counts[tag] += int(count)
+			}
+		}
+
+		chunkCount := len(searchResp.Chunks)
+		if chunkCount == 0 || chunkCount < pageSize {
+			break
+		}
+		if searchResp.Total > 0 && int64(offset+chunkCount) >= searchResp.Total {
+			break
+		}
+	}
+
+	if len(counts) == 0 {
+		return []map[string]interface{}{}, common.CodeSuccess, nil
+	}
+
+	tags := make([]string, 0, len(counts))
+	for tag := range counts {
+		tags = append(tags, tag)
+	}
+	sort.Slice(tags, func(i, j int) bool {
+		if counts[tags[i]] != counts[tags[j]] {
+			return counts[tags[i]] > counts[tags[j]]
+		}
+		return tags[i] < tags[j]
+	})
+
+	result := make([]map[string]interface{}, 0, len(tags))
+	for _, tag := range tags {
+		result = append(result, map[string]interface{}{
+			"key":   tag,
+			"count": counts[tag],
+		})
+	}
+
+	return result, common.CodeSuccess, nil
+}
+
 // GetIngestionSummary returns dataset-level ingestion counters together with
 // the aggregated document parsing status, mirroring
 // dataset_api_service.get_ingestion_summary.
@@ -2343,4 +2650,52 @@ func limitStrings(values []string, limit int) []string {
 		return values
 	}
 	return values[:limit]
+}
+
+func (s *DatasetService) RenameTag(datasetID, userID, fromTag, toTag string) (map[string]interface{}, common.ErrorCode, error) {
+	fromTag = strings.TrimSpace(fromTag)
+	toTag = strings.TrimSpace(toTag)
+
+	datasetID, err := normalizeDatasetID(datasetID)
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+	if strings.TrimSpace(datasetID) == "" {
+		return nil, common.CodeDataError, errors.New("Lack of \"Dataset ID\"")
+	}
+	if !s.kbDAO.Accessible(datasetID, userID) {
+		return nil, common.CodeDataError, errors.New("No authorization.")
+	}
+	if s.docEngine == nil {
+		return nil, common.CodeServerError, errors.New("Document engine is not initialized")
+	}
+
+	kb, err := s.kbDAO.GetByID(datasetID)
+	if err != nil || kb == nil {
+		return nil, common.CodeDataError, errors.New("Invalid Dataset ID")
+	}
+	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
+
+	condition := map[string]interface{}{
+		"tag_kwd": fromTag,
+		"kb_id":   datasetID,
+	}
+	newValue := map[string]interface{}{
+		"remove": map[string]interface{}{
+			"tag_kwd": fromTag,
+		},
+		"add": map[string]interface{}{
+			"tag_kwd": toTag,
+		},
+	}
+
+	err = s.docEngine.UpdateChunks(context.Background(), condition, newValue, indexName, datasetID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to rename tag: %w", err)
+	}
+
+	return map[string]interface{}{
+		"from": fromTag,
+		"to":   toTag,
+	}, common.CodeSuccess, nil
 }
