@@ -92,7 +92,7 @@ export function ConfirmDeleteDialog({
             </>
           )}
         </AlertDialogHeader>
-        <AlertDialogFooter className="px-5 flex items-center gap-2">
+        <AlertDialogFooter className="px-5 flex items-center">
           <AlertDialogCancel
             onClick={onCancel}
             data-testid={
