@@ -47,7 +47,11 @@ class GithubOAuthClient(OAuthClient):
             )
             email_response.raise_for_status()
             email_info = email_response.json()
-            user_info["email"] = next((email for email in email_info if email["primary"]), None)["email"]
+            primary_email = next((email for email in email_info if email.get("primary")), None)
+            email = primary_email.get("email") if primary_email else user_info.get("email")
+            if not email:
+                raise ValueError("GitHub account email is unavailable.")
+            user_info["email"] = email
             return self.normalize_user_info(user_info)
         except Exception as e:
             raise ValueError(f"Failed to fetch github user info: {e}")
@@ -74,7 +78,11 @@ class GithubOAuthClient(OAuthClient):
             )
             email_response.raise_for_status()
             email_info = email_response.json()
-            user_info["email"] = next((email for email in email_info if email["primary"]), None)["email"]
+            primary_email = next((email for email in email_info if email.get("primary")), None)
+            email = primary_email.get("email") if primary_email else user_info.get("email")
+            if not email:
+                raise ValueError("GitHub account email is unavailable.")
+            user_info["email"] = email
             return self.normalize_user_info(user_info)
         except Exception as e:
             raise ValueError(f"Failed to fetch github user info: {e}")
