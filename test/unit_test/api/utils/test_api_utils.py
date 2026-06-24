@@ -38,7 +38,7 @@ def _load_api_utils(monkeypatch):
     tenant_llm_stub.LLMFactoriesService = SimpleNamespace(get_all=lambda **_kwargs: [])
     monkeypatch.setitem(sys.modules, "api.db.services.tenant_llm_service", tenant_llm_stub)
 
-    sys.modules.pop("api.utils.api_utils", None)
+    monkeypatch.delitem(sys.modules, "api.utils.api_utils", raising=False)
     return importlib.import_module("api.utils.api_utils")
 
 

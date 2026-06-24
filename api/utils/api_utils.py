@@ -265,6 +265,7 @@ def _resolve_error_http_status(code) -> int:
     try:
         numeric_code = int(code)
     except (TypeError, ValueError):
+        logging.debug("build_error_result: falling back to 400 for non-numeric code=%r", code)
         return RetCode.BAD_REQUEST
 
     ret_code = RetCode._value2member_map_.get(numeric_code)
@@ -273,6 +274,7 @@ def _resolve_error_http_status(code) -> int:
 
     if 200 <= numeric_code <= 599:
         return numeric_code
+    logging.debug("build_error_result: falling back to 400 for out-of-range/internal code=%s", numeric_code)
     return RetCode.BAD_REQUEST
 
 
