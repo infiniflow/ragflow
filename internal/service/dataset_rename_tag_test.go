@@ -19,10 +19,6 @@ type renameTagUpdateCall struct {
 	DatasetID string
 }
 
-type fakeChatDocEngine struct {
-	engine.DocEngine
-}
-
 type renameTagMockEngine struct {
 	engine.DocEngine
 	updateCalls []renameTagUpdateCall
