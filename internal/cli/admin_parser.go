@@ -2301,20 +2301,6 @@ func (p *Parser) parseAdminIngestCommand() (*Command, error) {
 	}
 	return cmd, nil
 }
-func (p *Parser) parseAdminUnsetCommand() (*Command, error) {
-	p.nextToken() // consume UNSET
-
-	if p.curToken.Type != TokenToken {
-		return nil, fmt.Errorf("expected TOKEN after UNSET")
-	}
-	p.nextToken()
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return NewCommand("unset_token"), nil
-}
 
 func (p *Parser) parseMessageQueueCommand() (*Command, error) {
 	p.nextToken() // consume MESSAGE_QUEUE

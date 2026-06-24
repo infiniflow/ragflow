@@ -322,12 +322,12 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.APIListAPIKeysCommand(cmd)
 	case "api_delete_api_key":
 		return c.APIDeleteAPIKeyCommand(cmd)
-	case "set_token":
-		return c.SetToken(cmd)
+	case "api_set_api_key":
+		return c.APISetAPIKey(cmd)
 	case "show_token":
 		return c.ShowToken(cmd)
-	case "unset_token":
-		return c.UnsetToken(cmd)
+	case "api_unset_api_key":
+		return c.APIUnsetAPIKey(cmd)
 	case "show_version":
 		return c.ShowServerVersion(cmd)
 	case "show_current":

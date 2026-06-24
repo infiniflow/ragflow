@@ -1136,8 +1136,8 @@ func (c *CLI) ListAPIServer(cmd *Command) (ResponseIf, error) {
 		}
 		if c.APIServerClientMap[serverName].LoginToken != nil {
 			element["auth"] = "login"
-		} else if apiServerConfig.ApiToken != nil {
-			element["auth"] = "api token"
+		} else if c.APIServerClientMap[serverName].APIKey != nil {
+			element["auth"] = "api key"
 		} else {
 			element["auth"] = "no auth"
 		}
@@ -1310,7 +1310,7 @@ func (c *CLI) SaveServerConfig(cmd *Command) (ResponseIf, error) {
 			return nil, fmt.Errorf("admin server isn't already login")
 		}
 	case APIMode:
-		if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
 			return nil, fmt.Errorf("API token not set. Please login first")
 		}
 	default:
@@ -1365,8 +1365,8 @@ func (c *CLI) GetAPIServerInfo(serverName string) (ResponseIf, error) {
 		}
 		if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken != nil {
 			result.Data["auth"] = "login"
-		} else if apiServerConfig.ApiToken != nil {
-			result.Data["auth"] = "api token"
+		} else if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey != nil {
+			result.Data["auth"] = "api key"
 		} else {
 			result.Data["auth"] = "no auth"
 		}

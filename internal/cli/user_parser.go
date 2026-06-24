@@ -1828,7 +1828,7 @@ func (p *Parser) parseIdentifierList() ([]string, error) {
 	return list, nil
 }
 
-func (p *Parser) parseSetCommand() (*Command, error) {
+func (p *Parser) parseAPISetCommands() (*Command, error) {
 	p.nextToken() // consume SET
 
 	if p.curToken.Type == TokenVar {
@@ -1837,8 +1837,8 @@ func (p *Parser) parseSetCommand() (*Command, error) {
 	if p.curToken.Type == TokenDefault {
 		return p.parseSetDefault()
 	}
-	if p.curToken.Type == TokenToken {
-		return p.parseSetToken()
+	if p.curToken.Type == TokenKey {
+		return p.parseAPISetAPIKey()
 	}
 	if p.curToken.Type == TokenMetadata {
 		return p.parseSetMeta()
@@ -1929,26 +1929,26 @@ func (p *Parser) parseSetDefault() (*Command, error) {
 	}
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
 	return cmd, nil
 }
 
-func (p *Parser) parseSetToken() (*Command, error) {
-	p.nextToken() // consume TOKEN
+func (p *Parser) parseAPISetAPIKey() (*Command, error) {
+	p.nextToken() // consume KEY
 
-	tokenValue, err := p.parseQuotedString()
+	apiKey, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-
-	cmd := NewCommand("set_token")
-	cmd.Params["token"] = tokenValue
-
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+
+	cmd := NewCommand("api_set_api_key")
+	cmd.Params["api_key"] = apiKey
+
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -2032,37 +2032,6 @@ func (p *Parser) parseResetCommand() (*Command, error) {
 	p.nextToken() // pass MODEL
 
 	// Semicolon is optional for UNSET TOKEN
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseGenerateCommand() (*Command, error) {
-	p.nextToken() // consume GENERATE
-	if p.curToken.Type != TokenToken {
-		return nil, fmt.Errorf("expected TOKEN")
-	}
-	p.nextToken()
-	if p.curToken.Type != TokenFor {
-		return nil, fmt.Errorf("expected FOR")
-	}
-	p.nextToken()
-	if p.curToken.Type != TokenUser {
-		return nil, fmt.Errorf("expected USER")
-	}
-	p.nextToken()
-
-	userName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("generate_token")
-	cmd.Params["user_name"] = userName
-
-	p.nextToken()
-	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -3639,8 +3608,6 @@ func (p *Parser) parseUserStatement() (*Command, error) {
 		return p.parseCreateCommand()
 	case TokenDrop:
 		return p.parseDropCommand()
-	case TokenSet:
-		return p.parseSetCommand()
 	case TokenUnset:
 		return p.parseUnsetCommand()
 	case TokenReset:
@@ -3669,16 +3636,16 @@ func (p *Parser) parseUserStatement() (*Command, error) {
 func (p *Parser) parseUnsetCommand() (*Command, error) {
 	p.nextToken() // consume UNSET
 
-	if p.curToken.Type != TokenToken {
+	if p.curToken.Type != TokenKey {
 		return nil, fmt.Errorf("expected TOKEN after UNSET")
 	}
 	p.nextToken()
 
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
-	return NewCommand("unset_token"), nil
+	return NewCommand("api_unset_api_key"), nil
 }
 
 // parseGetCommand parses: GET CHUNK or GET METADATA
