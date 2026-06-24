@@ -1661,10 +1661,6 @@ func (s *ChunkService) AddChunk(req *service.AddChunkRequest, userID string) (*s
 
 	chunkID := strconv.FormatUint(xxhash.Sum64([]byte(req.Content+req.DocumentID)), 16)
 	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
-	chunkExists, err := s.chunkExists(indexName, chunkID, req.DatasetID)
-	if err != nil {
-		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("check chunk existence: %v", err)}
-	}
 	contentLtks, err := s.tokenize(req.Content)
 	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("tokenize content: %v", err)}
@@ -1749,11 +1745,9 @@ func (s *ChunkService) AddChunk(req *service.AddChunkRequest, userID string) (*s
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("insert chunk: %v", err)}
 	}
 
-	if !chunkExists {
-		tokenNum := int64(s.numTokens(docName) + s.numTokens(embeddingText))
-		if err := s.incrementChunkStats(req.DocumentID, req.DatasetID, tokenNum, 1, 0); err != nil {
-			return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("increment chunk stats: %v", err)}
-		}
+	tokenNum := int64(s.numTokens(docName) + s.numTokens(embeddingText))
+	if err := s.incrementChunkStats(req.DocumentID, req.DatasetID, tokenNum, 1, 0); err != nil {
+		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("increment chunk stats: %v", err)}
 	}
 
 	importantKeywords := req.ImportantKeywords

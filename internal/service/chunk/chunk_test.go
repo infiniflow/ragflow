@@ -636,7 +636,7 @@ func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
 	}
 }
 
-func TestAddChunkSkipsStatsForExistingChunk(t *testing.T) {
+func TestAddChunkIncrementsStatsForExistingChunk(t *testing.T) {
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
 	userID, datasetID, documentID := "user-1", "kb-1", "doc-1"
@@ -682,8 +682,8 @@ func TestAddChunkSkipsStatsForExistingChunk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddChunk() error = %v", err)
 	}
-	if incrementCalls != 0 {
-		t.Fatalf("increment calls = %d, want 0", incrementCalls)
+	if incrementCalls != 1 {
+		t.Fatalf("increment calls = %d, want 1", incrementCalls)
 	}
 }
 
