@@ -329,9 +329,9 @@ func (c *CLI) RegisterUser(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// ListDatasets lists datasets for current user (user mode)
+// APIListDatasetsCommand lists datasets for current user (user mode)
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
-func (c *CLI) ListDatasets(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APIListDatasetsCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
@@ -376,6 +376,186 @@ func (c *CLI) ListDatasets(cmd *Command) (ResponseIf, error) {
 	var result CommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("list datasets failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+
+	return &result, nil
+}
+
+func (c *CLI) APIListDatasetDocumentsCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+	// Determine auth kind based on whether API token is being used
+	if httpClient.LoginToken == nil && !httpClient.useAPIToken {
+		return nil, fmt.Errorf("no authorization")
+	}
+
+	datasetID, ok := cmd.Params["dataset_id"].(string)
+	if !ok {
+		return nil, fmt.Errorf("no dataset id")
+	}
+
+	page := 1
+	pageSize := 10
+	keywords := ""
+	returnEmptyMetadata := "true"
+	url := fmt.Sprintf("/datasets/%s/documents?page=%d&page_size=%d&keywords=%s&return_empty_metadata=%s", datasetID, page, pageSize, keywords, returnEmptyMetadata)
+
+	// Normal mode
+	resp, err := httpClient.Request("GET", url, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list documents: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list documents: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result ListDocumentsResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list documents failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+
+	return &result, nil
+}
+
+// APIListAgentsCommand lists agents
+func (c *CLI) APIListAgentsCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+
+	// Determine auth kind based on whether API token is being used
+	if httpClient.LoginToken == nil && !c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIToken {
+		return nil, fmt.Errorf("no authorization")
+	}
+
+	authKind := "web"
+	if httpClient.useAPIToken {
+		authKind = "api"
+	}
+
+	if httpClient.LoginToken != nil {
+		authKind = "web"
+	}
+
+	// Normal mode
+	resp, err := httpClient.Request("GET", "/agents", authKind, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list agents: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list agents: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result ListAgentsResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list agents failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+
+	return &result, nil
+}
+
+// APIListChatsCommand lists chats
+func (c *CLI) APIListChatsCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+
+	// Determine auth kind based on whether API token is being used
+	if httpClient.LoginToken == nil && !c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIToken {
+		return nil, fmt.Errorf("no authorization")
+	}
+
+	authKind := "web"
+	if httpClient.useAPIToken {
+		authKind = "api"
+	}
+
+	if httpClient.LoginToken != nil {
+		authKind = "web"
+	}
+
+	// Normal mode
+	resp, err := httpClient.Request("GET", "/chats", authKind, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list chats: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list chats: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result ListChatsResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list chats failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+
+	return &result, nil
+}
+
+// APIListSearchesCommand lists searches
+func (c *CLI) APIListSearchesCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+
+	// Determine auth kind based on whether API token is being used
+	if httpClient.LoginToken == nil && !c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].useAPIToken {
+		return nil, fmt.Errorf("no authorization")
+	}
+
+	authKind := "web"
+	if httpClient.useAPIToken {
+		authKind = "api"
+	}
+
+	if httpClient.LoginToken != nil {
+		authKind = "web"
+	}
+
+	// Normal mode
+	resp, err := httpClient.Request("GET", "/searches", authKind, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list searches: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list searches: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result ListSearchesResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list searches failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
@@ -734,25 +914,25 @@ func (c *CLI) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
 	return nil, nil
 }
 
-// CreateToken creates a new API token
-func (c *CLI) CreateToken(cmd *Command) (ResponseIf, error) {
+// APICreateAPIKeyCommand creates a new API key
+func (c *CLI) APICreateAPIKeyCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
 	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-	resp, err := httpClient.Request("POST", "/system/tokens", "web", nil, nil)
+	resp, err := httpClient.Request("POST", "/system/keys", "web", nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create token: %w", err)
+		return nil, fmt.Errorf("failed to create key: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to create token: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to create key: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	var createResult CommonDataResponse
 	if err = json.Unmarshal(resp.Body, &createResult); err != nil {
-		return nil, fmt.Errorf("create token failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("create key failed: invalid JSON (%w)", err)
 	}
 
 	if createResult.Code != 0 {
@@ -761,30 +941,30 @@ func (c *CLI) CreateToken(cmd *Command) (ResponseIf, error) {
 
 	var result SimpleResponse
 	result.Code = 0
-	result.Message = "Token created successfully"
+	result.Message = "API Key created successfully"
 	result.Duration = resp.Duration
 	return &result, nil
 }
 
-// ListTokens lists all API tokens for the current user
-func (c *CLI) ListTokens(cmd *Command) (ResponseIf, error) {
+// APIListAPIKeysCommand lists all API keys for the current user
+func (c *CLI) APIListAPIKeysCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
 	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-	resp, err := httpClient.Request("GET", "/system/tokens", "web", nil, nil)
+	resp, err := httpClient.Request("GET", "/system/keys", "web", nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list tokens: %w", err)
+		return nil, fmt.Errorf("failed to list keys: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list tokens: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to list keys: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	var result CommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list tokens failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("list keys failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
@@ -794,29 +974,29 @@ func (c *CLI) ListTokens(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// DropToken deletes an API token
-func (c *CLI) DropToken(cmd *Command) (ResponseIf, error) {
+// APIDeleteAPIKeyCommand deletes an API key
+func (c *CLI) APIDeleteAPIKeyCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	token, ok := cmd.Params["token"].(string)
+	apiKey, ok := cmd.Params["api_key"].(string)
 	if !ok {
-		return nil, fmt.Errorf("token not provided")
+		return nil, fmt.Errorf("key not provided")
 	}
 
-	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("DELETE", fmt.Sprintf("/system/tokens/%s", token), "web", nil, nil)
+	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("DELETE", fmt.Sprintf("/system/keys/%s", apiKey), "web", nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to drop token: %w", err)
+		return nil, fmt.Errorf("failed to delete key: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to drop token: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to delete key: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	var result SimpleResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("drop token failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("delete key failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {

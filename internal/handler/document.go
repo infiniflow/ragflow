@@ -489,7 +489,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	userID := c.GetString("user_id")
 
 	if !h.datasetService.Accessible(datasetID, userID) {
-		jsonError(c, common.CodeAuthenticationError, "No authorization.")
+		jsonError(c, common.CodeAuthenticationError, "No authorization to access the dataset.")
 		return
 	}
 

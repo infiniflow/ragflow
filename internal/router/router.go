@@ -554,11 +554,21 @@ func (r *Router) Setup(engine *gin.Engine) {
 				tokens := system.Group("/tokens")
 				{
 					// list tokens /api/v1/system/tokens GET
-					tokens.GET("", r.systemHandler.ListTokens)
+					tokens.GET("", r.systemHandler.ListAPIKeys)
 					// create token /api/v1/system/tokens POST
-					tokens.POST("", r.systemHandler.CreateToken)
-					// delete token /api/v1/system/tokens/:token DELETE
-					tokens.DELETE("/:token", r.systemHandler.DeleteToken)
+					tokens.POST("", r.systemHandler.CreateKey)
+					// delete token /api/v1/system/tokens/:key DELETE
+					tokens.DELETE("/:key", r.systemHandler.DeleteKey)
+				}
+
+				keys := system.Group("/keys")
+				{
+					// list keys /api/v1/system/keys GET
+					keys.GET("", r.systemHandler.ListAPIKeys)
+					// create key /api/v1/system/keys POST
+					keys.POST("", r.systemHandler.CreateKey)
+					// delete key /api/v1/system/keys/:key DELETE
+					keys.DELETE("/:key", r.systemHandler.DeleteKey)
 				}
 			}
 		}
