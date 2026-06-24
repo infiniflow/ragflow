@@ -664,6 +664,78 @@ func (h *DatasetsHandler) RemoveTags(c *gin.Context) {
 	jsonResponse(c, common.CodeSuccess, true, "success")
 }
 
+// RunEmbedding Run embedding for all documents in a dataset.
+func (h *DatasetsHandler) RunEmbedding(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	userID := strings.TrimSpace(user.ID)
+	if userID == "" {
+		jsonError(c, common.CodeAuthenticationError, "user_id is required")
+		return
+	}
+
+	datasetID := strings.TrimSpace(c.Param("dataset_id"))
+	if datasetID == "" {
+		jsonError(c, common.CodeDataError, "dataset_id is required")
+		return
+	}
+
+	result, errorCode, err := h.datasetsService.RunEmbedding(userID, datasetID)
+	if err != nil {
+		jsonError(c, errorCode, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, result, "success")
+}
+
+// CheckEmbedding Check embedding model compatibility by sampling random chunks,
+// re-embedding them with the new model, and computing cosine similarity.
+func (h *DatasetsHandler) CheckEmbedding(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := strings.TrimSpace(c.Param("dataset_id"))
+	if datasetID == "" {
+		jsonError(c, common.CodeDataError, "dataset_id is required")
+		return
+	}
+
+	userID := strings.TrimSpace(user.ID)
+	if userID == "" {
+		jsonError(c, common.CodeDataError, "user_id is required")
+		return
+	}
+
+	var req service.CheckEmbeddingRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+	if strings.TrimSpace(req.EmbeddingID) == "" {
+		jsonError(c, common.CodeDataError, "`embd_id` is required.")
+		return
+	}
+
+	data, code, err := h.datasetsService.CheckEmbedding(userID, datasetID, &req)
+	if err != nil {
+		if code == common.CodeNotEffective {
+			jsonResponse(c, code, data, err.Error())
+			return
+		}
+		jsonError(c, code, err.Error())
+		return
+	}
+	jsonResponse(c, common.CodeSuccess, data, "success")
+}
+
 // AggregateTags handles GET /api/v1/datasets/tags/aggregation.
 // @Summary Aggregate dataset tags
 // @Description Aggregate tags across multiple datasets
