@@ -20,7 +20,7 @@
 // The canvas builder (internal/agent/canvas) consumes the factory via
 // runtime.DefaultFactory() so it can resolve real component bodies at
 // BuildWorkflow time without importing the component package. The
-// orchestrator (cmd/server_main, cmd/ragflow_cli, ...) blank-imports
+// orchestrator (cmd/server_main, cmd/ragflow-cli, ...) blank-imports
 // internal/agent/component to trigger this init, which is the same
 // trigger that drives each component's Register(...) call.
 package component

@@ -32,10 +32,10 @@ func init() {
 // It carries messages between sub-agents and tracks the current position.
 type WorkflowGraphState struct {
 	Messages      []*schema.Message
-	SubAgentNames []string   // names of sub-agents in order
-	CurrentStep   int        // current sub-agent index
-	LoopIter      int        // for loop mode
-	MaxLoopIter   int        // for loop mode
+	SubAgentNames []string // names of sub-agents in order
+	CurrentStep   int      // current sub-agent index
+	LoopIter      int      // for loop mode
+	MaxLoopIter   int      // for loop mode
 	Done          bool
 
 	mu sync.Mutex // protects Messages from concurrent access in inline execution

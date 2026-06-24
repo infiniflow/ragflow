@@ -862,11 +862,11 @@ func TestMultiTurn_ContextTimeout(t *testing.T) {
 
 // Helper: alternatingToolModel for testing tool call -> tool result -> response flow.
 type alternatingToolModel struct {
-	inner      *mockModel
-	toolCalls  []schema.ToolCall
-	responses  []string
-	callCount  int
-	mu         sync.Mutex
+	inner     *mockModel
+	toolCalls []schema.ToolCall
+	responses []string
+	callCount int
+	mu        sync.Mutex
 }
 
 func (m *alternatingToolModel) Generate(ctx context.Context, msgs []Message, opts ...modelOption) (Message, error) {

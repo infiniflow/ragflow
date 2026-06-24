@@ -410,7 +410,7 @@ func (h *Handler) ListModels(c *gin.Context) {
 	})
 }
 
-func (h *Handler) ShowModel(c *gin.Context) {
+func (h *Handler) ShowProviderModel(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -876,39 +876,46 @@ func (h *Handler) DeleteModels(c *gin.Context) {
 	success(c, result, "Model deleted successfully")
 }
 
-type ListModelsOrShowModelRequest struct {
-	ModelName string `json:"model_name"`
+func (h *Handler) ListAllModels(c *gin.Context) {
+	// List models
+	models, err := h.service.ListAllModels()
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, models, "")
 }
 
-func (h *Handler) ListModelsOrShowModel(c *gin.Context) {
-	var req ListModelsOrShowModelRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+func (h *Handler) ShowModel(c *gin.Context) {
+	encodedModelName := c.Param("model_name")
+	if encodedModelName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "Invalid request body",
+			"message": "Encoded model name is empty",
 		})
 		return
 	}
 
-	if req.ModelName == "" {
-		// List models
-		models, err := h.service.ListAllModels()
-		if err != nil {
-			errorResponse(c, err.Error(), 500)
-			return
-		}
-
-		success(c, models, "")
-	} else {
-		// Get model
-		model, err := h.service.GetModelByModelName(req.ModelName)
-		if err != nil {
-			errorResponse(c, err.Error(), 500)
-			return
-		}
-
-		success(c, model, "")
+	decodedModelName, err := common.DecodeFromBase64(encodedModelName)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
 	}
+	if decodedModelName == "" {
+		errorResponse(c, "Decoded model name is empty", 400)
+		return
+	}
+
+	// Get model
+	model, err := h.service.GetModelByModelName(decodedModelName)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, model, "")
+
 }
 
 // GetSystemFingerprint handle get system fingerprint
@@ -1035,7 +1042,7 @@ func (h *Handler) ShowUserDatasetSummary(c *gin.Context) {
 	}
 
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1061,7 +1068,7 @@ func (h *Handler) ShowUserDatasetSummary(c *gin.Context) {
 // ShowUserSummary handle show user summary
 func (h *Handler) ShowUserSummary(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1087,7 +1094,7 @@ func (h *Handler) ShowUserSummary(c *gin.Context) {
 // ShowUserStorage handle show user storage
 func (h *Handler) ShowUserStorage(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1113,7 +1120,7 @@ func (h *Handler) ShowUserStorage(c *gin.Context) {
 // ShowUserQuota handle show user quota
 func (h *Handler) ShowUserQuota(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1139,7 +1146,7 @@ func (h *Handler) ShowUserQuota(c *gin.Context) {
 // ShowUserIndex handle show user index
 func (h *Handler) ShowUserIndex(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1170,7 +1177,7 @@ type UpdateUserRoleHTTPRequest struct {
 // UpdateUserRole handle update user role
 func (h *Handler) UpdateUserRole(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1198,7 +1205,7 @@ func (h *Handler) UpdateUserRole(c *gin.Context) {
 // ShowUserPermission handle show user permission
 func (h *Handler) ShowUserPermission(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1220,7 +1227,7 @@ func (h *Handler) ShowUserPermission(c *gin.Context) {
 // ListUserDatasets handle show user datasets
 func (h *Handler) ListUserDatasets(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1242,7 +1249,7 @@ func (h *Handler) ListUserDatasets(c *gin.Context) {
 // ListUserAgents handle show user agents
 func (h *Handler) ListUserAgents(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1264,7 +1271,7 @@ func (h *Handler) ListUserAgents(c *gin.Context) {
 // ListUserChats handle show user chats
 func (h *Handler) ListUserChats(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1286,7 +1293,7 @@ func (h *Handler) ListUserChats(c *gin.Context) {
 // ListUserSearches handle show user searches
 func (h *Handler) ListUserSearches(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1308,7 +1315,7 @@ func (h *Handler) ListUserSearches(c *gin.Context) {
 // ListUserModels handle show user models
 func (h *Handler) ListUserModels(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1330,7 +1337,7 @@ func (h *Handler) ListUserModels(c *gin.Context) {
 // ListUserFiles handle show user files
 func (h *Handler) ListUserFiles(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1352,7 +1359,7 @@ func (h *Handler) ListUserFiles(c *gin.Context) {
 // ListUserProviders handle show user providers
 func (h *Handler) ListUserProviders(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1374,7 +1381,7 @@ func (h *Handler) ListUserProviders(c *gin.Context) {
 // ListUserProviderInstances handle show user provider instances
 func (h *Handler) ListUserProviderInstances(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	userName, err := common.DecodeEmail(encodedUsername)
+	userName, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1402,7 +1409,7 @@ func (h *Handler) ListUserProviderInstances(c *gin.Context) {
 // ListUserProviderInstanceModels handle show user provider instance models
 func (h *Handler) ListUserProviderInstanceModels(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	userName, err := common.DecodeEmail(encodedUsername)
+	userName, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1436,7 +1443,7 @@ func (h *Handler) ListUserProviderInstanceModels(c *gin.Context) {
 // ListUserDefaultModels handle show user default models
 func (h *Handler) ListUserDefaultModels(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	userName, err := common.DecodeEmail(encodedUsername)
+	userName, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1875,7 +1882,7 @@ func (h *Handler) PurgeUserData(c *gin.Context) {
 		return
 	}
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1933,7 +1940,7 @@ func (h *Handler) PurgeUsersData(c *gin.Context) {
 // GenerateUserAPIKey handle create tenant API key
 func (h *Handler) GenerateUserAPIKey(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1951,7 +1958,7 @@ func (h *Handler) GenerateUserAPIKey(c *gin.Context) {
 // DeleteUserAPIKey handle delete user API key
 func (h *Handler) DeleteUserAPIKey(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1974,7 +1981,7 @@ func (h *Handler) DeleteUserAPIKey(c *gin.Context) {
 // ListUserAPIKeys handle list user API keys
 func (h *Handler) ListUserAPIKeys(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
