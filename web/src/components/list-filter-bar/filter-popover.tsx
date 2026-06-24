@@ -259,6 +259,7 @@ function CheckboxFormMultiple({
                           onChange={(e) =>
                             handleSearchChange(x.field, e.target.value)
                           }
+                          rootClassName="w-full"
                         />
                       )}
                     </div>

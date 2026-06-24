@@ -106,7 +106,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
 
     if (prefix || suffix || isPasswordInput) {
       return (
-        <div className={cn('relative w-full', rootClassName)}>
+        <div className={cn('relative', rootClassName)}>
           {prefix && (
             <span
               ref={prefixRef}
