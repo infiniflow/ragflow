@@ -342,6 +342,8 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.CommonListInstanceModelsCommand(cmd)
 	case "api_list_provider_instance_models_sync":
 		return c.CommonListInstanceModelsSyncCommand(cmd)
+	case "api_list_provider_instance_tasks":
+		return c.APIListModelInstanceTasksCommand(cmd)
 	case "show_provider_model":
 		return c.CommonShowProviderModelCommand(cmd)
 	case "show_model":
@@ -413,8 +415,6 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ResetDefaultModel(cmd)
 	case "api_list_default_models":
 		return c.ListDefaultModels(cmd)
-	case "list_tasks_user_command":
-		return c.ListTasksUserCommand(cmd)
 	case "show_task_user_command":
 		return c.ShowTaskUserCommand(cmd)
 	case "create_chunk_store":

@@ -1589,7 +1589,10 @@ func (c *CLI) getDatasetIDByName(datasetName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	commonResponse := response.(*CommonResponse)
+	commonResponse, ok := response.(*CommonResponse)
+	if !ok {
+		return "", fmt.Errorf("invalid response")
+	}
 	for _, dataset := range commonResponse.Data {
 		if dataset["name"] == datasetName {
 			return dataset["id"].(string), nil
