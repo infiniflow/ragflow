@@ -533,7 +533,11 @@ function GenericProviderInstanceCard({
               />
 
               <div className=" pt-3">
-                <VerifyButton onVerify={handleVerify} isAbsolute={false} />
+                <VerifyButton
+                  onVerify={handleVerify}
+                  isAbsolute={false}
+                  formRef={formRef}
+                />
               </div>
 
               <div className=" pt-3">
@@ -629,7 +633,11 @@ function GenericProviderInstanceCard({
             />
 
             <div className=" pt-3">
-              <VerifyButton onVerify={handleVerify} isAbsolute={false} />
+              <VerifyButton
+                onVerify={handleVerify}
+                isAbsolute={false}
+                formRef={formRef}
+              />
             </div>
 
             <div className=" pt-3">

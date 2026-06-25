@@ -30,6 +30,15 @@ interface IVerifyButton {
   params?: any;
   className?: string;
   verifyCallback?: (result: VerifyResult | null) => void;
+  /**
+   * Optional ref to a form-like object exposing `trigger()` and
+   * `getValues()`. Use this when the button is rendered as a *sibling*
+   * of the form (i.e. outside any FormProvider). When omitted, falls
+   * back to react-hook-form's `useFormContext()`.
+   */
+  formRef?: {
+    current: { trigger: () => Promise<boolean>; getValues: () => any } | null;
+  };
 }
 
 const VerifyButton: React.FC<IVerifyButton> = ({
@@ -38,6 +47,7 @@ const VerifyButton: React.FC<IVerifyButton> = ({
   params,
   className,
   verifyCallback,
+  formRef,
 }) => {
   const { t, i18n } = useTranslate('setting');
   const isArabic = (i18n.resolvedLanguage || i18n.language || '')
@@ -45,7 +55,8 @@ const VerifyButton: React.FC<IVerifyButton> = ({
     .startsWith('ar');
   const [isVerifying, setIsVerifying] = useState(false);
   const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
-  const form = useFormContext();
+  const contextForm = useFormContext();
+  const form = formRef?.current ?? contextForm;
 
   const onHandleVerify = useCallback(async () => {
     const formValid = await form?.trigger();
