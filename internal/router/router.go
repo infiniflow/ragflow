@@ -35,6 +35,7 @@ type Router struct {
 	llmHandler           *handler.LLMHandler
 	chatHandler          *handler.ChatHandler
 	chatChannelHandler   *handler.ChatChannelHandler
+	langfuseHandler      *handler.LangfuseHandler
 	openaiChatHandler    *handler.OpenAIChatHandler
 	chatSessionHandler   *handler.ChatSessionHandler
 	connectorHandler     *handler.ConnectorHandler
@@ -66,6 +67,7 @@ func NewRouter(
 	llmHandler *handler.LLMHandler,
 	chatHandler *handler.ChatHandler,
 	chatChannelHandler *handler.ChatChannelHandler,
+	langfuseHandler *handler.LangfuseHandler,
 	chatSessionHandler *handler.ChatSessionHandler,
 	connectorHandler *handler.ConnectorHandler,
 	searchHandler *handler.SearchHandler,
@@ -95,6 +97,7 @@ func NewRouter(
 		llmHandler:           llmHandler,
 		chatHandler:          chatHandler,
 		chatChannelHandler:   chatChannelHandler,
+		langfuseHandler:      langfuseHandler,
 		openaiChatHandler:    openaiChatHandler,
 		chatSessionHandler:   chatSessionHandler,
 		connectorHandler:     connectorHandler,
@@ -649,6 +652,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 			chanChannel.GET("/:channel_id", r.chatChannelHandler.GetChatChannel)
 			chanChannel.PATCH("/:channel_id", r.chatChannelHandler.UpdateChatChannel)
 			chanChannel.DELETE("/:channel_id", r.chatChannelHandler.DeleteChatChannel)
+		}
+
+		// Langfuse tracing keys
+		langfuse := v1.Group("/langfuse")
+		{
+			langfuse.POST("/api-key", r.langfuseHandler.SetAPIKey)
+			langfuse.PUT("/api-key", r.langfuseHandler.SetAPIKey)
+			langfuse.GET("/api-key", r.langfuseHandler.GetAPIKey)
+			langfuse.DELETE("/api-key", r.langfuseHandler.DeleteAPIKey)
 		}
 
 		// Chat session (conversation) routes
