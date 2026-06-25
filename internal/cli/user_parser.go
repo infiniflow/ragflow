@@ -524,7 +524,7 @@ func (p *Parser) parseAPIShowCommands() (*Command, error) {
 	case TokenVar:
 		return p.parseShowVariable()
 	case TokenProvider:
-		return p.parseShowProvider()
+		return p.parseAPIShowProviderCommands()
 	case TokenModel:
 		return p.parseShowModel()
 	case TokenInstance:
@@ -630,19 +630,90 @@ func (p *Parser) parseShowModel() (*Command, error) {
 	return cmd, nil
 }
 
-// parseShowProvider parses SHOW PROVIDER <name> command
-func (p *Parser) parseShowProvider() (*Command, error) {
+// SHOW PROVIDER <name>
+// SHOW PROVIDER <name> INSTANCE <instance_name>
+// SHOW PROVIDER <name> INSTANCE <instance_name> BALANCE
+// SHOW PROVIDER 'provider_name' MODEL 'model_name';
+func (p *Parser) parseAPIShowProviderCommands() (*Command, error) {
 	p.nextToken() // consume PROVIDER
 
 	providerName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, fmt.Errorf("expected provider name: %w", err)
 	}
+	p.nextToken() // consume provider_name
 
-	cmd := NewCommand("show_provider")
+	switch p.curToken.Type {
+	case TokenInstance:
+		return p.parseAPIShowProviderInstance(providerName)
+	case TokenModel:
+		return p.parseAPIShowProviderModel(providerName)
+	case TokenSemicolon, TokenEOF:
+		p.nextToken()
+	default:
+		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
+	}
+
+	cmd := NewCommand("api_show_provider")
 	cmd.Params["provider_name"] = providerName
 
-	p.nextToken()
+	return cmd, nil
+}
+
+// SHOW PROVIDER <name> INSTANCE <instance_name>
+func (p *Parser) parseAPIShowProviderInstance(providerName string) (*Command, error) {
+	p.nextToken() // consume INSTANCE
+
+	instanceName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected instance name: %w", err)
+	}
+	p.nextToken() // consume instance_name
+
+	if p.curToken.Type == TokenBalance {
+		return p.parseAPIShowProviderInstanceBalance(providerName, instanceName)
+	}
+
+	cmd := NewCommand("api_show_provider_instance")
+	cmd.Params["instance_name"] = instanceName
+	cmd.Params["provider_name"] = providerName
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// SHOW PROVIDER <name> INSTANCE <instance_name> BALANCE
+func (p *Parser) parseAPIShowProviderInstanceBalance(providerName, instanceName string) (*Command, error) {
+	p.nextToken() // consume BALANCE
+
+	cmd := NewCommand("api_show_provider_instance_balance")
+	cmd.Params["instance_name"] = instanceName
+	cmd.Params["provider_name"] = providerName
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// SHOW PROVIDER <name> MODEL <model_name>
+func (p *Parser) parseAPIShowProviderModel(providerName string) (*Command, error) {
+	p.nextToken() // consume MODEL
+
+	modelName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected model name: %w", err)
+	}
+	p.nextToken() // consume model_name
+
+	cmd := NewCommand("api_show_provider_model")
+	cmd.Params["model_name"] = modelName
+	cmd.Params["provider_name"] = providerName
+
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
