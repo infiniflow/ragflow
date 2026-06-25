@@ -527,10 +527,6 @@ func (p *Parser) parseAPIShowCommands() (*Command, error) {
 		return p.parseAPIShowProviderCommands()
 	case TokenModel:
 		return p.parseShowModel()
-	case TokenInstance:
-		return p.parseShowInstance()
-	case TokenBalance:
-		return p.parseShowBalance()
 	case TokenTask:
 		return p.parseShowTask()
 	case TokenQuotedString:
@@ -1712,77 +1708,6 @@ optionsLoop:
 	if region != "" {
 		cmd.Params["region"] = region
 	}
-
-	p.nextToken()
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-// parseShowInstance parses SHOW INSTANCE <name> FROM PROVIDER <name> command
-func (p *Parser) parseShowInstance() (*Command, error) {
-	p.nextToken() // consume INSTANCE
-
-	instanceName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, fmt.Errorf("expected instance name: %w", err)
-	}
-
-	p.nextToken()
-	if p.curToken.Type != TokenFrom {
-		return nil, fmt.Errorf("expected FROM")
-	}
-	p.nextToken()
-
-	providerName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, fmt.Errorf("expected provider name after FROM PROVIDER: %w", err)
-	}
-
-	cmd := NewCommand("show_provider_instance")
-	cmd.Params["instance_name"] = instanceName
-	cmd.Params["provider_name"] = providerName
-
-	p.nextToken()
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-// parseShowBalance parses SHOW BALANCE FROM <provider_name> <instance_name>
-func (p *Parser) parseShowBalance() (*Command, error) {
-	p.nextToken() // consume INSTANCE
-
-	if p.curToken.Type != TokenFrom {
-		return nil, fmt.Errorf("expected FROM")
-	}
-	p.nextToken()
-
-	if p.curToken.Type != TokenQuotedString {
-		return nil, fmt.Errorf("expected provider name after FROM PROVIDER")
-	}
-	providerName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, fmt.Errorf("expected provider name after FROM PROVIDER: %w", err)
-	}
-	p.nextToken()
-
-	if p.curToken.Type != TokenQuotedString {
-		return nil, fmt.Errorf("expected instance name")
-	}
-	instanceName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, fmt.Errorf("expected instance name: %w", err)
-	}
-	p.nextToken()
-
-	cmd := NewCommand("show_instance_balance")
-	cmd.Params["instance_name"] = instanceName
-	cmd.Params["provider_name"] = providerName
 
 	p.nextToken()
 	// Semicolon is optional

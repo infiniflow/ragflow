@@ -374,10 +374,6 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.CreateProviderInstance(cmd)
 	case "api_list_provider_instances":
 		return c.CommonListProviderInstances(cmd)
-	case "show_provider_instance":
-		return c.CommonShowProviderInstanceCommand(cmd)
-	case "show_instance_balance":
-		return c.ShowInstanceBalance(cmd)
 	case "alter_provider_instance":
 		return c.CommonAlterProviderInstanceCommand(cmd)
 	case "drop_provider_instance":
