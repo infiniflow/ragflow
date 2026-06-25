@@ -9,8 +9,7 @@ config:
       - 3. Bold key terms on first use; link them with [[ ]] artifactlinks.
       - 4. Examples or implications where the source provides them.
       - 5. ## See also section at the end with artifactlinks to highly related pages(less than 12).\n
-      - Page structure could be as following:
-      - (Not provided)
+      - Page structure could be as following: (Not provided)
   entity:
     description: >-
       You are a robust graph entity extractor for knowledge graphs.

@@ -2310,8 +2310,7 @@ ARTIFACT_TEMPLATE_EXAMPLE = (
     "3. Bold key terms on first use; link them with [[ ]] artifactlinks.\n"
     "4. Examples or implications where the source provides them.\n"
     "5. ## See also section at the end with artifactlinks to highly related pages(less than 12).\n\n"
-    "Page structure could be as following:"
-    "(Not provided)"
+    "Page structure could be as following:\n(Not provided)"
 )
 
 # Writer system prompt as a template: the ``{template_example}``
