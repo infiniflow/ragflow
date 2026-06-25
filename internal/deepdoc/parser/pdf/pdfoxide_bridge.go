@@ -5,7 +5,7 @@ package parser
 import (
 	"image"
 
-	"ragflow/internal/pdfoxide"
+	"ragflow/internal/deepdoc/parser/pdf/pdfoxide"
 )
 
 // pdfoxideEngine adapts pdfoxide.Engine to the PDFEngine interface.

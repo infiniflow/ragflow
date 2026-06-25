@@ -6,7 +6,7 @@ import (
 	"image"
 	"math"
 
-	"ragflow/internal/pdfium"
+	"ragflow/internal/deepdoc/parser/pdf/pdfium"
 )
 
 // Char represents a single character extracted from a PDF page.

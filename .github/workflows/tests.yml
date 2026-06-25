@@ -251,8 +251,8 @@ jobs:
             | grep -v '/internal/storage$' \
             | grep -v '/internal/tokenizer$' \
             | grep -v '/internal/handler$' \
-            | grep -v '/internal/pdfium' \
-            | grep -v '/internal/pdfoxide' \
+            | grep -v '/internal/deepdoc/parser/pdf/pdfium' \
+            | grep -v '/internal/deepdoc/parser/pdf/pdfoxide' \
             | grep -v '/internal/deepdoc/parser/pdf' || true)
           if [ -z "$PKGS" ]; then
             ./build.sh --test
@@ -697,8 +697,8 @@ jobs:
             | grep -v '/internal/storage$' \
             | grep -v '/internal/tokenizer$' \
             | grep -v '/internal/handler$' \
-            | grep -v '/internal/pdfium' \
-            | grep -v '/internal/pdfoxide' \
+            | grep -v '/internal/deepdoc/parser/pdf/pdfium' \
+            | grep -v '/internal/deepdoc/parser/pdf/pdfoxide' \
             | grep -v '/internal/deepdoc/parser/pdf' || true)
           if [ -z "$PKGS" ]; then
             ./build.sh --test

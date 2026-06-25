@@ -10,8 +10,8 @@ import (
 	"sort"
 	"testing"
 
-	"ragflow/internal/pdfium"
-	"ragflow/internal/pdfoxide"
+	"ragflow/internal/deepdoc/parser/pdf/pdfium"
+	"ragflow/internal/deepdoc/parser/pdf/pdfoxide"
 )
 
 // ── helpers ──────────────────────────────────────────────────────────────

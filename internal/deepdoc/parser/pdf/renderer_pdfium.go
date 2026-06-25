@@ -5,7 +5,7 @@ package parser
 import (
 	"image"
 
-	"ragflow/internal/pdfium"
+	"ragflow/internal/deepdoc/parser/pdf/pdfium"
 )
 
 // pdfiumRender uses the pdfium C library for higher-quality rasterisation
