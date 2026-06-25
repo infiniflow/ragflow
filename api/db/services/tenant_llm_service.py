@@ -229,18 +229,11 @@ class TenantLLMService(CommonService):
             if model_config["llm_factory"] not in OcrModel:
                 logging.error(f"Factory {model_config['llm_factory']} not in ocr model. Supported factories: {OcrModel.keys()}")
                 return None
-            model_extra = model_config.get("extra") or {}
-            if isinstance(model_extra, str):
-                try:
-                    model_extra = json.loads(model_extra)
-                except Exception:
-                    model_extra = {}
-            ocr_kwargs = {**model_extra, **kwargs}
             return OcrModel[model_config["llm_factory"]](
                 key=api_key,
                 model_name=model_config["llm_name"],
                 base_url=model_config.get("api_base", ""),
-                **ocr_kwargs,
+                **kwargs,
             )
 
         return None

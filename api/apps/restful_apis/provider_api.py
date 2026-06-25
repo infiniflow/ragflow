@@ -346,8 +346,7 @@ async def create_provider_instance(tenant_id: str = None, provider_name: str = N
 
     try:
         success, msg = await provider_api_service.create_provider_instance(
-            tenant_id, provider_name, instance_name, api_key, base_url, region, model_info,
-            flat_config=data
+            tenant_id, provider_name, instance_name, api_key, base_url, region, model_info
         )
         if success:
             return get_result(message=msg)
@@ -417,8 +416,7 @@ async def verify_provider_api_key(provider_name: str = None):
 
     try:
         success, msg = await provider_api_service.verify_api_key(
-            provider_name, api_key, base_url, region, model_info,
-            flat_config=data
+            provider_name, api_key, base_url, region, model_info
         )
         if success:
             return get_result(message=msg)

@@ -269,7 +269,7 @@ def show_provider_model(provider_name: str, model_name: str):
     }
 
 
-async def create_provider_instance(tenant_id: str, provider_name: str, instance_name: str, api_key: str|dict, base_url: str, region: str, model_info: list[dict]=None, flat_config: dict=None):
+async def create_provider_instance(tenant_id: str, provider_name: str, instance_name: str, api_key: str|dict, base_url: str, region: str, model_info: list[dict]=None):
     """
     Create a provider instance.
 
@@ -291,15 +291,12 @@ async def create_provider_instance(tenant_id: str, provider_name: str, instance_
             "field2": "'value2"
         }
     }]
-    :param flat_config: raw request data for providers that send model fields at
-        the top level instead of inside model_info (e.g. SoMark)
     :return: (success, result_or_error_message)
     """
     if not provider_name:
         return False, "Provider name is required"
 
     base_url = _normalize_provider_base_url(provider_name, base_url)
-    model_info = _normalize_model_info(provider_name, model_info, flat_config)
 
     if instance_name == "default":
         return False, "Instance name cannot be 'default'"
@@ -316,6 +313,26 @@ async def create_provider_instance(tenant_id: str, provider_name: str, instance_
     api_key_str = ""
     if api_key:
         api_key_str = api_key if isinstance(api_key, str) else json.dumps(api_key)
+
+    # For SoMark, embed OCR config from model_info into the api_key JSON so
+    # SoMarkOcrModel.__init__ can read it via the existing key → api_key_payload
+    # path.  This avoids changing the deprecated LLMBundle in tenant_llm_service.py.
+    if provider_name == "SoMark" and model_info:
+        cfg = {}
+        if api_key_str:
+            try:
+                cfg = json.loads(api_key_str)
+            except Exception:
+                pass
+        if not isinstance(cfg, dict):
+            cfg = {}
+        for model in model_info:
+            if model.get("extra"):
+                cfg.update(model["extra"])
+        if base_url:
+            cfg["SOMARK_BASE_URL"] = base_url
+        api_key_str = json.dumps(cfg)
+
     success, msg = await verify_api_key(provider_name, api_key, base_url, region, model_info)
     if not success:
         return False, msg
@@ -367,39 +384,7 @@ def list_provider_instances(tenant_id: str, provider_name: str):
     return True, instances
 
 
-def _normalize_model_info(provider_name: str, model_info: list[dict] | None, flat_data: dict | None) -> list[dict] | None:
-    """Build model_info from flat request payload for providers with no static models.
-
-    When the frontend sends model fields at the top level of the request body
-    (e.g. ``llm_name``, ``model_type``, ``somark_*``) instead of inside
-    a ``model_info`` array, and the provider has an empty ``llm: []`` in
-    ``llm_factories.json``, synthesize the expected ``model_info`` structure.
-    """
-    if model_info or not flat_data:
-        return model_info
-    if not flat_data.get("model_type"):
-        return model_info
-
-    factory_info = [f for f in FACTORY_LLM_INFOS if f["name"] == provider_name]
-    # Only build model_info for providers that have NO static models defined
-    if factory_info and factory_info[0].get("llm"):
-        return model_info
-
-    model_name = flat_data.get("llm_name") or flat_data.get("model_name", "")
-    model_type = flat_data["model_type"]
-    max_tokens_val = flat_data.get("max_tokens", 0)
-    prefix = f"{provider_name.lower()}_"
-    exclude_keys = {f"{prefix}api_key", f"{prefix}base_url"}
-    extra = {k: v for k, v in flat_data.items() if k.startswith(prefix) and k not in exclude_keys}
-    return [{
-        "model_name": model_name,
-        "model_type": [model_type] if not isinstance(model_type, list) else model_type,
-        "max_tokens": max_tokens_val,
-        "extra": extra,
-    }]
-
-
-async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=None, region: str=None, model_info: list[dict]=None, flat_config: dict=None):
+async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=None, region: str=None, model_info: list[dict]=None):
     """
     Verify API key for a provider.
 
@@ -422,7 +407,6 @@ async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=No
         return False, "Provider name is required"
 
     base_url = _normalize_provider_base_url(provider_name, base_url)
-    model_info = _normalize_model_info(provider_name, model_info, flat_config)
 
     if region and region == "intl" and provider_name.lower() == "siliconflow":
         target_factory_name = "siliconflow_intl"
@@ -771,8 +755,7 @@ def add_model_to_instance(tenant_id: str, provider_name: str, instance_name: str
         if target_model:
             extra_fields.update({"is_tools": target_model[0].get("is_tools", False)})
         if extra:
-            has_ocr = LLMType.OCR.value in model_type
-            if has_ocr:
+            if provider_name == "SoMark" and LLMType.OCR.value in model_type:
                 extra_fields["ocr_config"] = extra
             else:
                 extra_fields.update(extra)

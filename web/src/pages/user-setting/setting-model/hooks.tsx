@@ -203,24 +203,33 @@ export const useSubmitSoMark = () => {
       const req = {
         instance_name: payload.instance_name,
         llm_factory: LLMFactory.SoMark,
-        llm_name: payload.llm_name,
-        model_type: 'ocr',
         api_key: payload.somark_api_key || '',
         api_base: payload.somark_base_url,
         max_tokens: 0,
-        somark_image_format: payload.somark_image_format,
-        somark_formula_format: payload.somark_formula_format,
-        somark_table_format: payload.somark_table_format,
-        somark_cs_format: payload.somark_cs_format,
-        somark_enable_text_cross_page: payload.somark_enable_text_cross_page,
-        somark_enable_table_cross_page: payload.somark_enable_table_cross_page,
-        somark_enable_title_level_recognition:
-          payload.somark_enable_title_level_recognition,
-        somark_enable_inline_image: payload.somark_enable_inline_image,
-        somark_enable_table_image: payload.somark_enable_table_image,
-        somark_enable_image_understanding:
-          payload.somark_enable_image_understanding,
-        somark_keep_header_footer: payload.somark_keep_header_footer,
+        model_info: [
+          {
+            model_name: payload.llm_name,
+            model_type: ['ocr'],
+            max_tokens: 0,
+            extra: {
+              somark_image_format: payload.somark_image_format,
+              somark_formula_format: payload.somark_formula_format,
+              somark_table_format: payload.somark_table_format,
+              somark_cs_format: payload.somark_cs_format,
+              somark_enable_text_cross_page:
+                payload.somark_enable_text_cross_page,
+              somark_enable_table_cross_page:
+                payload.somark_enable_table_cross_page,
+              somark_enable_title_level_recognition:
+                payload.somark_enable_title_level_recognition,
+              somark_enable_inline_image: payload.somark_enable_inline_image,
+              somark_enable_table_image: payload.somark_enable_table_image,
+              somark_enable_image_understanding:
+                payload.somark_enable_image_understanding,
+              somark_keep_header_footer: payload.somark_keep_header_footer,
+            },
+          },
+        ],
       };
       try {
         const ret = await submitProviderInstance(
