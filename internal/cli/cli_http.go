@@ -97,12 +97,12 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminListEnvironmentsCommand(cmd)
 	case "admin_show_variable":
 		return c.AdminShowVariable(cmd)
-	case "admin_set_license_command":
+	case "admin_set_license":
 		return c.AdminSetLicenseCommand(cmd)
-	case "admin_set_license_config_command":
+	case "admin_set_license_config":
 		return c.AdminSetLicenseConfigCommand(cmd)
-	case "set_variable":
-		return c.SetVariable(cmd)
+	case "admin_set_variable":
+		return c.AdminSetVariableCommand(cmd)
 	case "admin_set_role_default_model":
 		return c.AdminSetRoleDefaultModelsCommand(cmd)
 	case "admin_reset_role_default_model":
@@ -323,7 +323,9 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "api_delete_api_key":
 		return c.APIDeleteAPIKeyCommand(cmd)
 	case "api_set_api_key":
-		return c.APISetAPIKey(cmd)
+		return c.APISetAPIKeyCommand(cmd)
+	case "api_set_variable":
+		return c.APISetVariableCommand(cmd)
 	case "api_unset_api_key":
 		return c.APIUnsetAPIKeyCommand(cmd)
 	case "api_show_version":

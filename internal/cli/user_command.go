@@ -1041,8 +1041,8 @@ func (c *CLI) APIDeleteAPIKeyCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// APISetAPIKey sets the API key after validating it
-func (c *CLI) APISetAPIKey(cmd *Command) (ResponseIf, error) {
+// APISetAPIKeyCommand sets the API key after validating it
+func (c *CLI) APISetAPIKeyCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
@@ -1097,6 +1097,52 @@ func (c *CLI) APISetAPIKey(cmd *Command) (ResponseIf, error) {
 	successResult.Message = "API key set successfully"
 	successResult.Duration = resp.Duration
 	return &successResult, nil
+}
+
+// APISetVariableCommand sets variable value
+func (c *CLI) APISetVariableCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
+	}
+
+	varName, ok := cmd.Params["var_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("var_name not provided")
+	}
+	varValue, ok := cmd.Params["var_value"].(string)
+	if !ok {
+		return nil, fmt.Errorf("var_value not provided")
+	}
+
+	payload := map[string]interface{}{
+		"var_name":  varName,
+		"var_value": varValue,
+	}
+	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("PUT", "/system/variables", "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to set variable: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to set variable: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result MessageResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("set variable failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
 }
 
 // APIShowAPIKeyCommand displays the current API key

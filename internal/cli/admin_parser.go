@@ -1661,7 +1661,7 @@ func (p *Parser) parseAdminSetLicense() (*Command, error) {
 	if p.curToken.Type == TokenConfig {
 		p.nextToken() // consume CONFIG
 		// SET LICENSE CONFIG <number1> <number2>
-		cmd := NewCommand("admin_set_license_config_command")
+		cmd := NewCommand("admin_set_license_config")
 		number1, err := p.parseNumber()
 		if err != nil {
 			return nil, err
@@ -1683,7 +1683,7 @@ func (p *Parser) parseAdminSetLicense() (*Command, error) {
 	}
 	p.nextToken()
 
-	cmd := NewCommand("admin_set_license_command")
+	cmd := NewCommand("admin_set_license")
 	cmd.Params["license"] = license
 
 	// Semicolon is optional
@@ -1707,7 +1707,7 @@ func (p *Parser) parseAdminSetVariable() (*Command, error) {
 		return nil, err
 	}
 
-	cmd := NewCommand("set_variable")
+	cmd := NewCommand("admin_set_variable")
 	cmd.Params["var_name"] = varName
 	cmd.Params["var_value"] = varValue
 

@@ -1935,22 +1935,23 @@ func (p *Parser) parseAPISetCommands() (*Command, error) {
 
 func (p *Parser) parseSetVariable() (*Command, error) {
 	p.nextToken() // consume VAR
-	varName, err := p.parseIdentifier()
+
+	varName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-
 	p.nextToken()
+
 	varValue, err := p.parseVariableValue()
 	if err != nil {
 		return nil, err
 	}
+	p.nextToken()
 
-	cmd := NewCommand("set_variable")
+	cmd := NewCommand("api_set_variable")
 	cmd.Params["var_name"] = varName
 	cmd.Params["var_value"] = varValue
 
-	p.nextToken()
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()

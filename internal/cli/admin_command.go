@@ -1073,8 +1073,8 @@ func (c *CLI) AdminSetLicenseConfigCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// SetVariable updates a system variable (admin mode only).
-func (c *CLI) SetVariable(cmd *Command) (ResponseIf, error) {
+// AdminSetVariableCommand updates a system variable (admin mode only).
+func (c *CLI) AdminSetVariableCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
