@@ -685,7 +685,11 @@ export const useFetchVersion = (
 
 export const useFetchAgentLog = (searchParams: IAgentLogsRequest) => {
   const { id } = useParams();
-  const { data, isFetching: loading } = useQuery<IAgentLogsResponse>({
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery<IAgentLogsResponse>({
     queryKey: [AgentApiAction.FetchAgentLog, id, searchParams],
     initialData: {} as IAgentLogsResponse,
     gcTime: 0,
@@ -698,7 +702,7 @@ export const useFetchAgentLog = (searchParams: IAgentLogsRequest) => {
     },
   });
 
-  return { data, loading };
+  return { data, loading, refetch };
 };
 
 export const useFetchSessionsByCanvasId = () => {
