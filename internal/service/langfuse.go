@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -292,7 +293,7 @@ func (c *LangfuseClient) GetProject(ctx context.Context) (string, string, error)
 		return "", "", fmt.Errorf("nil langfuse client")
 	}
 
-	url := c.Host + "/api/public/projects"
+	url := strings.TrimRight(c.Host, "/") + "/api/public/projects"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", "", err

@@ -20,6 +20,7 @@ import (
 	"errors"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"ragflow/internal/entity"
 )
@@ -94,20 +95,14 @@ func (dao *LangfuseDAO) deleteByTenantID(db *gorm.DB, tenantID string) error {
 }
 
 func (dao *LangfuseDAO) SaveByTenantID(row *entity.TenantLangfuse) error {
-	return DB.Transaction(func(tx *gorm.DB) error {
-		existing, err := dao.getByTenantID(tx, row.TenantID)
-		if err != nil {
-			return err
-		}
-		if existing == nil {
-			return dao.create(tx, row)
-		}
-		return dao.updateByTenantID(tx, row.TenantID, map[string]any{
+	return DB.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "tenant_id"}},
+		DoUpdates: clause.Assignments(map[string]any{
 			"secret_key": row.SecretKey,
 			"public_key": row.PublicKey,
 			"host":       row.Host,
-		})
-	})
+		}),
+	}).Create(row).Error
 }
 
 func (dao *LangfuseDAO) DeleteExistingByTenantID(tenantID string) error {
