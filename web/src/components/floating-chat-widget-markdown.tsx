@@ -294,7 +294,7 @@ const FloatingChatWidgetMarkdown = ({
   return (
     <div className="floating-chat-widget" dir={dir}>
       <Markdown
-        rehypePlugins={[rehypeWrapReference, rehypeKatex, rehypeRaw]}
+        rehypePlugins={[rehypeRaw, rehypeWrapReference, rehypeKatex]}
         remarkPlugins={MarkdownRemarkPlugins}
         className="text-sm leading-relaxed space-y-2 prose-sm max-w-full"
         components={

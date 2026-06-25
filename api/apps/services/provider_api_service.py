@@ -51,6 +51,11 @@ def _normalize_provider_base_url(provider_name: str, base_url: str | None):
     return base_url
 
 
+def _normalize_provider_api_key(provider_name: str, api_key: str | dict | None):
+    if provider_name == "VLLM" and not api_key:
+        return "x"
+    return api_key
+
 
 def _factory_llm_name(llm: dict) -> str:
     return llm.get("name") or llm.get("llm_name", "")
@@ -297,6 +302,7 @@ async def create_provider_instance(tenant_id: str, provider_name: str, instance_
         return False, "Provider name is required"
 
     base_url = _normalize_provider_base_url(provider_name, base_url)
+    api_key = _normalize_provider_api_key(provider_name, api_key)
 
     if instance_name == "default":
         return False, "Instance name cannot be 'default'"
@@ -407,6 +413,7 @@ async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=No
         return False, "Provider name is required"
 
     base_url = _normalize_provider_base_url(provider_name, base_url)
+    api_key = _normalize_provider_api_key(provider_name, api_key)
 
     if region and region == "intl" and provider_name.lower() == "siliconflow":
         target_factory_name = "siliconflow_intl"
