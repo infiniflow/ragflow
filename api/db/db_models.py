@@ -564,6 +564,8 @@ class PostgresDatabaseLock:
         self.lock_id = int(hashlib.md5(lock_name.encode()).hexdigest(), 16) % (2**31 - 1)
         self.timeout = int(timeout)
         self.db = db if db else DB
+        self._acquired = False
+        self._conn_ctx = None
 
     @staticmethod
     def _is_lock_timeout_error(exc):
@@ -577,26 +579,42 @@ class PostgresDatabaseLock:
             self.lock_name,
         )
 
-    @with_retry(max_retries=3, retry_delay=1.0)
-    def lock(self):
-        # Use session-level lock_timeout so PostgreSQL blocks on pg_advisory_lock
-        # and raises on timeout (SQLSTATE 55P03), matching MySQL GET_LOCK semantics.
+    def _acquire_lock(self):
+        # Keep lock_timeout set for the whole critical section; reset only in _release_lock().
         lock_timeout_value = "0" if self.timeout < 0 else f"{self.timeout}s"
+        self.db.execute_sql("SET lock_timeout = %s", (lock_timeout_value,))
+        self.db.execute_sql("SELECT pg_advisory_lock(%s)", (self.lock_id,))
+        logging.debug(
+            "PostgreSQL advisory lock acquired: %s (lock_id=%s)",
+            self.lock_name,
+            self.lock_id,
+        )
+        return True
+
+    def _release_lock(self):
         try:
-            self.db.execute_sql("SET lock_timeout = %s", (lock_timeout_value,))
-            self.db.execute_sql("SELECT pg_advisory_lock(%s)", (self.lock_id,))
-            logging.debug(
-                "PostgreSQL advisory lock acquired: %s (lock_id=%s)",
+            cursor = self.db.execute_sql("SELECT pg_advisory_unlock(%s)", (self.lock_id,))
+            ret = cursor.fetchone()
+            if ret[0] == 0:
+                logging.warning(
+                    "PostgreSQL advisory lock %s (lock_id=%s) was not held by this session",
+                    self.lock_name,
+                    self.lock_id,
+                )
+                return False
+            if ret[0] == 1:
+                logging.debug(
+                    "PostgreSQL advisory lock released: %s (lock_id=%s)",
+                    self.lock_name,
+                    self.lock_id,
+                )
+                return True
+            logging.warning(
+                "PostgreSQL advisory lock %s (lock_id=%s) does not exist",
                 self.lock_name,
                 self.lock_id,
             )
-            return True
-        except OperationalError as e:
-            if self.timeout >= 0 and self._is_lock_timeout_error(e):
-                raise PostgresLockTimeoutError(
-                    f"acquire postgres lock {self.lock_name} timeout"
-                ) from e
-            raise
+            return False
         finally:
             try:
                 self._reset_lock_timeout()
@@ -607,29 +625,44 @@ class PostgresDatabaseLock:
                 )
 
     @with_retry(max_retries=3, retry_delay=1.0)
+    def lock(self):
+        try:
+            return self._acquire_lock()
+        except OperationalError as e:
+            if self.timeout >= 0 and self._is_lock_timeout_error(e):
+                raise PostgresLockTimeoutError(
+                    f"acquire postgres lock {self.lock_name} timeout"
+                ) from e
+            raise
+
     def unlock(self):
-        cursor = self.db.execute_sql("SELECT pg_advisory_unlock(%s)", (self.lock_id,))
-        ret = cursor.fetchone()
-        if ret[0] == 0:
-            raise Exception(f"postgres lock {self.lock_name} was not established by this thread")
-        elif ret[0] == 1:
-            logging.debug(
-                "PostgreSQL advisory lock released: %s (lock_id=%s)",
-                self.lock_name,
-                self.lock_id,
-            )
-            return True
-        else:
-            raise Exception(f"postgres lock {self.lock_name} does not exist")
+        if not self._acquired:
+            return False
+        self._acquired = False
+        return self._release_lock()
 
     def __enter__(self):
         if isinstance(self.db, PooledPostgresqlDatabase):
-            self.lock()
+            self._conn_ctx = self.db.connection_context()
+            self._conn_ctx.__enter__()
+            try:
+                self.lock()
+                self._acquired = True
+            except Exception:
+                self._conn_ctx.__exit__(*sys.exc_info())
+                self._conn_ctx = None
+                raise
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if isinstance(self.db, PooledPostgresqlDatabase):
-            self.unlock()
+            try:
+                if self._acquired:
+                    self.unlock()
+            finally:
+                if self._conn_ctx is not None:
+                    self._conn_ctx.__exit__(exc_type, exc_val, exc_tb)
+                    self._conn_ctx = None
 
     def __call__(self, func):
         @wraps(func)
