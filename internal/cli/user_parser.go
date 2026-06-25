@@ -133,7 +133,7 @@ func (p *Parser) parseAPIListCommands() (*Command, error) {
 	case TokenDatasets:
 		return p.parseAPIListDatasets()
 	case TokenDataset:
-		return p.parseAPIListDatasetDocuments()
+		return p.parseAPIListDatasetCommands()
 	case TokenAgents:
 		return p.parseAPIListAgents()
 	case TokenChats:
@@ -150,12 +150,10 @@ func (p *Parser) parseAPIListCommands() (*Command, error) {
 		return p.parseAPIListProviders()
 	case TokenProvider:
 		return p.parseAPIListProviderCommands()
-	case TokenInstances:
-		return p.parseListInstances()
 	case TokenIngestion:
-		return p.parseUserListIngestionTasks()
+		return p.parseAPIListIngestionTasks()
 	case TokenDefault:
-		return p.parseListDefaultModels()
+		return p.parseAPIListDefaultModels()
 	case TokenAvailable:
 		return p.parseAPIListAvailableProviders()
 	case TokenFiles:
@@ -192,7 +190,7 @@ func (p *Parser) parseAPIListDatasets() (*Command, error) {
 }
 
 // LIST DATASET 'dataset_name' DOCUMENTS;
-func (p *Parser) parseAPIListDatasetDocuments() (*Command, error) {
+func (p *Parser) parseAPIListDatasetCommands() (*Command, error) {
 	p.nextToken() // consume DATASET
 
 	datasetID, err := p.parseQuotedString()
@@ -201,17 +199,58 @@ func (p *Parser) parseAPIListDatasetDocuments() (*Command, error) {
 	}
 	p.nextToken()
 
-	if p.curToken.Type != TokenDocuments {
-		return nil, fmt.Errorf("expected DOCUMENTS")
+	switch p.curToken.Type {
+	case TokenDocuments:
+		return p.parseAPIListDatasetDocuments(datasetID)
+	case TokenFiles:
+		return p.parseAPIListDatasetFiles(datasetID)
+	case TokenIngestion:
+		return p.parseAPIListDatasetIngestionTasks(datasetID)
+	default:
+		return nil, fmt.Errorf("unknown LIST target: %s", p.curToken.Value)
+	}
+}
+
+func (p *Parser) parseAPIListDatasetDocuments(datasetID string) (*Command, error) {
+	p.nextToken() // consume DOCUMENTS
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
 	}
 
 	cmd := NewCommand("api_list_dataset_documents")
 	cmd.Params["dataset_id"] = datasetID
+	return cmd, nil
+}
 
-	// Semicolon is optional for UNSET TOKEN
+func (p *Parser) parseAPIListDatasetFiles(datasetName string) (*Command, error) {
+	p.nextToken() // consume FILES
+
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
+
+	cmd := NewCommand("api_list_dataset_files")
+	cmd.Params["dataset_name"] = datasetName
+	return cmd, nil
+}
+
+func (p *Parser) parseAPIListDatasetIngestionTasks(datasetName string) (*Command, error) {
+	p.nextToken() // consume INGESTION
+
+	if p.curToken.Type != TokenTasks {
+		return nil, fmt.Errorf("expected TASKS")
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("api_list_ingestion_tasks")
+	cmd.Params["dataset_name"] = datasetName
 	return cmd, nil
 }
 
@@ -313,7 +352,7 @@ func (p *Parser) parseAPIListProviders() (*Command, error) {
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
-	return NewCommand("list_providers"), nil
+	return NewCommand("api_list_providers"), nil
 }
 
 // LIST PROVIDER 'provider_name' INSTANCES
@@ -350,6 +389,7 @@ func (p *Parser) parseListProviderInstances(providerName string) (*Command, erro
 }
 
 // LIST PROVIDER 'provider_name' INSTANCE 'instance_name' MODELS
+// LIST PROVIDER 'provider_name' INSTANCE 'instance_name' MODELS SYNC, get model list by API from remote server
 func (p *Parser) parseListProviderInstanceModels(providerName string) (*Command, error) {
 	p.nextToken() // consume INSTANCE
 
@@ -364,17 +404,21 @@ func (p *Parser) parseListProviderInstanceModels(providerName string) (*Command,
 	}
 	p.nextToken()
 
+	cmd := NewCommand("api_list_provider_instance_models")
+	if p.curToken.Type == TokenSync {
+		cmd = NewCommand("api_list_provider_instance_models_sync")
+	}
+
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
-	cmd := NewCommand("api_list_provider_instance_models")
 	cmd.Params["provider_name"] = providerName
 	cmd.Params["instance_name"] = instanceName
 	return cmd, nil
 }
 
-func (p *Parser) parseListDefaultModels() (*Command, error) {
+func (p *Parser) parseAPIListDefaultModels() (*Command, error) {
 	p.nextToken() // consume DEFAULT
 	if p.curToken.Type != TokenModels {
 		return nil, fmt.Errorf("expected MODELS")
@@ -384,7 +428,7 @@ func (p *Parser) parseListDefaultModels() (*Command, error) {
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
-	return NewCommand("list_user_default_models"), nil
+	return NewCommand("api_list_default_models"), nil
 }
 
 func (p *Parser) parseAPIListAvailableProviders() (*Command, error) {
@@ -1586,31 +1630,6 @@ optionsLoop:
 	if region != "" {
 		cmd.Params["region"] = region
 	}
-
-	p.nextToken()
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-// parseListInstances parses LIST INSTANCES FROM PROVIDER <name> command
-func (p *Parser) parseListInstances() (*Command, error) {
-	p.nextToken() // consume INSTANCES
-
-	if p.curToken.Type != TokenFrom {
-		return nil, fmt.Errorf("expected FROM")
-	}
-	p.nextToken()
-
-	providerName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, fmt.Errorf("expected provider name after FROM PROVIDER: %w", err)
-	}
-
-	cmd := NewCommand("list_provider_instances")
-	cmd.Params["provider_name"] = providerName
 
 	p.nextToken()
 	// Semicolon is optional
@@ -4198,7 +4217,7 @@ func (p *Parser) parseUserStopIngestion() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseUserListIngestionTasks() (*Command, error) {
+func (p *Parser) parseAPIListIngestionTasks() (*Command, error) {
 	p.nextToken() // consume Ingestion
 
 	if p.curToken.Type != TokenTasks {
@@ -4206,7 +4225,7 @@ func (p *Parser) parseUserListIngestionTasks() (*Command, error) {
 	}
 	p.nextToken() // consume TASKS
 
-	cmd := NewCommand("user_list_ingestion_tasks")
+	cmd := NewCommand("api_list_ingestion_tasks")
 
 	if p.curToken.Type == TokenFrom {
 		p.nextToken()

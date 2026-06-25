@@ -1327,9 +1327,8 @@ func (c *CLI) AddProvider(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// ListProviders lists all providers
-// LIST PROVIDERS
-func (c *CLI) ListProviders(cmd *Command) (ResponseIf, error) {
+// APIListProviders lists added providers
+func (c *CLI) APIListProviders(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
