@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import message from '@/components/ui/message';
+import { Textarea } from '@/components/ui/textarea';
 import { useFetchBuiltinCompilationTemplates } from '@/hooks/use-compilation-template-request';
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import { CompilationTemplate } from '@/interfaces/database/compilation-template';
@@ -273,6 +274,43 @@ export function EditTemplateForm({
               </FormItem>
             )}
           />
+
+          {/* Page-structure example for the REFINE writer. Sits at the
+              top of the artifact-specific area (directly under LLM) so
+              the user sees and can edit it before the lower-priority
+              Entity / Relation / Claim / Concept blocks. The
+              ``example`` value is prefilled from the artifacts built-in
+              by the useEffect above when empty. */}
+          {kind === 'artifacts' && (
+            <FormField
+              control={form.control}
+              name="example"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    {t('knowledgeCompilation.exampleLabel')}
+                  </FormLabel>
+                  <FormControl>
+                    <Textarea
+                      rows={10}
+                      maxLength={8000}
+                      className="font-mono text-sm"
+                      placeholder={t('knowledgeCompilation.examplePlaceholder')}
+                      value={field.value ?? ''}
+                      onBlur={field.onBlur}
+                      onChange={field.onChange}
+                      name={field.name}
+                      ref={field.ref}
+                    />
+                  </FormControl>
+                  <p className="text-xs text-text-secondary">
+                    {t('knowledgeCompilation.exampleDescription')}
+                  </p>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
 
           {kind !== 'tree' && (
             <>
