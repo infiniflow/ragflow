@@ -40,10 +40,10 @@ import {
   useHideWhenInstanceExists,
   VerifyResult,
 } from '../hooks';
-import { useProviderFields } from '../model/provider-model/hooks';
-import VerifyButton from '../model/verify-button';
+import { useProviderFields } from '../provider-schema/hooks';
 import { BedrockInstanceCard } from './bedrock-instance-card';
 import { ModelsSection } from './models-section';
+import VerifyButton from './verify-button';
 
 interface ProviderInstanceCardProps {
   providerName: string;

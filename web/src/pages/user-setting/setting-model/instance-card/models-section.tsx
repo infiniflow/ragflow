@@ -39,9 +39,9 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AddCustomModelDialog } from '../model/provider-model/components/add-custom-model-dialog';
-import { useCustomModelFields } from '../model/provider-model/components/use-custom-model-fields';
-import { mapModelKey, sortModelTypes } from './un-add-model';
+import { AddCustomModelDialog } from './add-custom-model-dialog';
+import { mapModelKey, sortModelTypes } from './available-models';
+import { useCustomModelFields } from './use-custom-model-fields';
 
 type VerifyState =
   | { status: 'idle' }

@@ -43,11 +43,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { BedrockRegionList } from '../constant';
+import { BedrockRegionList } from '../constants';
 import { VerifyResult } from '../hooks';
-import VerifyButton from '../model/verify-button';
 import { splitProviderPayload } from '../payload-utils';
 import { ModelsSection } from './models-section';
+import VerifyButton from './verify-button';
 
 type AuthMode = 'access_key_secret' | 'iam_role' | 'assume_role';
 

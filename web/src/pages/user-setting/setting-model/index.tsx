@@ -25,10 +25,10 @@ import { IProviderInstance } from '@/interfaces/database/llm';
 import { useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ProviderHeaderBar } from './components/provider-header-bar';
-import { ProviderInstanceCard } from './components/provider-instance-card';
-import { Sidebar, SidebarSelection } from './components/sidebar';
-import SystemSetting from './components/system-setting';
+import { ProviderInstanceCard } from './instance-card/provider-instance-card';
+import { ProviderHeaderBar } from './layout/provider-header-bar';
+import { Sidebar, SidebarSelection } from './layout/sidebar';
+import SystemSetting from './layout/system-setting';
 
 /**
  * Sidebar-driven model provider settings page.
