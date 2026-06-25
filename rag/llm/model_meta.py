@@ -82,6 +82,8 @@ class VolcEngine(Base):
 
             if model.get("domain", "") == "Embedding":
                 model_types.append(LLMType.EMBEDDING.value)
+            elif set(model.get("task_type", [])) & {"TextEmbedding", "ImageEmbedding"}:
+                model_types.append(LLMType.EMBEDDING.value)
             else:
                 modalities = model.get("modalities", {})
                 input_modalities = modalities.get("input_modalities", [])

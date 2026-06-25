@@ -25,6 +25,8 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 )
@@ -33,6 +35,7 @@ import (
 
 type chatSessionStore interface {
 	GetByID(id string) (*entity.ChatSession, error)
+	GetBySessionIDAndChatID(sessionID, chatID string) (*entity.ChatSession, error)
 	Create(conv *entity.ChatSession) error
 	UpdateByID(id string, updates map[string]interface{}) error
 	DeleteByID(id string) error
@@ -128,16 +131,13 @@ func (s *ChatSessionService) SetChatSession(userID string, req *SetChatSessionRe
 		}
 	}
 
-	// Create initial message - store as JSON object with messages array
-	messagesObj := map[string]interface{}{
-		"messages": []map[string]interface{}{
-			{
-				"role":    "assistant",
-				"content": prologue,
-			},
+	// Store messages in the same list shape as Python Conversation.message.
+	messagesJSON, _ := json.Marshal([]map[string]interface{}{
+		{
+			"role":    "assistant",
+			"content": prologue,
 		},
-	}
-	messagesJSON, _ := json.Marshal(messagesObj)
+	})
 
 	// Create reference - store as JSON array
 	referenceJSON, _ := json.Marshal([]interface{}{})
@@ -218,6 +218,20 @@ type ListChatSessionsResponse struct {
 	Sessions []*entity.ChatSession
 }
 
+type ChatSessionPayload struct {
+	ID         string                   `json:"id"`
+	ChatID     string                   `json:"chat_id"`
+	Name       *string                  `json:"name,omitempty"`
+	Messages   []map[string]interface{} `json:"messages"`
+	Reference  []interface{}            `json:"reference"`
+	UserID     *string                  `json:"user_id,omitempty"`
+	Avatar     *string                  `json:"avatar,omitempty"`
+	CreateDate *time.Time               `json:"create_date,omitempty"`
+	UpdateDate *time.Time               `json:"update_date,omitempty"`
+	CreateTime *int64                   `json:"create_time,omitempty"`
+	UpdateTime *int64                   `json:"update_time,omitempty"`
+}
+
 // ListChatSessions lists chat sessions for a dialog
 func (s *ChatSessionService) ListChatSessions(userID string, chatID string) (*ListChatSessionsResponse, error) {
 	// Get user's tenants
@@ -263,6 +277,214 @@ func (s *ChatSessionService) ListChatSessions(userID string, chatID string) (*Li
 	return &ListChatSessionsResponse{Sessions: sessions}, nil
 }
 
+// GetSession returns one chat session after ownership validation.
+func (s *ChatSessionService) GetSession(userID, chatID, sessionID string) (*ChatSessionPayload, common.ErrorCode, error) {
+	ok, err := s.ensureOwnedChat(userID, chatID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	if !ok {
+		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
+	}
+
+	session, err := s.chatSessionDAO.GetByID(sessionID)
+	if err != nil {
+		if isChatSessionNotFound(err) {
+			return nil, common.CodeDataError, errors.New("Session not found!")
+		}
+		return nil, common.CodeServerError, err
+	}
+	if session.DialogID != chatID {
+		return nil, common.CodeDataError, errors.New("Session does not belong to this chat!")
+	}
+
+	dialog, err := s.chatSessionDAO.GetDialogByID(chatID)
+	if err != nil && !isChatSessionNotFound(err) {
+		return nil, common.CodeServerError, err
+	}
+
+	return s.buildSessionPayload(session, dialog, true), common.CodeSuccess, nil
+}
+
+// UpdateSession updates one chat session after Python-style field validation.
+func (s *ChatSessionService) UpdateSession(userID, chatID, sessionID string, req map[string]interface{}) (*ChatSessionPayload, common.ErrorCode, error) {
+	ok, err := s.ensureOwnedChat(userID, chatID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	if !ok {
+		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
+	}
+	if len(req) == 0 {
+		return nil, common.CodeArgumentError, errors.New("Request body cannot be empty")
+	}
+
+	if _, err := s.chatSessionDAO.GetBySessionIDAndChatID(sessionID, chatID); err != nil {
+		if isChatSessionNotFound(err) {
+			return nil, common.CodeDataError, errors.New("Session not found!")
+		}
+		return nil, common.CodeServerError, err
+	}
+
+	if _, ok := req["message"]; ok {
+		return nil, common.CodeDataError, errors.New("`messages` cannot be changed.")
+	}
+	if _, ok := req["messages"]; ok {
+		return nil, common.CodeDataError, errors.New("`messages` cannot be changed.")
+	}
+	if _, ok := req["reference"]; ok {
+		return nil, common.CodeDataError, errors.New("`reference` cannot be changed.")
+	}
+
+	if name, exists := req["name"]; exists && name != nil {
+		nameStr, ok := name.(string)
+		if !ok || strings.TrimSpace(nameStr) == "" {
+			return nil, common.CodeDataError, errors.New("`name` can not be empty.")
+		}
+		req["name"] = strings.TrimSpace(nameStr)
+		nameRunes := []rune(req["name"].(string))
+		if len(nameRunes) > 255 {
+			req["name"] = string(nameRunes[:255])
+		}
+	}
+
+	updateFields := make(map[string]interface{})
+	for k, v := range req {
+		switch k {
+		case "id", "dialog_id", "chat_id", "user_id":
+			continue
+		default:
+			updateFields[k] = v
+		}
+	}
+
+	if err := s.chatSessionDAO.UpdateByID(sessionID, updateFields); err != nil {
+		if isChatSessionNotFound(err) {
+			return nil, common.CodeDataError, errors.New("Session not found!")
+		}
+		return nil, common.CodeServerError, err
+	}
+
+	session, err := s.chatSessionDAO.GetByID(sessionID)
+	if err != nil {
+		if isChatSessionNotFound(err) {
+			return nil, common.CodeDataError, errors.New("Fail to update a session!")
+		}
+		return nil, common.CodeServerError, err
+	}
+
+	return s.buildSessionPayload(session, nil, false), common.CodeSuccess, nil
+}
+
+func (s *ChatSessionService) ensureOwnedChat(userID, chatID string) (bool, error) {
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
+	if err != nil {
+		return false, err
+	}
+
+	for _, tenantID := range tenantIDs {
+		exists, err := s.chatSessionDAO.CheckDialogExists(tenantID, chatID)
+		if err != nil {
+			return false, err
+		}
+		if exists {
+			return true, nil
+		}
+	}
+
+	exists, err := s.chatSessionDAO.CheckDialogExists(userID, chatID)
+	if err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
+func (s *ChatSessionService) buildSessionPayload(session *entity.ChatSession, dialog *entity.Chat, includeAvatar bool) *ChatSessionPayload {
+	var avatar *string
+	if includeAvatar {
+		value := ""
+		if dialog != nil && dialog.Icon != nil {
+			value = *dialog.Icon
+		}
+		avatar = &value
+	}
+
+	references := parseReferenceList(session.Reference)
+	for index, ref := range references {
+		refMap, ok := ref.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		refMap["chunks"] = formatReferenceChunks(refMap)
+		references[index] = refMap
+	}
+
+	return &ChatSessionPayload{
+		ID:         session.ID,
+		ChatID:     session.DialogID,
+		Name:       session.Name,
+		Messages:   parseMessages(session.Message),
+		Reference:  references,
+		UserID:     session.UserID,
+		Avatar:     avatar,
+		CreateDate: session.CreateDate,
+		UpdateDate: session.UpdateDate,
+		CreateTime: session.CreateTime,
+		UpdateTime: session.UpdateTime,
+	}
+}
+
+func parseMessages(raw json.RawMessage) []map[string]interface{} {
+	var messages []map[string]interface{}
+	if len(raw) == 0 {
+		return messages
+	}
+	if err := json.Unmarshal(raw, &messages); err == nil {
+		return messages
+	}
+
+	var wrapped struct {
+		Messages []map[string]interface{} `json:"messages"`
+	}
+	if err := json.Unmarshal(raw, &wrapped); err != nil {
+		return nil
+	}
+	return wrapped.Messages
+}
+
+func parseReferenceList(raw json.RawMessage) []interface{} {
+	var references []interface{}
+	if len(raw) == 0 {
+		return references
+	}
+	err := json.Unmarshal(raw, &references)
+	if err != nil {
+		return nil
+	}
+	return references
+}
+
+func formatReferenceChunks(reference map[string]interface{}) []FormattedChunk {
+	rawChunks, ok := reference["chunks"].([]interface{})
+	if !ok {
+		return []FormattedChunk{}
+	}
+
+	chunks := make([]map[string]interface{}, 0, len(rawChunks))
+	for _, item := range rawChunks {
+		chunk, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		chunks = append(chunks, chunk)
+	}
+	return formatChunks(chunks)
+}
+
+func isChatSessionNotFound(err error) bool {
+	return errors.Is(err, gorm.ErrRecordNotFound)
+}
+
 // Completion performs chat completion with full RAG support via ChatPipelineService.
 func (s *ChatSessionService) Completion(userID string, conversationID string, messages []map[string]interface{}, llmID string, chatModelConfig map[string]interface{}, messageID string) (map[string]interface{}, error) {
 	// Validate the last message is from user
@@ -286,7 +508,7 @@ func (s *ChatSessionService) Completion(userID string, conversationID string, me
 		return nil, errors.New("Dialog not found")
 	}
 
-	// Deep copy messages to session
+	// Deep copy messages to session, preserving the stored prologue that handler strips from requests.
 	sessionMessages := s.buildSessionMessages(session, messages)
 
 	// Initialize reference if empty
@@ -338,6 +560,12 @@ func (s *ChatSessionService) Completion(userID string, conversationID string, me
 
 	// Update conversation if not embedded
 	if !isEmbedded {
+		sessionMessages = append(sessionMessages, map[string]interface{}{
+			"role":       "assistant",
+			"content":    answer.String(),
+			"id":         messageID,
+			"created_at": float64(time.Now().Unix()),
+		})
 		s.updateSessionMessages(session, sessionMessages, reference)
 	}
 
@@ -375,7 +603,7 @@ func (s *ChatSessionService) CompletionStream(ctx context.Context, userID string
 		return errors.New("Dialog not found")
 	}
 
-	// Deep copy messages to session
+	// Deep copy messages to session, preserving the stored prologue that handler strips from requests.
 	sessionMessages := s.buildSessionMessages(session, messages)
 
 	// Initialize reference if empty
@@ -440,6 +668,12 @@ func (s *ChatSessionService) CompletionStream(ctx context.Context, userID string
 
 	// Update conversation if not embedded
 	if !isEmbedded {
+		sessionMessages = append(sessionMessages, map[string]interface{}{
+			"role":       "assistant",
+			"content":    fullAnswer.String(),
+			"id":         messageID,
+			"created_at": float64(time.Now().Unix()),
+		})
 		s.updateSessionMessages(session, sessionMessages, reference)
 	}
 
@@ -449,13 +683,32 @@ func (s *ChatSessionService) CompletionStream(ctx context.Context, userID string
 // Helper methods
 
 func (s *ChatSessionService) buildSessionMessages(session *entity.ChatSession, messages []map[string]interface{}) []map[string]interface{} {
-	// Deep copy messages to session
-	sessionMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		sessionMessages[i] = make(map[string]interface{})
-		for k, v := range msg {
-			sessionMessages[i][k] = v
+	prefix := make([]map[string]interface{}, 0, 1)
+	existingMessages := parseMessages(session.Message)
+	if len(existingMessages) > 0 {
+		if role, _ := existingMessages[0]["role"].(string); role == "assistant" {
+			firstIncomingRole := ""
+			if len(messages) > 0 {
+				firstIncomingRole, _ = messages[0]["role"].(string)
+			}
+			if firstIncomingRole != "assistant" {
+				prologue := make(map[string]interface{}, len(existingMessages[0]))
+				for k, v := range existingMessages[0] {
+					prologue[k] = v
+				}
+				prefix = append(prefix, prologue)
+			}
 		}
+	}
+
+	sessionMessages := make([]map[string]interface{}, 0, len(prefix)+len(messages))
+	sessionMessages = append(sessionMessages, prefix...)
+	for _, msg := range messages {
+		cloned := make(map[string]interface{}, len(msg))
+		for k, v := range msg {
+			cloned[k] = v
+		}
+		sessionMessages = append(sessionMessages, cloned)
 	}
 	return sessionMessages
 }
@@ -495,9 +748,7 @@ func (s *ChatSessionService) structureAnswer(session *entity.ChatSession, answer
 
 func (s *ChatSessionService) updateSessionMessages(session *entity.ChatSession, messages []map[string]interface{}, reference []interface{}) {
 	// Update session with new messages and reference
-	messagesJSON, _ := json.Marshal(map[string]interface{}{
-		"messages": messages,
-	})
+	messagesJSON, _ := json.Marshal(messages)
 	referenceJSON, _ := json.Marshal(reference)
 
 	updates := map[string]interface{}{
@@ -505,6 +756,8 @@ func (s *ChatSessionService) updateSessionMessages(session *entity.ChatSession, 
 		"reference": referenceJSON,
 	}
 	s.chatSessionDAO.UpdateByID(session.ID, updates)
+	session.Message = messagesJSON
+	session.Reference = referenceJSON
 }
 
 // structureAnswerWithConv structures the answer with conversation update (like Python's structure_answer)
@@ -535,12 +788,8 @@ func (s *ChatSessionService) structureAnswerWithConv(session *entity.ChatSession
 		content = "</think>"
 	}
 
-	// Parse existing messages
-	var messagesObj map[string]interface{}
-	if len(session.Message) > 0 {
-		json.Unmarshal(session.Message, &messagesObj)
-	}
-	messages, _ := messagesObj["messages"].([]interface{})
+	// Parse existing messages. Keep backward compatibility with wrapped legacy rows.
+	messages := parseMessages(session.Message)
 
 	// Update or append assistant message
 	if len(messages) == 0 || s.getLastRole(messages) != "assistant" {
@@ -552,19 +801,19 @@ func (s *ChatSessionService) structureAnswerWithConv(session *entity.ChatSession
 		})
 	} else {
 		lastIdx := len(messages) - 1
-		lastMsg, _ := messages[lastIdx].(map[string]interface{})
-		if lastMsg != nil {
-			if ans["final"] == true && ans["answer"] != nil {
-				lastMsg["content"] = ans["answer"]
-			} else {
-				existing, _ := lastMsg["content"].(string)
-				lastMsg["content"] = existing + content
-			}
-			lastMsg["created_at"] = float64(time.Now().Unix())
-			lastMsg["id"] = messageID
-			messages[lastIdx] = lastMsg
+		lastMsg := messages[lastIdx]
+		if ans["final"] == true && ans["answer"] != nil {
+			lastMsg["content"] = ans["answer"]
+		} else {
+			existing, _ := lastMsg["content"].(string)
+			lastMsg["content"] = existing + content
 		}
+		lastMsg["created_at"] = float64(time.Now().Unix())
+		lastMsg["id"] = messageID
+		messages[lastIdx] = lastMsg
 	}
+
+	session.Message, _ = json.Marshal(messages)
 
 	// Update reference
 	if len(reference) > 0 {
@@ -575,16 +824,12 @@ func (s *ChatSessionService) structureAnswerWithConv(session *entity.ChatSession
 }
 
 // getLastRole gets the role of the last message
-func (s *ChatSessionService) getLastRole(messages []interface{}) string {
+func (s *ChatSessionService) getLastRole(messages []map[string]interface{}) string {
 	if len(messages) == 0 {
 		return ""
 	}
-	lastMsg, _ := messages[len(messages)-1].(map[string]interface{})
-	if lastMsg != nil {
-		role, _ := lastMsg["role"].(string)
-		return role
-	}
-	return ""
+	role, _ := messages[len(messages)-1]["role"].(string)
+	return role
 }
 
 // chunksFormat formats chunks for reference (simplified version)
