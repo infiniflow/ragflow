@@ -124,7 +124,7 @@ export function InputForm({ onOk }: IModalProps<any>) {
           control={form.control}
           name="name"
           render={({ field }) => (
-            <FormItem>
+            <FormItem className="space-y-1">
               <FormLabel required>{t('knowledgeList.name')}</FormLabel>
               <FormControl>
                 <Input
