@@ -60,9 +60,9 @@ COPY deepdoc/server/deepdoc_svr.py       /app/deepdoc/server/
 COPY deepdoc/server/endpoints/           /app/deepdoc/server/endpoints/
 COPY deepdoc/server/adapters/            /app/deepdoc/server/adapters/
 
-EXPOSE 8000
+EXPOSE 9390
 
 HEALTHCHECK --interval=10s --timeout=10s --retries=5 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:9390/health || exit 1
 
 ENTRYPOINT ["/app/.venv/bin/python3", "/app/deepdoc/server/deepdoc_svr.py", "--model-dir", "/app/rag/res/deepdoc"]

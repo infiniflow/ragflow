@@ -430,12 +430,14 @@ func (p *Parser) buildLayout(ctx context.Context,
 	boxes []TextBox, pageChars map[int][]TextChar,
 	medianHeights, medianWidths map[int]float64,
 	fromPage, toPage int, ocrUsedAny bool, isEnglish bool,
-) {
-	_ = ctx
+) error {
 	result.Metrics.BoxesInitial = len(boxes)
 
 	result.Tables = p.enrichWithDeepDoc(ctx, engine, boxes, result.PageImages)
 	result.Metrics.TablesCount = len(result.Tables)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
 	boxes = AssignColumn(boxes, p.Config.Zoom)
 	boxes = TextMerge(boxes, medianHeights, p.Config.Zoom)
@@ -448,6 +450,9 @@ func (p *Parser) buildLayout(ctx context.Context,
 	}
 	boxes = NaiveVerticalMerge(boxes, medianHeights, medianWidths, isEnglish)
 	result.Metrics.BoxesVertMerge = len(boxes)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
 	boxes = extractTableAndReplace(boxes, result.Tables)
 	boxes = consolidateFigures(boxes)
@@ -460,6 +465,7 @@ func (p *Parser) buildLayout(ctx context.Context,
 	result.Metrics.BoxesFinal = len(result.Sections)
 	result.Figures = CollectFigures(result.Sections)
 	result.Sections = mergeCaptions(result.Sections, result.Figures)
+	return nil
 }
 
 // processPages runs the full pipeline on pages [fromPage, toPage].
@@ -497,8 +503,10 @@ func (p *Parser) processPages(ctx context.Context, engine PDFEngine,
 	}
 
 	// 4. Layout pipeline — DLA → TSR → Column → TextMerge → VM → Sections.
-	p.buildLayout(ctx, result, engine, boxes, pageChars,
-		medianHeights, medianWidths, fromPage, toPage, ocrUsedAny, isEnglish)
+	if err := p.buildLayout(ctx, result, engine, boxes, pageChars,
+		medianHeights, medianWidths, fromPage, toPage, ocrUsedAny, isEnglish); err != nil {
+		return nil, fmt.Errorf("buildLayout: %w", err)
+	}
 	// Text sections use cropSectionImage based on their PositionTag.
 	if len(result.PageImages) > 0 {
 		// Build lookup: DLA region → TableItem index for image matching.

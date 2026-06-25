@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strconv"
 	"strings"
@@ -45,15 +46,32 @@ func ExtractPositions(text string) []Position {
 		for _, p := range strings.Split(parts[0], "-") {
 			n, err := strconv.Atoi(p)
 			if err != nil {
+				slog.Warn("ExtractPositions: invalid page number in tag", "tag", tag, "part", p, "err", err)
 				continue
 			}
 			pageNums = append(pageNums, n-1) // 0-index
 		}
 
-		left, _ := strconv.ParseFloat(parts[1], 64)
-		right, _ := strconv.ParseFloat(parts[2], 64)
-		top, _ := strconv.ParseFloat(parts[3], 64)
-		bottom, _ := strconv.ParseFloat(parts[4], 64)
+		left, err := strconv.ParseFloat(parts[1], 64)
+		if err != nil {
+			slog.Warn("ExtractPositions: invalid left coordinate", "tag", tag, "err", err)
+			continue
+		}
+		right, err := strconv.ParseFloat(parts[2], 64)
+		if err != nil {
+			slog.Warn("ExtractPositions: invalid right coordinate", "tag", tag, "err", err)
+			continue
+		}
+		top, err := strconv.ParseFloat(parts[3], 64)
+		if err != nil {
+			slog.Warn("ExtractPositions: invalid top coordinate", "tag", tag, "err", err)
+			continue
+		}
+		bottom, err := strconv.ParseFloat(parts[4], 64)
+		if err != nil {
+			slog.Warn("ExtractPositions: invalid bottom coordinate", "tag", tag, "err", err)
+			continue
+		}
 
 		poss = append(poss, Position{
 			PageNumbers: pageNums,

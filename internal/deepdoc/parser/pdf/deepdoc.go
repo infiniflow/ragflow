@@ -4,14 +4,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"io"
 	"log/slog"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/cenkalti/backoff/v5"
 )
 
 // DeepDocClient wraps the DeepDoc HTTP API.
@@ -294,6 +298,7 @@ func NewTableBuilderFor(doc DocAnalyzer) TableBuilder {
 }
 
 func (c *DeepDocClient) post(ctx context.Context, endpoint string, imgData []byte, filename string, result interface{}, extraFields ...string) error {
+	// Build multipart body once — the image data is idempotent.
 	var body bytes.Buffer
 	w := multipart.NewWriter(&body)
 	fw, err := w.CreateFormFile("request", filename)
@@ -307,26 +312,46 @@ func (c *DeepDocClient) post(ctx context.Context, endpoint string, imgData []byt
 		w.WriteField(extraFields[i], extraFields[i+1])
 	}
 	w.Close()
+	contentType := w.FormDataContentType()
+	bodyBytes := body.Bytes()
 
-	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+endpoint, &body)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", w.FormDataContentType())
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		s := string(b)
-		if len(s) > 200 {
-			s = s[:200]
+	_, err = backoff.Retry(ctx, func() (struct{}, error) {
+		req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+endpoint, bytes.NewReader(bodyBytes))
+		if err != nil {
+			return struct{}{}, backoff.Permanent(err)
 		}
-		return fmt.Errorf("http %d: %s", resp.StatusCode, s)
-	}
-	// Guard against unbounded response bodies (malicious / misconfigured
-	// server).  64 MiB is far beyond any legitimate DLA / TSR / OCR payload.
-	return json.NewDecoder(io.LimitReader(resp.Body, 64<<20)).Decode(result)
+		req.Header.Set("Content-Type", contentType)
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return struct{}{}, backoff.Permanent(err)
+			}
+			var netErr net.Error
+			if errors.As(err, &netErr) {
+				slog.Warn("deepdoc: network error, will retry", "endpoint", endpoint, "err", err)
+				return struct{}{}, err
+			}
+			return struct{}{}, backoff.Permanent(err)
+		}
+
+		if resp.StatusCode == 200 {
+			defer resp.Body.Close()
+			return struct{}{}, json.NewDecoder(io.LimitReader(resp.Body, 64<<20)).Decode(result)
+		}
+
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		resp.Body.Close()
+		respErr := fmt.Errorf("http %d: %s", resp.StatusCode, string(errBody[:min(200, len(errBody))]))
+
+		if resp.StatusCode >= 500 {
+			slog.Warn("deepdoc: server error, will retry", "endpoint", endpoint, "status", resp.StatusCode)
+			return struct{}{}, respErr
+		}
+		// 4xx and other codes are not retryable.
+		return struct{}{}, backoff.Permanent(respErr)
+	}, backoff.WithMaxTries(4), backoff.WithNotify(func(err error, d time.Duration) {
+		slog.Info("deepdoc: retrying", "endpoint", endpoint, "backoff", d.Round(time.Millisecond), "err", err)
+	}))
+	return err
 }

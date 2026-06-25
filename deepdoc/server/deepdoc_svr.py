@@ -33,7 +33,7 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--port", type=int, default=8000, help="Serving port (default: 8000)"
+        "--port", type=int, default=9390, help="Serving port (default: 9390)"
     )
     parser.add_argument(
         "--timeout", type=int, default=100, help="Request timeout in seconds (default: 100)"

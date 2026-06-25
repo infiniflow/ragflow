@@ -11,13 +11,13 @@ TSR (Table Structure Recognition) models via a unified HTTP API using
 docker build -f docker/Dockerfile_deepdoc_oss -t deepdoc_oss:latest .
 
 # Run (CPU only; no GPU required)
-docker run -p 8000:8000 deepdoc_oss:latest
+docker run -p 9390:9390 deepdoc_oss:latest
 
 # Or via docker compose
 docker compose -f docker/docker-compose.yml up -d
 ```
 
-The service listens on port **8000** by default. Pass `--port` to change it:
+The service listens on port **9390** by default. Pass `--port` to change it:
 
 ```bash
 python deepdoc/server/deepdoc_svr.py --port 9000 --model-dir /path/to/models
@@ -43,7 +43,7 @@ Analyzes a full page image and returns labelled layout regions.
 **Request**
 
 ```
-curl -X POST http://localhost:8000/predict/dla \
+curl -X POST http://localhost:9390/predict/dla \
   -F "request=@page.jpg;type=image/jpeg"
 ```
 
@@ -80,7 +80,7 @@ Recognizes table structure from a cropped table image.
 **Request**
 
 ```
-curl -X POST http://localhost:8000/predict/tsr \
+curl -X POST http://localhost:9390/predict/tsr \
   -F "request=@table_crop.jpg;type=image/jpeg"
 ```
 
@@ -113,7 +113,7 @@ Two modes controlled by the `operator` form field.
 Returns quadrilateral bounding boxes for detected text regions.
 
 ```
-curl -X POST "http://localhost:8000/predict/ocr" \
+curl -X POST "http://localhost:9390/predict/ocr" \
   -F "operator=det" \
   -F "request=@page.jpg;type=image/jpeg"
 ```
@@ -140,7 +140,7 @@ curl -X POST "http://localhost:8000/predict/ocr" \
 Recognizes text within a cropped region.
 
 ```
-curl -X POST "http://localhost:8000/predict/ocr" \
+curl -X POST "http://localhost:9390/predict/ocr" \
   -F "operator=rec" \
   -F "request=@char_crop.jpg;type=image/jpeg"
 ```

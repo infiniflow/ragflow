@@ -42,6 +42,9 @@ func (p *Parser) enrichWithDeepDoc(ctx context.Context, engine PDFEngine, boxes 
 
 	var tableItems []TableItem
 	for _, pg := range pageKeys {
+		if err := ctx.Err(); err != nil {
+			return tableItems
+		}
 		indices := byPage[pg]
 		pageBoxes := make([]TextBox, len(indices))
 		for i, idx := range indices {

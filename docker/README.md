@@ -92,7 +92,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 ### DeepDoc Vision Service (OSS)
 
 - `DEEPDOC_URL`  
-  URL for the deepdoc vision API serving DLA (layout analysis), OCR (text detection/recognition), and TSR (table structure recognition). The `deepdoc` service in `docker-compose.yml` provides this endpoint. Defaults to `http://deepdoc:8000`. When unset, the parser falls back to inline ONNX Runtime inference.
+  URL for the deepdoc vision API serving DLA (layout analysis), OCR (text detection/recognition), and TSR (table structure recognition). The `deepdoc` service in `docker-compose.yml` provides this endpoint. Defaults to `http://deepdoc:9390`. When unset, the parser falls back to inline ONNX Runtime inference.
 
   > The OSS deepdoc service runs on CPU using ONNX Runtime models. No GPU required.  
   > API endpoints: `GET /health`, `GET /model`, `POST /predict/dla`, `POST /predict/tsr`, `POST /predict/ocr`.
@@ -182,8 +182,8 @@ Before setting `DOC_ENGINE=oceanbase`, make sure the host OS allows the file des
   The OSS DeepDoc vision service provides DLA, OCR, and TSR inference via ONNX Runtime.
   Defined in `docker-compose.yml`, it is started automatically as a dependency of `ragflow-cpu` and `ragflow-gpu`.
   - `image`: Docker image. Defaults to `infiniflow/deepdoc_oss:latest`.
-  - `port`: Serving port inside the container. Defaults to `8000`.
-  - Health check: `curl -f http://localhost:8000/health` every 10s.
+  - `port`: Serving port inside the container. Defaults to `9390`.
+  - Health check: `curl -f http://localhost:9390/health` every 10s.
 
 - `mysql`
   - `name`: The MySQL database name. Defaults to `rag_flow`.
