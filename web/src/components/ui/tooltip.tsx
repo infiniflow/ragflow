@@ -38,7 +38,7 @@ export const FormTooltip = ({ tooltip }: { tooltip: React.ReactNode }) => {
       <TooltipTrigger asChild>
         <span
           tabIndex={-1}
-          className="inline-flex align-text-top"
+          className="inline-flex align-middle -translate-y-[.02em]"
           onClick={(e) => {
             e.preventDefault(); // Prevent clicking the tooltip from triggering form save
           }}
