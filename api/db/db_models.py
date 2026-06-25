@@ -611,59 +611,72 @@ class PostgresDatabaseLock:
         )
 
     def _acquire_lock(self):
-        # Keep lock_timeout set for the whole critical section; reset only in _release_lock().
+        # Keep lock_timeout for the critical section after success; reset on failed acquire
+        # or in _release_lock() so pooled sessions do not retain a finite timeout.
         lock_timeout_value = "0" if self.timeout < 0 else f"{self.timeout}s"
         max_attempts, retry_delay = self._lock_retry_budget()
         last_exc = None
+        acquired = False
 
-        for attempt in range(max_attempts):
-            try:
-                self.db.execute_sql("SET lock_timeout = %s", (lock_timeout_value,))
-                self.db.execute_sql("SELECT pg_advisory_lock(%s)", (self.lock_id,))
-                logging.debug(
-                    "PostgreSQL advisory lock acquired: %s (lock_id=%s)",
-                    self.lock_name,
-                    self.lock_id,
-                )
-                return True
-            except OperationalError as e:
-                if self.timeout >= 0 and self._is_lock_timeout_error(e):
-                    raise PostgresLockTimeoutError(
-                        f"acquire postgres lock {self.lock_name} timeout"
-                    ) from e
-                if _is_postgresql_connection_error(e) and attempt < max_attempts - 1:
-                    last_exc = e
-                    logging.warning(
-                        "PostgreSQL connection lost while acquiring advisory lock %s "
-                        "(attempt %s/%s): %s",
+        try:
+            for attempt in range(max_attempts):
+                try:
+                    self.db.execute_sql("SET lock_timeout = %s", (lock_timeout_value,))
+                    self.db.execute_sql("SELECT pg_advisory_lock(%s)", (self.lock_id,))
+                    logging.debug(
+                        "PostgreSQL advisory lock acquired: %s (lock_id=%s)",
                         self.lock_name,
-                        attempt + 1,
-                        max_attempts,
-                        e,
+                        self.lock_id,
                     )
-                    self._reconnect_db()
-                    time.sleep(retry_delay * (2**attempt))
-                    continue
-                raise
-            except InterfaceError as e:
-                if attempt < max_attempts - 1:
-                    last_exc = e
-                    logging.warning(
-                        "PostgreSQL interface error while acquiring advisory lock %s "
-                        "(attempt %s/%s): %s",
-                        self.lock_name,
-                        attempt + 1,
-                        max_attempts,
-                        e,
-                    )
-                    self._reconnect_db()
-                    time.sleep(retry_delay * (2**attempt))
-                    continue
-                raise
+                    acquired = True
+                    return True
+                except OperationalError as e:
+                    if self.timeout >= 0 and self._is_lock_timeout_error(e):
+                        raise PostgresLockTimeoutError(
+                            f"acquire postgres lock {self.lock_name} timeout"
+                        ) from e
+                    if _is_postgresql_connection_error(e) and attempt < max_attempts - 1:
+                        last_exc = e
+                        logging.warning(
+                            "PostgreSQL connection lost while acquiring advisory lock %s "
+                            "(attempt %s/%s): %s",
+                            self.lock_name,
+                            attempt + 1,
+                            max_attempts,
+                            e,
+                        )
+                        self._reconnect_db()
+                        time.sleep(retry_delay * (2**attempt))
+                        continue
+                    raise
+                except InterfaceError as e:
+                    if attempt < max_attempts - 1:
+                        last_exc = e
+                        logging.warning(
+                            "PostgreSQL interface error while acquiring advisory lock %s "
+                            "(attempt %s/%s): %s",
+                            self.lock_name,
+                            attempt + 1,
+                            max_attempts,
+                            e,
+                        )
+                        self._reconnect_db()
+                        time.sleep(retry_delay * (2**attempt))
+                        continue
+                    raise
 
-        if last_exc:
-            raise last_exc
-        raise RuntimeError(f"failed to acquire postgres lock {self.lock_name}")
+            if last_exc:
+                raise last_exc
+            raise RuntimeError(f"failed to acquire postgres lock {self.lock_name}")
+        finally:
+            if not acquired:
+                try:
+                    self._reset_lock_timeout()
+                except Exception:
+                    logging.exception(
+                        "failed to reset postgres lock_timeout after failed advisory lock %s",
+                        self.lock_name,
+                    )
 
     def _release_lock(self):
         try:
