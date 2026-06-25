@@ -569,18 +569,15 @@ class PostgresDatabaseLock:
 
     @with_retry(max_retries=3, retry_delay=1.0)
     def lock(self):
-        # Match MySQL GET_LOCK semantics: timeout < 0 waits indefinitely,
-        # otherwise block up to `timeout` seconds using PostgreSQL lock_timeout.
-        if self.timeout < 0:
-            self.db.execute_sql("SELECT pg_advisory_lock(%s)", (self.lock_id,))
-            return True
-
+        # Use session-level lock_timeout so PostgreSQL blocks on pg_advisory_lock
+        # and raises on timeout (SQLSTATE 55P03), matching MySQL GET_LOCK semantics.
+        lock_timeout_value = "0" if self.timeout < 0 else f"{self.timeout}s"
         try:
-            self.db.execute_sql("SET lock_timeout = %s", (f"{self.timeout}s",))
+            self.db.execute_sql("SET lock_timeout = %s", (lock_timeout_value,))
             self.db.execute_sql("SELECT pg_advisory_lock(%s)", (self.lock_id,))
             return True
         except OperationalError as e:
-            if self._is_lock_timeout_error(e):
+            if self.timeout >= 0 and self._is_lock_timeout_error(e):
                 raise Exception(f"acquire postgres lock {self.lock_name} timeout") from e
             raise
         finally:
