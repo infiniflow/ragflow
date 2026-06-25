@@ -119,9 +119,9 @@ async def add_provider(tenant_id: str = None):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/providers/<provider_name>", methods=["GET"])  # noqa: F821
+@manager.route("/providers/<provider_id_or_name>", methods=["GET"])  # noqa: F821
 @login_required
-def show_provider(provider_name: str):
+def show_provider(provider_id_or_name: str):
     """
     Show provider details.
     ---
@@ -131,10 +131,10 @@ def show_provider(provider_name: str):
       - ApiKeyAuth: []
     parameters:
       - in: path
-        name: provider_name
+        name: provider_id_or_name
         type: string
         required: true
-        description: Provider name.
+        description: Provider ID or name.
       - in: header
         name: Authorization
         type: string
@@ -147,7 +147,7 @@ def show_provider(provider_name: str):
           type: object
     """
     try:
-        success, result = provider_api_service.show_provider(provider_name)
+        success, result = provider_api_service.show_provider(provider_id_or_name)
         if success:
             return get_result(data=result)
         else:
@@ -157,10 +157,10 @@ def show_provider(provider_name: str):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/providers/<provider_name>", methods=["DELETE"])  # noqa: F821
+@manager.route("/providers/<provider_id_or_name>", methods=["DELETE"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-def delete_provider(tenant_id: str = None, provider_name: str = None):
+def delete_provider(tenant_id: str = None, provider_id_or_name: str = None):
     """
     Delete a provider and all its models for the tenant.
     ---
@@ -170,10 +170,10 @@ def delete_provider(tenant_id: str = None, provider_name: str = None):
       - ApiKeyAuth: []
     parameters:
       - in: path
-        name: provider_name
+        name: provider_id_or_name
         type: string
         required: true
-        description: Provider name.
+        description: Provider ID or name.
       - in: header
         name: Authorization
         type: string
@@ -186,7 +186,7 @@ def delete_provider(tenant_id: str = None, provider_name: str = None):
           type: object
     """
     try:
-        success, msg = provider_api_service.delete_provider(tenant_id, provider_name)
+        success, msg = provider_api_service.delete_provider(tenant_id, provider_id_or_name)
         if success:
             return get_result(message=msg)
         else:
@@ -196,9 +196,9 @@ def delete_provider(tenant_id: str = None, provider_name: str = None):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/providers/<provider_name>/models", methods=["GET"])  # noqa: F821
+@manager.route("/providers/<provider_id_or_name>/models", methods=["GET"])  # noqa: F821
 @login_required
-async def list_provider_models(provider_name: str):
+async def list_provider_models(provider_id_or_name: str):
     """
     List models for a provider.
     ---
@@ -208,10 +208,10 @@ async def list_provider_models(provider_name: str):
       - ApiKeyAuth: []
     parameters:
       - in: path
-        name: provider_name
+        name: provider_id_or_name
         type: string
         required: true
-        description: Provider name.
+        description: Provider ID or name.
       - in: header
         name: Authorization
         type: string
@@ -231,7 +231,7 @@ async def list_provider_models(provider_name: str):
     try:
         api_key = request.args.get("api_key")
         base_url = request.args.get("base_url")
-        success, result = await provider_api_service.list_provider_models(provider_name, api_key, base_url)
+        success, result = await provider_api_service.list_provider_models(provider_id_or_name, api_key, base_url)
         if success:
             return get_result(data=result)
         else:
@@ -241,9 +241,9 @@ async def list_provider_models(provider_name: str):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/providers/<provider_name>/models/<path:model_name>", methods=["GET"])  # noqa: F821
+@manager.route("/providers/<provider_id_or_name>/models/<path:model_name>", methods=["GET"])  # noqa: F821
 @login_required
-def show_provider_model(provider_name: str, model_name: str):
+def show_provider_model(provider_id_or_name: str, model_name: str):
     """
     Show a specific model for a provider.
     ---
@@ -253,10 +253,10 @@ def show_provider_model(provider_name: str, model_name: str):
       - ApiKeyAuth: []
     parameters:
       - in: path
-        name: provider_name
+        name: provider_id_or_name
         type: string
         required: true
-        description: Provider name.
+        description: Provider ID or name.
       - in: path
         name: model_name
         type: string
@@ -274,7 +274,7 @@ def show_provider_model(provider_name: str, model_name: str):
           type: object
     """
     try:
-        success, result = provider_api_service.show_provider_model(provider_name, model_name)
+        success, result = provider_api_service.show_provider_model(provider_id_or_name, model_name)
         if success:
             return get_result(data=result)
         else:
@@ -284,10 +284,10 @@ def show_provider_model(provider_name: str, model_name: str):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/providers/<provider_name>/instances", methods=["POST"])  # noqa: F821
+@manager.route("/providers/<provider_id_or_name>/instances", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def create_provider_instance(tenant_id: str = None, provider_name: str = None):
+async def create_provider_instance(tenant_id: str = None, provider_id_or_name: str = None):
     """
     Create a provider instance.
     ---
@@ -297,10 +297,10 @@ async def create_provider_instance(tenant_id: str = None, provider_name: str = N
       - ApiKeyAuth: []
     parameters:
       - in: path
-        name: provider_name
+        name: provider_id_or_name
         type: string
         required: true
-        description: Provider name.
+        description: Provider ID or name.
       - in: header
         name: Authorization
         type: string
@@ -345,9 +345,7 @@ async def create_provider_instance(tenant_id: str = None, provider_name: str = N
     model_info = data.get("model_info", [])
 
     try:
-        success, msg = await provider_api_service.create_provider_instance(
-            tenant_id, provider_name, instance_name, api_key, base_url, region, model_info
-        )
+        success, msg = await provider_api_service.create_provider_instance(tenant_id, provider_id_or_name, instance_name, api_key, base_url, region, model_info)
         if success:
             return get_result(message=msg)
         else:
@@ -357,9 +355,9 @@ async def create_provider_instance(tenant_id: str = None, provider_name: str = N
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/providers/<provider_name>/connection", methods=["POST"])  # noqa: F821
+@manager.route("/providers/<provider_id_or_name>/connection", methods=["POST"])  # noqa: F821
 @login_required
-async def verify_provider_api_key(provider_name: str = None):
+async def verify_provider_api_key(provider_id_or_name: str = None):
     """
     Verify api key.
     ---
@@ -369,10 +367,10 @@ async def verify_provider_api_key(provider_name: str = None):
       - ApiKeyAuth: []
     parameters:
       - in: path
-        name: provider_name
+        name: provider_id_or_name
         type: string
         required: true
-        description: Provider name.
+        description: Provider ID or name.
       - in: header
         name: Authorization
         type: string
@@ -415,9 +413,7 @@ async def verify_provider_api_key(provider_name: str = None):
     model_info = data.get("model_info", [])
 
     try:
-        success, msg = await provider_api_service.verify_api_key(
-            provider_name, api_key, base_url, region, model_info
-        )
+        success, msg = await provider_api_service.verify_api_key(provider_id_or_name, api_key, base_url, region, model_info)
         if success:
             return get_result(message=msg)
         else:
@@ -427,10 +423,10 @@ async def verify_provider_api_key(provider_name: str = None):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/providers/<provider_name>/instances", methods=["GET"])  # noqa: F821
+@manager.route("/providers/<provider_id_or_name>/instances", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-def list_provider_instances(tenant_id: str = None, provider_name: str = None):
+def list_provider_instances(tenant_id: str = None, provider_id_or_name: str = None):
     """
     List provider instances.
     ---
@@ -440,10 +436,10 @@ def list_provider_instances(tenant_id: str = None, provider_name: str = None):
       - ApiKeyAuth: []
     parameters:
       - in: path
-        name: provider_name
+        name: provider_id_or_name
         type: string
         required: true
-        description: Provider name.
+        description: Provider ID or name.
       - in: header
         name: Authorization
         type: string
@@ -461,7 +457,7 @@ def list_provider_instances(tenant_id: str = None, provider_name: str = None):
                 type: object
     """
     try:
-        success, result = provider_api_service.list_provider_instances(tenant_id, provider_name)
+        success, result = provider_api_service.list_provider_instances(tenant_id, provider_id_or_name)
         if success:
             return get_result(data=result)
         else:
@@ -471,10 +467,10 @@ def list_provider_instances(tenant_id: str = None, provider_name: str = None):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/providers/<provider_name>/instances/<instance_name>", methods=["GET"])  # noqa: F821
+@manager.route("/providers/<provider_id_or_name>/instances/<instance_id_or_name>", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-def show_provider_instance(tenant_id: str = None, provider_name: str = None, instance_name: str = None):
+def show_provider_instance(tenant_id: str = None, provider_id_or_name: str = None, instance_id_or_name: str = None):
     """
     Show a provider instance.
     ---
@@ -484,15 +480,15 @@ def show_provider_instance(tenant_id: str = None, provider_name: str = None, ins
       - ApiKeyAuth: []
     parameters:
       - in: path
-        name: provider_name
+        name: provider_id_or_name
         type: string
         required: true
-        description: Provider name.
+        description: Provider ID or name.
       - in: path
-        name: instance_name
+        name: instance_id_or_name
         type: string
         required: true
-        description: Instance name.
+        description: Instance ID or name.
       - in: header
         name: Authorization
         type: string
@@ -505,7 +501,7 @@ def show_provider_instance(tenant_id: str = None, provider_name: str = None, ins
           type: object
     """
     try:
-        success, result = provider_api_service.show_provider_instance(tenant_id, provider_name, instance_name)
+        success, result = provider_api_service.show_provider_instance(tenant_id, provider_id_or_name, instance_id_or_name)
         if success:
             return get_result(data=result)
         else:
@@ -515,10 +511,10 @@ def show_provider_instance(tenant_id: str = None, provider_name: str = None, ins
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/providers/<provider_name>/instances", methods=["DELETE"])  # noqa: F821
+@manager.route("/providers/<provider_id_or_name>/instances", methods=["DELETE"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def drop_provider_instances(tenant_id: str = None, provider_name: str = None):
+async def drop_provider_instances(tenant_id: str = None, provider_id_or_name: str = None):
     """
     Drop provider instances.
     ---
@@ -528,10 +524,10 @@ async def drop_provider_instances(tenant_id: str = None, provider_name: str = No
       - ApiKeyAuth: []
     parameters:
       - in: path
-        name: provider_name
+        name: provider_id_or_name
         type: string
         required: true
-        description: Provider name.
+        description: Provider ID or name.
       - in: header
         name: Authorization
         type: string
@@ -550,7 +546,7 @@ async def drop_provider_instances(tenant_id: str = None, provider_name: str = No
               type: array
               items:
                 type: string
-              description: List of instance names to drop.
+              description: List of instance IDs or names to drop.
     responses:
       200:
         description: Instances dropped successfully.
@@ -566,7 +562,7 @@ async def drop_provider_instances(tenant_id: str = None, provider_name: str = No
         return get_error_argument_result(message="instances is required")
 
     try:
-        success, msg = provider_api_service.drop_provider_instances(tenant_id, provider_name, instances)
+        success, msg = provider_api_service.drop_provider_instances(tenant_id, provider_id_or_name, instances)
         if success:
             return get_result(message=msg)
         else:
@@ -576,10 +572,10 @@ async def drop_provider_instances(tenant_id: str = None, provider_name: str = No
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/providers/<provider_name>/instances/<instance_name>/models", methods=["GET"])  # noqa: F821
+@manager.route("/providers/<provider_id_or_name>/instances/<instance_id_or_name>/models", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-def list_instance_models(tenant_id: str = None, provider_name: str = None, instance_name: str = None):
+def list_instance_models(tenant_id: str = None, provider_id_or_name: str = None, instance_id_or_name: str = None):
     """
     List models for a provider instance.
     ---
@@ -589,15 +585,15 @@ def list_instance_models(tenant_id: str = None, provider_name: str = None, insta
       - ApiKeyAuth: []
     parameters:
       - in: path
-        name: provider_name
+        name: provider_id_or_name
         type: string
         required: true
-        description: Provider name.
+        description: Provider ID or name.
       - in: path
-        name: instance_name
+        name: instance_id_or_name
         type: string
         required: true
-        description: Instance name.
+        description: Instance ID or name.
       - in: query
         name: supported
         type: string
@@ -622,7 +618,7 @@ def list_instance_models(tenant_id: str = None, provider_name: str = None, insta
     supported_only = request.args.get("supported", "").lower() == "true"
     try:
         success, result = provider_api_service.list_instance_models(
-            tenant_id, provider_name, instance_name, supported_only
+            tenant_id, provider_id_or_name, instance_id_or_name, supported_only
         )
         if success:
             return get_result(data=result)
@@ -633,10 +629,10 @@ def list_instance_models(tenant_id: str = None, provider_name: str = None, insta
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/providers/<provider_name>/instances/<instance_name>/models", methods=["PUT"])  # noqa: F821
+@manager.route("/providers/<provider_id_or_name>/instances/<instance_id_or_name>/models", methods=["PUT"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def update_instance_models(tenant_id: str, provider_name: str, instance_name: str):
+async def update_instance_models(tenant_id: str, provider_id_or_name: str, instance_id_or_name: str):
     """
     Batch update model_type for models in instance.
     ---
@@ -646,15 +642,15 @@ async def update_instance_models(tenant_id: str, provider_name: str, instance_na
       - ApiKeyAuth: []
     parameters:
       - in: path
-        name: provider_name
+        name: provider_id_or_name
         type: string
         required: true
-        description: Provider name.
+        description: Provider ID or name.
       - in: path
-        name: instance_name
+        name: instance_id_or_name
         type: string
         required: true
-        description: Instance name.
+        description: Instance ID or name.
       - in: header
         name: Authorization
         type: string
@@ -683,7 +679,9 @@ async def update_instance_models(tenant_id: str, provider_name: str, instance_na
     model_name = data["model_name"]
     model_type = data["model_type"]
     try:
-        success, msg = provider_api_service.update_instance_models(tenant_id, provider_name, instance_name, model_name, model_type)
+        success, msg = provider_api_service.update_instance_models(
+            tenant_id, provider_id_or_name, instance_id_or_name, model_name, model_type
+        )
         if success:
             return get_result(message=msg)
         else:
@@ -693,10 +691,10 @@ async def update_instance_models(tenant_id: str, provider_name: str, instance_na
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/providers/<provider_name>/instances/<instance_name>/models", methods=["POST"])  # noqa: F821
+@manager.route("/providers/<provider_id_or_name>/instances/<instance_id_or_name>/models", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def add_model_to_instance(tenant_id: str, provider_name: str, instance_name: str):
+async def add_model_to_instance(tenant_id: str, provider_id_or_name: str, instance_id_or_name: str):
     """
     Add a model to an instance.
     ---
@@ -706,15 +704,15 @@ async def add_model_to_instance(tenant_id: str, provider_name: str, instance_nam
       - ApiKeyAuth: []
     parameters:
       - in: path
-        name: provider_name
+        name: provider_id_or_name
         type: string
         required: true
-        description: Provider name.
+        description: Provider ID or name.
       - in: path
-        name: instance_name
+        name: instance_id_or_name
         type: string
         required: true
-        description: Instance name.
+        description: Instance ID or name.
       - in: header
         name: Authorization
         type: string
@@ -757,7 +755,7 @@ async def add_model_to_instance(tenant_id: str, provider_name: str, instance_nam
 
     try:
         success, result = provider_api_service.add_model_to_instance(
-            tenant_id, provider_name, instance_name, model_name, model_type, max_tokens, extra
+            tenant_id, provider_id_or_name, instance_id_or_name, model_name, model_type, max_tokens, extra
         )
         if success:
             return get_result(message=result)
@@ -768,10 +766,10 @@ async def add_model_to_instance(tenant_id: str, provider_name: str, instance_nam
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/providers/<provider_name>/instances/<instance_name>/models/<path:model_name>", methods=["PATCH"])  # noqa: F821
+@manager.route("/providers/<provider_id_or_name>/instances/<instance_id_or_name>/models/<path:model_name>", methods=["PATCH"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def enable_or_disable_model(tenant_id: str = None, provider_name: str = None, instance_name: str = None, model_name: str = None):
+async def enable_or_disable_model(tenant_id: str = None, provider_id_or_name: str = None, instance_id_or_name: str = None, model_name: str = None):
     """
     Enable or disable a model.
     ---
@@ -781,15 +779,15 @@ async def enable_or_disable_model(tenant_id: str = None, provider_name: str = No
       - ApiKeyAuth: []
     parameters:
       - in: path
-        name: provider_name
+        name: provider_id_or_name
         type: string
         required: true
-        description: Provider name.
+        description: Provider ID or name.
       - in: path
-        name: instance_name
+        name: instance_id_or_name
         type: string
         required: true
-        description: Instance name.
+        description: Instance ID or name.
       - in: path
         name: model_name
         type: string
@@ -828,7 +826,9 @@ async def enable_or_disable_model(tenant_id: str = None, provider_name: str = No
         return get_error_argument_result(message="status must be 'active' or 'inactive'")
 
     try:
-        success, msg = provider_api_service.update_model_status(tenant_id, provider_name, instance_name, model_name, status)
+        success, msg = provider_api_service.update_model_status(
+            tenant_id, provider_id_or_name, instance_id_or_name, model_name, status
+        )
         if success:
             return get_result(message=msg)
         else:
@@ -838,10 +838,10 @@ async def enable_or_disable_model(tenant_id: str = None, provider_name: str = No
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/providers/<provider_name>/instances/<instance_name>/models/<path:model_name>", methods=["POST"])  # noqa: F821
+@manager.route("/providers/<provider_id_or_name>/instances/<instance_id_or_name>/models/<path:model_name>", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def chat_to_model(tenant_id: str = None, provider_name: str = None, instance_name: str = None, model_name: str = None):
+async def chat_to_model(tenant_id: str = None, provider_id_or_name: str = None, instance_id_or_name: str = None, model_name: str = None):
     """
     Chat to a model.
     ---
@@ -851,15 +851,15 @@ async def chat_to_model(tenant_id: str = None, provider_name: str = None, instan
       - ApiKeyAuth: []
     parameters:
       - in: path
-        name: provider_name
+        name: provider_id_or_name
         type: string
         required: true
-        description: Provider name.
+        description: Provider ID or name.
       - in: path
-        name: instance_name
+        name: instance_id_or_name
         type: string
         required: true
-        description: Instance name.
+        description: Instance ID or name.
       - in: path
         name: model_name
         type: string
@@ -904,7 +904,7 @@ async def chat_to_model(tenant_id: str = None, provider_name: str = None, instan
 
     try:
         success, result = await provider_api_service.chat_to_model(
-            tenant_id, provider_name, instance_name, model_name, message, stream, thinking
+            tenant_id, provider_id_or_name, instance_id_or_name, model_name, message, stream, thinking
         )
         if not success:
             return get_error_data_result(message=result)

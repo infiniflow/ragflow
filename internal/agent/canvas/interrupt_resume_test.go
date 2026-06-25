@@ -27,6 +27,7 @@ import (
 	"testing"
 
 	"github.com/cloudwego/eino/compose"
+	"ragflow/internal/agent/workflowx"
 )
 
 // TestBuildInputSpec_BasicFields passes enable_tips/tips/inputs and
@@ -107,6 +108,55 @@ func TestExtractInterruptContexts_PlainError(t *testing.T) {
 	}
 }
 
+func TestExtractInterruptContexts_FlattensSubGraphs(t *testing.T) {
+	sub := compose.NewWorkflow[int, int]()
+	subNode := sub.AddLambdaNode("waiter", compose.InvokableLambda(func(ctx context.Context, in int) (int, error) {
+		return 0, compose.Interrupt(ctx, map[string]any{"kind": "user_fill_up"})
+	}))
+	subNode.AddInput(compose.START)
+	sub.End().AddInput("waiter")
+
+	outer := compose.NewWorkflow[int, int]()
+	loopNode, err := workflowx.AddLoopNode(
+		context.Background(),
+		outer,
+		"loop",
+		sub,
+		func(_ context.Context, _, _, _ int) (bool, error) { return true, nil },
+	)
+	if err != nil {
+		t.Fatalf("AddLoopNode: %v", err)
+	}
+	loopNode.AddInput(compose.START)
+	outer.End().AddInput("loop")
+
+	compiled, err := outer.Compile(context.Background())
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	_, err = compiled.Invoke(context.Background(), 0)
+	if err == nil {
+		t.Fatal("expected interrupt error, got nil")
+	}
+
+	got := ExtractInterruptContexts(err)
+	if len(got) < 1 {
+		t.Fatalf("len(ExtractInterruptContexts) = %d; want >= 1", len(got))
+	}
+	foundUserFillUp := false
+	for _, ctx := range got {
+		if info, ok := ctx.Info.(map[string]any); ok {
+			if kind, _ := info["kind"].(string); kind == "user_fill_up" {
+				foundUserFillUp = true
+				break
+			}
+		}
+	}
+	if !foundUserFillUp {
+		t.Fatalf("flattened contexts = %+v; want nested user_fill_up context", got)
+	}
+}
+
 // TestFirstInterruptID_Empty covers the empty/nil case.
 func TestFirstInterruptID_Empty(t *testing.T) {
 	if got := FirstInterruptID(nil); got != "" {
@@ -126,6 +176,47 @@ func TestFirstInterruptID_PicksFirst(t *testing.T) {
 	})
 	if got != "first" {
 		t.Errorf("FirstInterruptID = %q; want \"first\"", got)
+	}
+}
+
+func TestFirstInterruptID_PrefersUserFillUp(t *testing.T) {
+	got := FirstInterruptID([]*compose.InterruptCtx{
+		{ID: "outer-loop", Info: "sub-interrupt"},
+		{ID: "user-fill-up", Info: map[string]any{"kind": "user_fill_up"}},
+	})
+	if got != "user-fill-up" {
+		t.Errorf("FirstInterruptID = %q; want %q", got, "user-fill-up")
+	}
+}
+
+func TestRootInterruptID_PrefersRootCause(t *testing.T) {
+	got := RootInterruptID([]*compose.InterruptCtx{
+		{ID: "outer-loop"},
+		{ID: "user-fill-up", Info: map[string]any{"kind": "user_fill_up"}, IsRootCause: true},
+	})
+	if got != "user-fill-up" {
+		t.Errorf("RootInterruptID = %q; want %q", got, "user-fill-up")
+	}
+}
+
+func TestRootInterruptID_DiffersFromDisplayInterrupt(t *testing.T) {
+	ctxs := []*compose.InterruptCtx{
+		{
+			ID:          "user-fill-up",
+			Info:        map[string]any{"kind": "user_fill_up"},
+			IsRootCause: false,
+			Parent: &compose.InterruptCtx{
+				ID:          "loop-root",
+				Info:        "sub-interrupt",
+				IsRootCause: true,
+			},
+		},
+	}
+	if got := FirstInterruptID(ctxs); got != "user-fill-up" {
+		t.Fatalf("FirstInterruptID = %q; want %q", got, "user-fill-up")
+	}
+	if got := RootInterruptID(ctxs); got != "loop-root" {
+		t.Fatalf("RootInterruptID = %q; want %q", got, "loop-root")
 	}
 }
 
@@ -188,6 +279,107 @@ func TestUserFillUpNodeBody_ResumeReturnsInput(t *testing.T) {
 	}
 	// When err == nil, the resume branch was taken — that's the
 	// happy-path engine case. No further assertion needed.
+}
+
+func TestBuildUserFillUpResumeOutput_SingleFieldUsesFieldName(t *testing.T) {
+	out := buildUserFillUpResumeOutput("UserFillUp:Menu", map[string]any{
+		"inputs": map[string]any{
+			"demo": map[string]any{"type": "options"},
+		},
+	}, "loop")
+
+	if out["user_input"] != "loop" {
+		t.Fatalf("user_input = %v, want loop", out["user_input"])
+	}
+	if out["UserFillUp:Menu"] != "loop" {
+		t.Fatalf("cpn bucket = %v, want loop", out["UserFillUp:Menu"])
+	}
+	if out["demo"] != "loop" {
+		t.Fatalf("demo = %v, want loop", out["demo"])
+	}
+}
+
+func TestBuildUserFillUpResumeOutput_MapResumeUsesMatchingFields(t *testing.T) {
+	out := buildUserFillUpResumeOutput("UserFillUp:Form", map[string]any{
+		"inputs": map[string]any{
+			"name": map[string]any{"type": "text"},
+			"age":  map[string]any{"type": "text"},
+		},
+	}, map[string]any{
+		"name":  "alice",
+		"age":   "18",
+		"extra": "ignored",
+	})
+
+	if out["name"] != "alice" {
+		t.Fatalf("name = %v, want alice", out["name"])
+	}
+	if out["age"] != "18" {
+		t.Fatalf("age = %v, want 18", out["age"])
+	}
+	if _, ok := out["extra"]; ok {
+		t.Fatalf("unexpected extra key in output: %+v", out)
+	}
+}
+
+func TestBuildUserFillUpResumeOutput_ValueFieldMirrorsResumeData(t *testing.T) {
+	out := buildUserFillUpResumeOutput("UserFillUp:LoopInput", map[string]any{
+		"inputs": map[string]any{
+			"value": map[string]any{"type": "text"},
+		},
+	}, "1")
+
+	if out["value"] != "1" {
+		t.Fatalf("value = %v, want 1", out["value"])
+	}
+}
+
+func TestInitialUserFillUpData_UsesSysQueryWhenSchemaPresent(t *testing.T) {
+	state := NewCanvasState("run-1", "task-1")
+	state.Sys["query"] = "loop"
+	ctx := WithState(context.Background(), state)
+
+	got, ok := initialUserFillUpData(ctx, map[string]any{
+		"inputs": map[string]any{
+			"demo": map[string]any{"type": "options"},
+		},
+	})
+	if !ok {
+		t.Fatal("expected initialUserFillUpData to consume sys.query")
+	}
+	if got != "loop" {
+		t.Fatalf("got %v, want loop", got)
+	}
+}
+
+func TestInitialUserFillUpData_SkipsWhenNoSchema(t *testing.T) {
+	state := NewCanvasState("run-1", "task-1")
+	state.Sys["query"] = "loop"
+	ctx := WithState(context.Background(), state)
+
+	if got, ok := initialUserFillUpData(ctx, map[string]any{}); ok || got != nil {
+		t.Fatalf("expected no auto-consume without schema, got (%v, %v)", got, ok)
+	}
+}
+
+func TestInitialUserFillUpData_ConsumesOnlyOnce(t *testing.T) {
+	state := NewCanvasState("run-1", "task-1")
+	state.Sys["query"] = "loop"
+	ctx := WithState(context.Background(), state)
+	spec := map[string]any{
+		"inputs": map[string]any{
+			"demo": map[string]any{"type": "options"},
+		},
+	}
+
+	got, ok := initialUserFillUpData(ctx, spec)
+	if !ok || got != "loop" {
+		t.Fatalf("first auto-consume = (%v, %v), want (loop, true)", got, ok)
+	}
+	got2, ok2 := initialUserFillUpData(ctx, spec)
+	if ok2 || got2 != nil {
+		t.Fatalf("second auto-consume = (%v, %v), want (nil, false)", got2, ok2)
+	}
 }
 
 // TestAutoDiscoverUserFillUpIDs_Empty covers the nil canvas path.

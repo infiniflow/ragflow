@@ -63,7 +63,7 @@ func splitTrinoCatalogSchema(db string) (catalog, schema string) {
 			return db[:i], db[i+1:]
 		}
 	}
-	return db, ""
+	return db, "default"
 }
 
 // trinoDSN builds a Trino DSN from the project's exesql connection
@@ -90,7 +90,12 @@ func trinoDSN(p exesqlConnParams) string {
 	if schema == "" {
 		schema = "default"
 	}
-	user := url.UserPassword(username, p.Password)
+	var user *url.Userinfo
+	if scheme == "https" && p.Password != "" {
+		user = url.UserPassword(username, p.Password)
+	} else {
+		user = url.User(username)
+	}
 	q := url.Values{}
 	q.Set("catalog", catalog)
 	q.Set("schema", schema)
@@ -100,9 +105,8 @@ func trinoDSN(p exesqlConnParams) string {
 		Host:     host + ":" + strconv.Itoa(port),
 		RawQuery: q.Encode(),
 	}
-	// Empty password over plain HTTP is fine; url.URL.String()
-	// strips the empty password. Trino doesn't accept ":@" in
-	// the userinfo for unauthenticated connections.
+	// Over plain HTTP, omit the password entirely so the DSN never
+	// leaks cleartext credentials in userinfo.
 	return u.String()
 }
 

@@ -139,7 +139,7 @@ func copyTypedAgentEvent[M MessageType](event *TypedAgentEvent[M]) *TypedAgentEv
 		cp.Action = &AgentAction{
 			Exit: event.Action.Exit, Interrupted: event.Action.Interrupted,
 			TransferToAgent: event.Action.TransferToAgent, BreakLoop: event.Action.BreakLoop,
-			CustomizedAction: event.Action.CustomizedAction,
+			CustomizedAction:    event.Action.CustomizedAction,
 			internalInterrupted: event.Action.internalInterrupted,
 		}
 	}
@@ -147,7 +147,9 @@ func copyTypedAgentEvent[M MessageType](event *TypedAgentEvent[M]) *TypedAgentEv
 }
 
 func setAutomaticClose[M MessageType](event *TypedAgentEvent[M]) {
-	if event == nil { return }
+	if event == nil {
+		return
+	}
 	if event.Output != nil && event.Output.MessageOutput != nil {
 		if event.Output.MessageOutput.MessageStream != nil {
 			event.Output.MessageOutput.MessageStream.Close()
@@ -156,7 +158,9 @@ func setAutomaticClose[M MessageType](event *TypedAgentEvent[M]) {
 }
 func typedSetAutomaticClose[M MessageType](event *TypedAgentEvent[M]) { setAutomaticClose(event) }
 func addTypedEvent[M MessageType](s *runSession, event *TypedAgentEvent[M]) {
-	if s == nil { return }
+	if s == nil {
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.TypedEvents == nil {

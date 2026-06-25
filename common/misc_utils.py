@@ -16,6 +16,7 @@
 
 import asyncio
 import base64
+import contextvars
 import functools
 import hashlib
 import logging
@@ -250,8 +251,13 @@ def _thread_pool_executor():
 
 
 async def thread_pool_exec(func, *args, **kwargs):
+    # loop.run_in_executor() submits the callable without propagating the caller's
+    # contextvars (unlike asyncio.to_thread, which copies the context). Copy the
+    # current context and run the callable inside it so ContextVars set by the
+    # caller (e.g. tracing / per-request state) are visible in the worker thread.
     loop = asyncio.get_running_loop()
+    ctx = contextvars.copy_context()
     if kwargs:
-        func = functools.partial(func, *args, **kwargs)
-        return await loop.run_in_executor(_thread_pool_executor(), func)
-    return await loop.run_in_executor(_thread_pool_executor(), func, *args)
+        inner = functools.partial(func, *args, **kwargs)
+        return await loop.run_in_executor(_thread_pool_executor(), ctx.run, inner)
+    return await loop.run_in_executor(_thread_pool_executor(), ctx.run, func, *args)

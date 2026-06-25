@@ -32,17 +32,13 @@ internal/cpp/cmake-build-release/
 internal/cpp/cmake-build-debug/
 target/
 
-# ── Downloaded dependency artifacts (mounted from infiniflow/ragflow_deps) ──
-chrome-linux64-*
-chromedriver-linux64-*
-tika-server-standard-*.jar
-tika-server-standard-*.jar.md5
-cl100k_base.tiktoken
-libssl*.deb
-uv-*.tar.gz
-huggingface.co/
-nltk_data/
-9b5ad71b2ce5302211f9c61530b329a4922fc6a4
+# ── ragflow_deps build context (built as a separate image, mounted ──
+# ── from infiniflow/ragflow_deps:latest by the main Dockerfile)     ──
+# Excluding the entire directory keeps the main build context small
+# regardless of which deps files download_deps.py currently fetches.
+# The deps image is built from this directory with:
+#   cd ragflow_deps && docker build -f Dockerfile -t infiniflow/ragflow_deps .
+ragflow_deps/
 
 # ── IDE and editor config ──────────────────────────────────────────────────
 .idea/

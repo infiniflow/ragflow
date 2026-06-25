@@ -1,6 +1,6 @@
 module ragflow
 
-go 1.26.2
+go 1.26.4
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
@@ -14,8 +14,9 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.96.4
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.8
 	github.com/aws/smithy-go v1.24.2
+	github.com/browserbase/stagehand-go/v3 v3.21.0
 	github.com/cespare/xxhash/v2 v2.3.0
-	github.com/cloudwego/eino v0.9.8
+	github.com/cloudwego/eino v0.9.9
 	github.com/denisenkom/go-mssqldb v0.12.3
 	github.com/elastic/go-elasticsearch/v8 v8.19.1
 	github.com/eric642/e2b-go-sdk v0.1.3
@@ -28,11 +29,13 @@ require (
 	github.com/infiniflow/infinity-go-sdk v0.0.0-00010101000000-000000000000
 	github.com/iromli/go-itsdangerous v0.0.0-20220223194502-9c8bef8dac6a
 	github.com/json-iterator/go v1.1.12
+	github.com/kaptinlin/jsonrepair v0.4.8
 	github.com/lib/pq v1.10.9
 	github.com/minio/minio-go/v7 v7.0.99
 	github.com/nats-io/nats.go v1.52.0
 	github.com/nikolalohinski/gonja v1.5.3
 	github.com/peterh/liner v1.2.2
+	github.com/pkoukk/tiktoken-go v0.1.8
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
 	github.com/redis/go-redis/v9 v9.18.0
@@ -41,6 +44,7 @@ require (
 	github.com/spf13/viper v1.18.2
 	github.com/xuri/excelize/v2 v2.10.1
 	github.com/yfedoseev/office_oxide/go v0.1.2
+	github.com/zeebo/xxh3 v1.0.2
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.44.0
@@ -54,6 +58,7 @@ require (
 	golang.org/x/term v0.43.0
 	google.golang.org/genai v1.54.0
 	google.golang.org/grpc v1.81.1
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/mysql v1.5.2
 	gorm.io/gorm v1.25.7
@@ -93,6 +98,7 @@ require (
 	github.com/clbanning/mxj/v2 v2.7.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
+	github.com/dlclark/regexp2 v1.10.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/eino-contrib/jsonschema v1.0.3 // indirect
 	github.com/elastic/elastic-transport-go/v8 v8.8.0 // indirect
@@ -102,6 +108,7 @@ require (
 	github.com/gin-contrib/sse v0.1.0 // indirect
 	github.com/glebarez/go-sqlite v1.21.2 // indirect
 	github.com/go-ini/ini v1.67.0 // indirect
+	github.com/go-json-experiment/json v0.0.0-20260601182631-00ed12fed2a6 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
@@ -156,6 +163,10 @@ require (
 	github.com/spf13/cast v1.6.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
+	github.com/tidwall/gjson v1.18.0 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.1 // indirect
+	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/tiendc/go-deepcopy v1.7.2 // indirect
 	github.com/tinylib/msgp v1.6.1 // indirect
 	github.com/tjfoc/gmsm v1.4.1 // indirect

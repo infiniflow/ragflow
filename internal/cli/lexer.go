@@ -205,8 +205,6 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenService, Value: ident}
 	case "SHUTDOWN":
 		return Token{Type: TokenShutdown, Value: ident}
-	case "STARTUP":
-		return Token{Type: TokenStartup, Value: ident}
 	case "RESTART":
 		return Token{Type: TokenRestart, Value: ident}
 	case "USERS":
@@ -243,6 +241,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenOf, Value: ident}
 	case "AGENTS":
 		return Token{Type: TokenAgents, Value: ident}
+	case "SEARCHES":
+		return Token{Type: TokenSearches, Value: ident}
 	case "ROLE":
 		return Token{Type: TokenRole, Value: ident}
 	case "ROLES":
@@ -305,6 +305,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenChats, Value: ident}
 	case "CHAT":
 		return Token{Type: TokenChat, Value: ident}
+	case "OPENAI_CHAT":
+		return Token{Type: TokenOpenaiChat, Value: ident}
 	case "MESSAGE":
 		return Token{Type: TokenMessage, Value: ident}
 	case "IMAGE":
@@ -363,6 +365,10 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenRetrieve, Value: ident}
 	case "CURRENT":
 		return Token{Type: TokenCurrent, Value: ident}
+	case "FINGERPRINT":
+		return Token{Type: TokenFingerprint, Value: ident}
+	case "LICENSE":
+		return Token{Type: TokenLicense, Value: ident}
 	case "VISION":
 		return Token{Type: TokenVision, Value: ident}
 	case "EMBEDDING":
