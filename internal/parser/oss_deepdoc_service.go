@@ -1,29 +1,47 @@
 package parser
 
 import (
+	"context"
 	"image"
 	"sort"
 	"strings"
 )
 
-// OssDeepDocTableBuilder implements TableBuilder for the oss DeepDoc TSR
-// service (ONNX model via HTTP).  TSR returns structural cells — row regions
-// (full table width), column regions (full table height), header regions,
-// and spanning cell regions.  GroupCells cross-products row×column boundaries
-// to build the cell grid.
-type OssDeepDocTableBuilder struct {
+// OSS model label taxonomies.
+// DLA: 8 unique classes (no duplicates — OSS ONNX model output).
+var ossDLALabels = []string{
+	"title", "text", "reference", "figure", "figure caption",
+	"table", "table caption", "equation",
+}
+
+// TSR: 6 structural elements (matches deepdoc/vision/table_structure_recognizer.py).
+var ossTSRLabels = []string{
+	"table", "table column", "table row",
+	"table column header", "table projected row header",
+	"table spanning cell",
+}
+
+// OssDeepDocService implements TableBuilder and DocAnalyzer for the oss
+// DeepDoc service (ONNX models via HTTP).
+type OssDeepDocService struct {
 	doc DocAnalyzer
 }
 
-// NewOssDeepDocTableBuilder creates a TableBuilder backed by the oss DeepDoc TSR service.
-func NewOssDeepDocTableBuilder(doc DocAnalyzer) *OssDeepDocTableBuilder {
-	return &OssDeepDocTableBuilder{doc: doc}
+// NewOssDeepDocService creates a service backed by the oss DeepDoc service.
+// If doc is a *DeepDocClient, its DLALabels/TSRLabels are set to the OSS
+// taxonomy.
+func NewOssDeepDocService(doc DocAnalyzer) *OssDeepDocService {
+	if c, ok := doc.(*DeepDocClient); ok {
+		c.DLALabels = ossDLALabels
+		c.TSRLabels = ossTSRLabels
+	}
+	return &OssDeepDocService{doc: doc}
 }
 
-func (b *OssDeepDocTableBuilder) Name() string { return "oss-deepdoc" }
+func (b *OssDeepDocService) Name() string { return "oss-deepdoc" }
 
-func (b *OssDeepDocTableBuilder) DetectCells(cropped image.Image) ([]TSRCell, error) {
-	return b.doc.TSR(cropped)
+func (b *OssDeepDocService) DetectCells(ctx context.Context, cropped image.Image) ([]TSRCell, error) {
+	return b.doc.TSR(ctx, cropped)
 }
 
 // GroupCells builds a row×column grid from OSS structural cells.
@@ -40,7 +58,7 @@ func (b *OssDeepDocTableBuilder) DetectCells(cropped image.Image) ([]TSRCell, er
 //  5. Span injection: for each "table spanning cell", find grid cells
 //     whose center falls inside the span bbox.  The top-left cell gets
 //     the span label + extended bbox; remaining cells are zeroed (covered).
-func (b *OssDeepDocTableBuilder) GroupCells(cells []TSRCell) [][]TSRCell {
+func (b *OssDeepDocService) GroupCells(cells []TSRCell) [][]TSRCell {
 	if len(cells) == 0 {
 		return nil
 	}

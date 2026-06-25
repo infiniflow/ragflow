@@ -1,9 +1,8 @@
-//go:build cgo
-
 package parser
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"image"
@@ -11,6 +10,7 @@ import (
 	"log/slog"
 	"mime/multipart"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -18,8 +18,13 @@ import (
 type DeepDocClient struct {
 	baseURL    string
 	httpClient *http.Client
+	modelOnce  sync.Once
 	model      ModelType
-	modelOK    bool
+
+	// Label tables for class_id → label string mapping.
+	// Set by the service layer (Oss/Saas) to reflect the model's taxonomy.
+	DLALabels []string
+	TSRLabels []string
 }
 
 // NewDeepDocClient creates a client.  baseURL must be provided by the caller
@@ -36,17 +41,16 @@ func NewDeepDocClient(baseURL string) (*DeepDocClient, error) {
 	}, nil
 }
 
-// tsrLabels maps DLABEL class IDs to label strings.
-// Must match Python deepdoc/vision/table_structure_recognizer.py labels.
-var tsrLabels = []string{
+// Default DLA/TSR label tables.  Service constructors replace these with
+// model-specific labels (OSS 6-class TSR, SaaS 2-class, etc.).
+var defaultDLALabels = []string{
+	"title", "text", "reference", "figure", "figure caption",
+	"table", "table caption", "table caption", "equation", "figure caption",
+}
+var defaultTSRLabels = []string{
 	"table", "table column", "table row",
 	"table column header", "table projected row header",
 	"table spanning cell",
-}
-
-var dlaClassLabels = []string{
-	"title", "text", "reference", "figure", "figure caption",
-	"table", "table caption", "table caption", "equation", "figure caption",
 }
 
 type bboxesResponse struct {
@@ -54,13 +58,13 @@ type bboxesResponse struct {
 }
 
 // DLA analyses a full page image and returns labelled regions.
-func (c *DeepDocClient) DLA(pageImage image.Image) ([]DLARegion, error) {
+func (c *DeepDocClient) DLA(ctx context.Context, pageImage image.Image) ([]DLARegion, error) {
 	data, err := encodeJPEG(pageImage)
 	if err != nil {
 		return nil, fmt.Errorf("dla: encode: %w", err)
 	}
 	var resp bboxesResponse
-	if err := c.post("/predict/dla", data, "dla.jpeg", &resp); err != nil {
+	if err := c.post(ctx, "/predict/dla", data, "dla.jpeg", &resp); err != nil {
 		return nil, fmt.Errorf("dla: %w", err)
 	}
 	regions := make([]DLARegion, 0, len(resp.BBoxes))
@@ -68,9 +72,13 @@ func (c *DeepDocClient) DLA(pageImage image.Image) ([]DLARegion, error) {
 		if len(b) < 6 {
 			continue
 		}
+	labels := c.DLALabels
+		if labels == nil {
+			labels = defaultDLALabels
+		}
 		label := ""
-		if clsID := int(b[5]); clsID >= 0 && clsID < len(dlaClassLabels) {
-			label = dlaClassLabels[clsID]
+		if clsID := int(b[5]); clsID >= 0 && clsID < len(labels) {
+			label = labels[clsID]
 		}
 		regions = append(regions, DLARegion{
 			X0: b[0], Y0: b[1], X1: b[2], Y1: b[3],
@@ -82,13 +90,13 @@ func (c *DeepDocClient) DLA(pageImage image.Image) ([]DLARegion, error) {
 }
 
 // TSR recognises table structure from a cropped image.
-func (c *DeepDocClient) TSR(cropped image.Image) ([]TSRCell, error) {
+func (c *DeepDocClient) TSR(ctx context.Context, cropped image.Image) ([]TSRCell, error) {
 	data, err := encodeJPEG(cropped)
 	if err != nil {
 		return nil, fmt.Errorf("tsr: encode: %w", err)
 	}
 	var resp bboxesResponse
-	if err := c.post("/predict/tsr", data, "tsr.jpeg", &resp); err != nil {
+	if err := c.post(ctx, "/predict/tsr", data, "tsr.jpeg", &resp); err != nil {
 		return nil, fmt.Errorf("tsr: %w", err)
 	}
 	cells := make([]TSRCell, 0, len(resp.BBoxes))
@@ -96,10 +104,14 @@ func (c *DeepDocClient) TSR(cropped image.Image) ([]TSRCell, error) {
 		if len(b) < 5 {
 			continue
 		}
+	tlabels := c.TSRLabels
+		if tlabels == nil {
+			tlabels = defaultTSRLabels
+		}
 		label := ""
 		if len(b) >= 6 {
-			if cls := int(b[5]); cls >= 0 && cls < len(tsrLabels) {
-				label = tsrLabels[cls]
+			if cls := int(b[5]); cls >= 0 && cls < len(tlabels) {
+				label = tlabels[cls]
 			}
 		}
 		cells = append(cells, TSRCell{
@@ -126,7 +138,7 @@ type ocrRecognizeResponse struct {
 
 // OCRDetect detects text regions (bounding boxes) in an image.
 // DeepDoc /predict/ocr with operator=det returns quad boxes: [[[x0,y0],[x1,y1],[x2,y2],[x3,y3]], ...]
-func (c *DeepDocClient) OCRDetect(cropped image.Image) ([]OCRBox, error) {
+func (c *DeepDocClient) OCRDetect(ctx context.Context, cropped image.Image) ([]OCRBox, error) {
 	data, err := encodeJPEG(cropped)
 	if err != nil {
 		return nil, fmt.Errorf("ocr detect: encode: %w", err)
@@ -136,7 +148,7 @@ func (c *DeepDocClient) OCRDetect(cropped image.Image) ([]OCRBox, error) {
 	var rawEnvelope struct {
 		Output json.RawMessage `json:"output"`
 	}
-	if err := c.post("/predict/ocr", data, "ocr_detect.jpeg", &rawEnvelope, "operator", "det"); err != nil {
+	if err := c.post(ctx, "/predict/ocr", data, "ocr_detect.jpeg", &rawEnvelope, "operator", "det"); err != nil {
 		return nil, fmt.Errorf("ocr detect: %w", err)
 	}
 
@@ -171,13 +183,13 @@ func (c *DeepDocClient) OCRDetect(cropped image.Image) ([]OCRBox, error) {
 
 // OCRRecognize recognizes text in a cropped image region.
 // DeepDoc /predict/ocr with operator=rec returns [[["text", confidence], ...]]
-func (c *DeepDocClient) OCRRecognize(cropped image.Image) ([]OCRText, error) {
+func (c *DeepDocClient) OCRRecognize(ctx context.Context, cropped image.Image) ([]OCRText, error) {
 	data, err := encodeJPEG(cropped)
 	if err != nil {
 		return nil, fmt.Errorf("ocr rec: encode: %w", err)
 	}
 	var result ocrRecognizeResponse
-	if err := c.post("/predict/ocr", data, "ocr_rec.jpeg", &result, "operator", "rec"); err != nil {
+	if err := c.post(ctx, "/predict/ocr", data, "ocr_rec.jpeg", &result, "operator", "rec"); err != nil {
 		return nil, fmt.Errorf("ocr rec: %w", err)
 	}
 	var texts []OCRText
@@ -198,7 +210,7 @@ func (c *DeepDocClient) OCRRecognize(cropped image.Image) ([]OCRText, error) {
 // OCRRecognizeBatch recognizes text in multiple cropped image regions.
 // Returns a slice of results and a parallel slice of errors (nil on success).
 // A nil cropped image in the input produces nil results and a non-nil error.
-func (c *DeepDocClient) OCRRecognizeBatch(cropped []image.Image) ([][]OCRText, []error) {
+func (c *DeepDocClient) OCRRecognizeBatch(ctx context.Context, cropped []image.Image) ([][]OCRText, []error) {
 	results := make([][]OCRText, len(cropped))
 	errs := make([]error, len(cropped))
 	for i, img := range cropped {
@@ -206,7 +218,7 @@ func (c *DeepDocClient) OCRRecognizeBatch(cropped []image.Image) ([][]OCRText, [
 			errs[i] = fmt.Errorf("ocr rec batch: image[%d] is nil", i)
 			continue
 		}
-		texts, err := c.OCRRecognize(img)
+		texts, err := c.OCRRecognize(ctx, img)
 		results[i] = texts
 		errs[i] = err
 	}
@@ -226,32 +238,30 @@ func (c *DeepDocClient) Health() bool {
 // ModelType probes the DeepDoc /model endpoint once and caches the model flavour.
 // The /model endpoint is expected to return JSON like {"model":"oss","version":"1.0"}.
 // When the endpoint is unreachable or model is not "oss", ModelSaas is returned.
+// Uses sync.Once so the call is safe for concurrent use.
 func (c *DeepDocClient) ModelType() ModelType {
-	if c.modelOK {
-		return c.model
-	}
-	c.modelOK = true
-	c.model = ModelSaas
-	resp, err := c.httpClient.Get(c.baseURL + "/model")
-	if err != nil {
-		return c.model
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return c.model
-	}
-	var h struct {
-		Model string `json:"model"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&h); err != nil {
-		slog.Warn("deepdoc /model: failed to decode response, falling back to SaaS",
-			"err", err)
-		return c.model
-	}
-	switch h.Model {
-	case "oss":
-		c.model = ModelOSS
-	}
+	c.modelOnce.Do(func() {
+		c.model = ModelSaas
+		resp, err := c.httpClient.Get(c.baseURL + "/model")
+		if err != nil {
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			return
+		}
+		var h struct {
+			Model string `json:"model"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&h); err != nil {
+			slog.Warn("deepdoc /model: failed to decode response, falling back to SaaS",
+				"err", err)
+			return
+		}
+		if h.Model == "oss" {
+			c.model = ModelOSS
+		}
+	})
 	return c.model
 }
 
@@ -260,13 +270,13 @@ func (c *DeepDocClient) ModelType() ModelType {
 func NewTableBuilderFor(doc DocAnalyzer) TableBuilder {
 	switch doc.ModelType() {
 	case ModelOSS:
-		return NewOssDeepDocTableBuilder(doc)
+		return NewOssDeepDocService(doc)
 	default:
-		return NewSaasDeepDocTableBuilder(doc)
+		return NewSaasDeepDocService(doc)
 	}
 }
 
-func (c *DeepDocClient) post(endpoint string, imgData []byte, filename string, result interface{}, extraFields ...string) error {
+func (c *DeepDocClient) post(ctx context.Context, endpoint string, imgData []byte, filename string, result interface{}, extraFields ...string) error {
 	var body bytes.Buffer
 	w := multipart.NewWriter(&body)
 	fw, err := w.CreateFormFile("request", filename)
@@ -281,7 +291,7 @@ func (c *DeepDocClient) post(endpoint string, imgData []byte, filename string, r
 	}
 	w.Close()
 
-	req, err := http.NewRequest("POST", c.baseURL+endpoint, &body)
+	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+endpoint, &body)
 	if err != nil {
 		return err
 	}
@@ -299,5 +309,7 @@ func (c *DeepDocClient) post(endpoint string, imgData []byte, filename string, r
 		}
 		return fmt.Errorf("http %d: %s", resp.StatusCode, s)
 	}
-	return json.NewDecoder(resp.Body).Decode(result)
+	// Guard against unbounded response bodies (malicious / misconfigured
+	// server).  64 MiB is far beyond any legitimate DLA / TSR / OCR payload.
+	return json.NewDecoder(io.LimitReader(resp.Body, 64<<20)).Decode(result)
 }

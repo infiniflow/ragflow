@@ -4,6 +4,7 @@ package parser
 
 import (
 	"context"
+	"fmt"
 	"image"
 	"strings"
 	"testing"
@@ -25,11 +26,11 @@ func TestMockDocAnalyzer(t *testing.T) {
 	if !mock.Health() {
 		t.Error("mock should be healthy")
 	}
-	regions, _ := mock.DLA(nil)
+	regions, _ := mock.DLA(context.Background(), nil)
 	if len(regions) != 1 || regions[0].Label != "table" {
 		t.Error("mock DLA returned wrong data")
 	}
-	cells, _ := mock.TSR(nil)
+	cells, _ := mock.TSR(context.Background(), nil)
 	if len(cells) != 1 || cells[0].Text != "A" {
 		t.Error("mock TSR returned wrong data")
 	}
@@ -235,7 +236,7 @@ func TestEnrichWithDeepDoc_Noop(t *testing.T) {
 	eng := &mockEngine{pageCount: 1}
 
 	p := NewParser(DefaultParserConfig(), &MockDocAnalyzer{Healthy: false, Model: ModelSaas})
-	tables := p.enrichWithDeepDoc(eng, boxes, nil)
+	tables := p.enrichWithDeepDoc(context.Background(), eng, boxes, nil)
 	if len(tables) != 0 {
 		t.Error("unhealthy DeepDoc → 0 Tables")
 	}
@@ -265,7 +266,7 @@ func TestExtractTableBoxes_Mock(t *testing.T) {
 	p := NewParser(DefaultParserConfig(), mock)
 	dummyImg := image.NewRGBA(image.Rect(0, 0, 2000, 3000))
 
-	tables := p.extractTableBoxesFromImage(boxes, dummyImg, 0, 0)
+	tables := p.extractTableBoxesFromImage(context.Background(), boxes, dummyImg, 0, 0)
 	if len(tables) != 1 {
 		t.Fatalf("expected 1 TableItem, got %d", len(tables))
 	}
@@ -286,7 +287,7 @@ func TestExtractTableBoxes_NoTables(t *testing.T) {
 	mock := &MockDocAnalyzer{Healthy: true, DLARegions: []DLARegion{}}
 	p := NewParser(DefaultParserConfig(), mock)
 	dummy := image.NewRGBA(image.Rect(0, 0, 1000, 1000))
-	tables := p.extractTableBoxesFromImage(nil, dummy, 0, 0)
+	tables := p.extractTableBoxesFromImage(context.Background(), nil, dummy, 0, 0)
 	if len(tables) != 0 {
 		t.Errorf("0 tables expected, got %d", len(tables))
 	}
@@ -302,7 +303,7 @@ func TestExtractTableBoxes_NonTableRegions(t *testing.T) {
 	}
 	p := NewParser(DefaultParserConfig(), mock)
 	dummy := image.NewRGBA(image.Rect(0, 0, 2000, 2000))
-	tables := p.extractTableBoxesFromImage(nil, dummy, 0, 0)
+	tables := p.extractTableBoxesFromImage(context.Background(), nil, dummy, 0, 0)
 	if len(tables) != 0 {
 		t.Errorf("non-table regions → 0 tables, got %d", len(tables))
 	}
@@ -320,7 +321,7 @@ func TestExtractTableBoxes_NoOverlap(t *testing.T) {
 	}
 	p := NewParser(DefaultParserConfig(), mock)
 	dummy := image.NewRGBA(image.Rect(0, 0, 2000, 3000))
-	tables := p.extractTableBoxesFromImage(boxes, dummy, 0, 0)
+	tables := p.extractTableBoxesFromImage(context.Background(), boxes, dummy, 0, 0)
 	if len(tables) != 0 {
 		t.Errorf("no overlap → 0 tables, got %d", len(tables))
 	}
@@ -339,7 +340,7 @@ func TestExtractTableBoxes_TSRError(t *testing.T) {
 	}
 	p := NewParser(DefaultParserConfig(), mock)
 	dummy := image.NewRGBA(image.Rect(0, 0, 2000, 3000))
-	tables := p.extractTableBoxesFromImage(boxes, dummy, 0, 0)
+	tables := p.extractTableBoxesFromImage(context.Background(), boxes, dummy, 0, 0)
 	if len(tables) != 1 {
 		t.Fatalf("TSR failure: expected 1 TableItem with image+positions, got %d", len(tables))
 	}
@@ -397,7 +398,7 @@ func TestExtractTableBoxes_DLAError(t *testing.T) {
 	}}
 	p := NewParser(DefaultParserConfig(), mock)
 	dummy := image.NewRGBA(image.Rect(0, 0, 1000, 1000))
-	tables := p.extractTableBoxesFromImage(nil, dummy, 0, 0)
+	tables := p.extractTableBoxesFromImage(context.Background(), nil, dummy, 0, 0)
 	if len(tables) != 0 {
 		t.Errorf("non-table DLA → 0 tables, got %d", len(tables))
 	}
@@ -672,7 +673,7 @@ func TestExtractTableBoxes_InvalidRegion(t *testing.T) {
 	}
 	p := NewParser(DefaultParserConfig(), mock)
 	dummy := image.NewRGBA(image.Rect(0, 0, 1000, 1000))
-	tables := p.extractTableBoxesFromImage(nil, dummy, 0, 0)
+	tables := p.extractTableBoxesFromImage(context.Background(), nil, dummy, 0, 0)
 	if len(tables) != 0 {
 		t.Errorf("invalid DLA region should be skipped, got %d tables", len(tables))
 	}
@@ -822,7 +823,70 @@ func TestParse_FallsBackToCharsToBoxes_EmptyOCRBoxes(t *testing.T) {
 }
 
 
-// TestTSRLabels verifies Go tsrLabels matches Python's table_structure_recognizer.py labels.
+// ── Error path coverage ────────────────────────────────────────────────
+
+func TestMockDocAnalyzer_DLAError_DoesNotCrash(t *testing.T) {
+	p := NewParser(DefaultParserConfig(), &MockDocAnalyzer{
+		Healthy: true,
+		DLAErr:  fmt.Errorf("DLA service unavailable"),
+	})
+	eng := &mockEngine{pageCount: 1}
+	img := image.NewRGBA(image.Rect(0, 0, 100, 100))
+	pageImages := map[int]image.Image{0: img}
+	boxes := []TextBox{
+		{PageNumber: 0, X0: 0, X1: 100, Top: 0, Bottom: 50, Text: "text"},
+	}
+	// enrichWithDeepDoc should return nil (not panic) on DLA error.
+	tables := p.enrichWithDeepDoc(context.Background(), eng, boxes, pageImages)
+	if len(tables) != 0 {
+		t.Errorf("DLA error should produce 0 tables, got %d", len(tables))
+	}
+}
+
+func TestMockDocAnalyzer_TSRError_DoesNotCrash(t *testing.T) {
+	// TSR error: DLA succeeds, TSR fails.  The table region is detected
+	// but no cells are returned — the table is skipped gracefully.
+	p := NewParser(DefaultParserConfig(), &MockDocAnalyzer{
+		Healthy: true,
+		DLARegions: []DLARegion{
+			{X0: 0, Y0: 0, X1: 400, Y1: 400, Label: "table", Confidence: 0.95},
+		},
+		TSRErr: fmt.Errorf("TSR model timeout"),
+	})
+	eng := &mockEngine{pageCount: 1}
+	img := image.NewRGBA(image.Rect(0, 0, 100, 100))
+	pageImages := map[int]image.Image{0: img}
+	boxes := []TextBox{
+		{PageNumber: 0, X0: 10, X1: 90, Top: 10, Bottom: 90, Text: "in table region"},
+	}
+	tables := p.enrichWithDeepDoc(context.Background(), eng, boxes, pageImages)
+	// DLA detects the table region → 1 TableItem is created.  TSR failure
+	// means it has no cells, but the pipeline must not panic.
+	if len(tables) != 1 {
+		t.Errorf("TSR error: expected 1 table (DLA region found), got %d", len(tables))
+	}
+	if len(tables[0].Cells) != 0 {
+		t.Errorf("TSR error: Cells should be empty, got %d", len(tables[0].Cells))
+	}
+}
+
+func TestMockDocAnalyzer_OCRDetectError_DoesNotCrash(t *testing.T) {
+	// OCRDetect failure path: extractPages uses ocrDetectAndRecognize which
+	// calls doc.OCRDetect.  When it fails, the page is skipped gracefully.
+	mock := &MockDocAnalyzer{Healthy: true, OCRDetectErr: fmt.Errorf("OCR model OOM")}
+	eng := &mockEngine{
+		pageCount: 1,
+		chars:     map[int][]TextChar{}, // empty → triggers OCR path
+	}
+	p := NewParser(DefaultParserConfig(), mock)
+	_, err := p.Parse(context.Background(), eng)
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	// Parse should succeed — the page with OCRDetect error is just skipped.
+}
+
+// TestTSRLabels verifies Go defaultTSRLabels matches Python's table_structure_recognizer.py labels.
 // Order must be exact — the ONNX model returns class IDs that index into this array.
 func TestTSRLabels(t *testing.T) {
 	want := []string{
@@ -830,12 +894,12 @@ func TestTSRLabels(t *testing.T) {
 		"table column header", "table projected row header",
 		"table spanning cell",
 	}
-	if len(tsrLabels) != len(want) {
-		t.Fatalf("tsrLabels length %d, want %d", len(tsrLabels), len(want))
+	if len(defaultTSRLabels) != len(want) {
+		t.Fatalf("defaultTSRLabels length %d, want %d", len(defaultTSRLabels), len(want))
 	}
 	for i := range want {
-		if tsrLabels[i] != want[i] {
-			t.Errorf("tsrLabels[%d] = %q, want %q", i, tsrLabels[i], want[i])
+		if defaultTSRLabels[i] != want[i] {
+			t.Errorf("defaultTSRLabels[%d] = %q, want %q", i, defaultTSRLabels[i], want[i])
 		}
 	}
 }

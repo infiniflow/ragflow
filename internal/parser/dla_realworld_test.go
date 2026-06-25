@@ -3,6 +3,7 @@
 package parser
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -55,7 +56,7 @@ func TestDLARealWorldCompare(t *testing.T) {
 				savePNGFile(imgPath, pageImg)
 
 				// Call DLA.
-				regions, err := client.DLA(pageImg)
+				regions, err := client.DLA(context.Background(), pageImg)
 				if err != nil {
 					t.Fatalf("DLA: %v", err)
 				}

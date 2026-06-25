@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-func TestOssDeepDocTableBuilder_GroupCells_Basic4x5(t *testing.T) {
-	b := &OssDeepDocTableBuilder{}
+func TestOssDeepDocService_GroupCells_Basic4x5(t *testing.T) {
+	b := &OssDeepDocService{}
 
 	cells := buildOSSCells(4, 5, 0, 0, 500, 200)
 	grid := b.GroupCells(cells)
@@ -21,8 +21,8 @@ func TestOssDeepDocTableBuilder_GroupCells_Basic4x5(t *testing.T) {
 	}
 }
 
-func TestOssDeepDocTableBuilder_GroupCells_Coords(t *testing.T) {
-	b := &OssDeepDocTableBuilder{}
+func TestOssDeepDocService_GroupCells_Coords(t *testing.T) {
+	b := &OssDeepDocService{}
 
 	cells := buildOSSCells(2, 2, 0, 0, 200, 100)
 	grid := b.GroupCells(cells)
@@ -44,8 +44,8 @@ func TestOssDeepDocTableBuilder_GroupCells_Coords(t *testing.T) {
 	}
 }
 
-func TestOssDeepDocTableBuilder_GroupCells_HeaderPropagation(t *testing.T) {
-	b := &OssDeepDocTableBuilder{}
+func TestOssDeepDocService_GroupCells_HeaderPropagation(t *testing.T) {
+	b := &OssDeepDocService{}
 
 	// 3 rows: header(Y=0-50) should map to row 0
 	cells := []TSRCell{
@@ -78,8 +78,8 @@ func TestOssDeepDocTableBuilder_GroupCells_HeaderPropagation(t *testing.T) {
 	}
 }
 
-func TestOssDeepDocTableBuilder_GroupCells_SpanInjection(t *testing.T) {
-	b := &OssDeepDocTableBuilder{}
+func TestOssDeepDocService_GroupCells_SpanInjection(t *testing.T) {
+	b := &OssDeepDocService{}
 
 	// 2×3 table, spanning cell covers cols 0-1 in row 0
 	cells := []TSRCell{
@@ -119,8 +119,8 @@ func TestOssDeepDocTableBuilder_GroupCells_SpanInjection(t *testing.T) {
 	}
 }
 
-func TestOssDeepDocTableBuilder_GroupCells_IrregularSize(t *testing.T) {
-	b := &OssDeepDocTableBuilder{}
+func TestOssDeepDocService_GroupCells_IrregularSize(t *testing.T) {
+	b := &OssDeepDocService{}
 	cells := buildOSSCells(3, 2, 0, 0, 200, 120)
 	grid := b.GroupCells(cells)
 
@@ -132,16 +132,16 @@ func TestOssDeepDocTableBuilder_GroupCells_IrregularSize(t *testing.T) {
 	}
 }
 
-func TestOssDeepDocTableBuilder_GroupCells_EmptyInput(t *testing.T) {
-	b := &OssDeepDocTableBuilder{}
+func TestOssDeepDocService_GroupCells_EmptyInput(t *testing.T) {
+	b := &OssDeepDocService{}
 	grid := b.GroupCells(nil)
 	if len(grid) != 0 {
 		t.Errorf("expected empty grid, got %d rows", len(grid))
 	}
 }
 
-func TestOssDeepDocTableBuilder_GroupCells_NoRows(t *testing.T) {
-	b := &OssDeepDocTableBuilder{}
+func TestOssDeepDocService_GroupCells_NoRows(t *testing.T) {
+	b := &OssDeepDocService{}
 	// Only a "table" cell, no row cells.
 	cells := []TSRCell{
 		{X0: 0, Y0: 0, X1: 500, Y1: 200, Label: "table"},
@@ -152,8 +152,8 @@ func TestOssDeepDocTableBuilder_GroupCells_NoRows(t *testing.T) {
 	}
 }
 
-func TestOssDeepDocTableBuilder_GroupCells_NoColumns(t *testing.T) {
-	b := &OssDeepDocTableBuilder{}
+func TestOssDeepDocService_GroupCells_NoColumns(t *testing.T) {
+	b := &OssDeepDocService{}
 	// Table + rows but no column cells → each row gets 1 wide column.
 	cells := []TSRCell{
 		{X0: 0, Y0: 0, X1: 500, Y1: 100, Label: "table"},

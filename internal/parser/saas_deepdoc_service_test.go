@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-func TestSaasDeepDocTableBuilder_GroupCells(t *testing.T) {
-	b := &SaasDeepDocTableBuilder{}
+func TestSaasDeepDocService_GroupCells(t *testing.T) {
+	b := &SaasDeepDocService{}
 
 	t.Run("labels group into rows", func(t *testing.T) {
 		cells := []TSRCell{
@@ -36,8 +36,6 @@ func TestSaasDeepDocTableBuilder_GroupCells(t *testing.T) {
 			{X0: 100, Y0: 35, X1: 200, Y1: 65, Text: "D2", Label: "table row"},
 		}
 		grid := b.GroupCells(cells)
-		// Header cells at Y=0 → row 0, data cells at Y=35 → row 1.
-		// Spanning cell added to first overlapping row (row 0).
 		if len(grid) != 2 {
 			t.Fatalf("expected 2 rows (header + data), got %d", len(grid))
 		}
@@ -63,8 +61,8 @@ func TestSaasDeepDocTableBuilder_GroupCells(t *testing.T) {
 	})
 }
 
-func TestSaasDeepDocTableBuilder_Name(t *testing.T) {
-	b := &SaasDeepDocTableBuilder{}
+func TestSaasDeepDocService_Name(t *testing.T) {
+	b := &SaasDeepDocService{}
 	if b.Name() != "deepdoc" {
 		t.Errorf("expected 'deepdoc', got %q", b.Name())
 	}
@@ -77,7 +75,6 @@ func TestGatherTSR(t *testing.T) {
 		{Label: "table row", Text: "B"},
 	}
 	result := gatherTSR(cells, reRowHdr)
-	// "table row" matches, "table column header" matches (contains "header")
 	if len(result) < 2 {
 		t.Errorf("expected at least 2 matching cells, got %d", len(result))
 	}
@@ -85,5 +82,30 @@ func TestGatherTSR(t *testing.T) {
 		if !strings.Contains("ABH", c.Text[:1]) {
 			t.Errorf("unexpected cell in result: %+v", c)
 		}
+	}
+}
+
+func TestGroupTSRCellsToRowsLabeled_NoZeroHeightPhantomCells(t *testing.T) {
+	// Row0: 1 row cell + 1 spanning cell → 2 cells.
+	// Row1: 1 row cell → 1 cell.  maxCols=2 → Row1 padded.
+	// The padded cell must have valid height from the real cell.
+	cells := []TSRCell{
+		{Label: "table row", X0: 0, Y0: 0, X1: 100, Y1: 20},
+		{Label: "table spanning cell", X0: 120, Y0: 0, X1: 200, Y1: 20},
+		{Label: "table row", X0: 0, Y0: 100, X1: 100, Y1: 120},
+	}
+	result := groupTSRCellsToRowsLabeled(cells)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(result))
+	}
+	if len(result[0]) != 2 {
+		t.Fatalf("row 0: expected 2 cells, got %d", len(result[0]))
+	}
+	if len(result[1]) != 2 {
+		t.Fatalf("row 1: expected 2 cells (padded), got %d", len(result[1]))
+	}
+	phantom := result[1][1]
+	if phantom.Y1 <= phantom.Y0 {
+		t.Errorf("phantom cell has zero height: Y0=%v Y1=%v", phantom.Y0, phantom.Y1)
 	}
 }

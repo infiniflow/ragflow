@@ -203,6 +203,24 @@ func TestRotateImageCW(t *testing.T) {
 	})
 }
 
+func TestMapRotatedPointToOriginal_RoundTrip(t *testing.T) {
+	// Verify that forward (rotateImageCW) → inverse (mapRotatedPointToOriginal)
+	// recovers the original coordinates for all rotation angles.
+	origW, origH := 200, 100
+	for _, angle := range []int{0, 90, 180, 270} {
+		for _, ox := range []float64{0, 50, 199} {
+			for _, oy := range []float64{0, 30, 99} {
+				rx, ry := forwardRotateCW(ox, oy, angle, origW, origH)
+				gotX, gotY := mapRotatedPointToOriginal(rx, ry, angle, origW, origH)
+				if math.Abs(gotX-ox) > 0.01 || math.Abs(gotY-oy) > 0.01 {
+					t.Errorf("angle=%d orig(%.0f,%.0f) → rot(%.0f,%.0f) → got(%.1f,%.1f)",
+						angle, ox, oy, rx, ry, gotX, gotY)
+				}
+			}
+		}
+	}
+}
+
 func TestMapRotatedPointToOriginal(t *testing.T) {
 	// Verify alignment with Python's _map_rotated_point formulas.
 	// Original 200x100; rotW,rotH swap for 90/270.
@@ -213,9 +231,9 @@ func TestMapRotatedPointToOriginal(t *testing.T) {
 		wantX, wantY float64
 	}{
 		{0, 50, 30, 200, 100, 50, 30},
-		{90, 50, 30, 200, 100, 30, 50},   // rotW=100: (100-30, 50)
-		{180, 50, 30, 200, 100, 150, 70}, // (200-50, 100-30)
-		{270, 50, 30, 200, 100, 170, 50}, // rotH=200: (30, 200-50)
+		{90, 50, 30, 200, 100, 30, 49},    // rotH=100: forward (100-1-oy,ox)
+		{180, 50, 30, 200, 100, 149, 69},   // (199-50, 99-30)
+		{270, 50, 30, 200, 100, 169, 50},   // rotW=200: inverse (199-30,50)
 	}
 	for _, tt := range tests {
 		gotX, gotY := mapRotatedPointToOriginal(tt.rx, tt.ry, tt.angle, tt.origW, tt.origH)

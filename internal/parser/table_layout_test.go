@@ -518,3 +518,38 @@ func TestAnnotateTableBoxes_RealTSRLabels(t *testing.T) {
 		}
 	}
 }
+
+// TestTsrBoxOverlap_ReturnsTrueWhenDisjoint verifies that tsrBoxOverlap
+// returns true when the box and cell do NOT overlap (are separated in
+// at least one dimension).  Despite the name "Overlap", the function
+// tests for disjointness.  All callers must negate it to check for
+// actual overlap.  This test locks in the semantics so future readers
+// and static analysis tools can rely on the behaviour.
+func TestTsrBoxOverlap_ReturnsTrueWhenDisjoint(t *testing.T) {
+	box := TextBox{X0: 50, X1: 100, Top: 0, Bottom: 50}
+
+	// Separated in X (cell to the right) → disjoint → true.
+	if !tsrBoxOverlap(box, TSRCell{X0: 150, Y0: 0, X1: 200, Y1: 50}) {
+		t.Error("cell to the right (separated in X): expected true")
+	}
+	// Separated in X (cell to the left) → disjoint → true.
+	if !tsrBoxOverlap(box, TSRCell{X0: 0, Y0: 0, X1: 30, Y1: 50}) {
+		t.Error("cell to the left (separated in X): expected true")
+	}
+	// Separated in Y (cell below) → disjoint → true.
+	if !tsrBoxOverlap(box, TSRCell{X0: 50, Y0: 100, X1: 100, Y1: 150}) {
+		t.Error("cell below (separated in Y): expected true")
+	}
+	// Separated in Y (cell above) → disjoint → true.
+	if !tsrBoxOverlap(box, TSRCell{X0: 50, Y0: -50, X1: 100, Y1: -10}) {
+		t.Error("cell above (separated in Y): expected true")
+	}
+	// Fully enclosing cell → overlaps in both X and Y → NOT disjoint → false.
+	if tsrBoxOverlap(box, TSRCell{X0: 0, Y0: 0, X1: 200, Y1: 100}) {
+		t.Error("cell fully enclosing box (overlaps): expected false")
+	}
+	// Partially overlapping cell → overlaps in both dims → false.
+	if tsrBoxOverlap(box, TSRCell{X0: 25, Y0: 25, X1: 75, Y1: 75}) {
+		t.Error("cell partially overlapping: expected false")
+	}
+}

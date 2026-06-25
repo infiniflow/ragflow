@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"fmt"
 	"image"
 	"log/slog"
@@ -184,8 +185,8 @@ func pdfOxideUnmappedGarbled(text string) bool {
 // ocrDetectAndRecognize runs OCR detection + recognition and returns
 // recognized TextBox results. logLabel distinguishes callers in log output
 // ("scan page", "garbled page").
-func ocrDetectAndRecognize(pageImg image.Image, doc DocAnalyzer, pageNum int, logLabel string) []TextBox {
-	boxes, err := doc.OCRDetect(pageImg)
+func ocrDetectAndRecognize(ctx context.Context, pageImg image.Image, doc DocAnalyzer, pageNum int, logLabel string) []TextBox {
+	boxes, err := doc.OCRDetect(ctx, pageImg)
 	if err != nil || len(boxes) == 0 {
 		if err != nil {
 			slog.Warn(logLabel+" OCR detect failed", "page", pageNum, "err", err)
@@ -203,7 +204,7 @@ func ocrDetectAndRecognize(pageImg image.Image, doc DocAnalyzer, pageNum int, lo
 			continue
 		}
 		cropped := fastCrop(pageImg, x0, y0, x1, y1)
-		texts, recErr := doc.OCRRecognize(cropped)
+		texts, recErr := doc.OCRRecognize(ctx, cropped)
 		if recErr != nil {
 			slog.Warn(logLabel+" OCR recognize failed", "page", pageNum, "err", recErr)
 			continue
@@ -226,8 +227,8 @@ func ocrDetectAndRecognize(pageImg image.Image, doc DocAnalyzer, pageNum int, lo
 // merges the chars into detect regions, and OCRs any regions without chars.
 // Matches Python's __ocr: detect → match chars to boxes → use char text
 // for boxes with embedded chars → OCR recognize only empty/garbled boxes.
-func ocrMergeChars(pageImg image.Image, chars []TextChar, doc DocAnalyzer, pageNum int) []TextBox {
-	detectBoxes, err := doc.OCRDetect(pageImg)
+func ocrMergeChars(ctx context.Context, pageImg image.Image, chars []TextChar, doc DocAnalyzer, pageNum int) []TextBox {
+	detectBoxes, err := doc.OCRDetect(ctx, pageImg)
 	if err != nil || len(detectBoxes) == 0 {
 		return nil
 	}
@@ -242,7 +243,7 @@ func ocrMergeChars(pageImg image.Image, chars []TextChar, doc DocAnalyzer, pageN
 
 	// Step 1: match embedded chars to detect boxes (Python __ocr char matching).
 	type detectBox struct {
-		box  TextBox
+		box            TextBox
 		x0, y0, x1, y1 float64 // PDF-space bounds
 	}
 	boxes := make([]detectBox, 0, len(detectBoxes))
@@ -251,63 +252,71 @@ func ocrMergeChars(pageImg image.Image, chars []TextChar, doc DocAnalyzer, pageN
 		y0 := min(b.Y0, b.Y1, b.Y2, b.Y3) / scale
 		x1 := max(b.X0, b.X1, b.X2, b.X3) / scale
 		y1 := max(b.Y0, b.Y1, b.Y2, b.Y3) / scale
-		if x0 < 0 { x0 = 0 }
-		if y0 < 0 { y0 = 0 }
-		if x1 > imgW { x1 = imgW }
-		if y1 > imgH { y1 = imgH }
-		if x0 >= x1 || y0 >= y1 { continue }
+		if x0 < 0 {
+			x0 = 0
+		}
+		if y0 < 0 {
+			y0 = 0
+		}
+		if x1 > imgW {
+			x1 = imgW
+		}
+		if y1 > imgH {
+			y1 = imgH
+		}
+		if x0 >= x1 || y0 >= y1 {
+			continue
+		}
 		boxes = append(boxes, detectBox{box: TextBox{
 			X0: x0, X1: x1, Top: y0, Bottom: y1, PageNumber: pageNum,
 		}, x0: x0, y0: y0, x1: x1, y1: y1})
 	}
 
-
-		// Sort detect boxes top-down (fuzzy Y-group), matching Python's
-		// Recognizer.sort_Y_firstly with threshold = median box height / 3.
-		if len(boxes) > 1 {
-			boxHeights := make([]float64, len(boxes))
-			for i := range boxes {
-				boxHeights[i] = boxes[i].y1 - boxes[i].y0
-			}
-			sort.Float64s(boxHeights)
-			threshold := boxHeights[len(boxHeights)/2] / 3
-			sort.Slice(boxes, func(a, b int) bool {
-				if math.Abs(boxes[a].y0-boxes[b].y0) < threshold {
-					return boxes[a].x0 < boxes[b].x0
-				}
-				return boxes[a].y0 < boxes[b].y0
-			})
+	// Sort detect boxes top-down (fuzzy Y-group), matching Python's
+	// Recognizer.sort_Y_firstly with threshold = median box height / 3.
+	if len(boxes) > 1 {
+		boxHeights := make([]float64, len(boxes))
+		for i := range boxes {
+			boxHeights[i] = boxes[i].y1 - boxes[i].y0
 		}
+		sort.Float64s(boxHeights)
+		threshold := boxHeights[len(boxHeights)/2] / 3
+		sort.Slice(boxes, func(a, b int) bool {
+			if math.Abs(boxes[a].y0-boxes[b].y0) < threshold {
+				return boxes[a].x0 < boxes[b].x0
+			}
+			return boxes[a].y0 < boxes[b].y0
+		})
+	}
 
-		// Step 2: match each char to the best overlapping detect box
-		// (char perspective), matching Python's find_overlapped.
-		boxChars := make([][]TextChar, len(boxes))
-		for _, c := range chars {
-			bestIdx := -1
-			bestOverlap := 1e-6 // Python: thr=1e-6
-			for i := range boxes {
-				overlap := charBoxOverlapRatio(c, boxes[i].x0, boxes[i].x1, boxes[i].y0, boxes[i].y1)
-				if overlap >= bestOverlap {
-					bestOverlap = overlap
-					bestIdx = i
-				}
+	// Step 2: match each char to the best overlapping detect box
+	// (char perspective), matching Python's find_overlapped.
+	boxChars := make([][]TextChar, len(boxes))
+	for _, c := range chars {
+		bestIdx := -1
+		bestOverlap := 1e-6 // Python: thr=1e-6
+		for i := range boxes {
+			overlap := charBoxOverlapRatio(c, boxes[i].x0, boxes[i].x1, boxes[i].y0, boxes[i].y1)
+			if overlap >= bestOverlap {
+				bestOverlap = overlap
+				bestIdx = i
 			}
-			if bestIdx < 0 {
-				continue
-			}
-			// Height gating, matching Python: skip when height differs >70%,
-			// except space chars which are always kept.
-			ch := c.Bottom - c.Top
-			if ch <= 0 {
-				ch = 1
-			}
-			bh := boxes[bestIdx].y1 - boxes[bestIdx].y0
-			if math.Abs(ch-bh)/math.Max(ch, bh) >= 0.7 && c.Text != " " {
-				continue
-			}
-			boxChars[bestIdx] = append(boxChars[bestIdx], c)
 		}
-
+		if bestIdx < 0 {
+			continue
+		}
+		// Height gating, matching Python: skip when height differs >70%,
+		// except space chars which are always kept.
+		ch := c.Bottom - c.Top
+		if ch <= 0 {
+			ch = 1
+		}
+		bh := boxes[bestIdx].y1 - boxes[bestIdx].y0
+		if math.Abs(ch-bh)/math.Max(ch, bh) >= 0.7 && c.Text != " " {
+			continue
+		}
+		boxChars[bestIdx] = append(boxChars[bestIdx], c)
+	}
 
 	// Step 3: assemble text for each box.
 	var result []TextBox
@@ -360,7 +369,7 @@ func ocrMergeChars(pageImg image.Image, chars []TextChar, doc DocAnalyzer, pageN
 				int(boxes[idx].x0*scale), int(boxes[idx].y0*scale),
 				int(boxes[idx].x1*scale), int(boxes[idx].y1*scale))
 		}
-		allTexts, allErrs := doc.OCRRecognizeBatch(cropped)
+		allTexts, allErrs := doc.OCRRecognizeBatch(ctx, cropped)
 		for j, idx := range needOCR {
 			if allErrs[j] != nil {
 				slog.Warn("ocr merge: recognize failed", "page", pageNum, "err", allErrs[j])
@@ -445,7 +454,7 @@ func charBoxOverlapRatio(c TextChar, x0, x1, y0, y1 float64) float64 {
 }
 
 // ocrTableCells fills empty TSR cells via OCR recognition.
-func ocrTableCells(cells []TSRCell, tableImg image.Image, doc DocAnalyzer) {
+func ocrTableCells(ctx context.Context, cells []TSRCell, tableImg image.Image, doc DocAnalyzer) {
 	if doc == nil || tableImg == nil || len(cells) == 0 {
 		return
 	}
@@ -461,7 +470,7 @@ func ocrTableCells(cells []TSRCell, tableImg image.Image, doc DocAnalyzer) {
 			continue
 		}
 		cropped := fastCrop(tableImg, x0, y0, x1, y1)
-		texts, err := doc.OCRRecognize(cropped)
+		texts, err := doc.OCRRecognize(ctx, cropped)
 		if err != nil {
 			slog.Warn("table cell OCR failed", "err", err)
 			continue
@@ -486,7 +495,7 @@ func ocrTableCells(cells []TSRCell, tableImg image.Image, doc DocAnalyzer) {
 // more than 0.2 AND the 0° score is below 0.8.
 //
 // Python: pdf_parser.py:314 _evaluate_table_orientation()
-func evaluateTableOrientation(tableImg image.Image, doc DocAnalyzer) (bestAngle int, bestImg image.Image, scores map[int]float64) {
+func evaluateTableOrientation(ctx context.Context, tableImg image.Image, doc DocAnalyzer) (bestAngle int, bestImg image.Image, scores map[int]float64) {
 	rotations := []struct {
 		angle int
 		name  string
@@ -512,7 +521,7 @@ func evaluateTableOrientation(tableImg image.Image, doc DocAnalyzer) (bestAngle 
 			}
 		}
 
-		detectBoxes, err := doc.OCRDetect(rotated)
+		detectBoxes, err := doc.OCRDetect(ctx, rotated)
 		if err != nil || len(detectBoxes) == 0 {
 			scores[rot.angle] = 0
 			continue

@@ -58,14 +58,6 @@ def parse_args():
         "--disable-tsr", action="store_true", dest="disable_tsr", default=False,
         help="Disable TSR endpoint"
     )
-    parser.add_argument(
-        "--gpu", action="store_true", default=False,
-        help="Enable GPU inference (uses CUDAExecutionProvider for ONNX Runtime)"
-    )
-    parser.add_argument(
-        "--workers", type=int, default=1,
-        help="Workers per device (default: 1; GPU mode may use more)"
-    )
     parser.add_argument("--log-level", type=str, default="INFO", help="Logging level")
     return parser.parse_args()
 
@@ -92,29 +84,10 @@ def main():
         logger.error("No endpoints enabled")
         return
 
-    # GPU mode: detect CUDA availability, fall back to CPU if unavailable
-    accelerator = "cpu"
-    workers = 1
-    if args.gpu:
-        try:
-            import torch
-            if torch.cuda.is_available() and torch.cuda.device_count() > 0:
-                accelerator = "cuda"
-                workers = args.workers
-                os.environ.setdefault("PARALLEL_DEVICES", str(workers))
-                logger.info("GPU mode: accelerator=cuda workers=%d (CUDA: %d devices)",
-                            workers, torch.cuda.device_count())
-            else:
-                logger.warning("--gpu set but no CUDA device found, falling back to CPU")
-        except ImportError:
-            logger.warning("--gpu set but torch import failed, falling back to CPU")
-    else:
-        logger.info("CPU mode: accelerator=cpu workers=1")
-
     server = ls.LitServer(
         lit_api=apis,
-        accelerator=accelerator,
-        workers_per_device=workers,
+        accelerator="cpu",
+        workers_per_device=1,
         timeout=args.timeout,
         restart_workers=True,
     )

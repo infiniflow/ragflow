@@ -2,6 +2,7 @@ package parser
 
 import (
 	"image"
+	"reflect"
 )
 
 // renderFn is the active page-rendering function.  It defaults to
@@ -21,7 +22,9 @@ func fallbackRender(engine PDFEngine, pageNum int) (image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
-	if img == nil {
+	// Guard against typed-nil (e.g. (*image.RGBA)(nil) returned as non-nil
+	// interface).  The plain img==nil check misses that case.
+	if img == nil || reflect.ValueOf(img).IsNil() {
 		return nil, ErrNoPDFData
 	}
 	return img, nil

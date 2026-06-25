@@ -3,6 +3,7 @@
 package parser
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -28,9 +29,12 @@ func TestTableRotation_Integration(t *testing.T) {
 	if baseURL == "" {
 		baseURL = "http://localhost:8000"
 	}
-	dd, err := NewDeepDocClient(baseURL); if err != nil { t.Fatal(err) }
+	dd, err := NewDeepDocClient(baseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !dd.Health() {
-		t.Skipf("DeepDoc not available at %s", baseURL)
+		t.Fatalf("DeepDoc not available at %s", baseURL)
 	}
 	t.Logf("DeepDoc available at %s", baseURL)
 
@@ -48,12 +52,11 @@ func TestTableRotation_Integration(t *testing.T) {
 	pageCount, _ := eng.PageCount()
 	t.Logf("PDF: %d pages", pageCount)
 
-	cfg := DefaultConfig()
+	cfg := DefaultParserConfig()
 	cfg.ToPage = pageCount - 1
 	autoRotate := true
 	cfg.AutoRotateTables = &autoRotate
-	p := NewParser(cfg)
-	p.DeepDoc = dd
+	p := NewParser(cfg, dd)
 
 	for pg := 0; pg < pageCount; pg++ {
 		pageImg, err := renderPageToImage(eng, pg)
@@ -61,7 +64,7 @@ func TestTableRotation_Integration(t *testing.T) {
 			t.Fatalf("render page %d: %v", pg, err)
 		}
 
-		regions, err := dd.DLA(pageImg)
+		regions, err := dd.DLA(context.Background(), pageImg)
 		if err != nil {
 			t.Fatalf("DLA page %d: %v", pg, err)
 		}
@@ -81,7 +84,7 @@ func TestTableRotation_Integration(t *testing.T) {
 			}
 
 			// Evaluate rotation
-			angle, _, scores := evaluateTableOrientation(cropped, dd)
+			angle, _, scores := evaluateTableOrientation(context.Background(), cropped, dd)
 			t.Logf("  Page %d Table %d: %dx%d, bestAngle=%d°, scores: 0=%.3f 90=%.3f 180=%.3f 270=%.3f",
 				pg, tableCount, cropped.Bounds().Dx(), cropped.Bounds().Dy(),
 				angle,
@@ -96,7 +99,7 @@ func TestTableRotation_Integration(t *testing.T) {
 				t.Logf("  NOTE: Page 1 rotated table detected as %d° (expect 90 or 270)", angle)
 
 				// Verify TSR returns labels (6th element in bbox array).
-				testCells, tsrErr := dd.TSR(cropped)
+				testCells, tsrErr := dd.TSR(context.Background(), cropped)
 				if tsrErr == nil && len(testCells) > 0 {
 					hasLabel := false
 					for _, c := range testCells {
@@ -124,9 +127,12 @@ func TestTableRotation_Stability(t *testing.T) {
 	if baseURL == "" {
 		baseURL = "http://localhost:8000"
 	}
-	dd, err := NewDeepDocClient(baseURL); if err != nil { t.Fatal(err) }
+	dd, err := NewDeepDocClient(baseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !dd.Health() {
-		t.Skipf("DeepDoc not available at %s", baseURL)
+		t.Fatalf("DeepDoc not available at %s", baseURL)
 	}
 
 	realDir := filepath.Join("testdata", "real_pdfs")
@@ -160,7 +166,7 @@ func TestTableRotation_Stability(t *testing.T) {
 			continue
 		}
 
-		regions, _ := dd.DLA(pageImg)
+		regions, _ := dd.DLA(context.Background(), pageImg)
 		tables := 0
 		rotated := 0
 		for _, r := range regions {
@@ -172,7 +178,7 @@ func TestTableRotation_Stability(t *testing.T) {
 			if cropped == nil {
 				continue
 			}
-			angle, _, _ := evaluateTableOrientation(cropped, dd)
+			angle, _, _ := evaluateTableOrientation(context.Background(), cropped, dd)
 			if angle != 0 {
 				rotated++
 				t.Logf("  %s: rotated table detected (angle=%d°)", e.Name(), angle)
@@ -184,4 +190,3 @@ func TestTableRotation_Stability(t *testing.T) {
 
 	t.Logf("Sampled %d real PDFs", count)
 }
-

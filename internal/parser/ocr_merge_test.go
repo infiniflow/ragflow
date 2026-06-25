@@ -16,7 +16,7 @@ import (
 func TestOCR_mergeChars_RealScanned(t *testing.T) {
 	url := os.Getenv("DEEPDOC_URL"); if url == "" { t.Skip("DEEPDOC_URL not set") }; dd, err := NewDeepDocClient(url); if err != nil { t.Fatal(err) }
 	if !dd.Health() {
-		t.Skip("DeepDoc not available")
+		t.Fatal("DeepDoc not available")
 	}
 
 	pdfPath := "testdata/real_pdfs/1例3个月喉噗合并先天性心脏病患儿气管插管的麻醉护理.pdf"
@@ -51,7 +51,7 @@ func TestOCR_mergeChars_RealScanned(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	boxes := ocrMergeChars(img, chars, dd, 0)
+	boxes := ocrMergeChars(context.Background(), img, chars, dd, 0)
 	t.Logf("ocrMergeChars boxes: %d", len(boxes))
 	for i, b := range boxes {
 		// Save go render for comparison
@@ -64,7 +64,7 @@ func TestOCR_mergeChars_RealScanned(t *testing.T) {
 			i, b.X0, b.Top, b.X1, b.Bottom, b.Text[:end])
 	}
 
-	scanBoxes := ocrDetectAndRecognize(img, dd, 0, "scan page")
+	scanBoxes := ocrDetectAndRecognize(context.Background(), img, dd, 0, "scan page")
 	t.Logf("ocrScanPage boxes (no chars): %d", len(scanBoxes))
 	for i, b := range scanBoxes {
 		end := min(120, len(b.Text))

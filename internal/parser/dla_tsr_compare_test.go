@@ -3,6 +3,7 @@
 package parser
 
 import (
+	"context"
 	"encoding/json"
 	"image"
 	"image/png"
@@ -43,7 +44,7 @@ func TestDLATSRResponseCompare(t *testing.T) {
 	t.Logf("Input image saved: %s (%dx%d, %d bytes JPEG)", imgPath, pageImg.Bounds().Dx(), pageImg.Bounds().Dy(), len(jpegData))
 
 	// ── DLA ──
-	regions, err := client.DLA(pageImg)
+	regions, err := client.DLA(context.Background(), pageImg)
 	if err != nil {
 		t.Fatalf("DLA: %v", err)
 	}
@@ -74,7 +75,7 @@ func TestDLATSRResponseCompare(t *testing.T) {
 		cropJPEG, _ := encodeJPEG(cropped)
 		os.WriteFile(cropPath, cropJPEG, 0644)
 
-		cells, err := client.TSR(cropped)
+		cells, err := client.TSR(context.Background(), cropped)
 		if err != nil {
 			t.Fatalf("TSR: %v", err)
 		}
@@ -87,7 +88,7 @@ func TestDLATSRResponseCompare(t *testing.T) {
 	}
 
 	// ── OCR Detect ──
-	detectBoxes, err := client.OCRDetect(pageImg)
+	detectBoxes, err := client.OCRDetect(context.Background(), pageImg)
 	if err != nil {
 		t.Fatalf("OCRDetect: %v", err)
 	}
@@ -106,7 +107,7 @@ func TestDLATSRResponseCompare(t *testing.T) {
 		recJPEG, _ := encodeJPEG(cropped)
 		os.WriteFile(cropPath, recJPEG, 0644)
 
-		texts, err := client.OCRRecognize(cropped)
+		texts, err := client.OCRRecognize(context.Background(), cropped)
 		if err != nil {
 			t.Fatalf("OCRRecognize: %v", err)
 		}

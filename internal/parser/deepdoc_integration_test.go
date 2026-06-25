@@ -26,7 +26,7 @@ func mustConnectDeepDoc(t *testing.T) *DeepDocClient {
 	}
 	client, err := NewDeepDocClient(url); if err != nil { t.Fatal(err) }
 	if !client.Health() {
-		t.Skipf("DeepDoc not available at %s", url)
+		t.Fatalf("DeepDoc not available at %s", url)
 	}
 	return client
 }
@@ -356,7 +356,7 @@ func TestIntegration_Idempotency(t *testing.T) {
 	t.Run("DLA", func(t *testing.T) {
 		var all [][]DLARegion
 		for i := 0; i < N; i++ {
-			regions, err := client.DLA(pageImg)
+			regions, err := client.DLA(context.Background(), pageImg)
 			if err != nil {
 				t.Fatalf("run %d: %v", i, err)
 			}
@@ -371,7 +371,7 @@ func TestIntegration_Idempotency(t *testing.T) {
 		cropped := cropImageRect(pageImg, 50, 200, 550, 400)
 		var all [][]TSRCell
 		for i := 0; i < N; i++ {
-			cells, err := client.TSR(cropped)
+			cells, err := client.TSR(context.Background(), cropped)
 			if err != nil {
 				t.Fatalf("run %d: %v", i, err)
 			}
@@ -383,7 +383,7 @@ func TestIntegration_Idempotency(t *testing.T) {
 	t.Run("OCRDetect", func(t *testing.T) {
 		var all [][]OCRBox
 		for i := 0; i < N; i++ {
-			boxes, err := client.OCRDetect(pageImg)
+			boxes, err := client.OCRDetect(context.Background(), pageImg)
 			if err != nil {
 				t.Fatalf("run %d: %v", i, err)
 			}
@@ -396,7 +396,7 @@ func TestIntegration_Idempotency(t *testing.T) {
 		cropped := cropImageRect(pageImg, 50, 100, 400, 130)
 		var all [][]OCRText
 		for i := 0; i < N; i++ {
-			texts, err := client.OCRRecognize(cropped)
+			texts, err := client.OCRRecognize(context.Background(), cropped)
 			if err != nil {
 				t.Fatalf("run %d: %v", i, err)
 			}

@@ -1,10 +1,21 @@
 package parser
 
 import (
+	"context"
 	"image"
 	"regexp"
 	"sort"
 )
+
+// SaaS model label taxonomies.
+// DLA: 10 classes with duplicates (matching SaaS Docker TSR endpoint).
+var saasDLALabels = []string{
+	"title", "text", "reference", "figure", "figure caption",
+	"table", "table caption", "table caption", "equation", "figure caption",
+}
+
+// TSR: 2-class separator lines (v=vertical, h=horizontal).
+var saasTSRLabels = []string{"v", "h"}
 
 // DeepDoc label regexes — compiled once at package init.
 // These match the TSR label taxonomy returned by the Python DeepDoc
@@ -29,25 +40,30 @@ func gatherTSR(cells []TSRCell, re *regexp.Regexp) []TSRCell {
 	return result
 }
 
-// SaasDeepDocTableBuilder implements TableBuilder using the Python DeepDoc
-// TSR service.  TSR returns flat cells with label strings; GroupCells
-// uses label-based partitioning and Y-proximity row grouping.
-type SaasDeepDocTableBuilder struct {
+// SaasDeepDocService implements TableBuilder and DocAnalyzer using the
+// Python DeepDoc TSR service.
+type SaasDeepDocService struct {
 	doc DocAnalyzer
 }
 
-// NewSaasDeepDocTableBuilder creates a TableBuilder backed by the DeepDoc TSR service.
-func NewSaasDeepDocTableBuilder(doc DocAnalyzer) *SaasDeepDocTableBuilder {
-	return &SaasDeepDocTableBuilder{doc: doc}
+// NewSaasDeepDocService creates a service backed by the SaaS DeepDoc service.
+// If doc is a *DeepDocClient, its DLALabels/TSRLabels are set to the SaaS
+// taxonomy.
+func NewSaasDeepDocService(doc DocAnalyzer) *SaasDeepDocService {
+	if c, ok := doc.(*DeepDocClient); ok {
+		c.DLALabels = saasDLALabels
+		c.TSRLabels = saasTSRLabels
+	}
+	return &SaasDeepDocService{doc: doc}
 }
 
-func (b *SaasDeepDocTableBuilder) Name() string { return "deepdoc" }
+func (b *SaasDeepDocService) Name() string { return "deepdoc" }
 
-func (b *SaasDeepDocTableBuilder) DetectCells(cropped image.Image) ([]TSRCell, error) {
-	return b.doc.TSR(cropped)
+func (b *SaasDeepDocService) DetectCells(ctx context.Context, cropped image.Image) ([]TSRCell, error) {
+	return b.doc.TSR(ctx, cropped)
 }
 
-func (b *SaasDeepDocTableBuilder) GroupCells(cells []TSRCell) [][]TSRCell {
+func (b *SaasDeepDocService) GroupCells(cells []TSRCell) [][]TSRCell {
 	return groupTSRCellsToRowsLabeled(cells)
 }
 
@@ -120,14 +136,13 @@ func groupTSRCellsToRowsLabeled(cells []TSRCell) [][]TSRCell {
 		}
 	}
 	for i := range grouped {
+		if len(grouped[i]) == 0 {
+			continue // no real cells → cannot derive valid coordinates for padding
+		}
 		for len(grouped[i]) < maxCols {
-			lastX := 0.0
-			rowY0, rowY1 := 0.0, 0.0
-			if len(grouped[i]) > 0 {
-				lastX = grouped[i][len(grouped[i])-1].X1 + 10
-				rowY0 = grouped[i][0].Y0
-				rowY1 = grouped[i][0].Y1
-			}
+			lastX := grouped[i][len(grouped[i])-1].X1 + 10
+			rowY0 := grouped[i][0].Y0
+			rowY1 := grouped[i][0].Y1
 			grouped[i] = append(grouped[i], TSRCell{X0: lastX, X1: lastX + 1, Y0: rowY0, Y1: rowY1})
 		}
 	}

@@ -3,6 +3,7 @@
 package parser
 
 import (
+	"context"
 	"errors"
 	"image"
 	"testing"
@@ -10,14 +11,14 @@ import (
 
 func TestOCRRecognizeBatch_EmptyList(t *testing.T) {
 	mock := &MockDocAnalyzer{Healthy: true}
-	results, errs := mock.OCRRecognizeBatch(nil)
+	results, errs := mock.OCRRecognizeBatch(context.Background(), nil)
 	if len(results) != 0 {
 		t.Errorf("nil input: expected 0 results, got %d", len(results))
 	}
 	if len(errs) != 0 {
 		t.Errorf("nil input: expected 0 errs, got %d", len(errs))
 	}
-	results, errs = mock.OCRRecognizeBatch([]image.Image{})
+	results, errs = mock.OCRRecognizeBatch(context.Background(), []image.Image{})
 	if len(results) != 0 || len(errs) != 0 {
 		t.Error("empty input: expected 0 results/errs")
 	}
@@ -29,7 +30,7 @@ func TestOCRRecognizeBatch_SingleImage(t *testing.T) {
 		OCRTexts: []OCRText{{Text: "hello", Confidence: 0.9}},
 	}
 	dummy := image.NewRGBA(image.Rect(0, 0, 10, 10))
-	results, errs := mock.OCRRecognizeBatch([]image.Image{dummy})
+	results, errs := mock.OCRRecognizeBatch(context.Background(), []image.Image{dummy})
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
@@ -51,7 +52,7 @@ func TestOCRRecognizeBatch_MultipleImages(t *testing.T) {
 		},
 	}
 	dummy := image.NewRGBA(image.Rect(0, 0, 10, 10))
-	results, errs := mock.OCRRecognizeBatch([]image.Image{dummy, dummy, dummy})
+	results, errs := mock.OCRRecognizeBatch(context.Background(), []image.Image{dummy, dummy, dummy})
 	if len(results) != 3 {
 		t.Fatalf("expected 3 results, got %d", len(results))
 	}
@@ -71,7 +72,7 @@ func TestOCRRecognizeBatch_NilImage(t *testing.T) {
 		OCRTexts: []OCRText{{Text: "ok", Confidence: 0.9}},
 	}
 	dummy := image.NewRGBA(image.Rect(0, 0, 10, 10))
-	results, errs := mock.OCRRecognizeBatch([]image.Image{dummy, nil, dummy})
+	results, errs := mock.OCRRecognizeBatch(context.Background(), []image.Image{dummy, nil, dummy})
 	if len(results) != 3 {
 		t.Fatalf("expected 3 results, got %d", len(results))
 	}
@@ -101,7 +102,7 @@ func TestOCRRecognizeBatch_ErrorHandling(t *testing.T) {
 		},
 	}
 	dummy := image.NewRGBA(image.Rect(0, 0, 10, 10))
-	results, errs := mock.OCRRecognizeBatch([]image.Image{dummy, dummy, dummy})
+	results, errs := mock.OCRRecognizeBatch(context.Background(), []image.Image{dummy, dummy, dummy})
 	if len(results) != 3 {
 		t.Fatalf("expected 3 results, got %d", len(results))
 	}
@@ -132,7 +133,7 @@ func TestOCRRecognizeBatch_EmptyText(t *testing.T) {
 		OCRTexts: []OCRText{}, // empty — simulate no text recognized
 	}
 	dummy := image.NewRGBA(image.Rect(0, 0, 10, 10))
-	results, errs := mock.OCRRecognizeBatch([]image.Image{dummy})
+	results, errs := mock.OCRRecognizeBatch(context.Background(), []image.Image{dummy})
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
@@ -151,7 +152,7 @@ func TestOCRRecognizeBatch_FallbackToOCRTexts(t *testing.T) {
 		OCRTexts: []OCRText{{Text: "default", Confidence: 0.5}},
 	}
 	dummy := image.NewRGBA(image.Rect(0, 0, 10, 10))
-	results, errs := mock.OCRRecognizeBatch([]image.Image{dummy, dummy, dummy})
+	results, errs := mock.OCRRecognizeBatch(context.Background(), []image.Image{dummy, dummy, dummy})
 	if len(results) != 3 {
 		t.Fatalf("expected 3 results, got %d", len(results))
 	}
@@ -175,7 +176,7 @@ func TestOCRRecognizeBatch_PartialBatchTexts(t *testing.T) {
 		},
 	}
 	dummy := image.NewRGBA(image.Rect(0, 0, 10, 10))
-	results, errs := mock.OCRRecognizeBatch([]image.Image{dummy, dummy, dummy})
+	results, errs := mock.OCRRecognizeBatch(context.Background(), []image.Image{dummy, dummy, dummy})
 	if len(results) != 3 {
 		t.Fatalf("expected 3 results, got %d", len(results))
 	}

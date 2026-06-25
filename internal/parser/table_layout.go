@@ -220,7 +220,7 @@ func annotateTableBoxes(boxes []TextBox, grid [][]TSRCell) {
 				boxes[i].RTop = row[0].Y0
 				boxes[i].RBott = row[0].Y1
 				for ci, cell := range row {
-					if tsrBoxOverlap(boxes[i], cell) {
+					if !tsrBoxOverlap(boxes[i], cell) {
 						boxes[i].C = ci
 						boxes[i].CLeft = cell.X0
 						boxes[i].CRight = cell.X1

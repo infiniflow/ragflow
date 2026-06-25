@@ -68,8 +68,8 @@ class OCRAdapter:
             quads.append(quad)
 
         # 5-level nesting matching Go [][][][][]float64:
-        # batch → page → region(quads list) → quad → point
-        output = [[[quads]]]
+        # batch → page → quad → point → coord
+        output = [[quads]]
         return {"output": output}
 
     def recognize(self, image_data: bytes) -> Dict[str, Any]:

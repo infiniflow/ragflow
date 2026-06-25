@@ -355,15 +355,17 @@ func mapRotatedPointToOriginal(x, y float64, angle int, origW, origH int) (float
 	case 0:
 		return x, y
 	case 90:
-		// rotateImageCW 90°: (ox,oy) → (origH-oy, ox) = (rx,ry).
-		// Inverse: ox = ry, oy = origH - rx.
-		return y, float64(origH) - x
+		// rotateImageCW 90°: (ox,oy) → (origH-1-oy, ox) = (rx,ry).
+		// Inverse: ox = ry, oy = origH-1 - rx.
+		return y, float64(origH) - 1 - x
 	case 180:
-		return float64(origW) - x, float64(origH) - y
+		// rotateImageCW 180°: (ox,oy) → (origW-1-ox, origH-1-oy).
+		// Inverse: ox = origW-1 - rx, oy = origH-1 - ry.
+		return float64(origW) - 1 - x, float64(origH) - 1 - y
 	case 270:
-		// rotateImageCW 270°: (ox,oy) → (oy, origW-ox) = (rx,ry).
-		// Inverse: ox = origW - ry, oy = rx.
-		return float64(origW) - y, x
+		// rotateImageCW 270°: (ox,oy) → (oy, origW-1-ox) = (rx,ry).
+		// Inverse: ox = origW-1 - ry, oy = rx.
+		return float64(origW) - 1 - y, x
 	default:
 		return x, y
 	}

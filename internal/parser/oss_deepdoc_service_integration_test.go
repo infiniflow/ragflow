@@ -10,7 +10,7 @@ import (
 )
 
 // mustConnectOssDeepDoc returns a DeepDocClient pointed at the OSS service;
-// skips the test if unavailable.
+// skips the test if unavailable or if the service reports a non-OSS model type.
 func mustConnectOssDeepDoc(t *testing.T) *DeepDocClient {
 	t.Helper()
 	url := os.Getenv("OSSDEEPDOC_URL")
@@ -19,7 +19,10 @@ func mustConnectOssDeepDoc(t *testing.T) *DeepDocClient {
 	}
 	client, err := NewDeepDocClient(url); if err != nil { t.Fatal(err) }
 	if !client.Health() {
-		t.Skipf("OssDeepDoc not available at %s", url)
+		t.Fatalf("OssDeepDoc not available at %s", url)
+	}
+	if client.ModelType() != ModelOSS {
+		t.Skipf("DeepDoc at %s is %q, not oss — skipping OSS-specific test", url, client.ModelType())
 	}
 	return client
 }
@@ -33,7 +36,7 @@ func TestIntegration_OssDeepDoc_TableStructure(t *testing.T) {
 	defer eng.Close()
 
 	cfg := DefaultParserConfig()
-	cfg.TableBuilder = NewOssDeepDocTableBuilder(client)
+	cfg.TableBuilder = NewOssDeepDocService(client)
 	p := NewParser(cfg, client)
 	result, err := p.Parse(context.Background(), eng)
 	if err != nil {
@@ -69,7 +72,7 @@ func TestIntegration_OssDeepDoc_TableRows(t *testing.T) {
 	defer eng.Close()
 
 	cfg := DefaultParserConfig()
-	cfg.TableBuilder = NewOssDeepDocTableBuilder(client)
+	cfg.TableBuilder = NewOssDeepDocService(client)
 	p := NewParser(cfg, client)
 	result, err := p.Parse(context.Background(), eng)
 	if err != nil {
@@ -110,7 +113,7 @@ func TestIntegration_OssDeepDoc_Idempotency(t *testing.T) {
 		defer eng.Close()
 
 		cfg := DefaultParserConfig()
-		cfg.TableBuilder = NewOssDeepDocTableBuilder(client)
+		cfg.TableBuilder = NewOssDeepDocService(client)
 		p := NewParser(cfg, client)
 		result, err := p.Parse(context.Background(), eng)
 		if err != nil {
@@ -142,7 +145,7 @@ func TestIntegration_OssDeepDoc_EmptyPage(t *testing.T) {
 	defer eng.Close()
 
 	cfg := DefaultParserConfig()
-	cfg.TableBuilder = NewOssDeepDocTableBuilder(client)
+	cfg.TableBuilder = NewOssDeepDocService(client)
 	p := NewParser(cfg, client)
 	_, err := p.Parse(context.Background(), eng)
 	if err != nil {

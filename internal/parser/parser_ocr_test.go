@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"image"
 	"testing"
 )
@@ -29,7 +30,7 @@ func TestOCRMergeChars_FullCoverage(t *testing.T) {
 		{X0: 12, X1: 28, Top: 2, Bottom: 35, Text: "World"},
 	}
 
-	boxes := ocrMergeChars(testPageImg(), chars, mock, 0)
+	boxes := ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
 	if len(boxes) != 1 {
 		t.Fatalf("expected 1 box, got %d", len(boxes))
 	}
@@ -57,7 +58,7 @@ func TestOCRMergeChars_PartialCoverage(t *testing.T) {
 		{X0: 2, X1: 12, Top: 2, Bottom: 15, Text: "A"},
 	}
 
-	boxes := ocrMergeChars(testPageImg(), chars, mock, 0)
+	boxes := ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
 	if len(boxes) != 2 {
 		t.Fatalf("expected 2 boxes, got %d", len(boxes))
 	}
@@ -82,14 +83,14 @@ func TestOCRMergeChars_NoDetectBoxes(t *testing.T) {
 		{X0: 2, X1: 10, Top: 2, Bottom: 8, Text: "Hello"},
 	}
 
-	boxes := ocrMergeChars(testPageImg(), chars, mock, 0)
+	boxes := ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
 	if boxes != nil {
 		t.Errorf("expected nil for no detect boxes, got %d boxes", len(boxes))
 	}
 
 	// Also test empty OCRBoxes
 	mock.OCRBoxes = []OCRBox{}
-	boxes = ocrMergeChars(testPageImg(), chars, mock, 0)
+	boxes = ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
 	if boxes != nil {
 		t.Errorf("expected nil for empty detect boxes, got %d boxes", len(boxes))
 	}
@@ -114,7 +115,7 @@ func TestOCRMergeChars_GarbledChars(t *testing.T) {
 		{X0: 22, X1: 28, Top: 2, Bottom: 35, Text: "a"},                    // normal
 	}
 
-	boxes := ocrMergeChars(testPageImg(), chars, mock, 0)
+	boxes := ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
 	if len(boxes) != 1 {
 		t.Fatalf("expected 1 box, got %d", len(boxes))
 	}
@@ -142,7 +143,7 @@ func TestOCRMergeChars_HeightGate(t *testing.T) {
 		{X0: 2, X1: 10, Top: 2, Bottom: 3, Text: "tiny"},
 	}
 
-	boxes := ocrMergeChars(testPageImg(), chars, mock, 0)
+	boxes := ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
 	if len(boxes) != 1 {
 		t.Fatalf("expected 1 box (OCR fallback after height gate), got %d", len(boxes))
 	}
@@ -172,7 +173,7 @@ func TestOCRMergeChars_FontEncodingGarbled(t *testing.T) {
 			Text: "#", FontName: "DY1+SimSun", PageNumber: 0,
 		}
 	}
-	boxes := ocrMergeChars(testPageImg(), chars, mock, 0)
+	boxes := ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
 	if len(boxes) != 1 {
 		t.Fatalf("expected 1 OCR-fallback box, got %d", len(boxes))
 	}
@@ -250,7 +251,7 @@ func TestOCRMergeChars_MixedFontSizes(t *testing.T) {
 		{X0: 12, X1: 24, Top: 5, Bottom: 35, Text: "大"},   // larger font, lower baseline
 		{X0: 24, X1: 36, Top: 5, Bottom: 35, Text: "号"},   // same size as 大, rightmost
 	}
-	boxes := ocrMergeChars(testPageImg(), chars, mock, 0)
+	boxes := ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
 	if len(boxes) != 1 {
 		t.Fatalf("expected 1 box, got %d", len(boxes))
 	}
@@ -281,7 +282,7 @@ func TestOCRMergeChars_BoxOrder(t *testing.T) {
 		{X0: 2, X1: 10, Top: 16, Bottom: 19, Text: "B"},  // box 2 (middle)
 		{X0: 2, X1: 10, Top: 32, Bottom: 37, Text: "C"},  // box 3 (bottom)
 	}
-	boxes := ocrMergeChars(testPageImg(), chars, mock, 0)
+	boxes := ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
 	if len(boxes) != 3 {
 		t.Fatalf("expected 3 boxes, got %d", len(boxes))
 	}
@@ -318,7 +319,7 @@ func TestOCRMergeChars_OverlappingBoxes(t *testing.T) {
 		{X0: 12, X1: 18, Top: 2, Bottom: 12, Text: "乙"}, // overlap zone
 		{X0: 22, X1: 28, Top: 2, Bottom: 12, Text: "丙"}, // Box B only
 	}
-	boxes := ocrMergeChars(testPageImg(), chars, mock, 0)
+	boxes := ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
 	if len(boxes) != 2 {
 		t.Fatalf("expected 2 boxes, got %d", len(boxes))
 	}

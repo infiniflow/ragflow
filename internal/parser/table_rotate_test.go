@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"image"
 	"testing"
 )
@@ -21,18 +22,18 @@ type mockRotationDoc struct {
 
 var rotationOrder = []int{0, 90, 180, 270}
 
-func (m *mockRotationDoc) DLA(_ image.Image) ([]DLARegion, error)  { return nil, nil }
-func (m *mockRotationDoc) TSR(_ image.Image) ([]TSRCell, error)    { return nil, nil }
-func (m *mockRotationDoc) OCR(_ image.Image) (string, error)       { return "", nil }
-func (m *mockRotationDoc) Health() bool                            { return true }
-func (m *mockRotationDoc) ModelType() ModelType                    { return ModelSaas }
+func (m *mockRotationDoc) DLA(_ context.Context, _ image.Image) ([]DLARegion, error) { return nil, nil }
+func (m *mockRotationDoc) TSR(_ context.Context, _ image.Image) ([]TSRCell, error)   { return nil, nil }
+func (m *mockRotationDoc) OCR(_ image.Image) (string, error)                         { return "", nil }
+func (m *mockRotationDoc) Health() bool                                              { return true }
+func (m *mockRotationDoc) ModelType() ModelType                                      { return ModelSaas }
 
 func (m *mockRotationDoc) currentAngle() int {
 	idx := m.callSeq % len(rotationOrder)
 	return rotationOrder[idx]
 }
 
-func (m *mockRotationDoc) OCRDetect(img image.Image) ([]OCRBox, error) {
+func (m *mockRotationDoc) OCRDetect(_ context.Context, img image.Image) ([]OCRBox, error) {
 	defer func() { m.callSeq++ }()
 	angle := m.currentAngle()
 	cfg, ok := m.angles[angle]
@@ -60,16 +61,16 @@ func (m *mockRotationDoc) OCRDetect(img image.Image) ([]OCRBox, error) {
 	return boxes, nil
 }
 
-func (m *mockRotationDoc) OCRRecognizeBatch(cropped []image.Image) ([][]OCRText, []error) {
+func (m *mockRotationDoc) OCRRecognizeBatch(_ context.Context, cropped []image.Image) ([][]OCRText, []error) {
 	results := make([][]OCRText, len(cropped))
 	errs := make([]error, len(cropped))
 	for i, img := range cropped {
-		results[i], errs[i] = m.OCRRecognize(img)
+		results[i], errs[i] = m.OCRRecognize(context.Background(), img)
 	}
 	return results, errs
 }
 
-func (m *mockRotationDoc) OCRRecognize(_ image.Image) ([]OCRText, error) {
+func (m *mockRotationDoc) OCRRecognize(_ context.Context, _ image.Image) ([]OCRText, error) {
 	angle := rotationOrder[(m.callSeq-1)%len(rotationOrder)] // use angle from last Detect call
 	cfg, ok := m.angles[angle]
 	if !ok {
@@ -103,7 +104,7 @@ func TestEvaluateTableOrientation(t *testing.T) {
 				0: {regions: 10, avgConf: 0.9},
 			},
 		}
-		angle, _, scores := evaluateTableOrientation(makeTestTableImage(), doc)
+		angle, _, scores := evaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
 		if angle != 0 {
 			t.Errorf("expected 0°, got %d° (scores: %v)", angle, scores)
 		}
@@ -122,7 +123,7 @@ func TestEvaluateTableOrientation(t *testing.T) {
 				270: {regions: 2, avgConf: 0.2},
 			},
 		}
-		angle, _, scores := evaluateTableOrientation(makeTestTableImage(), doc)
+		angle, _, scores := evaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
 		if angle != 90 {
 			t.Errorf("expected 90°, got %d° (scores: %v)", angle, scores)
 		}
@@ -141,7 +142,7 @@ func TestEvaluateTableOrientation(t *testing.T) {
 				270: {regions: 1, avgConf: 0.1},
 			},
 		}
-		angle, _, scores := evaluateTableOrientation(makeTestTableImage(), doc)
+		angle, _, scores := evaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
 		if angle != 180 {
 			t.Errorf("expected 180°, got %d° (scores: %v)", angle, scores)
 		}
@@ -160,7 +161,7 @@ func TestEvaluateTableOrientation(t *testing.T) {
 				270: {regions: 9, avgConf: 0.88},
 			},
 		}
-		angle, _, scores := evaluateTableOrientation(makeTestTableImage(), doc)
+		angle, _, scores := evaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
 		if angle != 270 {
 			t.Errorf("expected 270°, got %d° (scores: %v)", angle, scores)
 		}
@@ -178,7 +179,7 @@ func TestEvaluateTableOrientation(t *testing.T) {
 				90: {regions: 9},
 			},
 		}
-		angle, _, _ := evaluateTableOrientation(makeTestTableImage(), doc)
+		angle, _, _ := evaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
 		if angle != 0 {
 			t.Errorf("expected 0° (threshold protection), got %d°", angle)
 		}
@@ -196,7 +197,7 @@ func TestEvaluateTableOrientation(t *testing.T) {
 				90: {regions: 10},
 			},
 		}
-		angle, _, _ := evaluateTableOrientation(makeTestTableImage(), doc)
+		angle, _, _ := evaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
 		if angle != 90 {
 			t.Errorf("expected 90° (threshold passed), got %d°", angle)
 		}
@@ -215,7 +216,7 @@ func TestEvaluateTableOrientation(t *testing.T) {
 				270: {err: errMockOCR},
 			},
 		}
-		angle, img, scores := evaluateTableOrientation(makeTestTableImage(), doc)
+		angle, img, scores := evaluateTableOrientation(context.Background(), makeTestTableImage(), doc)
 		if angle != 0 {
 			t.Errorf("expected 0° fallback, got %d°", angle)
 		}

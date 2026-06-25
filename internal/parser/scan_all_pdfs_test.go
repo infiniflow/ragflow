@@ -1,4 +1,4 @@
-//go:build cgo && integration
+//go:build cgo && manual
 
 package parser
 
@@ -42,9 +42,9 @@ func TestScanAllPDFs(t *testing.T) {
 
 		eng := mustOpenEngine(t, name)
 		cfg := DefaultParserConfig()
-		cfg.TableBuilder = NewOssDeepDocTableBuilder(client)
+		cfg.TableBuilder = NewOssDeepDocService(client)
 		p := NewParser(cfg, client)
-			result, err := p.Parse(context.Background(), eng)
+		result, err := p.Parse(context.Background(), eng)
 		eng.Close()
 		if err != nil {
 			fmt.Printf("  ❌ ERROR: %v\n", err)

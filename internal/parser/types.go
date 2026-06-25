@@ -5,7 +5,10 @@
 // file:line references to pdf_parser.py.
 package parser
 
-import "image"
+import (
+	"context"
+	"image"
+)
 
 // PipelineMetrics records diagnostic counts at each pipeline stage.
 // Used for Go-vs-Python parity comparison and logging.
@@ -241,12 +244,13 @@ const (
 
 // DocAnalyzer abstracts DeepDoc vision operations so the Parser can
 // work with either a live service or a test mock.
+// I/O methods accept a context for cancellation and deadline propagation.
 type DocAnalyzer interface {
-	DLA(pageImage image.Image) ([]DLARegion, error)
-	TSR(cropped image.Image) ([]TSRCell, error)
-	OCRDetect(cropped image.Image) ([]OCRBox, error)
-	OCRRecognize(cropped image.Image) ([]OCRText, error)
-	OCRRecognizeBatch(cropped []image.Image) ([][]OCRText, []error)
+	DLA(ctx context.Context, pageImage image.Image) ([]DLARegion, error)
+	TSR(ctx context.Context, cropped image.Image) ([]TSRCell, error)
+	OCRDetect(ctx context.Context, cropped image.Image) ([]OCRBox, error)
+	OCRRecognize(ctx context.Context, cropped image.Image) ([]OCRText, error)
+	OCRRecognizeBatch(ctx context.Context, cropped []image.Image) ([][]OCRText, []error)
 	Health() bool
 	ModelType() ModelType
 }

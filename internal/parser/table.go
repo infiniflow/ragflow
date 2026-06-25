@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"image"
@@ -13,7 +14,7 @@ import (
 
 // enrichWithDeepDoc runs DLA+TSR via p.DeepDoc and returns detected tables.
 // pageImages optionally provides pre-rendered page images to avoid re-rendering.
-func (p *Parser) enrichWithDeepDoc(engine PDFEngine, boxes []TextBox, pageImages map[int]image.Image) []TableItem {
+func (p *Parser) enrichWithDeepDoc(ctx context.Context, engine PDFEngine, boxes []TextBox, pageImages map[int]image.Image) []TableItem {
 	if !p.DeepDoc.Health() {
 		return nil
 	}
@@ -46,7 +47,7 @@ func (p *Parser) enrichWithDeepDoc(engine PDFEngine, boxes []TextBox, pageImages
 		for i, idx := range indices {
 			pageBoxes[i] = boxes[idx]
 		}
-		tables := p.extractTableBoxes(pageBoxes, engine, pg, pageImages, len(tableItems))
+		tables := p.extractTableBoxes(ctx, pageBoxes, engine, pg, pageImages, len(tableItems))
 		tableItems = append(tableItems, tables...)
 		// Write back DLA and TSR annotations (R/C/H/SP) to the original boxes.
 		for i, idx := range indices {
@@ -61,7 +62,7 @@ func (p *Parser) enrichWithDeepDoc(engine PDFEngine, boxes []TextBox, pageImages
 	return tableItems
 }
 
-func (p *Parser) extractTableBoxes(boxes []TextBox, engine PDFEngine, pageNum int, pageImages map[int]image.Image, tableBaseIdx int) []TableItem {
+func (p *Parser) extractTableBoxes(ctx context.Context, boxes []TextBox, engine PDFEngine, pageNum int, pageImages map[int]image.Image, tableBaseIdx int) []TableItem {
 	pageImg, ok := pageImages[pageNum]
 	if !ok {
 		var err error
@@ -71,11 +72,11 @@ func (p *Parser) extractTableBoxes(boxes []TextBox, engine PDFEngine, pageNum in
 			return nil
 		}
 	}
-	return p.extractTableBoxesFromImage(boxes, pageImg, pageNum, tableBaseIdx)
+	return p.extractTableBoxesFromImage(ctx, boxes, pageImg, pageNum, tableBaseIdx)
 }
 
-func (p *Parser) extractTableBoxesFromImage(boxes []TextBox, pageImg image.Image, pageNum int, tableBaseIdx int) []TableItem {
-	regions, err := p.DeepDoc.DLA(pageImg)
+func (p *Parser) extractTableBoxesFromImage(ctx context.Context, boxes []TextBox, pageImg image.Image, pageNum int, tableBaseIdx int) []TableItem {
+	regions, err := p.DeepDoc.DLA(ctx, pageImg)
 	if err != nil {
 		slog.Warn("DLA failed", "page", pageNum, "err", err)
 		return nil
@@ -112,10 +113,10 @@ func (p *Parser) extractTableBoxesFromImage(boxes []TextBox, pageImg image.Image
 	for _, tm := range tableMatches {
 		cropped, cropErr := cropImageRegion(pageImg, tm.region)
 		if cropErr != nil {
-		// DLA returned an invalid region (e.g. x1 < x0).  Python
-		// PIL.Image.crop() raises ValueError here; we skip this
-		// table instead of passing a full-page image to TSR.
-		continue
+			// DLA returned an invalid region (e.g. x1 < x0).  Python
+			// PIL.Image.crop() raises ValueError here; we skip this
+			// table instead of passing a full-page image to TSR.
+			continue
 		}
 
 		// Rotation detection (Python: _evaluate_table_orientation).
@@ -126,11 +127,10 @@ func (p *Parser) extractTableBoxesFromImage(boxes []TextBox, pageImg image.Image
 		origW, origH := cropped.Bounds().Dx(), cropped.Bounds().Dy()
 		tsrImg := cropped
 		if autoRotate {
-			angle, rotated, _ := evaluateTableOrientation(cropped, p.DeepDoc)
+			angle, rotated, _ := evaluateTableOrientation(ctx, cropped, p.DeepDoc)
 			bestAngle = angle
 			tsrImg = rotated
 		}
-
 
 		imgB64, encErr := encodeImageToBase64PNG(cropped)
 		if encErr != nil {
@@ -139,7 +139,7 @@ func (p *Parser) extractTableBoxesFromImage(boxes []TextBox, pageImg image.Image
 
 		var cells []TSRCell
 		var tsrErr error
-		cells, tsrErr = p.tableBuilder.DetectCells(tsrImg)
+		cells, tsrErr = p.tableBuilder.DetectCells(ctx, tsrImg)
 		if tsrErr != nil {
 			slog.Warn("TSR failed", "page", pageNum, "err", tsrErr)
 		}
@@ -170,7 +170,7 @@ func (p *Parser) extractTableBoxesFromImage(boxes []TextBox, pageImg image.Image
 				// on upright text.  After mapping, cells move to
 				// original crop space where boxInCrop lives.
 				if !p.Config.SkipOCR {
-					ocrTableCells(cells, tsrImg, p.DeepDoc)
+					ocrTableCells(ctx, cells, tsrImg, p.DeepDoc)
 				}
 				for i := range cells {
 					cells[i].X0, cells[i].Y0 = mapRotatedPointToOriginal(cells[i].X0, cells[i].Y0, bestAngle, origW, origH)
@@ -225,7 +225,7 @@ func (p *Parser) extractTableBoxesFromImage(boxes []TextBox, pageImg image.Image
 					}
 				}
 				if bestAngle == 0 && !p.Config.SkipOCR {
-					ocrTableCells(flat, tsrImg, p.DeepDoc)
+					ocrTableCells(ctx, flat, tsrImg, p.DeepDoc)
 					idx = 0
 					for ri := range grid {
 						for ci := range grid[ri] {
@@ -255,7 +255,7 @@ func (p *Parser) extractTableBoxesFromImage(boxes []TextBox, pageImg image.Image
 		// this table's cells — no cross-table cell contamination.
 		{
 			tableCells := make([]TSRCell, len(cells))
-		for k := range cells {
+			for k := range cells {
 				tableCells[k] = cellAddOffset(cells[k], cropOffX, cropOffY)
 			}
 			tblBoxes := make([]TextBox, len(tm.boxIdx))
@@ -459,15 +459,25 @@ func annotateBoxLayouts(boxes []TextBox, regions []DLARegion, scale float64, pag
 		}
 	}
 
-	// Compact: remove popped boxes (Python bxs.pop).
-	n := 0
+	// Compact: remove popped boxes into a new backing array (Python
+	// bxs.pop).  Allocating a fresh slice is deliberate: annotations were
+	// set in-place on the input elements, and callers (enrichWithDeepDoc)
+	// rely on positional stability of the original slice for their
+	// write-back loop.  Reusing the input backing array would shift
+	// survivors forward and break that index mapping.
+	survivors := 0
 	for i := range boxes {
 		if !dropped[i] {
-			boxes[n] = boxes[i]
-			n++
+			survivors++
 		}
 	}
-	boxes = boxes[:n]
+	compacted := make([]TextBox, 0, survivors)
+	for i := range boxes {
+		if !dropped[i] {
+			compacted = append(compacted, boxes[i])
+		}
+	}
+	boxes = compacted
 
 	// Synthetic figure boxes for unmatched figure/equation regions (Python:
 	// dla_cli.py:187-195). Use a fresh per-type counter for synthetic boxes.
@@ -535,9 +545,9 @@ func mergeTablesAcrossPages(tables []TableItem, medianHeights map[int]float64) [
 	}
 	// Sort by position for deterministic adjacency.
 	type indexed struct {
-		idx  int
-		pg   int
-		top  float64
+		idx int
+		pg  int
+		top float64
 	}
 	var items []indexed
 	for i, tbl := range tables {
@@ -669,7 +679,6 @@ func constructTable(cells []TSRCell, boxes []TextBox, caption string, item *Tabl
 	// may include caption text that doesn't match isCaptionBox patterns).
 	stripCaptionFromCells(cells)
 
-
 	// Use the pre-computed grid from TableBuilder.GroupCells.
 	// Falls back to cell-level grouping only when called directly by
 	// tests without a pre-computed Grid (production always sets it).
@@ -685,7 +694,9 @@ func constructTable(cells []TSRCell, boxes []TextBox, caption string, item *Tabl
 		if item != nil {
 			item.Rows = rowsToStrings(rows)
 		}
-		rows = cleanupOrphanColumns(rows); spanInfo, covered := calSpans(rows); return rowsToHTML(rows, caption, hdrs, spanInfo, covered)
+		rows = cleanupOrphanColumns(rows)
+		spanInfo, covered := calSpans(rows)
+		return rowsToHTML(rows, caption, hdrs, spanInfo, covered)
 	}
 	// Fallback: boxes with R/C annotations.
 	if len(boxes) > 0 && boxesHaveAnnotations(boxes) {
@@ -694,7 +705,8 @@ func constructTable(cells []TSRCell, boxes []TextBox, caption string, item *Tabl
 			if item != nil {
 				item.Rows = rowsToStrings(rows)
 			}
-			spanInfo, covered := calSpans(rows); return rowsToHTML(rows, caption, boxHeaderSet(rows, boxes), spanInfo, covered)
+			spanInfo, covered := calSpans(rows)
+			return rowsToHTML(rows, caption, boxHeaderSet(rows, boxes), spanInfo, covered)
 		}
 	}
 	// Test-only: Y/X coordinate grouping (matching Python construct_table).
@@ -705,7 +717,8 @@ func constructTable(cells []TSRCell, boxes []TextBox, caption string, item *Tabl
 			if item != nil {
 				item.Rows = rowsToStrings(rows)
 			}
-			spanInfo, covered := calSpans(rows); return rowsToHTML(rows, caption, boxHeaderSet(rows, boxes), spanInfo, covered)
+			spanInfo, covered := calSpans(rows)
+			return rowsToHTML(rows, caption, boxHeaderSet(rows, boxes), spanInfo, covered)
 		}
 	}
 	return ""
@@ -784,44 +797,51 @@ func groupBoxesByRC(boxes []TextBox) [][]TSRCell {
 
 	// Collect boxes per row, sort by C within each row.
 	type rb struct {
-		row, col int
-		txt       string
+		row, col       int
+		txt            string
 		x0, y0, x1, y1 float64
-		label     string
+		label          string
 	}
 	cmap := make(map[int]map[int]*rb) // row → col → entry
 	maxCols := make(map[int]int)
-		for _, b := range boxes {
-			t := strings.TrimSpace(b.Text)
-			// Keep boxes with SP/H annotations even if text is empty —
-			// their coordinates are needed for colspan/rowspan calculation.
-			if t == "" && b.H <= 0 && b.SP <= 0 {
-				continue
-			}
-			r := rowMap[b.R]
-			c := b.C
-			if cmap[r] == nil {
-				cmap[r] = make(map[int]*rb)
-			}
-			x0, y0, x1, y1, label := cellPosFromBox(b)
-			if v, ok := cmap[r][c]; ok {
-				v.txt += " " + t
-				// Merge spanning coordinates (use widest extent).
-				if b.H > 0 || b.SP > 0 {
-					v.label = cellLabelFromBox(b)
-					if v.x0 > x0 { v.x0 = x0 }
-					if v.y0 > y0 { v.y0 = y0 }
-					if v.x1 < x1 { v.x1 = x1 }
-					if v.y1 < y1 { v.y1 = y1 }
-				}
-			} else {
-				cmap[r][c] = &rb{r, c, t, x0, y0, x1, y1, label}
-			}
-			if c > maxCols[r] {
-				maxCols[r] = c
-			}
+	for _, b := range boxes {
+		t := strings.TrimSpace(b.Text)
+		// Keep boxes with SP/H annotations even if text is empty —
+		// their coordinates are needed for colspan/rowspan calculation.
+		if t == "" && b.H <= 0 && b.SP <= 0 {
+			continue
 		}
-
+		r := rowMap[b.R]
+		c := b.C
+		if cmap[r] == nil {
+			cmap[r] = make(map[int]*rb)
+		}
+		x0, y0, x1, y1, label := cellPosFromBox(b)
+		if v, ok := cmap[r][c]; ok {
+			v.txt += " " + t
+			// Merge spanning coordinates (use widest extent).
+			if b.H > 0 || b.SP > 0 {
+				v.label = cellLabelFromBox(b)
+				if v.x0 > x0 {
+					v.x0 = x0
+				}
+				if v.y0 > y0 {
+					v.y0 = y0
+				}
+				if v.x1 < x1 {
+					v.x1 = x1
+				}
+				if v.y1 < y1 {
+					v.y1 = y1
+				}
+			}
+		} else {
+			cmap[r][c] = &rb{r, c, t, x0, y0, x1, y1, label}
+		}
+		if c > maxCols[r] {
+			maxCols[r] = c
+		}
+	}
 
 	// Compress C indices per row: sort boxes by X0 within the row,
 	// group disjoint X ranges into separate columns.  This is equivalent
@@ -834,7 +854,11 @@ func groupBoxesByRC(boxes []TextBox) [][]TSRCell {
 			continue
 		}
 		// Collect all boxes in this row, sorted by X0.
-		type rowBox struct{ c, idx int; x0, x1 float64; txt string }
+		type rowBox struct {
+			c, idx int
+			x0, x1 float64
+			txt    string
+		}
 		var rowBoxes []rowBox
 		for i, b := range boxes {
 			if rowMap[b.R] == ri && (strings.TrimSpace(b.Text) != "" || b.H > 0 || b.SP > 0) {
@@ -890,11 +914,19 @@ func cellPosFromBox(b TextBox) (x0, y0, x1, y1 float64, label string) {
 	if b.H > 0 {
 		label = "table header"
 		if b.HLeft != 0 || b.HRight != 0 {
-			if b.HLeft != 0 { x0 = b.HLeft }
-			if b.HRight != 0 { x1 = b.HRight }
+			if b.HLeft != 0 {
+				x0 = b.HLeft
+			}
+			if b.HRight != 0 {
+				x1 = b.HRight
+			}
 		}
-		if b.HTop != 0 { y0 = b.HTop }
-		if b.HBott != 0 { y1 = b.HBott }
+		if b.HTop != 0 {
+			y0 = b.HTop
+		}
+		if b.HBott != 0 {
+			y1 = b.HBott
+		}
 	} else if b.SP > 0 {
 		label = "table spanning cell"
 	}
@@ -912,7 +944,6 @@ func cellLabelFromBox(b TextBox) string {
 	}
 	return ""
 }
-
 
 // groupBoxesByYX groups boxes into a cell grid by Y/X coordinates,
 // matching Python's construct_table which uses sort_R_firstly and
@@ -1062,7 +1093,10 @@ func fillCellTextFromAnnotations(rows [][]TSRCell, boxes []TextBox) {
 			continue
 		}
 		// Build sorted column list for positional matching.
-		type colEntry struct{ c int; texts []string }
+		type colEntry struct {
+			c     int
+			texts []string
+		}
 		var cols []colEntry
 		for c, texts := range colMap {
 			cols = append(cols, colEntry{c, texts})
@@ -1237,9 +1271,9 @@ func extractTableAndReplace(boxes []TextBox, tables []TableItem) []TextBox {
 				continue
 			}
 			s := tables[ti].Scale
-		pageGlobalCells := cellSliceToPageSpace(tables[ti].Cells, tables[ti].CropOffX, tables[ti].CropOffY, s)
-		var tableBoxes []TextBox
-		html := constructTable(pageGlobalCells, tableBoxes, tables[ti].Caption, &tables[ti])
+			pageGlobalCells := cellSliceToPageSpace(tables[ti].Cells, tables[ti].CropOffX, tables[ti].CropOffY, s)
+			var tableBoxes []TextBox
+			html := constructTable(pageGlobalCells, tableBoxes, tables[ti].Caption, &tables[ti])
 			if html != "" {
 				out = append(out, TextBox{
 					Text: html, LayoutType: "table", PageNumber: 0,
@@ -1332,7 +1366,7 @@ func extractTableAndReplace(boxes []TextBox, tables []TableItem) []TextBox {
 		// page-global 72 DPI (from ocrMergeChars), so no conversion needed.
 		s := tables[ti].Scale
 		pageGlobalCells := cellSliceToPageSpace(tables[ti].Cells, tables[ti].CropOffX, tables[ti].CropOffY, s)
-	// Collect only table-labelled boxes (Python: filters by layout_type).
+		// Collect only table-labelled boxes (Python: filters by layout_type).
 		var tableBoxes []TextBox
 		for i := range boxes {
 			if boxes[i].LayoutType != "table" {
@@ -1364,7 +1398,7 @@ func extractTableAndReplace(boxes []TextBox, tables []TableItem) []TextBox {
 			ti := anchorList[anchorIdx].ti
 			html := htmlByTable[ti]
 			if html != "" {
-					tbl := &tables[ti]
+				tbl := &tables[ti]
 				out = append(out, tableRegionBox(tbl, &b, html))
 			}
 			anchorIdx++
@@ -1643,14 +1677,14 @@ func calSpans(rows [][]TSRCell) (map[[2]int][2]int, map[[2]int]bool) {
 		}
 	}
 
-		// For each spanning cell, compute how many cols/rows it covers.
+	// For each spanning cell, compute how many cols/rows it covers.
 	for i, row := range rows {
 		for j, cell := range row {
 			if j >= nCols || covered[[2]int{i, j}] {
 				continue
 			}
 			// Skip cells without position data (they can't span).
-				if cell.X0 == 0 && cell.X1 == 0 && cell.Y0 == 0 && cell.Y1 == 0 {
+			if cell.X0 == 0 && cell.X1 == 0 && cell.Y0 == 0 && cell.Y1 == 0 {
 				continue
 			}
 			cs, rs := 1, 1

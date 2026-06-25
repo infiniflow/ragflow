@@ -2,6 +2,7 @@ package parser
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"log/slog"
@@ -187,13 +188,16 @@ func (p *Parser) Parse(ctx context.Context, engine PDFEngine) (*ParseResult, err
 }
 
 // extractPages runs per-page OCR (detect + recognize) for the given page
-// range, returning text boxes, char data, and whether any page used OCR.
+// range, returning text boxes, char data, whether any page used OCR, and
+// any errors encountered.  Partial results are returned even when some
+// pages fail — callers should inspect the error for diagnostics but may
+// still use the returned boxes and chars.
 func (p *Parser) extractPages(ctx context.Context, engine PDFEngine,
 	fromPage, toPage int,
 	prescanChars map[int][]TextChar,
 	medianHeights, medianWidths map[int]float64,
 	pageImages map[int]image.Image,
-) ([]TextBox, map[int][]TextChar, bool) {
+) ([]TextBox, map[int][]TextChar, bool, error) {
 	var boxes []TextBox
 	pageChars := make(map[int][]TextChar)
 	ocrUsedAny := false
@@ -230,7 +234,7 @@ func (p *Parser) extractPages(ctx context.Context, engine PDFEngine,
 			var ocrBoxes []TextBox
 			ocrUsed := false
 			if !p.Config.SkipOCR && renderErr == nil && pageImg != nil {
-				ocrBoxes = ocrMergeChars(pageImg, chars, p.DeepDoc, pg)
+				ocrBoxes = ocrMergeChars(ctx, pageImg, chars, p.DeepDoc, pg)
 				if ocrBoxes == nil {
 					ocrBoxes = charsToBoxes(chars, pg, p.Config.SortByTop)
 				} else {
@@ -264,7 +268,7 @@ func (p *Parser) extractPages(ctx context.Context, engine PDFEngine,
 				if len(chars) > 0 {
 					label = "garbled page"
 				}
-				ocrBoxes = ocrDetectAndRecognize(pageImg, p.DeepDoc, pg, label)
+				ocrBoxes = ocrDetectAndRecognize(ctx, pageImg, p.DeepDoc, pg, label)
 				if ocrBoxes != nil {
 					for j := range ocrBoxes {
 						for _, r := range ocrBoxes[j].Text {
@@ -277,7 +281,7 @@ func (p *Parser) extractPages(ctx context.Context, engine PDFEngine,
 			}
 			// Merged OCR path for pages with both embedded and OCR chars.
 			if !ocrUsed && len(chars) > 0 && !p.Config.SkipOCR {
-				ocrBoxes = ocrMergeChars(pageImg, chars, p.DeepDoc, pg)
+				ocrBoxes = ocrMergeChars(ctx, pageImg, chars, p.DeepDoc, pg)
 				if ocrBoxes != nil {
 					ocrUsed = true
 				}
@@ -293,10 +297,11 @@ func (p *Parser) extractPages(ctx context.Context, engine PDFEngine,
 	wg.Wait()
 
 	// Merge results in page order.
+		var errs []error
 	for i := 0; i < pageCount; i++ {
 		r := results[i]
 		if r.err != nil {
-			slog.Warn("page OCR failed", "page", r.pg, "err", r.err)
+			slog.Warn("page OCR failed", "page", r.pg, "err", r.err); errs = append(errs, fmt.Errorf("page %d: %w", r.pg, r.err))
 			continue
 		}
 		if r.ocrUsed {
@@ -314,12 +319,12 @@ func (p *Parser) extractPages(ctx context.Context, engine PDFEngine,
 			medianWidths[r.pg] = MedianCharWidth(r.chars)
 		}
 	}
-	return boxes, pageChars, ocrUsedAny
+	return boxes, pageChars, ocrUsedAny, errors.Join(errs...)
 }
 
 // retryScanNoise re-runs OCR on all pages when prescan detects scan noise,
 // overwriting page-level state with fresh detect+recognize results.
-func (p *Parser) retryScanNoise(engine PDFEngine,
+func (p *Parser) retryScanNoise(ctx context.Context, engine PDFEngine,
 	fromPage, toPage int,
 	pageImages map[int]image.Image,
 	pageChars map[int][]TextChar,
@@ -337,8 +342,9 @@ func (p *Parser) retryScanNoise(engine PDFEngine,
 				slog.Warn("scan noise: page render failed", "page", pg, "err", err)
 				continue
 			}
+			pageImages[pg] = img
 		}
-		ocrBoxes := ocrDetectAndRecognize(img, p.DeepDoc, pg, "scan page")
+		ocrBoxes := ocrDetectAndRecognize(ctx, img, p.DeepDoc, pg, "scan page")
 		if ocrBoxes == nil {
 			slog.Warn("scan noise: page OCR empty", "page", pg)
 			continue
@@ -362,7 +368,7 @@ func (p *Parser) retryScanNoise(engine PDFEngine,
 // retryZoom re-renders pages at higher resolution and re-runs OCR when the
 // initial extraction produced zero boxes.  Box coordinates are scaled back
 // to Config.Zoom space.  Matches Python's __images__ retry.
-func (p *Parser) retryZoom(engine PDFEngine,
+func (p *Parser) retryZoom(ctx context.Context, engine PDFEngine,
 	fromPage, toPage int,
 	pageImages map[int]image.Image,
 	boxes []TextBox, ocrUsedAny bool,
@@ -377,7 +383,14 @@ func (p *Parser) retryZoom(engine PDFEngine,
 			continue
 		}
 		pageImages[pg] = img
-		ocrBoxes := ocrDetectAndRecognize(img, p.DeepDoc, pg, "zoom retry")
+		// Downstream DLA/TSR assumes dlaDPI. Re-render at standard
+		// resolution so layout coordinates are scaled correctly.
+		if retryDPI != dlaDPI {
+			if dlaImg, dlaErr := engine.RenderPageImage(pg, dlaDPI); dlaErr == nil {
+				pageImages[pg] = dlaImg
+			}
+		}
+		ocrBoxes := ocrDetectAndRecognize(ctx, img, p.DeepDoc, pg, "zoom retry")
 		if ocrBoxes == nil {
 			continue
 		}
@@ -407,7 +420,7 @@ func (p *Parser) buildLayout(ctx context.Context,
 	_ = ctx
 	result.Metrics.BoxesInitial = len(boxes)
 
-	result.Tables = p.enrichWithDeepDoc(engine, boxes, result.PageImages)
+	result.Tables = p.enrichWithDeepDoc(ctx, engine, boxes, result.PageImages)
 	result.Metrics.TablesCount = len(result.Tables)
 
 	boxes = AssignColumn(boxes, p.Config.Zoom)
@@ -446,19 +459,22 @@ func (p *Parser) processPages(ctx context.Context, engine PDFEngine,
 	result := &ParseResult{PageImages: make(map[int]image.Image)}
 
 	// 1. OCR extraction — per-page detect + recognize + char merge.
-	boxes, pageChars, ocrUsedAny := p.extractPages(ctx, engine,
+	boxes, pageChars, ocrUsedAny, ocrErr := p.extractPages(ctx, engine,
 		fromPage, toPage, prescanChars,
 		medianHeights, medianWidths, result.PageImages)
+		if ocrErr != nil {
+			slog.Warn("extractPages: some pages failed OCR", "err", ocrErr)
+		}
 	// 2. Scan noise retry — re-OCR all pages when prescan detects scan noise.
 	if isScanNoiseDoc {
-		boxes, pageChars, ocrUsedAny = p.retryScanNoise(engine,
+		boxes, pageChars, ocrUsedAny = p.retryScanNoise(ctx, engine,
 			fromPage, toPage, result.PageImages,
 			pageChars, medianHeights, medianWidths, ocrUsedAny)
 	}
 
 	// 3. Zoom retry — re-render at higher resolution if OCR produced zero boxes.
 	if len(boxes) == 0 && p.Config.Zoom < 9 && !p.Config.SkipOCR {
-		boxes, ocrUsedAny = p.retryZoom(engine, fromPage, toPage,
+		boxes, ocrUsedAny = p.retryZoom(ctx, engine, fromPage, toPage,
 			result.PageImages, boxes, ocrUsedAny)
 	}
 
@@ -727,14 +743,47 @@ func splitLineByXGap(chars []TextChar, threshold float64) [][]TextChar {
 	return result
 }
 
+// resolvePageSpan computes the ending page and bottom coordinate for a box
+// that may span multiple pages.  When pageHeights is nil or the box fits
+// within its starting page the returned (toPage, bottom) equal the inputs.
+//
+// Zero or negative page heights are treated as invalid: the span stops at
+// the preceding page, guarding against infinite loops caused by corrupted
+// page images.
+func resolvePageSpan(pageNum int, bottom float64, pageHeights map[int]float64) (toPage int, newBottom float64) {
+	toPage = pageNum
+	newBottom = bottom
+	if pageHeights == nil {
+		return
+	}
+	ph, ok := pageHeights[pageNum]
+	if !ok || ph <= 0 || bottom <= ph {
+		return
+	}
+	remaining := bottom
+	for remaining > ph && ph > 0 {
+		nextPh, ok := pageHeights[toPage+1]
+		if !ok || nextPh <= 0 {
+			// Unknown or invalid next page height — extend by the
+			// last known height once and stop (Python: _line_tag
+			// while-loop break path).
+			remaining -= ph
+			toPage++
+			break
+		}
+		remaining -= ph
+		ph = nextPh
+		toPage++
+	}
+	newBottom = remaining
+	return
+}
+
 // boxesToSections converts layout boxes to section format with position tags.
-// Position tags are stored in the PositionTag field only, matching Python's
-// _parse_loaded_window_into_bboxes which stores _line_tag in b["position_tag"]
-// without modifying b["text"].
 //
 // pageHeights provides the PDF-point height of each page (image height / zoom).
 // Boxes that extend beyond their page produce multi-page position tags
-// (Python's _line_tag while-loop detection).
+// (Python's _line_tag while-loop detection via resolvePageSpan).
 //
 // Python equivalent: output consumed by naive.py::chunk()
 func boxesToSections(boxes []TextBox, pageHeights map[int]float64) []Section {
@@ -744,54 +793,25 @@ func boxesToSections(boxes []TextBox, pageHeights map[int]float64) []Section {
 		if t == "" {
 			continue
 		}
-		// Detect cross-page span: if box bottom exceeds page height, it
-		// spills into subsequent pages (Python's _line_tag while-loop).
-		fromPage := b.PageNumber
-		toPage := b.PageNumber
-		bottom := b.Bottom
-		if pageHeights != nil {
-			if ph, ok := pageHeights[b.PageNumber]; ok && ph > 0 && b.Bottom > ph {
-				remaining := b.Bottom
-				for remaining > ph {
-					if nextPh, ok := pageHeights[toPage+1]; ok {
-						remaining -= ph
-						ph = nextPh
-						toPage++
-					} else {
-						// Next page height unknown — assume same height.
-						remaining -= ph
-						toPage++
-						break
-					}
-				}
-				bottom = remaining
-			}
-		}
+		toPage, bottom := resolvePageSpan(b.PageNumber, b.Bottom, pageHeights)
+
 		var posTag string
 		var pageNums []int
-		if fromPage == toPage {
-			posTag = FormatPositionTag(fromPage, b.X0, b.X1, b.Top, bottom)
-			pageNums = []int{fromPage}
+		if b.PageNumber == toPage {
+			posTag = FormatPositionTag(b.PageNumber, b.X0, b.X1, b.Top, bottom)
+			pageNums = []int{b.PageNumber}
 		} else {
-			posTag = FormatPositionTagRange(fromPage, toPage, b.X0, b.X1, b.Top, bottom)
-			pageNums = make([]int, 0, toPage-fromPage+1)
-			for p := fromPage; p <= toPage; p++ {
+			posTag = FormatPositionTagRange(b.PageNumber, toPage, b.X0, b.X1, b.Top, bottom)
+			pageNums = make([]int, 0, toPage-b.PageNumber+1)
+			for p := b.PageNumber; p <= toPage; p++ {
 				pageNums = append(pageNums, p)
 			}
-		}
-		// Construct Position directly instead of format-then-parse round-trip.
-		pos := Position{
-			PageNumbers: pageNums,
-			Left:        b.X0,
-			Right:       b.X1,
-			Top:         b.Top,
-			Bottom:      bottom,
 		}
 		sections = append(sections, Section{
 			Text:        t,
 			PositionTag: posTag,
 			LayoutType:  b.LayoutType,
-			Positions:   []Position{pos},
+			Positions:   []Position{{PageNumbers: pageNums, Left: b.X0, Right: b.X1, Top: b.Top, Bottom: bottom}},
 		})
 	}
 	return sections
