@@ -144,7 +144,7 @@ func (h *ProviderHandler) DeleteProvider(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
-	errorCode, err := h.modelProviderService.DeleteModelProvider(providerName, userID)
+	errorCode, err := h.modelProviderService.DeleteModelProvider(userID, providerName)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    errorCode,
@@ -558,7 +558,8 @@ func (h *ProviderHandler) ShowTask(c *gin.Context) {
 }
 
 type AlterProviderInstanceRequest struct {
-	LLMName string `json:"llm_name" binding:"required"`
+	ModelName string `json:"model_name"`
+	APIKey    string `json:"api_key"`
 }
 
 func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
@@ -598,8 +599,17 @@ func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
 		return
 	}
 
+	code, err := h.modelProviderService.AlterProviderInstance(userID, providerName, instanceName, req.ModelName, req.APIKey)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"message": err.Error(),
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeNotFound,
+		"code":    0,
 		"message": "success",
 	})
 }

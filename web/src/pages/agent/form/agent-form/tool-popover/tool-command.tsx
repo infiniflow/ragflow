@@ -28,6 +28,7 @@ const Menus = [
       Operator.DuckDuckGo,
       Operator.Wikipedia,
       Operator.SearXNG,
+      Operator.KeenableSearch,
       Operator.YahooFinance,
       Operator.PubMed,
       Operator.GoogleScholar,

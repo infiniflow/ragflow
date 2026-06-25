@@ -61,10 +61,14 @@ class ConversationService(CommonService):
 
         A chat_channel is bound to a dialog; each end-user chat on that channel
         keeps its own conversation history. The conversation is identified by a
-        deterministic id derived from (channel_id, chat_id) so history persists
-        across restarts without a back-reference column on the conversation.
+        deterministic id derived from (dialog_id, channel_id, chat_id) so
+        history persists across restarts without a back-reference column on the
+        conversation, while still separating histories when the channel is
+        re-bound to a different dialog.
         """
-        conv_id = hashlib.md5(f"{channel_id}:{chat_id}".encode("utf-8")).hexdigest()[:32]
+        conv_id = hashlib.md5(
+            f"{dialog_id}:{channel_id}:{chat_id}".encode("utf-8")
+        ).hexdigest()[:32]
         conv = cls.model.get_or_none(cls.model.id == conv_id)
         if conv is not None:
             return conv

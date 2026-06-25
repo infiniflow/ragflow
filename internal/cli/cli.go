@@ -37,7 +37,8 @@ type APIServerConfig struct {
 	Host         string  `yaml:"host"`
 	UserName     *string `yaml:"user_name"`
 	UserPassword *string `yaml:"password"`
-	ApiToken     *string `yaml:"api_token"`
+	APIKey       *string `yaml:"api_key"`
+	KeyFile      *string `yaml:"key_file"`
 	IP           string
 	Port         int
 }
@@ -45,7 +46,7 @@ type APIServerConfig struct {
 // ConfigFile represents the rf.yml configuration file structure
 type ConfigFile struct {
 	Host         string                      `yaml:"host"`      // default API server host
-	APIToken     string                      `yaml:"api_token"` // default API server api token
+	APIKey       string                      `yaml:"api_key"`   // default API server api key
 	UserName     string                      `yaml:"user_name"` // default API server user name
 	Password     string                      `yaml:"password"`  // default API server password
 	APIServerMap map[string]*APIServerConfig `yaml:"api_servers"`
@@ -86,6 +87,7 @@ type AdminModeConfig struct {
 	AdminPort     int
 	AdminName     *string
 	AdminPassword *string
+	KeyFile       *string
 	//AdminCommand  *string
 }
 
@@ -150,7 +152,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 		defaultApiServerConfig := &APIServerConfig{
 			UserName:     nil,
 			UserPassword: nil,
-			ApiToken:     nil,
+			APIKey:       nil,
 		}
 
 		configFile := "rf.yml"
@@ -192,7 +194,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 				}
 			case "-t", "--token":
 				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-					defaultApiServerConfig.ApiToken = &args[i+1]
+					defaultApiServerConfig.APIKey = &args[i+1]
 					i++
 				}
 			case "-u", "--user":
@@ -215,6 +217,11 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 							configFile = absPath
 						}
 					}
+					i++
+				}
+			case "-k", "--key":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+					defaultApiServerConfig.KeyFile = &args[i+1]
 					i++
 				}
 			default:
@@ -256,9 +263,9 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 					defaultApiServerConfig.UserPassword = &config.Password
 				}
 			}
-			if config.APIToken != "" {
-				if defaultApiServerConfig.ApiToken == nil {
-					defaultApiServerConfig.ApiToken = &config.APIToken
+			if config.APIKey != "" {
+				if defaultApiServerConfig.APIKey == nil {
+					defaultApiServerConfig.APIKey = &config.APIKey
 				}
 			}
 		} else {
@@ -331,6 +338,11 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 			case "-u", "--user":
 				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
 					AdminConfig.AdminName = &args[i+1]
+					i++
+				}
+			case "-k", "--key":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+					AdminConfig.KeyFile = &args[i+1]
 					i++
 				}
 			case "-p", "--password":
@@ -422,7 +434,7 @@ func parseHostPort(hostPort string) (string, int, error) {
 func PrintUsage() {
 	fmt.Println(`RAGFlow CLI Client
 
-Usage: ragflow_cli [options] [command]
+Usage: ragflow-cli [options] [command]
 
 Options:
   -h, --host string      RAGFlow service address (host:port, default "127.0.0.1:9380")
@@ -502,15 +514,15 @@ func NewCLIWithConfig(commandLineConfig *CommandLineConfig) (*CLI, error) {
 		httpClient := NewHTTPClient()
 		httpClient.Host = apiServerConfig.IP
 		httpClient.Port = apiServerConfig.Port
-		if apiServerConfig.ApiToken != nil {
-			httpClient.APIToken = apiServerConfig.ApiToken
-			httpClient.useAPIToken = true
+		if apiServerConfig.APIKey != nil {
+			httpClient.APIKey = apiServerConfig.APIKey
+			httpClient.useAPIKey = true
 		}
 		cli.APIServerClientMap = map[string]*HTTPClient{
 			cli.Config.APIClientConfig.CurrentAPIServer: httpClient,
 		}
 		// Auto-login if user and password are provided (from config file)
-		if apiServerConfig.UserName != nil && apiServerConfig.UserPassword != nil && apiServerConfig.ApiToken == nil {
+		if apiServerConfig.UserName != nil && apiServerConfig.UserPassword != nil && apiServerConfig.APIKey == nil {
 			if err := cli.LoginUserInteractive(*apiServerConfig.UserName, *apiServerConfig.UserPassword); err != nil {
 				line.Close()
 				return nil, fmt.Errorf("auto-login failed: %w", err)
@@ -555,7 +567,7 @@ func (c *CLI) Run() error {
 	switch cliConfig.CLIMode {
 	case APIMode:
 		apiConfig := c.Config.APIClientConfig.APIServerMap[c.Config.APIClientConfig.CurrentAPIServer]
-		if apiConfig.UserName != nil && apiConfig.UserPassword == nil && apiConfig.ApiToken == nil {
+		if apiConfig.UserName != nil && apiConfig.UserPassword == nil && apiConfig.APIKey == nil {
 			// provider username but no password or api token
 			maxAttempts := 3
 			for attempt := 1; attempt <= maxAttempts; attempt++ {
@@ -784,11 +796,11 @@ Filesystem Commands (no quotes):
                                  Note: cat datasets or cat datasets/kb1 will error
 
 Examples:
-  ragflow_cli -f rf.yml "LIST USERS"           # SQL mode (with quotes)
-  ragflow_cli -f rf.yml ls datasets            # Filesystem mode (no quotes)
-  ragflow_cli -f rf.yml ls files               # List files in root
-  ragflow_cli -f rf.yml cat datasets           # Error: datasets is a directory
-  ragflow_cli -f rf.yml ls files/myfolder      # List folder contents
+  ragflow-cli -f rf.yml "LIST USERS"           # SQL mode (with quotes)
+  ragflow-cli -f rf.yml ls datasets            # Filesystem mode (no quotes)
+  ragflow-cli -f rf.yml ls files               # List files in root
+  ragflow-cli -f rf.yml cat datasets           # Error: datasets is a directory
+  ragflow-cli -f rf.yml ls files/myfolder      # List folder contents
 
 For more information, see documentation.
 `
@@ -816,25 +828,6 @@ func (c *CLI) RunSingleCommand(command *string) error {
 }
 
 // VerifyAuth verifies authentication if needed
-func (c *CLI) NewVerifyAuth(username, password *string) error {
-	// Otherwise, use username/password authentication
-	if username == nil {
-		return fmt.Errorf("username is required")
-	}
-
-	if password == nil {
-		return fmt.Errorf("password is required")
-	}
-
-	// Create login command with username and password
-	cmd := NewCommand("login_user")
-	cmd.Params["email"] = *username
-	cmd.Params["password"] = *password
-	_, err := c.ExecuteCommand(cmd)
-	return err
-}
-
-// VerifyAuth verifies authentication if needed
 func (c *CLI) VerifyAuth(username, password string) error {
 	// Otherwise, use username/password authentication
 	if username == "" {
@@ -846,11 +839,33 @@ func (c *CLI) VerifyAuth(username, password string) error {
 	}
 
 	// Create login command with username and password
-	cmd := NewCommand("login_user")
+	cmd := NewCommand("login_user_on_startup")
 	cmd.Params["email"] = username
 	cmd.Params["password"] = password
-	_, err := c.ExecuteCommand(cmd)
+
+	_, err := c.LoginUserByCommand(cmd)
 	return err
+}
+
+func (c *CLI) GetPublicKeyPEM() ([]byte, error) {
+
+	var publicKeyFile *string = nil
+	switch c.Config.CLIMode {
+	case AdminMode:
+		publicKeyFile = c.Config.AdminClientConfig.KeyFile
+	case APIMode:
+		publicKeyFile = c.Config.APIClientConfig.APIServerMap[c.Config.APIClientConfig.CurrentAPIServer].KeyFile
+	}
+	if publicKeyFile == nil {
+		result := "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArq9XTUSeYr2+N1h3Afl/\nz8Dse/2yD0ZGrKwx+EEEcdsBLca9Ynmx3nIB5obmLlSfmskLpBo0UACBmB5rEjBp\n2Q2f3AG3Hjd4B+gNCG6BDaawuDlgANIhGnaTLrIqWrrcm4EMzJOnAOI1fgzJRsOO\nUEfaS318Eq9OVO3apEyCCt0lOQK6PuksduOjVxtltDav+guVAA068NrPYmRNabVK\nRNLJpL8w4D44sfth5RvZ3q9t+6RTArpEtc5sh5ChzvqPOzKGMXW83C95TxmXqpbK\n6olN4RevSfVjEAgCydH6HN6OhtOQEcnrU97r9H0iZOWwbw3pVrZiUkuRD1R56Wzs\n2wIDAQAB\n-----END PUBLIC KEY-----"
+		return []byte(result), nil
+	}
+
+	publicKeyPEM, err := os.ReadFile(*publicKeyFile)
+	if err != nil {
+		return []byte(""), fmt.Errorf("failed to read public key: %w", err)
+	}
+	return publicKeyPEM, nil
 }
 
 // printSearchHelp prints help for the search command

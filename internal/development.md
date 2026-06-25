@@ -40,7 +40,7 @@ Note: admin_server must be started first; otherwise, ragflow_server will encount
 ```
 ```bash
 # Run CLI
-./bin/ragflow_cli
+./bin/ragflow-cli
 ```
 
 ## 4. Start Frontend
@@ -67,10 +67,10 @@ After updating or implementing an API, update the frontend development environme
 
 You can use the following CLI commands to test the corresponding API implementations.
 
-### 6.1. Run ragflow_cli, register user, login, and logout:
+### 6.1. Run ragflow-cli, register user, login, and logout:
 
 ```
-$ ./ragflow_cli
+$ ./ragflow-cli
 Welcome to RAGFlow CLI
 Type \? for help, \q to quit
 
@@ -324,19 +324,19 @@ Time: 1.680416
 
 ### 6.19. Set, reset, and list default models
 ```
-RAGFlow(api/default)> set default chat model 'zhipu-ai/test/glm-4.5-flash';
+RAGFlow(api/default)> set default chat model 'glm-4.5-flash@test@zhipu-ai';
 SUCCESS
-RAGFlow(api/default)> set default vision model 'zhipu-ai/test/glm-4.5v';
+RAGFlow(api/default)> set default vision model 'glm-4.5v@test@zhipu-ai';
 SUCCESS
-RAGFlow(api/default)> set default embedding model 'zhipu-ai/test/embedding-2';
+RAGFlow(api/default)> set default embedding model 'embedding-2@test@zhipu-ai';
 SUCCESS
-RAGFlow(api/default)> set default rerank model 'zhipu-ai/test/rerank';
+RAGFlow(api/default)> set default rerank model 'rerank@test@zhipu-ai';
 SUCCESS
-RAGFlow(api/default)> set default ocr model 'zhipu-ai/test/glm-ocr';
+RAGFlow(api/default)> set default ocr model 'glm-ocr@test@zhipu-ai';
 SUCCESS
-RAGFlow(api/default)> set default tts model 'zhipu-ai/test/glm-tts';
+RAGFlow(api/default)> set default tts model 'tts@test@zhipu-ai';
 SUCCESS
-RAGFlow(api/default)> set default asr model 'zhipu-ai/test/glm-asr-2512';
+RAGFlow(api/default)> set default asr model 'glm-asr-2512@test@zhipu-ai';
 SUCCESS
 RAGFlow(api/default)> list default models;
 +--------+----------------+---------------+----------------+------------+
@@ -473,7 +473,7 @@ RAGFlow(api/default)> DROP CHUNK STORE FOR DATASET 'test'
 
 - Search chunks
 ```
-RAGFlow(api/default)> SEARCH 'AI' ON DATASETS 'test'
+RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test'
 ```
 
 - Get chunks
@@ -519,35 +519,55 @@ RAGFlow(api/default)> GET METADATA OF DATASET 'test' 'test2'
 
 ### 6.29. Search datasets
 
-- Search datasets
+- Search datasets using SQL-like dataset search syntax:
 ```
-RAGFlow(api/default)> SEARCH 'AI' ON DATASETS 'test';
+RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test';
 
-RAGFlow(api/default)> SEARCH 'AI' ON DATASETS 'test1' 'test2';
+RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test1, test2';
 
-RAGFlow(api/default)> SEARCH 'AI' ON DATASETS 'test' WITH top_k 1;
+RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test' WITH top_k 1;
 
-RAGFlow(api/default)> SEARCH 'AI' ON DATASETS 'test' WITH page 2 page_size 20;
+RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test' WITH page 2 page_size 20;
 
-RAGFlow(api/default)> SEARCH 'AI' ON DATASETS 'test' WITH similarity_threshold 0.5;
+RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test' WITH similarity_threshold 0.5;
 
-RAGFlow(api/default)> SEARCH 'AI' ON DATASETS 'test' WITH vector_similarity_weight 0.0;
+RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test' WITH vector_similarity_weight 0.0;
 
-RAGFlow(api/default)> SEARCH 'AI' ON DATASETS 'test' WITH keyword true;
+RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test' WITH keyword true;
 
-RAGFlow(api/default)> SEARCH 'AI' ON DATASETS 'test' WITH use_kg true;
+RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test' WITH use_kg true;
 
-RAGFlow(api/default)> SEARCH 'AI' ON DATASETS 'test' WITH rerank_id 'BAAI/bge-reranker-v2-m3@CI@SILICONFLOW';
+RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test' WITH rerank_id 'BAAI/bge-reranker-v2-m3@CI@SILICONFLOW';
 
-RAGFlow(api/default)> SEARCH 'AI' ON DATASETS 'test' WITH search_id 'abc123';
+RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test' WITH search_id 'abc123';
 
-RAGFlow(api/default)> SEARCH 'AI' ON DATASETS 'test' WITH cross_languages ['Chinese'];
+RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test' WITH cross_languages ['Chinese'];
 
-RAGFlow(api/default)> SEARCH 'AI' ON DATASETS 'test' WITH doc_ids ['doc_a', 'doc_b'];
+RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test' WITH doc_ids ['doc_a', 'doc_b'];
 
-RAGFlow(api/default)> SEARCH 'AI' ON DATASETS 'test' WITH meta_data_filter '{"method":"auto"}';
+RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test' WITH meta_data_filter '{"method":"auto"}';
 
-RAGFlow(api/default)> SEARCH 'AI' ON DATASETS 'test' WITH meta_data_filter '{"method":"manual","conditions":[{"key":"author","op":"eq","value":"Luo"}]}';
+RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test' WITH meta_data_filter '{"method":"manual","conditions":[{"key":"author","op":"eq","value":"Luo"}]}';
 
-RAGFlow(api/default)> SEARCH 'AI' ON DATASETS 'test' WITH top_k 50 similarity_threshold 0.5 vector_similarity_weight 0.5 use_kg true;
+RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test' WITH top_k 50 similarity_threshold 0.5 vector_similarity_weight 0.5 use_kg true;
+```
+
+- Search datasets using filesystem-style search syntax:
+```
+RAGFlow(api/default)> search "AI"                             # search all datasets
+
+RAGFlow(api/default)> search "AI" datasets/test               # search only dataset 'test'
+
+RAGFlow(api/default)> search "AI" datasets/test -n 20         # return top 20 results
+
+RAGFlow(api/default)> search "AI" datasets 'test1' 'test2'    # search in datasets
+```
+
+> [!Note]
+>  - `search` is the simple filesystem search command and only accepts `query [path] [-n number]`.
+>  - `RETRIEVE` / `SEARCH ... ON DATASETS ...` is the SQL-like search command and supports full `WITH` option expansion.
+>  - `WITH` options include: `top_k`, `page_size`, `page`, `similarity_threshold`, `vector_similarity_weight`, `keyword`, `use_kg`, `rerank_id`, `search_id`, `cross_languages`, `doc_ids`, and `meta_data_filter`.
+  - Example with multiple options:
+```
+RAGFlow(api/default)> RETRIEVE 'AI' ON DATASETS 'test' WITH top_k 50 similarity_threshold 0.5 vector_similarity_weight 0.5 use_kg true;
 ```

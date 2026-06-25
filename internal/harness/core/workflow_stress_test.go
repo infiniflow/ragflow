@@ -101,9 +101,9 @@ func newErrorAgent(name string) Agent {
 	return &errorAgent{name: name}
 }
 
-func (a *errorAgent) Name(_ context.Context) string                                    { return a.name }
-func (a *errorAgent) Description(_ context.Context) string                             { return a.name + " error" }
-func (a *errorAgent) GetType() string                                                  { return "ErrorAgent" }
+func (a *errorAgent) Name(_ context.Context) string        { return a.name }
+func (a *errorAgent) Description(_ context.Context) string { return a.name + " error" }
+func (a *errorAgent) GetType() string                      { return "ErrorAgent" }
 func (a *errorAgent) Run(_ context.Context, _ *AgentInput, _ ...RunOption) *AsyncIterator[*AgentEvent] {
 	it, gen := NewAsyncIteratorPair[*AgentEvent]()
 	gen.Send(&AgentEvent{Err: errors.New("intentional agent failure")})
@@ -172,9 +172,9 @@ func TestWorkflow_SequentialCancel_ShouldNotTriggerInterruptCheckpoint(t *testin
 	// This assertion exposes the bug: if found == true, the cancel was incorrectly
 	// treated as an interrupt, saving an unnecessary checkpoint.
 	if found {
-		t.Errorf("BUG: cancel in sequential workflow saved a checkpoint. "+
-			"cancelTransition uses Interrupted action instead of CancelError, "+
-			"so the upper AgentLoop treats cancel as a business interrupt and saves checkpoint. "+
+		t.Errorf("BUG: cancel in sequential workflow saved a checkpoint. " +
+			"cancelTransition uses Interrupted action instead of CancelError, " +
+			"so the upper AgentLoop treats cancel as a business interrupt and saves checkpoint. " +
 			"Cancel should NOT produce an interrupt checkpoint.")
 	}
 	t.Logf("Cancel checkpoint found=%v (expected false if cancel is clean)", found)
@@ -257,7 +257,7 @@ func TestFlow_TransferLoop_ContextCancel(t *testing.T) {
 	case <-done:
 		// Agent terminated cleanly
 	case <-time.After(time.Second * 5):
-		t.Errorf("BUG: agent did not terminate within 5s after context cancel. "+
+		t.Errorf("BUG: agent did not terminate within 5s after context cancel. " +
 			"flow.go runLoop may not check context cancellation, causing goroutine leak")
 	}
 }
@@ -449,8 +449,8 @@ func TestReAct_MaxIterationExceeded_SkipsAfterAgent(t *testing.T) {
 	}
 
 	if !afterAgentCalled.Load() {
-		t.Errorf("BUG: AfterAgent middleware not called after max iteration exceeded. "+
-			"buildReActRunFunc returns early on line 94, skipping runAfterAgent. "+
+		t.Errorf("BUG: AfterAgent middleware not called after max iteration exceeded. " +
+			"buildReActRunFunc returns early on line 94, skipping runAfterAgent. " +
 			"Middleware cleanup/hooks are missed.")
 	} else {
 		t.Log("AfterAgent middleware was called (pass)")
@@ -600,8 +600,8 @@ func TestWorkflow_Sequential_LastEventWithoutActionIsDropped(t *testing.T) {
 	}
 
 	if len(events) == 0 {
-		t.Errorf("BUG: no events received from sequential workflow. "+
-			"drainEvents in runSeq returns nil when the last event has no Action, "+
+		t.Errorf("BUG: no events received from sequential workflow. " +
+			"drainEvents in runSeq returns nil when the last event has no Action, " +
 			"so the final message output is dropped by runSeq (it's not forwarded to gen).")
 	} else {
 		t.Logf("Received %d events (first is probably the dropped one)", len(events))
@@ -797,9 +797,9 @@ func TestFlow_SetSubAgents_DoesNotPopulateSubAgents(t *testing.T) {
 	if len(fa.subAgents) > 0 {
 		t.Logf("subAgents populated: %d (unexpected but OK)", len(fa.subAgents))
 	} else {
-		t.Errorf("BUG: SetSubAgents does not populate flowAgent.subAgents. "+
-			"The sub-agents are set on the returned ResumableAgent but not on "+
-			"the original flowAgent. This causes inconsistency when flowAgent.Run() "+
+		t.Errorf("BUG: SetSubAgents does not populate flowAgent.subAgents. " +
+			"The sub-agents are set on the returned ResumableAgent but not on " +
+			"the original flowAgent. This causes inconsistency when flowAgent.Run() " +
 			"tries to find sub-agents via getAgent().")
 	}
 }
@@ -875,7 +875,7 @@ type delayedTool struct {
 	mu    *sync.Mutex
 }
 
-func (t *delayedTool) Name() string       { return t.inner.Name() }
+func (t *delayedTool) Name() string        { return t.inner.Name() }
 func (t *delayedTool) Description() string { return t.inner.Description() }
 func (t *delayedTool) Invoke(ctx context.Context, args string, opts ...ToolOption) (string, error) {
 	time.Sleep(t.delay)

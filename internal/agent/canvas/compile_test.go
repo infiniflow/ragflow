@@ -18,29 +18,40 @@ package canvas
 import (
 	"bytes"
 	"context"
-	"log"
 	"strings"
 	"testing"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+
+	"ragflow/internal/common"
 )
 
 // TestCompile_LogsWhenLegacyNodesPresent exercises the
 // decoder-bypass guard in Compile: a Canvas that carries
 // LoopItem/IterationItem entries in `Components` (i.e. one that
 // never went through dsl.NormalizeForCanvas) must produce a
-// visible stderr warning. The guard is intentionally a log, not
-// a panic, so internal drivers / legacy fixtures can still drive
-// Compile; the log makes the regression observable.
+// visible warning through common.Logger. The guard is
+// intentionally a log, not a panic, so internal drivers / legacy
+// fixtures can still drive Compile; the log makes the regression
+// observable.
 //
-// The test redirects log output to a buffer and asserts the
-// expected substring. We don't fail on `Compile` itself failing —
-// the legacy fixture graph is intentionally minimal and may not
-// compile end-to-end without a Begin node; the assertion is
-// strictly about the log surface.
+// The test swaps common.Logger for a buffer-backed encoder so
+// we can assert on the structured log message. We don't fail on
+// `Compile` itself failing — the legacy fixture graph is
+// intentionally minimal and may not compile end-to-end without a
+// Begin node; the assertion is strictly about the log surface.
 func TestCompile_LogsWhenLegacyNodesPresent(t *testing.T) {
 	var buf bytes.Buffer
-	prev := log.Writer()
-	log.SetOutput(&buf)
-	t.Cleanup(func() { log.SetOutput(prev) })
+	prev := common.Logger
+	common.Logger = zap.New(
+		zapcore.NewCore(
+			zapcore.NewConsoleEncoder(zap.NewProductionEncoderConfig()),
+			zapcore.AddSync(&buf),
+			zapcore.InfoLevel,
+		),
+	)
+	t.Cleanup(func() { common.Logger = prev })
 
 	c := &Canvas{
 		Components: map[string]CanvasComponent{
@@ -76,9 +87,15 @@ func TestCompile_LogsWhenLegacyNodesPresent(t *testing.T) {
 // every Compile.
 func TestCompile_NoLogOnCleanCanvas(t *testing.T) {
 	var buf bytes.Buffer
-	prev := log.Writer()
-	log.SetOutput(&buf)
-	t.Cleanup(func() { log.SetOutput(prev) })
+	prev := common.Logger
+	common.Logger = zap.New(
+		zapcore.NewCore(
+			zapcore.NewConsoleEncoder(zap.NewProductionEncoderConfig()),
+			zapcore.AddSync(&buf),
+			zapcore.InfoLevel,
+		),
+	)
+	t.Cleanup(func() { common.Logger = prev })
 
 	c := &Canvas{
 		Components: map[string]CanvasComponent{

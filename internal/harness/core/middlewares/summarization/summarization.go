@@ -16,8 +16,8 @@ import (
 
 // TriggerCondition defines when summarization activates.
 type TriggerCondition struct {
-	MaxTokens    int // Trigger when estimated tokens exceed this
-	MaxMessages  int // Trigger when message count exceeds this (0 = no limit)
+	MaxTokens   int // Trigger when estimated tokens exceed this
+	MaxMessages int // Trigger when message count exceeds this (0 = no limit)
 }
 
 // TypedConfig configures the summarization middleware.
@@ -69,7 +69,7 @@ func NewTyped[M core.MessageType](cfg *TypedConfig[M]) core.TypedReActMiddleware
 	}
 	if cfg.CompactionCfg == nil {
 		cfg.CompactionCfg = &CompactionConfig{
-			TriggerTokens: 100000,
+			TriggerTokens:  100000,
 			PreserveRecent: 4,
 		}
 	}

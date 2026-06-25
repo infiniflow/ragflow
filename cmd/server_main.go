@@ -41,6 +41,7 @@ import (
 
 	"ragflow/internal/agent/audio"
 	"ragflow/internal/agent/canvas"
+	_ "ragflow/internal/agent/component" // blank import: registers every Component factory (Begin / Agent / LLM / Message / Retrieval / ...) into the shared runtime at package init
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -91,7 +92,7 @@ func main() {
 
 	// Initialize logger with default level
 	// logger.Init("info"); // set debug log level
-	if err := common.Init("info", "server_main.log"); err != nil {
+	if err := common.Init("info", common.FileOutput{Path: "server_main.log"}); err != nil {
 		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
 	}
 
@@ -121,7 +122,17 @@ func main() {
 		level = "debug"
 	}
 
-	if err := common.Init(level, "server_main.log"); err != nil {
+	fileOut := common.FileOutput{
+		Path:       "server_main.log",
+		MaxSize:    config.Log.MaxSize,
+		MaxBackups: config.Log.MaxBackups,
+		MaxAge:     config.Log.MaxAge,
+		Compress:   common.ResolveCompress(config.Log.Compress),
+	}
+	if config.Log.Path != "" {
+		fileOut.Path = config.Log.Path
+	}
+	if err := common.Init(level, fileOut); err != nil {
 		common.Error("Failed to reinitialize logger", err)
 	}
 	server.SetLogger(common.Logger)
@@ -211,6 +222,8 @@ func startServer(config *server.Config) {
 	llmService := service.NewLLMService()
 	tenantService := service.NewTenantService()
 	chatService := service.NewChatService()
+	chatChannelService := service.NewChatChannelService()
+	langfuseService := service.NewLangfuseService()
 	chatSessionService := service.NewChatSessionService()
 	openaiChatService := service.NewOpenAIChatService()
 	systemService := service.NewSystemService()
@@ -235,6 +248,8 @@ func startServer(config *server.Config) {
 	chunkHandler := handler.NewChunkHandler(chunkService, userService)
 	llmHandler := handler.NewLLMHandler(llmService, userService)
 	chatHandler := handler.NewChatHandler(chatService, userService)
+	chatChannelHandler := handler.NewChatChannelHandler(chatChannelService)
+	langfuseHandler := handler.NewLangfuseHandler(langfuseService)
 	chatSessionHandler := handler.NewChatSessionHandler(chatSessionService, userService)
 	openaiChatHandler := handler.NewOpenAIChatHandler(openaiChatService)
 	connectorHandler := handler.NewConnectorHandler(connectorService, userService)
@@ -291,7 +306,6 @@ func startServer(config *server.Config) {
 		docDAO,
 		docEngine,
 	)
-
 	// Per-tenant canvas-runtime override selector, backed by the
 	// existing Redis client and the global logger. The handler is
 	// ALWAYS constructed, even when Redis is briefly unavailable at
@@ -309,15 +323,16 @@ func startServer(config *server.Config) {
 	adminRuntimeHandler := handler.NewAdminRuntimeHandler(adminRuntimeSelector)
 
 	// Initialize router
-	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler, fileCommitHandler, adminRuntimeHandler, openaiChatHandler)
+	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatChannelHandler, langfuseHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler, fileCommitHandler, adminRuntimeHandler, openaiChatHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()
 
 	// Middleware
-	if config.Server.Mode == "debug" {
-		ginEngine.Use(gin.Logger())
-	}
+	// Note: common.GinLogger() is registered inside router.Setup so the
+	// HTTP request log captures every endpoint the router owns (including
+	// those registered by Setup itself). Registering it here would run
+	// it twice for those endpoints and double every access-log line.
 	ginEngine.Use(gin.Recovery())
 
 	// Setup routes

@@ -34,7 +34,6 @@ const (
 	TokenCreate
 	TokenService
 	TokenShutdown
-	TokenStartup
 	TokenRestart
 	TokenUsers
 	TokenDrop
@@ -104,6 +103,8 @@ const (
 	TokenSearch
 	TokenRetrieve
 	TokenCurrent
+	TokenFingerprint
+	TokenLicense
 	TokenVision
 	TokenEmbedding
 	TokenRerank
