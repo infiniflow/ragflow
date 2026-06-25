@@ -284,14 +284,7 @@ export const useProviderFields = ({
       setNestedValue(result, 'model_type', []);
     }
     return result;
-  }, [
-    editMode,
-    viewMode,
-    initialValues,
-    config.fields,
-    llmFactory,
-    baseUrlRegionMaps,
-  ]);
+  }, [editMode, viewMode, initialValues, config.fields, baseUrlRegionMaps]);
 
   // Documentation link text (rendered at the bottom of the modal)
   const docLinkText = useMemo(() => {

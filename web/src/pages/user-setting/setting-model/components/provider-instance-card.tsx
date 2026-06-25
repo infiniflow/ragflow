@@ -25,6 +25,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { useTranslate } from '@/hooks/common-hooks';
 import {
+  useAddProviderInstance,
   useDeleteProviderInstance,
   useFetchAvailableProviders,
   useFetchProviderInstance,
@@ -39,8 +40,9 @@ import {
   useHideWhenInstanceExists,
   VerifyResult,
 } from '../hooks';
-import { useProviderFields } from '../modal/provider-modal/hooks';
-import VerifyButton from '../modal/verify-button';
+import { useProviderFields } from '../model/provider-model/hooks';
+import VerifyButton from '../model/verify-button';
+import { BedrockInstanceCard } from './bedrock-instance-card';
 import { ModelsSection } from './models-section';
 
 interface ProviderInstanceCardProps {
@@ -58,6 +60,13 @@ interface ProviderInstanceCardProps {
   isDraft?: boolean;
   /** Called after a draft instance is successfully saved. */
   onSaved?: (values: Record<string, any>) => void | Promise<void>;
+  /**
+   * Called after a draft instance's *name* has been persisted via
+   * `addProviderInstance` (with just `instance_name`). The parent should
+   * remove this draft from its visible list; the freshly invalidated
+   * `providerInstances` query will surface the persisted card.
+   */
+  onNameSaved?: () => void;
   /**
    * Called when the user deletes a draft instance.
    * For drafts this is equivalent to onCancel; for saved instances
@@ -84,11 +93,25 @@ interface ProviderInstanceCardProps {
  *     with a hover-only key/lock icon. The form fields live inside
  *     the collapsible content and can be collapsed/expanded.
  */
-export function ProviderInstanceCard({
+export function ProviderInstanceCard(props: ProviderInstanceCardProps) {
+  // AWS Bedrock has provider-specific fields (auth_mode, region, AK/SK,
+  // role ARN, model name, max_tokens) that don't fit the generic
+  // DynamicForm path. Render its own inline card instead.
+  //
+  // Dispatch BEFORE any hooks so each branch component has a stable
+  // hook-call order (Rules of Hooks).
+  if (props.providerName === 'Bedrock') {
+    return <BedrockInstanceCard {...props} />;
+  }
+  return <GenericProviderInstanceCard {...props} />;
+}
+
+function GenericProviderInstanceCard({
   providerName,
   instance,
   isDraft = false,
   onSaved,
+  onNameSaved,
   onDelete,
 }: ProviderInstanceCardProps) {
   const { t } = useTranslation();
@@ -277,29 +300,10 @@ export function ProviderInstanceCard({
     [buildBaseUrlOptions, currentProvider],
   );
 
-  // For draft mode, derive `baseUrlOptions` from the available providers
-  // API response (`/api/v1/providers?available=true`). Each entry in
-  // `provider.url` is treated as one option, with `regionKey='default'`
-  // marking the entry the form should pre-select.
-  // const baseUrlOptions = useMemo(() => {
-  //   if (!isDraft) return undefined;
-  //   const provider = availableProviders?.find((p) => p.name === providerName);
-  //   if (!provider || !provider.url) return undefined;
-  //   return Object.entries(provider.url)
-  //     .filter(
-  //       (entry): entry is [string, string] => typeof entry[1] === 'string',
-  //     )
-  //     .map(([regionKey, url]) => ({
-  //       label: regionKey,
-  //       value: url,
-  //       regionKey,
-  //     }));
-  // }, [availableProviders, providerName, isDraft]);
-
   const { fields, defaultValues } = useProviderFields({
     llmFactory: providerName,
     editMode: !isDraft,
-    viewMode: !isDraft,
+    viewMode: isDraft,
     initialValues,
     baseUrlOptions,
     hideWhenInstanceExists,
@@ -340,14 +344,104 @@ export function ProviderInstanceCard({
     [providerName, verifyProviderConnection],
   );
 
-  // Save the instance name on its own. The flag clears the red-border
-  // warning on the name section and switches the layout from the
-  // form-field-with-red-border view to the collapsed "name row" view.
-  const handleSaveName = useCallback(() => {
+  // Save the instance name on its own. Calls addProviderInstance with
+  // only the instance name (backend now supports creating an instance
+  // with just a name). On success notifies the parent via onNameSaved
+  // so it can remove this draft — the invalidated providerInstances
+  // query will surface the persisted card automatically.
+  const { addProviderInstance } = useAddProviderInstance();
+  const handleSaveName = useCallback(async () => {
     const trimmed = draftName.trim();
     if (!trimmed) return;
-    setNameSaved(true);
-  }, [draftName]);
+    const ret = await addProviderInstance({
+      llm_factory: providerName,
+      instance_name: trimmed,
+    } as any);
+    if (ret?.code === 0) {
+      onNameSaved?.();
+    }
+  }, [draftName, addProviderInstance, providerName, onNameSaved]);
+
+  // ── Blur-driven auto-save for saved (non-draft) cards ───────────────
+  // For persisted instances the user edits non-name fields (api_key,
+  // base_url, ...) and we save automatically when a field loses focus.
+  // The instance id comes from the list payload (or, after a brand-new
+  // create, the freshly-invalidated query that surfaces this card).
+  const blurSavingRef = useRef(false);
+  const lastSavedPayloadRef = useRef<string>('');
+  const handleFieldsBlur = useCallback(
+    async (e: React.FocusEvent<HTMLDivElement>) => {
+      if (isDraft) return;
+      // Ignore focus moves that stay inside the same container.
+      if (
+        e.currentTarget.contains(e.relatedTarget as Node | null) &&
+        e.relatedTarget !== null
+      ) {
+        return;
+      }
+      if (blurSavingRef.current) return;
+
+      const isValid = await formRef.current?.trigger();
+      if (!isValid) return;
+
+      const values = formRef.current?.getValues?.() ?? {};
+      const instanceId = instanceDetails?.id || instance.id;
+      const payload = {
+        llm_factory: providerName,
+        instance_name: instance.instance_name,
+        id: instanceId,
+        api_key: values.api_key,
+        base_url: values.base_url ?? values.api_base,
+        model_info: values.model_info,
+      };
+      // Skip if nothing actually changed since the last save (or initial
+      // mount): prevents a no-op POST on every focus shift.
+      const signature = JSON.stringify(payload);
+      if (signature === lastSavedPayloadRef.current) return;
+
+      blurSavingRef.current = true;
+      try {
+        const ret = await addProviderInstance(payload as any);
+        if (ret?.code === 0) {
+          lastSavedPayloadRef.current = signature;
+        }
+      } finally {
+        blurSavingRef.current = false;
+      }
+    },
+    [
+      isDraft,
+      providerName,
+      instance.instance_name,
+      instance.id,
+      instanceDetails?.id,
+      addProviderInstance,
+    ],
+  );
+
+  // Seed the "last saved" signature once initial values are loaded so the
+  // first blur after mount doesn't trigger an unnecessary save.
+  useEffect(() => {
+    if (isDraft) return;
+    const instanceId = instanceDetails?.id || instance.id;
+    if (!instanceId) return;
+    const baseline = {
+      llm_factory: providerName,
+      instance_name: instance.instance_name,
+      id: instanceId,
+      api_key: initialValues.api_key,
+      base_url: initialValues.base_url ?? initialValues.api_base,
+      model_info: undefined,
+    };
+    lastSavedPayloadRef.current = JSON.stringify(baseline);
+  }, [
+    isDraft,
+    providerName,
+    instance.instance_name,
+    instance.id,
+    instanceDetails?.id,
+    initialValues,
+  ]);
 
   // Delete handler: for saved instances calls useDeleteProviderInstance;
   // for drafts calls onDelete (which maps to onCancel in the parent).
@@ -425,7 +519,10 @@ export function ProviderInstanceCard({
             forceMount
             className="data-[state=closed]:hidden overflow-hidden"
           >
-            <div className="px-2 pb-4 flex flex-col gap-4">
+            <div
+              className="px-2 pb-4 flex flex-col gap-4"
+              onBlurCapture={handleFieldsBlur}
+            >
               <DynamicForm.Root
                 key={`${providerName}-${instance.instance_name}-${isDraft}-${instanceDetails ? 'loaded' : 'pending'}`}
                 ref={formRef}

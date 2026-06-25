@@ -164,7 +164,6 @@ const SettingModelV2: FC = () => {
                   {tSetting('noInstancesConfigured')}
                 </div>
               )}
-
               {instances.map((instance) => (
                 <ProviderInstanceCard
                   key={instance.instance_name}
@@ -172,15 +171,14 @@ const SettingModelV2: FC = () => {
                   instance={instance}
                 />
               ))}
-
               {draftIds.map((id) => (
                 <ProviderInstanceCard
                   key={id}
                   providerName={selection as string}
                   instance={draftInstance}
                   isDraft
-                  onCancel={() => handleDraftCancel(id)}
                   onDelete={() => handleDraftCancel(id)}
+                  onNameSaved={() => removeDraft(id)}
                   onSaved={(values) => handleDraftSave(id, values)}
                 />
               ))}

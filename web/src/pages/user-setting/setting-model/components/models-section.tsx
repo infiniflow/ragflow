@@ -17,7 +17,7 @@
 import { Button } from '@/components/ui/button';
 import { SearchInput } from '@/components/ui/input';
 import { ModelStatus } from '@/constants/llm';
-import { useTranslate } from '@/hooks/common-hooks';
+import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import {
   useAddInstanceModel,
   useFetchInstanceModels,
@@ -39,7 +39,8 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AddCustomModelDialog } from './add-custom-model-dialog';
+import { AddCustomModelDialog } from '../model/provider-model/components/add-custom-model-dialog';
+import { useCustomModelFields } from '../model/provider-model/components/use-custom-model-fields';
 import { mapModelKey, sortModelTypes } from './un-add-model';
 
 type VerifyState =
@@ -95,6 +96,8 @@ export function ModelsSection({
 }: ModelsSectionProps) {
   const { t } = useTranslation();
   const { t: tSetting } = useTranslate('setting');
+  const { t: tc } = useCommonTranslation();
+  const customModelDialogFields = useCustomModelFields();
   const { listProviderModels, loading: listLoading } = useListProviderModels();
   const { addInstanceModel } = useAddInstanceModel();
   const { updateModelStatus } = useUpdateModelStatus();
@@ -190,20 +193,20 @@ export function ModelsSection({
     setModels((prev) =>
       prev.some((m) => m.name === item.name) ? prev : [...prev, item],
     );
-    if (!hideActions && instanceName) {
-      try {
-        await addInstanceModel({
-          provider_name: providerName,
-          instance_name: instanceName,
-          model_name: item.name,
-          model_type: item.model_types ?? [],
-          max_tokens: item.max_tokens ?? 0,
-        });
-      } catch {
-        // Best-effort — surface as a non-blocking failure; the user can
-        // retry via the "+" button.
-      }
+    // Persist the new model to the current instance. Skip the call only
+    // when there is no real instance yet (draft placeholder uses the
+    // `__draft__` sentinel) or when the host has explicitly hidden the
+    // model actions (so the user is just previewing the catalog).
+    if (hideActions || !instanceName || instanceName === '__draft__') {
+      return;
     }
+    await addInstanceModel({
+      provider_name: providerName,
+      instance_name: instanceName,
+      model_name: item.name,
+      model_type: item.model_types ?? [],
+      max_tokens: item.max_tokens ?? 0,
+    });
   };
 
   const handleVerify = async (model: IProviderModelItem) => {
@@ -436,8 +439,15 @@ export function ModelsSection({
       <AddCustomModelDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
+        title={tSetting('addCustomModelTitle')}
+        fields={customModelDialogFields}
         existingNames={models.map((m) => m.name)}
-        onSubmit={handleAddCustom}
+        onSubmit={async (item) => {
+          await handleAddCustom(item);
+          setDialogOpen(false);
+        }}
+        submitText={tc('confirm')}
+        cancelText={tc('cancel')}
       />
     </div>
   );

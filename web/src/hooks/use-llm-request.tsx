@@ -184,7 +184,7 @@ export const useFetchInstanceModels = (
     queryKey: LlmKeys.instanceModels(providerName, instanceName),
     initialData: [],
     gcTime: 0,
-    enabled: !!providerName && !!instanceName,
+    enabled: !!providerName && !!instanceName && instanceName !== '__draft__',
     queryFn: async () => {
       const { data } = await llmService.listInstanceModels(
         { provider_name: providerName, instance_name: instanceName },
@@ -244,15 +244,20 @@ export const useAddProviderInstance = () => {
       try {
         await addProvider({ provider_name: params.llm_factory });
 
-        const { data: instancesRes } = await llmService.listProviderInstances(
-          { provider_name: params.llm_factory },
-          true,
-        );
-        const instanceExists = instancesRes?.data?.some(
-          (i: IProviderInstance) => i.instance_name === params.instance_name,
-        );
-        if (instanceExists && !params.verify) {
-          return { code: 0, data: null };
+        // When `id` is supplied the caller is updating an existing
+        // instance (blur-save on a saved card), so do not short-circuit
+        // on the "already exists" check — we *want* the server call.
+        if (!params.id) {
+          const { data: instancesRes } = await llmService.listProviderInstances(
+            { provider_name: params.llm_factory },
+            true,
+          );
+          const instanceExists = instancesRes?.data?.some(
+            (i: IProviderInstance) => i.instance_name === params.instance_name,
+          );
+          if (instanceExists && !params.verify) {
+            return { code: 0, data: null };
+          }
         }
       } catch {
         // ignore list failure and proceed to add
@@ -261,10 +266,7 @@ export const useAddProviderInstance = () => {
       const { data } = await llmService.addProviderInstance(params);
       if (data.code === 0 && !params.verify) {
         queryClient.invalidateQueries({
-          queryKey: LlmKeys.addedProviders(),
-        });
-        queryClient.invalidateQueries({
-          queryKey: LlmKeys.allModels(),
+          queryKey: LlmKeys.providerInstances(params.llm_factory),
         });
       }
       return data;
@@ -340,11 +342,22 @@ export const useAddInstanceModel = () => {
     ) => {
       const { data } = await llmService.addInstanceModel(params);
       if (data.code === 0) {
+        // `exact: true` keeps the invalidation to the provider summary
+        // list. Without it the [AddedProviders] prefix would also match
+        // every providerInstances / instanceModels query and refetch
+        // every provider's instances — we only want the current one.
         queryClient.invalidateQueries({
           queryKey: LlmKeys.addedProviders(),
+          exact: true,
         });
         queryClient.invalidateQueries({
           queryKey: LlmKeys.allModels(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.instanceModels(
+            params.provider_name,
+            params.instance_name,
+          ),
         });
       }
       return data;
