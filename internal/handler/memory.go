@@ -516,13 +516,67 @@ func (h *MemoryHandler) GetMemoryConfig(c *gin.Context) {
 //   - message: true
 //   - data.messages: Array of message objects
 //   - data.storage_type: Storage type
-//
-// TODO: Haruko386 is implementing this for now, if you implement this, delete this line plz
 func (h *MemoryHandler) GetMemoryMessages(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	userID := strings.TrimSpace(user.ID)
+	if userID == "" {
+		jsonError(c, common.CodeAuthenticationError, "user id is required")
+		return
+	}
+
+	memoryID := strings.TrimSpace(c.Param("memory_id"))
+	if memoryID == "" {
+		jsonError(c, common.CodeArgumentError, "memory_id is required")
+		return
+	}
+
+	var agentIDs []string
+	values := c.QueryArray("agent_id")
+	for _, v := range values {
+		parts := strings.Split(v, ",")
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				agentIDs = append(agentIDs, p)
+			}
+		}
+	}
+
+	keywords := strings.TrimSpace(c.DefaultQuery("keywords", ""))
+	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if err != nil || page <= 0 {
+		jsonError(c, common.CodeArgumentError, "page must be a positive integer")
+		return
+	}
+	pageSize, err := strconv.Atoi(c.DefaultQuery("page_size", "50"))
+	if err != nil || pageSize <= 0 {
+		jsonError(c, common.CodeArgumentError, "page_size must be a positive integer")
+		return
+	}
+	if pageSize > 100 {
+		jsonError(c, common.CodeArgumentError, "page_size must be less than or equal to 100")
+		return
+	}
+
+	data, err := h.memoryService.GetMemoryMessages(c.Request.Context(), userID, memoryID, agentIDs, keywords, page, pageSize)
+	if err != nil {
+		if isMemoryServiceNotFound(err) {
+			jsonError(c, common.CodeNotFound, err.Error())
+			return
+		}
+		jsonError(c, common.CodeServerError, "Internal server error")
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeServerError,
-		"message": "GetMemoryMessages not implemented - pending CanvasService and TaskService dependencies",
-		"data":    nil,
+		"code":    common.CodeSuccess,
+		"message": true,
+		"data":    data,
 	})
 }
 
@@ -729,8 +783,6 @@ func (h *MemoryHandler) UpdateMessage(c *gin.Context) {
 //   - agent_id (optional): Agent ID filter
 //   - session_id (optional): Session ID filter
 //   - user_id (optional): User ID filter
-//
-// TODO: Haruko386 is implementing this for now, if you implement this, delete this line plz
 func (h *MemoryHandler) SearchMessage(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {

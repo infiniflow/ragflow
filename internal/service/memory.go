@@ -1360,8 +1360,266 @@ func (s *MemoryService) GetMemoryConfig(memoryID string) (*CreateMemoryResponse,
 	return formatRetDataFromMemoryListItem(memory), nil
 }
 
-// TODO: GetMemoryMessages - Implementation pending - depends on CanvasService and TaskService
-// func (s *MemoryService) GetMemoryMessages(memoryID string, agentIDs []string, keywords string, page int, pageSize int) (map[string]interface{}, error) { ... }
+func (s *MemoryService) GetMemoryMessages(ctx context.Context, userID, memoryID string, agentIDs []string, keywords string, page int, pageSize int) (map[string]interface{}, error) {
+	memory, err := s.requireMemoryAccess(ctx, userID, memoryID)
+	if err != nil {
+		return nil, err
+	}
+
+	messages, err := s.listMemoryMessages(ctx, memory, agentIDs, keywords, page, pageSize)
+	if err != nil {
+		return nil, err
+	}
+
+	rawMessages, _ := messages["message_list"].([]map[string]interface{})
+	agentNames := map[string]string{}
+	tasks := map[string]map[string]interface{}{}
+	if len(rawMessages) > 0 {
+		agentNames, err = s.memoryMessageAgentNames(rawMessages)
+		if err != nil {
+			return nil, err
+		}
+		tasks, err = s.memoryMessageTasks(memoryID)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	for _, message := range rawMessages {
+		agentID, _ := message["agent_id"].(string)
+		message["agent_name"] = "Unknown"
+		if name, ok := agentNames[agentID]; ok {
+			message["agent_name"] = name
+		}
+		message["task"] = map[string]interface{}{}
+		if task, ok := tasks[memoryMessageKey(message["message_id"])]; ok {
+			message["task"] = task
+		}
+		if extracts, ok := message["extract"].([]map[string]interface{}); ok {
+			for _, extract := range extracts {
+				extractAgentID, _ := extract["agent_id"].(string)
+				extract["agent_name"] = "Unknown"
+				if name, ok := agentNames[extractAgentID]; ok {
+					extract["agent_name"] = name
+				}
+			}
+		}
+	}
+
+	return common.ConvertFloatsToPyFormat(map[string]interface{}{
+		"messages":     messages,
+		"storage_type": memory.StorageType,
+	}).(map[string]interface{}), nil
+}
+
+func (s *MemoryService) listMemoryMessages(ctx context.Context, memory *entity.Memory, agentIDs []string, keywords string, page int, pageSize int) (map[string]interface{}, error) {
+	if s.docEngine == nil {
+		return nil, errors.New("message store is not initialized")
+	}
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = defaultMessageLimit
+	} else if pageSize > maxMessageLimit {
+		pageSize = maxMessageLimit
+	}
+
+	memoryID := memory.ID
+	selectFields := memoryMessageListFields()
+	filter := map[string]interface{}{
+		"message_type": "raw",
+	}
+	if len(agentIDs) > 0 {
+		filter["agent_id"] = agentIDs
+	}
+	if keywords = strings.TrimSpace(keywords); keywords != "" {
+		filter["session_id"] = keywords
+	}
+	filter["memory_id"] = []string{memoryID}
+	indexNames := memorySearchIndexNames([]*entity.Memory{memory})
+
+	rawReq := &enginetypes.SearchRequest{
+		IndexNames:   indexNames,
+		Offset:       (page - 1) * pageSize,
+		Limit:        pageSize,
+		SelectFields: selectFields,
+		Filter:       filter,
+		MatchExprs:   []interface{}{},
+		OrderBy:      (&enginetypes.OrderByExpr{}).Desc("valid_at"),
+	}
+	rawResult, err := s.docEngine.Search(ctx, rawReq)
+	if err != nil {
+		return nil, err
+	}
+
+	messages := map[string]interface{}{
+		"message_list": []map[string]interface{}{},
+		"total_count":  int64(0),
+	}
+	if rawResult != nil {
+		messages["total_count"] = rawResult.Total
+	}
+	if rawResult == nil || rawResult.Total == 0 {
+		return messages, nil
+	}
+
+	rawMessages := make([]map[string]interface{}, 0, len(rawResult.Chunks))
+	sourceIDs := make([]interface{}, 0, len(rawResult.Chunks))
+	for _, chunk := range rawResult.Chunks {
+		message := memoryMessageFromChunk(chunk, selectFields)
+		message["extract"] = []map[string]interface{}{}
+		if messageID, ok := message["message_id"]; ok {
+			sourceIDs = append(sourceIDs, messageID)
+		}
+		rawMessages = append(rawMessages, message)
+	}
+
+	if len(sourceIDs) > 0 {
+		extractReq := &enginetypes.SearchRequest{
+			IndexNames:   indexNames,
+			Offset:       0,
+			Limit:        512,
+			SelectFields: selectFields,
+			Filter: map[string]interface{}{
+				"memory_id": []string{memoryID},
+				"source_id": sourceIDs,
+			},
+			MatchExprs: []interface{}{},
+			OrderBy:    (&enginetypes.OrderByExpr{}).Desc("valid_at"),
+		}
+		extractResult, err := s.docEngine.Search(ctx, extractReq)
+		if err != nil {
+			return nil, err
+		}
+		if extractResult != nil && extractResult.Total > 0 {
+			groupedExtracts := make(map[string][]map[string]interface{})
+			for _, chunk := range extractResult.Chunks {
+				message := memoryMessageFromChunk(chunk, selectFields)
+				sourceID := memoryMessageKey(message["source_id"])
+				groupedExtracts[sourceID] = append(groupedExtracts[sourceID], message)
+			}
+			for _, message := range rawMessages {
+				messageID := memoryMessageKey(message["message_id"])
+				if extracts, ok := groupedExtracts[messageID]; ok {
+					message["extract"] = extracts
+				}
+			}
+		}
+	}
+
+	messages["message_list"] = rawMessages
+	return messages, nil
+}
+
+func memoryMessageListFields() []string {
+	return []string{
+		"message_id", "message_type", "source_id", "memory_id", "user_id", "agent_id", "session_id",
+		"valid_at", "invalid_at", "forget_at", "status",
+	}
+}
+
+func memoryMessageFromChunk(chunk map[string]interface{}, fields []string) map[string]interface{} {
+	message := make(map[string]interface{}, len(fields))
+	for _, field := range fields {
+		if value, ok := chunk[field]; ok {
+			message[field] = value
+		}
+	}
+	return message
+}
+
+func (s *MemoryService) memoryMessageAgentNames(messages []map[string]interface{}) (map[string]string, error) {
+	agentIDSet := make(map[string]struct{})
+	for _, message := range messages {
+		agentID, _ := message["agent_id"].(string)
+		if agentID != "" {
+			agentIDSet[agentID] = struct{}{}
+		}
+	}
+	if len(agentIDSet) == 0 {
+		return map[string]string{}, nil
+	}
+
+	agentIDs := make([]string, 0, len(agentIDSet))
+	for agentID := range agentIDSet {
+		agentIDs = append(agentIDs, agentID)
+	}
+
+	var agents []struct {
+		ID    string  `gorm:"column:id"`
+		Title *string `gorm:"column:title"`
+	}
+	if err := dao.DB.Model(&entity.UserCanvas{}).Select("id, title").Where("id IN ?", agentIDs).Scan(&agents).Error; err != nil {
+		return nil, err
+	}
+	agentNames := make(map[string]string, len(agents))
+	for _, agent := range agents {
+		if agent.Title != nil {
+			agentNames[agent.ID] = *agent.Title
+		}
+	}
+	return agentNames, nil
+}
+
+func (s *MemoryService) memoryMessageTasks(memoryID string) (map[string]map[string]interface{}, error) {
+	var tasks []struct {
+		ID          string  `gorm:"column:id"`
+		DocID       string  `gorm:"column:doc_id"`
+		FromPage    int64   `gorm:"column:from_page"`
+		Progress    float64 `gorm:"column:progress"`
+		ProgressMsg *string `gorm:"column:progress_msg"`
+		Digest      *string `gorm:"column:digest"`
+		ChunkIDs    *string `gorm:"column:chunk_ids"`
+		CreateTime  *int64  `gorm:"column:create_time"`
+	}
+	if err := dao.DB.Model(&entity.Task{}).
+		Select("id, doc_id, from_page, progress, progress_msg, digest, chunk_ids, create_time").
+		Where("doc_id IN ?", []string{memoryID}).
+		Order("create_time ASC").
+		Scan(&tasks).Error; err != nil {
+		return nil, err
+	}
+
+	taskByMessageID := make(map[string]map[string]interface{}, len(tasks))
+	for _, task := range tasks {
+		if task.Digest == nil {
+			continue
+		}
+		digest := strings.TrimSpace(*task.Digest)
+		if digest == "" {
+			continue
+		}
+		var progressMsg interface{}
+		if task.ProgressMsg != nil {
+			progressMsg = *task.ProgressMsg
+		}
+		var chunkIDs interface{}
+		if task.ChunkIDs != nil {
+			chunkIDs = *task.ChunkIDs
+		}
+		var createTime interface{}
+		if task.CreateTime != nil {
+			createTime = *task.CreateTime
+		}
+		taskMap := map[string]interface{}{
+			"id":           task.ID,
+			"doc_id":       task.DocID,
+			"from_page":    task.FromPage,
+			"progress":     task.Progress,
+			"progress_msg": progressMsg,
+			"digest":       digest,
+			"chunk_ids":    chunkIDs,
+			"create_time":  createTime,
+		}
+		taskByMessageID[digest] = taskMap
+	}
+	return taskByMessageID, nil
+}
+
+func memoryMessageKey(value interface{}) string {
+	return strings.TrimSpace(fmt.Sprint(value))
+}
 
 // TODO: queryMessages - Implementation pending - depends on CanvasService and TaskService
 // func (s *MemoryService) queryMessages(tenantID string, memoryID string, filterDict map[string]interface{}, page int, pageSize int) ([]map[string]interface{}, int64, error) { ... }

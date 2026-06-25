@@ -1282,6 +1282,13 @@ func applyFieldMappings(chunks []map[string]interface{}) {
 			chunk["authors_sm_tks"] = val
 		}
 
+		if val, ok := chunk["message_type_kwd"]; ok {
+			chunk["message_type"] = val
+		}
+		if val, ok := chunk["status_int"]; ok {
+			chunk["status"] = val
+		}
+
 		// position_int: convert from hex string to array format (grouped by 5)
 		if val, ok := chunk["position_int"].(string); ok {
 			chunk["position_int"] = utility.ConvertHexToPositionIntArray(val)
@@ -1837,6 +1844,8 @@ func convertSelectFields(output []string, isSkillIndex ...bool) []string {
 		"content_sm_ltks":     "content",
 		"authors_tks":         "authors",
 		"authors_sm_tks":      "authors",
+		"message_type":        "message_type_kwd",
+		"status":              "status_int",
 	}
 
 	skillIndex := false
@@ -2003,6 +2012,12 @@ func equivalentConditionToStr(condition map[string]interface{}) string {
 					convertMatchingField(k), escapeFilterValue(fmt.Sprintf("%v", v))))
 			}
 			continue
+		}
+
+		if k == "message_type" {
+			k = "message_type_kwd"
+		} else if k == "status" {
+			k = "status_int"
 		}
 
 		// Handle list values (mixed types - strings get quotes, numbers don't)
@@ -2210,6 +2225,19 @@ func transformChunkFields(chunk map[string]interface{}, embeddingCols [][2]inter
 			d["questions"] = strings.Join(utility.ConvertToStringSlice(v), "\n")
 		case "tag_kwd":
 			d["tag_kwd"] = strings.Join(utility.ConvertToStringSlice(v), "###")
+		case "message_type":
+			d["message_type_kwd"] = v
+		case "status":
+			switch status := v.(type) {
+			case bool:
+				if status {
+					d["status_int"] = 1
+				} else {
+					d["status_int"] = 0
+				}
+			default:
+				d["status_int"] = v
+			}
 		case "question_tks":
 			if _, exists := chunk["question_kwd"]; !exists {
 				d["questions"] = utility.ConvertToString(v)
