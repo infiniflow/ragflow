@@ -36,6 +36,20 @@ class Session(Base):
                 self.__session_type = "agent"
         super().__init__(rag, res_dict)
 
+    @staticmethod
+    def _raise_for_api_error(json_data):
+        if not isinstance(json_data, dict):
+            return
+        code = json_data.get("code")
+        if code is None or code == 0:
+            return
+        message = (
+            json_data.get("message")
+            or json_data.get("msg")
+            or json_data.get("data")
+            or f"Request failed: {code}"
+        )
+        raise Exception(message)
 
     def ask(
         self,
@@ -122,6 +136,8 @@ class Session(Base):
                 except json.JSONDecodeError:
                     continue  # Skip lines that are not valid JSON
 
+                self._raise_for_api_error(json_data)
+
                 event = json_data.get("event",None)
                 if event and event != "message":
                     continue
@@ -140,6 +156,9 @@ class Session(Base):
                 json_data = res.json()
             except ValueError:
                 raise Exception(f"Invalid response {res}")
+            self._raise_for_api_error(json_data)
+            if "data" not in json_data:
+                raise Exception("Missing data in response")
             yield self._structure_answer(json_data["data"])
         
 
