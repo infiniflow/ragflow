@@ -4,9 +4,11 @@ include:
 services:
   deepdoc:
     image: ${DEEPDOC_IMAGE:-deepdoc_oss:latest}
+    profiles:
+      - deepdoc
     build:
       context: ..
-      dockerfile: docker/Dockerfile_deepdoc_oss
+      dockerfile: Dockerfile_deepdoc_oss
     networks:
       - ragflow
     restart: unless-stopped

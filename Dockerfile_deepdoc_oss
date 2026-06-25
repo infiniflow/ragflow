@@ -48,16 +48,9 @@ RUN if [ "$NEED_MIRROR" = "1" ]; then \
 RUN mkdir -p /app/deepdoc/vision
 COPY deepdoc/vision/ /app/deepdoc/vision/
 
-# ── Docker stubs (replace __init__.py to avoid heavy deps) ──
-RUN mkdir -p /app/common /app/rag/nlp /app/rag/utils
-COPY deepdoc/docker_stub/deepdoc/vision/__init__.py  /app/deepdoc/vision/__init__.py
-COPY deepdoc/docker_stub/deepdoc/__init__.py         /app/deepdoc/__init__.py
-COPY deepdoc/docker_stub/common/__init__.py          /app/common/__init__.py
-COPY deepdoc/docker_stub/common/file_utils.py        /app/common/file_utils.py
-COPY deepdoc/docker_stub/common/misc_utils.py        /app/common/misc_utils.py
-COPY deepdoc/docker_stub/rag/__init__.py             /app/rag/__init__.py
-COPY deepdoc/docker_stub/rag/nlp/__init__.py         /app/rag/nlp/__init__.py
-COPY deepdoc/docker_stub/rag/utils/lazy_image.py     /app/rag/utils/lazy_image.py
+# ── Docker stubs (lightweight replacements for heavy common/rag/deepdoc imports) ──
+COPY deepdoc/server/docker_stubs.py /tmp/docker_stubs.py
+RUN /app/.venv/bin/python3 /tmp/docker_stubs.py
 
 # ── Server code ──
 RUN mkdir -p /app/deepdoc/server/endpoints /app/deepdoc/server/adapters
