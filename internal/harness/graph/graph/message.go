@@ -106,7 +106,7 @@ func AddMessagesReducer(existing interface{}, updates interface{}) (interface{},
 	result := make([]*Message, 0, len(existingMsgs)+len(msgs))
 	// Keep track of which IDs have been processed
 	processedIDs := make(map[string]bool)
-	
+
 	// First, add all existing messages, updating those that have updates
 	for _, msg := range existingMsgs {
 		if msg.ID == "" {
@@ -129,7 +129,7 @@ func AddMessagesReducer(existing interface{}, updates interface{}) (interface{},
 			result = append(result, msg)
 		}
 	}
-	
+
 	// Then, append new messages that don't have matching IDs in existing
 	for _, msg := range msgs {
 		if msg.ID == "" {
@@ -147,8 +147,8 @@ func AddMessagesReducer(existing interface{}, updates interface{}) (interface{},
 // MessageGraph is a graph specialized for message-based workflows.
 // It automatically manages a messages channel with the AddMessages reducer.
 type MessageGraph struct {
-	graph            *StateGraph
-	messagesChannel  string
+	graph           *StateGraph
+	messagesChannel string
 }
 
 // NewMessageGraph creates a new message-based graph.
@@ -349,10 +349,10 @@ func FilterMessagesByRole(msgs []*Message, roles ...string) []*Message {
 
 // MessagesFilter provides message filtering capabilities.
 type MessagesFilter struct {
-	roles    []string
-	limit    int
-	offset   int
-	reverse  bool
+	roles     []string
+	limit     int
+	offset    int
+	reverse   bool
 	predicate func(*Message) bool
 }
 

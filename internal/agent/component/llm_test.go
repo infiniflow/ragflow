@@ -1,4 +1,4 @@
-// Package component — LLM unit tests (Phase 2 P0, plan §2.11.3 row 5).
+// Package component — LLM unit tests.
 //
 // Tests use a stub ChatInvoker to avoid the network. The production path
 // flows through einoChatInvoker + models.NewEinoChatModel + the real
@@ -133,18 +133,20 @@ func TestLLM_Stream(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
-	var got map[string]any
-	select {
-	case got = <-ch:
-	case <-context.Background().Done():
-		t.Fatal("context cancelled before chunk")
+	// Drain all chunks; the implementation emits content + done
+	// over the goroutine-streaming pattern.
+	var got []map[string]any
+	for chunk := range ch {
+		got = append(got, chunk)
 	}
-	if got["content"] != "streamed" {
-		t.Errorf("chunk content=%v, want 'streamed'", got["content"])
+	if len(got) != 2 {
+		t.Fatalf("expected 2 chunks (content + done), got %d", len(got))
 	}
-	// Verify the channel closes after the single chunk.
-	if _, open := <-ch; open {
-		t.Error("Stream channel did not close after single chunk")
+	if got[0]["content"] != "streamed" {
+		t.Errorf("chunk[0].content=%v, want 'streamed'", got[0]["content"])
+	}
+	if got[1]["done"] != true {
+		t.Errorf("chunk[1].done=%v, want true", got[1]["done"])
 	}
 }
 

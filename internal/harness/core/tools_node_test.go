@@ -64,7 +64,7 @@ func TestToolsNode_Execute_ReturnDirectly(t *testing.T) {
 	exitTool := &mockTool{name: "exit_tool", desc: ""}
 
 	tn := NewToolsNode[*schema.Message](&ToolsNodeConfig{
-		Tools:         []Tool{exitTool},
+		Tools:          []Tool{exitTool},
 		ReturnDirectly: map[string]bool{"exit_tool": true},
 	})
 	resp := &schema.Message{
@@ -91,7 +91,9 @@ func TestToolsNode_Execute_ReturnDirectly(t *testing.T) {
 }
 
 func TestParseToolArgs_ValidJSON(t *testing.T) {
-	var in struct{ Name string `json:"name"` }
+	var in struct {
+		Name string `json:"name"`
+	}
 	err := parseToolArgs(`{"name":"test"}`, &in)
 	if err != nil {
 		t.Fatalf("parseToolArgs: %v", err)
@@ -107,8 +109,8 @@ type failingTool struct {
 	desc string
 }
 
-func (t *failingTool) Name() string                                                  { return t.name }
-func (t *failingTool) Description() string                                            { return t.desc }
+func (t *failingTool) Name() string        { return t.name }
+func (t *failingTool) Description() string { return t.desc }
 func (t *failingTool) Invoke(ctx context.Context, s string, opts ...toolOption) (string, error) {
 	return "", errors.New(t.name + " failed")
 }

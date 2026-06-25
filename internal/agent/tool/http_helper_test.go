@@ -245,8 +245,8 @@ func TestBackoffExponential(t *testing.T) {
 	}
 }
 
-// TestRetryConfigDefaults ensures zero-value RetryConfig falls back to
-// the documented defaults from plan §5 Phase 3.
+// TestRetryConfigDefaults ensures zero-value RetryConfig falls
+// back to the documented defaults.
 func TestRetryConfigDefaults(t *testing.T) {
 	t.Parallel()
 

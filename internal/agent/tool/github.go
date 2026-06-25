@@ -60,8 +60,8 @@ type githubEnvelope struct {
 	Error   string         `json:"_ERROR,omitempty"`
 }
 
-// GitHubTool is the Phase 3 batch 3 implementation of the GitHub
-// repository search tool (plan §2.11.4 row 6, §5 Phase 3 第 3 批). It
+// GitHubTool is the GitHub
+// repository search tool. It
 // GETs the GitHub Search API via the shared HTTPHelper and returns the
 // top N repository matches.
 type GitHubTool struct {

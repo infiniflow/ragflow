@@ -27,25 +27,26 @@ import (
 	"regexp"
 )
 
-// VarRefPattern matches the RAGFlow v1 variable reference syntax.
+// VarRefPattern matches the RAGFlow variable reference syntax.
 // Mirrors agent/component/base.py:368 in spirit with one deviation: the
 // cpn_id part includes '_' (real RAGFlow cpn_ids are like "begin_0",
 // "llm_0", "cpn_0"). The Python regex as documented in the plan
-// (`[a-zA-Z:0-9]+`) would not match those — this looks like a documentation
-// bug in the plan; the Python source likely has the underscore too. This
-// deviation is recorded in plan §1.1 and §2.11 with a TODO to confirm
-// against the live Python source during Phase 2 cross-validation.
+// (`[a-zA-Z:0-9]+`) would not match those — this looks like a
+// documentation bug in the plan; the Python source likely has
+// the underscore too. The pattern uses underscore-friendly
+// matching; a future cross-check against the live Python source
+// can confirm the exact behavior.
 //
 // Pattern:
 //
-//	\{* *\{(<ref>)\} *\}*
-//	where <ref> = cpn_id@param | sys.x | env.x
+//	\{+\s*(<ref>)\s*\}+
+//	where <ref> = cpn_id@param | sys.x | env.x | item | index
 //	cpn_id = [a-zA-Z:0-9_]+   (note: underscore added; see deviation note)
 //	param  = [A-Za-z0-9_.-]+
 //
 // Capture group 1 holds the bare ref without braces (e.g. "cpn_0@content",
-// "sys.query", "env.max_tokens").
-var VarRefPattern = regexp.MustCompile(`\{* *\{([a-zA-Z:0-9_]+@[A-Za-z0-9_.-]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\} *\}*`)
+// "sys.query", "env.max_tokens", "item", "index").
+var VarRefPattern = regexp.MustCompile(`\{+\s*([a-zA-Z:0-9_]+@[A-Za-z0-9_.-]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+|item|index)\s*\}+`)
 
 // ExtractRefs returns the unique ref strings (without the surrounding
 // braces) appearing in s, in first-occurrence order. Pure regex — does not
@@ -69,12 +70,14 @@ func ExtractRefs(s string) []string {
 	return out
 }
 
-// ResolveTemplate substitutes every {{...}} in s with the current state's
-// value for that ref. Unresolvable refs (GetVar returns nil) become errors
-// — the Go port trades Python's silent soft-fail (canvas.py:177-178 returns
-// "" for None) for a Go-idiomatic loud-fail so Phase 2 parameter binding can
-// surface misconfigured canvases early. The partial output (with "" in place
-// of the unresolved ref) is still returned so callers can choose to log it.
+// ResolveTemplate substitutes every {{...}} in s with the current
+// state's value for that ref. Unresolvable refs (GetVar returns
+// nil) become errors — the Go port trades Python's silent
+// soft-fail (canvas.py:177-178 returns "" for None) for a
+// Go-idiomatic loud-fail so parameter binding can surface
+// misconfigured canvases early. The partial output (with "" in
+// place of the unresolved ref) is still returned so callers can
+// choose to log it.
 //
 // Supported forms match GetVar (cpn_id@param[.path], sys.x[.path], env.x[.path],
 // item, index).
@@ -107,4 +110,31 @@ func ResolveTemplate(s string, state *CanvasState) (string, error) {
 		return fmt.Sprintf("%v", v)
 	})
 	return out, firstErr
+}
+
+// ResolveTemplateForDisplay is the display-only variant of
+// ResolveTemplate. Unresolvable refs (GetVar returns nil or an
+// error) render as empty string instead of failing the call.
+// Intended for Message-style template rendering where the partial
+// output is what the user ultimately sees; parameter binding
+// call sites should keep using ResolveTemplate so a misconfigured
+// ref surfaces as an error early.
+//
+// Mirrors the Python canvas.py:177-178 soft-fail ("unresolved ref
+// → empty string") for display rendering.
+func ResolveTemplateForDisplay(s string, state *CanvasState) string {
+	if state == nil || !VarRefPattern.MatchString(s) {
+		return s
+	}
+	return VarRefPattern.ReplaceAllStringFunc(s, func(match string) string {
+		sub := VarRefPattern.FindStringSubmatch(match)
+		if len(sub) < 2 {
+			return match
+		}
+		v, _ := state.GetVar(sub[1])
+		if v == nil {
+			return ""
+		}
+		return fmt.Sprintf("%v", v)
+	})
 }

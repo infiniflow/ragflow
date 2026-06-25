@@ -24,6 +24,8 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"regexp"
+
+	"github.com/kaptinlin/jsonrepair"
 	"strconv"
 	"strings"
 	"time"
@@ -225,7 +227,10 @@ func GenMetaFilter(ctx context.Context, chatModel *modelModule.ChatModel, metaDa
 	var result MetaFilterResult
 	if err := json.Unmarshal([]byte(responseStr), &result); err != nil {
 		// Attempt JSON repair for common LLM output issues
-		repaired := repairJSON(responseStr)
+		repaired, rerr := jsonrepair.Repair(responseStr)
+		if rerr != nil {
+			repaired = responseStr
+		}
 		if err2 := json.Unmarshal([]byte(repaired), &result); err2 != nil {
 			common.Warn("Failed to parse meta filter response after repair",
 				zap.String("raw", responseStr[:min(len(responseStr), 200)]),
@@ -570,6 +575,29 @@ func metaFilterValues(value interface{}) []string {
 	}
 }
 
+// MetadataConditionToDocIDs applies metadata_condition against pre-loaded
+// metadata and returns a comma-separated doc ID string.
+// Returns "-999" when conditions are non-empty but match nothing.
+func MetadataConditionToDocIDs(metaData common.MetaData, metadataCondition map[string]interface{}) string {
+	if metadataCondition == nil {
+		return ""
+	}
+	input := common.ParseAndConvert(metadataCondition)
+	if input == nil {
+		return ""
+	}
+	filtered := common.MetaFilter(metaData, input)
+
+	rawConditions, _ := metadataCondition["conditions"].([]interface{})
+	if len(rawConditions) > 0 && len(filtered) == 0 {
+		return "-999"
+	}
+	if len(filtered) == 0 {
+		return ""
+	}
+	return strings.Join(filtered, ",")
+}
+
 // ApplyMetaDataFilter applies metadata filtering rules and returns filtered doc_ids
 // Supports three modes:
 // - auto: generate filter conditions via LLM
@@ -764,50 +792,4 @@ func constrainDocIDs(baseDocIDs, filteredDocIDs []string) []string {
 		result = append(result, docID)
 	}
 	return result
-}
-
-// repairJSON attempts to fix common JSON formatting issues in LLM output.
-// This mirrors Python's json_repair.loads() behavior for the most common issues:
-// - Trailing commas in arrays/objects
-// - Unquoted or single-quoted keys
-// - Extra content after closing brace
-func repairJSON(s string) string {
-	s = strings.TrimSpace(s)
-
-	// Find the outermost JSON object { ... }
-	start := strings.Index(s, "{")
-	end := strings.LastIndex(s, "}")
-	if start == -1 || end == -1 || end <= start {
-		return s
-	}
-	s = s[start : end+1]
-
-	// Remove trailing commas before ] or }
-	s = removeTrailingCommas(s)
-
-	// Fix single-quoted keys and values: 'key' -> "key"
-	// This is a simplification — only handles the outermost level
-	s = fixQuotes(s)
-
-	return s
-}
-
-// removeTrailingCommas removes commas that appear immediately before ] or }
-func removeTrailingCommas(s string) string {
-	// Remove , followed by optional whitespace and then ] or }
-	re := regexp.MustCompile(`,(\s*[}\]])`)
-	return re.ReplaceAllString(s, "$1")
-}
-
-// fixQuotes converts single quotes to double quotes for JSON keys.
-// Only handles simple cases: 'word' -> "word"
-func fixQuotes(s string) string {
-	// Replace single-quoted keys: 'key': -> "key":
-	re := regexp.MustCompile(`'(\w+)'(\s*):`)
-	s = re.ReplaceAllString(s, `"$1"$2:`)
-	// Replace single-quoted string values: : 'value' -> : "value"
-	// (only when preceded by colon and optional whitespace)
-	re2 := regexp.MustCompile(`:\s*'([^']*)'(\s*[,}\]])`)
-	s = re2.ReplaceAllString(s, `: "$1"$2`)
-	return s
 }

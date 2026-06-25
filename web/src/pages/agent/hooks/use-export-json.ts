@@ -1,14 +1,14 @@
-import { EmptyDsl, Operator } from '@/constants/agent';
+import { Operator } from '@/constants/agent';
 import { useFetchAgent } from '@/hooks/use-agent-request';
 import { downloadJsonFile } from '@/utils/file-util';
-import { cloneDeepWith, get, isPlainObject, pick } from 'lodash';
+import { cloneDeepWith, get, isPlainObject } from 'lodash';
 import { useCallback } from 'react';
-import { useBuildDslData } from './use-build-dsl';
+import useGraphStore from '../store';
+import { exportDsl } from '../utils/dsl-bridge';
 
 /**
  * Recursively clear sensitive fields (api_key) from the DSL object
  */
-
 const clearSensitiveFields = <T>(obj: T): T =>
   cloneDeepWith(obj, (value) => {
     if (
@@ -23,21 +23,22 @@ const clearSensitiveFields = <T>(obj: T): T =>
   });
 
 export const useHandleExportJsonFile = () => {
-  const { buildDslData } = useBuildDslData();
   const { data } = useFetchAgent();
+  const { nodes, edges } = useGraphStore((state) => state);
 
   const handleExportJson = useCallback(() => {
-    const dsl = pick(buildDslData(), ['graph', 'globals', 'variables']);
-
-    const sanitizedDsl = clearSensitiveFields(dsl) as typeof dsl;
-
+    // bridge.exportDsl returns the canonical wire shape from current
+    // graph state plus preserved DSL fields, so export can write it
+    // directly after sensitive-field sanitization.
+    const full = exportDsl(nodes, edges, data?.dsl ?? {});
+    const sanitizedDsl = clearSensitiveFields(full);
     const nextDsl = {
       ...sanitizedDsl,
-      globals: { ...sanitizedDsl.globals, ...EmptyDsl.globals },
+      globals: { ...(sanitizedDsl.globals ?? {}) },
     };
 
     downloadJsonFile(nextDsl, `${data.title}.json`);
-  }, [buildDslData, data.title]);
+  }, [nodes, edges, data?.dsl, data.title]);
 
   return {
     handleExportJson,

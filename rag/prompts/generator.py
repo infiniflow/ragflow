@@ -204,7 +204,7 @@ PROMPT_JINJA_ENV = SandboxedEnvironment(
 
 def citation_prompt(user_defined_prompts: dict = {}) -> str:
     template = PROMPT_JINJA_ENV.from_string(user_defined_prompts.get("citation_guidelines", CITATION_PROMPT_TEMPLATE))
-    return template.render()
+    return template.render() + "\n\nIMPORTANT: The example IDs above (45, 46, 78, etc.) are illustrative only. Use the actual chunk IDs from the provided knowledge blocks."
 
 
 def citation_plus(sources: str) -> str:

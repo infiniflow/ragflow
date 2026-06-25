@@ -24405,6 +24405,15 @@
       }
     },
     {
+      "name": "PP-ChatOCRv4",
+      "alias": [
+        "PPChatOCRv4Doc"
+      ],
+      "model_types": [
+        "ocr"
+      ]
+    },
+    {
       "name": "Pro/deepseek-ai/DeepSeek-V3.2-Exp",
       "max_tokens": 160000,
       "model_types": [

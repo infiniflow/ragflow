@@ -17,27 +17,40 @@
 package service
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
+	"io"
+	"math"
+	"math/rand"
+	"mime/multipart"
 	"os"
 	"path/filepath"
-	"ragflow/internal/common"
-	"ragflow/internal/engine/redis"
-	"ragflow/internal/entity"
-	"ragflow/internal/storage"
-	"ragflow/internal/utility"
+	"reflect"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
-
+	"ragflow/internal/engine/redis"
+	enginetypes "ragflow/internal/engine/types"
+	"ragflow/internal/entity"
 	"ragflow/internal/server"
+	"ragflow/internal/storage"
+	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 
+	"github.com/cespare/xxhash/v2"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -52,6 +65,7 @@ type DocumentService struct {
 	metadataSvc         *MetadataService
 	taskDAO             *dao.TaskDAO
 	file2DocumentDAO    *dao.File2DocumentDAO
+	fileDAO             *dao.FileDAO
 }
 
 // NewDocumentService create document service
@@ -67,6 +81,7 @@ func NewDocumentService() *DocumentService {
 		metadataSvc:         NewMetadataService(),
 		taskDAO:             dao.NewTaskDAO(),
 		file2DocumentDAO:    dao.NewFile2DocumentDAO(),
+		fileDAO:             dao.NewFileDAO(),
 	}
 }
 
@@ -125,6 +140,50 @@ type ArtifactResponse struct {
 	ContentType     string
 	SafeFilename    string
 	ForceAttachment bool
+}
+
+type UpdateDatasetDocumentRequest struct {
+	Name         *string        `json:"name"`
+	ChunkMethod  *string        `json:"chunk_method"`
+	ParserID     *string        `json:"parser_id"`
+	ChunkCount   *int64         `json:"chunk_count"`
+	TokenCount   *int64         `json:"token_count"`
+	PipelineID   *string        `json:"pipeline_id"`
+	Enabled      *int           `json:"enabled"`
+	Progress     *float64       `json:"progress"`
+	ParserConfig map[string]any `json:"parser_config"`
+	MetaFields   map[string]any `json:"meta_fields"`
+}
+
+// PATCH /api/v1/datasets/:dataset_id/documents/:document_id.
+type UpdateDatasetDocumentResponse struct {
+	ID              string                 `json:"id"`
+	Thumbnail       *string                `json:"thumbnail,omitempty"`
+	DatasetID       string                 `json:"dataset_id"`
+	ChunkMethod     string                 `json:"chunk_method"`
+	PipelineID      *string                `json:"pipeline_id,omitempty"`
+	ParserConfig    map[string]interface{} `json:"parser_config"`
+	SourceType      string                 `json:"source_type"`
+	Type            string                 `json:"type"`
+	CreatedBy       string                 `json:"created_by"`
+	Name            *string                `json:"name,omitempty"`
+	Location        *string                `json:"location,omitempty"`
+	Size            int64                  `json:"size"`
+	TokenCount      int64                  `json:"token_count"`
+	ChunkCount      int64                  `json:"chunk_count"`
+	Progress        float64                `json:"progress"`
+	ProgressMsg     *string                `json:"progress_msg,omitempty"`
+	ProcessBeginAt  *time.Time             `json:"process_begin_at,omitempty"`
+	ProcessDuration float64                `json:"process_duration"`
+	ContentHash     *string                `json:"content_hash,omitempty"`
+	MetaFields      map[string]interface{} `json:"meta_fields,omitempty"`
+	Suffix          string                 `json:"suffix"`
+	Run             string                 `json:"run"`
+	Status          *string                `json:"status,omitempty"`
+	CreateTime      *int64                 `json:"create_time,omitempty"`
+	CreateDate      *time.Time             `json:"create_date,omitempty"`
+	UpdateTime      *int64                 `json:"update_time,omitempty"`
+	UpdateDate      *time.Time             `json:"update_date,omitempty"`
 }
 
 var (
@@ -682,6 +741,95 @@ func (s *DocumentService) GetThumbnail(docID string) (*ThumbnailResponse, error)
 	return &result, nil
 }
 
+func (s *DocumentService) BatchUpdateDocumentStatus(userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
+	kb, err := s.kbDAO.GetByIDAndTenantID(datasetID, userID)
+	if err != nil {
+		return nil, common.CodeDataError, fmt.Errorf("You don't own the dataset.")
+	}
+	statusInt, convErr := strconv.Atoi(status)
+	if convErr != nil {
+		return nil, common.CodeArgumentError, fmt.Errorf("invalid status: %s", status)
+	}
+
+	result := make(map[string]interface{}, len(documentIDs))
+	hasError := false
+
+	documents, err := s.documentDAO.GetByIDs(documentIDs)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to fetch documents: %w", err)
+	}
+	documentByID := make(map[string]*entity.Document, len(documents))
+	for _, doc := range documents {
+		documentByID[doc.ID] = doc
+	}
+
+	for _, docID := range documentIDs {
+		doc, ok := documentByID[docID]
+		if !ok {
+			result[docID] = map[string]string{"error": "Document not found"}
+			hasError = true
+			continue
+		}
+
+		if doc.KbID != datasetID {
+			result[docID] = map[string]string{"error": "Document not found in this dataset."}
+			hasError = true
+			continue
+		}
+
+		currentStatus := ""
+		if doc.Status != nil {
+			currentStatus = *doc.Status
+		}
+		if currentStatus == status {
+			result[docID] = map[string]string{"status": status}
+			continue
+		}
+		previousStatus := interface{}(nil)
+		if doc.Status != nil {
+			previousStatus = *doc.Status
+		}
+		if err := s.documentDAO.UpdateByID(docID, map[string]interface{}{"status": status}); err != nil {
+			result[docID] = map[string]string{"error": "Database error (Document update)!"}
+			hasError = true
+			continue
+		}
+
+		if doc.ChunkNum > 0 {
+			if s.docEngine == nil {
+				_ = s.documentDAO.UpdateByID(docID, map[string]interface{}{"status": previousStatus})
+				result[docID] = map[string]string{"error": "Document store update failed: document engine not initialized"}
+				hasError = true
+				continue
+			}
+			err := s.docEngine.UpdateChunks(
+				context.Background(),
+				map[string]interface{}{"doc_id": docID},
+				map[string]interface{}{"available_int": statusInt},
+				fmt.Sprintf("ragflow_%s", kb.TenantID),
+				doc.KbID,
+			)
+			if err != nil {
+				_ = s.documentDAO.UpdateByID(docID, map[string]interface{}{"status": previousStatus})
+				msg := err.Error()
+				if strings.Contains(msg, "3022") {
+					result[docID] = map[string]string{"error": "Document store table missing."}
+				} else {
+					result[docID] = map[string]string{"error": "Document store update failed: " + msg}
+				}
+				hasError = true
+				continue
+			}
+		}
+		result[docID] = map[string]string{"status": status}
+	}
+
+	if hasError {
+		return result, common.CodeServerError, fmt.Errorf("Partial failure")
+	}
+	return result, common.CodeSuccess, nil
+}
+
 // ListDocumentsByDatasetID list documents by knowledge base ID
 func (s *DocumentService) ListDocumentsByDatasetID(kbID string, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
 	offset := (page - 1) * pageSize
@@ -844,6 +992,584 @@ func (s *DocumentService) RemoveIngestionTasks(tasks []string, userID string) ([
 		deletedTasks = append(deletedTasks, taskRecord)
 	}
 	return deletedTasks, nil
+}
+
+type IngestDocumentRequest struct {
+	DocIDs  []string    `json:"doc_ids" binding:"required"`
+	Run     interface{} `json:"run" binding:"required"`
+	Delete  bool        `json:"delete"`
+	ApplyKB bool        `json:"apply_kb"`
+}
+
+type documentParsePageRange struct {
+	from int64
+	to   int64
+}
+
+func (s *DocumentService) Ingest(userID string, req *IngestDocumentRequest) (common.ErrorCode, error) {
+	run := fmt.Sprint(req.Run)
+
+	docs, err := s.documentDAO.GetByIDs(req.DocIDs)
+	if err != nil {
+		return common.CodeExceptionError, fmt.Errorf("fail to get documents: %s", err.Error())
+	}
+
+	docsByID := make(map[string]*entity.Document, len(docs))
+	for _, doc := range docs {
+		if doc != nil {
+			docsByID[doc.ID] = doc
+		}
+	}
+
+	tableDoneCountByKB := make(map[string]int64)
+
+	for _, docID := range req.DocIDs {
+		doc := docsByID[docID]
+		if doc == nil {
+			return common.CodeDataError, fmt.Errorf("Document not found!")
+		}
+
+		kb, err := s.kbDAO.GetByID(doc.KbID)
+		if err != nil {
+			return common.CodeDataError, fmt.Errorf("Tenant not found!")
+		}
+
+		if !s.kbDAO.Accessible(kb.ID, userID) {
+			return common.CodeAuthenticationError, fmt.Errorf("No authorization.")
+		}
+
+		updates := map[string]interface{}{
+			"run":      run,
+			"progress": 0,
+		}
+
+		rerunWithDelete := run == string(entity.TaskStatusRunning) && req.Delete
+		if rerunWithDelete {
+			updates["progress_msg"] = ""
+			updates["chunk_num"] = 0
+			updates["token_num"] = 0
+		}
+
+		if run == string(entity.TaskStatusCancel) {
+			if err := s.cancelDocParse(doc); err != nil {
+				return common.CodeDataError, err
+			}
+		}
+
+		if rerunWithDelete && doc.Run != nil && *doc.Run == string(entity.TaskStatusDone) {
+			if err := s.clearKBChunkNumWhenRerun(doc); err != nil {
+				return common.CodeExceptionError, err
+			}
+		}
+
+		if err := s.documentDAO.UpdateByID(doc.ID, updates); err != nil {
+			return common.CodeExceptionError, err
+		}
+
+		if req.Delete {
+			_, _ = s.taskDAO.DeleteByDocIDs([]string{doc.ID})
+			indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
+			if s.docEngine != nil {
+				exists, err := s.docEngine.ChunkStoreExists(context.Background(), indexName, doc.KbID)
+				if err != nil {
+					return common.CodeExceptionError, err
+				}
+				if exists {
+					if _, err := s.docEngine.DeleteChunks(context.Background(), map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
+						return common.CodeExceptionError, err
+					}
+				}
+			}
+		}
+
+		if run == string(entity.TaskStatusRunning) {
+			if req.ApplyKB {
+				if doc.ParserConfig == nil {
+					doc.ParserConfig = entity.JSONMap{}
+				}
+				config := map[string]interface{}{
+					"llm_id":          kb.ParserConfig["llm_id"],
+					"enable_metadata": false,
+					"metadata":        map[string]interface{}{},
+				}
+				if value, ok := kb.ParserConfig["enable_metadata"]; ok {
+					config["enable_metadata"] = value
+				}
+				if value, ok := kb.ParserConfig["metadata"]; ok {
+					config["metadata"] = value
+				}
+				if err := s.updateDocumentParserConfig(doc.ID, config); err != nil {
+					return common.CodeExceptionError, err
+				}
+				for key, value := range config {
+					doc.ParserConfig[key] = value
+				}
+			}
+			if doc.PipelineID != nil && strings.TrimSpace(*doc.PipelineID) != "" {
+				if err := s.queueDocumentDataflowTask(kb, doc, strings.TrimSpace(*doc.PipelineID), 0); err != nil {
+					return common.CodeExceptionError, err
+				}
+				continue
+			}
+			if doc.ParserID == string(entity.ParserTypeTable) {
+				doneCount, ok := tableDoneCountByKB[doc.KbID]
+				if !ok {
+					count, err := s.countDoneDocuments(doc.KbID)
+					if err != nil {
+						return common.CodeExceptionError, err
+					}
+					doneCount = count
+					tableDoneCountByKB[doc.KbID] = doneCount
+					if doneCount <= 0 {
+						if err := s.kbDAO.DeleteFieldMap(doc.KbID); err != nil && !dao.IsNotFoundErr(err) {
+							return common.CodeExceptionError, err
+						}
+					}
+				}
+			}
+			if _, err := s.taskDAO.DeleteByDocIDs([]string{doc.ID}); err != nil {
+				return common.CodeExceptionError, err
+			}
+			bucket, objectName, err := s.GetDocumentStorageAddress(doc)
+			if err != nil {
+				return common.CodeExceptionError, err
+			}
+			if err := s.queueDocumentParseTasks(doc, bucket, objectName, 0); err != nil {
+				return common.CodeExceptionError, err
+			}
+			if err := s.beginDocumentParse(doc.ID); err != nil {
+				return common.CodeExceptionError, err
+			}
+		}
+	}
+
+	return common.CodeSuccess, nil
+}
+
+func (s *DocumentService) countDoneDocuments(datasetID string) (int64, error) {
+	var count int64
+	err := dao.GetDB().Model(&entity.Document{}).
+		Where("kb_id = ? AND run = ?", datasetID, string(entity.TaskStatusDone)).
+		Count(&count).Error
+	return count, err
+}
+
+func (s *DocumentService) queueDocumentParseTasks(doc *entity.Document, bucket, objectName string, priority int64) error {
+	if _, err := s.taskDAO.DeleteByDocIDs([]string{doc.ID}); err != nil {
+		return err
+	}
+	tasks, err := s.newDocumentParseTasks(doc, bucket, objectName, priority)
+	if err != nil {
+		return err
+	}
+	if err := s.taskDAO.CreateMany(tasks); err != nil {
+		return err
+	}
+	queueName := documentParseQueueName(doc, priority)
+	for _, task := range tasks {
+		if task.Progress >= 1 {
+			continue
+		}
+		if redisClient := redis.Get(); redisClient == nil || !redisClient.QueueProduct(queueName, documentTaskMessage(task)) {
+			return fmt.Errorf("Can't access Redis. Please check the Redis' status.")
+		}
+	}
+	return nil
+}
+
+func (s *DocumentService) queueDocumentDataflowTask(kb *entity.Knowledgebase, doc *entity.Document, flowID string, priority int64) error {
+	if _, err := s.taskDAO.DeleteByDocIDs([]string{doc.ID}); err != nil {
+		return err
+	}
+	if err := s.beginDocumentParse(doc.ID); err != nil {
+		return err
+	}
+	task := s.newDocumentParseTask(doc, 0, maximumTaskPageNumber, priority)
+	task.TaskType = "dataflow"
+	if err := s.taskDAO.CreateMany([]*entity.Task{task}); err != nil {
+		return err
+	}
+	message := documentTaskMessage(task)
+	message["task_type"] = task.TaskType
+	message["kb_id"] = doc.KbID
+	message["tenant_id"] = kb.TenantID
+	message["dataflow_id"] = flowID
+	message["file"] = nil
+	if redisClient := redis.Get(); redisClient == nil || !redisClient.QueueProduct(documentParseQueueName(doc, priority), message) {
+		return fmt.Errorf("Can't access Redis. Please check the Redis' status.")
+	}
+	return nil
+}
+
+func (s *DocumentService) newDocumentParseTasks(doc *entity.Document, bucket, objectName string, priority int64) ([]*entity.Task, error) {
+	ranges, err := documentParseTaskRanges(doc, bucket, objectName)
+	if err != nil {
+		return nil, err
+	}
+	tasks := make([]*entity.Task, 0, len(ranges))
+	for _, pageRange := range ranges {
+		tasks = append(tasks, s.newDocumentParseTask(doc, pageRange.from, pageRange.to, priority))
+	}
+	return tasks, nil
+}
+
+func (s *DocumentService) newDocumentParseTask(doc *entity.Document, fromPage, toPage, priority int64) *entity.Task {
+	now := time.Now()
+	progressMsg := ""
+	digest := documentParseTaskDigest(doc, fromPage, toPage)
+	chunkIDs := ""
+	return &entity.Task{
+		ID:          common.GenerateUUID(),
+		DocID:       doc.ID,
+		FromPage:    fromPage,
+		ToPage:      toPage,
+		TaskType:    "",
+		Priority:    priority,
+		BeginAt:     &now,
+		Progress:    0,
+		ProgressMsg: &progressMsg,
+		Digest:      &digest,
+		ChunkIDs:    &chunkIDs,
+	}
+}
+
+func documentParseTaskRanges(doc *entity.Document, bucket, objectName string) ([]documentParsePageRange, error) {
+	if doc.Type == "pdf" {
+		binary, err := documentStorageBinary(bucket, objectName)
+		if err != nil {
+			return nil, err
+		}
+		pages := documentEstimatePDFPageCount(binary)
+		pageSize := int64(documentParserConfigInt(doc.ParserConfig, "task_page_size", 12))
+		if doc.ParserID == string(entity.ParserTypePaper) {
+			pageSize = int64(documentParserConfigInt(doc.ParserConfig, "task_page_size", 22))
+		}
+		if doc.ParserID == string(entity.ParserTypeOne) ||
+			doc.ParserID == string(entity.ParserTypeKG) ||
+			documentParserConfigBool(doc.ParserConfig, "toc_extraction", false) {
+			pageSize = maximumTaskPageNumber
+		}
+		if pageSize <= 0 {
+			pageSize = 12
+		}
+		ranges := make([]documentParsePageRange, 0)
+		for _, configuredRange := range documentParserConfigPageRanges(doc.ParserConfig) {
+			start := configuredRange.from - 1
+			if start < 0 {
+				start = 0
+			}
+			end := configuredRange.to - 1
+			if pages >= 0 && end > pages {
+				end = pages
+			}
+			for page := start; page < end; page += pageSize {
+				to := page + pageSize
+				if to > end {
+					to = end
+				}
+				ranges = append(ranges, documentParsePageRange{from: page, to: to})
+			}
+		}
+		if len(ranges) == 0 {
+			ranges = append(ranges, documentParsePageRange{from: 0, to: maximumTaskPageNumber})
+		}
+		return ranges, nil
+	}
+	if doc.ParserID == string(entity.ParserTypeTable) {
+		binary, err := documentStorageBinary(bucket, objectName)
+		if err != nil {
+			return nil, err
+		}
+		rows := documentEstimateTableRowCount(documentName(doc), binary)
+		if rows <= 0 {
+			return []documentParsePageRange{{from: 0, to: maximumTaskPageNumber}}, nil
+		}
+		ranges := make([]documentParsePageRange, 0, (rows+2999)/3000)
+		for row := int64(0); row < int64(rows); row += 3000 {
+			to := row + 3000
+			if to > int64(rows) {
+				to = int64(rows)
+			}
+			ranges = append(ranges, documentParsePageRange{from: row, to: to})
+		}
+		return ranges, nil
+	}
+	return []documentParsePageRange{{from: 0, to: maximumTaskPageNumber}}, nil
+}
+
+func documentStorageBinary(bucket, objectName string) ([]byte, error) {
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, fmt.Errorf("storage not initialized")
+	}
+	return storageImpl.Get(bucket, objectName)
+}
+
+func documentName(doc *entity.Document) string {
+	if doc == nil || doc.Name == nil {
+		return ""
+	}
+	return *doc.Name
+}
+
+func documentParserConfigInt(config map[string]interface{}, key string, fallback int) int {
+	value, ok := config[key]
+	if !ok || value == nil {
+		return fallback
+	}
+	switch typedValue := value.(type) {
+	case int:
+		return typedValue
+	case int64:
+		return int(typedValue)
+	case float64:
+		return int(typedValue)
+	case json.Number:
+		if intValue, err := typedValue.Int64(); err == nil {
+			return int(intValue)
+		}
+	case string:
+		if intValue, err := strconv.Atoi(strings.TrimSpace(typedValue)); err == nil {
+			return intValue
+		}
+	}
+	return fallback
+}
+
+func documentParserConfigBool(config map[string]interface{}, key string, fallback bool) bool {
+	value, ok := config[key]
+	if !ok || value == nil {
+		return fallback
+	}
+	switch typedValue := value.(type) {
+	case bool:
+		return typedValue
+	case string:
+		switch strings.ToLower(strings.TrimSpace(typedValue)) {
+		case "true", "1", "yes", "on":
+			return true
+		case "false", "0", "no", "off":
+			return false
+		}
+	}
+	return fallback
+}
+
+func documentParserConfigPageRanges(config map[string]interface{}) []documentParsePageRange {
+	defaultRanges := []documentParsePageRange{{from: 1, to: 100000}}
+	raw, ok := config["pages"]
+	if !ok || raw == nil {
+		return defaultRanges
+	}
+	rawRanges, ok := raw.([]interface{})
+	if !ok || len(rawRanges) == 0 {
+		return defaultRanges
+	}
+	ranges := make([]documentParsePageRange, 0, len(rawRanges))
+	for _, rawRange := range rawRanges {
+		rangeValues, ok := rawRange.([]interface{})
+		if !ok || len(rangeValues) < 2 {
+			continue
+		}
+		from, okFrom := documentToInt64(rangeValues[0])
+		to, okTo := documentToInt64(rangeValues[1])
+		if okFrom && okTo && to > from {
+			ranges = append(ranges, documentParsePageRange{from: from, to: to})
+		}
+	}
+	if len(ranges) == 0 {
+		return defaultRanges
+	}
+	return ranges
+}
+
+func documentToInt64(value interface{}) (int64, bool) {
+	switch typedValue := value.(type) {
+	case int:
+		return int64(typedValue), true
+	case int64:
+		return typedValue, true
+	case float64:
+		return int64(typedValue), true
+	case json.Number:
+		intValue, err := typedValue.Int64()
+		return intValue, err == nil
+	case string:
+		intValue, err := strconv.ParseInt(strings.TrimSpace(typedValue), 10, 64)
+		return intValue, err == nil
+	default:
+		return 0, false
+	}
+}
+
+var documentPDFPagePattern = regexp.MustCompile(`/Type\s*/Page\b`)
+
+func documentEstimatePDFPageCount(binary []byte) int64 {
+	if len(binary) == 0 {
+		return 0
+	}
+	return int64(len(documentPDFPagePattern.FindAll(binary, -1)))
+}
+
+func documentEstimateTableRowCount(name string, binary []byte) int {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".xlsx":
+		if rows, err := documentCountXLSXRows(binary); err == nil {
+			return rows
+		}
+	case ".csv", ".tsv", ".txt":
+		return documentCountDelimitedRows(name, binary)
+	}
+	return 0
+}
+
+func documentCountDelimitedRows(name string, binary []byte) int {
+	reader := csv.NewReader(bytes.NewReader(binary))
+	reader.FieldsPerRecord = -1
+	reader.ReuseRecord = true
+	if strings.EqualFold(filepath.Ext(name), ".tsv") {
+		reader.Comma = '\t'
+	}
+	rows := 0
+	for {
+		_, err := reader.Read()
+		if err == nil {
+			rows++
+			continue
+		}
+		if err == io.EOF {
+			break
+		}
+		rows += bytes.Count(binary, []byte{'\n'})
+		if len(binary) > 0 && binary[len(binary)-1] != '\n' {
+			rows++
+		}
+		break
+	}
+	return rows
+}
+
+func documentCountXLSXRows(binary []byte) (int, error) {
+	zipReader, err := zip.NewReader(bytes.NewReader(binary), int64(len(binary)))
+	if err != nil {
+		return 0, err
+	}
+	maxRows := 0
+	for _, file := range zipReader.File {
+		if !strings.HasPrefix(file.Name, "xl/worksheets/") || !strings.HasSuffix(file.Name, ".xml") {
+			continue
+		}
+		rows, err := documentCountWorksheetRows(file)
+		if err != nil {
+			return 0, err
+		}
+		if rows > maxRows {
+			maxRows = rows
+		}
+	}
+	return maxRows, nil
+}
+
+func documentCountWorksheetRows(file *zip.File) (int, error) {
+	reader, err := file.Open()
+	if err != nil {
+		return 0, err
+	}
+	defer reader.Close()
+	decoder := xml.NewDecoder(reader)
+	rows := 0
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return 0, err
+		}
+		start, ok := token.(xml.StartElement)
+		if ok && start.Name.Local == "row" {
+			rows++
+		}
+	}
+	return rows, nil
+}
+
+func (s *DocumentService) beginDocumentParse(docID string) error {
+	now := time.Now()
+	return dao.GetDB().Model(&entity.Document{}).Where("id = ?", docID).Updates(map[string]interface{}{
+		"progress_msg":     "Task is queued...",
+		"process_begin_at": now,
+		"progress":         rand.Float64() * 0.01,
+		"run":              string(entity.TaskStatusRunning),
+		"chunk_num":        0,
+		"token_num":        0,
+	}).Error
+}
+
+func documentParseQueueName(doc *entity.Document, priority int64) string {
+	suffix := "common"
+	if doc.ParserID == string(entity.ParserTypeResume) {
+		suffix = "resume"
+	}
+	return fmt.Sprintf("te.%d.%s", priority, suffix)
+}
+
+func documentTaskMessage(task *entity.Task) map[string]interface{} {
+	beginAt := ""
+	if task.BeginAt != nil {
+		beginAt = task.BeginAt.Format("2006-01-02 15:04:05")
+	}
+	digest := ""
+	if task.Digest != nil {
+		digest = *task.Digest
+	}
+	return map[string]interface{}{
+		"id":        task.ID,
+		"doc_id":    task.DocID,
+		"from_page": task.FromPage,
+		"to_page":   task.ToPage,
+		"progress":  task.Progress,
+		"priority":  task.Priority,
+		"begin_at":  beginAt,
+		"digest":    digest,
+	}
+}
+
+func documentParseTaskDigest(doc *entity.Document, fromPage, toPage int64) string {
+	hasher := xxhash.New()
+	config := map[string]interface{}{
+		"doc_id":        doc.ID,
+		"kb_id":         doc.KbID,
+		"parser_id":     doc.ParserID,
+		"parser_config": doc.ParserConfig,
+	}
+	keys := make([]string, 0, len(config))
+	for key := range config {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		b, err := json.Marshal(config[key])
+		if err != nil {
+			hasher.WriteString(fmt.Sprint(config[key]))
+		} else {
+			hasher.Write(b)
+		}
+	}
+	hasher.WriteString(doc.ID)
+	hasher.WriteString(strconv.FormatInt(fromPage, 10))
+	hasher.WriteString(strconv.FormatInt(toPage, 10))
+	return fmt.Sprintf("%x", hasher.Sum64())
+}
+
+func (s *DocumentService) clearKBChunkNumWhenRerun(doc *entity.Document) error {
+	if doc == nil {
+		return fmt.Errorf("document is nil")
+	}
+	return dao.GetDB().Model(&entity.Knowledgebase{}).Where("id = ?", doc.KbID).Updates(map[string]interface{}{
+		"token_num": gorm.Expr("token_num - ?", doc.TokenNum),
+		"chunk_num": gorm.Expr("chunk_num - ?", doc.ChunkNum),
+	}).Error
 }
 
 func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []string) ([]*ParseDocumentResponse, error) {
@@ -1433,15 +2159,10 @@ func aggregateMetadata(chunks []map[string]interface{}) map[string]interface{} {
 				typeCounter[k][valueType] = typeCounter[k][valueType] + 1
 			}
 
-			// Aggregate value counts
-			values := v
-			if v, ok := v.([]interface{}); ok {
-				values = v
-			} else {
-				values = []interface{}{v}
-			}
-
-			for _, vv := range values.([]interface{}) {
+			// Aggregate value counts. Flatten nested arrays so malformed values do
+			// not surface in the UI as the literal string "[]".
+			values := flattenMetadataSummaryValues(v)
+			for _, vv := range values {
 				if vv == nil {
 					continue
 				}
@@ -1538,8 +2259,992 @@ func getMetaValueType(value interface{}) string {
 	return "string"
 }
 
+func flattenMetadataSummaryValues(value interface{}) []interface{} {
+	switch typed := value.(type) {
+	case []interface{}:
+		result := make([]interface{}, 0, len(typed))
+		for _, item := range typed {
+			result = append(result, flattenMetadataSummaryValues(item)...)
+		}
+		return result
+	case []string:
+		result := make([]interface{}, 0, len(typed))
+		for _, item := range typed {
+			result = append(result, item)
+		}
+		return result
+	case nil:
+		return nil
+	default:
+		return []interface{}{typed}
+	}
+}
+
 // isTimeString checks if a string is an ISO 8601 datetime
 func isTimeString(s string) bool {
 	matched, _ := regexp.MatchString(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$`, s)
 	return matched
+}
+
+func (s *DocumentService) UpdateDatasetDocument(userID, datasetID, documentID string, req *UpdateDatasetDocumentRequest, present map[string]bool) (*UpdateDatasetDocumentResponse, common.ErrorCode, error) {
+	tenantID := userID
+	kb, err := s.kbDAO.GetByIDAndTenantID(datasetID, tenantID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, errors.New("You don't own the dataset.")
+		}
+		return nil, common.CodeDataError, errors.New("Can't find this dataset!")
+	}
+
+	doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(documentID, datasetID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, errors.New("The dataset doesn't own the document.")
+		}
+		return nil, common.CodeServerError, err
+	}
+
+	if code, err := s.validateDatasetDocumentUpdate(doc, req, present); err != nil {
+		return nil, code, err
+	}
+
+	if present["meta_fields"] {
+		if err := s.replaceDocumentMetadata(documentID, req.MetaFields); err != nil {
+			return nil, common.CodeDataError, err
+		}
+	}
+
+	if present["name"] && req.Name != nil && (doc.Name == nil || *req.Name != *doc.Name) {
+		if err := s.updateDocumentNameOnly(doc, kb.TenantID, *req.Name); err != nil {
+			return nil, common.CodeDataError, err
+		}
+	}
+
+	if present["parser_config"] && req.ParserConfig != nil {
+		if err := s.updateDocumentParserConfig(doc.ID, req.ParserConfig); err != nil {
+			return nil, common.CodeDataError, err
+		}
+	}
+
+	if req.PipelineID != nil && *req.PipelineID != "" {
+		if err := s.resetDocumentForReparse(doc, kb.TenantID, nil, req.PipelineID); err != nil {
+			return nil, common.CodeDataError, err
+		}
+	} else if present["parser_id"] && req.ParserID != nil && strings.TrimSpace(*req.ParserID) != "" {
+		parserID := strings.TrimSpace(*req.ParserID)
+		if err := s.resetDocumentForReparse(doc, kb.TenantID, &parserID, nil); err != nil {
+			return nil, common.CodeDataError, err
+		}
+	} else if req.ChunkMethod != nil && *req.ChunkMethod != "" {
+		if err := s.updateChunkMethod(doc, kb.TenantID, *req.ChunkMethod, req.ParserConfig, present["parser_config"]); err != nil {
+			return nil, common.CodeDataError, err
+		}
+	}
+
+	if present["enabled"] && req.Enabled != nil {
+		if err := s.updateDocumentStatusOnly(doc, kb, *req.Enabled); err != nil {
+			return nil, common.CodeServerError, err
+		}
+	}
+
+	updatedDoc, err := s.documentDAO.GetByID(doc.ID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, fmt.Errorf("Can not get document by id:%s", doc.ID)
+		}
+		return nil, common.CodeDataError, errors.New("Database operation failed")
+	}
+
+	metaFields := map[string]interface{}{}
+	if s.docEngine != nil && s.metadataSvc != nil {
+		metaFields, _ = s.GetDocumentMetadataByID(updatedDoc.ID)
+	}
+
+	return s.toUpdateDatasetDocumentResponse(updatedDoc, metaFields), common.CodeSuccess, nil
+}
+
+var allowedDocumentChunkMethods = map[string]struct{}{
+	"naive":           {},
+	"manual":          {},
+	"qa":              {},
+	"table":           {},
+	"paper":           {},
+	"book":            {},
+	"laws":            {},
+	"presentation":    {},
+	"picture":         {},
+	"one":             {},
+	"knowledge_graph": {},
+	"email":           {},
+	"tag":             {},
+}
+
+func (s *DocumentService) validateDatasetDocumentUpdate(doc *entity.Document, req *UpdateDatasetDocumentRequest, present map[string]bool) (common.ErrorCode, error) {
+	if req == nil {
+		return common.CodeDataError, errors.New("Invalid request payload")
+	}
+	if present["chunk_count"] && req.ChunkCount != nil && *req.ChunkCount != 0 && *req.ChunkCount != doc.ChunkNum {
+		return common.CodeDataError, errors.New("Can't change `chunk_count`.")
+	}
+	if present["token_count"] && req.TokenCount != nil && *req.TokenCount != 0 && *req.TokenCount != doc.TokenNum {
+		return common.CodeDataError, errors.New("Can't change `token_count`.")
+	}
+	if present["progress"] && req.Progress != nil && *req.Progress != 0 && math.Abs(*req.Progress-doc.Progress) > 1e-9 {
+		return common.CodeDataError, errors.New("Can't change `progress`.")
+	}
+
+	if present["enabled"] {
+		if req.Enabled == nil || (*req.Enabled != 0 && *req.Enabled != 1) {
+			return common.CodeDataError, errors.New("`enabled` value invalid, only accept 0 or 1")
+		}
+	}
+
+	if present["chunk_method"] {
+		if req.ChunkMethod == nil || strings.TrimSpace(*req.ChunkMethod) == "" {
+			return common.CodeDataError, errors.New("`chunk_method` (empty string) is not valid")
+		}
+		chunkMethod := strings.TrimSpace(*req.ChunkMethod)
+		if _, ok := allowedDocumentChunkMethods[chunkMethod]; !ok {
+			return common.CodeDataError, fmt.Errorf("`chunk_method` %s doesn't exist", chunkMethod)
+		}
+		if doc.Type == "visual" || isPresentationFile(doc.Name) {
+			return common.CodeDataError, errors.New("Not supported yet!")
+		}
+	}
+	if present["parser_id"] && req.ParserID != nil {
+		parserID := strings.TrimSpace(*req.ParserID)
+		if (doc.Type == "visual" && parserID != "picture") || (isPresentationFile(doc.Name) && parserID != "presentation") {
+			return common.CodeDataError, errors.New("Not supported yet!")
+		}
+	}
+	if present["name"] && req.Name != nil {
+		if err := s.validateDocumentName(doc, *req.Name); err != nil {
+			return common.CodeDataError, err
+		}
+	}
+
+	if present["meta_fields"] {
+		if err := validateMetaFields(req.MetaFields); err != nil {
+			return common.CodeDataError, err
+		}
+	}
+
+	return common.CodeSuccess, nil
+}
+
+func (s *DocumentService) validateDocumentName(doc *entity.Document, newName string) error {
+	if strings.TrimSpace(newName) == "" {
+		return errors.New("File name can't be empty.")
+	}
+	if len([]byte(newName)) > 255 {
+		return errors.New("File name must be 255 bytes or less.")
+	}
+
+	oldName := ""
+	if doc.Name != nil {
+		oldName = *doc.Name
+	}
+
+	if strings.ToLower(filepath.Ext(newName)) != strings.ToLower(filepath.Ext(oldName)) {
+		return errors.New("The extension of file can't be changed")
+	}
+
+	docs, err := s.documentDAO.GetByNameAndKBID(newName, doc.KbID)
+	if err != nil {
+		return err
+	}
+	for _, d := range docs {
+		if d.ID != doc.ID && d.Name != nil && *d.Name == newName {
+			return errors.New("Duplicated document name in the same dataset.")
+		}
+	}
+
+	return nil
+}
+
+func isPresentationFile(name *string) bool {
+	if name == nil {
+		return false
+	}
+	ext := strings.ToLower(filepath.Ext(*name))
+	return ext == ".ppt" || ext == ".pptx" || ext == ".pages"
+}
+
+func validateMetaFields(meta map[string]any) error {
+	if meta == nil {
+		return nil
+	}
+
+	for _, v := range meta {
+		switch typed := v.(type) {
+		case string, float64, int, int64, float32:
+			continue
+		case []any:
+			for _, item := range typed {
+				switch item.(type) {
+				case string, float64, int, int64, float32:
+					continue
+				default:
+					return fmt.Errorf("The type is not supported in list: %v", typed)
+				}
+			}
+		default:
+			return fmt.Errorf("The type is not supported: %v", v)
+		}
+	}
+
+	return nil
+}
+
+func (s *DocumentService) replaceDocumentMetadata(docID string, meta map[string]any) error {
+	if s.docEngine == nil || s.metadataSvc == nil {
+		return nil
+	}
+	if err := s.DeleteDocumentAllMetadata(docID); err != nil {
+		return err
+	}
+	return s.SetDocumentMetadata(docID, map[string]interface{}(meta))
+}
+
+func (s *DocumentService) updateDocumentNameOnly(doc *entity.Document, tenantID, newName string) error {
+	if err := s.documentDAO.UpdateByID(doc.ID, map[string]interface{}{"name": newName}); err != nil {
+		return errors.New("Database error (Document rename)!")
+	}
+
+	mappings, err := s.file2DocumentDAO.GetByDocumentID(doc.ID)
+	if err == nil && len(mappings) > 0 && mappings[0].FileID != nil && s.fileDAO != nil {
+		_ = s.fileDAO.UpdateByID(*mappings[0].FileID, map[string]interface{}{"name": newName})
+	}
+
+	if s.docEngine == nil {
+		return nil
+	}
+
+	titleTks, _ := tokenizer.Tokenize(newName)
+	titleSmTks, _ := tokenizer.FineGrainedTokenize(titleTks)
+	indexName := fmt.Sprintf("ragflow_%s", tenantID)
+	return s.docEngine.UpdateChunks(
+		context.Background(),
+		map[string]interface{}{"doc_id": doc.ID},
+		map[string]interface{}{
+			"docnm_kwd":    newName,
+			"title_tks":    titleTks,
+			"title_sm_tks": titleSmTks,
+		},
+		indexName,
+		doc.KbID,
+	)
+}
+
+func (s *DocumentService) updateDocumentParserConfig(documentID string, config map[string]any) error {
+	if len(config) == 0 {
+		return nil
+	}
+
+	doc, err := s.documentDAO.GetByID(documentID)
+	if err != nil {
+		return fmt.Errorf("Document(%s) not found.", documentID)
+	}
+
+	merged := common.DeepMergeMaps(map[string]interface{}(doc.ParserConfig), map[string]interface{}(config))
+	if _, ok := config["raptor"]; !ok {
+		delete(merged, "raptor")
+	}
+
+	return s.documentDAO.UpdateByID(documentID, map[string]interface{}{
+		"parser_config": entity.JSONMap(merged),
+	})
+}
+
+func (s *DocumentService) resetDocumentForReparse(doc *entity.Document, tenantID string, parserID *string, pipelineID *string) error {
+	progressMsg := ""
+	run := string(entity.TaskStatusUnstart)
+	updates := map[string]interface{}{
+		"progress":     0,
+		"progress_msg": progressMsg,
+		"run":          run,
+	}
+	if parserID != nil {
+		updates["parser_id"] = *parserID
+	}
+	if pipelineID != nil {
+		updates["pipeline_id"] = *pipelineID
+	}
+
+	if err := s.documentDAO.UpdateByID(doc.ID, updates); err != nil {
+		return errors.New("Document not found!")
+	}
+
+	if doc.TokenNum > 0 {
+		decremented, err := s.decrementDocumentAndKBCountersForReparse(doc)
+		if err != nil {
+			return errors.New("Document not found!")
+		}
+		if !decremented {
+			return nil
+		}
+		if s.docEngine != nil {
+			indexName := fmt.Sprintf("ragflow_%s", tenantID)
+			s.deleteChunkImages(doc, indexName)
+			if _, err := s.docEngine.DeleteChunks(context.Background(), map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (s *DocumentService) deleteChunkImages(doc *entity.Document, indexName string) {
+	if s.docEngine == nil {
+		return
+	}
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return
+	}
+
+	const pageSize = 1000
+	for offset := 0; ; offset += pageSize {
+		result, err := s.docEngine.Search(context.Background(), &enginetypes.SearchRequest{
+			IndexNames:   []string{indexName},
+			KbIDs:        []string{doc.KbID},
+			Offset:       offset,
+			Limit:        pageSize,
+			SelectFields: []string{"id", "img_id"},
+			Filter:       map[string]interface{}{"doc_id": doc.ID},
+			MatchExprs:   nil,
+			OrderBy:      nil,
+			RankFeature:  nil,
+		})
+		if err != nil || result == nil || len(result.Chunks) == 0 {
+			return
+		}
+		for _, chunk := range result.Chunks {
+			imageKey, ok := chunkImageStorageKey(doc.KbID, chunk)
+			if !ok {
+				continue
+			}
+			if storageImpl.ObjExist(doc.KbID, imageKey) {
+				_ = storageImpl.Remove(doc.KbID, imageKey)
+			}
+		}
+	}
+}
+
+func chunkImageStorageKey(defaultBucket string, chunk map[string]interface{}) (string, bool) {
+	imgID := firstStringField(chunk, "img_id")
+	if imgID != "" {
+		prefix := defaultBucket + "-"
+		if strings.HasPrefix(imgID, prefix) && len(imgID) > len(prefix) {
+			return strings.TrimPrefix(imgID, prefix), true
+		}
+		return imgID, true
+	}
+
+	chunkID := firstStringField(chunk, "id", "_id")
+	if chunkID == "" {
+		return "", false
+	}
+	return chunkID, true
+}
+
+func firstStringField(m map[string]interface{}, keys ...string) string {
+	for _, key := range keys {
+		if value, ok := m[key]; ok {
+			if s, ok := value.(string); ok {
+				return s
+			}
+		}
+	}
+	return ""
+}
+
+func (s *DocumentService) decrementDocumentAndKBCountersForReparse(doc *entity.Document) (bool, error) {
+	decremented := false
+	err := dao.DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&entity.Document{}).
+			Where("id = ? AND kb_id = ? AND token_num = ? AND chunk_num = ?", doc.ID, doc.KbID, doc.TokenNum, doc.ChunkNum).
+			Updates(map[string]interface{}{
+				"token_num":        gorm.Expr("token_num - ?", doc.TokenNum),
+				"chunk_num":        gorm.Expr("chunk_num - ?", doc.ChunkNum),
+				"process_duration": gorm.Expr("process_duration - ?", doc.ProcessDuration),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return nil
+		}
+		decremented = true
+
+		return tx.Model(&entity.Knowledgebase{}).
+			Where("id = ?", doc.KbID).
+			Updates(map[string]interface{}{
+				"token_num": gorm.Expr("token_num - ?", doc.TokenNum),
+				"chunk_num": gorm.Expr("chunk_num - ?", doc.ChunkNum),
+			}).Error
+	})
+	return decremented, err
+}
+
+func (s *DocumentService) updateChunkMethod(doc *entity.Document, tenantID string, chunkMethod string, parserConfig map[string]any, hasParserConfig bool) error {
+	chunkMethod = strings.TrimSpace(chunkMethod)
+	if !strings.EqualFold(doc.ParserID, chunkMethod) {
+		if err := s.resetDocumentForReparse(doc, tenantID, &chunkMethod, nil); err != nil {
+			return err
+		}
+	}
+	if !hasParserConfig {
+		defaultConfig := common.GetParserConfig(chunkMethod, nil)
+		if err := s.updateDocumentParserConfig(doc.ID, defaultConfig); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *DocumentService) updateDocumentStatusOnly(doc *entity.Document, kb *entity.Knowledgebase, status int) error {
+	statusStr := strconv.Itoa(status)
+	if doc.Status != nil && *doc.Status == statusStr {
+		return nil
+	}
+
+	if err := s.documentDAO.UpdateByID(doc.ID, map[string]interface{}{"status": statusStr}); err != nil {
+		return errors.New("Database error (Document update)!")
+	}
+
+	if s.docEngine == nil {
+		return nil
+	}
+
+	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
+	return s.docEngine.UpdateChunks(
+		context.Background(),
+		map[string]interface{}{"doc_id": doc.ID},
+		map[string]interface{}{"available_int": status},
+		indexName,
+		doc.KbID,
+	)
+}
+
+func (s *DocumentService) toUpdateDatasetDocumentResponse(doc *entity.Document, metaFields map[string]interface{}) *UpdateDatasetDocumentResponse {
+	if metaFields == nil {
+		metaFields = map[string]interface{}{}
+	}
+	return &UpdateDatasetDocumentResponse{
+		ID:              doc.ID,
+		Thumbnail:       doc.Thumbnail,
+		DatasetID:       doc.KbID,
+		ChunkMethod:     doc.ParserID,
+		PipelineID:      doc.PipelineID,
+		ParserConfig:    map[string]interface{}(doc.ParserConfig),
+		SourceType:      doc.SourceType,
+		Type:            doc.Type,
+		CreatedBy:       doc.CreatedBy,
+		Name:            doc.Name,
+		Location:        doc.Location,
+		Size:            doc.Size,
+		TokenCount:      doc.TokenNum,
+		ChunkCount:      doc.ChunkNum,
+		Progress:        doc.Progress,
+		ProgressMsg:     doc.ProgressMsg,
+		ProcessBeginAt:  doc.ProcessBeginAt,
+		ProcessDuration: doc.ProcessDuration,
+		ContentHash:     doc.ContentHash,
+		MetaFields:      metaFields,
+		Suffix:          doc.Suffix,
+		Run:             mapDocumentRunStatus(doc.Run),
+		Status:          doc.Status,
+		CreateTime:      doc.CreateTime,
+		CreateDate:      doc.CreateDate,
+		UpdateTime:      doc.UpdateTime,
+		UpdateDate:      doc.UpdateDate,
+	}
+}
+
+func mapDocumentRunStatus(run *string) string {
+	if run == nil {
+		return "UNSTART"
+	}
+	switch *run {
+	case string(entity.TaskStatusRunning):
+		return "RUNNING"
+	case string(entity.TaskStatusCancel):
+		return "CANCEL"
+	case string(entity.TaskStatusDone):
+		return "DONE"
+	case string(entity.TaskStatusFail):
+		return "FAIL"
+	default:
+		return "UNSTART"
+	}
+}
+
+// MetadataUpdate is one update item: set key to value.
+type DocumentMetadataUpdate struct {
+	Key       string      `json:"key"`
+	Value     interface{} `json:"value"`
+	Match     interface{} `json:"match,omitempty"`
+	ValueType string      `json:"valueType,omitempty"`
+}
+
+// MetadataDelete removes a whole key, or a specific value from a list field.
+type DocumentMetadataDelete struct {
+	Key   string      `json:"key"`
+	Value interface{} `json:"value,omitempty"`
+}
+
+// MetadataSelector selects which documents to target.
+type DocumentMetadataSelector struct {
+	DocumentIDs       []string               `json:"document_ids"`
+	MetadataCondition map[string]interface{} `json:"metadata_condition"`
+}
+
+// BatchUpdateDocumentMetadatasResponse summarises the operation.
+type BatchUpdateDocumentMetadatasResponse struct {
+	Updated     int `json:"updated"`
+	MatchedDocs int `json:"matched_docs"`
+}
+
+// BatchUpdateDocumentMetadatas implements the shared logic for
+// PATCH /datasets/:dataset_id/documents/metadatas  and
+// POST  /datasets/:dataset_id/metadata/update.
+func (s *DocumentService) BatchUpdateDocumentMetadatas(
+	datasetID string,
+	selector *DocumentMetadataSelector,
+	updates []DocumentMetadataUpdate,
+	deletes []DocumentMetadataDelete,
+) (*BatchUpdateDocumentMetadatasResponse, common.ErrorCode, error) {
+	if selector == nil {
+		selector = &DocumentMetadataSelector{}
+	}
+	if code, err := validateBatchUpdateDocumentMetadatasRequest(selector, updates, deletes); err != nil {
+		return nil, code, err
+	}
+
+	// Resolve which document IDs to target.
+	targetDocIDs := make(map[string]struct{})
+
+	if len(selector.DocumentIDs) > 0 {
+		// Validate that supplied IDs actually belong to this dataset.
+		allRows, err := s.documentDAO.GetAllDocIDsByKBIDs([]string{datasetID})
+		if err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("failed to list dataset documents: %w", err)
+		}
+		kbDocIDSet := make(map[string]struct{}, len(allRows))
+		for _, row := range allRows {
+			kbDocIDSet[row["id"]] = struct{}{}
+		}
+		var invalidIDs []string
+		for _, id := range selector.DocumentIDs {
+			if _, ok := kbDocIDSet[id]; !ok {
+				invalidIDs = append(invalidIDs, id)
+			}
+		}
+		if len(invalidIDs) > 0 {
+			return nil, common.CodeDataError, fmt.Errorf("these documents do not belong to dataset %s: %s",
+				datasetID, strings.Join(invalidIDs, ", "))
+		}
+		for _, id := range selector.DocumentIDs {
+			targetDocIDs[id] = struct{}{}
+		}
+	}
+
+	// Apply metadata_condition filter.
+	if len(selector.MetadataCondition) > 0 {
+		flattedMeta, err := s.metadataSvc.GetFlattedMetaByKBs([]string{datasetID})
+		if err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("failed to get flattened metadata: %w", err)
+		}
+
+		// ParseAndConvert mirrors Python convert_conditions: conditions arrive as
+		// {name, comparison_operator, value}, the operator is normalised, and the
+		// (possibly non-string) value is preserved. MetaFilter then matches against
+		// the common.MetaData returned by GetFlattedMetaByKBs.
+		filterInput := common.ParseAndConvert(selector.MetadataCondition)
+		filteredIDs := common.MetaFilter(flattedMeta, filterInput)
+
+		filteredSet := make(map[string]struct{}, len(filteredIDs))
+		for _, id := range filteredIDs {
+			filteredSet[id] = struct{}{}
+		}
+
+		if len(targetDocIDs) > 0 {
+			// Intersect with the document_ids restriction.
+			for id := range targetDocIDs {
+				if _, ok := filteredSet[id]; !ok {
+					delete(targetDocIDs, id)
+				}
+			}
+		} else {
+			targetDocIDs = filteredSet
+		}
+
+		// Early-exit when conditions given but nothing matched.
+		rawConds, _ := selector.MetadataCondition["conditions"]
+		if rawConds != nil && len(targetDocIDs) == 0 {
+			return &BatchUpdateDocumentMetadatasResponse{Updated: 0, MatchedDocs: 0}, common.CodeSuccess, nil
+		}
+	}
+
+	ids := make([]string, 0, len(targetDocIDs))
+	for id := range targetDocIDs {
+		ids = append(ids, id)
+	}
+
+	// Apply updates and deletes per document using Python's batch_update_metadata
+	// semantics instead of a simple merge-then-delete.
+	updated := 0
+	for _, docID := range ids {
+		currentMeta, err := s.GetDocumentMetadataByID(docID)
+		if err != nil {
+			common.Warn("BatchUpdateDocumentMetadata: get metadata failed",
+				zap.String("docID", docID), zap.Error(err))
+			continue
+		}
+
+		meta := cloneDocumentMetadata(currentMeta)
+		originalMeta := cloneDocumentMetadata(meta)
+
+		changed := applyDocumentMetadataUpdates(meta, updates)
+		if applyDocumentMetadataDeletes(meta, deletes) {
+			changed = true
+		}
+
+		if !changed || reflect.DeepEqual(originalMeta, meta) {
+			continue
+		}
+
+		if len(meta) == 0 {
+			if err := s.DeleteDocumentAllMetadata(docID); err != nil {
+				common.Warn("BatchUpdateDocumentMetadata: delete all metadata failed",
+					zap.String("docID", docID), zap.Error(err))
+				continue
+			}
+			updated++
+			continue
+		}
+
+		if err := s.replaceDocumentMetadata(docID, meta); err != nil {
+			common.Warn("BatchUpdateDocumentMetadata: replace metadata failed",
+				zap.String("docID", docID), zap.Error(err))
+			continue
+		}
+		updated++
+	}
+
+	return &BatchUpdateDocumentMetadatasResponse{Updated: updated, MatchedDocs: len(ids)}, common.CodeSuccess, nil
+}
+
+func (s *DocumentService) UploadDocumentInfos(userID string, files []*multipart.FileHeader) ([]map[string]interface{}, common.ErrorCode, error) {
+	fileSvc := &FileService{
+		fileDAO:          s.fileDAO,
+		file2DocumentDAO: s.file2DocumentDAO,
+	}
+	data, err := fileSvc.UploadInfos(userID, files)
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+	return data, common.CodeSuccess, nil
+}
+
+func (s *DocumentService) UploadDocumentInfoByURL(userID, rawURL string) (map[string]interface{}, common.ErrorCode, error) {
+	fileSvc := &FileService{
+		fileDAO:          s.fileDAO,
+		file2DocumentDAO: s.file2DocumentDAO,
+	}
+	data, err := fileSvc.UploadFromURL(userID, rawURL)
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+	return data, common.CodeSuccess, nil
+}
+
+func validateBatchUpdateDocumentMetadatasRequest(
+	selector *DocumentMetadataSelector,
+	updates []DocumentMetadataUpdate,
+	deletes []DocumentMetadataDelete,
+) (common.ErrorCode, error) {
+	for _, upd := range updates {
+		if strings.TrimSpace(upd.Key) == "" || upd.Value == nil {
+			return common.CodeDataError, errors.New("Each update requires key and value.")
+		}
+	}
+	for _, del := range deletes {
+		if strings.TrimSpace(del.Key) == "" {
+			return common.CodeDataError, errors.New("Each delete requires key.")
+		}
+	}
+	if selector != nil && selector.MetadataCondition != nil {
+		if _, ok := selector.MetadataCondition["conditions"]; !ok && len(selector.MetadataCondition) > 0 {
+			return common.CodeDataError, errors.New("metadata_condition must be an object.")
+		}
+	}
+	return common.CodeSuccess, nil
+}
+
+func cloneDocumentMetadata(meta map[string]interface{}) map[string]interface{} {
+	if meta == nil {
+		return map[string]interface{}{}
+	}
+	cloned := make(map[string]interface{}, len(meta))
+	for k, v := range meta {
+		cloned[k] = cloneDocumentMetadataValue(v)
+	}
+	return cloned
+}
+
+func cloneDocumentMetadataValue(v interface{}) interface{} {
+	switch typed := v.(type) {
+	case []interface{}:
+		cp := make([]interface{}, len(typed))
+		copy(cp, typed)
+		return cp
+	case []string:
+		cp := make([]interface{}, 0, len(typed))
+		for _, item := range typed {
+			cp = append(cp, item)
+		}
+		return cp
+	default:
+		return typed
+	}
+}
+
+func applyDocumentMetadataUpdates(meta map[string]interface{}, updates []DocumentMetadataUpdate) bool {
+	changed := false
+	for _, upd := range updates {
+		key := strings.TrimSpace(upd.Key)
+		if key == "" {
+			continue
+		}
+		normalizedValue := normalizeDocumentMetadataUpdateValue(upd.Value, upd.ValueType)
+		matchProvided := upd.Match != nil && !(fmt.Sprintf("%v", upd.Match) == "")
+		current, exists := meta[key]
+		if !exists {
+			if matchProvided {
+				continue
+			}
+			if listVal, ok := toMetadataInterfaceSlice(normalizedValue); ok {
+				meta[key] = dedupeDocumentMetadataList(listVal)
+			} else {
+				meta[key] = normalizedValue
+			}
+			changed = true
+			continue
+		}
+
+		if curList, ok := toMetadataInterfaceSlice(current); ok {
+			if !matchProvided {
+				newList := append([]interface{}{}, curList...)
+				if appendList, ok := toMetadataInterfaceSlice(normalizedValue); ok {
+					newList = append(newList, appendList...)
+				} else {
+					newList = append(newList, normalizedValue)
+				}
+				newList = dedupeDocumentMetadataList(newList)
+				if !reflect.DeepEqual(curList, newList) {
+					meta[key] = newList
+					changed = true
+				}
+				continue
+			}
+
+			replaced := false
+			newList := make([]interface{}, 0, len(curList))
+			for _, item := range curList {
+				if documentMetadataValuesEqual(item, upd.Match) {
+					if replacementList, ok := toMetadataInterfaceSlice(normalizedValue); ok {
+						newList = append(newList, replacementList...)
+					} else {
+						newList = append(newList, normalizedValue)
+					}
+					replaced = true
+				} else {
+					newList = append(newList, item)
+				}
+			}
+			newList = dedupeDocumentMetadataList(newList)
+			if replaced && !reflect.DeepEqual(curList, newList) {
+				meta[key] = newList
+				changed = true
+			}
+			continue
+		}
+
+		if !matchProvided {
+			if !reflect.DeepEqual(current, normalizedValue) {
+				meta[key] = normalizedValue
+				changed = true
+			}
+			continue
+		}
+		if documentMetadataValuesEqual(current, upd.Match) && !reflect.DeepEqual(current, normalizedValue) {
+			meta[key] = normalizedValue
+			changed = true
+		}
+	}
+	return changed
+}
+
+func applyDocumentMetadataDeletes(meta map[string]interface{}, deletes []DocumentMetadataDelete) bool {
+	changed := false
+	for _, del := range deletes {
+		key := strings.TrimSpace(del.Key)
+		current, exists := meta[key]
+		if key == "" || !exists {
+			continue
+		}
+
+		if curList, ok := toMetadataInterfaceSlice(current); ok {
+			if del.Value == nil {
+				delete(meta, key)
+				changed = true
+				continue
+			}
+			newList := make([]interface{}, 0, len(curList))
+			for _, item := range curList {
+				if !documentMetadataValuesEqual(item, del.Value) {
+					newList = append(newList, item)
+				}
+			}
+			if len(newList) != len(curList) {
+				if len(newList) == 0 {
+					delete(meta, key)
+				} else {
+					meta[key] = newList
+				}
+				changed = true
+			}
+			continue
+		}
+
+		if del.Value == nil || documentMetadataValuesEqual(current, del.Value) {
+			delete(meta, key)
+			changed = true
+		}
+	}
+	return changed
+}
+
+func toMetadataInterfaceSlice(v interface{}) ([]interface{}, bool) {
+	switch typed := v.(type) {
+	case []interface{}:
+		cp := make([]interface{}, len(typed))
+		copy(cp, typed)
+		return cp, true
+	case []string:
+		cp := make([]interface{}, 0, len(typed))
+		for _, item := range typed {
+			cp = append(cp, item)
+		}
+		return cp, true
+	default:
+		return nil, false
+	}
+}
+
+func dedupeDocumentMetadataList(items []interface{}) []interface{} {
+	result := make([]interface{}, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		key := fmt.Sprintf("%T:%v", item, item)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, item)
+	}
+	return result
+}
+
+func documentMetadataValuesEqual(a, b interface{}) bool {
+	return fmt.Sprintf("%v", a) == fmt.Sprintf("%v", b)
+}
+
+func normalizeDocumentMetadataUpdateValue(value interface{}, valueType string) interface{} {
+	switch strings.ToLower(strings.TrimSpace(valueType)) {
+	case "list":
+		if list, ok := normalizeMetadataListValue(value); ok {
+			return list
+		}
+		return []interface{}{}
+	case "number":
+		scalar, ok := firstScalarMetadataValue(value)
+		if !ok {
+			return value
+		}
+		switch typed := scalar.(type) {
+		case float64, float32, int, int8, int16, int32, int64:
+			return typed
+		case json.Number:
+			if i, err := typed.Int64(); err == nil {
+				return i
+			}
+			if f, err := typed.Float64(); err == nil {
+				return f
+			}
+		case string:
+			trimmed := strings.TrimSpace(typed)
+			if trimmed == "" {
+				return ""
+			}
+			if i, err := strconv.ParseInt(trimmed, 10, 64); err == nil {
+				return i
+			}
+			if f, err := strconv.ParseFloat(trimmed, 64); err == nil {
+				return f
+			}
+			return trimmed
+		}
+		return scalar
+	case "string", "time":
+		if scalar, ok := firstScalarMetadataValue(value); ok {
+			return fmt.Sprintf("%v", scalar)
+		}
+		return ""
+	default:
+		return value
+	}
+}
+
+func normalizeMetadataListValue(value interface{}) ([]interface{}, bool) {
+	switch typed := value.(type) {
+	case []interface{}:
+		result := make([]interface{}, 0, len(typed))
+		for _, item := range typed {
+			if nested, ok := normalizeMetadataListValue(item); ok {
+				result = append(result, nested...)
+				continue
+			}
+			if item != nil {
+				result = append(result, item)
+			}
+		}
+		return result, true
+	case []string:
+		result := make([]interface{}, 0, len(typed))
+		for _, item := range typed {
+			result = append(result, item)
+		}
+		return result, true
+	default:
+		return nil, false
+	}
+}
+
+func firstScalarMetadataValue(value interface{}) (interface{}, bool) {
+	if list, ok := normalizeMetadataListValue(value); ok {
+		for _, item := range list {
+			if item != nil {
+				return item, true
+			}
+		}
+		return nil, false
+	}
+	if value == nil {
+		return nil, false
+	}
+	return value, true
 }

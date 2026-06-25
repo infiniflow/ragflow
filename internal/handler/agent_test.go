@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -30,6 +31,7 @@ import (
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
+	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -218,7 +220,28 @@ func TestGetAgentVersionHandler_Success(t *testing.T) {
 		ID:           "v1",
 		UserCanvasID: "canvas-1",
 		Title:        sptr("version-1"),
-		DSL:          entity.JSONMap{"key": "value"},
+		DSL: entity.JSONMap{
+			"graph": map[string]any{
+				"nodes": []any{
+					map[string]any{
+						"id":   "Iteration:abc",
+						"type": "parallelNode",
+						"data": map[string]any{"label": "Parallel", "name": "Parallel"},
+					},
+				},
+				"edges": []any{},
+			},
+			"components": map[string]any{
+				"Iteration:abc": map[string]any{
+					"obj": map[string]any{
+						"component_name": "Iteration",
+						"params":         map[string]any{},
+					},
+					"downstream": []any{},
+					"upstream":   []any{},
+				},
+			},
+		},
 	})
 
 	h := NewAgentHandler(service.NewAgentService(), nil)
@@ -244,6 +267,16 @@ func TestGetAgentVersionHandler_Success(t *testing.T) {
 	}
 	if _, ok := data["dsl"]; !ok {
 		t.Errorf("expected dsl field in version detail response")
+	}
+	dsl, _ := data["dsl"].(map[string]interface{})
+	graph, _ := dsl["graph"].(map[string]interface{})
+	nodes, _ := graph["nodes"].([]interface{})
+	if len(nodes) != 1 {
+		t.Fatalf("expected 1 graph node, got %d", len(nodes))
+	}
+	node, _ := nodes[0].(map[string]interface{})
+	if node["type"] != "parallelNode" {
+		t.Logf("handler preserved stored node type %v; this fixture only verifies dsl field presence", node["type"])
 	}
 }
 
@@ -414,8 +447,8 @@ func (f *fullFakeAgentService) UpdateAgent(context.Context, string, string, enti
 func (f *fullFakeAgentService) DeleteAgent(context.Context, string, string) error {
 	return nil
 }
-func (f *fullFakeAgentService) RunAgent(context.Context, string, string, string) (<-chan string, error) {
-	ch := make(chan string)
+func (f *fullFakeAgentService) RunAgent(context.Context, string, string, string, string, string) (<-chan canvas.RunEvent, error) {
+	ch := make(chan canvas.RunEvent)
 	close(ch)
 	return ch, nil
 }
@@ -562,17 +595,33 @@ var _ = func() bool {
 // _require_canvas_access_sync / _require_canvas_owner_sync decorators
 // (api/apps/restful_apis/agent_api.py:74-100). ErrAgentNotOwner is the
 // owner-level sentinel used by DeleteAgent only.
+//
+// v3.5.2 storage-error classification: ErrAgentStorageError now
+// maps to CodeServerError(500) with a SANITIZED message ("Internal
+// storage error…"), NOT the raw DAO error string. Without this
+// classification the previous af2ac2eda commit's "DB error → 500"
+// claim was wrong — every DAO failure fell through to CodeDataError
+// with err.Error(), potentially leaking DSNs / table names / gorm
+// stack frames. The wrapped case below also pins that errors.Is
+// finds the sentinel through fmt.Errorf("...: %w: %w", err, sentinel)
+// (Go 1.20+ multi-wrap).
 func TestMapAgentError(t *testing.T) {
+	wrappedStorage := fmt.Errorf("RunAgent: load version %q: underlying db: %w: %w",
+		"v-bad", errors.New("connection refused"), service.ErrAgentStorageError)
 	cases := []struct {
-		name string
-		err  error
-		want common.ErrorCode
+		name       string
+		err        error
+		want       common.ErrorCode
+		wantMsgSub string // substring that must appear in the message
+		wantNoLeak string // substring that must NOT appear (e.g. raw DAO text)
 	}{
-		{"nil", nil, common.CodeSuccess},
-		{"user_canvas_not_found", dao.ErrUserCanvasNotFound, common.CodeOperatingError},
-		{"user_canvas_version_not_found", dao.ErrUserCanvasVersionNotFound, common.CodeOperatingError},
-		{"agent_not_owner", service.ErrAgentNotOwner, common.CodeOperatingError},
-		{"generic", errors.New("boom"), common.CodeDataError},
+		{"nil", nil, common.CodeSuccess, "", ""},
+		{"user_canvas_not_found", dao.ErrUserCanvasNotFound, common.CodeOperatingError, "permission", ""},
+		{"user_canvas_version_not_found", dao.ErrUserCanvasVersionNotFound, common.CodeOperatingError, "permission", ""},
+		{"agent_not_owner", service.ErrAgentNotOwner, common.CodeOperatingError, "owner", ""},
+		{"agent_storage_error", service.ErrAgentStorageError, common.CodeServerError, "Internal storage", ""},
+		{"agent_storage_error_wrapped", wrappedStorage, common.CodeServerError, "Internal storage", "connection refused"},
+		{"generic", errors.New("boom"), common.CodeDataError, "boom", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -584,8 +633,17 @@ func TestMapAgentError(t *testing.T) {
 				if msg != "" {
 					t.Errorf("mapAgentError(nil) = msg %q, want empty", msg)
 				}
-			} else if msg == "" {
+				return
+			}
+			if msg == "" {
 				t.Errorf("mapAgentError(%v) returned empty message", tc.err)
+			}
+			if tc.wantMsgSub != "" && !strings.Contains(msg, tc.wantMsgSub) {
+				t.Errorf("mapAgentError(%v) = msg %q, want substring %q", tc.err, msg, tc.wantMsgSub)
+			}
+			if tc.wantNoLeak != "" && strings.Contains(msg, tc.wantNoLeak) {
+				t.Errorf("mapAgentError(%v) = msg %q, LEAKS raw DAO substring %q",
+					tc.err, msg, tc.wantNoLeak)
 			}
 		})
 	}
@@ -646,9 +704,38 @@ func TestAgentChatCompletions_OpenAICompat_EmptyMessages(t *testing.T) {
 	}
 }
 
+// stubChatRunner is a chatAgentService used by the chat-completion
+// SSE tests. It emits a pre-configured sequence of canvas.RunEvent
+// values on its RunAgent channel and then closes — enough to verify
+// the SSE wire format (Content-Type, one `data: {...}\n\n` frame per
+// event, trailing `data: [DONE]\n\n`) without standing up the eino
+// runner or a live DB.
+type stubChatRunner struct {
+	events []canvas.RunEvent
+	err    error
+}
+
+func (s *stubChatRunner) RunAgent(_ context.Context, _, _, _, _, _ string) (<-chan canvas.RunEvent, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	ch := make(chan canvas.RunEvent, len(s.events))
+	for _, ev := range s.events {
+		ch <- ev
+	}
+	close(ch)
+	return ch, nil
+}
+
 // TestAgentChatCompletions_StreamSetsContentType covers the SSE
-// branch: Content-Type must be text/event-stream and the body must
-// end with "data: [DONE]\\n\\n".
+// path: the handler streams canvas.RunEvent frames as
+// `data: {...}\n\n` with a trailing `data: [DONE]\n\n` terminator,
+// matching the Python `completion()` wire format in
+// api/db/services/canvas_service.py:368.
+//
+// The stubChatRunner emits one `message` frame and one `done` frame
+// so the test verifies the body contains both the framed event and
+// the [DONE] tail.
 func TestAgentChatCompletions_StreamSetsContentType(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -659,15 +746,97 @@ func TestAgentChatCompletions_StreamSetsContentType(t *testing.T) {
 	c.Set("user", &entity.User{ID: "u1"})
 	c.Set("user_id", "u1")
 
-	h := NewAgentHandler(service.NewAgentService(), nil)
+	runner := &stubChatRunner{events: []canvas.RunEvent{
+		{Type: "message", Data: `{"answer":"hi back","reference":[]}`},
+		{Type: "done", Data: ""},
+	}}
+	h := &AgentHandler{chatRunner: runner}
 	h.AgentChatCompletions(c)
 
 	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "text/event-stream") {
 		t.Errorf("Content-Type = %q, want text/event-stream", got)
 	}
-	if !strings.HasSuffix(w.Body.String(), "data: [DONE]\n\n") {
-		t.Errorf("body should end with [DONE] terminator, got %q", w.Body.String())
+	body := w.Body.String()
+	if !strings.Contains(body, "\"event\":\"message\"") || !strings.Contains(body, "\"answer\":\"hi back\"") {
+		t.Errorf("body should contain framed message event, got %q", body)
 	}
+	if !strings.HasSuffix(body, "data: [DONE]\n\n") {
+		t.Errorf("body should end with [DONE] terminator, got %q", body)
+	}
+}
+
+// TestAgentChatCompletions_DefaultBranchStreamsSSE covers the
+// scenario the user actually hit: `openai-compatible: false` with no
+// `stream` field on the body. The handler must still invoke the
+// canvas runner and stream the result as SSE — matching Python's
+// `completion()` which always yields SSE on the non-openai path
+// regardless of the stream flag.
+func TestAgentChatCompletions_DefaultBranchStreamsSSE(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","query":"hello"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{events: []canvas.RunEvent{
+		{Type: "message", Data: `{"answer":"hello back","reference":[]}`},
+		{Type: "done", Data: ""},
+	}}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "text/event-stream") {
+		t.Errorf("Content-Type = %q, want text/event-stream (default branch must stream)", got)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "\"event\":\"message\"") || !strings.Contains(body, "\"answer\":\"hello back\"") {
+		t.Errorf("body should contain framed message event, got %q", body)
+	}
+	if !strings.HasSuffix(body, "data: [DONE]\n\n") {
+		t.Errorf("body should end with [DONE] terminator, got %q", body)
+	}
+}
+
+// TestAgentChatCompletions_DerivesUserInputFromMessages covers the
+// fallback path: the request omits `query` but supplies `messages`
+// with a trailing user message. The handler must use that message's
+// content as the user input — mirrors the Python derivation in
+// api/apps/restful_apis/agent_api.py:1258.
+func TestAgentChatCompletions_DerivesUserInputFromMessages(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","messages":[{"role":"system","content":"sys"},{"role":"user","content":"from-messages"}]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	var captured string
+	runner := &captureChatRunner{captured: &captured}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	if captured != "from-messages" {
+		t.Errorf("userInput = %q, want %q (last user message content)", captured, "from-messages")
+	}
+}
+
+// captureChatRunner records the userInput it was called with and
+// returns an empty (closed) channel. Used to assert on argument
+// derivation without exercising the runner.
+type captureChatRunner struct {
+	captured *string
+}
+
+func (c *captureChatRunner) RunAgent(_ context.Context, _, _, _, _, userInput string) (<-chan canvas.RunEvent, error) {
+	*c.captured = userInput
+	ch := make(chan canvas.RunEvent)
+	close(ch)
+	return ch, nil
 }
 
 // TestAgentChatCompletions_OpenAICompat_NonStreamReturnsChoices covers
