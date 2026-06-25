@@ -251,15 +251,15 @@ func WriteExcel(path string, diffs []Diff) error {
 		Alignment: &excelize.Alignment{Horizontal: "center"},
 	})
 	greenStyle, _ := f.NewStyle(&excelize.Style{
-		Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"C6EFCE"}},
+		Fill:   excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"C6EFCE"}},
 		NumFmt: 2,
 	})
 	yellowStyle, _ := f.NewStyle(&excelize.Style{
-		Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"FFEB9C"}},
+		Fill:   excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"FFEB9C"}},
 		NumFmt: 2,
 	})
 	redStyle, _ := f.NewStyle(&excelize.Style{
-		Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"FFC7CE"}},
+		Fill:   excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"FFC7CE"}},
 		NumFmt: 2,
 	})
 
@@ -326,6 +326,7 @@ func cellName(col, row int) string {
 	s, _ := excelize.CoordinatesToCellName(col, row)
 	return s
 }
+
 // including per-cell text comparison.
 func CompareTablesWithPython(log TLogger, goTablesDir, pyTablesDir string) {
 	goEntries, err := os.ReadDir(goTablesDir)
@@ -480,8 +481,8 @@ func CompareTablesWithPython(log TLogger, goTablesDir, pyTablesDir string) {
 // ── DLA intermediate comparison ──────────────────────────────────────────
 
 type jsonDlaPage struct {
-	Page    int              `json:"page"`
-	Regions []jsonDlaRegion  `json:"regions"`
+	Page    int             `json:"page"`
+	Regions []jsonDlaRegion `json:"regions"`
 }
 type jsonDlaRegion struct {
 	Label string  `json:"label"` // Go uses "label"
@@ -523,7 +524,7 @@ func CompareDLAWithPython(log TLogger, goDLADir, pyDLADir string) {
 		matched++
 		goRegions, pyRegions := 0, 0
 		goTables, pyTables := 0, 0
-	for _, p := range goPages {
+		for _, p := range goPages {
 			goRegions += len(p.Regions)
 			for _, r := range p.Regions {
 				if dlaRegionIsTable(r) {

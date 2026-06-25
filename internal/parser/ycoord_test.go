@@ -18,7 +18,7 @@ import (
 // require the "manual" build tag and rely on optional fixture files.
 func openTestingPDF(t *testing.T, name string) (PDFEngine, *pdfoxide.Document) {
 	t.Helper()
-	const dir = filepath.Join("testdata", "real_pdfs")
+	dir := filepath.Join("testdata", "real_pdfs")
 	if _, err := os.Stat(filepath.Join(dir, name)); os.IsNotExist(err) {
 		t.Skipf("test PDF not found: %s", name)
 	}

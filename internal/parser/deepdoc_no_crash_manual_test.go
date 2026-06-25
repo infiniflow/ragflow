@@ -11,6 +11,23 @@ import (
 	"testing"
 )
 
+// mustConnectDeepDoc returns a DeepDocClient; skips the test if unavailable.
+func mustConnectDeepDoc(t *testing.T) *DeepDocClient {
+	t.Helper()
+	url := os.Getenv("DEEPDOC_URL")
+	if url == "" {
+		url = "http://localhost:8000"
+	}
+	client, err := NewDeepDocClient(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !client.Health() {
+		t.Fatalf("DeepDoc not available at %s", url)
+	}
+	return client
+}
+
 // TestIntegration_NoCrash runs Parse on every small fixture PDF and checks it
 // does not panic or error. It does NOT require golden files.
 //

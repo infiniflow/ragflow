@@ -26,9 +26,9 @@ func LoadConfig() Config {
 	pyVariant := "ocr"
 	td := filepath.Join("testdata")
 	return Config{
-		Count:   envInt("BATCH_COUNT", 0),
-		Single:  os.Getenv("BATCH_SINGLE"),
-		SkipOCR: os.Getenv("BATCH_SKIP_OCR") == "1",
+		Count:         envInt("BATCH_COUNT", 0),
+		Single:        os.Getenv("BATCH_SINGLE"),
+		SkipOCR:       os.Getenv("BATCH_SKIP_OCR") == "1",
 		CompareOnly:   os.Getenv("BATCH_COMPARE_ONLY") == "1",
 		CompareFilter: os.Getenv("BATCH_COMPARE_FILTER"),
 		CSVOutput:     envStr("BATCH_COMPARE_CSV", filepath.Join(td, "output", fmt.Sprintf("compare_%s.csv", time.Now().Format("20060102_150405")))),

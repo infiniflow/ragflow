@@ -55,36 +55,36 @@ func (FileCommitItem) TableName() string {
 
 // TreeNode represents a file node in the commit tree state snapshot.
 type TreeNode struct {
-	ID          string      `json:"id"`
-	Name        string      `json:"name"`
-	Type        string      `json:"type"`        // "file" or "folder"
-	Hash        string      `json:"hash,omitempty"`
-	Location    string      `json:"location,omitempty"`
-	Size        int64       `json:"size,omitempty"`
-	Status      string      `json:"status"`       // "1" = active, "0" = deleted
-	Children    []*TreeNode `json:"children,omitempty"`
+	ID       string      `json:"id"`
+	Name     string      `json:"name"`
+	Type     string      `json:"type"` // "file" or "folder"
+	Hash     string      `json:"hash,omitempty"`
+	Location string      `json:"location,omitempty"`
+	Size     int64       `json:"size,omitempty"`
+	Status   string      `json:"status"` // "1" = active, "0" = deleted
+	Children []*TreeNode `json:"children,omitempty"`
 }
 
 // FileChange represents a file change in a commit request.
 type FileChange struct {
-	FileID   string `json:"file_id"`
-	FileName string `json:"file_name"`
+	FileID    string `json:"file_id"`
+	FileName  string `json:"file_name"`
 	Operation string `json:"operation"` // "add", "modify", "delete", "rename"
-	Content  string `json:"content,omitempty"`
-	OldName  string `json:"old_name,omitempty"`
-	NewName  string `json:"new_name,omitempty"`
+	Content   string `json:"content,omitempty"`
+	OldName   string `json:"old_name,omitempty"`
+	NewName   string `json:"new_name,omitempty"`
 }
 
 // CommitResponse is the API response for a commit.
 type CommitResponse struct {
-	ID        string  `json:"id"`
-	FolderID  string  `json:"folder_id"`
-	ParentID  *string `json:"parent_id,omitempty"`
-	Message   string  `json:"message"`
-	AuthorID  string  `json:"author_id"`
-	FileCount int     `json:"file_count"`
-	TreeState *string `json:"tree_state,omitempty"`
-	CreateTime *int64 `json:"create_time,omitempty"`
+	ID         string  `json:"id"`
+	FolderID   string  `json:"folder_id"`
+	ParentID   *string `json:"parent_id,omitempty"`
+	Message    string  `json:"message"`
+	AuthorID   string  `json:"author_id"`
+	FileCount  int     `json:"file_count"`
+	TreeState  *string `json:"tree_state,omitempty"`
+	CreateTime *int64  `json:"create_time,omitempty"`
 }
 
 // DiffEntry represents a single diff entry between two commits.
@@ -100,9 +100,9 @@ type DiffEntry struct {
 
 // VersionEntry represents a single version in a file's version history.
 type VersionEntry struct {
-	CommitID   string  `json:"commit_id"`
-	Operation  string  `json:"operation"`
-	Hash       string  `json:"hash"`
-	CreateTime *int64  `json:"create_time,omitempty"`
-	Message    string  `json:"message"`
+	CommitID   string `json:"commit_id"`
+	Operation  string `json:"operation"`
+	Hash       string `json:"hash"`
+	CreateTime *int64 `json:"create_time,omitempty"`
+	Message    string `json:"message"`
 }

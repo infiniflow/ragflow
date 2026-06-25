@@ -17,18 +17,18 @@ type BatchResult struct {
 
 // PyResult mirrors Python dump_py_results.py output.
 type PyResult struct {
-	File                 string  `json:"file"`
-	Pages                int     `json:"pages"`
-	Chars                int     `json:"chars"`
-	BoxesInitial  int `json:"boxes_initial"`
-	BoxesTextMerge int `json:"boxes_text_merge"`
-	BoxesVertMerge int `json:"boxes_vertical_merge"`
-	Sections      int `json:"sections"`
-	Tables               int     `json:"tables"`
-	TextLen              int     `json:"text_len"`
-	IsEnglish            *bool   `json:"is_english"`
-	TimeS                float64 `json:"time_s"`
-	Error                string  `json:"error,omitempty"`
+	File           string  `json:"file"`
+	Pages          int     `json:"pages"`
+	Chars          int     `json:"chars"`
+	BoxesInitial   int     `json:"boxes_initial"`
+	BoxesTextMerge int     `json:"boxes_text_merge"`
+	BoxesVertMerge int     `json:"boxes_vertical_merge"`
+	Sections       int     `json:"sections"`
+	Tables         int     `json:"tables"`
+	TextLen        int     `json:"text_len"`
+	IsEnglish      *bool   `json:"is_english"`
+	TimeS          float64 `json:"time_s"`
+	Error          string  `json:"error,omitempty"`
 }
 
 // TableItem stores per-table output.

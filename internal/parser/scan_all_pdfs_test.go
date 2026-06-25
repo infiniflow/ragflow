@@ -12,6 +12,41 @@ import (
 	"testing"
 )
 
+// mustConnectOssDeepDoc returns a DeepDocClient pointed at the OSS service.
+func mustConnectOssDeepDoc(t *testing.T) *DeepDocClient {
+	t.Helper()
+	url := os.Getenv("OSSDEEPDOC_URL")
+	if url == "" {
+		url = "http://localhost:8124"
+	}
+	client, err := NewDeepDocClient(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !client.Health() {
+		t.Fatalf("OssDeepDoc not available at %s", url)
+	}
+	if client.ModelType() != ModelOSS {
+		t.Skipf("DeepDoc at %s is %q, not oss — skipping OSS-specific test", url, client.ModelType())
+	}
+	return client
+}
+
+// mustOpenEngine opens a PDF from testdata/pdfs/ and returns a PDFEngine.
+func mustOpenEngine(t *testing.T, name string) PDFEngine {
+	t.Helper()
+	pdfPath := filepath.Join("testdata", "pdfs", name)
+	data, err := os.ReadFile(pdfPath)
+	if err != nil {
+		t.Fatalf("read fixture %s: %v", name, err)
+	}
+	eng, err := NewEngine(data)
+	if err != nil {
+		t.Fatalf("open engine %s: %v", name, err)
+	}
+	return eng
+}
+
 // TestScanAllPDFs iterates over all PDFs in testdata/pdfs/, parses each
 // with OssDeepDoc TSR, and prints a summary. Run with:
 //

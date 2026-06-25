@@ -19,31 +19,46 @@ func CharSimilarity(a, b string) float64 {
 	extract := func(s string) map[rune]int {
 		m := make(map[rune]int)
 		for _, r := range s {
-			if !unicode.IsSpace(r) { m[r]++ }
+			if !unicode.IsSpace(r) {
+				m[r]++
+			}
 		}
 		return m
 	}
 	ca, cb := extract(a), extract(b)
-	if len(ca) == 0 && len(cb) == 0 { return 100 }
+	if len(ca) == 0 && len(cb) == 0 {
+		return 100
+	}
 	common, totalA, totalB := 0, 0, 0
 	for r, n := range ca {
 		totalA += n
-		if n2, ok := cb[r]; ok { common += min(n, n2) }
+		if n2, ok := cb[r]; ok {
+			common += min(n, n2)
+		}
 	}
-	for _, n := range cb { totalB += n }
-	if totalA+totalB == 0 { return 100 }
+	for _, n := range cb {
+		totalB += n
+	}
+	if totalA+totalB == 0 {
+		return 100
+	}
 	return float64(common*2) / float64(totalA+totalB) * 100
 }
 
 func lcsRunes(a, b []rune) int {
-	if len(a) < len(b) { a, b = b, a }
+	if len(a) < len(b) {
+		a, b = b, a
+	}
 	m, n := len(b), len(a)
 	prev := make([]int, m+1)
 	cur := make([]int, m+1)
 	for i := 1; i <= n; i++ {
 		for j := 1; j <= m; j++ {
-			if a[i-1] == b[j-1] { cur[j] = prev[j-1] + 1
-			} else { cur[j] = max(cur[j-1], prev[j]) }
+			if a[i-1] == b[j-1] {
+				cur[j] = prev[j-1] + 1
+			} else {
+				cur[j] = max(cur[j-1], prev[j])
+			}
 		}
 		prev, cur = cur, prev
 	}
@@ -51,43 +66,74 @@ func lcsRunes(a, b []rune) int {
 }
 
 func LcsSimilarity(a, b string) float64 {
-	a = StripMeta(a); b = StripMeta(b)
+	a = StripMeta(a)
+	b = StripMeta(b)
 	ra := make([]rune, 0)
-	for _, r := range a { if !unicode.IsSpace(r) { ra = append(ra, r) } }
+	for _, r := range a {
+		if !unicode.IsSpace(r) {
+			ra = append(ra, r)
+		}
+	}
 	rb := make([]rune, 0)
-	for _, r := range b { if !unicode.IsSpace(r) { rb = append(rb, r) } }
-	if len(ra) == 0 && len(rb) == 0 { return 100 }
-	if len(ra) == 0 || len(rb) == 0 { return 0 }
+	for _, r := range b {
+		if !unicode.IsSpace(r) {
+			rb = append(rb, r)
+		}
+	}
+	if len(ra) == 0 && len(rb) == 0 {
+		return 100
+	}
+	if len(ra) == 0 || len(rb) == 0 {
+		return 0
+	}
 	return float64(lcsRunes(ra, rb)) / float64(max(len(ra), len(rb))) * 100
 }
 
 // RawCharSimilarity is CharSimilarity without space stripping — spaces
 // count as characters.  Still strips #@meta lines.
 func RawCharSimilarity(a, b string) float64 {
-	a = StripMeta(a); b = StripMeta(b)
+	a = StripMeta(a)
+	b = StripMeta(b)
 	ca := make(map[rune]int)
-	for _, r := range a { ca[r]++ }
+	for _, r := range a {
+		ca[r]++
+	}
 	cb := make(map[rune]int)
-	for _, r := range b { cb[r]++ }
-	if len(ca) == 0 && len(cb) == 0 { return 100 }
+	for _, r := range b {
+		cb[r]++
+	}
+	if len(ca) == 0 && len(cb) == 0 {
+		return 100
+	}
 	common, totalA, totalB := 0, 0, 0
 	for r, n := range ca {
 		totalA += n
-		if n2, ok := cb[r]; ok { common += min(n, n2) }
+		if n2, ok := cb[r]; ok {
+			common += min(n, n2)
+		}
 	}
-	for _, n := range cb { totalB += n }
-	if totalA+totalB == 0 { return 100 }
+	for _, n := range cb {
+		totalB += n
+	}
+	if totalA+totalB == 0 {
+		return 100
+	}
 	return float64(common*2) / float64(totalA+totalB) * 100
 }
 
 // RawLcsSimilarity is LcsSimilarity without space stripping — whitespace
 // is kept in the LCS comparison.  Still strips #@meta lines.
 func RawLcsSimilarity(a, b string) float64 {
-	a = StripMeta(a); b = StripMeta(b)
+	a = StripMeta(a)
+	b = StripMeta(b)
 	ra := []rune(a)
 	rb := []rune(b)
-	if len(ra) == 0 && len(rb) == 0 { return 100 }
-	if len(ra) == 0 || len(rb) == 0 { return 0 }
+	if len(ra) == 0 && len(rb) == 0 {
+		return 100
+	}
+	if len(ra) == 0 || len(rb) == 0 {
+		return 0
+	}
 	return float64(lcsRunes(ra, rb)) / float64(max(len(ra), len(rb))) * 100
 }
 
@@ -107,9 +153,14 @@ func SectionAlignedScore(goText, pyText string) float64 {
 		s = StripMeta(s)
 		return strings.Split(strings.TrimSpace(s), "\n")
 	}
-	gs := split(goText); ps := split(pyText)
-	if len(gs) == 0 && len(ps) == 0 { return 100 }
-	if len(gs) == 0 || len(ps) == 0 { return 0 }
+	gs := split(goText)
+	ps := split(pyText)
+	if len(gs) == 0 && len(ps) == 0 {
+		return 100
+	}
+	if len(gs) == 0 || len(ps) == 0 {
+		return 0
+	}
 
 	// Phase 1: Position-window greedy matching.
 	// Sections are ordered top-to-bottom by page position, so a global
@@ -156,7 +207,9 @@ func SectionAlignedScore(goText, pyText string) float64 {
 	matchedChars := 0
 
 	for _, c := range candidates {
-		if goUsed[c.gi] || pyUsed[c.pi] { continue }
+		if goUsed[c.gi] || pyUsed[c.pi] {
+			continue
+		}
 		goUsed[c.gi] = true
 		pyUsed[c.pi] = true
 
@@ -177,10 +230,16 @@ func SectionAlignedScore(goText, pyText string) float64 {
 	// Phase 2: Residual — concat unmatched sections, compute LCS once.
 	var goRes, pyRes strings.Builder
 	for i, g := range gs {
-		if !goUsed[i] { goRes.WriteString(g); goRes.WriteByte(' ') }
+		if !goUsed[i] {
+			goRes.WriteString(g)
+			goRes.WriteByte(' ')
+		}
 	}
 	for j, p := range ps {
-		if !pyUsed[j] { pyRes.WriteString(p); pyRes.WriteByte(' ') }
+		if !pyUsed[j] {
+			pyRes.WriteString(p)
+			pyRes.WriteByte(' ')
+		}
 	}
 
 	residualScore := 0.0
@@ -201,14 +260,18 @@ func SectionAlignedScore(goText, pyText string) float64 {
 
 	// Weighted average.
 	totalChars := matchedChars + residualChars
-	if totalChars == 0 { return 100 }
+	if totalChars == 0 {
+		return 100
+	}
 	return (matchedScore + residualScore*float64(residualChars)) / float64(totalChars)
 }
 
 func nonSpaceRunes(s string) []rune {
 	out := make([]rune, 0, len(s))
 	for _, r := range s {
-		if !unicode.IsSpace(r) { out = append(out, r) }
+		if !unicode.IsSpace(r) {
+			out = append(out, r)
+		}
 	}
 	return out
 }

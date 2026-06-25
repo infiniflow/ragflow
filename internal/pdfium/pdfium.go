@@ -95,7 +95,7 @@ func RenderPage(pdfData []byte, pageIdx int, dpi float64) (*image.RGBA, error) {
 	// (e.g. outside crop box) are white rather than undefined.
 	stride := int(C.FPDFBitmap_GetStride(bitmap))
 	buf := C.FPDFBitmap_GetBuffer(bitmap)
-	pixels := (*[1 << 30]byte)(unsafe.Pointer(buf))[:pxH*stride : pxH*stride]
+	pixels := (*[1 << 30]byte)(unsafe.Pointer(buf))[: pxH*stride : pxH*stride]
 	for i := range pixels {
 		pixels[i] = 255
 	}

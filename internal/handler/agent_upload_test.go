@@ -24,8 +24,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/glebarez/sqlite"
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
 	"ragflow/internal/common"
@@ -58,10 +58,10 @@ func setupUploadTestDB(t *testing.T) *gorm.DB {
 
 // fakeUploadFileService implements fileUploader for tests.
 type fakeUploadFileService struct {
-	uploaded      []map[string]interface{}
-	err           error
-	lastTenantID  string
-	lastParentID  string
+	uploaded     []map[string]interface{}
+	err          error
+	lastTenantID string
+	lastParentID string
 }
 
 func (f *fakeUploadFileService) UploadFile(tenantID, parentID string, files []*multipart.FileHeader) ([]map[string]interface{}, error) {

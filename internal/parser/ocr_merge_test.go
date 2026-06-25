@@ -3,6 +3,7 @@
 package parser
 
 import (
+	"context"
 	"image/png"
 	"os"
 	"strings"

@@ -11,12 +11,12 @@ import (
 
 // Char represents a single character extracted from a PDF page.
 type Char struct {
-	X0, X1     float64
+	X0, X1      float64
 	Top, Bottom float64
-	Text       string
-	FontName   string
-	FontSize   float64
-	PageNumber int
+	Text        string
+	FontName    string
+	FontSize    float64
+	PageNumber  int
 }
 
 // Engine wraps pdf_oxide to extract chars and render pages.
