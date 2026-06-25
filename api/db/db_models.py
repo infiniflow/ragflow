@@ -529,6 +529,8 @@ def with_retry(max_retries=3, retry_delay=1.0):
             for retry in range(max_retries):
                 try:
                     return func(*args, **kwargs)
+                except PostgresLockTimeoutError:
+                    raise
                 except Exception as e:
                     last_exception = e
                     # get self and method name for logging
@@ -552,6 +554,10 @@ def with_retry(max_retries=3, retry_delay=1.0):
     return decorator
 
 
+class PostgresLockTimeoutError(Exception):
+    """Raised when PostgreSQL advisory lock acquisition exceeds lock_timeout."""
+
+
 class PostgresDatabaseLock:
     def __init__(self, lock_name, timeout=10, db=None):
         self.lock_name = lock_name
@@ -566,6 +572,10 @@ class PostgresDatabaseLock:
 
     def _reset_lock_timeout(self):
         self.db.execute_sql("SET lock_timeout = DEFAULT")
+        logging.debug(
+            "PostgreSQL lock_timeout reset to DEFAULT after advisory lock %s",
+            self.lock_name,
+        )
 
     @with_retry(max_retries=3, retry_delay=1.0)
     def lock(self):
@@ -575,10 +585,17 @@ class PostgresDatabaseLock:
         try:
             self.db.execute_sql("SET lock_timeout = %s", (lock_timeout_value,))
             self.db.execute_sql("SELECT pg_advisory_lock(%s)", (self.lock_id,))
+            logging.debug(
+                "PostgreSQL advisory lock acquired: %s (lock_id=%s)",
+                self.lock_name,
+                self.lock_id,
+            )
             return True
         except OperationalError as e:
             if self.timeout >= 0 and self._is_lock_timeout_error(e):
-                raise Exception(f"acquire postgres lock {self.lock_name} timeout") from e
+                raise PostgresLockTimeoutError(
+                    f"acquire postgres lock {self.lock_name} timeout"
+                ) from e
             raise
         finally:
             try:
@@ -596,6 +613,11 @@ class PostgresDatabaseLock:
         if ret[0] == 0:
             raise Exception(f"postgres lock {self.lock_name} was not established by this thread")
         elif ret[0] == 1:
+            logging.debug(
+                "PostgreSQL advisory lock released: %s (lock_id=%s)",
+                self.lock_name,
+                self.lock_id,
+            )
             return True
         else:
             raise Exception(f"postgres lock {self.lock_name} does not exist")

@@ -7,10 +7,11 @@ from unittest.mock import MagicMock
 import pytest
 from peewee import OperationalError
 
-from api.db.db_models import PostgresDatabaseLock
+from api.db.db_models import PostgresDatabaseLock, PostgresLockTimeoutError
 
 
 class TestPostgresDatabaseLock:
+    @pytest.mark.p1
     def test_lock_blocks_indefinitely_when_timeout_negative(self):
         db = MagicMock()
         lock = PostgresDatabaseLock("update_progress", timeout=-1, db=db)
@@ -23,6 +24,7 @@ class TestPostgresDatabaseLock:
             (("SET lock_timeout = DEFAULT",),),
         ]
 
+    @pytest.mark.p2
     def test_lock_uses_postgres_lock_timeout(self):
         db = MagicMock()
         lock = PostgresDatabaseLock("update_progress", timeout=5, db=db)
@@ -35,6 +37,7 @@ class TestPostgresDatabaseLock:
             (("SET lock_timeout = DEFAULT",),),
         ]
 
+    @pytest.mark.p2
     def test_lock_raises_when_postgres_lock_timeout(self):
         db = MagicMock()
         db.execute_sql.side_effect = [
@@ -44,7 +47,8 @@ class TestPostgresDatabaseLock:
         ]
         lock = PostgresDatabaseLock("update_progress", timeout=5, db=db)
 
-        with pytest.raises(Exception, match="acquire postgres lock update_progress timeout"):
+        with pytest.raises(PostgresLockTimeoutError, match="acquire postgres lock update_progress timeout"):
             lock.lock()
 
+        assert db.execute_sql.call_count == 3
         db.execute_sql.assert_any_call("SET lock_timeout = DEFAULT")
