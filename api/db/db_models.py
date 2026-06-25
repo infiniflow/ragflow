@@ -330,6 +330,24 @@ class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
         return None
 
 
+_PG_CONNECTION_ERROR_MARKERS = (
+    "connection",
+    "server closed",
+    "connection refused",
+    "no connection to the server",
+    "terminating connection",
+)
+
+
+def _is_postgresql_connection_error(exc):
+    if isinstance(exc, InterfaceError):
+        return True
+    if isinstance(exc, OperationalError):
+        err = str(exc).lower()
+        return any(marker in err for marker in _PG_CONNECTION_ERROR_MARKERS)
+    return False
+
+
 class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
     def __init__(self, *args, **kwargs):
         self.max_retries = kwargs.pop("max_retries", 5)
@@ -348,10 +366,7 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
                 # 08006: connection_failure
                 # 08003: connection_does_not_exist
                 # 08000: connection_exception
-                error_messages = ['connection', 'server closed', 'connection refused',
-                                'no connection to the server', 'terminating connection']
-
-                should_retry = any(msg in str(e).lower() for msg in error_messages)
+                should_retry = _is_postgresql_connection_error(e)
 
                 if should_retry and attempt < self.max_retries:
                     logging.warning(
@@ -388,7 +403,7 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
                 error_messages = ['connection', 'server closed', 'connection refused',
                                 'no connection to the server', 'terminating connection']
 
-                should_retry = any(msg in str(e).lower() for msg in error_messages)
+                should_retry = _is_postgresql_connection_error(e)
 
                 if should_retry and attempt < self.max_retries:
                     logging.warning(
@@ -572,6 +587,22 @@ class PostgresDatabaseLock:
         err = str(exc).lower()
         return "lock timeout" in err or "55p03" in err
 
+    def _lock_retry_budget(self):
+        max_retries = getattr(self.db, "max_retries", 2)
+        retry_delay = getattr(self.db, "retry_delay", 1.0)
+        return max_retries + 1, retry_delay
+
+    def _reconnect_db(self):
+        handler = getattr(self.db, "_handle_connection_loss", None)
+        if callable(handler):
+            handler()
+            return
+        try:
+            self.db.close()
+        except Exception:
+            pass
+        self.db.connect()
+
     def _reset_lock_timeout(self):
         self.db.execute_sql("SET lock_timeout = DEFAULT")
         logging.debug(
@@ -582,14 +613,57 @@ class PostgresDatabaseLock:
     def _acquire_lock(self):
         # Keep lock_timeout set for the whole critical section; reset only in _release_lock().
         lock_timeout_value = "0" if self.timeout < 0 else f"{self.timeout}s"
-        self.db.execute_sql("SET lock_timeout = %s", (lock_timeout_value,))
-        self.db.execute_sql("SELECT pg_advisory_lock(%s)", (self.lock_id,))
-        logging.debug(
-            "PostgreSQL advisory lock acquired: %s (lock_id=%s)",
-            self.lock_name,
-            self.lock_id,
-        )
-        return True
+        max_attempts, retry_delay = self._lock_retry_budget()
+        last_exc = None
+
+        for attempt in range(max_attempts):
+            try:
+                self.db.execute_sql("SET lock_timeout = %s", (lock_timeout_value,))
+                self.db.execute_sql("SELECT pg_advisory_lock(%s)", (self.lock_id,))
+                logging.debug(
+                    "PostgreSQL advisory lock acquired: %s (lock_id=%s)",
+                    self.lock_name,
+                    self.lock_id,
+                )
+                return True
+            except OperationalError as e:
+                if self.timeout >= 0 and self._is_lock_timeout_error(e):
+                    raise PostgresLockTimeoutError(
+                        f"acquire postgres lock {self.lock_name} timeout"
+                    ) from e
+                if _is_postgresql_connection_error(e) and attempt < max_attempts - 1:
+                    last_exc = e
+                    logging.warning(
+                        "PostgreSQL connection lost while acquiring advisory lock %s "
+                        "(attempt %s/%s): %s",
+                        self.lock_name,
+                        attempt + 1,
+                        max_attempts,
+                        e,
+                    )
+                    self._reconnect_db()
+                    time.sleep(retry_delay * (2**attempt))
+                    continue
+                raise
+            except InterfaceError as e:
+                if attempt < max_attempts - 1:
+                    last_exc = e
+                    logging.warning(
+                        "PostgreSQL interface error while acquiring advisory lock %s "
+                        "(attempt %s/%s): %s",
+                        self.lock_name,
+                        attempt + 1,
+                        max_attempts,
+                        e,
+                    )
+                    self._reconnect_db()
+                    time.sleep(retry_delay * (2**attempt))
+                    continue
+                raise
+
+        if last_exc:
+            raise last_exc
+        raise RuntimeError(f"failed to acquire postgres lock {self.lock_name}")
 
     def _release_lock(self):
         try:
@@ -624,16 +698,8 @@ class PostgresDatabaseLock:
                     self.lock_name,
                 )
 
-    @with_retry(max_retries=3, retry_delay=1.0)
     def lock(self):
-        try:
-            return self._acquire_lock()
-        except OperationalError as e:
-            if self.timeout >= 0 and self._is_lock_timeout_error(e):
-                raise PostgresLockTimeoutError(
-                    f"acquire postgres lock {self.lock_name} timeout"
-                ) from e
-            raise
+        return self._acquire_lock()
 
     def unlock(self):
         if not self._acquired:
