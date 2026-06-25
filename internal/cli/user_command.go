@@ -39,7 +39,7 @@ import (
 
 // Show server version to show RAGFlow server version
 // Returns benchmark result map if iterations > 1, otherwise prints status
-func (c *CLI) ShowServerVersion(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APIShowVersionCommand(cmd *Command) (ResponseIf, error) {
 	// Get iterations from command params (for benchmark)
 	iterations := 1
 	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
@@ -1099,8 +1099,8 @@ func (c *CLI) APISetAPIKey(cmd *Command) (ResponseIf, error) {
 	return &successResult, nil
 }
 
-// ShowToken displays the current API key
-func (c *CLI) ShowToken(cmd *Command) (ResponseIf, error) {
+// APIShowAPIKeyCommand displays the current API key
+func (c *CLI) APIShowAPIKeyCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
@@ -1109,22 +1109,18 @@ func (c *CLI) ShowToken(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("no API key is currently set")
 	}
 
-	//fmt.Printf("Token: %s\n", c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey)
-
-	var result CommonResponse
+	var result CommonDataResponse
 	result.Code = 0
 	result.Message = ""
-	result.Data = []map[string]interface{}{
-		{
-			"token": c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey,
-		},
+	result.Data = map[string]interface{}{
+		"token": *c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey,
 	}
 	result.Duration = 0
 	return &result, nil
 }
 
-// APIUnsetAPIKey removes the current API key
-func (c *CLI) APIUnsetAPIKey(cmd *Command) (ResponseIf, error) {
+// APIUnsetAPIKeyCommand removes the current API key
+func (c *CLI) APIUnsetAPIKeyCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
@@ -2588,7 +2584,7 @@ func (c *CLI) ParseFileUserCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) ListTasksUserCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APIListModelInstanceTasksCommand(cmd *Command) (ResponseIf, error) {
 	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
 		return nil, fmt.Errorf("API key not set. Please login first")
 	}
@@ -2597,18 +2593,14 @@ func (c *CLI) ListTasksUserCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	var providerName, instanceName string
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("no provider name")
+	}
 
-	// Check if composite_instance_name is provided in command
-	if compositeModelName, ok := cmd.Params["composite_instance_name"].(string); ok && compositeModelName != "" {
-		names := strings.Split(compositeModelName, "@")
-		if len(names) != 2 {
-			return nil, fmt.Errorf("model name must be in format 'instance@provider'")
-		}
-		providerName = names[1]
-		instanceName = names[0]
-	} else {
-		return nil, fmt.Errorf("no provider name or instance name")
+	instanceName, ok := cmd.Params["instance_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("no instance name")
 	}
 
 	url := fmt.Sprintf("/providers/%s/instances/%s/tasks", providerName, instanceName)
