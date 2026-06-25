@@ -14,12 +14,26 @@
 #  limitations under the License.
 #
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 # DeepL component imports the `deepl` SDK at module load; skip where absent.
 pytest.importorskip("deepl")
 
-from agent.tools.deepl import DeepLParam  # noqa: E402
+from agent.tools.deepl import DeepL, DeepLParam  # noqa: E402
+
+
+class _Canvas:
+    def is_canceled(self):
+        return False
+
+
+def _deepl(param=None):
+    cpn = DeepL.__new__(DeepL)
+    cpn._canvas = _Canvas()
+    cpn._param = param or DeepLParam()
+    return cpn
 
 
 def test_check_passes_with_defaults():
@@ -40,3 +54,16 @@ def test_check_rejects_invalid_target_lang():
     param.target_lang = "XX"
     with pytest.raises(ValueError):
         param.check()
+
+
+@pytest.mark.p1
+def test_run_returns_error_on_translation_failure():
+    cpn = _deepl()
+    cpn._param.inputs = {"content": {"value": ["hello"]}}
+
+    with patch.object(DeepL, "get_input", return_value={"content": ["hello"]}):
+        with patch("agent.tools.deepl.deepl.Translator") as translator_cls:
+            translator_cls.return_value.translate_text.side_effect = RuntimeError("boom")
+            result = cpn._run([])
+
+    assert "**Error**:boom" in result.iloc[0]["content"]
