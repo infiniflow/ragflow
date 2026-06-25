@@ -227,7 +227,7 @@ func GetHost(config *map[string]interface{}, serverType, address, port string) s
 	return result
 }
 
-func (c *CLI) SetLogLevel(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APISetLogLevelCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
@@ -3407,8 +3407,8 @@ func (c *CLI) ListUserIngestionTasks(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// APIShowLogLevel sets the log level for the system.
-func (c *CLI) APIShowLogLevel(cmd *Command) (ResponseIf, error) {
+// APIShowLogLevelCommand sets the log level for the system.
+func (c *CLI) APIShowLogLevelCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}

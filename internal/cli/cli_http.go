@@ -105,6 +105,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminSetVariableCommand(cmd)
 	case "admin_set_role_default_model":
 		return c.AdminSetRoleDefaultModelsCommand(cmd)
+	case "admin_set_log_level":
+		return c.AdminSetLogLevelCommand(cmd)
 	case "admin_reset_role_default_model":
 		return c.AdminResetRoleDefaultModelsCommand(cmd)
 	case "list_user_datasets":
@@ -260,6 +262,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowAdminServer(cmd)
 	case "show_api_server":
 		return c.ShowAPIServer(cmd)
+	case "admin_show_log_level":
+		return c.AdminShowLogLevelCommand(cmd)
 	case "admin_list_api_servers":
 		return c.CommonListAPIServers(cmd)
 	case "add_api_server":
@@ -294,7 +298,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "api_list_configs":
 		return c.ListConfigs(cmd)
 	case "api_set_log_level":
-		return c.SetLogLevel(cmd)
+		return c.APISetLogLevelCommand(cmd)
 	case "benchmark":
 		return c.RunBenchmark(cmd)
 	case "api_list_datasets":
@@ -463,7 +467,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "show_api_server":
 		return c.ShowAPIServer(cmd)
 	case "api_show_log_level":
-		return c.APIShowLogLevel(cmd)
+		return c.APIShowLogLevelCommand(cmd)
 	case "api_list_api_servers":
 		return c.CommonListAPIServers(cmd)
 	case "api_list_environments":

@@ -2070,7 +2070,7 @@ func (p *Parser) parseAPISetLogLevel() (*Command, error) {
 	case TokenPanic:
 		cmd.Params["level"] = "panic"
 	default:
-		return nil, fmt.Errorf("unknown log target: %s", p.curToken.Value)
+		return nil, fmt.Errorf("unknown log level: %s", p.curToken.Value)
 	}
 	p.nextToken()
 	// Semicolon is optional
