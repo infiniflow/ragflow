@@ -16,6 +16,8 @@ function usage() {
     echo "  --disable-datasync                      Disables synchronization of datasource workers."
     echo "  --enable-mcpserver                      Enables the MCP server."
     echo "  --enable-adminserver                    Enables the Admin server."
+    echo "  --init-db=<1|0>                         Force or disable initializing the database. If omitted, the"
+    echo "                                          database is initialized only if the webserver is enabled."
     echo "  --init-model-provider-tables            Run model provider table migrations and exit."
     echo "  --init-superuser                        Initializes the superuser."
     echo "  --consumer-no-beg=<num>                 Start range for consumers (if using range-based)."
@@ -102,6 +104,10 @@ for arg in "$@"; do
       ENABLE_ADMIN_SERVER=1
       shift
       ;;
+    --init-db=*)
+      INIT_DB="${arg#*=}"
+      shift
+      ;;
     --init-model-provider-tables)
       INIT_MODEL_PROVIDER_TABLES=1
       shift
@@ -167,6 +173,8 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+INIT_DB=${INIT_DB:-$ENABLE_WEBSERVER} # Default is to init the db only if running the webserver
 
 # -----------------------------------------------------------------------------
 # Replace env variables in the service_conf.yaml file
@@ -303,9 +311,12 @@ if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
     fi
 fi
 
+if [[ "${INIT_DB}" -eq 1 ]]; then
+    ensure_db_init
+fi
+
 if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     ensure_docling
-    ensure_db_init
 
     echo "Starting nginx..."
     /usr/sbin/nginx -c /etc/nginx/nginx.conf
