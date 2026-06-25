@@ -379,7 +379,7 @@ func sortedCopy(in []int) []int {
 func TestBuildBoolQueryFromConditionIDFilter(t *testing.T) {
 	check := func(name string, cond map[string]interface{}, wantFields []string) {
 		t.Helper()
-		got := buildBoolQueryFromCondition(cond, nil, false)
+		got := buildBoolQueryFromCondition(cond, nil, false, false)
 		outer, ok := got["bool"].(map[string]interface{})
 		if !ok {
 			t.Fatalf("%s: missing bool wrapper: %v", name, got)
