@@ -68,8 +68,9 @@ class TestPostgresDatabaseLock:
             with lock:
                 pass
 
-        assert db.execute_sql.call_count == 2
+        assert db.execute_sql.call_count == 3
         db.execute_sql.assert_any_call("SET lock_timeout = %s", ("5s",))
+        db.execute_sql.assert_any_call("SET lock_timeout = DEFAULT")
 
     @pytest.mark.p2
     def test_unlock_warns_when_lock_not_held_by_session(self):
