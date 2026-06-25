@@ -554,6 +554,13 @@ func (r *Router) Setup(engine *gin.Engine) {
 					config.PUT("/log", r.systemHandler.SetLogLevel)
 				}
 
+				// Variables/Settings
+				system.GET("/variables", r.systemHandler.ListVariables)
+				system.PUT("/variables", r.systemHandler.SetVariable)
+
+				// Environments
+				system.GET("/environments", r.systemHandler.ListEnvironments)
+
 				//log := system.Group("/log")
 				//{
 				//	// /api/v1/system/log GET

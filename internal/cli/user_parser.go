@@ -154,6 +154,10 @@ func (p *Parser) parseAPIListCommands() (*Command, error) {
 		return p.parseAPIListAvailableProviders()
 	case TokenAPI:
 		return p.parseAPIListAPIServers()
+	case TokenEnvs:
+		return p.parseAPIListEnvironments()
+	case TokenVars:
+		return p.parseAPIListVariables()
 	default:
 		return nil, fmt.Errorf("unknown LIST target: %s", p.curToken.Value)
 	}
@@ -516,13 +520,7 @@ func (p *Parser) parseAPIShowCommands() (*Command, error) {
 	case TokenKey:
 		return p.parseAPIShowKey()
 	case TokenCurrent:
-		p.nextToken()
-
-		// Semicolon is optional
-		if p.curToken.Type == TokenSemicolon {
-			p.nextToken()
-		}
-		return NewCommand("show_current"), nil
+		return p.parseAPIShowCurrent()
 	case TokenVar:
 		return p.parseShowVariable()
 	case TokenProvider:
@@ -564,6 +562,16 @@ func (p *Parser) parseAPIShowKey() (*Command, error) {
 		p.nextToken()
 	}
 	return NewCommand("api_show_api_key"), nil
+}
+
+func (p *Parser) parseAPIShowCurrent() (*Command, error) {
+	p.nextToken()
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return NewCommand("api_show_current"), nil
 }
 
 func (p *Parser) parseShowVariable() (*Command, error) {
@@ -4211,6 +4219,32 @@ func (p *Parser) parseAPIListAPIServers() (*Command, error) {
 	default:
 		return nil, fmt.Errorf("expected SERVER after API")
 	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+func (p *Parser) parseAPIListEnvironments() (*Command, error) {
+	p.nextToken() // consume Envs
+
+	cmd := NewCommand("api_list_environments")
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+func (p *Parser) parseAPIListVariables() (*Command, error) {
+	p.nextToken() // consume Variables
+
+	cmd := NewCommand("api_list_variables")
 
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {

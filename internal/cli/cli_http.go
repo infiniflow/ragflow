@@ -330,7 +330,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.APIShowVersionCommand(cmd)
 	case "api_show_api_key":
 		return c.APIShowAPIKeyCommand(cmd)
-	case "show_current":
+	case "api_show_current":
 		return c.CommonShowCurrentCommand(cmd)
 	case "api_list_available_providers":
 		return c.CommonAvailableProvidersCommand(cmd)
@@ -462,6 +462,10 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowAPIServer(cmd)
 	case "api_list_api_servers":
 		return c.CommonListAPIServers(cmd)
+	case "api_list_environments":
+		return c.APIListEnvironmentsCommand(cmd)
+	case "api_list_variables":
+		return c.APIListVariablesCommand(cmd)
 	case "add_api_server":
 		return c.AddAPIServer(cmd)
 	case "delete_api_server":
