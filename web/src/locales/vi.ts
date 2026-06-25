@@ -43,6 +43,7 @@ export default {
       openInNewTab: 'Chat trong tab mới',
       nextPage: 'Tới',
       previousPage: 'Lùi',
+      owner: 'Chủ sở hữu',
     },
     login: {
       login: 'Đăng nhập',
@@ -373,6 +374,8 @@ export default {
     },
     chunk: {
       chunk: 'Khối',
+      createChunk: 'Tạo khối',
+      editChunk: 'Chỉnh sửa khối',
       bulk: 'Hàng loạt',
       selectAll: 'Chọn tất cả',
       enabledSelected: 'Bật đã chọn',
@@ -523,6 +526,11 @@ export default {
         'Áp dụng LLM (Mô hình ngôn ngữ lớn) để phân tích câu hỏi của người dùng, trích xuất các từ khóa sẽ được nhấn mạnh trong quá trình tính toán độ liên quan. Hoạt động tốt với các truy vấn dài nhưng sẽ làm tăng thời gian phản hồi.',
       languageTip:
         'Cho phép viết lại câu với ngôn ngữ được chỉ định, hoặc sử dụng câu hỏi mới nhất nếu không chọn ngôn ngữ nào.',
+      showChunkMetadata: 'Hiển thị siêu dữ liệu đoạn',
+      showChunkMetadataTip:
+        'Hiển thị siêu dữ liệu tài liệu (tiêu đề, số trang, ngày tải lên, v.v.) bên cạnh các đoạn văn bản được truy xuất',
+      metadataFields: 'Trường siêu dữ liệu',
+      metadataFieldsTip: 'Chọn các trường siêu dữ liệu hiển thị với mỗi đoạn',
     },
     setting: {
       profile: 'Hồ sơ',
@@ -1242,6 +1250,11 @@ export default {
         'Sử dụng lời nhắc hệ thống để mô tả nhiệm vụ cho LLM, chỉ định cách nó nên phản hồi và phác thảo các yêu cầu khác nhau. Lời nhắc hệ thống thường được sử dụng kết hợp với các khóa (biến), đóng vai trò là các đầu vào dữ liệu khác nhau cho LLM. Sử dụng dấu gạch chéo `/` hoặc nút (x) để hiển thị các khóa cần sử dụng.',
       promptMessage: 'Nhắc nhở là bắt buộc',
       runningHintText: 'đang chạy...🕞',
+      canvasCategory: 'Danh mục canvas',
+      tags: 'Thẻ',
+      created: 'Đã tạo',
+      id: 'ID',
+      logTitle: 'Tiêu đề',
     },
     footer: {
       profile: 'All rights reserved @ React',

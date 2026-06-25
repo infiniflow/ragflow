@@ -278,9 +278,29 @@ func (e *Engine) Run(ctx context.Context, input any, mode types.StreamMode) (<-c
 		)
 		if e.checkpointer != nil {
 			var cpErr error
-			cpData, cpErr = e.checkpointer.Get(ctx, map[string]any{
+			cpConfig := map[string]any{
 				constants.ConfigKeyThreadID: threadID,
-			})
+			}
+			// Support loading a specific checkpoint_id for replay/fork.
+			var requestedCPID string
+			if e.config != nil && e.config.Configurable != nil {
+				if cpid, ok := e.config.Configurable[constants.ConfigKeyCheckpointID]; ok {
+					if cpidStr, ok := cpid.(string); ok && cpidStr != "" {
+						cpConfig[constants.ConfigKeyCheckpointID] = cpidStr
+						requestedCPID = cpidStr
+					}
+				}
+			}
+			cpData, cpErr = e.checkpointer.Get(ctx, cpConfig)
+			// When a specific checkpoint_id was requested, fail on missing data.
+			if requestedCPID != "" && (cpErr != nil || cpData == nil) {
+				cpErrMsg := "checkpoint not found"
+				if cpErr != nil {
+					cpErrMsg = cpErr.Error()
+				}
+				errCh <- fmt.Errorf("requested checkpoint_id %s: %s", requestedCPID, cpErrMsg)
+				return
+			}
 			if cpErr == nil && cpData != nil {
 				didLoadCheckpoint = true
 				common.Debug("LOOP_CHECK: loaded checkpoint",
@@ -783,35 +803,15 @@ func (e *Engine) shouldInterrupt(
 ) []*Task {
 	interrupted := make([]*Task, 0)
 
-	// Check if any triggered node should interrupt
 	if len(e.interrupts) == 0 {
 		return interrupted
 	}
 
-	// Check if "*" is set (interrupt all)
 	interruptAll := e.interrupts[types.All]
 
 	for _, task := range tasks {
-		shouldInterrupt := false
-		if interruptAll {
-			shouldInterrupt = true
-		} else {
-			shouldInterrupt = e.interrupts[task.Name]
-		}
-
-		if shouldInterrupt {
-			// Check if this task was triggered by a channel update
-			triggered := false
-			for trigger := range task.Triggers {
-				if _, ok := triggerToNodes[trigger]; ok {
-					triggered = true
-					break
-				}
-			}
-
-			if triggered {
-				interrupted = append(interrupted, task)
-			}
+		if interruptAll || e.interrupts[task.Name] {
+			interrupted = append(interrupted, task)
 		}
 	}
 
