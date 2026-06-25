@@ -2133,6 +2133,12 @@ Best for: Documents with flowing, contextually connected content — such as boo
       searXNG: 'SearXNG',
       searXNGDescription:
         'A component that searches via your provided SearXNG instance URL. Specify TopN and the instance URL.',
+      keenableSearch: 'Keenable',
+      keenableSearchDescription:
+        'A web search component powered by Keenable, a search API built for AI agents. Works without an API key by default (keyless free tier); add a key to lift rate limits.',
+      keenableMode: 'Search mode',
+      keenableSite: 'Site',
+      keenableApiKeyTip: 'Optional. Leave blank to use the keyless free tier.',
       docGenerator: 'Doc Generator',
       docGeneratorDescription: `Generate a file from Markdown content.`,
       browser: 'Browser',

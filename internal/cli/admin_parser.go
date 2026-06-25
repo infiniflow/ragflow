@@ -115,7 +115,7 @@ func (p *Parser) parseAdminListCommands() (*Command, error) {
 	case TokenIngestion:
 		return p.parseAdminListIngestionTasks()
 	case TokenAPI:
-		return p.parseListApiCommand()
+		return p.parseAdminListAPIServers()
 	default:
 		return nil, fmt.Errorf("unknown LIST target: %s", p.curToken.Value)
 	}
@@ -329,6 +329,26 @@ func (p *Parser) parseAdminListModels() (*Command, error) {
 	p.nextToken() // consume MODELS
 	cmd := NewCommand("admin_list_all_models")
 
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminListAPIServers() (*Command, error) {
+	p.nextToken() // consume API
+
+	var cmd *Command
+	switch p.curToken.Type {
+	case TokenServer:
+		p.nextToken()
+		cmd = NewCommand("admin_list_api_servers")
+	default:
+		return nil, fmt.Errorf("expected SERVER after API")
+	}
+
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -2227,12 +2247,42 @@ func (p *Parser) parseAdminUseCommand() (*Command, error) {
 	p.nextToken() // consume USE
 	switch p.curToken.Type {
 	case TokenAPI:
-		return p.parseUseAPIServer()
+		return p.parseAdminUseAPIServer()
 	case TokenAdmin:
-		return p.parseUseAdminServer()
+		return p.parseAdminUseAdminServer()
 	default:
 		return nil, fmt.Errorf("expected API or ADMIN after USE")
 	}
+}
+
+func (p *Parser) parseAdminUseAPIServer() (*Command, error) {
+	p.nextToken() // consume API
+
+	serverName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+	cmd := NewCommand("admin_use_api_server")
+	cmd.Params["server_name"] = serverName
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminUseAdminServer() (*Command, error) {
+	p.nextToken() // consume ADMIN
+
+	cmd := NewCommand("admin_use_admin_server")
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
 }
 
 func (p *Parser) parseStartIngestion() (*Command, error) {
