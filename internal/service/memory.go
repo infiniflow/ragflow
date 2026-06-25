@@ -247,9 +247,8 @@ func generateOutputFormat(typesToExtract []string) string {
 // MemoryService handles business logic for memory operations
 // It provides methods for creating, updating, deleting, and querying memories
 type MemoryService struct {
-	memoryDAO      *dao.MemoryDAO
-	docEngine      engine.DocEngine
-	chatSessionDAO *dao.ChatSessionDAO
+	memoryDAO *dao.MemoryDAO
+	docEngine engine.DocEngine
 }
 
 // NewMemoryService creates a new MemoryService instance

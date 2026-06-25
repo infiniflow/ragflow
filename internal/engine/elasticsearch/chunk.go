@@ -32,10 +32,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/elastic/go-elasticsearch/v8/esapi"
-	"github.com/json-iterator/go"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
+
+	"github.com/elastic/go-elasticsearch/v8/esapi"
+	"github.com/json-iterator/go"
 
 	"go.uber.org/zap"
 )
@@ -1779,8 +1780,7 @@ func (e *elasticsearchEngine) getMemoryMessage(ctx context.Context, indexName, d
 		if res.StatusCode == http.StatusNotFound {
 			return nil, fmt.Errorf("%w: %s", types.ErrDocumentNotFound, docID)
 		}
-		bodyBytes, _ := io.ReadAll(res.Body)
-		return nil, fmt.Errorf("elasticsearch memory message get error: %s, body: %s", res.Status(), string(bodyBytes))
+		return nil, fmt.Errorf("elasticsearch memory message get error: %s", res.Status())
 	}
 
 	var getResult struct {
