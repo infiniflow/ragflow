@@ -39,7 +39,7 @@ import (
 
 // Show server version to show RAGFlow server version
 // Returns benchmark result map if iterations > 1, otherwise prints status
-func (c *CLI) ShowServerVersion(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APIShowVersionCommand(cmd *Command) (ResponseIf, error) {
 	// Get iterations from command params (for benchmark)
 	iterations := 1
 	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
@@ -1099,8 +1099,8 @@ func (c *CLI) APISetAPIKey(cmd *Command) (ResponseIf, error) {
 	return &successResult, nil
 }
 
-// ShowToken displays the current API key
-func (c *CLI) ShowToken(cmd *Command) (ResponseIf, error) {
+// APIShowAPIKeyCommand displays the current API key
+func (c *CLI) APIShowAPIKeyCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
@@ -1111,13 +1111,11 @@ func (c *CLI) ShowToken(cmd *Command) (ResponseIf, error) {
 
 	//fmt.Printf("Token: %s\n", c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey)
 
-	var result CommonResponse
+	var result CommonDataResponse
 	result.Code = 0
 	result.Message = ""
-	result.Data = []map[string]interface{}{
-		{
-			"token": c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey,
-		},
+	result.Data = map[string]interface{}{
+		"token": *c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey,
 	}
 	result.Duration = 0
 	return &result, nil

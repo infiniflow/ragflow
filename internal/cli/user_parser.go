@@ -512,23 +512,13 @@ func (p *Parser) parseShowCommand() (*Command, error) {
 	p.nextToken() // consume SHOW
 	switch p.curToken.Type {
 	case TokenVersion:
-		p.nextToken()
-		// Semicolon is optional for SHOW TOKEN
-		if p.curToken.Type == TokenSemicolon {
-			p.nextToken()
-		}
-		return NewCommand("show_version"), nil
-	case TokenToken:
-		p.nextToken()
-		// Semicolon is optional for SHOW TOKEN
-		if p.curToken.Type == TokenSemicolon {
-			p.nextToken()
-		}
-		return NewCommand("show_token"), nil
+		return p.parseAPIShowVersion()
+	case TokenKey:
+		return p.parseAPIShowKey()
 	case TokenCurrent:
 		p.nextToken()
 
-		// Semicolon is optional for SHOW TOKEN
+		// Semicolon is optional
 		if p.curToken.Type == TokenSemicolon {
 			p.nextToken()
 		}
@@ -554,6 +544,26 @@ func (p *Parser) parseShowCommand() (*Command, error) {
 	default:
 		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
 	}
+}
+
+func (p *Parser) parseAPIShowVersion() (*Command, error) {
+	p.nextToken() // consume VERSION
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return NewCommand("api_show_version"), nil
+}
+
+func (p *Parser) parseAPIShowKey() (*Command, error) {
+	p.nextToken() // consume KEY
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return NewCommand("api_show_api_key"), nil
 }
 
 func (p *Parser) parseShowVariable() (*Command, error) {

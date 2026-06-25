@@ -88,7 +88,7 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 	case "admin_show_version_command":
 		return c.AdminShowVersionCommand(cmd)
 	case "admin_show_current":
-		return c.CommonShowCurrent(cmd)
+		return c.CommonShowCurrentCommand(cmd)
 	case "admin_list_variables":
 		return c.AdminListVariablesCommand(cmd)
 	case "admin_list_configs":
@@ -324,14 +324,14 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.APIDeleteAPIKeyCommand(cmd)
 	case "api_set_api_key":
 		return c.APISetAPIKey(cmd)
-	case "show_token":
-		return c.ShowToken(cmd)
 	case "api_unset_api_key":
 		return c.APIUnsetAPIKey(cmd)
-	case "show_version":
-		return c.ShowServerVersion(cmd)
+	case "api_show_version":
+		return c.APIShowVersionCommand(cmd)
+	case "api_show_api_key":
+		return c.APIShowAPIKeyCommand(cmd)
 	case "show_current":
-		return c.CommonShowCurrent(cmd)
+		return c.CommonShowCurrentCommand(cmd)
 	case "api_list_available_providers":
 		return c.CommonAvailableProvidersCommand(cmd)
 	case "show_provider":
