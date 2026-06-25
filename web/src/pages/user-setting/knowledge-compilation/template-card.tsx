@@ -1,6 +1,5 @@
 import { CardContainer } from '@/components/card-container';
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -50,9 +49,6 @@ export function TemplateCard({ data, onEdit, onDelete }: TemplateCardProps) {
             {data.description || t('knowledgeCompilation.noDescription')}
           </CardDescription>
         </div>
-        <Badge variant="secondary" className="shrink-0">
-          {t(`knowledgeCompilation.kind.${data.kind}`)}
-        </Badge>
       </CardHeader>
       <CardContent />
       <CardFooter

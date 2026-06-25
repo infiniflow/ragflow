@@ -2303,7 +2303,25 @@ ARTIFACT_MERGE_BODY_SHRINK_THRESHOLD = 0.7
 ARTIFACT_MERGE_TIMEOUT = 600
 
 
-ARTIFACT_REFINE_WRITER_SYSTEM = (
+ARTIFACT_TEMPLATE_EXAMPLE = (
+    "Each page must be a proper encyclopedic article, NOT a flat bullet list:\n"
+    "1. Opening paragraph (2-4 sentences defining what this is). No heading.\n"
+    "2. Sections with H2 headings, each starting with prose before sub-bullets.\n"
+    "3. Bold key terms on first use; link them with [[ ]] artifactlinks.\n"
+    "4. Examples or implications where the source provides them.\n"
+    "5. ## See also section at the end with artifactlinks to highly related pages(less than 12).\n\n"
+    "Page structure could be as following:"
+    "(Not provided)"
+)
+
+# Writer system prompt as a template: the ``{template_example}``
+# placeholder is filled in at request time so each artifact compilation
+# template can override the page-structure section without touching the
+# rest of the writer's guidance. Use ``_build_refine_writer_system`` to
+# materialize a concrete prompt; ``ARTIFACT_REFINE_WRITER_SYSTEM`` is
+# kept as the default-filled value for back-compat with any code that
+# still imports it.
+ARTIFACT_REFINE_WRITER_SYSTEM_TEMPLATE = (
     "You are an enterprise knowledge artifact writer. Your job is to write a single, "
     "high-quality artifact page by reading the SOURCE TEXT provided and using the "
     "evidence checklist as guidance for what to cover.\n\n"
@@ -2330,12 +2348,7 @@ ARTIFACT_REFINE_WRITER_SYSTEM = (
     "# Language\n"
     "Write in the SAME LANGUAGE as the source text. Never translate content.\n\n"
     "# Page structure — CRITICAL\n"
-    "Each page must be a proper encyclopedic article, NOT a flat bullet list:\n"
-    "1. Opening paragraph (2-4 sentences defining what this is). No heading.\n"
-    "2. Sections with H2 headings, each starting with prose before sub-bullets.\n"
-    "3. Bold key terms on first use; link them with [[ ]] artifactlinks.\n"
-    "4. Examples or implications where the source provides them.\n"
-    "5. ## See also section at the end with artifactlinks to highly related pages(less than 12).\n\n"
+    "{template_example}\n\n"
     "# What NOT to do\n"
     "- Do NOT dump raw bullet points from the source as the entire content.\n"
     "- Do NOT omit the opening prose paragraph.\n"
@@ -2350,6 +2363,23 @@ ARTIFACT_REFINE_WRITER_SYSTEM = (
     "- concept/topic pages: at least 200 words of actual prose+structure.\n"
     "- entity pages: at least 100 words.\n"
 )
+
+
+def _build_refine_writer_system(example: str | None) -> str:
+    """Return the writer system prompt with the configured page-structure
+    example (or ``ARTIFACT_TEMPLATE_EXAMPLE`` when ``example`` is empty /
+    whitespace-only). Used by the REFINE phase to let each compilation
+    template override just the page-structure section.
+
+    The default-filled form is also exposed as
+    ``ARTIFACT_REFINE_WRITER_SYSTEM`` for callers that don't have an
+    override to apply.
+    """
+    body = (example or "").strip() or ARTIFACT_TEMPLATE_EXAMPLE
+    return ARTIFACT_REFINE_WRITER_SYSTEM_TEMPLATE.format(template_example=body)
+
+
+ARTIFACT_REFINE_WRITER_SYSTEM = _build_refine_writer_system(None)
 
 
 ARTIFACT_REFINE_WRITER_USER_TEMPLATE = """\
@@ -2859,8 +2889,14 @@ async def _artifact_write_page_simple(
     all_plan_slugs: list[str],
     chat_mdl,
     timeout: int,
+    example: Optional[str] = None,
 ) -> str:
-    """Single LLM call → markdown content."""
+    """Single LLM call → markdown content.
+
+    ``example`` is the per-template ``parser_config.example`` override
+    for the writer's page-structure section. Falsy / whitespace-only
+    values fall through to ``ARTIFACT_TEMPLATE_EXAMPLE``.
+    """
     own_slug = plan_item.get("slug") or ""
     available = [s for s in all_plan_slugs if s and s != own_slug]
     slugs_block = (
@@ -2889,7 +2925,7 @@ async def _artifact_write_page_simple(
     )
 
     return await _artifact_chat_text(
-        chat_mdl, ARTIFACT_REFINE_WRITER_SYSTEM, user_prompt,
+        chat_mdl, _build_refine_writer_system(example), user_prompt,
         temperature=0.15, timeout=timeout,
     )
 
@@ -3066,6 +3102,7 @@ async def artifact_refine_from_plan(
     merge_shrink_threshold: float = ARTIFACT_MERGE_BODY_SHRINK_THRESHOLD,
     force_rerun: bool = False,
     callback: Optional[Callable] = None,
+    example: Optional[str] = None,
 ) -> list[dict]:
     """Phase 4 (REFINE) — KB-scoped.
 
@@ -3246,6 +3283,7 @@ async def artifact_refine_from_plan(
                 content_md_raw = await _artifact_write_page_simple(
                     plan_item, evidence, existing_md_raw, source_context,
                     all_plan_slugs, chat_mdl, timeout,
+                    example=example,
                 )
                 if not content_md_raw:
                     content_md_raw = f"# {title}\n\n(Page generation produced no content.)"

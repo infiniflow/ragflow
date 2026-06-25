@@ -125,6 +125,17 @@ export const useFetchDocumentList = (loop = true) => {
     useHandleFilterSubmit();
   const [docs, setDocs] = useState<IDocumentInfo[]>([]);
 
+  const withCompilationTemplateCount = useCallback((doc: IDocumentInfo) => {
+    const ids =
+      doc.parser_config?.compilation_template_ids?.filter(Boolean) ?? [];
+    const count = ids.length;
+    return {
+      ...doc,
+      compilation_template_count: count,
+      has_compilation_template: count > 0,
+    };
+  }, []);
+
   const isLoop = useMemo(() => {
     return loop && docs.some((doc) => doc.run === RunningStatus.RUNNING);
   }, [docs, loop]);
@@ -175,7 +186,10 @@ export const useFetchDocumentList = (loop = true) => {
         queryClient.invalidateQueries({
           queryKey: [DocumentApiAction.FetchDocumentFilter],
         });
-        return ret.data.data;
+        return {
+          ...ret.data.data,
+          docs: (ret.data.data.docs || []).map(withCompilationTemplateCount),
+        };
       }
 
       return {

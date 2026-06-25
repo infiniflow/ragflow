@@ -71,9 +71,6 @@ export function BuiltinTemplatePopover({
                 }}
               >
                 <div className="font-medium">{b.display_name}</div>
-                <div className="text-xs text-text-secondary">
-                  {t(`knowledgeCompilation.kind.${b.kind}`)}
-                </div>
               </button>
             </li>
           ))}

@@ -373,7 +373,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                     [
                         {
                             "role": "user",
-                            "content": "Beside the summarization, give a title at the first line of your summarization.",
+                            "content": "Beside the summarization, give a title at the first line of your summarization. Must be in the same language as the paragraphs.",
                         }
                     ],
                     {"max_tokens": max(self._max_token, 512)},  # fix issue:  #10235

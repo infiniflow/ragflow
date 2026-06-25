@@ -24,7 +24,14 @@ function normalizeKind(kind: string | undefined): string {
   return kind.trim().toLowerCase().replace(/-/g, '_');
 }
 
-const ARTIFACT_TREE_ROOT_ID = '__document_structure_root__';
+// Synthetic anchor used only when the source data is a forest (multiple
+// natural roots). antv/g6's ``compact-box`` requires a single rooted
+// tree — without an anchor the layout either stack-overflows or
+// produces nodes with undefined positions, which crashes the renderer.
+// Single-natural-root data skips this entirely so no synthetic node
+// shows up in the canvas. When the anchor IS added, tree-graph.tsx
+// renders it invisibly via the ``isSynthetic`` flag.
+const FOREST_ANCHOR_ID = '__forest_anchor__';
 
 /**
  * Project one template's payload onto the (id-keyed) shape ForceGraph
@@ -65,10 +72,14 @@ function toForceGraphShape(template: IDocumentStructureTemplate | undefined): {
  * Project a ``page_index``-kind template onto a tree.
  *
  *   1. Adopt entity.name as the node id (same as the force-graph adapter).
- *   2. A synthetic root node is prepended: ``__document_structure_root__``.
- *   3. Every entity that is not the ``to`` of any relation becomes a
- *      first-level child of the synthetic root.
- *   4. The remaining relations are kept as-is — they form the hierarchy.
+ *   2. Edges that reference unknown endpoints are dropped (antv/g6's
+ *      compact-box layout chokes on dangling references).
+ *
+ * Multiple top-level entities (those with no incoming edge) render as a
+ * forest under the layout's implicit virtual root — no synthetic
+ * "Document" node is prepended any more, since it just added noise to
+ * the canvas. TreeGraph's BFS-for-depth auto-seeds from every node
+ * with no incoming edges, so depth shading still works on forests.
  *
  * If a chunk's structure happens to be cyclic (the LLM occasionally
  * emits a cycle), antv/g6's ``compact-box`` still renders something
@@ -82,41 +93,113 @@ function toTreeShape(template: IDocumentStructureTemplate | undefined): {
   const entities = Array.isArray(template.entities) ? template.entities : [];
   const relations = Array.isArray(template.relations) ? template.relations : [];
 
-  const nodes = entities.map((entity) => ({
-    id: entity.name,
-    entity_type: entity.type || 'title',
-    description:
-      entity.discription || entity.description || entity.aliases?.join(', '),
-  }));
-  const known = new Set(nodes.map((n) => n.id));
+  // De-duplicate by node id (entity.name). RAPTOR-produced trees can
+  // surface two clusters whose first-line summary collides, producing
+  // duplicate ids; compact-box reacts to a duplicate by building a
+  // corrupted child-map and either rendering one of the dupes with
+  // an undefined position (→ "Cannot read 'draw'") or recursing
+  // forever (→ stack overflow). First-seen wins.
+  const seenIds = new Set<string>();
+  const nodes: any[] = [];
+  for (const entity of entities) {
+    const id = (entity.name ?? '').trim();
+    if (!id || seenIds.has(id)) continue;
+    seenIds.add(id);
+    nodes.push({
+      id,
+      entity_type: entity.type || 'title',
+      description:
+        entity.discription || entity.description || entity.aliases?.join(', '),
+    });
+  }
+  const known = seenIds;
 
-  const edges = relations
-    .filter((r) => known.has(r.from) && known.has(r.to))
+  // Drop dangling endpoints + self-loops up front. Self-loops would
+  // also stack-overflow compact-box.
+  const rawEdges = relations
+    .filter((r) => r.from !== r.to && known.has(r.from) && known.has(r.to))
     .map((r) => ({
       source: r.from,
       target: r.to,
       description: r.type,
     }));
 
-  // First-level nodes = entities with no incoming edge. These get
-  // attached to the synthetic root so the whole thing reads as a single
-  // tree rather than a forest of disconnected components.
+  // Cycle prune: walk forward edges in insertion order and drop any
+  // edge whose target can already reach its source — that means
+  // adding it would close a cycle. ``compact-box`` assumes a DAG with
+  // single parents; cycles or DAG diamonds both break it.
+  const reachable = new Map<string, Set<string>>(); // source → reachable nodes
+  const childMap = new Map<string, string[]>(); // source → direct children
+  const edges: typeof rawEdges = [];
+  const hasParent = new Set<string>();
+  for (const e of rawEdges) {
+    // Each node can have at most one parent in a tree — drop a second
+    // parent edge rather than corrupt the layout.
+    if (hasParent.has(e.target)) continue;
+    // Does target already reach source? If yes, adding would cycle.
+    const sourceReachable = reachable.get(e.source) ?? new Set<string>();
+    if (sourceReachable.has(e.target) || e.target === e.source) continue;
+    // Accept the edge.
+    edges.push(e);
+    hasParent.add(e.target);
+    const targetChildren = childMap.get(e.target);
+    // Mark target + everything it transitively reaches as reachable
+    // from source (and from every ancestor of source).
+    const newlyReachable = new Set<string>([e.target]);
+    if (targetChildren) {
+      const queue = [...targetChildren];
+      while (queue.length) {
+        const n = queue.shift()!;
+        if (newlyReachable.has(n)) continue;
+        newlyReachable.add(n);
+        const grand = childMap.get(n);
+        if (grand) queue.push(...grand);
+      }
+    }
+    if (!childMap.has(e.source)) childMap.set(e.source, []);
+    childMap.get(e.source)!.push(e.target);
+    // Propagate the reachable set up the ancestor chain. Capped O(N²)
+    // worst case; node counts here are small (≤ a few hundred), fine.
+    for (const [ancestor, set] of reachable) {
+      if (set.has(e.source) || ancestor === e.source) {
+        for (const n of newlyReachable) set.add(n);
+      }
+    }
+    if (!reachable.has(e.source)) reachable.set(e.source, new Set());
+    const sr = reachable.get(e.source)!;
+    for (const n of newlyReachable) sr.add(n);
+  }
+
+  // Single-natural-root case: pass through unchanged. The natural root
+  // is the real top-level entity — no synthetic noise.
   const hasIncoming = new Set<string>();
   for (const e of edges) hasIncoming.add(e.target);
-  const topLevel = nodes
-    .filter((n) => !hasIncoming.has(n.id))
-    .map((n) => ({ source: ARTIFACT_TREE_ROOT_ID, target: n.id }));
+  const naturalRoots = nodes.filter((n) => !hasIncoming.has(n.id));
+  if (naturalRoots.length <= 1) {
+    return { nodes, edges };
+  }
 
-  const rootNode = {
-    id: ARTIFACT_TREE_ROOT_ID,
-    entity_type: 'root',
-    isRoot: true,
-    description: 'Document',
-  };
-
+  // Forest case: inject an invisible anchor so compact-box has a
+  // single rooted tree to lay out. ``isSynthetic`` is the renderer's
+  // signal to draw the node with no fill/stroke/label and size 1×1 —
+  // effectively a non-event on the canvas.
   return {
-    nodes: [rootNode, ...nodes],
-    edges: [...topLevel, ...edges],
+    nodes: [
+      {
+        id: FOREST_ANCHOR_ID,
+        entity_type: 'root',
+        isRoot: true,
+        isSynthetic: true,
+      },
+      ...nodes,
+    ],
+    edges: [
+      ...naturalRoots.map((n) => ({
+        source: FOREST_ANCHOR_ID,
+        target: n.id,
+      })),
+      ...edges,
+    ],
   };
 }
 
@@ -208,9 +291,14 @@ export function DocumentStructureGraph({
    *   anything else                → force-directed
    */
   type Renderer = 'tree' | 'timeline' | 'force';
+  // ``tree`` kind ships as RAPTOR's hierarchical output; treat it the
+  // same as the synthetic ``raptor`` kind / classic page_index — they
+  // all read as a vertical hierarchy under one synthetic root, so they
+  // share the LR tree renderer.
+
   const renderer: Renderer = useMemo(() => {
     const k = normalizeKind(activeTemplate?.kind);
-    if (k === 'page_index' || k === 'raptor') return 'tree';
+    if (k === 'page_index' || k === 'raptor' || k === 'tree') return 'tree';
     if (k === 'timeline' || k === 'list') return 'timeline';
     return 'force';
   }, [activeTemplate?.kind]);
@@ -339,11 +427,7 @@ export function DocumentStructureGraph({
           </div>
         ) : activeTemplate && activeNodeCount > 0 ? (
           renderer === 'tree' ? (
-            <TreeGraph
-              data={treeGraphData}
-              show
-              rootId={ARTIFACT_TREE_ROOT_ID}
-            />
+            <TreeGraph data={treeGraphData} show />
           ) : renderer === 'timeline' ? (
             <TimelineGraph data={timelineGraphData} show />
           ) : (

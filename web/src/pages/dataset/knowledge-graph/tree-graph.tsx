@@ -53,32 +53,48 @@ const TreeGraph = ({ data, show, rootId }: IProps) => {
   const isDark = useIsDarkTheme();
 
   /**
-   * Compute a depth map by BFS from ``rootId`` so the renderer can color
-   * nodes by tree depth (root → leaves). Falls back to depth 0 for any
-   * node not reachable from the root — they still render, just outside
-   * the main hierarchy.
+   * Compute a depth map by BFS from each root so the renderer can color
+   * nodes by tree depth (root → leaves). When ``rootId`` is provided we
+   * seed from it; otherwise we auto-seed from every node with no
+   * incoming edge — this keeps depth shading correct after the
+   * synthetic ``__document_structure_root__`` was dropped from the
+   * adapters, since the data now arrives as a forest of natural roots
+   * rather than a single artificial one.
+   *
+   * Nodes unreachable from any seed get depth 0 (still render, just
+   * outside the main hierarchy).
    */
   const annotated = useMemo(() => {
     if (isEmpty(data?.nodes)) return { nodes: [], edges: [] };
 
     const adj = new Map<string, string[]>();
+    const hasIncoming = new Set<string>();
     for (const e of data.edges || []) {
       if (!adj.has(e.source)) adj.set(e.source, []);
       adj.get(e.source)!.push(e.target);
+      hasIncoming.add(e.target);
     }
 
+    const seeds: string[] = rootId
+      ? [rootId]
+      : (data.nodes || [])
+          .map((n: { id: string }) => n.id)
+          .filter((id: string) => !hasIncoming.has(id));
+
     const depths = new Map<string, number>();
-    if (rootId) {
-      const queue: string[] = [rootId];
-      depths.set(rootId, 0);
-      while (queue.length > 0) {
-        const cur = queue.shift()!;
-        const d = depths.get(cur)!;
-        for (const child of adj.get(cur) || []) {
-          if (depths.has(child)) continue;
-          depths.set(child, d + 1);
-          queue.push(child);
-        }
+    const queue: string[] = [];
+    for (const seed of seeds) {
+      if (depths.has(seed)) continue;
+      depths.set(seed, 0);
+      queue.push(seed);
+    }
+    while (queue.length > 0) {
+      const cur = queue.shift()!;
+      const d = depths.get(cur)!;
+      for (const child of adj.get(cur) || []) {
+        if (depths.has(child)) continue;
+        depths.set(child, d + 1);
+        queue.push(child);
       }
     }
 
@@ -129,8 +145,13 @@ const TreeGraph = ({ data, show, rootId }: IProps) => {
         // vertically — the standard outline / file-tree orientation.
         direction: 'LR',
         getId: (d: any) => d.id,
-        getHeight: () => 36,
-        getWidth: (d: any) => Math.max(80, (d.id?.length ?? 0) * 9 + 24),
+        // Synthetic forest-anchor nodes (added by toTreeShape only when
+        // the input is a forest) collapse to 1×1 so they take no
+        // visible space in the layout. Real nodes use the standard
+        // rectangle dimensions.
+        getHeight: (d: any) => (d?.isSynthetic ? 1 : 36),
+        getWidth: (d: any) =>
+          d?.isSynthetic ? 1 : Math.max(80, (d.id?.length ?? 0) * 9 + 24),
         // ``compact-box`` reads V/H gaps relative to the layout
         // direction. With LR, getVGap is between siblings (vertical
         // stacking) and getHGap is between parent and child (level
@@ -144,12 +165,17 @@ const TreeGraph = ({ data, show, rootId }: IProps) => {
           // Rectangles with rounded corners read more naturally as a
           // table-of-contents than circles do.
           size: (d: any) => {
+            if (d.isSynthetic) return [1, 1];
             const labelLen = (d.id as string)?.length ?? 0;
             const width = Math.max(80, Math.min(labelLen * 9 + 24, 280));
             return [width, 36];
           },
           radius: 6,
           fill: (d: any) => {
+            // Synthetic forest-anchor: fully transparent so it never
+            // shows on the canvas. It exists only to give compact-box
+            // a single rooted tree.
+            if (d.isSynthetic) return 'rgba(0,0,0,0)';
             if (d.isRoot) return ROOT_FALLBACK_COLOR;
             const depth = (d.depth as number) ?? 0;
             // Lighter shades for deeper nodes (root is the boldest).
@@ -158,9 +184,15 @@ const TreeGraph = ({ data, show, rootId }: IProps) => {
               ? `rgba(56, 189, 248, ${alpha})`
               : `rgba(14, 165, 233, ${alpha})`;
           },
-          stroke: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.3)',
+          stroke: (d: any) =>
+            d.isSynthetic
+              ? 'rgba(0,0,0,0)'
+              : isDark
+                ? 'rgba(255,255,255,0.4)'
+                : 'rgba(0,0,0,0.3)',
           lineWidth: 1,
-          labelText: (d: any) => (d.id as string) ?? '',
+          labelText: (d: any) =>
+            d.isSynthetic ? '' : ((d.id as string) ?? ''),
           labelFill: (d: any) =>
             d.isRoot
               ? '#ffffff'
@@ -182,7 +214,15 @@ const TreeGraph = ({ data, show, rootId }: IProps) => {
         // looks awkward when siblings are stacked.)
         type: 'cubic-horizontal',
         style: {
-          stroke: isDark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.4)',
+          // Edges originating from the synthetic forest anchor are
+          // hidden — the anchor itself is already invisible, so its
+          // connectors would otherwise float as orphan arcs.
+          stroke: (model: any) =>
+            (model?.source ?? model?.data?.source) === '__forest_anchor__'
+              ? 'rgba(0,0,0,0)'
+              : isDark
+                ? 'rgba(255,255,255,0.45)'
+                : 'rgba(0,0,0,0.4)',
           lineWidth: 1.2,
           endArrow: false,
         },

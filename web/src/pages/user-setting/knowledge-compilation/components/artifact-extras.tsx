@@ -34,6 +34,37 @@ export function ArtifactExtras() {
     <>
       <section className="flex flex-col gap-4 rounded-md border border-border-button p-4">
         <h3 className="text-base font-medium">
+          {t('knowledgeCompilation.exampleLabel')}
+        </h3>
+        <FormField
+          control={form.control}
+          name="example"
+          render={({ field }) => (
+            <FormItem>
+              <FormControl>
+                <Textarea
+                  rows={10}
+                  maxLength={8000}
+                  className="font-mono text-sm"
+                  placeholder={t('knowledgeCompilation.examplePlaceholder')}
+                  value={field.value ?? ''}
+                  onBlur={field.onBlur}
+                  onChange={field.onChange}
+                  name={field.name}
+                  ref={field.ref}
+                />
+              </FormControl>
+              <p className="text-xs text-text-secondary">
+                {t('knowledgeCompilation.exampleDescription')}
+              </p>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </section>
+
+      <section className="flex flex-col gap-4 rounded-md border border-border-button p-4">
+        <h3 className="text-base font-medium">
           {t('knowledgeCompilation.claimSpecification')}
         </h3>
         <FieldListBlock

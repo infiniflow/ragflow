@@ -520,6 +520,63 @@ class RaptorService:
         }
         return [row], _sum_tree_text_tokens(processed_chunks)
 
+    async def build_doc_tree(
+        self,
+        chunks: List[Tuple[str, np.ndarray, str]],
+        raptor_config: Dict,
+        chat_mdl,
+        embd_mdl,
+        tree_builder: str,
+        clustering_method: str,
+        max_errors: int,
+    ) -> Optional[Dict]:
+        """Build a RAPTOR tree dict for one document — no ES IO.
+
+        Used by the ``tree``-kind compilation template, which wraps the
+        returned tree into a per-template structure-graph row. Returns
+        None when the input has no chunks, the PSI builder is selected
+        (which can't form a strict tree), or RAPTOR itself fails.
+        """
+        if not chunks:
+            return None
+        from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
+
+        raptor_ext_config = raptor_config.get("ext") or {}
+        raptor = Raptor(
+            raptor_config.get("max_cluster", 64),
+            chat_mdl,
+            embd_mdl,
+            raptor_config["prompt"],
+            raptor_config["max_token"],
+            raptor_config["threshold"],
+            max_errors=max_errors,
+            tree_builder=tree_builder,
+            clustering_method=clustering_method,
+            psi_exact_max_leaves=raptor_ext_config.get("psi_exact_max_leaves", 4096),
+            psi_bucket_size=raptor_ext_config.get("psi_bucket_size", 1024),
+        )
+
+        raptor_input = [
+            (content, vctr, [chunk_id] if chunk_id else [])
+            for content, vctr, chunk_id in chunks
+        ]
+        try:
+            tree, _ = await raptor(
+                raptor_input,
+                raptor_config["random_seed"],
+                self._task_context.progress_cb,
+                self._task_context.id,
+                is_tree=True,
+            )
+        except NotImplementedError:
+            # PSI builder — not supported in tree mode; surface as None
+            # so the compilation-template path can skip the doc cleanly.
+            logging.warning(
+                "build_doc_tree: PSI builder doesn't support is_tree; skipping",
+            )
+            return None
+        return tree if isinstance(tree, dict) else None
+
     async def _generate_raptor_legacy_rows(
         self, raptor, raptor_input, raptor_config, doc_id,
         effective_doc_name, tree_builder, vctr_nm,
@@ -722,15 +779,6 @@ class RaptorService:
         tenant_id = ctx.tenant_id
         kb_id_str = str(ctx.kb_id)
         index_nm = search.index_name(tenant_id)
-
-        # NOTE: this reader still consumes the legacy per-summary
-        # ``raptor_kwd="raptor"`` rows (now produced only by the PSI
-        # builder). The default tree path emits a single
-        # ``raptor_kwd="raptor_tree"`` row whose ``content_with_weight``
-        # already IS the tree — a follow-up will repoint this builder
-        # at that row and drop the per-summary projection entirely. For
-        # now, non-PSI runs produce no rows here and this graph stays
-        # empty for the doc-structure-graph UI's RAPTOR tab.
         select_fields = ["content_with_weight", "raptor_layer_int", "source_chunk_ids"]
         try:
             res = await thread_pool_exec(

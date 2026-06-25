@@ -18,6 +18,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import message from '@/components/ui/message';
 import { useFetchBuiltinCompilationTemplates } from '@/hooks/use-compilation-template-request';
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import { CompilationTemplate } from '@/interfaces/database/compilation-template';
@@ -30,6 +31,7 @@ import { ArtifactExtras } from './components/artifact-extras';
 import { BuiltinTemplatePopover } from './components/builtin-template-popover';
 import { EntityRelationSection } from './components/entity-relation-section';
 import { GlobalRulesBlock } from './components/global-rules-block';
+import { TreeExtras } from './components/tree-extras';
 import { useTemplateFormState } from './hooks/use-template-form-state';
 import {
   buildFieldTemplateMaps,
@@ -40,6 +42,31 @@ import {
   templateConfigToFormValues,
   TEXT_FIELD_MAX,
 } from './interface';
+
+/**
+ * Walk RHF's nested ``FieldErrors`` tree and return the first
+ * ``message`` string we find. Used by the form's ``onInvalid`` toast so
+ * the user sees a concrete reason a save was rejected — RHF otherwise
+ * silently no-ops, which presents as "Save did nothing."
+ */
+function _firstFormErrorMessage(errors: unknown): string | undefined {
+  if (!errors || typeof errors !== 'object') return undefined;
+  const stack: unknown[] = [errors];
+  while (stack.length) {
+    const node = stack.pop();
+    if (!node || typeof node !== 'object') continue;
+    const rec = node as Record<string, unknown>;
+    if (typeof rec.message === 'string' && rec.message) {
+      return rec.message;
+    }
+    for (const value of Object.values(rec)) {
+      if (value && typeof value === 'object') {
+        stack.push(value);
+      }
+    }
+  }
+  return undefined;
+}
 
 interface EditTemplateFormProps {
   initial?: CompilationTemplate;
@@ -110,6 +137,26 @@ export function EditTemplateForm({
     form.setValue('llm_id', fallback, { shouldDirty: false });
   }, [defaultModelDict.llm_id, watchedLlmId, form]);
 
+  // Prefill the artifact ``example`` textarea with the canonical
+  // default from the artifacts built-in (which carries
+  // ``ARTIFACT_TEMPLATE_EXAMPLE`` verbatim in its YAML). Fires only
+  // when ``kind === 'artifacts'`` and the textarea is currently
+  // empty — so explicit user edits and saved overrides are never
+  // clobbered. The built-in list arrives async, so this useEffect
+  // re-runs when ``builtins`` lands.
+  const watchedKind = form.watch('kind');
+  const watchedExample = form.watch('example');
+  useEffect(() => {
+    if (watchedKind !== 'artifacts') return;
+    if (watchedExample && watchedExample.trim()) return;
+    const artifactsBuiltin = builtins.find((b) => b.kind === 'artifacts');
+    const def = (artifactsBuiltin?.config as { example?: string } | undefined)
+      ?.example;
+    if (def && def.trim()) {
+      form.setValue('example', def, { shouldDirty: false });
+    }
+  }, [watchedKind, watchedExample, builtins, form]);
+
   useEffect(() => {
     onDirtyChange?.(form.formState.isDirty);
   }, [form.formState.isDirty, onDirtyChange]);
@@ -131,27 +178,39 @@ export function EditTemplateForm({
     [builtins],
   );
 
-  const handleSubmit = form.handleSubmit(async (values) => {
-    const normalizedName = values.name.trim();
-    const hasDuplicatedName = savedTemplates.some(
-      (template) =>
-        template.id !== initial?.id &&
-        template.name.trim().toLowerCase() === normalizedName.toLowerCase(),
-    );
-    if (hasDuplicatedName) {
-      form.setError('name', {
-        type: 'validate',
-        message: t('knowledgeCompilation.nameDuplicated'),
+  const handleSubmit = form.handleSubmit(
+    async (values) => {
+      const normalizedName = values.name.trim();
+      const hasDuplicatedName = savedTemplates.some(
+        (template) =>
+          template.id !== initial?.id &&
+          template.name.trim().toLowerCase() === normalizedName.toLowerCase(),
+      );
+      if (hasDuplicatedName) {
+        form.setError('name', {
+          type: 'validate',
+          message: t('knowledgeCompilation.nameDuplicated'),
+        });
+        return;
+      }
+      await onSubmit({
+        name: normalizedName,
+        description: values.description || undefined,
+        kind: values.kind,
+        config: formValuesToTemplateConfig(values),
       });
-      return;
-    }
-    await onSubmit({
-      name: normalizedName,
-      description: values.description || undefined,
-      kind: values.kind,
-      config: formValuesToTemplateConfig(values),
-    });
-  });
+    },
+    // Surface validation failures — without this, RHF silently no-ops the
+    // submit when any field rejects, which looks like a broken button.
+    (errors) => {
+      const firstError = _firstFormErrorMessage(errors);
+      if (firstError) {
+        message.error(firstError);
+      } else {
+        message.error(t('knowledgeCompilation.formInvalid'));
+      }
+    },
+  );
 
   return (
     <FormProvider {...form}>
@@ -215,18 +274,23 @@ export function EditTemplateForm({
             )}
           />
 
-          <EntityRelationSection
-            variant="entity"
-            kind={kind}
-            fieldTemplates={fieldTemplates.entity}
-          />
-          <EntityRelationSection
-            variant="relation"
-            kind={kind}
-            fieldTemplates={fieldTemplates.relation}
-          />
+          {kind !== 'tree' && (
+            <>
+              <EntityRelationSection
+                variant="entity"
+                kind={kind}
+                fieldTemplates={fieldTemplates.entity}
+              />
+              <EntityRelationSection
+                variant="relation"
+                kind={kind}
+                fieldTemplates={fieldTemplates.relation}
+              />
+            </>
+          )}
 
           {kind === 'artifacts' && <ArtifactExtras />}
+          {kind === 'tree' && <TreeExtras />}
 
           <GlobalRulesBlock />
 

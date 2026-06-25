@@ -13,7 +13,7 @@ import { IDocumentInfo } from '@/interfaces/database/document';
 import { cn } from '@/lib/utils';
 import { formatDate } from '@/utils/date';
 import { ColumnDef } from '@tanstack/table-core';
-import { ArrowUpDown } from 'lucide-react';
+import { ArrowUpDown, Layers3 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { MetadataType } from '../components/metedata/constant';
@@ -88,12 +88,17 @@ export function useDatasetTableColumns({
       meta: { cellClassName: 'max-w-[20vw]' },
       cell: ({ row }) => {
         const name: string = row.getValue('name');
+        const compilationTemplateCount =
+          row.original.compilation_template_count ??
+          row.original.parser_config?.compilation_template_ids?.length ??
+          0;
+        const hasCompilationTemplate = compilationTemplateCount > 0;
 
         return (
           <Tooltip>
             <TooltipTrigger asChild>
               <div
-                className="flex items-center gap-2 cursor-pointer"
+                className="flex items-center gap-2 cursor-pointer min-w-0"
                 onClick={navigateToChunkParsedResult(
                   row.original.id,
                   row.original.dataset_id,
@@ -101,10 +106,23 @@ export function useDatasetTableColumns({
               >
                 <FileIcon name={name}></FileIcon>
                 <span className={cn('truncate')}>{name}</span>
+                {hasCompilationTemplate ? (
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent-primary/10 px-2 py-0.5 text-xs text-accent-primary">
+                    <Layers3 className="size-3" />
+                    {compilationTemplateCount}
+                  </span>
+                ) : null}
               </div>
             </TooltipTrigger>
             <TooltipContent>
-              <p>{name}</p>
+              <div className="space-y-1">
+                <p>{name}</p>
+                <p className="text-xs text-text-secondary">
+                  {hasCompilationTemplate
+                    ? `${compilationTemplateCount} compilation template${compilationTemplateCount === 1 ? '' : 's'} configured`
+                    : 'No compilation templates configured'}
+                </p>
+              </div>
             </TooltipContent>
           </Tooltip>
         );

@@ -897,6 +897,28 @@ class TaskHandler:
             return
         active_templates = filtered_templates
 
+        # Pull ``tree``-kind templates off the streaming-compile path —
+        # they don't go through compile_structure_from_text. Each tree
+        # template runs RAPTOR per-doc and persists one graph row via
+        # _struct_upsert_graph_json. We handle them up-front so the
+        # rest of the orchestrator doesn't have to special-case them.
+        tree_templates: list[tuple[str, dict]] = []
+        non_tree_templates: list[tuple[str, dict]] = []
+        for tid, cfg in active_templates:
+            if _compilation_template_kind((cfg or {}).get("kind")) == "tree":
+                tree_templates.append((tid, cfg))
+            else:
+                non_tree_templates.append((tid, cfg))
+
+        if tree_templates:
+            await self._run_tree_templates(
+                tree_templates, chat_mdl_by_tid, embedding_model,
+            )
+
+        if not non_tree_templates:
+            return
+        active_templates = non_tree_templates
+
         progress_cb = ctx.progress_cb
         total = len(active_templates)
 
@@ -1023,6 +1045,213 @@ class TaskHandler:
         """Get binary from storage."""
         return await thread_pool_exec(settings.STORAGE_IMPL.get, bucket, name)
     
+    @staticmethod
+    def _raptor_tree_to_graph(tree: Dict) -> Dict:
+        """Project a RAPTOR tree dict (from ``Raptor(is_tree=True)``)
+        onto the ``{entities, relations}`` shape the document-structure
+        graph endpoint already serves for ``page_index``-kind rows.
+
+        * Every node — including leaves — becomes an entity, keyed by a
+          stable per-tree node id (``n0``, ``n1``, …).
+        * Every parent → child connection becomes a relation with
+          ``type='child'`` so the existing TreeGraph renderer treats it
+          as a hierarchy edge.
+        * Leaf ``source_chunk_ids`` get hoisted onto the leaf entity so
+          the UI can deep-link from a tree leaf back to the source
+          chunks.
+        """
+        entities: list[dict] = []
+        relations: list[dict] = []
+        counter = {"n": 0}
+
+        def _next_id() -> str:
+            cid = f"n{counter['n']}"
+            counter["n"] += 1
+            return cid
+
+        def _walk(node: dict, parent_id: Optional[str]) -> None:
+            if not isinstance(node, dict):
+                return
+            title = node.get("title") or ""
+            node_id = title #_next_id()
+            ent: dict = {
+                "name": node_id,
+                "type": "tree_node",
+                "description": title,
+                "mention_count": 1,
+            }
+            src_ids = node.get("source_chunk_ids")
+            if isinstance(src_ids, list) and src_ids:
+                ent["source_chunk_ids"] = [s for s in src_ids if isinstance(s, str) and s]
+            entities.append(ent)
+            if parent_id is not None:
+                relations.append({"from": parent_id, "to": node_id, "type": "child"})
+            for child in node.get("children") or []:
+                _walk(child, node_id)
+
+        _walk(tree, None)
+        return {"entities": entities, "relations": relations}
+
+    async def _run_tree_templates(
+        self,
+        templates: list[tuple[str, dict]],
+        chat_mdl_by_tid: dict[str, "LLMBundle"],
+        embedding_model,
+    ) -> None:
+        """Run the ``tree``-kind compilation templates for every doc in
+        this task's KB. Each (template, doc) pair runs RAPTOR with
+        ``is_tree=True`` (via ``RaptorService.build_doc_tree``) and
+        persists a single graph row keyed by
+        ``(compile_kwd="tree", compilation_template_ids=[tid], doc_id)``
+        through the existing ``_struct_upsert_graph_json`` helper — so
+        the document-structure-graph endpoint reads it like every other
+        per-template row.
+        """
+        from rag.svr.task_executor_refactor.raptor_service import RaptorService
+        from rag.advanced_rag.knowlege_compile.structure import _struct_upsert_graph_json
+
+        ctx = self._task_context
+        progress_cb = ctx.progress_cb
+
+        # Build chunks (text, vec, chunk_id) for the current doc from
+        # the streaming chunk loader. We need the embedding vectors
+        # alongside text — _load_chunks_for_doc doesn't include vectors
+        # by default, so do a focused read here that picks them up.
+        try:
+            doc_id = ctx.doc_id
+        except Exception:
+            doc_id = getattr(ctx, "_task", {}).get("doc_id") if hasattr(ctx, "_task") else None
+        if not doc_id:
+            logging.warning("tree-template: no doc_id on task context; skipping")
+            return
+
+        vctr_nm = "q_%d_vec" % len(embedding_model.encode(["x"])[0][0])
+        chunks = await self._load_chunks_with_vec(
+            ctx.tenant_id, ctx.kb_id, doc_id, vctr_nm,
+        )
+        if not chunks:
+            progress_cb(msg=f"tree-template: doc {doc_id} has no chunks; skipping")
+            return
+
+        raptor_service = RaptorService(ctx)
+
+        for idx, (template_id, parser_cfg) in enumerate(templates):
+            raptor_cfg = (parser_cfg or {}).get("raptor") or {}
+            # Mirror RAPTOR's parser_config default shape so build_doc_tree
+            # sees the same keys it does on the per-doc path.
+            raptor_config = {
+                "prompt": raptor_cfg.get("prompt") or "Please write a concise summary of the following texts:\n{cluster_content}",
+                "max_token": int(raptor_cfg.get("max_token") or 512),
+                "threshold": float(raptor_cfg.get("threshold") or 0.1),
+                "random_seed": int(raptor_cfg.get("random_seed") or 0),
+                "max_cluster": int(raptor_cfg.get("max_cluster") or 64),
+                "ext": raptor_cfg.get("ext") or {},
+            }
+            progress_cb(
+                msg=f"tree-template ({idx + 1}/{len(templates)}): "
+                    f"building tree for doc={doc_id}",
+            )
+            try:
+                tree = await raptor_service.build_doc_tree(
+                    chunks=chunks,
+                    raptor_config=raptor_config,
+                    chat_mdl=chat_mdl_by_tid[template_id],
+                    embd_mdl=embedding_model,
+                    tree_builder="raptor",        # classic builder; PSI returns None
+                    clustering_method="gmm",
+                    max_errors=3,
+                )
+            except Exception:
+                logging.exception(
+                    "tree-template %s: RAPTOR build failed for doc %s",
+                    template_id, doc_id,
+                )
+                continue
+            if tree is None:
+                logging.info(
+                    "tree-template %s: no tree produced for doc %s",
+                    template_id, doc_id,
+                )
+                continue
+
+            graph = self._raptor_tree_to_graph(tree)
+            try:
+                await _struct_upsert_graph_json(
+                    graph,
+                    ctx.tenant_id,
+                    ctx.kb_id,
+                    doc_id,
+                    compile_kwd="tree",
+                    compilation_template_id=template_id,
+                )
+            except Exception:
+                logging.exception(
+                    "tree-template %s: graph upsert failed for doc %s",
+                    template_id, doc_id,
+                )
+                continue
+            progress_cb(
+                msg=f"tree-template ({idx + 1}/{len(templates)}): "
+                    f"persisted {len(graph['entities'])} node(s), "
+                    f"{len(graph['relations'])} edge(s) for doc {doc_id}",
+            )
+
+    @staticmethod
+    async def _load_chunks_with_vec(
+        tenant_id: str, kb_id: str, doc_id: str, vctr_nm: str,
+    ) -> list[tuple[str, "np.ndarray", str]]:
+        """Page through this doc's chunks pulling content + vector +
+        chunk_id, in the shape ``RaptorService.build_doc_tree`` expects.
+        Mirrors ``_load_chunks_for_doc`` but with the vector field.
+        """
+        from common.doc_store.doc_store_base import OrderByExpr
+
+        index_nm = search.index_name(tenant_id)
+        if not settings.docStoreConn.index_exist(index_nm, kb_id):
+            return []
+        select_fields = ["id", "doc_id", "content_with_weight", vctr_nm]
+        order_by = OrderByExpr()
+        order_by.asc("page_num_int")
+        order_by.asc("top_int")
+
+        out: list[tuple[str, "np.ndarray", str]] = []
+        offset = 0
+        PAGE = 500
+        while True:
+            try:
+                res = await thread_pool_exec(
+                    settings.docStoreConn.search,
+                    select_fields, [], {"doc_id": [doc_id], "available_int": 1},
+                    [], order_by, offset, PAGE,
+                    index_nm, [kb_id],
+                )
+                field_map = settings.docStoreConn.get_fields(res, select_fields)
+            except Exception:
+                logging.exception(
+                    "tree-template: failed to load chunks for doc=%s", doc_id,
+                )
+                break
+            if not field_map:
+                break
+            for row_id, row in field_map.items():
+                if row.get("compile_kwd"):
+                    continue
+                text = row.get("content_with_weight") or ""
+                vec = row.get(vctr_nm)
+                if not text or vec is None:
+                    continue
+                try:
+                    arr = np.asarray(vec, dtype=np.float32)
+                except Exception:
+                    continue
+                if arr.size == 0:
+                    continue
+                out.append((text, arr, str(row_id)))
+            if len(field_map) < PAGE:
+                break
+            offset += PAGE
+        return out
+
     async def _run_artifact(self, embedding_model):
         """KB-wide artifact compilation task. Runs after the user clicks the
         "Artifact" button in the dataset generate menu. Iterates every doc in
@@ -1125,7 +1354,13 @@ class TaskHandler:
         # behavior the user asked for.
         # ``kb_chat_llm_id`` is captured from the first eligible template
         # and used as the canonical chat model for REDUCE/PLAN/REFINE.
+        # ``kb_writer_example`` follows the same first-template-wins
+        # rule: the REFINE writer's page-structure section is pulled
+        # from the first eligible artifact template's
+        # ``parser_config.example`` override (None falls back to the
+        # built-in ``ARTIFACT_TEMPLATE_EXAMPLE``).
         kb_chat_llm_id: str | None = None
+        kb_writer_example: str | None = None
         n_docs = len(eligible)
         for i, (doc, template_id) in enumerate(eligible):
             doc_id = doc["id"]
@@ -1145,6 +1380,11 @@ class TaskHandler:
                 # First eligible template wins — canonical for KB-wide
                 # REDUCE/PLAN/REFINE further down.
                 kb_chat_llm_id = map_llm_id or None
+                tmpl_example = (
+                    parser_cfg.get("example") if isinstance(parser_cfg, dict) else None
+                )
+                if isinstance(tmpl_example, str) and tmpl_example.strip():
+                    kb_writer_example = tmpl_example
 
             # Stream the doc's chunks in batches and call MAP per batch so
             # peak memory stays bounded for long docs. Each MAP call has its
@@ -1244,6 +1484,7 @@ class TaskHandler:
                 tenant_id=ctx.tenant_id,
                 kb_id=ctx.kb_id,
                 callback=_stage_cb("[artifact REFINE]"),
+                example=kb_writer_example,
             )
         except Exception:
             logging.exception("artifact: REDUCE/PLAN/REFINE failed for kb %s", ctx.kb_id)
@@ -1359,8 +1600,7 @@ class TaskHandler:
     async def _label_skill_node_one(
         self, summary: str, chat_mdl, semaphore: asyncio.Semaphore,
     ) -> str:
-        """Generate a single fs-safe label. Mirrors Corpus2Skill
-        ``_async_label_one`` (summarizer.py:163-191): 2–5 word lowercase
+        """Generate a single fs-safe label: 2–5 word lowercase
         hyphenated label, max_tokens=20, sanitized to [a-z0-9-], capped
         at 50 chars, falls back to "cluster" on any failure.
         """
@@ -1370,7 +1610,7 @@ class TaskHandler:
                     "You generate short filesystem-safe cluster labels. Reply with the label only.",
                     [{"role": "user", "content": (
                         "Generate a short (2-5 word) filesystem-safe label for this cluster. "
-                        "Use lowercase, hyphens instead of spaces. No quotes.\n\n"
+                        "Use lowercase(MUST be in the same language as 'Summary'), hyphens instead of spaces. No quotes.\n\n"
                         f"Summary: {(summary or '')[:500]}"
                     )}],
                     {"max_tokens": 20, "temperature": 0.0},

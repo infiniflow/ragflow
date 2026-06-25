@@ -96,11 +96,15 @@ export const compilationTemplateFormSchema = z
     llm_id: z.string().trim().min(1, 'LLM is required.'),
     entity: z.object({
       description: z.string().max(TEXT_MAX),
-      fields: z.array(entityFieldSchema).min(1).max(FIELDS_MAX),
+      // ``min(1)`` enforced in superRefine for kinds that actually
+      // render the entity/relation sections. ``tree`` hides them and
+      // carries empty arrays — validating min length here would
+      // silently block save with no visible error.
+      fields: z.array(entityFieldSchema).max(FIELDS_MAX),
     }),
     relation: z.object({
       description: z.string().max(TEXT_MAX),
-      fields: z.array(relationFieldSchema).min(1).max(FIELDS_MAX),
+      fields: z.array(relationFieldSchema).max(FIELDS_MAX),
     }),
     claim: z
       .object({
@@ -112,11 +116,41 @@ export const compilationTemplateFormSchema = z
         fields: z.array(conceptFieldSchema).max(FIELDS_MAX),
       })
       .optional(),
+    // Page-structure example for the REFINE writer (artifacts kind
+    // only). Empty / whitespace-only saves as ``undefined`` so the
+    // backend falls back to its built-in ARTIFACT_TEMPLATE_EXAMPLE.
+    example: z.string().max(8000).optional(),
+    raptor: z
+      .object({
+        prompt: z.string().max(TEXT_MAX),
+        max_token: z.coerce.number().int().min(1).max(8192),
+        threshold: z.coerce.number().min(0).max(1),
+      })
+      .optional(),
     global_rules: z.string().max(GLOBAL_RULES_MAX),
   })
   .superRefine((values, ctx) => {
     addUniqueTypeIssue(ctx, values.entity.fields, ['entity', 'fields']);
     addUniqueTypeIssue(ctx, values.relation.fields, ['relation', 'fields']);
+    // Entity/relation length requirement is per-kind: tree-kind
+    // templates hide those sections in the UI, so requiring at least
+    // one field would block save with no visible error.
+    if (values.kind !== 'tree') {
+      if (values.entity.fields.length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'At least one entity field is required.',
+          path: ['entity', 'fields'],
+        });
+      }
+      if (values.relation.fields.length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'At least one relation field is required.',
+          path: ['relation', 'fields'],
+        });
+      }
+    }
     if (values.kind === 'artifacts') {
       if (!values.claim?.fields?.length) {
         ctx.addIssue({
@@ -130,6 +164,15 @@ export const compilationTemplateFormSchema = z
           code: z.ZodIssueCode.custom,
           message: 'Concept specification is required.',
           path: ['concept', 'fields'],
+        });
+      }
+    }
+    if (values.kind === 'tree') {
+      if (!values.raptor?.prompt?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Summarization prompt is required.',
+          path: ['raptor', 'prompt'],
         });
       }
     }
@@ -158,25 +201,35 @@ export function templateConfigToFormValues(
     // before this code runs. Defensive '' fallback keeps the form
     // controlled.
     llm_id: (config as { llm_id?: string }).llm_id ?? '',
+    // ``tree`` kind hides the entity/relation sections in the editor.
+    // Seed empty arrays so the per-field validators (which require
+    // non-empty type/description) never fire on stub rows the user
+    // can't see.
     entity: {
       description: config.entity?.description ?? '',
-      fields: config.entity?.fields?.length
-        ? config.entity.fields.map((f) => ({
-            type: f.type ?? '',
-            description: f.description ?? '',
-            rule: f.rule ?? '',
-          }))
-        : [{ type: '', description: '', rule: '' }],
+      fields:
+        config.kind === 'tree'
+          ? []
+          : config.entity?.fields?.length
+            ? config.entity.fields.map((f) => ({
+                type: f.type ?? '',
+                description: f.description ?? '',
+                rule: f.rule ?? '',
+              }))
+            : [{ type: '', description: '', rule: '' }],
     },
     relation: {
       description: config.relation?.description ?? '',
-      fields: config.relation?.fields?.length
-        ? config.relation.fields.map((f) => ({
-            type: f.type ?? '',
-            description: f.description ?? '',
-            rule: f.rule ?? '',
-          }))
-        : [{ type: '', description: '', rule: '' }],
+      fields:
+        config.kind === 'tree'
+          ? []
+          : config.relation?.fields?.length
+            ? config.relation.fields.map((f) => ({
+                type: f.type ?? '',
+                description: f.description ?? '',
+                rule: f.rule ?? '',
+              }))
+            : [{ type: '', description: '', rule: '' }],
     },
     claim:
       config.kind === 'artifacts'
@@ -196,6 +249,25 @@ export function templateConfigToFormValues(
             })) ?? [{ term: '', definition_excerpt: '' }],
           }
         : undefined,
+    // Artifact page-structure override. Empty for non-artifact kinds;
+    // the form gates its render the same way as claim/concept above.
+    example:
+      config.kind === 'artifacts'
+        ? ((config as { example?: string }).example ?? '')
+        : undefined,
+    raptor:
+      config.kind === 'tree'
+        ? {
+            // Defaults mirror RAPTOR's per-doc parse-config so a fresh
+            // template doesn't ship empty fields when the user clicks
+            // "Add template" → kind "tree" without picking a built-in.
+            prompt:
+              config.raptor?.prompt ??
+              'Please write a concise summary of the following texts:\n{cluster_content}',
+            max_token: config.raptor?.max_token ?? 512,
+            threshold: config.raptor?.threshold ?? 0.1,
+          }
+        : undefined,
     global_rules: config.global_rules ?? '',
   };
 }
@@ -210,6 +282,13 @@ export function formValuesToTemplateConfig(
     relation: values.relation,
     claim: values.kind === 'artifacts' ? values.claim : undefined,
     concept: values.kind === 'artifacts' ? values.concept : undefined,
+    // Trim → empty → undefined so an all-whitespace textarea means
+    // "use backend default" rather than "send an empty override".
+    example:
+      values.kind === 'artifacts' && values.example?.trim()
+        ? values.example.trim()
+        : undefined,
+    raptor: values.kind === 'tree' ? values.raptor : undefined,
     global_rules: values.global_rules,
   };
 }
@@ -237,6 +316,7 @@ export function emptyFormValues(): CompilationTemplateFormValues {
     },
     claim: undefined,
     concept: undefined,
+    example: undefined,
     global_rules: '',
   };
 }
@@ -254,6 +334,7 @@ export const ENTITY_TYPE_SUGGESTIONS: Record<
   timeline: [],
   knowledge_graph: [],
   artifacts: [],
+  tree: [],
   empty: [],
 };
 
@@ -265,6 +346,7 @@ export const RELATION_TYPE_SUGGESTIONS: Record<
   timeline: [],
   knowledge_graph: [],
   artifacts: [],
+  tree: [],
   empty: [],
 };
 

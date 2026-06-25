@@ -12,6 +12,7 @@ export const COMPILATION_TEMPLATE_KINDS = [
   'timeline',
   'knowledge_graph',
   'artifacts',
+  'tree',
   'empty',
 ] as const;
 
@@ -70,7 +71,21 @@ export interface CompilationTemplateConfig {
   claim?: CompilationClaimSection;
   /** Present only when {@link kind} === 'artifacts'. */
   concept?: CompilationConceptSection;
+  /** Present only when {@link kind} === 'artifacts'.
+   *  Override for the page-structure section of the REFINE writer
+   *  prompt. Empty / missing → backend falls back to its built-in
+   *  ``ARTIFACT_TEMPLATE_EXAMPLE``. */
+  example?: string;
+  /** Present only when {@link kind} === 'tree'. RAPTOR-style knobs for
+   *  the recursive summarization tree. */
+  raptor?: CompilationRaptorSection;
   global_rules: string;
+}
+
+export interface CompilationRaptorSection {
+  prompt: string;
+  max_token: number;
+  threshold: number;
 }
 
 export interface CompilationTemplate {

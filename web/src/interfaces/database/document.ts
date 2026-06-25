@@ -31,6 +31,8 @@ export interface IDocumentInfo {
   meta_fields?: Record<string, any>;
   chunk_method: string;
   chunk_count: number;
+  compilation_template_count?: number;
+  has_compilation_template?: boolean;
 }
 
 export interface IParserConfig {
