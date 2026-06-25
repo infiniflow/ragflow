@@ -404,3 +404,32 @@ func isHalfWidth(r rune) bool {
 	}
 	return false
 }
+
+func ExtractColumnsAndCleanData(data []map[string]interface{}) ([]string, []map[string]interface{}, bool) {
+	if len(data) == 0 {
+		return nil, nil, false
+	}
+	columnsRaw, ok := data[0]["_columns"]
+	if !ok {
+		return nil, nil, false
+	}
+	columns, ok := columnsRaw.([]interface{})
+	if !ok {
+		return nil, nil, false
+	}
+	colNames := make([]string, 0, len(columns))
+	for _, c := range columns {
+		colNames = append(colNames, fmt.Sprintf("%v", c))
+	}
+	cleanData := make([]map[string]interface{}, 0, len(data))
+	for _, row := range data {
+		cleanRow := make(map[string]interface{}, len(row))
+		for k, v := range row {
+			if k != "_columns" {
+				cleanRow[k] = v
+			}
+		}
+		cleanData = append(cleanData, cleanRow)
+	}
+	return colNames, cleanData, true
+}
