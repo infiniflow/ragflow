@@ -17,7 +17,11 @@ class TestPostgresDatabaseLock:
 
         lock.lock()
 
-        db.execute_sql.assert_called_once_with("SELECT pg_advisory_lock(%s)", (lock.lock_id,))
+        assert db.execute_sql.call_args_list == [
+            (("SET lock_timeout = %s", ("0",)),),
+            (("SELECT pg_advisory_lock(%s)", (lock.lock_id,)),),
+            (("SET lock_timeout = DEFAULT",),),
+        ]
 
     def test_lock_uses_postgres_lock_timeout(self):
         db = MagicMock()
