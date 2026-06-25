@@ -414,8 +414,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Message routes
 			message := v1.Group("/messages")
 			{
+				message.GET("", r.memoryHandler.GetMessages)
 				message.DELETE("/:memory_message", r.memoryHandler.ForgetMessage)
 				message.PUT("/:memory_message", r.memoryHandler.UpdateMessage)
+				message.GET("/:memory_message/content", r.memoryHandler.GetMessageContent)
+				message.GET("/search", r.memoryHandler.SearchMessage)
 			}
 
 			// Skill search routes
@@ -520,6 +523,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				connector.POST("/google/oauth/web/start", r.connectorHandler.StartGoogleWebOAuth)
 				connector.POST("/google/oauth/web/result", r.connectorHandler.PollGoogleWebOAuthResult)
 				connector.GET("/:connector_id", r.connectorHandler.GetConnector)
+				connector.PATCH("/:connector_id", r.connectorHandler.UpdateConnector)
 				connector.GET("/:connector_id/logs", r.connectorHandler.ListLogs)
 				connector.DELETE("/:connector_id", r.connectorHandler.DeleteConnector)
 				connector.POST("/:connector_id/rebuild", r.connectorHandler.RebuildConnector)
