@@ -1058,6 +1058,7 @@ func (p *Parser) parseAdminCreateCommand() (*Command, error) {
 	}
 }
 
+// CREATE USER 'user@example.com' 'password';
 func (p *Parser) parseAdminCreateUser() (*Command, error) {
 	p.nextToken() // consume USER
 	userName, err := p.parseQuotedString()

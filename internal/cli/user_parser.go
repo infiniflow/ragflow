@@ -20,7 +20,7 @@ func tokenTypeDescription(t int, tok Token) string {
 func (p *Parser) parseAPILogout() (*Command, error) {
 	cmd := NewCommand("api_logout")
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -55,7 +55,7 @@ func (p *Parser) parseAPILoginUser() (*Command, error) {
 		p.nextToken()
 	}
 
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -66,7 +66,7 @@ func (p *Parser) parseAPILoginUser() (*Command, error) {
 func (p *Parser) parseAPIPingServer() (*Command, error) {
 	cmd := NewCommand("api_ping_server")
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -112,7 +112,7 @@ func (p *Parser) parseAPIRegisterCommand() (*Command, error) {
 	cmd.Params["password"] = password
 	p.nextToken() // consume 'password'
 
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -174,7 +174,7 @@ func (p *Parser) parseAPIListDatasets() (*Command, error) {
 	cmd := NewCommand("api_list_datasets")
 	p.nextToken() // consume DATASETS
 
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -459,7 +459,7 @@ func (p *Parser) parseAPIListDefaultModels() (*Command, error) {
 		return nil, fmt.Errorf("expected MODELS")
 	}
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -577,7 +577,7 @@ func (p *Parser) parseShowVariable() (*Command, error) {
 	cmd.Params["var_name"] = varName
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -792,7 +792,7 @@ func (p *Parser) parseCreateRole() (*Command, error) {
 		p.nextToken()
 	}
 
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -822,7 +822,7 @@ func (p *Parser) parseCreateModelProvider() (*Command, error) {
 	cmd.Params["provider_key"] = providerKey
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1271,7 +1271,7 @@ func (p *Parser) parseCreateDataset() (*Command, error) {
 		return nil, fmt.Errorf("expected PARSER or PIPELINE")
 	}
 
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1289,7 +1289,7 @@ func (p *Parser) parseCreateChat() (*Command, error) {
 	cmd.Params["chat_name"] = chatName
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1436,7 +1436,7 @@ func (p *Parser) parseDropUser() (*Command, error) {
 	cmd.Params["user_name"] = userName
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1454,7 +1454,7 @@ func (p *Parser) parseDropRole() (*Command, error) {
 	cmd.Params["role_name"] = roleName
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1492,7 +1492,7 @@ func (p *Parser) parseDropDataset() (*Command, error) {
 	cmd.Params["dataset_name"] = datasetName
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1510,7 +1510,7 @@ func (p *Parser) parseDropChat() (*Command, error) {
 	cmd.Params["chat_name"] = chatName
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -1943,7 +1943,7 @@ func (p *Parser) parseSetVariable() (*Command, error) {
 	cmd.Params["var_value"] = varValue
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -2062,20 +2062,28 @@ func (p *Parser) parseSetLogLevel() (*Command, error) {
 		return nil, fmt.Errorf("unknown log target: %s", p.curToken.Value)
 	}
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
 	return cmd, nil
 }
 
-func (p *Parser) parseResetCommand() (*Command, error) {
+func (p *Parser) parseAPIResetCommands() (*Command, error) {
 	p.nextToken() // consume RESET
 
-	if p.curToken.Type != TokenDefault {
-		return nil, fmt.Errorf("expected DEFAULT")
+	switch p.curToken.Type {
+	case TokenDefault:
+		return p.parseAPIResetDefaultModel()
+	case TokenKey:
+		return p.parseAPIResetKey()
+	default:
+		return nil, fmt.Errorf("unknown RESET target: %s", p.curToken.Value)
 	}
-	p.nextToken()
+}
+
+func (p *Parser) parseAPIResetDefaultModel() (*Command, error) {
+	p.nextToken() // consume DEFAULT
 
 	var modelType string
 	switch p.curToken.Type {
@@ -2106,11 +2114,21 @@ func (p *Parser) parseResetCommand() (*Command, error) {
 	}
 	p.nextToken() // pass MODEL
 
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
 	return cmd, nil
+}
+
+func (p *Parser) parseAPIResetKey() (*Command, error) {
+	p.nextToken()
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return NewCommand("api_unset_api_key"), nil
 }
 
 func (p *Parser) parseImportCommand() (*Command, error) {
@@ -2140,7 +2158,7 @@ func (p *Parser) parseImportCommand() (*Command, error) {
 	cmd.Params["dataset_name"] = datasetName
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -2519,7 +2537,7 @@ func (p *Parser) parseEnableCommand() (*Command, error) {
 	}
 	p.nextToken()
 
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -2562,7 +2580,7 @@ func (p *Parser) parseDisableCommand() (*Command, error) {
 	}
 	p.nextToken()
 
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -3006,7 +3024,7 @@ func (p *Parser) parseASRCommand() (*Command, error) {
 		}
 	}
 
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -3421,7 +3439,7 @@ func (p *Parser) parseParseDataset() (*Command, error) {
 	cmd.Params["method"] = method
 
 	p.nextToken()
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -3455,7 +3473,7 @@ func (p *Parser) parseParseDocs() (*Command, error) {
 	cmd.Params["documents"] = documents
 	cmd.Params["dataset_id"] = datasetID
 
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -3584,10 +3602,6 @@ func (p *Parser) parseUserStatement() (*Command, error) {
 		return p.parseCreateCommand()
 	case TokenDrop:
 		return p.parseDropCommand()
-	case TokenUnset:
-		return p.parseUnsetCommand()
-	case TokenReset:
-		return p.parseResetCommand()
 	case TokenList:
 		return p.parseAPIListCommands()
 	case TokenParse:
@@ -3608,22 +3622,6 @@ func (p *Parser) parseUserStatement() (*Command, error) {
 		return nil, fmt.Errorf("invalid user statement: %s", p.curToken.Value)
 	}
 }
-
-func (p *Parser) parseUnsetCommand() (*Command, error) {
-	p.nextToken() // consume UNSET
-
-	if p.curToken.Type != TokenKey {
-		return nil, fmt.Errorf("expected TOKEN after UNSET")
-	}
-	p.nextToken()
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return NewCommand("api_unset_api_key"), nil
-}
-
 // parseGetCommand parses: GET CHUNK or GET METADATA
 func (p *Parser) parseGetCommand() (*Command, error) {
 	p.nextToken() // consume GET
@@ -4061,7 +4059,7 @@ func (p *Parser) parseUserStartIngestion() (*Command, error) {
 	cmd.Params["dataset_id"] = datasetID
 	p.nextToken()
 
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -4112,7 +4110,7 @@ func (p *Parser) parseUserStopIngestion() (*Command, error) {
 	cmd.Params["tasks"] = tasks
 	p.nextToken()
 
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -4138,7 +4136,7 @@ func (p *Parser) parseAPIListIngestionTasks() (*Command, error) {
 		cmd.Params["dataset_id"] = datasetID
 	}
 
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -4164,7 +4162,7 @@ func (p *Parser) parseUserRemoveTask() (*Command, error) {
 
 	cmd.Params["tasks"] = tasks
 
-	// Semicolon is optional for UNSET TOKEN
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
