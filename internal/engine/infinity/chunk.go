@@ -1286,7 +1286,7 @@ func applyFieldMappings(chunks []map[string]interface{}) {
 			chunk["message_type"] = val
 		}
 		if val, ok := chunk["status_int"]; ok {
-			chunk["status"] = val
+			chunk["status"] = memoryMessageStatusBool(val)
 		}
 
 		// position_int: convert from hex string to array format (grouped by 5)
@@ -1336,6 +1336,26 @@ func applyFieldMappings(chunks []map[string]interface{}) {
 			chunk["row_id()"] = val
 			delete(chunk, "ROW_ID")
 		}
+	}
+}
+
+func memoryMessageStatusBool(value interface{}) bool {
+	switch v := value.(type) {
+	case bool:
+		return v
+	case int:
+		return v != 0
+	case int64:
+		return v != 0
+	case float64:
+		return v != 0
+	case json.Number:
+		n, err := v.Int64()
+		return err == nil && n != 0
+	case string:
+		return v != "" && v != "0" && !strings.EqualFold(v, "false")
+	default:
+		return false
 	}
 }
 

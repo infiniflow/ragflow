@@ -44,6 +44,8 @@ var jsonIterator = jsoniter.Config{
 	SortMapKeys: false,
 }.Froze()
 
+var memoryMessageVectorFieldRE = regexp.MustCompile(`^q_\d+_vec$`)
+
 var (
 	elasticsearchHighlightEmTagRE     = regexp.MustCompile(`<em>[^<>]+</em>`)
 	elasticsearchHighlightNewlineRE   = regexp.MustCompile(`[\r\n]`)
@@ -1410,6 +1412,12 @@ func mapMemoryMessageESFields(fields []string, useTokenizedContent bool) []strin
 
 func normalizeMemoryMessageChunks(chunks []map[string]interface{}) {
 	for _, chunk := range chunks {
+		for key, val := range chunk {
+			if memoryMessageVectorFieldRE.MatchString(key) {
+				chunk["content_embed"] = val
+				delete(chunk, key)
+			}
+		}
 		if val, ok := chunk["message_type_kwd"]; ok {
 			chunk["message_type"] = val
 			delete(chunk, "message_type_kwd")
@@ -1684,6 +1692,10 @@ func buildRankFeatureQuery(rankFeature map[string]float64) []map[string]interfac
 
 // GetChunk gets a chunk by ID using ES search API
 func (e *elasticsearchEngine) GetChunk(ctx context.Context, baseName, chunkID string, datasetIDs []string) (interface{}, error) {
+	if strings.HasPrefix(baseName, "memory_") {
+		return e.getMemoryMessage(ctx, baseName, chunkID)
+	}
+
 	// Try search by doc_id field (which is stored in the document)
 	for _, datasetID := range datasetIDs {
 		searchReq := map[string]interface{}{
@@ -1750,6 +1762,42 @@ func (e *elasticsearchEngine) GetChunk(ctx context.Context, baseName, chunkID st
 
 	common.Info("GetChunk no hits found", zap.String("baseName", baseName), zap.String("chunkID", chunkID))
 	return nil, nil
+}
+
+func (e *elasticsearchEngine) getMemoryMessage(ctx context.Context, indexName, docID string) (interface{}, error) {
+	req := esapi.GetRequest{
+		Index:      indexName,
+		DocumentID: docID,
+	}
+	res, err := req.Do(ctx, e.client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get memory message: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		if res.StatusCode == http.StatusNotFound {
+			return nil, fmt.Errorf("%w: %s", types.ErrDocumentNotFound, docID)
+		}
+		bodyBytes, _ := io.ReadAll(res.Body)
+		return nil, fmt.Errorf("elasticsearch memory message get error: %s, body: %s", res.Status(), string(bodyBytes))
+	}
+
+	var getResult struct {
+		Found  bool                   `json:"found"`
+		Source map[string]interface{} `json:"_source"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&getResult); err != nil {
+		return nil, fmt.Errorf("failed to parse memory message get response: %w", err)
+	}
+	if !getResult.Found || getResult.Source == nil {
+		return nil, nil
+	}
+
+	message := getResult.Source
+	message["id"] = docID
+	normalizeMemoryMessageChunks([]map[string]interface{}{message})
+	return message, nil
 }
 
 // GetFields extracts the requested fields from ES search response chunks

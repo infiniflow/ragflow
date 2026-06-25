@@ -766,6 +766,57 @@ func (h *MemoryHandler) UpdateMessage(c *gin.Context) {
 	})
 }
 
+// GetMessageContent handles GET request for getting message content
+// API Path: GET /api/v1/messages/:memory_id/:message_id/content
+//
+// Function:
+//   - Gets complete content of the specified message
+//   - doc_id format: memory_id + "_" + message_id
+//
+// Parameter Format:
+//   - memory_id: Memory ID
+//   - message_id: Message ID (integer)
+//
+
+func (h *MemoryHandler) GetMessageContent(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	userID := strings.TrimSpace(user.ID)
+	if userID == "" {
+		jsonError(c, common.CodeAuthenticationError, "user id is required")
+		return
+	}
+
+	memoryID, messageID, err := parseMemoryMessagePath(c.Param("memory_message"))
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeArgumentError,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	data, err := h.memoryService.GetMessageContent(c.Request.Context(), userID, memoryID, messageID)
+	if err != nil {
+		if _, ok := err.(*service.ResourceNotFoundError); ok {
+			jsonError(c, common.CodeNotFound, err.Error())
+			return
+		}
+		jsonError(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"message": true,
+		"data":    data,
+	})
+}
+
 // SearchMessage handles GET request for searching messages
 // API Path: GET /api/v1/messages/search
 //
@@ -899,26 +950,6 @@ func (h *MemoryHandler) GetMessages(c *gin.Context) {
 		"code":    common.CodeSuccess,
 		"message": true,
 		"data":    data,
-	})
-}
-
-// GetMessageContent handles GET request for getting message content
-// API Path: GET /api/v1/messages/:memory_id/:message_id/content
-//
-// Function:
-//   - Gets complete content of the specified message
-//   - doc_id format: memory_id + "_" + message_id
-//
-// Parameter Format:
-//   - memory_id: Memory ID
-//   - message_id: Message ID (integer)
-//
-// TODO: Haruko386 is implementing this for now, if you implement this, delete this line plz
-func (h *MemoryHandler) GetMessageContent(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeServerError,
-		"message": "GetMessageContent not implemented - pending embedding engine dependency",
-		"data":    nil,
 	})
 }
 

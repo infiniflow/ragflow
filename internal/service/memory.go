@@ -247,8 +247,9 @@ func generateOutputFormat(typesToExtract []string) string {
 // MemoryService handles business logic for memory operations
 // It provides methods for creating, updating, deleting, and querying memories
 type MemoryService struct {
-	memoryDAO *dao.MemoryDAO
-	docEngine engine.DocEngine
+	memoryDAO      *dao.MemoryDAO
+	docEngine      engine.DocEngine
+	chatSessionDAO *dao.ChatSessionDAO
 }
 
 // NewMemoryService creates a new MemoryService instance
@@ -846,6 +847,35 @@ func (s *MemoryService) UpdateMessage(ctx context.Context, userID, memoryID stri
 	}
 
 	return true, nil
+}
+
+func (s *MemoryService) GetMessageContent(ctx context.Context, userID, memoryID string, messageID int64) (map[string]interface{}, error) {
+	memory, err := s.requireMemoryAccess(ctx, userID, memoryID)
+	if err != nil {
+		return nil, err
+	}
+	if s.docEngine == nil {
+		return nil, errors.New("message store is not initialized")
+	}
+
+	indexName := memoryIndexName(memory.TenantID)
+	docID := fmt.Sprintf("%s_%d", memoryID, messageID)
+	res, err := s.docEngine.GetChunk(ctx, indexName, docID, []string{memoryID})
+	if err != nil {
+		if isMessageDocumentNotFound(err) {
+			return nil, &ResourceNotFoundError{Resource: "Message", ID: docID}
+		}
+		return nil, err
+	}
+	if res == nil {
+		return nil, &ResourceNotFoundError{Resource: "Message", ID: docID}
+	}
+
+	message, ok := res.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected message content type %T", res)
+	}
+	return common.ConvertFloatsToPyFormat(message).(map[string]interface{}), nil
 }
 
 func (s *MemoryService) SearchMessage(ctx context.Context, userID string, filterDict, params map[string]interface{}) ([]map[string]interface{}, common.ErrorCode, error) {
@@ -1629,15 +1659,6 @@ func memoryMessageKey(value interface{}) string {
 
 // TODO: UpdateMessageStatus - Implementation pending - depends on embedding engine
 // func (s *MemoryService) UpdateMessageStatus(memoryID string, messageID int, status bool) (bool, error) { ... }
-
-// TODO: SearchMessage - Implementation pending - depends on embedding engine
-// func (s *MemoryService) SearchMessage(filterDict map[string]interface{}, params map[string]interface{}) ([]map[string]interface{}, error) { ... }
-
-// TODO: GetMessages - Implementation pending - depends on embedding engine
-// func (s *MemoryService) GetMessages(memoryIDs []string, agentID string, sessionID string, limit int) ([]map[string]interface{}, error) { ... }
-
-// TODO: GetMessageContent - Implementation pending - depends on embedding engine
-// func (s *MemoryService) GetMessageContent(memoryID string, messageID int) (map[string]interface{}, error) { ... }
 
 // isList checks if a value is a list or array type
 // This is a utility function for type validation
