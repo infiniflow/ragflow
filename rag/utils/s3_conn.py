@@ -221,8 +221,15 @@ class RAGFlowS3:
     def move(self, src_bucket, src_path, dest_bucket, dest_path):
         try:
             if self.copy(src_bucket, src_path, dest_bucket, dest_path):
-                self.rm(src_bucket, src_path)
-                return True
+                actual_src_bucket, actual_src_path = self._resolve_path(src_bucket, src_path)
+                try:
+                    self.conn[0].delete_object(Bucket=actual_src_bucket, Key=actual_src_path)
+                    return True
+                except Exception:
+                    logging.exception(
+                        f"Copied but failed to delete source: {src_bucket}/{src_path}"
+                    )
+                    return False
             else:
                 logging.error(f"Copy failed, move aborted: {src_bucket}/{src_path}")
                 return False
