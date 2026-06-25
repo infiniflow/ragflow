@@ -7308,6 +7308,33 @@
                     "model_type": "embedding"
                 }
             ]
+        },
+        {
+            "name": "TwelveLabs",
+            "logo": "",
+            "tags": "TEXT EMBEDDING,IMAGE2TEXT",
+            "status": "1",
+            "url": "https://api.twelvelabs.io",
+            "llm": [
+                {
+                    "llm_name": "marengo3.0",
+                    "tags": "TEXT EMBEDDING,512",
+                    "max_tokens": 512,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "pegasus1.5",
+                    "tags": "IMAGE2TEXT,VIDEO",
+                    "max_tokens": 2048,
+                    "model_type": "image2text"
+                },
+                {
+                    "llm_name": "pegasus1.2",
+                    "tags": "IMAGE2TEXT,VIDEO",
+                    "max_tokens": 2048,
+                    "model_type": "image2text"
+                }
+            ]
         }
     ]
 }

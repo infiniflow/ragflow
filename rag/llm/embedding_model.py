@@ -1300,3 +1300,45 @@ class PerplexityEmbed(Base):
     def encode_queries(self, text):
         embds, cnt = self.encode([text])
         return np.array(embds[0]), cnt
+
+
+class TwelveLabsEmbed(Base):
+    """Text embeddings via TwelveLabs Marengo.
+
+    Marengo is a multimodal model: the text, image, video and audio it embeds
+    all land in the same 512-dimensional space, so a Marengo text embedding can
+    be searched against video/image embeddings produced elsewhere. Here we use
+    the text modality so RAGFlow can index documents in that shared space.
+
+    The ``/embed`` endpoint embeds a single input per call (no batch input
+    parameter), so we issue one request per text. Marengo has no published token
+    usage in the response, so token counts fall back to a local tiktoken count.
+    """
+
+    _FACTORY_NAME = "TwelveLabs"
+
+    def __init__(self, key, model_name="marengo3.0", base_url=None, **kwargs):
+        from twelvelabs import TwelveLabs
+
+        if not model_name:
+            model_name = "marengo3.0"
+        self.client = TwelveLabs(api_key=key)
+        self.model_name = model_name
+
+    def _embed_one(self, text):
+        try:
+            res = self.client.embed.create(model_name=self.model_name, text=text)
+        except Exception as e:
+            logger.exception("%s embedding request failed", type(self).__name__)
+            raise EmbeddingError(f"Embedding request failed for {type(self).__name__}. Error: {e}") from e
+        if not res.text_embedding or not res.text_embedding.segments:
+            raise EmbeddingError(f"Embedding request failed for {type(self).__name__}: empty response")
+        return res.text_embedding.segments[0].float_
+
+    def encode(self, texts: list):
+        vectors = [self._embed_one(t) for t in texts]
+        token_count = sum(num_tokens_from_string(t) for t in texts)
+        return np.array(vectors), token_count
+
+    def encode_queries(self, text):
+        return np.array(self._embed_one(text)), num_tokens_from_string(text)
