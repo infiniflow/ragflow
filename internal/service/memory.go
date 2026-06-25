@@ -58,6 +58,12 @@ const (
 	TenantPermissionAll TenantPermission = "all"
 )
 
+const (
+	defaultMessageTopN  = 5
+	defaultMessageLimit = 10
+	maxMessageLimit     = 100
+)
+
 // validPermissions defines which permission values are valid
 var validPermissions = map[TenantPermission]bool{
 	TenantPermissionMe:   true,
@@ -834,7 +840,7 @@ func (s *MemoryService) UpdateMessage(ctx context.Context, userID, memoryID stri
 	indexName := memoryIndexName(memory.TenantID)
 	if err := s.docEngine.UpdateChunks(ctx, condition, updates, indexName, memoryID); err != nil {
 		if isMessageDocumentNotFound(err) {
-			return false, fmt.Errorf("failed to set status for message '%d' in memory '%s': %w", messageID, memoryID, err)
+			return false, &ResourceNotFoundError{Resource: "Message", ID: messageDocID}
 		}
 		return false, fmt.Errorf("failed to set status for message '%d' in memory '%s': %w", messageID, memoryID, err)
 	}
@@ -862,7 +868,9 @@ func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Mem
 
 	topN := memoryIntParam(params["top_n"], 5)
 	if topN <= 0 {
-		topN = 5
+		topN = defaultMessageTopN
+	} else if topN > maxMessageLimit {
+		topN = maxMessageLimit
 	}
 	similarityThreshold := memoryFloatParam(params["similarity_threshold"], 0.2)
 	keywordsSimilarityWeight := memoryFloatParam(params["keywords_similarity_weight"], 0.7)
@@ -1175,7 +1183,9 @@ func (s *MemoryService) getRecentMessage(ctx context.Context, memories []*entity
 		return nil, common.CodeServerError, errors.New("doc engine is nil")
 	}
 	if limit <= 0 {
-		limit = 10
+		limit = defaultMessageLimit
+	} else if limit > maxMessageLimit {
+		limit = maxMessageLimit
 	}
 	indexNames := memorySearchIndexNames(memories)
 	memoryIDs := make([]string, 0, len(memories))
