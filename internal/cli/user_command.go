@@ -1109,8 +1109,6 @@ func (c *CLI) APIShowAPIKeyCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("no API key is currently set")
 	}
 
-	//fmt.Printf("Token: %s\n", c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey)
-
 	var result CommonDataResponse
 	result.Code = 0
 	result.Message = ""
@@ -1121,8 +1119,8 @@ func (c *CLI) APIShowAPIKeyCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// APIUnsetAPIKey removes the current API key
-func (c *CLI) APIUnsetAPIKey(cmd *Command) (ResponseIf, error) {
+// APIUnsetAPIKeyCommand removes the current API key
+func (c *CLI) APIUnsetAPIKeyCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
