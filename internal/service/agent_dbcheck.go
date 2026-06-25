@@ -55,6 +55,9 @@ func AssertHostIsSafe(host string) (string, error) {
 		return "", errors.New("Host must not be empty.")
 	}
 	if allowAnyHost() {
+		zap.L().Warn("SSRF guard bypass enabled via ALLOW_ANY_HOST; allowing host without validation",
+			zap.String("host", host),
+		)
 		return host, nil
 	}
 
