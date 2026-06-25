@@ -36,7 +36,6 @@ def main():
             repo_id=REPO_ID,
             filename=filename,
             local_dir=target_dir,
-            local_dir_use_symlinks=False,
             endpoint=hf_endpoint,
         )
         print(f"  OK {filename}")
