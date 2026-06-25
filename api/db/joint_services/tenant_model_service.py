@@ -178,6 +178,32 @@ def split_model_name(model_name: str):
     return pure_model_name, instance_name, provider_name
 
 
+def _resolve_instance_for_model(provider_obj, instance_name: str, model_name: str):
+    instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
+    if instance_obj:
+        return instance_obj
+    if instance_name != "default":
+        raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
+
+    active_instances = [
+        inst for inst in TenantModelInstanceService.get_all_by_provider_id(provider_obj.id)
+        if inst.status == ActiveStatusEnum.ACTIVE.value
+    ]
+    if len(active_instances) == 1:
+        logger.warning(
+            "Model instance fallback applied for legacy default instance name",
+            extra={
+                "provider_name": provider_obj.provider_name,
+                "requested_instance_name": instance_name,
+                "resolved_instance_name": active_instances[0].instance_name,
+                "model_name": model_name,
+            },
+        )
+        return active_instances[0]
+
+    raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
+
+
 def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum, model_name: str):
     pure_model_name, instance_name, provider_name = split_model_name(model_name)
     model_type_val = model_type if isinstance(model_type, str) else model_type.value
@@ -203,9 +229,7 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
     provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
     if not provider_obj:
         raise LookupError(f"Provider {provider_name} not found for model {model_name}.")
-    instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
-    if not instance_obj:
-        raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
+    instance_obj = _resolve_instance_for_model(provider_obj, instance_name, model_name)
     model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(provider_obj.id, instance_obj.id, model_type_val, pure_model_name)
 
     api_key, is_tool, api_key_payload = _decode_api_key_config(instance_obj.api_key)
@@ -268,9 +292,7 @@ def get_api_key(tenant_id: str, model_name: str):
     provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
     if not provider_obj:
         raise LookupError(f"Provider {provider_name} not found.")
-    instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
-    if not instance_obj:
-        raise LookupError(f"Instance {instance_name} not found.")
+    instance_obj = _resolve_instance_for_model(provider_obj, instance_name, model_name)
     return instance_obj.api_key
 
 
@@ -279,9 +301,7 @@ def get_model_type_by_name(tenant_id: str, model_name: str):
     provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
     if not provider_obj:
         raise LookupError(f"Provider {provider_name} not found for model {model_name}.")
-    instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
-    if not instance_obj:
-        raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
+    instance_obj = _resolve_instance_for_model(provider_obj, instance_name, model_name)
     model_objs = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(provider_obj.id, instance_obj.id, pure_model_name)
     types_in_json = []
     if not model_objs:

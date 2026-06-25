@@ -42,6 +42,7 @@ var registry = map[string]Factory{
 	"google":            noConfig("google", func() einotool.BaseTool { return NewGoogleTool() }),
 	"google_scholar":    noConfig("google_scholar", func() einotool.BaseTool { return NewGoogleScholarTool() }),
 	"jin10":             noConfig("jin10", func() einotool.BaseTool { return NewJin10Tool() }),
+	"keenable":          noConfig("keenable", func() einotool.BaseTool { return NewKeenableTool() }),
 	"pubmed":            noConfig("pubmed", func() einotool.BaseTool { return NewPubMedTool() }),
 	"qweather":          noConfig("qweather", func() einotool.BaseTool { return NewQWeatherTool() }),
 	"retrieval":         noConfig("retrieval", func() einotool.BaseTool { return NewRetrievalTool() }),

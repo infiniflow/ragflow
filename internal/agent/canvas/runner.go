@@ -221,7 +221,8 @@ func (r *Runner) getInterruptID(canvasID, sessionID string) string {
 func (r *Runner) Run(
 	ctx context.Context,
 	run RunFunc,
-	canvasID, sessionID, userInput string,
+	canvasID, sessionID string,
+	userInput any,
 	root map[string]any,
 ) <-chan RunEvent {
 	out := make(chan RunEvent, 8)

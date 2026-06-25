@@ -31,16 +31,21 @@ package component
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
 	einotool "github.com/cloudwego/eino/components/tool"
 
+	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // tavilySearchComponent delegates to internal/agent/tool/TavilyTool.
@@ -153,6 +158,8 @@ type retrievalComponent struct {
 	params retrievalParams
 }
 
+var legacyRetrievalQueryPattern = regexp.MustCompile(`(?s)^\s*UserFillUp:\s*(.*?)\s+Input\s+(.*?)\s*$`)
+
 func newRetrievalComponent(params map[string]any) (Component, error) {
 	return &retrievalComponent{
 		inner:  agenttool.NewRetrievalTool(),
@@ -180,11 +187,19 @@ func (c *retrievalComponent) Outputs() map[string]string {
 
 func (c *retrievalComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
 	merged := c.applyDefaults(inputs)
+	normalizeLegacyRetrievalInputs(ctx, merged)
+	common.Debug("agent retrieval component: invoke",
+		zap.Any("inputs", inputs),
+		zap.Any("merged", merged),
+	)
 	argsJSON, _ := json.Marshal(merged)
 	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
 	if err != nil {
 		return nil, fmt.Errorf("canvas: Retrieval: %w", err)
 	}
+	common.Debug("agent retrieval component: output",
+		zap.String("tool_output", out),
+	)
 	return parseToolEnvelope(out), nil
 }
 
@@ -259,6 +274,145 @@ func (c *retrievalComponent) applyDefaults(inputs map[string]any) map[string]any
 		delete(out, "kb_ids")
 	}
 	return out
+}
+
+func normalizeLegacyRetrievalInputs(ctx context.Context, out map[string]any) {
+	if normalizeStructuredRetrievalInputs(ctx, out) {
+		return
+	}
+	rawQuery, _ := out["query"].(string)
+	rawQuery = strings.TrimSpace(rawQuery)
+	if rawQuery == "" {
+		return
+	}
+	matches := legacyRetrievalQueryPattern.FindStringSubmatch(rawQuery)
+	if len(matches) != 3 {
+		return
+	}
+	kbName := strings.TrimSpace(matches[1])
+	queryText := strings.TrimSpace(matches[2])
+	if queryText != "" {
+		out["query"] = queryText
+	}
+	if _, hasDatasetIDs := out["dataset_ids"]; hasDatasetIDs {
+		return
+	}
+	if kbName == "" {
+		return
+	}
+	if datasetID := resolveRetrievalDatasetID(ctx, kbName); datasetID != "" {
+		out["dataset_ids"] = []string{datasetID}
+	}
+}
+
+func normalizeStructuredRetrievalInputs(ctx context.Context, out map[string]any) bool {
+	if _, hasDatasetIDs := out["dataset_ids"]; hasDatasetIDs {
+		return false
+	}
+	candidateMaps := []map[string]any{}
+	if stateMap, ok := out["state"].(map[string]any); ok {
+		if raw, ok := stateMap["UserFillUp:KBInput"].(map[string]any); ok {
+			candidateMaps = append(candidateMaps, raw)
+		}
+	}
+	candidateMaps = append(candidateMaps, out)
+
+	consumed := false
+	for _, candidate := range candidateMaps {
+		kbName, _ := candidate["kb"].(string)
+		queryText, _ := candidate["query"].(string)
+		if kbName == "" && legacyRetrievalQueryPattern.MatchString(strings.TrimSpace(queryText)) {
+			continue
+		}
+		if kbName == "" && queryText == "" {
+			continue
+		}
+		consumed = true
+		if queryText != "" {
+			out["query"] = queryText
+		}
+		if kbName != "" {
+			if datasetID := resolveRetrievalDatasetID(ctx, strings.TrimSpace(kbName)); datasetID != "" {
+				out["dataset_ids"] = []string{datasetID}
+				common.Debug("agent retrieval component: resolved dataset id",
+					zap.String("kb", strings.TrimSpace(kbName)),
+					zap.String("dataset_id", datasetID))
+			}
+		}
+		if queryText != "" {
+			return true
+		}
+		if kbName != "" && out["dataset_ids"] != nil {
+			return true
+		}
+	}
+	return consumed
+}
+
+func resolveRetrievalDatasetID(ctx context.Context, kbName string) string {
+	if kbName == "" {
+		return ""
+	}
+	if kb, err := dao.NewKnowledgebaseDAO().GetByID(kbName); err == nil && kb != nil {
+		common.Debug("agent retrieval component: resolved dataset id by direct id",
+			zap.String("kb", kbName),
+			zap.String("dataset_id", kb.ID))
+		return kb.ID
+	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		common.Warn("agent retrieval component: resolve dataset id by id failed",
+			zap.String("kb", kbName),
+			zap.Error(err))
+	}
+	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+		common.Debug("agent retrieval component: resolve dataset id context",
+			zap.String("kb", kbName),
+			zap.Any("sys_query", state.Sys["query"]),
+			zap.Any("tenant_id", state.Sys["tenant_id"]),
+			zap.Any("user_id", state.Sys["user_id"]))
+		if tenantID, _ := state.Sys["tenant_id"].(string); tenantID != "" {
+			if kb, lookupErr := dao.NewKnowledgebaseDAO().GetByName(kbName, tenantID); lookupErr == nil && kb != nil {
+				common.Debug("agent retrieval component: resolved dataset id by tenant",
+					zap.String("kb", kbName),
+					zap.String("tenant_id", tenantID),
+					zap.String("dataset_id", kb.ID))
+				return kb.ID
+			} else if lookupErr != nil && !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+				common.Warn("agent retrieval component: resolve dataset id by tenant failed",
+					zap.String("kb", kbName),
+					zap.String("tenant_id", tenantID),
+					zap.Error(lookupErr))
+			} else {
+				common.Debug("agent retrieval component: tenant lookup missed",
+					zap.String("kb", kbName),
+					zap.String("tenant_id", tenantID))
+			}
+		}
+		if userID, _ := state.Sys["user_id"].(string); userID != "" {
+			if kbs, lookupErr := dao.NewKnowledgebaseDAO().GetKBByNameAndUserID(kbName, userID); lookupErr == nil && len(kbs) > 0 && kbs[0] != nil {
+				common.Debug("agent retrieval component: resolved dataset id by user visibility",
+					zap.String("kb", kbName),
+					zap.String("user_id", userID),
+					zap.String("dataset_id", kbs[0].ID))
+				return kbs[0].ID
+			} else if lookupErr != nil {
+				common.Warn("agent retrieval component: resolve dataset id by name failed",
+					zap.String("kb", kbName),
+					zap.String("user_id", userID),
+					zap.Error(lookupErr))
+			} else {
+				common.Debug("agent retrieval component: user visibility lookup missed",
+					zap.String("kb", kbName),
+					zap.String("user_id", userID))
+			}
+		}
+	} else {
+		common.Debug("agent retrieval component: resolve dataset id missing canvas state",
+			zap.String("kb", kbName),
+			zap.Error(err))
+	}
+	common.Debug("agent retrieval component: dataset id unresolved",
+		zap.String("kb", kbName))
+	return ""
 }
 
 // exesqlComponent delegates to internal/agent/tool/ExeSQLTool. The

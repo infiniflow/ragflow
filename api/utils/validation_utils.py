@@ -279,16 +279,20 @@ def normalize_str(v: Any) -> Any:
 
 def validate_uuid1_hex(v: Any) -> str:
     """
-    Validates and converts input to a UUID version 1 hexadecimal string.
+    Validates and converts input to a UUID hexadecimal string.
 
-    This function performs strict validation and normalization:
+    The function name is retained for backward compatibility; only UUID
+    *format* is enforced (any version is accepted), because some IDs in the
+    system originate from external imports and use non-v1 UUIDs.
+
+    This function performs validation and normalization:
     1. Accepts either UUID objects or UUID-formatted strings
-    2. Verifies the UUID is version 1 (time-based)
-    3. Returns the 32-character hexadecimal representation
+    2. Returns the 32-character hexadecimal representation
+    3. Rejects anything that is not a valid UUID
 
     Args:
         v (Any): Input value to validate. Can be:
-                - UUID object (must be version 1)
+                - UUID object (any version)
                 - String in UUID format (e.g. "550e8400-e29b-41d4-a716-446655440000")
 
     Returns:
@@ -296,9 +300,8 @@ def validate_uuid1_hex(v: Any) -> str:
              Example: "550e8400e29b41d4a716446655440000"
 
     Raises:
-        PydanticCustomError: With code "invalid_UUID1_format" when:
+        PydanticCustomError: With code "invalid_uuid_format" when:
             - Input is not a UUID object or valid UUID string
-            - UUID version is not 1
             - String doesn't match UUID format
 
     Examples:
@@ -311,20 +314,17 @@ def validate_uuid1_hex(v: Any) -> str:
         Invalid cases:
             >>> validate_uuid1_hex("not-a-uuid")  # raises PydanticCustomError
             >>> validate_uuid1_hex(12345)  # raises PydanticCustomError
-            >>> validate_uuid1_hex(UUID(int=0))  # v4, raises PydanticCustomError
 
     Notes:
         - Uses Python's built-in UUID parser for format validation
-        - Version check prevents accidental use of other UUID versions
+        - UUID version is no longer enforced (v1, v4, v7, etc. all accepted)
         - Hyphens in input strings are automatically removed in output
     """
     try:
         uuid_obj = UUID(v) if isinstance(v, str) else v
-        if uuid_obj.version != 1:
-            raise PydanticCustomError("invalid_UUID1_format", "Must be a UUID1 format")
         return uuid_obj.hex
     except (AttributeError, ValueError, TypeError):
-        raise PydanticCustomError("invalid_UUID1_format", "Invalid UUID1 format")
+        raise PydanticCustomError("invalid_uuid_format", "Invalid UUID format")
 
 
 class Base(BaseModel):
@@ -801,7 +801,7 @@ class DeleteReq(Base):
 
         This post-processing validator performs:
         1. None input handling (pass-through)
-        2. UUID version 1 validation for each list item
+        2. UUID format validation for each list item (any version accepted)
         3. Duplicate value detection
         4. Returns normalized UUID hex strings or None
 
@@ -814,18 +814,18 @@ class DeleteReq(Base):
             - None if input was None
             - List of normalized UUID hex strings otherwise:
             * 32-character lowercase
-            * Valid UUID version 1
+            * Valid UUID format (any version)
             * Unique within list
 
         Raises:
             PydanticCustomError: With structured error details when:
-                - "invalid_UUID1_format": Any string fails UUIDv1 validation
+                - "invalid_uuid_format": Any string fails UUID format validation
                 - "duplicate_uuids": If duplicate IDs are detected
 
         Validation Rules:
             - None input returns None
             - Empty list returns empty list
-            - All non-None items must be valid UUIDv1
+            - All non-None items must be valid UUIDs (any version)
             - No duplicates permitted
             - Original order preserved
 
@@ -840,12 +840,12 @@ class DeleteReq(Base):
 
             Invalid cases:
                 >>> validate_ids(["invalid"])
-                # raises PydanticCustomError(invalid_UUID1_format)
+                # raises PydanticCustomError(invalid_uuid_format)
                 >>> validate_ids(["550e...", "550e..."])
                 # raises PydanticCustomError(duplicate_uuids)
 
         Security Notes:
-            - Validates UUID version to prevent version spoofing
+            - Validates UUID format (any version)
             - Duplicate check prevents data injection
             - None handling maintains pipeline integrity
         """
