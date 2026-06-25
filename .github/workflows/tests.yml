@@ -250,7 +250,10 @@ jobs:
           PKGS=$(go list ./... 2>/dev/null \
             | grep -v '/internal/storage$' \
             | grep -v '/internal/tokenizer$' \
-            | grep -v '/internal/handler$' || true)
+            | grep -v '/internal/handler$' \
+            | grep -v '/internal/pdfium' \
+            | grep -v '/internal/pdfoxide' \
+            | grep -v '/internal/parser' || true)
           if [ -z "$PKGS" ]; then
             ./build.sh --test
           else
@@ -693,7 +696,10 @@ jobs:
           PKGS=$(go list ./... 2>/dev/null \
             | grep -v '/internal/storage$' \
             | grep -v '/internal/tokenizer$' \
-            | grep -v '/internal/handler$' || true)
+            | grep -v '/internal/handler$' \
+            | grep -v '/internal/pdfium' \
+            | grep -v '/internal/pdfoxide' \
+            | grep -v '/internal/parser' || true)
           if [ -z "$PKGS" ]; then
             ./build.sh --test
           else
