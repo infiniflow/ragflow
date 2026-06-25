@@ -191,6 +191,11 @@ def assert_host_is_safe(host: str) -> str:
     if not host:
         raise ValueError("Host must not be empty.")
     if _allow_any_host():
+        logger.warning(
+            "SSRF guard bypass enabled via %s; allowing host without validation: host=%r",
+            _ALLOW_ANY_HOST_ENV,
+            host,
+        )
         return host
 
     try:
