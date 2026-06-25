@@ -473,7 +473,7 @@ func (c *CLI) CommonListProviderInstances(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) CommonListInstanceModels(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonListInstanceModelsCommand(cmd *Command) (ResponseIf, error) {
 
 	providerName, ok := cmd.Params["provider_name"].(string)
 	if !ok {
@@ -559,7 +559,7 @@ func (c *CLI) CommonListModelsCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) ListSupportedModels(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonListInstanceModelsSyncCommand(cmd *Command) (ResponseIf, error) {
 
 	providerName, ok := cmd.Params["provider_name"].(string)
 	if !ok {
