@@ -272,10 +272,10 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("cannot delete admin server in admin mode")
 	case "save_config_command":
 		return c.SaveServerConfig(cmd)
-	case "use_api_server":
-		return c.UseAPIServer(cmd)
-	case "use_admin_server":
-		return c.UseAdminServer(cmd)
+	case "admin_use_api_server":
+		return c.CommonUseAPIServerCommand(cmd)
+	case "admin_use_admin_server":
+		return c.CommonUseAdminServerCommand(cmd)
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
 	}
@@ -406,9 +406,9 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "use_model":
 		return c.UseModel(cmd)
 	case "use_api_server":
-		return c.UseAPIServer(cmd)
+		return c.CommonUseAPIServerCommand(cmd)
 	case "use_admin_server":
-		return c.UseAdminServer(cmd)
+		return c.CommonUseAdminServerCommand(cmd)
 	case "set_default_model":
 		return c.SetDefaultModel(cmd)
 	case "reset_default_model":

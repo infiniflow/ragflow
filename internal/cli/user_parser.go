@@ -508,7 +508,7 @@ func (p *Parser) parseShowQuotedStringCommand() (*Command, error) {
 	}
 }
 
-func (p *Parser) parseShowCommand() (*Command, error) {
+func (p *Parser) parseAPIShowCommands() (*Command, error) {
 	p.nextToken() // consume SHOW
 	switch p.curToken.Type {
 	case TokenVersion:
@@ -3579,7 +3579,7 @@ func (p *Parser) parseUserStatement() (*Command, error) {
 	case TokenDelete:
 		return p.parseDeleteCommand()
 	case TokenShow:
-		return p.parseShowCommand()
+		return p.parseAPIShowCommands()
 	case TokenCreate:
 		return p.parseCreateCommand()
 	case TokenDrop:

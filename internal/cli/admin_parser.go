@@ -2247,12 +2247,42 @@ func (p *Parser) parseAdminUseCommand() (*Command, error) {
 	p.nextToken() // consume USE
 	switch p.curToken.Type {
 	case TokenAPI:
-		return p.parseUseAPIServer()
+		return p.parseAdminUseAPIServer()
 	case TokenAdmin:
-		return p.parseUseAdminServer()
+		return p.parseAdminUseAdminServer()
 	default:
 		return nil, fmt.Errorf("expected API or ADMIN after USE")
 	}
+}
+
+func (p *Parser) parseAdminUseAPIServer() (*Command, error) {
+	p.nextToken() // consume API
+
+	serverName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+	cmd := NewCommand("admin_use_api_server")
+	cmd.Params["server_name"] = serverName
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminUseAdminServer() (*Command, error) {
+	p.nextToken() // consume ADMIN
+
+	cmd := NewCommand("admin_use_admin_server")
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
 }
 
 func (p *Parser) parseStartIngestion() (*Command, error) {

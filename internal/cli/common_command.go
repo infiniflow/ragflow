@@ -1317,7 +1317,7 @@ func (c *CLI) SaveServerConfig(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("invalid server type")
 	}
 
-	return nil, nil
+	return nil, fmt.Errorf("save server config isn't implemented")
 }
 
 func (c *CLI) GetAdminServerInfo() (ResponseIf, error) {
@@ -1363,12 +1363,17 @@ func (c *CLI) GetAPIServerInfo(serverName string) (ResponseIf, error) {
 		if apiServerConfig.UserPassword != nil {
 			result.Data["user_password"] = strings.Repeat("*", len(*apiServerConfig.UserPassword))
 		}
-		if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken != nil {
-			result.Data["auth"] = "login"
-		} else if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey != nil {
-			result.Data["auth"] = "api key"
+
+		if c.Config.APIClientConfig.CurrentAPIServer == "" {
+			result.Data["auth"] = "unknown"
 		} else {
-			result.Data["auth"] = "no auth"
+			if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken != nil {
+				result.Data["auth"] = "login"
+			} else if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey != nil {
+				result.Data["auth"] = "api key"
+			} else {
+				result.Data["auth"] = "no auth"
+			}
 		}
 	}
 	return &result, nil
@@ -1524,7 +1529,7 @@ func FlattenMap(data map[string]interface{}, prefix string, result *[]map[string
 	}
 }
 
-func (c *CLI) UseAPIServer(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonUseAPIServerCommand(cmd *Command) (ResponseIf, error) {
 	serverName, ok := cmd.Params["server_name"].(string)
 	if !ok {
 		return nil, fmt.Errorf("server_name not provided")
@@ -1564,7 +1569,7 @@ func (c *CLI) UseAPIServer(cmd *Command) (ResponseIf, error) {
 
 }
 
-func (c *CLI) UseAdminServer(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonUseAdminServerCommand(cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode == AdminMode {
 		return nil, fmt.Errorf("already in admin mode")
