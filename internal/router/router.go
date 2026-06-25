@@ -414,8 +414,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Message routes
 			message := v1.Group("/messages")
 			{
+				message.GET("", r.memoryHandler.GetMessages)
 				message.DELETE("/:memory_message", r.memoryHandler.ForgetMessage)
 				message.PUT("/:memory_message", r.memoryHandler.UpdateMessage)
+				message.GET("/:memory_message/content", r.memoryHandler.GetMessageContent)
+				message.GET("/search", r.memoryHandler.SearchMessage)
 			}
 
 			// Skill search routes
