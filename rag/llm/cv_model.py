@@ -1418,3 +1418,69 @@ class BedrockCV(Base):
 
     def describe(self, image):
         return self.describe_with_prompt(image)
+
+
+class TwelveLabsCV(Base):
+    """Video understanding via TwelveLabs Pegasus.
+
+    Pegasus reads a whole video natively (motion, speech, on-screen text) and
+    answers a prompt about it, rather than captioning a single frame. RAGFlow's
+    vision seam hands a model an ``image`` argument; for Pegasus that argument
+    is the *video* to analyze, given as one of:
+
+    * an ``http(s)://`` URL to the video file, or
+    * a TwelveLabs asset reference ``"tl-asset:<asset_id>"``, or
+    * raw bytes / ``BytesIO`` of the video, which we upload as a TwelveLabs
+      asset first.
+
+    ``analyze`` runs server-side and can be slow for long videos; callers that
+    need a non-blocking path should use the async TwelveLabs task API directly.
+    """
+
+    _FACTORY_NAME = "TwelveLabs"
+
+    _ASSET_PREFIX = "tl-asset:"
+
+    def __init__(self, key, model_name="pegasus1.5", lang="Chinese", base_url=None, **kwargs):
+        from twelvelabs import TwelveLabs
+
+        if not model_name:
+            model_name = "pegasus1.5"
+        self.client = TwelveLabs(api_key=key)
+        self.model_name = model_name
+        self.lang = lang
+        self.max_tokens = int(kwargs.get("max_tokens", 2048))
+        super().__init__(**kwargs)
+
+    def _video_context(self, video):
+        """Resolve ``video`` into the ``video=`` argument Pegasus expects."""
+        from twelvelabs.types.video_context import VideoContext_AssetId, VideoContext_Url
+
+        if isinstance(video, str):
+            if video.startswith(self._ASSET_PREFIX):
+                return VideoContext_AssetId(asset_id=video[len(self._ASSET_PREFIX) :])
+            if video.startswith("http://") or video.startswith("https://"):
+                return VideoContext_Url(url=video)
+            raise ValueError("TwelveLabs video must be an http(s) URL, a 'tl-asset:<id>' reference, or raw bytes.")
+
+        if isinstance(video, BytesIO):
+            video = video.getvalue()
+        if isinstance(video, (bytes, bytearray, memoryview)):
+            asset = self.client.assets.create(method="direct", file=bytes(video))
+            return VideoContext_AssetId(asset_id=asset.id)
+
+        raise ValueError(f"Unsupported video input for TwelveLabs: {type(video).__name__}")
+
+    def describe(self, image):
+        return self.describe_with_prompt(image, vision_llm_describe_prompt())
+
+    def describe_with_prompt(self, image, prompt=None):
+        res = self.client.analyze(
+            model_name=self.model_name,
+            video=self._video_context(image),
+            prompt=prompt or vision_llm_describe_prompt(),
+            max_tokens=self.max_tokens,
+        )
+        text = (res.data or "").strip()
+        tokens = res.usage.output_tokens if res.usage and getattr(res.usage, "output_tokens", None) else num_tokens_from_string(text)
+        return text, tokens
