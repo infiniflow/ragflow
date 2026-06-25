@@ -3042,6 +3042,25 @@ func (s *DatasetService) Accessible(kbID, userID string) bool {
 	return s.kbDAO.Accessible(kbID, userID)
 }
 
+// GetKnowledgebaseByID resolves a dataset entity without applying permission
+// checks. Upload needs the same existence-then-auth ordering as Python.
+func (s *DatasetService) GetKnowledgebaseByID(datasetID string) (*entity.Knowledgebase, error) {
+	datasetID = strings.TrimSpace(datasetID)
+	if datasetID == "" {
+		return nil, errors.New("Lack of \"Dataset ID\"")
+	}
+	normalizedID, err := normalizeDatasetID(datasetID)
+	if err != nil {
+		return nil, err
+	}
+	return s.kbDAO.GetByID(normalizedID)
+}
+
+// CheckKBTeamPermission mirrors Python check_kb_team_permission.
+func (s *DatasetService) CheckKBTeamPermission(kb *entity.Knowledgebase, userID string) bool {
+	return hasKBTeamPermission(kb, userID, s.tenantDAO)
+}
+
 func (s *DatasetService) AggregateTags(datasetIDs []string, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
 	if len(datasetIDs) == 0 {
 		return nil, common.CodeDataError, errors.New("Lack of dataset_ids in query parameters")
