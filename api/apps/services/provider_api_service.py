@@ -17,7 +17,6 @@ import os
 import json
 import logging
 import asyncio
-from json.decoder import JSONDecodeError
 
 from common.constants import LLMType, ActiveStatusEnum
 from common.settings import FACTORY_LLM_INFOS
@@ -757,7 +756,7 @@ def update_instance_models(tenant_id: str, provider_id_or_name: str, instance_id
     model_objs = TenantModelService.get_models_by_instance_id(instance_obj.id)
     not_exist_models = set(model_names) - {model_obj.model_name for model_obj in model_objs}
     if not_exist_models:
-        return False, f"Models {not_exist_models} not found for provider '{provider_name}' and instance '{instance_name}'"
+        return False, f"Models {not_exist_models} not found for provider '{provider_id_or_name}' and instance '{instance_id_or_name}'"
 
     target_model_type_bin = calculate_model_type(model_types)
     to_update = [model_obj.id for model_obj in model_objs if model_obj.model_type != target_model_type_bin and model_obj.model_name in model_names]
@@ -865,29 +864,37 @@ def update_model(tenant_id: str, provider_id_or_name: str, instance_id_or_name: 
     return True, "success"
 
 
-async def delete_models_from_instance(tenant_id: str, provider_name: str, instance_name: str, model_name: list[str]):
+async def delete_models_from_instance(tenant_id: str, provider_id_or_name: str, instance_id_or_name: str, model_name: list[str]):
     """
     Delete models from instance.
 
     :param tenant_id: tenant ID
-    :param provider_name: provider/factory name
-    :param instance_name: instance name
+    :param provider_id_or_name: provider/factory ID or name
+    :param instance_id_or_name: instance ID or name
     :param model_name: list of model name
     """
-    # Check if provider exists for this tenant
-    provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
+    # Check if provider exists for this tenant (by ID first, then by name)
+    provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_id(tenant_id, provider_id_or_name)
     if not provider_obj:
-        return False, f"No provider found for provider '{provider_name}'"
+        provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_id_or_name)
+    if not provider_obj:
+        return False, f"No provider found for provider '{provider_id_or_name}'"
 
-    # Check if instance exists
-    instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
+    # Check if instance exists (by ID first, then by name)
+    instance_obj = None
+    if instance_id_or_name:
+        _, instance_obj = TenantModelInstanceService.get_by_id(instance_id_or_name)
+    if instance_obj and instance_obj.provider_id != provider_obj.id:
+        instance_obj = None
     if not instance_obj:
-        return False, f"No instance found for provider '{provider_name}' and instance '{instance_name}'"
+        instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_id_or_name)
+    if not instance_obj:
+        return False, f"No instance found for provider '{provider_id_or_name}' and instance '{instance_id_or_name}'"
 
     model_objs = TenantModelService.get_models_by_instance_id(instance_obj.id)
     not_exist_models = set(model_name) - {model_obj.model_name for model_obj in model_objs}
     if not_exist_models:
-        return False, f"Models {not_exist_models} not found for provider '{provider_name}' and instance '{instance_name}'"
+        return False, f"Models {not_exist_models} not found for provider '{provider_id_or_name}' and instance '{instance_id_or_name}'"
 
     TenantModelService.delete_by_ids([model_obj.id for model_obj in model_objs if model_obj.model_name in model_name])
 

@@ -779,10 +779,10 @@ async def add_model_to_instance(tenant_id: str, provider_id_or_name: str, instan
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/providers/<provider_name>/instances/<instance_name>/models", methods=["DELETE"]) # noqa: F821
+@manager.route("/providers/<provider_id_or_name>/instances/<instance_id_or_name>/models", methods=["DELETE"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def delete_models_from_instance(tenant_id: str, provider_name: str, instance_name: str):
+async def delete_models_from_instance(tenant_id: str, provider_id_or_name: str, instance_id_or_name: str):
     """
     Delete models from an instance.
     ---
@@ -792,15 +792,15 @@ async def delete_models_from_instance(tenant_id: str, provider_name: str, instan
       - ApiKeyAuth: []
     parameters:
       - in: path
-        name: provider_name
+        name: provider_id_or_name
         type: string
         required: true
-        description: Provider name.
+        description: Provider ID or name.
       - in: path
-        name: instance_name
+        name: instance_id_or_name
         type: string
         required: true
-        description: Instance name.
+        description: Instance ID or name.
       - in: header
         name: Authorization
         type: string
@@ -828,7 +828,7 @@ async def delete_models_from_instance(tenant_id: str, provider_name: str, instan
         return get_error_argument_result(message="model_name is required")
     model_name = data["model_name"]
     try:
-        success, result = provider_api_service.delete_models_from_instance(tenant_id, provider_name, instance_name, model_name)
+        success, result = provider_api_service.delete_models_from_instance(tenant_id, provider_id_or_name, instance_id_or_name, model_name)
         if success:
             return get_result(message=result)
         else:
