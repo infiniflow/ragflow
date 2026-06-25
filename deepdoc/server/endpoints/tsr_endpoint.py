@@ -4,7 +4,7 @@ import logging
 
 import litserve as ls
 
-from deepdoc.servers.adapters.tsr_adapter import TSRAdapter
+from deepdoc.server.adapters.tsr_adapter import TSRAdapter
 
 logger = logging.getLogger(__name__)
 

@@ -16,9 +16,9 @@ import os
 
 import litserve as ls
 
-from deepdoc.servers.endpoints.dla_endpoint import DLAEndpoint
-from deepdoc.servers.endpoints.ocr_endpoint import OCREndpoint
-from deepdoc.servers.endpoints.tsr_endpoint import TSREndpoint
+from deepdoc.server.endpoints.dla_endpoint import DLAEndpoint
+from deepdoc.server.endpoints.ocr_endpoint import OCREndpoint
+from deepdoc.server.endpoints.tsr_endpoint import TSREndpoint
 
 logging.basicConfig(
     level=logging.INFO,

@@ -4,7 +4,7 @@ import logging
 
 import litserve as ls
 
-from deepdoc.servers.adapters.ocr_adapter import OCRAdapter
+from deepdoc.server.adapters.ocr_adapter import OCRAdapter
 
 logger = logging.getLogger(__name__)
 

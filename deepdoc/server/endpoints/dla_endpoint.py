@@ -4,7 +4,7 @@ import logging
 
 import litserve as ls
 
-from deepdoc.servers.adapters.dla_adapter import DLAAdapter
+from deepdoc.server.adapters.dla_adapter import DLAAdapter
 
 logger = logging.getLogger(__name__)
 
