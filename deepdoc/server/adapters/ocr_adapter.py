@@ -6,7 +6,7 @@ Two modes:
 """
 
 import logging
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict
 
 import cv2
 import numpy as np

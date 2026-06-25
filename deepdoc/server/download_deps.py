@@ -3,7 +3,6 @@
 
 import os
 import sys
-from pathlib import Path
 
 REPO_ID = "InfiniFlow/deepdoc"
 FILES = [
