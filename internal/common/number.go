@@ -97,10 +97,10 @@ func ConvertFloatsToPyFormat(v interface{}) interface{} {
 // the O(n * eps) of a naive left-to-right loop.
 //
 // This implementation matches numpy's exact pairwise summation algorithm:
-//   - For n < 16: uses naive left-to-right sum (matching numpy's small-array optimization)
-//   - For n >= 16: processes pairs left-to-right, carrying any odd element to the end
-//     of the next level. This matches numpy's pairwise reduction in
-//     numpy/core/src/umath/reduction.c.
+// - For n < 16: uses naive left-to-right sum (matching numpy's small-array optimization)
+// - For n >= 16: processes pairs left-to-right, carrying any odd element to the end
+//   of the next level. This matches numpy's pairwise reduction in
+//   numpy/core/src/umath/reduction.c.
 //
 // xs is modified in place. Pass a copy if the caller still needs the input.
 //

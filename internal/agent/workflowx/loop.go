@@ -24,7 +24,7 @@
 // a normal workflow node. See the .claude/plans/eino-workflow-loop.md
 // plan for the design rationale.
 //
-// # Foundation for the canvas Loop component
+// Foundation for the canvas Loop component
 //
 // AddLoopNode is also the runtime driver for the RAGFlow agent canvas's
 // "Loop" component (internal/agent/component/loop.go). The canvas engine
@@ -141,11 +141,11 @@ var (
 type LoopOption func(*loopOptions)
 
 type loopOptions struct {
-	maxIterations       int
-	compileOpts         []compose.GraphCompileOption
-	runOpts             []compose.Option
-	streamMode          LoopStreamMode
-	checkpointBuilder   func(nodeKey string, iteration int) string
+	maxIterations     int
+	compileOpts       []compose.GraphCompileOption
+	runOpts           []compose.Option
+	streamMode        LoopStreamMode
+	checkpointBuilder func(nodeKey string, iteration int) string
 	enableSubCheckpoint bool
 }
 
@@ -237,8 +237,8 @@ func defaultCheckpointBuilder(nodeKey string, iteration int) string {
 
 func getLoopOptions(opts []LoopOption) *loopOptions {
 	o := &loopOptions{
-		streamMode:          LoopStreamFinalOnly,
-		checkpointBuilder:   defaultCheckpointBuilder,
+		streamMode:        LoopStreamFinalOnly,
+		checkpointBuilder: defaultCheckpointBuilder,
 		enableSubCheckpoint: true,
 	}
 	for _, opt := range opts {
@@ -260,12 +260,12 @@ func getLoopOptions(opts []LoopOption) *loopOptions {
 // by the loop itself) sidesteps the need for callers to register
 // generic types with the schema package — see plan §"Type shape".
 type loopInterruptState struct {
-	Iteration       int               `json:"iteration"`
-	CurrentInput    []byte            `json:"current_input"`
-	StreamMode      LoopStreamMode    `json:"stream_mode"`
-	SubCheckpointID string            `json:"sub_checkpoint_id"`
-	SubCheckpoints  map[string][]byte `json:"sub_checkpoints,omitempty"`
-	ReplayChunks    [][]byte          `json:"replay_chunks,omitempty"`
+	Iteration       int                `json:"iteration"`
+	CurrentInput    []byte             `json:"current_input"`
+	StreamMode      LoopStreamMode     `json:"stream_mode"`
+	SubCheckpointID string             `json:"sub_checkpoint_id"`
+	SubCheckpoints  map[string][]byte  `json:"sub_checkpoints,omitempty"`
+	ReplayChunks    [][]byte           `json:"replay_chunks,omitempty"`
 }
 
 // AddLoopNode appends a loop node to the outer workflow `wf`. The
@@ -375,15 +375,15 @@ func loadLoopSnapshot[T any](ctx context.Context, defaultMode LoopStreamMode) (l
 	if streamMode == "" {
 		streamMode = defaultMode
 	}
-	return loopSnapshot{
-		startIteration: st.Iteration,
-		current:        st.CurrentInput,
-		streamMode:     streamMode,
-		subCheckID:     st.SubCheckpointID,
-		subCheckpoints: cloneCheckpointMap(st.SubCheckpoints),
-		replayChunks:   cloneByteSlices(st.ReplayChunks),
-	}, nil
-}
+		return loopSnapshot{
+			startIteration: st.Iteration,
+			current:        st.CurrentInput,
+			streamMode:     streamMode,
+			subCheckID:     st.SubCheckpointID,
+			subCheckpoints: cloneCheckpointMap(st.SubCheckpoints),
+			replayChunks:   cloneByteSlices(st.ReplayChunks),
+		}, nil
+	}
 
 // encodeState marshals a loop snapshot to the persisted form.
 func encodeState(s loopSnapshot) ([]byte, error) {

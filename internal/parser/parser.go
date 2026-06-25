@@ -255,11 +255,21 @@ func (p *Parser) extractPages(ctx context.Context, engine PDFEngine,
 		wg.Add(1)
 		go func(i, pg int, chars []TextChar) {
 			defer wg.Done()
-			sem <- struct{}{}
+			select {
+			case <-ctx.Done():
+				results[i] = pr{pg: pg, err: ctx.Err()}
+				return
+			case sem <- struct{}{}:
+			}
 			defer func() { <-sem }()
 
 			pageImg, err := renderPageToImage(engine, pg)
 			if err != nil {
+				results[i] = pr{pg: pg, err: err}
+				return
+			}
+			// Check if context was cancelled during render.
+			if err := ctx.Err(); err != nil {
 				results[i] = pr{pg: pg, err: err}
 				return
 			}
@@ -506,7 +516,7 @@ func (p *Parser) processPages(ctx context.Context, engine PDFEngine,
 			tableImgByRegion[key] = tbl.ImageB64
 		}
 		for i := range result.Sections {
-			if result.Sections[i].LayoutType == "table" && len(result.Sections[i].Positions) > 0 {
+			if result.Sections[i].LayoutType == LayoutTypeTable && len(result.Sections[i].Positions) > 0 {
 				pos := result.Sections[i].Positions[0]
 				pg := 0
 				if len(pos.PageNumbers) > 0 {
@@ -521,7 +531,7 @@ func (p *Parser) processPages(ctx context.Context, engine PDFEngine,
 			}
 			// Try DLA-aware cropping for figure sections (matching Python's
 			// cropout which uses DLA region boundaries instead of text boxes).
-			if result.Sections[i].LayoutType == "figure" && len(result.Sections[i].Positions) > 0 {
+			if result.Sections[i].LayoutType == LayoutTypeFigure && len(result.Sections[i].Positions) > 0 {
 				if dlaImg := cropSectionByDLA(result.Sections[i], p.debugDLA, result.PageImages); dlaImg != "" {
 					result.Sections[i].Image = dlaImg
 					continue
@@ -838,7 +848,7 @@ func mergeCaptions(sections []Section, figures []Section) []Section {
 		if target >= 0 {
 			// For table sections, prepend caption before the HTML table
 			// (matching Python's _extract_table_figure caption->construct_table).
-			if sections[target].LayoutType == "table" && sections[target].Text != "" {
+			if sections[target].LayoutType == LayoutTypeTable && sections[target].Text != "" {
 				sections[target].Text = s.Text + sections[target].Text
 			} else if sections[target].Text != "" {
 				sections[target].Text += " " + s.Text
@@ -897,13 +907,13 @@ func findNearestParent(captionIdx int, caption Section, sections []Section, figu
 	}
 
 	const maxCaptionGap = 40000.0 // PDF points (~7cm) — beyond this, don't attach.
-	if captionType == "figure" && len(figures) > 0 {
+	if captionType == LayoutTypeFigure && len(figures) > 0 {
 		idx, dist := find(figures, -1) // figures don't contain the caption itself
 		if idx >= 0 && dist < maxCaptionGap {
 			// Match by position coordinates, not PositionTag strings.
 			f := figures[idx]
 			for i, s := range sections {
-				if s.LayoutType != "figure" || len(s.Positions) == 0 || len(f.Positions) == 0 {
+				if s.LayoutType != LayoutTypeFigure || len(s.Positions) == 0 || len(f.Positions) == 0 {
 					continue
 				}
 				sp, fp := s.Positions[0], f.Positions[0]
@@ -914,9 +924,9 @@ func findNearestParent(captionIdx int, caption Section, sections []Section, figu
 			}
 		}
 	}
-	if captionType == "table" {
+	if captionType == LayoutTypeTable {
 		idx, dist := find(sections, captionIdx)
-		if idx >= 0 && dist < maxCaptionGap && sections[idx].LayoutType == "table" {
+		if idx >= 0 && dist < maxCaptionGap && sections[idx].LayoutType == LayoutTypeTable {
 			return idx
 		}
 	}

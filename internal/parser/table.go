@@ -265,7 +265,7 @@ func regionOverlapsBox(region DLARegion, box TextBox, scale float64) bool {
 func matchTableRegions(boxes []TextBox, regions []DLARegion, scale float64) []tableMatch {
 	var matches []tableMatch
 	for _, r := range regions {
-		if r.Label != "table" {
+		if r.Label != LayoutTypeTable {
 			continue
 		}
 		var matched []int
@@ -409,8 +409,10 @@ func annotateBoxLayouts(boxes []TextBox, regions []DLARegion, scale float64, pag
 
 	// Priority order matching Python's findLayout loop.
 	priorityOrder := []string{
-		"footer", "header", "reference", "figure caption", "table caption",
-		"title", "table", "text", "figure", "equation",
+		LayoutTypeFooter, LayoutTypeHeader, LayoutTypeReference,
+		DLALabelFigureCaption, DLALabelTableCaption,
+		LayoutTypeTitle, LayoutTypeTable, LayoutTypeText,
+		LayoutTypeFigure, LayoutTypeEquation,
 	}
 	for _, ty := range priorityOrder {
 		for i := range boxes {
@@ -452,8 +454,8 @@ func annotateBoxLayouts(boxes []TextBox, regions []DLARegion, scale float64, pag
 				}
 				visited[bestJ] = true
 				// Python: equation mapped to "figure" for layout_type
-				if ty == "equation" {
-					boxes[i].LayoutType = "figure"
+				if ty == LayoutTypeEquation {
+					boxes[i].LayoutType = LayoutTypeFigure
 				} else {
 					boxes[i].LayoutType = ty
 				}
@@ -490,7 +492,7 @@ func annotateBoxLayouts(boxes []TextBox, regions []DLARegion, scale float64, pag
 		if !regionOK[j] || visited[j] {
 			continue
 		}
-		if r.label != "figure" && r.label != "equation" {
+		if r.label != LayoutTypeFigure && r.label != LayoutTypeEquation {
 			continue
 		}
 		boxes = append(boxes, TextBox{
@@ -499,7 +501,7 @@ func annotateBoxLayouts(boxes []TextBox, regions []DLARegion, scale float64, pag
 			Top:        r.y0,
 			Bottom:     r.y1,
 			Text:       "",
-			LayoutType: "figure",
+			LayoutType: LayoutTypeFigure,
 			LayoutNo:   fmt.Sprintf("figure-%d", synthIdx),
 		})
 		synthIdx++
@@ -510,7 +512,7 @@ func annotateBoxLayouts(boxes []TextBox, regions []DLARegion, scale float64, pag
 
 // garbageLayoutTypes matches Python's self.garbage_layouts.
 var garbageLayoutTypes = map[string]bool{
-	"footer": true, "header": true, "reference": true,
+	LayoutTypeFooter: true, LayoutTypeHeader: true, LayoutTypeReference: true,
 }
 
 func isGarbageLayoutType(ty string) bool {
@@ -522,9 +524,9 @@ func isGarbageLayoutType(ty string) bool {
 // are real page decorations — keep them.  Others are DLA noise.
 func garbageKeepFeat(ty string, box TextBox, pageImgHeight float64) bool {
 	switch ty {
-	case "footer":
+	case LayoutTypeFooter:
 		return box.Bottom < pageImgHeight*0.9
-	case "header":
+	case LayoutTypeHeader:
 		return box.Top > pageImgHeight*0.1
 	}
 	return false
@@ -1144,7 +1146,7 @@ func tableRegionBox(tbl *TableItem, ref *TextBox, html string) TextBox {
 			Top: tbl.RegionTop, Bottom: tbl.RegionBottom,
 			Text:       html,
 			PageNumber: pg,
-			LayoutType: "table",
+			LayoutType: LayoutTypeTable,
 		}
 	}
 	// Fallback: use anchor box coordinates.
@@ -1153,7 +1155,7 @@ func tableRegionBox(tbl *TableItem, ref *TextBox, html string) TextBox {
 		X0: x0, X1: x1, Top: top, Bottom: bot,
 		Text:       html,
 		PageNumber: pg,
-		LayoutType: "table",
+		LayoutType: LayoutTypeTable,
 	}
 }
 
@@ -1193,7 +1195,7 @@ func markNoMergeTables(boxes []TextBox, tables []TableItem) {
 	var lastTableTI int = -1
 	for i := range boxes {
 		lt := boxes[i].LayoutType
-		if lt == "table" {
+		if lt == LayoutTypeTable {
 			matched := false
 			for ti := range tables {
 				for _, tp := range tables[ti].Positions {
@@ -1209,7 +1211,7 @@ func markNoMergeTables(boxes []TextBox, tables []TableItem) {
 			}
 			continue
 		}
-		if lastTableTI >= 0 && (lt == "title" || lt == "table caption" || lt == "figure caption" || lt == "reference" || isCaptionBox(boxes[i].Text, lt)) {
+		if lastTableTI >= 0 && (lt == LayoutTypeTitle || lt == DLALabelTableCaption || lt == DLALabelFigureCaption || lt == LayoutTypeReference || isCaptionBox(boxes[i].Text, lt)) {
 			tables[lastTableTI].NoMerge = true
 		}
 	}
@@ -1228,14 +1230,14 @@ type replacement struct {
 func buildReplacements(boxes []TextBox, tables []TableItem) (map[int]bool, []replacement) {
 	removeSet := make(map[int]bool)
 	for i := range boxes {
-		if boxes[i].LayoutType == "table" && isDataSourceBox(boxes[i].Text) {
+		if boxes[i].LayoutType == LayoutTypeTable && isDataSourceBox(boxes[i].Text) {
 			removeSet[i] = true
 		}
 	}
 	var reps []replacement
 	for ti := range tables {
 		for i := range boxes {
-			if boxes[i].LayoutType != "table" || removeSet[i] {
+			if boxes[i].LayoutType != LayoutTypeTable || removeSet[i] {
 				continue
 			}
 			for _, tp := range tables[ti].Positions {
@@ -1328,7 +1330,7 @@ func extractTableAndReplace(boxes []TextBox, tables []TableItem) []TextBox {
 		bestDist := math.MaxFloat64
 		bestIdx := -1
 		for i, b := range boxes {
-			if b.LayoutType == "table" || b.LayoutType == "figure" {
+			if b.LayoutType == LayoutTypeTable || b.LayoutType == LayoutTypeFigure {
 				continue
 			}
 			if b.PageNumber != tblPg {
@@ -1376,7 +1378,7 @@ func extractTableAndReplace(boxes []TextBox, tables []TableItem) []TextBox {
 		// Collect only table-labelled boxes (Python: filters by layout_type).
 		var tableBoxes []TextBox
 		for i := range boxes {
-			if boxes[i].LayoutType != "table" {
+			if boxes[i].LayoutType != LayoutTypeTable {
 				continue
 			}
 			for _, tp := range tables[ti].Positions {
@@ -1443,7 +1445,7 @@ func consolidateFigures(boxes []TextBox) []TextBox {
 	// self.boxes.pop(i); continue — box discarded.
 	removeSet := make(map[int]bool)
 	for i, b := range boxes {
-		if b.LayoutType == "figure" && isDataSourceBox(b.Text) {
+		if b.LayoutType == LayoutTypeFigure && isDataSourceBox(b.Text) {
 			removeSet[i] = true
 		}
 	}
@@ -1455,7 +1457,7 @@ func consolidateFigures(boxes []TextBox) []TextBox {
 	}
 	groups := make(map[figKey][]int)
 	for i, b := range boxes {
-		if b.LayoutType != "figure" || removeSet[i] {
+		if b.LayoutType != LayoutTypeFigure || removeSet[i] {
 			continue
 		}
 		key := figKey{b.PageNumber, b.LayoutNo}

@@ -313,9 +313,9 @@ func TestOptions_CompileFailureIsolated(t *testing.T) {
 func TestOptions_SentinelErrorsExist(t *testing.T) {
 	sentinels := map[string]error{
 		"ErrLoopMaxIterationsExceeded": ErrLoopMaxIterationsExceeded,
-		"ErrLoopSubGraphInterrupted":   ErrLoopSubGraphInterrupted,
-		"ErrLoopResumeStateInvalid":    ErrLoopResumeStateInvalid,
-		"ErrLoopQuitConditionFailed":   ErrLoopQuitConditionFailed,
+		"ErrLoopSubGraphInterrupted":  ErrLoopSubGraphInterrupted,
+		"ErrLoopResumeStateInvalid":   ErrLoopResumeStateInvalid,
+		"ErrLoopQuitConditionFailed":  ErrLoopQuitConditionFailed,
 	}
 	for name, e := range sentinels {
 		if e == nil {

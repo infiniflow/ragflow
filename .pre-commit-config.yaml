@@ -18,7 +18,8 @@ repos:
         args: [ --fix ]
       - id: ruff-format
 
-  - repo: https://github.com/dnephin/pre-commit-golang
-    rev: v0.5.1
-    hooks:
-      - id: go-fmt
+  # TODO: re-enable go-fmt after PR merges to avoid formatting unrelated files
+  # - repo: https://github.com/dnephin/pre-commit-golang
+  #   rev: v0.5.1
+  #   hooks:
+  #     - id: go-fmt

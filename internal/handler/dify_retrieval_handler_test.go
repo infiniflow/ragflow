@@ -20,7 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"gorm.io/gorm"
+		"gorm.io/gorm"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -28,10 +28,10 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
-	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/service/nlp"
+	"ragflow/internal/engine/types"
 
 	"github.com/gin-gonic/gin"
 )
@@ -135,12 +135,12 @@ type mockDocEngine struct {
 	engine.DocEngine
 }
 
-func (m *mockDocEngine) Close() error                   { return nil }
-func (m *mockDocEngine) Ping(ctx context.Context) error { return nil }
-func (m *mockDocEngine) GetType() string                { return "mock" }
-func (m *mockDocEngine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
-	return &types.SearchResult{}, nil
-}
+func (m *mockDocEngine) Close() error                          { return nil }
+func (m *mockDocEngine) Ping(ctx context.Context) error         { return nil }
+func (m *mockDocEngine) GetType() string { return "mock" }
+	func (m *mockDocEngine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+		return &types.SearchResult{}, nil
+	}
 func (m *mockDocEngine) GetChunk(ctx context.Context, _, _ string, _ []string) (interface{}, error) {
 	return map[string]interface{}{}, nil
 }

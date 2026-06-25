@@ -150,7 +150,7 @@ func CollectFigures(sections []Section) []Section {
 	}
 	figures := make([]Section, 0)
 	for _, s := range sections {
-		if s.LayoutType == "figure" {
+		if s.LayoutType == LayoutTypeFigure {
 			figures = append(figures, s)
 		}
 	}
@@ -248,6 +248,23 @@ type ModelType string
 const (
 	ModelSaas ModelType = "saas" // cpu DeepDoc — cell-level TSR output
 	ModelOSS  ModelType = "oss"  // oss DeepDoc — column/row line TSR output
+)
+
+// Layout type constants — used for LayoutType field comparisons across
+// the pipeline.  Values match DLA label taxonomy.
+const (
+	LayoutTypeText      = "text"
+	LayoutTypeTable     = "table"
+	LayoutTypeFigure    = "figure"
+	LayoutTypeEquation  = "equation"
+	LayoutTypeTitle     = "title"
+	LayoutTypeReference = "reference"
+	LayoutTypeFooter    = "footer"
+	LayoutTypeHeader    = "header"
+
+	// Compound DLA labels (used in priority-ordered annotation matching).
+	DLALabelFigureCaption = "figure caption"
+	DLALabelTableCaption  = "table caption"
 )
 
 // DocAnalyzer abstracts DeepDoc vision operations so the Parser can

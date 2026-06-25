@@ -31,15 +31,15 @@ import (
 
 // mockFileCommitSvc implements FileCommitServiceInterface for testing
 type mockFileCommitSvc struct {
-	createCommitFn          func(folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error)
-	listCommitsFn           func(folderID string, page, pageSize int, orderBy string, desc bool) ([]*entity.FileCommit, int64, error)
-	getCommitFn             func(commitID string) (*entity.FileCommit, error)
-	listCommitFilesFn       func(commitID string) ([]*entity.FileCommitItem, error)
-	diffCommitsFn           func(fromID, toID string) ([]entity.DiffEntry, error)
-	getUncommittedChangesFn func(folderID string) ([]entity.DiffEntry, error)
-	getCommitTreeFn         func(commitID string) (map[string]interface{}, error)
-	getCommitFileContentFn  func(folderID, commitID, fileID string) ([]byte, error)
-	getFileVersionHistoryFn func(fileID string) ([]entity.VersionEntry, error)
+	createCommitFn                func(folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error)
+	listCommitsFn                 func(folderID string, page, pageSize int, orderBy string, desc bool) ([]*entity.FileCommit, int64, error)
+	getCommitFn                   func(commitID string) (*entity.FileCommit, error)
+	listCommitFilesFn             func(commitID string) ([]*entity.FileCommitItem, error)
+	diffCommitsFn                 func(fromID, toID string) ([]entity.DiffEntry, error)
+	getUncommittedChangesFn       func(folderID string) ([]entity.DiffEntry, error)
+	getCommitTreeFn               func(commitID string) (map[string]interface{}, error)
+	getCommitFileContentFn        func(folderID, commitID, fileID string) ([]byte, error)
+	getFileVersionHistoryFn       func(fileID string) ([]entity.VersionEntry, error)
 }
 
 func (m *mockFileCommitSvc) CreateCommit(folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {

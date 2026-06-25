@@ -162,7 +162,7 @@ func annotateTableBoxes(boxes []TextBox, grid [][]TSRCell) {
 	sortXFirstly(clmns, 10)
 
 	for i := range boxes {
-		if boxes[i].LayoutType != "table" {
+		if boxes[i].LayoutType != LayoutTypeTable {
 			continue
 		}
 		// Grid-based R/C: match box to the row and column it overlaps.
@@ -207,7 +207,7 @@ func annotateTableBoxes(boxes []TextBox, grid [][]TSRCell) {
 		// Collect all table boxes grouped by R.
 		rBoxes := make(map[int][]int)
 		for i := range boxes {
-			if boxes[i].LayoutType == "table" {
+			if boxes[i].LayoutType == LayoutTypeTable {
 				rBoxes[boxes[i].R] = append(rBoxes[boxes[i].R], i)
 			}
 		}

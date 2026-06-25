@@ -51,14 +51,14 @@ import (
 // so a scale of 4 produces 20x28 glyphs, which are ~16x16 px after
 // padding — comfortably readable for humans at typical browser zoom.
 const (
-	captchaPNGScale    = 4
-	captchaGlyphW      = 5
-	captchaGlyphH      = 7
-	captchaCharSpacing = 4 // px between glyphs (after scaling)
-	captchaSidePadding = 8
-	captchaTopPadding  = 6
-	captchaNoiseDots   = 60
-	captchaNoiseLines  = 4
+	captchaPNGScale     = 4
+	captchaGlyphW       = 5
+	captchaGlyphH       = 7
+	captchaCharSpacing  = 4 // px between glyphs (after scaling)
+	captchaSidePadding  = 8
+	captchaTopPadding   = 6
+	captchaNoiseDots    = 60
+	captchaNoiseLines   = 4
 )
 
 // font5x7 maps a single character to its 7-row bitmap. Each row is a

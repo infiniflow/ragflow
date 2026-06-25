@@ -52,19 +52,19 @@ func TestQueryBuilder_IsChinese(t *testing.T) {
 		{"Single Chinese char", "中", true},
 		{"Two Chinese chars", "中文", true},
 		{"Three Chinese chars", "中文字", true},
-		{"Four Chinese chars", "中文字符", true},                // ratio >=0.7
-		{"Mixed with English", "hello world", true},         // fields=2 <=3
-		{"Mostly Chinese", "hello 世界 测试", true},             // fields=3 <=3
-		{"Mostly English", "hello world test", true},        // fields=3 <=3
+		{"Four Chinese chars", "中文字符", true}, // ratio >=0.7
+		{"Mixed with English", "hello world", true}, // fields=2 <=3
+		{"Mostly Chinese", "hello 世界 测试", true}, // fields=3 <=3
+		{"Mostly English", "hello world test", true}, // fields=3 <=3
 		{"English with punctuation", "Hello, world!", true}, // fields=2 <=3 (after split)
-		{"Chinese with spaces", "这 是 一个 测试", true},          // fields=4, non-alpha=4, ratio=1 >=0.7
-		{"Mixed with numbers", "123 abc", true},             // fields=2 <=3
+		{"Chinese with spaces", "这 是 一个 测试", true}, // fields=4, non-alpha=4, ratio=1 >=0.7
+		{"Mixed with numbers", "123 abc", true}, // fields=2 <=3
 		// Additional cases where fields >3 and ratio determines result
 		{"Many English words", "this is a long english sentence", false}, // fields=6, non-alpha=0, ratio=0 <0.7
-		{"Mixed with mostly Chinese", "hello world 中文 测试 多个", false},     // fields=5, non-alpha=3, ratio=0.6 <0.7 => false
-		{"Mostly Chinese with many words", "这 是 一个 中文 测试 多个 汉字", true},   // fields=7, non-alpha=7, ratio=1 >=0.7
-		{"English with Chinese suffix", "hello world 中文", true},          // fields=3 <=3
-		{"Chinese with English suffix", "中文 test", true},                 // fields=2 <=3
+		{"Mixed with mostly Chinese", "hello world 中文 测试 多个", false}, // fields=5, non-alpha=3, ratio=0.6 <0.7 => false
+		{"Mostly Chinese with many words", "这 是 一个 中文 测试 多个 汉字", true}, // fields=7, non-alpha=7, ratio=1 >=0.7
+		{"English with Chinese suffix", "hello world 中文", true}, // fields=3 <=3
+		{"Chinese with English suffix", "中文 test", true}, // fields=2 <=3
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -119,12 +119,12 @@ func TestQueryBuilder_RmWWW(t *testing.T) {
 		{"No stop words", "普通文本", "普通文本"},
 		{"Chinese question word", "请问如何操作", "操作"}, // "请问" and "如何" both matched
 		{"Chinese stop word 怎么办", "怎么办安装", "安装"},
-		{"English what", "what is this", " this"},                     // removes "what " and "is "
-		{"English who", "who are you", " you"},                        // removes "who " and "are "
+		{"English what", "what is this", " this"}, // removes "what " and "is "
+		{"English who", "who are you", " you"}, // removes "who " and "are "
 		{"Mixed stop words", "请问what is the problem", " the problem"}, // Chinese removed, "what ", "is " removed
-		{"All removed becomes empty", "请问", "请问"},                     // should revert to original
-		{"English articles", "the cat is on a mat", " cat on mat"},    // removes "the ", "is ", "a "
-		{"Case insensitive", "WHAT IS THIS", " THIS"},                 // removes "WHAT " and "IS "
+		{"All removed becomes empty", "请问", "请问"}, // should revert to original
+		{"English articles", "the cat is on a mat", " cat on mat"}, // removes "the ", "is ", "a "
+		{"Case insensitive", "WHAT IS THIS", " THIS"}, // removes "WHAT " and "IS "
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -181,7 +181,7 @@ func TestQueryBuilder_StrFullWidth2HalfWidth(t *testing.T) {
 		{"Chinese characters unchanged", "你好世界", "你好世界"},
 		{"Japanese characters unchanged", "こんにちは", "こんにちは"},
 		{"Korean characters unchanged", "안녕하세요", "안녕하세요"},
-		{"Full-width symbols outside range", "＠＠＠", "@@@"},            // Actually full-width '@' is U+FF20 which maps to U+0040
+		{"Full-width symbols outside range", "＠＠＠", "@@@"}, // Actually full-width '@' is U+FF20 which maps to U+0040
 		{"Edge case: character just below range", "\u001F", "\u001F"}, // U+001F is < 0x0020, should remain
 		{"Edge case: character just above range", "\u007F", "\u007F"}, // U+007F is > 0x7E, should remain
 	}
@@ -224,12 +224,12 @@ func TestQueryBuilder_Traditional2Simplified(t *testing.T) {
 func TestQueryBuilder_Question(t *testing.T) {
 	qb := NewQueryBuilder()
 	tests := []struct {
-		name          string
-		txt           string
-		tbl           string
-		minMatch      float64
-		expectNil     bool
-		checkExpr     func(*types.MatchTextExpr) bool
+		name         string
+		txt          string
+		tbl          string
+		minMatch     float64
+		expectNil    bool
+		checkExpr    func(*types.MatchTextExpr) bool
 		checkKeywords func([]string) bool
 	}{
 		{
@@ -275,10 +275,10 @@ func TestQueryBuilder_Question(t *testing.T) {
 			},
 		},
 		{
-			name:      "Empty text",
-			txt:       "",
-			tbl:       "test",
-			minMatch:  0.5,
+			name:     "Empty text",
+			txt:      "",
+			tbl:      "test",
+			minMatch: 0.5,
 			expectNil: true,
 			checkExpr: func(expr *types.MatchTextExpr) bool {
 				return expr == nil
@@ -310,59 +310,59 @@ func TestQueryBuilder_Question(t *testing.T) {
 func TestQueryBuilder_Paragraph(t *testing.T) {
 	qb := NewQueryBuilder()
 	tests := []struct {
-		name          string
-		contentTks    string
-		keywords      []string
-		keywordsTopN  int
+		name        string
+		contentTks  string
+		keywords    []string
+		keywordsTopN int
 		expectedQuery string
 	}{
 		{
-			name:          "No keywords",
-			contentTks:    "some content terms",
-			keywords:      []string{},
-			keywordsTopN:  0,
+			name:        "No keywords",
+			contentTks:  "some content terms",
+			keywords:    []string{},
+			keywordsTopN: 0,
 			expectedQuery: "",
 		},
 		{
-			name:          "Single keyword",
-			contentTks:    "content",
-			keywords:      []string{"hello"},
-			keywordsTopN:  0,
+			name:        "Single keyword",
+			contentTks:  "content",
+			keywords:    []string{"hello"},
+			keywordsTopN: 0,
 			expectedQuery: `"hello"`,
 		},
 		{
-			name:          "Multiple keywords",
-			contentTks:    "content",
-			keywords:      []string{"hello", "world", "test"},
-			keywordsTopN:  0,
+			name:        "Multiple keywords",
+			contentTks:  "content",
+			keywords:    []string{"hello", "world", "test"},
+			keywordsTopN: 0,
 			expectedQuery: `"hello" "world" "test"`,
 		},
 		{
-			name:          "Trim spaces",
-			contentTks:    "",
-			keywords:      []string{"  hello ", " world "},
-			keywordsTopN:  0,
+			name:        "Trim spaces",
+			contentTks:  "",
+			keywords:    []string{"  hello ", " world "},
+			keywordsTopN: 0,
 			expectedQuery: `"hello" "world"`,
 		},
 		{
-			name:          "TopN limit",
-			contentTks:    "",
-			keywords:      []string{"a", "b", "c", "d", "e"},
-			keywordsTopN:  3,
+			name:        "TopN limit",
+			contentTks:  "",
+			keywords:    []string{"a", "b", "c", "d", "e"},
+			keywordsTopN: 3,
 			expectedQuery: `"a" "b" "c"`,
 		},
 		{
-			name:          "TopN larger than slice",
-			contentTks:    "",
-			keywords:      []string{"a", "b"},
-			keywordsTopN:  10,
+			name:        "TopN larger than slice",
+			contentTks:  "",
+			keywords:    []string{"a", "b"},
+			keywordsTopN: 10,
 			expectedQuery: `"a" "b"`,
 		},
 		{
-			name:          "Empty keyword filtered",
-			contentTks:    "",
-			keywords:      []string{"a", "", "b"},
-			keywordsTopN:  0,
+			name:        "Empty keyword filtered",
+			contentTks:  "",
+			keywords:    []string{"a", "", "b"},
+			keywordsTopN: 0,
 			expectedQuery: `"a" "b"`,
 		},
 	}

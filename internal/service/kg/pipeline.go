@@ -23,11 +23,11 @@ import (
 	"strings"
 	"sync"
 
-	"go.uber.org/zap"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	modelModule "ragflow/internal/entity/models"
+	"go.uber.org/zap"
 )
 
 // Pipeline encapsulates the knowledge graph retrieval pipeline.
@@ -157,7 +157,7 @@ func (p *Pipeline) Retrieval(ctx context.Context) (map[string]interface{}, error
 	wg.Wait()
 	if entsErr != nil {
 		return nil, entsErr
-	} // 5. N-hop analysis + score fusion
+	}// 5. N-hop analysis + score fusion
 	nhopPathes := AnalyzeNHopPaths(entsFromQuery)
 	DoubleHitBoost(entsFromQuery, entsFromTypes)
 	FuseRelationScores(relsFromText, entsFromTypes, nhopPathes)
@@ -175,19 +175,19 @@ func (p *Pipeline) Retrieval(ctx context.Context) (map[string]interface{}, error
 
 	// 9. Build synthetic chunk
 	return map[string]interface{}{
-		"chunk_id":            "",
-		"content_ltks":        "",
-		"content_with_weight": entsRelsContent + communityContent,
-		"doc_id":              "",
-		"docnm_kwd":           "Related content in Knowledge Graph",
-		"kb_id":               p.kbIDs,
-		"important_kwd":       []string{},
-		"image_id":            "",
-		"similarity":          1.0,
-		"vector_similarity":   1.0,
-		"term_similarity":     0,
-		"vector":              []float64{},
-		"positions":           []interface{}{},
+		"chunk_id":              "",
+		"content_ltks":          "",
+		"content_with_weight":   entsRelsContent + communityContent,
+		"doc_id":                "",
+		"docnm_kwd":             "Related content in Knowledge Graph",
+		"kb_id":                 p.kbIDs,
+		"important_kwd":         []string{},
+		"image_id":              "",
+		"similarity":            1.0,
+		"vector_similarity":     1.0,
+		"term_similarity":       0,
+		"vector":                []float64{},
+		"positions":             []interface{}{},
 	}, nil
 }
 

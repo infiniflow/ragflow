@@ -10,8 +10,9 @@ import (
 // OSS model label taxonomies.
 // DLA: 8 unique classes (no duplicates — OSS ONNX model output).
 var ossDLALabels = []string{
-	"title", "text", "reference", "figure", "figure caption",
-	"table", "table caption", "equation",
+	LayoutTypeTitle, LayoutTypeText, LayoutTypeReference,
+	LayoutTypeFigure, DLALabelFigureCaption,
+	LayoutTypeTable, DLALabelTableCaption, LayoutTypeEquation,
 }
 
 // TSR: 6 structural elements (matches deepdoc/vision/table_structure_recognizer.py).

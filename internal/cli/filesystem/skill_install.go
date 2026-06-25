@@ -58,7 +58,7 @@ type SkillInstallCommand struct {
 // sourceHTTPClientAdapter adapts filesystem.HTTPClientInterface to source.HTTPClientInterface
 // This allows us to use the existing HTTP client infrastructure with the source package
 type sourceHTTPClientAdapter struct {
-	client     HTTPClientInterface
+	client HTTPClientInterface
 	httpClient *http.Client
 }
 
@@ -121,9 +121,9 @@ func NewInstallSkillCommand(client HTTPClientInterface, fileProvider *FileProvid
 	adaptedClient := &sourceHTTPClientAdapter{
 		client: client,
 		httpClient: &http.Client{
-			Timeout:   60 * time.Second,
-			Transport: transport,
-			Jar:       jar,
+			Timeout:       60 * time.Second,
+			Transport:     transport,
+			Jar:           jar,
 		},
 	}
 

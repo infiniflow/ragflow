@@ -210,8 +210,8 @@ func (c *Client) doPost(ctx context.Context, url string, buildBody bodyBuilder, 
 // httpError carries the HTTP status + body so callers can inspect.
 // retryable=true means the doPost loop already exhausted retries.
 type httpError struct {
-	Status    string
-	Body      string
+	Status   string
+	Body     string
 	retryable bool
 }
 

@@ -140,23 +140,23 @@ var reFigureCaptionText = regexp.MustCompile(`^图|(?i)Fig\.?\s*\d+|(?i)Figure\s
 // Matches Python's is_caption check: text patterns OR layout_type containing "caption".
 func captionKind(s Section) string {
 	lt := s.LayoutType
-	if lt == "table caption" || (strings.Contains(lt, "caption") && reTableCaptionText.MatchString(strings.TrimSpace(s.Text))) {
-		return "table"
+	if lt == DLALabelTableCaption || (strings.Contains(lt, "caption") && reTableCaptionText.MatchString(strings.TrimSpace(s.Text))) {
+		return LayoutTypeTable
 	}
-	if lt == "figure caption" || strings.Contains(lt, "caption") {
-		return "figure"
+	if lt == DLALabelFigureCaption || strings.Contains(lt, "caption") {
+		return LayoutTypeFigure
 	}
 	// DLA may label captions as "text" or other types — check text patterns.
 	t := strings.TrimSpace(s.Text)
 	if reTableCaptionText.MatchString(t) {
-		return "table"
+		return LayoutTypeTable
 	}
 	if reFigureCaptionText.MatchString(t) {
-		return "figure"
+		return LayoutTypeFigure
 	}
 	// "图表" pattern could be either — check if isCaptionBox matches.
 	if isCaptionBox(t, "") {
-		return "table"
+		return LayoutTypeTable
 	}
 	return ""
 }

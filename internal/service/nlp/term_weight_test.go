@@ -190,7 +190,7 @@ func TestTokenMerge(t *testing.T) {
 			result := d.TokenMerge(tt.tks)
 			if !reflect.DeepEqual(result, tt.expected) {
 				// Debug: print detailed comparison
-				t.Errorf("TokenMerge(%v) = %v (len=%d), expected %v (len=%d)",
+				t.Errorf("TokenMerge(%v) = %v (len=%d), expected %v (len=%d)", 
 					tt.tks, result, len(result), tt.expected, len(tt.expected))
 				for i, r := range result {
 					t.Errorf("  result[%d] = %q (len=%d)", i, r, len(r))
@@ -250,8 +250,8 @@ func TestSplit(t *testing.T) {
 		expected []string
 	}{
 		{
-			name: "simple split",
-			txt:  "hello world test",
+			name:     "simple split",
+			txt:      "hello world test",
 			// Consecutive English words ending with letters are merged
 			expected: []string{"hello world test"},
 		},
@@ -261,8 +261,8 @@ func TestSplit(t *testing.T) {
 			expected: []string{"machine learning algorithm"}, // Should merge
 		},
 		{
-			name: "mixed Chinese and English",
-			txt:  "hello 世界 world",
+			name:     "mixed Chinese and English",
+			txt:      "hello 世界 world",
 			// "hello" ends with letter, "世界" doesn't start with letter but doesn't end with letter either
 			expected: []string{"hello", "世界", "world"},
 		},
@@ -272,8 +272,8 @@ func TestSplit(t *testing.T) {
 			expected: []string{""},
 		},
 		{
-			name: "multiple spaces",
-			txt:  "hello    world",
+			name:     "multiple spaces",
+			txt:      "hello    world",
 			// Multiple spaces are normalized, then merged if both end with letters
 			expected: []string{"hello world"},
 		},
@@ -283,7 +283,7 @@ func TestSplit(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := d.Split(tt.txt)
 			if !reflect.DeepEqual(result, tt.expected) {
-				t.Errorf("Split('%s') = %v (len=%d), expected %v (len=%d)",
+				t.Errorf("Split('%s') = %v (len=%d), expected %v (len=%d)", 
 					tt.txt, result, len(result), tt.expected, len(tt.expected))
 				for i, r := range result {
 					t.Errorf("  result[%d] = %q", i, r)

@@ -149,7 +149,7 @@ func TextMerge(boxes []TextBox, medianHeights map[int]float64, zoom float64) []T
 			// Python: b.get("layoutno", "0") != b_.get("layoutno", "1") —
 			// asymmetric defaults mean empty/missing layoutno never merge horizontally.
 			if cur.LayoutNo != nxt.LayoutNo || cur.LayoutNo == "" || nxt.LayoutNo == "" ||
-				cur.LayoutType == "table" || cur.LayoutType == "figure" || cur.LayoutType == "equation" {
+				cur.LayoutType == LayoutTypeTable || cur.LayoutType == LayoutTypeFigure || cur.LayoutType == LayoutTypeEquation {
 				break
 			}
 			mh := medianHeights[cur.PageNumber]

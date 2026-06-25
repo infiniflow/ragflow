@@ -187,18 +187,39 @@ func cropSectionImage(posTag string, decodedImages map[int]image.Image, zoom flo
 		maxW = max(maxW, seg.img.Bounds().Dx())
 	}
 	stitched := image.NewRGBA(image.Rect(0, 0, maxW, totalH))
+
+	// Fill background using direct Pix slice write (matching fastCrop pattern).
+	// Gray 245,245,245,255 as BGRA bytes.
 	for y := 0; y < totalH; y++ {
-		for x := 0; x < maxW; x++ {
-			stitched.Set(x, y, color.RGBA{245, 245, 245, 255})
+		row := stitched.Pix[stitched.PixOffset(0, y):stitched.PixOffset(maxW, y)]
+		for i := 0; i < len(row); i += 4 {
+			row[i] = 245   // B
+			row[i+1] = 245 // G
+			row[i+2] = 245 // R
+			row[i+3] = 255 // A
 		}
 	}
+
 	curY := 0
 	for _, seg := range segments {
 		srcW := seg.img.Bounds().Dx()
 		srcH := seg.img.Bounds().Dy()
-		for y := 0; y < srcH; y++ {
-			for x := 0; x < srcW; x++ {
-				stitched.Set(x, curY+y, seg.img.At(x+seg.img.Bounds().Min.X, y+seg.img.Bounds().Min.Y))
+		if rgba, ok := seg.img.(*image.RGBA); ok {
+			// Fast path: direct Pix slice copy (matching fastCrop in geometry.go).
+			srcMinX := seg.img.Bounds().Min.X
+			srcMinY := seg.img.Bounds().Min.Y
+			for ry := 0; ry < srcH; ry++ {
+				srcStart := rgba.PixOffset(srcMinX, srcMinY+ry)
+				srcRow := rgba.Pix[srcStart : srcStart+srcW*4]
+				dstStart := stitched.PixOffset(0, curY+ry)
+				copy(stitched.Pix[dstStart:], srcRow)
+			}
+		} else {
+			// Fallback: pixel-by-pixel for non-RGBA images (e.g. edge overlays).
+			for y := 0; y < srcH; y++ {
+				for x := 0; x < srcW; x++ {
+					stitched.Set(x, curY+y, seg.img.At(x+seg.img.Bounds().Min.X, y+seg.img.Bounds().Min.Y))
+				}
 			}
 		}
 		curY += srcH + gap
@@ -256,7 +277,7 @@ func cropSectionByDLA(sec Section, dlaDebug []DLAPageRegions, pageImages map[int
 	bestIdx := -1
 	bestOverlap := 0.0
 	for i, r := range regions {
-		if r.Label != "figure" && r.Label != "equation" {
+		if r.Label != LayoutTypeFigure && r.Label != LayoutTypeEquation {
 			continue
 		}
 		overlap := rectOverlap(bx, rect{r.X0, r.Y0, r.X1, r.Y1})

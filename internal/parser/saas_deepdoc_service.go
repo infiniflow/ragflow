@@ -10,8 +10,10 @@ import (
 // SaaS model label taxonomies.
 // DLA: 10 classes with duplicates (matching SaaS Docker TSR endpoint).
 var saasDLALabels = []string{
-	"title", "text", "reference", "figure", "figure caption",
-	"table", "table caption", "table caption", "equation", "figure caption",
+	LayoutTypeTitle, LayoutTypeText, LayoutTypeReference,
+	LayoutTypeFigure, DLALabelFigureCaption,
+	LayoutTypeTable, DLALabelTableCaption, DLALabelTableCaption,
+	LayoutTypeEquation, DLALabelFigureCaption,
 }
 
 // TSR: 2-class separator lines (v=vertical, h=horizontal).

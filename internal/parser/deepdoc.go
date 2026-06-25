@@ -44,8 +44,10 @@ func NewDeepDocClient(baseURL string) (*DeepDocClient, error) {
 // Default DLA/TSR label tables.  Service constructors replace these with
 // model-specific labels (OSS 6-class TSR, SaaS 2-class, etc.).
 var defaultDLALabels = []string{
-	"title", "text", "reference", "figure", "figure caption",
-	"table", "table caption", "table caption", "equation", "figure caption",
+	LayoutTypeTitle, LayoutTypeText, LayoutTypeReference,
+	LayoutTypeFigure, DLALabelFigureCaption,
+	LayoutTypeTable, DLALabelTableCaption, DLALabelTableCaption,
+	LayoutTypeEquation, DLALabelFigureCaption,
 }
 var defaultTSRLabels = []string{
 	"table", "table column", "table row",
