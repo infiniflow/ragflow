@@ -1,5 +1,6 @@
 import { IRenameTag } from '@/interfaces/database/dataset';
 import {
+  IFetchArtifactListRequestParams,
   IFetchDocumentListRequestBody,
   IFetchKnowledgeListRequestParams,
 } from '@/interfaces/request/knowledge';
@@ -384,6 +385,17 @@ export const getPipelineDetail = (datasetId: string, logId: string) =>
 
 export const getKnowledgeBasicInfo = (datasetId: string) =>
   request.get(api.getKnowledgeBasicInfo(datasetId));
+
+export const listArtifacts = (
+  datasetId: string,
+  params?: IFetchArtifactListRequestParams,
+) => request.get(api.artifactsList(datasetId), { params });
+
+export const getArtifactPage = (
+  datasetId: string,
+  pageType: string,
+  slug: string,
+) => request.get(api.getArtifactPage(datasetId, pageType, slug));
 
 export const checkEmbedding = (datasetId: string, data: Record<string, any>) =>
   request.post(api.checkEmbedding(datasetId), { data });

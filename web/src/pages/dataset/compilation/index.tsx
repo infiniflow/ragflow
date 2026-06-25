@@ -1,5 +1,4 @@
 import BackButton from '@/components/back-button';
-import NextMarkdownContent from '@/components/next-markdown-content';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -8,12 +7,7 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from '@/components/ui/resizable';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { VersionHistorySheet } from '@/pages/dataset/compilation/version-history-sheet';
+import { WikiDetailContent } from '@/pages/dataset/compilation/wiki-detail-content';
 import {
   LeftPanelTab,
   WikiLeftPanel,
@@ -28,39 +22,13 @@ import {
   useFetchKnowledgeBaseConfiguration,
   useFetchKnowledgeGraph,
 } from '@/hooks/use-knowledge-request';
+import { IArtifact } from '@/interfaces/database/dataset';
 import KnowledgeForceGraph from '@/pages/dataset/compilation/knowledge-force-graph';
-import { LucideFileText, SquarePen, Upload } from 'lucide-react';
 
 enum ViewMode {
   Graph = 'graph',
   LlmWiki = 'llm-wiki',
 }
-
-const mockMarkdown = `# iPhone 17: The AI-Native Evolution
-
-## Overview
-The iPhone 17 represents a fundamental shift in mobile architecture, transitioning from a traditional smartphone to an **AI-Native Personal Agent**. Built upon the A19 Pro chip, it integrates deep-learning inference at the edge, ensuring your personal intelligence remains private and performant.
-
-## Key Technical Specifications
-| Feature | Specification | Impact |
-|---|---|---|
-| **Chipset** | A19 Pro (3nm+) | 30% faster NPU inference |
-| **Display** | 6.9" ProMotion OLED | 3000 nits peak brightness |
-| **Connectivity** | Quantum-Ready 6G | Ultra-low latency edge computing |
-| **Intelligence** | Core Agent OS | Real-time on-device task automation |
-
-## Core Innovations
-### 1. The Core Agent OS
-Unlike previous versions, iOS 19 on iPhone 17 is built around the **"Agent-First"** principle. The OS constantly observes usage patterns to proactively manage applications, background resources, and multi-modal communications.
-
-> **Note:** The onboard Neural Engine now supports up to 15 billion parameters for local inference, meaning your data never leaves your device.
-
-### 2. Photonics Camera System
-The camera system has been upgraded to a **"Photonic Sensor Array"**, allowing for:
-- **True-Depth Volumetric Capture:** Enabling 3D spatial video for immersive AR/VR environments.
-- **Semantic Lighting Control:** AI dynamically adjusts lighting for every entity within a frame in real-time.
-
-"meeting last Tuesday," and the system retrieves the`;
 
 export default function Compilation() {
   const { t } = useTranslation();
@@ -70,6 +38,9 @@ export default function Compilation() {
   const { data: knowledgeGraph } = useFetchKnowledgeGraph();
   const [leftTab, setLeftTab] = useState<LeftPanelTab>(LeftPanelTab.Graph);
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.Graph);
+  const [selectedArtifact, setSelectedArtifact] = useState<IArtifact | null>(
+    null,
+  );
 
   const handleSwitchToGraph = useCallback(() => {
     setViewMode(ViewMode.Graph);
@@ -81,6 +52,10 @@ export default function Compilation() {
 
   const handleLeftTabChange = useCallback((value: string) => {
     setLeftTab(value as LeftPanelTab);
+  }, []);
+
+  const handleSelectArtifact = useCallback((artifact: IArtifact) => {
+    setSelectedArtifact(artifact);
   }, []);
 
   return (
@@ -130,60 +105,19 @@ export default function Compilation() {
           <KnowledgeForceGraph data={knowledgeGraph?.graph} show />
         </div>
       ) : (
-        <Card className="flex-1 min-h-0 overflow-hidden flex bg-bg-card border-border-button rounded-xl">
-          <ResizablePanelGroup direction="horizontal">
+        <Card className="flex-1 min-h-0 overflow-hidden flex border-border-button rounded-xl flex-col">
+          <ResizablePanelGroup direction="horizontal" className="flex-1">
             <ResizablePanel defaultSize={33} minSize={20} maxSize={50}>
-              <WikiLeftPanel tab={leftTab} onTabChange={handleLeftTabChange} />
+              <WikiLeftPanel
+                tab={leftTab}
+                onTabChange={handleLeftTabChange}
+                selectedArtifact={selectedArtifact}
+                onSelectArtifact={handleSelectArtifact}
+              />
             </ResizablePanel>
             <ResizableHandle withHandle />
             <ResizablePanel>
-              <section className="size-full min-w-0 overflow-y-auto p-8">
-                <div className="max-w-3xl mx-auto">
-                  <div className="flex items-start justify-between mb-6">
-                    <div className="flex items-center gap-3">
-                      <h1 className="text-3xl font-semibold text-text-primary">
-                        iPhone 17
-                      </h1>
-                      <span className="text-sm text-state-success bg-state-success/10 px-2 py-0.5 rounded">
-                        test0415_2025_04_15_16_03
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-1">
-                      <Button variant="ghost" size="icon" className="size-8">
-                        <SquarePen className="size-4" />
-                      </Button>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="size-8"
-                          >
-                            <Upload className="size-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          {t('knowledgeDetails.export')}
-                        </TooltipContent>
-                      </Tooltip>
-                      <VersionHistorySheet />
-                    </div>
-                  </div>
-
-                  <NextMarkdownContent content={mockMarkdown} loading={false} />
-
-                  <div className="mt-8 flex items-center gap-2 text-sm text-text-secondary">
-                    <span className="flex items-center gap-1.5 px-2 py-1 bg-bg-base rounded">
-                      <LucideFileText className="size-3.5" />
-                      Mallat...17.pdf
-                    </span>
-                    <span className="px-2 py-1 bg-bg-base rounded">
-                      #Company
-                    </span>
-                  </div>
-                </div>
-              </section>
+              <WikiDetailContent selectedArtifact={selectedArtifact} />
             </ResizablePanel>
           </ResizablePanelGroup>
         </Card>

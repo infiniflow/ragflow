@@ -59,6 +59,11 @@ export const enum DocumentApiAction {
   ParseDocument = 'parseDocument',
 }
 
+const DocumentKeys = {
+  byIds: (ids: string[]) =>
+    [DocumentApiAction.FetchDocumentList, 'byIds', ids] as const,
+};
+
 export const useUploadDocument = () => {
   const queryClient = useQueryClient();
   const { id } = useParams();
@@ -212,6 +217,37 @@ export const useFetchDocumentList = (loop = true) => {
     handleFilterSubmit,
     checkValue,
   };
+};
+
+export const useFetchDocumentsByIds = (ids: string[]) => {
+  const { id: datasetId } = useParams();
+
+  const { data, isFetching: loading } = useQuery<{
+    docs: IDocumentInfo[];
+    total: number;
+  }>({
+    queryKey: DocumentKeys.byIds(ids),
+    enabled: ids.length > 0 && !!datasetId,
+    initialData: { docs: [], total: 0 },
+    queryFn: async () => {
+      const ret = await listDocument(
+        {
+          id: datasetId,
+          page: 1,
+          page_size: ids.length,
+        },
+        {
+          ids,
+        },
+      );
+      if (ret.data.code === 0) {
+        return ret.data.data;
+      }
+      return { docs: [], total: 0 };
+    },
+  });
+
+  return { documents: data.docs, loading };
 };
 
 // get document filter

@@ -444,6 +444,8 @@ export default {
       llmWiki: 'LLM Wiki',
       contents: '目录',
       entity: '实体',
+      selectArtifact: '从目录中选择一个条目以查看详情',
+      sourceDocuments: '来源文档',
       compilationTitleSuffix: '的数据集',
       files: '个文件',
       name: '名称',

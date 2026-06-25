@@ -126,6 +126,10 @@ export default {
   getMeta: `${restAPIv1}/datasets/metadata/flattened`,
   getKnowledgeBasicInfo: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/ingestions/summary`,
+  artifactsList: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts`,
+  getArtifactPage: (datasetId: string, pageType: string, slug: string) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts/${pageType}/${slug}`,
   // data pipeline log
   fetchDataPipelineLog: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/ingestions`,

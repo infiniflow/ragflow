@@ -222,3 +222,23 @@ export interface IKnowledgeGraph {
   graph: Record<string, any>;
   mind_map: import('@antv/g6/lib/types').TreeData;
 }
+
+export interface IArtifact {
+  slug: string;
+  title: string;
+  page_type?: string;
+  summary?: string;
+}
+
+export interface IArtifactPage {
+  slug: string;
+  title: string;
+  page_type: string;
+  content_md_rendered: string;
+  summary: string;
+  entity_names: string[];
+  outlinks: string[];
+  related_kb_pages: string[];
+  source_chunk_ids: string[];
+  source_doc_ids: string[];
+}

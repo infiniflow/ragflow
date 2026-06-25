@@ -1,10 +1,14 @@
 import { SearchInput } from '@/components/ui/input';
+import { Spin } from '@/components/ui/spin';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { IArtifact } from '@/interfaces/database/dataset';
 import { cn } from '@/lib/utils';
-import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useFetchKnowledgeGraph } from '@/hooks/use-knowledge-request';
+import {
+  useFetchArtifactList,
+  useFetchKnowledgeGraph,
+} from '@/hooks/use-knowledge-request';
 import KnowledgeForceGraph from './knowledge-force-graph';
 
 export enum LeftPanelTab {
@@ -12,76 +16,105 @@ export enum LeftPanelTab {
   Graph = 'graph',
 }
 
-type ContentsItem = {
-  id: string;
-  label: string;
-  type?: 'entity' | 'tag' | 'text';
-  active?: boolean;
-};
-
-const mockContents: ContentsItem[] = [
-  { id: '1', label: 'Steven Paul Jobs', type: 'text' },
-  { id: '2', label: 'iPhone 17', type: 'entity', active: true },
-  { id: '3', label: 'Company', type: 'tag' },
-  { id: '4', label: 'iPhone 17', type: 'text' },
-  { id: '5', label: 'iPhone 17', type: 'text' },
-  { id: '6', label: 'iPhone 17', type: 'text' },
-  { id: '7', label: 'iPhone 17', type: 'text' },
-  { id: '8', label: 'iPhone 17', type: 'text' },
-  { id: '9', label: 'iPhone 17', type: 'text' },
-];
-
 type LeftPanelProps = {
   tab: LeftPanelTab;
   onTabChange: (value: string) => void;
+  selectedArtifact: IArtifact | null;
+  onSelectArtifact: (artifact: IArtifact) => void;
 };
 
-function ContentsList() {
+type ContentListItemProps = {
+  item: IArtifact;
+  isSelected: boolean;
+  onSelect: (artifact: IArtifact) => void;
+};
+
+function ContentListItem({ item, isSelected, onSelect }: ContentListItemProps) {
+  const handleClick = () => {
+    onSelect(item);
+  };
+
+  return (
+    <li
+      key={item.slug}
+      onClick={handleClick}
+      className={cn(
+        'flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm cursor-pointer',
+        'text-text-secondary hover:bg-bg-base hover:text-text-primary',
+        isSelected && 'bg-bg-base text-text-primary',
+      )}
+    >
+      <div>
+        <span className="truncate">{item.title}</span>
+        {item.page_type && (
+          <span className="text-text-secondary ml-2">{item.page_type}</span>
+        )}
+      </div>
+    </li>
+  );
+}
+
+type ContentListProps = {
+  selectedArtifact: IArtifact | null;
+  onSelectArtifact: (artifact: IArtifact) => void;
+};
+
+function ContentList({ selectedArtifact, onSelectArtifact }: ContentListProps) {
   const { t } = useTranslation();
-  const [query, setQuery] = useState('');
+  const {
+    artifacts,
+    loading,
+    searchString,
+    handleSearchChange,
+    handleScroll,
+    hasMore,
+  } = useFetchArtifactList();
 
   return (
     <div className="size-full flex flex-col">
       <div className="px-3 py-2">
         <SearchInput
           placeholder={t('common.search')}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          value={searchString}
+          onChange={handleSearchChange}
         />
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-3">
+      <div
+        className="flex-1 min-h-0 overflow-y-auto px-3 pb-3"
+        onScroll={handleScroll}
+      >
         <ul className="space-y-1">
-          {mockContents.map((item) => (
-            <li
-              key={item.id}
-              className={cn(
-                'flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm cursor-pointer',
-                item.active
-                  ? 'bg-bg-base text-text-primary'
-                  : 'text-text-secondary hover:bg-bg-base hover:text-text-primary',
-              )}
-            >
-              <span className="flex items-center gap-2 min-w-0">
-                {item.type === 'tag' && (
-                  <span className="text-text-secondary">#</span>
-                )}
-                <span className="truncate">{item.label}</span>
-              </span>
-              {item.type === 'entity' && (
-                <span className="text-xs text-text-disabled uppercase tracking-wide">
-                  {t('knowledgeDetails.entity')}
-                </span>
-              )}
-            </li>
+          {artifacts.map((item) => (
+            <ContentListItem
+              key={item.slug}
+              item={item}
+              isSelected={selectedArtifact?.slug === item.slug}
+              onSelect={onSelectArtifact}
+            />
           ))}
         </ul>
+        {loading && (
+          <div className="py-4 flex justify-center">
+            <Spin size="small" />
+          </div>
+        )}
+        {!loading && !hasMore && artifacts.length > 0 && (
+          <div className="py-2 text-center text-sm text-text-secondary">
+            {t('knowledgeList.noMoreData')}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-export function WikiLeftPanel({ tab, onTabChange }: LeftPanelProps) {
+export function WikiLeftPanel({
+  tab,
+  onTabChange,
+  selectedArtifact,
+  onSelectArtifact,
+}: LeftPanelProps) {
   const { t } = useTranslation();
   const { data } = useFetchKnowledgeGraph();
 
@@ -99,7 +132,12 @@ export function WikiLeftPanel({ tab, onTabChange }: LeftPanelProps) {
       </Tabs>
 
       <div className="flex-1 min-h-0 relative">
-        {tab === LeftPanelTab.Contents && <ContentsList />}
+        {tab === LeftPanelTab.Contents && (
+          <ContentList
+            selectedArtifact={selectedArtifact}
+            onSelectArtifact={onSelectArtifact}
+          />
+        )}
         {tab === LeftPanelTab.Graph && (
           <KnowledgeForceGraph data={data?.graph} show />
         )}

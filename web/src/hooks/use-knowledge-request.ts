@@ -3,6 +3,8 @@ import message from '@/components/ui/message';
 import { ParseType } from '@/constants/knowledge';
 import { ResponsePostType } from '@/interfaces/database/base';
 import {
+  IArtifact,
+  IArtifactPage,
   IDataset,
   IDatasetListResult,
   IKnowledgeGraph,
@@ -14,8 +16,10 @@ import { ITestRetrievalRequestBody } from '@/interfaces/request/knowledge';
 import i18n from '@/locales/config';
 import kbService, {
   deleteKnowledgeGraph,
+  getArtifactPage,
   getKbDetail,
   getKnowledgeGraph,
+  listArtifacts,
   listDataset,
   listTag,
   removeTag,
@@ -23,6 +27,7 @@ import kbService, {
   updateKb,
 } from '@/services/knowledge-service';
 import {
+  useInfiniteQuery,
   useIsMutating,
   useMutation,
   useMutationState,
@@ -47,6 +52,8 @@ export const enum KnowledgeApiAction {
   SaveKnowledge = 'saveKnowledge',
   FetchKnowledgeDetail = 'fetchKnowledgeDetail',
   FetchKnowledgeGraph = 'fetchKnowledgeGraph',
+  FetchArtifactList = 'fetchArtifactList',
+  FetchArtifactPage = 'fetchArtifactPage',
   FetchMetadata = 'fetchMetadata',
   FetchMetadataKeys = 'fetchMetadataKeys',
   FetchKnowledgeList = 'fetchKnowledgeList',
@@ -323,6 +330,108 @@ export const useFetchKnowledgeBaseConfiguration = (props?: {
 
   return { data, loading };
 };
+
+const artifactKeys = {
+  list: (datasetId: string, keywords: string) =>
+    [KnowledgeApiAction.FetchArtifactList, datasetId, keywords] as const,
+  detail: (datasetId: string, pageType: string, slug: string) =>
+    [KnowledgeApiAction.FetchArtifactPage, datasetId, pageType, slug] as const,
+};
+
+export const useFetchArtifactList = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const [searchString, setSearchString] = useState('');
+  const debouncedSearchString = useDebounce(searchString, { wait: 500 });
+
+  const { data, fetchNextPage, hasNextPage, isFetching, isFetchingNextPage } =
+    useInfiniteQuery<{
+      artifacts: IArtifact[];
+      total: number;
+    }>({
+      queryKey: artifactKeys.list(knowledgeBaseId, debouncedSearchString),
+      enabled: !!knowledgeBaseId,
+      gcTime: 0,
+      initialPageParam: 1,
+      queryFn: async ({ pageParam }) => {
+        const page = pageParam as number;
+        const { data } = await listArtifacts(knowledgeBaseId, {
+          page,
+          page_size: 30,
+          keywords: debouncedSearchString,
+        });
+
+        const responseData = data?.data;
+
+        return {
+          artifacts: responseData?.items ?? [],
+          total: responseData?.total ?? 0,
+        };
+      },
+      getNextPageParam: (lastPage, allPages) => {
+        const loadedCount = allPages.reduce(
+          (sum, page) => sum + page.artifacts.length,
+          0,
+        );
+        return loadedCount < lastPage.total ? allPages.length + 1 : undefined;
+      },
+    });
+
+  const artifacts = useMemo(
+    () => data?.pages.flatMap((page) => page.artifacts) ?? [],
+    [data],
+  );
+
+  const handleSearchChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      setSearchString(e.target.value);
+    },
+    [],
+  );
+
+  const loading = isFetching || isFetchingNextPage;
+
+  const handleScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+      const threshold = 50;
+      if (
+        scrollHeight - scrollTop - clientHeight <= threshold &&
+        hasNextPage &&
+        !isFetchingNextPage
+      ) {
+        fetchNextPage();
+      }
+    },
+    [fetchNextPage, hasNextPage, isFetchingNextPage],
+  );
+
+  return {
+    artifacts,
+    loading,
+    searchString,
+    handleSearchChange,
+    handleScroll,
+    hasMore: !!hasNextPage,
+  };
+};
+
+export function useFetchArtifactPage(artifact: IArtifact | null) {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const pageType = artifact?.page_type ?? '';
+  const slug = artifact?.slug ?? '';
+
+  const { data, isFetching: loading } = useQuery<IArtifactPage | null>({
+    queryKey: artifactKeys.detail(knowledgeBaseId, pageType, slug),
+    enabled: !!knowledgeBaseId && !!artifact && !!pageType && !!slug,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await getArtifactPage(knowledgeBaseId, pageType, slug);
+      return data?.data ?? null;
+    },
+  });
+
+  return { data, loading };
+}
 
 export function useFetchKnowledgeGraph() {
   const knowledgeBaseId = useKnowledgeBaseId();

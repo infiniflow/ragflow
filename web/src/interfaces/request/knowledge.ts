@@ -39,4 +39,11 @@ export interface IFetchDocumentListRequestBody {
   run_status?: string[];
   return_empty_metadata?: boolean;
   metadata?: Record<string, string[]>;
+  ids?: string[];
+}
+
+export interface IFetchArtifactListRequestParams {
+  page?: number;
+  page_size?: number;
+  keywords?: string;
 }
