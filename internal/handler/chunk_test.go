@@ -679,3 +679,85 @@ func TestChunkHandlerAddChunkCodedError(t *testing.T) {
 		t.Fatalf("expected data error code, got %v", resp["code"])
 	}
 }
+
+func TestChunkHandlerAddChunkValidatesListFields(t *testing.T) {
+	tests := []struct {
+		name    string
+		body    string
+		wantMsg string
+	}{
+		{
+			name:    "important keywords type",
+			body:    `{"content":"chunk body","important_keywords":{}}`,
+			wantMsg: "`important_keywords` is required to be a list",
+		},
+		{
+			name:    "tag kwd element type",
+			body:    `{"content":"chunk body","tag_kwd":[1]}`,
+			wantMsg: "`tag_kwd` must be a list of strings",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockChunkSvc{
+				addChunkFn: func(req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
+					t.Fatal("service should not be called for invalid request")
+					return nil, nil
+				},
+			}
+			gin.SetMode(gin.TestMode)
+			r := gin.New()
+			r.Use(func(c *gin.Context) {
+				c.Set("user", &entity.User{ID: "user1"})
+			})
+			h := &ChunkHandler{chunkService: mock}
+			r.POST("/api/v1/datasets/:dataset_id/documents/:document_id/chunks", h.AddChunk)
+
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest("POST", "/api/v1/datasets/kb1/documents/doc1/chunks", strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			r.ServeHTTP(w, req)
+
+			var resp map[string]interface{}
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatal(err)
+			}
+			if resp["message"] != tt.wantMsg {
+				t.Fatalf("message = %v, want %q", resp["message"], tt.wantMsg)
+			}
+		})
+	}
+}
+
+func TestChunkHandlerAddChunkHidesServerErrorDetails(t *testing.T) {
+	mock := &mockChunkSvc{
+		addChunkFn: func(req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
+			return nil, addChunkTestError{code: common.CodeServerError, msg: "encode chunk embedding: provider secret"}
+		},
+	}
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("user", &entity.User{ID: "user1"})
+	})
+	h := &ChunkHandler{chunkService: mock}
+	r.POST("/api/v1/datasets/:dataset_id/documents/:document_id/chunks", h.AddChunk)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/datasets/kb1/documents/doc1/chunks", strings.NewReader(`{"content":"chunk body"}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["message"] != "Failed to add chunk" {
+		t.Fatalf("message = %v, want generic failure", resp["message"])
+	}
+	if strings.Contains(w.Body.String(), "provider secret") {
+		t.Fatalf("server error details leaked: %s", w.Body.String())
+	}
+}

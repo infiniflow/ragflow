@@ -65,11 +65,17 @@ import (
 const (
 	maximumPageNumber     = 100000
 	maximumTaskPageNumber = maximumPageNumber * 1000
-	maxChunkImageBytes    = 10 << 20
-	maxChunkImagePixels   = 16_000_000
 )
 
-var chunkImageMergeMu sync.Map
+var chunkImageMergeLocks = struct {
+	sync.Mutex
+	locks map[string]*chunkImageMergeLock
+}{locks: make(map[string]*chunkImageMergeLock)}
+
+type chunkImageMergeLock struct {
+	mu   sync.Mutex
+	refs int
+}
 
 // ChunkService chunk service
 type ChunkService struct {
@@ -1792,12 +1798,17 @@ func (s *ChunkService) AddChunk(req *service.AddChunkRequest, userID string) (*s
 	if doc.Name != nil {
 		docName = *doc.Name
 	}
+	importantKeywords := req.ImportantKeywords
+	if importantKeywords == nil {
+		importantKeywords = []string{}
+	}
+
 	chunkData := map[string]interface{}{
 		"id":                   chunkID,
 		"content_with_weight":  req.Content,
 		"content_ltks":         contentLtks,
 		"content_sm_ltks":      contentSmLtks,
-		"important_kwd":        req.ImportantKeywords,
+		"important_kwd":        importantKeywords,
 		"important_tks":        importantTks,
 		"question_kwd":         questionKwd,
 		"question_tks":         questionTks,
@@ -1858,14 +1869,11 @@ func (s *ChunkService) AddChunk(req *service.AddChunkRequest, userID string) (*s
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("increment chunk stats: %v", err)}
 	}
 
-	importantKeywords := req.ImportantKeywords
-	if importantKeywords == nil {
-		importantKeywords = []string{}
-	}
 	renamedChunk := map[string]interface{}{
 		"id":                 chunkID,
 		"content":            req.Content,
 		"document_id":        req.DocumentID,
+		"document":           docName,
 		"important_keywords": importantKeywords,
 		"questions":          questionKwd,
 		"dataset_id":         req.DatasetID,
@@ -1945,23 +1953,7 @@ func decodeChunkImageBase64(raw string) ([]byte, error) {
 	if len(imageBinary) == 0 {
 		return nil, fmt.Errorf("`image_base64` is empty")
 	}
-	if len(imageBinary) > maxChunkImageBytes {
-		return nil, fmt.Errorf("`image_base64` exceeds the maximum allowed size")
-	}
 	return imageBinary, nil
-}
-
-func validateChunkImageBounds(width, height int) error {
-	if width <= 0 || height <= 0 {
-		return fmt.Errorf("invalid image dimensions")
-	}
-	if width > maxChunkImagePixels || height > maxChunkImagePixels {
-		return fmt.Errorf("image dimensions exceed the maximum allowed size")
-	}
-	if width > maxChunkImagePixels/height {
-		return fmt.Errorf("image dimensions exceed the maximum allowed size")
-	}
-	return nil
 }
 
 func mergeChunkEmbeddings(a, b []float64) ([]float64, error) {
@@ -2014,17 +2006,6 @@ func (s *ChunkService) getEmbeddingModel(tenantID, embdID string) (*models.Embed
 	return service.NewModelProviderService().GetEmbeddingModel(tenantID, embdID)
 }
 
-func (s *ChunkService) chunkExists(indexName, chunkID, datasetID string) (bool, error) {
-	if s.docEngine == nil {
-		return false, fmt.Errorf("doc engine not initialized")
-	}
-	chunk, err := s.docEngine.GetChunk(context.Background(), indexName, chunkID, []string{datasetID})
-	if err != nil {
-		return false, err
-	}
-	return chunk != nil, nil
-}
-
 func (s *ChunkService) incrementChunkStats(docID, kbID string, tokenNum, chunkNum int64, duration float64) error {
 	if s.incrementChunkStatsFunc != nil {
 		return s.incrementChunkStatsFunc(docID, kbID, tokenNum, chunkNum, duration)
@@ -2068,9 +2049,13 @@ func (s *ChunkService) storeChunkImage(bucket, chunkID string, imageBinary []byt
 	if storageImpl == nil {
 		return fmt.Errorf("storage not initialized")
 	}
-	lock, _ := chunkImageMergeMu.LoadOrStore(bucket+"/"+chunkID, &sync.Mutex{})
-	lock.(*sync.Mutex).Lock()
-	defer lock.(*sync.Mutex).Unlock()
+	lockKey := bucket + "/" + chunkID
+	lock := acquireChunkImageMergeLock(lockKey)
+	lock.mu.Lock()
+	defer func() {
+		lock.mu.Unlock()
+		releaseChunkImageMergeLock(lockKey)
+	}()
 
 	if !storageImpl.ObjExist(bucket, chunkID) {
 		return storageImpl.Put(bucket, chunkID, imageBinary)
@@ -2080,29 +2065,6 @@ func (s *ChunkService) storeChunkImage(bucket, chunkID string, imageBinary []byt
 	if err != nil {
 		return err
 	}
-	oldCfg, _, err := image.DecodeConfig(bytes.NewReader(oldBinary))
-	if err != nil {
-		return err
-	}
-	if err := validateChunkImageBounds(oldCfg.Width, oldCfg.Height); err != nil {
-		return err
-	}
-	newCfg, _, err := image.DecodeConfig(bytes.NewReader(imageBinary))
-	if err != nil {
-		return err
-	}
-	if err := validateChunkImageBounds(newCfg.Width, newCfg.Height); err != nil {
-		return err
-	}
-	width := oldCfg.Width
-	if newCfg.Width > width {
-		width = newCfg.Width
-	}
-	height := oldCfg.Height + newCfg.Height
-	if err := validateChunkImageBounds(width, height); err != nil {
-		return err
-	}
-
 	oldImage, _, err := image.Decode(bytes.NewReader(oldBinary))
 	if err != nil {
 		return err
@@ -2112,11 +2074,11 @@ func (s *ChunkService) storeChunkImage(bucket, chunkID string, imageBinary []byt
 		return err
 	}
 	oldBounds, newBounds := oldImage.Bounds(), newImage.Bounds()
-	width = oldBounds.Dx()
+	width := oldBounds.Dx()
 	if newBounds.Dx() > width {
 		width = newBounds.Dx()
 	}
-	height = oldBounds.Dy() + newBounds.Dy()
+	height := oldBounds.Dy() + newBounds.Dy()
 	combined := image.NewRGBA(image.Rect(0, 0, width, height))
 	draw.Draw(combined, combined.Bounds(), &image.Uniform{C: color.White}, image.Point{}, draw.Src)
 	draw.Draw(combined, oldBounds, oldImage, oldBounds.Min, draw.Src)
@@ -2127,4 +2089,31 @@ func (s *ChunkService) storeChunkImage(bucket, chunkID string, imageBinary []byt
 		return err
 	}
 	return storageImpl.Put(bucket, chunkID, buf.Bytes())
+}
+
+func acquireChunkImageMergeLock(key string) *chunkImageMergeLock {
+	chunkImageMergeLocks.Lock()
+	defer chunkImageMergeLocks.Unlock()
+
+	lock := chunkImageMergeLocks.locks[key]
+	if lock == nil {
+		lock = &chunkImageMergeLock{}
+		chunkImageMergeLocks.locks[key] = lock
+	}
+	lock.refs++
+	return lock
+}
+
+func releaseChunkImageMergeLock(key string) {
+	chunkImageMergeLocks.Lock()
+	defer chunkImageMergeLocks.Unlock()
+
+	lock := chunkImageMergeLocks.locks[key]
+	if lock == nil {
+		return
+	}
+	lock.refs--
+	if lock.refs == 0 {
+		delete(chunkImageMergeLocks.locks, key)
+	}
 }

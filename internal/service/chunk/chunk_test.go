@@ -3,7 +3,6 @@ package chunk
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"errors"
 	"image"
 	"image/color"
@@ -483,6 +482,9 @@ func TestAddChunkSuccess(t *testing.T) {
 	if resp.Chunk["content"] != "chunk body" {
 		t.Fatalf("content = %v, want chunk body", resp.Chunk["content"])
 	}
+	if resp.Chunk["document"] != "doc-1.txt" {
+		t.Fatalf("document = %v, want doc-1.txt", resp.Chunk["document"])
+	}
 	if incrementChunkNum != 1 {
 		t.Fatalf("increment chunk num = %d, want 1", incrementChunkNum)
 	}
@@ -636,7 +638,7 @@ func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
 	}
 }
 
-func TestAddChunkIncrementsStatsForExistingChunk(t *testing.T) {
+func TestAddChunkIncrementsStatsAfterInsert(t *testing.T) {
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
 	userID, datasetID, documentID := "user-1", "kb-1", "doc-1"
@@ -644,9 +646,7 @@ func TestAddChunkIncrementsStatsForExistingChunk(t *testing.T) {
 	insertChunkTestDoc(t, documentID, datasetID)
 
 	var incrementCalls int
-	engine := &addChunkTestEngine{
-		getChunkResp: map[string]interface{}{"id": "existing"},
-	}
+	engine := &addChunkTestEngine{}
 	svc := &ChunkService{
 		docEngine:      engine,
 		kbDAO:          dao.NewKnowledgebaseDAO(),
@@ -685,19 +685,18 @@ func TestAddChunkIncrementsStatsForExistingChunk(t *testing.T) {
 	if incrementCalls != 1 {
 		t.Fatalf("increment calls = %d, want 1", incrementCalls)
 	}
-}
-
-func TestDecodeChunkImageBase64RejectsOversizedPayload(t *testing.T) {
-	raw := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{'a'}, maxChunkImageBytes+1))
-	_, err := decodeChunkImageBase64(raw)
-	if err == nil || !strings.Contains(err.Error(), "exceeds the maximum allowed size") {
-		t.Fatalf("expected size limit error, got %v", err)
+	if len(engine.insertedChunks) != 1 {
+		t.Fatalf("inserted chunks = %d, want 1", len(engine.insertedChunks))
+	}
+	importantKwd, ok := engine.insertedChunks[0]["important_kwd"].([]string)
+	if !ok || len(importantKwd) != 0 {
+		t.Fatalf("important_kwd = %#v, want empty []string", engine.insertedChunks[0]["important_kwd"])
 	}
 }
 
-func TestStoreChunkImageRejectsOversizedCombinedImage(t *testing.T) {
-	oldImage := mustEncodePNG(t, image.Rect(0, 0, 4000, 3000))
-	newImage := mustEncodePNG(t, image.Rect(0, 0, 4000, 2001))
+func TestStoreChunkImageMergesExistingImage(t *testing.T) {
+	oldImage := mustEncodePNG(t, image.Rect(0, 0, 2, 2))
+	newImage := mustEncodePNG(t, image.Rect(0, 0, 1, 1))
 	mockStorage := &chunkImageStorage{
 		exists:    true,
 		oldBinary: oldImage,
@@ -711,12 +710,11 @@ func TestStoreChunkImageRejectsOversizedCombinedImage(t *testing.T) {
 	})
 
 	svc := &ChunkService{}
-	err := svc.storeChunkImage("kb-1", "chunk-1", newImage)
-	if err == nil || !strings.Contains(err.Error(), "exceed") {
-		t.Fatalf("expected combined image size error, got %v", err)
+	if err := svc.storeChunkImage("kb-1", "chunk-1", newImage); err != nil {
+		t.Fatalf("storeChunkImage() error = %v", err)
 	}
-	if mockStorage.putCalls != 0 {
-		t.Fatalf("unexpected put call count: %d", mockStorage.putCalls)
+	if mockStorage.putCalls != 1 {
+		t.Fatalf("put calls = %d, want 1", mockStorage.putCalls)
 	}
 }
 
@@ -934,8 +932,6 @@ type addChunkTestEngine struct {
 	insertIndex    string
 	insertDataset  string
 	insertErr      error
-	getChunkResp   interface{}
-	getChunkErr    error
 }
 
 func (e *addChunkTestEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, baseName string, datasetID string) ([]string, error) {
@@ -943,10 +939,6 @@ func (e *addChunkTestEngine) InsertChunks(_ context.Context, chunks []map[string
 	e.insertIndex = baseName
 	e.insertDataset = datasetID
 	return nil, e.insertErr
-}
-
-func (e *addChunkTestEngine) GetChunk(context.Context, string, string, []string) (interface{}, error) {
-	return e.getChunkResp, e.getChunkErr
 }
 
 type chunkImageStorage struct {

@@ -17,6 +17,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"ragflow/internal/common"
@@ -790,6 +791,58 @@ func (h *ChunkHandler) RemoveChunks(c *gin.Context) {
 	})
 }
 
+func addChunkStringField(rawBody map[string]json.RawMessage, field string) (string, error) {
+	raw, ok := rawBody[field]
+	if !ok {
+		return "", nil
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return "", fmt.Errorf("`%s` must be a string", field)
+	}
+	return value, nil
+}
+
+func addChunkStringPtrField(rawBody map[string]json.RawMessage, field string) (*string, error) {
+	raw, ok := rawBody[field]
+	if !ok {
+		return nil, nil
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil, fmt.Errorf("`%s` must be a string", field)
+	}
+	return &value, nil
+}
+
+func addChunkStringListField(rawBody map[string]json.RawMessage, field, listMessage, elementMessage string) ([]string, error) {
+	raw, ok := rawBody[field]
+	if !ok {
+		return nil, nil
+	}
+	var values []interface{}
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return nil, errors.New(listMessage)
+	}
+	result := make([]string, len(values))
+	for i, value := range values {
+		str, ok := value.(string)
+		if !ok {
+			return nil, errors.New(elementMessage)
+		}
+		result[i] = str
+	}
+	return result, nil
+}
+
+func addChunkResponseMessage(code common.ErrorCode, err error) string {
+	if code == common.CodeServerError {
+		common.Warn("add chunk failed", zap.String("error", err.Error()))
+		return "Failed to add chunk"
+	}
+	return err.Error()
+}
+
 func (h *ChunkHandler) AddChunk(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -800,39 +853,62 @@ func (h *ChunkHandler) AddChunk(c *gin.Context) {
 	userID := user.ID
 	datasetID, documentID := strings.TrimSpace(c.Param("dataset_id")), strings.TrimSpace(c.Param("document_id"))
 
-	type addChunkBody struct {
-		Content           string      `json:"content"`
-		ImportantKeywords []string    `json:"important_keywords,omitempty"`
-		Questions         []string    `json:"questions,omitempty"`
-		TagKwd            []string    `json:"tag_kwd,omitempty"`
-		TagFeas           interface{} `json:"tag_feas,omitempty"`
-		ImageBase64       *string     `json:"image_base64,omitempty"`
-	}
-
-	body := addChunkBody{}
-	if err := c.ShouldBindJSON(&body); err != nil {
+	var rawBody map[string]json.RawMessage
+	if err := json.NewDecoder(c.Request.Body).Decode(&rawBody); err != nil {
 		jsonError(c, common.CodeArgumentError, err.Error())
 		return
+	}
+	content, err := addChunkStringField(rawBody, "content")
+	if err != nil {
+		jsonError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+	importantKeywords, err := addChunkStringListField(rawBody, "important_keywords", "`important_keywords` is required to be a list", "`important_keywords` must be a list of strings")
+	if err != nil {
+		jsonError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+	questions, err := addChunkStringListField(rawBody, "questions", "`questions` is required to be a list", "`questions` must be a list of strings")
+	if err != nil {
+		jsonError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+	tagKwd, err := addChunkStringListField(rawBody, "tag_kwd", "`tag_kwd` is required to be a list", "`tag_kwd` must be a list of strings")
+	if err != nil {
+		jsonError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+	imageBase64, err := addChunkStringPtrField(rawBody, "image_base64")
+	if err != nil {
+		jsonError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+	var tagFeas interface{}
+	if raw, ok := rawBody["tag_feas"]; ok {
+		if err := json.Unmarshal(raw, &tagFeas); err != nil {
+			jsonError(c, common.CodeArgumentError, err.Error())
+			return
+		}
 	}
 
 	req := service.AddChunkRequest{
 		DatasetID:         datasetID,
 		DocumentID:        documentID,
-		Content:           body.Content,
-		ImportantKeywords: body.ImportantKeywords,
-		Questions:         body.Questions,
-		TagKwd:            body.TagKwd,
-		TagFeas:           body.TagFeas,
-		ImageBase64:       body.ImageBase64,
+		Content:           content,
+		ImportantKeywords: importantKeywords,
+		Questions:         questions,
+		TagKwd:            tagKwd,
+		TagFeas:           tagFeas,
+		ImageBase64:       imageBase64,
 	}
 
 	resp, err := h.chunkService.AddChunk(&req, userID)
 	if err != nil {
 		if codedErr, ok := err.(service.ErrorCoder); ok {
-			jsonError(c, codedErr.Code(), codedErr.Error())
+			jsonError(c, codedErr.Code(), addChunkResponseMessage(codedErr.Code(), err))
 			return
 		}
-		jsonError(c, common.CodeServerError, err.Error())
+		jsonError(c, common.CodeServerError, addChunkResponseMessage(common.CodeServerError, err))
 		return
 	}
 
