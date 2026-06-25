@@ -240,7 +240,7 @@ def is_english(texts):
     pattern = re.compile(r"[`a-zA-Z0-9\s.,':;/\"?<>!\(\)\-]+")
 
     if isinstance(texts, str):
-        texts = list(texts)
+        texts = [texts]
     elif isinstance(texts, list):
         texts = [t for t in texts if isinstance(t, str) and t.strip()]
     else:
