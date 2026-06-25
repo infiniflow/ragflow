@@ -61,6 +61,7 @@ class TestPostgresDatabaseLock:
         db.execute_sql.side_effect = [
             None,
             OperationalError("canceling statement due to lock timeout"),
+            None,
         ]
         lock = PostgresDatabaseLock("update_progress", timeout=5, db=db)
 
