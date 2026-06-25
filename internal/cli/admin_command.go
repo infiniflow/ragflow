@@ -1972,7 +1972,7 @@ func (c *CLI) AdminShowUserSummaryCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to get user summary: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonDataResponse
+	var result OrderedCommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("get user summary failed: invalid JSON (%w)", err)
 	}
@@ -2191,7 +2191,7 @@ func (c *CLI) AdminShowUsersSummaryCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to get users summary: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonDataResponse
+	var result OrderedCommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("get users summary failed: invalid JSON (%w)", err)
 	}
@@ -2349,7 +2349,7 @@ func (c *CLI) AdminListUsersConditionCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list users: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonResponse
+	var result OrderedCommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("list users failed: invalid JSON (%w)", err)
 	}

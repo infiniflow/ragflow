@@ -19,10 +19,12 @@ import { useFormContext, useWatch } from 'react-hook-form';
 interface ChatBasicSettingProps {
   prefix?: string;
   option?: Record<string, any>;
+  hideName?: boolean;
 }
 
 export default function ChatBasicSetting({
   prefix = '',
+  hideName = false,
 }: ChatBasicSettingProps) {
   const { t } = useTranslate('chat');
   const form = useFormContext();
@@ -32,16 +34,20 @@ export default function ChatBasicSetting({
     name: prefixName(prefix, 'prompt_config.prologue'),
   });
 
+  const llmSettingPrefix = prefixName(prefix, 'llm_setting');
+
   return (
     <div className="space-y-8">
-      <AvatarNameDescription
-        avatarField={prefixName(prefix, 'icon')}
-        nameField={prefixName(prefix, 'name')}
-        descriptionField={prefixName(prefix, 'description')}
-      />
+      {hideName || (
+        <AvatarNameDescription
+          avatarField={prefixName(prefix, 'icon')}
+          nameField={prefixName(prefix, 'name')}
+          descriptionField={prefixName(prefix, 'description')}
+        />
+      )}
       <LlmSettingFieldItems
-        prefix="llm_setting"
-        llmId="llm_id"
+        prefix={llmSettingPrefix}
+        llmId={prefixName(prefix, 'llm_id')}
         showCollapse
       ></LlmSettingFieldItems>
 

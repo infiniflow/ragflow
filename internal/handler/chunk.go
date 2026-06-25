@@ -17,6 +17,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"ragflow/internal/common"
@@ -38,6 +39,8 @@ type chunkService interface {
 	UpdateChunk(req *service.UpdateChunkRequest, userID string) error
 	RemoveChunks(req *service.RemoveChunksRequest, userID string) (int64, error)
 	Parse(userID, datasetID string, req *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error)
+	AddChunk(req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error)
+	StopParsing(userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error)
 }
 
 // ChunkHandler chunk handler
@@ -224,8 +227,8 @@ func (h *ChunkHandler) Parse(c *gin.Context) {
 		})
 		return
 	}
-	datasetID := strings.TrimSpace(c.Param("dataset_id"))
-	if datasetID == "" {
+	datasetId := strings.TrimSpace(c.Param("dataset_id"))
+	if datasetId == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    common.CodeBadRequest,
 			"message": "dataset_id is required",
@@ -243,7 +246,7 @@ func (h *ChunkHandler) Parse(c *gin.Context) {
 		return
 	}
 
-	data, code, err := h.chunkService.Parse(userID, datasetID, &req)
+	data, code, err := h.chunkService.Parse(userID, datasetId, &req)
 	if code != common.CodeSuccess {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    code,
@@ -351,6 +354,59 @@ func parseAvailableQuery(raw string) (int, bool, error) {
 	default:
 		return 0, true, fmt.Errorf("available must be one of: true, false, 1, 0")
 	}
+}
+
+func (h *ChunkHandler) StopParsing(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := c.Param("dataset_id")
+	if datasetID == "" {
+		jsonError(c, common.CodeDataError, "dataset_id is required")
+		return
+	}
+
+	var req service.StopParsingRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+	if len(req.DocumentIDs) == 0 {
+		jsonError(c, common.CodeDataError, "`document_ids` is required")
+		return
+	}
+
+	resp, code, err := h.chunkService.StopParsing(user.ID, datasetID, req)
+	if err != nil {
+		var data interface{}
+		if resp != nil {
+			data = resp.Data
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"data":    data,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	message := "success"
+	var data interface{}
+	if resp != nil {
+		if resp.Message != "" {
+			message = resp.Message
+		}
+		data = resp.Data
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    data,
+		"message": message,
+	})
 }
 
 // List retrieves chunks for a document.
@@ -731,6 +787,134 @@ func (h *ChunkHandler) RemoveChunks(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"data":    deletedCount,
+		"message": "success",
+	})
+}
+
+func addChunkStringField(rawBody map[string]json.RawMessage, field string) (string, error) {
+	raw, ok := rawBody[field]
+	if !ok {
+		return "", nil
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return "", fmt.Errorf("`%s` must be a string", field)
+	}
+	return value, nil
+}
+
+func addChunkStringPtrField(rawBody map[string]json.RawMessage, field string) (*string, error) {
+	raw, ok := rawBody[field]
+	if !ok {
+		return nil, nil
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil, fmt.Errorf("`%s` must be a string", field)
+	}
+	return &value, nil
+}
+
+func addChunkStringListField(rawBody map[string]json.RawMessage, field, listMessage, elementMessage string) ([]string, error) {
+	raw, ok := rawBody[field]
+	if !ok {
+		return nil, nil
+	}
+	var values []interface{}
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return nil, errors.New(listMessage)
+	}
+	result := make([]string, len(values))
+	for i, value := range values {
+		str, ok := value.(string)
+		if !ok {
+			return nil, errors.New(elementMessage)
+		}
+		result[i] = str
+	}
+	return result, nil
+}
+
+func addChunkResponseMessage(code common.ErrorCode, err error) string {
+	if code == common.CodeServerError {
+		common.Warn("add chunk failed", zap.String("error", err.Error()))
+		return "Failed to add chunk"
+	}
+	return err.Error()
+}
+
+func (h *ChunkHandler) AddChunk(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	userID := user.ID
+	datasetID, documentID := strings.TrimSpace(c.Param("dataset_id")), strings.TrimSpace(c.Param("document_id"))
+
+	var rawBody map[string]json.RawMessage
+	if err := json.NewDecoder(c.Request.Body).Decode(&rawBody); err != nil {
+		jsonError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+	content, err := addChunkStringField(rawBody, "content")
+	if err != nil {
+		jsonError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+	importantKeywords, err := addChunkStringListField(rawBody, "important_keywords", "`important_keywords` is required to be a list", "`important_keywords` must be a list of strings")
+	if err != nil {
+		jsonError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+	questions, err := addChunkStringListField(rawBody, "questions", "`questions` is required to be a list", "`questions` must be a list of strings")
+	if err != nil {
+		jsonError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+	tagKwd, err := addChunkStringListField(rawBody, "tag_kwd", "`tag_kwd` is required to be a list", "`tag_kwd` must be a list of strings")
+	if err != nil {
+		jsonError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+	imageBase64, err := addChunkStringPtrField(rawBody, "image_base64")
+	if err != nil {
+		jsonError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+	var tagFeas interface{}
+	if raw, ok := rawBody["tag_feas"]; ok {
+		if err := json.Unmarshal(raw, &tagFeas); err != nil {
+			jsonError(c, common.CodeArgumentError, err.Error())
+			return
+		}
+	}
+
+	req := service.AddChunkRequest{
+		DatasetID:         datasetID,
+		DocumentID:        documentID,
+		Content:           content,
+		ImportantKeywords: importantKeywords,
+		Questions:         questions,
+		TagKwd:            tagKwd,
+		TagFeas:           tagFeas,
+		ImageBase64:       imageBase64,
+	}
+
+	resp, err := h.chunkService.AddChunk(&req, userID)
+	if err != nil {
+		if codedErr, ok := err.(service.ErrorCoder); ok {
+			jsonError(c, codedErr.Code(), addChunkResponseMessage(codedErr.Code(), err))
+			return
+		}
+		jsonError(c, common.CodeServerError, addChunkResponseMessage(common.CodeServerError, err))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"data":    resp,
 		"message": "success",
 	})
 }

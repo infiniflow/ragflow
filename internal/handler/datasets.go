@@ -34,8 +34,18 @@ import (
 
 // DatasetsHandler handles the RESTful dataset endpoints.
 type DatasetsHandler struct {
-	datasetsService *service.DatasetService
-	metadataService *service.MetadataService
+	datasetsService       *service.DatasetService
+	metadataService       *service.MetadataService
+	searchDatasetsService searchDatasetsService
+	searchDatasetService  searchDatasetService
+}
+
+type searchDatasetsService interface {
+	SearchDatasets(req *service.SearchDatasetsRequest, userID string) (*service.SearchDatasetsResponse, error)
+}
+
+type searchDatasetService interface {
+	SearchDataset(datasetID, userID string, req *service.SearchDatasetRequest) (*service.SearchDatasetsResponse, error)
 }
 
 type listDatasetsExt struct {
@@ -46,10 +56,15 @@ type listDatasetsExt struct {
 
 // NewDatasetsHandler creates a new datasets handler.
 func NewDatasetsHandler(datasetsService *service.DatasetService, metadataService *service.MetadataService) *DatasetsHandler {
-	return &DatasetsHandler{
+	h := &DatasetsHandler{
 		datasetsService: datasetsService,
 		metadataService: metadataService,
 	}
+	if datasetsService != nil {
+		h.searchDatasetsService = datasetsService
+		h.searchDatasetService = datasetsService
+	}
+	return h
 }
 
 // ListDatasets handles GET /api/v1/datasets.
@@ -479,6 +494,77 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 	jsonResponse(c, common.CodeSuccess, result, "success")
 }
 
+// ListTags handles GET /api/v1/datasets/:dataset_id/tags.
+// @Summary List dataset tags
+// @Description List tags for a dataset
+// @Tags datasets
+// @Produce json
+// @Security ApiKeyAuth
+// @Param dataset_id path string true "Dataset ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/datasets/{dataset_id}/tags [get]
+func (h *DatasetsHandler) ListTags(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := strings.TrimSpace(c.Param("dataset_id"))
+	result, code, err := h.datasetsService.ListTags(datasetID, user.ID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, result, "success")
+}
+
+type renameTagRequest struct {
+	FromTag string `json:"from_tag"`
+	ToTag   string `json:"to_tag"`
+}
+
+func (h *DatasetsHandler) RenameTag(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+	datasetID := strings.TrimSpace(c.Param("dataset_id"))
+
+	var payload map[string]interface{}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		jsonError(c, common.CodeDataError, "Lack of from_tag or to_tag in request body")
+		return
+	}
+	fromTagValue, hasFrom := payload["from_tag"]
+	toTagValue, hasTo := payload["to_tag"]
+	if !hasFrom || !hasTo {
+		jsonError(c, common.CodeDataError, "Lack of from_tag or to_tag in request body")
+		return
+	}
+	fromTag, okFrom := fromTagValue.(string)
+	toTag, okTo := toTagValue.(string)
+	if !okFrom || !okTo {
+		jsonError(c, common.CodeArgumentError, "from_tag and to_tag must be strings")
+		return
+	}
+	req := renameTagRequest{FromTag: fromTag, ToTag: toTag}
+	if strings.TrimSpace(req.FromTag) == "" || strings.TrimSpace(req.ToTag) == "" {
+		jsonError(c, common.CodeArgumentError, "from_tag and to_tag must not be empty")
+		return
+	}
+
+	result, code, err := h.datasetsService.RenameTag(datasetID, user.ID, req.FromTag, req.ToTag)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, result, "success")
+}
+
 // DeleteKnowledgeGraph handles DELETE /api/v1/datasets/:dataset_id/graph.
 func (h *DatasetsHandler) DeleteKnowledgeGraph(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
@@ -513,7 +599,8 @@ func (h *DatasetsHandler) DeleteKnowledgeGraph(c *gin.Context) {
 
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
 	if _, err := docEngine.DeleteChunks(c.Request.Context(), map[string]interface{}{
-		"knowledge_graph_kwd": []string{"graph", "subgraph", "entity", "relation", "community_report"},
+		"knowledge_graph_kwd": []interface{}{"graph", "subgraph", "entity", "relation", "community_report"},
+		"kb_id":               datasetID,
 	}, indexName, datasetID); err != nil {
 		jsonInternalError(c, err)
 		return
@@ -592,6 +679,116 @@ func (h *DatasetsHandler) RemoveTags(c *gin.Context) {
 	jsonResponse(c, common.CodeSuccess, true, "success")
 }
 
+// RunEmbedding Run embedding for all documents in a dataset.
+func (h *DatasetsHandler) RunEmbedding(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	userID := strings.TrimSpace(user.ID)
+	if userID == "" {
+		jsonError(c, common.CodeAuthenticationError, "user_id is required")
+		return
+	}
+
+	datasetID := strings.TrimSpace(c.Param("dataset_id"))
+	if datasetID == "" {
+		jsonError(c, common.CodeDataError, "dataset_id is required")
+		return
+	}
+
+	result, errorCode, err := h.datasetsService.RunEmbedding(userID, datasetID)
+	if err != nil {
+		jsonError(c, errorCode, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, result, "success")
+}
+
+// CheckEmbedding Check embedding model compatibility by sampling random chunks,
+// re-embedding them with the new model, and computing cosine similarity.
+func (h *DatasetsHandler) CheckEmbedding(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := strings.TrimSpace(c.Param("dataset_id"))
+	if datasetID == "" {
+		jsonError(c, common.CodeDataError, "dataset_id is required")
+		return
+	}
+
+	userID := strings.TrimSpace(user.ID)
+	if userID == "" {
+		jsonError(c, common.CodeDataError, "user_id is required")
+		return
+	}
+
+	var req service.CheckEmbeddingRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+	if strings.TrimSpace(req.EmbeddingID) == "" {
+		jsonError(c, common.CodeDataError, "`embd_id` is required.")
+		return
+	}
+
+	data, code, err := h.datasetsService.CheckEmbedding(userID, datasetID, &req)
+	if err != nil {
+		if code == common.CodeNotEffective {
+			jsonResponse(c, code, data, err.Error())
+			return
+		}
+		jsonError(c, code, err.Error())
+		return
+	}
+	jsonResponse(c, common.CodeSuccess, data, "success")
+}
+
+// AggregateTags handles GET /api/v1/datasets/tags/aggregation.
+// @Summary Aggregate dataset tags
+// @Description Aggregate tags across multiple datasets
+// @Tags datasets
+// @Produce json
+// @Security ApiKeyAuth
+// @Param dataset_ids query string true "Comma-separated dataset IDs"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/datasets/tags/aggregation [get]
+func (h *DatasetsHandler) AggregateTags(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	rawIDs := strings.Split(c.Query("dataset_ids"), ",")
+	datasetIDs := make([]string, 0, len(rawIDs))
+
+	for _, rawID := range rawIDs {
+		tempID := strings.TrimSpace(rawID)
+		if tempID != "" {
+			datasetIDs = append(datasetIDs, tempID)
+		}
+	}
+	if len(datasetIDs) == 0 {
+		jsonError(c, common.CodeDataError, "Lack of dataset_ids in query parameters")
+		return
+	}
+
+	result, code, err := h.datasetsService.AggregateTags(datasetIDs, user.ID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+	jsonResponse(c, common.CodeSuccess, result, "success")
+}
+
 // RunIndex Run an indexing task (graph/raptor/mindmap) for a dataset.
 func (h *DatasetsHandler) RunIndex(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
@@ -658,6 +855,47 @@ func (h *DatasetsHandler) TraceIndex(c *gin.Context) {
 		"data":    result,
 		"message": "success",
 	})
+}
+
+// DeleteIndex Delete an indexing task (graph/raptor/mindmap) for a dataset.
+func (h *DatasetsHandler) DeleteIndex(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := strings.TrimSpace(c.Param("dataset_id"))
+	if datasetID == "" {
+		jsonError(c, common.CodeDataError, "dataset_id is required")
+		return
+	}
+
+	userID := strings.TrimSpace(user.ID)
+	if userID == "" {
+		jsonError(c, common.CodeDataError, "user_id is required")
+		return
+	}
+
+	indexType := strings.ToLower(strings.TrimSpace(c.Param("index_type")))
+	if indexType == "" {
+		indexType = strings.ToLower(strings.TrimSpace(c.Query("type")))
+	}
+
+	wipeArg := strings.ToLower(strings.TrimSpace(c.DefaultQuery("wipe", "true")))
+	wipe := true
+	switch wipeArg {
+	case "false", "0", "no", "off":
+		wipe = false
+	}
+
+	code, err := h.datasetsService.DeleteIndex(userID, datasetID, indexType, wipe)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, map[string]interface{}{}, "success")
 }
 
 // ListMetadataFlattened handles GET /api/v1/datasets/metadata/flattened.
@@ -772,10 +1010,7 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 
 	var req service.SearchDatasetsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": err.Error(),
-		})
+		jsonError(c, common.CodeArgumentError, err.Error())
 		return
 	}
 
@@ -796,35 +1031,37 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		req.UseKG = &defaultUseKG
 	}
 
+	req.Question = strings.TrimSpace(req.Question)
 	if req.Question == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "question is required",
-		})
+		jsonError(c, common.CodeArgumentError, "question is required")
 		return
 	}
 	if req.DatasetIDs == nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "kb_id is required",
-		})
+		jsonError(c, common.CodeArgumentError, "kb_id is required")
 		return
 	}
 
 	if len(req.DatasetIDs) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "kb_id array cannot be empty",
-		})
+		jsonError(c, common.CodeArgumentError, "kb_id array cannot be empty")
+		return
+	}
+	if err := validateSearchDatasetsRequest(&req); err != nil {
+		jsonError(c, common.CodeArgumentError, err.Error())
 		return
 	}
 
-	resp, err := h.datasetsService.SearchDatasets(&req, user.ID)
+	searchService := h.searchDatasetsService
+	if searchService == nil {
+		searchService = h.datasetsService
+	}
+	if searchService == nil {
+		jsonError(c, common.CodeDataError, "dataset service is not initialized")
+		return
+	}
+
+	resp, err := searchService.SearchDatasets(&req, user.ID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": err.Error(),
-		})
+		jsonError(c, common.CodeDataError, err.Error())
 		return
 	}
 
@@ -832,6 +1069,92 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		"code": 0,
 		"data": resp,
 	})
+}
+
+// SearchDataset searches chunks within a single dataset based on a question.
+// @Summary Search Dataset
+// @Description Search for relevant chunks within one dataset based on a question
+// @Tags datasets
+// @Accept json
+// @Produce json
+// @Param dataset_id path string true "dataset id"
+// @Param request body service.SearchDatasetRequest true "search parameters"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/datasets/{dataset_id}/search [post]
+func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := c.Param("dataset_id")
+	if datasetID == "" {
+		jsonError(c, common.CodeDataError, "dataset_id is required")
+		return
+	}
+
+	var req service.SearchDatasetRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+	req.Question = strings.TrimSpace(req.Question)
+	if req.Question == "" {
+		jsonError(c, common.CodeArgumentError, "question is required")
+		return
+	}
+	if err := validateSearchDatasetRequest(&req); err != nil {
+		jsonError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+
+	searchService := h.searchDatasetService
+	if searchService == nil {
+		searchService = h.datasetsService
+	}
+	if searchService == nil {
+		jsonError(c, common.CodeDataError, "dataset service is not initialized")
+		return
+	}
+
+	resp, err := searchService.SearchDataset(datasetID, user.ID, &req)
+	if err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": resp,
+	})
+}
+
+func validateSearchDatasetsRequest(req *service.SearchDatasetsRequest) error {
+	return validateSearchParams(req.Page, req.Size, req.TopK, req.SimilarityThreshold, req.VectorSimilarityWeight)
+}
+
+func validateSearchDatasetRequest(req *service.SearchDatasetRequest) error {
+	return validateSearchParams(req.Page, req.Size, req.TopK, req.SimilarityThreshold, req.VectorSimilarityWeight)
+}
+
+func validateSearchParams(page, size, topK *int, similarityThreshold, vectorSimilarityWeight *float64) error {
+	if page != nil && *page < 1 {
+		return fmt.Errorf("page must be greater than or equal to 1")
+	}
+	if size != nil && *size < 1 {
+		return fmt.Errorf("size must be greater than or equal to 1")
+	}
+	if topK != nil && *topK < 1 {
+		return fmt.Errorf("top_k must be greater than or equal to 1")
+	}
+	if similarityThreshold != nil && (*similarityThreshold < 0 || *similarityThreshold > 1) {
+		return fmt.Errorf("similarity_threshold must be between 0 and 1")
+	}
+	if vectorSimilarityWeight != nil && (*vectorSimilarityWeight < 0 || *vectorSimilarityWeight > 1) {
+		return fmt.Errorf("vector_similarity_weight must be between 0 and 1")
+	}
+	return nil
 }
 
 func firstStringValue(value interface{}) string {
