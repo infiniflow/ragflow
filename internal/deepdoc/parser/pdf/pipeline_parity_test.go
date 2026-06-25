@@ -6,7 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"ragflow/internal/parser/tools"
+	"ragflow/internal/deepdoc/parser/pdf/tools"
 	"sort"
 	"strings"
 	"testing"

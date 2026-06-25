@@ -10,7 +10,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"ragflow/internal/parser/tools"
+	"ragflow/internal/deepdoc/parser/pdf/tools"
 	"regexp"
 	"sort"
 	"strconv"

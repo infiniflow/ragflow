@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"ragflow/internal/parser/tools"
+	"ragflow/internal/deepdoc/parser/pdf/tools"
 )
 
 // TestParse_ChunkEquivalence verifies that chunked processing produces

@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"ragflow/internal/parser/tools"
+	"ragflow/internal/deepdoc/parser/pdf/tools"
 )
 
 // TestBatchCompareWithPython compares Go output against Python reference

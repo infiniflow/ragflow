@@ -16,7 +16,7 @@ func mustConnectDeepDoc(t *testing.T) *DeepDocClient {
 	t.Helper()
 	url := os.Getenv("DEEPDOC_URL")
 	if url == "" {
-		url = "http://localhost:8000"
+		url = "http://localhost:8124"
 	}
 	client, err := NewDeepDocClient(url)
 	if err != nil {

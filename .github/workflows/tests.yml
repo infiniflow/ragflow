@@ -253,7 +253,7 @@ jobs:
             | grep -v '/internal/handler$' \
             | grep -v '/internal/pdfium' \
             | grep -v '/internal/pdfoxide' \
-            | grep -v '/internal/parser' || true)
+            | grep -v '/internal/deepdoc/parser/pdf' || true)
           if [ -z "$PKGS" ]; then
             ./build.sh --test
           else
@@ -699,7 +699,7 @@ jobs:
             | grep -v '/internal/handler$' \
             | grep -v '/internal/pdfium' \
             | grep -v '/internal/pdfoxide' \
-            | grep -v '/internal/parser' || true)
+            | grep -v '/internal/deepdoc/parser/pdf' || true)
           if [ -z "$PKGS" ]; then
             ./build.sh --test
           else
