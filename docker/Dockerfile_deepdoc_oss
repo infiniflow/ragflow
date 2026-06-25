@@ -1,49 +1,68 @@
-# Reuse SaaS deepdoc image as base (has Python 3.11, system deps, litserve, etc.)
-FROM 192.168.1.51/infiniflow-ai/deepdoc_cpu:latest
+# OSS DeepDoc server — minimal image with ONNX-only inference.
+# Build: docker build -f docker/Dockerfile_deepdoc_oss -t deepdoc_oss:latest .
+
+FROM ubuntu:24.04
 
 ENV PYTHONPATH=/app
+ENV DEBIAN_FRONTEND=noninteractive
 
-# ── Replace with OSS vision modules (all .py files) ──
+# ── System dependencies (onnxruntime + opencv runtime libs) ──
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    -o Acquire::Retries=5 \
+    python3.12 python3.12-venv \
+    libglib2.0-0 libglx-mesa0 libgl1 libgomp1 \
+    libgdiplus curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Python venv with ONNX inference stack ──
+RUN python3.12 -m venv /app/.venv
+COPY deepdoc/server/pyproject.toml /tmp/pyproject.toml
+RUN /app/.venv/bin/pip install --no-cache-dir \
+    -i https://pypi.tuna.tsinghua.edu.cn/simple \
+    --trusted-host pypi.tuna.tsinghua.edu.cn \
+    litserve \
+    onnxruntime \
+    opencv-python-headless \
+    numpy \
+    pillow \
+    pyclipper \
+    python-multipart \
+    shapely \
+    six
+
+# ── ONNX models ──
+RUN mkdir -p /app/rag/res/deepdoc
+COPY rag/res/deepdoc/layout.onnx /app/rag/res/deepdoc/
+COPY rag/res/deepdoc/det.onnx    /app/rag/res/deepdoc/
+COPY rag/res/deepdoc/rec.onnx    /app/rag/res/deepdoc/
+COPY rag/res/deepdoc/ocr.res     /app/rag/res/deepdoc/
+COPY rag/res/deepdoc/tsr.onnx    /app/rag/res/deepdoc/
+
+# ── Vision module (ONNX inference logic) ──
 RUN mkdir -p /app/deepdoc/vision
 COPY deepdoc/vision/ /app/deepdoc/vision/
 
-# Replace __init__.py with minimal version (avoid pdfplumber, beartype)
-COPY deepdoc/docker_stub/deepdoc/vision/__init__.py /app/deepdoc/vision/__init__.py
-
-# Replace deepdoc/__init__.py (avoid beartype dependency)
-COPY deepdoc/docker_stub/deepdoc/__init__.py /app/deepdoc/__init__.py
-
-# Stub huggingface_hub (models are local, no HF download needed)
-RUN mkdir -p /app/huggingface_hub
+# ── Docker stubs (replace __init__.py to avoid heavy deps) ──
+RUN mkdir -p /app/huggingface_hub /app/common /app/rag/nlp /app/rag/utils
+COPY deepdoc/docker_stub/deepdoc/vision/__init__.py  /app/deepdoc/vision/__init__.py
+COPY deepdoc/docker_stub/deepdoc/__init__.py         /app/deepdoc/__init__.py
 COPY deepdoc/docker_stub/huggingface_hub/__init__.py /app/huggingface_hub/__init__.py
+COPY deepdoc/docker_stub/common/__init__.py          /app/common/__init__.py
+COPY deepdoc/docker_stub/common/file_utils.py        /app/common/file_utils.py
+COPY deepdoc/docker_stub/common/misc_utils.py        /app/common/misc_utils.py
+COPY deepdoc/docker_stub/rag/__init__.py             /app/rag/__init__.py
+COPY deepdoc/docker_stub/rag/nlp/__init__.py         /app/rag/nlp/__init__.py
+COPY deepdoc/docker_stub/rag/utils/lazy_image.py     /app/rag/utils/lazy_image.py
 
-# Stub common and rag modules
-RUN mkdir -p /app/common /app/rag/nlp
-COPY deepdoc/docker_stub/common/__init__.py /app/common/__init__.py
-COPY deepdoc/docker_stub/common/file_utils.py /app/common/file_utils.py
-COPY deepdoc/docker_stub/common/misc_utils.py /app/common/misc_utils.py
-COPY deepdoc/docker_stub/rag/__init__.py /app/rag/__init__.py
-COPY deepdoc/docker_stub/rag/nlp/__init__.py /app/rag/nlp/__init__.py
-RUN mkdir -p /app/rag/utils
-COPY deepdoc/docker_stub/rag/utils/lazy_image.py /app/rag/utils/lazy_image.py
-
-# ── OSS server code ──
+# ── Server code ──
 RUN mkdir -p /app/deepdoc/server/endpoints /app/deepdoc/server/adapters
-COPY deepdoc/server/deepdoc_svr.py /app/deepdoc/server/
-COPY deepdoc/server/endpoints/ /app/deepdoc/server/endpoints/
-COPY deepdoc/server/adapters/ /app/deepdoc/server/adapters/
+COPY deepdoc/server/deepdoc_svr.py       /app/deepdoc/server/
+COPY deepdoc/server/endpoints/           /app/deepdoc/server/endpoints/
+COPY deepdoc/server/adapters/            /app/deepdoc/server/adapters/
 
-# ── OSS models ──
-RUN mkdir -p /app/rag/res/deepdoc
-COPY rag/res/deepdoc/layout.onnx /app/rag/res/deepdoc/
-COPY rag/res/deepdoc/det.onnx /app/rag/res/deepdoc/
-COPY rag/res/deepdoc/rec.onnx /app/rag/res/deepdoc/
-COPY rag/res/deepdoc/ocr.res /app/rag/res/deepdoc/
-COPY rag/res/deepdoc/tsr.onnx /app/rag/res/deepdoc/
-
-EXPOSE 8124
+EXPOSE 8000
 
 HEALTHCHECK --interval=10s --timeout=10s --retries=5 \
-    CMD curl -f http://localhost:8124/health || exit 1
+    CMD curl -f http://localhost:8000/health || exit 1
 
 ENTRYPOINT ["/app/.venv/bin/python3", "/app/deepdoc/server/deepdoc_svr.py", "--model-dir", "/app/rag/res/deepdoc"]

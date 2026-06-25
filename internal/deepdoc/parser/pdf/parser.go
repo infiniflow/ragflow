@@ -541,7 +541,7 @@ func (p *Parser) processPages(ctx context.Context, engine PDFEngine,
 			result.Sections[i].Image = img
 			if img == "" && result.Sections[i].Text != "" {
 				tag := result.Sections[i].PositionTag
-				slog.Debug("cropSectionImage empty for non-empty section",
+				slog.Warn("cropSectionImage empty for non-empty section",
 					"section", i, "posTag", tag[:min(80, len(tag))])
 			}
 		}

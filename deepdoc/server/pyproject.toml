@@ -11,6 +11,8 @@ dependencies = [
     "pillow",
     "pyclipper>=1.4.0",
     "python-multipart",
+    "shapely",
+    "six",
 ]
 
 [build-system]

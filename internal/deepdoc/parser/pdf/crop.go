@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"image"
 	"image/color"
+	"log/slog"
 	"math"
 )
 
@@ -14,11 +15,13 @@ import (
 // Python: pdf_parser.py:1802 RAGFlowPdfParser.crop()
 func cropSectionImage(posTag string, decodedImages map[int]image.Image, zoom float64) string {
 	if len(decodedImages) == 0 {
+		slog.Warn("cropSectionImage: no page images available, skipping image generation")
 		return ""
 	}
 
 	positions := ExtractPositions(posTag)
 	if len(positions) == 0 {
+		slog.Warn("cropSectionImage: empty position list in tag", "posTag", posTag[:min(80, len(posTag))])
 		return ""
 	}
 
@@ -37,10 +40,9 @@ func cropSectionImage(posTag string, decodedImages map[int]image.Image, zoom flo
 		}
 	}
 	if len(valid) == 0 {
+		slog.Warn("cropSectionImage: no valid positions after filtering, skipping crop")
 		return ""
 	}
-
-	// Page images are pre-decoded by the caller (Parse).
 
 	// Context padding (Python: 120px above first, 120 below last, 6px gap)
 	const contextPad = 120.0
@@ -138,6 +140,7 @@ func cropSectionImage(posTag string, decodedImages map[int]image.Image, zoom flo
 
 		pageImg, ok := decodedImages[pn0]
 		if !ok {
+			slog.Warn("cropSectionImage: page image not found", "page", pn0)
 			return ""
 		}
 		pageH := float64(pageImg.Bounds().Dy())
@@ -160,6 +163,7 @@ func cropSectionImage(posTag string, decodedImages map[int]image.Image, zoom flo
 			}
 			pageImg2, ok := decodedImages[pn]
 			if !ok {
+				slog.Warn("cropSectionImage: page image not found for subsequent page", "page", pn)
 				return ""
 			}
 			pageH2 := float64(pageImg2.Bounds().Dy())
@@ -227,6 +231,7 @@ func cropSectionImage(posTag string, decodedImages map[int]image.Image, zoom flo
 
 	data, err := encodePNG(stitched)
 	if err != nil {
+		slog.Warn("cropSectionImage: PNG encode failed", "err", err)
 		return ""
 	}
 	return base64.StdEncoding.EncodeToString(data)
@@ -287,6 +292,7 @@ func cropSectionByDLA(sec Section, dlaDebug []DLAPageRegions, pageImages map[int
 		}
 	}
 	if bestIdx < 0 {
+		slog.Warn("cropSectionByDLA: no matching layout region found", "page", pg)
 		return ""
 	}
 
@@ -296,10 +302,12 @@ func cropSectionByDLA(sec Section, dlaDebug []DLAPageRegions, pageImages map[int
 	}
 	cropped, err := cropImageRegion(img, regions[bestIdx])
 	if err != nil {
+		slog.Warn("cropSectionByDLA: cropImageRegion failed", "page", pg, "err", err)
 		return ""
 	}
 	data, err := encodePNG(cropped)
 	if err != nil {
+		slog.Warn("cropSectionByDLA: PNG encode failed", "err", err)
 		return ""
 	}
 	return base64.StdEncoding.EncodeToString(data)
