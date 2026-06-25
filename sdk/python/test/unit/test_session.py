@@ -66,6 +66,15 @@ def test_ask_raises_on_invalid_json_response():
 
 
 @pytest.mark.p1
+def test_ask_raises_on_missing_data_response():
+    session = _chat_session()
+    session.post = lambda *args, **kwargs: _FakeResponse({"code": 0})
+
+    with pytest.raises(Exception, match="Missing data in response"):
+        list(session.ask("hello", stream=False))
+
+
+@pytest.mark.p1
 def test_ask_returns_message_on_successful_chat_response():
     session = _chat_session()
     session.post = lambda *args, **kwargs: _FakeResponse(
