@@ -28,7 +28,7 @@ import { useManageMetadata } from '../components/metedata/hooks/use-manage-modal
 import { ManageMetadataModal } from '../components/metedata/manage-modal';
 import { useKnowledgeBaseContext } from '../contexts/knowledge-base-context';
 import { DatasetTable } from './dataset-table';
-import Generate from './generate-button/generate';
+import GenerateDropdownMenu from './generate-button/generate';
 import { ReparseDialog } from './reparse-dialog';
 import { useBulkOperateDataset } from './use-bulk-operate-dataset';
 import { useCreateEmptyDocument } from './use-create-empty-document';
@@ -164,7 +164,9 @@ export default function Dataset() {
               </p>
             </div>
           }
-          preChildren={<Generate disabled={!(dataSetData.chunk_count > 0)} />}
+          preChildren={
+            <GenerateDropdownMenu disabled={!(dataSetData.chunk_count > 0)} />
+          }
           // preChildren={
           //   <Button
           //     variant={'ghost'}

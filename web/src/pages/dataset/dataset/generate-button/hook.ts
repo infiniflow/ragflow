@@ -6,10 +6,10 @@ import {
   traceIndex,
 } from '@/services/knowledge-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { t } from 'i18next';
+import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { ProcessingType } from '../../dataset-overview/dataset-common';
-import { GenerateType, GenerateTypeMap } from './constants';
+import { GenerateType, GenerateTypeMap, TraceType } from './constants';
 
 enum DatasetKey {
   generate = 'generate',
@@ -17,8 +17,6 @@ enum DatasetKey {
 }
 
 const PollIntervalMs = 5000;
-
-type TraceType = 'graph' | 'raptor';
 
 const DatasetGenerateKeys = {
   trace: (type: GenerateType, id?: string, open?: boolean) =>
@@ -75,13 +73,22 @@ export const useTraceGenerate = ({ open }: { open: boolean }) => {
   const { id } = useParams();
   const { data: graphRunData, isFetching: graphRunLoading } = useTraceQuery(
     GenerateType.KnowledgeGraph,
-    'graph',
+    TraceType.Graph,
     open,
     id,
   );
   const { data: raptorRunData, isFetching: raptorRunLoading } = useTraceQuery(
     GenerateType.Raptor,
-    'raptor',
+    TraceType.Raptor,
+    open,
+    id,
+  );
+
+  const { data: artifactRunData, isFetching: artifactRunLoading } =
+    useTraceQuery(GenerateType.Artifact, TraceType.Artifact, open, id);
+  const { data: skillRunData, isFetching: skillRunLoading } = useTraceQuery(
+    GenerateType.ToSkills,
+    TraceType.Skill,
     open,
     id,
   );
@@ -91,11 +98,17 @@ export const useTraceGenerate = ({ open }: { open: boolean }) => {
     graphRunLoading,
     raptorRunData,
     raptorRunLoading,
+    artifactRunData,
+    artifactRunLoading,
+    skillRunData,
+    skillRunLoading,
   };
 };
 
 export const useUnBindTask = () => {
   const { id } = useParams();
+  const { t } = useTranslation();
+
   const { mutateAsync: handleUnbindTask } = useMutation({
     mutationKey: [DatasetKey.pauseGenerate],
     mutationFn: async ({
@@ -122,6 +135,8 @@ export const useDatasetGenerate = () => {
   const queryClient = useQueryClient();
   const { id } = useParams();
   const { handleUnbindTask } = useUnBindTask();
+  const { t } = useTranslation();
+
   const {
     data,
     isPending: loading,
@@ -130,7 +145,13 @@ export const useDatasetGenerate = () => {
     mutationKey: [DatasetKey.generate],
     mutationFn: async ({ type }: { type: GenerateType }) => {
       const indexType =
-        type === GenerateType.KnowledgeGraph ? 'graph' : 'raptor';
+        type === GenerateType.KnowledgeGraph
+          ? TraceType.Graph
+          : type === GenerateType.Artifact
+            ? TraceType.Artifact
+            : type === GenerateType.ToSkills
+              ? TraceType.Skill
+              : TraceType.Raptor;
       const { data } = await runIndex(id!, indexType);
       if (data.code === 0) {
         message.success(t('message.operated'));

@@ -397,6 +397,12 @@ export default {
       subbarFiles: '文件列表',
       generate: '生成',
       raptor: 'RAPTOR',
+      artifact: 'Artifact',
+      toSkills: '生成技能',
+      generateArtifact:
+        '从配置了知识编译模板的每个文档中编译 Artifact 页面（实体 / 概念 / 主题 wiki）。每次运行仅处理新添加的 chunk。',
+      generateToSkills:
+        '从该数据集构建分层技能树，并存储生成的技能页面以供搜索和复用。',
       processingType: '处理类型',
       dataPipeline: '切换或配置 ingestion pipeline。',
       dataPipelineTitle: '数据管道',

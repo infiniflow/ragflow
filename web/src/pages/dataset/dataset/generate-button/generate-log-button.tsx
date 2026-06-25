@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
 import { cn } from '@/lib/utils';
 import { formatDate } from '@/utils/date';
+import { lowerFirst } from 'lodash';
 import { Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { GenerateType, GenerateTypeMap } from './constants';
@@ -39,25 +40,21 @@ export function GenerateLogButton(props: IGenerateLogProps) {
     }
   };
 
+  const typeLabel = type
+    ? t(`knowledgeDetails.${lowerFirst(type)}`)
+    : t('knowledgeDetails.raptor');
+
   const handleDelete = () => {
     Modal.show({
       visible: true,
       className: '!w-[560px]',
-      title:
-        t('common.delete') +
-        ' ' +
-        (type === GenerateType.KnowledgeGraph
-          ? t('knowledgeDetails.knowledgeGraph')
-          : t('knowledgeDetails.raptor')),
+      title: t('common.delete') + ' ' + typeLabel,
       children: (
         <div
           className="text-sm text-text-secondary"
           dangerouslySetInnerHTML={{
             __html: t('knowledgeConfiguration.deleteGenerateModalContent', {
-              type:
-                type === GenerateType.KnowledgeGraph
-                  ? t('knowledgeDetails.knowledgeGraph')
-                  : t('knowledgeDetails.raptor'),
+              type: typeLabel,
             }),
           }}
         ></div>

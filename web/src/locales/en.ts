@@ -447,8 +447,14 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'This will extract entities and relationships from all your documents in this dataset. The process may take a while to complete.',
       generateRaptor:
         'Performs recursive clustering and summarization of document chunks to build a hierarchical tree structure, enabling more context-aware retrieval across lengthy documents.',
+      generateArtifact:
+        'Compiles artifact pages (entity / concept / topic wiki) from every document configured with a knowledge compilation template. Only newly added chunks are processed on each run.',
+      generateToSkills:
+        'Builds a hierarchical skill tree from this dataset and stores the generated skill pages for search and reuse.',
       generate: 'Generate',
       raptor: 'RAPTOR',
+      artifact: 'Artifact',
+      toSkills: 'To skills',
       processingType: 'Processing type',
       dataPipeline: 'Switch or configure ingestion pipeline.',
       dataPipelineTitle: 'Ingestion pipeline',
