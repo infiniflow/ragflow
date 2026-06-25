@@ -46,47 +46,6 @@ func TestExtractPositionsEmpty(t *testing.T) {
 	}
 }
 
-func TestRemoveTag(t *testing.T) {
-	text := "Q3 results @@1-2\t50.0\t300.0\t200.0\t400.0## are good"
-	clean := RemoveTag(text)
-	// RemoveTag strips the tag but may leave a double space; that's acceptable
-	// since downstream tokenize/merge handles whitespace normalization.
-	if clean != "Q3 results  are good" && clean != "Q3 results are good" {
-		t.Errorf("RemoveTag = %q, want cleaned text", clean)
-	}
-}
-
-func TestRemoveTagNoTags(t *testing.T) {
-	text := "plain text without any tags at all"
-	clean := RemoveTag(text)
-	if clean != "plain text without any tags at all" {
-		t.Errorf("RemoveTag changed clean text: %q", clean)
-	}
-}
-
-func TestOffsetPositionTag(t *testing.T) {
-	tests := []struct {
-		name    string
-		text    string
-		offset  int
-		want    string
-	}{
-		{"zero offset", "@@0-1\t50.0\t300.0##", 0, "@@0-1\t50.0\t300.0##"},
-		{"negative offset", "@@0-1\t50.0\t300.0##", -1, "@@0-1\t50.0\t300.0##"},
-		{"positive offset", "@@0-1\t50.0\t300.0##", 5, "@@5-6\t50.0\t300.0##"},
-		{"single page", "@@3\t50.0\t300.0##", 2, "@@5\t50.0\t300.0##"},
-		{"empty", "", 3, ""},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := OffsetPositionTag(tt.text, tt.offset)
-			if got != tt.want {
-				t.Errorf("OffsetPositionTag(%q, %d) = %q, want %q", tt.text, tt.offset, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestFormatPositionTag(t *testing.T) {
 	tag := FormatPositionTag(0, 50.0, 300.0, 200.0, 400.0)
 	// Page 0 → tag uses 1-indexed: page 1. Single page → no dash (Python format).
@@ -110,25 +69,6 @@ func TestFormatPositionTagRoundtrip(t *testing.T) {
 	// Page 0 → tag "page 1" → extract → page 0. Single page → 1 element.
 	if len(p.PageNumbers) != 1 || p.PageNumbers[0] != 0 {
 		t.Errorf("roundtrip page number: got %v, want [0]", p.PageNumbers)
-	}
-}
-
-func TestOffsetBoxes(t *testing.T) {
-	boxes := []TextBox{
-		{PageNumber: 0, Text: "a"},
-		{PageNumber: 1, Text: "b"},
-	}
-	result := OffsetBoxes(boxes, 5)
-	if result[0].PageNumber != 5 || result[1].PageNumber != 6 {
-		t.Errorf("OffsetBoxes: %d, %d", result[0].PageNumber, result[1].PageNumber)
-	}
-}
-
-func TestOffsetBoxesZero(t *testing.T) {
-	boxes := []TextBox{{PageNumber: 3}}
-	result := OffsetBoxes(boxes, 0)
-	if result[0].PageNumber != 3 {
-		t.Error("zero offset should not change pages")
 	}
 }
 

@@ -15,11 +15,6 @@ import (
 // Format: @@{page_range}\t{left}\t{right}\t{top}\t{bottom}##
 var posTagPattern = regexp.MustCompile(`@@[0-9-]+\t[0-9.\t]+##`)
 
-// removeTagPattern matches @@...## fragments for removal.
-var removeTagPattern = regexp.MustCompile(`@@[\t0-9.-]+?##`)
-
-// offsetPagePattern matches page numbers in @@ tags for offset adjustment.
-var offsetPagePattern = regexp.MustCompile(`@@([0-9-]+)\t`)
 
 // ExtractPositions parses @@ position tags from a text string.
 //
@@ -72,50 +67,6 @@ func ExtractPositions(text string) []Position {
 	return poss
 }
 
-// RemoveTag strips @@ position tags from text.
-//
-// Python: pdf_parser.py:1868 remove_tag()
-//
-// Example:
-//
-//	text := "Q3 results @@0-1\t50.0\t300.0\t200.0\t400.0##"
-//	clean := RemoveTag(text)  // "Q3 results"
-func RemoveTag(text string) string {
-	return strings.TrimSpace(removeTagPattern.ReplaceAllString(text, ""))
-}
-
-// OffsetPositionTag adjusts page numbers in @@ tags by pageOffset.
-// Used when parsing only a range of pages (from_page > 0) to renumber
-// pages back to global numbering.
-//
-// Python: pdf_parser.py:1840 _offset_position_tag()
-//
-// Example:
-//
-//	tag := "@@0-1\t50.0\t300.0\t200.0\t400.0##"
-//	// If we started from page 5, offset by 5:
-//	result := OffsetPositionTag(tag, 5)
-//	// "@@5-6\t50.0\t300.0\t200.0\t400.0##"
-func OffsetPositionTag(text string, pageOffset int) string {
-	if text == "" || pageOffset <= 0 {
-		return text
-	}
-	return offsetPagePattern.ReplaceAllStringFunc(text, func(match string) string {
-		// Extract page numbers from "@@{pages}\t"
-		pagesStr := offsetPagePattern.FindStringSubmatch(match)[1]
-		var newPages []string
-		for _, p := range strings.Split(pagesStr, "-") {
-			n, err := strconv.Atoi(p)
-			if err != nil {
-				newPages = append(newPages, p)
-				continue
-			}
-			newPages = append(newPages, strconv.Itoa(n+pageOffset))
-		}
-		return fmt.Sprintf("@@%s\t", strings.Join(newPages, "-"))
-	})
-}
-
 // FormatPositionTag creates a @@ position tag string from page number and bounding box.
 //
 // Reverse of ExtractPositions. Used when converting PDF engine
@@ -141,15 +92,3 @@ func FormatPositionTagRange(fromPage, toPage int, left, right, top, bottom float
 		fromPage+1, toPage+1, left, right, top, bottom)
 }
 
-// OffsetBoxes adjusts page numbers in boxes to global numbering.
-//
-// Python: pdf_parser.py:1850 _to_global_boxes()
-func OffsetBoxes(boxes []TextBox, pageOffset int) []TextBox {
-	if pageOffset <= 0 {
-		return boxes
-	}
-	for i := range boxes {
-		boxes[i].PageNumber += pageOffset
-	}
-	return boxes
-}

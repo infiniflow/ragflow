@@ -1826,6 +1826,31 @@ func TestMarkNoMergeTables_NoCaptionAfter(t *testing.T) {
 	}
 }
 
+func TestMarkNoMergeTables_StaleLastTableTI(t *testing.T) {
+	// Scenario: table box that does NOT overlap any TableItem.Position
+	// should reset lastTableTI. Otherwise the next caption marks the
+	// wrong (non-adjacent) table as NoMerge.
+	// Box 0: "table", overlaps table[0] → lastTableTI = 0
+	// Box 1: "table", no overlap → lastTableTI should reset to -1
+	// Box 2: "title" → should be a no-op (no adjacent table)
+	boxes := []TextBox{
+		{X0: 0, X1: 100, Top: 0, Bottom: 30, LayoutType: "table"},
+		{X0: 500, X1: 600, Top: 100, Bottom: 130, LayoutType: "table"}, // far away, no overlap
+		{X0: 0, X1: 100, Top: 140, Bottom: 160, LayoutType: "title"},
+	}
+	tables := []TableItem{
+		{Positions: []Position{{Left: 0, Right: 100, Top: 0, Bottom: 30}}},   // table 0
+		{Positions: []Position{{Left: 0, Right: 100, Top: 35, Bottom: 65}}},   // table 1 — box 0 doesn't overlap this either
+	}
+	markNoMergeTables(boxes, tables)
+	// table[0] should NOT be NoMerge: the title follows a non-matching
+	// table box, not table[0] directly.
+	if tables[0].NoMerge {
+		t.Error("stale lastTableTI: table[0] incorrectly marked NoMerge — " +
+			"the non-overlapping table box (box 1) should have reset lastTableTI")
+	}
+}
+
 func TestMarkNoMergeTables_EmptyInputs(t *testing.T) {
 	// Should not panic with empty inputs.
 	markNoMergeTables(nil, nil)

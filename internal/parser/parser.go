@@ -922,15 +922,6 @@ func findNearestParent(captionIdx int, caption Section, sections []Section, figu
 	return -1
 }
 
-// sectionPosKey returns a sort key for stable ordering.
-func sectionPosKey(s Section) string {
-	if len(s.Positions) == 0 {
-		return ""
-	}
-	p := s.Positions[0]
-	return fmt.Sprintf("%04d_%06.1f_%06.1f", p.PageNumbers[0], p.Top, p.Left)
-}
-
 // sortByPageThenY sorts boxes by page → vertical key → x0.
 func sortByPageThenY(boxes []TextBox, sortByTop bool) {
 	key := func(b TextBox) float64 { return b.Bottom }

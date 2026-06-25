@@ -139,7 +139,6 @@ func (p *Parser) extractTableBoxesFromImage(ctx context.Context, boxes []TextBox
 		marginY := h * 0.03
 		cropOffX := math.Max(0, tm.region.X0-marginX)
 		cropOffY := math.Max(0, tm.region.Y0-marginY)
-		cropScale := scale
 
 		var boxInCrop []TextBox
 		if tsrErr == nil && len(cells) > 0 {
@@ -220,7 +219,7 @@ func (p *Parser) extractTableBoxesFromImage(ctx context.Context, boxes []TextBox
 			Cells:     cells,
 			Grid:      grid,
 			Positions: positions,
-			Scale:     cropScale,
+			Scale:     scale,
 			CropOffX:  cropOffX,
 			CropOffY:  cropOffY,
 			// DLA region in PDF point space (Python's cropout uses layout region boundaries).
@@ -1195,13 +1194,18 @@ func markNoMergeTables(boxes []TextBox, tables []TableItem) {
 	for i := range boxes {
 		lt := boxes[i].LayoutType
 		if lt == "table" {
+			matched := false
 			for ti := range tables {
 				for _, tp := range tables[ti].Positions {
 					if boxOverlapsPosition(boxes[i], tp) {
 						lastTableTI = ti
+						matched = true
 						break
 					}
 				}
+			}
+			if !matched {
+				lastTableTI = -1
 			}
 			continue
 		}
@@ -1231,20 +1235,6 @@ func buildReplacements(boxes []TextBox, tables []TableItem) (map[int]bool, []rep
 	}
 	var reps []replacement
 	for ti := range tables {
-		if len(tables[ti].Cells) == 0 {
-			for i := range boxes {
-				if boxes[i].LayoutType != "table" || removeSet[i] {
-					continue
-				}
-				for _, tp := range tables[ti].Positions {
-					if boxOverlapsPosition(boxes[i], tp) {
-						reps = append(reps, replacement{tableIdx: ti, boxIdx: i})
-						break
-					}
-				}
-			}
-			continue
-		}
 		for i := range boxes {
 			if boxes[i].LayoutType != "table" || removeSet[i] {
 				continue

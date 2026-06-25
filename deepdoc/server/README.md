@@ -20,7 +20,7 @@ docker compose -f docker/docker-compose.yml up -d
 The service listens on port **8124** by default. Pass `--port` to change it:
 
 ```bash
-python deepdoc/servers/deepdoc_svr.py --port 9000 --model-dir /path/to/models
+python deepdoc/server/deepdoc_svr.py --port 9000 --model-dir /path/to/models
 ```
 
 ## Endpoints
@@ -189,7 +189,7 @@ HuggingFace repository (Apache 2.0 license):
 ## Architecture
 
 ```
-deepdoc/servers/
+deepdoc/server/
 ├── deepdoc_svr.py       # LitServe entry point
 ├── endpoints/            # LitAPI endpoints (HTTP layer)
 │   ├── dla_endpoint.py
