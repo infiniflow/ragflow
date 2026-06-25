@@ -69,6 +69,12 @@ interface BedrockInstanceCardProps {
   onSaved?: (values: Record<string, any>) => void | Promise<void>;
   onNameSaved?: () => void;
   onDelete?: () => void;
+  /**
+   * When true, this card starts expanded and fetches its instance
+   * details on mount. Default `false` so non-first cards stay
+   * collapsed until the user opens them.
+   */
+  defaultOpen?: boolean;
 }
 
 /**
@@ -85,11 +91,12 @@ export function BedrockInstanceCard({
   onSaved,
   onNameSaved,
   onDelete,
+  defaultOpen = false,
 }: BedrockInstanceCardProps) {
   const { t } = useTranslation();
   const { t: tSetting } = useTranslate('setting');
   const { buildModelTypeOptions } = useBuildModelTypeOptions();
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(isDraft || defaultOpen);
   const [draftName, setDraftName] = useState('');
   const [nameSaved, setNameSaved] = useState(!isDraft);
   const savingRef = useRef(false);
@@ -165,11 +172,21 @@ export function BedrockInstanceCard({
       isDraft ? '' : instance.instance_name,
     );
 
+  // Lazily fetch full instance details only when the card is open.
+  // Mirrors the generic ProviderInstanceCard: collapsed cards never
+  // hit /providers/<name>/instances/<instance_name>; expanding one
+  // triggers a fresh refetch.
   useEffect(() => {
-    if (!isDraft && providerName && instance.instance_name) {
+    if (!isDraft && open && providerName && instance.instance_name) {
       refetchInstanceDetails();
     }
-  }, [isDraft, providerName, instance.instance_name, refetchInstanceDetails]);
+  }, [
+    isDraft,
+    open,
+    providerName,
+    instance.instance_name,
+    refetchInstanceDetails,
+  ]);
 
   const initialValues = useMemo<BedrockFormValues>(() => {
     const merged = { ...instance, ...(instanceDetails ?? {}) } as any;

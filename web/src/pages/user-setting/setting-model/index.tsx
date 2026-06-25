@@ -164,11 +164,12 @@ const SettingModelV2: FC = () => {
                   {tSetting('noInstancesConfigured')}
                 </div>
               )}
-              {instances.map((instance) => (
+              {instances.map((instance, index) => (
                 <ProviderInstanceCard
                   key={instance.instance_name}
                   providerName={selection as string}
                   instance={instance}
+                  defaultOpen={index === 0}
                 />
               ))}
               {draftIds.map((id) => (

@@ -73,6 +73,13 @@ interface ProviderInstanceCardProps {
    * the component calls useDeleteProviderInstance internally.
    */
   onDelete?: () => void;
+  /**
+   * When true, this card starts expanded and its instance details
+   * are fetched on mount. Default `false` so additional cards stay
+   * collapsed until the user opens them — at which point details
+   * are fetched on demand.
+   */
+  defaultOpen?: boolean;
 }
 
 /**
@@ -113,10 +120,15 @@ function GenericProviderInstanceCard({
   onSaved,
   onNameSaved,
   onDelete,
+  defaultOpen = false,
 }: ProviderInstanceCardProps) {
   const { t } = useTranslation();
   const { t: tSetting } = useTranslate('setting');
-  const [open, setOpen] = useState(true);
+  // Drafts always start open (the user just added them and needs to
+  // fill the fields); saved cards default to collapsed unless the
+  // parent flagged this card as the one to expand initially (typically
+  // the first instance in the list).
+  const [open, setOpen] = useState(isDraft || defaultOpen);
   // Drafts start with an empty name — the user types it themselves.
   const [draftName, setDraftName] = useState('');
   // Tracks whether the instance name has been saved for the current
@@ -232,11 +244,21 @@ function GenericProviderInstanceCard({
       isDraft ? '' : instance.instance_name,
     );
 
+  // Lazily fetch full instance details only when the card is open
+  // (or pre-opened via defaultOpen). Cards that stay collapsed never
+  // hit /providers/<name>/instances/<instance_name>. Each expand
+  // triggers a refetch so the user always sees fresh values.
   useEffect(() => {
-    if (!isDraft && providerName && instance.instance_name) {
+    if (!isDraft && open && providerName && instance.instance_name) {
       refetchInstanceDetails();
     }
-  }, [isDraft, providerName, instance.instance_name, refetchInstanceDetails]);
+  }, [
+    isDraft,
+    open,
+    providerName,
+    instance.instance_name,
+    refetchInstanceDetails,
+  ]);
 
   // Build the form fields from the provider config. In draft mode we don't
   // pass any initial values; otherwise we pre-fill the form with the
@@ -258,6 +280,10 @@ function GenericProviderInstanceCard({
       values.base_url = merged.base_url;
       values.api_base = merged.base_url;
     }
+    // The /providers/<p>/instances/<i> endpoint also returns `region`
+    // for providers where it applies; surface it so the form / region
+    // submit logic can echo it back.
+    if ((merged as any).region) values.region = (merged as any).region;
     return values;
   }, [instance, instanceDetails, isDraft]);
 
@@ -322,6 +348,24 @@ function GenericProviderInstanceCard({
     void _ignored;
     return rest;
   }, [defaultValues]);
+
+  // When the lazy `showProviderInstance` fetch resolves (or refetches
+  // after the user collapses + re-expands), `formDefaultValues` will
+  // pick up the new api_key / base_url / region. React-Hook-Form only
+  // consumes `defaultValues` on first mount, so we explicitly reset
+  // the form here to make the freshly-fetched values visible. We use
+  // `keepDirtyValues` so the user's in-progress edits (if any) are
+  // not clobbered by a background refetch.
+  useEffect(() => {
+    if (isDraft) return;
+    if (!instanceDetails) return;
+    const form = (formRef.current as any)?.form;
+    if (form?.reset) {
+      form.reset(formDefaultValues, { keepDirtyValues: true });
+    } else {
+      formRef.current?.reset?.(formDefaultValues);
+    }
+  }, [isDraft, instanceDetails, formDefaultValues]);
 
   // Verify callback: just proxies the form values through. The VerifyButton
   // re-uses the existing shared verify hook; the modal-style verify flow
