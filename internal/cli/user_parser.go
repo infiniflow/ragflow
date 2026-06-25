@@ -3622,6 +3622,7 @@ func (p *Parser) parseUserStatement() (*Command, error) {
 		return nil, fmt.Errorf("invalid user statement: %s", p.curToken.Value)
 	}
 }
+
 // parseGetCommand parses: GET CHUNK or GET METADATA
 func (p *Parser) parseGetCommand() (*Command, error) {
 	p.nextToken() // consume GET
