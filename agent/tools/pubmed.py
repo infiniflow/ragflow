@@ -117,8 +117,8 @@ class PubMed(ToolBase, ABC):
 
     def _format_pubmed_content(self, child):
         """Extract structured reference info from PubMed XML"""
-        def safe_find(path):
-            node = child
+        def safe_find(path, base=None):
+            node = child if base is None else base
             for p in path.split("/"):
                 if node is None:
                     return None
@@ -135,8 +135,8 @@ class PubMed(ToolBase, ABC):
         # Authors
         authors = []
         for author in child.findall(".//AuthorList/Author"):
-            lastname = safe_find("LastName") or ""
-            forename = safe_find("ForeName") or ""
+            lastname = safe_find("LastName", author) or ""
+            forename = safe_find("ForeName", author) or ""
             fullname = f"{forename} {lastname}".strip()
             if fullname:
                 authors.append(fullname)

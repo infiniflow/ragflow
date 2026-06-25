@@ -205,8 +205,6 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenService, Value: ident}
 	case "SHUTDOWN":
 		return Token{Type: TokenShutdown, Value: ident}
-	case "STARTUP":
-		return Token{Type: TokenStartup, Value: ident}
 	case "RESTART":
 		return Token{Type: TokenRestart, Value: ident}
 	case "USERS":
@@ -219,6 +217,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenAlter, Value: ident}
 	case "ACTIVE":
 		return Token{Type: TokenActive, Value: ident}
+	case "INACTIVE":
+		return Token{Type: TokenInactive, Value: ident}
 	case "ADMIN":
 		return Token{Type: TokenAdmin, Value: ident}
 	case "SERVER":
@@ -241,6 +241,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenOf, Value: ident}
 	case "AGENTS":
 		return Token{Type: TokenAgents, Value: ident}
+	case "SEARCHES":
+		return Token{Type: TokenSearches, Value: ident}
 	case "ROLE":
 		return Token{Type: TokenRole, Value: ident}
 	case "ROLES":
@@ -303,6 +305,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenChats, Value: ident}
 	case "CHAT":
 		return Token{Type: TokenChat, Value: ident}
+	case "OPENAI_CHAT":
+		return Token{Type: TokenOpenaiChat, Value: ident}
 	case "MESSAGE":
 		return Token{Type: TokenMessage, Value: ident}
 	case "IMAGE":
@@ -361,6 +365,10 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenRetrieve, Value: ident}
 	case "CURRENT":
 		return Token{Type: TokenCurrent, Value: ident}
+	case "FINGERPRINT":
+		return Token{Type: TokenFingerprint, Value: ident}
+	case "LICENSE":
+		return Token{Type: TokenLicense, Value: ident}
 	case "VISION":
 		return Token{Type: TokenVision, Value: ident}
 	case "EMBEDDING":
@@ -487,6 +495,32 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenPending, Value: ident}
 	case "NOACK":
 		return Token{Type: TokenNoACK, Value: ident}
+	case "ANALYZE":
+		return Token{Type: TokenAnalyze, Value: ident}
+	case "SUMMARY":
+		return Token{Type: TokenSummary, Value: ident}
+	case "STORAGE":
+		return Token{Type: TokenStorage, Value: ident}
+	case "QUOTA":
+		return Token{Type: TokenQuota, Value: ident}
+	case "TREE":
+		return Token{Type: TokenTree, Value: ident}
+	case "ORPHAN":
+		return Token{Type: TokenOrphan, Value: ident}
+	case "DAYS":
+		return Token{Type: TokenDays, Value: ident}
+	case "WINDOW":
+		return Token{Type: TokenWindow, Value: ident}
+	case "ACTIVITY":
+		return Token{Type: TokenActivity, Value: ident}
+	case "PURGE":
+		return Token{Type: TokenPurge, Value: ident}
+	case "PREVIEW":
+		return Token{Type: TokenPreview, Value: ident}
+	case "PLAN":
+		return Token{Type: TokenPlan, Value: ident}
+	case "DATA":
+		return Token{Type: TokenData, Value: ident}
 	case "LOG":
 		return Token{Type: TokenLog, Value: ident}
 	case "LEVEL":

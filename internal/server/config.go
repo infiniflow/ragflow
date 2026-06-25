@@ -138,10 +138,31 @@ type DatabaseConfig struct {
 	Charset  string `mapstructure:"charset"`
 }
 
-// LogConfig logging configuration
+// LogConfig logging configuration.
+//
+// Path, MaxSize, MaxBackups, MaxAge, and Compress configure the rotated
+// log file. The cmd/* entry points hardcode per-service defaults
+// (e.g. "server_main.log" for the API server, "admin_server.log" for
+// the admin server, "ingestion_server.log" for the ingestion worker),
+// so a typical deployment gets a rotated file without any YAML
+// configuration. When Path is empty (the default) the binary's
+// hardcoded default filename is used — it does NOT disable file
+// output. Set log.path in service_conf.yaml to override the
+// per-service default filename.
+//
+// Compress is a pointer so callers can distinguish "not set" (nil,
+// defaults to true) from "explicitly false" (*bool=false). All other
+// numeric fields use plain int because their zero values are sensible
+// defaults (100 MB / 10 files / 30 days) and there is no operator-meaningful
+// reason to distinguish "not set" from "0".
 type LogConfig struct {
-	Level  string `mapstructure:"level"`  // debug, info, warn, error
-	Format string `mapstructure:"format"` // json, text
+	Level      string `mapstructure:"level"`       // debug, info, warn, error
+	Format     string `mapstructure:"format"`      // json, text (reserved for future use)
+	Path       string `mapstructure:"path"`        // per-binary file override; empty = use cmd/* hardcoded default
+	MaxSize    int    `mapstructure:"max_size"`    // MB before rotation; default 100
+	MaxBackups int    `mapstructure:"max_backups"` // retained rotated files; default 10
+	MaxAge     int    `mapstructure:"max_age"`     // days; default 30
+	Compress   *bool  `mapstructure:"compress"`    // gzip rotated files; nil = default true
 }
 
 // DocEngineConfig document engine configuration

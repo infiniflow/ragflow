@@ -111,3 +111,5 @@ type stubSandboxClient struct{}
 func (stubSandboxClient) ExecuteCode(_ context.Context, _ SandboxRequest) (*SandboxResponse, error) {
 	return nil, ErrSandboxNotWired
 }
+
+func (stubSandboxClient) IsStubSandboxClient() bool { return true }

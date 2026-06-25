@@ -22,8 +22,8 @@ func NewReActAgentState[M MessageType](msgs []M, tools []*schema.ToolInfo, maxIt
 
 // ReActAgentContext is passed to BeforeAgent middlewares.
 type ReActAgentContext struct {
-	Instruction   string
-	Tools         []Tool
+	Instruction    string
+	Tools          []Tool
 	ReturnDirectly map[string]bool
 	ToolSearchTool *schema.ToolInfo
 }

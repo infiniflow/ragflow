@@ -26,16 +26,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ListTokens list all API tokens for the current user's tenant
-// @Summary List API Tokens
-// @Description List all API tokens for the current user's tenant
-// @Tags system
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/system/tokens [get]
-func (h *SystemHandler) ListTokens(c *gin.Context) {
+func (h *SystemHandler) ListAPIKeys(c *gin.Context) {
 	// Get current user from context
 	user, exists := c.Get("user")
 	if !exists {
@@ -68,12 +59,12 @@ func (h *SystemHandler) ListTokens(c *gin.Context) {
 
 	tenantID := tenants[0].TenantID
 
-	// Get tokens for the tenant
-	tokens, err := h.systemService.ListAPITokens(tenantID)
+	// Get keys for the tenant
+	keys, err := h.systemService.ListAPIKeys(tenantID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
-			"message": "Failed to list tokens",
+			"message": "Failed to list keys",
 		})
 		return
 	}
@@ -81,21 +72,11 @@ func (h *SystemHandler) ListTokens(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "success",
-		"data":    tokens,
+		"data":    keys,
 	})
 }
 
-// CreateToken creates a new API token for the current user's tenant
-// @Summary Create API Token
-// @Description Generate a new API token for the current user's tenant
-// @Tags system
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param name query string false "Name of the token"
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/system/tokens [post]
-func (h *SystemHandler) CreateToken(c *gin.Context) {
+func (h *SystemHandler) CreateKey(c *gin.Context) {
 	// Get current user from context
 	user, exists := c.Get("user")
 	if !exists {
@@ -129,7 +110,7 @@ func (h *SystemHandler) CreateToken(c *gin.Context) {
 	tenantID := tenants[0].TenantID
 
 	// Parse request
-	var req service.CreateAPITokenRequest
+	var req service.CreateAPIKeyRequest
 	if err := c.ShouldBind(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
@@ -138,12 +119,12 @@ func (h *SystemHandler) CreateToken(c *gin.Context) {
 		return
 	}
 
-	// Create token
-	token, err := h.systemService.CreateAPIToken(tenantID, &req)
+	// Create key
+	key, err := h.systemService.CreateAPIKey(tenantID, &req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
-			"message": "Failed to create token",
+			"message": "Failed to create key",
 		})
 		return
 	}
@@ -151,21 +132,11 @@ func (h *SystemHandler) CreateToken(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "success",
-		"data":    token,
+		"data":    key,
 	})
 }
 
-// DeleteToken deletes an API token
-// @Summary Delete API Token
-// @Description Remove an API token for the current user's tenant
-// @Tags system
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param token path string true "The API token to remove"
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/system/tokens/{token} [delete]
-func (h *SystemHandler) DeleteToken(c *gin.Context) {
+func (h *SystemHandler) DeleteKey(c *gin.Context) {
 	// Get current user from context
 	user, exists := c.Get("user")
 	if !exists {
@@ -198,21 +169,21 @@ func (h *SystemHandler) DeleteToken(c *gin.Context) {
 
 	tenantID := tenants[0].TenantID
 
-	// Get token from path parameter
-	token := c.Param("token")
-	if token == "" {
+	// Get key from path parameter
+	key := c.Param("key")
+	if key == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "Token is required",
+			"message": "Key is required",
 		})
 		return
 	}
 
-	// Delete token
-	if err := h.systemService.DeleteAPIToken(tenantID, token); err != nil {
+	// Delete key
+	if err = h.systemService.DeleteAPIKey(tenantID, key); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
-			"message": "Failed to delete token",
+			"message": "Failed to delete key",
 		})
 		return
 	}

@@ -188,8 +188,119 @@ func PrintTableSimpleByFormat(data []map[string]interface{}, format OutputFormat
 					valueWidth = getStringWidth(value)
 				}
 				// Pad to column width
-				padding := colWidths[col] - valueWidth + len(value)
-				rowParts = append(rowParts, fmt.Sprintf(" %-*s ", padding, value))
+				rowParts = append(rowParts, fmt.Sprintf(" %s ", padCell(value, colWidths[col], false)))
+			}
+			fmt.Println("|" + strings.Join(rowParts, "|") + "|")
+		}
+
+		fmt.Println(separator)
+	}
+}
+
+// PrintTableSimpleByFormatWithOrder prints data with columns in the specified order
+func PrintTableSimpleByFormatWithOrder(data []map[string]interface{}, columns []string, format OutputFormat) {
+	if len(data) == 0 {
+		if format == OutputFormatJSON {
+			fmt.Println("[]")
+		} else if format == OutputFormatPlain {
+			fmt.Println("(empty)")
+		} else {
+			fmt.Println("No data to print")
+		}
+		return
+	}
+
+	if format == OutputFormatJSON {
+		jsonData, err := json.MarshalIndent(data, "", "  ")
+		if err != nil {
+			fmt.Printf("Error marshaling JSON: %v\n", err)
+			return
+		}
+		fmt.Println(string(jsonData))
+		return
+	}
+
+	colIsNumeric := make(map[string]bool)
+	for _, col := range columns {
+		isNumeric := true
+		for _, item := range data {
+			if val, ok := item[col]; ok {
+				if !isNumericValue(val) {
+					isNumeric = false
+					break
+				}
+			}
+		}
+		colIsNumeric[col] = isNumeric
+	}
+
+	colWidths := make(map[string]int)
+	for _, col := range columns {
+		maxWidth := getStringWidth(strings.ToLower(col))
+		for _, item := range data {
+			value := formatValue(item[col])
+			valueWidth := getStringWidth(value)
+			if valueWidth > maxWidth {
+				maxWidth = valueWidth
+			}
+		}
+		if maxWidth > maxColWidth {
+			maxWidth = maxColWidth
+		}
+		if maxWidth < 2 {
+			maxWidth = 2
+		}
+		colWidths[col] = maxWidth
+	}
+
+	if format == OutputFormatPlain {
+		headerParts := make([]string, 0, len(columns))
+		for _, col := range columns {
+			headerParts = append(headerParts, padCell(strings.ToLower(col), colWidths[col], colIsNumeric[col]))
+		}
+		fmt.Println(strings.Join(headerParts, "  "))
+
+		for _, item := range data {
+			rowParts := make([]string, 0, len(columns))
+			for _, col := range columns {
+				value := formatValue(item[col])
+				valueWidth := getStringWidth(value)
+				if valueWidth > colWidths[col] {
+					runes := []rune(value)
+					value = truncateStringByWidth(runes, colWidths[col])
+					valueWidth = getStringWidth(value)
+				}
+				rowParts = append(rowParts, padCell(value, colWidths[col], colIsNumeric[col]))
+			}
+			fmt.Println(strings.Join(rowParts, "  "))
+		}
+	} else {
+		separatorParts := make([]string, 0, len(columns))
+		for _, col := range columns {
+			separatorParts = append(separatorParts, strings.Repeat("-", colWidths[col]+2))
+		}
+		separator := "+" + strings.Join(separatorParts, "+") + "+"
+
+		fmt.Println(separator)
+		headerParts := make([]string, 0, len(columns))
+		for _, col := range columns {
+			headerParts = append(headerParts, fmt.Sprintf(" %-*s ", colWidths[col], col))
+		}
+		fmt.Println("|" + strings.Join(headerParts, "|") + "|")
+		fmt.Println(separator)
+
+		for _, item := range data {
+			rowParts := make([]string, 0, len(columns))
+			for _, col := range columns {
+				value := formatValue(item[col])
+				valueWidth := getStringWidth(value)
+				if valueWidth > colWidths[col] {
+					runes := []rune(value)
+					value = truncateStringByWidth(runes, colWidths[col])
+					valueWidth = getStringWidth(value)
+				}
+				rowParts = append(rowParts, fmt.Sprintf(" %s ", padCell(value, colWidths[col], false)))
+
 			}
 			fmt.Println("|" + strings.Join(rowParts, "|") + "|")
 		}
@@ -293,5 +404,3 @@ func isHalfWidth(r rune) bool {
 	}
 	return false
 }
-
-

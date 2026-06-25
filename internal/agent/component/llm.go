@@ -14,7 +14,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"regexp"
 	"slices"
 	"sort"
@@ -26,7 +25,10 @@ import (
 
 	"ragflow/internal/agent/component/prompts"
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	"ragflow/internal/entity/models"
+
+	"go.uber.org/zap"
 )
 
 // LLMComponent is a one-shot chat call.
@@ -48,6 +50,17 @@ type LLMParam struct {
 	MaxTokens                *int
 	JSONOutput               bool
 	OutputStructure          map[string]any // when set, LLM is asked for JSON matching this schema (best-effort keys); outputs["structured"] populated
+
+	// PresencePenalty mirrors Python's `presence_penalty` (range -2.0 to 2.0).
+	// Positive values penalize new tokens based on whether they appear in the
+	// text so far, increasing the model's likelihood to talk about new topics.
+	PresencePenalty *float64
+
+	// FrequencyPenalty mirrors Python's `frequency_penalty` (range -2.0 to 2.0).
+	// Positive values penalize new tokens based on their existing frequency
+	// in the text so far, decreasing the model's likelihood to repeat the
+	// same line verbatim.
+	FrequencyPenalty *float64
 
 	// Driver is the provider driver to use (e.g. "openai", "dummy"). When
 	// empty, the default ChatInvoker will look up a driver from ModelID
@@ -116,14 +129,16 @@ type ChatInvoker interface {
 // dispatch a chat call. Driver / APIKey / ModelName are kept here so the
 // invoker can wire the right provider without the component caring.
 type ChatInvokeRequest struct {
-	Driver      string
-	ModelName   string
-	APIKey      string
-	BaseURL     string
-	Messages    []schema.Message
-	Temperature *float64
-	TopP        *float64
-	MaxTokens   *int
+	Driver           string
+	ModelName        string
+	APIKey           string
+	BaseURL          string
+	Messages         []schema.Message
+	Temperature      *float64
+	TopP             *float64
+	PresencePenalty  *float64
+	FrequencyPenalty *float64
+	MaxTokens        *int
 }
 
 // ChatInvokeResponse mirrors what the LLM component writes to its outputs.
@@ -158,6 +173,12 @@ func getDefaultChatInvoker() ChatInvoker {
 	return defaultChatInvoker
 }
 
+// GetDefaultChatInvokerForTest exposes the current package-level invoker so
+// cross-package tests can swap it and restore it safely.
+func GetDefaultChatInvokerForTest() ChatInvoker {
+	return getDefaultChatInvoker()
+}
+
 // einoChatInvoker is the production ChatInvoker — it constructs a fresh
 // models.EinoChatModel per call from the request and dispatches.
 type einoChatInvoker struct{}
@@ -168,6 +189,13 @@ func (e *einoChatInvoker) Invoke(ctx context.Context, req ChatInvokeRequest) (*C
 		return nil, fmt.Errorf("component: LLM: model_id is required")
 	}
 	driver := req.Driver
+	modelName := req.ModelName
+	if driver == "" && modelName != "" {
+		if bareModelName, providerName, ok := splitCompositeLLMID(modelName); ok {
+			driver = providerName
+			modelName = bareModelName
+		}
+	}
 	if driver == "" {
 		driver = "dummy"
 	}
@@ -197,7 +225,7 @@ func (e *einoChatInvoker) Invoke(ctx context.Context, req ChatInvokeRequest) (*C
 	}
 	apiKey := req.APIKey
 	cfg := &models.APIConfig{ApiKey: &apiKey}
-	cm := models.NewChatModel(d, &req.ModelName, cfg)
+	cm := models.NewChatModel(d, &modelName, cfg)
 
 	chatCfg := &models.ChatConfig{
 		Temperature: req.Temperature,
@@ -211,7 +239,7 @@ func (e *einoChatInvoker) Invoke(ctx context.Context, req ChatInvokeRequest) (*C
 	}
 	return &ChatInvokeResponse{
 		Content: out.Content,
-		Model:   req.ModelName,
+		Model:   modelName,
 		Stopped: true,
 		Tokens:  0,
 	}, nil
@@ -304,13 +332,13 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 		if resolved, rerr := runtime.ResolveTemplate(p.SystemPrompt, state); resolved != p.SystemPrompt || rerr == nil {
 			p.SystemPrompt = resolved
 			if rerr != nil {
-				log.Printf("component: LLM: resolve system_prompt: %v", rerr)
+				common.Warn("component: LLM: resolve system_prompt", zap.Error(rerr))
 			}
 		}
 		if resolved, rerr := runtime.ResolveTemplate(p.UserPrompt, state); resolved != p.UserPrompt || rerr == nil {
 			p.UserPrompt = resolved
 			if rerr != nil {
-				log.Printf("component: LLM: resolve user_prompt: %v", rerr)
+				common.Warn("component: LLM: resolve user_prompt", zap.Error(rerr))
 			}
 		}
 	}
@@ -380,14 +408,16 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 		inv = newRetryInvoker(unwrapChatInvoker(inv), maxRetries, delay)
 	}
 	resp, err := inv.Invoke(ctx, ChatInvokeRequest{
-		Driver:      p.Driver,
-		ModelName:   p.ModelID,
-		APIKey:      p.APIKey,
-		BaseURL:     p.BaseURL,
-		Messages:    msgs,
-		Temperature: p.Temperature,
-		TopP:        p.TopP,
-		MaxTokens:   p.MaxTokens,
+		Driver:           p.Driver,
+		ModelName:        p.ModelID,
+		APIKey:           p.APIKey,
+		BaseURL:          p.BaseURL,
+		Messages:         msgs,
+		Temperature:      p.Temperature,
+		TopP:             p.TopP,
+		PresencePenalty:  p.PresencePenalty,
+		FrequencyPenalty: p.FrequencyPenalty,
+		MaxTokens:        p.MaxTokens,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("component: LLM.Invoke: %w", err)
@@ -405,7 +435,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 			out["json"] = parsed
 		} else {
 			// Surface a non-fatal warning — caller can still read "content".
-			log.Printf("component: LLM: json_output=true but content is not valid JSON: %v", err)
+			common.Warn("component: LLM: json_output=true but content is not valid JSON", zap.Error(err))
 		}
 	}
 	if p.OutputStructure != nil {
@@ -417,14 +447,16 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 		parsed, ok := matchOutputStructure(resp.Content, p.OutputStructure)
 		if !ok {
 			retryResp, err := inv.Invoke(ctx, ChatInvokeRequest{
-				Driver:      p.Driver,
-				ModelName:   p.ModelID,
-				APIKey:      p.APIKey,
-				BaseURL:     p.BaseURL,
-				Messages:    buildStructuredRetryMessages(p.SystemPrompt, p.UserPrompt, p.VisualFiles, p.Cite, p.OutputStructure, resp.Content),
-				Temperature: p.Temperature,
-				TopP:        p.TopP,
-				MaxTokens:   p.MaxTokens,
+				Driver:           p.Driver,
+				ModelName:        p.ModelID,
+				APIKey:           p.APIKey,
+				BaseURL:          p.BaseURL,
+				Messages:         buildStructuredRetryMessages(p.SystemPrompt, p.UserPrompt, p.VisualFiles, p.Cite, p.OutputStructure, resp.Content),
+				Temperature:      p.Temperature,
+				TopP:             p.TopP,
+				PresencePenalty:  p.PresencePenalty,
+				FrequencyPenalty: p.FrequencyPenalty,
+				MaxTokens:        p.MaxTokens,
 			})
 			if err == nil {
 				parsed, ok = matchOutputStructure(retryResp.Content, p.OutputStructure)
@@ -439,7 +471,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 			// downstream consumers reading "content" get the JSON text.
 			out["content"] = resp.Content
 		} else {
-			log.Printf("component: LLM: output_structure set but no parseable JSON after retry")
+			common.Warn("component: LLM: output_structure set but no parseable JSON after retry")
 		}
 	}
 	return out, nil
@@ -510,18 +542,21 @@ func (c *LLMComponent) Stream(ctx context.Context, inputs map[string]any) (<-cha
 // Inputs returns parameter metadata for tooling.
 func (c *LLMComponent) Inputs() map[string]string {
 	return map[string]string{
-		"model_id":         "Provider-side model identifier (e.g. \"gpt-4o-mini\")",
-		"system_prompt":    "Optional system prompt prepended to the conversation",
-		"user_prompt":      "User prompt; supports {{cpn_id@param}} references resolved by the canvas engine",
-		"temperature":      "Sampling temperature (0.0-2.0). Optional.",
-		"top_p":            "Top-p (nucleus) sampling cutoff (0.0-1.0). Optional.",
-		"visual_files":     "List of image URIs (data:image/... base64) attached to the user message as multi-modal content.",
-		"cite":             "When true (default), the citation-instruction prompt is appended to the system message.",
-		"output_structure": "Optional map of expected top-level keys. LLM is asked to produce JSON containing these keys; one retry on failure. Populates outputs[\"structured\"].",
-		"max_tokens":       "Maximum tokens to generate. Optional.",
-		"json_output":      "If true, attempt to JSON-parse \"content\" into \"json\" output key.",
-		"driver":           "Provider driver name (openai, anthropic, …). Defaults to \"dummy\".",
-		"api_key":          "Override API key for this call. Empty defers to env.",
+		"model_id":          "Provider-side model identifier (e.g. \"gpt-4o-mini\")",
+		"system_prompt":     "Optional system prompt prepended to the conversation",
+		"user_prompt":       "User prompt; supports {{cpn_id@param}} references resolved by the canvas engine",
+		"temperature":       "Sampling temperature (0.0-2.0). Optional.",
+		"top_p":             "Top-p (nucleus) sampling cutoff (0.0-1.0). Optional.",
+		"presence_penalty":  "Presence penalty (-2.0 to 2.0). Positive values encourage new topics. Optional.",
+		"frequency_penalty": "Frequency penalty (-2.0 to 2.0). Positive values discourage repetition. Optional.",
+		"visual_files":      "List of image URIs (data:image/... base64) attached to the user message as multi-modal content.",
+		"cite":              "When true (default), the citation-instruction prompt is appended to the system message.",
+		"output_structure":  "Optional map of expected top-level keys. LLM is asked to produce JSON containing these keys; one retry on failure. Populates outputs[\"structured\"].",
+		"max_tokens":        "Maximum tokens to generate. Optional.",
+		"json_output":       "If true, attempt to JSON-parse \"content\" into \"json\" output key.",
+		"driver":            "Provider driver name (openai, anthropic, …). Defaults to \"dummy\".",
+		"api_key":           "Override API key for this call. Empty defers to env.",
+		"base_url":          "Override the driver default endpoint URL.",
 	}
 }
 
@@ -784,6 +819,14 @@ func mergeLLMParam(base LLMParam, inputs map[string]any) LLMParam {
 		f := v
 		p.TopP = &f
 	}
+	if v, ok := floatFrom(inputs, "presence_penalty"); ok {
+		f := v
+		p.PresencePenalty = &f
+	}
+	if v, ok := floatFrom(inputs, "frequency_penalty"); ok {
+		f := v
+		p.FrequencyPenalty = &f
+	}
 	// visual_files: accept []string or single string with embedded
 	// data URIs. The current implementation only walks top-level
 	// string values; recursive walk is a future enhancement.
@@ -908,6 +951,14 @@ func init() {
 		}
 		if v, ok := mapFrom(params, "output_structure"); ok {
 			p.OutputStructure = v
+		}
+		if v, ok := floatFrom(params, "presence_penalty"); ok {
+			f := v
+			p.PresencePenalty = &f
+		}
+		if v, ok := floatFrom(params, "frequency_penalty"); ok {
+			f := v
+			p.FrequencyPenalty = &f
 		}
 		// cite defaults to true (matches Python) when neither LLMParam
 		// nor inputs set it.

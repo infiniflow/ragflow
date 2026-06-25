@@ -215,7 +215,7 @@ func NewNamedBarrierValueAfterFinish(typ interface{}, waitFor []string) *NamedBa
 		BaseChannel: BaseChannel{Typ: typ},
 		names:       names,
 		seen:        make(map[string]bool),
-		finished:     false,
+		finished:    false,
 	}
 }
 
@@ -395,14 +395,14 @@ type LastValueAfterFinish struct {
 	BaseChannel
 	value    interface{}
 	finished bool
-	mu        sync.RWMutex
+	mu       sync.RWMutex
 }
 
 // NewLastValueAfterFinish creates a new LastValueAfterFinish channel.
 func NewLastValueAfterFinish(typ interface{}) *LastValueAfterFinish {
 	return &LastValueAfterFinish{
 		BaseChannel: BaseChannel{Typ: typ},
-		value:      Missing,
+		value:       Missing,
 		finished:    false,
 	}
 }

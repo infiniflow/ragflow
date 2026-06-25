@@ -216,6 +216,8 @@ func toFloat64Slice(v interface{}) []float64 {
 		for i, x := range val {
 			if f, ok := x.(float64); ok {
 				out[i] = f
+			} else {
+				return nil
 			}
 		}
 		return out
@@ -224,5 +226,5 @@ func toFloat64Slice(v interface{}) []float64 {
 	}
 }
 
-func ptrInt(v int) *int          { return &v }
+func ptrInt(v int) *int             { return &v }
 func ptrFloat64(v float64) *float64 { return &v }

@@ -108,6 +108,7 @@ export enum Operator {
   UserFillUp = 'UserFillUp',
   StringTransform = 'StringTransform',
   SearXNG = 'SearXNG',
+  KeenableSearch = 'KeenableSearch',
   DocGenerator = 'DocGenerator',
   Browser = 'Browser',
   Placeholder = 'Placeholder',

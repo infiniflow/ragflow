@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+
+	"ragflow/internal/handler"
 )
 
 func TestConnectorRoutesDoNotConflictWithOAuthCallbacks(t *testing.T) {
@@ -67,5 +69,27 @@ func TestConnectorRoutesDoNotConflictWithOAuthCallbacks(t *testing.T) {
 				t.Fatalf("body=%q want=%q", resp.Body.String(), tt.want)
 			}
 		})
+	}
+}
+
+func TestRouterSetupRegistersUpdateDatasetRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	engine := gin.New()
+	r := &Router{
+		authHandler:     handler.NewAuthHandler(),
+		datasetsHandler: handler.NewDatasetsHandler(nil, nil),
+	}
+	r.Setup(engine)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/datasets/dataset-1", nil)
+	engine.ServeHTTP(resp, req)
+
+	if resp.Code == http.StatusNotFound {
+		t.Fatalf("PUT /api/v1/datasets/:dataset_id returned 404; UpdateDataset route is not registered")
+	}
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("status=%d body=%s; want auth middleware to handle registered UpdateDataset route", resp.Code, resp.Body.String())
 	}
 }
