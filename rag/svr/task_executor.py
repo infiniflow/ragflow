@@ -194,6 +194,8 @@ def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing...
         logging.warning(f"set_progress({task_id}) got exception DoesNotExist")
     except Exception as e:
         logging.exception(f"set_progress({task_id}), progress: {prog}, progress_msg: {msg}, got exception: {e}")
+        if prog is not None and (prog >= 1 or prog < 0):
+            raise
 
 
 async def collect():
