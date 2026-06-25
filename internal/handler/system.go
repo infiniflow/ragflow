@@ -222,3 +222,87 @@ func (h *SystemHandler) SetLogLevel(c *gin.Context) {
 		"data":    gin.H{"level": req.Level},
 	})
 }
+
+// ListVariables handle list variables
+func (h *SystemHandler) ListVariables(c *gin.Context) {
+	variables, err := h.systemService.ListAllVariables()
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    500,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    variables,
+	})
+}
+
+// SetVariableHTTPRequest set variable request
+type SetVariableHTTPRequest struct {
+	VarName  string `json:"var_name" binding:"required"`
+	VarValue string `json:"var_value" binding:"required"`
+}
+
+// SetVariable handle set variable
+// Python logic: update or create a system setting with the given name and value
+func (h *SystemHandler) SetVariable(c *gin.Context) {
+	var req SetVariableHTTPRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    400,
+			"message": "Var name is required",
+		})
+		return
+	}
+
+	if req.VarName == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    400,
+			"message": "Var name is required",
+		})
+		return
+	}
+
+	if req.VarValue == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    400,
+			"message": "Var value is required",
+		})
+		return
+	}
+
+	if err := h.systemService.SetVariable(req.VarName, req.VarValue); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    500,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "SUCCESS",
+	})
+}
+
+// ListEnvironments handle list environments
+func (h *SystemHandler) ListEnvironments(c *gin.Context) {
+	environments, err := h.systemService.ListEnvironments()
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    500,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    environments,
+	})
+}

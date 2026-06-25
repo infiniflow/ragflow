@@ -97,14 +97,16 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminListEnvironmentsCommand(cmd)
 	case "admin_show_variable":
 		return c.AdminShowVariable(cmd)
-	case "admin_set_license_command":
+	case "admin_set_license":
 		return c.AdminSetLicenseCommand(cmd)
-	case "admin_set_license_config_command":
+	case "admin_set_license_config":
 		return c.AdminSetLicenseConfigCommand(cmd)
-	case "set_variable":
-		return c.SetVariable(cmd)
+	case "admin_set_variable":
+		return c.AdminSetVariableCommand(cmd)
 	case "admin_set_role_default_model":
 		return c.AdminSetRoleDefaultModelsCommand(cmd)
+	case "admin_set_log_level":
+		return c.AdminSetLogLevelCommand(cmd)
 	case "admin_reset_role_default_model":
 		return c.AdminResetRoleDefaultModelsCommand(cmd)
 	case "list_user_datasets":
@@ -260,6 +262,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowAdminServer(cmd)
 	case "show_api_server":
 		return c.ShowAPIServer(cmd)
+	case "admin_show_log_level":
+		return c.AdminShowLogLevelCommand(cmd)
 	case "admin_list_api_servers":
 		return c.CommonListAPIServers(cmd)
 	case "add_api_server":
@@ -293,8 +297,8 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	// Configuration commands
 	case "api_list_configs":
 		return c.ListConfigs(cmd)
-	case "set_log_level":
-		return c.SetLogLevel(cmd)
+	case "api_set_log_level":
+		return c.APISetLogLevelCommand(cmd)
 	case "benchmark":
 		return c.RunBenchmark(cmd)
 	case "api_list_datasets":
@@ -323,14 +327,16 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "api_delete_api_key":
 		return c.APIDeleteAPIKeyCommand(cmd)
 	case "api_set_api_key":
-		return c.APISetAPIKey(cmd)
+		return c.APISetAPIKeyCommand(cmd)
+	case "api_set_variable":
+		return c.APISetVariableCommand(cmd)
 	case "api_unset_api_key":
 		return c.APIUnsetAPIKeyCommand(cmd)
 	case "api_show_version":
 		return c.APIShowVersionCommand(cmd)
 	case "api_show_api_key":
 		return c.APIShowAPIKeyCommand(cmd)
-	case "show_current":
+	case "api_show_current":
 		return c.CommonShowCurrentCommand(cmd)
 	case "api_list_available_providers":
 		return c.CommonAvailableProvidersCommand(cmd)
@@ -411,7 +417,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.CommonUseAdminServerCommand(cmd)
 	case "set_default_model":
 		return c.SetDefaultModel(cmd)
-	case "reset_default_model":
+	case "api_reset_default_model":
 		return c.ResetDefaultModel(cmd)
 	case "api_list_default_models":
 		return c.ListDefaultModels(cmd)
@@ -460,8 +466,14 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowAdminServer(cmd)
 	case "show_api_server":
 		return c.ShowAPIServer(cmd)
+	case "api_show_log_level":
+		return c.APIShowLogLevelCommand(cmd)
 	case "api_list_api_servers":
 		return c.CommonListAPIServers(cmd)
+	case "api_list_environments":
+		return c.APIListEnvironmentsCommand(cmd)
+	case "api_list_variables":
+		return c.APIListVariablesCommand(cmd)
 	case "add_api_server":
 		return c.AddAPIServer(cmd)
 	case "delete_api_server":
