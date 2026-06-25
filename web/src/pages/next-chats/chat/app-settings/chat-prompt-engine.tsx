@@ -130,7 +130,9 @@ export function ChatPromptEngine({ prefix = '' }: ChatPromptEngineProps) {
         <TOCEnhanceFormField
           name={prefixName(prefix, 'prompt_config.toc_enhance')}
         ></TOCEnhanceFormField>
-        <TavilyFormField></TavilyFormField>
+        <TavilyFormField
+          name={prefixName(prefix, 'prompt_config.tavily_api_key')}
+        ></TavilyFormField>
         <MetadataFilter></MetadataFilter>
         <FormField
           control={form.control}

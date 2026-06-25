@@ -25,7 +25,6 @@ const CopyToClipboard = ({
   const icon = copied ? <LucideCheck /> : <LucideCopy />;
   const trigger = avoidButtonWrapper ? (
     <Button
-      asChild
       variant="transparent"
       size="icon-sm"
       {...buttonProps}
