@@ -764,6 +764,8 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     knowledge_text = "\n\n------\n\n".join(knowledges)
     if knowledge_text:
         kwargs["knowledge"] = "\n------\n" + knowledge_text
+    else:
+        kwargs.setdefault("knowledge", "")
     gen_conf = dialog.llm_setting
 
     system_content = prompt_config["system"].format(**kwargs) + attachments_
