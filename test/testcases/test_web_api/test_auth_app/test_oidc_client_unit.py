@@ -668,8 +668,9 @@ def test_github_fetch_user_info_sync_raises_when_email_unavailable_unit(monkeypa
 
     monkeypatch.setattr(github_module, "sync_request", _fake_sync_request)
 
-    with pytest.raises(ValueError, match="GitHub account email is unavailable"):
+    with pytest.raises(ValueError) as exc_info:
         client.fetch_user_info("sync-token")
+    assert str(exc_info.value) == "GitHub account email is unavailable."
 
 @pytest.mark.p2
 def test_github_fetch_user_info_async_success_and_error_unit(monkeypatch):
@@ -749,5 +750,6 @@ def test_github_fetch_user_info_async_raises_when_email_unavailable_unit(monkeyp
 
     monkeypatch.setattr(github_module, "async_request", _fake_async_request)
 
-    with pytest.raises(ValueError, match="GitHub account email is unavailable"):
+    with pytest.raises(ValueError) as exc_info:
         asyncio.run(client.async_fetch_user_info("async-token"))
+    assert str(exc_info.value) == "GitHub account email is unavailable."
