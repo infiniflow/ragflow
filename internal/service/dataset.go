@@ -893,7 +893,8 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 				zap.String("chatID", chatID),
 				zap.Bool("useKG", useKG))
 		} else {
-			common.Warn("No search_config found in search detail", zap.String("searchID", searchID))
+			common.Warn("Invalid search_id: search_config missing or invalid", zap.String("searchID", searchID))
+			return nil, fmt.Errorf("Invalid search_id")
 		}
 	}
 
