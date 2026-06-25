@@ -22,10 +22,8 @@ import { createContext, useEffect, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import {
-  GenerateType,
-  IGenerateLogButtonProps,
-} from '../dataset/generate-button/generate';
+import { GenerateType } from '../dataset/generate-button/constants';
+import { IGenerateLogButtonProps } from '../dataset/generate-button/generate-log-button';
 import { ChunkMethodForm } from './chunk-method-form';
 import ChunkMethodLearnMore from './chunk-method-learn-more';
 import LinkDataSource, {

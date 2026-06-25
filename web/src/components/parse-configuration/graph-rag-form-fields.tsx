@@ -3,11 +3,11 @@ import { DocumentParserType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
 import { LLMModelItem } from '@/pages/dataset/dataset-setting/configuration/common-item';
+import { GenerateType } from '@/pages/dataset/dataset/generate-button/constants';
 import {
   GenerateLogButton,
-  GenerateType,
   IGenerateLogButtonProps,
-} from '@/pages/dataset/dataset/generate-button/generate';
+} from '@/pages/dataset/dataset/generate-button/generate-log-button';
 import { upperFirst } from 'lodash';
 import { useCallback, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
@@ -110,12 +110,12 @@ export function UseGraphRagFormField({
 }
 
 // The three types "table", "resume" and "one" do not display this configuration.
-const GraphRagItems = ({
+const GraphRagItems = function GraphRagItems({
   marginBottom = false,
   className = 'p-10',
   data,
   onDelete,
-}: GraphRagItemsProps) => {
+}: GraphRagItemsProps) {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
 
