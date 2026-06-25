@@ -153,7 +153,7 @@ func (p *Parser) parseAPIListCommands() (*Command, error) {
 	case TokenAvailable:
 		return p.parseAPIListAvailableProviders()
 	case TokenAPI:
-		return p.parseListApiCommand()
+		return p.parseAPIListAPIServers()
 	default:
 		return nil, fmt.Errorf("unknown LIST target: %s", p.curToken.Value)
 	}
@@ -4191,17 +4191,14 @@ func (p *Parser) parseUserShowAPI() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseListApiCommand() (*Command, error) {
+func (p *Parser) parseAPIListAPIServers() (*Command, error) {
 	p.nextToken() // consume API
 
 	var cmd *Command
 	switch p.curToken.Type {
 	case TokenServer:
 		p.nextToken()
-
-		cmd = NewCommand("list_api_server")
-		p.nextToken()
-
+		cmd = NewCommand("api_list_api_servers")
 	default:
 		return nil, fmt.Errorf("expected SERVER after API")
 	}

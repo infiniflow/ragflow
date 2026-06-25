@@ -1117,7 +1117,7 @@ func (c *CLI) ShowAPIServer(cmd *Command) (ResponseIf, error) {
 	return result, nil
 }
 
-func (c *CLI) ListAPIServer(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonListAPIServers(cmd *Command) (ResponseIf, error) {
 
 	var result CommonResponse
 	result.Data = make([]map[string]interface{}, 0)

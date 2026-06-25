@@ -260,8 +260,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowAdminServer(cmd)
 	case "show_api_server":
 		return c.ShowAPIServer(cmd)
-	case "list_api_server":
-		return c.ListAPIServer(cmd)
+	case "admin_list_api_servers":
+		return c.CommonListAPIServers(cmd)
 	case "add_api_server":
 		return c.AddAPIServer(cmd)
 	case "delete_api_server":
@@ -460,8 +460,8 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowAdminServer(cmd)
 	case "show_api_server":
 		return c.ShowAPIServer(cmd)
-	case "list_api_server":
-		return c.ListAPIServer(cmd)
+	case "api_list_api_servers":
+		return c.CommonListAPIServers(cmd)
 	case "add_api_server":
 		return c.AddAPIServer(cmd)
 	case "delete_api_server":

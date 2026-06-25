@@ -115,7 +115,7 @@ func (p *Parser) parseAdminListCommands() (*Command, error) {
 	case TokenIngestion:
 		return p.parseAdminListIngestionTasks()
 	case TokenAPI:
-		return p.parseListApiCommand()
+		return p.parseAdminListAPIServers()
 	default:
 		return nil, fmt.Errorf("unknown LIST target: %s", p.curToken.Value)
 	}
@@ -329,6 +329,26 @@ func (p *Parser) parseAdminListModels() (*Command, error) {
 	p.nextToken() // consume MODELS
 	cmd := NewCommand("admin_list_all_models")
 
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminListAPIServers() (*Command, error) {
+	p.nextToken() // consume API
+
+	var cmd *Command
+	switch p.curToken.Type {
+	case TokenServer:
+		p.nextToken()
+		cmd = NewCommand("admin_list_api_servers")
+	default:
+		return nil, fmt.Errorf("expected SERVER after API")
+	}
+
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
