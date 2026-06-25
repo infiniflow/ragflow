@@ -265,10 +265,18 @@ func rectOverlap(a, b rect) float64 {
 func fastCrop(src image.Image, x0, y0, x1, y1 int) *image.RGBA {
 	// Clamp to source bounds
 	b := src.Bounds()
-	if x0 < b.Min.X { x0 = b.Min.X }
-	if y0 < b.Min.Y { y0 = b.Min.Y }
-	if x1 > b.Max.X { x1 = b.Max.X }
-	if y1 > b.Max.Y { y1 = b.Max.Y }
+	if x0 < b.Min.X {
+		x0 = b.Min.X
+	}
+	if y0 < b.Min.Y {
+		y0 = b.Min.Y
+	}
+	if x1 > b.Max.X {
+		x1 = b.Max.X
+	}
+	if y1 > b.Max.Y {
+		y1 = b.Max.Y
+	}
 	if x0 >= x1 || y0 >= y1 {
 		return image.NewRGBA(image.Rect(0, 0, 1, 1))
 	}
@@ -280,7 +288,7 @@ func fastCrop(src image.Image, x0, y0, x1, y1 int) *image.RGBA {
 			dstRow := dst.Pix[dst.PixOffset(0, y-y0):]
 			copy(dstRow, srcRow)
 		}
-		
+
 	} else {
 		for y := y0; y < y1; y++ {
 			for x := x0; x < x1; x++ {

@@ -119,7 +119,7 @@ func boxOverlapsCell(cell TSRCell, box TextBox) bool {
 
 // isCaptionBox checks if a text box is a table/figure caption,
 // matching Python is_caption().  Captions should not enter table cells.
-		var reCaption = regexp.MustCompile(`^[图表]+[ 0-9:：]{2,}|(?i)Fig\.?\s*\d+|(?i)Figure\s+\d+|(?i)Table\s+\d+`)
+var reCaption = regexp.MustCompile(`^[图表]+[ 0-9:：]{2,}|(?i)Fig\.?\s*\d+|(?i)Figure\s+\d+|(?i)Table\s+\d+`)
 
 func isCaptionBox(text string, layoutType string) bool {
 	if strings.Contains(layoutType, "caption") {

@@ -67,8 +67,8 @@ func TestGroupTSRCellsToRows_CloseRows(t *testing.T) {
 func TestGroupTSRCellsToRows_VaryingHeights(t *testing.T) {
 	cells := []TSRCell{
 		{X0: 0, Y0: 0, X1: 10, Y1: 5, Text: "A"},   // height 5
-		{X0: 0, Y0: 50, X1: 10, Y1: 70, Text: "B"},  // height 20
-		{X0: 0, Y0: 50, X1: 10, Y1: 70, Text: "C"},  // height 20, same row as B
+		{X0: 0, Y0: 50, X1: 10, Y1: 70, Text: "B"}, // height 20
+		{X0: 0, Y0: 50, X1: 10, Y1: 70, Text: "C"}, // height 20, same row as B
 	}
 	rows := groupTSRCellsToRows(cells)
 	// median height = 5 (sorted: 5,20,20 → median index 1 = 20)
@@ -218,7 +218,7 @@ func TestRegionOverlapsBox_NoOverlap(t *testing.T) {
 
 func TestRegionOverlapsBox_WeakOverlap(t *testing.T) {
 	// Overlap at 30% → below 40% threshold → false.
-	region := DLARegion{X0: 0, Y0: 0, X1: 90, Y1: 90} // 30x30 at scale 3
+	region := DLARegion{X0: 0, Y0: 0, X1: 90, Y1: 90}   // 30x30 at scale 3
 	box := TextBox{X0: 0, X1: 100, Top: 0, Bottom: 100} // overlap = 30*30/10000 = 9%? No: 30x30=900 / 10000 = 9%
 	if regionOverlapsBox(region, box, 3.0) {
 		t.Error("9% overlap should return false")
@@ -260,8 +260,8 @@ func TestAnnotateBoxLayouts_SetsLabel(t *testing.T) {
 		{X0: 0, X1: 100, Top: 30, Bottom: 50},
 	}
 	regions := []DLARegion{
-		{X0: 0, Y0: 0, X1: 300, Y1: 60, Label: "title"},   // covers box 0 at scale 3
-		{X0: 0, Y0: 90, X1: 300, Y1: 150, Label: "text"},   // covers box 1 at scale 3
+		{X0: 0, Y0: 0, X1: 300, Y1: 60, Label: "title"},  // covers box 0 at scale 3
+		{X0: 0, Y0: 90, X1: 300, Y1: 150, Label: "text"}, // covers box 1 at scale 3
 	}
 	boxes = annotateBoxLayouts(boxes, regions, 3.0, 0)
 	if boxes[0].LayoutType != "title" {
@@ -371,7 +371,7 @@ func TestAnnotateBoxLayouts_LayoutNoDifferentRegions(t *testing.T) {
 		{X0: 0, X1: 100, Top: 100, Bottom: 120},
 	}
 	regions := []DLARegion{
-		{X0: 0, Y0: 0, X1: 300, Y1: 60, Label: "text"},   // per-type index 0
+		{X0: 0, Y0: 0, X1: 300, Y1: 60, Label: "text"},    // per-type index 0
 		{X0: 0, Y0: 300, X1: 300, Y1: 360, Label: "text"}, // per-type index 1
 	}
 	boxes = annotateBoxLayouts(boxes, regions, 3.0, 0)
@@ -509,7 +509,7 @@ func TestAnnotateBoxLayouts_SyntheticFigure(t *testing.T) {
 	}
 	// Two figure regions, one text region
 	regions := []DLARegion{
-		{X0: 0, Y0: 0, X1: 150, Y1: 60, Label: "text", Confidence: 0.9},     // matches text box → visited
+		{X0: 0, Y0: 0, X1: 150, Y1: 60, Label: "text", Confidence: 0.9},        // matches text box → visited
 		{X0: 300, Y0: 300, X1: 600, Y1: 600, Label: "figure", Confidence: 0.9}, // no box overlaps → synthetic
 		{X0: 600, Y0: 0, X1: 900, Y1: 300, Label: "figure", Confidence: 0.9},   // no box overlaps → synthetic
 	}
@@ -566,14 +566,14 @@ func TestAnnotateBoxLayouts_EquationMappedToFigure(t *testing.T) {
 // with multiple region types present.
 func TestAnnotateBoxLayouts_MixedTypesLayoutNo(t *testing.T) {
 	boxes := []TextBox{
-		{X0: 0, X1: 100, Top: 0, Bottom: 20},       // overlaps text region 0
-		{X0: 0, X1: 100, Top: 200, Bottom: 220},     // overlaps text region 1
-		{X0: 200, X1: 300, Top: 0, Bottom: 20},      // overlaps figure region 0 only
+		{X0: 0, X1: 100, Top: 0, Bottom: 20},    // overlaps text region 0
+		{X0: 0, X1: 100, Top: 200, Bottom: 220}, // overlaps text region 1
+		{X0: 200, X1: 300, Top: 0, Bottom: 20},  // overlaps figure region 0 only
 	}
 	regions := []DLARegion{
-		{X0: 0, Y0: 0, X1: 150, Y1: 60, Label: "text", Confidence: 0.9},        // text-0
-		{X0: 0, Y0: 600, X1: 150, Y1: 660, Label: "text", Confidence: 0.9},      // text-1
-		{X0: 600, Y0: 0, X1: 900, Y1: 60, Label: "figure", Confidence: 0.9},     // figure-0 (PDF: x0=200, x1=300)
+		{X0: 0, Y0: 0, X1: 150, Y1: 60, Label: "text", Confidence: 0.9},     // text-0
+		{X0: 0, Y0: 600, X1: 150, Y1: 660, Label: "text", Confidence: 0.9},  // text-1
+		{X0: 600, Y0: 0, X1: 900, Y1: 60, Label: "figure", Confidence: 0.9}, // figure-0 (PDF: x0=200, x1=300)
 	}
 	boxes = annotateBoxLayouts(boxes, regions, 3.0, 0)
 	if len(boxes) != 3 {
@@ -604,7 +604,7 @@ func TestExtractTableBoxes_PriorityPreservesTable(t *testing.T) {
 	mock := &MockDocAnalyzer{
 		Healthy: true,
 		DLARegions: []DLARegion{
-			{X0: 0, Y0: 0, X1: 2700, Y1: 2700, Label: "text"},     // full-page, 3x scale
+			{X0: 0, Y0: 0, X1: 2700, Y1: 2700, Label: "text"},      // full-page, 3x scale
 			{X0: 300, Y0: 300, X1: 1500, Y1: 1500, Label: "table"}, // partial, 3x scale
 		},
 		TSRCells: []TSRCell{{X0: 200, Y0: 200, X1: 400, Y1: 400, Text: "cell1"}},
@@ -967,7 +967,6 @@ func TestFillCellTextFromBoxes_RCAnnotations(t *testing.T) {
 	}
 }
 
-
 // TestConstructTable_SingleRowMultiCol covers R=0 with multiple columns
 // (table header pattern). boxesHaveAnnotations must detect valid annotations
 // even though maxR=0.
@@ -1172,8 +1171,6 @@ func TestRowsToHTML_HeaderRows(t *testing.T) {
 	}
 }
 
-
-
 // TestExtractTableAndReplace_OnlyTableBoxes verifies that only boxes with
 // LayoutType=="table" are passed to constructTable (Python: filters by layout_type).
 func TestExtractTableAndReplace_OnlyTableBoxes(t *testing.T) {
@@ -1219,7 +1216,9 @@ func TestFillCellText_RCOverSpatial(t *testing.T) {
 	fillCellTextFromBoxes(cellsCopy, boxes)
 	spatialCount := 0
 	for _, c := range cellsCopy {
-		if c.Text != "" { spatialCount++ }
+		if c.Text != "" {
+			spatialCount++
+		}
 	}
 	if spatialCount <= 1 {
 		t.Errorf("spatial fill: expected >1 cells with text, got %d", spatialCount)
@@ -1238,7 +1237,9 @@ func TestFillCellText_RCOverSpatial(t *testing.T) {
 	rcCount := 0
 	for _, row := range rows {
 		for _, c := range row {
-			if c.Text == "TEXT" { rcCount++ }
+			if c.Text == "TEXT" {
+				rcCount++
+			}
 		}
 	}
 	if rcCount != 1 {
@@ -1247,12 +1248,15 @@ func TestFillCellText_RCOverSpatial(t *testing.T) {
 }
 
 func TestIsCaptionBox(t *testing.T) {
-	tests := []struct{ text string; want bool }{
+	tests := []struct {
+		text string
+		want bool
+	}{
 		{"表1：交通工具等级", true},
 		{"Table 1: Transport Levels", true},
 		{"图表 1: 测试", true},
-		{"公司领导班子成员、出差地", false},   // plain text, not caption
-		{"第十条到厂矿单位出差", false},       // normal paragraph
+		{"公司领导班子成员、出差地", false}, // plain text, not caption
+		{"第十条到厂矿单位出差", false},   // normal paragraph
 		{"", false},
 	}
 	for _, tt := range tests {
@@ -1603,7 +1607,7 @@ func TestMatchTableRegions_SingleMatch(t *testing.T) {
 	}
 	regions := []DLARegion{
 		{X0: 0, Y0: 0, X1: 300, Y1: 150, Label: "table"},  // covers box 0 at scale 3
-		{X0: 600, Y0: 0, X1: 900, Y1: 150, Label: "text"},  // non-table, ignored
+		{X0: 600, Y0: 0, X1: 900, Y1: 150, Label: "text"}, // non-table, ignored
 	}
 	matches := matchTableRegions(boxes, regions, 3.0)
 	if len(matches) != 1 {
@@ -1631,7 +1635,7 @@ func TestMatchTableRegions_NoTableLabel(t *testing.T) {
 func TestMatchTableRegions_MultipleBoxesSameTable(t *testing.T) {
 	boxes := []TextBox{
 		{X0: 0, X1: 100, Top: 0, Bottom: 50},   // box 0
-		{X0: 110, X1: 210, Top: 0, Bottom: 50},  // box 1
+		{X0: 110, X1: 210, Top: 0, Bottom: 50}, // box 1
 	}
 	regions := []DLARegion{
 		{X0: 0, Y0: 0, X1: 630, Y1: 150, Label: "table"}, // covers both boxes at scale 3
@@ -1695,7 +1699,7 @@ type MockTableBuilder struct {
 	GroupCellsFn func(cells []TSRCell) [][]TSRCell
 }
 
-func (m *MockTableBuilder) Name() string                             { return "mock" }
+func (m *MockTableBuilder) Name() string { return "mock" }
 func (m *MockTableBuilder) DetectCells(_ context.Context, _ image.Image) ([]TSRCell, error) {
 	return nil, nil
 }
@@ -1839,8 +1843,8 @@ func TestMarkNoMergeTables_StaleLastTableTI(t *testing.T) {
 		{X0: 0, X1: 100, Top: 140, Bottom: 160, LayoutType: "title"},
 	}
 	tables := []TableItem{
-		{Positions: []Position{{Left: 0, Right: 100, Top: 0, Bottom: 30}}},   // table 0
-		{Positions: []Position{{Left: 0, Right: 100, Top: 35, Bottom: 65}}},   // table 1 — box 0 doesn't overlap this either
+		{Positions: []Position{{Left: 0, Right: 100, Top: 0, Bottom: 30}}},  // table 0
+		{Positions: []Position{{Left: 0, Right: 100, Top: 35, Bottom: 65}}}, // table 1 — box 0 doesn't overlap this either
 	}
 	markNoMergeTables(boxes, tables)
 	// table[0] should NOT be NoMerge: the title follows a non-matching

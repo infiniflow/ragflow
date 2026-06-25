@@ -34,9 +34,9 @@ func TestTableParityWithPythonBoxes(t *testing.T) {
 
 			var pyBoxes []struct {
 				X0, X1, Top, Bottom float64
-				Text               string
-				R, C, H, SP        int
-				LayoutType         string
+				Text                string
+				R, C, H, SP         int
+				LayoutType          string
 			}
 			if err := json.Unmarshal(data, &pyBoxes); err != nil {
 				t.Fatal(err)

@@ -492,8 +492,6 @@ func TestNaiveVerticalMerge_CommaConcat(t *testing.T) {
 		}
 	})
 
-
-
 	t.Run("empty boxes", func(t *testing.T) {
 		result := NaiveVerticalMerge(nil, nil, nil, false)
 		if len(result) != 0 {
@@ -522,9 +520,9 @@ func TestNaiveVerticalMerge_CommaConcat(t *testing.T) {
 
 func TestCharsToBoxes_PreservesWhitespaceLines(t *testing.T) {
 	chars := []TextChar{
-		{Text: " ", X0: 10, Top: 100, X1: 15, Bottom: 112}, // non-breaking space only
-		{Text: "Hello", X0: 10, Top: 120, X1: 50, Bottom: 132},   // real text
-		{Text: "  ", X0: 10, Top: 140, X1: 15, Bottom: 152},      // spaces only
+		{Text: " ", X0: 10, Top: 100, X1: 15, Bottom: 112},     // non-breaking space only
+		{Text: "Hello", X0: 10, Top: 120, X1: 50, Bottom: 132}, // real text
+		{Text: "  ", X0: 10, Top: 140, X1: 15, Bottom: 152},    // spaces only
 	}
 	boxes := charsToBoxes(chars, 0, false)
 
@@ -556,9 +554,6 @@ func TestCharsToBoxes_EmptyInput(t *testing.T) {
 	}
 }
 
-
-
-
 // ---- groupCharsToLines: stable sort for close x0 values ----
 
 func TestGroupCharsToLines_StableSort(t *testing.T) {
@@ -568,7 +563,7 @@ func TestGroupCharsToLines_StableSort(t *testing.T) {
 		{Text: "总", X0: 37.6, X1: 48.0, Top: 60.5, Bottom: 70.9},
 		{Text: "结", X0: 48.0, X1: 58.4, Top: 60.5, Bottom: 70.9},
 		{Text: "前", X0: 37.6, X1: 48.0, Top: 86.1, Bottom: 96.5},
-		{Text: "2",  X0: 48.0, X1: 54.0, Top: 86.1, Bottom: 96.5},
+		{Text: "2", X0: 48.0, X1: 54.0, Top: 86.1, Bottom: 96.5},
 		{Text: "个", X0: 53.9, X1: 64.4, Top: 86.1, Bottom: 96.5},
 		{Text: "问", X0: 64.4, X1: 74.8, Top: 86.1, Bottom: 96.5},
 		{Text: "题", X0: 74.8, X1: 85.2, Top: 86.1, Bottom: 96.5},

@@ -9,9 +9,9 @@ import (
 	"log/slog"
 	"math"
 	"os"
-	"regexp"
 	"path/filepath"
 	"ragflow/internal/parser/tools"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -47,7 +47,10 @@ func TestBatchResults(t *testing.T) {
 	}
 	pdfs := all[:min(count, len(all))]
 
-	ddClient, err := NewDeepDocClient(os.Getenv("DEEPDOC_URL")); if err != nil { t.Fatal(err) }
+	ddClient, err := NewDeepDocClient(os.Getenv("DEEPDOC_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !ddClient.Health() {
 		t.Fatalf("DeepDoc service not available at %s (DLA+TSR required)", ddClient.baseURL)
 	}
@@ -88,10 +91,10 @@ type outputDirs struct {
 
 func mkOutputDirs(variant string) outputDirs {
 	d := outputDirs{
-		text:    filepath.Join("testdata", "output", "go", variant, "text"),
-		tables:  filepath.Join("testdata", "output", "go", variant, "tables"),
-		dla:     filepath.Join("testdata", "output", "go", variant, "dla"),
-		tsrRaw:  filepath.Join("testdata", "output", "go", variant, "tsr_raw"),
+		text:   filepath.Join("testdata", "output", "go", variant, "text"),
+		tables: filepath.Join("testdata", "output", "go", variant, "tables"),
+		dla:    filepath.Join("testdata", "output", "go", variant, "dla"),
+		tsrRaw: filepath.Join("testdata", "output", "go", variant, "tsr_raw"),
 	}
 	os.MkdirAll(d.text, 0755)
 	os.MkdirAll(d.tables, 0755)
@@ -288,7 +291,7 @@ func htmlToRows(html string) [][]string {
 	var rows [][]string
 	re := regexp.MustCompile(`<tr>(.*?)</tr>`)
 	td := regexp.MustCompile(`<t[dh][^>]*>(.*?)</t[dh]>`)
-		for _, tr := range re.FindAllStringSubmatch(html, -1) {
+	for _, tr := range re.FindAllStringSubmatch(html, -1) {
 		var cells []string
 		for _, m := range td.FindAllStringSubmatch(tr[1], -1) {
 			cells = append(cells, m[1])
@@ -297,7 +300,6 @@ func htmlToRows(html string) [][]string {
 	}
 	return rows
 }
-
 
 func writeOutputs(dirs outputDirs, name string, parsed *ParseResult, res *parseOneResult) {
 	// ── text + #@meta ──

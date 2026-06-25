@@ -300,11 +300,12 @@ func (p *Parser) extractPages(ctx context.Context, engine PDFEngine,
 	wg.Wait()
 
 	// Merge results in page order.
-		var errs []error
+	var errs []error
 	for i := 0; i < pageCount; i++ {
 		r := results[i]
 		if r.err != nil {
-			slog.Warn("page OCR failed", "page", r.pg, "err", r.err); errs = append(errs, fmt.Errorf("page %d: %w", r.pg, r.err))
+			slog.Warn("page OCR failed", "page", r.pg, "err", r.err)
+			errs = append(errs, fmt.Errorf("page %d: %w", r.pg, r.err))
 			continue
 		}
 		if r.ocrUsed {
@@ -465,9 +466,9 @@ func (p *Parser) processPages(ctx context.Context, engine PDFEngine,
 	boxes, pageChars, ocrUsedAny, ocrErr := p.extractPages(ctx, engine,
 		fromPage, toPage, prescanChars,
 		medianHeights, medianWidths, result.PageImages)
-		if ocrErr != nil {
-			slog.Warn("extractPages: some pages failed OCR", "err", ocrErr)
-		}
+	if ocrErr != nil {
+		slog.Warn("extractPages: some pages failed OCR", "err", ocrErr)
+	}
 	// 2. Scan noise retry — re-OCR all pages when prescan detects scan noise.
 	if isScanNoiseDoc {
 		boxes, pageChars, ocrUsedAny = p.retryScanNoise(ctx, engine,
@@ -1047,5 +1048,3 @@ func lineToTextBox(chars []TextChar) TextBox {
 	box.Text = strings.Join(textParts, "")
 	return box
 }
-
-

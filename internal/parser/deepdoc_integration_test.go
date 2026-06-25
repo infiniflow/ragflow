@@ -24,7 +24,10 @@ func mustConnectDeepDoc(t *testing.T) *DeepDocClient {
 	if url == "" {
 		url = "http://localhost:8000"
 	}
-	client, err := NewDeepDocClient(url); if err != nil { t.Fatal(err) }
+	client, err := NewDeepDocClient(url)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !client.Health() {
 		t.Fatalf("DeepDoc not available at %s", url)
 	}
@@ -129,7 +132,7 @@ func TestIntegration_SectionsText(t *testing.T) {
 
 	cfg := DefaultParserConfig()
 	p := NewParser(cfg, client)
-			result, err := p.Parse(context.Background(), eng)
+	result, err := p.Parse(context.Background(), eng)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -173,7 +176,7 @@ func TestIntegration_SectionsCount(t *testing.T) {
 
 	cfg := DefaultParserConfig()
 	p := NewParser(cfg, client)
-			result, err := p.Parse(context.Background(), eng)
+	result, err := p.Parse(context.Background(), eng)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -200,7 +203,7 @@ func TestIntegration_TableStructure(t *testing.T) {
 
 	cfg := DefaultParserConfig()
 	p := NewParser(cfg, client)
-			result, err := p.Parse(context.Background(), eng)
+	result, err := p.Parse(context.Background(), eng)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -255,7 +258,7 @@ func TestIntegration_TableImageB64(t *testing.T) {
 
 	cfg := DefaultParserConfig()
 	p := NewParser(cfg, client)
-			result, err := p.Parse(context.Background(), eng)
+	result, err := p.Parse(context.Background(), eng)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -295,7 +298,7 @@ func TestIntegration_LayoutTypes(t *testing.T) {
 
 	cfg := DefaultParserConfig()
 	p := NewParser(cfg, client)
-			result, err := p.Parse(context.Background(), eng)
+	result, err := p.Parse(context.Background(), eng)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -565,7 +568,7 @@ func TestIntegration_TableAlign(t *testing.T) {
 
 	cfg := DefaultParserConfig()
 	p := NewParser(cfg, client)
-			result, err := p.Parse(context.Background(), eng)
+	result, err := p.Parse(context.Background(), eng)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -606,7 +609,7 @@ func TestIntegration_GarbageLayout(t *testing.T) {
 
 	cfg := DefaultParserConfig()
 	p := NewParser(cfg, client)
-			result, err := p.Parse(context.Background(), eng)
+	result, err := p.Parse(context.Background(), eng)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -638,7 +641,7 @@ func TestIntegration_MultiChunk(t *testing.T) {
 	cfg := DefaultParserConfig()
 	cfg.ChunkSize = 10 // small chunks to force multi-chunk path
 	p := NewParser(cfg, client)
-			result, err := p.Parse(context.Background(), eng)
+	result, err := p.Parse(context.Background(), eng)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -695,7 +698,7 @@ func TestIntegration_TableRotation(t *testing.T) {
 		defer eng.Close()
 		cfg := DefaultParserConfig()
 		p := NewParser(cfg, client)
-			result, err := p.Parse(context.Background(), eng)
+		result, err := p.Parse(context.Background(), eng)
 		if err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
@@ -715,7 +718,7 @@ func TestIntegration_TableRotation(t *testing.T) {
 		// verified via the charsToBoxes path.
 		cfg.SkipOCR = true
 		p := NewParser(cfg, client)
-			result, err := p.Parse(context.Background(), eng)
+		result, err := p.Parse(context.Background(), eng)
 		if err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
@@ -735,7 +738,7 @@ func TestIntegration_WordSpacing(t *testing.T) {
 
 	cfg := DefaultParserConfig()
 	p := NewParser(cfg, client)
-			result, err := p.Parse(context.Background(), eng)
+	result, err := p.Parse(context.Background(), eng)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}

@@ -288,7 +288,7 @@ func NaiveVerticalMerge(boxes []TextBox, medianHeights map[int]float64, medianWi
 				continue
 			}
 
-			slog.Debug("vm merge", "gap", gap, "ovX", ov, "mh", mh, "prev", prevText[:min(40,len(prevText))], "next", bText[:min(40,len(bText))])
+			slog.Debug("vm merge", "gap", gap, "ovX", ov, "mh", mh, "prev", prevText[:min(40, len(prevText))], "next", bText[:min(40, len(bText))])
 			// Python: (b["text"].rstrip() + " " + b_["text"].lstrip()).strip()
 			prev.Text = strings.TrimSpace(strings.TrimRight(prevText, " \t") + " " + strings.TrimLeft(bText, " \t"))
 			// Preserve the taller bottom when merging (prev.Bottom may already
@@ -327,6 +327,7 @@ func FinalReadingOrderMerge(boxes []TextBox) []TextBox {
 	})
 	return boxes
 }
+
 var pageNumSuffixPattern = regexp.MustCompile(`[0-9  •一—-]+$`)
 
 // ---- rune-based text helpers (CJK-safe) ----

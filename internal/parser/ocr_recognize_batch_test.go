@@ -92,7 +92,7 @@ func TestOCRRecognizeBatch_NilImage(t *testing.T) {
 
 func TestOCRRecognizeBatch_ErrorHandling(t *testing.T) {
 	mock := &MockDocAnalyzer{
-		Healthy: true,
+		Healthy:  true,
 		OCRTexts: []OCRText{{Text: "ok", Confidence: 0.9}},
 		OCRBatchErr: func(i int) error {
 			if i == 1 {
@@ -169,7 +169,7 @@ func TestOCRRecognizeBatch_FallbackToOCRTexts(t *testing.T) {
 func TestOCRRecognizeBatch_PartialBatchTexts(t *testing.T) {
 	// OCRBatchTexts shorter than images — remaining fall back to OCRTexts.
 	mock := &MockDocAnalyzer{
-		Healthy: true,
+		Healthy:  true,
 		OCRTexts: []OCRText{{Text: "fallback", Confidence: 0.5}},
 		OCRBatchTexts: [][]OCRText{
 			{{Text: "custom0", Confidence: 0.9}},

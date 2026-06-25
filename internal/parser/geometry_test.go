@@ -139,7 +139,6 @@ func TestNaiveVerticalMergeNonMerge(t *testing.T) {
 	}
 }
 
-
 func TestBoxWidth(t *testing.T) {
 	b := TextBox{X0: 50, X1: 200}
 	if w := BoxWidth(b); w != 150 {

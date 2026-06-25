@@ -27,7 +27,7 @@ func TestParse_CropSectionImages(t *testing.T) {
 
 	cfg := DefaultParserConfig()
 	p := NewParser(cfg, &MockDocAnalyzer{Healthy: true, Model: ModelSaas})
-result, err := p.Parse(context.Background(), eng)
+	result, err := p.Parse(context.Background(), eng)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}

@@ -18,9 +18,9 @@ import (
 // parse the DeepDoc response identically.
 //
 // Usage:
-//   1. Run this test:  go test -v -tags=integration -run TestDLATSRResponseCompare
-//   2. Run Python:     python3 tools/dla_tsr_compare.py
-//   3. Diff the JSON:  diff testdata/output/render_compare/go_dla.json testdata/output/render_compare/py_dla.json
+//  1. Run this test:  go test -v -tags=integration -run TestDLATSRResponseCompare
+//  2. Run Python:     python3 tools/dla_tsr_compare.py
+//  3. Diff the JSON:  diff testdata/output/render_compare/go_dla.json testdata/output/render_compare/py_dla.json
 func TestDLATSRResponseCompare(t *testing.T) {
 	client := mustConnectDeepDoc(t)
 	eng := mustOpenEngine(t, "06_table_content.pdf")

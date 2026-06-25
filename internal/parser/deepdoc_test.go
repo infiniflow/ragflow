@@ -685,7 +685,7 @@ func TestParse_CollectsFigures(t *testing.T) {
 	// End-to-end: Parse() with mock DeepDoc that labels a box as "figure".
 	// Verify p.Figures is populated.
 
-eng := &mockEngine{pageCount: 1, chars: map[int][]TextChar{0: {{X0: 50, X1: 550, Top: 100, Bottom: 112, Text: "chart image"}}}}
+	eng := &mockEngine{pageCount: 1, chars: map[int][]TextChar{0: {{X0: 50, X1: 550, Top: 100, Bottom: 112, Text: "chart image"}}}}
 	mock := &MockDocAnalyzer{
 		Healthy: true,
 		DLARegions: []DLARegion{
@@ -821,7 +821,6 @@ func TestParse_FallsBackToCharsToBoxes_EmptyOCRBoxes(t *testing.T) {
 		t.Fatal("expected at least 1 section (charsToBoxes fallback)")
 	}
 }
-
 
 // ── Error path coverage ────────────────────────────────────────────────
 

@@ -31,8 +31,8 @@ type ParseResult struct {
 
 	// Debug intermediates for DLA/TSR comparison with Python.
 	// Populated only during fresh Parse, not from cached results.
-	DLADebug  []DLAPageRegions
-	TSRDebug  []TSRRawCell
+	DLADebug []DLAPageRegions
+	TSRDebug []TSRRawCell
 }
 
 // DLAPageRegions holds DLA layout regions for one page.
@@ -66,16 +66,16 @@ type TSRRawCell struct {
 //	c := TextChar{X0: 100.5, X1: 108.2, Top: 200.0, Bottom: 212.0,
 //	              Text: "A", FontName: "ABCDE+SimSun", PageNumber: 3}
 type TextChar struct {
-	X0, X1          float64 // horizontal bounds in PDF points
-	Top, Bottom     float64 // vertical bounds in PDF points
-	Text            string  // single character (or small text run)
-	FontName        string  // e.g. "ABCDE+SimSun"
-	FontSize        float64
-	PageNumber      int
-	LayoutType      string  // "text", "table", "figure", "equation"
-	LayoutNo        string  // layout identifier
-	ColID           int     // column ID assigned by _assign_column
-	R               int     // rotation/orientation marker
+	X0, X1      float64 // horizontal bounds in PDF points
+	Top, Bottom float64 // vertical bounds in PDF points
+	Text        string  // single character (or small text run)
+	FontName    string  // e.g. "ABCDE+SimSun"
+	FontSize    float64
+	PageNumber  int
+	LayoutType  string // "text", "table", "figure", "equation"
+	LayoutNo    string // layout identifier
+	ColID       int    // column ID assigned by _assign_column
+	R           int    // rotation/orientation marker
 }
 
 func (c TextChar) Bounds() (float64, float64, float64, float64) {
@@ -98,7 +98,7 @@ type TextBox struct {
 	LayoutType  string // "text", "table", "figure", "equation"
 	LayoutNo    string
 	ColID       int
-	R    int
+	R           int
 	// Post-TSR table annotation fields (Python: R/H/C/SP tags)
 	RTop, RBott   float64 // row top/bottom
 	HTop, HBott   float64 // header top/bottom
@@ -120,7 +120,7 @@ func (b TextBox) Bounds() (float64, float64, float64, float64) {
 // Format: @@{page_range}\t{left}\t{right}\t{top}\t{bottom}##
 // Example: "@@0-1\t50.0\t300.0\t200.0\t400.0##"
 type Position struct {
-	PageNumbers []int   // e.g. [0, 1] for cross-page content
+	PageNumbers []int // e.g. [0, 1] for cross-page content
 	Left        float64
 	Right       float64
 	Top         float64
@@ -163,14 +163,14 @@ func CollectFigures(sections []Section) []Section {
 //
 //	[((img, rows), positions), ...]
 type TableItem struct {
-	ImageB64  string      // base64-encoded PNG of the table/figure region
-	Rows      [][]string  // DEPRECATED: replaced by Cells; kept for batch output compat
-	Cells     []TSRCell   // raw TSR cells in crop pixel space
-	Positions []Position  // spatial positions (PDF points, pre-merge)
-	Scale     float64     // zoom factor for coordinate conversion
-	CropOffX  float64     // crop origin X in pixel space
-	CropOffY  float64     // crop origin Y in pixel space
-	Caption   string      // caption text merged from adjacent caption box
+	ImageB64  string     // base64-encoded PNG of the table/figure region
+	Rows      [][]string // DEPRECATED: replaced by Cells; kept for batch output compat
+	Cells     []TSRCell  // raw TSR cells in crop pixel space
+	Positions []Position // spatial positions (PDF points, pre-merge)
+	Scale     float64    // zoom factor for coordinate conversion
+	CropOffX  float64    // crop origin X in pixel space
+	CropOffY  float64    // crop origin Y in pixel space
+	Caption   string     // caption text merged from adjacent caption box
 
 	// DLA table region boundaries in PDF point space (72 DPI).
 	// Matches Python's cropout using DLA layout region boundaries
@@ -193,24 +193,24 @@ type TableItem struct {
 //
 // Python equivalent: kwargs merged with parser_config in task_executor.py
 type ParserConfig struct {
-	Zoom               float64 // zoom factor for page rendering, default 3
-	FromPage            int     // 0-based start page
-	ToPage              int     // 0-based end page (-1 = all)
-	TableContextSize    int     // tokens of surrounding context for tables
-	ImageContextSize    int     // tokens of surrounding context for images
-	AutoRotateTables   *bool // enable auto table rotation detection
-	SeparateTablesFigs  bool  // separate tables and figures
-	SortByTop           bool  // true = Top-based sort (parity tests); false = Bottom (production)
-	ChunkSize           int   // pages per chunk (0 = default 50, matching Python batch_size)
-	SkipOCR             bool  // true = DLA+TSR only, no image OCR (matching Python SKIP_OCR=1)
-	MaxOCRConcurrency   int   // max concurrent OCR pages (0 = sequential); matches Python PARALLEL_DEVICES
-	TableBuilder        TableBuilder // TSR model adapter; injected by caller via NewTableBuilderFor
+	Zoom               float64      // zoom factor for page rendering, default 3
+	FromPage           int          // 0-based start page
+	ToPage             int          // 0-based end page (-1 = all)
+	TableContextSize   int          // tokens of surrounding context for tables
+	ImageContextSize   int          // tokens of surrounding context for images
+	AutoRotateTables   *bool        // enable auto table rotation detection
+	SeparateTablesFigs bool         // separate tables and figures
+	SortByTop          bool         // true = Top-based sort (parity tests); false = Bottom (production)
+	ChunkSize          int          // pages per chunk (0 = default 50, matching Python batch_size)
+	SkipOCR            bool         // true = DLA+TSR only, no image OCR (matching Python SKIP_OCR=1)
+	MaxOCRConcurrency  int          // max concurrent OCR pages (0 = sequential); matches Python PARALLEL_DEVICES
+	TableBuilder       TableBuilder // TSR model adapter; injected by caller via NewTableBuilderFor
 }
 
 // DefaultParserConfig returns a ParserConfig with sensible defaults.
 func DefaultParserConfig() ParserConfig {
 	return ParserConfig{
-		Zoom:              3,
+		Zoom:               3,
 		FromPage:           0,
 		ToPage:             -1,
 		ChunkSize:          50,

@@ -72,7 +72,7 @@ func (c *DeepDocClient) DLA(ctx context.Context, pageImage image.Image) ([]DLARe
 		if len(b) < 6 {
 			continue
 		}
-	labels := c.DLALabels
+		labels := c.DLALabels
 		if labels == nil {
 			labels = defaultDLALabels
 		}
@@ -104,7 +104,7 @@ func (c *DeepDocClient) TSR(ctx context.Context, cropped image.Image) ([]TSRCell
 		if len(b) < 5 {
 			continue
 		}
-	tlabels := c.TSRLabels
+		tlabels := c.TSRLabels
 		if tlabels == nil {
 			tlabels = defaultTSRLabels
 		}

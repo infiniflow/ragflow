@@ -23,8 +23,8 @@ func NewEngine(pdfBytes []byte) (PDFEngine, error) {
 }
 
 func (e *pdfoxideEngine) RawData() []byte         { return e.inner.RawData() }
-func (e *pdfoxideEngine) PageCount() (int, error)  { return e.inner.PageCount() }
-func (e *pdfoxideEngine) Close() error             { return e.inner.Close() }
+func (e *pdfoxideEngine) PageCount() (int, error) { return e.inner.PageCount() }
+func (e *pdfoxideEngine) Close() error            { return e.inner.Close() }
 
 func (e *pdfoxideEngine) RenderPage(pageNum int, dpi float64) ([]byte, error) {
 	return e.inner.RenderPage(pageNum, dpi)

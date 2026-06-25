@@ -42,13 +42,13 @@ func LoadPythonChars(jsonPath string) (*PythonCharEngine, error) {
 		result := make([]TextChar, len(pageChars))
 		for i, c := range pageChars {
 			result[i] = TextChar{
-				Text:      c.Text,
-				X0:        c.X0,
-				X1:        c.X1,
-				Top:       c.Top,
-				Bottom:    c.Bottom,
-				FontName:  c.FontName,
-				FontSize:  c.Size,
+				Text:       c.Text,
+				X0:         c.X0,
+				X1:         c.X1,
+				Top:        c.Top,
+				Bottom:     c.Bottom,
+				FontName:   c.FontName,
+				FontSize:   c.Size,
 				PageNumber: pg,
 			}
 		}

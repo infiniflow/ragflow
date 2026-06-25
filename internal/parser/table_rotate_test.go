@@ -53,8 +53,8 @@ func (m *mockRotationDoc) OCRDetect(_ context.Context, img image.Image) ([]OCRBo
 		x := step * (i + 1)
 		boxes[i] = OCRBox{
 			X0: float64(x), Y0: float64(h / 4),
-			X1: float64(x + 20), Y1: float64(h/4),
-			X2: float64(x + 20), Y2: float64(h*3/4),
+			X1: float64(x + 20), Y1: float64(h / 4),
+			X2: float64(x + 20), Y2: float64(h * 3 / 4),
 			X3: float64(x), Y3: float64(h * 3 / 4),
 		}
 	}

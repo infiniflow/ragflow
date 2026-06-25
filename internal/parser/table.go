@@ -1215,7 +1215,6 @@ func markNoMergeTables(boxes []TextBox, tables []TableItem) {
 	}
 }
 
-//
 // boxes must be post-TextMerge + post-VerticalMerge.  TableItem.Cells are in
 // crop pixel space; boxes are in PDF point space — conversion via Scale/CropOff.
 // replacement pairs a table index with the box index it replaces.

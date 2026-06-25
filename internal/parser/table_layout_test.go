@@ -37,7 +37,6 @@ func makeMockBoxes() []TextBox {
 	}
 }
 
-
 func TestSortYFirstly(t *testing.T) {
 	t.Run("basic sort", func(t *testing.T) {
 		cells := []TSRCell{

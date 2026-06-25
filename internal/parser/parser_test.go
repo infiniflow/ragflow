@@ -244,7 +244,7 @@ func TestOCR_fallback(t *testing.T) {
 
 	t.Run("detect + recognize success", func(t *testing.T) {
 		mock := &MockDocAnalyzer{
-			Healthy: true,
+			Healthy:  true,
 			OCRBoxes: []OCRBox{{X0: 10, Y0: 20, X1: 90, Y1: 20, X2: 90, Y2: 40, X3: 10, Y3: 40}},
 			OCRTexts: []OCRText{{Text: "Hello", Confidence: 0.9}},
 		}
@@ -319,8 +319,6 @@ func TestOCR_scanPage(t *testing.T) {
 }
 
 // ── OCR table cell ─────────────────────────────────────────────────────
-
-
 
 func TestOCR_tableCell(t *testing.T) {
 	t.Run("fill single empty cell", func(t *testing.T) {
@@ -851,7 +849,7 @@ func TestExtractTableAndReplace(t *testing.T) {
 			{X0: 110, Y0: 21, X1: 200, Y1: 40, Label: "table row"},
 		},
 		Positions: []Position{{Left: 0, Right: 200, Top: 0, Bottom: 40}},
-		Scale: 1.0,
+		Scale:     1.0,
 	}
 	result := extractTableAndReplace(boxes, []TableItem{tbl})
 	if len(result) != 1 {
@@ -878,7 +876,7 @@ func TestTableSectionCaptionInHTML(t *testing.T) {
 			{X0: 0, Y0: 51, X1: 200, Y1: 100, Label: "table row", Text: "火车"},
 		},
 		Positions: []Position{{Left: 100, Right: 500, Top: 200, Bottom: 400}},
-		Scale: 1.0,
+		Scale:     1.0,
 	}
 
 	// Step 1: extractTableAndReplace → HTML box with table text
@@ -988,11 +986,11 @@ func TestCharsToBoxes_XGapSplitsColumns(t *testing.T) {
 	// Large X gaps between columns, small gaps within.
 	chars := []TextChar{
 		{X0: 10, X1: 18, Top: 0, Bottom: 12, Text: "A", PageNumber: 0},
-		{X0: 18, X1: 26, Top: 0, Bottom: 12, Text: "1", PageNumber: 0},       // small gap after A
-		{X0: 150, X1: 158, Top: 0, Bottom: 12, Text: "B", PageNumber: 0},     // large gap → new box
-		{X0: 158, X1: 166, Top: 0, Bottom: 12, Text: "2", PageNumber: 0},     // small
-		{X0: 300, X1: 308, Top: 0, Bottom: 12, Text: "C", PageNumber: 0},     // large gap → new box
-		{X0: 308, X1: 316, Top: 0, Bottom: 12, Text: "3", PageNumber: 0},     // small
+		{X0: 18, X1: 26, Top: 0, Bottom: 12, Text: "1", PageNumber: 0},   // small gap after A
+		{X0: 150, X1: 158, Top: 0, Bottom: 12, Text: "B", PageNumber: 0}, // large gap → new box
+		{X0: 158, X1: 166, Top: 0, Bottom: 12, Text: "2", PageNumber: 0}, // small
+		{X0: 300, X1: 308, Top: 0, Bottom: 12, Text: "C", PageNumber: 0}, // large gap → new box
+		{X0: 308, X1: 316, Top: 0, Bottom: 12, Text: "3", PageNumber: 0}, // small
 	}
 	boxes := charsToBoxes(chars, 0, false)
 	if len(boxes) != 3 {
@@ -1056,7 +1054,6 @@ func TestCharsToBoxes_ChineseUniformSpacing(t *testing.T) {
 		t.Fatalf("uniform CJK: expected 1 box, got %d", len(boxes))
 	}
 }
-
 
 // TestBoxesToSections_CrossPagePositionTag verifies that a box whose bottom
 // exceeds the page height produces a multi-page PositionTag.
@@ -1290,8 +1287,6 @@ func TestMergeTablesAcrossPages_SingleTable(t *testing.T) {
 		t.Fatalf("single table: expected 1 table, got %d", len(merged))
 	}
 }
-
-
 
 func TestCharsToBoxes_CJKWordGapNoSplit(t *testing.T) {
 	chars := []TextChar{

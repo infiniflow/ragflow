@@ -88,7 +88,6 @@ func notOverlapped(a, b TSRCell) bool {
 	return a.X1 < b.X0 || a.X0 > b.X1 || a.Y1 < b.Y0 || a.Y0 > b.Y1
 }
 
-
 // tsrBoxOverlap returns true if a TextBox and a TSRCell do NOT overlap.
 func tsrBoxOverlap(b TextBox, c TSRCell) bool {
 	return b.X1 < c.X0 || b.X0 > c.X1 || b.Bottom < c.Y0 || b.Top > c.Y1
@@ -125,7 +124,6 @@ func findOverlappedWithThreshold(box TextBox, cells []TSRCell, thr float64) int 
 	}
 	return bestIdx
 }
-
 
 // findHorizontallyTightestFit returns the index of the column cell that
 // horizontally contains the box with minimal width difference.
@@ -221,4 +219,3 @@ func annotateTableBoxes(boxes []TextBox, grid [][]TSRCell) {
 		}
 	}
 }
-

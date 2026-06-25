@@ -228,12 +228,19 @@ func TestSnapshotRoundtrip(t *testing.T) {
 }
 
 func toInt(v interface{}) int {
-	if v == nil { return 0 }
+	if v == nil {
+		return 0
+	}
 	switch x := v.(type) {
-	case float64: return int(x)
-	case int: return x
-	case string: n, _ := strconv.Atoi(x); return n
-	default: return 0
+	case float64:
+		return int(x)
+	case int:
+		return x
+	case string:
+		n, _ := strconv.Atoi(x)
+		return n
+	default:
+		return 0
 	}
 }
 

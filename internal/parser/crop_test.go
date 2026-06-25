@@ -231,9 +231,9 @@ func TestMapRotatedPointToOriginal(t *testing.T) {
 		wantX, wantY float64
 	}{
 		{0, 50, 30, 200, 100, 50, 30},
-		{90, 50, 30, 200, 100, 30, 49},    // rotH=100: forward (100-1-oy,ox)
-		{180, 50, 30, 200, 100, 149, 69},   // (199-50, 99-30)
-		{270, 50, 30, 200, 100, 169, 50},   // rotW=200: inverse (199-30,50)
+		{90, 50, 30, 200, 100, 30, 49},   // rotH=100: forward (100-1-oy,ox)
+		{180, 50, 30, 200, 100, 149, 69}, // (199-50, 99-30)
+		{270, 50, 30, 200, 100, 169, 50}, // rotW=200: inverse (199-30,50)
 	}
 	for _, tt := range tests {
 		gotX, gotY := mapRotatedPointToOriginal(tt.rx, tt.ry, tt.angle, tt.origW, tt.origH)
@@ -367,7 +367,7 @@ func TestCropSectionByDLA_NoMatch(t *testing.T) {
 	sec := Section{
 		Positions: []Position{{
 			PageNumbers: []int{0},
-			Left: 20, Right: 50, Top: 20, Bottom: 50,
+			Left:        20, Right: 50, Top: 20, Bottom: 50,
 		}},
 		LayoutType: "figure",
 	}

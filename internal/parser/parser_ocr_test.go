@@ -110,9 +110,9 @@ func TestOCRMergeChars_GarbledChars(t *testing.T) {
 
 	// Char height ~33, box height 40. Diff = 0.175 < 0.7 → not filtered.
 	chars := []TextChar{
-		{X0: 2, X1: 10, Top: 2, Bottom: 35, Text: string(rune(0xF0123))}, // PUA
+		{X0: 2, X1: 10, Top: 2, Bottom: 35, Text: string(rune(0xF0123))},  // PUA
 		{X0: 12, X1: 20, Top: 2, Bottom: 35, Text: string(rune(0xF0456))}, // PUA
-		{X0: 22, X1: 28, Top: 2, Bottom: 35, Text: "a"},                    // normal
+		{X0: 22, X1: 28, Top: 2, Bottom: 35, Text: "a"},                   // normal
 	}
 
 	boxes := ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
@@ -247,9 +247,9 @@ func TestOCRMergeChars_MixedFontSizes(t *testing.T) {
 		},
 	}
 	chars := []TextChar{
-		{X0: 3, X1: 12, Top: 10, Bottom: 30, Text: "小"},  // smaller font, higher baseline
-		{X0: 12, X1: 24, Top: 5, Bottom: 35, Text: "大"},   // larger font, lower baseline
-		{X0: 24, X1: 36, Top: 5, Bottom: 35, Text: "号"},   // same size as 大, rightmost
+		{X0: 3, X1: 12, Top: 10, Bottom: 30, Text: "小"}, // smaller font, higher baseline
+		{X0: 12, X1: 24, Top: 5, Bottom: 35, Text: "大"}, // larger font, lower baseline
+		{X0: 24, X1: 36, Top: 5, Bottom: 35, Text: "号"}, // same size as 大, rightmost
 	}
 	boxes := ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
 	if len(boxes) != 1 {
@@ -278,9 +278,9 @@ func TestOCRMergeChars_BoxOrder(t *testing.T) {
 	// scaled down by 3 in ocrMergeChars.
 	// Box1 PDF: y0=0,y1=10. Box2 PDF: y0=15,y1=20. Box3 PDF: y0=30,y1=40.
 	chars := []TextChar{
-		{X0: 2, X1: 10, Top: 2, Bottom: 7, Text: "A"},    // box 1 (top)
-		{X0: 2, X1: 10, Top: 16, Bottom: 19, Text: "B"},  // box 2 (middle)
-		{X0: 2, X1: 10, Top: 32, Bottom: 37, Text: "C"},  // box 3 (bottom)
+		{X0: 2, X1: 10, Top: 2, Bottom: 7, Text: "A"},   // box 1 (top)
+		{X0: 2, X1: 10, Top: 16, Bottom: 19, Text: "B"}, // box 2 (middle)
+		{X0: 2, X1: 10, Top: 32, Bottom: 37, Text: "C"}, // box 3 (bottom)
 	}
 	boxes := ocrMergeChars(context.Background(), testPageImg(), chars, mock, 0)
 	if len(boxes) != 3 {

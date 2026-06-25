@@ -281,16 +281,16 @@ func TestConstructTable_OrphanColumn_NotCleanedUp(t *testing.T) {
 	// Python would relocate/merge that orphan column.
 	cells := []TSRCell{
 		{X0: 0, Y0: 0, X1: 100, Y1: 30, Text: "姓名", Label: "table column header"},
-		{X0: 101, Y0: 0, X1: 200, Y1: 30, Text: "备注", Label: "table row"},          // orphan col
+		{X0: 101, Y0: 0, X1: 200, Y1: 30, Text: "备注", Label: "table row"}, // orphan col
 		{X0: 201, Y0: 0, X1: 300, Y1: 30, Text: "年龄", Label: "table column header"},
 		{X0: 0, Y0: 35, X1: 100, Y1: 65, Text: "张三", Label: "table row"},
-		{X0: 101, Y0: 35, X1: 200, Y1: 65, Text: "", Label: "table row"},              // col 1 empty
+		{X0: 101, Y0: 35, X1: 200, Y1: 65, Text: "", Label: "table row"}, // col 1 empty
 		{X0: 201, Y0: 35, X1: 300, Y1: 65, Text: "25", Label: "table row"},
 		{X0: 0, Y0: 70, X1: 100, Y1: 100, Text: "李四", Label: "table row"},
-		{X0: 101, Y0: 70, X1: 200, Y1: 100, Text: "", Label: "table row"},             // col 1 empty
+		{X0: 101, Y0: 70, X1: 200, Y1: 100, Text: "", Label: "table row"}, // col 1 empty
 		{X0: 201, Y0: 70, X1: 300, Y1: 100, Text: "30", Label: "table row"},
 		{X0: 0, Y0: 105, X1: 100, Y1: 135, Text: "王五", Label: "table row"},
-		{X0: 101, Y0: 105, X1: 200, Y1: 135, Text: "", Label: "table row"},            // col 1 empty
+		{X0: 101, Y0: 105, X1: 200, Y1: 135, Text: "", Label: "table row"}, // col 1 empty
 		{X0: 201, Y0: 105, X1: 300, Y1: 135, Text: "28", Label: "table row"},
 	}
 
@@ -593,10 +593,10 @@ func TestExtractTableAndReplace_InsertionPosition_DistanceBug(t *testing.T) {
 	}
 
 	tables := []TableItem{{
-		Cells:       []TSRCell{{Text: "cell", Label: "table row"}},
-		Positions:   []Position{{Left: 10, Right: 100, Top: 100, Bottom: 130, PageNumbers: []int{0}}},
-		Scale:       1.0,
-		RegionLeft:  10, RegionRight: 100, RegionTop: 100, RegionBottom: 130,
+		Cells:      []TSRCell{{Text: "cell", Label: "table row"}},
+		Positions:  []Position{{Left: 10, Right: 100, Top: 100, Bottom: 130, PageNumbers: []int{0}}},
+		Scale:      1.0,
+		RegionLeft: 10, RegionRight: 100, RegionTop: 100, RegionBottom: 130,
 	}}
 
 	result := extractTableAndReplace(boxes, tables)
@@ -724,20 +724,20 @@ func TestDataSourcePattern_RegexCoverage(t *testing.T) {
 		want bool // Python re.match truthiness
 	}{
 		// ── Matching patterns (should be filtered) ──
-		{"数据来源：国家统计局", true},  // 数据 + 来源 + fullwidth colon
-		{"资料来源: 某报告", true},     // 资料 + 来源 + halfwidth colon
-		{"图表来源：某数据库", true},    // 图表 + 来源 + fullwidth colon
-		{"来源：权威机构", true},        // zero prefix + 来源 + fullwidth colon
-		{"来源: 参考数据", true},        // zero prefix + 来源 + halfwidth colon
-		{"数据来源 说明", true},        // 数据 + 来源 + space
+		{"数据来源：国家统计局", true}, // 数据 + 来源 + fullwidth colon
+		{"资料来源: 某报告", true},  // 资料 + 来源 + halfwidth colon
+		{"图表来源：某数据库", true},  // 图表 + 来源 + fullwidth colon
+		{"来源：权威机构", true},    // zero prefix + 来源 + fullwidth colon
+		{"来源: 参考数据", true},   // zero prefix + 来源 + halfwidth colon
+		{"数据来源 说明", true},    // 数据 + 来源 + space
 
 		// ── Non-matching patterns (should NOT be filtered) ──
-		{"数据来源明细", false},         // 来源 followed by 明, not :：space
-		{"普通来源说明", false},         // doesn't start with keyword
-		{"数据", false},                // too short
-		{"来源", false},                // 来源 but no :：space after
-		{"资料来源说明", false},         // 来源 followed by 说, not :：space
-		{"", false},                    // empty
+		{"数据来源明细", false},          // 来源 followed by 明, not :：space
+		{"普通来源说明", false},          // doesn't start with keyword
+		{"数据", false},              // too short
+		{"来源", false},              // 来源 but no :：space after
+		{"资料来源说明", false},          // 来源 followed by 说, not :：space
+		{"", false},                // empty
 		{"TABLE 1: 数据来源统计", false}, // doesn't start with keyword
 	}
 
@@ -882,5 +882,3 @@ func TestConsolidateFigures_DataSourceFilter_Missing(t *testing.T) {
 	t.Log("NOTE: Python filters figure boxes matching r\"(数据|资料|图表)*来源[:： ]\" in _extract_table_figure.")
 	t.Log("Go's consolidateFigures has no equivalent filter.")
 }
-
-

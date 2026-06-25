@@ -301,7 +301,7 @@ func TestDeepDocHTTP_ShortBBox(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{
 			"bboxes": [][]float64{
-				{10, 20, 100},       // too short for DLA (needs 6) and TSR (needs 5)
+				{10, 20, 100},              // too short for DLA (needs 6) and TSR (needs 5)
 				{10, 20, 100, 200, 0.9, 5}, // valid DLA
 			},
 		})

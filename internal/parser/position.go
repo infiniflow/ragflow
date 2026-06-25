@@ -15,7 +15,6 @@ import (
 // Format: @@{page_range}\t{left}\t{right}\t{top}\t{bottom}##
 var posTagPattern = regexp.MustCompile(`@@[0-9-]+\t[0-9.\t]+##`)
 
-
 // ExtractPositions parses @@ position tags from a text string.
 //
 // Each tag has format:
@@ -91,4 +90,3 @@ func FormatPositionTagRange(fromPage, toPage int, left, right, top, bottom float
 	return fmt.Sprintf("@@%d-%d\t%.1f\t%.1f\t%.1f\t%.1f##",
 		fromPage+1, toPage+1, left, right, top, bottom)
 }
-

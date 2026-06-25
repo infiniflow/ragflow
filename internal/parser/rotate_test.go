@@ -87,10 +87,10 @@ func TestRotation_CharExtent(t *testing.T) {
 		maxXAbove float64 // maxX must be > this
 		maxXBelow float64 // maxX must be < this
 	}{
-		{"rotate_0.pdf", 0, 600},   // portrait A4
-		{"rotate_90.pdf", 600, 850},  // landscape (text near right edge after CW)
-		{"rotate_180.pdf", 0, 600},    // still portrait (180° flips within bounds)
-		{"rotate_270.pdf", 0, 600},    // landscape (text near left edge after CCW)
+		{"rotate_0.pdf", 0, 600},    // portrait A4
+		{"rotate_90.pdf", 600, 850}, // landscape (text near right edge after CW)
+		{"rotate_180.pdf", 0, 600},  // still portrait (180° flips within bounds)
+		{"rotate_270.pdf", 0, 600},  // landscape (text near left edge after CCW)
 	}
 	for _, tt := range tests {
 		t.Run(tt.file, func(t *testing.T) {
@@ -225,7 +225,7 @@ func TestRotation_MultiPageMixed(t *testing.T) {
 	}{
 		{0, 0, 600},
 		{1, 600, 850},
-		{2, 0, 600},   // Rotate=270 → CCW, text near left edge
+		{2, 0, 600}, // Rotate=270 → CCW, text near left edge
 	}
 
 	for _, exp := range expectations {

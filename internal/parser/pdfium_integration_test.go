@@ -48,7 +48,7 @@ func TestParse_PdfiumRender(t *testing.T) {
 	t.Setenv("BATCH_SKIP_DEEPDOC", "1")
 	cfg := DefaultParserConfig()
 	p := NewParser(cfg, &MockDocAnalyzer{Healthy: true, Model: ModelSaas})
-result, err := p.Parse(context.Background(), eng)
+	result, err := p.Parse(context.Background(), eng)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -79,10 +79,10 @@ func TestParse_PdfiumRender_NoData(t *testing.T) {
 type pythonCharEngineStub struct{}
 
 func (e *pythonCharEngineStub) ExtractChars(_ int) ([]TextChar, error)      { return nil, nil }
-func (e *pythonCharEngineStub) RenderPage(_ int, _ float64) ([]byte, error)  { return nil, nil }
+func (e *pythonCharEngineStub) RenderPage(_ int, _ float64) ([]byte, error) { return nil, nil }
 func (e *pythonCharEngineStub) RenderPageImage(_ int, _ float64) (image.Image, error) {
 	return nil, nil
 }
-func (e *pythonCharEngineStub) RawData() []byte              { return nil }
-func (e *pythonCharEngineStub) PageCount() (int, error)      { return 0, nil }
-func (e *pythonCharEngineStub) Close() error                 { return nil }
+func (e *pythonCharEngineStub) RawData() []byte         { return nil }
+func (e *pythonCharEngineStub) PageCount() (int, error) { return 0, nil }
+func (e *pythonCharEngineStub) Close() error            { return nil }

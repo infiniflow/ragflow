@@ -17,7 +17,10 @@ func mustConnectOssDeepDoc(t *testing.T) *DeepDocClient {
 	if url == "" {
 		url = "http://localhost:8124"
 	}
-	client, err := NewDeepDocClient(url); if err != nil { t.Fatal(err) }
+	client, err := NewDeepDocClient(url)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !client.Health() {
 		t.Fatalf("OssDeepDoc not available at %s", url)
 	}

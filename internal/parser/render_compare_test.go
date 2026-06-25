@@ -17,11 +17,11 @@ import (
 // Python-rendered images (if available). Outputs to testdata/render_compare/.
 //
 // Usage:
-//   1. Run this test to generate Go renders:
-//      go test -v -tags=manual -run TestRenderCompare -count=1
-//   2. Run the Python script to generate Python renders:
-//      python3 testdata/render_compare.py
-//   3. Re-run this test — it will compare both and report similarity.
+//  1. Run this test to generate Go renders:
+//     go test -v -tags=manual -run TestRenderCompare -count=1
+//  2. Run the Python script to generate Python renders:
+//     python3 testdata/render_compare.py
+//  3. Re-run this test — it will compare both and report similarity.
 func TestRenderCompare(t *testing.T) {
 	const dpi = 216.0
 	pdfDir := filepath.Join("testdata", "pdfs")

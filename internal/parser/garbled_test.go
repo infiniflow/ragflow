@@ -120,21 +120,21 @@ func TestIsGarbledByFontEncoding(t *testing.T) {
 	})
 
 	t.Run("fullwidth chars from subset font — not garbled", func(t *testing.T) {
-			// Fullwidth characters (U+FF01-U+FF5E) are legitimate CJK typographic forms.
-			// They should count as cjkLike, preventing false garbled detection.
-			var chars []TextChar
-			for i := 0; i < 30; i++ {
-				chars = append(chars, TextChar{
-					Text:     "ＡＢＣＤＥＦ", // U+FF21-U+FF26 fullwidth uppercase
-					FontName: "DY1+SimSun",
-				})
-			}
-			if IsGarbledByFontEncoding(chars, 20) {
-				t.Error("fullwidth chars from subset font should NOT be garbled")
-			}
-		})
+		// Fullwidth characters (U+FF01-U+FF5E) are legitimate CJK typographic forms.
+		// They should count as cjkLike, preventing false garbled detection.
+		var chars []TextChar
+		for i := 0; i < 30; i++ {
+			chars = append(chars, TextChar{
+				Text:     "ＡＢＣＤＥＦ", // U+FF21-U+FF26 fullwidth uppercase
+				FontName: "DY1+SimSun",
+			})
+		}
+		if IsGarbledByFontEncoding(chars, 20) {
+			t.Error("fullwidth chars from subset font should NOT be garbled")
+		}
+	})
 
-		t.Run("normal English text — not garbled", func(t *testing.T) {
+	t.Run("normal English text — not garbled", func(t *testing.T) {
 		var chars []TextChar
 		for i := 0; i < 30; i++ {
 			chars = append(chars, TextChar{

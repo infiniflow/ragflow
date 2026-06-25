@@ -19,9 +19,9 @@ type MockDocAnalyzer struct {
 	// OCRBatchErr makes OCRRecognizeBatch return an error for image i.
 	OCRBatchErr func(i int) error
 	// Per-method error injection for testing failure paths.
-	DLAErr        error
-	TSRErr        error
-	OCRDetectErr  error
+	DLAErr          error
+	TSRErr          error
+	OCRDetectErr    error
 	OCRRecognizeErr error
 
 	Healthy bool
@@ -71,5 +71,5 @@ func (m *MockDocAnalyzer) OCRRecognizeBatch(_ context.Context, cropped []image.I
 	}
 	return results, errs
 }
-func (m *MockDocAnalyzer) Health() bool { return m.Healthy }
+func (m *MockDocAnalyzer) Health() bool         { return m.Healthy }
 func (m *MockDocAnalyzer) ModelType() ModelType { return m.Model }
