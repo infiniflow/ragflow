@@ -44,6 +44,7 @@ require (
 	github.com/spf13/viper v1.18.2
 	github.com/xuri/excelize/v2 v2.10.1
 	github.com/yfedoseev/office_oxide/go v0.1.2
+	github.com/zeebo/xxh3 v1.0.2
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.44.0
