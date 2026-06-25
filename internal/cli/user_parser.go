@@ -539,6 +539,8 @@ func (p *Parser) parseAPIShowCommands() (*Command, error) {
 		return p.parseUserShowAdmin()
 	case TokenAPI:
 		return p.parseUserShowAPI()
+	case TokenLog:
+		return p.parseAPIShowLogCommands()
 	default:
 		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
 	}
@@ -1915,7 +1917,7 @@ func (p *Parser) parseAPISetCommands() (*Command, error) {
 	p.nextToken() // consume SET
 
 	if p.curToken.Type == TokenVar {
-		return p.parseSetVariable()
+		return p.parseAPISetVariable()
 	}
 	if p.curToken.Type == TokenDefault {
 		return p.parseSetDefault()
@@ -1927,13 +1929,13 @@ func (p *Parser) parseAPISetCommands() (*Command, error) {
 		return p.parseSetMeta()
 	}
 	if p.curToken.Type == TokenLog {
-		return p.parseSetLog()
+		return p.parseAPISetLog()
 	}
 
 	return nil, fmt.Errorf("unknown SET target: %s", p.curToken.Value)
 }
 
-func (p *Parser) parseSetVariable() (*Command, error) {
+func (p *Parser) parseAPISetVariable() (*Command, error) {
 	p.nextToken() // consume VAR
 
 	varName, err := p.parseQuotedString()
@@ -2039,21 +2041,21 @@ func (p *Parser) parseAPISetAPIKey() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseSetLog() (*Command, error) {
+func (p *Parser) parseAPISetLog() (*Command, error) {
 	p.nextToken() // consume LOG
 
 	switch p.curToken.Type {
 	case TokenLevel:
-		return p.parseSetLogLevel()
+		return p.parseAPISetLogLevel()
 	default:
 		return nil, fmt.Errorf("unknown log target: %s", p.curToken.Value)
 	}
 }
 
-func (p *Parser) parseSetLogLevel() (*Command, error) {
+func (p *Parser) parseAPISetLogLevel() (*Command, error) {
 	p.nextToken() // consume LEVEL
 
-	cmd := NewCommand("set_log_level")
+	cmd := NewCommand("api_set_log_level")
 	switch p.curToken.Type {
 	case TokenDebug:
 		cmd.Params["level"] = "debug"
@@ -4200,6 +4202,30 @@ func (p *Parser) parseUserShowAPI() (*Command, error) {
 	default:
 		return nil, fmt.Errorf("expected SERVER after API")
 	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+func (p *Parser) parseAPIShowLogCommands() (*Command, error) {
+	p.nextToken() // consume LOG
+
+	switch p.curToken.Type {
+	case TokenLevel:
+		return p.parseShowLogLevel()
+	default:
+		return nil, fmt.Errorf("expected LEVEL after LOG")
+	}
+}
+
+func (p *Parser) parseShowLogLevel() (*Command, error) {
+	p.nextToken() // consume LEVEL
+
+	cmd := NewCommand("api_show_log_level")
 
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {

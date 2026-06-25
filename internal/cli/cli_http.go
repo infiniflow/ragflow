@@ -293,7 +293,7 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	// Configuration commands
 	case "api_list_configs":
 		return c.ListConfigs(cmd)
-	case "set_log_level":
+	case "api_set_log_level":
 		return c.SetLogLevel(cmd)
 	case "benchmark":
 		return c.RunBenchmark(cmd)
@@ -462,6 +462,8 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowAdminServer(cmd)
 	case "show_api_server":
 		return c.ShowAPIServer(cmd)
+	case "api_show_log_level":
+		return c.APIShowLogLevel(cmd)
 	case "api_list_api_servers":
 		return c.CommonListAPIServers(cmd)
 	case "api_list_environments":

@@ -232,31 +232,32 @@ func (c *CLI) SetLogLevel(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	if logLevel, ok := cmd.Params["level"].(string); ok {
-		payload := map[string]interface{}{
-			"level": logLevel,
-		}
-
-		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-		resp, err := httpClient.Request("PUT", "/system/log", "admin", nil, payload)
-		if err != nil {
-			return nil, fmt.Errorf("failed to change log level: %w", err)
-		}
-
-		if resp.StatusCode != 200 {
-			return nil, fmt.Errorf("failed to register user: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-		}
-
-		var result SimpleResponse
-		if err = json.Unmarshal(resp.Body, &result); err != nil {
-			return nil, fmt.Errorf("change log level failed: invalid JSON (%w)", err)
-		}
-		result.Code = 0
-		result.Duration = resp.Duration
-		return &result, nil
+	logLevel, ok := cmd.Params["level"].(string)
+	if !ok {
+		return nil, fmt.Errorf("no log level")
 	}
 
-	return nil, fmt.Errorf("no log level")
+	payload := map[string]interface{}{
+		"level": logLevel,
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+	resp, err := httpClient.Request("PUT", "/system/config/log", "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to change log level: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to register user: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("change log level failed: invalid JSON (%w)", err)
+	}
+	result.Code = 0
+	result.Duration = resp.Duration
+	return &result, nil
 }
 
 func (c *CLI) RegisterUser(cmd *Command) (ResponseIf, error) {
@@ -3404,6 +3405,35 @@ func (c *CLI) ListUserIngestionTasks(cmd *Command) (ResponseIf, error) {
 
 	result.Duration = resp.Duration
 	return &result, nil
+}
+
+// APIShowLogLevel sets the log level for the system.
+func (c *CLI) APIShowLogLevel(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", "/system/config/log", "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get log level config: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to get log level config: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("get log level config failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+
 }
 
 // APIListEnvironmentsCommand lists all system environments (api mode only).
