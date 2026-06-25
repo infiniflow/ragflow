@@ -193,7 +193,7 @@ class MarkdownElementExtractor:
 
     def _is_table_separator_row(self, line):
         cells = self._table_cells(line)
-        return len(cells) >= 2 and all(re.match(r"^:?-{3,}:?$", cell.replace(" ", "")) for cell in cells)
+        return len(cells) >= 2 and all(re.match(r"^:?-+:?$", cell.replace(" ", "")) for cell in cells)
 
     def _markdown_table_ranges(self, text):
         ranges = []
