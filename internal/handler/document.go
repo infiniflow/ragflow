@@ -478,7 +478,6 @@ func (h *DocumentHandler) BatchUpdateDocumentStatus(c *gin.Context) {
 }
 
 // ListDocuments document list
-
 func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 
 	datasetID := c.Param("dataset_id")
