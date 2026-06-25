@@ -1583,3 +1583,17 @@ func (c *CLI) UseAdminServer(cmd *Command) (ResponseIf, error) {
 	result.Duration = 0
 	return &result, nil
 }
+
+func (c *CLI) getDatasetIDByName(datasetName string) (string, error) {
+	response, err := c.APIListDatasetsCommand(nil)
+	if err != nil {
+		return "", err
+	}
+	commonResponse := response.(*CommonResponse)
+	for _, dataset := range commonResponse.Data {
+		if dataset["name"] == datasetName {
+			return dataset["id"].(string), nil
+		}
+	}
+	return "", fmt.Errorf("dataset %s not found", datasetName)
+}
