@@ -827,7 +827,7 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 		firstEmbdID := kbRecords[0].EmbdID
 		for i := 1; i < len(kbRecords); i++ {
 			if kbRecords[i].EmbdID != firstEmbdID {
-				return nil, fmt.Errorf("cannot retrieve across datasets with different embedding models")
+				return nil, fmt.Errorf("Datasets use different embedding models.")
 			}
 		}
 	}
@@ -835,9 +835,14 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 	// Override request fields with values from saved search config (if search_id is provided)
 	var chatID string
 	if searchID != "" {
+		if s.searchService == nil {
+			common.Warn("Search service is not initialized for search_id", zap.String("searchID", searchID))
+			return nil, fmt.Errorf("Invalid search_id")
+		}
 		searchDetail, err := s.searchService.GetDetail(searchID)
-		if err != nil {
-			common.Warn("Failed to get search detail for search_id, proceeding without it", zap.String("searchID", searchID), zap.Error(err))
+		if err != nil || searchDetail == nil || len(searchDetail) == 0 {
+			common.Warn("Invalid search_id", zap.String("searchID", searchID), zap.Error(err))
+			return nil, fmt.Errorf("Invalid search_id")
 		} else if searchConfig, ok := searchDetail["search_config"].(map[string]interface{}); ok && searchConfig != nil {
 			if scMetadataFilter, ok := searchConfig["meta_data_filter"].(map[string]interface{}); ok {
 				metadataFilter = scMetadataFilter
