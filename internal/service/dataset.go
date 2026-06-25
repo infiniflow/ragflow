@@ -1704,6 +1704,54 @@ type SearchDatasetsResponse struct {
 	Total   int64                    `json:"total"`
 }
 
+// SearchDatasetRequest is the request structure for searching chunks within one dataset.
+type SearchDatasetRequest struct {
+	Question               string                 `json:"question"`
+	Page                   *int                   `json:"page,omitempty"`
+	Size                   *int                   `json:"size,omitempty"`
+	DocIDs                 []string               `json:"doc_ids,omitempty"`
+	UseKG                  *bool                  `json:"use_kg,omitempty"`
+	TopK                   *int                   `json:"top_k,omitempty"`
+	CrossLanguages         []string               `json:"cross_languages,omitempty"`
+	SearchID               *string                `json:"search_id,omitempty"`
+	MetadataFilter         map[string]interface{} `json:"meta_data_filter,omitempty"`
+	RerankID               *string                `json:"rerank_id,omitempty"`
+	Keyword                *bool                  `json:"keyword,omitempty"`
+	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
+	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
+}
+
+// ToSearchDatasetsRequest converts a single-dataset search request into the multi-dataset form.
+func (req *SearchDatasetRequest) ToSearchDatasetsRequest(datasetID string) *SearchDatasetsRequest {
+	if req == nil {
+		return &SearchDatasetsRequest{DatasetIDs: []string{datasetID}}
+	}
+	return &SearchDatasetsRequest{
+		DatasetIDs:             []string{datasetID},
+		Question:               req.Question,
+		Page:                   req.Page,
+		Size:                   req.Size,
+		DocIDs:                 req.DocIDs,
+		UseKG:                  req.UseKG,
+		TopK:                   req.TopK,
+		CrossLanguages:         req.CrossLanguages,
+		SearchID:               req.SearchID,
+		MetadataFilter:         req.MetadataFilter,
+		RerankID:               req.RerankID,
+		Keyword:                req.Keyword,
+		SimilarityThreshold:    req.SimilarityThreshold,
+		VectorSimilarityWeight: req.VectorSimilarityWeight,
+	}
+}
+
+// SearchDataset searches chunks within one knowledge base based on a question.
+func (s *DatasetService) SearchDataset(datasetID, userID string, req *SearchDatasetRequest) (*SearchDatasetsResponse, error) {
+	if datasetID == "" {
+		return nil, fmt.Errorf("dataset_id is required")
+	}
+	return s.SearchDatasets(req.ToSearchDatasetsRequest(datasetID), userID)
+}
+
 // SearchDatasets searches chunks across one or more knowledge bases based on a question.
 // It retrieves relevant chunks using embedding and optional reranking, applying filters,
 // cross-language translation, and keyword extraction as configured.
@@ -1813,7 +1861,7 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 		firstEmbdID := kbRecords[0].EmbdID
 		for i := 1; i < len(kbRecords); i++ {
 			if kbRecords[i].EmbdID != firstEmbdID {
-				return nil, fmt.Errorf("cannot retrieve across datasets with different embedding models")
+				return nil, fmt.Errorf("Datasets use different embedding models.")
 			}
 		}
 	}
@@ -1821,9 +1869,14 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 	// Override request fields with values from saved search config (if search_id is provided)
 	var chatID string
 	if searchID != "" {
+		if s.searchService == nil {
+			common.Warn("Search service is not initialized for search_id", zap.String("searchID", searchID))
+			return nil, fmt.Errorf("Invalid search_id")
+		}
 		searchDetail, err := s.searchService.GetDetail(searchID)
-		if err != nil {
-			common.Warn("Failed to get search detail for search_id, proceeding without it", zap.String("searchID", searchID), zap.Error(err))
+		if err != nil || searchDetail == nil || len(searchDetail) == 0 {
+			common.Warn("Invalid search_id", zap.String("searchID", searchID), zap.Error(err))
+			return nil, fmt.Errorf("Invalid search_id")
 		} else if searchConfig, ok := searchDetail["search_config"].(map[string]interface{}); ok && searchConfig != nil {
 			if scMetadataFilter, ok := searchConfig["meta_data_filter"].(map[string]interface{}); ok {
 				metadataFilter = scMetadataFilter
@@ -1874,7 +1927,8 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 				zap.String("chatID", chatID),
 				zap.Bool("useKG", useKG))
 		} else {
-			common.Warn("No search_config found in search detail", zap.String("searchID", searchID))
+			common.Warn("Invalid search_id: search_config missing or invalid", zap.String("searchID", searchID))
+			return nil, fmt.Errorf("Invalid search_id")
 		}
 	}
 
