@@ -20,10 +20,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -185,6 +187,107 @@ type failingDeleteMetadataEngine struct {
 	fakeChatDocEngine
 	deleteErr    error
 	updateCalled bool
+}
+
+type metadataDocEngine struct {
+	fakeChatDocEngine
+	records map[string]map[string]interface{}
+	docKBs  map[string]string
+}
+
+func newMetadataDocEngine(records map[string]map[string]interface{}, docKBs map[string]string) *metadataDocEngine {
+	cp := make(map[string]map[string]interface{}, len(records))
+	for id, meta := range records {
+		dup := make(map[string]interface{}, len(meta))
+		for k, v := range meta {
+			dup[k] = v
+		}
+		cp[id] = dup
+	}
+	return &metadataDocEngine{records: cp, docKBs: docKBs}
+}
+
+func (m *metadataDocEngine) SearchMetadata(_ context.Context, req *types.SearchMetadataRequest) (*types.SearchMetadataResult, error) {
+	var ids map[string]struct{}
+	if rawIDs, ok := req.Filter["id"]; ok && rawIDs != nil {
+		ids = make(map[string]struct{})
+		switch typed := rawIDs.(type) {
+		case []string:
+			for _, id := range typed {
+				ids[id] = struct{}{}
+			}
+		case []interface{}:
+			for _, id := range typed {
+				if s, ok := id.(string); ok {
+					ids[s] = struct{}{}
+				}
+			}
+		}
+	}
+
+	var kbFilter map[string]struct{}
+	if rawKB, ok := req.Filter["kb_id"]; ok && rawKB != nil {
+		kbFilter = make(map[string]struct{})
+		switch typed := rawKB.(type) {
+		case string:
+			kbFilter[typed] = struct{}{}
+		case []string:
+			for _, kb := range typed {
+				kbFilter[kb] = struct{}{}
+			}
+		case []interface{}:
+			for _, kb := range typed {
+				if s, ok := kb.(string); ok {
+					kbFilter[s] = struct{}{}
+				}
+			}
+		}
+	}
+
+	result := &types.SearchMetadataResult{MetadataRecords: []map[string]interface{}{}}
+	for docID, meta := range m.records {
+		if ids != nil {
+			if _, ok := ids[docID]; !ok {
+				continue
+			}
+		}
+		kbID := m.docKBs[docID]
+		if kbFilter != nil {
+			if _, ok := kbFilter[kbID]; !ok {
+				continue
+			}
+		}
+		result.MetadataRecords = append(result.MetadataRecords, map[string]interface{}{
+			"id":          docID,
+			"kb_id":       kbID,
+			"meta_fields": meta,
+		})
+	}
+	return result, nil
+}
+
+func (m *metadataDocEngine) UpdateMetadata(_ context.Context, docID string, datasetID string, metaFields map[string]interface{}, tenantID string) error {
+	dup := make(map[string]interface{}, len(metaFields))
+	for k, v := range metaFields {
+		dup[k] = v
+	}
+	m.records[docID] = dup
+	if _, ok := m.docKBs[docID]; !ok {
+		m.docKBs[docID] = datasetID
+	}
+	return nil
+}
+
+func (m *metadataDocEngine) DeleteMetadata(_ context.Context, condition map[string]interface{}, tenantID string) (int64, error) {
+	docID, _ := condition["id"].(string)
+	if docID == "" {
+		return 0, nil
+	}
+	if _, ok := m.records[docID]; ok {
+		delete(m.records, docID)
+		return 1, nil
+	}
+	return 0, nil
 }
 
 func (f *failingDeleteMetadataEngine) DeleteMetadata(ctx context.Context, condition map[string]interface{}, tenantID string) (int64, error) {
@@ -1542,6 +1645,192 @@ func TestChunkImageStorageKeyFallsBackToChunkID(t *testing.T) {
 	}
 	if key != "chunk-fallback" {
 		t.Fatalf("key = %q, want %q", key, "chunk-fallback")
+	}
+}
+
+func TestBatchUpdateDocumentMetadatasMatchesPythonSemantics(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 3, 0, 0)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc1.txt", 0, 0)
+	insertNamedTestDoc(t, "doc-2", "kb-1", "doc2.txt", 0, 0)
+	insertNamedTestDoc(t, "doc-3", "kb-1", "doc3.txt", 0, 0)
+
+	engine := newMetadataDocEngine(map[string]map[string]interface{}{
+		"doc-1": {"tags": []interface{}{"old", "keep"}, "author": "alice"},
+		"doc-2": {"tags": []interface{}{"old"}, "author": "bob"},
+	}, map[string]string{"doc-1": "kb-1", "doc-2": "kb-1", "doc-3": "kb-1"})
+
+	svc := testDocumentService(t)
+	svc.docEngine = engine
+	svc.metadataSvc = &MetadataService{kbDAO: dao.NewKnowledgebaseDAO(), docEngine: engine}
+
+	resp, code, err := svc.BatchUpdateDocumentMetadatas("kb-1", &DocumentMetadataSelector{
+		DocumentIDs: []string{"doc-1", "doc-2", "doc-3"},
+	}, []DocumentMetadataUpdate{
+		{Key: "tags", Value: "new", Match: "old"},
+		{Key: "category", Value: "paper"},
+	}, []DocumentMetadataDelete{
+		{Key: "author", Value: "alice"},
+	})
+	if err != nil {
+		t.Fatalf("BatchUpdateDocumentMetadatas failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code = %v, want success", code)
+	}
+	if resp.Updated != 3 || resp.MatchedDocs != 3 {
+		t.Fatalf("resp = %#v, want updated=3 matched=3", resp)
+	}
+
+	got1 := engine.records["doc-1"]
+	if fmt.Sprintf("%v", got1["category"]) != "paper" {
+		t.Fatalf("doc-1 category = %#v", got1["category"])
+	}
+	if _, ok := got1["author"]; ok {
+		t.Fatalf("doc-1 author should be deleted: %#v", got1)
+	}
+	if got := got1["tags"].([]interface{}); len(got) != 2 || got[0] != "new" || got[1] != "keep" {
+		t.Fatalf("doc-1 tags = %#v", got)
+	}
+
+	got2 := engine.records["doc-2"]
+	if fmt.Sprintf("%v", got2["author"]) != "bob" {
+		t.Fatalf("doc-2 author should be kept: %#v", got2["author"])
+	}
+	if got := got2["tags"].([]interface{}); len(got) != 1 || got[0] != "new" {
+		t.Fatalf("doc-2 tags = %#v", got)
+	}
+
+	got3 := engine.records["doc-3"]
+	if fmt.Sprintf("%v", got3["category"]) != "paper" {
+		t.Fatalf("doc-3 category = %#v", got3)
+	}
+	if _, ok := got3["tags"]; ok {
+		t.Fatalf("doc-3 tags should not be created by match-only update: %#v", got3)
+	}
+}
+
+func TestBatchUpdateDocumentMetadatasDeletesEmptyMetadataAndNoOps(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 2, 0, 0)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc1.txt", 0, 0)
+	insertNamedTestDoc(t, "doc-2", "kb-1", "doc2.txt", 0, 0)
+
+	engine := newMetadataDocEngine(map[string]map[string]interface{}{
+		"doc-1": {"status": "draft"},
+		"doc-2": {"status": "done"},
+	}, map[string]string{"doc-1": "kb-1", "doc-2": "kb-1"})
+
+	svc := testDocumentService(t)
+	svc.docEngine = engine
+	svc.metadataSvc = &MetadataService{kbDAO: dao.NewKnowledgebaseDAO(), docEngine: engine}
+
+	resp, code, err := svc.BatchUpdateDocumentMetadatas("kb-1", &DocumentMetadataSelector{
+		DocumentIDs: []string{"doc-1", "doc-2"},
+	}, nil, []DocumentMetadataDelete{{Key: "status", Value: "draft"}})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("delete batch failed: code=%v err=%v", code, err)
+	}
+	if resp.Updated != 1 || resp.MatchedDocs != 2 {
+		t.Fatalf("resp = %#v, want updated=1 matched=2", resp)
+	}
+	if _, ok := engine.records["doc-1"]; ok {
+		t.Fatalf("doc-1 metadata should be fully removed: %#v", engine.records["doc-1"])
+	}
+	if fmt.Sprintf("%v", engine.records["doc-2"]["status"]) != "done" {
+		t.Fatalf("doc-2 metadata unexpectedly changed: %#v", engine.records["doc-2"])
+	}
+}
+
+func TestBatchUpdateDocumentMetadatasNormalizesNumberValues(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc1.txt", 0, 0)
+
+	engine := newMetadataDocEngine(map[string]map[string]interface{}{}, map[string]string{"doc-1": "kb-1"})
+
+	svc := testDocumentService(t)
+	svc.docEngine = engine
+	svc.metadataSvc = &MetadataService{kbDAO: dao.NewKnowledgebaseDAO(), docEngine: engine}
+
+	resp, code, err := svc.BatchUpdateDocumentMetadatas("kb-1", &DocumentMetadataSelector{
+		DocumentIDs: []string{"doc-1"},
+	}, []DocumentMetadataUpdate{
+		{Key: "score", Value: "42", ValueType: "number"},
+	}, nil)
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("number batch failed: code=%v err=%v", code, err)
+	}
+	if resp.Updated != 1 || resp.MatchedDocs != 1 {
+		t.Fatalf("resp = %#v, want updated=1 matched=1", resp)
+	}
+
+	got := engine.records["doc-1"]["score"]
+	switch v := got.(type) {
+	case int64:
+		if v != 42 {
+			t.Fatalf("score = %v, want 42", v)
+		}
+	case float64:
+		if v != 42 {
+			t.Fatalf("score = %v, want 42", v)
+		}
+	default:
+		t.Fatalf("score type = %T, want numeric value", got)
+	}
+}
+
+func TestBatchUpdateDocumentMetadatasRejectsMissingValue(t *testing.T) {
+	svc := testDocumentService(t)
+	resp, code, err := svc.BatchUpdateDocumentMetadatas("kb-1", &DocumentMetadataSelector{}, []DocumentMetadataUpdate{
+		{Key: "status"},
+	}, nil)
+	if err == nil {
+		t.Fatal("expected validation error for missing value")
+	}
+	if resp != nil {
+		t.Fatalf("resp = %#v, want nil", resp)
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("code = %v, want data error", code)
+	}
+	if !strings.Contains(err.Error(), "Each update requires key and value.") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestAggregateMetadataIgnoresNestedEmptyLists(t *testing.T) {
+	summary := aggregateMetadata([]map[string]interface{}{
+		{
+			"id":    "doc-1",
+			"kb_id": "kb-1",
+			"meta_fields": map[string]interface{}{
+				"score": []interface{}{[]interface{}{}, 7.0},
+				"name":  "alice",
+			},
+		},
+	})
+
+	scoreField, ok := summary["score"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("score summary missing: %#v", summary)
+	}
+	values, ok := scoreField["values"].([][2]interface{})
+	if !ok {
+		t.Fatalf("score values type = %T", scoreField["values"])
+	}
+	if len(values) != 1 || values[0][0] != "7" || values[0][1] != 1 {
+		t.Fatalf("score values = %#v, want [[\"7\",1]]", values)
+	}
+}
+
+func TestMergeFieldValuesKeepsNumericValues(t *testing.T) {
+	got := mergeFieldValues(1.0, 2.0)
+	if len(got) != 2 || got[0] != 1.0 || got[1] != 2.0 {
+		t.Fatalf("mergeFieldValues = %#v, want [1 2]", got)
 	}
 }
 

@@ -638,9 +638,9 @@ class Canvas(Graph):
                 break
             idx = to
 
-            if any([self.get_component_obj(c).component_name.lower() == "userfillup" for c in self.path[idx:]]):
-                path = [c for c in self.path[idx:] if self.get_component(c)["obj"].component_name.lower() == "userfillup"]
-                path.extend([c for c in self.path[idx:] if self.get_component(c)["obj"].component_name.lower() != "userfillup"])
+            if any([self.components.get(c) is not None and self.get_component_obj(c).component_name.lower() == "userfillup" for c in self.path[idx:]]):
+                path = [c for c in self.path[idx:] if self.components.get(c) is not None and self.get_component(c)["obj"].component_name.lower() == "userfillup"]
+                path.extend([c for c in self.path[idx:] if self.components.get(c) is not None and self.get_component(c)["obj"].component_name.lower() != "userfillup"])
                 another_inputs = {}
                 tips = ""
                 for c in path:
