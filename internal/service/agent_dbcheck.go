@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -52,6 +53,9 @@ func AssertHostIsSafe(host string) (string, error) {
 	host = strings.TrimSpace(host)
 	if host == "" {
 		return "", errors.New("Host must not be empty.")
+	}
+	if allowAnyHost() {
+		return host, nil
 	}
 
 	ips, err := net.LookupIP(host)
@@ -93,6 +97,15 @@ func AssertHostIsSafe(host string) (string, error) {
 		return "", fmt.Errorf("Host %q resolved to no addresses.", host)
 	}
 	return resolvedIP, nil
+}
+
+func allowAnyHost() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("ALLOW_ANY_HOST"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func isPublicAddr(addr netip.Addr) bool {
