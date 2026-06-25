@@ -116,6 +116,7 @@ class TestPostgresDatabaseLock:
         db.execute_sql.side_effect = [
             None,
             OperationalError("canceling statement due to lock timeout"),
+            None,
         ]
         lock = PostgresDatabaseLock("update_progress", timeout=5, db=db)
 
@@ -123,6 +124,7 @@ class TestPostgresDatabaseLock:
             lock._acquire_lock()
 
         db._handle_connection_loss.assert_not_called()
+        db.execute_sql.assert_any_call("SET lock_timeout = DEFAULT")
 
     @pytest.mark.p2
     def test_reconnect_db_uses_handle_connection_loss(self):
