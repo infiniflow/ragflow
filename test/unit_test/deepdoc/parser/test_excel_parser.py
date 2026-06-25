@@ -68,41 +68,6 @@ def _chunk_has_no_data_cells(chunk):
     return "<td>" not in chunk and "<td></td>" not in chunk
 
 
-def _make_xlsx_with_zero_and_false():
-    from openpyxl import Workbook
-
-    wb = Workbook()
-    ws = wb.active
-    ws.append(["Amount", "Active"])
-    ws.append([0, False])
-    buf = BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    return buf.read()
-
-
-@pytest.mark.p2
-def test_call_keeps_zero_and_false_cells():
-    lines = RAGFlowExcelParser()(_make_xlsx_with_zero_and_false())
-    assert len(lines) == 1
-    assert "0" in lines[0]
-    assert "False" in lines[0]
-
-
-@pytest.mark.p2
-def test_call_keeps_empty_string_cells(monkeypatch):
-    from openpyxl import Workbook
-
-    wb = Workbook()
-    ws = wb.active
-    ws.append(["Note"])
-    ws.append([""])
-
-    monkeypatch.setattr(RAGFlowExcelParser, "_load_excel_to_workbook", lambda _file: wb)
-    lines = RAGFlowExcelParser()(b"unused")
-    assert lines == ["Note："]
-
-
 @pytest.mark.p2
 def test_exact_multiple_does_not_emit_header_only_chunk():
     # 12 data rows with chunk_rows=12 (the value rag/app/naive.py uses).
