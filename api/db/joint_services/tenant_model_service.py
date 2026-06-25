@@ -256,7 +256,10 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
 
         model_extra = json.loads(model_obj.extra) if model_obj.extra else {}
         llm_info = _lookup_factory_llm_info(provider_obj.provider_name, pure_model_name, extra_fields)
-        max_tokens = model_extra.get("max_tokens") or (llm_info or {}).get("max_tokens") or 8192
+        if "max_tokens" in model_extra:
+            max_tokens = model_extra["max_tokens"]
+        else:
+            max_tokens = (llm_info or {}).get("max_tokens", 8192)
         model_config = {
             "llm_factory": provider_obj.provider_name,
             "api_key": api_key,
