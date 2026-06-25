@@ -275,6 +275,8 @@ func (s *LocalFileEventStore) Subscribe(ctx context.Context, filter EventFilter)
 }
 
 // GC implements EventStore.
+// Retained events are rewritten to fresh segment files; only segments whose
+// entire content predates the cutoff are deleted.
 func (s *LocalFileEventStore) GC(ctx context.Context, retention time.Duration) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -287,12 +289,23 @@ func (s *LocalFileEventStore) GC(ctx context.Context, retention time.Duration) e
 		}
 	}
 	s.cached = keep
+	s.segment = 0
 
-	// Remove old segment files (best-effort).
+	// Remove all old segment files so the retained events can be rewritten
+	// into fresh files below.
 	entries, _ := os.ReadDir(s.dir)
 	for _, entry := range entries {
 		if !entry.IsDir() && strings.HasPrefix(entry.Name(), "events_") && strings.HasSuffix(entry.Name(), ".jsonl") {
 			os.Remove(filepath.Join(s.dir, entry.Name()))
+		}
+	}
+
+	// Rewrite retained events into fresh segment files.
+	// appendToFileLocked is safe to call here — it does not acquire s.mu
+	// (the "Locked" suffix means the caller must hold it).
+	for _, ev := range keep {
+		if err := s.appendToFileLocked(ev); err != nil {
+			return err
 		}
 	}
 	return nil

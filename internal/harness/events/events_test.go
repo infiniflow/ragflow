@@ -147,6 +147,54 @@ func TestMemoryEventStore_Filter(t *testing.T) {
 	}
 }
 
+func TestLocalFileEventStore_GC_RetainsSurvivingEvents(t *testing.T) {
+	dir := t.TempDir()
+	ctx := context.Background()
+
+	s, err := NewLocalFileEventStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Write one old event (outside retention) and one recent event.
+	oldEv := &Event{ID: "old", Clock: 1, Type: EventGraphStart, TraceID: "gc-test", Timestamp: time.Now().Add(-2 * time.Hour)}
+	oldEv.Seal()
+	recentEv := &Event{ID: "recent", Clock: 2, Type: EventGraphEnd, TraceID: "gc-test", Timestamp: time.Now()}
+	recentEv.Seal()
+	if err := s.Append(ctx, oldEv, recentEv); err != nil {
+		t.Fatal(err)
+	}
+
+	// GC with 1-hour retention.
+	if err := s.GC(ctx, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+
+	// In-memory: old should be gone, recent should remain.
+	ev, _ := s.Get(ctx, "old")
+	if ev != nil {
+		t.Error("old event should be removed from cache")
+	}
+	ev, _ = s.Get(ctx, "recent")
+	if ev == nil {
+		t.Fatal("recent event should survive in cache")
+	}
+
+	// Reopen the store from disk and verify retained events survived.
+	s2, err := NewLocalFileEventStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev, _ = s2.Get(ctx, "recent")
+	if ev == nil {
+		t.Fatal("recent event should survive GC on disk")
+	}
+	ev, _ = s2.Get(ctx, "old")
+	if ev != nil {
+		t.Error("old event should be absent from disk after GC")
+	}
+}
+
 func TestMemoryEventStore_GC(t *testing.T) {
 	ctx := context.Background()
 	s := NewMemoryEventStore()
