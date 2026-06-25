@@ -34,6 +34,7 @@ import (
 	"math/rand"
 	"path/filepath"
 	"ragflow/internal/common"
+	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/server"
@@ -53,7 +54,6 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
-	"ragflow/internal/engine/redis"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/service"
 	"ragflow/internal/service/nlp"
@@ -79,6 +79,7 @@ type ChunkService struct {
 	kbDAO          *dao.KnowledgebaseDAO
 	userTenantDAO  *dao.UserTenantDAO
 	documentDAO    *dao.DocumentDAO
+	taskDAO        *dao.TaskDAO
 	searchService  *service.SearchService
 
 	accessibleFunc                func(string, string) bool
@@ -106,6 +107,7 @@ func NewChunkService() *ChunkService {
 		kbDAO:          dao.NewKnowledgebaseDAO(),
 		userTenantDAO:  dao.NewUserTenantDAO(),
 		documentDAO:    dao.NewDocumentDAO(),
+		taskDAO:        dao.NewTaskDAO(),
 		searchService:  service.NewSearchService(),
 	}
 }
@@ -590,6 +592,112 @@ func (s *ChunkService) Get(req *service.GetChunkRequest, userID string) (*servic
 	}
 
 	return &service.GetChunkResponse{Chunk: chunk}, nil
+}
+
+const (
+	docStopParsingInvalidStateMessage   = "Can't stop parsing document that has not started or already completed"
+	docStopParsingInvalidStateErrorCode = "DOC_STOP_PARSING_INVALID_STATE"
+)
+
+func (s *ChunkService) cancelAllTasksOfDoc(docID string) error {
+	tasks, err := s.taskDAO.GetByDocID(docID)
+	if err != nil {
+		return fmt.Errorf("failed to get tasks for document %s: %w", docID, err)
+	}
+
+	redisClient := redis.Get()
+	if redisClient == nil {
+		common.Warn(fmt.Sprintf("Redis unavailable; cannot cancel tasks for document %s", docID))
+		return nil
+	}
+
+	for _, task := range tasks {
+		if task == nil {
+			continue
+		}
+		redisClient.Set(fmt.Sprintf("%s-cancel", task.ID), "x", 0)
+	}
+
+	return nil
+}
+
+func (s *ChunkService) StopParsing(userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
+	if !s.kbDAO.Accessible(datasetID, userID) {
+		return nil, common.CodeDataError, fmt.Errorf("You don't own the dataset %s", datasetID)
+	}
+
+	if len(req.DocumentIDs) == 0 {
+		return nil, common.CodeDataError, fmt.Errorf("`document_ids` is required")
+	}
+
+	kb, err := s.kbDAO.GetByID(datasetID)
+	if err != nil {
+		return nil, common.CodeDataError, fmt.Errorf("You don't own the dataset %s", datasetID)
+	}
+
+	docIDs, duplicateMessages := service.CheckDuplicateIDs(req.DocumentIDs, "document")
+	successCount := 0
+	ctx := context.Background()
+	indexName := service.IndexName(kb.TenantID)
+
+	for _, docID := range docIDs {
+		doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(docID, datasetID)
+		if err != nil || doc == nil {
+			return nil, common.CodeDataError, fmt.Errorf("You don't own the document %s", docID)
+		}
+
+		if doc.Run == nil || *doc.Run != string(entity.TaskStatusRunning) {
+			return &service.StopParsingResponse{
+				Data: map[string]interface{}{"error_code": docStopParsingInvalidStateErrorCode},
+			}, common.CodeDataError, fmt.Errorf("%s", docStopParsingInvalidStateMessage)
+		}
+
+		if err := s.cancelAllTasksOfDoc(docID); err != nil {
+			return nil, common.CodeServerError, err
+		}
+
+		updates := map[string]interface{}{
+			"run":       string(entity.TaskStatusCancel),
+			"progress":  0,
+			"chunk_num": 0,
+		}
+		if err := s.documentDAO.UpdateByID(doc.ID, updates); err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("failed to update document %s: %w", doc.ID, err)
+		}
+
+		if s.docEngine != nil {
+			exists, err := s.docEngine.ChunkStoreExists(ctx, indexName, datasetID)
+			if err != nil {
+				return nil, common.CodeServerError, fmt.Errorf("failed to check chunk store %s/%s: %w", indexName, datasetID, err)
+			}
+			if exists {
+				if _, err := s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": doc.ID}, indexName, datasetID); err != nil {
+					return nil, common.CodeServerError, fmt.Errorf("failed to delete chunks for document %s: %w", doc.ID, err)
+				}
+			} else {
+				common.Info(fmt.Sprintf("Skipping chunk delete during stop_parsing for doc %s: index %s/%s does not exist", doc.ID, indexName, datasetID))
+			}
+		} else {
+			common.Info(fmt.Sprintf("Skipping chunk delete during stop_parsing for doc %s: index %s/%s does not exist", doc.ID, indexName, datasetID))
+		}
+
+		successCount++
+	}
+
+	if len(duplicateMessages) > 0 {
+		if successCount > 0 {
+			return &service.StopParsingResponse{
+				Message: fmt.Sprintf("Partially stopped %d documents with %d errors", successCount, len(duplicateMessages)),
+				Data: map[string]interface{}{
+					"success_count": successCount,
+					"errors":        duplicateMessages,
+				},
+			}, common.CodeSuccess, nil
+		}
+		return nil, common.CodeDataError, fmt.Errorf("%s", strings.Join(duplicateMessages, ";"))
+	}
+
+	return nil, common.CodeSuccess, nil
 }
 
 func checkDuplicateIDs(documentIDs []string, idTypes string) ([]string, []string) {

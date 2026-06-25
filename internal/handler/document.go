@@ -67,6 +67,7 @@ type documentServiceIface interface {
 	ListIngestionTasks(userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error)
 	IngestDocuments(datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
 	StopIngestionTasks(tasks []string, userID string) ([]*entity.IngestionTask, error)
+	Ingest(userID string, req *service.IngestDocumentRequest) (common.ErrorCode, error)
 	RemoveIngestionTasks(tasks []string, userID string) ([]map[string]string, error)
 	BatchUpdateDocumentStatus(userID, datasetID, status string, DocumentIDs []string) (map[string]interface{}, common.ErrorCode, error)
 }
@@ -489,7 +490,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	userID := c.GetString("user_id")
 
 	if !h.datasetService.Accessible(datasetID, userID) {
-		jsonError(c, common.CodeAuthenticationError, "No authorization.")
+		jsonError(c, common.CodeAuthenticationError, "No authorization to access the dataset.")
 		return
 	}
 
@@ -869,6 +870,37 @@ func (h *DocumentHandler) SetMeta(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
+		"message": "success",
+		"data":    true,
+	})
+}
+
+func (h *DocumentHandler) Ingest(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	userID := strings.TrimSpace(user.ID)
+	if userID == "" {
+		jsonError(c, common.CodeAuthenticationError, "No Authentication")
+		return
+	}
+
+	var req service.IngestDocumentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeBadRequest, err.Error())
+		return
+	}
+
+	if code, err := h.documentService.Ingest(userID, &req); err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
 		"message": "success",
 		"data":    true,
 	})

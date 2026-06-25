@@ -180,6 +180,114 @@ func (r *ListDocumentsResponse) PrintOut() {
 	}
 }
 
+type ListAgentsResponse struct {
+	Code         int                    `json:"code"`
+	Data         map[string]interface{} `json:"data"`
+	Message      string                 `json:"message"`
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *ListAgentsResponse) Type() string {
+	return "list_agents"
+}
+
+func (r *ListAgentsResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *ListAgentsResponse) SetOutputFormat(format OutputFormat) {
+	r.OutputFormat = format
+}
+
+func (r *ListAgentsResponse) PrintOut() {
+	if r.Code == 0 {
+		total := r.Data["total"].(float64)
+		fmt.Printf("Total: %0.0f\n", total)
+		docs := r.Data["canvas"].([]interface{})
+		table := make([]map[string]interface{}, 0)
+		for _, doc := range docs {
+			table = append(table, doc.(map[string]interface{}))
+		}
+		PrintTableSimpleByFormat(table, r.OutputFormat)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
+type ListChatsResponse struct {
+	Code         int                    `json:"code"`
+	Data         map[string]interface{} `json:"data"`
+	Message      string                 `json:"message"`
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *ListChatsResponse) Type() string {
+	return "list_chats"
+}
+
+func (r *ListChatsResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *ListChatsResponse) SetOutputFormat(format OutputFormat) {
+	r.OutputFormat = format
+}
+
+func (r *ListChatsResponse) PrintOut() {
+	if r.Code == 0 {
+		total := r.Data["total"].(float64)
+		fmt.Printf("Total: %0.0f\n", total)
+		docs := r.Data["chats"].([]interface{})
+		table := make([]map[string]interface{}, 0)
+		for _, doc := range docs {
+			table = append(table, doc.(map[string]interface{}))
+		}
+		PrintTableSimpleByFormat(table, r.OutputFormat)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
+type ListSearchesResponse struct {
+	Code         int                    `json:"code"`
+	Data         map[string]interface{} `json:"data"`
+	Message      string                 `json:"message"`
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *ListSearchesResponse) Type() string {
+	return "list_searches"
+}
+
+func (r *ListSearchesResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *ListSearchesResponse) SetOutputFormat(format OutputFormat) {
+	r.OutputFormat = format
+}
+
+func (r *ListSearchesResponse) PrintOut() {
+	if r.Code == 0 {
+		total := r.Data["total"].(float64)
+		fmt.Printf("Total: %0.0f\n", total)
+		docs := r.Data["search_apps"].([]interface{})
+		table := make([]map[string]interface{}, 0)
+		for _, doc := range docs {
+			table = append(table, doc.(map[string]interface{}))
+		}
+		PrintTableSimpleByFormat(table, r.OutputFormat)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
 type ChunkResponse struct {
 	Code         int                    `json:"code"`
 	Data         map[string]interface{} `json:"data"`
