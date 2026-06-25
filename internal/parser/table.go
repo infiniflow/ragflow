@@ -84,31 +84,10 @@ func (p *Parser) extractTableBoxesFromImage(ctx context.Context, boxes []TextBox
 	// Collect DLA debug intermediates.
 	p.debugDLA = append(p.debugDLA, DLAPageRegions{Page: pageNum, Regions: regions})
 	// Annotate boxes with DLA layout types (title, text, figure, table, ...).
-	scale := dlaDPI / 72.0
+	scale := dlaScale
 	boxes = annotateBoxLayouts(boxes, regions, scale, float64(pageImg.Bounds().Dy()))
 
-	type tableMatch struct {
-		region DLARegion
-		boxIdx []int
-	}
-	var tableMatches []tableMatch
-	for _, r := range regions {
-		if r.Label != "table" {
-			continue
-		}
-		var matched []int
-		for i, b := range boxes {
-			if regionOverlapsBox(r, b, scale) {
-				matched = append(matched, i)
-			}
-		}
-		// Include the table region if boxes overlap it, or if the page has
-		// no boxes at all (image-only PDF).  Python's _table_transformer_job
-		// processes every table DLA region regardless of text box overlap.
-		if len(matched) > 0 || len(boxes) == 0 {
-			tableMatches = append(tableMatches, tableMatch{region: r, boxIdx: matched})
-		}
-	}
+	tableMatches := matchTableRegions(boxes, regions, scale)
 	var items []TableItem
 	for _, tm := range tableMatches {
 		cropped, cropErr := cropImageRegion(pageImg, tm.region)
@@ -251,44 +230,15 @@ func (p *Parser) extractTableBoxesFromImage(ctx context.Context, boxes []TextBox
 			RegionBottom: tm.region.Y1 / scale,
 		})
 
-		// Per-table annotation: annotate only this table's boxes with
-		// this table's cells — no cross-table cell contamination.
-		{
-			tableCells := make([]TSRCell, len(cells))
-			for k := range cells {
-				tableCells[k] = cellAddOffset(cells[k], cropOffX, cropOffY)
-			}
-			tblBoxes := make([]TextBox, len(tm.boxIdx))
-			for k, idx := range tm.boxIdx {
-				b := boxes[idx]
-				tblBoxes[k] = TextBox{
-					X0: b.X0 * scale, X1: b.X1 * scale,
-					Top: b.Top * scale, Bottom: b.Bottom * scale,
-					LayoutType: b.LayoutType,
-					Text:       b.Text,
-				}
-			}
-			annotGrid := p.tableBuilder.GroupCells(tableCells)
-			annotateTableBoxes(tblBoxes, annotGrid)
-			// Write back per-box annotations scaled to PDF space.
-			for k, idx := range tm.boxIdx {
-				bp := &tblBoxes[k]
-				boxes[idx].R = bp.R
-				boxes[idx].RTop = bp.RTop / scale
-				boxes[idx].RBott = bp.RBott / scale
-				boxes[idx].H = bp.H
-				boxes[idx].HTop = bp.HTop / scale
-				boxes[idx].HBott = bp.HBott / scale
-				boxes[idx].HLeft = bp.HLeft / scale
-				boxes[idx].HRight = bp.HRight / scale
-				boxes[idx].C = bp.C
-				boxes[idx].CLeft = bp.CLeft / scale
-				boxes[idx].CRight = bp.CRight / scale
-				boxes[idx].SP = bp.SP
-			}
-		}
+		writeTableAnnotations(boxes, tm.boxIdx, cells, scale, cropOffX, cropOffY, p.tableBuilder)
 	}
 	return items
+}
+
+// tableMatch pairs a DLA table region with the indices of boxes that overlap it.
+type tableMatch struct {
+	region DLARegion
+	boxIdx []int
 }
 
 // ── cell row grouping ──────────────────────────────────────────────────
@@ -300,19 +250,74 @@ func regionOverlapsBox(region DLARegion, box TextBox, scale float64) bool {
 	ry0 := region.Y0 / scale
 	rx1 := region.X1 / scale
 	ry1 := region.Y1 / scale
-	ix0 := math.Max(rx0, box.X0)
-	iy0 := math.Max(ry0, box.Top)
-	ix1 := math.Min(rx1, box.X1)
-	iy1 := math.Min(ry1, box.Bottom)
-	if ix0 >= ix1 || iy0 >= iy1 {
-		return false
-	}
-	intersection := (ix1 - ix0) * (iy1 - iy0)
-	boxArea := (box.X1 - box.X0) * (box.Bottom - box.Top)
+	scaledR := DLARegion{X0: rx0, Y0: ry0, X1: rx1, Y1: ry1}
+	inter := OverlapInter(&scaledR, &box)
+	boxArea := Area(&box)
 	if boxArea <= 0 {
 		return false
 	}
-	return intersection/boxArea >= 0.4 // matches Python thr=0.4
+	return inter/boxArea >= 0.4 // matches Python thr=0.4
+}
+
+// matchTableRegions pairs DLA table regions with boxes that overlap them.
+// Each table region is matched if at least one box overlaps it (>40% of box
+// area) or if there are no boxes at all (image-only PDF), matching Python's
+// _table_transformer_job which processes every table DLA region.
+func matchTableRegions(boxes []TextBox, regions []DLARegion, scale float64) []tableMatch {
+	var matches []tableMatch
+	for _, r := range regions {
+		if r.Label != "table" {
+			continue
+		}
+		var matched []int
+		for i, b := range boxes {
+			if regionOverlapsBox(r, b, scale) {
+				matched = append(matched, i)
+			}
+		}
+		if len(matched) > 0 || len(boxes) == 0 {
+			matches = append(matches, tableMatch{region: r, boxIdx: matched})
+		}
+	}
+	return matches
+}
+
+// writeTableAnnotations annotates boxes at boxIdx with table cell grid
+// information (R/C/H/SP).  Cells are offset by cropOff, grouped into a grid,
+// and annotation fields are scaled back to PDF space for each box.
+func writeTableAnnotations(boxes []TextBox, boxIdx []int, cells []TSRCell, scale, cropOffX, cropOffY float64, tb TableBuilder) {
+	tableCells := make([]TSRCell, len(cells))
+	for k := range cells {
+		tableCells[k] = cellAddOffset(cells[k], cropOffX, cropOffY)
+	}
+	tblBoxes := make([]TextBox, len(boxIdx))
+	for k, idx := range boxIdx {
+		b := boxes[idx]
+		tblBoxes[k] = TextBox{
+			X0: b.X0 * scale, X1: b.X1 * scale,
+			Top: b.Top * scale, Bottom: b.Bottom * scale,
+			LayoutType: b.LayoutType,
+			Text:       b.Text,
+		}
+	}
+	annotGrid := tb.GroupCells(tableCells)
+	annotateTableBoxes(tblBoxes, annotGrid)
+	// Write back per-box annotations scaled to PDF space.
+	for k, idx := range boxIdx {
+		bp := &tblBoxes[k]
+		boxes[idx].R = bp.R
+		boxes[idx].RTop = bp.RTop / scale
+		boxes[idx].RBott = bp.RBott / scale
+		boxes[idx].H = bp.H
+		boxes[idx].HTop = bp.HTop / scale
+		boxes[idx].HBott = bp.HBott / scale
+		boxes[idx].HLeft = bp.HLeft / scale
+		boxes[idx].HRight = bp.HRight / scale
+		boxes[idx].C = bp.C
+		boxes[idx].CLeft = bp.CLeft / scale
+		boxes[idx].CRight = bp.CRight / scale
+		boxes[idx].SP = bp.SP
+	}
 }
 
 // ── image helpers ──────────────────────────────────────────────────────
@@ -1181,19 +1186,11 @@ func minRectangleDistance(left1, right1, top1, bottom1, left2, right2, top2, bot
 // Table boxes whose text matches the data-source discard pattern
 // (r"(数据|资料|图表)*来源[:： ]") are removed entirely without replacement —
 // matching Python's _extract_table_figure discard behavior.
-//
-// boxes must be post-TextMerge + post-VerticalMerge.  TableItem.Cells are in
-// crop pixel space; boxes are in PDF point space — conversion via Scale/CropOff.
-func extractTableAndReplace(boxes []TextBox, tables []TableItem) []TextBox {
-	if len(tables) == 0 {
-		return boxes
-	}
-	// Pre-merge nomerge detection: match Python's nomerge_lout_no.
-	// Traverse boxes in page order. When a caption/title/reference is
-	// found, mark the preceding table group as NoMerge, preventing
-	// cross-page merge when a caption ends a table group.
-	// Python: if is_caption(c) or layout_type in ["table caption", "title",
-	// "figure caption", "reference"]: nomerge_lout_no.append(lst_lout_no)
+
+// markNoMergeTables traverses boxes in page order. When a caption, title, or
+// reference immediately follows a table, the preceding table is marked NoMerge
+// to prevent cross-page merge. Matches Python's nomerge_lout_no.
+func markNoMergeTables(boxes []TextBox, tables []TableItem) {
 	var lastTableTI int = -1
 	for i := range boxes {
 		lt := boxes[i].LayoutType
@@ -1212,6 +1209,68 @@ func extractTableAndReplace(boxes []TextBox, tables []TableItem) []TextBox {
 			tables[lastTableTI].NoMerge = true
 		}
 	}
+}
+
+//
+// boxes must be post-TextMerge + post-VerticalMerge.  TableItem.Cells are in
+// crop pixel space; boxes are in PDF point space — conversion via Scale/CropOff.
+// replacement pairs a table index with the box index it replaces.
+type replacement struct {
+	tableIdx int
+	boxIdx   int
+}
+
+// buildReplacements scans for data-source-attribution boxes to remove and maps
+// each table to overlapping table-layout boxes, producing the replacement list.
+func buildReplacements(boxes []TextBox, tables []TableItem) (map[int]bool, []replacement) {
+	removeSet := make(map[int]bool)
+	for i := range boxes {
+		if boxes[i].LayoutType == "table" && isDataSourceBox(boxes[i].Text) {
+			removeSet[i] = true
+		}
+	}
+	var reps []replacement
+	for ti := range tables {
+		if len(tables[ti].Cells) == 0 {
+			for i := range boxes {
+				if boxes[i].LayoutType != "table" || removeSet[i] {
+					continue
+				}
+				for _, tp := range tables[ti].Positions {
+					if boxOverlapsPosition(boxes[i], tp) {
+						reps = append(reps, replacement{tableIdx: ti, boxIdx: i})
+						break
+					}
+				}
+			}
+			continue
+		}
+		for i := range boxes {
+			if boxes[i].LayoutType != "table" || removeSet[i] {
+				continue
+			}
+			for _, tp := range tables[ti].Positions {
+				if boxOverlapsPosition(boxes[i], tp) {
+					reps = append(reps, replacement{tableIdx: ti, boxIdx: i})
+					break
+				}
+			}
+		}
+	}
+	return removeSet, reps
+}
+
+func extractTableAndReplace(boxes []TextBox, tables []TableItem) []TextBox {
+	if len(tables) == 0 {
+		return boxes
+	}
+	// Pre-merge nomerge detection: match Python's nomerge_lout_no.
+	// Traverse boxes in page order. When a caption/title/reference is
+	// found, mark the preceding table group as NoMerge, preventing
+	// cross-page merge when a caption ends a table group.
+	// Python: if is_caption(c) or layout_type in ["table caption", "title",
+	// "figure caption", "reference"]: nomerge_lout_no.append(lst_lout_no)
+	markNoMergeTables(boxes, tables)
 
 	// Merge same-layoutno tables across consecutive pages (Python _extract_table_figure).
 	tables = mergeTablesAcrossPages(tables, nil)
@@ -1219,48 +1278,7 @@ func extractTableAndReplace(boxes []TextBox, tables []TableItem) []TextBox {
 	// Pre-scan: mark data-source-attribution table boxes for removal.
 	// Python: if re.match(r"(数据|资料|图表)*来源[:： ]", self.boxes[i]["text"]):
 	// self.boxes.pop(i); continue — box discarded, no HTML replacement.
-	removeSet := make(map[int]bool)
-	for i := range boxes {
-		if boxes[i].LayoutType == "table" && isDataSourceBox(boxes[i].Text) {
-			removeSet[i] = true
-		}
-	}
-
-	type replacement struct {
-		tableIdx int
-		boxIdx   int
-	}
-	var replacements []replacement
-
-	for ti := range tables {
-		if len(tables[ti].Cells) == 0 {
-			// No TSR cells — pop matching table boxes without replacing.
-			for i := range boxes {
-				if boxes[i].LayoutType != "table" || removeSet[i] {
-					continue
-				}
-				for _, tp := range tables[ti].Positions {
-					if boxOverlapsPosition(boxes[i], tp) {
-						replacements = append(replacements, replacement{tableIdx: ti, boxIdx: i})
-						break
-					}
-				}
-			}
-			continue
-		}
-		// Find all post-merge boxes overlapping this table region.
-		for i := range boxes {
-			if boxes[i].LayoutType != "table" || removeSet[i] {
-				continue
-			}
-			for _, tp := range tables[ti].Positions {
-				if boxOverlapsPosition(boxes[i], tp) {
-					replacements = append(replacements, replacement{tableIdx: ti, boxIdx: i})
-					break
-				}
-			}
-		}
-	}
+	removeSet, replacements := buildReplacements(boxes, tables)
 
 	// Image-only PDFs (0 boxes) may have tables with cells but no
 	// overlapping LayoutType=="table" boxes — generate HTML directly.

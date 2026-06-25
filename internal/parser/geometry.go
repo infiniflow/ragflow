@@ -89,15 +89,85 @@ func BoxXDis(b1, b2 TextBox) float64 {
 	)
 }
 
-// TextBoxOverlapX returns the horizontal overlap ratio between two boxes.
-// Returns 0.0-1.0 where 1.0 means fully overlapped.
+// ── Rectangular interface and overlap helpers ──────────────────────────
+
+// Rectangular is any 2D axis-aligned rectangle that can report its bounds.
+type Rectangular interface {
+	Bounds() (x0, y0, x1, y1 float64)
+}
+
+// Area returns the area of a Rectangular. Returns 0 for degenerate rects.
+func Area(r Rectangular) float64 {
+	x0, y0, x1, y1 := r.Bounds()
+	if x1 <= x0 || y1 <= y0 {
+		return 0
+	}
+	return (x1 - x0) * (y1 - y0)
+}
+
+// rectOverlapInter returns the intersection area of two axis-aligned rectangles.
+// Returns 0 when the rectangles do not overlap or either is degenerate.
+func rectOverlapInter(x0a, y0a, x1a, y1a, x0b, y0b, x1b, y1b float64) float64 {
+	x0 := max(x0a, x0b)
+	y0 := max(y0a, y0b)
+	x1 := min(x1a, x1b)
+	y1 := min(y1a, y1b)
+	if x0 >= x1 || y0 >= y1 {
+		return 0
+	}
+	return (x1 - x0) * (y1 - y0)
+}
+
+// OverlapInter returns the raw intersection area of two rectangles.
+func OverlapInter(a, b Rectangular) float64 {
+	ax0, ay0, ax1, ay1 := a.Bounds()
+	bx0, by0, bx1, by1 := b.Bounds()
+	return rectOverlapInter(ax0, ay0, ax1, ay1, bx0, by0, bx1, by1)
+}
+
+// OverlapRatio returns intersection(a,b) / Area(denom).
+// Returns 0 when denom has zero area or there is no intersection.
+func OverlapRatio(a, b, denom Rectangular) float64 {
+	inter := OverlapInter(a, b)
+	if inter <= 0 {
+		return 0
+	}
+	d := Area(denom)
+	if d <= 0 {
+		return 0
+	}
+	return inter / d
+}
+
+// OverlapRatioA returns intersection(a,b) / Area(a).
+func OverlapRatioA(a, b Rectangular) float64 {
+	return OverlapRatio(a, b, a)
+}
+
+// OverlapRatioMax returns intersection(a,b) / max(Area(a), Area(b)).
+func OverlapRatioMax(a, b Rectangular) float64 {
+	inter := OverlapInter(a, b)
+	if inter <= 0 {
+		return 0
+	}
+	d := max(Area(a), Area(b))
+	if d <= 0 {
+		return 0
+	}
+	return inter / d
+}
+
+// OverlapX returns the horizontal (X-axis only) overlap ratio between two rectangles.
+// Ratio = overlap_width / max(1, min(width(a), width(b))).
 //
 // Python: pdf_parser.py:964-965 overlap calculation in _naive_vertical_merge
-func TextBoxOverlapX(b1, b2 TextBox) float64 {
-	overlap := math.Max(0, math.Min(b1.X1, b2.X1)-math.Max(b1.X0, b2.X0))
-	// Python: max(1, min(width_a, width_b)) — denominator ≥1 prevents
-	// artificially high ratios for very narrow boxes.
-	minWidth := math.Max(1, math.Min(b1.X1-b1.X0, b2.X1-b2.X0))
+func OverlapX(a, b Rectangular) float64 {
+	ax0, _, ax1, _ := a.Bounds()
+	bx0, _, bx1, _ := b.Bounds()
+	overlap := math.Max(0, math.Min(ax1, bx1)-math.Max(ax0, bx0))
+	wA := ax1 - ax0
+	wB := bx1 - bx0
+	minWidth := math.Max(1, math.Min(wA, wB))
 	return overlap / minWidth
 }
 
@@ -180,25 +250,13 @@ func medianFloat64(vals []float64, fallback float64) float64 {
 // Coordinates are in whatever space the caller uses (pixel or PDF points).
 type rect struct{ x0, y0, x1, y1 float64 }
 
+func (r rect) Bounds() (float64, float64, float64, float64) { return r.x0, r.y0, r.x1, r.y1 }
+
 // rectOverlap returns the overlap ratio between two rects.
 // Ratio = area(intersection) / max(area(a), area(b)).
 // Returns 0 when there is no overlap.
 func rectOverlap(a, b rect) float64 {
-	x0 := math.Max(a.x0, b.x0)
-	y0 := math.Max(a.y0, b.y0)
-	x1 := math.Min(a.x1, b.x1)
-	y1 := math.Min(a.y1, b.y1)
-	if x0 >= x1 || y0 >= y1 {
-		return 0
-	}
-	inter := (x1 - x0) * (y1 - y0)
-	areaA := (a.x1 - a.x0) * (a.y1 - a.y0)
-	areaB := (b.x1 - b.x0) * (b.y1 - b.y0)
-	denom := math.Max(areaA, areaB)
-	if denom <= 0 {
-		return 0
-	}
-	return inter / denom
+	return OverlapRatioMax(a, b)
 }
 
 // fastCrop copies a rectangular region from src to a new *image.RGBA.

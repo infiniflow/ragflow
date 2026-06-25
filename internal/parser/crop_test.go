@@ -210,7 +210,7 @@ func TestMapRotatedPointToOriginal_RoundTrip(t *testing.T) {
 	for _, angle := range []int{0, 90, 180, 270} {
 		for _, ox := range []float64{0, 50, 199} {
 			for _, oy := range []float64{0, 30, 99} {
-				rx, ry := forwardRotateCW(ox, oy, angle, origW, origH)
+				rx, ry := rotateCoordCW(ox, oy, origW, origH, angle)
 				gotX, gotY := mapRotatedPointToOriginal(rx, ry, angle, origW, origH)
 				if math.Abs(gotX-ox) > 0.01 || math.Abs(gotY-oy) > 0.01 {
 					t.Errorf("angle=%d orig(%.0f,%.0f) → rot(%.0f,%.0f) → got(%.1f,%.1f)",
@@ -241,21 +241,6 @@ func TestMapRotatedPointToOriginal(t *testing.T) {
 			t.Errorf("angle=%d (%f,%f) got(%f,%f) want(%f,%f)",
 				tt.angle, tt.rx, tt.ry, gotX, gotY, tt.wantX, tt.wantY)
 		}
-	}
-}
-
-func forwardRotateCW(ox, oy float64, angle int, origW, origH int) (float64, float64) {
-	switch angle {
-	case 0:
-		return ox, oy
-	case 90:
-		return float64(origH-1) - oy, ox
-	case 180:
-		return float64(origW-1) - ox, float64(origH-1) - oy
-	case 270:
-		return oy, float64(origW-1) - ox
-	default:
-		return ox, oy
 	}
 }
 

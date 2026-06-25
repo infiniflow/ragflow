@@ -311,26 +311,36 @@ func applyEdgeOverlay(img image.Image) *image.RGBA {
 	return result
 }
 
+// rotateCoordCW returns the clockwise-rotated coordinates of (x, y) for the
+// given original dimensions and angle. Only 0/90/180/270 are meaningful;
+// other values are passed through unchanged.
+func rotateCoordCW(x, y float64, origW, origH int, angle int) (float64, float64) {
+	switch angle {
+	case 0:
+		return x, y
+	case 90:
+		return float64(origH-1) - y, x
+	case 180:
+		return float64(origW-1) - x, float64(origH-1) - y
+	case 270:
+		return y, float64(origW-1) - x
+	default:
+		return x, y
+	}
+}
+
 // rotateImageCW rotates an image clockwise. Only 0/90/180/270 supported;
 // other values return nil. Matches Python PIL.Image.rotate(-angle, expand=True).
 func rotateImageCW(img image.Image, angle int) *image.RGBA {
 	b := img.Bounds()
 	w, h := b.Dx(), b.Dy()
 
-	// Compute destination dimensions and the per-pixel mapping.
 	dstW, dstH := w, h
-	var tx func(x, y int) (int, int)
 	switch angle {
-	case 0:
-		tx = func(x, y int) (int, int) { return x, y }
-	case 90:
+	case 90, 270:
 		dstW, dstH = h, w
-		tx = func(x, y int) (int, int) { return h - 1 - y, x }
-	case 180:
-		tx = func(x, y int) (int, int) { return w - 1 - x, h - 1 - y }
-	case 270:
-		dstW, dstH = h, w
-		tx = func(x, y int) (int, int) { return y, w - 1 - x }
+	case 0, 180:
+		// keep w, h
 	default:
 		return nil
 	}
@@ -338,8 +348,8 @@ func rotateImageCW(img image.Image, angle int) *image.RGBA {
 	dst := image.NewRGBA(image.Rect(0, 0, dstW, dstH))
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
-			dx, dy := tx(x, y)
-			dst.Set(dx, dy, img.At(x+b.Min.X, y+b.Min.Y))
+			dx, dy := rotateCoordCW(float64(x), float64(y), w, h, angle)
+			dst.Set(int(dx), int(dy), img.At(x+b.Min.X, y+b.Min.Y))
 		}
 	}
 	return dst

@@ -1594,6 +1594,88 @@ func TestAnnotateBoxLayouts_CompactionPreservesWriteBackMapping(t *testing.T) {
 	}
 }
 
+// ── matchTableRegions unit tests ─────────────────────────────────────
+
+func TestMatchTableRegions_SingleMatch(t *testing.T) {
+	boxes := []TextBox{
+		{X0: 0, X1: 100, Top: 0, Bottom: 50},
+		{X0: 200, X1: 300, Top: 0, Bottom: 50},
+	}
+	regions := []DLARegion{
+		{X0: 0, Y0: 0, X1: 300, Y1: 150, Label: "table"},  // covers box 0 at scale 3
+		{X0: 600, Y0: 0, X1: 900, Y1: 150, Label: "text"},  // non-table, ignored
+	}
+	matches := matchTableRegions(boxes, regions, 3.0)
+	if len(matches) != 1 {
+		t.Fatalf("expected 1 match, got %d", len(matches))
+	}
+	if len(matches[0].boxIdx) != 1 || matches[0].boxIdx[0] != 0 {
+		t.Errorf("expected box 0 matched, got %v", matches[0].boxIdx)
+	}
+}
+
+func TestMatchTableRegions_NoTableLabel(t *testing.T) {
+	boxes := []TextBox{
+		{X0: 0, X1: 100, Top: 0, Bottom: 50},
+	}
+	regions := []DLARegion{
+		{X0: 0, Y0: 0, X1: 300, Y1: 150, Label: "text"},
+		{X0: 0, Y0: 0, X1: 300, Y1: 150, Label: "figure"},
+	}
+	matches := matchTableRegions(boxes, regions, 3.0)
+	if len(matches) != 0 {
+		t.Errorf("non-table labels: expected 0 matches, got %d", len(matches))
+	}
+}
+
+func TestMatchTableRegions_MultipleBoxesSameTable(t *testing.T) {
+	boxes := []TextBox{
+		{X0: 0, X1: 100, Top: 0, Bottom: 50},   // box 0
+		{X0: 110, X1: 210, Top: 0, Bottom: 50},  // box 1
+	}
+	regions := []DLARegion{
+		{X0: 0, Y0: 0, X1: 630, Y1: 150, Label: "table"}, // covers both boxes at scale 3
+	}
+	matches := matchTableRegions(boxes, regions, 3.0)
+	if len(matches) != 1 {
+		t.Fatalf("expected 1 match, got %d", len(matches))
+	}
+	if len(matches[0].boxIdx) != 2 {
+		t.Errorf("expected 2 boxes matched, got %d: %v", len(matches[0].boxIdx), matches[0].boxIdx)
+	}
+}
+
+func TestMatchTableRegions_ImageOnlyPDF(t *testing.T) {
+	// Zero boxes — image-only PDF. Python processes every table DLA region
+	// regardless of text box overlap.
+	var boxes []TextBox // nil
+	regions := []DLARegion{
+		{X0: 0, Y0: 0, X1: 300, Y1: 150, Label: "table"},
+		{X0: 0, Y0: 0, X1: 300, Y1: 150, Label: "text"},
+	}
+	matches := matchTableRegions(boxes, regions, 3.0)
+	if len(matches) != 1 {
+		t.Fatalf("image-only: expected 1 table match, got %d", len(matches))
+	}
+	if len(matches[0].boxIdx) != 0 {
+		t.Errorf("image-only: expected empty boxIdx, got %d", len(matches[0].boxIdx))
+	}
+}
+
+func TestMatchTableRegions_BelowThreshold(t *testing.T) {
+	// Region overlaps only a sliver of the box (<40%) → no match.
+	boxes := []TextBox{
+		{X0: 0, X1: 100, Top: 0, Bottom: 100},
+	}
+	regions := []DLARegion{
+		{X0: 0, Y0: 0, X1: 90, Y1: 90, Label: "table"}, // 30x30 at scale 3 → 9% overlap
+	}
+	matches := matchTableRegions(boxes, regions, 3.0)
+	if len(matches) != 0 {
+		t.Errorf("below threshold: expected 0 matches, got %d", len(matches))
+	}
+}
+
 func TestCellSliceToPageSpace(t *testing.T) {
 	cells := []TSRCell{
 		{X0: 100, Y0: 200, X1: 300, Y1: 400},
@@ -1606,4 +1688,146 @@ func TestCellSliceToPageSpace(t *testing.T) {
 	if got[0].X0 != 38.333333333333336 || got[1].X0 != 138.33333333333334 {
 		t.Error("wrong conversion")
 	}
+}
+
+// MockTableBuilder is a test-only TableBuilder with a configurable GroupCells.
+type MockTableBuilder struct {
+	GroupCellsFn func(cells []TSRCell) [][]TSRCell
+}
+
+func (m *MockTableBuilder) Name() string                             { return "mock" }
+func (m *MockTableBuilder) DetectCells(_ context.Context, _ image.Image) ([]TSRCell, error) {
+	return nil, nil
+}
+func (m *MockTableBuilder) GroupCells(cells []TSRCell) [][]TSRCell {
+	if m.GroupCellsFn != nil {
+		return m.GroupCellsFn(cells)
+	}
+	return nil
+}
+
+// ── writeTableAnnotations unit tests ──────────────────────────────────
+
+func TestWriteTableAnnotations_WriteBack(t *testing.T) {
+	boxes := []TextBox{
+		{X0: 10, X1: 100, Top: 10, Bottom: 30, Text: "A", LayoutType: "table"},
+		{X0: 110, X1: 200, Top: 10, Bottom: 30, Text: "B", LayoutType: "table"},
+		{X0: 10, X1: 100, Top: 35, Bottom: 55, Text: "C", LayoutType: "table"},
+	}
+	boxIdx := []int{0, 2}
+	cells := []TSRCell{
+		{X0: 30, Y0: 30, X1: 300, Y1: 90, Label: "table row"},
+		{X0: 30, Y0: 110, X1: 300, Y1: 170, Label: "table row"},
+	}
+	scale := 3.0
+
+	tb := &MockTableBuilder{GroupCellsFn: func(cells []TSRCell) [][]TSRCell {
+		return [][]TSRCell{{cells[0]}, {cells[1]}}
+	}}
+	writeTableAnnotations(boxes, boxIdx, cells, scale, 0, 0, tb)
+
+	if boxes[0].R != 0 {
+		t.Errorf("box 0 R = %d, want 0", boxes[0].R)
+	}
+	if boxes[0].C != 0 {
+		t.Errorf("box 0 C = %d, want 0", boxes[0].C)
+	}
+	// Box 1 was not in boxIdx — should NOT be annotated
+	if boxes[1].R != 0 || boxes[1].C != 0 {
+		t.Errorf("box 1 should not be annotated: R=%d C=%d", boxes[1].R, boxes[1].C)
+	}
+	if boxes[2].R != 1 {
+		t.Errorf("box 2 R = %d, want 1", boxes[2].R)
+	}
+}
+
+func TestWriteTableAnnotations_ScaleDown(t *testing.T) {
+	boxes := []TextBox{
+		{X0: 10, X1: 100, Top: 10, Bottom: 50, Text: "X", LayoutType: "table"},
+	}
+	boxIdx := []int{0}
+	cells := []TSRCell{
+		{X0: 30, Y0: 30, X1: 300, Y1: 150, Label: "table row"},
+	}
+	scale := 3.0
+
+	tb := &MockTableBuilder{GroupCellsFn: func(cells []TSRCell) [][]TSRCell {
+		return [][]TSRCell{{cells[0]}}
+	}}
+	writeTableAnnotations(boxes, boxIdx, cells, scale, 0, 0, tb)
+
+	// After scale-down: RTop / 3 should be in PDF space (~10).
+	if boxes[0].RTop == 0 {
+		t.Error("RTop should be non-zero after annotation")
+	}
+}
+
+func TestWriteTableAnnotations_EmptyCells(t *testing.T) {
+	boxes := []TextBox{{X0: 10, X1: 100, Top: 10, Bottom: 50, Text: "X", LayoutType: "table"}}
+	boxIdx := []int{0}
+	var cells []TSRCell
+
+	tb := &MockTableBuilder{GroupCellsFn: func(cells []TSRCell) [][]TSRCell {
+		return nil
+	}}
+	// Should not panic with empty cells.
+	writeTableAnnotations(boxes, boxIdx, cells, 3.0, 0, 0, tb)
+	if boxes[0].R != 0 || boxes[0].C != 0 {
+		t.Errorf("empty cells: R=%d C=%d, want 0,0", boxes[0].R, boxes[0].C)
+	}
+}
+
+// ── markNoMergeTables unit tests ─────────────────────────────────────
+
+func TestMarkNoMergeTables_CaptionAfterTable(t *testing.T) {
+	boxes := []TextBox{
+		{X0: 0, X1: 100, Top: 0, Bottom: 30, LayoutType: "table"},
+		{X0: 0, X1: 100, Top: 35, Bottom: 50, LayoutType: "table caption", Text: "表1：标题"},
+	}
+	tables := []TableItem{
+		{Positions: []Position{{Left: 0, Right: 100, Top: 0, Bottom: 30}}},
+	}
+	markNoMergeTables(boxes, tables)
+	if !tables[0].NoMerge {
+		t.Error("table followed by caption should be marked NoMerge")
+	}
+}
+
+func TestMarkNoMergeTables_TitleAfterTable(t *testing.T) {
+	boxes := []TextBox{
+		{X0: 0, X1: 100, Top: 0, Bottom: 30, LayoutType: "table"},
+		{X0: 0, X1: 100, Top: 35, Bottom: 50, LayoutType: "title"},
+	}
+	tables := []TableItem{
+		{Positions: []Position{{Left: 0, Right: 100, Top: 0, Bottom: 30}}},
+	}
+	markNoMergeTables(boxes, tables)
+	if !tables[0].NoMerge {
+		t.Error("table followed by title should be marked NoMerge")
+	}
+}
+
+func TestMarkNoMergeTables_NoCaptionAfter(t *testing.T) {
+	boxes := []TextBox{
+		{X0: 0, X1: 100, Top: 0, Bottom: 30, LayoutType: "table"},
+		{X0: 0, X1: 100, Top: 35, Bottom: 50, LayoutType: "text"},
+		{X0: 0, X1: 100, Top: 55, Bottom: 70, LayoutType: "table"},
+	}
+	tables := []TableItem{
+		{Positions: []Position{{Left: 0, Right: 100, Top: 0, Bottom: 30}}},
+		{Positions: []Position{{Left: 0, Right: 100, Top: 55, Bottom: 70}}},
+	}
+	markNoMergeTables(boxes, tables)
+	if tables[0].NoMerge {
+		t.Error("table followed by text should NOT be marked NoMerge")
+	}
+	if tables[1].NoMerge {
+		t.Error("last table should NOT be marked NoMerge")
+	}
+}
+
+func TestMarkNoMergeTables_EmptyInputs(t *testing.T) {
+	// Should not panic with empty inputs.
+	markNoMergeTables(nil, nil)
+	markNoMergeTables([]TextBox{}, []TableItem{})
 }

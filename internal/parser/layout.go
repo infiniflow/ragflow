@@ -233,7 +233,7 @@ func NaiveVerticalMerge(boxes []TextBox, medianHeights map[int]float64, medianWi
 				// keeps whitespace inline and lets it extend the previous box.
 				if len(out) > 0 {
 					prev := &out[len(out)-1]
-					if b.Top-prev.Bottom <= mh*1.5 && TextBoxOverlapX(*prev, b) >= 0.3 {
+					if b.Top-prev.Bottom <= mh*1.5 && OverlapX(prev, &b) >= 0.3 {
 						// TODO: prev.Bottom = math.Max(prev.Bottom, b.Bottom) — direct assignment
 						// can shrink a tall merged box when a short whitespace box overlaps.
 						// Matches Python behavior (also direct assignment). Defer fix until
@@ -259,7 +259,7 @@ func NaiveVerticalMerge(boxes []TextBox, medianHeights map[int]float64, medianWi
 				out = append(out, b)
 				continue
 			}
-			ov := TextBoxOverlapX(*prev, b)
+			ov := OverlapX(prev, &b)
 			if ov < 0.3 {
 				slog.Debug("vm reject", "reason", "ovX", "ov", ov, "threshold", 0.3)
 				out = append(out, b)
@@ -327,70 +327,7 @@ func FinalReadingOrderMerge(boxes []TextBox) []TextBox {
 	})
 	return boxes
 }
-
-// ---- Proj (heading detection) ----
-
-// projPatterns mirrors Python's proj_match (pdf_parser.py:1248-1270).
-// Python has 13 priority-ranked patterns; Go covers all with bool return.
-// Order follows Python's priority (1-12) for maintainability.
-var projPatterns = []*regexp.Regexp{
-	// Priority 1: 第[零一二三四五六七八九十百]+章
-	regexp.MustCompile(`第[零一二三四五六七八九十百]+章`),
-	// Priority 2: 第[零一二三四五六七八九十百]+[条节]
-	regexp.MustCompile(`第[零一二三四五六七八九十百]+[条节]`),
-	// Priority 3: [零一二三四五六七八九十百]+[、 　]
-	regexp.MustCompile(`[零一二三四五六七八九十百]+[、 　]`),
-	// Priority 4: [\(（][零一二三四五六七八九十百]+[）\)]
-	regexp.MustCompile(`[\(（][零一二三四五六七八九十百]+[）\)]`),
-	// Priority 5: [0-9]+(、|\.[　 ]|\.[^0-9])
-	regexp.MustCompile(`[0-9]+(、|\.[　 ]|\.[^0-9])`),
-	// Priority 6: [0-9]+\.[0-9]+(、|[. 　]|[^0-9])
-	regexp.MustCompile(`[0-9]+\.[0-9]+(、|[. 　]|[^0-9])`),
-	// Priority 7: [0-9]+\.[0-9]+\.[0-9]+(、|[ 　]|[^0-9])
-	regexp.MustCompile(`[0-9]+\.[0-9]+\.[0-9]+(、|[ 　]|[^0-9])`),
-	// Priority 8: [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(、|[ 　]|[^0-9])
-	regexp.MustCompile(`[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(、|[ 　]|[^0-9])`),
-	// Priority 9: .{,48}[：:?？]$ — short text ending with colon/question mark
-	regexp.MustCompile(`^.{0,48}[：:?？]$`),
-	// Priority 10: [0-9]+）
-	regexp.MustCompile(`[0-9]+）`),
-	// Priority 11: [\(（][0-9]+[）\)]
-	regexp.MustCompile(`[\(（][0-9]+[）\)]`),
-	// Priority 12a: [零一二三四五六七八九十百]+是
-	regexp.MustCompile(`[零一二三四五六七八九十百]+是`),
-	// Priority 12b: [⚫•➢✓] — bullet symbols matching Python's exact set
-	regexp.MustCompile(`[⚫•➢✓]`),
-}
-
-// preFilterDigitsOnly matches Python's pre-filter: re.match(r"[0-9 ().,%%+/-]+$", line)
-var preFilterDigitsOnly = regexp.MustCompile(`^[0-9 ().,%+\-/]+$`)
-
 var pageNumSuffixPattern = regexp.MustCompile(`[0-9  •一—-]+$`)
-
-// MatchProj checks if a text box represents a heading.
-//
-// Python: pdf_parser.py:1248 proj_match()
-// Python returns int priority (1-12) or None; __filterout_scraps only uses
-// truthiness, so bool return is sufficient. Two pre-filter rules:
-//  1. len(runes) ≤ 2 → false (Python: returns None)
-//  2. pure digits/spaces/punctuation → false (Python: returns False)
-func MatchProj(b TextBox) bool {
-	text := strings.TrimSpace(b.Text)
-	// Pre-filter 1: Python returns None (falsy) for len ≤ 2.
-	if len([]rune(text)) <= 2 {
-		return false
-	}
-	// Pre-filter 2: Python returns False for pure digits/spaces/punctuation.
-	if preFilterDigitsOnly.MatchString(text) {
-		return false
-	}
-	for _, p := range projPatterns {
-		if p.MatchString(text) {
-			return true
-		}
-	}
-	return false
-}
 
 // ---- rune-based text helpers (CJK-safe) ----
 

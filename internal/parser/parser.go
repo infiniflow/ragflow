@@ -17,6 +17,9 @@ import (
 // dlaDPI is the DPI used for rendering page images for DeepDoc DLA/OCR.
 const dlaDPI = 216
 
+// dlaScale is the scale factor from PDF points (72 DPI) to DLA image space.
+const dlaScale = dlaDPI / 72.0
+
 // Parser is the main PDF text/layout extraction pipeline.
 // It corresponds to RAGFlowPdfParser in pdf_parser.py.
 // Parser is stateless after construction — safe to reuse across documents.
@@ -373,7 +376,7 @@ func (p *Parser) retryZoom(ctx context.Context, engine PDFEngine,
 	pageImages map[int]image.Image,
 	boxes []TextBox, ocrUsedAny bool,
 ) ([]TextBox, bool) {
-	retryZoom := p.Config.Zoom * 3
+	retryZoom := p.Config.Zoom * dlaScale
 	retryDPI := retryZoom * 72
 	slog.Info("zoom retry: re-rendering", "oldZoom", p.Config.Zoom, "newZoom", retryZoom)
 	for pg := fromPage; pg <= toPage; pg++ {
@@ -1054,58 +1057,4 @@ func lineToTextBox(chars []TextChar) TextBox {
 	return box
 }
 
-// projMatch checks whether a text line matches a title/heading pattern,
-// returning a priority number (lower = stronger title) or 0 if no match.
-// Python: pdf_parser.py:1248-1270 proj_match()
-//
-// Patterns (priority 1-12):
-//  1. 第X章     — Chinese chapter header
-//  2. 第X条/节  — Chinese article/section
-//  3. X、       — Chinese numbered item
-//  4. (X)       — Chinese parenthesized number
-//  5. 1. / 1、  — Arabic numeral + separator
-//  6. 1.1       — Dotted decimal (2 levels)
-//  7. 1.1.1     — Dotted decimal (3 levels)
-//  8. 1.1.1.1   — Dotted decimal (4 levels)
-//  9. ...:/?    — Short line ending with colon/question (≤48 chars)
-//  10. 1)        — Arabic numeral + right paren
-//  11. (1)       — Arabic numeral in parens
-//  12. X是 / bullets — Chinese "是" suffix or bullet characters
-var projMatchPatterns = []struct {
-	re   *regexp.Regexp
-	prio int
-}{
-	{regexp.MustCompile(`^第[零一二三四五六七八九十百]+章`), 1},
-	{regexp.MustCompile(`^第[零一二三四五六七八九十百]+[条节]`), 2},
-	{regexp.MustCompile(`^[零一二三四五六七八九十百]+[、 　]`), 3},
-	{regexp.MustCompile(`^[\(（][零一二三四五六七八九十百]+[）\)]`), 4},
-	{regexp.MustCompile(`^[0-9]+(、|\.[\t ]|\.[^0-9])`), 5},
-	{regexp.MustCompile(`^[0-9]+\.[0-9]+(、|[. 　]|[^0-9])`), 6},
-	{regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(、|[ 　]|[^0-9])`), 7},
-	{regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(、|[ 　]|[^0-9])`), 8},
-	{regexp.MustCompile(`^.{1,48}[：:?？]$`), 9},
-	{regexp.MustCompile(`^[0-9]+）`), 10},
-	{regexp.MustCompile(`^[\(（][0-9]+[）\)]`), 11},
-	{regexp.MustCompile(`^[零一二三四五六七八九十百]+是|[⚫•➢✓]`), 12},
-}
 
-// reNumericLine matches lines that are purely numeric/symbols (Python: returns False).
-var reNumericLine = regexp.MustCompile(`^[0-9 ().,%%+\-/]+$`)
-
-// projMatch returns the priority number (1-12) if the text matches a title
-// pattern, or 0 if no match.  Matches Python's proj_match which returns
-// None for no-match, False for numeric-only lines, and 1-12 for matches.
-func projMatch(text string) int {
-	if len([]rune(text)) <= 2 {
-		return 0
-	}
-	if reNumericLine.MatchString(text) {
-		return 0
-	}
-	for _, p := range projMatchPatterns {
-		if p.re.MatchString(text) {
-			return p.prio
-		}
-	}
-	return 0
-}

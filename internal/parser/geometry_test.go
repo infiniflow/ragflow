@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -64,17 +65,17 @@ func TestSortXByPage(t *testing.T) {
 	}
 }
 
-func TestTextBoxOverlapX(t *testing.T) {
+func TestOverlapX(t *testing.T) {
 	b1 := TextBox{X0: 50, X1: 200}
 	b2 := TextBox{X0: 100, X1: 250}
-	overlap := TextBoxOverlapX(b1, b2)
+	overlap := OverlapX(&b1, &b2)
 	if overlap <= 0.5 || overlap >= 0.8 {
 		t.Errorf("OverlapX = %v, want ~0.667", overlap)
 	}
 
 	b3 := TextBox{X0: 50, X1: 100}
 	b4 := TextBox{X0: 200, X1: 250}
-	if overlap := TextBoxOverlapX(b3, b4); overlap != 0 {
+	if overlap := OverlapX(&b3, &b4); overlap != 0 {
 		t.Errorf("non-overlapping should be 0: got %v", overlap)
 	}
 }
@@ -107,26 +108,6 @@ func TestMedianHeight(t *testing.T) {
 	}
 }
 
-func TestMatchProj(t *testing.T) {
-	tests := []struct {
-		text string
-		want bool
-	}{
-		{"第三章 财务分析", true},
-		{"第五条 合同", true},
-		{"1. 概述", true},
-		{"(1) 内容", true},
-		{"普通段落文本", false},
-		{"Hello world", false},
-	}
-	for _, tt := range tests {
-		got := MatchProj(TextBox{Text: tt.text})
-		if got != tt.want {
-			t.Errorf("MatchProj(%q) = %v, want %v", tt.text, got, tt.want)
-		}
-	}
-}
-
 func TestNaiveVerticalMerge(t *testing.T) {
 	boxes := []TextBox{
 		{PageNumber: 0, ColID: 0, X0: 50, X1: 550, Top: 100, Bottom: 112, Text: "第一段", LayoutNo: "1", LayoutType: "text"},
@@ -139,7 +120,7 @@ func TestNaiveVerticalMerge(t *testing.T) {
 	if len(result) != 1 {
 		t.Errorf("expected 1 merged box, got %d: %v", len(result), result)
 	}
-	if len(result) > 0 && !containsText(result[0].Text, "第一段") {
+	if len(result) > 0 && !strings.Contains(result[0].Text, "第一段") {
 		t.Errorf("merged text should contain '第一段': got %q", result[0].Text)
 	}
 }
@@ -158,14 +139,6 @@ func TestNaiveVerticalMergeNonMerge(t *testing.T) {
 	}
 }
 
-func containsText(s, sub string) bool {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
-}
 
 func TestBoxWidth(t *testing.T) {
 	b := TextBox{X0: 50, X1: 200}

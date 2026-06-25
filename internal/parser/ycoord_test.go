@@ -14,23 +14,15 @@ import (
 // ── Y-coordinate tests ──────────────────────────────────────────────────
 
 // openTestingPDF opens a real PDF by name from testdata/real_pdfs/.
+// Missing fixtures are skipped (soft) rather than failing — these tests
+// require the "manual" build tag and rely on optional fixture files.
 func openTestingPDF(t *testing.T, name string) (PDFEngine, *pdfoxide.Document) {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("testdata", "real_pdfs", name))
-	if err != nil {
+	const dir = filepath.Join("testdata", "real_pdfs")
+	if _, err := os.Stat(filepath.Join(dir, name)); os.IsNotExist(err) {
 		t.Skipf("test PDF not found: %s", name)
 	}
-	doc, err := pdfoxide.OpenBytes(data)
-	if err != nil {
-		t.Fatalf("OpenBytes: %v", err)
-	}
-	t.Cleanup(func() { doc.Close() })
-
-	eng, err := NewEngine(data)
-	if err != nil {
-		t.Fatalf("NewEngine: %v", err)
-	}
-	return eng, doc
+	return openPDF(t, dir, name)
 }
 
 // TestYCoord_SameLineCharsHaveEqualBottom checks that characters on the same

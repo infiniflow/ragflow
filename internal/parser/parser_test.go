@@ -1057,58 +1057,6 @@ func TestCharsToBoxes_ChineseUniformSpacing(t *testing.T) {
 	}
 }
 
-// TestProjMatch_TitleDetection verifies that Go's projMatch matches
-// Python's proj_match title patterns with correct priorities.
-func TestProjMatch_TitleDetection(t *testing.T) {
-	tests := []struct {
-		text     string
-		wantPrio int  // 0 = no match
-	}{
-		// Priority 1: Chinese chapter
-		{"第一章 总则", 1},
-		{"第十二章 附则", 1},
-		// Priority 2: Chinese article/section
-		{"第一百五十二条", 2},
-		{"第三条 职责", 2},
-		// Priority 3: Chinese numbered item
-		{"一、概述", 3},
-		{"十二、其他", 3},
-		// Priority 4: Chinese parenthesized
-		{"（一）适用范围", 4},
-		// Priority 5: Arabic numeral + separator
-		{"1. Introduction", 5},
-		{"2、项目背景", 5},
-		// Priority 6: Dotted decimal (2 levels)
-		{"1.1 Background", 6},
-		{"3.2 内容", 6},
-		// Priority 6: pattern 6 matches "1.1." prefix before patterns 7/8
-		{"1.1.1 子项", 6}, // matches pattern 6 first (1.1. + ".")
-		// Same: pattern 6 matches "1.1." prefix first
-		{"1.1.1.1 细项", 6}, // matches pattern 6 first
-		// Priority 9: Short line ENDING with colon
-		{"短标题：", 9}, // must END with colon
-		// Priority 10: Arabic numeral + right paren
-		{"1）项目", 10},
-		// Priority 11: Arabic numeral in parens
-		{"（1）项目", 11},
-		// Non-titles: return 0
-		{"普通正文内容", 0},
-		{"Hello World", 0},
-		{"AB", 0},  // <=2 chars -> 0
-		{"", 0},
-		// Numeric-only line -> 0
-		{"123.45", 0},
-		{"100%", 0},
-	}
-	for _, tc := range tests {
-		got := projMatch(tc.text)
-		if got != tc.wantPrio {
-			t.Errorf("projMatch(%q) = %d, want %d", tc.text, got, tc.wantPrio)
-		}
-	}
-}
-
-
 
 // TestBoxesToSections_CrossPagePositionTag verifies that a box whose bottom
 // exceeds the page height produces a multi-page PositionTag.

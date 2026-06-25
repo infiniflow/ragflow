@@ -100,22 +100,15 @@ func fillCellTextFromBoxes(cells []TSRCell, boxes []TextBox) {
 // is empty, any overlap suffices — matching Python's _table_transformer_job
 // which fills cells from overlapping PDF boxes with thr=0.3.
 func boxMatchesCell(cell TSRCell, box TextBox, cellIsEmpty bool) bool {
-	ix0 := math.Max(cell.X0, box.X0)
-	iy0 := math.Max(cell.Y0, box.Top)
-	ix1 := math.Min(cell.X1, box.X1)
-	iy1 := math.Min(cell.Y1, box.Bottom)
-	if ix0 >= ix1 || iy0 >= iy1 {
-		return false
-	}
-	intersection := (ix1 - ix0) * (iy1 - iy0)
-	boxArea := (box.X1 - box.X0) * (box.Bottom - box.Top)
+	inter := OverlapInter(&cell, &box)
+	boxArea := Area(&box)
 	if boxArea <= 0 {
 		return false
 	}
 	if cellIsEmpty {
-		return intersection/boxArea >= 0.3 // Python's find_overlapped_with_threshold default
+		return inter/boxArea >= 0.3 // Python's find_overlapped_with_threshold default
 	}
-	return intersection/boxArea >= 0.85
+	return inter/boxArea >= 0.85
 }
 
 // boxOverlapsCell is kept for backward compat — same as boxMatchesCell

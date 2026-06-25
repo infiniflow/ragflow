@@ -148,7 +148,7 @@ func TestVMWhitespaceGapBridge(t *testing.T) {
 			if isWS && len(out) > 0 {
 				prev := &out[len(out)-1]
 				gap := b.Top - prev.Bottom
-				ov := TextBoxOverlapX(*prev, b)
+				ov := OverlapX(prev, &b)
 				// Python: gap passes AND xov passes → whitespace merged
 				// into prev, extending bottom.  i advances (Go for-loop).
 				if gap <= thr && ov >= 0.3 {
@@ -166,7 +166,7 @@ func TestVMWhitespaceGapBridge(t *testing.T) {
 				continue
 			}
 			gap := b.Top - prev.Bottom
-			ov := TextBoxOverlapX(*prev, b)
+			ov := OverlapX(prev, &b)
 			if gap > thr {
 				out = append(out, b)
 				continue
@@ -216,7 +216,7 @@ func TestVMWhitespaceGapBridge(t *testing.T) {
 				continue
 			}
 			gap := b.Top - prev.Bottom
-			ov := TextBoxOverlapX(*prev, b)
+			ov := OverlapX(prev, &b)
 			if gap > thr {
 				out = append(out, b)
 				continue

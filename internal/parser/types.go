@@ -78,6 +78,10 @@ type TextChar struct {
 	R               int     // rotation/orientation marker
 }
 
+func (c TextChar) Bounds() (float64, float64, float64, float64) {
+	return c.X0, c.Top, c.X1, c.Bottom
+}
+
 // TextBox represents a rectangular region of text on a PDF page,
 // typically a line or paragraph fragment. Created by layout analysis
 // (e.g. _assign_column, _text_merge).
@@ -103,6 +107,10 @@ type TextBox struct {
 	C             int     // column index
 	CLeft, CRight float64 // column left/right
 	SP            int     // spanning cell index
+}
+
+func (b TextBox) Bounds() (float64, float64, float64, float64) {
+	return b.X0, b.Top, b.X1, b.Bottom
 }
 
 // Position represents a parsed position tag from @@...## format.
@@ -279,9 +287,17 @@ type DLARegion struct {
 	Confidence     float64
 }
 
+func (r DLARegion) Bounds() (float64, float64, float64, float64) {
+	return r.X0, r.Y0, r.X1, r.Y1
+}
+
 // TSRCell represents one table cell from TSR.
 type TSRCell struct {
 	X0, Y0, X1, Y1 float64
 	Text           string
 	Label          string // "table", "table row", "table column", etc.
+}
+
+func (c TSRCell) Bounds() (float64, float64, float64, float64) {
+	return c.X0, c.Y0, c.X1, c.Y1
 }

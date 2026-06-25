@@ -13,7 +13,7 @@ import (
 func sortYFirstly(cells []TSRCell, threshold float64) {
 	sort.Slice(cells, func(i, j int) bool {
 		diff := cells[i].Y0 - cells[j].Y0
-		if abs(diff) < threshold {
+		if math.Abs(diff) < threshold {
 			return cells[i].X0 < cells[j].X0
 		}
 		return diff < 0
@@ -24,18 +24,11 @@ func sortYFirstly(cells []TSRCell, threshold float64) {
 func sortXFirstly(cells []TSRCell, threshold float64) {
 	sort.Slice(cells, func(i, j int) bool {
 		diff := cells[i].X0 - cells[j].X0
-		if abs(diff) < threshold {
+		if math.Abs(diff) < threshold {
 			return cells[i].Y0 < cells[j].Y0
 		}
 		return diff < 0
 	})
-}
-
-func abs(f float64) float64 {
-	if f < 0 {
-		return -f
-	}
-	return f
 }
 
 // layoutCleanup removes duplicate/overlapping cells of the same type.
@@ -64,8 +57,8 @@ func layoutCleanup(cells []TSRCell, boxes []TextBox, far int, thr float64) []TSR
 			continue
 		}
 		// Cells i and j overlap and have same type. Keep one.
-		areaI := overlapArea(out[i], out[j])
-		areaJ := overlapArea(out[j], out[i])
+		areaI := OverlapRatioA(&out[i], &out[j])
+		areaJ := OverlapRatioA(&out[j], &out[i])
 		if areaI < thr && areaJ < thr {
 			i++
 			continue
@@ -75,10 +68,10 @@ func layoutCleanup(cells []TSRCell, boxes []TextBox, far int, thr float64) []TSR
 		boxAreaI, boxAreaJ := 0.0, 0.0
 		for _, b := range boxes {
 			if !tsrBoxOverlap(b, out[i]) {
-				boxAreaI += tsrOverlapArea(b, out[i])
+				boxAreaI += OverlapInter(&b, &out[i])
 			}
 			if !tsrBoxOverlap(b, out[j]) {
-				boxAreaJ += tsrOverlapArea(b, out[j])
+				boxAreaJ += OverlapInter(&b, &out[j])
 			}
 		}
 		if boxAreaI >= boxAreaJ {
@@ -95,39 +88,10 @@ func notOverlapped(a, b TSRCell) bool {
 	return a.X1 < b.X0 || a.X0 > b.X1 || a.Y1 < b.Y0 || a.Y0 > b.Y1
 }
 
-// overlapArea returns the area of cell a that overlaps cell b, as a fraction
-// of cell a's area.
-func overlapArea(a, b TSRCell) float64 {
-	ix0 := max(a.X0, b.X0)
-	iy0 := max(a.Y0, b.Y0)
-	ix1 := min(a.X1, b.X1)
-	iy1 := min(a.Y1, b.Y1)
-	if ix0 >= ix1 || iy0 >= iy1 {
-		return 0
-	}
-	intersection := (ix1 - ix0) * (iy1 - iy0)
-	area := (a.X1 - a.X0) * (a.Y1 - a.Y0)
-	if area <= 0 {
-		return 0
-	}
-	return intersection / area
-}
 
 // tsrBoxOverlap returns true if a TextBox and a TSRCell do NOT overlap.
 func tsrBoxOverlap(b TextBox, c TSRCell) bool {
 	return b.X1 < c.X0 || b.X0 > c.X1 || b.Bottom < c.Y0 || b.Top > c.Y1
-}
-
-// tsrOverlapArea returns the overlap area between a TextBox and TSRCell.
-func tsrOverlapArea(b TextBox, c TSRCell) float64 {
-	ix0 := max(b.X0, c.X0)
-	iy0 := max(b.Top, c.Y0)
-	ix1 := min(b.X1, c.X1)
-	iy1 := min(b.Bottom, c.Y1)
-	if ix0 >= ix1 || iy0 >= iy1 {
-		return 0
-	}
-	return (ix1 - ix0) * (iy1 - iy0)
 }
 
 // findOverlappedWithThreshold returns the index of the cell with the best
@@ -135,18 +99,18 @@ func tsrOverlapArea(b TextBox, c TSRCell) float64 {
 // Python: Recognizer.find_overlapped_with_threshold(box, boxes, thr=0.3)
 // Python uses max(boxRatio, cellRatio) for both gate and scoring.
 func findOverlappedWithThreshold(box TextBox, cells []TSRCell, thr float64) int {
-	boxArea := (box.X1 - box.X0) * (box.Bottom - box.Top)
+	boxArea := Area(&box)
 	if boxArea <= 0 {
 		return -1
 	}
 	bestIdx := -1
 	bestOverlap := thr // Python: max_overlap starts at thr
 	for i, c := range cells {
-		cellArea := (c.X1 - c.X0) * (c.Y1 - c.Y0)
+		cellArea := Area(&c)
 		if cellArea <= 0 {
 			continue
 		}
-		ol := overlapAreaBoxCell(box, c)
+		ol := OverlapInter(&box, &c)
 		if ol <= 0 {
 			continue
 		}
@@ -162,16 +126,6 @@ func findOverlappedWithThreshold(box TextBox, cells []TSRCell, thr float64) int 
 	return bestIdx
 }
 
-func overlapAreaBoxCell(box TextBox, cell TSRCell) float64 {
-	ix0 := max(box.X0, cell.X0)
-	iy0 := max(box.Top, cell.Y0)
-	ix1 := min(box.X1, cell.X1)
-	iy1 := min(box.Bottom, cell.Y1)
-	if ix0 >= ix1 || iy0 >= iy1 {
-		return 0
-	}
-	return (ix1 - ix0) * (iy1 - iy0)
-}
 
 // findHorizontallyTightestFit returns the index of the column cell that
 // horizontally contains the box with minimal width difference.

@@ -236,7 +236,7 @@ func ocrMergeChars(ctx context.Context, pageImg image.Image, chars []TextChar, d
 
 	// Detect boxes are in pixel space (216 DPI).  Scale to PDF space (72 DPI)
 	// so coordinates match embedded chars.
-	scale := dlaDPI / 72.0 // 3.0
+	scale := dlaScale // 3.0
 	imgBounds := pageImg.Bounds()
 	imgW := float64(imgBounds.Dx()) / scale
 	imgH := float64(imgBounds.Dy()) / scale
@@ -441,16 +441,8 @@ func charBoxOverlapRatio(c TextChar, x0, x1, y0, y1 float64) float64 {
 	if charArea <= 0 {
 		return 0
 	}
-	// Intersection rectangle.
-	ix0 := math.Max(c.X0, x0)
-	iy0 := math.Max(c.Top, y0)
-	ix1 := math.Min(c.X1, x1)
-	iy1 := math.Min(c.Bottom, y1)
-	if ix0 >= ix1 || iy0 >= iy1 {
-		return 0
-	}
-	intersection := (ix1 - ix0) * (iy1 - iy0)
-	return intersection / charArea
+	inter := rectOverlapInter(c.X0, c.Top, c.X1, c.Bottom, x0, y0, x1, y1)
+	return inter / charArea
 }
 
 // ocrTableCells fills empty TSR cells via OCR recognition.

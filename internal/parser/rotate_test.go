@@ -35,10 +35,12 @@ func pdfiumPtSize(eng PDFEngine, file string, t *testing.T) (w, h float64) {
 	return pw, ph
 }
 
-func openRotatePDF(t *testing.T, name string) (PDFEngine, *pdfoxide.Document) {
+// openPDF reads a PDF fixture from dir/name, opens it via pdfoxide, and
+// returns both the engine and document. The document is closed via t.Cleanup.
+// Missing or corrupt fixtures cause a hard failure (t.Fatal).
+func openPDF(t *testing.T, dir, name string) (PDFEngine, *pdfoxide.Document) {
 	t.Helper()
-	path := filepath.Join("testdata", "pdfs", name)
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(filepath.Join(dir, name))
 	if err != nil {
 		t.Fatalf("read %s: %v", name, err)
 	}
@@ -52,6 +54,11 @@ func openRotatePDF(t *testing.T, name string) (PDFEngine, *pdfoxide.Document) {
 		t.Fatalf("NewEngine: %v", err)
 	}
 	return eng, doc
+}
+
+func openRotatePDF(t *testing.T, name string) (PDFEngine, *pdfoxide.Document) {
+	t.Helper()
+	return openPDF(t, "testdata/pdfs", name)
 }
 
 // ── Test 1: pdf_oxide page size is A4 for all test PDFs ──────────────────
@@ -465,33 +472,7 @@ func TestRotation_LetterSize(t *testing.T) {
 			scale := 216.0 / 72.0
 			t.Logf("pdfium render: %.0fx%.0f pts", float64(imgW)/scale, float64(imgH)/scale)
 
-			n, step := len(chars), max(1, len(chars)/min(50, len(chars)))
-			hit := 0
-			checked := 0
-			for i := 0; i < n; i += step {
-				c := chars[i]
-				px0 := int(math.Round(c.X0 * scale))
-				py0 := int(math.Round(c.Top * scale))
-				px1 := int(math.Round(c.X1 * scale))
-				py1 := int(math.Round(c.Bottom * scale))
-				if px0 < 0 || py0 < 0 || px1 > imgW || py1 > imgH || px0 >= px1 || py0 >= py1 {
-					continue
-				}
-				dark, total := 0, 0
-				for y := py0; y <= py1; y++ {
-					for x := px0; x <= px1; x++ {
-						r, g, b, _ := img.At(x, y).RGBA()
-						if (float64(r>>8)+float64(g>>8)+float64(b>>8))/3.0 < 128 {
-							dark++
-						}
-						total++
-					}
-				}
-				if total > 0 && float64(dark)/float64(total)*100 > 2.0 {
-					hit++
-				}
-				checked++
-			}
+			hit, checked := bboxDarkPixelHitRate(t, chars, img, scale)
 			if checked > 0 {
 				hitRate := float64(hit) / float64(checked) * 100
 				t.Logf("Letter render alignment: %d/%d hit (%.1f%%)", hit, checked, hitRate)
