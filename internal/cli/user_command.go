@@ -39,7 +39,7 @@ import (
 
 // Show server version to show RAGFlow server version
 // Returns benchmark result map if iterations > 1, otherwise prints status
-func (c *CLI) ShowServerVersion(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APIShowVersionCommand(cmd *Command) (ResponseIf, error) {
 	// Get iterations from command params (for benchmark)
 	iterations := 1
 	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
@@ -336,12 +336,6 @@ func (c *CLI) APIListDatasetsCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	// Check for benchmark iterations
-	iterations := 1
-	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
-		iterations = val
-	}
-
 	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
 
 	// Determine auth kind based on whether API key is being used
@@ -356,11 +350,6 @@ func (c *CLI) APIListDatasetsCommand(cmd *Command) (ResponseIf, error) {
 
 	if httpClient.LoginToken != nil {
 		authKind = "web"
-	}
-
-	if iterations > 1 {
-		// Benchmark mode - return raw result for benchmark stats
-		return httpClient.RequestWithIterations("GET", "/datasets", authKind, nil, nil, iterations)
 	}
 
 	// Normal mode
@@ -407,6 +396,52 @@ func (c *CLI) APIListDatasetDocumentsCommand(cmd *Command) (ResponseIf, error) {
 	keywords := ""
 	returnEmptyMetadata := "true"
 	url := fmt.Sprintf("/datasets/%s/documents?page=%d&page_size=%d&keywords=%s&return_empty_metadata=%s", datasetID, page, pageSize, keywords, returnEmptyMetadata)
+
+	// Normal mode
+	resp, err := httpClient.Request("GET", url, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list documents: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list documents: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result ListDocumentsResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list documents failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+
+	return &result, nil
+}
+
+func (c *CLI) APIListDatasetFilesCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+	// Determine auth kind based on whether API key is being used
+	if httpClient.LoginToken == nil && !httpClient.useAPIKey {
+		return nil, fmt.Errorf("no authorization")
+	}
+
+	datasetName, ok := cmd.Params["dataset_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("no dataset name")
+	}
+
+	datasetID, err := c.getDatasetIDByName(datasetName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dataset id: %w", err)
+	}
+
+	url := fmt.Sprintf("/datasets/%s/documents", datasetID)
 
 	// Normal mode
 	resp, err := httpClient.Request("GET", url, "web", nil, nil)
@@ -1064,8 +1099,8 @@ func (c *CLI) APISetAPIKey(cmd *Command) (ResponseIf, error) {
 	return &successResult, nil
 }
 
-// ShowToken displays the current API key
-func (c *CLI) ShowToken(cmd *Command) (ResponseIf, error) {
+// APIShowAPIKeyCommand displays the current API key
+func (c *CLI) APIShowAPIKeyCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
@@ -1074,22 +1109,18 @@ func (c *CLI) ShowToken(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("no API key is currently set")
 	}
 
-	//fmt.Printf("Token: %s\n", c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey)
-
-	var result CommonResponse
+	var result CommonDataResponse
 	result.Code = 0
 	result.Message = ""
-	result.Data = []map[string]interface{}{
-		{
-			"token": c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey,
-		},
+	result.Data = map[string]interface{}{
+		"token": *c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey,
 	}
 	result.Duration = 0
 	return &result, nil
 }
 
-// APIUnsetAPIKey removes the current API key
-func (c *CLI) APIUnsetAPIKey(cmd *Command) (ResponseIf, error) {
+// APIUnsetAPIKeyCommand removes the current API key
+func (c *CLI) APIUnsetAPIKeyCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
@@ -1327,9 +1358,8 @@ func (c *CLI) AddProvider(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// ListProviders lists all providers
-// LIST PROVIDERS
-func (c *CLI) ListProviders(cmd *Command) (ResponseIf, error) {
+// APIListProviders lists added providers
+func (c *CLI) APIListProviders(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
@@ -2554,7 +2584,7 @@ func (c *CLI) ParseFileUserCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) ListTasksUserCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APIListModelInstanceTasksCommand(cmd *Command) (ResponseIf, error) {
 	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
 		return nil, fmt.Errorf("API key not set. Please login first")
 	}
@@ -2563,18 +2593,14 @@ func (c *CLI) ListTasksUserCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	var providerName, instanceName string
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("no provider name")
+	}
 
-	// Check if composite_instance_name is provided in command
-	if compositeModelName, ok := cmd.Params["composite_instance_name"].(string); ok && compositeModelName != "" {
-		names := strings.Split(compositeModelName, "@")
-		if len(names) != 2 {
-			return nil, fmt.Errorf("model name must be in format 'instance@provider'")
-		}
-		providerName = names[1]
-		instanceName = names[0]
-	} else {
-		return nil, fmt.Errorf("no provider name or instance name")
+	instanceName, ok := cmd.Params["instance_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("no instance name")
 	}
 
 	url := fmt.Sprintf("/providers/%s/instances/%s/tasks", providerName, instanceName)

@@ -62,10 +62,20 @@ class WikipediaParam(ToolParamBase):
         }
 
 class Wikipedia(ToolBase, ABC):
+    """Wikipedia search tool that retrieves and processes Wikipedia articles."""
+
     component_name = "Wikipedia"
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 60)))
     def _invoke(self, **kwargs):
+        """Search Wikipedia for articles matching the query and return formalized content.
+
+        Args:
+            **kwargs: Must include 'query' key with the search keyword.
+
+        Returns:
+            Formatted Wikipedia content or error message.
+        """
         if self.check_if_canceled("Wikipedia processing"):
             return
 
@@ -88,8 +98,12 @@ class Wikipedia(ToolBase, ABC):
 
                     try:
                         pages.append(wikipedia.page(p))
-                    except Exception:
-                        pass
+                    except wikipedia.exceptions.DisambiguationError as e:
+                        logging.info(f"Wikipedia disambiguation for '{p}', options: {e.options[:5]}")
+                    except wikipedia.exceptions.PageError:
+                        logging.info(f"Wikipedia page not found: '{p}'")
+                    except Exception as e:
+                        logging.exception(f"Unexpected error fetching Wikipedia page '{p}': {e}")
                 self._retrieve_chunks(pages,
                                       get_title=lambda r: r.title,
                                       get_url=lambda r: r.url,
