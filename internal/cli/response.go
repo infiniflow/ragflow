@@ -108,6 +108,24 @@ func (r *CommonDataResponse) SetOutputFormat(format OutputFormat) {
 	r.OutputFormat = format
 }
 
+func (r *CommonDataResponse) orderedMetricTable() []map[string]interface{} {
+	table := make([]map[string]interface{}, 0)
+	if orderRaw, ok := r.Data["_order"]; ok {
+		if orderSlice, ok := orderRaw.([]interface{}); ok {
+			for _, keyRaw := range orderSlice {
+				key := fmt.Sprintf("%v", keyRaw)
+				if value, exists := r.Data[key]; exists {
+					table = append(table, map[string]interface{}{
+						"Metric": key,
+						"Value":  value,
+					})
+				}
+			}
+		}
+	}
+	return table
+}
+
 func (r *CommonDataResponse) PrintOut() {
 	if r.Code == 0 {
 		table := make([]map[string]interface{}, 0)
@@ -890,7 +908,7 @@ func chunkDocName(c map[string]interface{}) string {
 }
 
 type UserIndexResponse struct {
-	OrderedCommonDataResponse
+	CommonDataResponse
 }
 
 func (r *UserIndexResponse) Type() string {
@@ -958,7 +976,7 @@ func (r *UserIndexResponse) PrintOut() {
 }
 
 type UserStorageResponse struct {
-	OrderedCommonDataResponse
+	CommonDataResponse
 }
 
 func (r *UserStorageResponse) Type() string {
@@ -1035,7 +1053,7 @@ func truncateStr(s string, maxLen int) string {
 }
 
 type UserQuotaResponse struct {
-	OrderedCommonDataResponse
+	CommonDataResponse
 }
 
 func (r *UserQuotaResponse) Type() string {
@@ -1083,24 +1101,6 @@ func (r *OrderedCommonResponse) PrintOut() {
 
 type OrderedCommonDataResponse struct {
 	CommonDataResponse
-}
-
-func (r *OrderedCommonDataResponse) orderedMetricTable() []map[string]interface{} {
-	table := make([]map[string]interface{}, 0)
-	if orderRaw, ok := r.Data["_order"]; ok {
-		if orderSlice, ok := orderRaw.([]interface{}); ok {
-			for _, keyRaw := range orderSlice {
-				key := fmt.Sprintf("%v", keyRaw)
-				if value, exists := r.Data[key]; exists {
-					table = append(table, map[string]interface{}{
-						"Metric": key,
-						"Value":  value,
-					})
-				}
-			}
-		}
-	}
-	return table
 }
 
 func (r *OrderedCommonDataResponse) PrintOut() {
