@@ -553,33 +553,44 @@ def with_retry(max_retries=3, retry_delay=1.0):
 
 
 class PostgresDatabaseLock:
-    _LOCK_POLL_INTERVAL = 0.1
-
     def __init__(self, lock_name, timeout=10, db=None):
         self.lock_name = lock_name
         self.lock_id = int(hashlib.md5(lock_name.encode()).hexdigest(), 16) % (2**31 - 1)
         self.timeout = int(timeout)
         self.db = db if db else DB
 
+    @staticmethod
+    def _is_lock_timeout_error(exc):
+        err = str(exc).lower()
+        return "lock timeout" in err or "55p03" in err
+
+    def _reset_lock_timeout(self):
+        self.db.execute_sql("SET lock_timeout = DEFAULT")
+
     @with_retry(max_retries=3, retry_delay=1.0)
     def lock(self):
         # Match MySQL GET_LOCK semantics: timeout < 0 waits indefinitely,
-        # otherwise wait up to `timeout` seconds before raising.
+        # otherwise block up to `timeout` seconds using PostgreSQL lock_timeout.
         if self.timeout < 0:
             self.db.execute_sql("SELECT pg_advisory_lock(%s)", (self.lock_id,))
             return True
 
-        deadline = time.monotonic() + self.timeout
-        while True:
-            cursor = self.db.execute_sql("SELECT pg_try_advisory_lock(%s)", (self.lock_id,))
-            ret = cursor.fetchone()
-            if ret[0] == 1:
-                return True
-            if ret[0] != 0:
-                raise Exception(f"failed to acquire lock {self.lock_name}")
-            if time.monotonic() >= deadline:
-                raise Exception(f"acquire postgres lock {self.lock_name} timeout")
-            time.sleep(self._LOCK_POLL_INTERVAL)
+        try:
+            self.db.execute_sql("SET lock_timeout = %s", (f"{self.timeout}s",))
+            self.db.execute_sql("SELECT pg_advisory_lock(%s)", (self.lock_id,))
+            return True
+        except OperationalError as e:
+            if self._is_lock_timeout_error(e):
+                raise Exception(f"acquire postgres lock {self.lock_name} timeout") from e
+            raise
+        finally:
+            try:
+                self._reset_lock_timeout()
+            except Exception:
+                logging.exception(
+                    "failed to reset postgres lock_timeout after advisory lock %s",
+                    self.lock_name,
+                )
 
     @with_retry(max_retries=3, retry_delay=1.0)
     def unlock(self):
