@@ -108,24 +108,6 @@ func (r *CommonDataResponse) SetOutputFormat(format OutputFormat) {
 	r.OutputFormat = format
 }
 
-func (r *CommonDataResponse) orderedMetricTable() []map[string]interface{} {
-	table := make([]map[string]interface{}, 0)
-	if orderRaw, ok := r.Data["_order"]; ok {
-		if orderSlice, ok := orderRaw.([]interface{}); ok {
-			for _, keyRaw := range orderSlice {
-				key := fmt.Sprintf("%v", keyRaw)
-				if value, exists := r.Data[key]; exists {
-					table = append(table, map[string]interface{}{
-						"Metric": key,
-						"Value":  value,
-					})
-				}
-			}
-		}
-	}
-	return table
-}
-
 func (r *CommonDataResponse) PrintOut() {
 	if r.Code == 0 {
 		table := make([]map[string]interface{}, 0)
@@ -908,7 +890,7 @@ func chunkDocName(c map[string]interface{}) string {
 }
 
 type UserIndexResponse struct {
-	CommonDataResponse
+	OrderedCommonDataResponse
 }
 
 func (r *UserIndexResponse) Type() string {
@@ -976,7 +958,7 @@ func (r *UserIndexResponse) PrintOut() {
 }
 
 type UserStorageResponse struct {
-	CommonDataResponse
+	OrderedCommonDataResponse
 }
 
 func (r *UserStorageResponse) Type() string {
@@ -1053,7 +1035,7 @@ func truncateStr(s string, maxLen int) string {
 }
 
 type UserQuotaResponse struct {
-	CommonDataResponse
+	OrderedCommonDataResponse
 }
 
 func (r *UserQuotaResponse) Type() string {
@@ -1079,5 +1061,65 @@ func (r *UserQuotaResponse) PrintOut() {
 	}
 	if len(summaryTable) > 0 {
 		PrintTableSimpleByFormatWithOrder(summaryTable, []string{"Metric", "Used", "Limit"}, r.OutputFormat)
+	}
+}
+
+type OrderedCommonResponse struct {
+	CommonResponse
+}
+
+func (r *OrderedCommonResponse) PrintOut() {
+	if r.Code == 0 {
+		if colNames, cleanData, ok := ExtractColumnsAndCleanData(r.Data); ok {
+			PrintTableSimpleByFormatWithOrder(cleanData, colNames, r.OutputFormat)
+		} else {
+			PrintTableSimpleByFormat(r.Data, r.OutputFormat)
+		}
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
+type OrderedCommonDataResponse struct {
+	CommonDataResponse
+}
+
+func (r *OrderedCommonDataResponse) orderedMetricTable() []map[string]interface{} {
+	table := make([]map[string]interface{}, 0)
+	if orderRaw, ok := r.Data["_order"]; ok {
+		if orderSlice, ok := orderRaw.([]interface{}); ok {
+			for _, keyRaw := range orderSlice {
+				key := fmt.Sprintf("%v", keyRaw)
+				if value, exists := r.Data[key]; exists {
+					table = append(table, map[string]interface{}{
+						"Metric": key,
+						"Value":  value,
+					})
+				}
+			}
+		}
+	}
+	return table
+}
+
+func (r *OrderedCommonDataResponse) PrintOut() {
+	if r.Code == 0 {
+		if table := r.orderedMetricTable(); len(table) > 0 {
+			PrintTableSimpleByFormat(table, r.OutputFormat)
+		} else {
+			table := make([]map[string]interface{}, 0)
+			for key, value := range r.Data {
+				elem := map[string]interface{}{
+					"field": key,
+					"value": value,
+				}
+				table = append(table, elem)
+			}
+			PrintTableSimpleByFormat(table, r.OutputFormat)
+		}
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
 	}
 }
