@@ -6655,10 +6655,6 @@
       ],
       "tools": {
         "support": true
-      },
-      "structured_output": {
-        "support": true,
-        "types": ["json"]
       }
     },
     {
@@ -6669,10 +6665,6 @@
       ],
       "tools": {
         "support": true
-      },
-      "structured_output": {
-        "support": true,
-        "types": ["json"]
       }
     },
     {
@@ -6726,10 +6718,6 @@
       ],
       "tools": {
         "support": true
-      },
-      "structured_output": {
-        "support": true,
-        "types": ["json"]
       }
     },
     {
@@ -6754,10 +6742,6 @@
       ],
       "tools": {
         "support": true
-      },
-      "structured_output": {
-        "support": true,
-        "types": ["json"]
       },
       "thinking": {
         "default_value": true,
@@ -37388,10 +37372,6 @@
       "tools": {
         "support": true
       },
-      "structured_output": {
-        "support": true,
-        "types": ["json"]
-      },
       "model_types": [
         "chat"
       ]
@@ -37408,10 +37388,6 @@
       ],
       "tools": {
         "support": true
-      },
-      "structured_output": {
-        "support": true,
-        "types": ["json"]
       },
       "model_types": [
         "chat"

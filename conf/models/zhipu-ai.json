@@ -29,10 +29,6 @@
       },
       "tools": {
         "support": true
-      },
-      "structured_output": {
-        "support": true,
-        "types": ["json"]
       }
     },
     {
@@ -47,10 +43,6 @@
       },
       "tools": {
         "support": true
-      },
-      "structured_output": {
-        "support": true,
-        "types": ["json"]
       }
     },
     {

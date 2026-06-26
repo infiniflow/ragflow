@@ -157,24 +157,18 @@ type ModelTools struct {
 	Support bool `json:"support"`
 }
 
-type StructuredOutput struct {
-	Support bool     `json:"support"`
-	Types   []string `json:"types"`
-}
-
 // Model represents a single LLM model
 type Model struct {
-	Name             string            `json:"name"`
-	MaxTokens        *int              `json:"max_tokens"`
-	ModelTypes       []string          `json:"model_types"`
-	Thinking         *ModelThinking    `json:"thinking"`
-	Tools            *ModelTools       `json:"tools"`
-	StructuredOutput *StructuredOutput `json:"structured_output"`
-	Class            *string           `json:"class"`
-	MaxDimension     *int              `json:"max_dimension"` // used by embedding models
-	Dimensions       []int             `json:"dimensions"`
-	Alias            []string          `json:"alias"`
-	ModelTypeMap     map[string]bool
+	Name         string         `json:"name"`
+	MaxTokens    *int           `json:"max_tokens"`
+	ModelTypes   []string       `json:"model_types"`
+	Thinking     *ModelThinking `json:"thinking"`
+	Tools        *ModelTools    `json:"tools"`
+	Class        *string        `json:"class"`
+	MaxDimension *int           `json:"max_dimension"` // used by embedding models
+	Dimensions   []int          `json:"dimensions"`
+	Alias        []string       `json:"alias"`
+	ModelTypeMap map[string]bool
 }
 
 // Provider represents an LLM provider
@@ -423,9 +417,6 @@ func (pm *ProviderManager) ListAllModels() ([]map[string]interface{}, error) {
 		if model.Tools != nil {
 			modelData["tools"] = "supported"
 		}
-		if model.StructuredOutput != nil {
-			modelData["structured_output"] = "supported"
-		}
 		modelList = append(modelList, modelData)
 	}
 
@@ -498,9 +489,6 @@ func (pm *ProviderManager) ListModels(providerName string) ([]map[string]interfa
 		}
 		if model.Tools != nil {
 			modelData["tools"] = "supported"
-		}
-		if model.StructuredOutput != nil {
-			modelData["structured_output"] = "supported"
 		}
 		modelList = append(modelList, modelData)
 	}
