@@ -80,6 +80,20 @@ export interface IUpdateModelStatusRequestBody {
   status: 'active' | 'inactive';
 }
 
+/**
+ * Body shape for PATCH `/providers/{name}/instances/{name}/models/{model_name}`.
+ * All fields are optional; only the supplied keys are updated server-side.
+ */
+export interface IPatchInstanceModelRequestBody {
+  provider_name: string;
+  instance_name: string;
+  model_name: string;
+  status?: 'active' | 'inactive';
+  max_tokens?: number;
+  model_type?: string[];
+  is_tools?: boolean;
+}
+
 export interface IDeleteInstanceModelsRequestBody {
   provider_name: string;
   instance_name: string;

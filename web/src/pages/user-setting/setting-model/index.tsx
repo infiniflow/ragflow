@@ -110,6 +110,12 @@ const SettingModelV2: FC = () => {
         model_info: values.model_info,
       } as any);
       if (ret?.code === 0) {
+        // Mark this selection as "user-engaged" so the auto-show effect
+        // below does not spawn another draft while the providerInstances
+        // refetch is still in flight (during that window both `instances`
+        // and `draftIds` are empty and would otherwise re-trigger
+        // `addDraft()`).
+        cancelledRef.current = true;
         removeDraft(id);
         queryClient.invalidateQueries({
           queryKey: LlmKeys.providerInstances(providerQueryName),
@@ -123,6 +129,19 @@ const SettingModelV2: FC = () => {
       providerQueryName,
       removeDraft,
     ],
+  );
+
+  // The instance name has just been persisted (via the dedicated
+  // "Save name" button inside the draft card). Remove the draft and
+  // pin the auto-show guard so a new placeholder draft is not
+  // auto-injected during the brief window between draft removal and
+  // the providerInstances refetch landing.
+  const handleNameSaved = useCallback(
+    (id: string) => {
+      cancelledRef.current = true;
+      removeDraft(id);
+    },
+    [removeDraft],
   );
 
   // User clicked Cancel on a specific draft — remove it from the list
@@ -179,7 +198,7 @@ const SettingModelV2: FC = () => {
                   instance={draftInstance}
                   isDraft
                   onDelete={() => handleDraftCancel(id)}
-                  onNameSaved={() => removeDraft(id)}
+                  onNameSaved={() => handleNameSaved(id)}
                   onSaved={(values) => handleDraftSave(id, values)}
                 />
               ))}

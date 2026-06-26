@@ -86,6 +86,16 @@ export default {
     model_name: string;
   }) =>
     `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models/${model_name}`,
+  patchInstanceModel: ({
+    provider_name,
+    instance_name,
+    model_name,
+  }: {
+    provider_name: string;
+    instance_name: string;
+    model_name: string;
+  }) =>
+    `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models/${model_name}`,
   deleteInstanceModels: ({
     provider_name,
     instance_name,

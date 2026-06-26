@@ -16,6 +16,7 @@ const {
   editInstanceModel,
   deleteProviderInstance,
   updateModelStatus,
+  patchInstanceModel,
   deleteInstanceModels,
   updateProviderInstance,
 } = api;
@@ -79,6 +80,10 @@ const methods = {
   },
   updateModelStatus: {
     url: updateModelStatus,
+    method: 'patch',
+  },
+  patchInstanceModel: {
+    url: patchInstanceModel,
     method: 'patch',
   },
   deleteInstanceModels: {

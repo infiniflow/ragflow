@@ -16,12 +16,18 @@
 
 import { Button } from '@/components/ui/button';
 import { SearchInput } from '@/components/ui/input';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import {
   useAddInstanceModel,
   useDeleteInstanceModels,
   useFetchInstanceModels,
   useListProviderModels,
+  usePatchInstanceModel,
   useUpdateProviderInstance,
   useVerifyProviderConnection,
 } from '@/hooks/use-llm-request';
@@ -30,8 +36,11 @@ import { IModelInfo, IProviderModelItem } from '@/interfaces/request/llm';
 import { cn } from '@/lib/utils';
 import {
   Check,
+  ListMinus,
+  ListPlus,
   Loader2,
   Minus,
+  Pencil,
   Plus,
   RefreshCcw,
   Search,
@@ -121,6 +130,7 @@ export function ModelsSection({
   const { deleteInstanceModels } = useDeleteInstanceModels();
   const { updateProviderInstance, loading: batchLoading } =
     useUpdateProviderInstance();
+  const { patchInstanceModel, loading: editLoading } = usePatchInstanceModel();
   const { verifyProviderConnection } = useVerifyProviderConnection();
   const { data: instanceModels } = useFetchInstanceModels(
     providerName,
@@ -136,6 +146,12 @@ export function ModelsSection({
   const [search, setSearch] = useState('');
   const [tag, setTag] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  // Model currently being edited via AddCustomModelDialog (with `name`
+  // pinned/disabled and the dialog initial values pre-populated from the
+  // model's current config). `null` when the edit dialog is closed.
+  const [editingModel, setEditingModel] = useState<IProviderModelItem | null>(
+    null,
+  );
   const [verify, setVerify] = useState<VerifyState>({ status: 'idle' });
   // True only while the user is actively waiting on a click of the
   // "List Models" button. Kept independent from the mutation's own
@@ -171,13 +187,14 @@ export function ModelsSection({
   // container — without this guard, opening the dialog (focus shifts
   // into the Portal) would otherwise fire a spurious save.
   useEffect(() => {
-    onBlurSuppressChange?.(dialogOpen);
+    const open = dialogOpen || editingModel !== null;
+    onBlurSuppressChange?.(open);
     // On unmount, release any active suppression so the host is not
     // left permanently muted.
     return () => {
-      if (dialogOpen) onBlurSuppressChange?.(false);
+      if (open) onBlurSuppressChange?.(false);
     };
-  }, [dialogOpen, onBlurSuppressChange]);
+  }, [dialogOpen, editingModel, onBlurSuppressChange]);
 
   // Mark `hasFetched` true once the per-instance query resolves — even if
   // it returned an empty array — so `hideIfEmpty` can safely take effect.
@@ -426,6 +443,67 @@ export function ModelsSection({
     });
   };
 
+  // Field schema for the edit dialog — identical to the add schema
+  // except the `name` field is locked (model name is the row's primary
+  // key and the API forbids renaming via this endpoint).
+  const editModelDialogFields = useMemo(() => {
+    return customModelDialogFields.map((f) =>
+      f.name === 'name' ? { ...f, disabled: true } : f,
+    );
+  }, [customModelDialogFields]);
+
+  // Initial form values for the edit dialog, derived from the model
+  // currently being edited. `features` defaults to [] so the
+  // switch-group renders unchecked when the model has no flags.
+  const editDefaultValues = useMemo(() => {
+    if (!editingModel) return undefined;
+    return {
+      name: editingModel.name,
+      model_types: editingModel.model_types ?? [],
+      max_tokens: editingModel.max_tokens ?? 0,
+      features: editingModel.features ?? [],
+    };
+  }, [editingModel]);
+
+  /**
+   * Persist edits to an existing model. The PUT endpoint replaces the
+   * full `model_info` set, so we splice the edited model into the
+   * current instance's list (or append if it was only in the catalog,
+   * which effectively converts an edit on a draft into an attach).
+   * The local `catalog` is also patched so the UI reflects the new
+   * values immediately, before the cache invalidation lands.
+   */
+  const handleEditSubmit = async (item: IProviderModelItem) => {
+    if (!editingModel) return;
+    const targetName = editingModel.name;
+
+    // Patch the local catalog so any catalog-only row reflects the edit
+    // even before the per-instance refetch settles.
+    setCatalog((prev) =>
+      prev.some((m) => m.name === targetName)
+        ? prev.map((m) => (m.name === targetName ? item : m))
+        : prev,
+    );
+
+    // Derive is_tools from the features switch group. `null`/empty means
+    // the user has no flags selected for this model.
+    const isTools =
+      Array.isArray(item.features) &&
+      item.features.some((f) =>
+        ['is_tools', 'tool_call', 'tools', 'function_call'].includes(f),
+      );
+
+    await patchInstanceModel({
+      provider_name: providerName,
+      instance_name: instanceName,
+      model_name: targetName,
+      max_tokens: item.max_tokens ?? 0,
+      model_type: item.model_types ?? [],
+      is_tools: isTools,
+    });
+    setEditingModel(null);
+  };
+
   // When `hideIfEmpty` is set and the first fetch has completed with
   // zero models, render nothing. This is used by draft instances so
   // an unsuccessful (or rejected) `listProviderModels` call does not
@@ -494,9 +572,9 @@ export function ModelsSection({
               {batchLoading ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : allFilteredAdded ? (
-                <Minus className="size-4" />
+                <ListMinus className="size-4" />
               ) : (
-                <Plus className="size-4" />
+                <ListPlus className="size-4" />
               )}
             </Button>
           )}
@@ -553,7 +631,7 @@ export function ModelsSection({
               return (
                 <li
                   key={model.name}
-                  className="flex items-center justify-between gap-3 p-3 border-b border-border-button last:border-b-0 hover:bg-bg-input transition-colors"
+                  className="group flex items-center justify-between gap-3 p-3 border-b border-border-button last:border-b-0 hover:bg-bg-input transition-colors"
                   data-testid={`models-row-${model.name}`}
                 >
                   <div className="flex gap-1 min-w-0">
@@ -565,15 +643,66 @@ export function ModelsSection({
                         {model.max_tokens ?? 0}
                       </span> */}
                     </div>
-                    <div className="flex flex-wrap gap-1">
-                      {(model.model_types ?? []).map((mt) => (
-                        <span
-                          key={mt}
-                          className="px-1.5 py-0.5 text-[10px] bg-bg-card text-text-secondary rounded-md"
-                        >
-                          {mapModelKey[mt as keyof typeof mapModelKey] || mt}
-                        </span>
-                      ))}
+                    <div className="flex flex-wrap items-center gap-1">
+                      {(() => {
+                        const types = model.model_types ?? [];
+                        const visible = types.slice(0, 3);
+                        const hidden = types.slice(3);
+                        return (
+                          <>
+                            {visible.map((mt) => (
+                              <span
+                                key={mt}
+                                className="px-1.5 py-0.5 text-[10px] bg-bg-card text-text-secondary rounded-md"
+                              >
+                                {mapModelKey[mt as keyof typeof mapModelKey] ||
+                                  mt}
+                              </span>
+                            ))}
+                            {hidden.length > 0 && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span
+                                    className="px-1.5 py-0.5 text-[10px] bg-bg-card text-text-secondary rounded-md cursor-default"
+                                    data-testid={`models-types-overflow-${model.name}`}
+                                  >
+                                    +{hidden.length}
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <div className="flex flex-wrap gap-1 max-w-[16rem]">
+                                    {hidden.map((mt) => (
+                                      <span
+                                        key={mt}
+                                        className="px-1.5 py-0.5 text-[10px] bg-bg-card text-text-secondary rounded-md"
+                                      >
+                                        {mapModelKey[
+                                          mt as keyof typeof mapModelKey
+                                        ] || mt}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                            {!hideActions && (
+                              <button
+                                type="button"
+                                className="ml-1 size-5 flex items-center justify-center rounded-md text-text-secondary opacity-0 transition-all hover:bg-bg-card hover:text-text-primary group-hover:opacity-100 focus-visible:opacity-100"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingModel(model);
+                                }}
+                                aria-label={tSetting('editModel')}
+                                title={tSetting('editModel')}
+                                data-testid={`models-edit-${model.name}`}
+                              >
+                                <Pencil className="size-3" />
+                              </button>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -649,6 +778,28 @@ export function ModelsSection({
         onSubmit={async (item) => {
           await handleAddCustom(item);
           setDialogOpen(false);
+        }}
+        submitText={tc('confirm')}
+        cancelText={tc('cancel')}
+      />
+
+      <AddCustomModelDialog
+        open={editingModel !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditingModel(null);
+        }}
+        title={tSetting('editModel')}
+        fields={editModelDialogFields}
+        // Exclude the model being edited from the uniqueness check so
+        // submitting the unchanged (disabled) name does not flag a
+        // duplicate against itself.
+        existingNames={models
+          .filter((m) => m.name !== editingModel?.name)
+          .map((m) => m.name)}
+        defaultValues={editDefaultValues}
+        loading={editLoading}
+        onSubmit={async (item) => {
+          await handleEditSubmit(item);
         }}
         submitText={tc('confirm')}
         cancelText={tc('cancel')}

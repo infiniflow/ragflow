@@ -19,6 +19,7 @@ import {
   IListProviderModelsRequestBody,
   IListProvidersRequestParams,
   IModelInfo,
+  IPatchInstanceModelRequestBody,
   ISetDefaultModelRequestBody,
   IUpdateModelStatusRequestBody,
   IUpdateProviderInstanceRequestBody,
@@ -44,6 +45,7 @@ export const enum LLMApiAction {
   DeleteProviderInstance = 'deleteProviderInstance',
   DeleteInstanceModels = 'deleteInstanceModels',
   UpdateProviderInstance = 'updateProviderInstance',
+  PatchInstanceModel = 'patchInstanceModel',
   ListDefaultModels = 'listDefaultModels',
   SetDefaultModel = 'setDefaultModel',
 }
@@ -470,6 +472,46 @@ export const useUpdateModelStatus = () => {
   });
 
   return { loading, updateModelStatus: mutateAsync };
+};
+
+/**
+ * PATCH `/providers/{name}/instances/{name}/models/{model_name}` — updates
+ * a single model's editable fields (max_tokens, model_type, status, is_tools).
+ * Used by the per-row Edit dialog. Distinct from `useUpdateModelStatus`
+ * (which only flips the active/inactive bit) so call sites can pass the
+ * full set of editable fields without coercing them into the status hook.
+ */
+export const usePatchInstanceModel = () => {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  const { isPending: loading, mutateAsync } = useMutation({
+    mutationKey: [LLMApiAction.PatchInstanceModel],
+    mutationFn: async (params: IPatchInstanceModelRequestBody) => {
+      const { data } = await llmService.patchInstanceModel(params);
+      if (data.code === 0) {
+        message.success(t('message.modified'));
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.addedProviders(),
+          exact: true,
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.instanceModels(
+            params.provider_name,
+            params.instance_name,
+          ),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.allModels(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.defaultModels(),
+        });
+      }
+      return data;
+    },
+  });
+
+  return { loading, patchInstanceModel: mutateAsync };
 };
 
 export const useDeleteInstanceModels = () => {
