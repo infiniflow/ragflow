@@ -22,8 +22,6 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
-      deepdoc:
-        condition: service_healthy
     profiles:
       - cpu
     image: ${RAGFLOW_IMAGE}
@@ -74,8 +72,6 @@ services:
   ragflow-gpu:
     depends_on:
       mysql:
-        condition: service_healthy
-      deepdoc:
         condition: service_healthy
     profiles:
       - gpu
