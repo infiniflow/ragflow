@@ -142,7 +142,7 @@ class TestDatasetsDelete:
         payload = {"ids": ["not_uuid"]}
         res = delete_datasets(HttpApiAuth, payload)
         assert res["code"] == 101, res
-        assert "Invalid UUID1 format" in res["message"], res
+        assert "Invalid UUID format" in res["message"], res
 
         res = list_datasets(HttpApiAuth)
         assert len(res["data"]) == 1, res
@@ -152,8 +152,8 @@ class TestDatasetsDelete:
     def test_id_not_uuid1(self, HttpApiAuth):
         payload = {"ids": [uuid.uuid4().hex]}
         res = delete_datasets(HttpApiAuth, payload)
-        assert res["code"] == 101, res
-        assert "Invalid UUID1 format" in res["message"], res
+        assert res["code"] == 102, res
+        assert "lacks permission for dataset" in res["message"], res
 
     @pytest.mark.p2
     @pytest.mark.usefixtures("add_dataset_func")

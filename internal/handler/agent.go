@@ -29,6 +29,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
@@ -53,7 +54,7 @@ type agentFileService interface {
 // NewAgentHandler assigns the concrete *service.AgentService — which
 // satisfies this interface because its RunAgent signature matches.
 type chatAgentService interface {
-	RunAgent(ctx context.Context, userID, canvasID, sessionID, version, userInput string) (<-chan canvas.RunEvent, error)
+	RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any) (<-chan canvas.RunEvent, error)
 }
 
 // AgentHandler agent handler
@@ -869,6 +870,7 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 type agentChatCompletionsRequest struct {
 	AgentID      string                   `json:"agent_id"`
 	Query        string                   `json:"query"`
+	Inputs       map[string]interface{}   `json:"inputs"`
 	SessionID    string                   `json:"session_id"`
 	Stream       bool                     `json:"stream"`
 	OpenAICompat bool                     `json:"openai-compatible"`
@@ -895,6 +897,76 @@ func extractLastUserContent(messages []map[string]interface{}) string {
 	return ""
 }
 
+// extractUserInputFromFormInputs mirrors the front-end's wait-for-user submit
+// shape: `inputs` is an object keyed by form field name, and each entry carries
+// a nested `value`. The current chat-completion resume path consumes a single
+// string payload, so we lift the first field's value and stringify it.
+func extractUserInputFromFormInputs(inputs map[string]interface{}) interface{} {
+	if len(inputs) == 0 {
+		return nil
+	}
+	if len(inputs) == 1 {
+		for _, raw := range inputs {
+			if field, ok := raw.(map[string]interface{}); ok {
+				if v, ok := field["value"]; ok {
+					return v
+				}
+			}
+			return raw
+		}
+	}
+
+	out := make(map[string]any, len(inputs))
+	for name, raw := range inputs {
+		if field, ok := raw.(map[string]interface{}); ok {
+			if v, ok := field["value"]; ok {
+				out[name] = v
+				continue
+			}
+		}
+		out[name] = raw
+	}
+	return out
+}
+
+func countInputValues(inputs map[string]interface{}) int {
+	count := 0
+	for _, raw := range inputs {
+		if field, ok := raw.(map[string]interface{}); ok {
+			if _, exists := field["value"]; exists {
+				count++
+			}
+			continue
+		}
+		if raw != nil {
+			count++
+		}
+	}
+	return count
+}
+
+func userInputMeta(userInput any) []zap.Field {
+	fields := []zap.Field{zap.String("user_input_type", fmt.Sprintf("%T", userInput))}
+	switch v := userInput.(type) {
+	case nil:
+		fields = append(fields, zap.Bool("user_input_present", false))
+	case string:
+		fields = append(fields,
+			zap.Bool("user_input_present", true),
+			zap.Int("user_input_length", len(v)),
+			zap.Bool("user_input_blank", v == ""),
+		)
+	case map[string]interface{}:
+		fields = append(fields,
+			zap.Bool("user_input_present", true),
+			zap.Int("user_input_keys", len(v)),
+		)
+	default:
+		fields = append(fields, zap.Bool("user_input_present", true))
+	}
+	return fields
+}
+
 func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
@@ -914,6 +986,18 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		jsonError(c, common.CodeDataError, "at least one message is required in openai-compatible mode.")
 		return
 	}
+	common.Debug("agent chat completions: request received",
+		zap.String("user_id", user.ID),
+		zap.String("agent_id", req.AgentID),
+		zap.String("session_id", req.SessionID),
+		zap.Bool("stream", req.Stream),
+		zap.Bool("openai_compatible", req.OpenAICompat),
+		zap.Bool("query_present", req.Query != ""),
+		zap.Int("query_length", len(req.Query)),
+		zap.Int("inputs_count", len(req.Inputs)),
+		zap.Int("inputs_with_values_count", countInputValues(req.Inputs)),
+		zap.Int("messages_count", len(req.Messages)),
+	)
 
 	// TODO(phase5-openai-framing): the openai-compat branches below are
 	// stubs. They keep the existing "choices"-shape contract for the
@@ -936,13 +1020,31 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	// Real canvas run — derive userInput from `query` first, then fall
 	// back to the last user message (covers the front-end that posts
 	// running_hint_text without a top-level `query`).
-	userInput := req.Query
-	if userInput == "" {
-		userInput = extractLastUserContent(req.Messages)
+	var userInput any = req.Query
+	if req.Query == "" {
+		if extracted := extractUserInputFromFormInputs(req.Inputs); extracted != nil {
+			userInput = extracted
+		} else if extracted := extractLastUserContent(req.Messages); extracted != "" {
+			userInput = extracted
+		}
 	}
+	common.Debug("agent chat completions: derived user input",
+		append([]zap.Field{
+			zap.String("agent_id", req.AgentID),
+			zap.String("session_id", req.SessionID),
+		}, userInputMeta(userInput)...)...,
+	)
 
 	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, req.AgentID, req.SessionID, "", userInput)
 	if err != nil {
+		common.Warn("agent chat completions: RunAgent failed",
+			append([]zap.Field{
+				zap.String("user_id", user.ID),
+				zap.String("agent_id", req.AgentID),
+				zap.String("session_id", req.SessionID),
+				zap.Error(err),
+			}, userInputMeta(userInput)...)...,
+		)
 		ec, em := mapAgentError(err)
 		jsonError(c, ec, em)
 		return
@@ -963,8 +1065,19 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	// /api/v1/agents/{id}/run endpoint's wire format — see
 	// writeRunEventSSE at agent.go for that path.
 	for ev := range events {
-		writeChatCompletionSSE(c.Writer, flusher, ev)
+		common.Debug("agent chat completions: streaming event",
+			zap.String("agent_id", req.AgentID),
+			zap.String("session_id", req.SessionID),
+			zap.String("event_type", ev.Type),
+			zap.String("message_id", ev.MessageID),
+			zap.String("task_id", ev.TaskID),
+		)
+		writeChatCompletionSSE(c.Writer, flusher, req.AgentID, ev)
 	}
+	common.Debug("agent chat completions: stream closed",
+		zap.String("agent_id", req.AgentID),
+		zap.String("session_id", req.SessionID),
+	)
 }
 
 // writeChatCompletionSSE emits one canvas.RunEvent in the
@@ -973,8 +1086,13 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 //	data:{"event":"<ev.Type>","message_id":"<ev.MessageID>","created_at":<ev.CreatedAt>,"task_id":"<ev.TaskID>","session_id":"<ev.SessionID>","data":<ev.Data>}
 //
 // The special "done" type sends `data: [DONE]\n\n` (no JSON envelope).
-func writeChatCompletionSSE(w io.Writer, flusher http.Flusher, ev canvas.RunEvent) {
+func writeChatCompletionSSE(w io.Writer, flusher http.Flusher, agentID string, ev canvas.RunEvent) {
 	if ev.Type == "done" {
+		common.Debug("agent chat completions: writing done sentinel",
+			zap.String("agent_id", agentID),
+			zap.String("session_id", ev.SessionID),
+			zap.String("task_id", ev.TaskID),
+		)
 		fmt.Fprint(w, "data: [DONE]\n\n")
 		if flusher != nil {
 			flusher.Flush()
@@ -985,6 +1103,13 @@ func writeChatCompletionSSE(w io.Writer, flusher http.Flusher, ev canvas.RunEven
 	if data == "" {
 		data = "{}"
 	}
+	common.Debug("agent chat completions: writing sse frame",
+		zap.String("agent_id", agentID),
+		zap.String("event_type", ev.Type),
+		zap.String("message_id", ev.MessageID),
+		zap.String("session_id", ev.SessionID),
+		zap.String("task_id", ev.TaskID),
+	)
 	envelope := sseEnvelope(ev.Type, ev.MessageID, ev.CreatedAt, ev.TaskID, ev.SessionID, data)
 	fmt.Fprintf(w, "data: %s\n\n", envelope)
 	if flusher != nil {
