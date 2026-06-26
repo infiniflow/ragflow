@@ -522,7 +522,7 @@ func (p *Parser) parseAPIShowCommands() (*Command, error) {
 	case TokenCurrent:
 		return p.parseAPIShowCurrent()
 	case TokenVar:
-		return p.parseShowVariable()
+		return p.parseAPIShowVariable()
 	case TokenProvider:
 		return p.parseAPIShowProviderCommands()
 	case TokenModel:
@@ -572,7 +572,7 @@ func (p *Parser) parseAPIShowCurrent() (*Command, error) {
 	return NewCommand("api_show_current"), nil
 }
 
-func (p *Parser) parseShowVariable() (*Command, error) {
+func (p *Parser) parseAPIShowVariable() (*Command, error) {
 	p.nextToken() // consume VAR
 	varName, err := p.parseQuotedString()
 	if err != nil {
