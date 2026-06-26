@@ -101,6 +101,8 @@ const (
 	TokenParser
 	TokenPipeline
 	TokenSearch
+	TokenAgent
+	TokenMemory
 	TokenRetrieve
 	TokenCurrent
 	TokenFingerprint

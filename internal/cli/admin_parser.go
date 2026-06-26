@@ -385,9 +385,9 @@ func (p *Parser) parseAdminShowCommands() (*Command, error) {
 	case TokenModel:
 		return p.parseAdminShowModel()
 	case TokenAdmin:
-		return p.parseUserShowAdmin()
+		return p.parseAdminShowAdminServer()
 	case TokenAPI:
-		return p.parseUserShowAPI()
+		return p.parseAdminShowAPI()
 	case TokenUsers:
 		return p.parseAdminShowUsersCommands()
 	case TokenData:
@@ -820,6 +820,55 @@ func (p *Parser) parseAdminShowModel() (*Command, error) {
 
 	cmd := NewCommand("admin_show_model")
 	cmd.Params["model_name"] = modelName
+	return cmd, nil
+}
+
+// SHOW ADMIN SERVER;
+func (p *Parser) parseAdminShowAdminServer() (*Command, error) {
+	p.nextToken() // consume ADMIN
+
+	var cmd *Command
+	switch p.curToken.Type {
+	case TokenServer:
+		p.nextToken()
+		cmd = NewCommand("admin_show_admin_server")
+	default:
+		return nil, fmt.Errorf("expected SERVER after ADMIN")
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// SHOW API SERVER <server_name>
+func (p *Parser) parseAdminShowAPI() (*Command, error) {
+	p.nextToken() // consume API
+
+	var cmd *Command
+	switch p.curToken.Type {
+	case TokenServer:
+		p.nextToken()
+		cmd = NewCommand("admin_show_api_server")
+
+		serverName, err := p.parseQuotedString()
+		if err != nil {
+			return nil, fmt.Errorf("expected API server name: %w", err)
+		}
+		cmd.Params["api_server_name"] = serverName
+		p.nextToken()
+
+	default:
+		return nil, fmt.Errorf("expected SERVER after API")
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
 	return cmd, nil
 }
 
@@ -2281,10 +2330,34 @@ func (p *Parser) parseAdminSaveCommand() (*Command, error) {
 	p.nextToken() // consume SAVE
 	switch p.curToken.Type {
 	case TokenConfig:
-		return p.parseSaveConfig()
+		return p.parseAdminSaveConfig()
 	default:
 		return nil, fmt.Errorf("unknown ADD target: %s", p.curToken.Value)
 	}
+}
+
+func (p *Parser) parseAdminSaveConfig() (*Command, error) {
+	p.nextToken() // consume CONFIG
+
+	if p.curToken.Type != TokenAs {
+		return nil, fmt.Errorf("expected AS after CONFIG")
+	}
+	p.nextToken() // consume AS
+
+	path, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := NewCommand("admin_save_config_command")
+	cmd.Params["path"] = path
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
 }
 
 func (p *Parser) parseAdminUseCommand() (*Command, error) {
