@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"ragflow/internal/common"
 	"strconv"
@@ -81,7 +82,7 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 	}
 
 	// List chats - default to valid status "1" (same as Python StatusEnum.VALID.value)
-	result, err := h.chatService.ListChats(userID, keywords, "1", page, pageSize, orderby, desc)
+	result, err := h.chatService.ListChats(userID, "1", keywords, page, pageSize, orderby, desc)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -92,6 +93,46 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
+		"data":    result,
+		"message": "success",
+	})
+}
+
+// Create creates a chat.
+// @Summary Create Chat
+// @Description Create a chat, aligned with Python POST /api/v1/chats.
+// @Tags chat
+// @Accept json
+// @Produce json
+// @Param request body service.CreateChatRequest true "chat configuration"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/chats [post]
+func (h *ChatHandler) Create(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req map[string]interface{}
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.UseNumber()
+	if err := decoder.Decode(&req); err != nil {
+		jsonError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+	if req == nil {
+		req = map[string]interface{}{}
+	}
+
+	result, code, err := h.chatService.Create(user.ID, req)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
 		"data":    result,
 		"message": "success",
 	})
