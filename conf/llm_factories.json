@@ -8058,6 +8058,14 @@
                     "model_type": "embedding"
                 }
             ]
+        },
+        {
+            "name": "New API",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK,IMAGE2TEXT,TTS,SPEECH2TEXT",
+            "status": "1",
+            "llm": [],
+            "rank": "885"
         }
     ]
 }
