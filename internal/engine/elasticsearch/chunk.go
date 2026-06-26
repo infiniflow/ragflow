@@ -2455,6 +2455,13 @@ func (e *elasticsearchEngine) ensureMemoryMessageSearchVectorMappings(ctx contex
 		if !strings.HasPrefix(indexName, "memory_") {
 			continue
 		}
+		exists, err := e.indexExists(ctx, indexName)
+		if err != nil {
+			return fmt.Errorf("failed to check memory index existence: %w", err)
+		}
+		if !exists {
+			continue
+		}
 		if err := e.ensureMemoryMessageVectorMapping(ctx, indexName, vectorSize); err != nil {
 			return err
 		}
