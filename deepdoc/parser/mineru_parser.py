@@ -718,6 +718,11 @@ class MinerUParser(RAGFlowPdfParser):
 
             html_table = output.get("table_body", "")
             if not html_table.strip():
+                self.logger.warning(
+                    "[MinerU] Skip table with empty table_body: page=%s bbox=%s",
+                    output.get("page_idx"),
+                    output.get("bbox"),
+                )
                 continue
 
             caption = "\n".join(output.get("table_caption", []))
