@@ -157,8 +157,42 @@ def test_use_sql_repairs_missing_source_columns_for_non_aggregate(monkeypatch, f
 
     assert result is not None
     assert "|product|Source|" in result["answer"]
+    answer_lines = [ln.strip() for ln in result["answer"].splitlines() if ln.strip().startswith("|")]
+    header, separator = answer_lines[0], answer_lines[1]
+    assert header.count("|") == separator.count("|")
     assert len(chat_model.calls) == 2
     assert len(retriever.sql_calls) == 2
+
+
+@pytest.mark.p2
+def test_use_sql_separator_matches_header_without_doc_name(monkeypatch, force_es_engine):
+    retriever = _StubRetriever(
+        [
+            {
+                "columns": [{"name": "doc_id"}, {"name": "product"}],
+                "rows": [["doc-1", "desk"]],
+            },
+        ]
+    )
+    chat_model = _StubChatModel(["SELECT doc_id, product FROM ragflow_tenant"])
+    monkeypatch.setattr(dialog_service.settings, "retriever", retriever, raising=False)
+
+    result = asyncio.run(
+        dialog_service.use_sql(
+            question="show product with doc id only",
+            field_map={"product": "product"},
+            tenant_id="tenant-id",
+            chat_mdl=chat_model,
+            quota=True,
+            kb_ids=None,
+        )
+    )
+
+    assert result is not None
+    answer_lines = [ln.strip() for ln in result["answer"].splitlines() if ln.strip().startswith("|")]
+    assert answer_lines[0] == "|product|"
+    assert answer_lines[1] == "|------"
+    assert "|------|------|" not in result["answer"]
 
 
 @pytest.mark.p2

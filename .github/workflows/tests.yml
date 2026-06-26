@@ -250,7 +250,10 @@ jobs:
           PKGS=$(go list ./... 2>/dev/null \
             | grep -v '/internal/storage$' \
             | grep -v '/internal/tokenizer$' \
-            | grep -v '/internal/handler$' || true)
+            | grep -v '/internal/handler$' \
+            | grep -v '/internal/deepdoc/parser/pdf/pdfium' \
+            | grep -v '/internal/deepdoc/parser/pdf/pdfoxide' \
+            | grep -v '/internal/deepdoc/parser/pdf' || true)
           if [ -z "$PKGS" ]; then
             ./build.sh --test
           else
@@ -394,7 +397,7 @@ jobs:
                  echo "SANDBOX_EXECUTOR_MANAGER_PORT=${SANDBOX_EXECUTOR_MANAGER_PORT}"
                  echo "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}"
                  echo "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}"
-                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,tei-cpu"
+                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,tei-cpu,deepdoc"
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}"
                  echo "DOC_ENGINE=${DOC_ENGINE}"
@@ -693,7 +696,10 @@ jobs:
           PKGS=$(go list ./... 2>/dev/null \
             | grep -v '/internal/storage$' \
             | grep -v '/internal/tokenizer$' \
-            | grep -v '/internal/handler$' || true)
+            | grep -v '/internal/handler$' \
+            | grep -v '/internal/deepdoc/parser/pdf/pdfium' \
+            | grep -v '/internal/deepdoc/parser/pdf/pdfoxide' \
+            | grep -v '/internal/deepdoc/parser/pdf' || true)
           if [ -z "$PKGS" ]; then
             ./build.sh --test
           else
@@ -837,7 +843,7 @@ jobs:
                  echo "SANDBOX_EXECUTOR_MANAGER_PORT=${SANDBOX_EXECUTOR_MANAGER_PORT}"
                  echo "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}"
                  echo "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}"
-                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,tei-cpu"
+                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,tei-cpu,deepdoc"
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}"
                  echo "DOC_ENGINE=${DOC_ENGINE}"
