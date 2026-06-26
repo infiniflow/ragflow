@@ -9,10 +9,9 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
-	"testing"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	util "ragflow/internal/deepdoc/parser/pdf/util"
-
+	"testing"
 )
 
 // TestDLATSRResponseCompare calls DeepDoc DLA/TSR from Go and saves the
@@ -25,7 +24,7 @@ import (
 //  2. Run Python:     python3 tools/dla_tsr_compare.py
 //  3. Diff the JSON:  diff testdata/output/render_compare/go_dla.json testdata/output/render_compare/py_dla.json
 func TestDLATSRResponseCompare(t *testing.T) {
-	client := mustConnectDeepDoc(t)
+	client := mustConnectInferenceClient(t)
 	eng := mustOpenEngine(t, "06_table_content.pdf")
 	defer eng.Close()
 

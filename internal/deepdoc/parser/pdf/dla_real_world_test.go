@@ -12,7 +12,7 @@ import (
 // TestDLARealWorldCompare runs DLA on fixture PDFs and verifies
 // region count, label types, and structural invariants.
 func TestDLARealWorldCompare(t *testing.T) {
-	client := mustConnectDeepDoc(t)
+	client := mustConnectInferenceClient(t)
 	outDir := filepath.Join("testdata", "output", "render_compare")
 	os.MkdirAll(outDir, 0755)
 

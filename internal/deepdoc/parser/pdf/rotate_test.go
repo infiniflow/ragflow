@@ -10,15 +10,14 @@ import (
 	"sort"
 	"testing"
 
+	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/deepdoc/parser/pdf/pdfium"
 	"ragflow/internal/deepdoc/parser/pdf/pdfoxide"
-	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
 // ── helpers ──────────────────────────────────────────────────────────────
 
-// pdfiumPtSize returns post-rotation page dimensions via pdfium.
 // pdfiumPtSize returns post-rotation page dimensions via pdfium.
 func pdfiumPtSize(eng pdf.PDFEngine, file string, t *testing.T) (w, h float64) {
 	t.Helper()

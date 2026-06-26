@@ -19,12 +19,14 @@ type ModelImageDescriber struct {
 	driver    modelModule.ModelDriver
 	modelName string
 	apiConfig *modelModule.APIConfig
+	maxTokens int
 }
 
 // NewModelImageDescriber creates a ModelImageDescriber that calls the given
-// driver to describe images.
-func NewModelImageDescriber(d modelModule.ModelDriver, name string, cfg *modelModule.APIConfig) *ModelImageDescriber {
-	return &ModelImageDescriber{driver: d, modelName: name, apiConfig: cfg}
+// driver to describe images. maxTokens sets the response length limit (passed
+// as ChatConfig.MaxTokens); 0 means use provider default.
+func NewModelImageDescriber(d modelModule.ModelDriver, name string, cfg *modelModule.APIConfig, maxTokens int) *ModelImageDescriber {
+	return &ModelImageDescriber{driver: d, modelName: name, apiConfig: cfg, maxTokens: maxTokens}
 }
 
 // DescribeImage sends the image as a base64 data URL in an OpenAI-compatible
@@ -43,7 +45,12 @@ func (d *ModelImageDescriber) DescribeImage(ctx context.Context, img image.Image
 		},
 	}}
 
-	resp, err := d.driver.ChatWithMessages(d.modelName, msgs, d.apiConfig, nil)
+	var chatCfg *modelModule.ChatConfig
+	if d.maxTokens > 0 {
+		mt := d.maxTokens
+		chatCfg = &modelModule.ChatConfig{MaxTokens: &mt}
+	}
+	resp, err := d.driver.ChatWithMessages(d.modelName, msgs, d.apiConfig, chatCfg)
 	if err != nil {
 		return "", fmt.Errorf("image describe: %w", err)
 	}

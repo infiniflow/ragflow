@@ -3,28 +3,29 @@ package post
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"regexp"
 	"sort"
 	"strings"
 	"sync"
 
-	"ragflow/internal/deepdoc/parser/pdf/util"
 	pdftype "ragflow/internal/deepdoc/parser/pdf/type"
+	"ragflow/internal/deepdoc/parser/pdf/util"
+	"ragflow/internal/entity"
+	"ragflow/internal/service"
 )
 
 // ── Config ─────────────────────────────────────────────────────────────
 
 // Config keys for PipelineConfig.
 const (
-	ConfigKeyPageWidth         = "page_width"
-	ConfigKeyZoom              = "zoom"
-	ConfigKeyOutlines          = "outlines"
-	ConfigKeyImageDescriber    = "image_describer"
+	ConfigKeyPageWidth          = "page_width"
+	ConfigKeyZoom               = "zoom"
+	ConfigKeyOutlines           = "outlines"
 	ConfigKeyFlattenMediaToText = "flatten_media_to_text"
-	ConfigKeyVLMResolver        = "vlm_resolver"
-	ConfigKeyTenantID          = "tenant_id"
-	ConfigKeyVLMLLMID          = "vlm_llm_id"
+	ConfigKeyTenantID           = "tenant_id"
+	ConfigKeyVLMLLMID           = "vlm_llm_id"
 )
 
 // PipelineConfig is a key-value map that post-processing reads
@@ -77,45 +78,6 @@ func (c PipelineConfig) Outlines() []pdftype.Outline {
 		return nil
 	}
 	return o
-}
-
-// ImageDescriber returns the ImageDescriber value for ConfigKeyImageDescriber.
-func (c PipelineConfig) ImageDescriber() ImageDescriber {
-	if c == nil {
-		return nil
-	}
-	v, ok := c[ConfigKeyImageDescriber]
-	if !ok {
-		return nil
-	}
-	d, ok := v.(ImageDescriber)
-	if !ok {
-		return nil
-	}
-	return d
-}
-
-// ModelResolver resolves a VLM model from tenant config and returns an
-// ImageDescriber.  The caller injects an implementation that wraps
-// service.ModelProviderService (production) or a mock (tests).
-type ModelResolver interface {
-	ResolveVLM(tenantID, vlmLLMID string) (ImageDescriber, error)
-}
-
-// VLMResolver returns the ModelResolver value for ConfigKeyVLMResolver.
-func (c PipelineConfig) VLMResolver() ModelResolver {
-	if c == nil {
-		return nil
-	}
-	v, ok := c[ConfigKeyVLMResolver]
-	if !ok {
-		return nil
-	}
-	r, ok := v.(ModelResolver)
-	if !ok {
-		return nil
-	}
-	return r
 }
 
 // String returns the string value for key. Returns "" if absent or wrong type.
@@ -186,27 +148,35 @@ func PostProcess(ctx context.Context, result *pdftype.ParseResult, config Pipeli
 	assignDocTypeKwd(result, config.Bool(ConfigKeyFlattenMediaToText))
 
 	// 6. VLM enhancement
-	describer := config.ImageDescriber()
-	if describer == nil {
-		resolver := config.VLMResolver()
-		if resolver != nil {
-			var err error
-			describer, err = resolver.ResolveVLM(
-				config.String(ConfigKeyTenantID),
-				config.String(ConfigKeyVLMLLMID),
-			)
-			if err != nil {
-				return err
-			}
+	tenantID := config.String(ConfigKeyTenantID)
+	vlmLLMID := config.String(ConfigKeyVLMLLMID)
+	if tenantID != "" && vlmLLMID != "" {
+		describer, err := resolveImageDescriber(tenantID, vlmLLMID)
+		if err != nil {
+			return err
 		}
-	}
-	if describer != nil {
 		if err := enhanceWithVision(ctx, result, describer); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// resolveImageDescriber resolves a VLM model from tenant config and returns
+// an ImageDescriber.  Corresponds to Python's
+// get_model_config_from_provider_instance + LLMBundle.
+// resolveImageDescriber resolves a VLM model from tenant config and returns
+// an ImageDescriber.  Overridable in tests.
+var resolveImageDescriber = func(tenantID, llmID string) (ImageDescriber, error) {
+	svc := service.NewModelProviderService()
+	driver, modelName, apiCfg, maxTokens, err := svc.GetModelConfigFromProviderInstance(
+		tenantID, entity.ModelTypeImage2Text, llmID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("resolve VLM model %q: %w", llmID, err)
+	}
+	return NewModelImageDescriber(driver, modelName, apiCfg, maxTokens), nil
 }
 
 // ── normalizeLayoutType ────────────────────────────────────────────────

@@ -76,7 +76,7 @@ func TestModelImageDescriber_Success(t *testing.T) {
 	img := newTestImage(100, 100)
 	want := "A chart showing revenue growth."
 	driver := &mockModelDriver{answer: want}
-	desc := NewModelImageDescriber(driver, "gpt-4o", nil)
+	desc := NewModelImageDescriber(driver, "gpt-4o", nil, 0)
 
 	got, err := desc.DescribeImage(context.Background(), img, "Describe this chart")
 	if err != nil {
@@ -90,7 +90,7 @@ func TestModelImageDescriber_Success(t *testing.T) {
 func TestModelImageDescriber_DriverError(t *testing.T) {
 	img := newTestImage(100, 100)
 	driver := &mockModelDriver{err: errors.New("API rate limited")}
-	desc := NewModelImageDescriber(driver, "gpt-4o", nil)
+	desc := NewModelImageDescriber(driver, "gpt-4o", nil, 0)
 
 	_, err := desc.DescribeImage(context.Background(), img, "prompt")
 	if err == nil {
@@ -101,7 +101,7 @@ func TestModelImageDescriber_DriverError(t *testing.T) {
 func TestModelImageDescriber_EmptyAnswer(t *testing.T) {
 	img := newTestImage(100, 100)
 	driver := &mockModelDriver{answer: ""}
-	desc := NewModelImageDescriber(driver, "gpt-4o", nil)
+	desc := NewModelImageDescriber(driver, "gpt-4o", nil, 0)
 
 	_, err := desc.DescribeImage(context.Background(), img, "prompt")
 	if err == nil {

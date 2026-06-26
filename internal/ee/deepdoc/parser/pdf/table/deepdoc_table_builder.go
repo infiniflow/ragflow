@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"sort"
 
-	pdf "ragflow/internal/deepdoc/parser/pdf"
+	inference "ragflow/internal/deepdoc/parser/pdf/inference"
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdft "ragflow/internal/deepdoc/parser/pdf/type"
 )
@@ -60,7 +60,7 @@ type DeepDocTableBuilder struct {
 // NewDeepDocTableBuilder creates an EE TableBuilder backed by the DeepDoc service.
 // If doc is a *DeepDocClient, its label tables are set to the EE taxonomy.
 func NewDeepDocTableBuilder(doc pdft.DocAnalyzer) pdft.TableBuilder {
-	if c, ok := doc.(*pdf.InferenceClient); ok {
+	if c, ok := doc.(*inference.InferenceClient); ok {
 		c.DLALabels = eeDLALabels
 		c.TSRLabels = eeTSRLabels
 	}
@@ -162,5 +162,5 @@ func groupTSRCellsToRowsLabeled(cells []pdft.TSRCell) [][]pdft.TSRCell {
 
 // init registers the EE TableBuilder factory for ModelEE.
 func init() {
-	pdf.RegisterTableBuilder(NewDeepDocTableBuilder)
+	inference.RegisterTableBuilder(NewDeepDocTableBuilder)
 }

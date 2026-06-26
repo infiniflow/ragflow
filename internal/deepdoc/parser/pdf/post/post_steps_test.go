@@ -292,14 +292,17 @@ func TestPostProcess_FullPipeline(t *testing.T) {
 	wantVLM := "This table shows quarterly revenue data with 2 columns."
 	describer := &mockImageDescriber{describe: wantVLM}
 
-	// First pass: enhance with VLM
+	// First pass: non-VLM steps through PostProcess
 	config := PipelineConfig{
-		ConfigKeyPageWidth:      600.0,
-		ConfigKeyZoom:           1.0,
-		ConfigKeyOutlines:       outlines,
-		ConfigKeyImageDescriber: describer,
+		ConfigKeyPageWidth: 600.0,
+		ConfigKeyZoom:      1.0,
+		ConfigKeyOutlines:  outlines,
 	}
 	if err := PostProcess(context.Background(), result, config); err != nil {
+		t.Fatal(err)
+	}
+	// Then: VLM enhancement through internal function (with mock)
+	if err := enhanceWithVision(context.Background(), result, describer); err != nil {
 		t.Fatal(err)
 	}
 	// Then: flatten

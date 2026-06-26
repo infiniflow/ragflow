@@ -14,7 +14,7 @@ import (
 // TestIntegration_DeepDoc_TableStructure verifies that parsing a PDF
 // through the OSS TableBuilder produces tables with the expected row/column structure.
 func TestIntegration_DeepDoc_TableStructure(t *testing.T) {
-	client := mustConnectOssDeepDoc(t)
+	client := mustConnectInferenceClient(t)
 	eng := mustOpenEngine(t, "06_table_content.pdf")
 	defer eng.Close()
 
@@ -50,7 +50,7 @@ func TestIntegration_DeepDoc_TableStructure(t *testing.T) {
 // TestIntegration_DeepDoc_TableRows verifies each table has non-empty
 // rows with the expected grid structure.
 func TestIntegration_DeepDoc_TableRows(t *testing.T) {
-	client := mustConnectOssDeepDoc(t)
+	client := mustConnectInferenceClient(t)
 	eng := mustOpenEngine(t, "06_table_content.pdf")
 	defer eng.Close()
 
@@ -89,7 +89,7 @@ func TestIntegration_DeepDoc_TableRows(t *testing.T) {
 // TestIntegration_DeepDoc_Idempotency verifies that parsing the same PDF
 // twice produces the same table row structure.
 func TestIntegration_DeepDoc_Idempotency(t *testing.T) {
-	client := mustConnectOssDeepDoc(t)
+	client := mustConnectInferenceClient(t)
 
 	parseOnce := func() *pdf.ParseResult {
 		eng := mustOpenEngine(t, "06_table_content.pdf")
@@ -123,7 +123,7 @@ func TestIntegration_DeepDoc_Idempotency(t *testing.T) {
 // TestIntegration_DeepDoc_EmptyPage verifies that a page with no tables
 // does not crash.
 func TestIntegration_DeepDoc_EmptyPage(t *testing.T) {
-	client := mustConnectOssDeepDoc(t)
+	client := mustConnectInferenceClient(t)
 	eng := mustOpenEngine(t, "01_english_simple.pdf")
 	defer eng.Close()
 

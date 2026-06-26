@@ -11,6 +11,7 @@ import (
 	_ "image/png"
 	"os"
 	"path/filepath"
+	"ragflow/internal/deepdoc/parser/pdf/post"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"strings"
 	"testing"
@@ -93,7 +94,7 @@ func tablesToGolden(tables []pdf.TableItem) []tableGolden {
 
 // TestIntegration_SectionsText verifies section text output matches golden.
 func TestIntegration_SectionsText(t *testing.T) {
-	client := mustConnectDeepDoc(t)
+	client := mustConnectInferenceClient(t)
 	eng := mustOpenEngine(t, "01_english_simple.pdf")
 	defer eng.Close()
 
@@ -137,7 +138,7 @@ func TestIntegration_SectionsText(t *testing.T) {
 
 // TestIntegration_SectionsCount verifies section count is stable.
 func TestIntegration_SectionsCount(t *testing.T) {
-	client := mustConnectDeepDoc(t)
+	client := mustConnectInferenceClient(t)
 	eng := mustOpenEngine(t, "01_english_simple.pdf")
 	defer eng.Close()
 
@@ -164,7 +165,7 @@ func TestIntegration_SectionsCount(t *testing.T) {
 
 // TestIntegration_TableStructure verifies table rows and cell text match golden.
 func TestIntegration_TableStructure(t *testing.T) {
-	client := mustConnectDeepDoc(t)
+	client := mustConnectInferenceClient(t)
 	eng := mustOpenEngine(t, "06_table_content.pdf")
 	defer eng.Close()
 
@@ -219,7 +220,7 @@ func TestIntegration_TableStructure(t *testing.T) {
 
 // TestIntegration_TableImageB64 verifies table ImageB64 is valid base64 PNG.
 func TestIntegration_TableImageB64(t *testing.T) {
-	client := mustConnectDeepDoc(t)
+	client := mustConnectInferenceClient(t)
 	eng := mustOpenEngine(t, "06_table_content.pdf")
 	defer eng.Close()
 
@@ -259,7 +260,7 @@ func TestIntegration_TableImageB64(t *testing.T) {
 
 // TestIntegration_LayoutTypes verifies DLA labels boxes with expected types.
 func TestIntegration_LayoutTypes(t *testing.T) {
-	client := mustConnectDeepDoc(t)
+	client := mustConnectInferenceClient(t)
 	eng := mustOpenEngine(t, "06_table_content.pdf")
 	defer eng.Close()
 
@@ -311,7 +312,7 @@ func TestIntegration_LayoutTypes(t *testing.T) {
 // results when called multiple times with the same image. This validates
 // that the ML inference is deterministic (or at least semantically stable).
 func TestIntegration_Idempotency(t *testing.T) {
-	client := mustConnectDeepDoc(t)
+	client := mustConnectInferenceClient(t)
 
 	// Render a fixture page as the stable input image.
 	eng := mustOpenEngine(t, "06_table_content.pdf")
@@ -529,7 +530,7 @@ func floatClose(a, b, eps float64) bool {
 // suppression inside table regions, and caption removal — the key alignment
 // fixes from the Python→Go migration.
 func TestIntegration_TableAlign(t *testing.T) {
-	client := mustConnectDeepDoc(t)
+	client := mustConnectInferenceClient(t)
 	eng := mustOpenEngine(t, "18_table_caption.pdf")
 	defer eng.Close()
 
@@ -570,7 +571,7 @@ func TestIntegration_TableAlign(t *testing.T) {
 // TestIntegration_GarbageLayout verifies CID-garbled and garbage-layout
 // (header/footer/reference) boxes are popped from output.
 func TestIntegration_GarbageLayout(t *testing.T) {
-	client := mustConnectDeepDoc(t)
+	client := mustConnectInferenceClient(t)
 	eng := mustOpenEngine(t, "17_garbage_layout.pdf")
 	defer eng.Close()
 
@@ -601,7 +602,7 @@ func TestIntegration_GarbageLayout(t *testing.T) {
 
 // TestIntegration_MultiChunk verifies chunked processing for large documents.
 func TestIntegration_MultiChunk(t *testing.T) {
-	client := mustConnectDeepDoc(t)
+	client := mustConnectInferenceClient(t)
 	eng := mustOpenEngine(t, "19_multipage_chunk.pdf")
 	defer eng.Close()
 
@@ -625,7 +626,7 @@ func TestIntegration_MultiChunk(t *testing.T) {
 // TestIntegration_NoRegression runs a few snapshot PDFs and checks basic
 // invariants — no panic, sections produced, no CID garbage.
 func TestIntegration_NoRegression(t *testing.T) {
-	client := mustConnectDeepDoc(t)
+	client := mustConnectInferenceClient(t)
 
 	for _, name := range []string{
 		"01_english_simple.pdf",
@@ -658,7 +659,7 @@ func TestIntegration_NoRegression(t *testing.T) {
 // TestIntegration_TableRotation verifies that evaluateTableOrientation
 // correctly detects rotation using region-count scoring.
 func TestIntegration_TableRotation(t *testing.T) {
-	client := mustConnectDeepDoc(t)
+	client := mustConnectInferenceClient(t)
 
 	t.Run("upright_table", func(t *testing.T) {
 		eng := mustOpenEngine(t, "rotate_0.pdf")
@@ -699,7 +700,7 @@ func TestIntegration_TableRotation(t *testing.T) {
 // TestIntegration_WordSpacing verifies space insertion between ASCII word
 // characters with a visible gap (Python __img_ocr space insertion).
 func TestIntegration_WordSpacing(t *testing.T) {
-	client := mustConnectDeepDoc(t)
+	client := mustConnectInferenceClient(t)
 	eng := mustOpenEngine(t, "01_english_simple.pdf")
 	defer eng.Close()
 
@@ -728,4 +729,58 @@ func TestIntegration_WordSpacing(t *testing.T) {
 		}
 	}
 	t.Logf("word spacing check: %d sections", len(result.Sections))
+}
+
+// TestE2E_ParseAndPostProcess runs Parse → PostProcess end-to-end on a real
+// PDF. Skips VLM (no tenant_id set) but exercises all other operators.
+func TestE2E_ParseAndPostProcess(t *testing.T) {
+	engine := mustOpenEngine(t, "01_english_simple.pdf")
+	defer engine.Close()
+
+	mock := &MockDocAnalyzer{Healthy: true}
+	p := NewParser(pdf.DefaultParserConfig(), mock)
+
+	result, err := p.Parse(context.Background(), engine)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	preCount := len(result.Sections)
+	if preCount == 0 {
+		t.Fatal("Parse() returned zero sections")
+	}
+
+	// Post-processing (no VLM).
+	config := post.PipelineConfig{
+		post.ConfigKeyPageWidth: 612.0,
+		post.ConfigKeyZoom:      1.0,
+	}
+	if err := post.PostProcess(context.Background(), result, config); err != nil {
+		t.Fatalf("PostProcess: %v", err)
+	}
+
+	postCount := len(result.Sections)
+	t.Logf("sections: %d → %d after PostProcess", preCount, postCount)
+	if postCount == 0 {
+		t.Error("PostProcess removed all sections")
+	}
+
+	// Every section must have DocTypeKwd + LayoutType set.
+	for i, s := range result.Sections {
+		if s.DocTypeKwd == "" {
+			t.Errorf("section[%d] DocTypeKwd empty after PostProcess", i)
+		}
+		if s.LayoutType == "" {
+			t.Errorf("section[%d] LayoutType empty after PostProcess", i)
+		}
+	}
+
+	// Figures() must reflect post-processed sections.
+	figs := result.Figures()
+	t.Logf("figures: %d", len(figs))
+	for _, f := range figs {
+		if f.LayoutType != "figure" {
+			t.Errorf("Figures() LayoutType=%q, want 'figure'", f.LayoutType)
+		}
+	}
 }

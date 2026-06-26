@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	inf "ragflow/internal/deepdoc/parser/pdf/inference"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
 // ── Shared CGO test helpers ──────────────────────────────────────────────────
@@ -16,26 +16,9 @@ import (
 // different build tags (integration, manual). Consolidating them into one file
 // with the //go:build cgo tag makes them available to all cgo-tagged tests.
 
-// mustConnectDeepDoc returns a InferenceClient; fatals if unavailable.
-func mustConnectDeepDoc(t *testing.T) *inf.InferenceClient {
-	t.Helper()
-	url := os.Getenv("DEEPDOC_URL")
-	if url == "" {
-		url = "http://localhost:9390"
-	}
-	client, err := inf.NewInferenceClient(url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !client.Health() {
-		t.Fatalf("DeepDoc not available at %s", url)
-	}
-	return client
-}
-
-// mustConnectOssDeepDoc returns a InferenceClient pointed at the OSS service;
+// mustConnectInferenceClient returns a InferenceClient pointed at the OSS service;
 // skips the test if the service reports a non-OSS model type.
-func mustConnectOssDeepDoc(t *testing.T) *inf.InferenceClient {
+func mustConnectInferenceClient(t *testing.T) *inf.InferenceClient {
 	t.Helper()
 	url := os.Getenv("OSSDEEPDOC_URL")
 	if url == "" {
