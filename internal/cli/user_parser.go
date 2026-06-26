@@ -140,6 +140,8 @@ func (p *Parser) parseAPIListCommands() (*Command, error) {
 		return p.parseAPIListChats()
 	case TokenSearches:
 		return p.parseAPIListSearches()
+	case TokenMemories:
+		return p.parseAPIListMemories()
 	case TokenKeys:
 		return p.parseAPIListAPIKeys()
 	case TokenProviders:
@@ -281,6 +283,17 @@ func (p *Parser) parseAPIListSearches() (*Command, error) {
 	}
 
 	return NewCommand("api_list_searches"), nil
+}
+
+func (p *Parser) parseAPIListMemories() (*Command, error) {
+	p.nextToken() // consume MEMORIES
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return NewCommand("api_list_memories"), nil
 }
 
 func (p *Parser) parseGetMetadata() (*Command, error) {
@@ -1247,8 +1260,7 @@ func (p *Parser) parseAPISaveConfig() (*Command, error) {
 	return cmd, nil
 }
 
-// CREATE DATASET 'abc' WITH EMBEDDING 'modelName@instanceName@providerName' PARSER 'parserType'
-// CREATE DATASET 'abc' WITH EMBEDDING 'modelName@instanceName@providerName' PIPELINE 'pipelineName'
+// CREATE DATASET 'abc';
 func (p *Parser) parseAPICreateDataset() (*Command, error) {
 	p.nextToken() // consume DATASET
 	datasetName, err := p.parseQuotedString()
@@ -1256,52 +1268,13 @@ func (p *Parser) parseAPICreateDataset() (*Command, error) {
 		return nil, err
 	}
 
-	p.nextToken()
-	if p.curToken.Type != TokenWith {
-		return nil, fmt.Errorf("expected WITH")
-	}
-	p.nextToken()
-	if p.curToken.Type != TokenEmbedding {
-		return nil, fmt.Errorf("expected EMBEDDING")
-	}
-	p.nextToken()
-
-	embedding, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	p.nextToken()
-	cmd := NewCommand("api_create_dataset")
-	cmd.Params["dataset_name"] = datasetName
-	cmd.Params["embedding"] = embedding
-
-	if p.curToken.Type == TokenParser {
-		p.nextToken()
-		var parserType string
-		parserType, err = p.parseQuotedString()
-		if err != nil {
-			return nil, err
-		}
-		cmd.Params["parser_type"] = parserType
-		p.nextToken()
-	} else if p.curToken.Type == TokenPipeline {
-		p.nextToken()
-		var pipeline string
-		pipeline, err = p.parseQuotedString()
-		if err != nil {
-			return nil, err
-		}
-		cmd.Params["pipeline"] = pipeline
-		p.nextToken()
-	} else {
-		return nil, fmt.Errorf("expected PARSER or PIPELINE")
-	}
-
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
+
+	cmd := NewCommand("api_create_dataset")
+	cmd.Params["dataset_name"] = datasetName
 	return cmd, nil
 }
 
@@ -1389,9 +1362,15 @@ func (p *Parser) parseAPIDropCommands() (*Command, error) {
 
 	switch p.curToken.Type {
 	case TokenDataset:
-		return p.parseDropDataset()
+		return p.parseAPIDropDataset()
 	case TokenChat:
-		return p.parseDropChat()
+		return p.parseAPIDropChat()
+	case TokenSearch:
+		return p.parseAPIDropSearch()
+	case TokenMemory:
+		return p.parseAPIDropMemory()
+	case TokenAgent:
+		return p.parseAPIDropAgent()
 	case TokenKey:
 		return p.parseAPIDeleteAPIKey()
 	case TokenChunkStore:
@@ -1529,15 +1508,51 @@ func (p *Parser) parseDeleteProvider() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseDropDataset() (*Command, error) {
+func (p *Parser) parseAPIDropDataset() (*Command, error) {
 	p.nextToken() // consume DATASET
 	datasetName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
+	p.nextToken()
 
-	cmd := NewCommand("drop_user_dataset")
+	cmd := NewCommand("api_drop_dataset")
 	cmd.Params["dataset_name"] = datasetName
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+func (p *Parser) parseAPIDropSearch() (*Command, error) {
+	p.nextToken() // consume SEARCH
+	searchName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	cmd := NewCommand("api_drop_search")
+	cmd.Params["search_name"] = searchName
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+func (p *Parser) parseAPIDropChat() (*Command, error) {
+	p.nextToken() // consume CHAT
+	chatName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := NewCommand("api_drop_chat")
+	cmd.Params["chat_name"] = chatName
 
 	p.nextToken()
 	// Semicolon is optional
@@ -1547,15 +1562,33 @@ func (p *Parser) parseDropDataset() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseDropChat() (*Command, error) {
-	p.nextToken() // consume CHAT
-	chatName, err := p.parseQuotedString()
+func (p *Parser) parseAPIDropMemory() (*Command, error) {
+	p.nextToken() // consume MEMORY
+	memoryName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 
-	cmd := NewCommand("drop_user_chat")
-	cmd.Params["chat_name"] = chatName
+	cmd := NewCommand("api_drop_memory")
+	cmd.Params["memory_name"] = memoryName
+
+	p.nextToken()
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+func (p *Parser) parseAPIDropAgent() (*Command, error) {
+	p.nextToken() // consume AGENT
+	agentName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := NewCommand("api_drop_agent")
+	cmd.Params["agent_name"] = agentName
 
 	p.nextToken()
 	// Semicolon is optional

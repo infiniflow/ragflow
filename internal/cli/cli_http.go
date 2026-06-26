@@ -312,6 +312,8 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.APIListChatsCommand(cmd)
 	case "api_list_searches":
 		return c.APIListSearchesCommand(cmd)
+	case "api_list_memories":
+		return c.APIListMemoriesCommand(cmd)
 	case "list_dataset_documents":
 		return c.ListDatasetDocumentUserCommand(cmd)
 	case "search_on_datasets":
@@ -380,6 +382,16 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.APIListProviders(cmd)
 	case "delete_provider":
 		return c.DeleteProvider(cmd)
+	case "api_drop_dataset":
+		return c.APIDropDatasetCommand(cmd)
+	case "api_drop_chat":
+		return c.APIDropChatCommand(cmd)
+	case "api_drop_search":
+		return c.APIDropSearchCommand(cmd)
+	case "api_drop_memory":
+		return c.APIDropMemoryCommand(cmd)
+	case "api_drop_agent":
+		return c.APIDropAgentCommand(cmd)
 	// Provider instance commands
 	case "api_create_provider_instance":
 		return c.APICreateProviderInstanceCommand(cmd)

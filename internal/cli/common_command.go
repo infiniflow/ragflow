@@ -1605,3 +1605,77 @@ func (c *CLI) getDatasetIDByName(datasetName string) (string, error) {
 	}
 	return "", fmt.Errorf("dataset %s not found", datasetName)
 }
+
+func (c *CLI) getAgentIDByName(agentName string) (string, error) {
+	response, err := c.APIListAgentsCommand(nil)
+	if err != nil {
+		return "", err
+	}
+	commonResponse, ok := response.(*CommonResponse)
+	if !ok {
+		return "", fmt.Errorf("invalid response")
+	}
+	for _, agent := range commonResponse.Data {
+		if agent["name"] == agentName {
+			return agent["id"].(string), nil
+		}
+	}
+	return "", fmt.Errorf("agent %s not found", agentName)
+}
+
+func (c *CLI) getSearchIDByName(searchName string) (string, error) {
+	response, err := c.APIListSearchesCommand(nil)
+	if err != nil {
+		return "", err
+	}
+	commonResponse, ok := response.(*CommonResponse)
+	if !ok {
+		return "", fmt.Errorf("invalid response")
+	}
+	for _, search := range commonResponse.Data {
+		if search["name"] == searchName {
+			return search["id"].(string), nil
+		}
+	}
+	return "", fmt.Errorf("search %s not found", searchName)
+}
+
+func (c *CLI) getChatIDByName(chatName string) (string, error) {
+	response, err := c.APIListChatsCommand(nil)
+	if err != nil {
+		return "", err
+	}
+	commonResponse, ok := response.(*CommonResponse)
+	if !ok {
+		return "", fmt.Errorf("invalid response")
+	}
+	for _, chat := range commonResponse.Data {
+		if chat["name"] == chatName {
+			return chat["id"].(string), nil
+		}
+	}
+	return "", fmt.Errorf("chat %s not found", chatName)
+}
+
+func (c *CLI) getMemoryIDByName(memoryName string) (string, error) {
+	response, err := c.APIListMemoriesCommand(nil)
+	if err != nil {
+		return "", err
+	}
+	listMemoriesResponse, ok := response.(*ListMemoriesResponse)
+	memories := listMemoriesResponse.Data["memory_list"].([]interface{})
+	if !ok {
+		return "", fmt.Errorf("invalid response")
+	}
+	for _, memory := range memories {
+		var memoryMap map[string]interface{}
+		memoryMap, ok = memory.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if memoryMap["name"] == memoryName {
+			return memoryMap["id"].(string), nil
+		}
+	}
+	return "", fmt.Errorf("memory %s not found", memoryName)
+}

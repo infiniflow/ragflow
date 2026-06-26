@@ -258,16 +258,16 @@ build_go() {
     echo "Building RAGFlow binary: $RAGFLOW_SERVER_BINARY, $ADMIN_SERVER_BINARY, $INGESTOR_BINARY, and $RAGFLOW_CLI_BINARY"
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go build -o "$RAGFLOW_SERVER_BINARY" cmd/server_main.go
+        go build -ldflags="-s -w" -o "$RAGFLOW_SERVER_BINARY" cmd/server_main.go
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go build -o "$ADMIN_SERVER_BINARY" cmd/admin_server.go
+        go build -ldflags="-s -w" -o "$ADMIN_SERVER_BINARY" cmd/admin_server.go
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go build -o "$INGESTOR_BINARY" cmd/ingestor.go
+        go build -ldflags="-s -w" -o "$INGESTOR_BINARY" cmd/ingestor.go
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go build -o "$RAGFLOW_CLI_BINARY" cmd/ragflow-cli.go
+        go build -ldflags="-s -w" -o "$RAGFLOW_CLI_BINARY" cmd/ragflow-cli.go
 
     if [ ! -f "$RAGFLOW_SERVER_BINARY" ]; then
         echo -e "${RED}Error: Failed to build RAGFlow server binary${NC}"
