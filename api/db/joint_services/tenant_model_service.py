@@ -218,14 +218,23 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
             raise LookupError(f"Model {model_name} cannot be used as {model_type_val} model.")
 
         model_extra = json.loads(model_obj.extra) if model_obj.extra else {}
+
+        # Fallback to factory config for fields missing from model_extra
+        fac_list = [f for f in settings.FACTORY_LLM_INFOS if f["name"] == provider_name]
+        llm_info = None
+        if fac_list:
+            llm_list = [llm for llm in fac_list[0]["llm"] if llm["llm_name"] == model_obj.model_name]
+            if llm_list:
+                llm_info = llm_list[0]
+
         model_config = {
             "llm_factory": provider_obj.provider_name,
             "api_key": api_key,
             "llm_name": model_obj.model_name,
             "api_base": extra_fields.get("base_url", ""),
             "model_type": model_obj.model_type,
-            "is_tools": model_extra.get("is_tools", is_tool),
-            "max_tokens": model_extra.get("max_tokens", 8192),
+            "is_tools": model_extra.get("is_tools") if model_extra.get("is_tools") is not None else (llm_info.get("is_tools") if llm_info else is_tool),
+            "max_tokens": model_extra.get("max_tokens") or (llm_info.get("max_tokens") if llm_info else None) or 8192,
         }
         if api_key_payload is not None:
             model_config["api_key_payload"] = api_key_payload
