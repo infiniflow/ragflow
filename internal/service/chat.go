@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"reflect"
 	"strings"
 	"unicode/utf8"
 
@@ -655,6 +656,373 @@ func (s *ChatService) getOwnedValidChat(userID, chatID string) (*entity.Chat, er
 		return nil, errors.New("no authorization")
 	}
 	return chat, nil
+}
+
+var chatPersistedFields = map[string]struct{}{
+	"name":                     {},
+	"description":              {},
+	"icon":                     {},
+	"language":                 {},
+	"llm_id":                   {},
+	"tenant_llm_id":            {},
+	"llm_setting":              {},
+	"prompt_type":              {},
+	"prompt_config":            {},
+	"meta_data_filter":         {},
+	"similarity_threshold":     {},
+	"vector_similarity_weight": {},
+	"top_n":                    {},
+	"top_k":                    {},
+	"do_refer":                 {},
+	"rerank_id":                {},
+	"tenant_rerank_id":         {},
+	"kb_ids":                   {},
+	"status":                   {},
+}
+
+var chatReadonlyFields = map[string]struct{}{
+	"id":          {},
+	"tenant_id":   {},
+	"created_by":  {},
+	"create_time": {},
+	"create_date": {},
+	"update_time": {},
+	"update_date": {},
+}
+
+var defaultRerankModels = map[string]struct{}{
+	"BAAI/bge-reranker-v2-m3":           {},
+	"maidalun1020/bce-reranker-base_v1": {},
+}
+
+// UpdateChat mirrors PUT /api/v1/chats/<chat_id> in the Python REST API.
+func (s *ChatService) UpdateChat(userID, chatID string, req map[string]interface{}) (map[string]interface{}, error) {
+	return s.updateChatREST(userID, chatID, req, false)
+}
+
+// PatchChat mirrors PATCH /api/v1/chats/<chat_id> in the Python REST API.
+func (s *ChatService) PatchChat(userID, chatID string, req map[string]interface{}) (map[string]interface{}, error) {
+	return s.updateChatREST(userID, chatID, req, true)
+}
+
+func (s *ChatService) updateChatREST(userID, chatID string, req map[string]interface{}, patch bool) (map[string]interface{}, error) {
+	currentChat, err := s.getOwnedValidChat(userID, chatID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.tenantDAO.GetByID(userID); err != nil {
+		return nil, errors.New("Tenant not found!")
+	}
+
+	if !patch && isTruthy(req["tenant_id"]) {
+		return nil, errors.New("`tenant_id` must not be provided.")
+	}
+
+	if value, ok := req["name"]; ok {
+		name, shouldSet, err := validateRESTChatName(value, !patch)
+		if err != nil {
+			return nil, err
+		}
+		if shouldSet {
+			req["name"] = name
+		} else {
+			delete(req, "name")
+		}
+	}
+
+	if value, ok := req["dataset_ids"]; ok {
+		kbIDs, err := s.validateRESTDatasetIDs(value, userID)
+		if err != nil {
+			return nil, err
+		}
+		req["kb_ids"] = kbIDs
+		delete(req, "dataset_ids")
+	}
+
+	var llmSetting map[string]interface{}
+	llmSettingProvided := false
+	if value, ok := req["llm_setting"]; ok {
+		llmSettingProvided = true
+		setting, ok := mapFromValue(value)
+		if !ok {
+			return nil, errors.New("`llm_setting` should be an object.")
+		}
+		llmSetting = setting
+	}
+
+	if value, ok := req["llm_id"]; ok {
+		llmID := fmt.Sprint(value)
+		if err := s.validateRESTLLMID(llmID, userID, llmSetting); err != nil {
+			return nil, err
+		}
+	}
+
+	if value, ok := req["rerank_id"]; ok {
+		rerankID := fmt.Sprint(value)
+		if err := s.validateRESTRerankID(rerankID, userID); err != nil {
+			return nil, err
+		}
+	}
+
+	if value, ok := req["prompt_config"]; ok {
+		promptConfig, ok := mapFromValue(value)
+		if !ok {
+			return nil, errors.New("`prompt_config` should be an object.")
+		}
+		if patch {
+			req["prompt_config"] = mergeJSONMap(currentChat.PromptConfig, promptConfig)
+		} else {
+			req["prompt_config"] = entity.JSONMap(promptConfig)
+		}
+	}
+
+	if llmSettingProvided {
+		if patch {
+			req["llm_setting"] = mergeJSONMap(currentChat.LLMSetting, llmSetting)
+		} else {
+			req["llm_setting"] = entity.JSONMap(llmSetting)
+		}
+	}
+
+	if value, ok := req["meta_data_filter"]; ok && value != nil {
+		metaDataFilter, ok := mapFromValue(value)
+		if !ok {
+			return nil, errors.New("`meta_data_filter` should be an object.")
+		}
+		req["meta_data_filter"] = entity.JSONMap(metaDataFilter)
+	}
+
+	updates := filterRESTChatUpdates(req)
+	if value, ok := updates["name"]; ok {
+		name := value.(string)
+		currentName := ""
+		if currentChat.Name != nil {
+			currentName = *currentChat.Name
+		}
+		if strings.ToLower(name) != strings.ToLower(currentName) {
+			existingNames, err := s.chatDAO.GetExistingNames(userID, string(entity.StatusValid))
+			if err != nil {
+				return nil, err
+			}
+			for _, existingName := range existingNames {
+				if existingName == name {
+					return nil, errors.New("Duplicated chat name.")
+				}
+			}
+		}
+	}
+
+	if len(updates) > 0 {
+		if err := s.chatDAO.UpdateByID(chatID, updates); err != nil {
+			if patch {
+				return nil, errors.New("Failed to update chat.")
+			}
+			return nil, errors.New("Chat not found!")
+		}
+	}
+
+	updatedChat, err := s.chatDAO.GetByID(chatID)
+	if err != nil {
+		return nil, errors.New("Failed to retrieve updated chat.")
+	}
+	return s.buildRESTChatResponse(updatedChat), nil
+}
+
+func validateRESTChatName(value interface{}, required bool) (string, bool, error) {
+	if value == nil {
+		if required {
+			return "", false, errors.New("`name` is required.")
+		}
+		return "", false, nil
+	}
+	name, ok := value.(string)
+	if !ok {
+		return "", false, errors.New("Chat name must be a string.")
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		if required {
+			return "", false, errors.New("`name` is required.")
+		}
+		return "", false, errors.New("`name` cannot be empty.")
+	}
+	if len([]byte(name)) > 255 {
+		return "", false, fmt.Errorf("Chat name length is %d which is larger than 255.", len([]byte(name)))
+	}
+	return name, true, nil
+}
+
+func (s *ChatService) validateRESTDatasetIDs(value interface{}, userID string) (entity.JSONSlice, error) {
+	if value == nil {
+		return entity.JSONSlice{}, nil
+	}
+	items, ok := value.([]interface{})
+	if !ok {
+		return nil, errors.New("`dataset_ids` should be a list.")
+	}
+
+	var kbs []*entity.Knowledgebase
+	kbIDs := make(entity.JSONSlice, 0, len(items))
+	for _, item := range items {
+		if !isTruthy(item) {
+			continue
+		}
+		datasetID := fmt.Sprint(item)
+		if !s.kbDAO.Accessible(datasetID, userID) {
+			return nil, fmt.Errorf("You don't own the dataset %s", datasetID)
+		}
+		kb, err := s.kbDAO.GetByID(datasetID)
+		if err != nil || kb == nil {
+			return nil, fmt.Errorf("You don't own the dataset %s", datasetID)
+		}
+		if kb.ChunkNum == 0 {
+			return nil, fmt.Errorf("The dataset %s doesn't own parsed file", datasetID)
+		}
+		kbs = append(kbs, kb)
+		kbIDs = append(kbIDs, datasetID)
+	}
+
+	embdIDs := make([]string, 0, len(kbs))
+	seenEmbdIDs := make(map[string]struct{})
+	for _, kb := range kbs {
+		embdIDs = append(embdIDs, kb.EmbdID)
+		seenEmbdIDs[s.splitModelNameAndFactory(kb.EmbdID)] = struct{}{}
+	}
+	if len(seenEmbdIDs) > 1 {
+		return nil, fmt.Errorf("Datasets use different embedding models: %v", embdIDs)
+	}
+	return kbIDs, nil
+}
+
+func (s *ChatService) validateRESTLLMID(llmID, tenantID string, llmSetting map[string]interface{}) error {
+	if llmID == "" {
+		return nil
+	}
+	modelType := entity.ModelTypeChat
+	if rawModelType, ok := llmSetting["model_type"]; ok {
+		switch typedModelType := rawModelType.(type) {
+		case string:
+			if typedModelType == string(entity.ModelTypeImage2Text) {
+				modelType = entity.ModelTypeImage2Text
+			}
+		case []interface{}:
+			for _, item := range typedModelType {
+				if fmt.Sprint(item) == string(entity.ModelTypeImage2Text) {
+					modelType = entity.ModelTypeImage2Text
+					break
+				}
+			}
+		}
+	}
+	if _, _, _, _, err := NewModelProviderService().GetModelConfigFromProviderInstance(tenantID, modelType, llmID); err != nil {
+		return fmt.Errorf("`llm_id` %s doesn't exist", llmID)
+	}
+	return nil
+}
+
+func (s *ChatService) validateRESTRerankID(rerankID, tenantID string) error {
+	if rerankID == "" {
+		return nil
+	}
+	baseName := s.splitModelNameAndFactory(rerankID)
+	if _, ok := defaultRerankModels[baseName]; ok {
+		return nil
+	}
+	if _, _, _, _, err := NewModelProviderService().GetModelConfigFromProviderInstance(tenantID, entity.ModelTypeRerank, rerankID); err != nil {
+		return fmt.Errorf("`rerank_id` %s doesn't exist", rerankID)
+	}
+	return nil
+}
+
+func filterRESTChatUpdates(req map[string]interface{}) map[string]interface{} {
+	updates := make(map[string]interface{})
+	for field, value := range req {
+		if _, ok := chatPersistedFields[field]; !ok {
+			continue
+		}
+		if _, ok := chatReadonlyFields[field]; ok {
+			continue
+		}
+		updates[field] = value
+	}
+	return updates
+}
+
+func mapFromValue(value interface{}) (map[string]interface{}, bool) {
+	if value == nil {
+		return nil, false
+	}
+	switch typedValue := value.(type) {
+	case map[string]interface{}:
+		return typedValue, true
+	case entity.JSONMap:
+		return map[string]interface{}(typedValue), true
+	default:
+		return nil, false
+	}
+}
+
+func mergeJSONMap(base entity.JSONMap, patch map[string]interface{}) entity.JSONMap {
+	merged := entity.JSONMap{}
+	for key, value := range base {
+		merged[key] = value
+	}
+	for key, value := range patch {
+		merged[key] = value
+	}
+	return merged
+}
+
+func isTruthy(value interface{}) bool {
+	if value == nil {
+		return false
+	}
+	switch typedValue := value.(type) {
+	case bool:
+		return typedValue
+	case string:
+		return typedValue != ""
+	case int, int8, int16, int32, int64:
+		return reflect.ValueOf(value).Int() != 0
+	case uint, uint8, uint16, uint32, uint64:
+		return reflect.ValueOf(value).Uint() != 0
+	case float32, float64:
+		return reflect.ValueOf(value).Float() != 0
+	default:
+		return true
+	}
+}
+
+func (s *ChatService) buildRESTChatResponse(chat *entity.Chat) map[string]interface{} {
+	kbNames, datasetIDs := s.getDatasetNamesAndIDs(chat.KBIDs)
+	return map[string]interface{}{
+		"id":                       chat.ID,
+		"tenant_id":                chat.TenantID,
+		"name":                     chat.Name,
+		"description":              chat.Description,
+		"icon":                     chat.Icon,
+		"language":                 chat.Language,
+		"llm_id":                   chat.LLMID,
+		"tenant_llm_id":            chat.TenantLLMID,
+		"llm_setting":              chat.LLMSetting,
+		"prompt_type":              chat.PromptType,
+		"prompt_config":            chat.PromptConfig,
+		"meta_data_filter":         chat.MetaDataFilter,
+		"similarity_threshold":     chat.SimilarityThreshold,
+		"vector_similarity_weight": chat.VectorSimilarityWeight,
+		"top_n":                    chat.TopN,
+		"top_k":                    chat.TopK,
+		"do_refer":                 chat.DoRefer,
+		"rerank_id":                chat.RerankID,
+		"tenant_rerank_id":         chat.TenantRerankID,
+		"dataset_ids":              datasetIDs,
+		"kb_names":                 kbNames,
+		"status":                   chat.Status,
+		"create_time":              chat.CreateTime,
+		"create_date":              chat.CreateDate,
+		"update_time":              chat.UpdateTime,
+		"update_date":              chat.UpdateDate,
+	}
 }
 
 // DeleteChat soft deletes a single chat owned by the current user.

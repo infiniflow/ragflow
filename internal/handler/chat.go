@@ -503,3 +503,57 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 		"message": "success",
 	})
 }
+
+// UpdateChat updates a chat by ID using REST PUT semantics.
+func (h *ChatHandler) UpdateChat(c *gin.Context) {
+	h.updateChatByMethod(c, false)
+}
+
+// PatchChat updates a chat by ID using REST PATCH semantics.
+func (h *ChatHandler) PatchChat(c *gin.Context) {
+	h.updateChatByMethod(c, true)
+}
+
+func (h *ChatHandler) updateChatByMethod(c *gin.Context, patch bool) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	chatID := c.Param("chat_id")
+	if chatID == "" {
+		jsonError(c, common.CodeBadRequest, "chat_id is required")
+		return
+	}
+
+	var req map[string]interface{}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	var (
+		result map[string]interface{}
+		err    error
+	)
+	if patch {
+		result, err = h.chatService.PatchChat(user.ID, chatID, req)
+	} else {
+		result, err = h.chatService.UpdateChat(user.ID, chatID, req)
+	}
+	if err != nil {
+		if err.Error() == "no authorization" {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeAuthenticationError,
+				"data":    false,
+				"message": "No authorization.",
+			})
+			return
+		}
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, result, "success")
+}
