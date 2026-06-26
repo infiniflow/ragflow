@@ -43,6 +43,7 @@ import (
 	"ragflow/internal/agent/canvas"
 	_ "ragflow/internal/agent/component" // blank import: registers every Component factory (Begin / Agent / LLM / Message / Retrieval / ...) into the shared runtime at package init
 	"ragflow/internal/agent/runtime"
+	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/handler"
@@ -90,9 +91,8 @@ func main() {
 		return
 	}
 
-	// Initialize logger with default level
-	// logger.Init("info"); // set debug log level
-	if err := common.Init("info", common.FileOutput{Path: "server_main.log"}); err != nil {
+	// Temporarily default to debug while investigating the Go chat/SSE path.
+	if err := common.Init("debug", common.FileOutput{Path: "server_main.log"}); err != nil {
 		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
 	}
 
@@ -115,7 +115,7 @@ func main() {
 	// Reinitialize logger with configured level if different
 	level := config.Log.Level
 	if level == "" {
-		level = "info"
+		level = "debug"
 	}
 
 	if debugFlag {
@@ -236,6 +236,9 @@ func startServer(config *server.Config) {
 
 	// Initialize doc engine for skill search
 	docEngine := engine.Get()
+	documentDAO := dao.NewDocumentDAO()
+	agenttool.SetRetrievalService(agenttool.NewNLPRetrievalAdapterFromDeps(docEngine, documentDAO))
+	common.Info("agent: retrieval service adapter installed")
 
 	// Initialize handler layer
 	authHandler := handler.NewAuthHandler()
@@ -296,7 +299,7 @@ func startServer(config *server.Config) {
 	fileCommitHandler := handler.NewFileCommitHandler(service.NewFileCommitService())
 
 	// Dify retrieval handler
-	docDAO := dao.NewDocumentDAO()
+	docDAO := documentDAO
 	retrievalService := nlp.NewRetrievalService(docEngine, docDAO)
 	difyRetrievalHandler := handler.NewDifyRetrievalHandler(
 		knowledgebaseService,
