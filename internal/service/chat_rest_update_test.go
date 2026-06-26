@@ -116,6 +116,27 @@ func TestChatServiceUpdateChatRejectsTenantID(t *testing.T) {
 	}
 }
 
+func TestChatServiceUpdateChatRejectsInvalidLLMSetting(t *testing.T) {
+	db := setupChatRESTUpdateServiceTestDB(t)
+	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
+
+	svc := NewChatService()
+	_, err := svc.UpdateChat("user-1", "chat-1", map[string]interface{}{
+		"llm_setting": "invalid",
+	})
+	if err == nil || err.Error() != "`llm_setting` should be an object." {
+		t.Fatalf("expected llm_setting error, got %v", err)
+	}
+
+	chat, err := svc.chatDAO.GetByID("chat-1")
+	if err != nil {
+		t.Fatalf("failed to fetch chat: %v", err)
+	}
+	if chat.LLMSetting["temperature"] != float64(0.1) {
+		t.Fatalf("expected llm_setting to remain unchanged, got %+v", chat.LLMSetting)
+	}
+}
+
 func TestChatServicePatchChatIgnoresTenantIDAndUpdatesName(t *testing.T) {
 	db := setupChatRESTUpdateServiceTestDB(t)
 	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")

@@ -739,7 +739,17 @@ func (s *ChatService) updateChatREST(userID, chatID string, req map[string]inter
 		delete(req, "dataset_ids")
 	}
 
-	llmSetting, _ := mapFromValue(req["llm_setting"])
+	var llmSetting map[string]interface{}
+	llmSettingProvided := false
+	if value, ok := req["llm_setting"]; ok {
+		llmSettingProvided = true
+		setting, ok := mapFromValue(value)
+		if !ok {
+			return nil, errors.New("`llm_setting` should be an object.")
+		}
+		llmSetting = setting
+	}
+
 	if value, ok := req["llm_id"]; ok {
 		llmID := fmt.Sprint(value)
 		if err := s.validateRESTLLMID(llmID, userID, llmSetting); err != nil {
@@ -766,16 +776,12 @@ func (s *ChatService) updateChatREST(userID, chatID string, req map[string]inter
 		}
 	}
 
-	if patch {
-		if value, ok := req["llm_setting"]; ok {
-			setting, ok := mapFromValue(value)
-			if !ok {
-				return nil, errors.New("`llm_setting` should be an object.")
-			}
-			req["llm_setting"] = mergeJSONMap(currentChat.LLMSetting, setting)
+	if llmSettingProvided {
+		if patch {
+			req["llm_setting"] = mergeJSONMap(currentChat.LLMSetting, llmSetting)
+		} else {
+			req["llm_setting"] = entity.JSONMap(llmSetting)
 		}
-	} else if setting, ok := mapFromValue(req["llm_setting"]); ok {
-		req["llm_setting"] = entity.JSONMap(setting)
 	}
 
 	updates := filterRESTChatUpdates(req)
