@@ -19,7 +19,7 @@ func TestOCR_mergeChars_RealScanned(t *testing.T) {
 	if url == "" {
 		t.Skip("DEEPDOC_URL not set")
 	}
-	dd, err := NewInferenceClient(url)
+	dd, err := inf.NewInferenceClient(url)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,8 +51,8 @@ func TestOCR_mergeChars_RealScanned(t *testing.T) {
 		sample.WriteString(c.Text)
 	}
 	t.Logf("pdf_oxide sample: %q", sample.String())
-	t.Logf("isScanNoise: %v", isScanNoise(sample.String()))
-	t.Logf("isGarbledPage: %v", isGarbledPage(chars))
+	t.Logf("isScanNoise: %v", util.IsScanNoise(sample.String()))
+	t.Logf("isGarbledPage: %v", util.IsGarbledPage(chars))
 
 	img, err := eng.RenderPageImage(0, 72*3)
 	if err != nil {

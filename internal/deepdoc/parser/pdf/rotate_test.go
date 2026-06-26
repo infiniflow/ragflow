@@ -12,6 +12,7 @@ import (
 
 	"ragflow/internal/deepdoc/parser/pdf/pdfium"
 	"ragflow/internal/deepdoc/parser/pdf/pdfoxide"
+	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
@@ -181,7 +182,7 @@ func TestRotation_SameLinePreserved(t *testing.T) {
 				tolerance = 15.0 // char widths vary ~10-13pts on same line
 			}
 
-			lines := groupCharsToLines(chars, false)
+			lines := lyt.GroupCharsToLines(chars, false)
 			violations := 0
 			for li, line := range lines {
 				if len(line) <= 1 {

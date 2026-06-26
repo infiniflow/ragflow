@@ -390,3 +390,44 @@ func TestCropSectionByDLA_EmptyInputs(t *testing.T) {
 		t.Error("expected empty for empty page numbers")
 	}
 }
+func TestCropImageRegion(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 200, 300))
+
+	t.Run("normal crop", func(t *testing.T) {
+		r := pdf.DLARegion{X0: 10, Y0: 20, X1: 100, Y1: 150}
+		cropped, err := CropImageRegion(img, r)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// 3% proportional margin: 90×3%≈3px, 130×3%≈4px → 95×137
+		if cropped.Bounds().Dx() != 95 || cropped.Bounds().Dy() != 137 {
+			t.Errorf("size %v, want 95x137", cropped.Bounds())
+		}
+	})
+
+	t.Run("x0 >= x1 returns error", func(t *testing.T) {
+		// 3% proportional margin on each side: if the gap is too small after margin expansion, x0 ≥ x1 triggers error.
+		r := pdf.DLARegion{X0: 110, Y0: 20, X1: 50, Y1: 150}
+		_, err := CropImageRegion(img, r)
+		if err == nil {
+			t.Fatal("expected error for x0 >= x1, got nil")
+		}
+	})
+
+	t.Run("y0 >= y1 returns error", func(t *testing.T) {
+		r := pdf.DLARegion{X0: 10, Y0: 150, X1: 100, Y1: 20}
+		_, err := CropImageRegion(img, r)
+		if err == nil {
+			t.Fatal("expected error for y0 >= y1, got nil")
+		}
+	})
+
+	t.Run("region fully outside image bounds", func(t *testing.T) {
+		// Clamped to image bounds → zero-width/height → error.
+		r := pdf.DLARegion{X0: 300, Y0: 400, X1: 500, Y1: 600}
+		_, err := CropImageRegion(img, r)
+		if err == nil {
+			t.Fatal("expected error for region outside image bounds")
+		}
+	})
+}

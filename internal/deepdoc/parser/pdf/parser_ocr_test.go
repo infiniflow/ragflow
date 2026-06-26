@@ -5,6 +5,7 @@ import (
 	"image"
 	"testing"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	util "ragflow/internal/deepdoc/parser/pdf/util"
 )
 
 // testPageImg creates a small test image for ocrMergeChars tests.
@@ -338,27 +339,27 @@ func TestOCRMergeChars_OverlappingBoxes(t *testing.T) {
 // ── pdf_oxide ### detection tests ─────────────────────────────────────
 
 func TestPdfOxideUnmappedGarbled_Empty(t *testing.T) {
-	if pdfOxideUnmappedGarbled("") {
+	if util.PdfOxideUnmappedGarbled("") {
 		t.Error("empty text should not be garbled")
 	}
 }
 
 func TestPdfOxideUnmappedGarbled_NormalText(t *testing.T) {
-	if pdfOxideUnmappedGarbled("这是一段正常的中文文本没有任何问题") {
+	if util.PdfOxideUnmappedGarbled("这是一段正常的中文文本没有任何问题") {
 		t.Error("normal Chinese text should not be garbled")
 	}
 }
 
 func TestPdfOxideUnmappedGarbled_SingleHash(t *testing.T) {
 	// A single # is not enough (could be a phone number or reference).
-	if pdfOxideUnmappedGarbled("参考 #123 的文献") {
+	if util.PdfOxideUnmappedGarbled("参考 #123 的文献") {
 		t.Error("single # should not be garbled")
 	}
 }
 
 func TestPdfOxideUnmappedGarbled_TripleHashCluster(t *testing.T) {
 	// Two ### sequences => garbled.
-	if !pdfOxideUnmappedGarbled("我信###D_8-.###$#(") {
+	if !util.PdfOxideUnmappedGarbled("我信###D_8-.###$#(") {
 		t.Error("two ### clusters should be garbled")
 	}
 }
@@ -366,7 +367,7 @@ func TestPdfOxideUnmappedGarbled_TripleHashCluster(t *testing.T) {
 func TestPdfOxideUnmappedGarbled_QuadHash(t *testing.T) {
 	// One #### counts as one ### cluster. Need two for trigger.
 	// But density may also be high enough.
-	if !pdfOxideUnmappedGarbled("text####abc####def") {
+	if !util.PdfOxideUnmappedGarbled("text####abc####def") {
 		t.Error("two #### clusters should be garbled")
 	}
 }
@@ -374,7 +375,7 @@ func TestPdfOxideUnmappedGarbled_QuadHash(t *testing.T) {
 func TestPdfOxideUnmappedGarbled_SingleTriple(t *testing.T) {
 	// Single ### cluster => garbled.  In a 200-char sample "###" is impossible
 	// in normal text (URLs/markdown use at most "##").
-	if !pdfOxideUnmappedGarbled("hello###world normal text here") {
+	if !util.PdfOxideUnmappedGarbled("hello###world normal text here") {
 		t.Error("single ### cluster should be garbled")
 	}
 }
@@ -382,7 +383,7 @@ func TestPdfOxideUnmappedGarbled_SingleTriple(t *testing.T) {
 func TestPdfOxideUnmappedGarbled_HighDensity(t *testing.T) {
 	// 10 # chars mixed among 40+ non-space chars = 25% → garbled.
 	text := "#a#b#c#d#e#f#g#h#i#j" + " extra normal chars padding to reach minimum"
-	if !pdfOxideUnmappedGarbled(text) {
+	if !util.PdfOxideUnmappedGarbled(text) {
 		t.Error("high # density should be garbled")
 	}
 }
@@ -391,7 +392,7 @@ func TestPdfOxideUnmappedGarbled_RealWorldGarbled(t *testing.T) {
 	// Simulates the garbled page from 1例3个月...pdf:
 	// Chinese text mixed with ###D_ style unmapped glyph patterns.
 	garbled := "和蔘语言###D_8-.*/*护理全科##%&$ 80引用\"\"###$#(点向患儿"
-	if !pdfOxideUnmappedGarbled(garbled) {
+	if !util.PdfOxideUnmappedGarbled(garbled) {
 		t.Error("real-world garbled text with ### clusters should be detected")
 	}
 }

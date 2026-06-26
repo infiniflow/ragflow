@@ -5,181 +5,13 @@ import (
 	"image"
 	"log/slog"
 	"math"
+	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	util "ragflow/internal/deepdoc/parser/pdf/util"
 	"sort"
 	"strings"
-	"unicode"
 )
 
-// isGarbledPage returns true if a page is garbled by PUA ratio, font encoding,
-// pdf_oxide unmapped glyphs, or scan noise (no real words).
-func isGarbledPage(chars []pdf.TextChar) bool {
-	if len(chars) < 20 {
-		return false
-	}
-	// Build full-page text for detection (all O(n) single pass).
-	var fullText strings.Builder
-	for _, c := range chars {
-		fullText.WriteString(c.Text)
-	}
-	text := fullText.String()
-	if util.IsGarbledText(text, 0.3) {
-		return true
-	}
-	if pdfOxideUnmappedGarbled(text) && isScanNoise(text) {
-		return true
-	}
-	if util.IsGarbledByFontEncoding(chars, 20) {
-		return true
-	}
-	if isScanNoise(text) {
-		return true
-	}
-	return false
-}
-
-// isScanNoise detects scanned pages where pdf_oxide extracts noise glyphs
-// instead of real text.  Real text in any language contains word-like runs
-// of consecutive letters (L category).  Scan noise consists of random ASCII
-// symbols with at most 2-letter fragments.
-//
-// Three indicators of real (non-noise) text, any one is sufficient:
-//   - ≥4 consecutive lowercase Latin letters (e.g. "the", "and")
-//   - ≥2 consecutive CJK characters (Han, Hiragana, Katakana, Hangul)
-//   - ≥4 consecutive non-ASCII letters (Arabic, Thai, Cyrillic, etc.)
-//
-// Pure-uppercase fragments like "RASB" are common in pdf_oxide noise but
-// never appear as standalone words in real text without lowercase context.
-func isScanNoise(text string) bool {
-	nonSpace := 0
-	digitCount := 0
-	lowerRun := 0
-	maxLowerRun := 0
-	cjkRun := 0
-	maxCJKRun := 0
-	nonASCIILetterRun := 0
-	maxNonASCIILetterRun := 0
-
-	for _, r := range text {
-		if r == ' ' || r == '\t' || r == '\n' || r == '\r' {
-			lowerRun = 0
-			cjkRun = 0
-			nonASCIILetterRun = 0
-			continue
-		}
-		nonSpace++
-
-		// Digit density: real content (tables, dates) has digits;
-		// pdf_oxide noise (unmapped glyphs) never produces digits.
-		if r >= '0' && r <= '9' {
-			digitCount++
-		}
-
-		// Lowercase Latin (Ll)
-		if unicode.Is(unicode.Ll, r) {
-			lowerRun++
-			if lowerRun > maxLowerRun {
-				maxLowerRun = lowerRun
-			}
-		} else {
-			lowerRun = 0
-		}
-
-		// CJK: Han, Hiragana, Katakana, Hangul Syllables & Jamo
-		if pdf.IsCJK(r) {
-			cjkRun++
-			if cjkRun > maxCJKRun {
-				maxCJKRun = cjkRun
-			}
-		} else {
-			cjkRun = 0
-		}
-
-		// Non-ASCII letter (Arabic U+0600–U+06FF, Thai U+0E00–U+0E7F,
-		// Cyrillic U+0400–U+04FF, etc.).  Excludes ASCII so uppercase
-		// Latin fragments like "RASB" don't count.
-		if unicode.IsLetter(r) && r > unicode.MaxASCII {
-			nonASCIILetterRun++
-			if nonASCIILetterRun > maxNonASCIILetterRun {
-				maxNonASCIILetterRun = nonASCIILetterRun
-			}
-		} else {
-			nonASCIILetterRun = 0
-		}
-	}
-
-	// Need enough characters to make a meaningful decision.
-	if nonSpace < 30 {
-		return false
-	}
-
-	// Digit density: pdf_oxide never substitutes digits for unmapped
-	// glyphs. Real content (tables, dates, page numbers) has ≥10%
-	// digits; noise consists of random ASCII punctuation.
-	if float64(digitCount)/float64(nonSpace) >= 0.10 {
-		return false
-	}
-
-	// Real text in any script — any one indicator is sufficient.
-	isNoise := maxLowerRun < 4 && maxCJKRun < 2 && maxNonASCIILetterRun < 4
-
-	return isNoise
-}
-
-// isCJK reports whether r is a CJK character: Han ideograph, Hiragana,
-// Katakana, Hangul syllable, or Hangul Jamo.
-
-// pdfOxideUnmappedGarbled detects pdf_oxide's '#' placeholder glyphs.
-// pdf_oxide uses '#' (U+0023) for every glyph it cannot map; consecutive
-// unmapped glyphs form "##", "###", "####" sequences.  Three or more
-// consecutive '#' is virtually impossible in normal text.
-//
-// Two conditions (either is sufficient):
-//   - ≥ 2 occurrences of "###" (3+ consecutive #)
-//   - # density ≥ 5% of non-space characters
-func pdfOxideUnmappedGarbled(text string) bool {
-	hashCount := 0
-	total := 0
-	consecutive := 0
-	tripleClusters := 0
-
-	for _, r := range text {
-		if r == ' ' || r == '\t' || r == '\n' || r == '\r' {
-			continue
-		}
-		total++
-		if r == '#' {
-			hashCount++
-			consecutive++
-			if consecutive == 3 {
-				tripleClusters++
-			}
-		} else {
-			consecutive = 0
-		}
-	}
-
-	if total == 0 {
-		return false
-	}
-
-	density := float64(hashCount) / float64(total)
-
-	if tripleClusters >= 1 {
-		return true
-	}
-	// Density check only meaningful with enough chars (matches isGarbledPage's
-	// min 20 char guard).  In production the sample is 200 chars.
-	if total >= 40 && density >= 0.03 {
-		return true
-	}
-	return false
-}
-
-// ocrDetectAndRecognize runs OCR detection + recognition and returns
-// recognized pdf.TextBox results. logLabel distinguishes callers in log output
-// ("scan page", "garbled page").
 func ocrDetectAndRecognize(ctx context.Context, pageImg image.Image, doc pdf.DocAnalyzer, pageNum int, logLabel string) []pdf.TextBox {
 	boxes, err := doc.OCRDetect(ctx, pageImg)
 	if err != nil || len(boxes) == 0 {
@@ -328,7 +160,7 @@ func ocrMergeChars(ctx context.Context, pageImg image.Image, chars []pdf.TextCha
 			// Use lineToTextBox for correct space insertion + garbled detection.
 			// lineToTextBox inserts ASCII word spaces at visible gaps —
 			// matching Python's __img_ocr + __ocr char logic.
-			lineBox := lineToTextBox(boxChars[i])
+			lineBox := lyt.LineToTextBox(boxChars[i])
 			tb.Text = lineBox.Text
 
 			// Strategy 1: If majority of chars are garbled (PUA), clear text → OCR.
@@ -389,20 +221,6 @@ func ocrMergeChars(ctx context.Context, pageImg image.Image, chars []pdf.TextCha
 	result = filtered
 	slog.Debug("ocrMergeChars result", "page", pageNum, "boxes", len(result))
 	return result
-}
-
-// medianCharHeight returns the median height of chars, or 0 if empty.
-// Used as the fuzzy-sort threshold matching Python's np.mean([c["height"]]).
-func MedianCharHeight(chars []pdf.TextChar) float64 {
-	if len(chars) == 0 {
-		return 0
-	}
-	heights := make([]float64, len(chars))
-	for i, c := range chars {
-		heights[i] = c.Bottom - c.Top
-	}
-	sort.Float64s(heights)
-	return heights[len(heights)/2]
 }
 
 // sortYFirstly sorts chars by Y (fuzzy group by threshold), then by X.

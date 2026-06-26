@@ -1,6 +1,6 @@
 //go:build manual
 
-package parser
+package tool
 
 import (
 	"log/slog"
@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"ragflow/internal/deepdoc/parser/pdf/tool"
 )
 
 // TestBatchCompareWithPython compares Go output against Python reference
@@ -37,29 +36,29 @@ func TestBatchCompareWithPython(t *testing.T) {
 	pyTextDir := filepath.Join("testdata", "output", "py", pyVariant, "text")
 
 	// Read Go text files' #@meta (no aggregate JSON dependency).
-	goResults, err := tool.ReadGoTextMeta(goTextDir)
+	goResults, err := ReadGoTextMeta(goTextDir)
 	if err != nil || len(goResults) == 0 {
 		t.Fatalf("No Go text files in %s: %v", goTextDir, err)
 	}
 
 	// Read Python text files' #@meta
-	pyResults, err := tool.ReadPythonTextMeta(pyTextDir)
+	pyResults, err := ReadPythonTextMeta(pyTextDir)
 	if err != nil || len(pyResults) == 0 {
 		t.Fatalf("No Python text files in %s: %v", pyTextDir, err)
 	}
 
 	t.Logf("Comparing %d Go × %d Python", len(goResults), len(pyResults))
-	tool.CompareWithPython(t, goResults, pyResults, goTextDir, pyTextDir)
+	CompareWithPython(t, goResults, pyResults, goTextDir, pyTextDir)
 
 	// Compare tables.
 	goTablesDir := filepath.Join("testdata", "output", "go", goVariant, "tables")
 	pyTablesDir2 := filepath.Join("testdata", "output", "py", pyVariant, "tables")
-	tool.CompareTablesWithPython(t, goTablesDir, pyTablesDir2)
+	CompareTablesWithPython(t, goTablesDir, pyTablesDir2)
 	// Compare DLA + TSR raw intermediates.
 	goDLADir := filepath.Join("testdata", "output", "go", goVariant, "dla")
 	pyDLADir := filepath.Join("testdata", "output", "py", pyVariant, "dla")
-	tool.CompareDLAWithPython(t, goDLADir, pyDLADir)
+	CompareDLAWithPython(t, goDLADir, pyDLADir)
 	goTSRRawDir := filepath.Join("testdata", "output", "go", goVariant, "tsr_raw")
 	pyTSRRawDir := filepath.Join("testdata", "output", "py", pyVariant, "tsr_raw")
-	tool.CompareTSRRawWithPython(t, goTSRRawDir, pyTSRRawDir)
+	CompareTSRRawWithPython(t, goTSRRawDir, pyTSRRawDir)
 }

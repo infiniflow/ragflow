@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	inf "ragflow/internal/deepdoc/parser/pdf/inference"
 	"testing"
 )
 
@@ -31,7 +32,7 @@ func TestTableRotation_Integration(t *testing.T) {
 	if baseURL == "" {
 		baseURL = "http://localhost:9390"
 	}
-	dd, err := NewInferenceClient(baseURL)
+	dd, err := inf.NewInferenceClient(baseURL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +130,7 @@ func TestTableRotation_Stability(t *testing.T) {
 	if baseURL == "" {
 		baseURL = "http://localhost:9390"
 	}
-	dd, err := NewInferenceClient(baseURL)
+	dd, err := inf.NewInferenceClient(baseURL)
 	if err != nil {
 		t.Fatal(err)
 	}

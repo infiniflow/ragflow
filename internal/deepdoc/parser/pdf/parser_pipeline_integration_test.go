@@ -564,7 +564,7 @@ func TestIntegration_TableAlign(t *testing.T) {
 	}
 
 	t.Logf("Sections: %d, Tables: %d, Figures: %d",
-		len(result.Sections), len(result.Tables), len(result.Figures))
+		len(result.Sections), len(result.Tables), len(result.Figures()))
 }
 
 // TestIntegration_GarbageLayout verifies CID-garbled and garbage-layout

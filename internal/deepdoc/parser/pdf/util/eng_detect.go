@@ -1,4 +1,4 @@
-package parser
+package util
 
 import (
 	"math/rand/v2"
@@ -7,7 +7,9 @@ import (
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
-func isASCIIPrintable(r rune) bool {
+// IsASCIIPrintable returns true for characters that match Python's
+// is_english regex: [ a-zA-Z0-9,/¸;:'\[\]\(\)!@#$%^&*\"?<>._-]
+func IsASCIIPrintable(r rune) bool {
 	if r == ' ' {
 		return true
 	}
@@ -30,10 +32,10 @@ func isASCIIPrintable(r rune) bool {
 	return false
 }
 
-// defaultSampleChars returns a random sample of up to n character texts,
+// DefaultSampleChars returns a random sample of up to n character texts,
 // concatenated.  Matches Python's random.choices([c["text"] for c in
 // page_chars], k=min(100, len(page_chars))).
-func defaultSampleChars(chars []pdf.TextChar, n int) string {
+func DefaultSampleChars(chars []pdf.TextChar, n int) string {
 	if n <= 0 || len(chars) == 0 {
 		return ""
 	}
@@ -53,8 +55,8 @@ func defaultSampleChars(chars []pdf.TextChar, n int) string {
 	return buf.String()
 }
 
-// fullTextFromChars concatenates all chars text across pages for scan noise detection.
-func fullTextFromChars(pageChars map[int][]pdf.TextChar) string {
+// FullTextFromChars concatenates all chars text across pages for scan noise detection.
+func FullTextFromChars(pageChars map[int][]pdf.TextChar) string {
 	var sb strings.Builder
 	for _, chars := range pageChars {
 		for _, c := range chars {
@@ -64,7 +66,7 @@ func fullTextFromChars(pageChars map[int][]pdf.TextChar) string {
 	return sb.String()
 }
 
-// detectEnglish detects whether a PDF is primarily English by per-page
+// DetectEnglish detects whether a PDF is primarily English by per-page
 // majority vote, matching Python's is_english logic in __images__
 // (pdf_parser.py:1519-1526).
 //
@@ -76,12 +78,12 @@ func fullTextFromChars(pageChars map[int][]pdf.TextChar) string {
 // totalPages is the denominator (len(self.page_images) in Python), including
 // image-only pages that have zero chars.  This matches Python's behavior
 // where empty pages dilute the majority.
-func detectEnglish(pageChars map[int][]pdf.TextChar, totalPages int, sample pdf.SampleFunc) bool {
+func DetectEnglish(pageChars map[int][]pdf.TextChar, totalPages int, sample pdf.SampleFunc) bool {
 	if totalPages == 0 || len(pageChars) == 0 {
 		return false
 	}
 	if sample == nil {
-		sample = defaultSampleChars
+		sample = DefaultSampleChars
 	}
 	pagesWithSeq := 0
 
@@ -92,7 +94,7 @@ func detectEnglish(pageChars map[int][]pdf.TextChar, totalPages int, sample pdf.
 		sampleText := sample(chars, 100)
 		run := 0
 		for _, r := range sampleText {
-			if isASCIIPrintable(r) {
+			if IsASCIIPrintable(r) {
 				run++
 				if run >= 30 {
 					pagesWithSeq++

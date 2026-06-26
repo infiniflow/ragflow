@@ -3,10 +3,13 @@ package parser
 import (
 	"context"
 	"image"
-	tbl "ragflow/internal/deepdoc/parser/pdf/table"
-	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"strings"
 	"testing"
+
+	tbl "ragflow/internal/deepdoc/parser/pdf/table"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
+	util "ragflow/internal/deepdoc/parser/pdf/util"
 )
 
 // ── OCR fallback ──────────────────────────────────────────────────────
@@ -255,12 +258,12 @@ func TestIsGarbledPage(t *testing.T) {
 		for i := range chars {
 			chars[i] = pdf.TextChar{Text: string(rune(0xE000)), PageNumber: 0}
 		}
-		if !isGarbledPage(chars) {
+		if !util.IsGarbledPage(chars) {
 			t.Error("100% PUA → garbled")
 		}
 	})
 	t.Run("font encoding", func(t *testing.T) {
-		if !isGarbledPage(garbledSample()) {
+		if !util.IsGarbledPage(garbledSample()) {
 			t.Error("subset font → garbled")
 		}
 	})
@@ -269,7 +272,7 @@ func TestIsGarbledPage(t *testing.T) {
 		for i := range chars {
 			chars[i] = pdf.TextChar{Text: "a", PageNumber: 0}
 		}
-		if isGarbledPage(chars) {
+		if util.IsGarbledPage(chars) {
 			t.Error("normal text → not garbled")
 		}
 	})
@@ -289,12 +292,12 @@ func TestIsGarbledPage(t *testing.T) {
 			{Text: "科", PageNumber: 0}, {Text: "引", PageNumber: 0},
 			{Text: "用", PageNumber: 0},
 		}
-		if isGarbledPage(chars) {
+		if util.IsGarbledPage(chars) {
 			t.Error("### unmapped + CJK text should NOT be garbled (no subset fonts)")
 		}
 	})
 	t.Run("too few chars", func(t *testing.T) {
-		if isGarbledPage([]pdf.TextChar{{Text: " ", PageNumber: 0}}) {
+		if util.IsGarbledPage([]pdf.TextChar{{Text: " ", PageNumber: 0}}) {
 			t.Error("< 20 chars → not garbled")
 		}
 	})
@@ -507,100 +510,9 @@ func TestOCR_MergeChars(t *testing.T) {
 	})
 }
 
-func TestRowsToHTML(t *testing.T) {
-	// rowsToHTML takes [][]pdf.TSRCell instead of [][]string (tableToHTML removed).
-	toCells := func(rows [][]string) [][]pdf.TSRCell {
-		out := make([][]pdf.TSRCell, len(rows))
-		for ri, row := range rows {
-			out[ri] = make([]pdf.TSRCell, len(row))
-			for ci, s := range row {
-				out[ri][ci] = pdf.TSRCell{Text: s}
-			}
-		}
-		return out
-	}
-
-	t.Run("simple 2x2 table", func(t *testing.T) {
-		rows := toCells([][]string{
-			{"姓名", "年龄"},
-			{"张三", "25"},
-		})
-		html := tbl.RowsToHTML(rows, "", nil, nil, nil)
-		expected := "<table><tr><td >姓名</td><td >年龄</td></tr><tr><td >张三</td><td >25</td></tr></table>"
-		if html != expected {
-			t.Errorf("got  %q\nwant %q", html, expected)
-		}
-	})
-
-	t.Run("empty table", func(t *testing.T) {
-		html := tbl.RowsToHTML(nil, "", nil, nil, nil)
-		if html != "<table></table>" {
-			t.Errorf("expected '<table></table>', got %q", html)
-		}
-	})
-
-	t.Run("single cell", func(t *testing.T) {
-		rows := toCells([][]string{{"X"}})
-		html := tbl.RowsToHTML(rows, "", nil, nil, nil)
-		expected := "<table><tr><td >X</td></tr></table>"
-		if html != expected {
-			t.Errorf("got  %q\nwant %q", html, expected)
-		}
-	})
-
-	t.Run("matches Python format for 公司差旅费", func(t *testing.T) {
-		rows := toCells([][]string{
-			{"标职务", "飞机", "火车", "轮船", "其他交通工具（不含的士）"},
-			{"公司级领导人员", "经济舱位", "火车软席", "二等舱位", "按实报销"},
-			{"其他工作人员", "经济舱位", "火车硬席", "三等舱位", "按实报销"},
-		})
-		html := tbl.RowsToHTML(rows, "", nil, nil, nil)
-		if !strings.HasPrefix(html, "<table>") || !strings.HasSuffix(html, "</table>") {
-			t.Errorf("not valid HTML: %s", html)
-		}
-		if !strings.Contains(html, "<td >标职务</td>") {
-			t.Errorf("missing cell '标职务': %s", html)
-		}
-		if strings.Count(html, "<tr>") != 3 {
-			t.Errorf("expected 3 rows, got %d", strings.Count(html, "<tr>"))
-		}
-	})
-}
-
-// TestExtractTableAndReplace verifies that extractTableAndReplace pops
-// table boxes and replaces them with consolidated HTML, matching Python.
-func TestExtractTableAndReplace(t *testing.T) {
-	// Build boxes with table labels and a pdf.TableItem with cells.
-	boxes := []pdf.TextBox{
-		{X0: 0, X1: 100, Top: 0, Bottom: 20, Text: "A", LayoutType: "table", PageNumber: 0, R: 0, C: 0},
-		{X0: 0, X1: 100, Top: 21, Bottom: 40, Text: "B", LayoutType: "table", PageNumber: 0, R: 0, C: 0},
-		{X0: 110, X1: 200, Top: 0, Bottom: 20, Text: "C", LayoutType: "table", PageNumber: 0, R: 0, C: 1},
-		{X0: 110, X1: 200, Top: 21, Bottom: 40, Text: "D", LayoutType: "table", PageNumber: 0, R: 0, C: 1},
-	}
-	ti := pdf.TableItem{
-		Cells: []pdf.TSRCell{
-			{X0: 0, Y0: 0, X1: 100, Y1: 20, Label: "table row"},
-			{X0: 110, Y0: 0, X1: 200, Y1: 20, Label: "table row"},
-			{X0: 0, Y0: 21, X1: 100, Y1: 40, Label: "table row"},
-			{X0: 110, Y0: 21, X1: 200, Y1: 40, Label: "table row"},
-		},
-		Positions: []pdf.Position{{Left: 0, Right: 200, Top: 0, Bottom: 40}},
-		Scale:     1.0,
-	}
-	result := tbl.ExtractTableAndReplace(boxes, []pdf.TableItem{ti})
-	if len(result) != 1 {
-		t.Fatalf("expected 1 box (replaced), got %d", len(result))
-	}
-	if result[0].LayoutType != "table" {
-		t.Errorf("expected LayoutType table, got %q", result[0].LayoutType)
-	}
-	if !strings.Contains(result[0].Text, "<table>") {
-		t.Errorf("expected HTML table, got %q", result[0].Text)
-	}
-}
-
 // TestTableSectionCaptionInHTML verifies mergeCaptions prepends table
 // caption text before the HTML table, matching Python's caption handling.
+
 func TestTableSectionCaptionInHTML(t *testing.T) {
 	// Simulate pipeline order: extractTableAndReplace → boxesToSections → mergeCaptions
 	boxes := []pdf.TextBox{
@@ -617,7 +529,7 @@ func TestTableSectionCaptionInHTML(t *testing.T) {
 
 	// Step 1: extractTableAndReplace → HTML box with table text
 	boxes = tbl.ExtractTableAndReplace(boxes, []pdf.TableItem{ti})
-	sections := boxesToSections(boxes, nil)
+	sections := lyt.BoxesToSections(boxes, nil)
 
 	// Add caption section
 	sections = append(sections, pdf.Section{
@@ -628,7 +540,7 @@ func TestTableSectionCaptionInHTML(t *testing.T) {
 
 	// Step 2: mergeCaptions prepends caption before HTML
 	figures := pdf.CollectFigures(sections)
-	sections = mergeCaptions(sections, figures)
+	sections = tbl.MergeCaptions(sections, figures)
 
 	if !strings.HasPrefix(sections[0].Text, "表1: 交通工具等级<table>") {
 		t.Errorf("expected caption before table HTML, got %q", sections[0].Text)
@@ -639,220 +551,3 @@ func TestTableSectionCaptionInHTML(t *testing.T) {
 // text boxes that are mostly OUTSIDE the cell, even with cellIsEmpty=true.
 // The 0.3 threshold should not match a wide box that barely touches a
 // narrow cell — this would cause body text to leak into table cells.
-func TestBoxMatchesCell_FalsePositive(t *testing.T) {
-	// Cell: narrow table cell (40×20 px)
-	cell := pdf.TSRCell{X0: 0, Y0: 0, X1: 40, Y1: 20}
-
-	// Box A: entirely inside the cell → should match.
-	boxA := pdf.TextBox{X0: 5, X1: 35, Top: 2, Bottom: 18, Text: "标职务"}
-
-	// Box B: a wide body-text box that only slightly overlaps the cell.
-	// It covers x=30..200 but the cell is only x=0..40.
-	// Overlap: x=30..40 (10px), box width=170 → ratio=10/170=0.059 < 0.3.
-	boxB := pdf.TextBox{X0: 30, X1: 200, Top: 5, Bottom: 15, Text: "第二条出差人员应按规定等级乘坐交通工具..."}
-
-	if !tbl.BoxMatchesCell(cell, boxA, true) {
-		t.Error("boxA entirely inside cell should match with cellIsEmpty=true")
-	}
-	if tbl.BoxMatchesCell(cell, boxB, true) {
-		t.Error("boxB mostly outside cell should NOT match even with cellIsEmpty=true")
-	}
-	if !tbl.BoxMatchesCell(cell, boxA, false) {
-		t.Error("boxA entirely inside cell should match with cellIsEmpty=false")
-	}
-	if tbl.BoxMatchesCell(cell, boxB, false) {
-		t.Error("boxB mostly outside cell should NOT match with cellIsEmpty=false")
-	}
-}
-
-// TestFillCellTextFromBoxes_PageGlobal verifies that fillCellTextFromBoxes
-// correctly matches text boxes to cells when both use page-global 72 DPI
-// coordinates, matching Python's construct_table approach.
-func TestFillCellTextFromBoxes_PageGlobal(t *testing.T) {
-	t.Run("exact alignment matches", func(t *testing.T) {
-		cells := []pdf.TSRCell{
-			{X0: 73, Y0: 329, X1: 214, Y1: 345},
-			{X0: 214, Y0: 329, X1: 272, Y1: 345},
-			{X0: 272, Y0: 329, X1: 407, Y1: 345},
-		}
-		boxes := []pdf.TextBox{
-			{X0: 73, X1: 214, Top: 329, Bottom: 345, Text: "标职务"},
-			{X0: 214, X1: 272, Top: 329, Bottom: 345, Text: "飞机"},
-			{X0: 272, X1: 407, Top: 329, Bottom: 345, Text: "火车"},
-		}
-		tbl.FillCellTextFromBoxes(cells, boxes)
-		if cells[0].Text != "标职务" {
-			t.Errorf("cell[0] = %q, want '标职务'", cells[0].Text)
-		}
-		if cells[1].Text != "飞机" {
-			t.Errorf("cell[1] = %q, want '飞机'", cells[1].Text)
-		}
-		if cells[2].Text != "火车" {
-			t.Errorf("cell[2] = %q, want '火车'", cells[2].Text)
-		}
-	})
-
-	t.Run("body text box does not leak into cell", func(t *testing.T) {
-		cells := []pdf.TSRCell{{X0: 73, Y0: 329, X1: 214, Y1: 345}}
-		boxes := []pdf.TextBox{
-			{X0: 73, X1: 214, Top: 329, Bottom: 345, Text: "标职务"},
-			{X0: 73, X1: 520, Top: 310, Bottom: 360, Text: "第二条出差人员应按规定"},
-		}
-		tbl.FillCellTextFromBoxes(cells, boxes)
-		if cells[0].Text != "标职务" {
-			t.Errorf("cell text = %q, want '标职务' (body text should not leak in)", cells[0].Text)
-		}
-	})
-
-	t.Run("empty cells list is no-op", func(t *testing.T) {
-		tbl.FillCellTextFromBoxes(nil, []pdf.TextBox{{Text: "x"}})
-	})
-
-	t.Run("empty boxes list preserves cell text", func(t *testing.T) {
-		cells := []pdf.TSRCell{{Text: "existing"}}
-		tbl.FillCellTextFromBoxes(cells, nil)
-		if cells[0].Text != "existing" {
-			t.Errorf("existing text should be preserved, got %q", cells[0].Text)
-		}
-	})
-}
-
-// spans and generates "@@5-6\t..." tags.
-func TestBoxesToSections_CrossPagePositionTag(t *testing.T) {
-	// Page 0: 267 PDF-points tall (800px at zoom=3).
-	// Box bottom=400 > 267 → spills into page 1 by 133pt.
-	boxes := []pdf.TextBox{
-		{X0: 100, X1: 500, Top: 200, Bottom: 400, PageNumber: 0, Text: "跨页表格"},
-	}
-	pageHeights := map[int]float64{0: 267.0}
-
-	sections := boxesToSections(boxes, pageHeights)
-	if len(sections) != 1 {
-		t.Fatalf("expected 1 section, got %d", len(sections))
-	}
-	s := sections[0]
-
-	// Python: @@1-2\t100.0\t500.0\t200.0\t133.0##
-	// Page 0→1 becomes 1-indexed → pages 1-2.
-	if s.PositionTag != "@@1-2\t100.0\t500.0\t200.0\t133.0##" {
-		t.Errorf("PositionTag: got %q, want '@@1-2\\t100.0\\t500.0\\t200.0\\t133.0##'", s.PositionTag)
-	}
-	if len(s.Positions) != 1 {
-		t.Fatalf("expected 1 pdf.Position, got %d", len(s.Positions))
-	}
-	p := s.Positions[0]
-	if len(p.PageNumbers) != 2 || p.PageNumbers[0] != 0 || p.PageNumbers[1] != 1 {
-		t.Errorf("PageNumbers: got %v, want [0, 1]", p.PageNumbers)
-	}
-	if p.Top != 200 || p.Bottom != 133 {
-		t.Errorf("coords: top=%v (want 200), bottom=%v (want 133 = 400-267)", p.Top, p.Bottom)
-	}
-}
-
-// TestBoxesToSections_SinglePageUnchanged verifies single-page boxes are
-// unaffected by the cross-page change.
-func TestBoxesToSections_SinglePageUnchanged(t *testing.T) {
-	boxes := []pdf.TextBox{
-		{X0: 50, X1: 200, Top: 10, Bottom: 30, PageNumber: 0, Text: "普通文本"},
-	}
-	pageHeights := map[int]float64{0: 267.0}
-
-	sections := boxesToSections(boxes, pageHeights)
-	if len(sections) != 1 {
-		t.Fatalf("expected 1 section, got %d", len(sections))
-	}
-	// Single page: tag should be @@1, not @@1-1
-	if sections[0].PositionTag != "@@1\t50.0\t200.0\t10.0\t30.0##" {
-		t.Errorf("single-page PositionTag: got %q", sections[0].PositionTag)
-	}
-	if len(sections[0].Positions[0].PageNumbers) != 1 {
-		t.Errorf("single-page PageNumbers: got %v, want [0]", sections[0].Positions[0].PageNumbers)
-	}
-}
-
-func TestResolvePageSpan_SinglePage(t *testing.T) {
-	// Box fits within the page → toPage unchanged, bottom unchanged.
-	toPage, bottom := resolvePageSpan(0, 30, map[int]float64{0: 267})
-	if toPage != 0 || bottom != 30 {
-		t.Errorf("got toPage=%d bottom=%v, want 0, 30", toPage, bottom)
-	}
-}
-
-func TestResolvePageSpan_CrossPage(t *testing.T) {
-	// Box bottom=400 exceeds page 0 height=267 → spans to page 1.
-	toPage, bottom := resolvePageSpan(0, 400, map[int]float64{0: 267})
-	if toPage != 1 {
-		t.Errorf("toPage = %d, want 1", toPage)
-	}
-	if bottom != 133 {
-		t.Errorf("bottom = %v, want 133 (400-267)", bottom)
-	}
-}
-
-func TestResolvePageSpan_MultiPage(t *testing.T) {
-	// Box bottom=600, page 0=267, page 1=200, page 2=200.
-	heights := map[int]float64{0: 267, 1: 200, 2: 200}
-	toPage, bottom := resolvePageSpan(0, 600, heights)
-	if toPage != 2 {
-		t.Errorf("toPage = %d, want 2", toPage)
-	}
-	if bottom != 133 {
-		t.Errorf("bottom = %v, want 133 (600-267-200)", bottom)
-	}
-}
-
-func TestResolvePageSpan_NilHeights(t *testing.T) {
-	toPage, bottom := resolvePageSpan(0, 400, nil)
-	if toPage != 0 || bottom != 400 {
-		t.Errorf("got toPage=%d bottom=%v, want 0, 400 (nil=no cross-page)", toPage, bottom)
-	}
-}
-
-func TestResolvePageSpan_ZeroHeightGuard(t *testing.T) {
-	// Zero-height pages must not cause an infinite loop.
-	// Page 0=200, page 1=0, page 2=0, page 3=300 — box bottom=500.
-	heights := map[int]float64{0: 200, 1: 0, 2: 0, 3: 300}
-	toPage, bottom := resolvePageSpan(0, 500, heights)
-	// 500-200=300 remaining; page1=0 → break at unknown/invalid; toPage=1, bottom=300.
-	// (the break path treats zero/unknown as "assume same height once and stop")
-	if toPage != 1 {
-		t.Errorf("toPage = %d, want 1 (stopped at first zero-height page)", toPage)
-	}
-	if bottom != 300 {
-		t.Errorf("bottom = %v, want 300 (500-200)", bottom)
-	}
-}
-
-func TestResolvePageSpan_UnknownNextPage(t *testing.T) {
-	// Next page not in map → assume same height once, then stop.
-	heights := map[int]float64{0: 267}
-	toPage, bottom := resolvePageSpan(0, 500, heights)
-	if toPage != 1 {
-		t.Errorf("toPage = %d, want 1 (one fallback extension)", toPage)
-	}
-	if bottom != 233 {
-		t.Errorf("bottom = %v, want 233 (500-267)", bottom)
-	}
-}
-
-func TestResolvePageSpan_NegativePh(t *testing.T) {
-	heights := map[int]float64{0: 200, 1: -10, 2: 200}
-	toPage, bottom := resolvePageSpan(0, 500, heights)
-	if toPage != 1 {
-		t.Errorf("toPage = %d, want 1 (stopped at negative-height page)", toPage)
-	}
-	if bottom != 300 {
-		t.Errorf("bottom = %v, want 300 (500-200)", bottom)
-	}
-		{X0: 110, X1: 200, Top: 0, Bottom: 30, Text: "", R: 0, C: 1, SP: 1},
-		{X0: 10, X1: 90, Top: 35, Bottom: 65, Text: "A", R: 1, C: 0},
-		{X0: 110, X1: 200, Top: 35, Bottom: 65, Text: "B", R: 1, C: 1},
-	}
-	rows := tbl.GroupBoxesByRC(boxes)
-	// The result should have colspan=2 for cell [0,0] and skip [0,1].
-	// Currently groupBoxesByRC produces a flat grid without span info.
-	if len(rows) >= 1 && len(rows[0]) >= 2 && rows[0][1].Text == "" {
-		t.Log("KNOWN LIMITATION: colspan not computed — cell [0,1] is empty instead of merged")
-	}
-	_ = rows
-}

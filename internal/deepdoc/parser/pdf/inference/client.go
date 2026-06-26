@@ -1,4 +1,4 @@
-package parser
+package inference
 
 import (
 	"bytes"
@@ -49,13 +49,13 @@ func NewInferenceClient(baseURL string) (*InferenceClient, error) {
 
 // Default DLA/TSR label tables used as fallback when no model-specific
 // labels are injected by a TableBuilder constructor.
-var defaultDLALabels = []string{
+var DefaultDLALabels = []string{
 	pdf.LayoutTypeTitle, pdf.LayoutTypeText, pdf.LayoutTypeReference,
 	pdf.LayoutTypeFigure, pdf.DLALabelFigureCaption,
 	pdf.LayoutTypeTable, pdf.DLALabelTableCaption, pdf.DLALabelTableCaption,
 	pdf.LayoutTypeEquation, pdf.DLALabelFigureCaption,
 }
-var defaultTSRLabels = []string{
+var DefaultTSRLabels = []string{
 	"table", "table column", "table row",
 	"table column header", "table projected row header",
 	"table spanning cell",
@@ -82,7 +82,7 @@ func (c *InferenceClient) DLA(ctx context.Context, pageImage image.Image) ([]pdf
 		}
 		labels := c.DLALabels
 		if labels == nil {
-			labels = defaultDLALabels
+			labels = DefaultDLALabels
 		}
 		label := ""
 		if clsID := int(b[5]); clsID >= 0 && clsID < len(labels) {
@@ -114,7 +114,7 @@ func (c *InferenceClient) TSR(ctx context.Context, cropped image.Image) ([]pdf.T
 		}
 		tlabels := c.TSRLabels
 		if tlabels == nil {
-			tlabels = defaultTSRLabels
+			tlabels = DefaultTSRLabels
 		}
 		label := ""
 		if len(b) >= 6 {
@@ -275,8 +275,8 @@ func NewTableBuilderFor(doc pdf.DocAnalyzer) pdf.TableBuilder {
 		return tableBuilderFactory(doc)
 	}
 	if c, ok := doc.(*InferenceClient); ok {
-		c.DLALabels = defaultDLALabels
-		c.TSRLabels = defaultTSRLabels
+		c.DLALabels = DefaultDLALabels
+		c.TSRLabels = DefaultTSRLabels
 	}
 	return tbl.NewDeepDocTableBuilder(doc)
 }

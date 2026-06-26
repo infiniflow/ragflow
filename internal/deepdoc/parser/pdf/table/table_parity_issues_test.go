@@ -433,7 +433,7 @@ func TestFigureInsertion_EndToEnd(t *testing.T) {
 	// Figure boxes stay in list.  NaiveVerticalMerge may NOT merge them
 	// if the gap is too large (> 1.5 × median_height ≈ 15pt).
 	// Each figure text box → separate section in result.Sections.
-	// pdf.CollectFigures collects them into result.Figures but doesn't re-insert.
+	// pdf.CollectFigures collects them into result.Figures() but doesn't re-insert.
 
 	var figureSections []pdf.Section
 	for _, s := range result.Sections {
@@ -457,7 +457,7 @@ func TestFigureInsertion_EndToEnd(t *testing.T) {
 	}
 
 	t.Logf("figure sections in Sections: %d", len(figureSections))
-	t.Logf("result.Figures count: %d", len(result.Figures))
+	t.Logf("result.Figures() count: %d", len(result.Figures()))
 	t.Logf("result.Sections total: %d", len(result.Sections))
 	for i, s := range result.Sections {
 		t.Logf("  section[%d] layout=%q text=%q", i, s.LayoutType, s.Text)

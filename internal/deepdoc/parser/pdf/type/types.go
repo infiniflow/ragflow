@@ -25,11 +25,16 @@ type ParseResult struct {
 	Sections   []Section
 	Tables     []TableItem
 	PageImages map[int]image.Image
-	Figures    []Section
 	Metrics    PipelineMetrics
 
 	DLADebug []DLAPageRegions
 	TSRDebug []TSRRawCell
+}
+
+// Figures returns all sections with LayoutType "figure".
+// Computed on demand from Sections — no stored field.
+func (r *ParseResult) Figures() []Section {
+	return CollectFigures(r.Sections)
 }
 
 // DLAPageRegions holds DLA layout regions for one page.
@@ -110,9 +115,26 @@ type Section struct {
 	Text        string
 	PositionTag string
 	LayoutType  string
+	DocTypeKwd  string // "text"/"table"/"image" — assigned during post-processing
 	Positions   []Position
 	TableItem   *TableItem
-	Image       string
+	Image       string // base64-encoded cropped page image
+}
+
+// SectionsByPage returns a slice of sections on the given page.
+func SectionsByPage(sections []Section, page int) []Section {
+	var out []Section
+	for _, s := range sections {
+		for _, p := range s.Positions {
+			for _, pn := range p.PageNumbers {
+				if pn == page {
+					out = append(out, s)
+					break
+				}
+			}
+		}
+	}
+	return out
 }
 
 // CollectFigures returns all sections with LayoutType "figure".

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 )
 
 // TestSnapshotStageComparison verifies Go's TextMerge output
@@ -48,7 +49,7 @@ func TestSnapshotStageComparison(t *testing.T) {
 
 			// Run Go TextMerge with default params
 			meanH := map[int]float64{0: avg(s1.MeanHeight)}
-			merged := TextMerge(goBoxes, meanH, 3)
+			merged := lyt.TextMerge(goBoxes, meanH, 3)
 
 			// Compare counts
 			if len(merged) > 0 {
@@ -60,7 +61,7 @@ func TestSnapshotStageComparison(t *testing.T) {
 
 			// Run Go NaiveVerticalMerge
 			meanW := map[int]float64{0: avg(s1.MeanWidth)}
-			vm := NaiveVerticalMerge(merged, meanH, meanW, s1.IsEnglish)
+			vm := lyt.NaiveVerticalMerge(merged, meanH, meanW, s1.IsEnglish)
 			if s6, ok := snap.Stages["_naive_vertical_merge"]; ok {
 				t.Logf("  Go VerticalMerge: %d -> %d boxes (Python: %d->%d)",
 					len(merged), len(vm), s6.BoxesBefore, s6.BoxesAfter)
@@ -74,7 +75,7 @@ func TestSnapshotStageComparison(t *testing.T) {
 			}
 
 			// Run Go boxesToSections
-			sections := boxesToSections(vm, nil)
+			sections := lyt.BoxesToSections(vm, nil)
 			if len(vm) > 0 && len(sections) == 0 {
 				t.Error("boxesToSections produced 0 sections from non-empty boxes")
 			}

@@ -1,4 +1,4 @@
-package parser
+package layout
 
 import (
 	"math"
@@ -10,16 +10,16 @@ import (
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
-// charsToBoxes converts raw characters to initial text boxes by grouping
+// CharsToBoxes converts raw characters to initial text boxes by grouping
 // characters into lines based on vertical overlap.
 //
 // Python: pdf_parser.__images__ producing self.boxes
-func charsToBoxes(chars []pdf.TextChar, pageNum int, sortByTop bool) []pdf.TextBox {
+func CharsToBoxes(chars []pdf.TextChar, pageNum int, sortByTop bool) []pdf.TextBox {
 	if len(chars) == 0 {
 		return nil
 	}
 
-	lines := groupCharsToLines(chars, sortByTop)
+	lines := GroupCharsToLines(chars, sortByTop)
 
 	// Page-level column gap threshold from ALL inter-char gaps.
 	// Falls back to per-line threshold when page has too few gaps.
@@ -34,7 +34,7 @@ func charsToBoxes(chars []pdf.TextChar, pageNum int, sortByTop bool) []pdf.TextB
 		}
 		subLines := splitLineByXGap(line, thr)
 		for _, sub := range subLines {
-			box := lineToTextBox(sub)
+			box := LineToTextBox(sub)
 			box.PageNumber = pageNum
 			boxes = append(boxes, box)
 		}
@@ -113,7 +113,7 @@ func splitLineByXGap(chars []pdf.TextChar, threshold float64) [][]pdf.TextChar {
 // ---- internal helpers ----
 
 // groupCharsToLines groups characters into horizontal lines based on vertical overlap.
-func groupCharsToLines(chars []pdf.TextChar, sortByTop bool) [][]pdf.TextChar {
+func GroupCharsToLines(chars []pdf.TextChar, sortByTop bool) [][]pdf.TextChar {
 	if len(chars) == 0 {
 		return nil
 	}
@@ -176,7 +176,7 @@ func verticalOverlap(a, b pdf.TextChar) bool {
 // Python: pdf_parser.py:1528 re.match(r"[0-9a-zA-Z,.:;!%]+", ...)
 var asciiWordPattern = regexp.MustCompile(`^[0-9a-zA-Z,.:;!%]+$`)
 
-func lineToTextBox(chars []pdf.TextChar) pdf.TextBox {
+func LineToTextBox(chars []pdf.TextChar) pdf.TextBox {
 	if len(chars) == 0 {
 		return pdf.TextBox{}
 	}

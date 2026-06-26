@@ -10,7 +10,7 @@ import (
 )
 
 // testdataDir points at the shared test-pdf directory.
-var testdataDir = filepath.Join("..", "parser", "testdata", "pdfs")
+var testdataDir = filepath.Join("..", "testdata", "pdfs")
 
 func readPDF(t *testing.T, name string) []byte {
 	t.Helper()

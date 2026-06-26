@@ -20,6 +20,8 @@ import (
 
 	"ragflow/internal/deepdoc/parser/pdf/tool"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	inf "ragflow/internal/deepdoc/parser/pdf/inference"
+	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 )
 
 // TestBatchResults runs Parse() on real PDFs and writes:
@@ -49,7 +51,7 @@ func TestBatchResults(t *testing.T) {
 	}
 	pdfs := all[:min(count, len(all))]
 
-	ddClient, err := NewInferenceClient(os.Getenv("DEEPDOC_URL"))
+	ddClient, err := inf.NewInferenceClient(os.Getenv("DEEPDOC_URL"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +161,7 @@ func extractPageStats(eng pdf.PDFEngine) (chars, boxes int) {
 			continue
 		}
 		chars += len(pgChars)
-		boxes += len(charsToBoxes(pgChars, pg, false))
+		boxes += len(lyt.CharsToBoxes(pgChars, pg, false))
 	}
 	return
 }

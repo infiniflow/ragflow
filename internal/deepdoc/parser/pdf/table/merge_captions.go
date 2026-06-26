@@ -1,20 +1,13 @@
-package parser
+package table
 
 import (
-	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
-// mergeCaptions finds "figure caption" and "table caption" sections,
-// appends their text to the nearest figure/table, then removes the
-// caption sections.  Matches Python _extract_table_figure caption
-// matching (pdf_parser.py:1196-1232).
-// Also uses isCaptionBox to detect captions that DLA mislabeled as
-// "text" — matching Python's is_caption(text) pattern matching.
-func mergeCaptions(sections []pdf.Section, figures []pdf.Section) []pdf.Section {
+func MergeCaptions(sections []pdf.Section, figures []pdf.Section) []pdf.Section {
 	captions := make([]int, 0, 4)
 	for i, s := range sections {
-		captionType := tbl.CaptionKind(s)
+		captionType := CaptionKind(s)
 		if captionType == "" {
 			continue
 		}

@@ -9,7 +9,7 @@ import (
 )
 
 func TestPDFPlumber_Basic(t *testing.T) {
-	pdfDir := filepath.Join("..", "parser", "testdata", "pdfs")
+	pdfDir := filepath.Join("..", "testdata", "pdfs")
 	path := filepath.Join(pdfDir, "01_english_simple.pdf")
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -42,7 +42,7 @@ func TestPDFPlumber_Basic(t *testing.T) {
 }
 
 func BenchmarkPDFPlumber_ExtractChars(b *testing.B) {
-	pdfDir := filepath.Join("..", "parser", "testdata", "pdfs")
+	pdfDir := filepath.Join("..", "testdata", "pdfs")
 	path := filepath.Join(pdfDir, "01_english_simple.pdf")
 	data, _ := os.ReadFile(path)
 

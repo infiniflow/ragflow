@@ -11,7 +11,8 @@ import (
 	"path/filepath"
 	"testing"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
-	"ragflow/internal/deepdoc/parser/pdf/util"
+	util "ragflow/internal/deepdoc/parser/pdf/util"
+
 )
 
 // TestDLATSRResponseCompare calls DeepDoc DLA/TSR from Go and saves the

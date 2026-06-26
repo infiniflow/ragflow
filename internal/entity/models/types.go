@@ -254,7 +254,7 @@ func NewChatModel(driver ModelDriver, modelName *string, apiConfig *APIConfig) *
 func (cm *ChatModel) BindTools(session ToolCallSession, tools interface{}) {
 	// Serialize tools to JSON if it's a list/map.
 	toolsJSON := ""
-	switch v := tool.(type) {
+	switch v := tools.(type) {
 	case string:
 		toolsJSON = v
 	case []byte:

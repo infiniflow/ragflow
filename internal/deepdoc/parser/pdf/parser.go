@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"sync"
 
+	inf "ragflow/internal/deepdoc/parser/pdf/inference"
+	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	util "ragflow/internal/deepdoc/parser/pdf/util"
@@ -43,7 +45,7 @@ type Parser struct {
 func NewParser(cfg pdf.ParserConfig, doc pdf.DocAnalyzer) *Parser {
 	tb := cfg.TableBuilder
 	if tb == nil {
-		tb = NewTableBuilderFor(doc)
+		tb = inf.NewTableBuilderFor(doc)
 	}
 	return &Parser{
 		Config:       cfg,
@@ -96,8 +98,8 @@ func (p *Parser) Parse(ctx context.Context, engine pdf.PDFEngine) (*pdf.ParseRes
 		prescanMedianH[pg] = util.MedianCharHeight(chars)
 		prescanMedianW[pg] = util.MedianCharWidth(chars)
 	}
-	isEnglish := detectEnglish(prescanChars, totalPages, p.SampleChars)
-	scanNoise := isScanNoise(fullTextFromChars(prescanChars))
+	isEnglish := util.DetectEnglish(prescanChars, totalPages, p.SampleChars)
+	scanNoise := util.IsScanNoise(util.FullTextFromChars(prescanChars))
 
 	// ── Small document: process all at once (no batching overhead) ──
 	if totalPages <= batchSize {
@@ -133,7 +135,7 @@ func (p *Parser) Parse(ctx context.Context, engine pdf.PDFEngine) (*pdf.ParseRes
 		// Merge batch results.
 		result.Sections = append(result.Sections, batch.Sections...)
 		result.Tables = append(result.Tables, batch.Tables...)
-		result.Figures = append(result.Figures, batch.Figures...)
+		// Figures() is computed on demand from Sections.
 		for pg, img := range batch.PageImages {
 			result.PageImages[pg] = img
 		}
@@ -185,7 +187,7 @@ func (p *Parser) extractPages(ctx context.Context, engine pdf.PDFEngine,
 		chars := prescanChars[pg]
 
 		// Fast path: pages with embedded chars → sequential inline (no HTTP OCR).
-		if len(chars) > 0 && !isGarbledPage(chars) {
+		if len(chars) > 0 && !util.IsGarbledPage(chars) {
 			pageImg, renderErr := renderPageToImage(engine, pg)
 			if renderErr == nil && pageImg != nil {
 				pageImages[pg] = pageImg
@@ -195,13 +197,13 @@ func (p *Parser) extractPages(ctx context.Context, engine pdf.PDFEngine,
 			if !p.Config.SkipOCR && renderErr == nil && pageImg != nil {
 				ocrBoxes = ocrMergeChars(ctx, pageImg, chars, p.DeepDoc, pg)
 				if ocrBoxes == nil {
-					ocrBoxes = charsToBoxes(chars, pg, p.Config.SortByTop)
+					ocrBoxes = lyt.CharsToBoxes(chars, pg, p.Config.SortByTop)
 				} else {
 					ocrUsed = true
 					ocrUsedAny = true
 				}
 			} else {
-				ocrBoxes = charsToBoxes(chars, pg, p.Config.SortByTop)
+				ocrBoxes = lyt.CharsToBoxes(chars, pg, p.Config.SortByTop)
 			}
 			results[i] = pr{pg: pg, ocrBoxes: ocrBoxes, chars: chars, ocrUsed: ocrUsed}
 			continue
@@ -257,7 +259,7 @@ func (p *Parser) extractPages(ctx context.Context, engine pdf.PDFEngine,
 			}
 			if !ocrUsed {
 				if len(chars) > 0 {
-					ocrBoxes = charsToBoxes(chars, pg, p.Config.SortByTop)
+					ocrBoxes = lyt.CharsToBoxes(chars, pg, p.Config.SortByTop)
 				}
 			}
 			results[i] = pr{pg: pg, ocrBoxes: ocrBoxes, chars: chars, ocrUsed: ocrUsed, pageImg: pageImg}
@@ -379,7 +381,7 @@ func (p *Parser) retryZoom(ctx context.Context, engine pdf.PDFEngine,
 
 // buildLayout runs the DLA → TSR → Column → TextMerge → VM → pdf.Section
 // pipeline and populates result.Metrics, result.Tables, result.Sections,
-// and result.Figures.  Matches Python's _parse_loaded_window_into_bboxes
+// and result.Sections.  Matches Python's _parse_loaded_window_into_bboxes
 // order.
 func (p *Parser) buildLayout(ctx context.Context,
 	result *pdf.ParseResult, engine pdf.PDFEngine,
@@ -395,16 +397,16 @@ func (p *Parser) buildLayout(ctx context.Context,
 		return err
 	}
 
-	boxes = AssignColumn(boxes, p.Config.Zoom)
-	boxes = TextMerge(boxes, medianHeights, p.Config.Zoom)
+	boxes = lyt.AssignColumn(boxes, p.Config.Zoom)
+	boxes = lyt.TextMerge(boxes, medianHeights, p.Config.Zoom)
 	result.Metrics.BoxesTextMerge = len(boxes)
 
-	sortByPageThenY(boxes, p.Config.SortByTop)
+	lyt.SortByPageThenY(boxes, p.Config.SortByTop)
 
 	if ocrUsedAny {
-		isEnglish = detectEnglish(pageChars, toPage-fromPage+1, p.SampleChars)
+		isEnglish = util.DetectEnglish(pageChars, toPage-fromPage+1, p.SampleChars)
 	}
-	boxes = NaiveVerticalMerge(boxes, medianHeights, medianWidths, isEnglish)
+	boxes = lyt.NaiveVerticalMerge(boxes, medianHeights, medianWidths, isEnglish)
 	result.Metrics.BoxesVertMerge = len(boxes)
 	if err := ctx.Err(); err != nil {
 		return err
@@ -417,10 +419,9 @@ func (p *Parser) buildLayout(ctx context.Context,
 	for pg, img := range result.PageImages {
 		pageHeights[pg] = float64(img.Bounds().Dy()) / p.Config.Zoom
 	}
-	result.Sections = boxesToSections(boxes, pageHeights)
+	result.Sections = lyt.BoxesToSections(boxes, pageHeights)
 	result.Metrics.BoxesFinal = len(result.Sections)
-	result.Figures = pdf.CollectFigures(result.Sections)
-	result.Sections = mergeCaptions(result.Sections, result.Figures)
+	result.Sections = tbl.MergeCaptions(result.Sections, result.Figures())
 	return nil
 }
 

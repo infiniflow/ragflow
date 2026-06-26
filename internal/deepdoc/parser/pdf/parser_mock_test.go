@@ -7,8 +7,9 @@ import (
 	"strings"
 	"testing"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	inf "ragflow/internal/deepdoc/parser/pdf/inference"
+	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
-	util "ragflow/internal/deepdoc/parser/pdf/util"
 )
 
 // ── MockDocAnalyzer tests ──────────────────────────────────────────────
@@ -187,57 +188,6 @@ func TestExtractTableBoxes_DLAError(t *testing.T) {
 	}
 }
 
-func TestAnnotateBoxLayouts(t *testing.T) {
-	boxes := []pdf.TextBox{
-		{X0: 50, X1: 200, Top: 100, Bottom: 200, Text: "title text"},
-		{X0: 250, X1: 500, Top: 100, Bottom: 200, Text: "body"},
-		{X0: 50, X1: 500, Top: 300, Bottom: 600, Text: "table content"},
-		{X0: 50, X1: 500, Top: 700, Bottom: 800, Text: "unmatched"},
-	}
-	regions := []pdf.DLARegion{
-		{X0: 150, Y0: 300, X1: 600, Y1: 600, Label: "title", Confidence: 0.9},    // PDF pts: X50-200,Y100-200 → only box[0]
-		{X0: 750, Y0: 300, X1: 1500, Y1: 600, Label: "text", Confidence: 0.8},    // PDF pts: X250-500,Y100-200 → box[1]
-		{X0: 150, Y0: 900, X1: 1500, Y1: 1800, Label: "table", Confidence: 0.95}, // PDF pts: X50-500,Y300-600 → box[2]
-	}
-	scale := 3.0
-	annotateBoxLayouts(boxes, regions, scale, 0)
-
-	if boxes[0].LayoutType != "title" {
-		t.Errorf("box[0] = %q, want title", boxes[0].LayoutType)
-	}
-	if boxes[1].LayoutType != "text" {
-		t.Errorf("box[1] = %q, want text", boxes[1].LayoutType)
-	}
-	if boxes[2].LayoutType != "table" {
-		t.Errorf("box[2] = %q, want table", boxes[2].LayoutType)
-	}
-	if boxes[3].LayoutType != "" {
-		t.Errorf("box[3] = %q, want empty (no matching region)", boxes[3].LayoutType)
-	}
-}
-
-func TestAnnotateBoxLayouts_Figure(t *testing.T) {
-	// Figure region → box gets "figure" layout type (no TSR needed)
-	boxes := []pdf.TextBox{
-		{X0: 50, X1: 500, Top: 100, Bottom: 400, Text: "chart image"},
-	}
-	regions := []pdf.DLARegion{
-		{X0: 50, Y0: 200, X1: 2000, Y1: 1000, Label: "figure", Confidence: 0.85},
-	}
-	annotateBoxLayouts(boxes, regions, 3.0, 0)
-	if boxes[0].LayoutType != "figure" {
-		t.Errorf("LayoutType = %q, want 'figure'", boxes[0].LayoutType)
-	}
-}
-
-func TestAnnotateBoxLayouts_Empty(t *testing.T) {
-	boxes := []pdf.TextBox{{Text: "x"}}
-	annotateBoxLayouts(boxes, nil, 3.0, 0)
-	if boxes[0].LayoutType != "" {
-		t.Error("empty regions → no annotation")
-	}
-}
-
 func TestParse_TableLinkedToSections(t *testing.T) {
 	// Simulate enrichWithDeepDoc → extractTableAndReplace → boxesToSections:
 	// table boxes are popped and replaced with one HTML box.
@@ -256,7 +206,7 @@ func TestParse_TableLinkedToSections(t *testing.T) {
 	}
 
 	boxes = tbl.ExtractTableAndReplace(boxes, []pdf.TableItem{tableItem})
-	sections := boxesToSections(boxes, nil)
+	sections := lyt.BoxesToSections(boxes, nil)
 
 	// 3 boxes (heading, table, after) → 3 sections (heading, HTML, after).
 	if len(sections) != 3 {
@@ -285,49 +235,6 @@ func cellTexts(cells []pdf.TSRCell) []string {
 }
 
 // ── cropImageRegion ────────────────────────────────────────────────────
-
-func TestCropImageRegion(t *testing.T) {
-	img := image.NewRGBA(image.Rect(0, 0, 200, 300))
-
-	t.Run("normal crop", func(t *testing.T) {
-		r := pdf.DLARegion{X0: 10, Y0: 20, X1: 100, Y1: 150}
-		cropped, err := util.CropImageRegion(img, r)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		// 3% proportional margin: 90×3%≈3px, 130×3%≈4px → 95×137
-		if cropped.Bounds().Dx() != 95 || cropped.Bounds().Dy() != 137 {
-			t.Errorf("size %v, want 95x137", cropped.Bounds())
-		}
-	})
-
-	t.Run("x0 >= x1 returns error", func(t *testing.T) {
-		// 3% proportional margin on each side: if the gap is too small after margin expansion, x0 ≥ x1 triggers error.
-		r := pdf.DLARegion{X0: 110, Y0: 20, X1: 50, Y1: 150}
-		_, err := util.CropImageRegion(img, r)
-		if err == nil {
-			t.Fatal("expected error for x0 >= x1, got nil")
-		}
-	})
-
-	t.Run("y0 >= y1 returns error", func(t *testing.T) {
-		r := pdf.DLARegion{X0: 10, Y0: 150, X1: 100, Y1: 20}
-		_, err := util.CropImageRegion(img, r)
-		if err == nil {
-			t.Fatal("expected error for y0 >= y1, got nil")
-		}
-	})
-
-	t.Run("region fully outside image bounds", func(t *testing.T) {
-		// Clamped to image bounds → zero-width/height → error.
-		r := pdf.DLARegion{X0: 300, Y0: 400, X1: 500, Y1: 600}
-		_, err := util.CropImageRegion(img, r)
-		if err == nil {
-			t.Fatal("expected error for region outside image bounds")
-		}
-	})
-}
-
 // ── extractTableBoxesFromImage: invalid DLA region ─────────────────────
 
 func TestExtractTableBoxes_InvalidRegion(t *testing.T) {
@@ -369,13 +276,13 @@ func TestParse_CollectsFigures(t *testing.T) {
 	if len(result.Sections) == 0 {
 		t.Fatal("expected at least 1 section")
 	}
-	if len(result.Figures) != 1 {
-		t.Fatalf("expected 1 figure, got %d", len(result.Figures))
+	if len(result.Figures()) != 1 {
+		t.Fatalf("expected 1 figure, got %d", len(result.Figures()))
 	}
-	if result.Figures[0].LayoutType != "figure" {
-		t.Errorf("figure LayoutType = %q, want 'figure'", result.Figures[0].LayoutType)
+	if result.Figures()[0].LayoutType != "figure" {
+		t.Errorf("figure LayoutType = %q, want 'figure'", result.Figures()[0].LayoutType)
 	}
-	if result.Figures[0].Text == "" {
+	if result.Figures()[0].Text == "" {
 		t.Error("figure Text should not be empty")
 	}
 }
@@ -395,8 +302,8 @@ func TestParse_NoFigures(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if len(result.Figures) != 0 {
-		t.Fatalf("expected 0 figures, got %d", len(result.Figures))
+	if len(result.Figures()) != 0 {
+		t.Fatalf("expected 0 figures, got %d", len(result.Figures()))
 	}
 }
 
@@ -410,8 +317,8 @@ func TestParse_NoDeepDoc_NoFigures(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if len(result.Figures) != 0 {
-		t.Fatalf("expected 0 Figures (no DLA-detected figures), got %d", len(result.Figures))
+	if len(result.Figures()) != 0 {
+		t.Fatalf("expected 0 Figures (no DLA-detected figures), got %d", len(result.Figures()))
 	}
 }
 
@@ -553,7 +460,7 @@ func TestMockDocAnalyzer_OCRDetectError_DoesNotCrash(t *testing.T) {
 	// Parse should succeed — the page with OCRDetect error is just skipped.
 }
 
-// TestTSRLabels verifies Go defaultTSRLabels matches Python's table_structure_recognizer.py labels.
+// TestTSRLabels verifies Go inf.DefaultTSRLabels matches Python's table_structure_recognizer.py labels.
 // Order must be exact — the ONNX model returns class IDs that index into this array.
 func TestTSRLabels(t *testing.T) {
 	want := []string{
@@ -561,12 +468,12 @@ func TestTSRLabels(t *testing.T) {
 		"table column header", "table projected row header",
 		"table spanning cell",
 	}
-	if len(defaultTSRLabels) != len(want) {
-		t.Fatalf("defaultTSRLabels length %d, want %d", len(defaultTSRLabels), len(want))
+	if len(inf.DefaultTSRLabels) != len(want) {
+		t.Fatalf("inf.DefaultTSRLabels length %d, want %d", len(inf.DefaultTSRLabels), len(want))
 	}
 	for i := range want {
-		if defaultTSRLabels[i] != want[i] {
-			t.Errorf("defaultTSRLabels[%d] = %q, want %q", i, defaultTSRLabels[i], want[i])
+		if inf.DefaultTSRLabels[i] != want[i] {
+			t.Errorf("inf.DefaultTSRLabels[%d] = %q, want %q", i, inf.DefaultTSRLabels[i], want[i])
 		}
 	}
 }

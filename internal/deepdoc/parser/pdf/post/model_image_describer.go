@@ -1,4 +1,4 @@
-package parser
+package post
 
 import (
 	"bytes"
@@ -8,54 +8,22 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+
+	modelModule "ragflow/internal/entity/models"
 )
-
-// ── chat driver interface (minimal, avoids entity/models import) ────────
-
-// ChatDriver is the subset of modelModule.ModelDriver needed to call a
-// vision-capable chat API.  Defined here to keep model_image_describer.go
-// self-contained and avoid import chains that require CGO.
-type ChatDriver interface {
-	ChatWithMessages(modelName string, messages []ChatMessage, apiConfig *ChatAPIConfig, chatConfig *ChatConfig) (*ChatResponse, error)
-}
-
-// ChatMessage mirrors modelModule.Message.
-type ChatMessage struct {
-	Role       string                   `json:"role"`
-	Content    interface{}              `json:"content"`
-	ToolCallID string                   `json:"tool_call_id,omitempty"`
-	ToolCalls  []map[string]interface{} `json:"tool_calls,omitempty"`
-}
-
-// ChatAPIConfig mirrors modelModule.APIConfig.
-type ChatAPIConfig struct {
-	ApiKey  *string
-	Region  *string
-	BaseURL *string
-}
-
-// ChatConfig mirrors modelModule.ChatConfig (may be nil).
-type ChatConfig struct{}
-
-// ChatResponse mirrors modelModule.ChatResponse.
-type ChatResponse struct {
-	Answer        *string                  `json:"answer"`
-	ReasonContent *string                  `json:"reason_content"`
-	ToolCalls     []map[string]interface{} `json:"tool_calls,omitempty"`
-}
 
 // ── ModelImageDescriber ────────────────────────────────────────────────
 
-// ModelImageDescriber implements ImageDescriber via any ChatDriver.
+// ModelImageDescriber implements ImageDescriber via any modelModule.ModelDriver.
 type ModelImageDescriber struct {
-	driver    ChatDriver
+	driver    modelModule.ModelDriver
 	modelName string
-	apiConfig *ChatAPIConfig
+	apiConfig *modelModule.APIConfig
 }
 
 // NewModelImageDescriber creates a ModelImageDescriber that calls the given
 // driver to describe images.
-func NewModelImageDescriber(d ChatDriver, name string, cfg *ChatAPIConfig) *ModelImageDescriber {
+func NewModelImageDescriber(d modelModule.ModelDriver, name string, cfg *modelModule.APIConfig) *ModelImageDescriber {
 	return &ModelImageDescriber{driver: d, modelName: name, apiConfig: cfg}
 }
 
@@ -67,7 +35,7 @@ func (d *ModelImageDescriber) DescribeImage(ctx context.Context, img image.Image
 		return "", fmt.Errorf("image encode: %w", err)
 	}
 
-	msgs := []ChatMessage{{
+	msgs := []modelModule.Message{{
 		Role: "user",
 		Content: []interface{}{
 			map[string]interface{}{"type": "text", "text": prompt},
