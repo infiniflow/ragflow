@@ -480,38 +480,6 @@ func (p *Parser) parseAPIListAvailableProviders() (*Command, error) {
 	return NewCommand("api_list_available_providers"), nil
 }
 
-func (p *Parser) parseShowQuotedStringCommand() (*Command, error) {
-	str, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-	p.nextToken() // consume str
-	switch p.curToken.Type {
-	case TokenTask:
-		p.nextToken() // consume TASK
-
-		var taskID string
-		taskID, err = p.parseQuotedString()
-		if err != nil {
-			return nil, fmt.Errorf("expected string: %w", err)
-		}
-		p.nextToken()
-
-		cmd := NewCommand("show_task_user_command")
-		cmd.Params["task_id"] = taskID
-		cmd.Params["composite_instance_name"] = str
-		p.nextToken()
-
-		// Semicolon is optional
-		if p.curToken.Type == TokenSemicolon {
-			p.nextToken()
-		}
-		return cmd, nil
-	default:
-		return nil, fmt.Errorf("unknown command: %s", str)
-	}
-}
-
 func (p *Parser) parseAPIShowCommands() (*Command, error) {
 	p.nextToken() // consume SHOW
 	switch p.curToken.Type {
@@ -522,19 +490,15 @@ func (p *Parser) parseAPIShowCommands() (*Command, error) {
 	case TokenCurrent:
 		return p.parseAPIShowCurrent()
 	case TokenVar:
-		return p.parseShowVariable()
+		return p.parseAPIShowVariable()
 	case TokenProvider:
 		return p.parseAPIShowProviderCommands()
 	case TokenModel:
-		return p.parseShowModel()
-	case TokenTask:
-		return p.parseShowTask()
-	case TokenQuotedString:
-		return p.parseShowQuotedStringCommand()
+		return p.parseAPIShowModel()
 	case TokenAdmin:
-		return p.parseUserShowAdmin()
+		return p.parseAPIShowAdmin()
 	case TokenAPI:
-		return p.parseUserShowAPI()
+		return p.parseAPIShowAPI()
 	case TokenLog:
 		return p.parseAPIShowLogCommands()
 	default:
@@ -572,17 +536,17 @@ func (p *Parser) parseAPIShowCurrent() (*Command, error) {
 	return NewCommand("api_show_current"), nil
 }
 
-func (p *Parser) parseShowVariable() (*Command, error) {
+func (p *Parser) parseAPIShowVariable() (*Command, error) {
 	p.nextToken() // consume VAR
-	varName, err := p.parseIdentifier()
+	varName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
+	p.nextToken()
 
-	cmd := NewCommand("show_variable")
+	cmd := NewCommand("api_show_variable")
 	cmd.Params["var_name"] = varName
 
-	p.nextToken()
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
@@ -590,8 +554,9 @@ func (p *Parser) parseShowVariable() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseShowModel() (*Command, error) {
-	p.nextToken() // consume model
+// SHOW MODEL 'model_name';
+func (p *Parser) parseAPIShowModel() (*Command, error) {
+	p.nextToken() // consume MODEL
 
 	modelName, err := p.parseQuotedString()
 	if err != nil {
@@ -599,36 +564,18 @@ func (p *Parser) parseShowModel() (*Command, error) {
 	}
 	p.nextToken() // consume model_name
 
-	if p.curToken.Type != TokenFrom {
-		// SHOW MODEL 'model_name'
-		if p.curToken.Type == TokenSemicolon {
-			p.nextToken()
-		}
-		cmd := NewCommand("show_model")
-		cmd.Params["model_name"] = modelName
-		return cmd, nil
-	}
-	p.nextToken() // consume from
-
-	cmd := NewCommand("show_provider_model")
-	cmd.Params["model_name"] = modelName
-
-	providerName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, fmt.Errorf("expected provider name: %w", err)
-	}
-	cmd.Params["provider_name"] = providerName
-	p.nextToken() // consume provider name
-	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
+	cmd := NewCommand("api_show_model")
+	cmd.Params["model_name"] = modelName
 	return cmd, nil
 }
 
-// SHOW PROVIDER <name>
-// SHOW PROVIDER <name> INSTANCE <instance_name>
-// SHOW PROVIDER <name> INSTANCE <instance_name> BALANCE
+// SHOW PROVIDER <name>;
+// SHOW PROVIDER <name> INSTANCE <instance_name>;
+// SHOW PROVIDER <name> INSTANCE <instance_name> BALANCE;
+// SHOW PROVIDER <name> INSTANCE <instance_name> TASK <task_id>;
 // SHOW PROVIDER 'provider_name' MODEL 'model_name';
 func (p *Parser) parseAPIShowProviderCommands() (*Command, error) {
 	p.nextToken() // consume PROVIDER
@@ -656,7 +603,7 @@ func (p *Parser) parseAPIShowProviderCommands() (*Command, error) {
 	return cmd, nil
 }
 
-// SHOW PROVIDER <name> INSTANCE <instance_name>
+// SHOW PROVIDER <name> INSTANCE <instance_name>;
 func (p *Parser) parseAPIShowProviderInstance(providerName string) (*Command, error) {
 	p.nextToken() // consume INSTANCE
 
@@ -666,18 +613,21 @@ func (p *Parser) parseAPIShowProviderInstance(providerName string) (*Command, er
 	}
 	p.nextToken() // consume instance_name
 
-	if p.curToken.Type == TokenBalance {
+	switch p.curToken.Type {
+	case TokenBalance:
 		return p.parseAPIShowProviderInstanceBalance(providerName, instanceName)
+	case TokenTask:
+		return p.parseAPIShowProviderInstanceTask(providerName, instanceName)
+	case TokenSemicolon, TokenEOF:
+		p.nextToken()
+	default:
+		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
 	}
 
 	cmd := NewCommand("api_show_provider_instance")
 	cmd.Params["instance_name"] = instanceName
 	cmd.Params["provider_name"] = providerName
 
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
 	return cmd, nil
 }
 
@@ -688,6 +638,28 @@ func (p *Parser) parseAPIShowProviderInstanceBalance(providerName, instanceName 
 	cmd := NewCommand("api_show_provider_instance_balance")
 	cmd.Params["instance_name"] = instanceName
 	cmd.Params["provider_name"] = providerName
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// SHOW PROVIDER <name> INSTANCE <instance_name> TASK <task_id>
+func (p *Parser) parseAPIShowProviderInstanceTask(providerName, instanceName string) (*Command, error) {
+	p.nextToken() // consume TASK
+
+	taskID, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected task id: %w", err)
+	}
+	p.nextToken() // consume task_id
+
+	cmd := NewCommand("api_show_provider_instance_task")
+	cmd.Params["instance_name"] = instanceName
+	cmd.Params["provider_name"] = providerName
+	cmd.Params["task_id"] = taskID
 
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
@@ -729,16 +701,20 @@ func (p *Parser) parseListAllModels() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseCreateCommand() (*Command, error) {
+func (p *Parser) parseAPICreateCommands() (*Command, error) {
 	p.nextToken() // consume CREATE
 
 	switch p.curToken.Type {
-	case TokenModel:
-		return p.parseCreateModelProvider()
 	case TokenDataset:
-		return p.parseCreateDataset()
+		return p.parseAPICreateDataset()
 	case TokenChat:
-		return p.parseCreateChat()
+		return p.parseAPICreateChat()
+	case TokenSearch:
+		return p.parseAPICreateSearch()
+	case TokenAgent:
+		return p.parseAPICreateAgent()
+	case TokenMemory:
+		return p.parseAPICreateMemory()
 	case TokenKey:
 		return p.parseAPICreateKey()
 	case TokenChunkStore:
@@ -746,7 +722,7 @@ func (p *Parser) parseCreateCommand() (*Command, error) {
 	case TokenMetadata:
 		return p.parseCreateMetadataStore()
 	case TokenProvider:
-		return p.parseCreateProviderInstance()
+		return p.parseAPICreateProviderInstance()
 	default:
 		return nil, fmt.Errorf("unknown CREATE target: %s", p.curToken.Value)
 	}
@@ -869,36 +845,6 @@ func (p *Parser) parseCreateRole() (*Command, error) {
 		p.nextToken()
 	}
 
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseCreateModelProvider() (*Command, error) {
-	p.nextToken() // consume MODEL
-	if p.curToken.Type != TokenProvider {
-		return nil, fmt.Errorf("expected PROVIDER")
-	}
-	p.nextToken()
-
-	providerName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	p.nextToken()
-	providerKey, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("create_model_provider")
-	cmd.Params["provider_name"] = providerName
-	cmd.Params["provider_key"] = providerKey
-
-	p.nextToken()
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
@@ -1266,18 +1212,18 @@ func (p *Parser) parseDeleteAdminServer() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseUserSaveCommand() (*Command, error) {
+func (p *Parser) parseAPISaveCommand() (*Command, error) {
 	p.nextToken() // consume SAVE
 	switch p.curToken.Type {
 	case TokenConfig:
-		return p.parseSaveConfig()
+		return p.parseAPISaveConfig()
 	default:
 		return nil, fmt.Errorf("unknown ADD target: %s", p.curToken.Value)
 	}
 }
 
-// syntax: save config as 'path'
-func (p *Parser) parseSaveConfig() (*Command, error) {
+// SAVE CONFIG AS 'path'
+func (p *Parser) parseAPISaveConfig() (*Command, error) {
 	p.nextToken() // consume CONFIG
 
 	if p.curToken.Type != TokenAs {
@@ -1290,7 +1236,7 @@ func (p *Parser) parseSaveConfig() (*Command, error) {
 		return nil, err
 	}
 
-	cmd := NewCommand("save_config_command")
+	cmd := NewCommand("api_save_config_command")
 	cmd.Params["path"] = path
 
 	// Semicolon is optional
@@ -1301,7 +1247,9 @@ func (p *Parser) parseSaveConfig() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseCreateDataset() (*Command, error) {
+// CREATE DATASET 'abc' WITH EMBEDDING 'modelName@instanceName@providerName' PARSER 'parserType'
+// CREATE DATASET 'abc' WITH EMBEDDING 'modelName@instanceName@providerName' PIPELINE 'pipelineName'
+func (p *Parser) parseAPICreateDataset() (*Command, error) {
 	p.nextToken() // consume DATASET
 	datasetName, err := p.parseQuotedString()
 	if err != nil {
@@ -1324,13 +1272,14 @@ func (p *Parser) parseCreateDataset() (*Command, error) {
 	}
 
 	p.nextToken()
-	cmd := NewCommand("create_user_dataset")
+	cmd := NewCommand("api_create_dataset")
 	cmd.Params["dataset_name"] = datasetName
 	cmd.Params["embedding"] = embedding
 
 	if p.curToken.Type == TokenParser {
 		p.nextToken()
-		parserType, err := p.parseQuotedString()
+		var parserType string
+		parserType, err = p.parseQuotedString()
 		if err != nil {
 			return nil, err
 		}
@@ -1338,7 +1287,8 @@ func (p *Parser) parseCreateDataset() (*Command, error) {
 		p.nextToken()
 	} else if p.curToken.Type == TokenPipeline {
 		p.nextToken()
-		pipeline, err := p.parseQuotedString()
+		var pipeline string
+		pipeline, err = p.parseQuotedString()
 		if err != nil {
 			return nil, err
 		}
@@ -1355,32 +1305,89 @@ func (p *Parser) parseCreateDataset() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseCreateChat() (*Command, error) {
+// CREAT CHAT 'chat_name'
+func (p *Parser) parseAPICreateChat() (*Command, error) {
 	p.nextToken() // consume CHAT
 	chatName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
+	p.nextToken()
 
-	cmd := NewCommand("create_user_chat")
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("api_create_chat")
 	cmd.Params["chat_name"] = chatName
 
+	return cmd, nil
+}
+
+// CREAT AGENT 'agent_name'
+func (p *Parser) parseAPICreateAgent() (*Command, error) {
+	p.nextToken() // consume AGENT
+
+	agentName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("api_create_agent")
+	cmd.Params["agent_name"] = agentName
+	return cmd, nil
+}
+
+// CREAT SEARCH 'search_name'
+func (p *Parser) parseAPICreateSearch() (*Command, error) {
+	p.nextToken() // consume SEARCH
+	searchName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("api_create_search")
+	cmd.Params["search_name"] = searchName
+
+	return cmd, nil
+}
+
+// CREAT MEMORY 'memory_name'
+func (p *Parser) parseAPICreateMemory() (*Command, error) {
+	p.nextToken() // consume MEMORY
+	memoryName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
 	p.nextToken()
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
+
+	cmd := NewCommand("api_create_memory")
+	cmd.Params["memory_name"] = memoryName
+
 	return cmd, nil
 }
 
-func (p *Parser) parseDropCommand() (*Command, error) {
+func (p *Parser) parseAPIDropCommands() (*Command, error) {
 	p.nextToken() // consume DROP
 
 	switch p.curToken.Type {
-	case TokenUser:
-		return p.parseDropUser()
-	case TokenRole:
-		return p.parseDropRole()
 	case TokenDataset:
 		return p.parseDropDataset()
 	case TokenChat:
@@ -1502,42 +1509,6 @@ func (p *Parser) parseDropMetadataStore() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseDropUser() (*Command, error) {
-	p.nextToken() // consume USER
-	userName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("drop_user")
-	cmd.Params["user_name"] = userName
-
-	p.nextToken()
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseDropRole() (*Command, error) {
-	p.nextToken() // consume ROLE
-	roleName, err := p.parseIdentifier()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("drop_role")
-	cmd.Params["role_name"] = roleName
-
-	p.nextToken()
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
 // parseDeleteProvider parses DELETE PROVIDER <name> command
 func (p *Parser) parseDeleteProvider() (*Command, error) {
 	p.nextToken() // consume PROVIDER
@@ -1639,9 +1610,8 @@ func (p *Parser) parseAlterProvider() (*Command, error) {
 	return cmd, nil
 }
 
-// parseCreateProviderInstance parses CREATE PROVIDER <name> INSTANCE <instance_name> KEY <api_key> URL <base_url> REGION <region> command
-// instance_name cannot be "default"
-func (p *Parser) parseCreateProviderInstance() (*Command, error) {
+// CREATE PROVIDER <name> INSTANCE <instance_name> KEY <api_key> URL <base_url> REGION <region>
+func (p *Parser) parseAPICreateProviderInstance() (*Command, error) {
 	p.nextToken() // consume PROVIDER
 
 	providerName, err := p.parseQuotedString()
@@ -1696,7 +1666,7 @@ optionsLoop:
 		}
 	}
 
-	cmd := NewCommand("create_provider_instance")
+	cmd := NewCommand("api_create_provider_instance")
 	cmd.Params["provider_name"] = providerName
 	cmd.Params["instance_name"] = instanceName
 	cmd.Params["api_key"] = apiKey
@@ -1710,27 +1680,6 @@ optionsLoop:
 	}
 
 	p.nextToken()
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-// parseShowTask parses SHOW TASK <task>
-func (p *Parser) parseShowTask() (*Command, error) {
-	p.nextToken() // consume TASK
-
-	taskID, err := p.parseQuotedString()
-	if err != nil {
-		return nil, fmt.Errorf("expected string: %w", err)
-	}
-	p.nextToken()
-
-	cmd := NewCommand("show_task_user_command")
-	cmd.Params["task_id"] = taskID
-	p.nextToken()
-
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
@@ -3331,22 +3280,22 @@ func (p *Parser) parseCheckProviderByKeyCommand() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseUseCommand() (*Command, error) {
+func (p *Parser) parseAPIUseCommands() (*Command, error) {
 	p.nextToken() // consume USE
 
 	switch p.curToken.Type {
 	case TokenModel:
-		return p.parseUseModel()
+		return p.parseAPIUseModel()
 	case TokenAPI:
-		return p.parseUseAPIServer()
+		return p.parseAPIUseAPIServer()
 	case TokenAdmin:
-		return p.parseUseAdminServer()
+		return p.parseAPIUseAdminServer()
 	default:
 		return nil, fmt.Errorf("expected MODEL or SKILL after USE")
 	}
 }
 
-func (p *Parser) parseUseModel() (*Command, error) {
+func (p *Parser) parseAPIUseModel() (*Command, error) {
 	p.nextToken() // consume MODEL
 
 	modelNameOrID, err := p.parseQuotedString()
@@ -3360,7 +3309,7 @@ func (p *Parser) parseUseModel() (*Command, error) {
 		p.nextToken()
 	}
 
-	cmd := NewCommand("use_model")
+	cmd := NewCommand("api_use_model")
 
 	if common.IsCompositeModelName(modelNameOrID) {
 		cmd.Params["composite_model_name"] = modelNameOrID
@@ -3377,7 +3326,7 @@ func (p *Parser) parseUseModel() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseUseAPIServer() (*Command, error) {
+func (p *Parser) parseAPIUseAPIServer() (*Command, error) {
 	p.nextToken() // consume API
 
 	serverName, err := p.parseQuotedString()
@@ -3385,7 +3334,7 @@ func (p *Parser) parseUseAPIServer() (*Command, error) {
 		return nil, err
 	}
 	p.nextToken()
-	cmd := NewCommand("use_api_server")
+	cmd := NewCommand("api_use_api_server")
 	cmd.Params["server_name"] = serverName
 
 	// Semicolon is optional
@@ -3395,10 +3344,10 @@ func (p *Parser) parseUseAPIServer() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseUseAdminServer() (*Command, error) {
+func (p *Parser) parseAPIUseAdminServer() (*Command, error) {
 	p.nextToken() // consume ADMIN
 
-	cmd := NewCommand("use_admin_server")
+	cmd := NewCommand("api_use_admin_server")
 
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
@@ -3605,10 +3554,6 @@ func (p *Parser) parseUserStatement() (*Command, error) {
 		return p.parseDeleteCommand()
 	case TokenShow:
 		return p.parseAPIShowCommands()
-	case TokenCreate:
-		return p.parseCreateCommand()
-	case TokenDrop:
-		return p.parseDropCommand()
 	case TokenList:
 		return p.parseAPIListCommands()
 	case TokenParse:
@@ -4074,15 +4019,15 @@ func (p *Parser) parseUserStartIngestion() (*Command, error) {
 	return cmd, nil
 }
 
-// parseShowTask parses SHOW ADMIN SERVER
-func (p *Parser) parseUserShowAdmin() (*Command, error) {
+// SHOW ADMIN SERVER
+func (p *Parser) parseAPIShowAdmin() (*Command, error) {
 	p.nextToken() // consume ADMIN
 
 	var cmd *Command
 	switch p.curToken.Type {
 	case TokenServer:
 		p.nextToken()
-		cmd = NewCommand("show_admin_server")
+		cmd = NewCommand("api_show_admin_server")
 	default:
 		return nil, fmt.Errorf("expected SERVER after ADMIN")
 	}
@@ -4178,19 +4123,19 @@ func (p *Parser) parseUserRemoveTask() (*Command, error) {
 	return cmd, nil
 }
 
-// parseShowTask parses SHOW API SERVER <server_name>
-func (p *Parser) parseUserShowAPI() (*Command, error) {
+// SHOW API SERVER <server_name>
+func (p *Parser) parseAPIShowAPI() (*Command, error) {
 	p.nextToken() // consume API
 
 	var cmd *Command
 	switch p.curToken.Type {
 	case TokenServer:
 		p.nextToken()
-		cmd = NewCommand("show_api_server")
+		cmd = NewCommand("api_show_api_server")
 
 		serverName, err := p.parseQuotedString()
 		if err != nil {
-			return nil, fmt.Errorf("expected dataset_name: %w", err)
+			return nil, fmt.Errorf("expected API server name: %w", err)
 		}
 		cmd.Params["api_server_name"] = serverName
 		p.nextToken()

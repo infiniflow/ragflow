@@ -1101,11 +1101,11 @@ func (c *CLI) CommonShowCurrentCommand(cmd *Command) (ResponseIf, error) {
 	return result, nil
 }
 
-func (c *CLI) ShowAdminServer(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonShowAdminServerCommand(cmd *Command) (ResponseIf, error) {
 	return c.GetAdminServerInfo()
 }
 
-func (c *CLI) ShowAPIServer(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonShowAPIServerCommand(cmd *Command) (ResponseIf, error) {
 	apiServerName, ok := cmd.Params["api_server_name"].(string)
 	if !ok {
 		return nil, fmt.Errorf("api_server_name not provided")
@@ -1302,7 +1302,7 @@ func (c *CLI) DeleteAdminServer(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) SaveServerConfig(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonSaveServerConfigCommand(cmd *Command) (ResponseIf, error) {
 
 	switch c.Config.CLIMode {
 	case AdminMode:
@@ -1432,7 +1432,7 @@ func (c *CLI) ListAllModels(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) CommonShowModel(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonShowModelCommand(cmd *Command) (ResponseIf, error) {
 
 	modelName, ok := cmd.Params["model_name"].(string)
 	if !ok {

@@ -154,15 +154,16 @@ export const useListModelsPicker = ({
       if (models.length > 0 || listLoading) return;
       setListLoading(true);
       try {
-        const values = (formRef.current?.getValues() || {}) as Record<
+        const rawValues = (formRef.current?.getValues() || {}) as Record<
           string,
           any
         >;
-        // Reuse the verifyTransform to build the request payload — it
-        // already knows how to flatten provider-specific auth (api_key,
-        // base_url, region, model_info). Pass the current modelInfoList
-        // (empty on first load, populated on re-opens) so the backend
-        // sees an array shape consistent with the verify/submit payloads.
+        // In viewMode, pass instance_name so the backend looks up
+        // stored credentials server-side (avoids exposing api_key).
+        // For new-instance mode, pass api_key/base_url from the form.
+        const values = viewMode && initialValues
+          ? { ...initialValues, ...rawValues }
+          : rawValues;
         const verifyArgs = config.verifyTransform
           ? config.verifyTransform({
               ...values,
@@ -171,10 +172,13 @@ export const useListModelsPicker = ({
           : { apiKey: values.api_key ?? '', baseUrl: values.base_url };
         const res = await listProviderModels({
           provider_name: llmFactory,
-          api_key: (verifyArgs as any).apiKey ?? '',
-          base_url: (verifyArgs as any).baseUrl,
+          api_key: viewMode ? '' : ((verifyArgs as any).apiKey ?? ''),
+          base_url: viewMode ? '' : ((verifyArgs as any).baseUrl ?? ''),
           region: (verifyArgs as any).region,
           model_info: (verifyArgs as any).modelInfo ?? modelInfoList,
+          ...(viewMode && initialValues?.instance_name
+            ? { instance_name: initialValues.instance_name }
+            : {}),
         });
         if (res?.code === 0 && Array.isArray(res.data)) {
           setModelsState(res.data);
@@ -210,6 +214,8 @@ export const useListModelsPicker = ({
       llmFactory,
       modelInfoList,
       formRef,
+      viewMode,
+      initialValues,
     ],
   );
 
@@ -287,6 +293,30 @@ export const useListModelsPicker = ({
     [],
   );
 
+  // --- Model editing ---
+  const [editingModel, setEditingModel] =
+    useState<IProviderModelItem | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+
+  const handleEditModel = useCallback((model: IProviderModelItem) => {
+    setEditingModel(model);
+    setEditDialogOpen(true);
+  }, []);
+
+  const handleSaveEditedModel = useCallback(
+    (updated: IProviderModelItem) => {
+      const oldName = editingModel?.name;
+      if (!oldName) return;
+      const replace = (items: IProviderModelItem[]) =>
+        items.map((m) => (m.name === oldName ? updated : m));
+      setModelsState(replace);
+      setSelectedModelItemsState(replace);
+      setEditDialogOpen(false);
+      setEditingModel(null);
+    },
+    [editingModel],
+  );
+
   return {
     models,
     listLoading,
@@ -298,5 +328,10 @@ export const useListModelsPicker = ({
     handleToggleAll,
     setModels,
     setSelectedModelItems,
+    editingModel,
+    editDialogOpen,
+    setEditDialogOpen,
+    handleEditModel,
+    handleSaveEditedModel,
   };
 };

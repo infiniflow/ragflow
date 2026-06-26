@@ -132,7 +132,7 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 	case "admin_list_provider_instances":
 		return c.CommonListProviderInstances(cmd)
 	case "admin_show_model":
-		return c.CommonShowModel(cmd)
+		return c.CommonShowModelCommand(cmd)
 	case "admin_list_providers":
 		return c.AdminListProvidersCommand(cmd)
 	case "admin_list_all_models":
@@ -257,11 +257,10 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.CommonEnableOrDisableModel(cmd, "enable")
 	case "admin_disable_model":
 		return c.CommonEnableOrDisableModel(cmd, "disable")
-		// TODO: Implement other commands
-	case "show_admin_server":
-		return c.ShowAdminServer(cmd)
-	case "show_api_server":
-		return c.ShowAPIServer(cmd)
+	case "admin_show_admin_server":
+		return c.CommonShowAdminServerCommand(cmd)
+	case "admin_show_api_server":
+		return c.CommonShowAPIServerCommand(cmd)
 	case "admin_show_log_level":
 		return c.AdminShowLogLevelCommand(cmd)
 	case "admin_list_api_servers":
@@ -274,8 +273,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("cannot add admin server in admin mode")
 	case "delete_admin_server":
 		return nil, fmt.Errorf("cannot delete admin server in admin mode")
-	case "save_config_command":
-		return c.SaveServerConfig(cmd)
+	case "admin_save_config_command":
+		return c.CommonSaveServerConfigCommand(cmd)
 	case "admin_use_api_server":
 		return c.CommonUseAPIServerCommand(cmd)
 	case "admin_use_admin_server":
@@ -322,6 +321,16 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return nil, nil
 	case "api_create_api_key":
 		return c.APICreateAPIKeyCommand(cmd)
+	case "api_create_dataset":
+		return c.APICreateDatasetCommand(cmd)
+	case "api_create_agent":
+		return c.APICreateAgentCommand(cmd)
+	case "api_create_chat":
+		return c.APICreateChatCommand(cmd)
+	case "api_create_search":
+		return c.APICreateSearchCommand(cmd)
+	case "api_create_memory":
+		return c.APICreateMemoryCommand(cmd)
 	case "api_list_api_keys":
 		return c.APIListAPIKeysCommand(cmd)
 	case "api_delete_api_key":
@@ -330,6 +339,8 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.APISetAPIKeyCommand(cmd)
 	case "api_set_variable":
 		return c.APISetVariableCommand(cmd)
+	case "api_show_variable":
+		return c.APIShowVariableCommand(cmd)
 	case "api_unset_api_key":
 		return c.APIUnsetAPIKeyCommand(cmd)
 	case "api_show_version":
@@ -346,6 +357,8 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.CommonShowProviderInstanceCommand(cmd)
 	case "api_show_provider_instance_balance":
 		return c.CommonShowProviderInstanceBalanceCommand(cmd)
+	case "api_show_provider_instance_task":
+		return c.APIShowProviderInstanceTaskCommand(cmd)
 	case "api_show_provider_model":
 		return c.CommonShowProviderModelCommand(cmd)
 	case "list_provider_models":
@@ -356,10 +369,8 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.CommonListInstanceModelsSyncCommand(cmd)
 	case "api_list_provider_instance_tasks":
 		return c.APIListModelInstanceTasksCommand(cmd)
-	case "show_provider_model":
-		return c.CommonShowProviderModelCommand(cmd)
-	case "show_model":
-		return c.CommonShowModel(cmd)
+	case "api_show_model":
+		return c.CommonShowModelCommand(cmd)
 	case "list_all_models":
 		return c.ListAllModels(cmd)
 	// Provider commands
@@ -370,8 +381,8 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "delete_provider":
 		return c.DeleteProvider(cmd)
 	// Provider instance commands
-	case "create_provider_instance":
-		return c.CreateProviderInstance(cmd)
+	case "api_create_provider_instance":
+		return c.APICreateProviderInstanceCommand(cmd)
 	case "api_list_provider_instances":
 		return c.CommonListProviderInstances(cmd)
 	case "alter_provider_instance":
@@ -411,11 +422,11 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.CommonCheckProviderConnection(cmd)
 	case "check_provider_with_key":
 		return c.CommonCheckProviderWithKey(cmd)
-	case "use_model":
-		return c.UseModel(cmd)
-	case "use_api_server":
+	case "api_use_model":
+		return c.APIUseModelCommand(cmd)
+	case "api_use_api_server":
 		return c.CommonUseAPIServerCommand(cmd)
-	case "use_admin_server":
+	case "api_use_admin_server":
 		return c.CommonUseAdminServerCommand(cmd)
 	case "set_default_model":
 		return c.SetDefaultModel(cmd)
@@ -423,8 +434,6 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ResetDefaultModel(cmd)
 	case "api_list_default_models":
 		return c.ListDefaultModels(cmd)
-	case "show_task_user_command":
-		return c.ShowTaskUserCommand(cmd)
 	case "create_chunk_store":
 		return c.CreateChunkStore(cmd)
 	case "drop_chunk_store":
@@ -464,10 +473,10 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	// TODO: Implement other commands
 	case "user_parse_local_file_command":
 		return c.UserParseLocalFile(cmd)
-	case "show_admin_server":
-		return c.ShowAdminServer(cmd)
-	case "show_api_server":
-		return c.ShowAPIServer(cmd)
+	case "api_show_admin_server":
+		return c.CommonShowAdminServerCommand(cmd)
+	case "api_show_api_server":
+		return c.CommonShowAPIServerCommand(cmd)
 	case "api_show_log_level":
 		return c.APIShowLogLevelCommand(cmd)
 	case "api_list_api_servers":
@@ -486,8 +495,8 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.DeleteAdminServer(cmd)
 	case "user_chunk_command":
 		return c.ChunkCommand(cmd)
-	case "save_config_command":
-		return c.SaveServerConfig(cmd)
+	case "api_save_config_command":
+		return c.CommonSaveServerConfigCommand(cmd)
 	case "file_system_command":
 		return c.ExecuteFilesystemCommand(cmd)
 	default:
