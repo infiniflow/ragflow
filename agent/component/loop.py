@@ -67,7 +67,7 @@ class Loop(ComponentBase, ABC):
             return cls._is_missing_required_field(item.get("value"))
         if input_mode == "constant":
             return item.get("value") is None
-        return False
+        return True
 
     def get_start(self):
         for cid in self._canvas.components.keys():
