@@ -975,9 +975,11 @@ func (c *CLI) AdminShowVariable(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("var_name not provided")
 	}
 
-	payload := map[string]interface{}{"var_name": varName}
+	encodedVarName := common.EncodeToBase64(varName)
 
-	resp, err := c.AdminServerClient.Request("GET", "/admin/variables", "admin", nil, payload)
+	endPoint := fmt.Sprintf("/admin/variables/%s", encodedVarName)
+
+	resp, err := c.AdminServerClient.Request("GET", endPoint, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show variable: %w", err)
 	}

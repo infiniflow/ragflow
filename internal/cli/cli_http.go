@@ -330,6 +330,8 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.APISetAPIKeyCommand(cmd)
 	case "api_set_variable":
 		return c.APISetVariableCommand(cmd)
+	case "api_show_variable":
+		return c.APIShowVariableCommand(cmd)
 	case "api_unset_api_key":
 		return c.APIUnsetAPIKeyCommand(cmd)
 	case "api_show_version":
