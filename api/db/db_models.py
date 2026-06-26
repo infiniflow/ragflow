@@ -956,6 +956,38 @@ class File2Document(DataBaseModel):
         db_table = "file2document"
 
 
+class FileCommit(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    folder_id = CharField(max_length=32, null=False, help_text="workspace folder id", index=True)
+    parent_id = CharField(max_length=32, null=True, help_text="parent commit id", index=True)
+    message = CharField(max_length=512, default="", help_text="commit message")
+    author_id = CharField(max_length=32, null=False, help_text="user who created the commit", index=True)
+    file_count = IntegerField(default=0, help_text="number of files in this commit")
+    tree_state = LongTextField(null=True, help_text="JSON snapshot of the full folder tree at this commit")
+
+    class Meta:
+        db_table = "file_commit"
+
+
+class FileCommitItem(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    commit_id = CharField(max_length=32, null=False, help_text="commit id", index=True)
+    file_id = CharField(max_length=32, null=False, help_text="file id", index=True)
+    operation = CharField(max_length=16, null=False, help_text="add / modify / delete / rename", index=True)
+    old_hash = CharField(max_length=64, null=True, help_text="old content hash", index=True)
+    new_hash = CharField(max_length=64, null=True, help_text="new content hash", index=True)
+    old_location = CharField(max_length=255, null=True, help_text="old storage location")
+    new_location = CharField(max_length=255, null=True, help_text="new storage location")
+    old_name = CharField(max_length=255, null=True, help_text="old file name (for rename)")
+    new_name = CharField(max_length=255, null=True, help_text="new file name (for rename)")
+
+    class Meta:
+        db_table = "file_commit_item"
+        indexes = (
+            (("commit_id", "file_id"), True),  # unique composite index
+        )
+
+
 class Task(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     doc_id = CharField(max_length=32, null=False, index=True)
@@ -1213,6 +1245,22 @@ class Connector2Kb(DataBaseModel):
 
     class Meta:
         db_table = "connector2kb"
+
+
+class ChatChannel(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    name = CharField(max_length=128, null=False, help_text="Bot name", index=False)
+    channel = CharField(max_length=128, null=False, help_text="Chat channel type", index=True)
+    config = JSONField(null=False, default={}, help_text="Channel credential & settings")
+    chat_id = CharField(max_length=32, null=True, default=None, help_text="connected chat id", index=True)
+    status = IntegerField(default=1, index=True)
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        db_table = "chat_channel"
 
 
 class DateTimeTzField(CharField):
@@ -1693,6 +1741,7 @@ def migrate_db():
     alter_db_add_column(migrator, "canvas_template", "canvas_category", CharField(max_length=32, null=False, default="agent_canvas", help_text="agent_canvas|dataflow_canvas", index=True))
     alter_db_add_column(migrator, "canvas_template", "canvas_types", ListField(null=True, default=list, help_text="Canvas types"))
     alter_db_add_column(migrator, "knowledgebase", "pipeline_id", CharField(max_length=32, null=True, help_text="Pipeline ID", index=True))
+    alter_db_add_column(migrator, "chat_channel", "dialog_id", CharField(max_length=32, null=True, help_text="connected dialog id", index=True))
     alter_db_add_column(migrator, "document", "pipeline_id", CharField(max_length=32, null=True, help_text="Pipeline ID", index=True))
     alter_db_add_column(migrator, "knowledgebase", "graphrag_task_id", CharField(max_length=32, null=True, help_text="Gragh RAG task ID", index=True))
     alter_db_add_column(migrator, "knowledgebase", "raptor_task_id", CharField(max_length=32, null=True, help_text="RAPTOR task ID", index=True))
@@ -1728,7 +1777,22 @@ def migrate_db():
     alter_db_column_type(migrator, "document", "size", BigIntegerField(default=0, index=True))
     alter_db_column_type(migrator, "file", "size", BigIntegerField(default=0, index=True))
     alter_db_add_column(migrator, "tenant", "ocr_id", CharField(max_length=128, null=True, help_text="default ocr model ID", index=True))
-    for table_name, index_name in [("tenant_model_instance", "idx_api_key_provider_id"), ("tenant_model", "idx_provider_model_instance")]:
+    alter_db_column_type(migrator, "chat_channel", "status", IntegerField(default=1, index=True))
+    alter_db_rename_column(migrator, "chat_channel", "dialog_id", "chat_id")
+    # Drop both the explicit "idx_*" name from later migrations AND the
+    # Peewee-auto-derived "<table-as-classname>_<col1>_<col2>" name from the
+    # original TenantModelInstance definition (commit dc4b82523). Databases
+    # created before #15460 dropped the model's `indexes = ((...,), True)`
+    # tuple still carry the auto-named compound unique index, which makes a
+    # second instance with an empty api_key (e.g. Ollama) fail with
+    # "Duplicate entry ... for key 'tenantmodelinstance_api_key_provider_id'"
+    # — see #15699.
+    legacy_indexes = [
+        ("tenant_model_instance", "idx_api_key_provider_id"),
+        ("tenant_model_instance", "tenantmodelinstance_api_key_provider_id"),
+        ("tenant_model", "idx_provider_model_instance"),
+    ]
+    for table_name, index_name in legacy_indexes:
         try:
             migrate(migrator.drop_index(table_name, index_name))
         except (OperationalError, ProgrammingError) as ex:

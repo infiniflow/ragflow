@@ -34,6 +34,7 @@ from enum import StrEnum
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
+from rag.llm.key_utils import _normalize_replicate_key
 from rag.llm.tool_decorator import FunctionToolSession, is_tool
 from rag.nlp import is_chinese, is_english
 
@@ -920,6 +921,15 @@ class OpenAI_APIChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
+class Xiaomi(Base):
+    _FACTORY_NAME = "Xiaomi"
+
+    def __init__(self, key, model_name, base_url, **kwargs):
+        if not base_url:
+            base_url = "https://api.xiaomimimo.com/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
 class LeptonAIChat(Base):
     _FACTORY_NAME = "LeptonAI"
 
@@ -938,7 +948,7 @@ class ReplicateChat(Base):
         from replicate.client import Client
 
         self.model_name = model_name
-        self.client = Client(api_token=key)
+        self.client = Client(api_token=_normalize_replicate_key(key))
 
     def _chat(self, history, gen_conf=None, **kwargs):
         gen_conf = dict(gen_conf or {})
@@ -970,6 +980,43 @@ class ReplicateChat(Base):
             yield ans + "\n**ERROR**: " + str(e)
 
         yield num_tokens_from_string(ans)
+
+    async def async_chat_streamly(self, system, history, gen_conf: dict | None = None, **kwargs):
+        gen_conf = dict(gen_conf or {})
+        if "max_tokens" in gen_conf:
+            del gen_conf["max_tokens"]
+
+        def _do_chat():
+            msgs = list(history or [])
+            if system and msgs and msgs[0].get("role") != "system":
+                msgs.insert(0, {"role": "system", "content": system})
+            elif system and not msgs:
+                msgs = [{"role": "system", "content": system}]
+
+            system_msg = msgs[0]["content"] if msgs and msgs[0].get("role") == "system" else ""
+            prompt = "\n".join(
+                [item["role"] + ":" + item["content"] for item in msgs[-5:] if item.get("role") != "system"]
+            )
+            try:
+                response = self.client.run(
+                    self.model_name,
+                    input={"system_prompt": system_msg, "prompt": prompt, **gen_conf},
+                )
+                chunks = []
+                for resp in response:
+                    chunks.append(resp if isinstance(resp, str) else str(resp))
+                answer = "".join(chunks)
+                return chunks or ([answer] if answer else []), num_tokens_from_string(answer), None
+            except Exception as e:
+                return [], 0, e
+
+        chunks, total_tokens, error = await asyncio.to_thread(_do_chat)
+        if error:
+            yield f"**ERROR**: {error}"
+        else:
+            for chunk in chunks:
+                yield chunk
+        yield total_tokens
 
 
 class SparkChat(Base):
@@ -1075,6 +1122,22 @@ class BaiduYiyanChat(Base):
 class GoogleChat(Base):
     _FACTORY_NAME = "Google Cloud"
 
+    @staticmethod
+    def _vertex_http_options(region: str):
+        region_norm = (region or "").strip().lower()
+        multipoint_hosts = {
+            "eu": "https://aiplatform.eu.rep.googleapis.com/",
+            "us": "https://aiplatform.us.rep.googleapis.com/",
+        }
+        base_url = multipoint_hosts.get(region_norm)
+        if base_url:
+            from google.genai.types import HttpOptions
+
+            # Gemini 3.x multi-region endpoints require *.rep hostnames
+            # instead of region-aiplatform host synthesis.
+            return HttpOptions(base_url=base_url, api_version="v1")
+        return None
+
     def __init__(self, key, model_name, base_url=None, **kwargs):
         super().__init__(key, model_name, base_url=base_url, **kwargs)
 
@@ -1105,11 +1168,21 @@ class GoogleChat(Base):
         else:
             from google import genai
 
+            client_kwargs = {
+                "vertexai": True,
+                "project": project_id,
+                "location": region,
+            }
+            http_options = self._vertex_http_options(region)
+            if http_options is not None:
+                client_kwargs["http_options"] = http_options
+
             if access_token:
                 credits = service_account.Credentials.from_service_account_info(access_token, scopes=scopes)
-                self.client = genai.Client(vertexai=True, project=project_id, location=region, credentials=credits)
+                client_kwargs["credentials"] = credits
+                self.client = genai.Client(**client_kwargs)
             else:
-                self.client = genai.Client(vertexai=True, project=project_id, location=region)
+                self.client = genai.Client(**client_kwargs)
 
     def _clean_conf(self, gen_conf):
         if "claude" in self.model_name:

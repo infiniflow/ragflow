@@ -29,6 +29,7 @@ from api.db.services.file_service import FileService
 from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import (
     ensure_mineru_from_env,
+    ensure_opendataloader_from_env,
     ensure_paddleocr_from_env,
     get_first_provider_model_name,
     get_model_config_from_provider_instance,
@@ -446,12 +447,8 @@ class Parser(ProcessBase):
                 tenant_id = self._canvas._tenant_id
                 if not tenant_id:
                     return None
-                from api.db.services.tenant_llm_service import TenantLLMService
-                env_name = TenantLLMService.ensure_opendataloader_from_env(tenant_id)
-                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="OpenDataLoader", model_type=LLMType.OCR.value)
-                if candidates:
-                    return candidates[0].llm_name
-                return env_name
+
+                return get_first_provider_model_name(tenant_id, "OpenDataLoader", LLMType.OCR) or ensure_opendataloader_from_env(tenant_id)
 
             parser_model_name = resolve_opendataloader_llm_name()
             if not parser_model_name:
@@ -958,7 +955,7 @@ class Parser(ProcessBase):
         sections, tables, section_images = markdown_parser(
             name,
             blob,
-            separate_tables=False,
+            separate_tables=True,
             delimiter=conf.get("delimiter"),
             return_section_images=True,
         )

@@ -167,17 +167,15 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       },
     ],
     verifyTransform: (values) => ({
-      apiKey: {
-        ark_api_key: values.api_key,
-        endpoint_id: values.endpoint_id,
-      },
+      apiKey: values.api_key,
+      endpoint_id: values.endpoint_id,
       modelInfo: buildModelInfoFromValues(values),
     }),
     submitTransform: (values) => ({
       instance_name: values.instance_name,
       llm_factory: LLMFactory.VolcEngine,
       endpoint_id: values.endpoint_id,
-      ark_api_key: values.api_key,
+      api_key: values.api_key,
       model_info: buildModelInfoFromValues(values),
     }),
   },
@@ -671,7 +669,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         modelInfo: [
           {
             model_name: values.model_name,
-            model_type: 'ocr',
+            model_type: ['ocr'],
             max_tokens: 0,
           },
         ],
@@ -694,7 +692,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         model_info: [
           {
             model_name: values.model_name,
-            model_type: 'ocr',
+            model_type: ['ocr'],
             max_tokens: 0,
           },
         ],
@@ -727,7 +725,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       {
         name: 'paddleocr_api_url',
         label: 'paddleocrApiUrl',
-        type: FormFieldType.Text,
+        type: 'inputSelect',
         required: true,
         placeholder: 'paddleocrApiUrlPlaceholder',
         validation: { message: 'paddleocrApiUrlMessage' },
@@ -748,8 +746,10 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         defaultValue: 'PaddleOCR-VL',
         placeholder: 'paddleocrSelectAlgorithm',
         options: [
+          { label: 'PaddleOCR-VL-1.6', value: 'PaddleOCR-VL-1.6' },
           { label: 'PaddleOCR-VL-1.5', value: 'PaddleOCR-VL-1.5' },
           { label: 'PaddleOCR-VL', value: 'PaddleOCR-VL' },
+          { label: 'PP-OCRv6', value: 'PP-OCRv6' },
           { label: 'PP-OCRv5', value: 'PP-OCRv5' },
           { label: 'PP-StructureV3', value: 'PP-StructureV3' },
         ],

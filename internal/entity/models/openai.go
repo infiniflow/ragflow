@@ -30,7 +30,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // OpenAIModel implements ModelDriver for OpenAI (GPT models).
@@ -40,20 +39,11 @@ type OpenAIModel struct {
 
 // NewOpenAIModel creates a new OpenAI model instance.
 func NewOpenAIModel(baseURL map[string]string, urlSuffix URLSuffix) *OpenAIModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-	transport.ResponseHeaderTimeout = 60 * time.Second
-
 	return &OpenAIModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
-			httpClient: &http.Client{
-				Transport: transport,
-			},
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
@@ -83,21 +73,27 @@ func (o *OpenAIModel) ChatWithMessages(modelName string, messages []Message, api
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, o.baseModel.URLSuffix.Chat)
 
-	// Convert messages to the format expected by the API
+	// Convert messages to API format (supports multimodal content)
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
+		apiMsg := map[string]interface{}{
 			"role":    msg.Role,
 			"content": msg.Content,
 		}
+		if msg.ToolCallID != "" {
+			apiMsg["tool_call_id"] = msg.ToolCallID
+		}
+		if len(msg.ToolCalls) > 0 {
+			apiMsg["tool_calls"] = msg.ToolCalls
+		}
+		apiMessages[i] = apiMsg
 	}
 
 	// Build request body
 	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      false,
-		"temperature": 1,
+		"model":    modelName,
+		"messages": apiMessages,
+		"stream":   false,
 	}
 
 	if chatModelConfig != nil {
@@ -116,6 +112,21 @@ func (o *OpenAIModel) ChatWithMessages(modelName string, messages []Message, api
 		if chatModelConfig.Stop != nil {
 			reqBody["stop"] = *chatModelConfig.Stop
 		}
+
+		if chatModelConfig.Tools != nil {
+			reqBody["tools"] = chatModelConfig.Tools
+			tc := "auto"
+			if chatModelConfig.ToolChoice != nil {
+				tc = *chatModelConfig.ToolChoice
+			}
+			reqBody["tool_choice"] = tc
+		}
+	}
+
+	// Qwen3 family: disable thinking by default (matches Python's
+	// _apply_model_family_policies in rag/llm/chat_model.py:119-121).
+	if strings.Contains(strings.ToLower(modelName), "qwen3") && (chatModelConfig == nil || chatModelConfig.Thinking == nil) {
+		reqBody["enable_thinking"] = false
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -170,9 +181,9 @@ func (o *OpenAIModel) ChatWithMessages(modelName string, messages []Message, api
 		return nil, fmt.Errorf("invalid message format")
 	}
 
-	content, ok := messageMap["content"].(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid content format")
+	var content string
+	if c, ok := messageMap["content"].(string); ok {
+		content = c
 	}
 
 	// OpenAI reasoning models (o-series and similar) return reasoning text in
@@ -185,9 +196,19 @@ func (o *OpenAIModel) ChatWithMessages(modelName string, messages []Message, api
 		}
 	}
 
+	var toolCalls []map[string]interface{}
+	if tcs, ok := messageMap["tool_calls"].([]interface{}); ok {
+		for _, tc := range tcs {
+			if tcMap, ok := tc.(map[string]interface{}); ok {
+				toolCalls = append(toolCalls, tcMap)
+			}
+		}
+	}
+
 	chatResponse := &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
 	}
 
 	return chatResponse, nil
@@ -210,13 +231,20 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, o.baseModel.URLSuffix.Chat)
 
-	// Convert messages to API format (supports multimodal content)
+	// Convert messages to API format (supports multimodal content and tool messages)
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
+		apiMsg := map[string]interface{}{
 			"role":    msg.Role,
 			"content": msg.Content,
 		}
+		if msg.ToolCallID != "" {
+			apiMsg["tool_call_id"] = msg.ToolCallID
+		}
+		if len(msg.ToolCalls) > 0 {
+			apiMsg["tool_calls"] = msg.ToolCalls
+		}
+		apiMessages[i] = apiMsg
 	}
 
 	// Build request body with streaming on by default
@@ -246,6 +274,20 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		if chatModelConfig.Stop != nil {
 			reqBody["stop"] = *chatModelConfig.Stop
 		}
+
+		if chatModelConfig.Tools != nil {
+			reqBody["tools"] = chatModelConfig.Tools
+			tc := "auto"
+			if chatModelConfig.ToolChoice != nil {
+				tc = *chatModelConfig.ToolChoice
+			}
+			reqBody["tool_choice"] = tc
+		}
+	}
+
+	// Qwen3 family: disable thinking by default.
+	if strings.Contains(strings.ToLower(modelName), "qwen3") && (chatModelConfig == nil || chatModelConfig.Thinking == nil) {
+		reqBody["enable_thinking"] = false
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -272,9 +314,9 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	sawTerminal := false
+	accumulatedToolCalls := make(map[int]map[string]interface{})
+	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
 
@@ -313,6 +355,37 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 			continue
 		}
 
+		// Accumulate streaming tool_call deltas (mirrors Python's
+		// async_chat_streamly_with_tools in rag/llm/chat_model.py:500-509).
+		if tcs, ok := delta["tool_calls"].([]interface{}); ok {
+			for _, tc := range tcs {
+				if tcMap, ok := tc.(map[string]interface{}); ok {
+					idxF, ok := tcMap["index"].(float64)
+					if !ok {
+						continue
+					}
+					idx := int(idxF)
+					existing, hasExisting := accumulatedToolCalls[idx]
+					if hasExisting {
+						if fn, ok := tcMap["function"].(map[string]interface{}); ok {
+							if args, ok := fn["arguments"].(string); ok {
+								if ef, ok := existing["function"].(map[string]interface{}); ok {
+									if ea, ok := ef["arguments"].(string); ok {
+										ef["arguments"] = ea + args
+									} else {
+										ef["arguments"] = args
+									}
+								}
+							}
+						}
+					} else {
+						accumulatedToolCalls[idx] = cloneMap(tcMap)
+					}
+				}
+			}
+			continue // tool_call deltas don't carry content
+		}
+
 		reasoningContent, ok := delta["reasoning_content"].(string)
 		if ok && reasoningContent != "" {
 			if err := sender(nil, &reasoningContent); err != nil {
@@ -330,15 +403,22 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		finishReason, ok := firstChoice["finish_reason"].(string)
 		if ok && finishReason != "" {
 			sawTerminal = true
-			break
 		}
 	}
-
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
 	if !sawTerminal {
 		return fmt.Errorf("openai: stream ended before [DONE] or finish_reason")
+	}
+
+	// Populate ToolCallsResult with accumulated streaming tool_calls.
+	if len(accumulatedToolCalls) > 0 && chatModelConfig != nil {
+		tcs := make([]map[string]interface{}, 0, len(accumulatedToolCalls))
+		for _, tc := range accumulatedToolCalls {
+			tcs = append(tcs, tc)
+		}
+		chatModelConfig.ToolCallsResult = &tcs
 	}
 
 	// Send the [DONE] marker for OpenAI compatibility
@@ -483,30 +563,15 @@ func (o *OpenAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, err
 	}
 
 	// Parse response
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	data, ok := result["data"].([]interface{})
-	if !ok {
+	if modelList.Models == nil {
 		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	models := make([]ListModelResponse, 0)
-	for _, model := range data {
-		modelMap, ok := model.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		modelName, ok := modelMap["id"].(string)
-		if !ok {
-			continue
-		}
-		models = append(models, ListModelResponse{Name: modelName})
-	}
-
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 // Balance is not exposed by the OpenAI API, so this returns "no such method".
@@ -600,31 +665,15 @@ func (o *OpenAIModel) TranscribeAudioWithSender(modelName *string, file *string,
 	}
 
 	sentDelta := false
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-
-		dataStr := strings.TrimSpace(line[6:])
-		if dataStr == "" {
-			continue
-		}
-		if dataStr == "[DONE]" {
-			break
-		}
-
-		var event struct {
-			Type  string `json:"type"`
-			Delta string `json:"delta"`
-			Text  string `json:"text"`
-		}
-		if err = json.Unmarshal([]byte(dataStr), &event); err != nil {
-			continue
-		}
-
+	if _, err = ParseSSEStream[struct {
+		Type  string `json:"type"`
+		Delta string `json:"delta"`
+		Text  string `json:"text"`
+	}](resp.Body, func(event struct {
+		Type  string `json:"type"`
+		Delta string `json:"delta"`
+		Text  string `json:"text"`
+	}) error {
 		switch {
 		case event.Delta != "":
 			if err = sender(&event.Delta, nil); err != nil {
@@ -641,8 +690,8 @@ func (o *OpenAIModel) TranscribeAudioWithSender(modelName *string, file *string,
 				return err
 			}
 		}
-	}
-	if err = scanner.Err(); err != nil {
+		return nil
+	}); err != nil {
 		return fmt.Errorf("error reading OpenAI ASR stream: %w", err)
 	}
 
@@ -972,4 +1021,12 @@ func (o *OpenAIModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) 
 
 func (o *OpenAIModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", o.Name())
+}
+
+func cloneMap(m map[string]interface{}) map[string]interface{} {
+	cp := make(map[string]interface{}, len(m))
+	for k, v := range m {
+		cp[k] = v
+	}
+	return cp
 }

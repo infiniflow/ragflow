@@ -82,6 +82,8 @@ class VolcEngine(Base):
 
             if model.get("domain", "") == "Embedding":
                 model_types.append(LLMType.EMBEDDING.value)
+            elif set(model.get("task_type", [])) & {"TextEmbedding", "ImageEmbedding"}:
+                model_types.append(LLMType.EMBEDDING.value)
             else:
                 modalities = model.get("modalities", {})
                 input_modalities = modalities.get("input_modalities", [])
@@ -259,7 +261,7 @@ class LocalAI(Base):
                     context_length = model_info.get("model_info", {}).get("general.context_length", 8192)
                     res.append(
                         {
-                            "name": model["name"],
+                            "name": model["name"].rsplit(":", 1)[0],
                             "model_types": [capability_to_model_type_mapping[c] for c in model_info.get("capabilities", []) if c in capability_to_model_type_mapping],
                             "features": [capability_to_feature_mapping[c] for c in model_info.get("capabilities", []) if c in capability_to_feature_mapping],
                             "max_tokens": context_length or 8192,

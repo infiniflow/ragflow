@@ -21,21 +21,20 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
-	"ragflow/internal/cache"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/engine/elasticsearch"
+	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
 	"regexp"
 	"strconv"
-	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -43,45 +42,49 @@ import (
 
 // Service admin service layer
 type Service struct {
-	userDAO           *dao.UserDAO
-	licenseDAO        *dao.LicenseDAO
-	timeRecordDAO     *dao.TimeRecordDAO
-	systemSettingsDAO *dao.SystemSettingsDAO
-	tenantDAO         *dao.TenantDAO
-	userTenantDAO     *dao.UserTenantDAO
-	tenantLLMDAO      *dao.TenantLLMDAO
-	fileDAO           *dao.FileDAO
-	documentDAO       *dao.DocumentDAO
-	taskDAO           *dao.TaskDAO
-	kbDAO             *dao.KnowledgebaseDAO
-	canvasDAO         *dao.UserCanvasDAO
-	chatDAO           *dao.ChatDAO
-	chatSessionDAO    *dao.ChatSessionDAO
-	apiTokenDAO       *dao.APITokenDAO
-	api4ConvDAO       *dao.API4ConversationDAO
-	llmDAO            *dao.LLMDAO
+	userDAO             *dao.UserDAO
+	licenseDAO          *dao.LicenseDAO
+	timeRecordDAO       *dao.TimeRecordDAO
+	systemSettingsDAO   *dao.SystemSettingsDAO
+	tenantDAO           *dao.TenantDAO
+	userTenantDAO       *dao.UserTenantDAO
+	tenantLLMDAO        *dao.TenantLLMDAO
+	fileDAO             *dao.FileDAO
+	documentDAO         *dao.DocumentDAO
+	taskDAO             *dao.TaskDAO
+	kbDAO               *dao.KnowledgebaseDAO
+	canvasDAO           *dao.UserCanvasDAO
+	chatDAO             *dao.ChatDAO
+	chatSessionDAO      *dao.ChatSessionDAO
+	apiTokenDAO         *dao.APITokenDAO
+	api4ConvDAO         *dao.API4ConversationDAO
+	llmDAO              *dao.LLMDAO
+	ingestionTaskDAO    *dao.IngestionTaskDAO
+	ingestionTaskLogDao *dao.IngestionTaskLogDAO
 }
 
 // NewService create admin service
 func NewService() *Service {
 	return &Service{
-		userDAO:           dao.NewUserDAO(),
-		licenseDAO:        dao.NewLicenseDAO(),
-		timeRecordDAO:     dao.NewTimeRecordDAO(),
-		systemSettingsDAO: dao.NewSystemSettingsDAO(),
-		tenantDAO:         dao.NewTenantDAO(),
-		userTenantDAO:     dao.NewUserTenantDAO(),
-		tenantLLMDAO:      dao.NewTenantLLMDAO(),
-		fileDAO:           dao.NewFileDAO(),
-		documentDAO:       dao.NewDocumentDAO(),
-		taskDAO:           dao.NewTaskDAO(),
-		kbDAO:             dao.NewKnowledgebaseDAO(),
-		canvasDAO:         dao.NewUserCanvasDAO(),
-		chatDAO:           dao.NewChatDAO(),
-		chatSessionDAO:    dao.NewChatSessionDAO(),
-		apiTokenDAO:       dao.NewAPITokenDAO(),
-		api4ConvDAO:       dao.NewAPI4ConversationDAO(),
-		llmDAO:            dao.NewLLMDAO(),
+		userDAO:             dao.NewUserDAO(),
+		licenseDAO:          dao.NewLicenseDAO(),
+		timeRecordDAO:       dao.NewTimeRecordDAO(),
+		systemSettingsDAO:   dao.NewSystemSettingsDAO(),
+		tenantDAO:           dao.NewTenantDAO(),
+		userTenantDAO:       dao.NewUserTenantDAO(),
+		tenantLLMDAO:        dao.NewTenantLLMDAO(),
+		fileDAO:             dao.NewFileDAO(),
+		documentDAO:         dao.NewDocumentDAO(),
+		taskDAO:             dao.NewTaskDAO(),
+		kbDAO:               dao.NewKnowledgebaseDAO(),
+		canvasDAO:           dao.NewUserCanvasDAO(),
+		chatDAO:             dao.NewChatDAO(),
+		chatSessionDAO:      dao.NewChatSessionDAO(),
+		apiTokenDAO:         dao.NewAPITokenDAO(),
+		api4ConvDAO:         dao.NewAPI4ConversationDAO(),
+		llmDAO:              dao.NewLLMDAO(),
+		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
+		ingestionTaskLogDao: dao.NewIngestionTaskLogDAO(),
 	}
 }
 
@@ -96,51 +99,99 @@ func (s *Service) Logout(user interface{}) error {
 }
 
 // ListTasks
-func (s *Service) ListTasks() ([]map[string]interface{}, error) {
+func (s *Service) ListIngestionTasks() ([]map[string]interface{}, error) {
 
-	//tasks, err := s.taskDAO.GetAllTasks()
-	//if err != nil {
-	//	return nil, err
-	//}
-	//
-	//var result []map[string]interface{}
-	//for _, task := range tasks {
-	//	// task.ChunkIDs is a string, delimiter is space, count the word count
-	//	ChunkCount := strings.Count(*task.ChunkIDs, " ")
-	//	result = append(result, map[string]interface{}{
-	//		"id":          task.ID,
-	//		"task_type":   task.TaskType,
-	//		"document_id": task.DocID,
-	//		"chunk_count": ChunkCount,
-	//		"from_page":   task.FromPage,
-	//		"to_page":     task.ToPage,
-	//		"priority":    task.Priority,
-	//		"duration":    task.ProcessDuration,
-	//		"progress":    task.Progress,
-	//		//"message":     *task.ProgressMsg,
-	//		"retry_count": task.RetryCount,
-	//		"digest":      task.Digest,
-	//	})
-	//}
-
-	ingestionMgr := GetIngestionManager()
-	ingestionTasks, err := ingestionMgr.ListIngestionTasks()
+	ingestionTasks, err := s.ingestionTaskDAO.GetAllTasks(0, 0)
 	if err != nil {
-		return nil, fmt.Errorf("fail to list ingestion tasks")
+		return nil, err
 	}
 
-	return ingestionTasks, nil
+	showTasks := []map[string]interface{}{}
+	for _, task := range ingestionTasks {
+		var user *entity.User
+		user, err = s.userDAO.GetByTenantID(task.UserID)
+		if err != nil {
+			return nil, err
+		}
+		//var document *entity.Document
+		//document, err = s.documentDAO.GetByID(task.DocumentID)
+		//if err != nil {
+		//	return nil, err
+		//}
+
+		var showTask map[string]interface{}
+		var latestLog *entity.IngestionTaskLog
+		latestLog, err = s.ingestionTaskLogDao.LatestLogByTaskID(task.ID)
+		showTask = map[string]interface{}{
+			"id":          task.ID,
+			"user_id":     task.UserID,
+			"user":        user.Email,
+			"document_id": task.DocumentID,
+			"status":      task.Status,
+		}
+		if err == nil {
+			showTask = map[string]interface{}{
+				"id":          task.ID,
+				"user_id":     task.UserID,
+				"user":        user.Email,
+				"document_id": task.DocumentID,
+				"status":      task.Status,
+				"step":        int(latestLog.Checkpoint["current_step"].(float64)),
+			}
+		}
+
+		showTasks = append(showTasks, showTask)
+	}
+	return showTasks, nil
+}
+
+func (s *Service) RemoveIngestionTasks(tasks []string) ([]map[string]string, error) {
+	var deletedTasks []map[string]string
+	for _, taskID := range tasks {
+		taskRecord := map[string]string{
+			"task_id": taskID,
+		}
+		_, err := s.ingestionTaskDAO.RemoveByAPIServerOrAdminServer(taskID, nil)
+		if err != nil {
+			taskRecord["remove"] = fmt.Sprintf("fail: %s", err.Error())
+		} else {
+			taskRecord["remove"] = "success"
+		}
+		deletedTasks = append(deletedTasks, taskRecord)
+	}
+	return deletedTasks, nil
+}
+
+func (s *Service) StopIngestionTasks(tasks []string) ([]*entity.IngestionTask, error) {
+	var taskResponses []*entity.IngestionTask
+	for _, taskID := range tasks {
+		task, err := s.ingestionTaskDAO.SetStoppingByAPIServer(taskID)
+		if err != nil {
+			return nil, err
+		}
+
+		if task.Status == common.STOPPING {
+			msgQueueEngine := engine.GetMessageQueueEngine()
+			err = msgQueueEngine.PublishTask("tasks.RAGFLOW", []byte(task.ID))
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		taskResponses = append(taskResponses, task)
+	}
+	return taskResponses, nil
 }
 
 // GetUserByToken get user by access token
 func (s *Service) GetUserByToken(token string) (*entity.User, error) {
 	user, err := s.userDAO.GetByAccessToken(token)
 	if err != nil {
-		return nil, ErrInvalidToken
+		return nil, common.ErrInvalidToken
 	}
 
 	if user.IsSuperuser == nil || !*user.IsSuperuser {
-		return nil, ErrNotAdmin
+		return nil, common.ErrNotAdmin
 	}
 
 	if user.IsActive != "1" {
@@ -158,8 +209,8 @@ func generateRandomHex(n int) string {
 }
 
 // ListUsers list all users
-func (s *Service) ListUsers() ([]map[string]interface{}, error) {
-	users, _, err := s.userDAO.List(0, 0)
+func (s *Service) ListUsers(page, pageSize int) ([]map[string]interface{}, error) {
+	users, _, err := s.userDAO.List(page*pageSize, pageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -197,12 +248,12 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 		return nil, fmt.Errorf("User '%s' already exists", username)
 	}
 
-	decryptedPassword, err := DecryptPassword(password)
+	decryptedPassword, err := common.DecryptPassword(password)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt password: %w", err)
 	}
 
-	hashedPassword, err := GenerateWerkzeugPasswordHash(decryptedPassword, 150000)
+	hashedPassword, err := common.GenerateWerkzeugPasswordHash(decryptedPassword)
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
@@ -477,16 +528,17 @@ func (s *Service) GetUserDetails(username string) (map[string]interface{}, error
 	var user entity.User
 	err := dao.DB.Where("email = ?", username).First(&user).Error
 	if err != nil {
-		return nil, ErrUserNotFound
+		return nil, common.ErrUserNotFound
 	}
 
 	return map[string]interface{}{
-		"id":          user.ID,
-		"email":       user.Email,
-		"nickname":    user.Nickname,
-		"is_active":   user.IsActive,
-		"create_time": user.CreateTime,
-		"update_time": user.UpdateTime,
+		"id":           user.ID,
+		"email":        user.Email,
+		"nickname":     user.Nickname,
+		"is_active":    user.IsActive,
+		"is_superuser": user.IsSuperuser,
+		"create_time":  user.CreateTime,
+		"update_time":  user.UpdateTime,
 	}, nil
 }
 
@@ -717,16 +769,16 @@ func (s *Service) ChangePassword(username, newPassword string) error {
 
 	user := userList[0]
 
-	decryptedPassword, err := DecryptPassword(newPassword)
+	decryptedPassword, err := common.DecryptPassword(newPassword)
 	if err != nil {
 		return fmt.Errorf("failed to decrypt password: %w", err)
 	}
 
-	if user.Password != nil && CheckWerkzeugPassword(decryptedPassword, *user.Password) {
+	if user.Password != nil && common.CheckWerkzeugPassword(decryptedPassword, *user.Password) {
 		return nil
 	}
 
-	hashedPassword, err := GenerateWerkzeugPasswordHash(decryptedPassword, 150000)
+	hashedPassword, err := common.GenerateWerkzeugPasswordHash(decryptedPassword)
 	if err != nil {
 		return fmt.Errorf("failed to hash password: %w", err)
 	}
@@ -967,68 +1019,6 @@ func (s *Service) DeleteUserAPIToken(username, key string) error {
 	return nil
 }
 
-// Role management methods
-
-// ListRoles list all roles
-func (s *Service) ListRoles() ([]map[string]interface{}, error) {
-	// TODO: Implement list roles
-	return []map[string]interface{}{}, nil
-}
-
-// CreateRole create a new role
-func (s *Service) CreateRole(roleName, description string) (map[string]interface{}, error) {
-	// TODO: Implement create role
-	return map[string]interface{}{}, nil
-}
-
-// GetRole get role details
-func (s *Service) GetRole(roleName string) (map[string]interface{}, error) {
-	// TODO: Implement get role
-	return map[string]interface{}{}, nil
-}
-
-// UpdateRole update role
-func (s *Service) UpdateRole(roleName, description string) (map[string]interface{}, error) {
-	// TODO: Implement update role
-	return map[string]interface{}{}, nil
-}
-
-// DeleteRole delete role
-func (s *Service) DeleteRole(roleName string) error {
-	// TODO: Implement delete role
-	return nil
-}
-
-// GetRolePermission get role permissions
-func (s *Service) GetRolePermission(roleName string) ([]map[string]interface{}, error) {
-	// TODO: Implement get role permissions
-	return []map[string]interface{}{}, nil
-}
-
-// GrantRolePermission grant permission to role
-func (s *Service) GrantRolePermission(roleName string, actions []string, resource string) (map[string]interface{}, error) {
-	// TODO: Implement grant role permission
-	return map[string]interface{}{}, nil
-}
-
-// RevokeRolePermission revoke permission from role
-func (s *Service) RevokeRolePermission(roleName string, actions []string, resource string) (map[string]interface{}, error) {
-	// TODO: Implement revoke role permission
-	return map[string]interface{}{}, nil
-}
-
-// UpdateUserRole update user role
-func (s *Service) UpdateUserRole(username, roleName string) ([]map[string]interface{}, error) {
-	// TODO: Implement update user role
-	return []map[string]interface{}{}, nil
-}
-
-// GetUserPermission get user permissions
-func (s *Service) GetUserPermission(username string) ([]map[string]interface{}, error) {
-	// TODO: Implement get user permissions
-	return []map[string]interface{}{}, nil
-}
-
 // ListServices get all services
 func (s *Service) ListServices() ([]map[string]interface{}, error) {
 	allConfigs := server.GetAllConfigs()
@@ -1050,11 +1040,11 @@ func (s *Service) ListServices() ([]map[string]interface{}, error) {
 			}
 			result = append(result, configDict)
 		}
-
 	}
 
 	id := len(result)
 	serverList := GlobalServerStore.ListInfos()
+	now := time.Now()
 	for _, serverStatus := range serverList {
 		serverItem := make(map[string]interface{})
 		serverItem["name"] = serverStatus.ServerName
@@ -1063,7 +1053,12 @@ func (s *Service) ListServices() ([]map[string]interface{}, error) {
 		id++
 		serverItem["host"] = serverStatus.Host
 		serverItem["port"] = serverStatus.Port
-		serverItem["status"] = "alive"
+		// the difference between now and serverStatus.Timestamp is less than 5 seconds, then the server is alive
+		if now.Sub(serverStatus.Timestamp) < 30*time.Second {
+			serverItem["status"] = "alive"
+		} else {
+			serverItem["status"] = "timeout"
+		}
 		result = append(result, serverItem)
 	}
 	return result, nil
@@ -1148,7 +1143,7 @@ func (s *Service) getMySQLStatus(name string) (map[string]interface{}, error) {
 func (s *Service) getRedisInfo(name string) (map[string]interface{}, error) {
 	startTime := time.Now()
 
-	redisClient := cache.Get()
+	redisClient := redis.Get()
 	if redisClient == nil {
 		return map[string]interface{}{
 			"service_name": name,
@@ -1416,21 +1411,29 @@ func (s *Service) checkTaskExecutorAlive(name string) (map[string]interface{}, e
 func (s *Service) ShutdownService(serviceID string) (map[string]interface{}, error) {
 	// TODO: Implement with proper service manager
 	return map[string]interface{}{
+		"command":    "shutdown service",
 		"service_id": serviceID,
-		"status":     "shutdown",
+		"error":      "shutdown service not implemented",
+	}, nil
+}
+
+// StartService start service
+func (s *Service) StartService(serviceID string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":    "start service",
+		"service_id": serviceID,
+		"error":      "command 'start service' isn't implemented",
 	}, nil
 }
 
 // RestartService restart service
 func (s *Service) RestartService(serviceID string) (map[string]interface{}, error) {
-	// TODO: Implement with proper service manager
 	return map[string]interface{}{
+		"command":    "restart service",
 		"service_id": serviceID,
-		"status":     "restarted",
+		"error":      "command 'restart service' isn't implemented",
 	}, nil
 }
-
-// Variable/Settings methods
 
 // AdminException admin exception error
 type AdminException struct {
@@ -1451,56 +1454,6 @@ func NewAdminException(message string) *AdminException {
 	}
 }
 
-func formatSystemSetting(setting entity.SystemSettings) map[string]interface{} {
-	return map[string]interface{}{
-		"data_type":    setting.DataType,
-		"name":         setting.Name,
-		"setting_type": "config",
-		"value":        setting.Value,
-	}
-}
-
-func formatSystemSettings(settings []entity.SystemSettings) []map[string]interface{} {
-	result := make([]map[string]interface{}, 0, len(settings))
-	for _, setting := range settings {
-		result = append(result, formatSystemSetting(setting))
-	}
-	return result
-}
-
-func validateSystemSettingValue(setting entity.SystemSettings, value string) error {
-	dataType := strings.ToLower(setting.DataType)
-	switch dataType {
-	case "string":
-		return nil
-	case "integer", "int":
-		if _, err := strconv.Atoi(value); err != nil {
-			return NewAdminException(fmt.Sprintf("Invalid integer value for %s: %s", setting.Name, value))
-		}
-	case "bool", "boolean":
-		if value != "true" && value != "false" {
-			return NewAdminException(fmt.Sprintf("Invalid bool value for %s: expected true or false", setting.Name))
-		}
-	case "json":
-		if !json.Valid([]byte(value)) {
-			return NewAdminException(fmt.Sprintf("Invalid JSON value for %s", setting.Name))
-		}
-	default:
-		return NewAdminException(fmt.Sprintf("Unsupported data type for %s: %s", setting.Name, setting.DataType))
-	}
-	return nil
-}
-
-func inferSystemSettingDataType(name string) string {
-	if strings.HasPrefix(name, "sandbox.") {
-		return "json"
-	}
-	if strings.HasSuffix(name, ".enabled") {
-		return "bool"
-	}
-	return "string"
-}
-
 // GetVariable get variable by name
 // Returns the exact system setting with the given name, or settings matching the
 // given name prefix when an exact setting does not exist.
@@ -1519,18 +1472,18 @@ func (s *Service) GetVariable(varName string) ([]map[string]interface{}, error) 
 			return nil, NewAdminException("Can't get setting: " + varName)
 		}
 	}
-	return formatSystemSettings(settings), nil
+	return common.FormatSystemSettings(settings), nil
 }
 
-// GetAllVariables get all variables
+// ListAllVariables list all variables
 // Returns all system settings from database
-func (s *Service) GetAllVariables() ([]map[string]interface{}, error) {
+func (s *Service) ListAllVariables() ([]map[string]interface{}, error) {
 	settings, err := s.systemSettingsDAO.GetAll()
 	if err != nil {
 		return nil, err
 	}
 
-	return formatSystemSettings(settings), nil
+	return common.FormatSystemSettings(settings), nil
 }
 
 // SetVariable set variable
@@ -1544,7 +1497,7 @@ func (s *Service) SetVariable(varName, varValue string) error {
 
 	if len(settings) == 1 {
 		setting := &settings[0]
-		if err := validateSystemSettingValue(*setting, varValue); err != nil {
+		if err = common.ValidateSystemSettingValue(*setting, varValue); err != nil {
 			return err
 		}
 		setting.Value = varValue
@@ -1553,14 +1506,14 @@ func (s *Service) SetVariable(varName, varValue string) error {
 		return NewAdminException("Can't update more than 1 setting: " + varName)
 	}
 
-	dataType := inferSystemSettingDataType(varName)
+	dataType := common.InferSystemSettingDataType(varName)
 	newSetting := &entity.SystemSettings{
 		Name:     varName,
 		Value:    varValue,
 		Source:   "admin",
 		DataType: dataType,
 	}
-	if err := validateSystemSettingValue(*newSetting, varValue); err != nil {
+	if err = common.ValidateSystemSettingValue(*newSetting, varValue); err != nil {
 		return err
 	}
 	return s.systemSettingsDAO.Create(newSetting)
@@ -1568,18 +1521,17 @@ func (s *Service) SetVariable(varName, varValue string) error {
 
 // Config methods
 
-// GetAllConfigs get all configs
+// ListAllConfigs list all configs
 // Returns all service configurations from the config file
-func (s *Service) GetAllConfigs() ([]map[string]interface{}, error) {
+func (s *Service) ListAllConfigs() ([]map[string]interface{}, error) {
 	result := server.GetAllConfigs()
 	return result, nil
 }
 
 // Environment methods
 
-// GetAllEnvironments get all environments
-// Returns important environment variables
-func (s *Service) GetAllEnvironments() ([]map[string]interface{}, error) {
+// ListEnvironments list all environments
+func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 	result := make([]map[string]interface{}, 0)
 
 	// DOC_ENGINE
@@ -1701,11 +1653,6 @@ func (s *Service) HandleHeartbeat(message *common.BaseMessage) (common.ErrorCode
 	return common.CodeLicenseValid, ""
 }
 
-func (s *Service) ListIngestionTasks() ([]map[string]interface{}, error) {
-	// TODO: Implement with sandbox manager
-	return []map[string]interface{}{}, nil
-}
-
 // InitDefaultAdmin initialize default admin user
 // This matches Python's init_default_admin behavior
 func (s *Service) InitDefaultAdmin() error {
@@ -1731,7 +1678,7 @@ func (s *Service) InitDefaultAdmin() error {
 		// Python: password = encode_to_base64(password) = base64.b64encode(password)
 		// Then: generate_password_hash(base64_password) creates werkzeug hash
 		password := base64.StdEncoding.EncodeToString([]byte(defaultPassword))
-		hashedPassword, err := GenerateWerkzeugPasswordHash(password, 150000)
+		hashedPassword, err := common.GenerateWerkzeugPasswordHash(password)
 		if err != nil {
 			return fmt.Errorf("failed to hash password: %w", err)
 		}
@@ -1758,6 +1705,7 @@ func (s *Service) InitDefaultAdmin() error {
 			return fmt.Errorf("failed to add tenant for admin: %w", err)
 		}
 
+		common.Info("Init default super user successfully")
 		return nil
 	}
 
@@ -1785,6 +1733,7 @@ func (s *Service) InitDefaultAdmin() error {
 		}
 	}
 
+	common.Info("Init default super user successfully")
 	return nil
 }
 

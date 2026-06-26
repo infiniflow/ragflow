@@ -7,7 +7,7 @@ import {
   useVerifyProviderConnection,
 } from '@/hooks/use-llm-request';
 import { IInstanceModel, IProviderInstance } from '@/interfaces/database/llm';
-import {
+import type {
   IAddProviderInstanceRequestBody,
   IModelInfo,
 } from '@/interfaces/request/llm';
@@ -375,7 +375,7 @@ const ModelProviders = () => {
         onOk={onBedrockAddingOk}
         loading={bedrockAddingLoading}
         llmFactory={LLMFactory.Bedrock}
-        onVerify={async () => ({ isValid: null, logs: '' })}
+        onVerify={(payload) => onBedrockAddingOk(payload, true)}
       ></BedrockModal>
     </div>
   );

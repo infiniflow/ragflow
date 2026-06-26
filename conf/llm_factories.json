@@ -271,9 +271,12 @@
                 },
                 {
                     "llm_name": "grok-2-vision",
-                    "tags": "LLM,CHAT,IMAGE2TEXT,32k",
+                    "tags": "LLM,IMAGE2TEXT,32k",
                     "max_tokens": 32768,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 }
             ]
@@ -591,23 +594,32 @@
                 },
                 {
                     "llm_name": "qwen3-vl-plus",
-                    "tags": "LLM,CHAT,IMAGE2TEXT,256k",
+                    "tags": "LLM,IMAGE2TEXT,256k",
                     "max_tokens": 256000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "qwen3-vl-235b-a22b-instruct",
-                    "tags": "LLM,CHAT,IMAGE2TEXT,128k",
+                    "tags": "LLM,IMAGE2TEXT,128k",
                     "max_tokens": 128000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "qwen3-vl-235b-a22b-thinking",
-                    "tags": "LLM,CHAT,IMAGE2TEXT,128k",
+                    "tags": "LLM,IMAGE2TEXT,128k",
                     "max_tokens": 128000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
@@ -775,16 +787,22 @@
                 },
                 {
                     "llm_name": "qwen-vl-max",
-                    "tags": "LLM,CHAT,IMAGE2TEXT",
+                    "tags": "LLM,IMAGE2TEXT",
                     "max_tokens": 765,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": false
                 },
                 {
                     "llm_name": "qwen-vl-plus",
-                    "tags": "LLM,CHAT,IMAGE2TEXT",
+                    "tags": "LLM,IMAGE2TEXT",
                     "max_tokens": 765,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": false
                 },
                 {
@@ -878,9 +896,12 @@
                 },
                 {
                     "llm_name": "glm-4.5v",
-                    "tags": "LLM,IMAGE2TEXT,64,",
+                    "tags": "LLM,IMAGE2TEXT,64",
                     "max_tokens": 64000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": false
                 },
                 {
@@ -948,9 +969,12 @@
                 },
                 {
                     "llm_name": "glm-4v",
-                    "tags": "LLM,CHAT,IMAGE2TEXT",
+                    "tags": "LLM,IMAGE2TEXT",
                     "max_tokens": 2000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
@@ -1106,21 +1130,30 @@
                     "llm_name": "moonshot-v1-8k-vision-preview",
                     "tags": "LLM,IMAGE2TEXT,8k",
                     "max_tokens": 8192,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "moonshot-v1-32k-vision-preview",
                     "tags": "LLM,IMAGE2TEXT,32k",
                     "max_tokens": 32768,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "moonshot-v1-128k-vision-preview",
                     "tags": "LLM,IMAGE2TEXT,128k",
                     "max_tokens": 131072,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
@@ -1419,9 +1452,12 @@
                 },
                 {
                     "llm_name": "pixtral-large-latest",
-                    "tags": "LLM,CHAT,IMAGE2TEXT,131k",
+                    "tags": "LLM,IMAGE2TEXT,131k",
                     "max_tokens": 131000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
@@ -1461,13 +1497,19 @@
                     "llm_name": "pixtral-12b-2409",
                     "tags": "LLM,IMAGE2TEXT,131k",
                     "max_tokens": 131000,
-                    "model_type": "image2text"
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ]
                 },
                 {
                     "llm_name": "mistral-ocr-latest",
                     "tags": "LLM,IMAGE2TEXT,131k",
                     "max_tokens": 131000,
-                    "model_type": "image2text"
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ]
                 },
                 {
                     "llm_name": "open-mistral-nemo",
@@ -1492,16 +1534,22 @@
             "llm": [
                 {
                     "llm_name": "gpt-4o-mini",
-                    "tags": "LLM,CHAT,128K",
+                    "tags": "LLM,128K",
                     "max_tokens": 128000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "gpt-4o",
-                    "tags": "LLM,CHAT,128K",
+                    "tags": "LLM,128K",
                     "max_tokens": 128000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
@@ -1562,9 +1610,12 @@
                 },
                 {
                     "llm_name": "gpt-4-vision-preview",
-                    "tags": "LLM,CHAT,IMAGE2TEXT",
+                    "tags": "LLM,IMAGE2TEXT",
                     "max_tokens": 765,
-                    "model_type": "image2text"
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ]
                 }
             ]
         },
@@ -1584,44 +1635,62 @@
             "llm": [
                 {
                     "llm_name": "gemini-3-pro-preview",
-                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "tags": "LLM,1M,IMAGE2TEXT",
                     "max_tokens": 1048576,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "gemini-2.5-flash",
-                    "tags": "LLM,CHAT,1024K,IMAGE2TEXT",
+                    "tags": "LLM,1024K,IMAGE2TEXT",
                     "max_tokens": 1048576,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "gemini-2.5-pro",
-                    "tags": "LLM,CHAT,IMAGE2TEXT,1024K",
+                    "tags": "LLM,IMAGE2TEXT,1024K",
                     "max_tokens": 1048576,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "gemini-2.5-flash-lite",
-                    "tags": "LLM,CHAT,1024K,IMAGE2TEXT",
+                    "tags": "LLM,1024K,IMAGE2TEXT",
                     "max_tokens": 1048576,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "gemini-2.0-flash",
-                    "tags": "LLM,CHAT,1024K",
+                    "tags": "LLM,1024K",
                     "max_tokens": 1048576,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "gemini-2.0-flash-lite",
-                    "tags": "LLM,CHAT,1024K",
+                    "tags": "LLM,1024K",
                     "max_tokens": 1048576,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
@@ -1697,7 +1766,8 @@
             "tags": "LLM,IMAGE2TEXT",
             "status": "1",
             "llm": [],
-            "rank": "989"
+            "rank": "989",
+            "url": "https://openrouter.ai/api/v1"
         },
         {
             "name": "StepFun",
@@ -1707,9 +1777,12 @@
             "llm": [
                 {
                     "llm_name": "step-3",
-                    "tags": "LLM,CHAT,IMAGE2TEXT,64k",
+                    "tags": "LLM,IMAGE2TEXT,64k",
                     "max_tokens": 65536,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
@@ -1749,37 +1822,52 @@
                 },
                 {
                     "llm_name": "step-r1-v-mini",
-                    "tags": "LLM,CHAT,IMAGE2TEXT,100k",
+                    "tags": "LLM,IMAGE2TEXT,100k",
                     "max_tokens": 102400,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "step-1v-8k",
-                    "tags": "LLM,CHAT,IMAGE2TEXT,8k",
+                    "tags": "LLM,IMAGE2TEXT,8k",
                     "max_tokens": 8192,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "step-1v-32k",
-                    "tags": "LLM,CHAT,IMAGE2TEXT,32k",
+                    "tags": "LLM,IMAGE2TEXT,32k",
                     "max_tokens": 32768,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "step-1o-vision-32k",
-                    "tags": "LLM,CHAT,IMAGE2TEXT,32k",
+                    "tags": "LLM,IMAGE2TEXT,32k",
                     "max_tokens": 32768,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "step-1o-turbo-vision",
-                    "tags": "LLM,CHAT,IMAGE2TEXT,32k",
+                    "tags": "LLM,IMAGE2TEXT,32k",
                     "max_tokens": 32768,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
@@ -2487,61 +2575,91 @@
                     "llm_name": "adept/fuyu-8b",
                     "tags": "IMAGE2TEXT,1K",
                     "max_tokens": 1024,
-                    "model_type": "image2text"
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ]
                 },
                 {
                     "llm_name": "google/deplot",
                     "tags": "IMAGE2TEXT,8K",
                     "max_tokens": 8192,
-                    "model_type": "image2text"
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ]
                 },
                 {
                     "llm_name": "google/paligemma",
                     "tags": "IMAGE2TEXT,256K",
                     "max_tokens": 256000,
-                    "model_type": "image2text"
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ]
                 },
                 {
                     "llm_name": "meta/llama-3.2-11b-vision-instruct",
                     "tags": "IMAGE2TEXT,128K",
                     "max_tokens": 131072,
-                    "model_type": "image2text"
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ]
                 },
                 {
                     "llm_name": "meta/llama-3.2-90b-vision-instruct",
                     "tags": "IMAGE2TEXT,128K",
                     "max_tokens": 131072,
-                    "model_type": "image2text"
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ]
                 },
                 {
                     "llm_name": "microsoft/florence-2",
                     "tags": "IMAGE2TEXT,1K",
                     "max_tokens": 1024,
-                    "model_type": "image2text"
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ]
                 },
                 {
                     "llm_name": "microsoft/kosmos-2",
                     "tags": "IMAGE2TEXT,4K",
                     "max_tokens": 4096,
-                    "model_type": "image2text"
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ]
                 },
                 {
                     "llm_name": "microsoft/phi-3-vision-128k-instruct",
                     "tags": "IMAGE2TEXT,128K",
                     "max_tokens": 131072,
-                    "model_type": "image2text"
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ]
                 },
                 {
                     "llm_name": "microsoft/phi-3.5-vision-instruct",
                     "tags": "IMAGE2TEXT,128K",
                     "max_tokens": 131072,
-                    "model_type": "image2text"
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ]
                 },
                 {
                     "llm_name": "nvidia/neva-22b",
                     "tags": "IMAGE2TEXT,1K",
                     "max_tokens": 1024,
-                    "model_type": "image2text"
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ]
                 }
             ]
         },
@@ -2850,323 +2968,63 @@
         {
             "name": "SILICONFLOW",
             "logo": "",
-            "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK,IMAGE2TEXT",
+            "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK,IMAGE2TEXT,TTS,SPEECH2TEXT",
             "status": "1",
             "rank": "986",
             "url": "https://api.siliconflow.cn/v1",
             "llm": [
                 {
-                    "llm_name": "Qwen/Qwen3-Embedding-8B",
-                    "tags": "TEXT EMBEDDING,TEXT RE-RANK,32k",
-                    "max_tokens": 32000,
-                    "model_type": "embedding",
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "Qwen/Qwen3-Embedding-4B",
-                    "tags": "TEXT EMBEDDING,TEXT RE-RANK,32k",
-                    "max_tokens": 32000,
-                    "model_type": "embedding",
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "Qwen/Qwen3-Embedding-0.6B",
-                    "tags": "TEXT EMBEDDING,TEXT RE-RANK,32k",
-                    "max_tokens": 32000,
-                    "model_type": "embedding",
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "Qwen/Qwen3-235B-A22B",
-                    "tags": "LLM,CHAT,128k",
-                    "max_tokens": 128000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "Qwen/Qwen3-30B-A3B",
-                    "tags": "LLM,CHAT,128k",
-                    "max_tokens": 128000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "Qwen/Qwen3-32B",
-                    "tags": "LLM,CHAT,128k",
-                    "max_tokens": 128000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "Qwen/Qwen3-14B",
-                    "tags": "LLM,CHAT,128k",
-                    "max_tokens": 128000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "Qwen/Qwen3-8B",
-                    "tags": "LLM,CHAT,64k",
-                    "max_tokens": 64000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "Pro/deepseek-ai/DeepSeek-R1",
-                    "tags": "LLM,CHAT,64k",
-                    "max_tokens": 64000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "deepseek-ai/DeepSeek-R1",
-                    "tags": "LLM,CHAT,64k",
-                    "max_tokens": 64000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "Pro/deepseek-ai/DeepSeek-V3",
-                    "tags": "LLM,CHAT,64k",
-                    "max_tokens": 64000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "deepseek-ai/DeepSeek-V3",
-                    "tags": "LLM,CHAT,64k",
-                    "max_tokens": 64000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "Pro/deepseek-ai/DeepSeek-V3.1",
-                    "tags": "LLM,CHAT,160k",
-                    "max_tokens": 160000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "Pro/deepseek-ai/DeepSeek-V4-Pro",
+                    "llm_name": "deepseek-ai/DeepSeek-V4-Pro",
                     "tags": "LLM,CHAT,1M",
                     "max_tokens": 1000000,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
-                    "llm_name": "Pro/deepseek-ai/DeepSeek-V4-Flash",
+                    "llm_name": "deepseek-ai/DeepSeek-V4-Flash",
                     "tags": "LLM,CHAT,1M",
                     "max_tokens": 1000000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "deepseek-ai/DeepSeek-V3.1",
-                    "tags": "LLM,CHAT,160",
-                    "max_tokens": 160000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "deepseek-ai/DeepSeek-V2.5",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "Qwen/QwQ-32B",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "THUDM/GLM-Z1-32B-0414",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "THUDM/GLM-4-32B-0414",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "THUDM/GLM-Z1-9B-0414",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "THUDM/GLM-4-9B-0414",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "Pro/THUDM/glm-4-9b-chat",
-                    "tags": "LLM,CHAT,128k",
-                    "max_tokens": 128000,
-                    "model_type": "chat",
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "THUDM/GLM-Z1-Rumination-32B-0414",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "chat",
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "THUDM/glm-4-9b-chat",
-                    "tags": "LLM,CHAT,128k",
-                    "max_tokens": 128000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "Qwen/Qwen2.5-72B-Instruct-128Kt",
-                    "tags": "LLM,IMAGE2TEXT,128k",
-                    "max_tokens": 128000,
-                    "model_type": "image2text",
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "deepseek-ai/deepseek-vl2",
-                    "tags": "LLM,IMAGE2TEXT,4k",
-                    "max_tokens": 4096,
-                    "model_type": "image2text",
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "Qwen/Qwen2.5-72B-Instruct",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "Qwen/Qwen2.5-32B-Instruct",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "Qwen/Qwen2.5-14B-Instruct",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "Qwen/Qwen2.5-7B-Instruct",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "Qwen/Qwen2.5-Coder-7B-Instruct",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "internlm/internlm2_5-7b-chat",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "Qwen/Qwen2-7B-Instruct",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "Pro/Qwen/Qwen2.5-Coder-7B-Instruct",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "chat",
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "Pro/Qwen/Qwen2.5-7B-Instruct",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "Pro/Qwen/Qwen2-7B-Instruct",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "chat",
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "Pro/MiniMaxAI/MiniMax-M2.5",
-                    "tags": "LLM,CHAT,197k",
-                    "max_tokens": 197000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "Pro/zai-org/GLM-5",
-                    "tags": "LLM,CHAT,205k",
-                    "max_tokens": 205000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "Pro/moonshotai/Kimi-K2.5",
-                    "tags": "LLM,CHAT,IMAGE2TEXT,262k",
-                    "max_tokens": 262000,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
                     "llm_name": "Pro/moonshotai/Kimi-K2.6",
-                    "tags": "LLM,CHAT,IMAGE2TEXT,262k",
+                    "tags": "LLM,IMAGE2TEXT,CHAT,262k",
                     "max_tokens": 262000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "Pro/zai-org/GLM-4.7",
-                    "tags": "LLM,CHAT,205k",
-                    "max_tokens": 205000,
-                    "model_type": "chat",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "Pro/zai-org/GLM-5.1",
                     "tags": "LLM,CHAT,205k",
                     "max_tokens": 205000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "nex-agi/Nex-N2-Pro",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32000,
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "MiniMaxAI/MiniMax-M2.5",
+                    "tags": "LLM,CHAT,197k",
+                    "max_tokens": 197000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Pro/MiniMaxAI/MiniMax-M2.5",
+                    "tags": "LLM,CHAT,197k",
+                    "max_tokens": 197000,
                     "model_type": "chat",
                     "is_tools": true
                 },
@@ -3199,108 +3057,477 @@
                     "is_tools": true
                 },
                 {
-                    "llm_name": "Pro/MiniMaxAI/MiniMax-M2.1",
-                    "tags": "LLM,CHAT,197k",
-                    "max_tokens": 197000,
+                    "llm_name": "Qwen/Qwen3.6-35B-A3B",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 256000,
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen3.6-27B",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 256000,
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen3.5-397B-A17B",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 256000,
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen3.5-122B-A10B",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 256000,
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen3.5-35B-A3B",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 256000,
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen3.5-27B",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 256000,
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen3.5-9B",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 256000,
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen3.5-4B",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 256000,
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-ai/DeepSeek-R1",
+                    "tags": "LLM,CHAT,160k",
+                    "max_tokens": 160000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Pro/deepseek-ai/DeepSeek-R1",
+                    "tags": "LLM,CHAT,160k",
+                    "max_tokens": 160000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-ai/DeepSeek-V3",
+                    "tags": "LLM,CHAT,160k",
+                    "max_tokens": 160000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Pro/deepseek-ai/DeepSeek-V3",
+                    "tags": "LLM,CHAT,160k",
+                    "max_tokens": 160000,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
                     "llm_name": "stepfun-ai/Step-3.5-Flash",
-                    "tags": "LLM,CHAT,262k",
-                    "max_tokens": 262000,
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 256000,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
-                    "llm_name": "zai-org/GLM-4.6V",
-                    "tags": "LLM,CHAT,131k",
-                    "max_tokens": 131000,
+                    "llm_name": "Qwen/Qwen3-VL-32B-Instruct",
+                    "tags": "LLM,IMAGE2TEXT,CHAT,256k",
+                    "max_tokens": 256000,
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-VL-32B-Thinking",
+                    "tags": "LLM,IMAGE2TEXT,CHAT,256k",
+                    "max_tokens": 256000,
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-VL-8B-Instruct",
+                    "tags": "LLM,IMAGE2TEXT,CHAT,256k",
+                    "max_tokens": 256000,
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-VL-8B-Thinking",
+                    "tags": "LLM,IMAGE2TEXT,CHAT,256k",
+                    "max_tokens": 256000,
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-VL-30B-A3B-Instruct",
+                    "tags": "LLM,IMAGE2TEXT,CHAT,256k",
+                    "max_tokens": 256000,
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-VL-30B-A3B-Thinking",
+                    "tags": "LLM,IMAGE2TEXT,CHAT,256k",
+                    "max_tokens": 256000,
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-Omni-30B-A3B-Instruct",
+                    "tags": "LLM,IMAGE2TEXT,CHAT,256k",
+                    "max_tokens": 256000,
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-Omni-30B-A3B-Thinking",
+                    "tags": "LLM,IMAGE2TEXT,CHAT,64k",
+                    "max_tokens": 64000,
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-Omni-30B-A3B-Captioner",
+                    "tags": "LLM,IMAGE2TEXT,CHAT,64k",
+                    "max_tokens": 64000,
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "inclusionAI/Ling-flash-2.0",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
-                    "llm_name": "moonshotai/Kimi-K2-Thinking",
-                    "tags": "LLM,CHAT,262k",
-                    "max_tokens": 262000,
+                    "llm_name": "inclusionAI/Ling-mini-2.0",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
-                    "llm_name": "Pro/moonshotai/Kimi-K2-Thinking",
-                    "tags": "LLM,CHAT,262k",
-                    "max_tokens": 262000,
+                    "llm_name": "tencent/Hunyuan-MT-7B",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32000,
+                    "model_type": "chat",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "ByteDance-Seed/Seed-OSS-36B-Instruct",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 256000,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
-                    "llm_name": "zai-org/GLM-4.6",
-                    "tags": "LLM,CHAT,131k",
-                    "max_tokens": 131000,
+                    "llm_name": "zai-org/GLM-4.5V",
+                    "tags": "LLM,IMAGE2TEXT,CHAT,64k",
+                    "max_tokens": 64000,
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "zai-org/GLM-4.5-Air",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
-                    "llm_name": "Kwaipilot/KAT-Dev",
-                    "tags": "LLM,CHAT,131k",
-                    "max_tokens": 131000,
+                    "llm_name": "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 256000,
                     "model_type": "chat",
                     "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 256000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "tencent/Hunyuan-A13B-Instruct",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-32B",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-14B",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-8B",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "THUDM/GLM-4-32B-0414",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "THUDM/GLM-Z1-9B-0414",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "THUDM/GLM-4-9B-0414",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen2.5-72B-Instruct-128K",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen2.5-72B-Instruct",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen2.5-32B-Instruct",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen2.5-14B-Instruct",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen2.5-7B-Instruct",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Pro/Qwen/Qwen2.5-7B-Instruct",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-VL-Embedding-8B",
+                    "tags": "TEXT EMBEDDING,32k",
+                    "max_tokens": 32000,
+                    "model_type": "embedding",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-Embedding-8B",
+                    "tags": "TEXT EMBEDDING,32k",
+                    "max_tokens": 32000,
+                    "model_type": "embedding",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-Embedding-4B",
+                    "tags": "TEXT EMBEDDING,32k",
+                    "max_tokens": 32000,
+                    "model_type": "embedding",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-Embedding-0.6B",
+                    "tags": "TEXT EMBEDDING,32k",
+                    "max_tokens": 32000,
+                    "model_type": "embedding",
+                    "is_tools": false
                 },
                 {
                     "llm_name": "BAAI/bge-m3",
-                    "tags": "LLM,EMBEDDING,8k",
+                    "tags": "TEXT EMBEDDING,8k",
                     "max_tokens": 8192,
-                    "model_type": "embedding",
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "BAAI/bge-reranker-v2-m3",
-                    "tags": "LLM,RE-RANK,8k",
-                    "max_tokens": 8192,
-                    "model_type": "rerank",
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "Pro/BAAI/bge-m3",
-                    "tags": "LLM,EMBEDDING,8k",
-                    "max_tokens": 8192,
-                    "model_type": "embedding",
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "Pro/BAAI/bge-reranker-v2-m3",
-                    "tags": "LLM,RE-RANK,8k",
-                    "max_tokens": 8192,
-                    "model_type": "rerank",
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "BAAI/bge-large-zh-v1.5",
-                    "tags": "LLM,EMBEDDING,0.5k",
-                    "max_tokens": 512,
                     "model_type": "embedding",
                     "is_tools": false
                 },
                 {
                     "llm_name": "BAAI/bge-large-en-v1.5",
-                    "tags": "LLM,EMBEDDING,0.5k",
+                    "tags": "TEXT EMBEDDING,512",
                     "max_tokens": 512,
                     "model_type": "embedding",
                     "is_tools": false
                 },
                 {
-                    "llm_name": "netease-youdao/bce-embedding-base_v1",
-                    "tags": "LLM,EMBEDDING,0.5k",
+                    "llm_name": "BAAI/bge-large-zh-v1.5",
+                    "tags": "TEXT EMBEDDING,512",
                     "max_tokens": 512,
                     "model_type": "embedding",
                     "is_tools": false
                 },
                 {
-                    "llm_name": "netease-youdao/bce-reranker-base_v1",
-                    "tags": "LLM,RE-RANK,0.5k",
-                    "max_tokens": 512,
+                    "llm_name": "Pro/BAAI/bge-m3",
+                    "tags": "TEXT EMBEDDING,8k",
+                    "max_tokens": 8192,
+                    "model_type": "embedding",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-VL-Reranker-8B",
+                    "tags": "TEXT RE-RANK,32k",
+                    "max_tokens": 32000,
                     "model_type": "rerank",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-Reranker-8B",
+                    "tags": "TEXT RE-RANK,32k",
+                    "max_tokens": 32000,
+                    "model_type": "rerank",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-Reranker-4B",
+                    "tags": "TEXT RE-RANK,32k",
+                    "max_tokens": 32000,
+                    "model_type": "rerank",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-Reranker-0.6B",
+                    "tags": "TEXT RE-RANK,32k",
+                    "max_tokens": 32000,
+                    "model_type": "rerank",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "BAAI/bge-reranker-v2-m3",
+                    "tags": "TEXT RE-RANK,8k",
+                    "max_tokens": 8192,
+                    "model_type": "rerank",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "Pro/BAAI/bge-reranker-v2-m3",
+                    "tags": "TEXT RE-RANK,8k",
+                    "max_tokens": 8192,
+                    "model_type": "rerank",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "fnlp/MOSS-TTSD-v0.5",
+                    "tags": "TTS",
+                    "max_tokens": 26214400,
+                    "model_type": "tts",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "FunAudioLLM/CosyVoice2-0.5B",
+                    "tags": "TTS",
+                    "max_tokens": 26214400,
+                    "model_type": "tts",
                     "is_tools": false
                 }
             ]
@@ -3870,7 +4097,46 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING",
             "status": "1",
-            "llm": []
+            "llm": [
+                {
+                    "llm_name": "meta/llama-4-maverick-instruct",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "meta/llama-4-scout-instruct",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "meta/meta-llama-3-70b-instruct",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "meta/meta-llama-3-8b-instruct",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "chat"
+                },
+                {
+                    "llm_name": "replicate/all-mpnet-base-v2:b6b7585c9640cd7a9572c6e129c9549d79c9c31f0d3fdce7baac7c67ca38f305",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 384,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "ibm-granite/granite-embedding-278m-multilingual:1f76d42a05f120e12272746d5a2d86b525c13420773f795a4cbef9117d8685f1",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 512,
+                    "model_type": "embedding"
+                }
+            ],
+            "rank": "987",
+            "url": "https://api.replicate.com"
         },
         {
             "name": "Tencent Hunyuan",
@@ -3908,7 +4174,10 @@
                     "llm_name": "hunyuan-vision",
                     "tags": "LLM,IMAGE2TEXT,8k",
                     "max_tokens": 8192,
-                    "model_type": "image2text"
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ]
                 }
             ]
         },
@@ -3924,7 +4193,10 @@
                     "max_tokens": 8192,
                     "model_type": "chat",
                     "is_tools": true,
-                    "features": ["is_tools", "thinking"]
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
                 },
                 {
                     "llm_name": "Spark-Max-32K",
@@ -3932,7 +4204,10 @@
                     "max_tokens": 32768,
                     "model_type": "chat",
                     "is_tools": true,
-                    "features": ["is_tools", "thinking"]
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
                 },
                 {
                     "llm_name": "Spark-Lite",
@@ -3940,7 +4215,10 @@
                     "max_tokens": 8192,
                     "model_type": "chat",
                     "is_tools": true,
-                    "features": ["is_tools", "thinking"]
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
                 },
                 {
                     "llm_name": "Spark-Pro",
@@ -3948,7 +4226,10 @@
                     "max_tokens": 8192,
                     "model_type": "chat",
                     "is_tools": true,
-                    "features": ["is_tools", "thinking"]
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
                 },
                 {
                     "llm_name": "Spark-Pro-128K",
@@ -3956,7 +4237,10 @@
                     "max_tokens": 131072,
                     "model_type": "chat",
                     "is_tools": true,
-                    "features": ["is_tools", "thinking"]
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
                 },
                 {
                     "llm_name": "Spark-4.0-Ultra",
@@ -3964,7 +4248,10 @@
                     "max_tokens": 131072,
                     "model_type": "chat",
                     "is_tools": true,
-                    "features": ["is_tools", "thinking"]
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
                 }
             ]
         },
@@ -4422,63 +4709,90 @@
                     "llm_name": "ERNIE-4.5-Turbo-VL",
                     "tags": "LLM,IMAGE2TEXT",
                     "max_tokens": 4096,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": false
                 },
                 {
                     "llm_name": "Qwen2.5-VL-32B-Instruct",
                     "tags": "LLM,IMAGE2TEXT",
                     "max_tokens": 32768,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "Qwen2-VL-72B",
                     "tags": "LLM,IMAGE2TEXT",
                     "max_tokens": 4096,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": false
                 },
                 {
                     "llm_name": "Align-DS-V",
                     "tags": "LLM,IMAGE2TEXT",
                     "max_tokens": 4096,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": false
                 },
                 {
                     "llm_name": "InternVL3-78B",
                     "tags": "LLM,IMAGE2TEXT",
                     "max_tokens": 32768,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": false
                 },
                 {
                     "llm_name": "InternVL3-38B",
                     "tags": "LLM,IMAGE2TEXT",
                     "max_tokens": 32768,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": false
                 },
                 {
                     "llm_name": "InternVL2.5-78B",
                     "tags": "LLM,IMAGE2TEXT",
                     "max_tokens": 32768,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": false
                 },
                 {
                     "llm_name": "InternVL2.5-26B",
                     "tags": "LLM,IMAGE2TEXT",
                     "max_tokens": 16384,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": false
                 },
                 {
                     "llm_name": "InternVL2-8B",
                     "tags": "LLM,IMAGE2TEXT",
                     "max_tokens": 8192,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": false
                 },
                 {
@@ -5002,9 +5316,12 @@
                 },
                 {
                     "llm_name": "gemini-2.0-flash",
-                    "tags": "LLM,CHAT",
+                    "tags": "LLM",
                     "max_tokens": 1000000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
@@ -5100,16 +5417,22 @@
                 },
                 {
                     "llm_name": "claude-opus-4-20250514",
-                    "tags": "LLM,CHAT",
+                    "tags": "LLM",
                     "max_tokens": 200000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "gemini-2.5-pro",
-                    "tags": "LLM,CHAT",
+                    "tags": "LLM",
                     "max_tokens": 1000000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
@@ -5213,30 +5536,42 @@
                 },
                 {
                     "llm_name": "claude-opus-4-1-20250805",
-                    "tags": "LLM,CHAT,200k,IMAGE2TEXT",
+                    "tags": "LLM,200k,IMAGE2TEXT",
                     "max_tokens": 200000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "claude-opus-4-1-20250805-thinking",
-                    "tags": "LLM,CHAT,200k,IMAGE2TEXT",
+                    "tags": "LLM,200k,IMAGE2TEXT",
                     "max_tokens": 200000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "claude-sonnet-4-20250514",
-                    "tags": "LLM,CHAT,200k,IMAGE2TEXT",
+                    "tags": "LLM,200k,IMAGE2TEXT",
                     "max_tokens": 200000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "claude-sonnet-4-20250514-thinking",
-                    "tags": "LLM,CHAT,200k,IMAGE2TEXT",
+                    "tags": "LLM,200k,IMAGE2TEXT",
                     "max_tokens": 200000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
@@ -5255,30 +5590,42 @@
                 },
                 {
                     "llm_name": "gemini-2.5-pro",
-                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "tags": "LLM,1M,IMAGE2TEXT",
                     "max_tokens": 1000000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "gemini-2.5-flash",
-                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "tags": "LLM,1M,IMAGE2TEXT",
                     "max_tokens": 1000000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "gemini-2.5-flash-lite",
-                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "tags": "LLM,1M,IMAGE2TEXT",
                     "max_tokens": 1000000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "gemini-2.0-flash",
-                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "tags": "LLM,1M,IMAGE2TEXT",
                     "max_tokens": 1000000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
@@ -5304,9 +5651,12 @@
                 },
                 {
                     "llm_name": "grok-2-image-1212",
-                    "tags": "LLM,CHAT,32k,IMAGE2TEXT",
+                    "tags": "LLM,32k,IMAGE2TEXT",
                     "max_tokens": 32768,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
@@ -5503,30 +5853,42 @@
                 },
                 {
                     "llm_name": "claude-opus-4-1-20250805",
-                    "tags": "LLM,CHAT,200k,IMAGE2TEXT",
+                    "tags": "LLM,200k,IMAGE2TEXT",
                     "max_tokens": 200000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "claude-opus-4-1-20250805-thinking",
-                    "tags": "LLM,CHAT,200k,IMAGE2TEXT",
+                    "tags": "LLM,200k,IMAGE2TEXT",
                     "max_tokens": 200000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "claude-sonnet-4-20250514",
-                    "tags": "LLM,CHAT,200k,IMAGE2TEXT",
+                    "tags": "LLM,200k,IMAGE2TEXT",
                     "max_tokens": 200000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "claude-sonnet-4-20250514-thinking",
-                    "tags": "LLM,CHAT,200k,IMAGE2TEXT",
+                    "tags": "LLM,200k,IMAGE2TEXT",
                     "max_tokens": 200000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
@@ -5545,30 +5907,42 @@
                 },
                 {
                     "llm_name": "gemini-2.5-pro",
-                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "tags": "LLM,1M,IMAGE2TEXT",
                     "max_tokens": 1000000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "gemini-2.5-flash",
-                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "tags": "LLM,1M,IMAGE2TEXT",
                     "max_tokens": 1000000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "gemini-2.5-flash-lite",
-                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "tags": "LLM,1M,IMAGE2TEXT",
                     "max_tokens": 1000000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "gemini-2.0-flash",
-                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "tags": "LLM,1M,IMAGE2TEXT",
                     "max_tokens": 1000000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
@@ -5594,9 +5968,12 @@
                 },
                 {
                     "llm_name": "grok-2-image-1212",
-                    "tags": "LLM,CHAT,32k,IMAGE2TEXT",
+                    "tags": "LLM,32k,IMAGE2TEXT",
                     "max_tokens": 32768,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
@@ -5749,9 +6126,12 @@
                 },
                 {
                     "llm_name": "claude-haiku-4-5-20251001",
-                    "tags": "LLM,CHAT,20K,IMAGE2TEXT",
+                    "tags": "LLM,20K,IMAGE2TEXT",
                     "max_tokens": 20000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
@@ -5777,9 +6157,12 @@
                 },
                 {
                     "llm_name": "claude-sonnet-4-5-20250929",
-                    "tags": "LLM,CHAT,200K,IMAGE2TEXT",
+                    "tags": "LLM,200K,IMAGE2TEXT",
                     "max_tokens": 200000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
@@ -5854,9 +6237,12 @@
                 },
                 {
                     "llm_name": "gemini-2.5-flash-lite-preview-09-2025",
-                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "tags": "LLM,1M,IMAGE2TEXT",
                     "max_tokens": 1048576,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
@@ -5945,9 +6331,12 @@
                 },
                 {
                     "llm_name": "gpt-5-codex",
-                    "tags": "LLM,CHAT,400K,IMAGE2TEXT",
+                    "tags": "LLM,400K,IMAGE2TEXT",
                     "max_tokens": 400000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
@@ -5966,9 +6355,12 @@
                 },
                 {
                     "llm_name": "gpt-5-pro",
-                    "tags": "LLM,CHAT,400K,IMAGE2TEXT",
+                    "tags": "LLM,400K,IMAGE2TEXT",
                     "max_tokens": 400000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
@@ -6015,16 +6407,22 @@
                 },
                 {
                     "llm_name": "grok-4-fast-non-reasoning",
-                    "tags": "LLM,CHAT,2M,IMAGE2TEXT",
+                    "tags": "LLM,2M,IMAGE2TEXT",
                     "max_tokens": 2000000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
                     "llm_name": "grok-4-fast-reasoning",
-                    "tags": "LLM,CHAT,2M,IMAGE2TEXT",
+                    "tags": "LLM,2M,IMAGE2TEXT",
                     "max_tokens": 2000000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
@@ -6330,6 +6728,7 @@
             "logo": "",
             "tags": "OCR",
             "status": "1",
+            "url": "https://paddleocr.aistudio-app.com",
             "llm": []
         },
         {
@@ -6597,9 +6996,12 @@
                 },
                 {
                     "llm_name": "gpt-4o",
-                    "tags": "IMAGE2TEXT,CHAT,128k",
+                    "tags": "IMAGE2TEXT,128k",
                     "max_tokens": 128000,
-                    "model_type": "image2text",
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
                     "is_tools": true
                 },
                 {
