@@ -100,7 +100,7 @@ func TestEnrichWithDeepDoc_ImageOnlyPage(t *testing.T) {
 	dummyImg := image.NewRGBA(image.Rect(0, 0, 900, 600))
 	pageImages := map[int]image.Image{0: dummyImg}
 
-	tables := p.enrichWithDeepDoc(context.Background(), nil, boxes, pageImages)
+	tables := p.enrichWithDeepDoc(context.Background(), nil, nil, boxes, pageImages)
 	if len(tables) == 0 {
 		t.Fatal("enrichWithDeepDoc: expected at least 1 table from DLA on page with image but no boxes, got 0")
 	}
@@ -310,43 +310,3 @@ func TestNilChars_Handled(t *testing.T) {
 	}
 }
 
-// mockEngine is a minimal pdf.PDFEngine stub for unit tests.
-type mockEngine struct {
-	chars     map[int][]pdf.TextChar
-	pageCount int
-	renderW   int
-	renderH   int
-}
-
-func (m *mockEngine) ExtractChars(pg int) ([]pdf.TextChar, error) {
-	return m.chars[pg], nil
-}
-func (m *mockEngine) RenderPage(pg int, dpi float64) ([]byte, error) {
-	w, h := m.renderW, m.renderH
-	if w <= 0 {
-		w = 595
-	}
-	if h <= 0 {
-		h = 842
-	}
-	return nil, nil
-}
-func (m *mockEngine) RenderPageImage(pg int, dpi float64) (image.Image, error) {
-	w, h := m.renderW, m.renderH
-	if w <= 0 {
-		w = 100
-	}
-	if h <= 0 {
-		h = 100
-	}
-	return image.NewRGBA(image.Rect(0, 0, w, h)), nil
-}
-func (m *mockEngine) PageCount() (int, error) {
-	if m.pageCount <= 0 {
-		return 1, nil
-	}
-	return m.pageCount, nil
-}
-func (m *mockEngine) RawData() []byte                  { return nil }
-func (m *mockEngine) Close() error                     { return nil }
-func (m *mockEngine) Outlines() ([]pdf.Outline, error) { return nil, nil }

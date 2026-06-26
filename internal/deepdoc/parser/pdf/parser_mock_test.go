@@ -56,7 +56,7 @@ func TestEnrichWithDeepDoc_Noop(t *testing.T) {
 	eng := &mockEngine{pageCount: 1}
 
 	p := NewParser(pdf.DefaultParserConfig(), &MockDocAnalyzer{Healthy: false})
-	tables := p.enrichWithDeepDoc(context.Background(), eng, boxes, nil)
+	tables := p.enrichWithDeepDoc(context.Background(), nil, eng, boxes, nil)
 	if len(tables) != 0 {
 		t.Error("unhealthy DeepDoc → 0 Tables")
 	}
@@ -86,7 +86,7 @@ func TestExtractTableBoxes_Mock(t *testing.T) {
 	p := NewParser(pdf.DefaultParserConfig(), mock)
 	dummyImg := image.NewRGBA(image.Rect(0, 0, 2000, 3000))
 
-	tables := p.extractTableBoxesFromImage(context.Background(), boxes, dummyImg, 0, 0)
+	tables := p.extractTableBoxesFromImage(context.Background(), nil, boxes, dummyImg, 0, 0)
 	if len(tables) != 1 {
 		t.Fatalf("expected 1 pdf.TableItem, got %d", len(tables))
 	}
@@ -107,7 +107,7 @@ func TestExtractTableBoxes_NoTables(t *testing.T) {
 	mock := &MockDocAnalyzer{Healthy: true, DLARegions: []pdf.DLARegion{}}
 	p := NewParser(pdf.DefaultParserConfig(), mock)
 	dummy := image.NewRGBA(image.Rect(0, 0, 1000, 1000))
-	tables := p.extractTableBoxesFromImage(context.Background(), nil, dummy, 0, 0)
+	tables := p.extractTableBoxesFromImage(context.Background(), nil, nil, dummy, 0, 0)
 	if len(tables) != 0 {
 		t.Errorf("0 tables expected, got %d", len(tables))
 	}
@@ -123,7 +123,7 @@ func TestExtractTableBoxes_NonTableRegions(t *testing.T) {
 	}
 	p := NewParser(pdf.DefaultParserConfig(), mock)
 	dummy := image.NewRGBA(image.Rect(0, 0, 2000, 2000))
-	tables := p.extractTableBoxesFromImage(context.Background(), nil, dummy, 0, 0)
+	tables := p.extractTableBoxesFromImage(context.Background(), nil, nil, dummy, 0, 0)
 	if len(tables) != 0 {
 		t.Errorf("non-table regions → 0 tables, got %d", len(tables))
 	}
@@ -141,7 +141,7 @@ func TestExtractTableBoxes_NoOverlap(t *testing.T) {
 	}
 	p := NewParser(pdf.DefaultParserConfig(), mock)
 	dummy := image.NewRGBA(image.Rect(0, 0, 2000, 3000))
-	tables := p.extractTableBoxesFromImage(context.Background(), boxes, dummy, 0, 0)
+	tables := p.extractTableBoxesFromImage(context.Background(), nil, boxes, dummy, 0, 0)
 	if len(tables) != 0 {
 		t.Errorf("no overlap → 0 tables, got %d", len(tables))
 	}
@@ -160,7 +160,7 @@ func TestExtractTableBoxes_TSRError(t *testing.T) {
 	}
 	p := NewParser(pdf.DefaultParserConfig(), mock)
 	dummy := image.NewRGBA(image.Rect(0, 0, 2000, 3000))
-	tables := p.extractTableBoxesFromImage(context.Background(), boxes, dummy, 0, 0)
+	tables := p.extractTableBoxesFromImage(context.Background(), nil, boxes, dummy, 0, 0)
 	if len(tables) != 1 {
 		t.Fatalf("TSR failure: expected 1 pdf.TableItem with image+positions, got %d", len(tables))
 	}
@@ -182,7 +182,7 @@ func TestExtractTableBoxes_DLAError(t *testing.T) {
 	}}
 	p := NewParser(pdf.DefaultParserConfig(), mock)
 	dummy := image.NewRGBA(image.Rect(0, 0, 1000, 1000))
-	tables := p.extractTableBoxesFromImage(context.Background(), nil, dummy, 0, 0)
+	tables := p.extractTableBoxesFromImage(context.Background(), nil, nil, dummy, 0, 0)
 	if len(tables) != 0 {
 		t.Errorf("non-table DLA → 0 tables, got %d", len(tables))
 	}
@@ -226,14 +226,6 @@ func TestParse_TableLinkedToSections(t *testing.T) {
 	}
 }
 
-func cellTexts(cells []pdf.TSRCell) []string {
-	t := make([]string, len(cells))
-	for i, c := range cells {
-		t[i] = c.Text
-	}
-	return t
-}
-
 // ── cropImageRegion ────────────────────────────────────────────────────
 // ── extractTableBoxesFromImage: invalid DLA region ─────────────────────
 
@@ -248,7 +240,7 @@ func TestExtractTableBoxes_InvalidRegion(t *testing.T) {
 	}
 	p := NewParser(pdf.DefaultParserConfig(), mock)
 	dummy := image.NewRGBA(image.Rect(0, 0, 1000, 1000))
-	tables := p.extractTableBoxesFromImage(context.Background(), nil, dummy, 0, 0)
+	tables := p.extractTableBoxesFromImage(context.Background(), nil, nil, dummy, 0, 0)
 	if len(tables) != 0 {
 		t.Errorf("invalid DLA region should be skipped, got %d tables", len(tables))
 	}
@@ -411,7 +403,7 @@ func TestMockDocAnalyzer_DLAError_DoesNotCrash(t *testing.T) {
 		{PageNumber: 0, X0: 0, X1: 100, Top: 0, Bottom: 50, Text: "text"},
 	}
 	// enrichWithDeepDoc should return nil (not panic) on DLA error.
-	tables := p.enrichWithDeepDoc(context.Background(), eng, boxes, pageImages)
+	tables := p.enrichWithDeepDoc(context.Background(), nil, eng, boxes, pageImages)
 	if len(tables) != 0 {
 		t.Errorf("DLA error should produce 0 tables, got %d", len(tables))
 	}
@@ -433,7 +425,7 @@ func TestMockDocAnalyzer_TSRError_DoesNotCrash(t *testing.T) {
 	boxes := []pdf.TextBox{
 		{PageNumber: 0, X0: 10, X1: 90, Top: 10, Bottom: 90, Text: "in table region"},
 	}
-	tables := p.enrichWithDeepDoc(context.Background(), eng, boxes, pageImages)
+	tables := p.enrichWithDeepDoc(context.Background(), nil, eng, boxes, pageImages)
 	// DLA detects the table region → 1 pdf.TableItem is created.  TSR failure
 	// means it has no cells, but the pipeline must not panic.
 	if len(tables) != 1 {
@@ -460,7 +452,7 @@ func TestMockDocAnalyzer_OCRDetectError_DoesNotCrash(t *testing.T) {
 	// Parse should succeed — the page with OCRDetect error is just skipped.
 }
 
-// TestTSRLabels verifies Go inf.DefaultTSRLabels matches Python's table_structure_recognizer.py labels.
+// TestTSRLabels verifies Go inf.DefaultTSRLabels() matches Python's table_structure_recognizer.py labels.
 // Order must be exact — the ONNX model returns class IDs that index into this array.
 func TestTSRLabels(t *testing.T) {
 	want := []string{
@@ -468,12 +460,12 @@ func TestTSRLabels(t *testing.T) {
 		"table column header", "table projected row header",
 		"table spanning cell",
 	}
-	if len(inf.DefaultTSRLabels) != len(want) {
-		t.Fatalf("inf.DefaultTSRLabels length %d, want %d", len(inf.DefaultTSRLabels), len(want))
+	if len(inf.DefaultTSRLabels()) != len(want) {
+		t.Fatalf("inf.DefaultTSRLabels() length %d, want %d", len(inf.DefaultTSRLabels()), len(want))
 	}
 	for i := range want {
-		if inf.DefaultTSRLabels[i] != want[i] {
-			t.Errorf("inf.DefaultTSRLabels[%d] = %q, want %q", i, inf.DefaultTSRLabels[i], want[i])
+		if inf.DefaultTSRLabels()[i] != want[i] {
+			t.Errorf("inf.DefaultTSRLabels()[%d] = %q, want %q", i, inf.DefaultTSRLabels()[i], want[i])
 		}
 	}
 }

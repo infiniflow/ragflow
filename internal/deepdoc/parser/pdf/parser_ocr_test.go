@@ -2,17 +2,11 @@ package parser
 
 import (
 	"context"
-	"image"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	util "ragflow/internal/deepdoc/parser/pdf/util"
 	"testing"
 )
 
-// testPageImg creates a small test image for ocrMergeChars tests.
-// 90×120 px at 216 DPI → 30×40 pt in PDF space after /3.0 scaling.
-func testPageImg() image.Image {
-	return image.NewRGBA(image.Rect(0, 0, 90, 120))
-}
 
 // TestOCRMergeChars_FullCoverage: embedded chars fill the detect box.
 func TestOCRMergeChars_FullCoverage(t *testing.T) {

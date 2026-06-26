@@ -14,7 +14,7 @@ import (
 
 // enrichWithDeepDoc runs DLA+TSR via p.DeepDoc and returns detected tables.
 // pageImages optionally provides pre-rendered page images to avoid re-rendering.
-func (p *Parser) enrichWithDeepDoc(ctx context.Context, engine pdf.PDFEngine, boxes []pdf.TextBox, pageImages map[int]image.Image) []pdf.TableItem {
+func (p *Parser) enrichWithDeepDoc(ctx context.Context, result *pdf.ParseResult, engine pdf.PDFEngine, boxes []pdf.TextBox, pageImages map[int]image.Image) []pdf.TableItem {
 	if !p.DeepDoc.Health() {
 		return nil
 	}
@@ -50,7 +50,7 @@ func (p *Parser) enrichWithDeepDoc(ctx context.Context, engine pdf.PDFEngine, bo
 		for i, idx := range indices {
 			pageBoxes[i] = boxes[idx]
 		}
-		tables := p.extractTableBoxes(ctx, pageBoxes, engine, pg, pageImages, len(tableItems))
+		tables := p.extractTableBoxes(ctx, result, pageBoxes, engine, pg, pageImages, len(tableItems))
 		tableItems = append(tableItems, tables...)
 		// Write back DLA and TSR annotations (R/C/H/SP) to the original boxes.
 		for i, idx := range indices {
@@ -65,7 +65,7 @@ func (p *Parser) enrichWithDeepDoc(ctx context.Context, engine pdf.PDFEngine, bo
 	return tableItems
 }
 
-func (p *Parser) extractTableBoxes(ctx context.Context, boxes []pdf.TextBox, engine pdf.PDFEngine, pageNum int, pageImages map[int]image.Image, tableBaseIdx int) []pdf.TableItem {
+func (p *Parser) extractTableBoxes(ctx context.Context, result *pdf.ParseResult, boxes []pdf.TextBox, engine pdf.PDFEngine, pageNum int, pageImages map[int]image.Image, tableBaseIdx int) []pdf.TableItem {
 	pageImg, ok := pageImages[pageNum]
 	if !ok {
 		var err error
@@ -75,17 +75,19 @@ func (p *Parser) extractTableBoxes(ctx context.Context, boxes []pdf.TextBox, eng
 			return nil
 		}
 	}
-	return p.extractTableBoxesFromImage(ctx, boxes, pageImg, pageNum, tableBaseIdx)
+	return p.extractTableBoxesFromImage(ctx, result, boxes, pageImg, pageNum, tableBaseIdx)
 }
 
-func (p *Parser) extractTableBoxesFromImage(ctx context.Context, boxes []pdf.TextBox, pageImg image.Image, pageNum int, tableBaseIdx int) []pdf.TableItem {
+func (p *Parser) extractTableBoxesFromImage(ctx context.Context, result *pdf.ParseResult, boxes []pdf.TextBox, pageImg image.Image, pageNum int, tableBaseIdx int) []pdf.TableItem {
 	regions, err := p.DeepDoc.DLA(ctx, pageImg)
 	if err != nil {
 		slog.Warn("DLA failed", "page", pageNum, "err", err)
 		return nil
 	}
 	// Collect DLA debug intermediates.
-	p.debugDLA = append(p.debugDLA, pdf.DLAPageRegions{Page: pageNum, Regions: regions})
+	if result != nil {
+		result.DLADebug = append(result.DLADebug, pdf.DLAPageRegions{Page: pageNum, Regions: regions})
+	}
 	// Annotate boxes with DLA layout types (title, text, figure, table, ...).
 	scale := pdf.DlaScale
 	boxes = tbl.AnnotateBoxLayouts(boxes, regions, scale, float64(pageImg.Bounds().Dy()))
@@ -128,11 +130,13 @@ func (p *Parser) extractTableBoxesFromImage(ctx context.Context, boxes []pdf.Tex
 		// Collect TSR raw cells for debug comparison.
 		if tsrErr == nil {
 			for _, c := range cells {
-				p.debugTSR = append(p.debugTSR, pdf.TSRRawCell{
+				if result != nil {
+				result.TSRDebug = append(result.TSRDebug, pdf.TSRRawCell{
 					TableIndex: tableBaseIdx + len(items), Page: pageNum,
 					Label: c.Label, X0: c.X0, Y0: c.Y0, X1: c.X1, Y1: c.Y1,
 					Text: c.Text,
 				})
+				}
 			}
 		}
 		// Python margin: w*0.03, h*0.03 (_table_transformer_job:374-376).

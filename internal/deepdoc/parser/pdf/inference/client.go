@@ -48,18 +48,21 @@ func NewInferenceClient(baseURL string) (*InferenceClient, error) {
 
 // Default DLA/TSR label tables used as fallback when no model-specific
 // labels are injected by a TableBuilder constructor.
-var DefaultDLALabels = []string{
+func DefaultDLALabels() []string {
+	return []string{
 	pdf.LayoutTypeTitle, pdf.LayoutTypeText, pdf.LayoutTypeReference,
 	pdf.LayoutTypeFigure, pdf.DLALabelFigureCaption,
 	pdf.LayoutTypeTable, pdf.DLALabelTableCaption, pdf.DLALabelTableCaption,
 	pdf.LayoutTypeEquation, pdf.DLALabelFigureCaption,
+	}
 }
-var DefaultTSRLabels = []string{
+func DefaultTSRLabels() []string {
+	return []string{
 	"table", "table column", "table row",
 	"table column header", "table projected row header",
 	"table spanning cell",
+	}
 }
-
 type bboxesResponse struct {
 	BBoxes [][]float64 `json:"bboxes"`
 }
@@ -81,7 +84,7 @@ func (c *InferenceClient) DLA(ctx context.Context, pageImage image.Image) ([]pdf
 		}
 		labels := c.DLALabels
 		if labels == nil {
-			labels = DefaultDLALabels
+			labels = DefaultDLALabels()
 		}
 		label := ""
 		if clsID := int(b[5]); clsID >= 0 && clsID < len(labels) {
@@ -113,7 +116,7 @@ func (c *InferenceClient) TSR(ctx context.Context, cropped image.Image) ([]pdf.T
 		}
 		tlabels := c.TSRLabels
 		if tlabels == nil {
-			tlabels = DefaultTSRLabels
+			tlabels = DefaultTSRLabels()
 		}
 		label := ""
 		if len(b) >= 6 {

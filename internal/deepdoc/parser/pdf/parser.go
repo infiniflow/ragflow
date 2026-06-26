@@ -35,10 +35,6 @@ type Parser struct {
 	// different implementation via Config.TableBuilder.
 	tableBuilder pdf.TableBuilder
 
-	// debugDLA and debugTSR collect intermediates for comparison with Python.
-	// Set before Parse(), read from pdf.ParseResult after, cleared by Parse().
-	debugDLA []pdf.DLAPageRegions
-	debugTSR []pdf.TSRRawCell
 }
 
 // NewParser creates a new Parser with the required DeepDoc service.
@@ -76,8 +72,8 @@ func NewTableBuilderFor(doc pdf.DocAnalyzer) pdf.TableBuilder {
 		return tableBuilderFactory(doc)
 	}
 	if c, ok := doc.(*inf.InferenceClient); ok {
-		c.DLALabels = inf.DefaultDLALabels
-		c.TSRLabels = inf.DefaultTSRLabels
+		c.DLALabels = inf.DefaultDLALabels()
+		c.TSRLabels = inf.DefaultTSRLabels()
 	}
 	return tbl.NewDeepDocTableBuilder(doc)
 }
@@ -419,7 +415,7 @@ func (p *Parser) buildLayout(ctx context.Context,
 ) error {
 	result.Metrics.BoxesInitial = len(boxes)
 
-	result.Tables = p.enrichWithDeepDoc(ctx, engine, boxes, result.PageImages)
+	result.Tables = p.enrichWithDeepDoc(ctx, result, engine, boxes, result.PageImages)
 	result.Metrics.TablesCount = len(result.Tables)
 	if err := ctx.Err(); err != nil {
 		return err
@@ -495,7 +491,6 @@ func (p *Parser) processPages(ctx context.Context, engine pdf.PDFEngine,
 	// 5. Crop section images from page renders.
 	p.fillSectionImages(result)
 
-	p.debugTSR = nil
 	return result, nil
 }
 
@@ -538,7 +533,7 @@ func (p *Parser) fillSectionImages(result *pdf.ParseResult) {
 		// Try DLA-aware cropping for figure sections (matching Python's
 		// cropout which uses DLA region boundaries instead of text boxes).
 		if result.Sections[i].LayoutType == pdf.LayoutTypeFigure && len(result.Sections[i].Positions) > 0 {
-			if dlaImg := util.CropSectionByDLA(result.Sections[i], p.debugDLA, result.PageImages); dlaImg != "" {
+			if dlaImg := util.CropSectionByDLA(result.Sections[i], result.DLADebug, result.PageImages); dlaImg != "" {
 				result.Sections[i].Image = dlaImg
 				continue
 			}

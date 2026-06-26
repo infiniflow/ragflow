@@ -6,8 +6,6 @@ import (
 	"regexp"
 	"sort"
 
-	pdfparser "ragflow/internal/deepdoc/parser/pdf"
-	inference "ragflow/internal/deepdoc/parser/pdf/inference"
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdft "ragflow/internal/deepdoc/parser/pdf/type"
 )
@@ -16,18 +14,6 @@ import (
 //
 // Files in this package mirror the OSS structure at internal/deepdoc/parser/pdf/
 // and register EE-specific implementations via init().
-
-// EE model label taxonomies.
-// DLA: 10 classes with duplicates (matching EE Docker TSR endpoint).
-var eeDLALabels = []string{
-	pdft.LayoutTypeText, pdft.LayoutTypeTitle, pdft.LayoutTypeText, pdft.LayoutTypeReference,
-	pdft.LayoutTypeFigure, pdft.DLALabelFigureCaption,
-	pdft.LayoutTypeTable, pdft.DLALabelTableCaption, pdft.DLALabelTableCaption,
-	pdft.LayoutTypeEquation, pdft.DLALabelFigureCaption,
-}
-
-// TSR: 2-class separator lines (v=vertical, h=horizontal).
-var eeTSRLabels = []string{"v", "h"}
 
 // DeepDoc label regexes — compiled once at package init.
 // These match the TSR label taxonomy returned by the DeepDoc
@@ -56,16 +42,6 @@ func gatherTSR(cells []pdft.TSRCell, re *regexp.Regexp) []pdft.TSRCell {
 // with 2-class label taxonomy and label-aware cell grouping.
 type DeepDocTableBuilder struct {
 	doc pdft.DocAnalyzer
-}
-
-// NewDeepDocTableBuilder creates an EE TableBuilder backed by the DeepDoc service.
-// If doc is a *DeepDocClient, its label tables are set to the EE taxonomy.
-func NewDeepDocTableBuilder(doc pdft.DocAnalyzer) pdft.TableBuilder {
-	if c, ok := doc.(*inference.InferenceClient); ok {
-		c.DLALabels = eeDLALabels
-		c.TSRLabels = eeTSRLabels
-	}
-	return &DeepDocTableBuilder{doc: doc}
 }
 
 func (b *DeepDocTableBuilder) Name() string { return "deepdoc" }
@@ -159,9 +135,4 @@ func groupTSRCellsToRowsLabeled(cells []pdft.TSRCell) [][]pdft.TSRCell {
 	}
 
 	return grouped
-}
-
-// init registers the EE TableBuilder factory for ModelEE.
-func init() {
-	pdfparser.RegisterTableBuilder(NewDeepDocTableBuilder)
 }
