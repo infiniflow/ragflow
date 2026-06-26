@@ -73,7 +73,9 @@ func (e *elasticsearchEngine) CreateChunkStore(ctx context.Context, baseName, da
 
 	// Load mapping based on index type
 	var mapping map[string]interface{}
-	if datasetID == "skill" {
+	if strings.HasPrefix(baseName, "memory_") {
+		mapping = getMemoryMessageMapping(vectorSize)
+	} else if datasetID == "skill" {
 		// Load skill-specific mapping
 		skillMapping, err := loadSkillMapping()
 		if err != nil {
@@ -2285,6 +2287,83 @@ func loadSkillMapping() (map[string]interface{}, error) {
 	}
 
 	return mapping, nil
+}
+
+func getMemoryMessageMapping(vectorSize int) map[string]interface{} {
+	vectorField := fmt.Sprintf("q_%d_vec", vectorSize)
+	return map[string]interface{}{
+		"settings": map[string]interface{}{
+			"number_of_shards":   1,
+			"number_of_replicas": 0,
+		},
+		"mappings": map[string]interface{}{
+			"properties": map[string]interface{}{
+				"id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"doc_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"kb_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"memory_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"user_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"agent_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"session_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"message_id": map[string]interface{}{
+					"type": "long",
+				},
+				"source_id": map[string]interface{}{
+					"type": "long",
+				},
+				"message_type_kwd": map[string]interface{}{
+					"type": "keyword",
+				},
+				"status_int": map[string]interface{}{
+					"type": "integer",
+				},
+				"content": map[string]interface{}{
+					"type":  "text",
+					"index": false,
+				},
+				"content_ltks": map[string]interface{}{
+					"type":     "text",
+					"analyzer": "whitespace",
+				},
+				"tokenized_content_ltks": map[string]interface{}{
+					"type":     "text",
+					"analyzer": "whitespace",
+				},
+				"valid_at": map[string]interface{}{
+					"type":   "date",
+					"format": "yyyy-MM-dd HH:mm:ss||strict_date_optional_time||epoch_millis",
+				},
+				"invalid_at": map[string]interface{}{
+					"type":   "date",
+					"format": "yyyy-MM-dd HH:mm:ss||strict_date_optional_time||epoch_millis",
+				},
+				"forget_at": map[string]interface{}{
+					"type":   "date",
+					"format": "yyyy-MM-dd HH:mm:ss||strict_date_optional_time||epoch_millis",
+				},
+				vectorField: map[string]interface{}{
+					"type":       "dense_vector",
+					"dims":       vectorSize,
+					"index":      true,
+					"similarity": "cosine",
+				},
+			},
+		},
+	}
 }
 
 // getDefaultSkillMapping returns the default skill index mapping

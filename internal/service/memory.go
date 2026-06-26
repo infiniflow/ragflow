@@ -816,7 +816,53 @@ func (s *MemoryService) ForgetMessage(ctx context.Context, userID string, memory
 	return nil
 }
 
-func (s *MemoryService) UpdateMessage(ctx context.Context, userID, memoryID string, messageID int64, status bool) (bool, error) {
+// AddMessage filters inaccessible memories and queues the raw message for
+// memory extraction. The currentUserID is used only for access control; msg.UserID
+// is the attribution stored on the message and may differ for API-token callers.
+func (s *MemoryService) AddMessage(ctx context.Context, currentUserID string, memoryIDs []string, msg MemoryMessage) (bool, string, error) {
+	memories, err := s.filterAccessibleMemories(ctx, currentUserID, memoryIDs)
+	if err != nil {
+		return false, err.Error(), err
+	}
+	if len(memories) == 0 {
+		return false, "Memory not found.", nil
+	}
+
+	accessibleMemoryIDs := make([]string, 0, len(memories))
+	for _, memory := range memories {
+		if memory != nil {
+			accessibleMemoryIDs = append(accessibleMemoryIDs, memory.ID)
+		}
+	}
+
+	res, err := NewMemoryMessageService(s).QueueSaveToMemoryTask(ctx, accessibleMemoryIDs, msg)
+	if err != nil {
+		return false, err.Error(), err
+	}
+
+	errorMsg := memorySaveErrorMessage(res)
+	if errorMsg != "" {
+		return false, errorMsg, nil
+	}
+	return true, "All add to task.", nil
+}
+
+func memorySaveErrorMessage(res *QueueSaveResult) string {
+	if res == nil {
+		return ""
+	}
+
+	var b strings.Builder
+	if len(res.NotFound) > 0 {
+		b.WriteString(fmt.Sprintf("Memory %v not found.", res.NotFound))
+	}
+	for _, failed := range res.Failed {
+		b.WriteString(fmt.Sprintf("Memory %s failed. Detail: %s", failed.MemoryID, failed.FailMsg))
+	}
+	return b.String()
+}
+
+func (s *MemoryService) UpdateMessageStatus(ctx context.Context, userID, memoryID string, messageID int64, status bool) (bool, error) {
 	memory, err := s.requireMemoryAccess(ctx, userID, memoryID)
 	if err != nil {
 		return false, err
@@ -846,6 +892,10 @@ func (s *MemoryService) UpdateMessage(ctx context.Context, userID, memoryID stri
 	}
 
 	return true, nil
+}
+
+func (s *MemoryService) UpdateMessage(ctx context.Context, userID, memoryID string, messageID int64, status bool) (bool, error) {
+	return s.UpdateMessageStatus(ctx, userID, memoryID, messageID, status)
 }
 
 func (s *MemoryService) GetMessageContent(ctx context.Context, userID, memoryID string, messageID int64) (map[string]interface{}, error) {
@@ -1649,15 +1699,6 @@ func (s *MemoryService) memoryMessageTasks(memoryID string) (map[string]map[stri
 func memoryMessageKey(value interface{}) string {
 	return strings.TrimSpace(fmt.Sprint(value))
 }
-
-// TODO: queryMessages - Implementation pending - depends on CanvasService and TaskService
-// func (s *MemoryService) queryMessages(tenantID string, memoryID string, filterDict map[string]interface{}, page int, pageSize int) ([]map[string]interface{}, int64, error) { ... }
-
-// TODO: AddMessage - Implementation pending - depends on embedding engine
-// func (s *MemoryService) AddMessage(memoryIDs []string, messageDict map[string]interface{}) (bool, string, error) { ... }
-
-// TODO: UpdateMessageStatus - Implementation pending - depends on embedding engine
-// func (s *MemoryService) UpdateMessageStatus(memoryID string, messageID int, status bool) (bool, error) { ... }
 
 // isList checks if a value is a list or array type
 // This is a utility function for type validation
