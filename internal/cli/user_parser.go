@@ -701,16 +701,20 @@ func (p *Parser) parseListAllModels() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseCreateCommand() (*Command, error) {
+func (p *Parser) parseAPICreateCommands() (*Command, error) {
 	p.nextToken() // consume CREATE
 
 	switch p.curToken.Type {
-	case TokenModel:
-		return p.parseCreateModelProvider()
 	case TokenDataset:
-		return p.parseCreateDataset()
+		return p.parseAPICreateDataset()
 	case TokenChat:
-		return p.parseCreateChat()
+		return p.parseAPICreateChat()
+	case TokenSearch:
+		return p.parseAPICreateSearch()
+	case TokenAgent:
+		return p.parseAPICreateAgent()
+	case TokenMemory:
+		return p.parseAPICreateMemory()
 	case TokenKey:
 		return p.parseAPICreateKey()
 	case TokenChunkStore:
@@ -718,7 +722,7 @@ func (p *Parser) parseCreateCommand() (*Command, error) {
 	case TokenMetadata:
 		return p.parseCreateMetadataStore()
 	case TokenProvider:
-		return p.parseCreateProviderInstance()
+		return p.parseAPICreateProviderInstance()
 	default:
 		return nil, fmt.Errorf("unknown CREATE target: %s", p.curToken.Value)
 	}
@@ -841,36 +845,6 @@ func (p *Parser) parseCreateRole() (*Command, error) {
 		p.nextToken()
 	}
 
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseCreateModelProvider() (*Command, error) {
-	p.nextToken() // consume MODEL
-	if p.curToken.Type != TokenProvider {
-		return nil, fmt.Errorf("expected PROVIDER")
-	}
-	p.nextToken()
-
-	providerName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	p.nextToken()
-	providerKey, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("create_model_provider")
-	cmd.Params["provider_name"] = providerName
-	cmd.Params["provider_key"] = providerKey
-
-	p.nextToken()
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
@@ -1273,7 +1247,9 @@ func (p *Parser) parseAPISaveConfig() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseCreateDataset() (*Command, error) {
+// CREATE DATASET 'abc' WITH EMBEDDING 'modelName@instanceName@providerName' PARSER 'parserType'
+// CREATE DATASET 'abc' WITH EMBEDDING 'modelName@instanceName@providerName' PIPELINE 'pipelineName'
+func (p *Parser) parseAPICreateDataset() (*Command, error) {
 	p.nextToken() // consume DATASET
 	datasetName, err := p.parseQuotedString()
 	if err != nil {
@@ -1296,13 +1272,14 @@ func (p *Parser) parseCreateDataset() (*Command, error) {
 	}
 
 	p.nextToken()
-	cmd := NewCommand("create_user_dataset")
+	cmd := NewCommand("api_create_dataset")
 	cmd.Params["dataset_name"] = datasetName
 	cmd.Params["embedding"] = embedding
 
 	if p.curToken.Type == TokenParser {
 		p.nextToken()
-		parserType, err := p.parseQuotedString()
+		var parserType string
+		parserType, err = p.parseQuotedString()
 		if err != nil {
 			return nil, err
 		}
@@ -1310,7 +1287,8 @@ func (p *Parser) parseCreateDataset() (*Command, error) {
 		p.nextToken()
 	} else if p.curToken.Type == TokenPipeline {
 		p.nextToken()
-		pipeline, err := p.parseQuotedString()
+		var pipeline string
+		pipeline, err = p.parseQuotedString()
 		if err != nil {
 			return nil, err
 		}
@@ -1327,32 +1305,89 @@ func (p *Parser) parseCreateDataset() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseCreateChat() (*Command, error) {
+// CREAT CHAT 'chat_name'
+func (p *Parser) parseAPICreateChat() (*Command, error) {
 	p.nextToken() // consume CHAT
 	chatName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
+	p.nextToken()
 
-	cmd := NewCommand("create_user_chat")
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("api_create_chat")
 	cmd.Params["chat_name"] = chatName
 
+	return cmd, nil
+}
+
+// CREAT AGENT 'agent_name'
+func (p *Parser) parseAPICreateAgent() (*Command, error) {
+	p.nextToken() // consume AGENT
+
+	agentName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("api_create_agent")
+	cmd.Params["agent_name"] = agentName
+	return cmd, nil
+}
+
+// CREAT SEARCH 'search_name'
+func (p *Parser) parseAPICreateSearch() (*Command, error) {
+	p.nextToken() // consume SEARCH
+	searchName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("api_create_search")
+	cmd.Params["search_name"] = searchName
+
+	return cmd, nil
+}
+
+// CREAT MEMORY 'memory_name'
+func (p *Parser) parseAPICreateMemory() (*Command, error) {
+	p.nextToken() // consume MEMORY
+	memoryName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
 	p.nextToken()
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
+
+	cmd := NewCommand("api_create_memory")
+	cmd.Params["memory_name"] = memoryName
+
 	return cmd, nil
 }
 
-func (p *Parser) parseDropCommand() (*Command, error) {
+func (p *Parser) parseAPIDropCommands() (*Command, error) {
 	p.nextToken() // consume DROP
 
 	switch p.curToken.Type {
-	case TokenUser:
-		return p.parseDropUser()
-	case TokenRole:
-		return p.parseDropRole()
 	case TokenDataset:
 		return p.parseDropDataset()
 	case TokenChat:
@@ -1474,42 +1509,6 @@ func (p *Parser) parseDropMetadataStore() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseDropUser() (*Command, error) {
-	p.nextToken() // consume USER
-	userName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("drop_user")
-	cmd.Params["user_name"] = userName
-
-	p.nextToken()
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseDropRole() (*Command, error) {
-	p.nextToken() // consume ROLE
-	roleName, err := p.parseIdentifier()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("drop_role")
-	cmd.Params["role_name"] = roleName
-
-	p.nextToken()
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
 // parseDeleteProvider parses DELETE PROVIDER <name> command
 func (p *Parser) parseDeleteProvider() (*Command, error) {
 	p.nextToken() // consume PROVIDER
@@ -1611,9 +1610,8 @@ func (p *Parser) parseAlterProvider() (*Command, error) {
 	return cmd, nil
 }
 
-// parseCreateProviderInstance parses CREATE PROVIDER <name> INSTANCE <instance_name> KEY <api_key> URL <base_url> REGION <region> command
-// instance_name cannot be "default"
-func (p *Parser) parseCreateProviderInstance() (*Command, error) {
+// CREATE PROVIDER <name> INSTANCE <instance_name> KEY <api_key> URL <base_url> REGION <region>
+func (p *Parser) parseAPICreateProviderInstance() (*Command, error) {
 	p.nextToken() // consume PROVIDER
 
 	providerName, err := p.parseQuotedString()
@@ -1668,7 +1666,7 @@ optionsLoop:
 		}
 	}
 
-	cmd := NewCommand("create_provider_instance")
+	cmd := NewCommand("api_create_provider_instance")
 	cmd.Params["provider_name"] = providerName
 	cmd.Params["instance_name"] = instanceName
 	cmd.Params["api_key"] = apiKey
@@ -3556,10 +3554,6 @@ func (p *Parser) parseUserStatement() (*Command, error) {
 		return p.parseDeleteCommand()
 	case TokenShow:
 		return p.parseAPIShowCommands()
-	case TokenCreate:
-		return p.parseCreateCommand()
-	case TokenDrop:
-		return p.parseDropCommand()
 	case TokenList:
 		return p.parseAPIListCommands()
 	case TokenParse:

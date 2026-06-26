@@ -321,6 +321,16 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return nil, nil
 	case "api_create_api_key":
 		return c.APICreateAPIKeyCommand(cmd)
+	case "api_create_dataset":
+		return c.APICreateDatasetCommand(cmd)
+	case "api_create_agent":
+		return c.APICreateAgentCommand(cmd)
+	case "api_create_chat":
+		return c.APICreateChatCommand(cmd)
+	case "api_create_search":
+		return c.APICreateSearchCommand(cmd)
+	case "api_create_memory":
+		return c.APICreateMemoryCommand(cmd)
 	case "api_list_api_keys":
 		return c.APIListAPIKeysCommand(cmd)
 	case "api_delete_api_key":
@@ -371,8 +381,8 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	case "delete_provider":
 		return c.DeleteProvider(cmd)
 	// Provider instance commands
-	case "create_provider_instance":
-		return c.CreateProviderInstance(cmd)
+	case "api_create_provider_instance":
+		return c.APICreateProviderInstanceCommand(cmd)
 	case "api_list_provider_instances":
 		return c.CommonListProviderInstances(cmd)
 	case "alter_provider_instance":
