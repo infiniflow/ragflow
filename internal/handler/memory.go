@@ -649,7 +649,11 @@ func (h *MemoryHandler) AddMessage(c *gin.Context) {
 	effectiveUserID := currentUserID
 	if v, ok := c.Get("auth_via_api_token"); ok {
 		if authViaAPIToken, ok := v.(bool); authViaAPIToken && ok {
-			effectiveUserID = reqBody.UserID
+			effectiveUserID = strings.TrimSpace(reqBody.UserID)
+			if effectiveUserID == "" {
+				jsonError(c, common.CodeArgumentError, "user_id is required")
+				return
+			}
 		}
 	}
 

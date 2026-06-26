@@ -67,6 +67,13 @@ func (e *elasticsearchEngine) CreateChunkStore(ctx context.Context, baseName, da
 		return fmt.Errorf("failed to check index existence: %w", err)
 	}
 	if exists {
+		if strings.HasPrefix(baseName, "memory_") {
+			if err := e.ensureMemoryMessageVectorMapping(ctx, baseName, vectorSize); err != nil {
+				return fmt.Errorf("failed to ensure memory vector mapping: %w", err)
+			}
+			common.Info("Memory index already exists, ensured vector mapping", zap.String("index_name", baseName), zap.Int("vector_size", vectorSize))
+			return nil
+		}
 		common.Info("Index already exists, skipping creation", zap.String("index_name", baseName))
 		return nil
 	}
@@ -149,6 +156,12 @@ func (e *elasticsearchEngine) InsertChunks(ctx context.Context, chunks []map[str
 
 	if baseName == "" {
 		return nil, fmt.Errorf("index name cannot be empty")
+	}
+
+	if strings.HasPrefix(baseName, "memory_") {
+		if err := e.ensureMemoryMessageVectorMappingsForDocs(ctx, baseName, chunks); err != nil {
+			return nil, err
+		}
 	}
 
 	// Build bulk request body with index operations (upsert behavior: insert if not exists, update if exists)
@@ -903,6 +916,12 @@ func (e *elasticsearchEngine) Search(ctx context.Context, req *types.SearchReque
 
 	hasVectorMatch := matchDense != nil && len(matchDense.EmbeddingData) > 0
 	if hasVectorMatch {
+		if isMemoryIndex {
+			if err := e.ensureMemoryMessageSearchVectorMappings(ctx, req.IndexNames, matchDense.VectorColumnName, len(matchDense.EmbeddingData)); err != nil {
+				return nil, err
+			}
+		}
+
 		k := matchDense.TopN
 		if k <= 0 {
 			k = limit
@@ -2289,8 +2308,162 @@ func loadSkillMapping() (map[string]interface{}, error) {
 	return mapping, nil
 }
 
+func memoryMessageVectorField(vectorSize int) string {
+	return fmt.Sprintf("q_%d_vec", vectorSize)
+}
+
+func memoryMessageVectorProperty(vectorSize int) map[string]interface{} {
+	return map[string]interface{}{
+		"type":       "dense_vector",
+		"dims":       vectorSize,
+		"index":      true,
+		"similarity": "cosine",
+	}
+}
+
+func parseMemoryMessageVectorSize(field string) (int, bool) {
+	if !memoryMessageVectorFieldRE.MatchString(field) {
+		return 0, false
+	}
+	sizeText := strings.TrimSuffix(strings.TrimPrefix(field, "q_"), "_vec")
+	vectorSize, err := strconv.Atoi(sizeText)
+	if err != nil || vectorSize <= 0 {
+		return 0, false
+	}
+	return vectorSize, true
+}
+
+func (e *elasticsearchEngine) memoryMessageVectorMappingExists(ctx context.Context, indexName, fieldName string) (bool, error) {
+	req := esapi.IndicesGetMappingRequest{
+		Index: []string{indexName},
+	}
+	res, err := req.Do(ctx, e.client)
+	if err != nil {
+		return false, fmt.Errorf("failed to get memory vector mapping: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode == http.StatusNotFound {
+		return false, nil
+	}
+	if res.IsError() {
+		bodyBytes, _ := io.ReadAll(res.Body)
+		reason := extractErrorReason(bodyBytes)
+		if reason != "" {
+			return false, fmt.Errorf("elasticsearch error getting memory vector mapping %s.%s: %s", indexName, fieldName, reason)
+		}
+		return false, fmt.Errorf("elasticsearch returned error getting memory vector mapping %s.%s: %s, body: %s", indexName, fieldName, res.Status(), string(bodyBytes))
+	}
+
+	var mappings map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&mappings); err != nil {
+		return false, fmt.Errorf("failed to decode memory vector mapping: %w", err)
+	}
+
+	indexMapping, ok := mappings[indexName].(map[string]interface{})
+	if !ok {
+		return false, nil
+	}
+	mapping, ok := indexMapping["mappings"].(map[string]interface{})
+	if !ok {
+		return false, nil
+	}
+	properties, ok := mapping["properties"].(map[string]interface{})
+	if !ok {
+		return false, nil
+	}
+	_, ok = properties[fieldName]
+	return ok, nil
+}
+
+func (e *elasticsearchEngine) ensureMemoryMessageVectorMapping(ctx context.Context, indexName string, vectorSize int) error {
+	if vectorSize <= 0 {
+		return fmt.Errorf("memory vector size must be positive, got %d", vectorSize)
+	}
+
+	fieldName := memoryMessageVectorField(vectorSize)
+	exists, err := e.memoryMessageVectorMappingExists(ctx, indexName, fieldName)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+
+	body := map[string]interface{}{
+		"properties": map[string]interface{}{
+			fieldName: memoryMessageVectorProperty(vectorSize),
+		},
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("failed to marshal memory vector mapping: %w", err)
+	}
+
+	req := esapi.IndicesPutMappingRequest{
+		Index: []string{indexName},
+		Body:  bytes.NewReader(data),
+	}
+	res, err := req.Do(ctx, e.client)
+	if err != nil {
+		return fmt.Errorf("failed to update memory vector mapping: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		bodyBytes, _ := io.ReadAll(res.Body)
+		reason := extractErrorReason(bodyBytes)
+		if reason != "" {
+			return fmt.Errorf("elasticsearch error updating memory vector mapping %s.%s: %s", indexName, fieldName, reason)
+		}
+		return fmt.Errorf("elasticsearch returned error updating memory vector mapping %s.%s: %s, body: %s", indexName, fieldName, res.Status(), string(bodyBytes))
+	}
+
+	return nil
+}
+
+func (e *elasticsearchEngine) ensureMemoryMessageVectorMappingsForDocs(ctx context.Context, indexName string, chunks []map[string]interface{}) error {
+	seen := map[int]struct{}{}
+	for _, chunk := range chunks {
+		for field := range chunk {
+			vectorSize, ok := parseMemoryMessageVectorSize(field)
+			if !ok {
+				continue
+			}
+			if _, ok := seen[vectorSize]; ok {
+				continue
+			}
+			if err := e.ensureMemoryMessageVectorMapping(ctx, indexName, vectorSize); err != nil {
+				return err
+			}
+			seen[vectorSize] = struct{}{}
+		}
+	}
+	return nil
+}
+
+func (e *elasticsearchEngine) ensureMemoryMessageSearchVectorMappings(ctx context.Context, indexNames []string, vectorFieldName string, fallbackVectorSize int) error {
+	vectorSize, ok := parseMemoryMessageVectorSize(vectorFieldName)
+	if !ok {
+		vectorSize = fallbackVectorSize
+	}
+	if vectorSize <= 0 {
+		return fmt.Errorf("memory vector size must be positive, got %d", vectorSize)
+	}
+
+	for _, indexName := range indexNames {
+		if !strings.HasPrefix(indexName, "memory_") {
+			continue
+		}
+		if err := e.ensureMemoryMessageVectorMapping(ctx, indexName, vectorSize); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func getMemoryMessageMapping(vectorSize int) map[string]interface{} {
-	vectorField := fmt.Sprintf("q_%d_vec", vectorSize)
+	vectorField := memoryMessageVectorField(vectorSize)
 	return map[string]interface{}{
 		"settings": map[string]interface{}{
 			"number_of_shards":   1,
@@ -2355,12 +2528,7 @@ func getMemoryMessageMapping(vectorSize int) map[string]interface{} {
 					"type":   "date",
 					"format": "yyyy-MM-dd HH:mm:ss||strict_date_optional_time||epoch_millis",
 				},
-				vectorField: map[string]interface{}{
-					"type":       "dense_vector",
-					"dims":       vectorSize,
-					"index":      true,
-					"similarity": "cosine",
-				},
+				vectorField: memoryMessageVectorProperty(vectorSize),
 			},
 		},
 	}
