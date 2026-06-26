@@ -56,5 +56,11 @@ def test_is_english_single_english_answer_in_list():
 
 
 @pytest.mark.p2
+def test_is_english_multi_word_phrase():
+    # Regression: splitting a string into characters made short spaced phrases fail.
+    assert is_english("I am good") is True
+
+
+@pytest.mark.p2
 def test_is_english_chinese_list_is_false():
     assert is_english(["这是中文段落。", "另一个中文段落。"]) is False

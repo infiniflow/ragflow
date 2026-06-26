@@ -1432,7 +1432,7 @@ func (c *CLI) ListAllModels(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) CommonShowModel(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonShowModelCommand(cmd *Command) (ResponseIf, error) {
 
 	modelName, ok := cmd.Params["model_name"].(string)
 	if !ok {

@@ -80,19 +80,19 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Variables/Settings
 			protected.GET("/variables", r.handler.ListVariables)
 			protected.PUT("/variables", r.handler.SetVariable)
+			protected.GET("/variables/:var_name", r.handler.ShowVariable)
 
 			// Configs
 			protected.GET("/configs", r.handler.ListConfigs)
+			// Log level
+			protected.GET("/config/log", r.handler.GetLogLevel)
+			protected.PUT("/config/log", r.handler.SetLogLevel)
 
 			// Environments
 			protected.GET("/environments", r.handler.ListEnvironments)
 
 			// Version
 			protected.GET("/version", r.handler.GetVersion)
-
-			// Log level
-			protected.GET("/log_level", r.handler.GetLogLevel)
-			protected.PUT("/log_level", r.handler.SetLogLevel)
 
 			queue := protected.Group("/queue")
 			{
