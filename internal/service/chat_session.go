@@ -22,9 +22,11 @@ import (
 	"errors"
 	"fmt"
 	"ragflow/internal/common"
+	"ragflow/internal/storage"
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 
 	"ragflow/internal/dao"
@@ -304,6 +306,230 @@ func (s *ChatSessionService) GetSession(userID, chatID, sessionID string) (*Chat
 	}
 
 	return s.buildSessionPayload(session, dialog, true), common.CodeSuccess, nil
+}
+
+// CreateSession create a session in a dialog
+func (s *ChatSessionService) CreateSession(userID, chatID string, req map[string]interface{}) (*ChatSessionPayload, common.ErrorCode, error) {
+	ok, err := s.ensureOwnedChat(userID, chatID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	if !ok {
+		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
+	}
+
+	dialog, err := s.chatSessionDAO.GetDialogByID(chatID)
+	if err != nil {
+		if isChatSessionNotFound(err) {
+			return nil, common.CodeDataError, errors.New("Chat not found!")
+		}
+		return nil, common.CodeServerError, err
+	}
+
+	name := "New session"
+	if rawName, exists := req["name"]; exists {
+		nameStr, ok := rawName.(string)
+		if !ok || strings.TrimSpace(nameStr) == "" {
+			return nil, common.CodeDataError, errors.New("`name` can not be empty.")
+		}
+		name = strings.TrimSpace(nameStr)
+	}
+	nameRunes := []rune(name)
+	if len(nameRunes) > 255 {
+		name = string(nameRunes[:255])
+	}
+
+	prologue := ""
+	if dialog.PromptConfig != nil {
+		if value, ok := dialog.PromptConfig["prologue"].(string); ok {
+			prologue = value
+		}
+	}
+	messagesJSON, _ := json.Marshal([]map[string]interface{}{
+		{
+			"role":    "assistant",
+			"content": prologue,
+		},
+	})
+
+	referenceJSON, _ := json.Marshal([]interface{}{})
+
+	conv := &entity.ChatSession{
+		ID:        common.GenerateUUID(),
+		DialogID:  chatID,
+		Name:      &name,
+		Message:   messagesJSON,
+		UserID:    &userID,
+		Reference: referenceJSON,
+	}
+
+	if err := s.chatSessionDAO.Create(conv); err != nil {
+		return nil, common.CodeDataError, errors.New("Fail to create a session!")
+	}
+
+	session, err := s.chatSessionDAO.GetByID(conv.ID)
+	if err != nil {
+		return nil, common.CodeDataError, errors.New("Fail to create a session!")
+	}
+	return s.buildSessionPayload(session, nil, false), common.CodeSuccess, nil
+}
+
+// DeleteSessions delete a session in a dialog
+func (s *ChatSessionService) DeleteSessions(userID, chatID string, req map[string]interface{}) (interface{}, string, common.ErrorCode, error) {
+	ok, err := s.ensureOwnedChat(userID, chatID)
+	if err != nil {
+		return nil, "", common.CodeServerError, err
+	}
+	if !ok {
+		return false, "No authorization.", common.CodeAuthenticationError, errors.New("No authorization.")
+	}
+
+	if len(req) == 0 {
+		return map[string]interface{}{}, "success", common.CodeSuccess, nil
+	}
+
+	sessionIDs, hasIDs := stringSliceFromValue(req["ids"])
+	if !hasIDs || len(sessionIDs) == 0 {
+		deleteAll, _ := req["delete_all"].(bool)
+		if deleteAll {
+			sessions, err := s.chatSessionDAO.ListByChatID(chatID)
+			if err != nil {
+				return nil, "", common.CodeServerError, err
+			}
+			for _, session := range sessions {
+				sessionIDs = append(sessionIDs, session.ID)
+			}
+			if len(sessionIDs) == 0 {
+				return map[string]interface{}{}, "success", common.CodeSuccess, nil
+			}
+		} else {
+			return map[string]interface{}{}, "success", common.CodeSuccess, nil
+		}
+	}
+
+	uniqueIDs, duplicateMessages := checkDuplicateChatSessionIDs(sessionIDs)
+
+	errorsList := make([]string, 0)
+	successCount := 0
+
+	for _, sid := range uniqueIDs {
+		session, err := s.chatSessionDAO.GetBySessionIDAndChatID(sid, chatID)
+		if err != nil {
+			errorsList = append(errorsList, fmt.Sprintf("The chat doesn't own the session %s", sid))
+			continue
+		}
+
+		s.removeSessionUploadFiles(userID, session)
+
+		if err := s.chatSessionDAO.DeleteByID(sid); err != nil {
+			return nil, "", common.CodeServerError, err
+		}
+
+		successCount++
+	}
+
+	allErrors := append(errorsList, duplicateMessages...)
+
+	if len(allErrors) > 0 {
+		if successCount > 0 {
+			return map[string]interface{}{
+				"success_count": successCount,
+				"errors":        allErrors,
+			}, fmt.Sprintf("Partially deleted %d sessions with %d errors", successCount, len(allErrors)), common.CodeSuccess, nil
+		}
+
+		return nil, "", common.CodeDataError, errors.New(strings.Join(allErrors, "; "))
+	}
+
+	return true, "success", common.CodeSuccess, nil
+}
+
+func stringSliceFromValue(value interface{}) ([]string, bool) {
+	var raw []interface{}
+	switch typed := value.(type) {
+	case []interface{}:
+		raw = typed
+	case []string:
+		raw = make([]interface{}, 0, len(typed))
+		for _, item := range typed {
+			raw = append(raw, item)
+		}
+	default:
+		return nil, false
+	}
+
+	ids := make([]string, 0, len(raw))
+	for _, item := range raw {
+		id, ok := item.(string)
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(id) == "" {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	return ids, true
+}
+
+func (s *ChatSessionService) removeSessionUploadFiles(userID string, session *entity.ChatSession) {
+	messages := parseMessages(session.Message)
+	bucket := fmt.Sprintf("%s-downloads", userID)
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		common.Warn("storage is not initialized; skip chat upload cleanup", zap.String("bucket", bucket))
+		return
+	}
+
+	for _, msg := range messages {
+		files, ok := msg["files"].([]interface{})
+		if !ok {
+			continue
+		}
+
+		for _, item := range files {
+			file, ok := item.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			fileID, ok := file["id"].(string)
+			if !ok || fileID == "" {
+				continue
+			}
+
+			if err := storageImpl.Remove(bucket, fileID); err != nil {
+				common.Warn("Failed to delete chat upload blob",
+					zap.String("bucket", bucket),
+					zap.String("file_id", fileID),
+					zap.Error(err),
+				)
+			}
+		}
+	}
+}
+
+func checkDuplicateChatSessionIDs(ids []string) ([]string, []string) {
+	idCount := make(map[string]int, len(ids))
+	uniqueIDs := make([]string, 0, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		idCount[id]++
+		if idCount[id] == 1 {
+			uniqueIDs = append(uniqueIDs, id)
+		}
+	}
+
+	duplicateMessages := make([]string, 0)
+	for id, count := range idCount {
+		if count > 1 {
+			duplicateMessages = append(duplicateMessages, fmt.Sprintf("Duplicate session ids: %s", id))
+		}
+	}
+	return uniqueIDs, duplicateMessages
 }
 
 // UpdateSession updates one chat session after Python-style field validation.

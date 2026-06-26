@@ -52,6 +52,8 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
+		authViaAPIToken := false
+
 		// Get user by access token
 		user, code, err := h.userService.GetUserByToken(token)
 		if err != nil {
@@ -64,6 +66,7 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 				c.Abort()
 				return
 			}
+			authViaAPIToken = true
 		}
 
 		if user.IsSuperuser != nil && *user.IsSuperuser {
@@ -89,6 +92,7 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 		c.Set("user", user)
 		c.Set("user_id", user.ID)
 		c.Set("email", user.Email)
+		c.Set("auth_via_api_token", authViaAPIToken)
 		c.Next()
 	}
 }

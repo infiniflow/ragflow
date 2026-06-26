@@ -253,10 +253,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 			chats := v1.Group("/chats")
 			{
 				chats.GET("", r.chatHandler.ListChats)
+				chats.POST("", r.chatHandler.Create)
 				chats.DELETE("", r.chatHandler.BulkDeleteChats)
 				chats.DELETE("/:chat_id", r.chatHandler.DeleteChat)
 				chats.GET("/:chat_id", r.chatHandler.GetChat)
+				chats.PUT("/:chat_id", r.chatHandler.UpdateChat)
+				chats.PATCH("/:chat_id", r.chatHandler.PatchChat)
 				chats.GET("/:chat_id/sessions", r.chatSessionHandler.ListChatSessions)
+				chats.POST("/:chat_id/sessions", r.chatSessionHandler.CreateSession)
+				chats.DELETE("/:chat_id/sessions", r.chatSessionHandler.DeleteSessions)
 				chats.GET("/:chat_id/sessions/:session_id", r.chatSessionHandler.GetSession)
 				chats.PATCH("/:chat_id/sessions/:session_id", r.chatSessionHandler.UpdateSession)
 			}
@@ -418,6 +423,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			message := v1.Group("/messages")
 			{
 				message.GET("", r.memoryHandler.GetMessages)
+				message.POST("", r.memoryHandler.AddMessage)
 				message.DELETE("/:memory_message", r.memoryHandler.ForgetMessage)
 				message.PUT("/:memory_message", r.memoryHandler.UpdateMessage)
 				message.GET("/:memory_message/content", r.memoryHandler.GetMessageContent)
