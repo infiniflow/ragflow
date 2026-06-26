@@ -526,7 +526,7 @@ func (p *Parser) parseAPIShowCommands() (*Command, error) {
 	case TokenProvider:
 		return p.parseAPIShowProviderCommands()
 	case TokenModel:
-		return p.parseShowModel()
+		return p.parseAPIShowModel()
 	case TokenTask:
 		return p.parseShowTask()
 	case TokenQuotedString:
@@ -590,8 +590,9 @@ func (p *Parser) parseAPIShowVariable() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseShowModel() (*Command, error) {
-	p.nextToken() // consume model
+// SHOW MODEL 'model_name'
+func (p *Parser) parseAPIShowModel() (*Command, error) {
+	p.nextToken() // consume MODEL
 
 	modelName, err := p.parseQuotedString()
 	if err != nil {
@@ -599,30 +600,11 @@ func (p *Parser) parseShowModel() (*Command, error) {
 	}
 	p.nextToken() // consume model_name
 
-	if p.curToken.Type != TokenFrom {
-		// SHOW MODEL 'model_name'
-		if p.curToken.Type == TokenSemicolon {
-			p.nextToken()
-		}
-		cmd := NewCommand("show_model")
-		cmd.Params["model_name"] = modelName
-		return cmd, nil
-	}
-	p.nextToken() // consume from
-
-	cmd := NewCommand("show_provider_model")
-	cmd.Params["model_name"] = modelName
-
-	providerName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, fmt.Errorf("expected provider name: %w", err)
-	}
-	cmd.Params["provider_name"] = providerName
-	p.nextToken() // consume provider name
-	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
+	cmd := NewCommand("api_show_model")
+	cmd.Params["model_name"] = modelName
 	return cmd, nil
 }
 

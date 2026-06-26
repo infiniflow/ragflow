@@ -501,6 +501,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			allModels := v1.Group("/all-models")
 			{
 				allModels.GET("", r.modelHandler.ListAllModels)
+				allModels.GET("/:model_name", r.modelHandler.ShowModel)
 			}
 
 			// Agent routes
