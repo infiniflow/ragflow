@@ -876,48 +876,6 @@ func (h *Handler) DeleteModels(c *gin.Context) {
 	success(c, result, "Model deleted successfully")
 }
 
-func (h *Handler) ListAllModels(c *gin.Context) {
-	// List models
-	models, err := h.service.ListAllModels()
-	if err != nil {
-		errorResponse(c, err.Error(), 500)
-		return
-	}
-
-	success(c, models, "")
-}
-
-func (h *Handler) ShowModel(c *gin.Context) {
-	encodedModelName := c.Param("model_name")
-	if encodedModelName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Encoded model name is empty",
-		})
-		return
-	}
-
-	decodedModelName, err := common.DecodeFromBase64(encodedModelName)
-	if err != nil {
-		errorResponse(c, err.Error(), 400)
-		return
-	}
-	if decodedModelName == "" {
-		errorResponse(c, "Decoded model name is empty", 400)
-		return
-	}
-
-	// Get model
-	model, err := h.service.GetModelByModelName(decodedModelName)
-	if err != nil {
-		errorResponse(c, err.Error(), 500)
-		return
-	}
-
-	success(c, model, "")
-
-}
-
 // GetSystemFingerprint handle get system fingerprint
 func (h *Handler) GetSystemFingerprint(c *gin.Context) {
 	fingerprint, err := h.service.GetSystemFingerprint()

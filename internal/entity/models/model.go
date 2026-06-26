@@ -153,12 +153,17 @@ type ModelThinking struct {
 	ClearThinking bool `json:"clear_thinking"`
 }
 
+type ModelTools struct {
+	Support bool `json:"support"`
+}
+
 // Model represents a single LLM model
 type Model struct {
 	Name         string         `json:"name"`
 	MaxTokens    *int           `json:"max_tokens"`
 	ModelTypes   []string       `json:"model_types"`
 	Thinking     *ModelThinking `json:"thinking"`
+	Tools        *ModelTools    `json:"tools"`
 	Class        *string        `json:"class"`
 	MaxDimension *int           `json:"max_dimension"` // used by embedding models
 	Dimensions   []int          `json:"dimensions"`
@@ -406,6 +411,12 @@ func (pm *ProviderManager) ListAllModels() ([]map[string]interface{}, error) {
 		if len(model.Dimensions) > 0 {
 			modelData["dimensions"] = model.Dimensions
 		}
+		if model.Thinking != nil {
+			modelData["thinking"] = "supported"
+		}
+		if model.Tools != nil {
+			modelData["tools"] = "supported"
+		}
 		modelList = append(modelList, modelData)
 	}
 
@@ -472,6 +483,12 @@ func (pm *ProviderManager) ListModels(providerName string) ([]map[string]interfa
 			"model_type":    model.ModelTypes,
 			"max_dimension": model.MaxDimension,
 			"dimensions":    model.Dimensions,
+		}
+		if model.Thinking != nil {
+			modelData["thinking"] = "supported"
+		}
+		if model.Tools != nil {
+			modelData["tools"] = "supported"
 		}
 		modelList = append(modelList, modelData)
 	}

@@ -975,9 +975,11 @@ func (c *CLI) AdminShowVariable(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("var_name not provided")
 	}
 
-	payload := map[string]interface{}{"var_name": varName}
+	encodedVarName := common.EncodeToBase64(varName)
 
-	resp, err := c.AdminServerClient.Request("GET", "/admin/variables", "admin", nil, payload)
+	endPoint := fmt.Sprintf("/admin/variables/%s", encodedVarName)
+
+	resp, err := c.AdminServerClient.Request("GET", endPoint, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show variable: %w", err)
 	}
@@ -1073,8 +1075,8 @@ func (c *CLI) AdminSetLicenseConfigCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// SetVariable updates a system variable (admin mode only).
-func (c *CLI) SetVariable(cmd *Command) (ResponseIf, error) {
+// AdminSetVariableCommand updates a system variable (admin mode only).
+func (c *CLI) AdminSetVariableCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -1167,6 +1169,39 @@ func (c *CLI) AdminSetRoleDefaultModelsCommand(cmd *Command) (ResponseIf, error)
 		return nil, fmt.Errorf("%s", result.Message)
 	}
 
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// AdminSetLogLevelCommand set log level (admin mode only).
+func (c *CLI) AdminSetLogLevelCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	logLevel, ok := cmd.Params["level"].(string)
+	if !ok {
+		return nil, fmt.Errorf("no log level")
+	}
+
+	payload := map[string]interface{}{
+		"level": logLevel,
+	}
+
+	resp, err := c.AdminServerClient.Request("PUT", "/admin/config/log", "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to change log level: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to register user: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("change log level failed: invalid JSON (%w)", err)
+	}
+	result.Code = 0
 	result.Duration = resp.Duration
 	return &result, nil
 }
@@ -1972,7 +2007,7 @@ func (c *CLI) AdminShowUserSummaryCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to get user summary: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonDataResponse
+	var result OrderedCommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("get user summary failed: invalid JSON (%w)", err)
 	}
@@ -2191,7 +2226,7 @@ func (c *CLI) AdminShowUsersSummaryCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to get users summary: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonDataResponse
+	var result OrderedCommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("get users summary failed: invalid JSON (%w)", err)
 	}
@@ -2349,7 +2384,7 @@ func (c *CLI) AdminListUsersConditionCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list users: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonResponse
+	var result OrderedCommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("list users failed: invalid JSON (%w)", err)
 	}
@@ -3495,6 +3530,34 @@ func (c *CLI) AdminDeleteModelsCommand(cmd *Command) (ResponseIf, error) {
 	var result CommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("remove model %s failed: invalid JSON (%w)", modelNames, err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *CLI) AdminShowLogLevelCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode != AdminMode {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	resp, err := c.AdminServerClient.Request("GET", "/admin/config/log", "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get log level config: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to get log level config: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("get log level config failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
