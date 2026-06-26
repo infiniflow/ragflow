@@ -749,7 +749,7 @@
                     "model_type": [
                         "tts"
                     ],
-                    "is_tools": true
+                    "is_tools": false
                 },
                 {
                     "llm_name": "qwen3-coder-plus-2025-07-22",
@@ -1294,6 +1294,13 @@
                     "is_tools": true
                 },
                 {
+                    "llm_name": "qwen-plus-2025-07-28",
+                    "tags": "LLM,CHAT,132k",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "qwen-plus-2025-07-14",
                     "tags": "LLM,CHAT,132k",
                     "max_tokens": 131072,
@@ -1302,6 +1309,13 @@
                 },
                 {
                     "llm_name": "qwen-flash",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen-flash-2025-07-28",
                     "tags": "LLM,CHAT,1M",
                     "max_tokens": 1000000,
                     "model_type": "chat",
@@ -1374,6 +1388,26 @@
                     "llm_name": "qwen3-vl-plus",
                     "tags": "LLM,IMAGE2TEXT,256k",
                     "max_tokens": 256000,
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen3-vl-235b-a22b-instruct",
+                    "tags": "LLM,IMAGE2TEXT,128k",
+                    "max_tokens": 128000,
+                    "model_type": [
+                        "image2text",
+                        "chat"
+                    ],
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen3-vl-235b-a22b-thinking",
+                    "tags": "LLM,IMAGE2TEXT,128k",
+                    "max_tokens": 128000,
                     "model_type": [
                         "image2text",
                         "chat"
@@ -1479,6 +1513,36 @@
                     "is_tools": true
                 },
                 {
+                    "llm_name": "text-embedding-v2",
+                    "tags": "TEXT EMBEDDING,2K",
+                    "max_tokens": 2048,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "sambert-zhide-v1",
+                    "tags": "TTS",
+                    "max_tokens": 2048,
+                    "model_type": "tts"
+                },
+                {
+                    "llm_name": "sambert-zhiru-v1",
+                    "tags": "TTS",
+                    "max_tokens": 2048,
+                    "model_type": "tts"
+                },
+                {
+                    "llm_name": "text-embedding-v3",
+                    "tags": "TEXT EMBEDDING,8K",
+                    "max_tokens": 8192,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "text-embedding-v4",
+                    "tags": "TEXT EMBEDDING,8K",
+                    "max_tokens": 8192,
+                    "model_type": "embedding"
+                },
+                {
                     "llm_name": "qwen-vl-max",
                     "tags": "LLM,IMAGE2TEXT",
                     "max_tokens": 765,
@@ -1497,6 +1561,36 @@
                         "chat"
                     ],
                     "is_tools": false
+                },
+                {
+                    "llm_name": "gte-rerank",
+                    "tags": "RE-RANK,4k",
+                    "max_tokens": 4000,
+                    "model_type": "rerank"
+                },
+                {
+                    "llm_name": "qwen3-asr-flash",
+                    "tags": "SPEECH2TEXT,8k",
+                    "max_tokens": 8000,
+                    "model_type": "speech2text"
+                },
+                {
+                    "llm_name": "qwen3-asr-flash-2025-09-08",
+                    "tags": "SPEECH2TEXT,8k",
+                    "max_tokens": 8000,
+                    "model_type": "speech2text"
+                },
+                {
+                    "llm_name": "gte-rerank-v2",
+                    "tags": "RE-RANK,4k",
+                    "max_tokens": 4000,
+                    "model_type": "rerank"
+                },
+                {
+                    "llm_name": "qwen3-rerank",
+                    "tags": "RE-RANK,4k",
+                    "max_tokens": 4000,
+                    "model_type": "rerank"
                 }
             ]
         },
