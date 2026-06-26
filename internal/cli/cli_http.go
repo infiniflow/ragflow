@@ -340,8 +340,14 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.CommonShowCurrentCommand(cmd)
 	case "api_list_available_providers":
 		return c.CommonAvailableProvidersCommand(cmd)
-	case "show_provider":
+	case "api_show_provider":
 		return c.CommonShowProviderCommand(cmd)
+	case "api_show_provider_instance":
+		return c.CommonShowProviderInstanceCommand(cmd)
+	case "api_show_provider_instance_balance":
+		return c.CommonShowProviderInstanceBalanceCommand(cmd)
+	case "api_show_provider_model":
+		return c.CommonShowProviderModelCommand(cmd)
 	case "list_provider_models":
 		return c.CommonListModelsCommand(cmd)
 	case "api_list_provider_instance_models":
@@ -368,10 +374,6 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.CreateProviderInstance(cmd)
 	case "api_list_provider_instances":
 		return c.CommonListProviderInstances(cmd)
-	case "show_provider_instance":
-		return c.CommonShowProviderInstanceCommand(cmd)
-	case "show_instance_balance":
-		return c.ShowInstanceBalance(cmd)
 	case "alter_provider_instance":
 		return c.CommonAlterProviderInstanceCommand(cmd)
 	case "drop_provider_instance":
