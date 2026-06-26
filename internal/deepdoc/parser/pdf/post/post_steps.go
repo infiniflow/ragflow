@@ -3,7 +3,6 @@ package post
 import (
 	"context"
 	"errors"
-	"fmt"
 	"math"
 	"regexp"
 	"sort"
@@ -12,8 +11,6 @@ import (
 
 	pdftype "ragflow/internal/deepdoc/parser/pdf/type"
 	"ragflow/internal/deepdoc/parser/pdf/util"
-	"ragflow/internal/entity"
-	"ragflow/internal/service"
 )
 
 // ── Config ─────────────────────────────────────────────────────────────
@@ -167,17 +164,10 @@ func PostProcess(ctx context.Context, result *pdftype.ParseResult, config Pipeli
 // an ImageDescriber.  Corresponds to Python's
 // get_model_config_from_provider_instance + LLMBundle.
 // resolveImageDescriber resolves a VLM model from tenant config and returns
-// an ImageDescriber.  Overridable in tests.
-var resolveImageDescriber = func(tenantID, llmID string) (ImageDescriber, error) {
-	svc := service.NewModelProviderService()
-	driver, modelName, apiCfg, maxTokens, err := svc.GetModelConfigFromProviderInstance(
-		tenantID, entity.ModelTypeImage2Text, llmID,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("resolve VLM model %q: %w", llmID, err)
-	}
-	return NewModelImageDescriber(driver, modelName, apiCfg, maxTokens), nil
-}
+// an ImageDescriber.  The implementation is assigned by init() in
+// post_steps_cgo.go (production) or post_steps_no_cgo.go (stub).
+// Overridable in tests.
+var resolveImageDescriber func(tenantID, llmID string) (ImageDescriber, error)
 
 // ── normalizeLayoutType ────────────────────────────────────────────────
 
