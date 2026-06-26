@@ -266,7 +266,7 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
             raise LookupError(f"Model provider config not found: {provider_name}")
         llm_list = [llm for llm in fac_list[0]["llm"] if llm["llm_name"] == pure_model_name]
         if not llm_list:
-            raise LookupError(f"Model config not found: {model_name}")
+            raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
         llm_info = llm_list[0]
         if model_type_val not in _factory_model_types(llm_info):
             raise LookupError(f"Model {model_name} is not a {model_type_val} model.")

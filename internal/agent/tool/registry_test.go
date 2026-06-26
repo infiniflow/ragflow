@@ -77,6 +77,18 @@ func TestBuildAll_ExeSQLRequiresNodeParams(t *testing.T) {
 	}
 }
 
+func TestBuildAll_KeenableRejectsEmptyNodeAPIKey(t *testing.T) {
+	_, err := BuildAll([]string{"keenable"}, map[string]map[string]any{
+		"keenable": {"api_key": ""},
+	})
+	if err == nil {
+		t.Fatal("expected keenable config error")
+	}
+	if !strings.Contains(err.Error(), "requires non-empty string node-level param api_key") {
+		t.Fatalf("err = %q, want keenable api_key validation error", err.Error())
+	}
+}
+
 // TestToolRegistry_SchemasAreComplete sweeps every name the public
 // registry advertises (including the execute_sql/exesql and
 // retrieval/search_my_dateset alias pairs), builds the tool, and

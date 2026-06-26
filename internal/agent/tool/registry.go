@@ -117,11 +117,14 @@ func buildKeenableTool(params map[string]any) (einotool.BaseTool, error) {
 	if len(params) == 0 {
 		return NewKeenableTool(), nil
 	}
-	apiKey, _ := params["api_key"].(string)
 	for key := range params {
 		if key != "api_key" {
 			return nil, fmt.Errorf("agent tool: tool %q only accepts node-level param api_key", "keenable")
 		}
+	}
+	apiKey, ok := params["api_key"].(string)
+	if !ok || strings.TrimSpace(apiKey) == "" {
+		return nil, fmt.Errorf("agent tool: tool %q requires non-empty string node-level param api_key", "keenable")
 	}
 	return NewKeenableToolWithAPIKey(nil, apiKey), nil
 }
