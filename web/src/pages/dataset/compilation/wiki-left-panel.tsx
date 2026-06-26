@@ -41,7 +41,7 @@ function ContentListItem({ item, isSelected, onSelect }: ContentListItemProps) {
       className={cn(
         'flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm cursor-pointer',
         'text-text-secondary hover:bg-bg-base hover:text-text-primary',
-        isSelected && 'bg-bg-base text-text-primary',
+        isSelected && 'bg-bg-card text-text-primary',
       )}
     >
       <div>

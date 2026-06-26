@@ -48,6 +48,11 @@ const menuItems = (t: TFunction) => [
     key: Routes.Mcp,
   },
   {
+    icon: <Columns3Cog className="size-[1em]" />,
+    label: t('setting.compilationTemplates'),
+    key: Routes.CompilationTemplates,
+  },
+  {
     icon: <LucideUsers className="size-[1em]" />,
     label: t('setting.team'),
     key: Routes.Team,
@@ -61,11 +66,6 @@ const menuItems = (t: TFunction) => [
     icon: <LucideUnplug className="size-[1em]" />,
     label: t('setting.api'),
     key: Routes.Api,
-  },
-  {
-    icon: <Columns3Cog className="size-[1em]" />,
-    label: t('setting.compilationTemplates'),
-    key: Routes.CompilationTemplates,
   },
 ];
 

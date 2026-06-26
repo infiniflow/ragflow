@@ -36,7 +36,7 @@ export default function Compilation() {
   const { navigateToDataFile } = useNavigatePage();
   const { data: knowledgeBase } = useFetchKnowledgeBaseConfiguration();
   const { data: knowledgeGraph } = useFetchKnowledgeGraph();
-  const [leftTab, setLeftTab] = useState<LeftPanelTab>(LeftPanelTab.Graph);
+  const [leftTab, setLeftTab] = useState<LeftPanelTab>(LeftPanelTab.Contents);
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.Graph);
   const [selectedArtifact, setSelectedArtifact] = useState<IArtifact | null>(
     null,
@@ -59,7 +59,7 @@ export default function Compilation() {
   }, []);
 
   return (
-    <section className="min-h-screen w-full flex flex-col p-4 gap-4 bg-bg-base">
+    <section className="flex flex-col p-4 gap-4 h-full">
       <header className="space-y-5">
         <BackButton
           to={`${Routes.DatasetBase}${Routes.Files}/${id}`}

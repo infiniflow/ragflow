@@ -1,5 +1,5 @@
 import Empty from '@/components/empty/empty';
-import NextMarkdownContent from '@/components/next-markdown-content';
+import MarkdownEditor from '@/components/markdown-editor';
 import { ReferenceDocumentList } from '@/components/next-message-item/reference-document-list';
 import { Button } from '@/components/ui/button';
 import { Spin } from '@/components/ui/spin';
@@ -13,7 +13,7 @@ import { useFetchArtifactPage } from '@/hooks/use-knowledge-request';
 import { Docagg } from '@/interfaces/database/chat';
 import { IArtifact } from '@/interfaces/database/dataset';
 import { VersionHistorySheet } from '@/pages/dataset/compilation/version-history-sheet';
-import { SquarePen, Upload } from 'lucide-react';
+import { Upload } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -43,7 +43,7 @@ export function WikiDetailContent({
       {selectedArtifact ? (
         <>
           <header className="shrink-0 px-8 pt-8 pb-4">
-            <div className="max-w-3xl mx-auto flex items-start justify-between">
+            <div className="flex items-start justify-between">
               <div className="flex items-center gap-3">
                 <h1 className="text-3xl font-semibold text-text-primary">
                   {data?.title ?? selectedArtifact.title}
@@ -56,9 +56,6 @@ export function WikiDetailContent({
               </div>
 
               <div className="flex items-center gap-1">
-                <Button variant="ghost" size="icon" className="size-8">
-                  <SquarePen className="size-4" />
-                </Button>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button variant="ghost" size="icon" className="size-8">
@@ -80,10 +77,7 @@ export function WikiDetailContent({
                 <Spin size="large" />
               </div>
             ) : (
-              <NextMarkdownContent
-                content={data?.content_md_rendered ?? ''}
-                loading={false}
-              />
+              <MarkdownEditor content={data?.content_md_rendered ?? ''} />
             )}
 
             {referenceDocuments.length > 0 && (
