@@ -98,7 +98,7 @@ export function Sidebar({ selection, onSelect }: SidebarProps) {
       <button
         type="button"
         className={cn(
-          'flex items-center justify-between px-3 py-2 rounded-md text-sm transition-colors',
+          'flex items-center justify-between px-3 py-2 rounded-md text-sm transition-colors border border-border-button',
           selection === 'default'
             ? 'bg-bg-input text-text-primary'
             : 'text-text-secondary hover:bg-bg-input hover:text-text-primary',
@@ -114,14 +114,13 @@ export function Sidebar({ selection, onSelect }: SidebarProps) {
         {t('setting.availableModels')}
       </div>
 
-      <div className="px-1">
-        <SearchInput
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder={t('setting.search')}
-          data-testid="sidebar-provider-search"
-        />
-      </div>
+      <SearchInput
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder={t('setting.search')}
+        data-testid="sidebar-provider-search"
+        className="w-full border-none"
+      />
 
       <div className="flex flex-col gap-1 overflow-auto scrollbar-auto">
         {filteredProviders.map((provider) => {

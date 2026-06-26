@@ -536,7 +536,7 @@ function GenericProviderInstanceCard({
           <CollapsibleTrigger asChild>
             <div className="flex items-center gap-1 w-full mb-5">
               <div
-                className="group flex items-center flex-1 gap-2 px-2 mx-2 py-1 cursor-pointer bg-bg-input rounded-md"
+                className="group flex items-center flex-1 gap-2 px-2 py-1 cursor-pointer bg-bg-input rounded-md"
                 data-testid="instance-name-row"
               >
                 <Button
@@ -578,7 +578,7 @@ function GenericProviderInstanceCard({
             className="data-[state=closed]:hidden overflow-hidden"
           >
             <div
-              className="px-2 pb-4 flex flex-col gap-4"
+              className="pb-4 flex flex-col gap-4"
               onBlurCapture={handleFieldsBlur}
             >
               <DynamicForm.Root

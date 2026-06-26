@@ -205,7 +205,7 @@ const SettingModelV2: FC = () => {
               <div className=" bottom-0 z-10 border-border-button py-4">
                 <button
                   type="button"
-                  className="w-full flex items-center justify-center gap-2 px-3 py-3 rounded-md border border-dashed border-border-button text-text-secondary hover:bg-bg-input hover:text-text-primary transition-colors"
+                  className="w-full flex items-center justify-center gap-2 px-3 py-1 rounded-md border border-dashed border-border-button text-text-secondary hover:bg-bg-input hover:text-text-primary transition-colors"
                   onClick={addDraft}
                   data-testid="add-instance-bottom"
                 >
