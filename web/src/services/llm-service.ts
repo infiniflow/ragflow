@@ -15,7 +15,6 @@ const {
   addInstanceModel,
   deleteProviderInstance,
   updateModelStatus,
-  discoverModels,
 } = api;
 
 const methods = {
@@ -74,10 +73,6 @@ const methods = {
   updateModelStatus: {
     url: updateModelStatus,
     method: 'patch',
-  },
-  discoverModels: {
-    url: discoverModels,
-    method: 'post',
   },
 } as const;
 

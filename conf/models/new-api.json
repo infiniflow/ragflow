@@ -1,0 +1,16 @@
+{
+  "name": "New API",
+  "url": {
+    "default": "https://localhost/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "embedding": "embeddings",
+    "models": "models",
+    "rerank": "rerank",
+    "asr": "audio/transcriptions",
+    "tts": "audio/speech"
+  },
+  "class": "local",
+  "tags": ["chat", "embedding", "rerank", "vision", "tts", "speech2text"]
+}

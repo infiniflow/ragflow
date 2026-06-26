@@ -17,7 +17,6 @@ import asyncio
 import logging
 import json
 import os
-import openai
 from quart import request
 
 from api.apps import login_required, current_user
@@ -204,7 +203,6 @@ async def add_llm():
             "HuggingFace": "___HuggingFace",
             "OpenAI-API-Compatible": "___OpenAI-API",
             "VLLM": "___VLLM",
-            "New API": "___NewAPI",
         }
         saved_llm_name = llm_name + _LLM_NAME_SUFFIX.get(factory, "")
         logging.debug(
@@ -268,9 +266,6 @@ async def add_llm():
 
     elif factory == "VLLM":
         llm_name += "___VLLM"
-
-    elif factory == "New API":
-        llm_name += "___NewAPI"
 
     elif factory == "XunFei Spark":
         if req["model_type"] == "chat":
@@ -554,23 +549,3 @@ async def list_app():
         return get_json_result(data=res)
     except Exception as e:
         return server_error_response(e)
-
-
-@manager.route("/discover_models", methods=["POST"])
-@login_required
-@validate_request("api_base", "api_key")
-async def discover_models():
-    req = await get_request_json()
-    base_url = req["api_base"].rstrip("/")
-    api_key = req["api_key"]
-    timeout_seconds = int(os.environ.get("LLM_TIMEOUT_SECONDS", 10))
-    try:
-        client = openai.OpenAI(api_key=api_key, base_url=base_url, timeout=timeout_seconds)
-        models = await asyncio.wait_for(
-            asyncio.to_thread(client.models.list),
-            timeout=timeout_seconds,
-        )
-        result = [{"id": m.id, "owned_by": getattr(m, "owned_by", "")} for m in models.data]
-        return get_json_result(data=result)
-    except Exception as e:
-        return get_data_error_result(message=f"Failed to discover models: {str(e)}")

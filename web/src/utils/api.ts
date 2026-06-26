@@ -28,7 +28,6 @@ export default {
   defaultModel: `${restAPIv1}/models/default`,
   listProviders: `${restAPIv1}/providers`,
   addProvider: `${restAPIv1}/providers/`,
-  discoverModels: `${webAPI}/llm/discover_models`,
   addProviderInstance: ({ llm_factory }: { llm_factory: string }) =>
     `${restAPIv1}/providers/${llm_factory}/instances`,
   verifyProviderConnection: ({ provider_name }: { provider_name: string }) =>
