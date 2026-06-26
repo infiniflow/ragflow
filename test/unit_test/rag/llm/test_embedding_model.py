@@ -35,6 +35,7 @@ import numpy as np
 import pytest
 
 from rag.llm.embedding_model import (
+    BaiduYiyanEmbed,
     DEFAULT_MAX_TOKENS,
     BedrockEmbed,
     EmbeddingError,
@@ -381,3 +382,23 @@ class TestBedrockResponseParsing:
         embed.client.invoke_model.return_value = self._body({"embeddings": [[5.0, 6.0]]})
         vector, _ = embed.encode_queries("q")
         np.testing.assert_array_equal(vector, np.array([5.0, 6.0]))
+
+
+@pytest.mark.p2
+class TestBaiduYiyanResponseParsing:
+    def test_query_returns_single_vector(self):
+        embed = BaiduYiyanEmbed.__new__(BaiduYiyanEmbed)
+        embed.model_name = "bge-large-zh"
+        embed.client = MagicMock()
+        embed.client.do.return_value = SimpleNamespace(
+            body={
+                "data": [{"embedding": [1.0, 2.0, 3.0]}],
+                "usage": {"total_tokens": 7},
+            }
+        )
+
+        vector, tokens = embed.encode_queries("hello")
+
+        assert vector.shape == (3,)
+        np.testing.assert_array_equal(vector, np.array([1.0, 2.0, 3.0]))
+        assert tokens == 7
