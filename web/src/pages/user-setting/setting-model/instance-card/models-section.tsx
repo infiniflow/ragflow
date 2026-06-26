@@ -22,10 +22,11 @@ import {
   useDeleteInstanceModels,
   useFetchInstanceModels,
   useListProviderModels,
+  useUpdateProviderInstance,
   useVerifyProviderConnection,
 } from '@/hooks/use-llm-request';
 import { IInstanceModel, IProviderInstance } from '@/interfaces/database/llm';
-import { IProviderModelItem } from '@/interfaces/request/llm';
+import { IModelInfo, IProviderModelItem } from '@/interfaces/request/llm';
 import { cn } from '@/lib/utils';
 import {
   Check,
@@ -118,6 +119,8 @@ export function ModelsSection({
   const { listProviderModels } = useListProviderModels();
   const { addInstanceModel } = useAddInstanceModel();
   const { deleteInstanceModels } = useDeleteInstanceModels();
+  const { updateProviderInstance, loading: batchLoading } =
+    useUpdateProviderInstance();
   const { verifyProviderConnection } = useVerifyProviderConnection();
   const { data: instanceModels } = useFetchInstanceModels(
     providerName,
@@ -348,6 +351,81 @@ export function ModelsSection({
     });
   };
 
+  // Build an IModelInfo array (the shape required by the PUT
+  // `/providers/{name}/instances/{name}` endpoint) from a list of
+  // provider model items. `features` is forwarded via `extra` so the
+  // backend can persist per-model flags such as `is_tools`.
+  const toModelInfo = (items: IProviderModelItem[]): IModelInfo[] =>
+    items.map((m) => {
+      const info: IModelInfo = {
+        model_name: m.name,
+        model_type: m.model_types ?? [],
+        max_tokens: m.max_tokens ?? 0,
+      };
+      if (m.features && m.features.length) {
+        info.extra = {
+          is_tools: m.features.some((f) =>
+            ['tool_call', 'tools', 'function_call'].includes(f),
+          ),
+        };
+      }
+      return info;
+    });
+
+  // True when every model currently shown in the filtered list is
+  // already attached to the instance — drives the +/- toggle on the
+  // batch button. Vacuously false when no models are visible so the
+  // button does not render as a "remove" when there is nothing to
+  // remove.
+  const allFilteredAdded = useMemo(() => {
+    return (
+      filteredModels.length > 0 &&
+      filteredModels.every((m) => addedSet.has(m.name))
+    );
+  }, [filteredModels, addedSet]);
+
+  /**
+   * Batch attach/detach the currently visible (filtered) models to the
+   * instance via the PUT `/providers/{name}/instances/{name}` endpoint.
+   * The endpoint replaces `model_info` wholesale, so we always compute
+   * the full next set:
+   *   - batch add → union(existing instance models, visible models)
+   *   - batch remove → existing instance models minus visible models
+   * Models that are attached but not in the current filtered view are
+   * preserved either way.
+   */
+  const handleBatchToggleModels = async () => {
+    if (filteredModels.length === 0) return;
+    const { apiKey, baseUrl } = resolveCreds();
+
+    // Keyed view of the existing per-instance set so we can compute
+    // the next set without losing fields (max_tokens, model_types, ...).
+    const byName = new Map<string, IProviderModelItem>();
+    instanceItems.forEach((m) => byName.set(m.name, m));
+
+    let nextModels: IProviderModelItem[];
+    if (allFilteredAdded) {
+      // Remove every filtered model from the existing set.
+      const drop = new Set(filteredModels.map((m) => m.name));
+      nextModels = Array.from(byName.values()).filter((m) => !drop.has(m.name));
+    } else {
+      // Add every filtered model on top of the existing set; catalog
+      // entry wins on conflict (it carries authoritative features /
+      // max_tokens).
+      filteredModels.forEach((m) => byName.set(m.name, m));
+      nextModels = Array.from(byName.values());
+    }
+
+    await updateProviderInstance({
+      provider_name: providerName,
+      instance_name: instanceName,
+      api_key: apiKey,
+      base_url: baseUrl,
+      region: instance?.region ?? 'default',
+      model_info: toModelInfo(nextModels),
+    });
+  };
+
   // When `hideIfEmpty` is set and the first fetch has completed with
   // zero models, render nothing. This is used by draft instances so
   // an unsuccessful (or rejected) `listProviderModels` call does not
@@ -388,11 +466,41 @@ export function ModelsSection({
       </div>
 
       <div className="flex flex-col gap-2">
-        <SearchInput
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder={t('setting.search')}
-        />
+        <div className="flex items-center gap-2">
+          <SearchInput
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t('setting.search')}
+            rootClassName="flex-1"
+          />
+          {!hideActions && (
+            <Button
+              variant="outline"
+              size="icon-sm"
+              onClick={handleBatchToggleModels}
+              disabled={batchLoading || filteredModels.length === 0}
+              data-testid="models-batch-toggle"
+              aria-label={
+                allFilteredAdded
+                  ? tSetting('batchRemoveModels')
+                  : tSetting('batchAddModels')
+              }
+              title={
+                allFilteredAdded
+                  ? tSetting('batchRemoveModels')
+                  : tSetting('batchAddModels')
+              }
+            >
+              {batchLoading ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : allFilteredAdded ? (
+                <Minus className="size-4" />
+              ) : (
+                <Plus className="size-4" />
+              )}
+            </Button>
+          )}
+        </div>
         <div className="flex flex-wrap gap-1.5">
           <button
             type="button"

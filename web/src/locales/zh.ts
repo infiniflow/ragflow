@@ -1478,6 +1478,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       selectModelBeforeVerify: '请至少选择一个模型后再验证。',
       addCustomModel: '添加自定义模型',
       addCustomModelTitle: '添加自定义模型',
+      batchAddModels: '批量添加当前模型',
+      batchRemoveModels: '批量移除当前模型',
       modelMaxTokens: '最大 Token 数',
       modelTypes: {
         chat: 'Chat',
