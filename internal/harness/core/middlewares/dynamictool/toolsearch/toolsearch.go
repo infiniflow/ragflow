@@ -85,7 +85,7 @@ func (m *middleware[M]) BeforeModelRewrite(ctx context.Context, state *core.Type
 		return ctx, state, nil
 	}
 
-	// Deferred mode: build tool info list for all available tool.
+	// Deferred mode: build tool info list for all available tools.
 	infos := make([]*schema.ToolInfo, 0, len(m.cfg.AllTools))
 	for _, t := range m.cfg.AllTools {
 		infos = append(infos, &schema.ToolInfo{Name: t.Name(), Description: t.Description()})

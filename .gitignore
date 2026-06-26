@@ -244,4 +244,4 @@ bin/*
 
 # Parser test fixtures and python tools
 internal/deepdoc/parser/pdf/testdata/
-internal/deepdoc/parser/pdf/tool-py/
+internal/deepdoc/parser/pdf/tools-py/

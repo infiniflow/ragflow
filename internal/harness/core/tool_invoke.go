@@ -183,7 +183,7 @@ func ApprovalMiddleware(getApproval func(ctx context.Context, ictx *ToolInvocati
 	}
 }
 
-// AutoApprovalMiddleware creates an approval middleware that auto-approves all tool.
+// AutoApprovalMiddleware creates an approval middleware that auto-approves all tools.
 // Useful for testing or when no human-in-the-loop is needed.
 func AutoApprovalMiddleware() ToolInvokeMiddleware {
 	return ApprovalMiddleware(func(ctx context.Context, ictx *ToolInvocationContext) (*ApprovalRequest, error) {

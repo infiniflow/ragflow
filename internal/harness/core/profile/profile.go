@@ -78,7 +78,7 @@ type HarnessProfile struct {
 	// SystemPromptSuffix is appended to the system prompt after BaseSystemPrompt.
 	SystemPromptSuffix string
 
-	// ToolDescriptionOverrides replaces the Description() of matching tool.
+	// ToolDescriptionOverrides replaces the Description() of matching tools.
 	// Key = tool name, value = new description.
 	ToolDescriptionOverrides map[string]string
 

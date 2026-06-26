@@ -209,7 +209,7 @@ func TestMultiAgent_PlanExecute(t *testing.T) {
 		},
 	)
 
-	// Conditional edge from tool.
+	// Conditional edge from tools.
 	sg.AddConditionalEdges("tools",
 		func(ctx context.Context, state interface{}) (interface{}, error) {
 			return "to_executor", nil

@@ -466,7 +466,7 @@ func extractTextContent[M MessageType](msg M) string {
 	}
 }
 
-// findTool finds a tool by name from a list of tool.
+// findTool finds a tool by name from a list of tools.
 func findTool(tools []Tool, name string) Tool {
 	for _, t := range tools {
 		if t.Name() == name {

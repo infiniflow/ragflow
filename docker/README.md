@@ -94,7 +94,6 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `DEEPDOC_URL`  
   URL for the deepdoc vision API serving DLA (layout analysis), OCR (text detection/recognition), and TSR (table structure recognition). The `deepdoc` service in `docker-compose.yml` provides this endpoint. Defaults to `http://deepdoc:9390`. When unset, the parser falls back to inline ONNX Runtime inference.
 
-  > The deepdoc service is **opt-in** — it is not started by default. Use `docker compose --profile deepdoc up -d` to enable it.  
   > The OSS deepdoc service runs on CPU using ONNX Runtime models. No GPU required.  
   > API endpoints: `GET /health`, `GET /model`, `POST /predict/dla`, `POST /predict/tsr`, `POST /predict/ocr`.
 

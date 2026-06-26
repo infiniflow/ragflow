@@ -388,7 +388,7 @@ func TestSubAgent_DeclarativeConfig(t *testing.T) {
 }
 
 // TestSubAgent_DeclarativeWithOwnTools verifies AgentConfig sub-agent that
-// has its own tool.
+// has its own tools.
 func TestSubAgent_DeclarativeWithOwnTools(t *testing.T) {
 	innerTool := &mockTool{name: "calc", desc: "Calculator"}
 
@@ -404,7 +404,7 @@ func TestSubAgent_DeclarativeWithOwnTools(t *testing.T) {
 					"worker result",
 				),
 				Tools:         []core.Tool{innerTool},
-				SystemPrompt:  "You are a worker with tool.",
+				SystemPrompt:  "You are a worker with tools.",
 				MaxIterations: 5,
 			},
 		},
@@ -832,7 +832,7 @@ func TestSubAgent_AgentFactoryOnly(t *testing.T) {
 }
 
 // TestSubAgent_BindIdempotent verifies BindToConfig can be called multiple times
-// without creating duplicate tool.
+// without creating duplicate tools.
 func TestSubAgent_BindIdempotent(t *testing.T) {
 	mw := New([]SubAgentSpec{
 		{
