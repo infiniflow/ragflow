@@ -352,26 +352,35 @@ func TestSwitch_NilUpstreamStartWithEndWithDoNotCrash(t *testing.T) {
 	state.Sys["answer"] = nil
 	ctx := withStateForTest(context.Background(), state)
 
-	inputs := map[string]any{
-		"conditions": []any{
-			// start with "" on nil → match (route to case_target)
-			map[string]any{
-				"op": "and",
-				"to": []any{"case_target"},
-				"clauses": []any{
-					map[string]any{"left": "{{sys.answer}}", "op": "start with", "right": ""},
+	for _, tc := range []struct {
+		name string
+		op   string
+	}{
+		{name: "start with", op: "start with"},
+		{name: "end with", op: "end with"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			inputs := map[string]any{
+				"conditions": []any{
+					map[string]any{
+						"op": "and",
+						"to": []any{"case_target"},
+						"clauses": []any{
+							map[string]any{"left": "{{sys.answer}}", "op": tc.op, "right": ""},
+						},
+					},
 				},
-			},
-		},
-		"default": "else_target",
-	}
-	out, err := s.Invoke(ctx, inputs)
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-	targets := nextTargets(out)
-	if len(targets) != 1 || targets[0] != "case_target" {
-		t.Errorf("_next: got %v, want [\"case_target\"] (nil coerced to \"\" starts with \"\")", targets)
+				"default": "else_target",
+			}
+			out, err := s.Invoke(ctx, inputs)
+			if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			targets := nextTargets(out)
+			if len(targets) != 1 || targets[0] != "case_target" {
+				t.Errorf("_next: got %v, want [\"case_target\"] (nil coerced to \"\" %s \"\")", targets, tc.op)
+			}
+		})
 	}
 }
 

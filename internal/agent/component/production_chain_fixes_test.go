@@ -197,7 +197,7 @@ func TestRetrieval_KbIDsTranslatedToDatasetIDs(t *testing.T) {
 }
 
 func TestRetrieval_LegacyQueryStringNormalized(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{TranslateError: true})
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{TranslateError: true})
 	if err != nil {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
@@ -261,7 +261,7 @@ func TestRetrieval_LegacyQueryStringNormalized(t *testing.T) {
 }
 
 func TestRetrieval_StructuredUserFillInputNormalized(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{TranslateError: true})
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{TranslateError: true})
 	if err != nil {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
@@ -327,7 +327,7 @@ func TestRetrieval_StructuredUserFillInputNormalized(t *testing.T) {
 }
 
 func TestRetrieval_ResolveDatasetIDByTenantName(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{TranslateError: true})
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{TranslateError: true})
 	if err != nil {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
@@ -361,6 +361,35 @@ func TestRetrieval_ResolveDatasetIDByTenantName(t *testing.T) {
 
 	if got := resolveRetrievalDatasetID(ctx, "da1"); got != "kb-da1" {
 		t.Fatalf("resolveRetrievalDatasetID = %q, want kb-da1", got)
+	}
+}
+
+func TestRetrieval_StructuredInputPreservesQueryWhenDatasetIDsAlreadyPresent(t *testing.T) {
+	c, err := newRetrievalComponent(nil)
+	if err != nil {
+		t.Fatalf("newRetrievalComponent: %v", err)
+	}
+	rc := c.(*retrievalComponent)
+	merged := rc.applyDefaults(map[string]any{
+		"dataset_ids": []string{"kb-fixed"},
+		"state": map[string]any{
+			"UserFillUp:KBInput": map[string]any{
+				"kb":    "da1",
+				"query": "合同",
+			},
+		},
+	})
+
+	consumed := normalizeStructuredRetrievalInputs(context.Background(), merged)
+	if !consumed {
+		t.Fatal("normalizeStructuredRetrievalInputs should consume structured query")
+	}
+	if got, _ := merged["query"].(string); got != "合同" {
+		t.Fatalf("query = %q, want 合同", got)
+	}
+	ds, ok := merged["dataset_ids"].([]string)
+	if !ok || len(ds) != 1 || ds[0] != "kb-fixed" {
+		t.Fatalf("dataset_ids = %#v, want []string{\"kb-fixed\"}", merged["dataset_ids"])
 	}
 }
 

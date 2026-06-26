@@ -267,6 +267,8 @@ func TestKeenable_ResolveBaseURL(t *testing.T) {
 		{"http ::1 ok", "http://[::1]:8080", true, "http://[::1]:8080"},
 		{"http non-loopback rejected", "http://example.com", false, ""},
 		{"ftp rejected", "ftp://api.keenable.ai", false, ""},
+		{"query rejected", "https://api.keenable.ai?x=1", false, ""},
+		{"fragment rejected", "https://api.keenable.ai#frag", false, ""},
 		{"no host rejected", "https:///path", false, ""},
 		{"empty rejected", "", false, ""},
 	}

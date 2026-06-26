@@ -161,6 +161,9 @@ func resolveKeenableBaseURL(raw string) (string, error) {
 	if host == "" {
 		return "", fmt.Errorf("keenable: KEENABLE_API_URL must have a host, got %q", raw)
 	}
+	if u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("keenable: KEENABLE_API_URL must not include query or fragment, got %q", raw)
+	}
 	switch u.Scheme {
 	case "https":
 		return raw, nil

@@ -43,6 +43,7 @@ import (
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -306,9 +307,7 @@ func normalizeLegacyRetrievalInputs(ctx context.Context, out map[string]any) {
 }
 
 func normalizeStructuredRetrievalInputs(ctx context.Context, out map[string]any) bool {
-	if _, hasDatasetIDs := out["dataset_ids"]; hasDatasetIDs {
-		return false
-	}
+	_, hasDatasetIDs := out["dataset_ids"]
 	candidateMaps := []map[string]any{}
 	if stateMap, ok := out["state"].(map[string]any); ok {
 		if raw, ok := stateMap["UserFillUp:KBInput"].(map[string]any); ok {
@@ -331,7 +330,7 @@ func normalizeStructuredRetrievalInputs(ctx context.Context, out map[string]any)
 		if queryText != "" {
 			out["query"] = queryText
 		}
-		if kbName != "" {
+		if kbName != "" && !hasDatasetIDs {
 			if datasetID := resolveRetrievalDatasetID(ctx, strings.TrimSpace(kbName)); datasetID != "" {
 				out["dataset_ids"] = []string{datasetID}
 				common.Debug("agent retrieval component: resolved dataset id",
@@ -388,12 +387,17 @@ func resolveRetrievalDatasetID(ctx context.Context, kbName string) string {
 			}
 		}
 		if userID, _ := state.Sys["user_id"].(string); userID != "" {
-			if kbs, lookupErr := dao.NewKnowledgebaseDAO().GetKBByNameAndUserID(kbName, userID); lookupErr == nil && len(kbs) > 0 && kbs[0] != nil {
-				common.Debug("agent retrieval component: resolved dataset id by user visibility",
-					zap.String("kb", kbName),
-					zap.String("user_id", userID),
-					zap.String("dataset_id", kbs[0].ID))
-				return kbs[0].ID
+			if kbs, lookupErr := dao.NewKnowledgebaseDAO().GetKBByNameAndUserID(kbName, userID); lookupErr == nil && len(kbs) > 0 {
+				for _, kb := range kbs {
+					if kb == nil || kb.Status == nil || *kb.Status != string(entity.StatusValid) {
+						continue
+					}
+					common.Debug("agent retrieval component: resolved dataset id by user visibility",
+						zap.String("kb", kbName),
+						zap.String("user_id", userID),
+						zap.String("dataset_id", kb.ID))
+					return kb.ID
+				}
 			} else if lookupErr != nil {
 				common.Warn("agent retrieval component: resolve dataset id by name failed",
 					zap.String("kb", kbName),
