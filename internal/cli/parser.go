@@ -206,11 +206,10 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseUserStartIngestion()
 	case TokenStop:
 		return p.parseUserStopIngestion()
-
 	case TokenSave:
-		return p.parseUserSaveCommand()
+		return p.parseAPISaveCommand()
 	case TokenUse:
-		return p.parseUseCommand()
+		return p.parseAPIUseCommands()
 	case TokenUpdate:
 		return p.parseUpdateCommand()
 	case TokenRemove:

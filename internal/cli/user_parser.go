@@ -498,7 +498,7 @@ func (p *Parser) parseAPIShowCommands() (*Command, error) {
 	case TokenAdmin:
 		return p.parseAPIShowAdmin()
 	case TokenAPI:
-		return p.parseUserShowAPI()
+		return p.parseAPIShowAPI()
 	case TokenLog:
 		return p.parseAPIShowLogCommands()
 	default:
@@ -1238,18 +1238,18 @@ func (p *Parser) parseDeleteAdminServer() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseUserSaveCommand() (*Command, error) {
+func (p *Parser) parseAPISaveCommand() (*Command, error) {
 	p.nextToken() // consume SAVE
 	switch p.curToken.Type {
 	case TokenConfig:
-		return p.parseSaveConfig()
+		return p.parseAPISaveConfig()
 	default:
 		return nil, fmt.Errorf("unknown ADD target: %s", p.curToken.Value)
 	}
 }
 
-// syntax: save config as 'path'
-func (p *Parser) parseSaveConfig() (*Command, error) {
+// SAVE CONFIG AS 'path'
+func (p *Parser) parseAPISaveConfig() (*Command, error) {
 	p.nextToken() // consume CONFIG
 
 	if p.curToken.Type != TokenAs {
@@ -1262,7 +1262,7 @@ func (p *Parser) parseSaveConfig() (*Command, error) {
 		return nil, err
 	}
 
-	cmd := NewCommand("save_config_command")
+	cmd := NewCommand("api_save_config_command")
 	cmd.Params["path"] = path
 
 	// Semicolon is optional
@@ -3282,22 +3282,22 @@ func (p *Parser) parseCheckProviderByKeyCommand() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseUseCommand() (*Command, error) {
+func (p *Parser) parseAPIUseCommands() (*Command, error) {
 	p.nextToken() // consume USE
 
 	switch p.curToken.Type {
 	case TokenModel:
-		return p.parseUseModel()
+		return p.parseAPIUseModel()
 	case TokenAPI:
-		return p.parseUseAPIServer()
+		return p.parseAPIUseAPIServer()
 	case TokenAdmin:
-		return p.parseUseAdminServer()
+		return p.parseAPIUseAdminServer()
 	default:
 		return nil, fmt.Errorf("expected MODEL or SKILL after USE")
 	}
 }
 
-func (p *Parser) parseUseModel() (*Command, error) {
+func (p *Parser) parseAPIUseModel() (*Command, error) {
 	p.nextToken() // consume MODEL
 
 	modelNameOrID, err := p.parseQuotedString()
@@ -3311,7 +3311,7 @@ func (p *Parser) parseUseModel() (*Command, error) {
 		p.nextToken()
 	}
 
-	cmd := NewCommand("use_model")
+	cmd := NewCommand("api_use_model")
 
 	if common.IsCompositeModelName(modelNameOrID) {
 		cmd.Params["composite_model_name"] = modelNameOrID
@@ -3328,7 +3328,7 @@ func (p *Parser) parseUseModel() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseUseAPIServer() (*Command, error) {
+func (p *Parser) parseAPIUseAPIServer() (*Command, error) {
 	p.nextToken() // consume API
 
 	serverName, err := p.parseQuotedString()
@@ -3336,7 +3336,7 @@ func (p *Parser) parseUseAPIServer() (*Command, error) {
 		return nil, err
 	}
 	p.nextToken()
-	cmd := NewCommand("use_api_server")
+	cmd := NewCommand("api_use_api_server")
 	cmd.Params["server_name"] = serverName
 
 	// Semicolon is optional
@@ -3346,10 +3346,10 @@ func (p *Parser) parseUseAPIServer() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseUseAdminServer() (*Command, error) {
+func (p *Parser) parseAPIUseAdminServer() (*Command, error) {
 	p.nextToken() // consume ADMIN
 
-	cmd := NewCommand("use_admin_server")
+	cmd := NewCommand("api_use_admin_server")
 
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
@@ -4129,19 +4129,19 @@ func (p *Parser) parseUserRemoveTask() (*Command, error) {
 	return cmd, nil
 }
 
-// parseUserShowAPI parses SHOW API SERVER <server_name>
-func (p *Parser) parseUserShowAPI() (*Command, error) {
+// SHOW API SERVER <server_name>
+func (p *Parser) parseAPIShowAPI() (*Command, error) {
 	p.nextToken() // consume API
 
 	var cmd *Command
 	switch p.curToken.Type {
 	case TokenServer:
 		p.nextToken()
-		cmd = NewCommand("show_api_server")
+		cmd = NewCommand("api_show_api_server")
 
 		serverName, err := p.parseQuotedString()
 		if err != nil {
-			return nil, fmt.Errorf("expected dataset_name: %w", err)
+			return nil, fmt.Errorf("expected API server name: %w", err)
 		}
 		cmd.Params["api_server_name"] = serverName
 		p.nextToken()

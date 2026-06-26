@@ -259,8 +259,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.CommonEnableOrDisableModel(cmd, "disable")
 	case "admin_show_admin_server":
 		return c.CommonShowAdminServerCommand(cmd)
-	case "show_api_server":
-		return c.ShowAPIServer(cmd)
+	case "admin_show_api_server":
+		return c.CommonShowAPIServerCommand(cmd)
 	case "admin_show_log_level":
 		return c.AdminShowLogLevelCommand(cmd)
 	case "admin_list_api_servers":
@@ -273,8 +273,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("cannot add admin server in admin mode")
 	case "delete_admin_server":
 		return nil, fmt.Errorf("cannot delete admin server in admin mode")
-	case "save_config_command":
-		return c.SaveServerConfig(cmd)
+	case "admin_save_config_command":
+		return c.CommonSaveServerConfigCommand(cmd)
 	case "admin_use_api_server":
 		return c.CommonUseAPIServerCommand(cmd)
 	case "admin_use_admin_server":
@@ -412,11 +412,11 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.CommonCheckProviderConnection(cmd)
 	case "check_provider_with_key":
 		return c.CommonCheckProviderWithKey(cmd)
-	case "use_model":
-		return c.UseModel(cmd)
-	case "use_api_server":
+	case "api_use_model":
+		return c.APIUseModelCommand(cmd)
+	case "api_use_api_server":
 		return c.CommonUseAPIServerCommand(cmd)
-	case "use_admin_server":
+	case "api_use_admin_server":
 		return c.CommonUseAdminServerCommand(cmd)
 	case "set_default_model":
 		return c.SetDefaultModel(cmd)
@@ -465,8 +465,8 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.UserParseLocalFile(cmd)
 	case "api_show_admin_server":
 		return c.CommonShowAdminServerCommand(cmd)
-	case "show_api_server":
-		return c.ShowAPIServer(cmd)
+	case "api_show_api_server":
+		return c.CommonShowAPIServerCommand(cmd)
 	case "api_show_log_level":
 		return c.APIShowLogLevelCommand(cmd)
 	case "api_list_api_servers":
@@ -485,8 +485,8 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.DeleteAdminServer(cmd)
 	case "user_chunk_command":
 		return c.ChunkCommand(cmd)
-	case "save_config_command":
-		return c.SaveServerConfig(cmd)
+	case "api_save_config_command":
+		return c.CommonSaveServerConfigCommand(cmd)
 	case "file_system_command":
 		return c.ExecuteFilesystemCommand(cmd)
 	default:

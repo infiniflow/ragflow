@@ -2762,8 +2762,8 @@ func (c *CLI) APIShowProviderInstanceTaskCommand(cmd *Command) (ResponseIf, erro
 	return &result, nil
 }
 
-// UseModel sets the current model for chat
-func (c *CLI) UseModel(cmd *Command) (ResponseIf, error) {
+// APIUseModelCommand sets the current model for chat
+func (c *CLI) APIUseModelCommand(cmd *Command) (ResponseIf, error) {
 	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
 		return nil, fmt.Errorf("API key not set. Please login first")
 	}
