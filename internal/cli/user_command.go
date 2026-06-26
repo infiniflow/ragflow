@@ -2715,8 +2715,11 @@ func (c *CLI) APIListModelInstanceTasksCommand(cmd *Command) (ResponseIf, error)
 	return &result, nil
 }
 
-func (c *CLI) ShowTaskUserCommand(cmd *Command) (ResponseIf, error) {
-	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+// APIShowProviderInstanceTaskCommand shows the details of a task
+func (c *CLI) APIShowProviderInstanceTaskCommand(cmd *Command) (ResponseIf, error) {
+
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+	if httpClient.APIKey == nil && httpClient.LoginToken == nil {
 		return nil, fmt.Errorf("API key not set. Please login first")
 	}
 
@@ -2724,18 +2727,14 @@ func (c *CLI) ShowTaskUserCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	var providerName, instanceName string
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("no provider name")
+	}
 
-	// Check if composite_instance_name is provided in command
-	if compositeModelName, ok := cmd.Params["composite_instance_name"].(string); ok && compositeModelName != "" {
-		names := strings.Split(compositeModelName, "@")
-		if len(names) != 2 {
-			return nil, fmt.Errorf("model name must be in format 'instance@provider'")
-		}
-		providerName = names[1]
-		instanceName = names[0]
-	} else {
-		return nil, fmt.Errorf("no provider name or instance name")
+	instanceName, ok := cmd.Params["instance_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("no instance name")
 	}
 
 	taskID, ok := cmd.Params["task_id"].(string)
@@ -2745,7 +2744,7 @@ func (c *CLI) ShowTaskUserCommand(cmd *Command) (ResponseIf, error) {
 
 	url := fmt.Sprintf("/providers/%s/instances/%s/tasks/%s", providerName, instanceName, taskID)
 
-	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", url, "web", nil, nil)
+	resp, err := httpClient.Request("GET", url, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get task: %w", err)
 	}

@@ -385,7 +385,7 @@ func (p *Parser) parseAdminShowCommands() (*Command, error) {
 	case TokenModel:
 		return p.parseAdminShowModel()
 	case TokenAdmin:
-		return p.parseUserShowAdmin()
+		return p.parseAdminShowAdminServer()
 	case TokenAPI:
 		return p.parseUserShowAPI()
 	case TokenUsers:
@@ -820,6 +820,26 @@ func (p *Parser) parseAdminShowModel() (*Command, error) {
 
 	cmd := NewCommand("admin_show_model")
 	cmd.Params["model_name"] = modelName
+	return cmd, nil
+}
+
+// SHOW ADMIN SERVER;
+func (p *Parser) parseAdminShowAdminServer() (*Command, error) {
+	p.nextToken() // consume ADMIN
+
+	var cmd *Command
+	switch p.curToken.Type {
+	case TokenServer:
+		p.nextToken()
+		cmd = NewCommand("admin_show_admin_server")
+	default:
+		return nil, fmt.Errorf("expected SERVER after ADMIN")
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
 	return cmd, nil
 }
 

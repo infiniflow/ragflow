@@ -1101,7 +1101,7 @@ func (c *CLI) CommonShowCurrentCommand(cmd *Command) (ResponseIf, error) {
 	return result, nil
 }
 
-func (c *CLI) ShowAdminServer(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonShowAdminServerCommand(cmd *Command) (ResponseIf, error) {
 	return c.GetAdminServerInfo()
 }
 

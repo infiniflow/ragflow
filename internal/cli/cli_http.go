@@ -257,9 +257,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.CommonEnableOrDisableModel(cmd, "enable")
 	case "admin_disable_model":
 		return c.CommonEnableOrDisableModel(cmd, "disable")
-		// TODO: Implement other commands
-	case "show_admin_server":
-		return c.ShowAdminServer(cmd)
+	case "admin_show_admin_server":
+		return c.CommonShowAdminServerCommand(cmd)
 	case "show_api_server":
 		return c.ShowAPIServer(cmd)
 	case "admin_show_log_level":
@@ -348,6 +347,8 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.CommonShowProviderInstanceCommand(cmd)
 	case "api_show_provider_instance_balance":
 		return c.CommonShowProviderInstanceBalanceCommand(cmd)
+	case "api_show_provider_instance_task":
+		return c.APIShowProviderInstanceTaskCommand(cmd)
 	case "api_show_provider_model":
 		return c.CommonShowProviderModelCommand(cmd)
 	case "list_provider_models":
@@ -423,8 +424,6 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ResetDefaultModel(cmd)
 	case "api_list_default_models":
 		return c.ListDefaultModels(cmd)
-	case "show_task_user_command":
-		return c.ShowTaskUserCommand(cmd)
 	case "create_chunk_store":
 		return c.CreateChunkStore(cmd)
 	case "drop_chunk_store":
@@ -464,8 +463,8 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 	// TODO: Implement other commands
 	case "user_parse_local_file_command":
 		return c.UserParseLocalFile(cmd)
-	case "show_admin_server":
-		return c.ShowAdminServer(cmd)
+	case "api_show_admin_server":
+		return c.CommonShowAdminServerCommand(cmd)
 	case "show_api_server":
 		return c.ShowAPIServer(cmd)
 	case "api_show_log_level":
