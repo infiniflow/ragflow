@@ -223,7 +223,7 @@ func (m *tracedModel) Generate(ctx context.Context, msgs []*schema.Message, opts
 		ctx, span = m.mw.tracer.Start(ctx, "model.generate",
 			trace.WithAttributes(
 				attribute.Int("messages.count", len(msgs)),
-				attribute.Int("tools.count", m.toolCnt),
+				attribute.Int("tool.count", m.toolCnt),
 			),
 			trace.WithSpanKind(trace.SpanKindClient),
 		)
@@ -246,7 +246,7 @@ func (m *tracedModel) Stream(ctx context.Context, msgs []*schema.Message, opts .
 		ctx, span = m.mw.tracer.Start(ctx, "model.stream",
 			trace.WithAttributes(
 				attribute.Int("messages.count", len(msgs)),
-				attribute.Int("tools.count", m.toolCnt),
+				attribute.Int("tool.count", m.toolCnt),
 			),
 			trace.WithSpanKind(trace.SpanKindClient),
 		)

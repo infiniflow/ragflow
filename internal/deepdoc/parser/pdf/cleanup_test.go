@@ -2,10 +2,11 @@ package parser
 
 import (
 	"testing"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
 func TestMergeSameBullet(t *testing.T) {
-	boxes := []TextBox{
+	boxes := []pdf.TextBox{
 		{Text: "* item 1", Top: 100, Bottom: 112, X0: 50, X1: 200},
 		{Text: "* item 2", Top: 114, Bottom: 126, X0: 50, X1: 200},
 	}
@@ -16,7 +17,7 @@ func TestMergeSameBullet(t *testing.T) {
 }
 
 func TestMergeSameBulletNoMerge(t *testing.T) {
-	boxes := []TextBox{
+	boxes := []pdf.TextBox{
 		{Text: "A item", Top: 100, Bottom: 112, X0: 50, X1: 200},
 		{Text: "B item", Top: 114, Bottom: 126, X0: 50, X1: 200},
 	}
@@ -28,7 +29,7 @@ func TestMergeSameBulletNoMerge(t *testing.T) {
 
 func TestMergeSameBulletChinese(t *testing.T) {
 	// Chinese chars start, should not merge via bullet rule
-	boxes := []TextBox{
+	boxes := []pdf.TextBox{
 		{Text: "测试文本", Top: 100, Bottom: 112, X0: 50, X1: 200},
 		{Text: "测试内容", Top: 114, Bottom: 126, X0: 50, X1: 200},
 	}

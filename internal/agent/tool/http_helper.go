@@ -64,7 +64,7 @@ func (c RetryConfig) withDefaults() RetryConfig {
 }
 
 // HTTPHelper is a context-aware HTTP client shared by the HTTP
-// tools. It wraps http.Client with otelhttp.NewTransport for
+// tool. It wraps http.Client with otelhttp.NewTransport for
 // OTel span propagation, enforces a 30s default timeout, and
 // retries idempotent failures (5xx + network errors) per the
 // RetryConfig.

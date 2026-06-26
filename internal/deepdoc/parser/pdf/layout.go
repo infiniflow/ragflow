@@ -3,10 +3,13 @@ package parser
 import (
 	"log/slog"
 	"math"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	util "ragflow/internal/deepdoc/parser/pdf/util"
 	"regexp"
 	"slices"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -16,7 +19,7 @@ import (
 // with silhouette score selection, matching Python's _assign_column().
 //
 // Python: pdf_parser.py:739 _assign_column()
-func AssignColumn(boxes []TextBox, zoom float64) []TextBox {
+func AssignColumn(boxes []pdf.TextBox, zoom float64) []pdf.TextBox {
 	if len(boxes) == 0 {
 		return boxes
 	}
@@ -26,7 +29,7 @@ func AssignColumn(boxes []TextBox, zoom float64) []TextBox {
 		pageGroups[b.PageNumber] = append(pageGroups[b.PageNumber], i)
 	}
 
-	result := make([]TextBox, len(boxes))
+	result := make([]pdf.TextBox, len(boxes))
 	copy(result, boxes)
 
 	// Step A: per-page best k using silhouette score.
@@ -71,10 +74,10 @@ func AssignColumn(boxes []TextBox, zoom float64) []TextBox {
 		bestK, bestScore := 1, -1.0
 
 		for k := 1; k <= maxTry; k++ {
-			labels, _ := kmeans1D(x0s, k)
+			labels, _ := util.KMeans1D(x0s, k)
 			var score float64
 			if k > 1 {
-				score = silhouette1D(x0s, labels)
+				score = util.Silhouette1D(x0s, labels)
 			}
 			// score = 0 for k=1; score = -1 if silhouette undefined.
 			if score > bestScore {
@@ -101,7 +104,7 @@ func AssignColumn(boxes []TextBox, zoom float64) []TextBox {
 			x0s[i] = boxes[idx].X0
 		}
 
-		labels, centroids := kmeans1D(x0s, k)
+		labels, centroids := util.KMeans1D(x0s, k)
 
 		// Sort centroids by x position, remap labels left→right.
 		type clPair struct {
@@ -131,12 +134,12 @@ func AssignColumn(boxes []TextBox, zoom float64) []TextBox {
 // TextMerge horizontally merges adjacent boxes at similar vertical positions.
 //
 // Python: pdf_parser.py:888 _text_merge()
-func TextMerge(boxes []TextBox, medianHeights map[int]float64, zoom float64) []TextBox {
+func TextMerge(boxes []pdf.TextBox, medianHeights map[int]float64, zoom float64) []pdf.TextBox {
 	if len(boxes) < 2 {
 		return boxes
 	}
 	// Build output via collect: O(n) instead of O(n²) slice-element removal.
-	out := make([]TextBox, 0, len(boxes))
+	out := make([]pdf.TextBox, 0, len(boxes))
 	i := 0
 	for i < len(boxes) {
 		cur := boxes[i]
@@ -149,14 +152,14 @@ func TextMerge(boxes []TextBox, medianHeights map[int]float64, zoom float64) []T
 			// Python: b.get("layoutno", "0") != b_.get("layoutno", "1") —
 			// asymmetric defaults mean empty/missing layoutno never merge horizontally.
 			if cur.LayoutNo != nxt.LayoutNo || cur.LayoutNo == "" || nxt.LayoutNo == "" ||
-				cur.LayoutType == LayoutTypeTable || cur.LayoutType == LayoutTypeFigure || cur.LayoutType == LayoutTypeEquation {
+				cur.LayoutType == pdf.LayoutTypeTable || cur.LayoutType == pdf.LayoutTypeFigure || cur.LayoutType == pdf.LayoutTypeEquation {
 				break
 			}
 			mh := medianHeights[cur.PageNumber]
 			if mh <= 0 {
 				mh = 10
 			}
-			if math.Abs(BoxYDis(cur, nxt)) < mh/3 {
+			if math.Abs(util.BoxYDis(cur, nxt)) < mh/3 {
 				cur.X1 = nxt.X1
 				cur.Top = (cur.Top + nxt.Top) / 2
 				cur.Bottom = (cur.Bottom + nxt.Bottom) / 2
@@ -176,7 +179,7 @@ func TextMerge(boxes []TextBox, medianHeights map[int]float64, zoom float64) []T
 // NaiveVerticalMerge vertically merges boxes on the same page/column.
 //
 // Python: pdf_parser.py:926 _naive_vertical_merge()
-func NaiveVerticalMerge(boxes []TextBox, medianHeights map[int]float64, medianWidths map[int]float64, isEnglish bool) []TextBox {
+func NaiveVerticalMerge(boxes []pdf.TextBox, medianHeights map[int]float64, medianWidths map[int]float64, isEnglish bool) []pdf.TextBox {
 	if len(boxes) < 2 {
 		return boxes
 	}
@@ -195,7 +198,7 @@ func NaiveVerticalMerge(boxes []TextBox, medianHeights map[int]float64, medianWi
 	}
 	sort.Ints(pageKeys)
 
-	var result []TextBox
+	var result []pdf.TextBox
 	for _, pg := range pageKeys {
 		indices := groups[pg]
 		sort.Slice(indices, func(i, j int) bool {
@@ -205,14 +208,14 @@ func NaiveVerticalMerge(boxes []TextBox, medianHeights map[int]float64, medianWi
 			}
 			return bi.X0 < bj.X0
 		})
-		bxs := make([]TextBox, len(indices))
+		bxs := make([]pdf.TextBox, len(indices))
 		for i, idx := range indices {
 			bxs[i] = boxes[idx]
 		}
 
 		mh := medianHeights[pg]
 		if mh <= 0 {
-			mh = MedianHeight(bxs)
+			mh = util.MedianHeight(bxs)
 		}
 		mw := medianWidths[pg]
 		if mw <= 0 {
@@ -220,7 +223,7 @@ func NaiveVerticalMerge(boxes []TextBox, medianHeights map[int]float64, medianWi
 		}
 
 		// Collect pattern: build output slice, merging into last element when appropriate.
-		out := make([]TextBox, 0, len(bxs))
+		out := make([]pdf.TextBox, 0, len(bxs))
 		for i := 0; i < len(bxs); i++ {
 			b := bxs[i]
 			// Cross-page suffix (e.g. page number on previous page): skip.
@@ -233,7 +236,7 @@ func NaiveVerticalMerge(boxes []TextBox, medianHeights map[int]float64, medianWi
 				// keeps whitespace inline and lets it extend the previous box.
 				if len(out) > 0 {
 					prev := &out[len(out)-1]
-					if b.Top-prev.Bottom <= mh*1.5 && OverlapX(prev, &b) >= 0.3 {
+					if b.Top-prev.Bottom <= mh*1.5 && util.OverlapX(prev, &b) >= 0.3 {
 						// TODO: prev.Bottom = math.Max(prev.Bottom, b.Bottom) — direct assignment
 						// can shrink a tall merged box when a short whitespace box overlaps.
 						// Matches Python behavior (also direct assignment). Defer fix until
@@ -259,7 +262,7 @@ func NaiveVerticalMerge(boxes []TextBox, medianHeights map[int]float64, medianWi
 				out = append(out, b)
 				continue
 			}
-			ov := OverlapX(prev, &b)
+			ov := util.OverlapX(prev, &b)
 			if ov < 0.3 {
 				slog.Debug("vm reject", "reason", "ovX", "ov", ov, "threshold", 0.3)
 				out = append(out, b)
@@ -308,7 +311,7 @@ func NaiveVerticalMerge(boxes []TextBox, medianHeights map[int]float64, medianWi
 // FinalReadingOrderMerge sorts boxes by page → column → top → x0.
 //
 // Python: pdf_parser.py:1007 _final_reading_order_merge()
-func FinalReadingOrderMerge(boxes []TextBox) []TextBox {
+func FinalReadingOrderMerge(boxes []pdf.TextBox) []pdf.TextBox {
 	if len(boxes) == 0 {
 		return boxes
 	}
@@ -378,4 +381,62 @@ func startsWithOneOf(s, set string) bool {
 // containsRune returns true if the string set contains the given rune.
 func containsRune(set string, r rune) bool {
 	return strings.ContainsRune(set, r)
+}
+
+// MergeSameBullet merges adjacent boxes that start with the same bullet/number
+// character, combining their text with a newline separator.
+func MergeSameBullet(boxes []pdf.TextBox, tok pdf.Tokenizer) []pdf.TextBox {
+	if len(boxes) < 2 {
+		return boxes
+	}
+	out := make([]pdf.TextBox, 0, len(boxes))
+	i := 0
+	for i < len(boxes) {
+		if strings.TrimSpace(boxes[i].Text) == "" {
+			i++
+			continue
+		}
+		cur := boxes[i]
+		i++
+		for i < len(boxes) {
+			if strings.TrimSpace(boxes[i].Text) == "" {
+				i++
+				continue
+			}
+			nxt := boxes[i]
+			firstCur := firstRuneString(cur.Text)
+			firstNxt := firstRuneString(nxt.Text)
+			if firstCur != firstNxt ||
+				unicode.Is(unicode.Latin, firstCur) ||
+				isChinese(firstCur, tok) ||
+				cur.Top > nxt.Bottom {
+				break
+			}
+			cur.Text = cur.Text + "\n" + nxt.Text
+			cur.X0 = min(cur.X0, nxt.X0)
+			cur.X1 = max(cur.X1, nxt.X1)
+			cur.Bottom = nxt.Bottom
+			i++
+		}
+		out = append(out, cur)
+	}
+	return out
+}
+
+func firstRuneString(s string) rune {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+	return []rune(s)[0]
+}
+
+// isChinese checks if a rune is a Chinese character (CJK Unified Ideograph).
+func isChinese(r rune, tok pdf.Tokenizer) bool {
+	if tok != nil {
+		return strings.Contains(tok.Tag(string(r)), "n")
+	}
+	return (r >= 0x4E00 && r <= 0x9FFF) ||
+		(r >= 0x3400 && r <= 0x4DBF) ||
+		(r >= 0x20000 && r <= 0x2A6DF)
 }

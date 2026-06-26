@@ -37,7 +37,7 @@ func NewPluginHandler(pluginService *service.PluginService) *PluginHandler {
 	}
 }
 
-// ListLLMTools handles GET /v1/plugin/tools.
+// ListLLMTools handles GET /v1/plugin/tool.
 //
 // @Summary  List LLM tool plugins
 // @Description  Return the metadata of every embedded LLM tool plugin. Matches

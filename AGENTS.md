@@ -63,7 +63,7 @@ Located in `web/`.
    ```bash
    npm run dev
    ```
-   Runs on port 8000 by default.
+   Runs on port 9390 by default.
 
 ### Docker Deployment
 To run the full stack using Docker:
@@ -107,4 +107,3 @@ docker compose -f docker-compose.yml up -d
   pre-commit install
   pre-commit run --all-files
   ```
-

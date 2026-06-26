@@ -9,6 +9,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"testing"
 )
 
@@ -25,8 +26,8 @@ func TestParse_CropSectionImages(t *testing.T) {
 	}
 	defer eng.Close()
 
-	cfg := DefaultParserConfig()
-	p := NewParser(cfg, &MockDocAnalyzer{Healthy: true, Model: ModelSaas})
+	cfg := pdf.DefaultParserConfig()
+	p := NewParser(cfg, &MockDocAnalyzer{Healthy: true})
 	result, err := p.Parse(context.Background(), eng)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
@@ -78,7 +79,7 @@ func TestCrop_Regression_SnapshotPDFs(t *testing.T) {
 			}
 			defer eng.Close()
 
-			p := NewParser(DefaultParserConfig(), &MockDocAnalyzer{Healthy: true, Model: ModelSaas})
+			p := NewParser(pdf.DefaultParserConfig(), &MockDocAnalyzer{Healthy: true})
 			result, err := p.Parse(context.Background(), eng)
 			if err != nil {
 				t.Fatalf("Parse: %v", err)

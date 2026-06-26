@@ -14,6 +14,8 @@ package pdfium
 typedef struct FPDF_DOCUMENT__  { int unused; } *FPDF_DOCUMENT;
 typedef struct FPDF_PAGE__     { int unused; } *FPDF_PAGE;
 typedef struct FPDF_BITMAP__   { int unused; } *FPDF_BITMAP;
+typedef struct FPDF_BOOKMARK__ { int unused; } *FPDF_BOOKMARK;
+typedef struct FPDF_DEST__     { int unused; } *FPDF_DEST;
 
 extern void          FPDF_InitLibrary(void);
 extern FPDF_DOCUMENT FPDF_LoadMemDocument(const void* data_buf, int size, const char* password);
@@ -32,6 +34,13 @@ extern void*         FPDFBitmap_GetBuffer(FPDF_BITMAP bitmap);
 extern int           FPDFBitmap_GetWidth(FPDF_BITMAP bitmap);
 extern int           FPDFBitmap_GetHeight(FPDF_BITMAP bitmap);
 extern int           FPDFBitmap_GetStride(FPDF_BITMAP bitmap);
+
+// Outline / bookmark API
+extern FPDF_BOOKMARK FPDFBookmark_GetFirstChild(FPDF_DOCUMENT document, FPDF_BOOKMARK bookmark);
+extern FPDF_BOOKMARK FPDFBookmark_GetNextSibling(FPDF_DOCUMENT document, FPDF_BOOKMARK bookmark);
+extern unsigned long  FPDFBookmark_GetTitle(FPDF_BOOKMARK bookmark, void* buffer, unsigned long buflen);
+extern FPDF_DEST      FPDFBookmark_GetDest(FPDF_DOCUMENT document, FPDF_BOOKMARK bookmark);
+extern int            FPDFDest_GetDestPageIndex(FPDF_DOCUMENT document, FPDF_DEST dest);
 */
 import "C"
 import (
@@ -40,8 +49,16 @@ import (
 	"image/color"
 	"math"
 	"sync"
+	"unicode/utf16"
 	"unsafe"
 )
+
+// Outline represents one entry in a PDF document outline (table of contents).
+type Outline struct {
+	Title      string
+	Level      int
+	PageNumber int // 1-indexed, matching Python
+}
 
 var initOnce sync.Once
 
@@ -162,4 +179,88 @@ func openPage(pdfData []byte, pageIdx int) (
 		C.free(cData)
 	}
 	return
+}
+
+// ExtractOutlines returns the document outline (bookmarks / table of contents)
+// from a PDF. Returns nil for empty or broken PDFs. Title decoding uses UTF-16LE
+// as required by pdfium's FPDFBookmark_GetTitle.
+//
+// Traversal is iterative with an explicit stack to avoid stack overflow on deep
+// outline trees. pdfium is not thread-safe; callers must hold pdfiumMu.
+func ExtractOutlines(pdfData []byte) []Outline {
+	if len(pdfData) == 0 {
+		return nil
+	}
+	Init()
+	pdfiumMu.Lock()
+	defer pdfiumMu.Unlock()
+
+	cData := C.CBytes(pdfData)
+	defer C.free(cData)
+
+	doc := C.FPDF_LoadMemDocument(unsafe.Pointer(cData), C.int(len(pdfData)), nil)
+	if doc == nil {
+		return nil
+	}
+	defer C.FPDF_CloseDocument(doc)
+
+	type frame struct {
+		bm    C.FPDF_BOOKMARK
+		level int
+	}
+
+	var result []Outline
+	stack := []frame{{bm: C.FPDFBookmark_GetFirstChild(doc, nil), level: 0}}
+
+	for len(stack) > 0 {
+		top := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if top.bm == nil {
+			continue
+		}
+
+		// Title (UTF-16LE).
+		title := bookmarkTitle(top.bm)
+
+		// Page number.
+		pageNum := 1 // default to page 1 if dest is unavailable
+		if dest := C.FPDFBookmark_GetDest(doc, top.bm); dest != nil {
+			pn := C.FPDFDest_GetDestPageIndex(doc, dest)
+			if pn >= 0 {
+				pageNum = int(pn) + 1 // pdfium returns 0-based
+			}
+		}
+
+		result = append(result, Outline{Title: title, Level: top.level, PageNumber: pageNum})
+
+		// Push siblings after children so children are processed first (pre-order).
+		if sibling := C.FPDFBookmark_GetNextSibling(doc, top.bm); sibling != nil {
+			stack = append(stack, frame{bm: sibling, level: top.level})
+		}
+		if child := C.FPDFBookmark_GetFirstChild(doc, top.bm); child != nil {
+			stack = append(stack, frame{bm: child, level: top.level + 1})
+		}
+	}
+	return result
+}
+
+// bookmarkTitle reads a bookmark's title (UTF-16LE) and converts to Go string.
+func bookmarkTitle(bm C.FPDF_BOOKMARK) string {
+	// First call: get required buffer length in bytes.
+	buflen := C.FPDFBookmark_GetTitle(bm, nil, 0)
+	if buflen <= 0 {
+		return ""
+	}
+	buf := make([]byte, buflen)
+	C.FPDFBookmark_GetTitle(bm, unsafe.Pointer(&buf[0]), buflen)
+
+	// Title is UTF-16LE. Convert to []uint16 then decode.
+	n := int(buflen) / 2
+	u16 := unsafe.Slice((*uint16)(unsafe.Pointer(&buf[0])), n)
+
+	// Strip trailing null terminator if present.
+	if n > 0 && u16[n-1] == 0 {
+		u16 = u16[:n-1]
+	}
+	return string(utf16.Decode(u16))
 }

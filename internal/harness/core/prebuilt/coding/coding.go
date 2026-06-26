@@ -43,7 +43,7 @@ type Config struct {
 	// Model is the chat model. Required (unless using profile system).
 	Model core.Model[*schema.Message]
 
-	// Tools are additional tools to register beyond the built-in coding tools.
+	// Tools are additional tools to register beyond the built-in coding tool.
 	Tools []core.Tool
 
 	// Instruction overrides the default coding system prompt.

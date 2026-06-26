@@ -22,7 +22,7 @@
 //
 // Primary registration: TavilySearch, Retrieval (incl. the
 // Python-typo SearchMyDataset alias), and ExeSQL all delegate to
-// the real Universe B tools. fixture_stubs.go's init() wires the
+// the real Universe B tool. fixture_stubs.go's init() wires the
 // registry to these wrappers; the legacy stub-only path is
 // preserved as NewRetrievalStub / NewExeSQLStub for unit tests
 // that want to assert the "no service wired" state directly.

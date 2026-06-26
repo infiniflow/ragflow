@@ -282,7 +282,7 @@ func (m *SubAgentMiddleware) BindToConfig(ctx context.Context, config *core.ReAc
 	m.mu.Unlock()
 
 	m.ensureBuilt(ctx, config)
-	config.Tools = append(config.Tools, m.tools...)
+	config.Tools = append(config.Tools, m.tool...)
 	config.ToolsConfig = nil
 }
 
@@ -399,7 +399,7 @@ func (m *SubAgentMiddleware) inheritedMiddlewares(parentCfg *core.ReActConfig[*s
 }
 
 // BeforeModelRewrite injects sub-agent ToolInfo entries into state.ToolInfos
-// so the LLM sees the sub-agents as available tools. Only tools that were
+// so the LLM sees the sub-agents as available tool. Only tools that were
 // successfully built in ensureBuilt are advertised.
 func (m *SubAgentMiddleware) BeforeModelRewrite(ctx context.Context, state *core.ReActAgentState, mc *core.ModelContext) (context.Context, *core.ReActAgentState, error) {
 	state.ToolInfos = append(state.ToolInfos, m.builtInfos...)

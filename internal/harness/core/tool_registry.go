@@ -184,7 +184,7 @@ func (r *ToolRegistry) Unregister(name string) {
 	}
 }
 
-// ToolInfos returns metadata for all registered tools. When a tool implements
+// ToolInfos returns metadata for all registered tool. When a tool implements
 // ToolInfoProvider, its full structured info is used; otherwise a minimal
 // Name+Description info is created.
 func (r *ToolRegistry) ToolInfos() []*schema.ToolInfo {

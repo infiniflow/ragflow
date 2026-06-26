@@ -477,7 +477,7 @@ type ImportResult struct {
 // ImportServers bulk-imports MCP servers from a {"mcpServers": {name: config}}
 // map. For each entry: validate type and URL, de-duplicate the name with a
 // "_N" suffix, fetch the remote tool list via mcpclient (SSRF-guarded), and
-// persist the server with tools stored under variables.tools. Mirrors
+// persist the server with tools stored under variables.tool. Mirrors
 // Python's import_multiple.
 //
 // timeoutSeconds controls how long each tool-fetch call waits; <=0 falls back
@@ -687,7 +687,7 @@ func (s *MCPService) TestServer(mcpID string, req *TestServerRequest) ([]map[str
 }
 
 // toolsAsMap mirrors Python's `{tool["name"]: tool ...}` shape used when
-// persisting variables.tools.
+// persisting variables.tool.
 func toolsAsMap(tools []utility.Tool) map[string]interface{} {
 	m := map[string]interface{}{}
 	for _, t := range tools {

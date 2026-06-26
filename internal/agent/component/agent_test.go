@@ -241,7 +241,7 @@ func (m *fakeToolCallingChatModel) Stream(_ context.Context, _ []*schema.Message
 
 func (m *fakeToolCallingChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
 	cp := *m
-	cp.tools = append([]*schema.ToolInfo(nil), tools...)
+	cp.tools = append([]*schema.ToolInfo(nil), tool...)
 	return &cp, nil
 }
 

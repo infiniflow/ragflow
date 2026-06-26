@@ -237,7 +237,7 @@ func (m *anthropicModel) buildRequest(msgs []*schema.Message) *anthropicRequest 
 		req.System = strings.TrimSuffix(systemText, "\n")
 	}
 
-	// Populate tools.
+	// Populate tool.
 	for _, t := range m.tools {
 		req.Tools = append(req.Tools, anthropicToolDef{
 			Name:        t.Name,

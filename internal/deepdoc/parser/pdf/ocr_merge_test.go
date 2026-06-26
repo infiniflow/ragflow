@@ -19,7 +19,7 @@ func TestOCR_mergeChars_RealScanned(t *testing.T) {
 	if url == "" {
 		t.Skip("DEEPDOC_URL not set")
 	}
-	dd, err := NewDeepDocClient(url)
+	dd, err := NewInferenceClient(url)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -305,7 +305,7 @@ type ImportMCPRequest struct {
 }
 
 // ImportMCPServers bulk-imports MCP servers from a JSON config, fetching the
-// remote tool list for each entry and persisting it under variables.tools.
+// remote tool list for each entry and persisting it under variables.tool.
 // Mirrors Python's import_multiple, including the same distinction between
 // "mcpServers key missing" (101 ARGUMENT_ERROR) and "mcpServers key
 // present but empty" (102 DATA_ERROR).

@@ -25,7 +25,7 @@ import (
 // TestLLM_Stream_ExposesThinkingAndContentForDownstreamMessage is a
 // regression guard for the Downstream Message detect path.
 //
-// Python's `_invoke_async` returns a `functools.partial` callable
+// Python's `_invoke_async` returns a `functool.partial` callable
 // when it detects a Message component downstream, deferring
 // streaming evaluation until the consumer actually pulls from
 // the channel. The Go port exposes the streaming surface via the

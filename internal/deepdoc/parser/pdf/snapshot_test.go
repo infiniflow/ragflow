@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
 // TestSnapshotStageComparison verifies Go's TextMerge output
@@ -42,7 +43,7 @@ func TestSnapshotStageComparison(t *testing.T) {
 			t.Logf("  Sample boxes (page 0): %d", len(s1.SampleBoxesPage0))
 			t.Logf("  Text merge: %d -> %d boxes", s4.BoxesBefore, s4.BoxesAfter)
 
-			// Convert sample boxes to Go TextBox format
+			// Convert sample boxes to Go pdf.TextBox format
 			goBoxes := snapshotBoxesToGo(s1.SampleBoxesPage0)
 
 			// Run Go TextMerge with default params
@@ -146,10 +147,10 @@ func loadSnapshot(t *testing.T, path string) snapshot {
 	return s
 }
 
-func snapshotBoxesToGo(sbs []snapshotBox) []TextBox {
-	boxes := make([]TextBox, len(sbs))
+func snapshotBoxesToGo(sbs []snapshotBox) []pdf.TextBox {
+	boxes := make([]pdf.TextBox, len(sbs))
 	for i, sb := range sbs {
-		boxes[i] = TextBox{
+		boxes[i] = pdf.TextBox{
 			X0: sb.X0, X1: sb.X1, Top: sb.Top, Bottom: sb.Bottom,
 			Text: sb.Text, PageNumber: sb.PageNumber - 1, // pdfplumber uses 1-based
 			LayoutType: sb.LayoutType, LayoutNo: sb.LayoutNo,
@@ -242,13 +243,6 @@ func toInt(v interface{}) int {
 	default:
 		return 0
 	}
-}
-
-func toString(v interface{}) string {
-	if v == nil {
-		return ""
-	}
-	return fmt.Sprint(v)
 }
 
 func formatBytes(n int) string {

@@ -105,7 +105,7 @@ func NewReActGraph(agent *ReActAgent[*schema.Message], cfg *ReActGraphConfig, al
 
 	// --- Node: prepare_input ---
 	// Runs once at the start. Applies BeforeAgent middleware.
-	// Build allTools and allRD from config + contributor tools.
+	// Build allTools and allRD from config + contributor tool.
 	allTools := make([]Tool, 0, len(agent.config.Tools))
 	allTools = append(allTools, agent.config.Tools...)
 	allRD := make(map[string]bool)

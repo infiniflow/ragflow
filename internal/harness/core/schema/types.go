@@ -57,7 +57,7 @@ type ToolCallInfo struct {
 }
 
 // ToolResult represents the result of a tool execution.
-// Used by both standard tools and enhanced tools.
+// Used by both standard tools and enhanced tool.
 type ToolResult struct {
 	ToolCallID string         `json:"tool_call_id"`
 	Name       string         `json:"name"`
@@ -92,9 +92,9 @@ type ToolInfo struct {
 type ToolChoice string
 
 const (
-	// ToolChoiceForbidden instructs the model not to call any tools.
+	// ToolChoiceForbidden instructs the model not to call any tool.
 	ToolChoiceForbidden ToolChoice = "forbidden"
-	// ToolChoiceAllowed lets the model decide whether to call tools.
+	// ToolChoiceAllowed lets the model decide whether to call tool.
 	ToolChoiceAllowed ToolChoice = "allowed"
 	// ToolChoiceForced requires the model to call at least one tool.
 	ToolChoiceForced ToolChoice = "forced"
