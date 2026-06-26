@@ -828,7 +828,7 @@ async def delete_models_from_instance(tenant_id: str, provider_id_or_name: str, 
         return get_error_argument_result(message="model_name is required")
     model_name = data["model_name"]
     try:
-        success, result = provider_api_service.delete_models_from_instance(tenant_id, provider_id_or_name, instance_id_or_name, model_name)
+        success, result = await provider_api_service.delete_models_from_instance(tenant_id, provider_id_or_name, instance_id_or_name, model_name)
         if success:
             return get_result(message=result)
         else:
