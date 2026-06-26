@@ -94,7 +94,7 @@ func TestGiteeListModelsMapsAllDeepSeekAliasesToModelMetadata(t *testing.T) {
 			t.Errorf("Content-Type=%q, want application/json", got)
 		}
 
-		resp := DSModelList{
+		resp := ModelList{
 			Object: "list",
 			Models: make([]DSModel, 0, len(aliases)+1),
 		}

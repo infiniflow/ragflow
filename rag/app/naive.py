@@ -643,6 +643,11 @@ class Pdf(PdfParser):
             return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], tbls
 
 
+# Maximum number of HTTP redirects followed when fetching a remote image
+# referenced by a markdown document (each hop is SSRF-validated).
+MAX_IMAGE_REDIRECTS = 5
+
+
 class Markdown(MarkdownParser):
     def md_to_html(self, sections):
         if not sections:
@@ -714,6 +719,9 @@ class Markdown(MarkdownParser):
     def load_images_from_urls(self, urls, cache=None):
         import requests
         from pathlib import Path
+        from urllib.parse import urljoin
+
+        from common.ssrf_guard import assert_url_is_safe, pin_dns
 
         cache = cache or {}
         images = []
@@ -725,9 +733,40 @@ class Markdown(MarkdownParser):
             img_obj = None
             try:
                 if url.startswith(("http://", "https://")):
-                    response = requests.get(url, stream=True, timeout=30)
-                    if response.status_code == 200 and response.headers.get("Content-Type", "").startswith("image/"):
-                        img_obj = Image.open(BytesIO(response.content)).convert("RGB")
+                    # SSRF guard: image references come from the (untrusted) uploaded
+                    # document, so validate and DNS-pin every hop before connecting.
+                    # Otherwise a markdown image like ![x](http://169.254.169.254/...)
+                    # would make the server fetch internal services / cloud metadata.
+                    # Redirects are followed manually so each hop is re-validated,
+                    # mirroring common/data_source/rss_connector.py.
+                    current_hostname, current_ip = assert_url_is_safe(url)
+                    current_url = url
+                    response = None
+                    try:
+                        for _ in range(MAX_IMAGE_REDIRECTS + 1):
+                            # Release the previous hop before opening the next: with
+                            # stream=True the connection isn't returned to the pool
+                            # until the body is read or the response is closed.
+                            if response is not None:
+                                response.close()
+                            with pin_dns(current_hostname, current_ip):
+                                response = requests.get(current_url, stream=True, timeout=30, allow_redirects=False)
+                            if response.status_code not in (301, 302, 303, 307, 308):
+                                break
+                            location = response.headers.get("Location")
+                            if not location:
+                                break
+                            current_url = urljoin(current_url, location)
+                            current_hostname, current_ip = assert_url_is_safe(current_url)
+                        else:
+                            raise ValueError(f"Exceeded {MAX_IMAGE_REDIRECTS} redirects fetching {url!r}")
+                        if response.status_code == 200 and response.headers.get("Content-Type", "").startswith("image/"):
+                            img_obj = Image.open(BytesIO(response.content)).convert("RGB")
+                    finally:
+                        # Always release the final/streamed response, including the
+                        # non-image and redirect-cap paths where the body is unread.
+                        if response is not None:
+                            response.close()
                 else:
                     local_path = Path(url)
                     if local_path.exists():
@@ -742,6 +781,7 @@ class Markdown(MarkdownParser):
         return images, cache
 
     def __call__(self, filename, binary=None, separate_tables=True, delimiter=None, return_section_images=False):
+        """Parse markdown into text sections and optional standalone table chunks."""
         if binary:
             encoding = find_codec(binary)
             txt = binary.decode(encoding, errors="ignore")
@@ -750,10 +790,9 @@ class Markdown(MarkdownParser):
                 txt = f.read()
 
         remainder, tables = self.extract_tables_and_remainder(f"{txt}\n", separate_tables=separate_tables)
-        # To eliminate duplicate tables in chunking result, uncomment code below and set separate_tables to True in line 410.
-        # extractor = MarkdownElementExtractor(remainder)
-        extractor = MarkdownElementExtractor(txt)
-        image_refs = self.extract_image_urls_with_lines(txt)
+        parsing_text = remainder if separate_tables else txt
+        extractor = MarkdownElementExtractor(parsing_text)
+        image_refs = self.extract_image_urls_with_lines(parsing_text)
         element_sections = extractor.extract_elements(delimiter, include_meta=True)
 
         sections = []
@@ -978,7 +1017,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         sections, tables, section_images = markdown_parser(
             filename,
             binary,
-            separate_tables=False,
+            separate_tables=True,
             delimiter=parser_config.get("delimiter", "\n!?;。；！？"),
             return_section_images=True,
         )

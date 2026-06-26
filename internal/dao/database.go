@@ -18,11 +18,13 @@ package dao
 
 import (
 	"fmt"
-	"log"
+	"os"
+	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"strings"
+	"sync"
 	"time"
 
 	"ragflow/internal/server"
@@ -36,6 +38,7 @@ import (
 
 var DB *gorm.DB
 var modelProviderManager *models.ProviderManager
+var modelProviderManagerMu sync.Mutex
 
 // LLMFactoryConfig represents a single LLM factory configuration
 type LLMFactoryConfig struct {
@@ -149,6 +152,12 @@ func InitDB() error {
 		&entity.TenantModelGroupMapping{},
 		&entity.TenantModelProvider{},
 		&entity.TenantModelGroup{},
+		&entity.IngestionTask{},
+		&entity.IngestionTaskLog{},
+		&entity.IngestionTasklet{},
+		&entity.IngestionTaskletLog{},
+		&entity.FileCommit{},
+		&entity.FileCommitItem{},
 	}
 
 	for _, m := range dataModels {
@@ -166,7 +175,7 @@ func InitDB() error {
 
 	err = models.InitProviderManager("conf/models")
 	if err != nil {
-		log.Fatal("Failed to load model providers:", err)
+		common.Fatal("Failed to load model providers", zap.Error(err))
 	}
 
 	modelProviderManager = models.GetProviderManager()
@@ -182,12 +191,48 @@ func GetDB() *gorm.DB {
 
 // GetModelProviderManager get database instance
 func GetModelProviderManager() *models.ProviderManager {
+	if modelProviderManager != nil {
+		return modelProviderManager
+	}
+
+	modelProviderManagerMu.Lock()
+	defer modelProviderManagerMu.Unlock()
+	if modelProviderManager != nil {
+		return modelProviderManager
+	}
+	if existing := models.GetProviderManager(); existing != nil {
+		modelProviderManager = existing
+		return modelProviderManager
+	}
+	modelConfigDir, err := findModelConfigDir()
+	if err != nil {
+		common.Fatal("Failed to locate model providers", zap.Error(err))
+	}
+	if err := models.InitProviderManager(modelConfigDir); err != nil {
+		common.Fatal("Failed to load model providers", zap.Error(err))
+	}
+	modelProviderManager = models.GetProviderManager()
 	return modelProviderManager
+}
+
+func findModelConfigDir() (string, error) {
+	candidates := []string{
+		"conf/models",
+		filepath.Join("..", "..", "conf", "models"),
+		filepath.Join("..", "..", "..", "conf", "models"),
+	}
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("conf/models not found")
 }
 
 // autoMigrateSafely runs AutoMigrate and ignores duplicate index errors
 // This handles cases where indexes already exist (e.g., created by Python backend)
 func autoMigrateSafely(db *gorm.DB, model interface{}) error {
+	//err := db.Debug().AutoMigrate(model) // to print debug info
 	err := db.AutoMigrate(model)
 	if err == nil {
 		return nil
@@ -196,27 +241,27 @@ func autoMigrateSafely(db *gorm.DB, model interface{}) error {
 	// Check if error is MySQL duplicate index error (Error 1061)
 	errStr := err.Error()
 	if strings.Contains(errStr, "Error 1061") && strings.Contains(errStr, "Duplicate key name") {
-		common.Info("Index already exists, skipping", zap.String("error", errStr))
+		common.Warn("Index already exists, skipping", zap.String("error", errStr))
 		return nil
 	}
 
 	if strings.Contains(errStr, "Error 1060") && strings.Contains(errStr, "Duplicate column name") {
-		common.Info("Column already exists, skipping", zap.String("error", errStr))
+		common.Warn("Column already exists, skipping", zap.String("error", errStr))
 		return nil
 	}
 
 	if strings.Contains(errStr, "Error 1050") && strings.Contains(errStr, "Table") {
-		common.Info("Table already exists, skipping", zap.String("error", errStr))
+		common.Warn("Table already exists, skipping", zap.String("error", errStr))
 		return nil
 	}
 
 	if strings.Contains(errStr, "Error 1091") && strings.Contains(errStr, "Can't DROP") {
-		common.Info("Index/column already dropped, skipping", zap.String("error", errStr))
+		common.Warn("Index/column already dropped, skipping", zap.String("error", errStr))
 		return nil
 	}
 
 	if strings.Contains(errStr, "Error 1138") && strings.Contains(errStr, "Invalid use of NULL") {
-		common.Info("NULL value in existing rows, skipping migration change", zap.String("error", errStr))
+		common.Warn("NULL value in existing rows, skipping migration change", zap.String("error", errStr))
 		return nil
 	}
 

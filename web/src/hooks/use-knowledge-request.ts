@@ -64,19 +64,15 @@ export const useTestRetrieval = () => {
   const [values, setValues] = useState<ITestRetrievalRequestBody>();
   const { filterValue, setFilterValue } = useHandleFilterSubmit();
 
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-
   const queryParams = useMemo(() => {
     return {
       ...values,
       kb_id: values?.kb_id || knowledgeBaseId,
-      page,
-      size: pageSize,
+      page: 1,
       doc_ids: filterValue.doc_ids,
       highlight: true,
     };
-  }, [filterValue, knowledgeBaseId, page, pageSize, values]);
+  }, [filterValue, knowledgeBaseId, values]);
 
   const mutation = useMutation<INextTestingResult, Error, typeof queryParams>({
     mutationFn: async (params) => {
@@ -87,30 +83,15 @@ export const useTestRetrieval = () => {
   });
 
   const refetch = useCallback(() => {
-    setPage(1);
     if (queryParams.question) {
       const newParams = { ...queryParams, page: 1 };
       mutation.mutate(newParams);
     }
   }, [mutation, queryParams]);
 
-  const onPaginationChange = useCallback(
-    (newPage: number, newPageSize: number) => {
-      const nextPage = newPageSize !== pageSize ? 1 : newPage;
-      setPage(nextPage);
-      setPageSize(newPageSize);
-      if (mutation.data && queryParams.question) {
-        const newParams = { ...queryParams, page: nextPage, size: newPageSize };
-        mutation.mutate(newParams);
-      }
-    },
-    [mutation, queryParams, pageSize],
-  );
-
   const handleFilterSubmit = useCallback(
     (value: { doc_ids?: string[] }) => {
       setFilterValue(value);
-      setPage(1);
       if (mutation.data && queryParams.question) {
         const newParams = {
           ...queryParams,
@@ -139,9 +120,6 @@ export const useTestRetrieval = () => {
     loading: mutation.isPending,
     setValues,
     refetch,
-    onPaginationChange,
-    page,
-    pageSize,
     handleFilterSubmit,
     filterValue,
   };

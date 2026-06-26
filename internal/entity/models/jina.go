@@ -32,13 +32,16 @@ type JinaModel struct {
 }
 
 func NewJinaModel(baseURL map[string]string, urlSuffix URLSuffix) *JinaModel {
+	// Embed/Rerank/ListModels issue requests without a per-call context
+	// deadline, so keep an explicit 90s client-level timeout to bound them.
+	// Built on the shared transport via NewDriverHTTPClient.
+	client := NewDriverHTTPClient()
+	client.Timeout = 90 * time.Second
 	return &JinaModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
-			httpClient: &http.Client{
-				Timeout: time.Second * 90,
-			},
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: client,
 		},
 	}
 }

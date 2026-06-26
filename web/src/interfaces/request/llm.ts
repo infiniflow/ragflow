@@ -64,6 +64,11 @@ export interface IAddInstanceModelRequestBody {
   extra?: Record<string, any>;
 }
 
+export interface IEditInstanceModelRequestBody {
+  model_name: string[];
+  model_type: string[];
+}
+
 export interface IListAllModelsRequestParams {
   type?: string;
 }

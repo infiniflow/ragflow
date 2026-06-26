@@ -17,7 +17,6 @@
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -30,7 +29,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // CometAPIModel implements ModelDriver for CometAPI AI.
@@ -40,20 +38,11 @@ type CometAPIModel struct {
 
 // NewCometAPIModel creates a new CometAPI model instance.
 func NewCometAPIModel(baseURL map[string]string, urlSuffix URLSuffix) *CometAPIModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-	transport.ResponseHeaderTimeout = 60 * time.Second
-
 	return &CometAPIModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
-			httpClient: &http.Client{
-				Transport: transport,
-			},
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
@@ -334,27 +323,14 @@ func (c *CometAPIModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	sawTerminal := false
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if !strings.HasPrefix(line, "data:") {
-			continue
+	done, err := ParseSSEStream[cometapiChatResponsePayload](resp.Body, func(event cometapiChatResponsePayload) error {
+		if len(event.Choices) == 0 {
+			return nil
 		}
-
-		data := strings.TrimSpace(line[5:])
-
-		if data == "[DONE]" {
-			sawTerminal = true
-			break
-		}
-
-		content, reasoningContent, terminal, ok := parseCometAPIStreamEvent(data)
-		if !ok {
-			continue
-		}
+		choice := event.Choices[0]
+		reasoningContent := choice.Delta.ReasoningContent
+		content := choice.Delta.Content
 
 		if reasoningContent != "" {
 			if err := sender(nil, &reasoningContent); err != nil {
@@ -368,16 +344,15 @@ func (c *CometAPIModel) ChatStreamlyWithSender(modelName string, messages []Mess
 			}
 		}
 
-		if terminal {
+		if choice.FinishReason != "" {
 			sawTerminal = true
-			break
 		}
-	}
-
-	if err := scanner.Err(); err != nil {
+		return nil
+	})
+	if err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
-	if !sawTerminal {
+	if !done && !sawTerminal {
 		return fmt.Errorf("cometapi: stream ended before [DONE] or finish_reason")
 	}
 

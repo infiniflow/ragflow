@@ -7,6 +7,7 @@ import {
 } from '@/interfaces/database/chat';
 import classNames from 'classnames';
 import { memo, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
 import { cn } from '@/lib/utils';
@@ -51,7 +52,9 @@ const MessageItem = ({
   showLikeButton = true,
   showLoudspeaker = true,
   visibleAvatar = true,
+  nickname,
 }: IProps) => {
+  const { t } = useTranslation();
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
@@ -98,6 +101,7 @@ const MessageItem = ({
                 className="size-10"
                 avatar={avatar ?? '/logo.svg'}
                 isPerson
+                name={nickname}
               />
             ) : avatarDialog ? (
               <RAGFlowAvatar
@@ -147,7 +151,7 @@ const MessageItem = ({
                 )}
               >
                 {sendLoading && isEmpty(messageContent) ? (
-                  'running...'
+                  t('common.running')
                 ) : (
                   <MarkdownContent
                     loading={loading}
