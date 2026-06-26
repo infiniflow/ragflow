@@ -218,7 +218,7 @@ func TestMemorySaverCheckpointID(t *testing.T) {
 		"step": 1,
 	}
 	config := map[string]interface{}{
-		"thread_id":    threadID,
+		"thread_id":     threadID,
 		"checkpoint_id": checkpointID,
 	}
 

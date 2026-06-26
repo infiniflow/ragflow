@@ -59,6 +59,8 @@ export function useAgentToolInitialValues() {
           return {};
         case Operator.SearXNG:
           return pick(initialValues, 'searxng_url', 'top_n');
+        case Operator.KeenableSearch:
+          return pick(initialValues, 'api_key', 'mode', 'site', 'top_n');
 
         default:
           return initialValues;

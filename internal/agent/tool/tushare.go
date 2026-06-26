@@ -92,9 +92,9 @@ type tushareEnvelope struct {
 	Error  string   `json:"_ERROR,omitempty"`
 }
 
-// TushareTool is the Phase 3 batch 4 implementation of the Tushare Pro
+// TushareTool is the Tushare Pro
 // Chinese financial data tool (plan §2.11.4 row 19 [numbered 19, also
-// mentioned as row 18 in the matrix header], §5 Phase 3 第 4 批). It
+// mentioned as row 18 in the matrix header], ). It
 // performs a POST against api.tushare.pro with the token in the body
 // and returns the data.fields + data.items arrays.
 //

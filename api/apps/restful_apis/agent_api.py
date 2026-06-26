@@ -173,7 +173,17 @@ def _normalize_agent_session(conv):
         messages = [message for i, message in enumerate(conv["message"]) if i != 0 and message["role"] != "user"]
         for message, reference in zip(messages, conv["reference"]):
             chunks = reference.get("chunks", [])
-            message["reference"] = [_normalize_agent_reference_chunk(chunk) for chunk in chunks]
+            if isinstance(chunks, dict):
+                refs = []
+                for citation_id, chunk in chunks.items():
+                    ref = _normalize_agent_reference_chunk(chunk)
+                    ref["citation_id"] = str(citation_id)
+                    refs.append(ref)
+                message["reference"] = refs
+            elif isinstance(chunks, list):
+                message["reference"] = [_normalize_agent_reference_chunk(chunk) for chunk in chunks]
+            else:
+                message["reference"] = []
     del conv["reference"]
     return conv
 
@@ -715,12 +725,10 @@ async def create_agent(tenant_id):
         )
 
     req["title"] = req["title"].strip()
-    if UserCanvasService.query(
-        user_id=tenant_id,
-        title=req["title"],
-        canvas_category=req["canvas_category"],
-    ):
-        return get_data_error_result(message=f"{req['title']} already exists.")
+    for canvas in UserCanvasService.query(user_id=tenant_id, canvas_category=req["canvas_category"]):
+        canvas_title = getattr(canvas, "title", req["title"])
+        if canvas_title and canvas_title.lower() == req["title"].lower():
+            return get_data_error_result(message=f"{req['title']} already exists.")
 
     req["id"] = get_uuid()
     if not UserCanvasService.save(**req):
@@ -956,10 +964,15 @@ async def update_agent(agent_id, tenant_id):
                 code=RetCode.ARGUMENT_ERROR,
             )
 
+    _, current_agent = UserCanvasService.get_by_id(agent_id)
     if req.get("title") is not None:
         req["title"] = req["title"].strip()
+        canvas_category_for_duplicate_check = req.get("canvas_category") or (current_agent.canvas_category if current_agent else CanvasCategory.Agent)
+        for canvas in UserCanvasService.query(user_id=tenant_id, canvas_category=canvas_category_for_duplicate_check):
+            canvas_title = getattr(canvas, "title", "")
+            if getattr(canvas, "id", None) != agent_id and canvas_title and canvas_title.lower() == req["title"].lower():
+                return get_data_error_result(message=f"{req['title']} already exists.")
 
-    _, current_agent = UserCanvasService.get_by_id(agent_id)
     agent_title_for_version = req.get("title") or (current_agent.title if current_agent else "")
     canvas_category = (
         req.get("canvas_category")

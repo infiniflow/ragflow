@@ -7,7 +7,7 @@ import {
   useVerifyProviderConnection,
 } from '@/hooks/use-llm-request';
 import { IInstanceModel, IProviderInstance } from '@/interfaces/database/llm';
-import {
+import type {
   IAddProviderInstanceRequestBody,
   IModelInfo,
 } from '@/interfaces/request/llm';

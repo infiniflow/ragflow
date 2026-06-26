@@ -22,12 +22,12 @@ const ConnectDialogModal = ({
   const { dialogs } = useChatChannelDialogList();
   const { connect, connecting } = useConnectChatChannelDialog();
   const [dialogId, setDialogId] = useState<string | undefined>(
-    channel?.dialog_id ?? undefined,
+    channel?.chat_id ?? undefined,
   );
 
   useEffect(() => {
-    setDialogId(channel?.dialog_id ?? undefined);
-  }, [channel?.id, channel?.dialog_id]);
+    setDialogId(channel?.chat_id ?? undefined);
+  }, [channel?.id, channel?.chat_id]);
 
   const options = useMemo(
     () => (dialogs || []).map((d) => ({ label: d.name, value: d.id })),

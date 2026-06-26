@@ -14,23 +14,19 @@
 //  limitations under the License.
 //
 
-// Package io — PDF writer (signintech/gopdf, plan §2.11.5.4).
+// Package io — PDF writer (signintech/gopdf).
 //
-// WritePDF renders the supplied content to a PDF using the MIT-licensed
-// signintech/gopdf library. P4 ships in a **stub mode**: gopdf requires
-// a TTF to be registered before any text is drawn, and we do not
-// register one in P4. The writer probes via gopdf.SetFont; if the
-// family is unknown, it surfaces ErrPDFFontNotConfigured so the
-// orchestrator can return a clear deployment-time error. Production
-// deployments register a TTF (e.g. Noto Sans CJK SC) at startup — the
-// Phase 5 polish task will wire that into the boot sequence.
+// WritePDF renders the supplied content to a PDF using the
+// MIT-licensed signintech/gopdf library. The writer probes via
+// gopdf.SetFont; if the family is unknown, it surfaces
+// ErrPDFFontNotConfigured so the orchestrator can return a clear
+// deployment-time error. Production deployments register a TTF
+// (e.g. Noto Sans CJK SC) at startup.
 //
-// When a TTF *is* registered, the writer emits a simple one-paragraph
-// page per line of content, with a centered header and a centered
-// footer carrying the page number / timestamp when requested. Visual
-// fidelity (real watermark rotation, multi-column layout, etc.) is
-// Phase 5 polish; the contract for P4 is the byte stream + a clear
-// error path.
+// When a TTF *is* registered, the writer emits a simple
+// one-paragraph page per line of content, with a centered header
+// and a centered footer carrying the page number / timestamp when
+// requested.
 package io
 
 import (
@@ -56,20 +52,19 @@ type PDFOptions struct {
 
 // ErrPDFFontNotConfigured is returned when no TTF is registered.
 // Callers should register a TTF via gopdf.SetFont before invoking
-// WritePDF; Phase 5 will wire a default TTF into the boot path.
+// WritePDF.
 var ErrPDFFontNotConfigured = errors.New("PDF font not configured: register a TTF (e.g. Noto Sans CJK SC) via gopdf.SetFont before calling WritePDF")
 
 // WritePDF renders the content to a PDF byte stream.
 //
-// Layout (P4):
+// Layout:
 //
 //   - A4 portrait, 36pt margins on all sides.
 //   - Body lines are drawn top-to-bottom, one per line of content.
 //   - Header is centered at the top of every page (when set).
 //   - Footer is centered at the bottom of every page and may include
 //     the footer text, a generation timestamp, and a page number.
-//   - Watermark is rendered as grey text near the page center; full
-//     rotation is Phase 5.
+//   - Watermark is rendered as grey text near the page center.
 //
 // When the requested font family is not registered, the function
 // returns ErrPDFFontNotConfigured and does not write any output.
@@ -173,9 +168,8 @@ func drawFooter(pdf *gopdf.GoPdf, opts PDFOptions) {
 		parts = append(parts, time.Now().UTC().Format("2006-01-02 15:04"))
 	}
 	if opts.AddPageNumbers {
-		// gopdf v0.36 doesn't expose a page-number macro; emit a
-		// literal placeholder. Phase 5 will replace with a real
-		// {np} token if gopdf gains one.
+		// gopdf doesn't expose a page-number macro; emit a
+		// literal placeholder until upstream adds one.
 		parts = append(parts, "Page #")
 	}
 	_ = pdf.Cell(nil, strings.Join(parts, " | "))
@@ -203,8 +197,7 @@ func drawWatermark(pdf *gopdf.GoPdf, opts PDFOptions) {
 // writePDFToBytes serializes the gopdf output to a byte slice.
 //
 // gopdf's Write method requires an *os.File (it needs random access
-// for the xref table), so we route through a TempFile. Phase 5 can
-// lift this into a streaming implementation if needed.
+// for the xref table), so we route through a TempFile.
 func writePDFToBytes(pdf *gopdf.GoPdf) ([]byte, error) {
 	tmp, err := os.CreateTemp("", "ragflow-pdf-*.pdf")
 	if err != nil {

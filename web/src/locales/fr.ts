@@ -14,6 +14,7 @@ export default {
       yes: 'Oui',
       no: 'Non',
       total: 'Total',
+      top: 'Top {{top}}',
       rename: 'Renommer',
       name: 'Nom',
       save: 'Enregistrer',
@@ -80,6 +81,8 @@ export default {
       selected: 'Sélectionné',
       seeAll: 'Voir tout',
       bulkOperate: 'Opération en masse',
+      owner: 'Propriétaire',
+      running: 'En cours...',
     },
     login: {
       loginTitle: 'Connexion à votre compte',
@@ -467,7 +470,6 @@ export default {
       metadata: {
         fields: 'Champs',
         selectFiles: '{{count}} fichiers sélectionnés',
-        type: 'Type',
         fieldNameInvalid:
           'Le nom du champ ne peut contenir que des lettres ou des underscores.',
         builtIn: 'Intégré',
@@ -499,6 +501,7 @@ export default {
         value: 'Valeur',
         action: 'Action',
         field: 'Champ',
+        type: 'Type',
         description: 'Description',
         fieldName: 'Nom du champ',
         editMetadata: 'Modifier les métadonnées',
@@ -685,6 +688,7 @@ export default {
       theDocumentBeingParsedCannotBeDeleted:
         "Le document en cours d'analyse ne peut pas être supprimé",
       lastWeek: 'de la semaine dernière',
+      top: 'Top',
       paddleocrOptions: 'Options PaddleOCR',
       paddleocrApiUrl: "URL de l'API PaddleOCR",
       paddleocrApiUrlTip:
@@ -893,6 +897,8 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       size: 'Taille',
       uploadedTime: 'Date de téléversement',
       chunk: 'Segment',
+      createChunk: 'Créer un segment',
+      editChunk: 'Modifier le segment',
       bulk: 'En masse',
       selectAll: 'Tout sélectionner',
       enabledSelected: 'Activer la sélection',
@@ -1113,6 +1119,12 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       batchDeleteSessions: 'Suppression en masse',
       deleteSelectedConfirm:
         'Supprimer les {{count}} session(s) sélectionnée(s) ?',
+      showChunkMetadata: 'Afficher les métadonnées du segment',
+      showChunkMetadataTip:
+        "Afficher les métadonnées du document (titre, numéro de page, date d'upload, etc.) à côté des segments de texte récupérés",
+      metadataFields: 'Champs de métadonnées',
+      metadataFieldsTip:
+        'Sélectionnez les champs de métadonnées à afficher pour chaque segment',
     },
     language: {
       english: 'Anglais',
@@ -1153,6 +1165,9 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       api: 'API',
       username: "Nom d'utilisateur",
       usernameMessage: "Veuillez saisir votre nom d'utilisateur !",
+      usernameMaxLength: 'Le nom doit comporter au maximum {{max}} caractères.',
+      usernameInvalidCharacters:
+        "Le nom ne peut contenir que des lettres, chiffres, espaces et . _ ' -",
       photo: 'Votre photo',
       photoDescription: 'Ceci sera affiché sur votre profil.',
       colorSchema: 'Schéma de couleurs',
@@ -1708,6 +1723,47 @@ Exemple : Virtual Hosted Style`,
         'Sélectionner une source de données à ajouter',
       availableSources: 'Sources disponibles',
       datasourceDescription: 'Gérez vos sources de données et connexions',
+      chatChannels: 'Canaux de chat',
+      chatChannelsDescription:
+        'Gérez vos bots de canaux de chat et leurs identifiants',
+      channelEmptyTip:
+        'Aucun canal de chat ajouté. Sélectionnez-en un ci-dessous pour vous connecter.',
+      availableChannels: 'Canaux disponibles',
+      availableChannelsDescription: 'Sélectionner un canal de chat à ajouter',
+      addChannelModalTitle: 'Ajouter un bot {{name}}',
+      editChannelModalTitle: 'Modifier le bot {{name}}',
+      deleteChannelModalTitle: 'Supprimer un canal de chat',
+      deleteChannelModalContent:
+        'Êtes-vous sûr de vouloir supprimer ce bot ? Cette action est irréversible.',
+      connectDialog: 'Connecter un assistant',
+      connectDialogTitle: 'Connecter {{name}} à un assistant',
+      selectDialog: 'Sélectionner un assistant',
+      connectDialogTip:
+        "Les messages reçus par ce canal seront traités par l'assistant connecté. Effacez la sélection pour déconnecter.",
+      notConnected: 'Aucun assistant connecté',
+      chatChannelDesc: {
+        clickclack: 'Connecter un bot ClickClack',
+        discord: 'Connecter un bot Discord',
+        feishu: 'Connecter un bot Feishu / Lark',
+        googlechat: 'Connecter un bot Google Chat',
+        irc: 'Se connecter à un serveur IRC',
+        matrix: 'Connecter un bot Matrix',
+        mattermost: 'Connecter un bot Mattermost',
+        msteams: 'Connecter un bot Microsoft Teams',
+        nextcloud_talk: 'Connecter un bot Nextcloud Talk',
+        nostr: 'Connecter un bot Nostr',
+        qqbot: 'Connecter un bot QQ',
+        slack: 'Connecter un bot Slack',
+        synology_chat: 'Connecter un bot Synology Chat',
+        telegram: 'Connecter un bot Telegram',
+        tlon: 'Connecter un bot Tlon (Urbit)',
+        twitch: 'Connecter un bot Twitch',
+        wecom: 'Connecter un bot WeCom',
+        whatsapp: 'Connecter un bot WhatsApp (appairage QR)',
+        yuanbao: 'Connecter un bot Tencent Yuanbao',
+        zalo: 'Connecter un bot Zalo',
+        zalouser: 'Connecter un compte Zalo personnel',
+      },
       save: 'Enregistrer',
       search: 'Rechercher',
       availableModels: 'Modèles disponibles',
@@ -1758,6 +1814,7 @@ Exemple : Virtual Hosted Style`,
         'Veuillez sélectionner au moins un modèle avant la vérification.',
       addCustomModel: 'Ajouter un modèle personnalisé',
       addCustomModelTitle: 'Ajouter un modèle personnalisé',
+      editCustomModelTitle: 'Modifier le modèle',
       modelMaxTokens: 'Tokens maximum',
       modelFeatures: 'Fonctionnalités du modèle',
       modelFeatureToolCall: "Appel d'outil",
@@ -2845,6 +2902,8 @@ Ce processus agrège des variables de plusieurs branches en une seule variable p
       news: 'Actualités',
       text: 'Texte',
       userId: 'ID utilisateur',
+      tags: 'Étiquettes',
+      canvasCategory: 'Catégorie de canvas',
     },
     llmTools: {
       bad_calculator: {
@@ -2931,6 +2990,7 @@ Mémoire procédurale : compétences acquises, habitudes et procédures automati
       cancelText: 'Annuler',
       chooseDataset:
         'Veuillez sélectionner une base de connaissances en premier',
+      selectLocalePlaceholder: 'Sélectionner une langue',
     },
     pagination: {
       total: 'Total {{total}}',

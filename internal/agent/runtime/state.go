@@ -36,6 +36,8 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/cloudwego/eino/compose"
 )
 
 // CanvasState is the per-run shared state bag that all components read/write
@@ -83,6 +85,108 @@ func NewCanvasState(runID, taskID string) *CanvasState {
 	}
 }
 
+// init registers CanvasState with eino's internal type registry so
+// that eino's StatePre/Post handler chain (which uses its own
+// InternalSerializer, NOT stdlib encoding/json) recognises the
+// type during the deepCopyState call that fires on every interrupt
+// boundary. eino's serialization registry requires the type to
+// implement both json.Marshaler AND json.Unmarshaler; CanvasState
+// has both (below). Without this init, the interrupt path surfaces
+// "failed to marshal state: unknown type: runtime.CanvasState"
+// and the resume cycle is blocked at the eino layer.
+func init() {
+	_ = compose.RegisterSerializableType[CanvasState]("runtime.CanvasState")
+}
+
+// canvasStateJSON is the wire shape used by MarshalJSON / UnmarshalJSON.
+// Defined so the field tags and omitempty semantics are pinned in one
+// place. The CancelFlag is round-tripped as a bool (atomic.Bool can't
+// be marshalled directly without a wrapper).
+type canvasStateJSON struct {
+	Outputs    map[string]map[string]any `json:"outputs"`
+	Sys        map[string]any            `json:"sys,omitempty"`
+	Env        map[string]any            `json:"env,omitempty"`
+	Path       []string                  `json:"path,omitempty"`
+	History    []map[string]any          `json:"history,omitempty"`
+	Retrieval  map[string]any            `json:"retrieval,omitempty"`
+	Globals    map[string]any            `json:"globals,omitempty"`
+	CancelFlag bool                      `json:"cancel_flag"`
+	RunID      string                    `json:"run_id"`
+	TaskID     string                    `json:"task_id"`
+}
+
+// MarshalJSON serialises the CanvasState for eino's StatePre/Post
+// handler chain (which JSON-encodes the state on every node boundary
+// when a StateSerializer is wired) and for Redis-backed CheckPointStore
+// payloads.
+//
+// Eino's interrupt path hit "failed to marshal state: unknown
+// type: runtime.CanvasState"
+// because the struct had no MarshalJSON and contained a sync.RWMutex
+// (unexported) + atomic.Bool (indirected; serialises as 8 bytes
+// without explicit handling). This hook defines the stable wire shape
+// (canvasStateJSON) and serialises through it.
+//
+// Concurrency: the lock is held briefly while we snapshot the maps;
+// readers may briefly block during marshal, which is fine for the
+// checkpoint/serializer hot path. The lock is read-only so concurrent
+// SetVar calls also proceed.
+func (s *CanvasState) MarshalJSON() ([]byte, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	snap := canvasStateJSON{
+		Outputs:    s.Outputs,
+		Sys:        s.Sys,
+		Env:        s.Env,
+		Path:       s.Path,
+		History:    s.History,
+		Retrieval:  s.Retrieval,
+		Globals:    s.Globals,
+		CancelFlag: s.CancelFlag != nil && s.CancelFlag.Load(),
+		RunID:      s.RunID,
+		TaskID:     s.TaskID,
+	}
+	return json.Marshal(snap)
+}
+
+// UnmarshalJSON restores the wire shape produced by MarshalJSON.
+// Cancels the read-lock contention: an unmarshal only happens during
+// checkpoint restore (rare) and boot, so we accept the lock-acquire
+// cost. atomic.Bool is allocated so the loaded value lands on a real
+// pointer (nodes may poll it concurrently with unmarshal completion).
+func (s *CanvasState) UnmarshalJSON(b []byte) error {
+	var snap canvasStateJSON
+	if err := json.Unmarshal(b, &snap); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if snap.Outputs != nil {
+		s.Outputs = snap.Outputs
+	}
+	if snap.Sys != nil {
+		s.Sys = snap.Sys
+	}
+	if snap.Env != nil {
+		s.Env = snap.Env
+	}
+	s.Path = snap.Path
+	s.History = snap.History
+	if snap.Retrieval != nil {
+		s.Retrieval = snap.Retrieval
+	}
+	if snap.Globals != nil {
+		s.Globals = snap.Globals
+	}
+	if s.CancelFlag == nil {
+		s.CancelFlag = &atomic.Bool{}
+	}
+	s.CancelFlag.Store(snap.CancelFlag)
+	s.RunID = snap.RunID
+	s.TaskID = snap.TaskID
+	return nil
+}
+
 // GetVar resolves a variable reference to its current value.
 //
 // Supported forms (matches plan §2.5 + agent/canvas.py:168-239):
@@ -91,8 +195,8 @@ func NewCanvasState(runID, taskID string) *CanvasState {
 //	"cpn_id@param.path"   — dot-path traversal on Outputs[cpn_id][param]
 //	"sys.x"               — Sys["x"]   (also "sys.x.path")
 //	"env.x"               — Env["x"]   (also "env.x.path")
-//	"item"                — iteration alias (Phase 2; nil if unset)
-//	"index"               — iteration alias (Phase 2; nil if unset)
+//	"item"                — iteration alias (nil if unset)
+//	"index"               — iteration alias (nil if unset)
 //
 // An unknown cpn_id returns (nil, nil) — mirrors Python's "treat as literal"
 // fallback (canvas.py:494-495).
@@ -158,6 +262,28 @@ func (s *CanvasState) Snapshot() map[string]map[string]any {
 	return out
 }
 
+// SnapshotNamespaces returns shallow copies of the non-Outputs state
+// namespaces that components may read/write directly via GetVar /
+// writeVar, namely sys.*, env.*, and the iteration/global aliases.
+func (s *CanvasState) SnapshotNamespaces() (sys map[string]any, env map[string]any, globals map[string]any) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sys = make(map[string]any, len(s.Sys))
+	for k, v := range s.Sys {
+		sys[k] = v
+	}
+	env = make(map[string]any, len(s.Env))
+	for k, v := range s.Env {
+		env[k] = v
+	}
+	globals = make(map[string]any, len(s.Globals))
+	for k, v := range s.Globals {
+		globals[k] = v
+	}
+	return sys, env, globals
+}
+
 // RecordOutput stores payload under Outputs[cpnID][bucket]. Used by the
 // StatePostHandler to persist a node's result so downstream nodes can
 // resolve {{cpnID@bucket.x}} references against it.
@@ -173,6 +299,62 @@ func (s *CanvasState) RecordOutput(cpnID, bucket string, payload any) {
 		s.Outputs[cpnID] = b
 	}
 	b[bucket] = payload
+}
+
+// GetRetrievalChunks returns a snapshot of the chunks recorded in
+// state.Retrieval["chunks"]. The Retrieval map is the canvas-level
+// aggregate that the Retrieval tool populates during the ReAct loop;
+// the post-stream citation-grounding call reads it back to
+// build the prompts.CitationSource list.
+//
+// The function returns nil when the state has no chunks recorded
+// (a non-retrieval canvas, or no tool call has populated the field
+// yet). The returned slice is a fresh copy so callers can range
+// over it without holding the lock.
+func (s *CanvasState) GetRetrievalChunks() []map[string]any {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	raw, ok := s.Retrieval["chunks"]
+	if !ok {
+		return nil
+	}
+	list, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(list))
+	for _, item := range list {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
+// SetRetrievalChunks records the supplied chunks into
+// state.Retrieval["chunks"]. Existing entries are replaced
+// (last-writer-wins) so a multi-tool canvas reflects the most
+// recent retrieval pass when the Agent's grounding call reads the
+// state.
+func (s *CanvasState) SetRetrievalChunks(chunks []map[string]any) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Retrieval == nil {
+		s.Retrieval = make(map[string]any)
+	}
+	asAny := make([]any, 0, len(chunks))
+	for _, c := range chunks {
+		asAny = append(asAny, c)
+	}
+	s.Retrieval["chunks"] = asAny
 }
 
 // getVarLocked is the lock-free inner GetVar. Caller must hold s.mu (read or

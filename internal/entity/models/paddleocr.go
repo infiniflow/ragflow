@@ -107,6 +107,11 @@ type paddleJsonlLine struct {
 				Text string `json:"text"`
 			} `json:"markdown"`
 		} `json:"layoutParsingResults"`
+		OcrResults []struct {
+			PrunedResult struct {
+				RecTexts []string `json:"rec_texts"`
+			} `json:"prunedResult"`
+		} `json:"ocrResults"`
 	} `json:"result"`
 }
 
@@ -172,6 +177,7 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 	if auth := BearerAuth(apiConfig); auth != "" {
 		req.Header.Set("Authorization", auth)
 	}
+	req.Header.Set("Client-Platform", "ragflow")
 
 	resp, err := p.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -197,17 +203,19 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 	pollUrl := fmt.Sprintf("%s/%s", url, jobId)
 	var jsonlUrl string
 
-	for {
-		select {
-		case <-time.After(3 * time.Second):
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
+	pollInterval := 3 * time.Second
+	const pollMultiplier = 1.5
+	maxPollInterval := 15 * time.Second
 
-		pollReq, _ := http.NewRequestWithContext(ctx, "GET", pollUrl, nil)
+	for {
+		pollReq, err := http.NewRequestWithContext(ctx, "GET", pollUrl, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create poll request: %w", err)
+		}
 		if auth := BearerAuth(apiConfig); auth != "" {
 			pollReq.Header.Set("Authorization", auth)
 		}
+		pollReq.Header.Set("Client-Platform", "ragflow")
 
 		pollResp, err := p.baseModel.httpClient.Do(pollReq)
 		if err != nil {
@@ -233,6 +241,18 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 			break
 		} else if state == "failed" {
 			return nil, fmt.Errorf("ocr job failed on server: %s", pollData.Data.ErrorMsg)
+		}
+
+		// Exponential backoff
+		pollInterval = time.Duration(float64(pollInterval) * pollMultiplier)
+		if pollInterval > maxPollInterval {
+			pollInterval = maxPollInterval
+		}
+
+		select {
+		case <-time.After(pollInterval):
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		}
 	}
 
@@ -273,6 +293,19 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 		for _, layoutRes := range lineData.Result.LayoutParsingResults {
 			fullMarkdown.WriteString(layoutRes.Markdown.Text)
 			fullMarkdown.WriteString("\n\n")
+		}
+
+		// Fallback to ocrResults for models like PP-OCRv6
+		if len(lineData.Result.LayoutParsingResults) == 0 {
+			for _, ocrRes := range lineData.Result.OcrResults {
+				for _, text := range ocrRes.PrunedResult.RecTexts {
+					text = strings.TrimSpace(text)
+					if text != "" {
+						fullMarkdown.WriteString(text)
+						fullMarkdown.WriteString("\n")
+					}
+				}
+			}
 		}
 	}
 

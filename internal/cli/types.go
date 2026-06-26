@@ -34,13 +34,13 @@ const (
 	TokenCreate
 	TokenService
 	TokenShutdown
-	TokenStartup
 	TokenRestart
 	TokenUsers
 	TokenDrop
 	TokenUser
 	TokenAlter
 	TokenActive
+	TokenInactive
 	TokenAdmin
 	TokenServer
 	TokenAPI
@@ -53,6 +53,7 @@ const (
 	TokenChunkStore
 	TokenOf
 	TokenAgents
+	TokenSearches
 	TokenRole
 	TokenRoles
 	TokenDescription
@@ -102,6 +103,8 @@ const (
 	TokenSearch
 	TokenRetrieve
 	TokenCurrent
+	TokenFingerprint
+	TokenLicense
 	TokenVision
 	TokenEmbedding
 	TokenRerank
@@ -175,6 +178,20 @@ const (
 	TokenPull
 	TokenPending
 	TokenNoACK
+	TokenAnalyze
+	TokenSummary
+	TokenStorage
+	TokenQuota
+	TokenTree
+	TokenOrphan
+	TokenDays
+	TokenWindow
+	TokenActivity
+	TokenData
+	TokenPurge
+	TokenPlan
+	TokenPreview
+	TokenOpenaiChat
 	TokenLog
 	TokenLevel
 	TokenDebug

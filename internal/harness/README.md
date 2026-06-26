@@ -128,8 +128,10 @@ The framework is organized into three logical layers:
 ├─────────────────────────────────────────────────────────────────┤
 │ Layer 2: AgentCore ADK (ReActAgent, Runner, Middleware, Tools)   │
 │           ├─ ReActAgent with iterate-loop or graph-backed exec   │
-│           ├─ Middleware system (9 hook points)                   │
+│           ├─ Middleware system (5 hooks + ToolContributor)       │
 │           ├─ Tool system (standard + enhanced + tool_registry)   │
+│           │   └─ ToolInvokeMiddleware (onion model: timeout,     │
+│           │       retry, fallback, approval, rate-limit)         │
 │           ├─ flowAgent (sub-agent management, transfer routing)  │
 │           └─ workflowAgent (Sequential / Parallel / Loop)       │
 ├─────────────────────────────────────────────────────────────────┤
@@ -477,19 +479,27 @@ ToolsConfig: &agentcore.ToolsNodeConfig{
 
 ### Middleware System
 
-**ReActMiddleware** provides 9 hook points:
+**TypedReActMiddleware[M]** — the core middleware interface with 5 hook points:
 
 | Hook | Signature | Purpose |
 |---|---|---|
 | `BeforeAgent` | `(ctx, *ReActAgentContext)` | Modify instruction, tools, return-directly map |
-| `AfterAgent` | `(ctx, state)` | Post-execution cleanup |
 | `BeforeModelRewrite` | `(ctx, state, *ModelContext)` | Transform state before model call |
 | `AfterModelRewrite` | `(ctx, state, *ModelContext)` | Transform state after model call |
-| `WrapModel` | `(ctx, ChatModel[M], *ModelContext)` → ChatModel[M] | Wrap the model call |
-| `WrapToolInvoke` | `(ctx, InvokableToolEndpoint, *ToolContext)` | Wrap sync tool invoke |
-| `WrapToolStream` | `(ctx, StreamableToolEndpoint, *ToolContext)` | Wrap streaming tool invoke |
-| `WrapEnhancedInvokableToolCall` | `(ctx, EnhancedInvokableToolEndpoint, *ToolContext)` | Wrap enhanced sync tool |
-| `WrapEnhancedStreamableToolCall` | `(ctx, EnhancedStreamableToolEndpoint, *ToolContext)` | Wrap enhanced streaming tool |
+| `AfterAgent` | `(ctx, state)` | Post-execution cleanup |
+| `WrapModel` | `(ctx, Model[M], *ModelContext)` → Model[M] | Decorate the model call |
+
+**ToolContributor[M]** — an **optional interface** that middlewares can implement to contribute tools to the agent. The agent loop automatically collects contributed tools during build, eliminating the need for manual `BindToConfig` calls:
+
+| Method | Purpose |
+|---|---|
+| `ContributeTools(ctx) []Tool` | Returns tools to add to the agent's tool set |
+| `ContributeToolInfos(ctx) []*schema.ToolInfo` | Returns structured ToolInfo entries to bind to the model |
+| `ContributeReturnDirectly(ctx) map[string]bool` | Returns tool names that cause the agent to exit immediately |
+
+Tool contribution is automatically merged with `config.Tools`. Middleware that contributed tools will have them available in the `ReActAgentContext.Tools` during `BeforeAgent` for inspection.
+
+**ToolInvokeMiddleware** (onion model) — a separate orthogonal system for tool-call level cross-cutting concerns (see [Tools section](#tools)).
 
 Embed `BaseMiddleware[*schema.Message]` and override only needed hooks:
 
@@ -503,20 +513,39 @@ func (m *LoggingMiddleware) BeforeModelRewrite(ctx, state, mc) (context.Context,
 }
 ```
 
+For middlewares that contribute tools, implement `ToolContributor` and optionally override `BeforeAgent` for non-tool configuration:
+
+```go
+type FilesystemMiddleware struct {
+    agentcore.BaseMiddleware[*schema.Message]
+    backend Backend
+}
+
+// Tools are auto-collected during agent build.
+func (m *FilesystemMiddleware) ContributeTools(ctx context.Context) []core.Tool {
+    return m.buildTools()
+}
+
+// BeforeAgent is still available for modifying instruction etc.
+func (m *FilesystemMiddleware) BeforeAgent(ctx context.Context, rc *core.ReActAgentContext) (context.Context, *core.ReActAgentContext, error) {
+    // Non-tool modifications go here
+    return ctx, rc, nil
+}
+```
+
 **Prebuilt middlewares** (in `agentcore/middlewares/`):
 
-| Middleware | Purpose |
-|---|---|
-| `subagent` | Injects sub-agents as callable tools (LLM-driven delegation) |
-| `summarization` | Auto-compresses long conversation history on token overflow |
-| `reduction` | Offloads large tool results to backend storage |
-| `filesystem` | Provides read/write/edit/ls/grep/execute tools |
-| `skill` | Loads and executes skills from SKILL.md files |
-| `patchtoolcalls` | Fixes dangling tool calls in message history |
-| `plantask` | Task management CRUD for coding sessions |
-| `agentsmd` | Injects AGENTS.md file contents into model input |
-| `telemetry` | OpenTelemetry tracing/monitoring middleware *(removed in internal copy)* |
-| `dynamictool` | Dynamic tool registration and invocation |
+| Middleware | Tool Contribution | Purpose |
+|---|---|---|
+| `filesystem` | `ContributeTools` | Provides read/write/edit/ls/grep/execute tools |
+| `skill` | `ContributeTools` (Fork mode) + `BeforeAgent` (Inline mode) | Loads and executes skills from SKILL.md files |
+| `dynamictool/toolsearch` | `ContributeTools` + `ContributeToolInfos` | Dynamic tool search for large tool libraries |
+| `subagent` | `ContributeTools` (or `Init` for inheritance) | Injects sub-agents as callable tools |
+| `summarization` | — | Auto-compresses long conversation history |
+| `reduction` | — | Truncates large tool results |
+| `patchtoolcalls` | — | Fixes dangling tool calls in message history |
+| `plantask` | — | Task management CRUD for coding sessions |
+| `telemetry` | — (uses `WrapModel`) | OpenTelemetry tracing/monitoring |
 
 ### Runner
 
@@ -574,14 +603,30 @@ Dynamically injects sub-agents as callable tools that the parent LLM can invoke 
 
 ```
 Parent Agent (ReActAgent)
-  ├─ Tools: [..., researcher_AgentTool, coder_AgentTool] ← injected by SubAgentMiddleware
+  ├─ Tools: [..., researcher_AgentTool, coder_AgentTool] ← auto-injected via ToolContributor
   ├─ Middlewares: [SubAgentMiddleware, ...]
-  └─ Tool dispatch: executeInlineTools (ToolsConfig = nil→force inline)
+  └─ Tool dispatch: ToolsNode (merged config + contributed tools)
 
   When LLM calls "researcher":
     └─ researcher_AgentTool.Invoke(ctx, args)
          └─ Runner.Run(runCtx_with_depth_1)
               └─ Researcher Agent (independent ReAct loop)
+```
+
+Sub-agent tools are automatically contributed via the `ToolContributor` interface. No manual `BindToConfig` call is needed for basic usage:
+
+```go
+saMW := subagent.New(specs, &subagent.Config{
+    EmitInternalEvents: true,
+    MaxDepth:           5,
+})
+
+// Just add to Middlewares — tools are auto-collected.
+cfg := &agentcore.ReActConfig[*schema.Message]{
+    Model:       parentModel,
+    Middlewares: []agentcore.ReActMiddleware{saMW},
+}
+agent := agentcore.NewReActAgent(cfg)
 ```
 
 Three ways to declare sub-agents:
@@ -626,7 +671,16 @@ mw := subagent.New(specs, &subagent.Config{
 })
 ```
 
-**Design principle**: `BindToConfig()` sets `config.ToolsConfig = nil` to force inline tool dispatch (the only path that finds middleware-injected tools in `rc.Tools`). Both `BindToConfig` and middleware build are idempotent.
+**Middleware inheritance** — when a spec has `InheritParentMiddlewares: true`, call `Init(ctx, config)` after adding the middleware to `config.Middlewares`:
+
+```go
+saMW := subagent.New(specs, &subagent.Config{MaxDepth: 5})
+cfg.Middlewares = append(cfg.Middlewares, saMW)
+saMW.Init(ctx, cfg)  // enables middleware inheritance for sub-agents
+agent := agentcore.NewReActAgent(cfg)
+```
+
+> **Migration note**: The legacy `BindToConfig` method is deprecated and retained for backward compatibility. New code should use the `ToolContributor` interface (automatic) or call `Init(ctx, config)` when middleware inheritance is needed.
 
 ### Sub-Agent Architecture: flowAgent vs SubAgentMiddleware
 
@@ -843,6 +897,7 @@ harness-go/
 │   ├── resume_data.go       # Resume data types
 │   ├── utils.go             # AsyncIterator, AsyncGenerator
 │   ├── tool.go              # AgentTool (sub-agent as Tool), depth guard
+│   ├── tool_contributor.go  # ToolContributor interface + collection helpers
 │   ├── instruction.go       # Instruction management
 │   │
 │   ├── backend/             # Filesystem backend abstraction
@@ -996,7 +1051,7 @@ cfg := &agentcore.ReActConfig[*schema.Message]{
     Model:       parentModel,
     Middlewares: []agentcore.ReActMiddleware{saMW, filesystem.New(...)},
 }
-saMW.BindToConfig(cfg) // mandatory: injects tools, forces inline dispatch
+saMW.Init(ctx, cfg) // enables middleware inheritance
 agent := agentcore.NewReActAgent(cfg)
 ```
 

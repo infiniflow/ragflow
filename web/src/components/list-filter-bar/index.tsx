@@ -29,7 +29,6 @@ export const FilterButton = React.forwardRef<
     <Button
       variant="outline"
       size={count > 0 ? 'default' : 'icon'}
-      asChild
       {...props}
       ref={ref}
     >
@@ -123,7 +122,6 @@ export default function ListFilterBar({
             <FilterButton count={filterCount}></FilterButton>
           </FilterPopover>
         )}
-
         {showSearch && (
           <SearchInput
             value={searchString}

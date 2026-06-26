@@ -102,9 +102,16 @@ export const useAddChatChannel = () => {
             queryClient.invalidateQueries({
               queryKey: ChatChannelKeys.detail(values.id),
             });
+          } else if (values.channel === ChatChannelKey.WHATSAPP) {
+            setEditingRecord(res.data as IChatChannel);
+            queryClient.invalidateQueries({
+              queryKey: ChatChannelKeys.detail(res.data?.id),
+            });
           }
           message.success(t('message.operated'));
-          hideModal();
+          if (isEdit || values.channel !== ChatChannelKey.WHATSAPP) {
+            hideModal();
+          }
         }
       } finally {
         setLoading(false);
@@ -166,7 +173,7 @@ export const useConnectChatChannelDialog = () => {
       dialogId: string | null;
     }) => {
       const { data } = await updateChatChannel(params.channelId, {
-        dialog_id: params.dialogId,
+        chat_id: params.dialogId,
       });
       if (data.code === 0) {
         message.success(t('message.operated'));

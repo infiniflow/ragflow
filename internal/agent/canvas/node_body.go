@@ -19,10 +19,10 @@
 // Both the outer graph (scheduler.go) and the Loop sub-graph
 // (loop_subgraph.go) install lambda nodes that:
 //
-//   1. tag their output with __cpn_id__ so statePost can persist the
-//      result into Outputs[cpnID]["result"];
-//   2. either invoke a real factory-built component or fall back to a
-//      no-op echo body.
+//  1. tag their output with __cpn_id__ so statePost can persist the
+//     result into Outputs[cpnID]["result"];
+//  2. either invoke a real factory-built component or fall back to a
+//     no-op echo body.
 //
 // Centralising the construction here keeps both call sites consistent
 // and makes the legacy-no-op / factory / placeholder routing logic the
@@ -31,7 +31,12 @@ package canvas
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"time"
 
 	"ragflow/internal/agent/runtime"
 )
@@ -48,11 +53,17 @@ type nodeBodyFn = func(ctx context.Context, in map[string]any) (map[string]any, 
 //
 //  1. isLegacyNoOp(name) → legacyNoOpBody (echo + __legacy_noop__ tag).
 //     DSL v1 sentinels like "ExitLoop" land here.
-//  2. runtime.DefaultFactory() is non-nil → call the factory once to
+//  2. name is "UserFillUp" (case-insensitive) → UserFillUpNodeBody.
+//     This route takes precedence over the regular factory path so
+//     the eino interrupt semantics replace the legacy
+//     UserFillUpComponent.Invoke body. UserFillUpNodeBody calls
+//     compose.Interrupt on first execution and reads the resume
+//     payload via compose.GetResumeContext on subsequent runs.
+//  3. runtime.DefaultFactory() is non-nil → call the factory once to
 //     construct a runtime.Component, then return a body that delegates
 //     to that component's Invoke. A factory error surfaces here with
 //     the cpn_id wrapped for diagnostics.
-//  3. otherwise → placeholderBody. This is the canvas-package-only
+//  4. otherwise → placeholderBody. This is the canvas-package-only
 //     fallback used when no factory has been registered (most commonly
 //     in canvas-only unit tests that do not import the component
 //     package). Production runs always have a factory installed via
@@ -60,10 +71,23 @@ type nodeBodyFn = func(ctx context.Context, in map[string]any) (map[string]any, 
 //
 // The returned body always tags the output map with __cpn_id__ so the
 // shared statePost handler can persist the result into the per-cpn
-// Outputs bucket.
+// Outputs bucket. UserFillUpNodeBody tags its output itself so the
+// interrupt-driven branch still attributes the resume payload to the
+// right cpn.
 func buildNodeBody(cpnID, name string, params map[string]any) (nodeBodyFn, error) {
 	if isLegacyNoOp(name) {
 		return legacyNoOpBody(cpnID), nil
+	}
+	// UserFillUp routes to the eino interrupt-based node body
+	// regardless of whether the legacy UserFillUpComponent is
+	// registered. The component's Invoke path renders tips / fields
+	// but never emits an interrupt signal — it was the missing
+	// producer half of the old sentinel chain. With this routing,
+	// every UserFillUp node pauses the graph on first execution
+	// (compose.Interrupt) and resumes from the orchestrator's
+	// compose.ResumeWithData call.
+	if strings.EqualFold(name, "UserFillUp") {
+		return UserFillUpNodeBody(cpnID, params), nil
 	}
 	if factory := runtime.DefaultFactory(); factory != nil {
 		comp, err := factory(name, params)
@@ -73,13 +97,19 @@ func buildNodeBody(cpnID, name string, params map[string]any) (nodeBodyFn, error
 		if comp == nil {
 			return nil, fmt.Errorf("canvas: component %q (%s): factory returned nil component", cpnID, name)
 		}
-		return realComponentBody(cpnID, comp), nil
+		// Pass the class name through to the body so the per-class
+		// timeout resolver (resolveTimeout) can pick the right
+		// timeout without the runtime.Component interface needing
+		// to expose Name(). The factory returns the class name as
+		// the DSL's `component_name` field, which is also what
+		// ComponentBase.Name() would have returned.
+		return realComponentBody(cpnID, name, comp), nil
 	}
 	// Fallback: no factory registered. This path is only exercised by
 	// canvas-only unit tests; production wiring always installs a
 	// factory via component.init().
 	if !isKnownPrimitive(name) {
-		return nil, fmt.Errorf("canvas: component %q has unknown component_name %q (typo? not in the Phase 1 primitive allowlist, not in legacyNoOpNames)", cpnID, name)
+		return nil, fmt.Errorf("canvas: component %q has unknown component_name %q (typo? not in isKnownPrimitive, not in legacyNoOpNames)", cpnID, name)
 	}
 	return placeholderBody(cpnID), nil
 }
@@ -100,18 +130,55 @@ func legacyNoOpBody(cpnID string) nodeBodyFn {
 	}
 }
 
+// componentTimeout returns the per-component Invoke timeout.
+//
+// Reads the COMPONENT_EXEC_TIMEOUT env var (seconds); defaults to 600s
+// (10 min) to match the Python @timeout decorator's default in
+// agent/component/base.py. Invalid / non-positive values fall back to
+// the default — invalid input must never widen the timeout silently.
+func componentTimeout() time.Duration {
+	const def = 600 * time.Second
+	if v := os.Getenv("COMPONENT_EXEC_TIMEOUT"); v != "" {
+		if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
+			return time.Duration(secs) * time.Second
+		}
+	}
+	return def
+}
+
 // realComponentBody returns a body that delegates to the supplied
 // runtime.Component. The component is constructed once at build time
 // (in buildNodeBody) and re-invoked per iteration.
+//
+// Each invocation is wrapped in a context.WithTimeout derived from
+// resolveTimeout(comp.Name()) — the per-class resolver in timeout.go
+// (4-level: per-class env → per-class defaults table → uniform env
+// → 600s fallback). The lookup is per-invocation (not per-body) so
+// operators can tune COMPONENT_EXEC_TIMEOUT[_<CLASS>] at runtime
+// without rebuilding graphs.
+//
+// Timeout errors are surfaced as `timeout after Xs: <wrapped>`;
+// parent-context cancellation as `cancelled: <wrapped>`; all other
+// errors wrap the component's own error with the cpn_id for diagnostics.
 //
 // The output map is tagged with __cpn_id__ before return so statePost
 // can attribute the result; if the component already populated that
 // key it is overwritten with the canvas-controlled value to keep
 // attribution authoritative.
-func realComponentBody(cpnID string, comp runtime.Component) nodeBodyFn {
+func realComponentBody(cpnID, componentClass string, comp runtime.Component) nodeBodyFn {
 	return func(ctx context.Context, in map[string]any) (map[string]any, error) {
-		out, err := comp.Invoke(ctx, in)
+		timeout := resolveTimeout(componentClass)
+		cctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		out, err := comp.Invoke(cctx, in)
 		if err != nil {
+			switch {
+			case errors.Is(err, context.DeadlineExceeded):
+				return nil, fmt.Errorf("canvas: component %q invoke: timeout after %s: %w",
+					cpnID, timeout, err)
+			case errors.Is(err, context.Canceled):
+				return nil, fmt.Errorf("canvas: component %q invoke: cancelled: %w", cpnID, err)
+			}
 			return nil, fmt.Errorf("canvas: component %q invoke: %w", cpnID, err)
 		}
 		if out == nil {

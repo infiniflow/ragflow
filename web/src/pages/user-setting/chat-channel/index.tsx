@@ -56,14 +56,25 @@ const AvailableChannelCard = ({
 const ChatChannel = () => {
   const { t } = useTranslation();
   const { chatChannelInfo } = useChatChannelInfo();
-  const channelTemplates: IChatChannelInfo[] = Object.values(
-    ChatChannelKey,
-  ).map((id) => ({
-    id,
-    name: chatChannelInfo[id].name,
-    description: chatChannelInfo[id].description,
-    icon: chatChannelInfo[id].icon,
-  }));
+  const channelTemplates: IChatChannelInfo[] = Object.values(ChatChannelKey)
+    .filter(
+      (id) =>
+        [
+          ChatChannelKey.DISCORD,
+          ChatChannelKey.DINGTALK,
+          ChatChannelKey.FEISHU,
+          ChatChannelKey.TELEGRAM,
+          ChatChannelKey.QQBOT,
+          ChatChannelKey.WECOM,
+          ChatChannelKey.WHATSAPP,
+        ].includes(id), // Show only selected chat channels
+    )
+    .map((id) => ({
+      id,
+      name: chatChannelInfo[id].name,
+      description: chatChannelInfo[id].description,
+      icon: chatChannelInfo[id].icon,
+    }));
 
   const { categorizedList } = useListChatChannel();
 

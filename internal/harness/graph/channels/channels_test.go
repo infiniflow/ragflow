@@ -280,10 +280,14 @@ func TestBaseChannelGetVersion(t *testing.T) {
 	// Concurrent read/write should not race (atomic).
 	done := make(chan struct{})
 	go func() {
-		for i := 0; i < 100; i++ { ch.SetVersion(i) }
+		for i := 0; i < 100; i++ {
+			ch.SetVersion(i)
+		}
 		close(done)
 	}()
-	for i := 0; i < 100; i++ { _ = ch.GetVersion() }
+	for i := 0; i < 100; i++ {
+		_ = ch.GetVersion()
+	}
 	<-done
 }
 

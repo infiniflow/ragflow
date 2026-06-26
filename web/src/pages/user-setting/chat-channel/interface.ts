@@ -11,8 +11,8 @@ export interface IChatChannelBase {
   id: string;
   name: string;
   channel: ChatChannelKey;
-  // Connected assistant (dialog), joined in by the list endpoint.
-  dialog_id?: string | null;
+  // Connected assistant (chat), joined in by the list endpoint.
+  chat_id?: string | null;
   dialog_name?: string | null;
 }
 
