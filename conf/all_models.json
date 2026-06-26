@@ -6652,14 +6652,28 @@
       "max_tokens": 128000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      },
+      "structured_output": {
+        "support": true,
+        "types": ["json"]
+      }
     },
     {
       "name": "glm-4-flash-250414",
       "max_tokens": 128000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      },
+      "structured_output": {
+        "support": true,
+        "types": ["json"]
+      }
     },
     {
       "name": "glm-4-long",
@@ -6709,7 +6723,14 @@
       "max_tokens": 128000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      },
+      "structured_output": {
+        "support": true,
+        "types": ["json"]
+      }
     },
     {
       "name": "glm-4.5-x",
@@ -6731,6 +6752,13 @@
       "model_types": [
         "chat"
       ],
+      "tools": {
+        "support": true
+      },
+      "structured_output": {
+        "support": true,
+        "types": ["json"]
+      },
       "thinking": {
         "default_value": true,
         "clear_thinking": true
@@ -37357,6 +37385,13 @@
         "glm-5.2",
         "glm-5-2"
       ],
+      "tools": {
+        "support": true
+      },
+      "structured_output": {
+        "support": true,
+        "types": ["json"]
+      },
       "model_types": [
         "chat"
       ]
@@ -37371,6 +37406,13 @@
         "Z-AI/GLM 5.1",
         "GLM 5.1 FP4"
       ],
+      "tools": {
+        "support": true
+      },
+      "structured_output": {
+        "support": true,
+        "types": ["json"]
+      },
       "model_types": [
         "chat"
       ],
