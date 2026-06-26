@@ -40,14 +40,13 @@ Released on June 26, 2026.
   - Tables in `.docx` files were silently removed by the laws document parser. [#16155](https://github.com/infiniflow/ragflow/pull/16155)；
   - Lone Markdown headers were separated from their subsequent sections when a DeepDoc delimiter was set. [#16109](https://github.com/infiniflow/ragflow/pull/16109)
   - Markdown tables appeared twice in chunk results, once as a standalone chunk and again within a regular text chunk. [#16143](https://github.com/infiniflow/ragflow/pull/16143)
-- MCP:
+- MCP
   - The MCP server hung indefinitely when encountering empty document pages; the final page of documents was silently dropped due to flawed pagination. [#16285](https://github.com/infiniflow/ragflow/pull/16285)
   - The MCP connection and dataset discovery process failed because the server's hardcoded fetch limit exceeded the introduced `page_size` restriction. [#16148](https://github.com/infiniflow/ragflow/pull/16148)
-- 数据流:
-  - 修复 dataflow 重跑和详情 payload 丢失 [#16292](https://github.com/infiniflow/ragflow/pull/16292)
-  - 修复 dataflow 默认值和 SSE 响应丢失 [#16290](https://github.com/infiniflow/ragflow/pull/16290)
-
-- LLM: 修复 Google Cloud Gemini eu/us 多节点端点支持 [#15990](https://github.com/infiniflow/ragflow/pull/15990)
+- Dataflow
+  - Restores the dataflow rerun endpoint and ensures the ingestion response includes the DSL payload to reliably render the timeline and parser views. [#16292](https://github.com/infiniflow/ragflow/pull/16292)
+  - Restores dataflow parser defaults and returns the actual SSE payload, ensuring pipeline runs correctly surface message IDs and log updates. [#16290](https://github.com/infiniflow/ragflow/pull/16290)
+- LLM: Failed to use the new `gemini-3.5-flash` model via the Google Cloud (Vertex AI) provider using `eu` or `us` region endpoint. This is resolved by explicitly multi-region routing requests to the required `aiplatform.<region>.rep.googleapis.com` domains instead of synthesized `<region>-aiplatform.googleapis.com` hosts. [#15990](https://github.com/infiniflow/ragflow/pull/15990)
 - UI/UX: The metadata add modal sent empty values to the backend. [#15229](https://github.com/infiniflow/ragflow/pull/15229)
 
 ## v0.26.1
