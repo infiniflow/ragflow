@@ -478,16 +478,17 @@ async def verify_api_key(provider_id_or_name: str, api_key: str|dict, base_url: 
     if not factory_info:
         return False, f"Provider '{provider_id_or_name}' not found"
 
-    factory_llms = factory_info[0]["llm"]
-    if not factory_llms:
-        if not model_info:
-            return False, f"No models found for provider '{provider_id_or_name}'"
+    if model_info:
         factory_llms = [{
             "model_type": _type,
             "llm_name": model.get("model_name", ""),
-        } for model in model_info if model for _type in model.get("model_type", []) ]
+        } for model in model_info if model for _type in model.get("model_type", [])]
         if not factory_llms:
             return False, f"No valid models found for provider '{provider_id_or_name}'"
+    else:
+        factory_llms = factory_info[0]["llm"]
+        if not factory_llms:
+            return False, f"No models found for provider '{provider_id_or_name}'"
 
     # test if api key works
     chat_passed, embd_passed, rerank_passed, ocr_passed, tts_passed = False, False, False, False, False

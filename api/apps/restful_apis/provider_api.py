@@ -336,6 +336,8 @@ async def create_provider_instance(tenant_id: str = None, provider_id_or_name: s
           type: object
     """
     data = await request.get_json()
+    if not provider_id_or_name:
+        return get_error_argument_result(message="provider_id_or_name is required")
     if not data or "instance_name" not in data or ("api_key" not in data and provider_id_or_name != "VLLM"):
         return get_error_argument_result(message="instance_name is required")
 
@@ -417,6 +419,8 @@ async def verify_provider_api_key(provider_id_or_name: str = None):
           type: object
     """
     data = await request.get_json()
+    if not provider_id_or_name:
+        return get_error_argument_result(message="provider_id_or_name is required")
     if not data or ("api_key" not in data and provider_id_or_name != "VLLM"):
         return get_error_argument_result(message="api_key is required")
 
