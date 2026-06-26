@@ -814,6 +814,7 @@ def add_model_to_instance(tenant_id: str, provider_id_or_name: str, instance_id_
         return False, f"No instance found for provider '{provider_id_or_name}' and instance '{instance_id_or_name}'"
     model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(provider_obj.id, instance_obj.id, model_name)
     if model_obj:
+        logging.debug("Model '%s' already exists for instance '%s', skipping", model_name, instance_name)
         return True, "skipped"
     factory_info = [f for f in FACTORY_LLM_INFOS if f["name"] == provider_obj.provider_name]
     if not factory_info:
