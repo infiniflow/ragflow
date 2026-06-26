@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 )
 
 // Sentinel errors returned by File2DocumentService. Handlers map these to
@@ -196,7 +197,7 @@ func (s *File2DocumentService) convertFiles(fileIDs, kbIDs []string, userID stri
 				continue
 			}
 
-			parserID := getParser(file.Type, file.Name, kb.ParserID)
+			parserID := selectUploadParser(utility.FileType(file.Type), file.Name, kb.ParserID)
 			suffix := strings.TrimPrefix(filepath.Ext(file.Name), ".")
 			doc := &entity.Document{
 				ID:           common.GenerateUUID(),
@@ -266,12 +267,18 @@ func (s *File2DocumentService) checkFileTeamPermission(file *entity.File, userID
 	if file.TenantID == userID {
 		return true
 	}
-	tenants, err := s.userTenantDAO.GetByUserID(userID)
-	if err != nil {
+
+	datasetIDs, err := s.fileDAO.GetDatasetIDByFileID(file.ID)
+	if err != nil || len(datasetIDs) == 0 {
 		return false
 	}
-	for _, t := range tenants {
-		if t.TenantID == file.TenantID {
+
+	for _, datasetID := range datasetIDs {
+		kb, err := s.kbDAO.GetByID(datasetID)
+		if err != nil || kb == nil {
+			continue
+		}
+		if s.checkKBTeamPermission(kb, userID) {
 			return true
 		}
 	}
@@ -281,43 +288,7 @@ func (s *File2DocumentService) checkFileTeamPermission(file *entity.File, userID
 // checkKBTeamPermission mirrors Python check_kb_team_permission:
 // true when kb.TenantID == userID or user is in the KB tenant's team.
 func (s *File2DocumentService) checkKBTeamPermission(kb *entity.Knowledgebase, userID string) bool {
-	if kb.TenantID == userID {
-		return true
-	}
-	tenants, err := s.userTenantDAO.GetByUserID(userID)
-	if err != nil {
-		return false
-	}
-	for _, t := range tenants {
-		if t.TenantID == kb.TenantID {
-			return true
-		}
-	}
-	return false
-}
-
-// getParser maps (fileType, fileName, kbParserID) → a parser ID.
-// Mirrors Python FileService.get_parser — falls back to the KB's parser.
-func getParser(fileType, fileName, kbParserID string) string {
-	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(fileName), "."))
-	switch ext {
-	case "pdf":
-		return "pdf"
-	case "doc", "docx":
-		return "naive"
-	case "ppt", "pptx":
-		return "presentation"
-	case "xls", "xlsx":
-		return "table"
-	case "txt", "md":
-		return "naive"
-	case "png", "jpg", "jpeg", "gif", "bmp", "webp":
-		return "picture"
-	}
-	if kbParserID != "" {
-		return kbParserID
-	}
-	return "naive"
+	return hasKBTeamPermission(kb, userID, dao.NewTenantDAO())
 }
 
 // dedupeStrings returns the input slice with duplicates removed, preserving the

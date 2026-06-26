@@ -241,3 +241,7 @@ bin/*
 # Local agent tooling state (per-developer; not for commit)
 .omc/
 .marscode/
+
+# Parser test fixtures and python tools
+internal/deepdoc/parser/pdf/testdata/
+internal/deepdoc/parser/pdf/tools-py/

@@ -1081,3 +1081,45 @@ func (r *UserQuotaResponse) PrintOut() {
 		PrintTableSimpleByFormatWithOrder(summaryTable, []string{"Metric", "Used", "Limit"}, r.OutputFormat)
 	}
 }
+
+type OrderedCommonResponse struct {
+	CommonResponse
+}
+
+func (r *OrderedCommonResponse) PrintOut() {
+	if r.Code == 0 {
+		if colNames, cleanData, ok := ExtractColumnsAndCleanData(r.Data); ok {
+			PrintTableSimpleByFormatWithOrder(cleanData, colNames, r.OutputFormat)
+		} else {
+			PrintTableSimpleByFormat(r.Data, r.OutputFormat)
+		}
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
+type OrderedCommonDataResponse struct {
+	CommonDataResponse
+}
+
+func (r *OrderedCommonDataResponse) PrintOut() {
+	if r.Code == 0 {
+		if table := r.orderedMetricTable(); len(table) > 0 {
+			PrintTableSimpleByFormat(table, r.OutputFormat)
+		} else {
+			table := make([]map[string]interface{}, 0)
+			for key, value := range r.Data {
+				elem := map[string]interface{}{
+					"field": key,
+					"value": value,
+				}
+				table = append(table, elem)
+			}
+			PrintTableSimpleByFormat(table, r.OutputFormat)
+		}
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}

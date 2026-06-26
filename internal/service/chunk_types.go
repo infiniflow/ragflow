@@ -95,6 +95,29 @@ type ParseFileRequest struct {
 	DocumentIDs []string `json:"document_ids"`
 }
 
+// AddChunkRequest request for adding a chunk
+type AddChunkRequest struct {
+	DatasetID         string      `json:"dataset_id"`
+	DocumentID        string      `json:"document_id"`
+	Content           string      `json:"content"`
+	ImportantKeywords []string    `json:"important_keywords,omitempty"`
+	Questions         []string    `json:"questions,omitempty"`
+	TagKwd            []string    `json:"tag_kwd,omitempty"`
+	TagFeas           interface{} `json:"tag_feas,omitempty"`
+	ImageBase64       *string     `json:"image_base64,omitempty"`
+}
+
+// AddChunkResponse response for adding a chunk
+type AddChunkResponse struct {
+	Chunk map[string]interface{} `json:"chunk"`
+}
+
+// ErrorCoder exposes an application error code alongside an error string.
+type ErrorCoder interface {
+	error
+	Code() common.ErrorCode
+}
+
 // Get retrieves a chunk by ID
 func (s *ChunkService) Get(req *GetChunkRequest, userID string) (*GetChunkResponse, error) {
 	if s.docEngine == nil {

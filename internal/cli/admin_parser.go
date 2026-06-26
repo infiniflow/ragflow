@@ -115,7 +115,7 @@ func (p *Parser) parseAdminListCommands() (*Command, error) {
 	case TokenIngestion:
 		return p.parseAdminListIngestionTasks()
 	case TokenAPI:
-		return p.parseListApiCommand()
+		return p.parseAdminListAPIServers()
 	default:
 		return nil, fmt.Errorf("unknown LIST target: %s", p.curToken.Value)
 	}
@@ -336,6 +336,26 @@ func (p *Parser) parseAdminListModels() (*Command, error) {
 	return cmd, nil
 }
 
+func (p *Parser) parseAdminListAPIServers() (*Command, error) {
+	p.nextToken() // consume API
+
+	var cmd *Command
+	switch p.curToken.Type {
+	case TokenServer:
+		p.nextToken()
+		cmd = NewCommand("admin_list_api_servers")
+	default:
+		return nil, fmt.Errorf("expected SERVER after API")
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
 // endregion LIST commands
 
 // region SHOW commands
@@ -376,6 +396,8 @@ func (p *Parser) parseAdminShowCommands() (*Command, error) {
 		return p.parseAdminShowQuota()
 	case TokenTasks:
 		return p.parseAdminShowTasks()
+	case TokenLog:
+		return p.parseAdminShowLogCommands()
 	default:
 		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
 	}
@@ -1038,6 +1060,7 @@ func (p *Parser) parseAdminCreateCommand() (*Command, error) {
 	}
 }
 
+// CREATE USER 'user@example.com' 'password';
 func (p *Parser) parseAdminCreateUser() (*Command, error) {
 	p.nextToken() // consume USER
 	userName, err := p.parseQuotedString()
@@ -1629,6 +1652,8 @@ func (p *Parser) parseAdminSetCommand() (*Command, error) {
 		return p.parseAdminSetVariable()
 	case TokenRole:
 		return p.parseAdminSetRoleDefaultModel()
+	case TokenLog:
+		return p.parseAdminSetLog()
 	default:
 		return nil, fmt.Errorf("unknown SET target: %s", p.curToken.Value)
 	}
@@ -1640,7 +1665,7 @@ func (p *Parser) parseAdminSetLicense() (*Command, error) {
 	if p.curToken.Type == TokenConfig {
 		p.nextToken() // consume CONFIG
 		// SET LICENSE CONFIG <number1> <number2>
-		cmd := NewCommand("admin_set_license_config_command")
+		cmd := NewCommand("admin_set_license_config")
 		number1, err := p.parseNumber()
 		if err != nil {
 			return nil, err
@@ -1662,7 +1687,7 @@ func (p *Parser) parseAdminSetLicense() (*Command, error) {
 	}
 	p.nextToken()
 
-	cmd := NewCommand("admin_set_license_command")
+	cmd := NewCommand("admin_set_license")
 	cmd.Params["license"] = license
 
 	// Semicolon is optional
@@ -1686,7 +1711,7 @@ func (p *Parser) parseAdminSetVariable() (*Command, error) {
 		return nil, err
 	}
 
-	cmd := NewCommand("set_variable")
+	cmd := NewCommand("admin_set_variable")
 	cmd.Params["var_name"] = varName
 	cmd.Params["var_value"] = varValue
 
@@ -1750,6 +1775,45 @@ func (p *Parser) parseAdminSetRoleDefaultModel() (*Command, error) {
 		return nil, fmt.Errorf("invalid format of model name or ID: %s", modelNameOrID)
 	}
 
+	p.nextToken()
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminSetLog() (*Command, error) {
+	p.nextToken() // consume LOG
+
+	switch p.curToken.Type {
+	case TokenLevel:
+		return p.parseAdminSetLogLevel()
+	default:
+		return nil, fmt.Errorf("unknown log target: %s", p.curToken.Value)
+	}
+}
+
+func (p *Parser) parseAdminSetLogLevel() (*Command, error) {
+	p.nextToken() // consume LEVEL
+
+	cmd := NewCommand("admin_set_log_level")
+	switch p.curToken.Type {
+	case TokenDebug:
+		cmd.Params["level"] = "debug"
+	case TokenInfo:
+		cmd.Params["level"] = "info"
+	case TokenWarn:
+		cmd.Params["level"] = "warn"
+	case TokenError:
+		cmd.Params["level"] = "error"
+	case TokenFatal:
+		cmd.Params["level"] = "fatal"
+	case TokenPanic:
+		cmd.Params["level"] = "panic"
+	default:
+		return nil, fmt.Errorf("unknown log level: %s", p.curToken.Value)
+	}
 	p.nextToken()
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
@@ -2227,12 +2291,42 @@ func (p *Parser) parseAdminUseCommand() (*Command, error) {
 	p.nextToken() // consume USE
 	switch p.curToken.Type {
 	case TokenAPI:
-		return p.parseUseAPIServer()
+		return p.parseAdminUseAPIServer()
 	case TokenAdmin:
-		return p.parseUseAdminServer()
+		return p.parseAdminUseAdminServer()
 	default:
 		return nil, fmt.Errorf("expected API or ADMIN after USE")
 	}
+}
+
+func (p *Parser) parseAdminUseAPIServer() (*Command, error) {
+	p.nextToken() // consume API
+
+	serverName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+	cmd := NewCommand("admin_use_api_server")
+	cmd.Params["server_name"] = serverName
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminUseAdminServer() (*Command, error) {
+	p.nextToken() // consume ADMIN
+
+	cmd := NewCommand("admin_use_admin_server")
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
 }
 
 func (p *Parser) parseStartIngestion() (*Command, error) {
@@ -2642,6 +2736,30 @@ func (p *Parser) parseAdminShowTasks() (*Command, error) {
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminShowLogCommands() (*Command, error) {
+	p.nextToken() // consume LOG
+
+	switch p.curToken.Type {
+	case TokenLevel:
+		return p.parseAdminShowLogLevel()
+	default:
+		return nil, fmt.Errorf("expected LEVEL after LOG")
+	}
+}
+
+func (p *Parser) parseAdminShowLogLevel() (*Command, error) {
+	p.nextToken() // consume LEVEL
+
+	cmd := NewCommand("admin_show_log_level")
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
 	return cmd, nil
 }
 

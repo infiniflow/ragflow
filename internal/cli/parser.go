@@ -151,7 +151,7 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 	case TokenList:
 		return p.parseAPIListCommands()
 	case TokenShow:
-		return p.parseShowCommand()
+		return p.parseAPIShowCommands()
 	case TokenCreate:
 		return p.parseCreateCommand()
 	case TokenDrop:
@@ -164,10 +164,8 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseAlterCommand()
 	case TokenSet:
 		return p.parseAPISetCommands()
-	case TokenUnset:
-		return p.parseUnsetCommand()
 	case TokenReset:
-		return p.parseResetCommand()
+		return p.parseAPIResetCommands()
 	case TokenImport:
 		return p.parseImportCommand()
 	case TokenInsert:
