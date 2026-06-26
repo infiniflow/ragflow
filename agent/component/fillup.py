@@ -54,16 +54,19 @@ class UserFillUp(ComponentBase):
         if query is None or query == "":
             return {}
 
-        self._canvas.globals[_INITIAL_USER_INPUT_CONSUMED_KEY] = True
         if isinstance(query, dict):
-            return {
+            matched = {
                 key: value if isinstance(value, dict) else {"value": value}
                 for key, value in query.items()
                 if key in fields
             }
+            if matched:
+                self._canvas.globals[_INITIAL_USER_INPUT_CONSUMED_KEY] = True
+            return matched
 
         if len(fields) == 1:
             field_name = next(iter(fields))
+            self._canvas.globals[_INITIAL_USER_INPUT_CONSUMED_KEY] = True
             return {field_name: {"value": query}}
 
         return {}

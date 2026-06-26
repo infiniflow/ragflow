@@ -929,6 +929,44 @@ func extractUserInputFromFormInputs(inputs map[string]interface{}) interface{} {
 	return out
 }
 
+func countInputValues(inputs map[string]interface{}) int {
+	count := 0
+	for _, raw := range inputs {
+		if field, ok := raw.(map[string]interface{}); ok {
+			if _, exists := field["value"]; exists {
+				count++
+			}
+			continue
+		}
+		if raw != nil {
+			count++
+		}
+	}
+	return count
+}
+
+func userInputMeta(userInput any) []zap.Field {
+	fields := []zap.Field{zap.String("user_input_type", fmt.Sprintf("%T", userInput))}
+	switch v := userInput.(type) {
+	case nil:
+		fields = append(fields, zap.Bool("user_input_present", false))
+	case string:
+		fields = append(fields,
+			zap.Bool("user_input_present", true),
+			zap.Int("user_input_length", len(v)),
+			zap.Bool("user_input_blank", v == ""),
+		)
+	case map[string]interface{}:
+		fields = append(fields,
+			zap.Bool("user_input_present", true),
+			zap.Int("user_input_keys", len(v)),
+		)
+	default:
+		fields = append(fields, zap.Bool("user_input_present", true))
+	}
+	return fields
+}
+
 func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
@@ -954,8 +992,10 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		zap.String("session_id", req.SessionID),
 		zap.Bool("stream", req.Stream),
 		zap.Bool("openai_compatible", req.OpenAICompat),
-		zap.String("query", req.Query),
+		zap.Bool("query_present", req.Query != ""),
+		zap.Int("query_length", len(req.Query)),
 		zap.Int("inputs_count", len(req.Inputs)),
+		zap.Int("inputs_with_values_count", countInputValues(req.Inputs)),
 		zap.Int("messages_count", len(req.Messages)),
 	)
 
@@ -989,19 +1029,21 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		}
 	}
 	common.Debug("agent chat completions: derived user input",
-		zap.String("agent_id", req.AgentID),
-		zap.String("session_id", req.SessionID),
-		zap.Any("user_input", userInput),
+		append([]zap.Field{
+			zap.String("agent_id", req.AgentID),
+			zap.String("session_id", req.SessionID),
+		}, userInputMeta(userInput)...)...,
 	)
 
 	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, req.AgentID, req.SessionID, "", userInput)
 	if err != nil {
 		common.Warn("agent chat completions: RunAgent failed",
-			zap.String("user_id", user.ID),
-			zap.String("agent_id", req.AgentID),
-			zap.String("session_id", req.SessionID),
-			zap.Any("user_input", userInput),
-			zap.Error(err),
+			append([]zap.Field{
+				zap.String("user_id", user.ID),
+				zap.String("agent_id", req.AgentID),
+				zap.String("session_id", req.SessionID),
+				zap.Error(err),
+			}, userInputMeta(userInput)...)...,
 		)
 		ec, em := mapAgentError(err)
 		jsonError(c, ec, em)

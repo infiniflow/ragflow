@@ -321,7 +321,12 @@ def validate_uuid1_hex(v: Any) -> str:
         - Hyphens in input strings are automatically removed in output
     """
     try:
-        uuid_obj = UUID(v) if isinstance(v, str) else v
+        if isinstance(v, UUID):
+            uuid_obj = v
+        elif isinstance(v, str):
+            uuid_obj = UUID(v)
+        else:
+            raise TypeError
         return uuid_obj.hex
     except (AttributeError, ValueError, TypeError):
         raise PydanticCustomError("invalid_uuid_format", "Invalid UUID format")

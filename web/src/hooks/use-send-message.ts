@@ -87,11 +87,22 @@ export type IChatEvent = INodeEvent | IMessageEvent | IMessageEndEvent;
 
 export type IEventList = Array<IChatEvent>;
 
+const parseAgentEventData = (data: any) => {
+  if (typeof data !== 'string') return data;
+
+  try {
+    return JSON.parse(data);
+  } catch {
+    return data;
+  }
+};
+
 const normalizeAgentEvent = (value: any) => {
   if (value?.event === MessageEventType.WaitingForUser) {
     return {
       ...value,
       event: MessageEventType.UserInputs,
+      data: parseAgentEventData(value.data),
     };
   }
 

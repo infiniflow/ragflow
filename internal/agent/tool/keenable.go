@@ -39,12 +39,10 @@ const keenableToolDescription = `Keenable is a web search API built for AI agent
    - Optionally restrict to a single site/domain.`
 
 // keenableParams is the JSON shape the model sends into InvokableRun.
-// api_key may be omitted; an empty string means use the keyless public
-// endpoint (free tier). site is an optional single-domain filter. mode
-// is "pro" (default, deeper) or "realtime" (requires a key). top_n
-// caps how many results we keep from the upstream `results` array.
+// site is an optional single-domain filter. mode is "pro" (default,
+// deeper) or "realtime" (requires a server-configured key). top_n caps
+// how many results we keep from the upstream `results` array.
 type keenableParams struct {
-	APIKey string `json:"api_key"`
 	Query  string `json:"query"`
 	Site   string `json:"site"`
 	Mode   string `json:"mode"`
@@ -90,6 +88,7 @@ type keenableEnvelope struct {
 // `results` array is returned as JSON.
 type KeenableTool struct {
 	helper *HTTPHelper
+	apiKey string
 
 	// envBaseURL resolves the Keenable API base URL from the
 	// KEENABLE_API_URL env var (HTTPS enforced). Exposed as a
@@ -102,6 +101,14 @@ type KeenableTool struct {
 // and the KEENABLE_API_URL env var for base-URL resolution.
 func NewKeenableTool() *KeenableTool {
 	return NewKeenableToolWith(NewHTTPHelper())
+}
+
+// NewKeenableToolWithAPIKey returns a KeenableTool that uses a
+// server-provided API key instead of model-visible runtime args.
+func NewKeenableToolWithAPIKey(h *HTTPHelper, apiKey string) *KeenableTool {
+	t := NewKeenableToolWith(h)
+	t.apiKey = strings.TrimSpace(apiKey)
+	return t
 }
 
 // NewKeenableToolWith returns a KeenableTool that uses the provided
@@ -185,14 +192,9 @@ func (k *KeenableTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 				Desc:     "Optional. Restrict results to a single domain, e.g. 'techcrunch.com'. Defaults to '' (no filter).",
 				Required: false,
 			},
-			"api_key": {
-				Type:     schema.String,
-				Desc:     "Optional Keenable API key. Blank uses the keyless free-tier endpoint; set one to lift rate limits and enable realtime mode.",
-				Required: false,
-			},
 			"mode": {
 				Type:     schema.String,
-				Desc:     `Search mode: "pro" (default, deeper) or "realtime" (low latency; requires an API key).`,
+				Desc:     `Search mode: "pro" (default, deeper) or "realtime" (low latency; requires a server-configured API key).`,
 				Required: false,
 			},
 			"top_n": {
@@ -227,9 +229,9 @@ func (k *KeenableTool) InvokableRun(ctx context.Context, argsJSON string, _ ...t
 	// 'realtime' is only available on the keyed endpoint. Reject the
 	// invalid combination up front instead of letting the upstream
 	// return a confusing error — matches the Python tool's check().
-	if mode == "realtime" && strings.TrimSpace(p.APIKey) == "" {
-		return keenableErrJSON(fmt.Errorf("keenable: 'realtime' mode requires an api_key")),
-			fmt.Errorf("keenable: 'realtime' mode requires an api_key")
+	if mode == "realtime" && strings.TrimSpace(k.apiKey) == "" {
+		return keenableErrJSON(fmt.Errorf("keenable: 'realtime' mode requires a configured api_key")),
+			fmt.Errorf("keenable: 'realtime' mode requires a configured api_key")
 	}
 
 	topN := p.TopN
@@ -244,7 +246,7 @@ func (k *KeenableTool) InvokableRun(ctx context.Context, argsJSON string, _ ...t
 		return keenableErrJSON(err), err
 	}
 
-	apiKey := strings.TrimSpace(p.APIKey)
+	apiKey := strings.TrimSpace(k.apiKey)
 	path := "/v1/search/public"
 	headers := map[string]string{
 		"User-Agent":       "keenable-ragflow",

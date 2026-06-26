@@ -197,10 +197,15 @@ func TestRetrieval_KbIDsTranslatedToDatasetIDs(t *testing.T) {
 }
 
 func TestRetrieval_LegacyQueryStringNormalized(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{TranslateError: true})
 	if err != nil {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to unwrap sql db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
 	if err := db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
 		t.Fatalf("failed to migrate knowledgebase: %v", err)
 	}
@@ -256,10 +261,15 @@ func TestRetrieval_LegacyQueryStringNormalized(t *testing.T) {
 }
 
 func TestRetrieval_StructuredUserFillInputNormalized(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{TranslateError: true})
 	if err != nil {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to unwrap sql db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
 	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.UserTenant{}); err != nil {
 		t.Fatalf("failed to migrate tables: %v", err)
 	}
@@ -317,10 +327,15 @@ func TestRetrieval_StructuredUserFillInputNormalized(t *testing.T) {
 }
 
 func TestRetrieval_ResolveDatasetIDByTenantName(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{TranslateError: true})
 	if err != nil {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to unwrap sql db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
 	if err := db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
 		t.Fatalf("failed to migrate knowledgebase: %v", err)
 	}

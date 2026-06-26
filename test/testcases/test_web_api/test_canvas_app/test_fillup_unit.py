@@ -140,3 +140,18 @@ def test_user_fillup_only_auto_consumes_initial_query_once(monkeypatch):
     component._invoke(inputs={})
 
     assert component._param.outputs == {}
+
+
+@pytest.mark.p2
+def test_user_fillup_does_not_consume_unmatched_structured_query(monkeypatch):
+    module = _load_fillup_module(monkeypatch)
+    component = _make_fillup(
+        module,
+        query={"x": 8},
+        inputs={"demo": {"type": "options", "name": "Demo"}},
+    )
+
+    component._invoke(inputs={})
+
+    assert component._param.outputs == {}
+    assert component._canvas.globals["sys.__initial_user_input_consumed__"] is False

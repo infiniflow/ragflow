@@ -163,7 +163,7 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, req RetrievalRequest) 
 
 func (a *NLPRetrievalAdapter) resolveTenantIDs(req RetrievalRequest) []string {
 	seen := map[string]struct{}{}
-	tenantIDs := make([]string, 0, len(req.DatasetIDs)+1)
+	tenantIDs := make([]string, 0, 1)
 	appendTenantID := func(tenantID string) {
 		if tenantID == "" {
 			return
@@ -176,17 +176,6 @@ func (a *NLPRetrievalAdapter) resolveTenantIDs(req RetrievalRequest) []string {
 	}
 
 	appendTenantID(req.TenantID)
-	if len(req.DatasetIDs) == 0 || a == nil || a.kbDAO == nil {
-		return tenantIDs
-	}
-
-	if kbs, err := a.kbDAO.GetByIDs(req.DatasetIDs); err == nil {
-		for _, kb := range kbs {
-			if kb != nil {
-				appendTenantID(kb.TenantID)
-			}
-		}
-	}
 	return tenantIDs
 }
 

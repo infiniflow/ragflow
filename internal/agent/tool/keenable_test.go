@@ -82,8 +82,9 @@ func TestKeenable_KeylessPath(t *testing.T) {
 	}
 }
 
-// TestKeenable_KeyedPath verifies that providing api_key switches the
-// tool to the /v1/search endpoint and sets X-API-Key on the request.
+// TestKeenable_KeyedPath verifies that a server-configured api_key
+// switches the tool to the /v1/search endpoint and sets X-API-Key on
+// the request.
 func TestKeenable_KeyedPath(t *testing.T) {
 	t.Parallel()
 
@@ -99,10 +100,11 @@ func TestKeenable_KeyedPath(t *testing.T) {
 	helper := NewHTTPHelper().WithClient(&http.Client{
 		Transport: rewriteHostTransport(srv.URL),
 	})
-	tool := NewKeenableToolWithEnvBaseURL(helper, func() string { return "https://" + srv.URL[len("http://"):] })
+	tool := NewKeenableToolWithAPIKey(helper, "key-xyz")
+	tool.envBaseURL = func() string { return "https://" + srv.URL[len("http://"):] }
 
 	if _, err := tool.InvokableRun(context.Background(),
-		`{"query":"ragflow","api_key":"key-xyz","mode":"realtime"}`); err != nil {
+		`{"query":"ragflow","mode":"realtime"}`); err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
 
@@ -218,7 +220,7 @@ func TestKeenable_MissingQuery(t *testing.T) {
 }
 
 // TestKeenable_RealtimeRequiresAPIKey verifies the config-time rejection
-// of realtime mode without an api_key.
+// of realtime mode without a configured api_key.
 func TestKeenable_RealtimeRequiresAPIKey(t *testing.T) {
 	t.Parallel()
 
@@ -227,8 +229,8 @@ func TestKeenable_RealtimeRequiresAPIKey(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for realtime mode without api_key")
 	}
-	if !strings.Contains(err.Error(), "realtime") {
-		t.Errorf("err = %v, want to mention realtime", err)
+	if !strings.Contains(err.Error(), "configured api_key") {
+		t.Errorf("err = %v, want to mention configured api_key", err)
 	}
 }
 
@@ -377,5 +379,12 @@ func TestKeenable_Info(t *testing.T) {
 	}
 	if info.ParamsOneOf == nil {
 		t.Fatal("ParamsOneOf = nil, want schema definition")
+	}
+	paramsJSON, err := json.Marshal(info.ParamsOneOf)
+	if err != nil {
+		t.Fatalf("marshal ParamsOneOf: %v", err)
+	}
+	if strings.Contains(string(paramsJSON), "api_key") {
+		t.Fatalf("Info ParamsOneOf unexpectedly exposes api_key: %s", string(paramsJSON))
 	}
 }

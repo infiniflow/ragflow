@@ -296,7 +296,7 @@ func (r *Runner) Run(
 		// invoking the workflow. The sentinel keys are deleted from
 		// root inside the RunFunc — see service/agent.go's
 		// buildRunFunc.
-		if userInput != "" {
+		if userInput != nil {
 			if id := r.getInterruptID(canvasID, sessionID); id != "" {
 				root["__resume_interrupt_id__"] = id
 				root["__resume_data__"] = userInput

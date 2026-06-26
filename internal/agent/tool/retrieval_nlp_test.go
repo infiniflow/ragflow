@@ -30,23 +30,7 @@ import (
 	"context"
 	"math"
 	"testing"
-
-	"ragflow/internal/entity"
 )
-
-type fakeKnowledgebaseLookup struct {
-	byID map[string]*entity.Knowledgebase
-}
-
-func (f fakeKnowledgebaseLookup) GetByIDs(ids []string) ([]*entity.Knowledgebase, error) {
-	out := make([]*entity.Knowledgebase, 0, len(ids))
-	for _, id := range ids {
-		if kb, ok := f.byID[id]; ok {
-			out = append(out, kb)
-		}
-	}
-	return out, nil
-}
 
 // floatEqual compares two floats with a small epsilon so
 // arithmetic like 0.4+0.8/2 == 0.6000000000000001 doesn't fail.
@@ -224,25 +208,17 @@ func TestNewNLPRetrievalAdapter_NilService(t *testing.T) {
 	}
 }
 
-func TestNLPRetrievalAdapter_ResolveTenantIDsFromDatasetIDs(t *testing.T) {
-	a := &NLPRetrievalAdapter{
-		kbDAO: fakeKnowledgebaseLookup{
-			byID: map[string]*entity.Knowledgebase{
-				"kb-1": {ID: "kb-1", TenantID: "tenant-a"},
-				"kb-2": {ID: "kb-2", TenantID: "tenant-b"},
-			},
-		},
-	}
-
+func TestNLPRetrievalAdapter_ResolveTenantIDsStaysWithinRequestTenant(t *testing.T) {
+	a := &NLPRetrievalAdapter{}
 	got := a.resolveTenantIDs(RetrievalRequest{
 		TenantID:   "tenant-a",
 		DatasetIDs: []string{"kb-1", "kb-2", "kb-missing"},
 	})
 
-	if len(got) != 2 {
-		t.Fatalf("tenantIDs len=%d want 2, got=%v", len(got), got)
+	if len(got) != 1 {
+		t.Fatalf("tenantIDs len=%d want 1, got=%v", len(got), got)
 	}
-	if got[0] != "tenant-a" || got[1] != "tenant-b" {
-		t.Fatalf("tenantIDs=%v want [tenant-a tenant-b]", got)
+	if got[0] != "tenant-a" {
+		t.Fatalf("tenantIDs=%v want [tenant-a]", got)
 	}
 }

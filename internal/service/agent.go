@@ -664,7 +664,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		"session_id": sessionID,
 		"user_id":    userID,
 	}
-	if userInput != nil && userInput != "" {
+	if userInput != nil {
 		root["user_input"] = userInput
 	}
 	if dsl != nil {

@@ -42,7 +42,7 @@ var registry = map[string]Factory{
 	"google":            noConfig("google", func() einotool.BaseTool { return NewGoogleTool() }),
 	"google_scholar":    noConfig("google_scholar", func() einotool.BaseTool { return NewGoogleScholarTool() }),
 	"jin10":             noConfig("jin10", func() einotool.BaseTool { return NewJin10Tool() }),
-	"keenable":          noConfig("keenable", func() einotool.BaseTool { return NewKeenableTool() }),
+	"keenable":          buildKeenableTool,
 	"pubmed":            noConfig("pubmed", func() einotool.BaseTool { return NewPubMedTool() }),
 	"qweather":          noConfig("qweather", func() einotool.BaseTool { return NewQWeatherTool() }),
 	"retrieval":         noConfig("retrieval", func() einotool.BaseTool { return NewRetrievalTool() }),
@@ -111,6 +111,19 @@ func buildExeSQLTool(params map[string]any) (einotool.BaseTool, error) {
 		return nil, err
 	}
 	return NewExeSQLTool(conn), nil
+}
+
+func buildKeenableTool(params map[string]any) (einotool.BaseTool, error) {
+	if len(params) == 0 {
+		return NewKeenableTool(), nil
+	}
+	apiKey, _ := params["api_key"].(string)
+	for key := range params {
+		if key != "api_key" {
+			return nil, fmt.Errorf("agent tool: tool %q only accepts node-level param api_key", "keenable")
+		}
+	}
+	return NewKeenableToolWithAPIKey(nil, apiKey), nil
 }
 
 func decodeExeSQLConnParams(params map[string]any) (exesqlConnParams, error) {

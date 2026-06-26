@@ -95,7 +95,7 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 	names := []string{
 		"akshare", "arxiv", "code_exec", "crawler", "deepl", "duckduckgo",
 		"email", "execute_sql", "exesql", "github", "google",
-		"google_scholar", "jin10", "pubmed", "qweather", "retrieval",
+		"google_scholar", "jin10", "keenable", "pubmed", "qweather", "retrieval",
 		"search_my_dateset", "searxng", "tavily", "tushare", "wencai",
 		"wikipedia", "yahoo_finance",
 	}
@@ -117,6 +117,9 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 			"username":    "u",
 			"password":    "p",
 			"max_records": 10,
+		},
+		"keenable": {
+			"api_key": "key-xyz",
 		},
 	}
 	tools, err := BuildAll(names, params)

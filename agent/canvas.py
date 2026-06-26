@@ -749,12 +749,14 @@ class Canvas(Graph):
             return field is not None
 
         value = field.get("value")
-        if value is None:
-            return False
-
         field_type = str(field.get("type", "")).lower()
         if field_type.find("file") >= 0:
-            return value != [] and value != ""
+            if field.get("optional") and value is None:
+                return True
+            return value not in (None, [], "")
+
+        if value is None:
+            return False
 
         return True
 

@@ -447,7 +447,7 @@ func (f *fullFakeAgentService) UpdateAgent(context.Context, string, string, enti
 func (f *fullFakeAgentService) DeleteAgent(context.Context, string, string) error {
 	return nil
 }
-func (f *fullFakeAgentService) RunAgent(context.Context, string, string, string, string, string) (<-chan canvas.RunEvent, error) {
+func (f *fullFakeAgentService) RunAgent(context.Context, string, string, string, string, any) (<-chan canvas.RunEvent, error) {
 	ch := make(chan canvas.RunEvent)
 	close(ch)
 	return ch, nil

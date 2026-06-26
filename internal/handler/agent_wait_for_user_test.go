@@ -94,7 +94,7 @@ func (f *waitFakeAgentService) DeleteAgent(context.Context, string, string) erro
 // RunAgent mimics service.AgentService.RunAgent for the test
 // driver. It loads the canvas (a no-op in tests), builds a RunFunc
 // from the supplied stub, and hands off to the orchestrator.
-func (f *waitFakeAgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID, version, userInput string) (<-chan canvas.RunEvent, error) {
+func (f *waitFakeAgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any) (<-chan canvas.RunEvent, error) {
 	_ = ctx
 	_ = userID
 	_ = version

@@ -455,7 +455,6 @@ export const useSendAgentMessage = ({
   }, [sendMessageInTaskMode]);
 
   useEffect(() => {
-    console.log('agent chat answerList', answerList);
     const { content, id, attachment, audio_binary, downloads } =
       findMessageFromList(answerList);
     const inputAnswer = findInputFromList(answerList);
