@@ -693,7 +693,7 @@ class MinerUParser(RAGFlowPdfParser):
                     self.logger.debug("[MinerU] Skip unsupported section type=%s", output.get("type"))
                     continue
 
-            if not table_enable:
+            if output.get("type") != MinerUContentType.TABLE or not table_enable:
                 section = self._sanitize_section_text(section)
             if not section:
                 self.logger.debug("[MinerU] Skip section after sanitization: type=%s", output.get("type"))

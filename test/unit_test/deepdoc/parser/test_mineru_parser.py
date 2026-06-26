@@ -152,3 +152,4 @@ def test_transfer_to_sections_skips_tables_when_table_enable_true(monkeypatch):
     sections = parser._transfer_to_sections(outputs, parse_method="raw", table_enable=True)
 
     assert [section[0] for section in sections] == ["Section before table", "Section after table"]
+    assert "<b>" not in sections[0][0]

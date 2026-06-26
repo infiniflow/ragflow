@@ -1,7 +1,7 @@
 [
   {
     "type": "text",
-    "text": "Section before table",
+    "text": "Section <b>before</b> table",
     "page_idx": 0,
     "bbox": [10, 20, 30, 40]
   },
