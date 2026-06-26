@@ -1207,7 +1207,10 @@ async def test_db_connection():
         return server_error_response(exc)
 
 
-@manager.route("/agents/chat/completion", methods=["POST"])  # noqa: F821
+# NOTE: The singular form `/agents/chat/completion` was a historical typo
+# in earlier releases — no client, SDK, or doc ever used it, and the
+# plural form below is the canonical route. The singular is intentionally
+# NOT registered; clients sending it receive 404.
 @manager.route("/agents/chat/completions", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs

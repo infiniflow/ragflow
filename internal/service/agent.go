@@ -49,6 +49,51 @@ func genID32() string {
 	return strings.ReplaceAll(uuid.New().String(), "-", "")[:32]
 }
 
+// webhookPayloadKey is the unexported context key RunAgent reads to
+// inject root["webhook_payload"]. Only the AgentService.RunAgentWithWebhook
+// public wrapper sets it; the chat / agent-run paths leave it absent so
+// existing callers see no behaviour change.
+//
+// We deliberately do NOT surface the payload as a new RunAgent parameter
+// — keeping the public signature stable means existing tests
+// (agent_run_e2e_test.go, agent_wait_for_user_test.go) keep compiling.
+type webhookPayloadKey struct{}
+
+// LoadCanvasByID is the read-side counterpart of loadCanvasForUser that
+// the webhook handler uses. It deliberately returns the raw DAO/service
+// error (no error-code mapping) because the webhook envelope is 102
+// "Canvas not found." while the chat/run envelope is 103 "Make sure you
+// have permission..." — the choice must stay at the HTTP layer where
+// each handler knows its own spec.
+//
+// Mirrors python: api/apps/restful_apis/agent_api.py:1570
+// (`UserCanvasService.get_by_id(agent_id)`), with the same IDOR guard
+// the chat handler uses.
+func (s *AgentService) LoadCanvasByID(
+	ctx context.Context, userID, canvasID string,
+) (*entity.UserCanvas, error) {
+	return s.loadCanvasForUser(ctx, userID, canvasID)
+}
+
+// RunAgentWithWebhook is a thin wrapper over RunAgent that attaches the
+// webhook payload to the runner root so the Begin component can surface
+// it as state.Sys["webhook_payload"] for downstream components.
+//
+// The payload is intentionally passed via context value (rather than a new
+// RunAgent parameter) to keep the public RunAgent signature stable for
+// the existing chat tests.
+//
+// Mirrors python: api/apps/restful_apis/agent_api.py:2125
+// (`canvas.run(..., webhook_payload=clean_request)`).
+func (s *AgentService) RunAgentWithWebhook(
+	ctx context.Context, userID, canvasID string, payload map[string]any,
+) (<-chan canvas.RunEvent, error) {
+	if payload != nil {
+		ctx = context.WithValue(ctx, webhookPayloadKey{}, payload)
+	}
+	return s.RunAgent(ctx, userID, canvasID, "", "", "")
+}
+
 // ErrAgentNotOwner is returned by DeleteAgent when the canvas exists and
 // is accessible to the caller but is owned by a different user. It maps
 // to the Python "Only the owner of the agent is authorized for this
@@ -669,6 +714,14 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	}
 	if dsl != nil {
 		root["__dsl_present__"] = true
+	}
+	// Webhook payload injection. Only RunAgentWithWebhook sets this
+	// context value; the chat / agent-run paths leave it nil so the
+	// existing surface is unchanged. The Begin component reads
+	// inputs["webhook_payload"] and writes it to state.Sys so
+	// downstream components can read sys.webhook_payload.
+	if payload, ok := ctx.Value(webhookPayloadKey{}).(map[string]any); ok && payload != nil {
+		root["webhook_payload"] = payload
 	}
 	// Phase 4.4 V2.1 (v3.6.1): populate root["tenant_id"] so the
 	// RunTracker.Start call (in buildRunFunc) records the run
