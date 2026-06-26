@@ -85,3 +85,38 @@ class TestKbPromptDocumentMetadata:
         assert len(rendered) == 1
         assert "author: alice" in rendered[0]
         assert "year: 2026" in rendered[0]
+
+
+@pytest.mark.p1
+class TestKbPromptTokenBudget:
+    """Regression tests for kb_prompt token-budget trimming."""
+
+    @pytest.mark.p1
+    def test_excludes_chunk_that_exceeds_token_budget(self):
+        """The chunk that pushes usage over the budget must not be rendered."""
+        kbinfos = {
+            "chunks": [
+                {
+                    "id": "chunk-1",
+                    "content_with_weight": "fits " * 20,
+                    "docnm_kwd": "doc1.pdf",
+                },
+                {
+                    "id": "chunk-2",
+                    "content_with_weight": "overflow " * 200,
+                    "docnm_kwd": "doc2.pdf",
+                },
+                {
+                    "id": "chunk-3",
+                    "content_with_weight": "never " * 200,
+                    "docnm_kwd": "doc3.pdf",
+                },
+            ]
+        }
+
+        rendered = kb_prompt(kbinfos, max_tokens=50)
+
+        assert len(rendered) == 1
+        assert "doc1.pdf" in rendered[0]
+        assert "overflow" not in rendered[0]
+        assert "never" not in rendered[0]

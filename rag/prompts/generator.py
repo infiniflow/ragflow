@@ -137,15 +137,15 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
     kwlg_len = len(knowledges)
     used_token_count = 0
     chunks_num = 0
-    for i, c in enumerate(knowledges):
+    for c in knowledges:
         if not c:
             continue
-        used_token_count += num_tokens_from_string(c)
-        chunks_num += 1
-        if max_tokens * 0.97 < used_token_count:
-            knowledges = knowledges[:i]
-            logging.warning(f"Not all the retrieval into prompt: {len(knowledges)}/{kwlg_len}")
+        chunk_tokens = num_tokens_from_string(c)
+        if max_tokens * 0.97 < used_token_count + chunk_tokens:
+            logging.warning(f"Not all the retrieval into prompt: {chunks_num}/{kwlg_len}")
             break
+        used_token_count += chunk_tokens
+        chunks_num += 1
 
     def draw_node(k, line):
         if line is not None and not isinstance(line, str):
