@@ -120,3 +120,32 @@ class TestKbPromptTokenBudget:
         assert "doc1.pdf" in rendered[0]
         assert "overflow" not in rendered[0]
         assert "never" not in rendered[0]
+
+    @pytest.mark.p1
+    def test_empty_chunk_does_not_shift_selected_chunks(self):
+        kbinfos = {
+            "chunks": [
+                {
+                    "id": "chunk-1",
+                    "content_with_weight": "first chunk",
+                    "docnm_kwd": "doc1.pdf",
+                },
+                {
+                    "id": "chunk-2",
+                    "content_with_weight": "",
+                    "docnm_kwd": "empty.pdf",
+                },
+                {
+                    "id": "chunk-3",
+                    "content_with_weight": "second chunk",
+                    "docnm_kwd": "doc2.pdf",
+                },
+            ]
+        }
+
+        rendered = kb_prompt(kbinfos, max_tokens=10000)
+
+        assert len(rendered) == 2
+        assert "doc1.pdf" in rendered[0]
+        assert "doc2.pdf" in rendered[1]
+        assert "empty.pdf" not in "\n".join(rendered)
