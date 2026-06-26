@@ -75,6 +75,22 @@ export interface IUpdateModelStatusRequestBody {
   status: 'active' | 'inactive';
 }
 
+export interface IDeleteInstanceModelsRequestBody {
+  provider_name: string;
+  instance_name: string;
+  model_name: string[];
+}
+
+export interface IUpdateProviderInstanceRequestBody {
+  provider_name: string;
+  instance_name: string;
+  id?: string;
+  api_key?: string;
+  base_url?: string;
+  region?: string;
+  model_info?: IModelInfo[];
+}
+
 export interface ISetDefaultModelRequestBody {
   model_provider: string;
   model_instance: string;

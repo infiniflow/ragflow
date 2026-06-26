@@ -16,13 +16,12 @@
 
 import { Button } from '@/components/ui/button';
 import { SearchInput } from '@/components/ui/input';
-import { ModelStatus } from '@/constants/llm';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import {
   useAddInstanceModel,
+  useDeleteInstanceModels,
   useFetchInstanceModels,
   useListProviderModels,
-  useUpdateModelStatus,
   useVerifyProviderConnection,
 } from '@/hooks/use-llm-request';
 import { IInstanceModel, IProviderInstance } from '@/interfaces/database/llm';
@@ -37,7 +36,7 @@ import {
   Search,
   TriangleAlert,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AddCustomModelDialog } from './add-custom-model-dialog';
 import { mapModelKey, sortModelTypes } from './available-models';
@@ -65,6 +64,24 @@ interface ModelsSectionProps {
    * avoid showing an empty list.
    */
   hideIfEmpty?: boolean;
+  /**
+   * Optional getter returning the host card's current form values
+   * (`api_key`, `base_url` / `api_base`, region-specific fields, ...).
+   * When provided, ModelsSection prefers these over the persisted
+   * `instance` props when calling listProviderModels / verifyProviderConnection,
+   * so the user can verify with values they are still editing (before
+   * blur-save persists them to the backend).
+   */
+  getFormValues?: () => Record<string, any>;
+  /**
+   * Notifies the host that ModelsSection has opened (or closed) a modal
+   * dialog whose contents live in a React Portal outside the host's
+   * `onBlurCapture` container. The host should temporarily disable its
+   * blur-driven auto-save while suppressed === true; otherwise the
+   * focus shift into the dialog body fires a spurious "save". Restored
+   * to false when the dialog closes.
+   */
+  onBlurSuppressChange?: (suppressed: boolean) => void;
 }
 
 /**
@@ -83,9 +100,7 @@ interface ModelsSectionProps {
  *
  * The +/- semantics:
  *  - "+" calls `addInstanceModel` (backend persistence).
- *  - "-" calls `updateModelStatus(... Inactive)`. There is no dedicated
- *    "delete instance model" endpoint, so flipping to Inactive is the
- *    de-facto "remove" operation. This is documented in the report.
+ *  - "-" calls `deleteInstanceModels` to drop the model from this instance.
  */
 export function ModelsSection({
   providerName,
@@ -93,80 +108,158 @@ export function ModelsSection({
   instance,
   hideActions = false,
   hideIfEmpty = false,
+  getFormValues,
+  onBlurSuppressChange,
 }: ModelsSectionProps) {
   const { t } = useTranslation();
   const { t: tSetting } = useTranslate('setting');
   const { t: tc } = useCommonTranslation();
   const customModelDialogFields = useCustomModelFields();
-  const { listProviderModels, loading: listLoading } = useListProviderModels();
+  const { listProviderModels } = useListProviderModels();
   const { addInstanceModel } = useAddInstanceModel();
-  const { updateModelStatus } = useUpdateModelStatus();
+  const { deleteInstanceModels } = useDeleteInstanceModels();
   const { verifyProviderConnection } = useVerifyProviderConnection();
   const { data: instanceModels } = useFetchInstanceModels(
     providerName,
     instanceName,
   );
 
-  const [models, setModels] = useState<IProviderModelItem[]>([]);
+  // `catalog` holds the upstream provider's full model list, populated only
+  // when the user explicitly clicks "List Models" or adds a custom model.
+  // The displayed `models` below is computed as a union of `catalog` and
+  // the per-instance saved models (`instanceModels`), so on mount we show
+  // exactly the saved set without any extra network round-trip.
+  const [catalog, setCatalog] = useState<IProviderModelItem[]>([]);
   const [search, setSearch] = useState('');
   const [tag, setTag] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [verify, setVerify] = useState<VerifyState>({ status: 'idle' });
-  // Tracks whether the first auto-fetch has completed (success OR fail).
-  // Used by `hideIfEmpty` to decide when it is safe to hide the section.
+  // True only while the user is actively waiting on a click of the
+  // "List Models" button. Kept independent from the mutation's own
+  // `isPending` flag because the same mutation is also used by the
+  // auto-fetch on mount — driving the button spinner from the shared
+  // mutation state would make the button appear stuck whenever the
+  // background auto-fetch is slow or fails to settle.
+  const [manualListLoading, setManualListLoading] = useState(false);
+
+  // True once we have either (a) received instance models from the backend
+  // or (b) the user has clicked "List Models". Used by `hideIfEmpty`.
   const [hasFetched, setHasFetched] = useState(false);
 
-  const apiKey = instance?.api_key ?? '';
-  const baseUrl = instance?.base_url ?? '';
-
-  // Fetch the model catalog on first mount. We tolerate empty credentials
-  // here so the section is usable for new/draft instances — the backend
-  // will reject the call but the UI will not crash.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const ret = await listProviderModels({
-          provider_name: providerName,
-          api_key: apiKey,
-          base_url: baseUrl,
-        });
-        if (!cancelled) {
-          if (ret?.code === 0) {
-            setModels((ret.data as IProviderModelItem[]) ?? []);
-          }
-          setHasFetched(true);
-        }
-      } catch {
-        if (!cancelled) {
-          setHasFetched(true);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
+  // Resolve the credentials/url used for the catalog and verify calls.
+  // Prefer the live values from the host card's form (so the user can
+  // verify with an api_key they have just typed but not yet saved); fall
+  // back to the persisted instance fields when no form getter is wired up.
+  const resolveCreds = () => {
+    const fv = getFormValues?.() ?? {};
+    return {
+      apiKey: (fv.api_key as string) ?? instance?.api_key ?? '',
+      baseUrl:
+        (fv.base_url as string) ??
+        (fv.api_base as string) ??
+        instance?.base_url ??
+        '',
     };
-    // We intentionally do NOT re-run on apiKey/baseUrl changes — those
-    // are stable per instance and re-listing on every keystroke would be
-    // expensive. Use the manual "List models" button to refresh.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [providerName]);
+  };
 
-  // Manual "List models" handler also marks `hasFetched` so `hideIfEmpty`
-  // takes effect after a user-triggered refresh as well.
+  // Mirror the AddCustomModelDialog open state up to the host so it can
+  // pause its blur-driven auto-save while the dialog is open. The dialog
+  // body lives in a React Portal outside the host's `onBlurCapture`
+  // container — without this guard, opening the dialog (focus shifts
+  // into the Portal) would otherwise fire a spurious save.
+  useEffect(() => {
+    onBlurSuppressChange?.(dialogOpen);
+    // On unmount, release any active suppression so the host is not
+    // left permanently muted.
+    return () => {
+      if (dialogOpen) onBlurSuppressChange?.(false);
+    };
+  }, [dialogOpen, onBlurSuppressChange]);
+
+  // Mark `hasFetched` true once the per-instance query resolves — even if
+  // it returned an empty array — so `hideIfEmpty` can safely take effect.
+  useEffect(() => {
+    if (instanceModels) {
+      setHasFetched(true);
+    }
+  }, [instanceModels]);
+
+  // Auto-fetch the provider's available-models catalog when this section
+  // mounts. Because the host card wraps <ModelsSection> in `{open && ...}`,
+  // "on mount" is effectively "when the card is expanded", so this gives
+  // us the open-time catalog fetch the page wants. The fired list is then
+  // unioned with the per-instance saved models below.
+  //
+  // Skipped for:
+  //   - draft instances (no api_key yet — backend call would fail),
+  //   - sections rendered with hideActions (catalog-preview-only host).
+  // The `hasAutoFetchedRef` guard ensures we only auto-fetch once per
+  // mount, even if props churn before the request settles.
+  const hasAutoFetchedRef = useRef(false);
+  useEffect(() => {
+    if (hasAutoFetchedRef.current) return;
+    if (hideActions) return;
+    if (!providerName) return;
+    if (!instanceName || instanceName === '__draft__') return;
+    hasAutoFetchedRef.current = true;
+    handleListModels();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [providerName, instanceName, hideActions]);
+
+  // Normalize instance-model records (which historically use `model_type`
+  // singular and lack `features`) into the shared `IProviderModelItem`
+  // shape used by the catalog. The current backend already returns the
+  // newer shape (`model_types` plural, `features`), but we defensively
+  // handle both.
+  const instanceItems: IProviderModelItem[] = useMemo(() => {
+    return (instanceModels ?? []).map((im: any) => {
+      const rawTypes = im.model_types ?? im.model_type ?? [];
+      const model_types: string[] = Array.isArray(rawTypes)
+        ? rawTypes
+        : rawTypes
+          ? [rawTypes]
+          : [];
+      return {
+        name: im.name,
+        max_tokens: im.max_tokens ?? 0,
+        model_types,
+        features: im.features ?? null,
+      };
+    });
+  }, [instanceModels]);
+
+  // Union of instance models + catalog, keyed by `name`. Catalog entries
+  // win on conflict because the upstream list is authoritative for
+  // `features` / `max_tokens`. The instance set is listed first so that
+  // already-added models stay at the top of the list on the initial
+  // render before the catalog is fetched.
+  const models: IProviderModelItem[] = useMemo(() => {
+    const byName = new Map<string, IProviderModelItem>();
+    instanceItems.forEach((m) => byName.set(m.name, m));
+    catalog.forEach((m) => byName.set(m.name, m));
+    return Array.from(byName.values());
+  }, [instanceItems, catalog]);
+
+  // Manual "List models" handler — still hits the upstream catalog
+  // endpoint. The result is merged into `catalog`; the displayed list
+  // then becomes the union of catalog + instance models.
   const handleListModels = async () => {
+    setManualListLoading(true);
     try {
+      const { apiKey, baseUrl } = resolveCreds();
       const ret = await listProviderModels({
         provider_name: providerName,
         api_key: apiKey,
         base_url: baseUrl,
       });
       if (ret?.code === 0) {
-        setModels((ret.data as IProviderModelItem[]) ?? []);
+        setCatalog((ret.data as IProviderModelItem[]) ?? []);
       }
       setHasFetched(true);
     } catch {
       setHasFetched(true);
+    } finally {
+      setManualListLoading(false);
     }
   };
 
@@ -190,7 +283,10 @@ export function ModelsSection({
   }, [instanceModels]);
 
   const handleAddCustom = async (item: IProviderModelItem) => {
-    setModels((prev) =>
+    // Append the custom item to the local catalog so it shows up in the
+    // unioned `models` list immediately. Server-side persistence happens
+    // via `addInstanceModel` below (when there is a real instance).
+    setCatalog((prev) =>
       prev.some((m) => m.name === item.name) ? prev : [...prev, item],
     );
     // Persist the new model to the current instance. Skip the call only
@@ -212,6 +308,7 @@ export function ModelsSection({
   const handleVerify = async (model: IProviderModelItem) => {
     setVerify({ status: 'loading', modelName: model.name });
     try {
+      const { apiKey, baseUrl } = resolveCreds();
       const ret = await verifyProviderConnection({
         provider_name: providerName,
         api_key: apiKey,
@@ -244,11 +341,10 @@ export function ModelsSection({
   };
 
   const handleRemoveModel = async (model: IProviderModelItem) => {
-    await updateModelStatus({
+    await deleteInstanceModels({
       provider_name: providerName,
       instance_name: instanceName,
-      model_name: model.name,
-      status: ModelStatus.Inactive,
+      model_name: [model.name],
     });
   };
 
@@ -272,10 +368,10 @@ export function ModelsSection({
               variant="outline"
               size="sm"
               onClick={handleListModels}
-              disabled={listLoading}
+              disabled={manualListLoading}
               data-testid="models-list-button"
             >
-              {listLoading && <Loader2 className="size-3 animate-spin" />}
+              {manualListLoading && <Loader2 className="size-3 animate-spin" />}
               {t('setting.listModels')}
             </Button>
             <Button

@@ -29,6 +29,7 @@ import {
   useDeleteProviderInstance,
   useFetchAvailableProviders,
   useFetchProviderInstance,
+  useUpdateProviderInstance,
   useVerifyProviderConnection,
 } from '@/hooks/use-llm-request';
 import { IProviderInstance } from '@/interfaces/database/llm';
@@ -408,10 +409,20 @@ function GenericProviderInstanceCard({
 
   // ── Blur-driven auto-save for saved (non-draft) cards ───────────────
   // For persisted instances the user edits non-name fields (api_key,
-  // base_url, ...) and we save automatically when a field loses focus.
-  // The instance id comes from the list payload (or, after a brand-new
-  // create, the freshly-invalidated query that surfaces this card).
+  // base_url, region, ...) and we save automatically when a field
+  // loses focus via the dedicated PUT endpoint:
+  //   PUT /api/v1/providers/<provider_name>/instances/<instance_name>
+  // Both `id` and `instance_name` are sent in the body but the backend
+  // rejects any change to them — they are echoed back unchanged so the
+  // backend can locate the row.
+  const { updateProviderInstance } = useUpdateProviderInstance();
   const blurSavingRef = useRef(false);
+  // Flipped to true while a child (e.g. ModelsSection's
+  // AddCustomModelDialog) is rendering a Portal-based dialog. The dialog
+  // body is outside this card's `onBlurCapture` container, so opening it
+  // would otherwise fire a spurious blur-save. The child notifies us via
+  // `onBlurSuppressChange`.
+  const blurSuppressRef = useRef(false);
   const lastSavedPayloadRef = useRef<string>('');
   const handleFieldsBlur = useCallback(
     async (e: React.FocusEvent<HTMLDivElement>) => {
@@ -424,6 +435,7 @@ function GenericProviderInstanceCard({
         return;
       }
       if (blurSavingRef.current) return;
+      if (blurSuppressRef.current) return;
 
       const isValid = await formRef.current?.trigger();
       if (!isValid) return;
@@ -431,21 +443,22 @@ function GenericProviderInstanceCard({
       const values = formRef.current?.getValues?.() ?? {};
       const instanceId = instanceDetails?.id || instance.id;
       const payload = {
-        llm_factory: providerName,
+        provider_name: providerName,
         instance_name: instance.instance_name,
         id: instanceId,
         api_key: values.api_key,
         base_url: values.base_url ?? values.api_base,
+        region: values.region,
         model_info: values.model_info,
       };
       // Skip if nothing actually changed since the last save (or initial
-      // mount): prevents a no-op POST on every focus shift.
+      // mount): prevents a no-op PUT on every focus shift.
       const signature = JSON.stringify(payload);
       if (signature === lastSavedPayloadRef.current) return;
 
       blurSavingRef.current = true;
       try {
-        const ret = await addProviderInstance(payload as any);
+        const ret = await updateProviderInstance(payload);
         if (ret?.code === 0) {
           lastSavedPayloadRef.current = signature;
         }
@@ -459,7 +472,7 @@ function GenericProviderInstanceCard({
       instance.instance_name,
       instance.id,
       instanceDetails?.id,
-      addProviderInstance,
+      updateProviderInstance,
     ],
   );
 
@@ -470,11 +483,12 @@ function GenericProviderInstanceCard({
     const instanceId = instanceDetails?.id || instance.id;
     if (!instanceId) return;
     const baseline = {
-      llm_factory: providerName,
+      provider_name: providerName,
       instance_name: instance.instance_name,
       id: instanceId,
       api_key: initialValues.api_key,
       base_url: initialValues.base_url ?? initialValues.api_base,
+      region: initialValues.region,
       model_info: undefined,
     };
     lastSavedPayloadRef.current = JSON.stringify(baseline);
@@ -584,15 +598,31 @@ function GenericProviderInstanceCard({
                 />
               </div>
 
-              <div className=" pt-3">
-                <ModelsSection
-                  providerName={providerName}
-                  instanceName={instance.instance_name || '__draft__'}
-                  instance={instance}
-                  hideActions={false}
-                  hideIfEmpty={false}
-                />
-              </div>
+              {/*
+                Only mount ModelsSection when the card is expanded.
+                CollapsibleContent uses `forceMount` so the form above stays
+                in the DOM across open/close transitions, but we do NOT want
+                the per-instance models query (and the upstream catalog
+                fetch) to fire for every collapsed sibling — that would
+                produce one request per instance every time the provider is
+                clicked. Gating on `open` here ensures only the expanded
+                instance hits /api/v1/providers/<p>/instances/<i>/models.
+              */}
+              {open && (
+                <div className=" pt-3">
+                  <ModelsSection
+                    providerName={providerName}
+                    instanceName={instance.instance_name || '__draft__'}
+                    instance={instance}
+                    hideActions={false}
+                    hideIfEmpty={false}
+                    getFormValues={() => formRef.current?.getValues?.() ?? {}}
+                    onBlurSuppressChange={(s) => {
+                      blurSuppressRef.current = s;
+                    }}
+                  />
+                </div>
+              )}
             </div>
           </CollapsibleContent>
         </Collapsible>
@@ -691,6 +721,7 @@ function GenericProviderInstanceCard({
                 instance={instance}
                 hideActions={false}
                 hideIfEmpty={false}
+                getFormValues={() => formRef.current?.getValues?.() ?? {}}
               />
             </div>
           </fieldset>

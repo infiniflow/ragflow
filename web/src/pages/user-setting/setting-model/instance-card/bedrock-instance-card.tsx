@@ -357,6 +357,10 @@ export function BedrockInstanceCard({
 
   // Blur-driven save for persisted (non-draft) cards.
   const blurSavingRef = useRef(false);
+  // Flipped to true while a child (e.g. ModelsSection's
+  // AddCustomModelDialog) opens a Portal-based dialog. Suppresses the
+  // spurious blur-save fired when focus moves into the Portal.
+  const blurSuppressRef = useRef(false);
   const lastSavedSigRef = useRef('');
   const handleFieldsBlur = useCallback(
     async (e: React.FocusEvent<HTMLDivElement>) => {
@@ -368,6 +372,7 @@ export function BedrockInstanceCard({
         return;
       }
       if (blurSavingRef.current) return;
+      if (blurSuppressRef.current) return;
       const isValid = await form.trigger();
       if (!isValid) return;
       const values = form.getValues();
@@ -610,6 +615,10 @@ export function BedrockInstanceCard({
                   instance={instance}
                   hideActions={false}
                   hideIfEmpty={false}
+                  getFormValues={() => form.getValues()}
+                  onBlurSuppressChange={(s) => {
+                    blurSuppressRef.current = s;
+                  }}
                 />
               </div>
             </div>
@@ -690,6 +699,7 @@ export function BedrockInstanceCard({
                 instance={instance}
                 hideActions={false}
                 hideIfEmpty={false}
+                getFormValues={() => form.getValues()}
               />
             </div>
           </fieldset>

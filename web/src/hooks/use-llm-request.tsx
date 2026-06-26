@@ -12,6 +12,7 @@ import {
   IAddInstanceModelRequestBody,
   IAddProviderInstanceRequestBody,
   IAddProviderRequestBody,
+  IDeleteInstanceModelsRequestBody,
   IDeleteProviderInstanceRequestBody,
   IListAllModelsRequestParams,
   IListProviderModelsRequestBody,
@@ -19,6 +20,7 @@ import {
   IModelInfo,
   ISetDefaultModelRequestBody,
   IUpdateModelStatusRequestBody,
+  IUpdateProviderInstanceRequestBody,
 } from '@/interfaces/request/llm';
 import llmService from '@/services/llm-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -38,6 +40,8 @@ export const enum LLMApiAction {
   ListProviderModels = 'listProviderModels',
   AddInstanceModel = 'addInstanceModel',
   DeleteProviderInstance = 'deleteProviderInstance',
+  DeleteInstanceModels = 'deleteInstanceModels',
+  UpdateProviderInstance = 'updateProviderInstance',
   ListDefaultModels = 'listDefaultModels',
   SetDefaultModel = 'setDefaultModel',
 }
@@ -426,6 +430,79 @@ export const useUpdateModelStatus = () => {
   });
 
   return { loading, updateModelStatus: mutateAsync };
+};
+
+export const useDeleteInstanceModels = () => {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  const { isPending: loading, mutateAsync } = useMutation({
+    mutationKey: [LLMApiAction.DeleteInstanceModels],
+    mutationFn: async (params: IDeleteInstanceModelsRequestBody) => {
+      const { data } = await llmService.deleteInstanceModels(params);
+      if (data.code === 0) {
+        message.success(t('message.deleted'));
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.addedProviders(),
+          exact: true,
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.allModels(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.defaultModels(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.instanceModels(
+            params.provider_name,
+            params.instance_name,
+          ),
+        });
+      }
+      return data;
+    },
+  });
+
+  return { loading, deleteInstanceModels: mutateAsync };
+};
+
+export const useUpdateProviderInstance = () => {
+  const queryClient = useQueryClient();
+  const { isPending: loading, mutateAsync } = useMutation({
+    mutationKey: [LLMApiAction.UpdateProviderInstance],
+    mutationFn: async (params: IUpdateProviderInstanceRequestBody) => {
+      const { data } = await llmService.updateProviderInstance(params);
+      if (data.code === 0) {
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.addedProviders(),
+          exact: true,
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.providerInstances(params.provider_name),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.providerInstance(
+            params.provider_name,
+            params.instance_name,
+          ),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.instanceModels(
+            params.provider_name,
+            params.instance_name,
+          ),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.allModels(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.defaultModels(),
+        });
+      }
+      return data;
+    },
+  });
+
+  return { loading, updateProviderInstance: mutateAsync };
 };
 
 export const useFetchDefaultModels = () => {
