@@ -53,7 +53,7 @@ def _mocked_rest_api_requests_and_dns():
     """
     mock_rl = MagicMock()
     with patch(
-        "common.data_source.rest_api_connector.socket.getaddrinfo",
+        "common.ssrf_guard._orig_getaddrinfo",
         return_value=_MOCK_DNS_ADDRINFO,
     ), patch.object(_ds_utils._RateLimitedRequest, "get", mock_rl.get), patch.object(
         _ds_utils._RateLimitedRequest,
@@ -157,40 +157,60 @@ class TestRestAPIConfig:
 class TestSSRFValidation:
     """Test that unsafe URLs are blocked before any HTTP request is made."""
 
-    def test_localhost_blocked(self):
+    @patch("common.ssrf_guard._orig_getaddrinfo")
+    def test_localhost_blocked(self, mock_dns):
         """localhost should be rejected."""
-        with pytest.raises(ConnectorValidationError, match="localhost"):
+        mock_dns.return_value = [(2, 1, 6, "", ("127.0.0.1", 0))]
+        with pytest.raises(ConnectorValidationError, match="not safe to fetch"):
             _make_connector(url="http://localhost/api")
 
-    @patch("common.data_source.rest_api_connector.socket.getaddrinfo")
+    @patch("common.ssrf_guard._orig_getaddrinfo")
     def test_loopback_ip_blocked(self, mock_dns):
         """127.0.0.1 should be rejected."""
         mock_dns.return_value = [(2, 1, 6, "", ("127.0.0.1", 0))]
-        with pytest.raises(ConnectorValidationError, match="disallowed"):
+        with pytest.raises(ConnectorValidationError, match="not safe to fetch"):
             _make_connector(url="http://127.0.0.1/api")
 
-    @patch("common.data_source.rest_api_connector.socket.getaddrinfo")
+    @patch("common.ssrf_guard._orig_getaddrinfo")
     def test_cloud_metadata_ip_blocked(self, mock_dns):
         """169.254.169.254 (cloud metadata endpoint) should be rejected."""
         mock_dns.return_value = [(2, 1, 6, "", ("169.254.169.254", 0))]
-        with pytest.raises(ConnectorValidationError, match="disallowed"):
+        with pytest.raises(ConnectorValidationError, match="not safe to fetch"):
             _make_connector(url="http://169.254.169.254/latest/meta-data/")
 
-    @patch("common.data_source.rest_api_connector.socket.getaddrinfo")
+    @patch("common.ssrf_guard._orig_getaddrinfo")
     def test_private_ip_192_blocked(self, mock_dns):
         """192.168.x.x should be rejected."""
         mock_dns.return_value = [(2, 1, 6, "", ("192.168.1.1", 0))]
-        with pytest.raises(ConnectorValidationError, match="disallowed"):
+        with pytest.raises(ConnectorValidationError, match="not safe to fetch"):
             _make_connector(url="http://192.168.1.1/api")
 
-    @patch("common.data_source.rest_api_connector.socket.getaddrinfo")
+    @patch("common.ssrf_guard._orig_getaddrinfo")
     def test_private_ip_10_blocked(self, mock_dns):
         """10.x.x.x should be rejected."""
         mock_dns.return_value = [(2, 1, 6, "", ("10.0.0.1", 0))]
-        with pytest.raises(ConnectorValidationError, match="disallowed"):
+        with pytest.raises(ConnectorValidationError, match="not safe to fetch"):
             _make_connector(url="http://10.0.0.1/api")
 
-    @patch("common.data_source.rest_api_connector.socket.getaddrinfo")
+    @patch("common.ssrf_guard._orig_getaddrinfo")
+    def test_ipv4_mapped_loopback_blocked(self, mock_dns):
+        """``::ffff:127.0.0.1`` (IPv4-mapped IPv6 loopback) is normalised by
+        the shared guard and must be rejected. This is the scenario the
+        homegrown ``_validate_url_for_ssrf`` missed before the fix."""
+        mock_dns.return_value = [(10, 1, 6, "", ("::ffff:127.0.0.1", 0, 0, 0))]
+        with pytest.raises(ConnectorValidationError, match="not safe to fetch"):
+            _make_connector(url="http://[::ffff:127.0.0.1]/api")
+
+    @patch("common.ssrf_guard._orig_getaddrinfo")
+    def test_unresolvable_host_blocked(self, mock_dns):
+        """A host that cannot be resolved fails validation (was silently
+        allowed before the fix)."""
+        import socket as _socket
+        mock_dns.side_effect = _socket.gaierror("name resolution failed")
+        with pytest.raises(ConnectorValidationError, match="not safe to fetch"):
+            _make_connector(url="http://does-not-exist.invalid/api")
+
+    @patch("common.ssrf_guard._orig_getaddrinfo")
     def test_public_url_passes(self, mock_dns):
         """A public IP should pass validation."""
         mock_dns.return_value = [(2, 1, 6, "", ("93.184.216.34", 0))]
@@ -215,7 +235,7 @@ class TestSSRFValidation:
 class TestAuthSetup:
     """Test _build_auth produces the correct headers / auth objects."""
 
-    @patch("common.data_source.rest_api_connector.socket.getaddrinfo",
+    @patch("common.ssrf_guard._orig_getaddrinfo",
            return_value=[(2, 1, 6, "", ("93.184.216.34", 0))])
     def test_auth_none(self, _dns):
         """auth_type=none should produce no auth headers."""
@@ -224,7 +244,7 @@ class TestAuthSetup:
         assert c._auth_headers == {}
         assert c._basic_auth is None
 
-    @patch("common.data_source.rest_api_connector.socket.getaddrinfo",
+    @patch("common.ssrf_guard._orig_getaddrinfo",
            return_value=[(2, 1, 6, "", ("93.184.216.34", 0))])
     def test_api_key_header(self, _dns):
         """api_key_header should set the specified header."""
@@ -235,7 +255,7 @@ class TestAuthSetup:
         c.load_credentials({"api_key": "secret123"})
         assert c._auth_headers == {"X-API-Key": "secret123"}
 
-    @patch("common.data_source.rest_api_connector.socket.getaddrinfo",
+    @patch("common.ssrf_guard._orig_getaddrinfo",
            return_value=[(2, 1, 6, "", ("93.184.216.34", 0))])
     def test_bearer_token(self, _dns):
         """bearer should set Authorization: Bearer <token>."""
@@ -243,7 +263,7 @@ class TestAuthSetup:
         c.load_credentials({"token": "tok_abc"})
         assert c._auth_headers == {"Authorization": "Bearer tok_abc"}
 
-    @patch("common.data_source.rest_api_connector.socket.getaddrinfo",
+    @patch("common.ssrf_guard._orig_getaddrinfo",
            return_value=[(2, 1, 6, "", ("93.184.216.34", 0))])
     def test_basic_auth(self, _dns):
         """basic should produce an HTTPBasicAuth object."""
@@ -261,10 +281,10 @@ class TestAuthSetup:
 class TestFieldExtraction:
     """Test _extract_field / _extract_field_values dot-notation paths."""
 
-    @patch("common.data_source.rest_api_connector.socket.getaddrinfo",
+    @patch("common.ssrf_guard._orig_getaddrinfo",
            return_value=[(2, 1, 6, "", ("93.184.216.34", 0))])
     def setup_method(self, method, _dns=None):
-        with patch("common.data_source.rest_api_connector.socket.getaddrinfo",
+        with patch("common.ssrf_guard._orig_getaddrinfo",
                     return_value=[(2, 1, 6, "", ("93.184.216.34", 0))]):
             self.connector = _make_connector()
 
@@ -289,7 +309,7 @@ class TestFieldExtraction:
 
     def test_missing_field_with_default(self):
         """Missing field returns configured default value."""
-        with patch("common.data_source.rest_api_connector.socket.getaddrinfo",
+        with patch("common.ssrf_guard._orig_getaddrinfo",
                     return_value=[(2, 1, 6, "", ("93.184.216.34", 0))]):
             c = _make_connector(field_default_values={"missing": "fallback"})
         result = c._get_typed_field_value("missing", {"other": 1})
@@ -308,10 +328,10 @@ class TestFieldExtraction:
 class TestItemsArrayDetection:
     """Test _extract_items auto-detection of the items array."""
 
-    @patch("common.data_source.rest_api_connector.socket.getaddrinfo",
+    @patch("common.ssrf_guard._orig_getaddrinfo",
            return_value=[(2, 1, 6, "", ("93.184.216.34", 0))])
     def setup_method(self, method, _dns=None):
-        with patch("common.data_source.rest_api_connector.socket.getaddrinfo",
+        with patch("common.ssrf_guard._orig_getaddrinfo",
                     return_value=[(2, 1, 6, "", ("93.184.216.34", 0))]):
             self.connector = _make_connector()
 
@@ -395,10 +415,10 @@ class TestHTMLStripping:
 class TestDocumentCreation:
     """Test _item_to_document mapping."""
 
-    @patch("common.data_source.rest_api_connector.socket.getaddrinfo",
+    @patch("common.ssrf_guard._orig_getaddrinfo",
            return_value=[(2, 1, 6, "", ("93.184.216.34", 0))])
     def setup_method(self, method, _dns=None):
-        with patch("common.data_source.rest_api_connector.socket.getaddrinfo",
+        with patch("common.ssrf_guard._orig_getaddrinfo",
                     return_value=[(2, 1, 6, "", ("93.184.216.34", 0))]):
             self.connector = _make_connector(
                 id_field="id",
@@ -605,3 +625,114 @@ class TestNonRetriableErrors:
             c.load_credentials({})
             with pytest.raises(requests.HTTPError):
                 c._fetch_page({})
+
+
+# ===================================================================== #
+# 10. DNS rebinding / TOCTOU                                            #
+# ===================================================================== #
+
+class TestDnsRebindingProtection:
+    """Verify that the connector closes the DNS-rebinding / TOCTOU window
+    between SSRF validation and the actual HTTP fetch.
+
+    Before the fix, ``_validate_url_for_ssrf`` resolved DNS once at
+    construction time and ``_fetch_page`` re-resolved DNS implicitly via
+    ``requests``. An attacker controlling DNS for the hostname could return
+    a public IP for the first lookup and a loopback / private IP for the
+    second lookup (TTL=0), defeating the validator. The fix re-validates the
+    URL on every ``_fetch_page`` call and wraps the request in
+    ``common.ssrf_guard.pin_dns(hostname, ip)`` so the resolved IP is locked
+    in for the duration of the request.
+    """
+
+    @patch("common.ssrf_guard._orig_getaddrinfo")
+    def test_revalidation_blocks_rebind_to_loopback(self, mock_dns):
+        """First lookup (constructor) returns a public IP and passes; the
+        attacker then flips DNS so the second lookup (fetch) returns
+        ``127.0.0.1``. The fetch must surface a ``ConnectorValidationError``
+        instead of silently issuing the request."""
+        public_addr = [(2, 1, 6, "", ("93.184.216.34", 0))]
+        loopback_addr = [(2, 1, 6, "", ("127.0.0.1", 0))]
+        # call 0: __init__ validation → public; call 1+: fetch revalidation → loopback
+        mock_dns.side_effect = [public_addr, loopback_addr, loopback_addr]
+
+        c = _make_connector(url="http://rebind.example.test/api", request_delay=0)
+        c.load_credentials({})
+
+        with pytest.raises(ConnectorValidationError, match="not safe to fetch"):
+            c._fetch_page({})
+
+    @patch("common.ssrf_guard._orig_getaddrinfo")
+    def test_revalidation_blocks_rebind_to_cloud_metadata(self, mock_dns):
+        """Rebind to the AWS metadata endpoint must be refused."""
+        public_addr = [(2, 1, 6, "", ("93.184.216.34", 0))]
+        metadata_addr = [(2, 1, 6, "", ("169.254.169.254", 0))]
+        mock_dns.side_effect = [public_addr, metadata_addr, metadata_addr]
+
+        c = _make_connector(url="http://rebind.example.test/api", request_delay=0)
+        c.load_credentials({})
+
+        with pytest.raises(ConnectorValidationError, match="not safe to fetch"):
+            c._fetch_page({})
+
+    def test_fetch_pins_dns_with_validated_ip(self):
+        """The fetch path must call ``pin_dns(hostname, ip)`` so that, even
+        if upstream DNS subsequently returns a different IP, the actual
+        TCP connection goes to the validated IP."""
+        with _mocked_rest_api_requests_and_dns() as mock_rl:
+            with patch(
+                "common.data_source.rest_api_connector.pin_dns",
+                wraps=__import__("common.ssrf_guard", fromlist=["pin_dns"]).pin_dns,
+            ) as mock_pin:
+                mock_rl.get.return_value = _mock_response({"items": []})
+
+                c = _make_connector(request_delay=0)
+                c.load_credentials({})
+                c._fetch_page({})
+
+                assert mock_pin.called, "pin_dns must wrap the outbound request"
+                call_args = mock_pin.call_args
+                hostname_arg, ip_arg = call_args.args
+                assert hostname_arg == "api.example.com"
+                # The validated IP comes from the mocked DNS; in
+                # _mocked_rest_api_requests_and_dns it is 93.184.216.34.
+                assert ip_arg == "93.184.216.34"
+
+    def test_validator_returns_hostname_and_ip(self):
+        """``_validate_url_for_ssrf`` now returns the resolved
+        ``(hostname, ip)`` tuple so the caller can pin DNS to the validated
+        IP."""
+        with patch(
+            "common.ssrf_guard._orig_getaddrinfo",
+            return_value=[(2, 1, 6, "", ("93.184.216.34", 0))],
+        ):
+            result = RestAPIConnector._validate_url_for_ssrf("https://api.example.com/v1/items")
+        assert result == ("api.example.com", "93.184.216.34")
+
+    def test_template_substitution_into_url_is_revalidated(self):
+        """``_build_url_with_templates`` can substitute placeholders into
+        the URL; the substituted URL must be revalidated on each fetch."""
+        public_addr = [(2, 1, 6, "", ("93.184.216.34", 0))]
+        with patch(
+            "common.ssrf_guard._orig_getaddrinfo",
+            return_value=public_addr,
+        ) as mock_dns:
+            with patch.object(
+                _ds_utils._RateLimitedRequest, "get", MagicMock(return_value=_mock_response({"items": []}))
+            ):
+                c = _make_connector(
+                    url="https://api.example.com/v1/items/{cursor}",
+                    pagination_type=PaginationType.CURSOR,
+                    pagination_config={"cursor_param": "cursor", "initial_cursor": "abc"},
+                    request_delay=0,
+                )
+                c.load_credentials({})
+                c._fetch_page({})
+                # At minimum: __init__ + _fetch_page → at least two
+                # getaddrinfo calls (assert_url_is_safe resolves DNS each
+                # call). Reading >=2 is robust to the inner pin_dns flow.
+                assert mock_dns.call_count >= 2, (
+                    "Expected at least two DNS resolutions (one at __init__ "
+                    "and one inside _fetch_page) — re-validation is what "
+                    "closes the rebinding window."
+                )
