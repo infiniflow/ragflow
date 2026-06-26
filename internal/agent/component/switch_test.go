@@ -258,8 +258,8 @@ func TestSwitch_NilUpstreamContainsEmptyNeedleMatches(t *testing.T) {
 	inputs := map[string]any{
 		"conditions": []any{
 			map[string]any{
-				"op":      "and",
-				"to":      []any{"case_target"},
+				"op": "and",
+				"to": []any{"case_target"},
 				"clauses": []any{
 					map[string]any{"left": "{{sys.answer}}", "op": "contains", "right": ""},
 				},
@@ -289,8 +289,8 @@ func TestSwitch_NilUpstreamContainsNonEmptyDoesNotMatch(t *testing.T) {
 	inputs := map[string]any{
 		"conditions": []any{
 			map[string]any{
-				"op":      "and",
-				"to":      []any{"case_target"},
+				"op": "and",
+				"to": []any{"case_target"},
 				"clauses": []any{
 					map[string]any{"left": "{{sys.answer}}", "op": "contains", "right": "foo"},
 				},
@@ -321,8 +321,8 @@ func TestSwitch_NilValueContainsDoesNotRaise(t *testing.T) {
 	inputs := map[string]any{
 		"conditions": []any{
 			map[string]any{
-				"op":      "and",
-				"to":      []any{"case_target"},
+				"op": "and",
+				"to": []any{"case_target"},
 				"clauses": []any{
 					map[string]any{"left": "{{sys.answer}}", "op": "contains", "right": nil},
 				},
@@ -356,8 +356,8 @@ func TestSwitch_NilUpstreamStartWithEndWithDoNotCrash(t *testing.T) {
 		"conditions": []any{
 			// start with "" on nil → match (route to case_target)
 			map[string]any{
-				"op":      "and",
-				"to":      []any{"case_target"},
+				"op": "and",
+				"to": []any{"case_target"},
 				"clauses": []any{
 					map[string]any{"left": "{{sys.answer}}", "op": "start with", "right": ""},
 				},

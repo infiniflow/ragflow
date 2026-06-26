@@ -49,12 +49,12 @@ func TestBuildAll_AllRegisteredTools(t *testing.T) {
 	}
 	params := map[string]map[string]any{
 		"execute_sql": {
-			"db_type":   "mysql",
-			"host":      "127.0.0.1",
-			"port":      3306,
-			"database":  "demo",
-			"username":  "u",
-			"password":  "p",
+			"db_type":     "mysql",
+			"host":        "127.0.0.1",
+			"port":        3306,
+			"database":    "demo",
+			"username":    "u",
+			"password":    "p",
 			"max_records": 10,
 		},
 	}
@@ -150,9 +150,9 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 	// search_my_dateset. A bug here would mean an alias was
 	// accidentally pointed at a different tool.
 	canonicalByAlias := map[string]string{
-		"execute_sql":      "execute_sql",
-		"exesql":           "execute_sql",
-		"retrieval":        "search_my_dateset",
+		"execute_sql":       "execute_sql",
+		"exesql":            "execute_sql",
+		"retrieval":         "search_my_dateset",
 		"search_my_dateset": "search_my_dateset",
 	}
 	for _, name := range names {

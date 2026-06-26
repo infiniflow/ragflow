@@ -38,9 +38,9 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
+	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	agenttool "ragflow/internal/agent/tool"
 )
 
 type codeExecSandboxRecorder struct {
@@ -212,12 +212,12 @@ func TestRetrieval_LegacyQueryStringNormalized(t *testing.T) {
 	t.Cleanup(func() { dao.DB = origDB })
 	activeStatus := "1"
 	if err := db.Create(&entity.UserTenant{
-		ID:       "ut-1",
-		UserID:   "user-1",
-		TenantID: "tenant-1",
-		Role:     "owner",
-		InvitedBy:"user-1",
-		Status:   &activeStatus,
+		ID:        "ut-1",
+		UserID:    "user-1",
+		TenantID:  "tenant-1",
+		Role:      "owner",
+		InvitedBy: "user-1",
+		Status:    &activeStatus,
 	}).Error; err != nil {
 		t.Fatalf("failed to seed user_tenant: %v", err)
 	}

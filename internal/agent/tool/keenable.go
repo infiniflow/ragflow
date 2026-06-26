@@ -247,8 +247,8 @@ func (k *KeenableTool) InvokableRun(ctx context.Context, argsJSON string, _ ...t
 	apiKey := strings.TrimSpace(p.APIKey)
 	path := "/v1/search/public"
 	headers := map[string]string{
-		"User-Agent":        "keenable-ragflow",
-		"X-Keenable-Title":  "RAGFlow",
+		"User-Agent":       "keenable-ragflow",
+		"X-Keenable-Title": "RAGFlow",
 	}
 	if apiKey != "" {
 		path = "/v1/search"
