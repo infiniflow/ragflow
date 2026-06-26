@@ -185,7 +185,7 @@ func (m *EinoChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingCh
 		return nil, fmt.Errorf("models: EinoChatModel.WithTools: nil receiver")
 	}
 	cp := *m
-	cp.tools = append([]*schema.ToolInfo(nil), tools...)
+	cp.tools = append([]*schema.ToolInfo(nil), tool...)
 	return &cp, nil
 }
 
@@ -195,7 +195,7 @@ func (m *EinoChatModel) Tools() []*schema.ToolInfo {
 	if m == nil {
 		return nil
 	}
-	return append([]*schema.ToolInfo(nil), m.tools...)
+	return append([]*schema.ToolInfo(nil), m.tool...)
 }
 
 // Inner exposes the wrapped *ChatModel for callers that need direct
