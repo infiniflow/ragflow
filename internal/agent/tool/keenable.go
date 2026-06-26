@@ -43,10 +43,10 @@ const keenableToolDescription = `Keenable is a web search API built for AI agent
 // deeper) or "realtime" (requires a server-configured key). top_n caps
 // how many results we keep from the upstream `results` array.
 type keenableParams struct {
-	Query  string `json:"query"`
-	Site   string `json:"site"`
-	Mode   string `json:"mode"`
-	TopN   int    `json:"top_n"`
+	Query string `json:"query"`
+	Site  string `json:"site"`
+	Mode  string `json:"mode"`
+	TopN  int    `json:"top_n"`
 }
 
 // keenableRequestBody is the JSON body POSTed to the Keenable search
