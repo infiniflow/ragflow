@@ -784,6 +784,14 @@ func (s *ChatService) updateChatREST(userID, chatID string, req map[string]inter
 		}
 	}
 
+	if value, ok := req["meta_data_filter"]; ok && value != nil {
+		metaDataFilter, ok := mapFromValue(value)
+		if !ok {
+			return nil, errors.New("`meta_data_filter` should be an object.")
+		}
+		req["meta_data_filter"] = entity.JSONMap(metaDataFilter)
+	}
+
 	updates := filterRESTChatUpdates(req)
 	if value, ok := updates["name"]; ok {
 		name := value.(string)

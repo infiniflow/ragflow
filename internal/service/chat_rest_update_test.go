@@ -137,6 +137,31 @@ func TestChatServiceUpdateChatRejectsInvalidLLMSetting(t *testing.T) {
 	}
 }
 
+func TestChatServiceUpdateChatAcceptsMetaDataFilterObject(t *testing.T) {
+	db := setupChatRESTUpdateServiceTestDB(t)
+	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
+
+	svc := NewChatService()
+	_, err := svc.UpdateChat("user-1", "chat-1", map[string]interface{}{
+		"name": "chat-chat-1",
+		"meta_data_filter": map[string]interface{}{
+			"method": "disabled",
+			"manual": []interface{}{},
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateChat failed: %v", err)
+	}
+
+	chat, err := svc.chatDAO.GetByID("chat-1")
+	if err != nil {
+		t.Fatalf("failed to fetch chat: %v", err)
+	}
+	if chat.MetaDataFilter == nil || (*chat.MetaDataFilter)["method"] != "disabled" {
+		t.Fatalf("expected meta_data_filter to be persisted, got %+v", chat.MetaDataFilter)
+	}
+}
+
 func TestChatServicePatchChatIgnoresTenantIDAndUpdatesName(t *testing.T) {
 	db := setupChatRESTUpdateServiceTestDB(t)
 	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
