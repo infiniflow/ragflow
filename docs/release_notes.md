@@ -36,8 +36,8 @@ Released on June 26, 2026.
 ### Bug fixes
 
 - File parsing:
-  - A `ValueError` was raised during `.docx` parsing on 'Heading' styles. [#16284](https://github.com/infiniflow/ragflow/pull/16284)；
-  - Tables in `.docx` files were silently removed by the laws document parser. [#16155](https://github.com/infiniflow/ragflow/pull/16155)；
+  - A `ValueError` was raised during `.docx` parsing on 'Heading' styles. [#16284](https://github.com/infiniflow/ragflow/pull/16284)
+  - Tables in `.docx` files were silently removed by the laws document parser. [#16155](https://github.com/infiniflow/ragflow/pull/16155)
   - Lone Markdown headers were separated from their subsequent sections when a DeepDoc delimiter was set. [#16109](https://github.com/infiniflow/ragflow/pull/16109)
   - Markdown tables appeared twice in chunk results, once as a standalone chunk and again within a regular text chunk. [#16143](https://github.com/infiniflow/ragflow/pull/16143)
 - MCP
