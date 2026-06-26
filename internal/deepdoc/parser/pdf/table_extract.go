@@ -131,11 +131,11 @@ func (p *Parser) extractTableBoxesFromImage(ctx context.Context, result *pdf.Par
 		if tsrErr == nil {
 			for _, c := range cells {
 				if result != nil {
-				result.TSRDebug = append(result.TSRDebug, pdf.TSRRawCell{
-					TableIndex: tableBaseIdx + len(items), Page: pageNum,
-					Label: c.Label, X0: c.X0, Y0: c.Y0, X1: c.X1, Y1: c.Y1,
-					Text: c.Text,
-				})
+					result.TSRDebug = append(result.TSRDebug, pdf.TSRRawCell{
+						TableIndex: tableBaseIdx + len(items), Page: pageNum,
+						Label: c.Label, X0: c.X0, Y0: c.Y0, X1: c.X1, Y1: c.Y1,
+						Text: c.Text,
+					})
 				}
 			}
 		}

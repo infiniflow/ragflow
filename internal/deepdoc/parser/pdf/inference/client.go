@@ -50,19 +50,20 @@ func NewInferenceClient(baseURL string) (*InferenceClient, error) {
 // labels are injected by a TableBuilder constructor.
 func DefaultDLALabels() []string {
 	return []string{
-	pdf.LayoutTypeTitle, pdf.LayoutTypeText, pdf.LayoutTypeReference,
-	pdf.LayoutTypeFigure, pdf.DLALabelFigureCaption,
-	pdf.LayoutTypeTable, pdf.DLALabelTableCaption, pdf.DLALabelTableCaption,
-	pdf.LayoutTypeEquation, pdf.DLALabelFigureCaption,
+		pdf.LayoutTypeTitle, pdf.LayoutTypeText, pdf.LayoutTypeReference,
+		pdf.LayoutTypeFigure, pdf.DLALabelFigureCaption,
+		pdf.LayoutTypeTable, pdf.DLALabelTableCaption, pdf.DLALabelTableCaption,
+		pdf.LayoutTypeEquation, pdf.DLALabelFigureCaption,
 	}
 }
 func DefaultTSRLabels() []string {
 	return []string{
-	"table", "table column", "table row",
-	"table column header", "table projected row header",
-	"table spanning cell",
+		"table", "table column", "table row",
+		"table column header", "table projected row header",
+		"table spanning cell",
 	}
 }
+
 type bboxesResponse struct {
 	BBoxes [][]float64 `json:"bboxes"`
 }

@@ -309,4 +309,3 @@ func TestNilChars_Handled(t *testing.T) {
 		t.Logf("nil chars + DeepDoc: sections=%d (may trigger OCR path)", len(result.Sections))
 	}
 }
-

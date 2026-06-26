@@ -7,7 +7,6 @@ import (
 	"testing"
 )
 
-
 // TestOCRMergeChars_FullCoverage: embedded chars fill the detect box.
 func TestOCRMergeChars_FullCoverage(t *testing.T) {
 	mock := &MockDocAnalyzer{

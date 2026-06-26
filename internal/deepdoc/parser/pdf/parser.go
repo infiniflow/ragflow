@@ -34,7 +34,6 @@ type Parser struct {
 	//
 	// different implementation via Config.TableBuilder.
 	tableBuilder pdf.TableBuilder
-
 }
 
 // NewParser creates a new Parser with the required DeepDoc service.
