@@ -49,12 +49,12 @@ func TestBuildAll_AllRegisteredTools(t *testing.T) {
 	}
 	params := map[string]map[string]any{
 		"execute_sql": {
-			"db_type":   "mysql",
-			"host":      "127.0.0.1",
-			"port":      3306,
-			"database":  "demo",
-			"username":  "u",
-			"password":  "p",
+			"db_type":     "mysql",
+			"host":        "127.0.0.1",
+			"port":        3306,
+			"database":    "demo",
+			"username":    "u",
+			"password":    "p",
 			"max_records": 10,
 		},
 	}
@@ -77,6 +77,18 @@ func TestBuildAll_ExeSQLRequiresNodeParams(t *testing.T) {
 	}
 }
 
+func TestBuildAll_KeenableRejectsEmptyNodeAPIKey(t *testing.T) {
+	_, err := BuildAll([]string{"keenable"}, map[string]map[string]any{
+		"keenable": {"api_key": ""},
+	})
+	if err == nil {
+		t.Fatal("expected keenable config error")
+	}
+	if !strings.Contains(err.Error(), "requires non-empty string node-level param api_key") {
+		t.Fatalf("err = %q, want keenable api_key validation error", err.Error())
+	}
+}
+
 // TestToolRegistry_SchemasAreComplete sweeps every name the public
 // registry advertises (including the execute_sql/exesql and
 // retrieval/search_my_dateset alias pairs), builds the tool, and
@@ -95,7 +107,7 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 	names := []string{
 		"akshare", "arxiv", "code_exec", "crawler", "deepl", "duckduckgo",
 		"email", "execute_sql", "exesql", "github", "google",
-		"google_scholar", "jin10", "pubmed", "qweather", "retrieval",
+		"google_scholar", "jin10", "keenable", "pubmed", "qweather", "retrieval",
 		"search_my_dateset", "searxng", "tavily", "tushare", "wencai",
 		"wikipedia", "yahoo_finance",
 	}
@@ -117,6 +129,9 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 			"username":    "u",
 			"password":    "p",
 			"max_records": 10,
+		},
+		"keenable": {
+			"api_key": "key-xyz",
 		},
 	}
 	tools, err := BuildAll(names, params)
@@ -150,9 +165,9 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 	// search_my_dateset. A bug here would mean an alias was
 	// accidentally pointed at a different tool.
 	canonicalByAlias := map[string]string{
-		"execute_sql":      "execute_sql",
-		"exesql":           "execute_sql",
-		"retrieval":        "search_my_dateset",
+		"execute_sql":       "execute_sql",
+		"exesql":            "execute_sql",
+		"retrieval":         "search_my_dateset",
 		"search_my_dateset": "search_my_dateset",
 	}
 	for _, name := range names {

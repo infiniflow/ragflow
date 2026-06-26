@@ -574,7 +574,7 @@ async def move_files(uid: str, src_file_ids: list, dest_file_id: str = None, new
                 )
             except Exception as storage_err:
                 raise RuntimeError(f"Move file failed at storage layer: {str(storage_err)}")
-            if not moved:
+            if moved is False:
                 raise RuntimeError("Move file failed at storage layer")
             updates["parent_id"] = dest_folder_entry.id
             updates["location"] = new_location

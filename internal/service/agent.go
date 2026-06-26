@@ -560,7 +560,7 @@ func (s *AgentService) DeleteVersion(ctx context.Context, userID, canvasID, vers
 // The per-run RunFunc is built by buildRunFunc — see its doc comment
 // for the full production chain (real Compile/Invoke, resume path,
 // error-layering contract).
-func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID, version, userInput string) (<-chan canvas.RunEvent, error) {
+func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any) (<-chan canvas.RunEvent, error) {
 	canvasRow, err := s.loadCanvasForUser(ctx, userID, canvasID)
 	if err != nil {
 		return nil, err
@@ -664,7 +664,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		"session_id": sessionID,
 		"user_id":    userID,
 	}
-	if userInput != "" {
+	if userInput != nil {
 		root["user_input"] = userInput
 	}
 	if dsl != nil {
@@ -693,7 +693,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		zap.String("userID", userID),
 		zap.String("sessionID", sessionID),
 		zap.Any("tenantID", root["tenant_id"]),
-		zap.Int("userInput_len", func() int { s, _ := root["user_input"].(string); return len(s) }()))
+		zap.Any("userInput", root["user_input"]))
 
 	return s.runner.Run(ctx, run, canvasID, sessionID, userInput, root), nil
 }
@@ -755,9 +755,10 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 
 		startedAt := float64(time.Now().UnixNano()) / 1e9
 
-		userInput := ""
-		if v, ok := root["user_input"].(string); ok {
-			userInput = v
+		userInput := root["user_input"]
+		userInputText := ""
+		if v, ok := userInput.(string); ok {
+			userInputText = v
 		}
 
 		resumeID, isResume := root["__resume_interrupt_id__"].(string)
@@ -824,6 +825,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			}
 		}
 		state.Sys["query"] = userInput
+		if uid, ok := root["user_id"].(string); ok && uid != "" {
+			state.Sys["user_id"] = uid
+		}
 		if tid, ok := root["tenant_id"].(string); ok && tid != "" {
 			state.Sys["tenant_id"] = tid
 		}
@@ -853,7 +857,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 
 		if s.runTracker != nil {
 			_ = s.runTracker.Start(ctx2, runID, canvasID,
-				tenantIDFromRoot(root), userInput)
+				tenantIDFromRoot(root), userInputText)
 		}
 
 		// Compile.
@@ -975,7 +979,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				emit("message_end", string(meData))
 
 				wfData, _ := json.Marshal(map[string]interface{}{
-					"inputs":       map[string]string{"query": userInput},
+					"inputs":       map[string]any{"query": userInput},
 					"outputs":      answer,
 					"elapsed_time": now - startedAt,
 					"created_at":   now,
@@ -1003,7 +1007,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 
 		// Emit workflow_finished with the final outputs.
 		wfData, _ := json.Marshal(map[string]interface{}{
-			"inputs":       map[string]string{"query": userInput},
+			"inputs":       map[string]any{"query": userInput},
 			"outputs":      answer,
 			"elapsed_time": now - startedAt,
 			"created_at":   now,
