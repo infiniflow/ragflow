@@ -3,6 +3,7 @@ import {
   IFetchArtifactListRequestParams,
   IFetchDocumentListRequestBody,
   IFetchKnowledgeListRequestParams,
+  IUpdateArtifactPageRequestBody,
 } from '@/interfaces/request/knowledge';
 import { ProcessingType } from '@/pages/dataset/dataset-overview/dataset-common';
 import api from '@/utils/api';
@@ -396,6 +397,13 @@ export const getArtifactPage = (
   pageType: string,
   slug: string,
 ) => request.get(api.getArtifactPage(datasetId, pageType, slug));
+
+export const updateArtifactPage = (
+  datasetId: string,
+  pageType: string,
+  slug: string,
+  data: IUpdateArtifactPageRequestBody,
+) => request.put(api.getArtifactPage(datasetId, pageType, slug), { data });
 
 export const checkEmbedding = (datasetId: string, data: Record<string, any>) =>
   request.post(api.checkEmbedding(datasetId), { data });

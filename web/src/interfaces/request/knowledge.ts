@@ -47,3 +47,15 @@ export interface IFetchArtifactListRequestParams {
   page_size?: number;
   keywords?: string;
 }
+
+export interface IUpdateArtifactPageRequestBody {
+  content_md: string;
+  comments: string;
+  title?: string;
+}
+
+export interface IUpdateArtifactPageRequestParams {
+  pageType: string;
+  slug: string;
+  body: IUpdateArtifactPageRequestBody;
+}

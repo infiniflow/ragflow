@@ -1,7 +1,7 @@
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
 import { ParseType } from '@/constants/knowledge';
-import { ResponsePostType } from '@/interfaces/database/base';
+import { ResponsePostType, ResponseType } from '@/interfaces/database/base';
 import {
   IArtifact,
   IArtifactPage,
@@ -12,7 +12,10 @@ import {
   IRenameTag,
   ITestingResult,
 } from '@/interfaces/database/dataset';
-import { ITestRetrievalRequestBody } from '@/interfaces/request/knowledge';
+import {
+  ITestRetrievalRequestBody,
+  IUpdateArtifactPageRequestParams,
+} from '@/interfaces/request/knowledge';
 import i18n from '@/locales/config';
 import kbService, {
   deleteKnowledgeGraph,
@@ -24,6 +27,7 @@ import kbService, {
   listTag,
   removeTag,
   renameTag,
+  updateArtifactPage,
   updateKb,
 } from '@/services/knowledge-service';
 import {
@@ -54,6 +58,7 @@ export const enum KnowledgeApiAction {
   FetchKnowledgeGraph = 'fetchKnowledgeGraph',
   FetchArtifactList = 'fetchArtifactList',
   FetchArtifactPage = 'fetchArtifactPage',
+  UpdateArtifactPage = 'updateArtifactPage',
   FetchMetadata = 'fetchMetadata',
   FetchMetadataKeys = 'fetchMetadataKeys',
   FetchKnowledgeList = 'fetchKnowledgeList',
@@ -432,6 +437,44 @@ export function useFetchArtifactPage(artifact: IArtifact | null) {
 
   return { data, loading };
 }
+
+export const useUpdateArtifactPage = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation<
+    ResponseType<IArtifactPage>,
+    Error,
+    IUpdateArtifactPageRequestParams
+  >({
+    mutationKey: [KnowledgeApiAction.UpdateArtifactPage],
+    mutationFn: async (params) => {
+      const { data = {} } = await updateArtifactPage(
+        knowledgeBaseId,
+        params.pageType,
+        params.slug,
+        params.body,
+      );
+      if (data.code === 0) {
+        message.success(i18n.t(`message.updated`));
+        queryClient.invalidateQueries({
+          queryKey: artifactKeys.detail(
+            knowledgeBaseId,
+            params.pageType,
+            params.slug,
+          ),
+        });
+      }
+      return data;
+    },
+  });
+
+  return { data, loading, updateArtifactPage: mutateAsync };
+};
 
 export function useFetchKnowledgeGraph() {
   const knowledgeBaseId = useKnowledgeBaseId();

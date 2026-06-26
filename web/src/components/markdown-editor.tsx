@@ -55,7 +55,6 @@ export default function MarkdownEditor({
           style={{ display: showSource ? 'none' : 'flex' }}
         >
           <LexicalEditor
-            key={content}
             content={content}
             onChange={handleWysiwygChange}
             readOnly={readOnly}

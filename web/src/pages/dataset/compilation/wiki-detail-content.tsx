@@ -12,7 +12,10 @@ import { useFetchDocumentsByIds } from '@/hooks/use-document-request';
 import { useFetchArtifactPage } from '@/hooks/use-knowledge-request';
 import { Docagg } from '@/interfaces/database/chat';
 import { IArtifact } from '@/interfaces/database/dataset';
+import { useCommitArtifact } from '@/pages/dataset/compilation/use-commit-artifact';
+import { useWikiEditor } from '@/pages/dataset/compilation/use-wiki-editor';
 import { VersionHistorySheet } from '@/pages/dataset/compilation/version-history-sheet';
+import { WikiCommitModal } from '@/pages/dataset/compilation/wiki-commit-modal';
 import { Upload } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -28,6 +31,24 @@ export function WikiDetailContent({
   const { data, loading } = useFetchArtifactPage(selectedArtifact);
   const { documents } = useFetchDocumentsByIds(data?.source_doc_ids ?? []);
 
+  const {
+    editedContent,
+    isDirty,
+    handleContentChange,
+    handleCancelEdit,
+    handleMarkAsSaved,
+  } = useWikiEditor({
+    content: data?.content_md_rendered ?? '',
+    artifactSlug: selectedArtifact?.slug,
+  });
+
+  const { isOpen, open, close, form, handleConfirm, isUpdating } =
+    useCommitArtifact({
+      editedContent,
+      page: data,
+      onSuccess: handleMarkAsSaved,
+    });
+
   const referenceDocuments = useMemo<Docagg[]>(() => {
     return documents.map(
       (doc): Docagg => ({
@@ -37,6 +58,40 @@ export function WikiDetailContent({
       }),
     );
   }, [documents]);
+
+  const renderToolbarButtons = () => {
+    if (isDirty) {
+      return (
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleCancelEdit}
+          >
+            {t('common.cancel')}
+          </Button>
+          <Button type="button" size="sm" onClick={open}>
+            {t('knowledgeDetails.commit')}
+          </Button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex items-center gap-1">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon" className="size-8">
+              <Upload className="size-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('knowledgeDetails.export')}</TooltipContent>
+        </Tooltip>
+        <VersionHistorySheet />
+      </div>
+    );
+  };
 
   return (
     <section className="size-full min-w-0 flex flex-col">
@@ -55,19 +110,7 @@ export function WikiDetailContent({
                 )}
               </div>
 
-              <div className="flex items-center gap-1">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" className="size-8">
-                      <Upload className="size-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {t('knowledgeDetails.export')}
-                  </TooltipContent>
-                </Tooltip>
-                <VersionHistorySheet />
-              </div>
+              {renderToolbarButtons()}
             </div>
           </header>
 
@@ -77,7 +120,10 @@ export function WikiDetailContent({
                 <Spin size="large" />
               </div>
             ) : (
-              <MarkdownEditor content={data?.content_md_rendered ?? ''} />
+              <MarkdownEditor
+                content={editedContent}
+                onChange={handleContentChange}
+              />
             )}
 
             {referenceDocuments.length > 0 && (
@@ -89,6 +135,14 @@ export function WikiDetailContent({
               </div>
             )}
           </div>
+
+          <WikiCommitModal
+            open={isOpen}
+            onOpenChange={close}
+            form={form}
+            onConfirm={handleConfirm}
+            loading={isUpdating}
+          />
         </>
       ) : (
         <div className="flex-1 overflow-y-auto p-8">

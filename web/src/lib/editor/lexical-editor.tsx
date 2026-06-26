@@ -53,7 +53,7 @@ function InitialContentPlugin({
   const seeded = useRef(false);
 
   useEffect(() => {
-    // Seed ONCE on mount. New file = new key = new component = fresh seeded ref.
+    // Seed ONCE on mount. Subsequent external content changes are handled by ContentSyncPlugin.
     if (seeded.current) return;
     seeded.current = true;
 
@@ -68,6 +68,33 @@ function InitialContentPlugin({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor]);
+
+  return null;
+}
+
+function ContentSyncPlugin({
+  content,
+  transformers,
+}: {
+  content: string;
+  transformers: Transformer[];
+}) {
+  const [editor] = useLexicalComposerContext();
+
+  useEffect(() => {
+    editor.update(() => {
+      const currentMarkdown = $convertToEnhancedMarkdownString(transformers);
+      if (currentMarkdown === content) return;
+
+      const root = $getRoot();
+      root.clear();
+      if (content && content.trim()) {
+        $convertFromEnhancedMarkdownString(content, transformers);
+      } else {
+        root.append($createParagraphNode());
+      }
+    });
+  }, [content, editor, transformers]);
 
   return null;
 }
@@ -143,6 +170,7 @@ export default function LexicalEditor({
               content={content}
               transformers={transformers}
             />
+            <ContentSyncPlugin content={content} transformers={transformers} />
             <ChangeListener onChange={onChange} transformers={transformers} />
             <FloatingSelectionToolbar />
             <RichTextPlugin
