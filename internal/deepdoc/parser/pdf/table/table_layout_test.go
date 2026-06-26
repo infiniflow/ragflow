@@ -1,9 +1,9 @@
 package table
 
 import (
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"sort"
 	"testing"
-	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
 // ── Mock TSR data ──────────────────────────────────────────────────────

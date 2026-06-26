@@ -6,9 +6,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	inf "ragflow/internal/deepdoc/parser/pdf/inference"
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
-	inf "ragflow/internal/deepdoc/parser/pdf/inference"
 	"testing"
 )
 

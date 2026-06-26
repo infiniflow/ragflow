@@ -3,9 +3,9 @@ package parser
 import (
 	"context"
 	"image"
-	"testing"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	util "ragflow/internal/deepdoc/parser/pdf/util"
+	"testing"
 )
 
 // testPageImg creates a small test image for ocrMergeChars tests.

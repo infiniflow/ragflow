@@ -109,7 +109,6 @@ func TestEnrichWithDeepDoc_ImageOnlyPage(t *testing.T) {
 	}
 }
 
-
 // TestFigureCaption_MergedIntoFigure verifies that "figure caption" text
 // is merged into the nearest "figure" pdf.Section and the caption pdf.Section is
 // removed. Matches Python _extract_table_figure caption matching.
@@ -311,7 +310,6 @@ func TestNilChars_Handled(t *testing.T) {
 	}
 }
 
-
 // mockEngine is a minimal pdf.PDFEngine stub for unit tests.
 type mockEngine struct {
 	chars     map[int][]pdf.TextChar
@@ -349,6 +347,6 @@ func (m *mockEngine) PageCount() (int, error) {
 	}
 	return m.pageCount, nil
 }
-func (m *mockEngine) RawData() []byte                   { return nil }
-func (m *mockEngine) Close() error                      { return nil }
+func (m *mockEngine) RawData() []byte                  { return nil }
+func (m *mockEngine) Close() error                     { return nil }
 func (m *mockEngine) Outlines() ([]pdf.Outline, error) { return nil, nil }

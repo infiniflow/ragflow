@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"strings"
 	"testing"
-	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
 // TestTableParityWithPythonBoxes reads Python's pre-merge table boxes

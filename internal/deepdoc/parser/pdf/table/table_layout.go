@@ -2,8 +2,8 @@ package table
 
 import (
 	"math"
-	"sort"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	"sort"
 )
 
 // ── Post-TSR layout annotation (Python: pdf_parser.py gather/layouts_cleanup) ──

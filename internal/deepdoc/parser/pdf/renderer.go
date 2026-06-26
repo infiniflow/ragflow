@@ -2,8 +2,8 @@ package parser
 
 import (
 	"image"
-	"reflect"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	"reflect"
 )
 
 // renderFn is the active page-rendering function.  It defaults to

@@ -1,9 +1,9 @@
 package table
 
 import (
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"strings"
 	"testing"
-	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
 func TestCellTexts(t *testing.T) {
@@ -905,7 +905,6 @@ func TestExtractTableAndReplace(t *testing.T) {
 	}
 }
 
-
 func TestBoxMatchesCell_FalsePositive(t *testing.T) {
 	// Cell: narrow table cell (40×20 px)
 	cell := pdf.TSRCell{X0: 0, Y0: 0, X1: 40, Y1: 20}
@@ -1087,7 +1086,6 @@ func TestMergeTablesAcrossPages_SingleTable(t *testing.T) {
 		t.Fatalf("single table: expected 1 table, got %d", len(merged))
 	}
 }
-
 
 func TestMergeCaptions_NeedsCaptionLayoutType(t *testing.T) {
 	// Simulate what happens when DLA doesn't produce a "table caption" region:

@@ -6,8 +6,8 @@ import (
 	"context"
 	"errors"
 	"image"
-	"testing"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	"testing"
 )
 
 func TestOCRRecognizeBatch_EmptyList(t *testing.T) {

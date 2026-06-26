@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
-	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	util "ragflow/internal/deepdoc/parser/pdf/util"
 )
 

@@ -1,8 +1,8 @@
 package layout
 
 import (
-	"testing"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	"testing"
 )
 
 func TestMergeSameBullet(t *testing.T) {

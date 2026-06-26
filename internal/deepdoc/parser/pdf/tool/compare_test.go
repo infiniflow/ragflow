@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
 )
 
 // TestBatchCompareWithPython compares Go output against Python reference

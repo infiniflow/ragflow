@@ -41,12 +41,12 @@ type TableItem struct {
 
 // TSRCell mirrors parser.TSRCell for serialization.
 type TSRCell struct {
-	X0 float64 `json:"x0"`
-	Y0 float64 `json:"y0"`
-	X1 float64 `json:"x1"`
-	Y1 float64 `json:"y1"`
-	Text           string  `json:"text"`
-	Label          string  `json:"label"`
+	X0    float64 `json:"x0"`
+	Y0    float64 `json:"y0"`
+	X1    float64 `json:"x1"`
+	Y1    float64 `json:"y1"`
+	Text  string  `json:"text"`
+	Label string  `json:"label"`
 }
 
 // Position stores a bounding box.

@@ -70,8 +70,8 @@ func TestOverlapInter(t *testing.T) {
 }
 
 func TestOverlapRatioA(t *testing.T) {
-	a := textBox{0, 0, 10, 10}   // area = 100
-	b := textBox{5, 5, 15, 15}   // overlap = 25
+	a := textBox{0, 0, 10, 10} // area = 100
+	b := textBox{5, 5, 15, 15} // overlap = 25
 	if got := OverlapRatioA(a, b); got != 0.25 {
 		t.Errorf("OverlapRatioA = %v, want 0.25", got)
 	}

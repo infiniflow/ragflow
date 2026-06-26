@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/deepdoc/parser/pdf/tool"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
-	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 )
 
 // TestPipelineParity verifies Go pipeline logic equivalence with Python.

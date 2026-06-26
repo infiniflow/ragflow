@@ -165,8 +165,8 @@ type TableItem struct {
 	Caption   string
 
 	RegionLeft, RegionRight, RegionTop, RegionBottom float64
-	NoMerge bool
-	Grid    [][]TSRCell
+	NoMerge                                          bool
+	Grid                                             [][]TSRCell
 }
 
 // TSRCell represents one table cell from TSR.

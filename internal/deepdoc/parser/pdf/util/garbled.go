@@ -237,6 +237,7 @@ func DetectGarbled(chars []pdf.TextChar) bool {
 func HasColor(c pdf.TextChar) bool {
 	return true
 }
+
 // isGarbledPage returns true if a page is garbled by PUA ratio, font encoding,
 // pdf_oxide unmapped glyphs, or scan noise (no real words).
 func IsGarbledPage(chars []pdf.TextChar) bool {

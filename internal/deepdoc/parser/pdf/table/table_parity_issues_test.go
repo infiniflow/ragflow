@@ -7,10 +7,10 @@ import (
 	"context"
 	"encoding/base64"
 	"image"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"regexp"
 	"strings"
 	"testing"
-	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
 // =============================================================================

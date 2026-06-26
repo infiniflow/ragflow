@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	"image"
-	"strings"
-	"testing"
-	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	inf "ragflow/internal/deepdoc/parser/pdf/inference"
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	"strings"
+	"testing"
 )
 
 // ── MockDocAnalyzer tests ──────────────────────────────────────────────

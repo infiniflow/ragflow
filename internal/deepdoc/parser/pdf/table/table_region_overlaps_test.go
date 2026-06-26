@@ -6,7 +6,6 @@ import (
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
-
 // ---- regionOverlapsBox ----
 
 func TestRegionOverlapsBox_StrongOverlap(t *testing.T) {

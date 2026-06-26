@@ -6,9 +6,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"strings"
 	"testing"
-	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
 // TestDumpTextOutput runs Parse on real PDFs and saves per-PDF text

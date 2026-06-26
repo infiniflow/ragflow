@@ -45,13 +45,41 @@ type Parser struct {
 func NewParser(cfg pdf.ParserConfig, doc pdf.DocAnalyzer) *Parser {
 	tb := cfg.TableBuilder
 	if tb == nil {
-		tb = inf.NewTableBuilderFor(doc)
+		tb = NewTableBuilderFor(doc)
 	}
 	return &Parser{
 		Config:       cfg,
 		DeepDoc:      doc,
 		tableBuilder: tb,
 	}
+}
+
+// ── TableBuilder factory ───────────────────────────────────────────────────
+
+// tableBuilderFactory holds a model-specific TableBuilder factory registered
+// by EE packages via RegisterTableBuilder. If nil, the default OSS
+// implementation is used.
+var tableBuilderFactory func(pdf.DocAnalyzer) pdf.TableBuilder
+
+// RegisterTableBuilder registers a TableBuilder factory for the PDF parser.
+// EE packages call this from init() to inject EE-specific implementations.
+func RegisterTableBuilder(factory func(pdf.DocAnalyzer) pdf.TableBuilder) {
+	tableBuilderFactory = factory
+}
+
+// NewTableBuilderFor creates the right TableBuilder, chosen by the registry.
+// Checks the registry first for EE-registered implementations, falling back
+// to the default OSS DeepDocTableBuilder. Label taxonomies are injected
+// before construction.
+func NewTableBuilderFor(doc pdf.DocAnalyzer) pdf.TableBuilder {
+	if tableBuilderFactory != nil {
+		return tableBuilderFactory(doc)
+	}
+	if c, ok := doc.(*inf.InferenceClient); ok {
+		c.DLALabels = inf.DefaultDLALabels
+		c.TSRLabels = inf.DefaultTSRLabels
+	}
+	return tbl.NewDeepDocTableBuilder(doc)
 }
 
 // Parse runs the full PDF extraction pipeline: chars → boxes →
@@ -464,60 +492,65 @@ func (p *Parser) processPages(ctx context.Context, engine pdf.PDFEngine,
 		medianHeights, medianWidths, fromPage, toPage, ocrUsedAny, isEnglish); err != nil {
 		return nil, fmt.Errorf("buildLayout: %w", err)
 	}
-	// Text sections use cropSectionImage based on their PositionTag.
-	if len(result.PageImages) > 0 {
-		// Build lookup: DLA region → pdf.TableItem index for image matching.
-		tableImgByRegion := make(map[string]string, len(result.Tables))
-		for _, tbl := range result.Tables {
-			if tbl.ImageB64 == "" {
-				continue
-			}
-			pg := 0
-			if len(tbl.Positions) > 0 && len(tbl.Positions[0].PageNumbers) > 0 {
-				pg = tbl.Positions[0].PageNumbers[0]
-			}
-			key := fmt.Sprintf("%d_%.1f_%.1f_%.1f_%.1f",
-				pg, tbl.RegionLeft, tbl.RegionRight, tbl.RegionTop, tbl.RegionBottom)
-			tableImgByRegion[key] = tbl.ImageB64
-		}
-		for i := range result.Sections {
-			if result.Sections[i].LayoutType == pdf.LayoutTypeTable && len(result.Sections[i].Positions) > 0 {
-				pos := result.Sections[i].Positions[0]
-				pg := 0
-				if len(pos.PageNumbers) > 0 {
-					pg = pos.PageNumbers[0]
-				}
-				key := fmt.Sprintf("%d_%.1f_%.1f_%.1f_%.1f",
-					pg, pos.Left, pos.Right, pos.Top, pos.Bottom)
-				if img, ok := tableImgByRegion[key]; ok {
-					result.Sections[i].Image = img
-					continue
-				}
-			}
-			// Try DLA-aware cropping for figure sections (matching Python's
-			// cropout which uses DLA region boundaries instead of text boxes).
-			if result.Sections[i].LayoutType == pdf.LayoutTypeFigure && len(result.Sections[i].Positions) > 0 {
-				if dlaImg := util.CropSectionByDLA(result.Sections[i], p.debugDLA, result.PageImages); dlaImg != "" {
-					result.Sections[i].Image = dlaImg
-					continue
-				}
-			}
-			img := util.CropSectionImage(result.Sections[i].PositionTag, result.PageImages, p.Config.Zoom)
-			result.Sections[i].Image = img
-			if img == "" && result.Sections[i].Text != "" {
-				tag := result.Sections[i].PositionTag
-				slog.Warn("cropSectionImage empty for non-empty section",
-					"section", i, "posTag", tag[:min(80, len(tag))])
-			}
-		}
-	}
+	// 5. Crop section images from page renders.
+	p.fillSectionImages(result)
 
-	// Collect DLA/TSR debug intermediates if available.
-	result.DLADebug = p.debugDLA
-	result.TSRDebug = p.debugTSR
-	p.debugDLA = nil
 	p.debugTSR = nil
 	return result, nil
+}
+
+// fillSectionImages populates result.Sections[i].Image with cropped
+// page images. Table sections are matched to their TableItem image;
+// figure sections try DLA-aware cropping first, then fall back to
+// position-tag-based cropping.
+func (p *Parser) fillSectionImages(result *pdf.ParseResult) {
+	if len(result.PageImages) == 0 {
+		return
+	}
+	// Build lookup: DLA region -> table image (base64).
+	tableImgByRegion := make(map[string]string, len(result.Tables))
+	for _, tbl := range result.Tables {
+		if tbl.ImageB64 == "" {
+			continue
+		}
+		pg := 0
+		if len(tbl.Positions) > 0 && len(tbl.Positions[0].PageNumbers) > 0 {
+			pg = tbl.Positions[0].PageNumbers[0]
+		}
+		key := fmt.Sprintf("%d_%.1f_%.1f_%.1f_%.1f",
+			pg, tbl.RegionLeft, tbl.RegionRight, tbl.RegionTop, tbl.RegionBottom)
+		tableImgByRegion[key] = tbl.ImageB64
+	}
+	for i := range result.Sections {
+		if result.Sections[i].LayoutType == pdf.LayoutTypeTable && len(result.Sections[i].Positions) > 0 {
+			pos := result.Sections[i].Positions[0]
+			pg := 0
+			if len(pos.PageNumbers) > 0 {
+				pg = pos.PageNumbers[0]
+			}
+			key := fmt.Sprintf("%d_%.1f_%.1f_%.1f_%.1f",
+				pg, pos.Left, pos.Right, pos.Top, pos.Bottom)
+			if img, ok := tableImgByRegion[key]; ok {
+				result.Sections[i].Image = img
+				continue
+			}
+		}
+		// Try DLA-aware cropping for figure sections (matching Python's
+		// cropout which uses DLA region boundaries instead of text boxes).
+		if result.Sections[i].LayoutType == pdf.LayoutTypeFigure && len(result.Sections[i].Positions) > 0 {
+			if dlaImg := util.CropSectionByDLA(result.Sections[i], p.debugDLA, result.PageImages); dlaImg != "" {
+				result.Sections[i].Image = dlaImg
+				continue
+			}
+		}
+		img := util.CropSectionImage(result.Sections[i].PositionTag, result.PageImages, p.Config.Zoom)
+		result.Sections[i].Image = img
+		if img == "" && result.Sections[i].Text != "" {
+			tag := result.Sections[i].PositionTag
+			slog.Warn("cropSectionImage empty for non-empty section",
+				"section", i, "posTag", tag[:min(80, len(tag))])
+		}
+	}
 }
 
 // isASCIIPrintable returns true for characters that match Python's

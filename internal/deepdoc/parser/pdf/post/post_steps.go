@@ -169,6 +169,14 @@ func PostProcess(ctx context.Context, result *pdftype.ParseResult, config Pipeli
 // Overridable in tests.
 var resolveImageDescriber func(tenantID, llmID string) (ImageDescriber, error)
 
+// SetImageDescriberResolver sets the factory that creates an ImageDescriber
+// from tenant/LLM configuration. Higher layers (e.g. EE extensions or the
+// PDF document pipeline entry point) register the real implementation via
+// init(). If never called, PostProcess skips VLM enhancement.
+func SetImageDescriberResolver(fn func(tenantID, llmID string) (ImageDescriber, error)) {
+	resolveImageDescriber = fn
+}
+
 // ── normalizeLayoutType ────────────────────────────────────────────────
 
 // normalizeLayoutType trims whitespace from LayoutType and defaults empty

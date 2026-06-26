@@ -3,8 +3,8 @@ package table
 import (
 	"context"
 	"image"
-	"testing"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	"testing"
 )
 
 // mockRotationDoc implements DocAnalyzer with deterministic OCR results per angle.
@@ -23,10 +23,14 @@ type mockRotationDoc struct {
 
 var rotationOrder = []int{0, 90, 180, 270}
 
-func (m *mockRotationDoc) DLA(_ context.Context, _ image.Image) ([]pdf.DLARegion, error) { return nil, nil }
-func (m *mockRotationDoc) TSR(_ context.Context, _ image.Image) ([]pdf.TSRCell, error)   { return nil, nil }
-func (m *mockRotationDoc) OCR(_ image.Image) (string, error)                         { return "", nil }
-func (m *mockRotationDoc) Health() bool                                              { return true }
+func (m *mockRotationDoc) DLA(_ context.Context, _ image.Image) ([]pdf.DLARegion, error) {
+	return nil, nil
+}
+func (m *mockRotationDoc) TSR(_ context.Context, _ image.Image) ([]pdf.TSRCell, error) {
+	return nil, nil
+}
+func (m *mockRotationDoc) OCR(_ image.Image) (string, error) { return "", nil }
+func (m *mockRotationDoc) Health() bool                      { return true }
 
 func (m *mockRotationDoc) currentAngle() int {
 	idx := m.callSeq % len(rotationOrder)

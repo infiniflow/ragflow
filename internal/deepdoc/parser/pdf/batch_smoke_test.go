@@ -18,10 +18,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"ragflow/internal/deepdoc/parser/pdf/tool"
-	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	inf "ragflow/internal/deepdoc/parser/pdf/inference"
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
+	"ragflow/internal/deepdoc/parser/pdf/tool"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
 // TestBatchResults runs Parse() on real PDFs and writes:

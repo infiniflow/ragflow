@@ -7,9 +7,9 @@ import (
 	"math"
 	"sort"
 
+	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	util "ragflow/internal/deepdoc/parser/pdf/util"
-	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 )
 
 // enrichWithDeepDoc runs DLA+TSR via p.DeepDoc and returns detected tables.

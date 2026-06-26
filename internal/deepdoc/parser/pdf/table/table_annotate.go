@@ -28,7 +28,7 @@ func regionOverlapsBox(region pdf.DLARegion, box pdf.TextBox, scale float64) boo
 	boxArea := pdf.Area(&box)
 	if boxArea <= 0 {
 		return false
-}
+	}
 	return inter/boxArea >= 0.4 // matches Python thr=0.4
 }
 
@@ -242,6 +242,7 @@ func garbageKeepFeat(ty string, box pdf.TextBox, pageImgHeight float64) bool {
 	}
 	return false
 }
+
 // writeTableAnnotations annotates boxes at boxIdx with table cell grid
 // information (R/C/H/SP).  Cells are offset by cropOff, grouped into a grid,
 // and annotation fields are scaled back to PDF space for each box.

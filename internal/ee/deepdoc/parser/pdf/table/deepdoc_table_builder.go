@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"sort"
 
+	pdfparser "ragflow/internal/deepdoc/parser/pdf"
 	inference "ragflow/internal/deepdoc/parser/pdf/inference"
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdft "ragflow/internal/deepdoc/parser/pdf/type"
@@ -162,5 +163,5 @@ func groupTSRCellsToRowsLabeled(cells []pdft.TSRCell) [][]pdft.TSRCell {
 
 // init registers the EE TableBuilder factory for ModelEE.
 func init() {
-	inference.RegisterTableBuilder(NewDeepDocTableBuilder)
+	pdfparser.RegisterTableBuilder(NewDeepDocTableBuilder)
 }

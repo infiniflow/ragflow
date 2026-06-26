@@ -71,4 +71,4 @@ func (m *MockDocAnalyzer) OCRRecognizeBatch(_ context.Context, cropped []image.I
 	}
 	return results, errs
 }
-func (m *MockDocAnalyzer) Health() bool             { return m.Healthy }
+func (m *MockDocAnalyzer) Health() bool { return m.Healthy }

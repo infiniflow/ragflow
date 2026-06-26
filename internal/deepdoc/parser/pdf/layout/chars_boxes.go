@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	util "ragflow/internal/deepdoc/parser/pdf/util"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	util "ragflow/internal/deepdoc/parser/pdf/util"
 )
 
 // CharsToBoxes converts raw characters to initial text boxes by grouping

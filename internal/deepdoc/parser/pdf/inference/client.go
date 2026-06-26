@@ -15,7 +15,6 @@ import (
 	"sync"
 	"time"
 
-	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	util "ragflow/internal/deepdoc/parser/pdf/util"
 
@@ -256,29 +255,6 @@ func (c *InferenceClient) Health() bool {
 	}
 	resp.Body.Close()
 	return resp.StatusCode == 200
-}
-// tableBuilderFactories holds model-specific pdf.TableBuilder factories
-// registered by EE packages via RegisterTableBuilder.
-var tableBuilderFactory func(pdf.DocAnalyzer) pdf.TableBuilder
-
-// RegisterTableBuilder registers a pdf.TableBuilder factory for the TableBuilder.
-// EE packages call this from init() to inject EE-specific implementations.
-func RegisterTableBuilder(factory func(pdf.DocAnalyzer) pdf.TableBuilder) {
-	tableBuilderFactory = factory
-}
-
-// NewTableBuilderFor creates the right TableBuilder, chosen by the registry.
-// Checks the registry first for EE-registered implementations, falling back
-// to the default. Label taxonomies are injected before construction.
-func NewTableBuilderFor(doc pdf.DocAnalyzer) pdf.TableBuilder {
-	if tableBuilderFactory != nil {
-		return tableBuilderFactory(doc)
-	}
-	if c, ok := doc.(*InferenceClient); ok {
-		c.DLALabels = DefaultDLALabels
-		c.TSRLabels = DefaultTSRLabels
-	}
-	return tbl.NewDeepDocTableBuilder(doc)
 }
 
 func (c *InferenceClient) post(ctx context.Context, endpoint string, imgData []byte, filename string, result interface{}, extraFields ...string) error {

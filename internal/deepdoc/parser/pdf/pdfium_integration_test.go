@@ -7,8 +7,8 @@ import (
 	"image"
 	"os"
 	"path/filepath"
-	"testing"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	"testing"
 )
 
 func TestParse_PdfiumRender(t *testing.T) {
@@ -84,7 +84,7 @@ func (e *pythonCharEngineStub) RenderPage(_ int, _ float64) ([]byte, error) { re
 func (e *pythonCharEngineStub) RenderPageImage(_ int, _ float64) (image.Image, error) {
 	return nil, nil
 }
-func (e *pythonCharEngineStub) RawData() []byte                    { return nil }
-func (e *pythonCharEngineStub) PageCount() (int, error)            { return 0, nil }
-func (e *pythonCharEngineStub) Close() error                       { return nil }
+func (e *pythonCharEngineStub) RawData() []byte                  { return nil }
+func (e *pythonCharEngineStub) PageCount() (int, error)          { return 0, nil }
+func (e *pythonCharEngineStub) Close() error                     { return nil }
 func (e *pythonCharEngineStub) Outlines() ([]pdf.Outline, error) { return nil, nil }

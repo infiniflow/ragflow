@@ -8,12 +8,12 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
-	pdf "ragflow/internal/deepdoc/parser/pdf/type"
-	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 )
 
 // TestSnapshotStageComparison verifies Go's TextMerge output

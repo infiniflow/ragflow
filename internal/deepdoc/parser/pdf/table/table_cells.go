@@ -3,10 +3,10 @@ package table
 import (
 	"log/slog"
 	"math"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"regexp"
 	"sort"
 	"strings"
-	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
 // ── TSR cell grouping ──────────────────────────────────────────────────

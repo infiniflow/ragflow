@@ -1,8 +1,8 @@
 package util
 
 import (
-	"testing"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	"testing"
 )
 
 func TestCharWidth(t *testing.T) {
@@ -107,7 +107,6 @@ func TestMedianHeight(t *testing.T) {
 		t.Errorf("MedianHeight(empty) = %v, want 10.0", mh2)
 	}
 }
-
 
 func TestBoxWidth(t *testing.T) {
 	b := pdf.TextBox{X0: 50, X1: 200}

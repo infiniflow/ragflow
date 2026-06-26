@@ -91,31 +91,31 @@ func TestGroupTSRCellsToRows(t *testing.T) {
 		}
 	})
 
-		t.Run("close rows", func(t *testing.T) {
-			cells := []pdf.TSRCell{
-				{X0: 0, Y0: 0, X1: 10, Y1: 8, Text: "Row1"},
-				{X0: 0, Y0: 9, X1: 10, Y1: 17, Text: "Row2"},
-			}
-			rows := GroupTSRCellsToRows(cells)
-			if len(rows) != 2 {
-				t.Errorf("close rows: expected 2, got %d", len(rows))
-			}
-		})
+	t.Run("close rows", func(t *testing.T) {
+		cells := []pdf.TSRCell{
+			{X0: 0, Y0: 0, X1: 10, Y1: 8, Text: "Row1"},
+			{X0: 0, Y0: 9, X1: 10, Y1: 17, Text: "Row2"},
+		}
+		rows := GroupTSRCellsToRows(cells)
+		if len(rows) != 2 {
+			t.Errorf("close rows: expected 2, got %d", len(rows))
+		}
+	})
 
-		t.Run("varying heights", func(t *testing.T) {
-			cells := []pdf.TSRCell{
-				{X0: 0, Y0: 0, X1: 10, Y1: 5, Text: "A"},
-				{X0: 0, Y0: 50, X1: 10, Y1: 70, Text: "B"},
-				{X0: 0, Y0: 50, X1: 10, Y1: 70, Text: "C"},
-			}
-			rows := GroupTSRCellsToRows(cells)
-			if len(rows) != 2 {
-				t.Fatalf("varying heights: expected 2 rows, got %d", len(rows))
-			}
-			if len(rows[0]) != 1 || rows[0][0].Text != "A" {
-				t.Errorf("row 0: expected [A], got %v", cellTexts(rows[0]))
-			}
-		})
+	t.Run("varying heights", func(t *testing.T) {
+		cells := []pdf.TSRCell{
+			{X0: 0, Y0: 0, X1: 10, Y1: 5, Text: "A"},
+			{X0: 0, Y0: 50, X1: 10, Y1: 70, Text: "B"},
+			{X0: 0, Y0: 50, X1: 10, Y1: 70, Text: "C"},
+		}
+		rows := GroupTSRCellsToRows(cells)
+		if len(rows) != 2 {
+			t.Fatalf("varying heights: expected 2 rows, got %d", len(rows))
+		}
+		if len(rows[0]) != 1 || rows[0][0].Text != "A" {
+			t.Errorf("row 0: expected [A], got %v", cellTexts(rows[0]))
+		}
+	})
 }
 
 // ── fillCellTextFromBoxes ──────────────────────────────────────────────

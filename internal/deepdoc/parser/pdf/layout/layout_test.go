@@ -1,10 +1,10 @@
 package layout
 
 import (
-	"strings"
-	"testing"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	util "ragflow/internal/deepdoc/parser/pdf/util"
+	"strings"
+	"testing"
 )
 
 func TestAssignColumn(t *testing.T) {
@@ -82,7 +82,6 @@ func TestEndsWithOneOf(t *testing.T) {
 		t.Error("should not match")
 	}
 }
-
 
 func TestDefaultConfig(t *testing.T) {
 	cfg := pdf.DefaultParserConfig()
