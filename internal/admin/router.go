@@ -80,6 +80,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Variables/Settings
 			protected.GET("/variables", r.handler.ListVariables)
 			protected.PUT("/variables", r.handler.SetVariable)
+			protected.GET("/variables/:var_name", r.handler.ShowVariable)
 
 			// Configs
 			protected.GET("/configs", r.handler.ListConfigs)

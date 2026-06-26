@@ -574,15 +574,15 @@ func (p *Parser) parseAPIShowCurrent() (*Command, error) {
 
 func (p *Parser) parseShowVariable() (*Command, error) {
 	p.nextToken() // consume VAR
-	varName, err := p.parseIdentifier()
+	varName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
+	p.nextToken()
 
-	cmd := NewCommand("show_variable")
+	cmd := NewCommand("api_show_variable")
 	cmd.Params["var_name"] = varName
 
-	p.nextToken()
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()

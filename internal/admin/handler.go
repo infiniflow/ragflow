@@ -696,6 +696,28 @@ func (h *Handler) ListVariables(c *gin.Context) {
 	success(c, variable, "")
 }
 
+// ShowVariable handle show variable
+func (h *Handler) ShowVariable(c *gin.Context) {
+	encodedVarName := c.Param("var_name")
+	varName, err := common.DecodeFromBase64(encodedVarName)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
+	if varName == "" {
+		errorResponse(c, "Var name is required", 400)
+		return
+	}
+
+	variable, err := h.service.GetVariable(varName)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, variable, "")
+}
+
 // SetVariableHTTPRequest set variable request
 type SetVariableHTTPRequest struct {
 	VarName  string `json:"var_name" binding:"required"`
