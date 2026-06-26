@@ -39274,7 +39274,8 @@
       ],
       "model_types": [
         "chat"
-      ]
+      ],
+      "max_tokens": 1000000
     },
     {
       "name": "qwen/qwen-flash-character-2026-02-26",
@@ -39283,7 +39284,8 @@
       ],
       "model_types": [
         "chat"
-      ]
+      ],
+      "max_tokens": 1000000
     },
     {
       "name": "qwen/qwen3.5-omni-plus-realtime-2026-03-15",
@@ -39386,7 +39388,8 @@
       ],
       "model_types": [
         "chat"
-      ]
+      ],
+      "max_tokens": 131072
     },
     {
       "name": "qwen/qwen3-s2s-flash-realtime-2025-09-22",
