@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
-	"reflect"
 	"strings"
 	"unicode/utf8"
 
@@ -1468,20 +1467,6 @@ func filterRESTChatUpdates(req map[string]interface{}) map[string]interface{} {
 	return updates
 }
 
-func mapFromValue(value interface{}) (map[string]interface{}, bool) {
-	if value == nil {
-		return nil, false
-	}
-	switch typedValue := value.(type) {
-	case map[string]interface{}:
-		return typedValue, true
-	case entity.JSONMap:
-		return map[string]interface{}(typedValue), true
-	default:
-		return nil, false
-	}
-}
-
 func mergeJSONMap(base entity.JSONMap, patch map[string]interface{}) entity.JSONMap {
 	merged := entity.JSONMap{}
 	for key, value := range base {
@@ -1491,26 +1476,6 @@ func mergeJSONMap(base entity.JSONMap, patch map[string]interface{}) entity.JSON
 		merged[key] = value
 	}
 	return merged
-}
-
-func isTruthy(value interface{}) bool {
-	if value == nil {
-		return false
-	}
-	switch typedValue := value.(type) {
-	case bool:
-		return typedValue
-	case string:
-		return typedValue != ""
-	case int, int8, int16, int32, int64:
-		return reflect.ValueOf(value).Int() != 0
-	case uint, uint8, uint16, uint32, uint64:
-		return reflect.ValueOf(value).Uint() != 0
-	case float32, float64:
-		return reflect.ValueOf(value).Float() != 0
-	default:
-		return true
-	}
 }
 
 func (s *ChatService) buildRESTChatResponse(chat *entity.Chat) map[string]interface{} {
