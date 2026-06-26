@@ -1309,7 +1309,7 @@ Please correct the error and write SQL again using json_extract_string(chunk_dat
     # compose Markdown table
     columns = "|" + "|".join([map_column_name(tbl["columns"][i]["name"]) for i in column_idx]) + ("|Source|" if docid_idx and doc_name_idx else "|")
 
-    line = "|" + "|".join(["------" for _ in range(len(column_idx))]) + ("|------|" if docid_idx and docid_idx else "")
+    line = "|" + "|".join(["------" for _ in range(len(column_idx))]) + ("|------|" if docid_idx and doc_name_idx else "")
 
     # Build rows ensuring column names match values - create a dict for each row
     # keyed by column name to handle any SQL column order
