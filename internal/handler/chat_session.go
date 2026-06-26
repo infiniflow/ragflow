@@ -17,11 +17,13 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"ragflow/internal/common"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -347,6 +349,98 @@ func (h *ChatSessionHandler) GetSession(c *gin.Context) {
 		return
 	}
 	jsonResponse(c, common.CodeSuccess, result, "success")
+}
+
+// CreateSession create a session in a dialog
+func (h *ChatSessionHandler) CreateSession(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	userID := strings.TrimSpace(user.ID)
+	if userID == "" {
+		jsonError(c, common.CodeBadRequest, "user_id is required")
+		return
+	}
+
+	chatID := strings.TrimSpace(c.Param("chat_id"))
+	if chatID == "" {
+		jsonError(c, common.CodeBadRequest, "chat_id is required")
+		return
+	}
+
+	req := map[string]interface{}{}
+	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
+		if errors.Is(err, io.EOF) {
+			req = map[string]interface{}{}
+		} else {
+			jsonError(c, common.CodeArgumentError, err.Error())
+			return
+		}
+	}
+	if req == nil {
+		req = map[string]interface{}{}
+	}
+
+	result, code, err := h.chatSessionService.CreateSession(userID, chatID, req)
+	if err != nil {
+		if code == common.CodeAuthenticationError {
+			jsonResponse(c, code, false, err.Error())
+			return
+		}
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, result, "success")
+}
+
+// DeleteSessions delete a session in a dialog
+func (h *ChatSessionHandler) DeleteSessions(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	chatID := strings.TrimSpace(c.Param("chat_id"))
+	if chatID == "" {
+		jsonError(c, common.CodeBadRequest, "chat_id is required")
+		return
+	}
+
+	userID := strings.TrimSpace(user.ID)
+	if userID == "" {
+		jsonError(c, common.CodeBadRequest, "user_id is required")
+		return
+	}
+
+	req := map[string]interface{}{}
+	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
+		if errors.Is(err, io.EOF) {
+			req = map[string]interface{}{}
+		} else {
+			jsonError(c, common.CodeArgumentError, err.Error())
+			return
+		}
+	}
+	if req == nil {
+		req = map[string]interface{}{}
+	}
+
+	result, message, code, err := h.chatSessionService.DeleteSessions(userID, chatID, req)
+	if err != nil {
+		if code == common.CodeAuthenticationError {
+			jsonResponse(c, code, false, err.Error())
+			return
+		}
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, result, message)
 }
 
 func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {
