@@ -1,3 +1,4 @@
+import React from 'react';
 import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
 import classNames from 'classnames';
 import DOMPurify from 'dompurify';
