@@ -234,9 +234,10 @@ class TestSSRFValidation:
             import sys
             sys.stderr.write(f"[TEST] _safe_by_url called with url={url!r}\n")
             sys.stderr.flush()
-            if "127.0.0.1" in url or "localhost" in url:
-                raise ValueError("loopback blocked")
-            return ("api.example.com", "93.184.216.34")
+            # Raise unconditionally — the loop must terminate on the second
+            # hop. If the loop runs to "Exceeded 5 redirects", something is
+            # bypassing our mock entirely (CI-only flake).
+            raise ValueError(f"loopback blocked: called with {url!r}")
 
         mock_safe.side_effect = _safe_by_url
         mock_pin_dns.return_value = nullcontext()
