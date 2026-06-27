@@ -203,11 +203,11 @@ func clearOAuthStateCookie(c *gin.Context) {
 // Authorization header on subsequent fetches. Lifetime mirrors the
 // access-token TTL used by the rest of the app.
 func setOAuthAuthCookie(c *gin.Context, token string) {
-	// codeql[go/cookie-httponly-not-set] Intentional: this cookie is
 	// the SPA's bootstrap credential after the OAuth redirect. The
 	// SPA reads it via document.cookie and copies it into the
 	// Authorization header. Setting HttpOnly would break the login
 	// flow. The token is short-lived (7 days) and signed with itsdangerous.
+	// codeql[go/cookie-httponly-not-set] Intentional: this cookie is
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     oauthAuthCookie,
 		Value:    token,

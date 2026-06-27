@@ -191,11 +191,11 @@ func deliverMail(client *smtp.Client, from, to string, msg []byte) error {
 	if err != nil {
 		return fmt.Errorf("smtp data: %w", err)
 	}
-	// codeql[go/email-injection] False positive: deliverMail builds
 	// the RFC-822 envelope (from/to) from server-side configuration;
 	// msg is the body the caller already constructed and validated.
 	// Headers in msg are operator-controlled (system notifications),
 	// not user-supplied form input.
+	// codeql[go/email-injection] False positive: deliverMail builds
 	if _, err := w.Write(msg); err != nil {
 		w.Close()
 		return fmt.Errorf("smtp write: %w", err)

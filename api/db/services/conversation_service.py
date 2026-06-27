@@ -82,6 +82,13 @@ class ConversationService(CommonService):
         sha256_id = hashlib.sha256(
             f"{dialog_id}:{channel_id}:{chat_id}".encode("utf-8")
         ).hexdigest()[:32]
+        # codeql[py/weak-sensitive-data-hashing] Intentional: the
+        # MD5 here is a backward-compatibility lookup for rows
+        # created under the previous hashing scheme. The
+        # corresponding SHA-256 lookup is the new writer path; this
+        # MD5 is read-only and only used to find-and-migrate
+        # existing rows on first access. It is not used for
+        # authentication or any other security-sensitive purpose.
         legacy_id = hashlib.md5(
             f"{dialog_id}:{channel_id}:{chat_id}".encode("utf-8")
         ).hexdigest()[:32]

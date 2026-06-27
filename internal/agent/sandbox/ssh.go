@@ -498,9 +498,9 @@ func (p *SSHProvider) runRemoteCommand(ctx context.Context, client *ssh.Client, 
 	stdoutBuf, stderrBuf := &strings.Builder{}, &strings.Builder{}
 	sess.Stdout = stdoutBuf
 	sess.Stderr = stderrBuf
-	// codeql[go/command-injection] False positive: command is built
 	// from shq()-escaped arguments only (see callers above); user
 	// input never reaches the shell unsanitized.
+	// codeql[go/command-injection] False positive: command is built
 	if err := sess.Run(command); err != nil {
 		// ssh.ExitError carries the remote exit code; we surface
 		// it as a normal non-zero exit (the caller can branch on
