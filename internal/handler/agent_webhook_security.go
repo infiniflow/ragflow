@@ -49,10 +49,21 @@ import (
 )
 
 const (
+	// bytesPerKB / bytesPerMB use SI decimal units (1 KB = 1 000 B,
+	// 1 MB = 1 000 000 B). Per user request, the Go port diverges
+	// from python agent_api.py:1643 which uses 1 KB = 1 024 B
+	// (binary). The header doc comments on parseMaxBodySize call
+	// this out so future audits can find the divergence.
+	bytesPerKB int64 = 1000
+	bytesPerMB int64 = bytesPerKB * 1000
+
 	// webhookBodyMaxBytes is the hard ceiling above which a configured
-	// max_body_size is rejected at config-validation time. Mirrors the
-	// python MAX_LIMIT = 10 * 1024 * 1024 at agent_api.py:1652.
-	webhookBodyMaxBytes int64 = 10 * 1024 * 1024
+	// max_body_size is rejected at config-validation time. Stated
+	// in decimal MB to match the kb/mb unit base above; 10 MB
+	// decimal = 10 000 000 bytes. The python reference
+	// (agent_api.py:1652) uses 10 * 1024 * 1024 = 10 485 760 bytes,
+	// so this is ~486 KB stricter than python.
+	webhookBodyMaxBytes int64 = 10 * bytesPerMB
 
 	// webhookRateLimitTimeout is the redis call timeout used for the
 	// strict token-bucket lookup. Short on purpose — a security gate
@@ -122,6 +133,16 @@ func validateMaxBodySize(c *gin.Context, cfg map[string]any) error {
 // http.MaxBytesReader so the actual stream read is bounded — the
 // Content-Length header check alone is insufficient because a client
 // can advertise a small Content-Length and stream more.
+//
+// Unit base: 1 kb = 1 000 B, 1 mb = 1 000 000 B (SI decimal). Per
+// user request; note this DIVERGES from the python reference
+// (agent_api.py:1643 uses binary 1 KB = 1 024 B).
+//
+// Overflow guard (CodeRabbit PR review #3 on PR #16403): a very
+// large configured n (e.g. "10000000mb") would otherwise overflow
+// `n * bytesPerMB` and wrap to a small positive number, bypassing
+// the 10 MB cap. We check the parsed number against the cap before
+// multiplying.
 func parseMaxBodySize(cfg map[string]any) (int64, error) {
 	raw, ok := cfg["max_body_size"].(string)
 	if !ok || raw == "" {
@@ -135,13 +156,19 @@ func parseMaxBodySize(cfg map[string]any) (int64, error) {
 		if err != nil || n <= 0 {
 			return 0, fmt.Errorf("invalid max_body_size format")
 		}
-		limit = n * 1024
+		if n > webhookBodyMaxBytes/bytesPerKB {
+			return 0, fmt.Errorf("max_body_size exceeds maximum allowed size (10MB)")
+		}
+		limit = n * bytesPerKB
 	case strings.HasSuffix(sizeStr, "mb"):
 		n, err := strconv.ParseInt(strings.TrimSuffix(sizeStr, "mb"), 10, 64)
 		if err != nil || n <= 0 {
 			return 0, fmt.Errorf("invalid max_body_size format")
 		}
-		limit = n * 1024 * 1024
+		if n > webhookBodyMaxBytes/bytesPerMB {
+			return 0, fmt.Errorf("max_body_size exceeds maximum allowed size (10MB)")
+		}
+		limit = n * bytesPerMB
 	default:
 		return 0, fmt.Errorf("invalid max_body_size format")
 	}
@@ -267,6 +294,11 @@ func validateAuth(c *gin.Context, cfg map[string]any) error {
 }
 
 // validateTokenAuth mirrors python agent_api.py:1725-1733.
+//
+// An empty configured `token_value` previously meant "accept any
+// request without that header". We now require both header and
+// value to be non-empty configured secrets, otherwise the request
+// is rejected as misconfigured. CodeRabbit PR review #4.
 func validateTokenAuth(c *gin.Context, cfg map[string]any) error {
 	rawToken, _ := cfg["token"].(map[string]any)
 	if rawToken == nil {
@@ -274,7 +306,7 @@ func validateTokenAuth(c *gin.Context, cfg map[string]any) error {
 	}
 	header, _ := rawToken["token_header"].(string)
 	want, _ := rawToken["token_value"].(string)
-	if header == "" {
+	if header == "" || want == "" {
 		return fmt.Errorf("Invalid token authentication")
 	}
 	if c.GetHeader(header) != want {
@@ -285,7 +317,8 @@ func validateTokenAuth(c *gin.Context, cfg map[string]any) error {
 
 // validateBasicAuth mirrors python agent_api.py:1735-1743. We use
 // gin's c.Request.BasicAuth() which parses the Authorization header
-// and returns the (user, pass, ok) triple.
+// and returns the (user, pass, ok) triple. Empty configured
+// username/password are now rejected (CodeRabbit PR review #4).
 func validateBasicAuth(c *gin.Context, cfg map[string]any) error {
 	rawBasic, _ := cfg["basic_auth"].(map[string]any)
 	if rawBasic == nil {
@@ -293,6 +326,9 @@ func validateBasicAuth(c *gin.Context, cfg map[string]any) error {
 	}
 	username, _ := rawBasic["username"].(string)
 	password, _ := rawBasic["password"].(string)
+	if username == "" || password == "" {
+		return fmt.Errorf("Invalid Basic Auth credentials")
+	}
 	u, p, ok := c.Request.BasicAuth()
 	if !ok || u != username || p != password {
 		return fmt.Errorf("Invalid Basic Auth credentials")

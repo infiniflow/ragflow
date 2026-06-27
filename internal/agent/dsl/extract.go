@@ -35,10 +35,15 @@ import "fmt"
 // the runtime Canvas type).
 //
 // Returns:
-//   - the form-schema dict if present and non-nil
+//   - the form-schema dict if present and well-typed
 //   - ErrComponentNotFound if the componentID is missing from dsl
 //   - ErrMissingInputForm if the component exists but has no input_form
-//   - ErrMalformedDSL for other structural problems
+//   - ErrMalformedDSL if the field is present but the wrong type
+//
+// Type errors (input_form is e.g. a list or a string) are NOT
+// collapsed into ErrMissingInputForm — they would mask a contract
+// violation in the DSL and let DebugComponent run against corrupt
+// data. CodeRabbit PR review #1 on PR #16403.
 func ExtractComponentInputForm(dsl map[string]any, componentID string) (map[string]any, error) {
 	comp, err := navigateToComponent(dsl, componentID)
 	if err != nil {
@@ -48,9 +53,13 @@ func ExtractComponentInputForm(dsl map[string]any, componentID string) (map[stri
 	if !ok {
 		return nil, fmt.Errorf("%w: component %q has no obj", ErrMalformedDSL, componentID)
 	}
-	form, ok := obj["input_form"].(map[string]any)
-	if !ok {
+	rawForm, exists := obj["input_form"]
+	if !exists || rawForm == nil {
 		return nil, fmt.Errorf("%w: component %q has no input_form", ErrMissingInputForm, componentID)
+	}
+	form, ok := rawForm.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("%w: component %q input_form is not a dict", ErrMalformedDSL, componentID)
 	}
 	return form, nil
 }
@@ -58,7 +67,8 @@ func ExtractComponentInputForm(dsl map[string]any, componentID string) (map[stri
 // ExtractComponentParams returns the params map stored at
 // `dsl["components"][componentID]["obj"]["params"]`. The debug handler
 // uses this to build the inputs map for the runtime Component.Invoke
-// call.
+// call. Type errors collapse to ErrMalformedDSL (CodeRabbit PR
+// review #1).
 func ExtractComponentParams(dsl map[string]any, componentID string) (map[string]any, error) {
 	comp, err := navigateToComponent(dsl, componentID)
 	if err != nil {
@@ -68,7 +78,14 @@ func ExtractComponentParams(dsl map[string]any, componentID string) (map[string]
 	if !ok {
 		return nil, fmt.Errorf("%w: component %q has no obj", ErrMalformedDSL, componentID)
 	}
-	params, _ := obj["params"].(map[string]any)
+	rawParams, exists := obj["params"]
+	if !exists || rawParams == nil {
+		return nil, nil
+	}
+	params, ok := rawParams.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("%w: component %q params is not a dict", ErrMalformedDSL, componentID)
+	}
 	return params, nil
 }
 

@@ -231,6 +231,30 @@ func TestDebugComponent_InvalidParams_MissingField(t *testing.T) {
 	}
 }
 
+// TestDebugComponent_InvalidParams_MissingValue covers CodeRabbit
+// PR review #2: `{"params":{"q":{}}}` (no `value` key) should
+// fail-fast with 101 rather than silently invoking the component
+// with inputs["q"]=nil.
+func TestDebugComponent_InvalidParams_MissingValue(t *testing.T) {
+	cv := beginCanvas()
+	h := &AgentHandler{loader: &fakeCanvasLoader{canvas: cv}}
+
+	c, w := componentCtx(t, "POST", "/api/v1/agents/c1/components/begin/debug", `{"params":{"q":{}}}`)
+	c.Params = gin.Params{
+		{Key: "canvas_id", Value: "c1"},
+		{Key: "component_id", Value: "begin"},
+	}
+	h.DebugComponent(c)
+
+	code, msg := errBody(t, w.Body.Bytes())
+	if code != 101 {
+		t.Errorf("code = %d, want 101; msg=%q", code, msg)
+	}
+	if !strings.Contains(msg, "value") {
+		t.Errorf("msg = %q, want mention of 'value'", msg)
+	}
+}
+
 func TestDebugComponent_UnknownComponent(t *testing.T) {
 	cv := beginCanvas()
 	h := &AgentHandler{loader: &fakeCanvasLoader{canvas: cv}}

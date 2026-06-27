@@ -112,6 +112,25 @@ func TestExtractComponentParams_NoParams(t *testing.T) {
 	}
 }
 
+// TestExtractComponentParams_WrongType pins that a present-but-
+// wrongly-typed params field is ErrMalformedDSL. CodeRabbit PR #1.
+func TestExtractComponentParams_WrongType(t *testing.T) {
+	dsl := map[string]any{
+		"components": map[string]any{
+			"bad": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Begin",
+					"params":         "this is a string, not a dict",
+				},
+			},
+		},
+	}
+	_, err := ExtractComponentParams(dsl, "bad")
+	if !errors.Is(err, ErrMalformedDSL) {
+		t.Errorf("err = %v, want ErrMalformedDSL", err)
+	}
+}
+
 func TestExtractComponentName_HappyPath(t *testing.T) {
 	got, err := ExtractComponentName(happyDSL(), "begin")
 	if err != nil {

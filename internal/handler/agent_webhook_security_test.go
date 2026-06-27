@@ -316,3 +316,58 @@ func TestValidateRateLimit_BadLimit(t *testing.T) {
 // inline above.)
 // _securityUnused previously lived here as a placeholder; deleted
 // during cleanup (code-review MEDIUM-2).
+
+// TestValidateMaxBodySize_OverflowGuard covers CodeRabbit PR review
+// #3: a configured n that would overflow n*bytesPerMB (e.g. a huge
+// mb value) must be rejected before the multiplication, not
+// silently wrap to a small number and pass the cap check.
+func TestValidateMaxBodySize_OverflowGuard(t *testing.T) {
+	c := securityCtx(t, "1.2.3.4:0", nil)
+	err := validateMaxBodySize(c, map[string]any{"max_body_size": "999999999mb"})
+	if err == nil {
+		t.Errorf("huge mb value: err = nil, want overflow-rejection error")
+	} else if !strings.Contains(err.Error(), "exceeds maximum") {
+		t.Errorf("err = %v, want 'exceeds maximum'", err)
+	}
+}
+
+// TestParseMaxBodySize_DecimalUnits documents the per-user-request
+// SI-decimal unit base: 1 kb = 1 000 B, 1 mb = 1 000 000 B.
+// (The python reference uses 1 024 / 1 048 576.)
+func TestParseMaxBodySize_DecimalUnits(t *testing.T) {
+	cases := []struct {
+		in   string
+		want int64
+	}{
+		{"1kb", 1000},
+		{"5kb", 5000},
+		{"1mb", 1_000_000},
+		{"10mb", 10_000_000}, // exact cap
+	}
+	for _, tc := range cases {
+		got, err := parseMaxBodySize(map[string]any{"max_body_size": tc.in})
+		if err != nil {
+			t.Errorf("parseMaxBodySize(%q): err = %v, want nil", tc.in, err)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("parseMaxBodySize(%q) = %d, want %d", tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestValidateTokenAuth_EmptyValueRejected covers CodeRabbit PR
+// review #4: an empty configured token_value used to mean "accept
+// any request without that header". Now it must be rejected.
+func TestValidateTokenAuth_EmptyValueRejected(t *testing.T) {
+	cfg := map[string]any{
+		"token": map[string]any{
+			"token_header": "X-Token",
+			"token_value":  "",
+		},
+	}
+	c := securityCtx(t, "1.2.3.4:0", nil) // no header at all
+	if err := validateTokenAuth(c, cfg); err == nil {
+		t.Errorf("empty token_value: err = nil, want error")
+	}
+}

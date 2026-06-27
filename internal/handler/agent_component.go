@@ -129,12 +129,23 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 	// {param: {value: ...}} shape into {param: value}. Mirrors python
 	// agent_api.py:830 (`component.invoke(**{k: o["value"] for k, o in
 	// req["params"].items()})`).
+	//
+	// The body contract requires `params.*.value` — a missing value
+	// field used to slip through as nil and still invoke the
+	// component, which silently corrupted debug input. Now we fail
+	// fast. CodeRabbit PR review #2.
 	inputs := make(map[string]any, len(body.Params))
 	for k, v := range body.Params {
 		if v == nil {
-			continue
+			jsonError(c, common.CodeArgumentError, "`params."+k+".value` is required.")
+			return
 		}
-		inputs[k] = v["value"]
+		value, ok := v["value"]
+		if !ok {
+			jsonError(c, common.CodeArgumentError, "`params."+k+".value` is required.")
+			return
+		}
+		inputs[k] = value
 	}
 
 	factory := runtime.DefaultFactory()
