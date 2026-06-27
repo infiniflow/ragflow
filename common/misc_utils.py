@@ -135,16 +135,14 @@ async def download_img(url):
             kind, payload = await asyncio.wait_for(_stream_one_get(), timeout=request_timeout)
         except asyncio.TimeoutError:
             logger.warning(
-                "download_img total wall-clock timeout: url=%r redirect_hops=%s timeout=%s",
-                current_url,
+                "download_img total wall-clock timeout: redirect_hops=%s timeout=%s",
                 redirect_hops,
                 request_timeout,
             )
             return ""
         except Exception as exc:
             logger.warning(
-                "download_img request failed: url=%r redirect_hops=%s err=%s",
-                current_url,
+                "download_img request failed: redirect_hops=%s err=%s",
                 redirect_hops,
                 exc,
             )

@@ -559,7 +559,6 @@ func (o *OpenRouterModel) TranscribeAudio(modelName *string, file *string, apiCo
 
 	// codeql[go/path-injection] False positive: *file is the audio file path the caller passes in to upload. The user (or operator-supplied pipeline) explicitly chose this path, and the OS access check enforces permissions anyway.
 
-
 	audio, err := os.ReadFile(*file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read audio file: %w", err)

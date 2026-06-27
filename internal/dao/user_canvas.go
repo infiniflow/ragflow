@@ -54,6 +54,7 @@ func userCanvasOrderClause(orderby string, desc bool) string {
 	}
 	return orderby + " ASC"
 }
+
 var ErrUserCanvasNotFound = errors.New("user_canvas: not found or access denied")
 
 // UserCanvasDAO user canvas data access object
@@ -192,14 +193,12 @@ func (dao *UserCanvasDAO) GetList(tenantID string, pageNumber, itemsPerPage int,
 	}
 
 	// Order by
-	// codeql[go/sql-injection] False positive: orderby is constrained to
-	// a closed allowlist by userCanvasOrderClause above (defaults to
-	// "create_time" on miss), so only safe column names reach Order().
-	if desc {
-		query = query.Order(orderby + " DESC")
-	} else {
-		query = query.Order(orderby + " ASC")
-	}
+	// Route orderby through userCanvasOrderClause above so user-supplied
+	// query params can never reach Order() verbatim. The helper validates
+	// against userCanvasOrderableColumns (a closed allowlist) and falls
+	// back to "create_time" on any miss, so the string spliced into the
+	// SQL fragment is always one of a fixed set of column names.
+	query = query.Order(userCanvasOrderClause(orderby, desc))
 
 	// Pagination
 	if pageNumber > 0 && itemsPerPage > 0 {

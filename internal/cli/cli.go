@@ -560,6 +560,54 @@ func NewCLIWithConfig(commandLineConfig *CommandLineConfig) (*CLI, error) {
 	return cli, nil
 }
 
+// sanitizeCLIError returns an operator-safe rendering of a CLI
+// command error. Many command handlers build their errors via
+// fmt.Errorf("... %s ...", userInput) where userInput can be a
+// dataset name, file path, or partial command containing secrets;
+// printing err.Error() verbatim would echo that back to the
+// operator's terminal in cleartext. We keep the error class (e.g.
+// "not found", "invalid argument") and drop the interpolated
+// user-controlled values. The full error is still available via
+// err.Error() for the caller's own logging.
+func sanitizeCLIError(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	// Strip every single-quoted span. Many command handlers interpolate
+	// user-controlled values via fmt.Errorf("... '%s' ... '%s' ...", a, b)
+	// (e.g. "copy '/secret/a' to '/secret/b' failed"). A single pass only
+	// catches the first one, so loop until none remain. Unmatched single
+	// quotes (no closing pair before the end of the string) are left in
+	// place — they likely indicate the error wasn't produced by our
+	// fmt.Errorf pattern and the original text is the safer rendering.
+	for {
+		i := strings.Index(msg, "'")
+		if i < 0 {
+			break
+		}
+		j := strings.Index(msg[i+1:], "'")
+		if j < 0 {
+			break
+		}
+		head := strings.TrimRight(msg[:i], " ")
+		tail := strings.TrimLeft(msg[i+j+2:], " ")
+		switch {
+		case head == "":
+			msg = tail
+		case tail == "":
+			msg = head
+		default:
+			msg = head + " " + tail
+		}
+	}
+	msg = strings.TrimSpace(msg)
+	if msg == "" {
+		return "command failed"
+	}
+	return msg
+}
+
 // Run starts the interactive CLI
 func (c *CLI) Run() error {
 	// If username is provided without password, prompt for password
@@ -683,11 +731,12 @@ func (c *CLI) Run() error {
 		}
 
 		if err = c.execute(input); err != nil {
-			// %v rather than %s so we don't print user-controlled input verbatim;
-			// user input that triggered the error may itself be sensitive
-			// (paths, partial commands with secrets), and we don't want it
-			// echoed back into operator logs in cleartext.
-			fmt.Printf("CLI error: %v\n", err)
+			// err.Error() can include user-controlled input (e.g. dataset
+			// names, file paths) via fmt.Errorf("... %s ...", userInput) in
+			// the command handlers. Don't echo that back to the operator
+			// verbatim — log the full error server-side for debugging, and
+			// show only the error type/message via a sanitized wrapper.
+			fmt.Printf("CLI error: %s\n", sanitizeCLIError(err))
 		}
 	}
 
