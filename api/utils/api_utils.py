@@ -425,12 +425,21 @@ def get_data_openai(id=None, created=None, model=None, prompt_tokens=0, completi
         return {
             "id": f"{id}",
             "object": "chat.completion.chunk",
+            "created": created if created is not None else int(time.time()),
             "model": model,
+            "system_fingerprint": "",
+            "usage": None,
             "choices": [
                 {
-                    "delta": {"content": content},
+                    "delta": {
+                        "content": content,
+                        "role": "assistant",
+                        "function_call": None,
+                        "tool_calls": None,
+                    },
                     "finish_reason": finish_reason,
                     "index": 0,
+                    "logprobs": None,
                 }
             ],
         }
