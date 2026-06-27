@@ -67,6 +67,24 @@ class Base(ABC):
         self.base_delay = float(os.environ.get("LLM_BASE_DELAY", 2.0))
         self.is_tools = False
 
+    def _debug_log_llm_response(self, stage, response):
+        if not logging.getLogger().isEnabledFor(logging.DEBUG):
+            return
+        try:
+            if hasattr(response, "model_dump_json"):
+                payload = response.model_dump_json(exclude_none=True)
+            elif hasattr(response, "model_dump"):
+                payload = json.dumps(response.model_dump(exclude_none=True), ensure_ascii=False)
+            else:
+                payload = json.dumps(response, ensure_ascii=False, default=str)
+        except Exception:
+            payload = str(response)
+
+        max_len = int(os.environ.get("LLM_DEBUG_RESPONSE_MAX_LEN", 20000))
+        if len(payload) > max_len:
+            payload = payload[:max_len] + "...(truncated)"
+        logging.debug("LLM response [%s]: %s", stage, payload)
+
     def _get_delay(self, attempt):
         """Calculate retry delay time"""
         return self.base_delay * (2**attempt) + random.uniform(0, 0.5)
@@ -118,6 +136,7 @@ class Base(ABC):
         for attempt in range(self.max_retries):
             try:
                 response = self.client.chat.completions.create(model=self.model_name, messages=history, tools=tools, **gen_conf)
+                self._debug_log_llm_response("chat_with_tools.initial", response)
 
                 assistant_output = response.choices[0].message
                 if not ans and "tool_calls" not in assistant_output and "reasoning_content" in assistant_output:
@@ -150,6 +169,7 @@ class Base(ABC):
                     history.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_response)})
 
                 final_response = self.client.chat.completions.create(model=self.model_name, messages=history, tools=tools, **gen_conf)
+                self._debug_log_llm_response("chat_with_tools.final", final_response)
                 assistant_output = final_response.choices[0].message
                 if "tool_calls" not in assistant_output and "reasoning_content" in assistant_output:
                     ans += "<think>" + ans + "</think>"
@@ -191,6 +211,7 @@ class Base(ABC):
         for attempt in range(self.max_retries):
             try:
                 response = self.client.chat.completions.create(model=self.model_name, messages=history, **gen_conf)
+                self._debug_log_llm_response("chat", response)
 
                 if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):
                     return "", 0
@@ -251,6 +272,7 @@ class Base(ABC):
             response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, **gen_conf)
             while not finish_completion:
                 for resp in response:
+                    self._debug_log_llm_response("chat_streamly_with_tools.chunk", resp)
                     if resp.choices[0].delta.tool_calls:
                         for tool_call in resp.choices[0].delta.tool_calls or []:
                             index = tool_call.index
@@ -348,6 +370,7 @@ class Base(ABC):
         try:
             response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf)
             for resp in response:
+                self._debug_log_llm_response("chat_streamly.chunk", resp)
                 if not resp.choices:
                     continue
                 if not resp.choices[0].delta.content:
