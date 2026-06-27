@@ -694,6 +694,9 @@ class RestAPIConnector(LoadConnector, PollConnector):
             # Normalize SSRF validation failures to the connector's documented
             # ConnectorValidationError so they don't leak ValueError out of
             # _page_iter_for_validation(). (Coderabbit MAJOR #3486038789)
+            import sys as _dbg_sys
+            _dbg_sys.stderr.write(f"[DBG_PROD] _safe_request iter url={current_url!r} aus={assert_url_is_safe!r}\n")
+            _dbg_sys.stderr.flush()
             try:
                 hostname, pin_ip = assert_url_is_safe(current_url)
             except ValueError as exc:
