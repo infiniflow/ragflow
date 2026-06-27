@@ -282,6 +282,9 @@ def test_invoke_rejects_private_url(monkeypatch):
         "assert_url_is_safe",
         MagicMock(side_effect=ValueError("URL resolves to a non-public address")),
     )
+    # Coderabbit MAJOR #3486038793: _build_url() is now inside the retry
+    # try/except block, so the ValueError from assert_url_is_safe is caught
+    # and the message is stored in _ERROR via the standard error path.
     invoke._invoke()
     assert "non-public address" in invoke._param.outputs["_ERROR"]
 
