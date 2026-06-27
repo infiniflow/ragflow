@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from unittest.mock import MagicMock, patch
 from urllib.parse import urlparse
 
@@ -210,6 +210,64 @@ class TestSSRFValidation:
         """file:// should be rejected."""
         with pytest.raises(ConnectorValidationError, match="scheme"):
             _make_connector(url="file:///etc/passwd")
+
+    @patch("common.data_source.rest_api_connector.assert_url_is_safe")
+    @patch("common.data_source.rest_api_connector.pin_dns")
+    def test_redirect_to_loopback_rejected(self, mock_pin_dns, mock_safe):
+        """Redirect targets must be revalidated before they are fetched."""
+        connector = _make_connector()
+        first = _mock_response([], status_code=302)
+        first.headers = {"Location": "http://127.0.0.1/secret"}
+        mock_safe.side_effect = [
+            ("api.example.com", "93.184.216.34"),
+            ValueError("loopback blocked"),
+        ]
+        mock_pin_dns.return_value = nullcontext()
+
+        with _mocked_rest_api_requests_and_dns() as mock_rl:
+            mock_rl.get.return_value = first
+            with pytest.raises(ValueError, match="loopback blocked"):
+                connector._fetch_page({})
+
+        assert mock_safe.call_count == 2
+
+    @patch("common.data_source.rest_api_connector.assert_url_is_safe")
+    @patch("common.data_source.rest_api_connector.pin_dns")
+    def test_post_307_preserves_body(self, mock_pin_dns, mock_safe):
+        """307 redirects should keep method and JSON body."""
+        connector = _make_connector(method="POST", request_body={"hello": "world"})
+        first = _mock_response([], status_code=307)
+        first.headers = {"Location": "https://api.example.com/redirected"}
+        second = _mock_response({"items": []}, status_code=200)
+        mock_safe.side_effect = [
+            ("api.example.com", "93.184.216.34"),
+            ("api.example.com", "93.184.216.34"),
+        ]
+        mock_pin_dns.return_value = nullcontext()
+
+        with _mocked_rest_api_requests_and_dns() as mock_rl:
+            mock_rl.post.side_effect = [first, second]
+            connector._fetch_page({})
+
+        assert mock_rl.post.call_count == 2
+        assert mock_rl.post.call_args_list[0].kwargs["json"] == {"hello": "world"}
+        assert mock_rl.post.call_args_list[1].kwargs["json"] == {"hello": "world"}
+        assert mock_rl.post.call_args_list[1].kwargs["allow_redirects"] is False
+
+    @patch("common.data_source.rest_api_connector.assert_url_is_safe")
+    @patch("common.data_source.rest_api_connector.pin_dns")
+    def test_exceeds_max_redirects_raises(self, mock_pin_dns, mock_safe):
+        """Too many redirects should raise a connector validation error."""
+        connector = _make_connector()
+        redirect = _mock_response([], status_code=302)
+        redirect.headers = {"Location": "https://api.example.com/next"}
+        mock_safe.side_effect = [("api.example.com", "93.184.216.34")] * 6
+        mock_pin_dns.return_value = nullcontext()
+
+        with _mocked_rest_api_requests_and_dns() as mock_rl:
+            mock_rl.get.side_effect = [redirect] * 6
+            with pytest.raises(ConnectorValidationError, match="Exceeded 5 redirects"):
+                connector._fetch_page({})
 
 
 # ===================================================================== #

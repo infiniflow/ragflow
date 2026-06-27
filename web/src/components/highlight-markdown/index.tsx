@@ -1,5 +1,6 @@
 import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
 import classNames from 'classnames';
+import DOMPurify from 'dompurify';
 import Markdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import {
@@ -25,6 +26,7 @@ const HighLightMarkdown = ({
   children: string | null | undefined;
 }) => {
   const isDarkTheme = useIsDarkTheme();
+  const safeChildren = children ? DOMPurify.sanitize(children) : children;
   const dir = children
     ? getDirAttribute(children.replace(citationMarkerReg, ''))
     : undefined;
@@ -60,7 +62,7 @@ const HighLightMarkdown = ({
           } as any
         }
       >
-        {children ? preprocessLaTeX(children) : children}
+        {safeChildren ? preprocessLaTeX(safeChildren) : safeChildren}
       </Markdown>
     </div>
   );
