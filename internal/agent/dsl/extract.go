@@ -131,3 +131,72 @@ func navigateToComponent(dsl map[string]any, componentID string) (map[string]any
 	}
 	return cm, nil
 }
+
+// FindBeginComponentID returns the component_id of the canvas component
+// whose obj.component_name == "Begin". Returns ErrComponentNotFound if
+// no such component exists. Mirrors python Canvas.begin_component_id
+// (api/agent/canvas.py:180).
+//
+// `Begin` is a component NAME (stored at obj.component_name), not a
+// component ID. The two are related but not identical; a canvas can
+// have a component named "Begin" whose ID is e.g. "sally:0". Callers
+// that need to read fields off the begin component must use this
+// helper to resolve the name to the ID, then pass the ID to
+// navigateToComponent (or any of the ExtractComponent* helpers).
+func FindBeginComponentID(dsl map[string]any) (string, error) {
+	if dsl == nil {
+		return "", fmt.Errorf("%w: nil dsl", ErrMalformedDSL)
+	}
+	comps, ok := dsl["components"].(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("%w: missing components map", ErrMalformedDSL)
+	}
+	for id, raw := range comps {
+		cm, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		obj, _ := cm["obj"].(map[string]any)
+		name, _ := obj["component_name"].(string)
+		if name == "Begin" {
+			return id, nil
+		}
+	}
+	return "", fmt.Errorf("%w: Begin component", ErrComponentNotFound)
+}
+
+// ExtractPrologue mirrors python Canvas.get_prologue
+// (api/agent/canvas.py:190) — returns the "prologue" string stored at
+// dsl["components"][<begin_id>]["obj"]["prologue"]. Reuses the
+// shared navigateToComponent helper so the addressing rule is
+// consistent with ExtractComponentInputForm.
+func ExtractPrologue(dsl map[string]any) (string, error) {
+	id, err := FindBeginComponentID(dsl)
+	if err != nil {
+		return "", err
+	}
+	comp, err := navigateToComponent(dsl, id)
+	if err != nil {
+		return "", err
+	}
+	obj, _ := comp["obj"].(map[string]any)
+	s, _ := obj["prologue"].(string)
+	return s, nil
+}
+
+// ExtractMode mirrors python Canvas.get_mode (api/agent/canvas.py:200).
+// Returns the canvas mode (e.g. "Agent" / "DataFlow") stored at
+// dsl["components"][<begin_id>]["obj"]["mode"].
+func ExtractMode(dsl map[string]any) (string, error) {
+	id, err := FindBeginComponentID(dsl)
+	if err != nil {
+		return "", err
+	}
+	comp, err := navigateToComponent(dsl, id)
+	if err != nil {
+		return "", err
+	}
+	obj, _ := comp["obj"].(map[string]any)
+	s, _ := obj["mode"].(string)
+	return s, nil
+}

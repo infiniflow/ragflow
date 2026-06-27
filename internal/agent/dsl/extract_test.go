@@ -147,3 +147,120 @@ func TestExtractComponentName_NotFound(t *testing.T) {
 		t.Errorf("err = %v, want ErrComponentNotFound", err)
 	}
 }
+
+// TestFindBeginComponentID_HappyPath covers the common case where the
+// component ID is literally "begin" (mirrors the
+// internal/agent/dsl/testdata fixtures).
+func TestFindBeginComponentID_HappyPath(t *testing.T) {
+	id, err := FindBeginComponentID(happyDSL())
+	if err != nil {
+		t.Fatalf("err = %v, want nil", err)
+	}
+	if id != "begin" {
+		t.Errorf("id = %q, want begin", id)
+	}
+}
+
+// TestFindBeginComponentID_DifferentID ensures the helper resolves
+// the name to whatever ID the canvas uses (mirrors real-world
+// canvases where IDs are sally:0 / jack:0 etc.).
+func TestFindBeginComponentID_DifferentID(t *testing.T) {
+	dsl := map[string]any{
+		"components": map[string]any{
+			"sally:0": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Begin",
+				},
+			},
+			"jack:0": map[string]any{
+				"obj": map[string]any{
+					"component_name": "LLM",
+				},
+			},
+		},
+	}
+	id, err := FindBeginComponentID(dsl)
+	if err != nil {
+		t.Fatalf("err = %v, want nil", err)
+	}
+	if id != "sally:0" {
+		t.Errorf("id = %q, want sally:0", id)
+	}
+}
+
+// TestFindBeginComponentID_NotFound pins that a canvas with no begin
+// component returns ErrComponentNotFound. The service layer maps this
+// to an empty fallback (degrades gracefully, no panic).
+func TestFindBeginComponentID_NotFound(t *testing.T) {
+	dsl := map[string]any{
+		"components": map[string]any{
+			"jack:0": map[string]any{
+				"obj": map[string]any{
+					"component_name": "LLM",
+				},
+			},
+		},
+	}
+	_, err := FindBeginComponentID(dsl)
+	if !errors.Is(err, ErrComponentNotFound) {
+		t.Errorf("err = %v, want ErrComponentNotFound", err)
+	}
+}
+
+// TestFindBeginComponentID_NilDSL pins that a nil dsl returns
+// ErrMalformedDSL (not a nil-deref panic).
+func TestFindBeginComponentID_NilDSL(t *testing.T) {
+	_, err := FindBeginComponentID(nil)
+	if !errors.Is(err, ErrMalformedDSL) {
+		t.Errorf("err = %v, want ErrMalformedDSL", err)
+	}
+}
+
+// TestExtractPrologue_HappyPath pins the prologue lookup path.
+func TestExtractPrologue_HappyPath(t *testing.T) {
+	dsl := happyDSL()
+	dsl["components"].(map[string]any)["begin"].(map[string]any)["obj"].(map[string]any)["prologue"] = "hello"
+	got, err := ExtractPrologue(dsl)
+	if err != nil {
+		t.Fatalf("err = %v, want nil", err)
+	}
+	if got != "hello" {
+		t.Errorf("prologue = %q, want hello", got)
+	}
+}
+
+// TestExtractPrologue_NotFound pins that a missing begin component
+// returns ErrComponentNotFound (the service layer turns this into
+// empty-string fallback).
+func TestExtractPrologue_NotFound(t *testing.T) {
+	_, err := ExtractPrologue(map[string]any{
+		"components": map[string]any{},
+	})
+	if !errors.Is(err, ErrComponentNotFound) {
+		t.Errorf("err = %v, want ErrComponentNotFound", err)
+	}
+}
+
+// TestExtractMode_HappyPath pins the mode lookup path.
+func TestExtractMode_HappyPath(t *testing.T) {
+	dsl := happyDSL()
+	dsl["components"].(map[string]any)["begin"].(map[string]any)["obj"].(map[string]any)["mode"] = "Agent"
+	got, err := ExtractMode(dsl)
+	if err != nil {
+		t.Fatalf("err = %v, want nil", err)
+	}
+	if got != "Agent" {
+		t.Errorf("mode = %q, want Agent", got)
+	}
+}
+
+// TestExtractMode_NotFound pins that a missing begin component
+// returns ErrComponentNotFound.
+func TestExtractMode_NotFound(t *testing.T) {
+	_, err := ExtractMode(map[string]any{
+		"components": map[string]any{},
+	})
+	if !errors.Is(err, ErrComponentNotFound) {
+		t.Errorf("err = %v, want ErrComponentNotFound", err)
+	}
+}
