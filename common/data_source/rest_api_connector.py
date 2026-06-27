@@ -658,6 +658,17 @@ class RestAPIConnector(LoadConnector, PollConnector):
         except ValueError as exc:
             raise ConnectorValidationError("REST API response is not valid JSON") from exc
 
+    # Headers that carry auth state. Stripped on cross-origin redirects to
+    # prevent credential exfiltration to a third-party host. (Coderabbit MAJOR #3486038792)
+    _AUTH_SENSITIVE_HEADER_KEYS = frozenset({
+        "authorization",
+        "proxy-authorization",
+        "apikey",
+        "api-key",
+        "x-api-key",
+        "x-auth-token",
+    })
+
     def _safe_request(
         self,
         method: str,
@@ -674,16 +685,28 @@ class RestAPIConnector(LoadConnector, PollConnector):
         current_body = body
         current_json = json_body
         current_params = dict(params)
+        # Local auth handle: cleared when crossing origins, even though
+        # ``self._basic_auth`` may still hold the original credentials.
+        current_auth = self._basic_auth
+        previous_netloc = urlparse(current_url).netloc
 
         for _ in range(_MAX_REDIRECTS + 1):
-            hostname, pin_ip = assert_url_is_safe(current_url)
+            # Normalize SSRF validation failures to the connector's documented
+            # ConnectorValidationError so they don't leak ValueError out of
+            # _page_iter_for_validation(). (Coderabbit MAJOR #3486038789)
+            try:
+                hostname, pin_ip = assert_url_is_safe(current_url)
+            except ValueError as exc:
+                raise ConnectorValidationError(
+                    f"Unsafe REST API URL: {exc}"
+                ) from exc
             with pin_dns(hostname, pin_ip):
                 if current_method == "GET":
                     resp = rl_requests.get(
                         current_url,
                         headers=headers,
                         params=current_params,
-                        auth=self._basic_auth,
+                        auth=current_auth,
                         timeout=60,
                         allow_redirects=False,
                     )
@@ -693,7 +716,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
                         headers=headers,
                         params=current_params,
                         json=current_json,
-                        auth=self._basic_auth,
+                        auth=current_auth,
                         timeout=60,
                         allow_redirects=False,
                     )
@@ -703,7 +726,7 @@ class RestAPIConnector(LoadConnector, PollConnector):
                         current_url,
                         headers=headers,
                         params=current_params,
-                        auth=self._basic_auth,
+                        auth=current_auth,
                         timeout=60,
                         data=current_body,
                         json=current_json,
@@ -718,10 +741,26 @@ class RestAPIConnector(LoadConnector, PollConnector):
                 return resp
 
             current_url = urljoin(current_url, location)
+            next_netloc = urlparse(current_url).netloc
+
+            # Coderabbit MAJOR #3486038792: strip credentials when the redirect
+            # crosses to a different origin so a public→private redirect chain
+            # cannot exfiltrate Bearer/Basic/API-key headers.
+            if next_netloc and next_netloc != previous_netloc:
+                headers = {
+                    k: v
+                    for k, v in headers.items()
+                    if k.lower() not in self._AUTH_SENSITIVE_HEADER_KEYS
+                }
+                current_auth = None
+            previous_netloc = next_netloc
+
             if resp.status_code in (301, 302, 303):
                 current_method = "GET"
                 current_body = None
                 current_json = None
+                # Clear carried params — only the new Location URL's query
+                # string should apply for the downgraded GET.
                 current_params = {}
 
         raise ConnectorValidationError(f"Exceeded {_MAX_REDIRECTS} redirects fetching {url!r}")
