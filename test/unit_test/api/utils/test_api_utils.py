@@ -51,6 +51,22 @@ def test_get_data_openai_stream_preserves_explicit_created_value():
     assert data["created"] == 0
 
 
+def test_get_data_openai_terminal_stream_chunk_includes_usage():
+    data = api_utils.get_data_openai(prompt_tokens=3, completion_tokens=5, content=None, finish_reason="stop", stream=True)
+
+    assert data["usage"] == {
+        "prompt_tokens": 3,
+        "completion_tokens": 5,
+        "total_tokens": 8,
+        "completion_tokens_details": {
+            "reasoning_tokens": 0,
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0,
+        },
+    }
+    assert data["choices"][0]["finish_reason"] == "stop"
+
+
 def test_get_data_openai_stream_delta_allows_reference_payload():
     data = api_utils.get_data_openai(content="chunk", stream=True)
 
