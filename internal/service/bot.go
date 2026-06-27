@@ -145,8 +145,24 @@ func (s *BotService) AgentbotCompletion(
 	if _, err := s.loadCanvas(ctx, tenantID, agentID); err != nil {
 		return nil, common.CodeDataError, err
 	}
+	// Compose the canvas user input from req.UserInput (the
+	// `inputs` dict body field) plus the top-level `question` and
+	// `files` fields. The python canvas_service.completion at
+	// api/db/services/canvas_service.py:313 reads all three; the
+	// previous code dropped question/files, so a body like
+	// `{"question":"hi"}` reached the canvas with empty inputs.
+	userInput := make(map[string]any, len(req.UserInput)+2)
+	for k, v := range req.UserInput {
+		userInput[k] = v
+	}
+	if req.Question != "" {
+		userInput["question"] = req.Question
+	}
+	if len(req.Files) > 0 {
+		userInput["files"] = req.Files
+	}
 	ch, err := s.agentService.RunAgent(ctx, tenantID, agentID,
-		req.SessionID, "", req.UserInput)
+		req.SessionID, "", userInput)
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}

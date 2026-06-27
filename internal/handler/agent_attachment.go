@@ -64,10 +64,26 @@ func (h *AgentHandler) DownloadAttachment(c *gin.Context) {
 	// existing Go DownloadAgentFile path rely on storage lookup +
 	// header sanitization; we DO NOT gate on UUID here because
 	// attachment IDs in storage are not guaranteed UUIDs and the
-	// review found no evidence of a UUID invariant. Header
-	// sanitization at line 94-98 (filepath.Base + CR/LF/quote
-	// rejection) is the only defensive layer.
-	ext := c.DefaultQuery("ext", "markdown")
+	// review found no evidence of a UUID invariant. The
+	// filepath.Base + CR/LF/quote check below is the only defensive
+	// layer and runs BEFORE the file-service call so an unsafe id
+	// never crosses the service boundary.
+	safe := filepath.Base(attachmentID)
+	if safe == "" || safe == "." || safe == "/" || strings.ContainsAny(safe, "\r\n\"") {
+		jsonError(c, common.CodeArgumentError, "invalid attachment id.")
+		return
+	}
+
+	// Normalize the ext query once. A blank or dotted input like
+	// `?ext=` or `?ext=.pdf` would otherwise produce a malformed
+	// MIME type like `application/` or `application/.pdf`. Trim
+	// whitespace, lowercase, strip any leading dot, then fall back
+	// to markdown when the value is empty.
+	ext := strings.ToLower(strings.TrimSpace(c.DefaultQuery("ext", "markdown")))
+	ext = strings.TrimPrefix(ext, ".")
+	if ext == "" {
+		ext = "markdown"
+	}
 
 	// IDOR note: the Go User struct collapses user/tenant into one
 	// identifier (same model as the python download_agent_file
@@ -84,16 +100,6 @@ func (h *AgentHandler) DownloadAttachment(c *gin.Context) {
 		// errors collapse to a generic 102 so we don't leak storage
 		// internals in the response body.
 		jsonError(c, common.CodeDataError, "Attachment not found!")
-		return
-	}
-
-	// Sanitize the attachment_id before echoing it in
-	// Content-Disposition (header-injection defence). The Go
-	// net/http layer rejects CR/LF in header values, but we sanitize
-	// at the source so we don't rely on the implicit defense.
-	safe := filepath.Base(attachmentID)
-	if safe == "" || safe == "." || safe == "/" || strings.ContainsAny(safe, "\r\n\"") {
-		jsonError(c, common.CodeArgumentError, "invalid attachment id.")
 		return
 	}
 

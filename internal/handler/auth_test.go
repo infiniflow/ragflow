@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -50,9 +51,16 @@ func TestBetaAuthMiddleware_MissingHeader(t *testing.T) {
 	}
 	// jsonError writes 200 with a CodeUnauthorized body. Confirm the
 	// body shape matches the wire contract used by the rest of the
-	// bot handlers.
-	if got := rec.Body.String(); got == "" {
-		t.Errorf("body empty, want JSON envelope")
+	// bot handlers by decoding the JSON envelope and asserting the
+	// code field rather than just checking for a non-empty body.
+	var resp struct {
+		Code common.ErrorCode `json:"code"`
 	}
-	_ = common.CodeUnauthorized
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v; body = %s", err, rec.Body.String())
+	}
+	if resp.Code != common.CodeUnauthorized {
+		t.Errorf("code = %d, want %d; body = %s",
+			resp.Code, common.CodeUnauthorized, rec.Body.String())
+	}
 }

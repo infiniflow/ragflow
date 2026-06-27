@@ -144,7 +144,11 @@ func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 		return
 	}
 	var body service.AgentbotCompletionRequest
-	if c.Request.ContentLength > 0 {
+	// ContentLength != 0 (not > 0) so chunked requests carrying a
+	// valid JSON body with ContentLength == -1 still bind. The old
+	// `> 0` guard silently dropped those payloads and the canvas
+	// then ran with empty inputs.
+	if c.Request.ContentLength != 0 {
 		if err := c.ShouldBindJSON(&body); err != nil {
 			jsonError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
 			return
@@ -161,13 +165,12 @@ func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 	c.Writer.Header().Set("Connection", "keep-alive")
 	for ev := range events {
 		switch ev.Type {
-		case "message", "message_end":
+		case "message":
 			// The python iframe_completion wrapper flattens each
 			// message chunk into a {code:0, data:{answer:...}}
-			// frame, then terminates with {code:0, data:true}.
-			// We forward the message Data as the assistant text
-			// payload so the iframe SDK's `data.answer` parser
-			// keeps working. The agentbot path uses
+			// frame. We forward the message Data as the assistant
+			// text payload so the iframe SDK's `data.answer`
+			// parser keeps working. The agentbot path uses
 			// WriteAgentbotFrame (a thin alias for
 			// WriteChatbotFrame) to keep the two paths visually
 			// distinct in the handler.
@@ -179,10 +182,23 @@ func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 			if err := service.WriteAgentbotFrame(c.Writer, frame); err != nil {
 				return
 			}
-			if ev.Type == "message_end" {
-				_ = service.WriteDoneFrame(c.Writer)
-				return
+		case "message_end", "done":
+			// Terminator events. message_end occasionally carries
+			// a final payload (e.g. structured output); forward
+			// it as a final answer frame when present, then close
+			// the stream with the standard python completion
+			// marker. A bare `done` event closes the stream
+			// directly.
+			if ev.Data != "" {
+				frame := service.ChatbotSSEFrame{
+					Data:      ev.Data,
+					Reference: map[string]any{},
+					SessionID: ev.SessionID,
+				}
+				_ = service.WriteAgentbotFrame(c.Writer, frame)
 			}
+			_ = service.WriteDoneFrame(c.Writer)
+			return
 		default:
 			// Non-message events (node_started, node_finished, …)
 			// are silently dropped on the agentbot path. The
@@ -211,7 +227,11 @@ func (h *BotHandler) ChatbotCompletion(c *gin.Context) {
 		return
 	}
 	var body service.ChatbotCompletionRequest
-	if c.Request.ContentLength > 0 {
+	// ContentLength != 0 (not > 0) so chunked requests carrying a
+	// valid JSON body with ContentLength == -1 still bind. The old
+	// `> 0` guard silently dropped those payloads and the chatbot
+	// then ran with empty session_id/question.
+	if c.Request.ContentLength != 0 {
 		if err := c.ShouldBindJSON(&body); err != nil {
 			jsonError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
 			return
