@@ -797,10 +797,10 @@ func (b *BedrockModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, er
 		return nil, err
 	}
 
-	// codeql[go/request-forgery] False positive: AWS Bedrock endpoint is
 	// derived from the AWS region (operator config, see AWSConfig above),
 	// not from user input. The signed request enforces the destination
 	// via sigv4 — a tampered URL would fail signature verification.
+	// codeql[go/request-forgery] False positive: AWS Bedrock endpoint is
 	resp, err := b.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("bedrock: send request: %w", err)

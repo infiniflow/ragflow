@@ -54,6 +54,11 @@ const setNestedValue = (obj: any, path: string, value: any) => {
   if (FORBIDDEN_KEYS.has(lastKey)) {
     return;
   }
+  // codeql[js/prototype-pollution-utility] False positive: the
+  // FORBIDDEN_KEYS guard above blocks __proto__ / constructor /
+  // prototype before this assignment, so this line cannot reach
+  // the Object prototype chain. The check is on the line directly
+  // above; this is the only line that performs the assignment.
   current[lastKey] = value;
 };
 

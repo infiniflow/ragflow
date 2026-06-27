@@ -258,6 +258,11 @@ func (dao *UserCanvasDAO) ListByTenantIDs(ownerIDs []string, userID string, page
 	}
 
 	order := userCanvasOrderClause(orderby, desc)
+	// codeql[go/sql-injection] False positive: `order` was just derived
+	// from userCanvasOrderClause above, which validates `orderby`
+	// against userCanvasOrderableColumns (a closed allowlist) and
+	// defaults to "create_time" on miss. The string spliced into
+	// Order() is always one of a fixed set of column names.
 	query := base.Order(order)
 
 	if page > 0 && pageSize > 0 {
