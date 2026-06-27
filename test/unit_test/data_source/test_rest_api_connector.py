@@ -231,7 +231,9 @@ class TestSSRFValidation:
         def _safe_by_url(url):
             # First hop (original target) pins the public hostname. Any later
             # hop — including the loopback redirect — must be rejected.
-            print(f"[TEST] _safe_by_url called with url={url!r}", flush=True)
+            import sys
+            sys.stderr.write(f"[TEST] _safe_by_url called with url={url!r}\n")
+            sys.stderr.flush()
             if "127.0.0.1" in url or "localhost" in url:
                 raise ValueError("loopback blocked")
             return ("api.example.com", "93.184.216.34")
