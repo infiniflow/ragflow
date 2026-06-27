@@ -42,9 +42,20 @@ import (
 
 // AgentHandler agent handler
 // fileUploader is the subset of FileService used by agent handlers.
+//
+// The full FileService also has UploadFile, but it is consumed by
+// the FileHandler (handler/file.go), not by any agent handler, so
+// the interface deliberately does NOT list it. (Code review CR1.)
 type agentFileService interface {
-	UploadFile(tenantID, parentID string, files []*multipart.FileHeader) ([]map[string]interface{}, error)
 	DownloadAgentFile(tenantID, location string) ([]byte, error)
+	// UploadInfos stores raw bytes in the per-user downloads bucket and
+	// returns lightweight descriptors. Mirrors python FileService.upload_info
+	// (multi-file path) used by the agent upload endpoint.
+	UploadInfos(userID string, files []*multipart.FileHeader) ([]map[string]interface{}, error)
+	// UploadFromURL downloads a remote file (with SSRF protection) and
+	// stores it as an info blob. Mirrors python FileService.upload_info
+	// (single-file path with ?url=) used by the agent upload endpoint.
+	UploadFromURL(tenantID, rawURL string) (map[string]interface{}, error)
 }
 
 // chatAgentService is the subset of AgentService used by the chat-completion
@@ -62,6 +73,7 @@ type AgentHandler struct {
 	agentService *service.AgentService
 	chatRunner   chatAgentService
 	fileService  agentFileService
+	loader       canvasLoader
 }
 
 // NewAgentHandler create agent handler
@@ -71,6 +83,7 @@ func NewAgentHandler(agentService *service.AgentService, fileService *service.Fi
 		agentService: agentService,
 		chatRunner:   agentService,
 		fileService:  fileService,
+		loader:       agentService,
 	}
 }
 
