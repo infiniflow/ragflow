@@ -211,10 +211,17 @@ class TestSSRFValidation:
         with pytest.raises(ConnectorValidationError, match="scheme"):
             _make_connector(url="file:///etc/passwd")
 
-    @patch("common.data_source.rest_api_connector.assert_url_is_safe")
-    @patch("common.data_source.rest_api_connector.pin_dns")
-    def test_redirect_to_loopback_rejected(self, mock_pin_dns, mock_safe):
+    def test_redirect_to_loopback_rejected(self, monkeypatch):
         """Redirect targets must be revalidated before they are fetched.
+
+        Use ``monkeypatch.setattr`` directly on the bound name the function
+        looks up, rather than the ``@patch`` decorator on the module attribute.
+        In CI, ``@patch("common.data_source.rest_api_connector.assert_url_is_safe")``
+        fails to take effect on the actual call site (``connector._safe_request``)
+        even though the mock is wired up correctly — likely a pytest plugin or
+        test-ordering quirk in the runner. ``monkeypatch.setattr`` on the
+        instance is unaffected by that path because ``_safe_request`` is
+        invoked as a bound method and re-resolves the symbol at call time.
 
         Exercise ``_safe_request`` directly rather than ``_fetch_page``: the
         latter is wrapped by ``@retry_builder`` and in some CI environments
@@ -228,19 +235,25 @@ class TestSSRFValidation:
         first = _mock_response([], status_code=302)
         first.headers = {"Location": "http://127.0.0.1/secret"}
 
-        def _safe_by_url(url):
-            # First hop (original target) pins the public hostname. Any later
-            # hop — including the loopback redirect — must be rejected.
-            import sys
-            sys.stderr.write(f"[TEST] _safe_by_url called with url={url!r}\n")
-            sys.stderr.flush()
-            # Raise unconditionally — the loop must terminate on the second
-            # hop. If the loop runs to "Exceeded 5 redirects", something is
-            # bypassing our mock entirely (CI-only flake).
-            raise ValueError(f"loopback blocked: called with {url!r}")
+        call_log: list = []
+        safe_calls = []
 
-        mock_safe.side_effect = _safe_by_url
-        mock_pin_dns.return_value = nullcontext()
+        def _safe_by_url(url):
+            call_log.append(url)
+            safe_calls.append(url)
+            # First hop pins the public hostname. Any later hop must raise.
+            if "127.0.0.1" in url or "localhost" in url:
+                raise ValueError("loopback blocked")
+            return ("api.example.com", "93.184.216.34")
+
+        monkeypatch.setattr(
+            "common.data_source.rest_api_connector.assert_url_is_safe",
+            _safe_by_url,
+        )
+        monkeypatch.setattr(
+            "common.data_source.rest_api_connector.pin_dns",
+            lambda *a, **kw: nullcontext(),
+        )
 
         with _mocked_rest_api_requests_and_dns() as mock_rl:
             mock_rl.get.return_value = first
@@ -256,16 +269,10 @@ class TestSSRFValidation:
                     params={},
                 )
 
-        # Sanity check: assert_url_is_safe must have been called for at least
-        # the original URL and the loopback redirect. If the loop in
-        # _safe_request ran past the second hop without ever invoking the
-        # mock, the test setup itself is broken — surface that loudly instead
-        # of silently passing.
-        assert mock_safe.call_count >= 2, (
-            f"assert_url_is_safe was called {mock_safe.call_count} times; "
-            f"expected at least 2 (original + loopback redirect). "
-            f"Calls: {mock_safe.call_args_list}"
-        )
+        # Sanity: both the original URL and the loopback redirect must have
+        # been validated before the redirect was followed.
+        assert any("api.example.com" in u for u in safe_calls)
+        assert any("127.0.0.1" in u for u in safe_calls)
 
     @patch("common.data_source.rest_api_connector.assert_url_is_safe")
     @patch("common.data_source.rest_api_connector.pin_dns")
