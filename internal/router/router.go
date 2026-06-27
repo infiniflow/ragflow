@@ -52,6 +52,7 @@ type Router struct {
 	modelHandler         *handler.ModelHandler
 	fileCommitHandler    *handler.FileCommitHandler
 	adminRuntimeHandler  *handler.AdminRuntimeHandler
+	botHandler           *handler.BotHandler
 }
 
 // NewRouter create router
@@ -84,6 +85,7 @@ func NewRouter(
 	fileCommitHandler *handler.FileCommitHandler,
 	adminRuntimeHandler *handler.AdminRuntimeHandler,
 	openaiChatHandler *handler.OpenAIChatHandler,
+	botHandler *handler.BotHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -114,6 +116,7 @@ func NewRouter(
 		modelHandler:         modelHandler,
 		fileCommitHandler:    fileCommitHandler,
 		adminRuntimeHandler:  adminRuntimeHandler,
+		botHandler:           botHandler,
 	}
 }
 
@@ -183,6 +186,20 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.POST("/auth/password/forgot/otp", r.userHandler.ForgotSendOTP)
 		apiNoAuth.POST("/auth/password/forgot/otp/verify", r.userHandler.ForgotVerifyOTP)
 		apiNoAuth.POST("/auth/password/reset", r.userHandler.ForgotResetPassword)
+
+		// Public bot endpoints — beta API token only, NOT regular
+		// user session. Mirrors python's
+		// @login_required(auth_types=AUTH_BETA) on bot_api.py:55,126,157,239.
+		// Mounted on apiNoAuth (not on the auth-protected v1 tree) so
+		// external widgets / iframes / downloads can hit them with
+		// only a beta token. Risk R0 of the plan.
+		if r.botHandler != nil {
+			betaMW := r.authHandler.BetaAuthMiddleware()
+			chatbotGroup := apiNoAuth.Group("/chatbots")
+			RegisterChatbotRoutes(chatbotGroup, betaMW, r.botHandler)
+			agentbotGroup := apiNoAuth.Group("/agentbots")
+			RegisterAgentbotRoutes(agentbotGroup, betaMW, r.botHandler)
+		}
 	}
 
 	// Protected routes
