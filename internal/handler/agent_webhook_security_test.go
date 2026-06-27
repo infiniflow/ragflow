@@ -321,9 +321,16 @@ func TestValidateRateLimit_BadLimit(t *testing.T) {
 // #3: a configured n that would overflow n*bytesPerMB (e.g. a huge
 // mb value) must be rejected before the multiplication, not
 // silently wrap to a small number and pass the cap check.
+//
+// The chosen n=9_223_372_036_855 multiplied by 1_000_000 (= 1 MB)
+// overflows int64 max (9.22e18), so without the pre-multiplication
+// guard this would silently wrap to a small positive number and
+// the cap check would (incorrectly) succeed. With the guard in
+// place, the rejection happens at the parse step, before any
+// multiplication.
 func TestValidateMaxBodySize_OverflowGuard(t *testing.T) {
 	c := securityCtx(t, "1.2.3.4:0", nil)
-	err := validateMaxBodySize(c, map[string]any{"max_body_size": "999999999mb"})
+	err := validateMaxBodySize(c, map[string]any{"max_body_size": "9223372036855mb"})
 	if err == nil {
 		t.Errorf("huge mb value: err = nil, want overflow-rejection error")
 	} else if !strings.Contains(err.Error(), "exceeds maximum") {
