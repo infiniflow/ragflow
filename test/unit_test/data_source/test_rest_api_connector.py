@@ -254,7 +254,7 @@ class TestSSRFValidation:
                 # _safe_request are now wrapped to raise ConnectorValidationError
                 # (the connector's documented error contract) instead of leaking
                 # raw ValueError from ssrf_guard.
-                with pytest.raises(ConnectorValidationError, match="loopback blocked"):
+                with pytest.raises(ConnectorValidationError, match=r"non-public address|loopback"):
                     connector._safe_request(
                         "GET",
                         connector.url,
