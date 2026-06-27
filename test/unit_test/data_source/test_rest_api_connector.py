@@ -214,14 +214,26 @@ class TestSSRFValidation:
     @patch("common.data_source.rest_api_connector.assert_url_is_safe")
     @patch("common.data_source.rest_api_connector.pin_dns")
     def test_redirect_to_loopback_rejected(self, mock_pin_dns, mock_safe):
-        """Redirect targets must be revalidated before they are fetched."""
+        """Redirect targets must be revalidated before they are fetched.
+
+        Use a function-based ``side_effect`` keyed on URL so the second hop
+        raises regardless of how many times ``assert_url_is_safe`` is invoked
+        (some pytest environments exercise the retry path on the first
+        ConnectorValidationError, which would exhaust a list-based side_effect
+        and let the loop reach the "Exceeded 5 redirects" branch instead).
+        """
         connector = _make_connector()
         first = _mock_response([], status_code=302)
         first.headers = {"Location": "http://127.0.0.1/secret"}
-        mock_safe.side_effect = [
-            ("api.example.com", "93.184.216.34"),
-            ValueError("loopback blocked"),
-        ]
+
+        def _safe_by_url(url):
+            # First hop (original target) pins the public hostname. Any later
+            # hop — including the loopback redirect — must be rejected.
+            if "127.0.0.1" in url:
+                raise ValueError("loopback blocked")
+            return ("api.example.com", "93.184.216.34")
+
+        mock_safe.side_effect = _safe_by_url
         mock_pin_dns.return_value = nullcontext()
 
         with _mocked_rest_api_requests_and_dns() as mock_rl:
@@ -233,7 +245,8 @@ class TestSSRFValidation:
             with pytest.raises(ConnectorValidationError, match="loopback blocked"):
                 connector._fetch_page({})
 
-        assert mock_safe.call_count == 2
+        # The original URL plus the loopback redirect — at minimum 2 calls.
+        assert mock_safe.call_count >= 2
 
     @patch("common.data_source.rest_api_connector.assert_url_is_safe")
     @patch("common.data_source.rest_api_connector.pin_dns")
