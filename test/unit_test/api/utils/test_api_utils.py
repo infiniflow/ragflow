@@ -26,9 +26,9 @@ def test_get_data_openai_defaults_created_to_current_timestamp(monkeypatch):
 
 
 def test_get_data_openai_preserves_explicit_created_value():
-    data = api_utils.get_data_openai(created=123, content="answer")
+    data = api_utils.get_data_openai(created=0, content="answer")
 
-    assert data["created"] == 123
+    assert data["created"] == 0
 
 
 def test_get_data_openai_stream_response_shape_is_unchanged():
