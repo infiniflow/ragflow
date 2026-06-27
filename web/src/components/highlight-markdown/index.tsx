@@ -1,4 +1,3 @@
-import React from 'react';
 import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
 import classNames from 'classnames';
 import DOMPurify from 'dompurify';
@@ -27,7 +26,12 @@ const HighLightMarkdown = ({
   children: string | null | undefined;
 }) => {
   const isDarkTheme = useIsDarkTheme();
-  const safeChildren = children ? DOMPurify.sanitize(children) : children;
+  // IMPORTANT: preprocessLaTeX() decodes &lt;/&gt;/&amp; back to raw HTML before
+  // rehypeRaw parses the markdown. Sanitizing children *before* preprocessLaTeX
+  // would let entity-encoded payloads bypass DOMPurify and inject HTML.
+  // Sanitize the *post*-processed string instead. (Coderabbit CRITICAL #3486038798)
+  const processed = children ? preprocessLaTeX(children) : children;
+  const safeChildren = processed ? DOMPurify.sanitize(processed) : processed;
   const dir = children
     ? getDirAttribute(children.replace(citationMarkerReg, ''))
     : undefined;
@@ -63,7 +67,7 @@ const HighLightMarkdown = ({
           } as any
         }
       >
-        {safeChildren ? preprocessLaTeX(safeChildren) : safeChildren}
+        {safeChildren}
       </Markdown>
     </div>
   );
