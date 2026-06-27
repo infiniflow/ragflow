@@ -1952,18 +1952,15 @@ func (c *CLI) APIDropSearchCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to get search ID: %w by search name: %s", err, searchName)
 	}
 
-	payload := map[string]interface{}{
-		"ids":        []string{searchID},
-		"delete_all": true,
-	}
+	endPoint := fmt.Sprintf("/searches/%s", searchID)
 
-	resp, err := httpClient.Request("DELETE", "/searches", "web", nil, payload)
+	resp, err := httpClient.Request("DELETE", endPoint, "web", nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create search: %w", err)
+		return nil, fmt.Errorf("failed to delete search: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to create search: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to delete search: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	var result SimpleResponse

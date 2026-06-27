@@ -1628,13 +1628,15 @@ func (c *CLI) getSearchIDByName(searchName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	commonResponse, ok := response.(*CommonResponse)
+	searchesResponse, ok := response.(*ListSearchesResponse)
 	if !ok {
 		return "", fmt.Errorf("invalid response")
 	}
-	for _, search := range commonResponse.Data {
-		if search["name"] == searchName {
-			return search["id"].(string), nil
+	searches := searchesResponse.Data["search_apps"].([]interface{})
+	for _, search := range searches {
+		searchMap := search.(map[string]interface{})
+		if searchMap["name"] == searchName {
+			return searchMap["id"].(string), nil
 		}
 	}
 	return "", fmt.Errorf("search %s not found", searchName)
