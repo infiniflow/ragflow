@@ -96,8 +96,8 @@ async def download_img(url):
                             location = response.headers.get("location")
                             if not location:
                                 logger.warning(
-                                    "download_img redirect missing Location header: url=%r status=%s redirect_hops=%s",
-                                    current_url,
+                                    "download_img redirect missing Location header: status=%s redirect_hops=%s",
+                                
                                     response.status_code,
                                     redirect_hops,
                                 )
@@ -105,8 +105,8 @@ async def download_img(url):
                             return ("redirect", urljoin(current_url, location))
                         if response.status_code != 200:
                             logger.warning(
-                                "download_img non-200 response: url=%r status=%s redirect_hops=%s",
-                                current_url,
+                                "download_img non-200 response: status=%s redirect_hops=%s",
+                                
                                 response.status_code,
                                 redirect_hops,
                             )
@@ -115,8 +115,8 @@ async def download_img(url):
                         async for chunk in response.aiter_bytes():
                             if len(body) + len(chunk) > _OAUTH_AVATAR_MAX_BYTES:
                                 logger.warning(
-                                    "download_img response exceeded max size: url=%r max_bytes=%s",
-                                    current_url,
+                                    "download_img response exceeded max size: max_bytes=%s",
+                                
                                     _OAUTH_AVATAR_MAX_BYTES,
                                 )
                                 await response.aclose()
@@ -159,8 +159,8 @@ async def download_img(url):
         return str(payload)
 
     logger.warning(
-        "download_img redirect hop limit exceeded: url=%r redirect_hops=%s max_redirects=%s",
-        current_url,
+        "download_img redirect hop limit exceeded: redirect_hops=%s max_redirects=%s",
+                                
         redirect_hops,
         _OAUTH_AVATAR_MAX_REDIRECTS,
     )

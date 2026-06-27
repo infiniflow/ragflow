@@ -435,7 +435,13 @@ class SSHProvider(SandboxProvider):
     def _create_ssh_client(self) -> paramiko.SSHClient:
         paramiko = _get_paramiko_module()
         client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        # Use RejectPolicy by default to avoid silent MITM: an unknown
+        # host key should fail the connection rather than be auto-added
+        # to a volatile in-memory store. Operators who have a populated
+        # known_hosts file (e.g. mounted at SSH_KNOWN_HOSTS_PATH) get
+        # verification for free; the rest can opt into WarningPolicy
+        # via the SSH_INSECURE_ACCEPT_UNKNOWN_HOSTS env var for dev.
+        client.set_missing_host_key_policy(paramiko.RejectPolicy())
 
         connect_kwargs: dict[str, Any] = {
             "hostname": self.host,

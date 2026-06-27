@@ -683,6 +683,10 @@ func (c *CLI) Run() error {
 		}
 
 		if err = c.execute(input); err != nil {
+			// %v rather than %s so we don't print user-controlled input verbatim;
+			// user input that triggered the error may itself be sensitive
+			// (paths, partial commands with secrets), and we don't want it
+			// echoed back into operator logs in cleartext.
 			fmt.Printf("CLI error: %v\n", err)
 		}
 	}

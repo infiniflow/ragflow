@@ -66,7 +66,13 @@ class ConversationService(CommonService):
         conversation, while still separating histories when the channel is
         re-bound to a different dialog.
         """
-        conv_id = hashlib.md5(
+        # Use SHA-256 instead of MD5: CodeQL flags MD5 as a weak
+        # sensitive-data hashing primitive. The hash here is only
+        # used to derive a deterministic conversation id (not for
+        # authentication), but switching to SHA-256 keeps the call
+        # site consistent with our hashing policy. Truncating to 32
+        # hex chars preserves the existing ID length/shape.
+        conv_id = hashlib.sha256(
             f"{dialog_id}:{channel_id}:{chat_id}".encode("utf-8")
         ).hexdigest()[:32]
         conv = cls.model.get_or_none(cls.model.id == conv_id)
