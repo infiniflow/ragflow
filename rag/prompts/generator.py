@@ -70,6 +70,7 @@ def message_fit_in(msg, max_length=4000):
     if max_length <= 0:
         logging.debug("message_fit_in normalizing non-positive max_length=%s to 8192", max_length)
 >>>>>>> f5cd5ba23 (fix(agent): prevent empty LLM user message after prompt fitting)
+>>>>>>> 1e7e8ac48 (fix(agent): address CodeRabbit review on prompt fitting)
         max_length = 8192
 
     def count():

@@ -115,11 +115,12 @@ class Agent(LLM, ToolBase):
         if self.tool_meta:
             self.chat_mdl.bind_tools(self.toolcall_session, self.tool_meta)
 
-    def _fit_messages(self, prompt: str, msg: list[dict]) -> list[dict]:
+    def _fit_messages(self, prompt: str, msg: list[dict]) -> tuple[list[dict] | None, str | None]:
         msg_fit, fit_error = LLM.fit_messages(prompt, msg, self.chat_mdl.max_length)
         if fit_error:
-            raise ValueError(fit_error)
-        return msg_fit
+            logging.error("Agent prompt fit error: %s", fit_error)
+            return None, fit_error
+        return msg_fit, None
 
     @staticmethod
     def _append_system_prompt(msg: list[dict], extra_prompt: str) -> None:

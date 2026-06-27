@@ -18,6 +18,33 @@ def test_sys_prompt_and_msg_replaces_trailing_user_instead_of_skipping():
 
 
 @pytest.mark.p1
+def test_sys_prompt_and_msg_keeps_consecutive_configured_prompts():
+    cpn = _llm(
+        [
+            {"role": "user", "content": "Context: {sys.query}"},
+            {"role": "user", "content": "User query: {sys.query}"},
+        ]
+    )
+    msg, _ = cpn._sys_prompt_and_msg([], {"sys.query": "test"})
+    assert msg == [
+        {"role": "user", "content": "Context: test"},
+        {"role": "user", "content": "User query: test"},
+    ]
+
+
+@pytest.mark.p1
+def test_validate_fitted_messages_requires_trailing_user():
+    err = LLM.validate_fitted_messages(
+        [
+            {"role": "system", "content": "system"},
+            {"role": "user", "content": "still here"},
+            {"role": "assistant", "content": "reply"},
+        ]
+    )
+    assert err and "empty" in err.lower()
+
+
+@pytest.mark.p1
 def test_validate_fitted_messages_rejects_empty_user():
     err = LLM.validate_fitted_messages(
         [{"role": "system", "content": "system"}, {"role": "user", "content": ""}]
