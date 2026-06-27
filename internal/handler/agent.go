@@ -391,9 +391,15 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
-	flusher, _ := c.Writer.(http.Flusher)
 	for ev := range events {
-		writeRunEventSSE(c.Writer, flusher, ev)
+		if err := service.WriteChatbotRunEvent(c.Writer, ev); err != nil {
+			common.Debug("agent run: client disconnected",
+				zap.String("canvas_id", canvasID),
+				zap.String("session_id", sessionID),
+				zap.Error(err),
+			)
+			return
+		}
 	}
 }
 
@@ -421,38 +427,6 @@ func readUserInput(c *gin.Context) string {
 		}
 	}
 	return c.Query("user_input")
-}
-
-// writeRunEventSSE writes one canvas.RunEvent as an SSE frame in the
-// legacy per-run wire format:
-//
-//	data:{"event":"<ev.Type>","message_id":"...","created_at":...,"task_id":"...","session_id":"...","data":<ev.Data>}
-//
-// The "done" type emits `data: [DONE]\n\n`.
-//
-// NOTE: this is intentionally distinct from the unified python
-// envelope emitted by service.WriteChatbotRunEvent (used by
-// /api/v1/agents/chat/completions). Migrating this helper onto
-// service.WriteChatbotRunEvent is the natural follow-up; the iframe
-// SDK already speaks that envelope so any consumer can move when
-// ready.
-func writeRunEventSSE(w io.Writer, flusher http.Flusher, ev canvas.RunEvent) {
-	if ev.Type == "done" {
-		fmt.Fprintf(w, "data: [DONE]\n\n")
-		if flusher != nil {
-			flusher.Flush()
-		}
-		return
-	}
-	data := ev.Data
-	if data == "" {
-		data = "{}"
-	}
-	envelope := sseEnvelope(ev.Type, ev.MessageID, ev.CreatedAt, ev.TaskID, ev.SessionID, data)
-	fmt.Fprintf(w, "data: %s\n\n", envelope)
-	if flusher != nil {
-		flusher.Flush()
-	}
 }
 
 // sanitiseRunEventError passes through the error event payload
@@ -1078,14 +1052,14 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	// One frame per canvas event, all routed through
 	// service.WriteChatbotRunEvent so the two paths share one writer
 	// and one shape — see internal/service/bot_completion.go for the
-	// frame definition. The channel close is signalled by
-	// `data: [DONE]\n\n`. We do NOT emit an SSE `event:` line — the
-	// front-end's `use-send-message.ts` parser feeds each `data:` line
-	// directly into JSON.parse and breaks on the `e` of `event:`
-	// (browser console: "SyntaxError: Unexpected token 'e', \"event:
-	// mes\"…"). The richer `writeRunEventSSE` helper still owns the
-	// /api/v1/agents/{id}/run endpoint's wire format — see
-	// writeRunEventSSE at agent.go for that path.
+	// frame definition. The same unified envelope is used by the
+	// /api/v1/agents/{canvas_id}/run and /api/v1/agentbots/<id>/completions
+	// endpoints, all going through service.WriteChatbotRunEvent. The
+	// channel close is signalled by `data: [DONE]\n\n`. We do NOT emit
+	// an SSE `event:` line — the front-end's `use-send-message.ts`
+	// parser feeds each `data:` line directly into JSON.parse and
+	// breaks on the `e` of `event:` (browser console: "SyntaxError:
+	// Unexpected token 'e', \"event: mes\"…").
 	for ev := range events {
 		common.Debug("agent chat completions: streaming event",
 			zap.String("agent_id", req.AgentID),
@@ -1105,20 +1079,6 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	common.Debug("agent chat completions: stream closed",
 		zap.String("agent_id", req.AgentID),
 		zap.String("session_id", req.SessionID),
-	)
-}
-
-// sseEnvelope builds the legacy SSE JSON payload for the
-// /api/v1/agents/{id}/run endpoint:
-//
-//	{"event":"<typ>","message_id":"<mid>","created_at":<ts>,"task_id":"<tid>","session_id":"<sid>","data":<raw>}
-//
-// Still used by writeRunEventSSE (agent.go:444). Safe to remove once
-// that helper is migrated to the unified python envelope.
-func sseEnvelope(typ, mid string, ts int64, tid, sid, rawData string) string {
-	return fmt.Sprintf(
-		`{"event":%q,"message_id":%q,"created_at":%d,"task_id":%q,"session_id":%q,"data":%s}`,
-		typ, mid, ts, tid, sid, rawData,
 	)
 }
 
