@@ -428,13 +428,25 @@ def get_data_openai(id=None, created=None, model=None, prompt_tokens=0, completi
     total_tokens = prompt_tokens + completion_tokens
 
     if stream:
+        usage = None
+        if finish_reason is not None:
+            usage = {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+                "completion_tokens_details": {
+                    "reasoning_tokens": 0,
+                    "accepted_prediction_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                },
+            }
         return {
             "id": f"{id}",
             "object": "chat.completion.chunk",
             "created": created if created is not None else int(time.time()),
             "model": model,
             "system_fingerprint": "",
-            "usage": None,
+            "usage": usage,
             "choices": [
                 {
                     "delta": {
