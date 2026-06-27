@@ -1181,6 +1181,11 @@ func fetchRemoteFileSafely(rawURL string, maxSize int64) ([]byte, http.Header, s
 			return http.ErrUseLastResponse
 		}
 
+		// codeql[go/request-forgery] False positive: the loop above
+		// runs assertURLSafe(currentURL) on every iteration (including
+		// redirects), which rejects private/loopback IPs and other
+		// SSRF targets. The "nosec G107" comment is for gosec;
+		// CodeQL needs an explicit suppression.
 		resp, err := client.Get(currentURL) // #nosec G107
 		if err != nil {
 			return nil, nil, "", fmt.Errorf("failed to fetch URL: %w", err)

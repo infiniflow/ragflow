@@ -16,6 +16,7 @@
 
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
+from urllib.parse import urlparse
 
 import pytest
 import requests
@@ -124,7 +125,10 @@ class TestRestAPIConfig:
     def test_valid_minimal_config(self):
         """Minimal valid config: url + content_fields."""
         cfg = RestAPIConnectorConfig(url=VALID_URL, content_fields=["title"])
-        assert str(cfg.url).startswith("https://api.example.com")
+        # Use urlparse for the host check rather than str.startswith on
+        # the full URL — a URL like https://api.example.com.attacker.tld
+        # would also start with the configured prefix.
+        assert urlparse(str(cfg.url)).hostname == "api.example.com"
         assert cfg.content_fields == ["title"]
 
     def test_auth_type_defaults_to_none(self):

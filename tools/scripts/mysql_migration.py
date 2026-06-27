@@ -968,10 +968,13 @@ class TenantModelStage(MigrationStage):
                 resolved.append((source_id, llm_name, provider_id, instance_id, model_type, status, api_key))
             else:
                 skipped += 1
+                # Don't include the API key (even truncated) in the log:
+                # CodeQL flags this as clear-text-logging-sensitive-data,
+                # and the first 30 chars of an API key often carry enough
+                # entropy to be useful to an attacker who reads the log.
                 logger.warning(
-                    f"No matching instance for tenant_llm id={source_id}, "
-                    f"provider_id={provider_id}, llm_name={llm_name}, "
-                    f"canonical_api_key={canonical[:30]}..."
+                    "No matching instance for tenant_llm id=%s provider_id=%s llm_name=%s",
+                    source_id, provider_id, llm_name,
                 )
 
         if skipped > 0:

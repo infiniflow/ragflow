@@ -98,7 +98,11 @@ def init_superuser(nickname=DEFAULT_SUPERUSER_NICKNAME, email=DEFAULT_SUPERUSER_
         embd_mdl = LLMBundle(tenant["id"], embd_model_config)
         v, c = embd_mdl.encode(["Hello!"])
         if c == 0:
-            logging.error("'{}' doesn't work!".format(tenant["embd_id"]))
+            # Don't log the model identifier verbatim: CodeQL flags it
+            # as potential sensitive data in clear text. The ID itself
+            # is non-sensitive, but the pattern matches any string
+            # sourced from tenant config that could carry credentials.
+            logging.error("embedding model failed sanity-check encode")
 
 
 def update_document_number_in_init():

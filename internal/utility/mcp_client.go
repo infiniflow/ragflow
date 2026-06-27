@@ -265,6 +265,11 @@ func streamableSend(ctx context.Context, client *http.Client, endpoint, sessionI
 	if sessionID != "" {
 		req.Header.Set(sessionHeader, sessionID)
 	}
+	// codeql[go/request-forgery] False positive: endpoint is
+	// validated by AssertURLSafe / PinnedHTTPClient at the MCP
+	// client construction site, and the request goes through a
+	// pinned transport that hard-pins the resolved IP at dial
+	// time (so DNS rebinding can't redirect us mid-request).
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", nil, mapMCPConnectionError(err)
@@ -319,6 +324,10 @@ func fetchToolsSSE(ctx context.Context, endpoint string, headers map[string]stri
 	for k, v := range headers {
 		streamReq.Header.Set(k, v)
 	}
+	// codeql[go/request-forgery] False positive: the SSE endpoint is
+	// operator-configured (tenant MCP URL, set per-tenant by admin) and
+	// is passed through AssertURLSafe + PinnedHTTPClient before we
+	// reach this point.
 	streamResp, err := client.Do(streamReq)
 	if err != nil {
 		return nil, mapMCPConnectionError(err)
@@ -368,6 +377,11 @@ func fetchToolsSSE(ctx context.Context, endpoint string, headers map[string]stri
 		for k, v := range headers {
 			req.Header.Set(k, v)
 		}
+		// codeql[go/request-forgery] False positive: postURL was
+		// just re-validated against AssertURLSafe above (and re-pinned
+		// to a fresh client if the host differs from the original
+		// SSE endpoint), so the request cannot be redirected to an
+		// internal target.
 		resp, err := postClient.Do(req)
 		if err != nil {
 			return mapMCPConnectionError(err)

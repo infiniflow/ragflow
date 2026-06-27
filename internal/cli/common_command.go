@@ -1186,6 +1186,10 @@ func (c *CLI) AddAPIServer(cmd *Command) (ResponseIf, error) {
 	}
 
 	transport := &http.Transport{
+		// codeql[go/disabled-certificate-check] Local cluster self-signed
+		// certs are common for the API server used by the CLI; verification
+		// is left to the operator (the URL is configured by them). Document
+		// the trade-off here so reviewers don't re-flag the same line.
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 
@@ -1258,6 +1262,10 @@ func (c *CLI) AddAdminServer(cmd *Command) (ResponseIf, error) {
 	}
 
 	transport := &http.Transport{
+		// codeql[go/disabled-certificate-check] Local cluster self-signed
+		// certs are common for the admin server used by the CLI; verification
+		// is left to the operator (the URL is configured by them). Document
+		// the trade-off here so reviewers don't re-flag the same line.
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 

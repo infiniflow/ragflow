@@ -16,8 +16,6 @@
 
 package parser
 
-import "fmt"
-
 type PDFParser struct {
 	ParserType string // DeepDoc, PaddleOCR, MinerU
 	Model      string // DeepDoc@buildin@ragflow
@@ -29,7 +27,6 @@ func NewPDFParser() *PDFParser {
 }
 
 func (p *PDFParser) Parse(filename string, data []byte) error {
-	fmt.Printf("Parsing PDF file: %s\n", filename)
 	return nil
 }
 
