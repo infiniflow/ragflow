@@ -67,6 +67,9 @@ def chunks_format(reference):
 
 
 def message_fit_in(msg, max_length=4000):
+    if max_length <= 0:
+        max_length = 8192
+
     def count():
         nonlocal msg
         tks_cnts = []

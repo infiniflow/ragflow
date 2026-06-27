@@ -116,11 +116,10 @@ class Agent(LLM, ToolBase):
             self.chat_mdl.bind_tools(self.toolcall_session, self.tool_meta)
 
     def _fit_messages(self, prompt: str, msg: list[dict]) -> list[dict]:
-        _, fitted_messages = message_fit_in(
-            [{"role": "system", "content": prompt}, *msg],
-            int(self.chat_mdl.max_length * 0.97),
-        )
-        return fitted_messages
+        msg_fit, fit_error = LLM.fit_messages(prompt, msg, self.chat_mdl.max_length)
+        if fit_error:
+            raise ValueError(fit_error)
+        return msg_fit
 
     @staticmethod
     def _append_system_prompt(msg: list[dict], extra_prompt: str) -> None:
@@ -185,7 +184,7 @@ class Agent(LLM, ToolBase):
             {"role": "system", "content": schema_prompt + "\nIMPORTANT: Output ONLY valid JSON. No markdown, no extra text."},
             {"role": "user", "content": text},
         ]
-        _, fmt_msgs = message_fit_in(fmt_msgs, int(self.chat_mdl.max_length * 0.97))
+        _, fmt_msgs = message_fit_in(fmt_msgs, LLM.context_fit_budget(self.chat_mdl.max_length))
         return await self._generate_async(fmt_msgs)
 
     def _invoke(self, **kwargs):

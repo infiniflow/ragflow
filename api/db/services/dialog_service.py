@@ -563,7 +563,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         llm_model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 
     factory = llm_model_config.get("llm_factory", "") if llm_model_config else ""
-    max_tokens = llm_model_config.get("max_tokens", 8192)
+    max_tokens = llm_model_config.get("max_tokens") or 8192
 
     check_llm_ts = timer()
 

@@ -23,6 +23,7 @@ from typing import Any, AsyncGenerator
 import json_repair
 from functools import partial
 from common.constants import LLMType
+from api.db.services.dialog_service import _stream_with_think_delta
 from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_model_type_by_name
 from agent.component.base import ComponentBase, ComponentParamBase
@@ -120,12 +121,40 @@ class LLM(ComponentBase):
         if isinstance(self._param.prompts, str):
             self._param.prompts = [{"role": "user", "content": self._param.prompts}]
         for p in self._param.prompts:
-            if msg and msg[-1]["role"] == p["role"]:
-                continue
-            p = deepcopy(p)
-            p["content"] = self.string_format(p["content"], args)
-            msg.append(p)
+            formatted = deepcopy(p)
+            formatted["content"] = self.string_format(formatted["content"], args)
+            if msg and msg[-1]["role"] == formatted["role"]:
+                msg[-1] = formatted
+            else:
+                msg.append(formatted)
         return msg, self.string_format(self._param.sys_prompt, args)
+
+    @staticmethod
+    def effective_context_length(max_length) -> int:
+        return max_length or 8192
+
+    @classmethod
+    def context_fit_budget(cls, max_length) -> int:
+        return int(cls.effective_context_length(max_length) * 0.97)
+
+    @staticmethod
+    def validate_fitted_messages(msg_fit: list[dict]) -> str | None:
+        if len(msg_fit) < 2:
+            return "**ERROR**: message_fit_in produced insufficient messages for LLM"
+        for m in reversed(msg_fit[1:]):
+            if m.get("role") == "user":
+                if str(m.get("content") or "").strip():
+                    return None
+                break
+        return "**ERROR**: LLM user message is empty after prompt fitting; check model max_tokens context setting"
+
+    @classmethod
+    def fit_messages(cls, system_prompt: str, msg: list[dict], max_length) -> tuple[list[dict], str | None]:
+        _, msg_fit = message_fit_in(
+            [{"role": "system", "content": system_prompt}, *deepcopy(msg)],
+            cls.context_fit_budget(max_length),
+        )
+        return msg_fit, cls.validate_fitted_messages(msg_fit)
 
     @staticmethod
     def _extract_data_images(value) -> list[str]:
@@ -342,83 +371,32 @@ class LLM(ComponentBase):
         return await self.chat_mdl.async_chat(msg[0]["content"], msg[1:], self._param.gen_conf(), images=self.imgs, **kwargs)
 
     async def _generate_streamly(self, msg: list[dict], **kwargs) -> AsyncGenerator[str, None]:
-        async def delta_wrapper(txt_iter):
-            ans = ""
-            last_idx = 0
-            endswith_think = False
-
-            def delta(txt):
-                nonlocal ans, last_idx, endswith_think
-                delta_ans = txt[last_idx:]
-                ans = txt
-
-                if delta_ans.find("<think>") == 0:
-                    last_idx += len("<think>")
-                    return "<think>"
-                elif delta_ans.find("<think>") > 0:
-                    delta_ans = txt[last_idx:last_idx + delta_ans.find("<think>")]
-                    last_idx += delta_ans.find("<think>")
-                    return delta_ans
-                elif delta_ans.endswith("</think>"):
-                    endswith_think = True
-                elif endswith_think:
-                    endswith_think = False
-                    return "</think>"
-
-                last_idx = len(ans)
-                if ans.endswith("</think>"):
-                    last_idx -= len("</think>")
-                return re.sub(r"(<think>|</think>)", "", delta_ans)
-
-            async for t in txt_iter:
-                yield delta(t)
-
-        if not self.imgs:
-            async for t in delta_wrapper(self.chat_mdl.async_chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), **kwargs)):
-                yield t
-            return
-
-        async for t in delta_wrapper(self.chat_mdl.async_chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), images=self.imgs, **kwargs)):
-            yield t
+        stream_kwargs = {"images": self.imgs} if self.imgs else {}
+        stream_kwargs.update(kwargs)
+        stream = self.chat_mdl.async_chat_streamly_delta(msg[0]["content"], msg[1:], self._param.gen_conf(), **stream_kwargs)
+        async for _, value, _ in _stream_with_think_delta(stream, min_tokens=0):
+            yield value
 
     async def _stream_output_async(self, prompt, msg):
-        _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
+        msg_fit, fit_error = self.fit_messages(prompt, msg, self.chat_mdl.max_length)
+        if fit_error:
+            logging.error("LLM streaming prompt fit error: %s", fit_error)
+            if self.get_exception_default_value():
+                fallback = self.get_exception_default_value()
+                self.set_output("content", fallback)
+                yield fallback
+            else:
+                self.set_output("_ERROR", fit_error)
+            return
+
         answer = ""
-        last_idx = 0
-        endswith_think = False
-
-        def delta(txt):
-            nonlocal answer, last_idx, endswith_think
-            delta_ans = txt[last_idx:]
-            answer = txt
-
-            if delta_ans.find("<think>") == 0:
-                last_idx += len("<think>")
-                return "<think>"
-            elif delta_ans.find("<think>") > 0:
-                delta_ans = txt[last_idx:last_idx + delta_ans.find("<think>")]
-                last_idx += delta_ans.find("<think>")
-                return delta_ans
-            elif delta_ans.endswith("</think>"):
-                endswith_think = True
-            elif endswith_think:
-                endswith_think = False
-                return "</think>"
-
-            last_idx = len(answer)
-            if answer.endswith("</think>"):
-                last_idx -= len("</think>")
-            return re.sub(r"(<think>|</think>)", "", delta_ans)
-
         stream_kwargs = {"images": self.imgs} if self.imgs else {}
         extra_chat_kwargs = self._get_chat_template_kwargs()
         stream_kwargs.update(extra_chat_kwargs)
-        async for ans in self.chat_mdl.async_chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), **stream_kwargs):
+        stream = self.chat_mdl.async_chat_streamly_delta(msg_fit[0]["content"], msg_fit[1:], self._param.gen_conf(), **stream_kwargs)
+        async for _, ans, _ in _stream_with_think_delta(stream, min_tokens=0):
             if self.check_if_canceled("LLM streaming"):
                 return
-
-            if isinstance(ans, int):
-                continue
 
             if ans.find("**ERROR**") >= 0:
                 if self.get_exception_default_value():
@@ -428,7 +406,8 @@ class LLM(ComponentBase):
                     self.set_output("_ERROR", ans)
                 return
 
-            yield delta(ans)
+            answer += ans
+            yield ans
 
         self.set_output("content", answer)
 
@@ -457,10 +436,11 @@ class LLM(ComponentBase):
                 if self.check_if_canceled("LLM processing"):
                     return
 
-                _, msg_fit = message_fit_in(
-                    [{"role": "system", "content": prompt_with_schema}, *deepcopy(msg)],
-                    int(self.chat_mdl.max_length * 0.97),
-                )
+                msg_fit, fit_error = self.fit_messages(prompt_with_schema, msg, self.chat_mdl.max_length)
+                if fit_error:
+                    logging.error("LLM structured prompt fit error: %s", fit_error)
+                    self.set_output("_ERROR", fit_error)
+                    return
                 error = ""
                 ans = await self._generate_async(msg_fit, **extra_chat_kwargs)
                 msg_fit.pop(0)
@@ -491,9 +471,11 @@ class LLM(ComponentBase):
             if self.check_if_canceled("LLM processing"):
                 return
 
-            _, msg_fit = message_fit_in(
-                [{"role": "system", "content": prompt}, *deepcopy(msg)], int(self.chat_mdl.max_length * 0.97)
-            )
+            msg_fit, fit_error = self.fit_messages(prompt, msg, self.chat_mdl.max_length)
+            if fit_error:
+                logging.error("LLM prompt fit error: %s", fit_error)
+                error = fit_error
+                break
             error = ""
             ans = await self._generate_async(msg_fit, **extra_chat_kwargs)
             msg_fit.pop(0)

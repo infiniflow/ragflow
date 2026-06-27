@@ -149,3 +149,20 @@ def test_message_fit_in_clamps_dominant_last_message_to_budget(monkeypatch):
     assert used_tokens == 8
     assert trimmed[0]["content"] == ""
     assert trimmed[-1]["content"] == "abcdefgh"
+
+
+@pytest.mark.p1
+def test_message_fit_in_zero_budget_preserves_non_empty_messages(monkeypatch):
+    generator = _load_generator_module(monkeypatch)
+    monkeypatch.setattr(generator, "num_tokens_from_string", lambda text: len(text))
+    monkeypatch.setattr(generator, "encoder", _CharEncoder())
+
+    messages = [
+        {"role": "system", "content": "s" * 845},
+        {"role": "user", "content": "User query: test"},
+    ]
+
+    used_tokens, trimmed = generator.message_fit_in(messages, max_length=0)
+
+    assert used_tokens == len(messages[0]["content"]) + len(messages[1]["content"])
+    assert trimmed[-1]["content"] == "User query: test"
