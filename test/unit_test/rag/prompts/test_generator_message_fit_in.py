@@ -157,12 +157,18 @@ def test_message_fit_in_zero_budget_preserves_non_empty_messages(monkeypatch):
     monkeypatch.setattr(generator, "num_tokens_from_string", lambda text: len(text))
     monkeypatch.setattr(generator, "encoder", _CharEncoder())
 
+    system_len = 8100
+    user_content = "User query: test"
     messages = [
-        {"role": "system", "content": "s" * 845},
-        {"role": "user", "content": "User query: test"},
+        {"role": "system", "content": "s" * system_len},
+        {"role": "user", "content": user_content},
     ]
+    expected_total = system_len + len(user_content)
 
     used_tokens, trimmed = generator.message_fit_in(messages, max_length=0)
 
-    assert used_tokens == len(messages[0]["content"]) + len(messages[1]["content"])
-    assert trimmed[-1]["content"] == "User query: test"
+    assert expected_total > 861
+    assert expected_total < 8192
+    assert used_tokens == expected_total
+    assert trimmed[0]["content"] == "s" * system_len
+    assert trimmed[-1]["content"] == user_content

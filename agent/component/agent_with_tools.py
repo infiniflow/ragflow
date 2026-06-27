@@ -115,11 +115,12 @@ class Agent(LLM, ToolBase):
         if self.tool_meta:
             self.chat_mdl.bind_tools(self.toolcall_session, self.tool_meta)
 
-    def _fit_messages(self, prompt: str, msg: list[dict]) -> list[dict]:
+    def _fit_messages(self, prompt: str, msg: list[dict]) -> tuple[list[dict] | None, str | None]:
         msg_fit, fit_error = LLM.fit_messages(prompt, msg, self.chat_mdl.max_length)
         if fit_error:
-            raise ValueError(fit_error)
-        return msg_fit
+            logging.error("Agent prompt fit error: %s", fit_error)
+            return None, fit_error
+        return msg_fit, None
 
     @staticmethod
     def _append_system_prompt(msg: list[dict], extra_prompt: str) -> None:
@@ -239,7 +240,14 @@ class Agent(LLM, ToolBase):
             self.set_output("content", partial(self.stream_output_with_tools_async, prompt, deepcopy(msg), user_defined_prompt))
             return
 
-        msg = self._fit_messages(prompt, msg)
+        msg, fit_error = self._fit_messages(prompt, msg)
+        if fit_error:
+            if self.get_exception_default_value():
+                self.set_output("content", self.get_exception_default_value())
+            else:
+                self.set_output("_ERROR", fit_error)
+            return
+
         self._append_system_prompt(msg, schema_prompt)
         _logger.debug("[Agent] Calling LLM with %d messages, has_schema=%s", len(msg), bool(schema_prompt))
         ans = await self._generate_async(msg)
@@ -282,7 +290,17 @@ class Agent(LLM, ToolBase):
             self.callback("Multi-turn conversation optimization", {}, user_request, elapsed_time=timer() - st)
             msg = [*msg[:-1], {"role": "user", "content": user_request}]
 
-        msg = self._fit_messages(prompt, msg)
+        msg, fit_error = self._fit_messages(prompt, msg)
+        if fit_error:
+            if self.get_exception_default_value():
+                fallback = self.get_exception_default_value()
+                self.set_output("content", fallback)
+                yield fallback
+            else:
+                self.set_output("_ERROR", fit_error)
+                self.set_output("content", fit_error)
+                yield fit_error
+            return
 
         need2cite = self._param.cite and self._canvas.get_reference()["chunks"] and self._id.find("-->") < 0
         cited = False

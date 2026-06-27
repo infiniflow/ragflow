@@ -120,10 +120,11 @@ class LLM(ComponentBase):
     def _sys_prompt_and_msg(self, msg, args):
         if isinstance(self._param.prompts, str):
             self._param.prompts = [{"role": "user", "content": self._param.prompts}]
+        history_size = len(msg)
         for p in self._param.prompts:
             formatted = deepcopy(p)
             formatted["content"] = self.string_format(formatted["content"], args)
-            if msg and msg[-1]["role"] == formatted["role"]:
+            if len(msg) == history_size and msg and msg[-1]["role"] == formatted["role"]:
                 msg[-1] = formatted
             else:
                 msg.append(formatted)
@@ -141,12 +142,10 @@ class LLM(ComponentBase):
     def validate_fitted_messages(msg_fit: list[dict]) -> str | None:
         if len(msg_fit) < 2:
             return "**ERROR**: message_fit_in produced insufficient messages for LLM"
-        for m in reversed(msg_fit[1:]):
-            if m.get("role") == "user":
-                if str(m.get("content") or "").strip():
-                    return None
-                break
-        return "**ERROR**: LLM user message is empty after prompt fitting; check model max_tokens context setting"
+        last = msg_fit[-1]
+        if last.get("role") != "user" or not str(last.get("content") or "").strip():
+            return "**ERROR**: LLM user message is empty after prompt fitting; check model max_tokens context setting"
+        return None
 
     @classmethod
     def fit_messages(cls, system_prompt: str, msg: list[dict], max_length) -> tuple[list[dict], str | None]:
