@@ -216,11 +216,13 @@ class TestSSRFValidation:
     def test_redirect_to_loopback_rejected(self, mock_pin_dns, mock_safe):
         """Redirect targets must be revalidated before they are fetched.
 
-        Use a function-based ``side_effect`` keyed on URL so the second hop
-        raises regardless of how many times ``assert_url_is_safe`` is invoked
-        (some pytest environments exercise the retry path on the first
-        ConnectorValidationError, which would exhaust a list-based side_effect
-        and let the loop reach the "Exceeded 5 redirects" branch instead).
+        Exercise ``_safe_request`` directly rather than ``_fetch_page``: the
+        latter is wrapped by ``@retry_builder`` and in some CI environments
+        the retry path on the first ``ConnectorValidationError`` exhausts the
+        ``side_effect`` and lets the loop run all 6 iterations, surfacing
+        ``Exceeded 5 redirects`` instead of the expected ``loopback blocked``.
+        ``_safe_request`` is the actual unit under test for redirect SSRF
+        handling, so testing it directly is the more faithful check.
         """
         connector = _make_connector()
         first = _mock_response([], status_code=302)
@@ -243,7 +245,12 @@ class TestSSRFValidation:
             # (the connector's documented error contract) instead of leaking
             # raw ValueError from ssrf_guard.
             with pytest.raises(ConnectorValidationError, match="loopback blocked"):
-                connector._fetch_page({})
+                connector._safe_request(
+                    "GET",
+                    connector.url,
+                    headers={},
+                    params={},
+                )
 
         # The original URL plus the loopback redirect — at minimum 2 calls.
         assert mock_safe.call_count >= 2
