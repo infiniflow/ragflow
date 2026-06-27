@@ -211,17 +211,8 @@ class TestSSRFValidation:
         with pytest.raises(ConnectorValidationError, match="scheme"):
             _make_connector(url="file:///etc/passwd")
 
-    def test_redirect_to_loopback_rejected(self, monkeypatch):
+    def test_redirect_to_loopback_rejected(self):
         """Redirect targets must be revalidated before they are fetched.
-
-        Use ``monkeypatch.setattr`` directly on the bound name the function
-        looks up, rather than the ``@patch`` decorator on the module attribute.
-        In CI, ``@patch("common.data_source.rest_api_connector.assert_url_is_safe")``
-        fails to take effect on the actual call site (``connector._safe_request``)
-        even though the mock is wired up correctly — likely a pytest plugin or
-        test-ordering quirk in the runner. ``monkeypatch.setattr`` on the
-        instance is unaffected by that path because ``_safe_request`` is
-        invoked as a bound method and re-resolves the symbol at call time.
 
         Exercise ``_safe_request`` directly rather than ``_fetch_page``: the
         latter is wrapped by ``@retry_builder`` and in some CI environments
@@ -230,49 +221,46 @@ class TestSSRFValidation:
         ``Exceeded 5 redirects`` instead of the expected ``loopback blocked``.
         ``_safe_request`` is the actual unit under test for redirect SSRF
         handling, so testing it directly is the more faithful check.
+
+        Note on the DNS mock: ``_mocked_rest_api_requests_and_dns`` uses a
+        fixed ``return_value`` for ``socket.getaddrinfo``. With a constant
+        return value, a redirect to ``127.0.0.1`` would be reported as
+        resolving to ``93.184.216.34`` (a public address) and would slip
+        through ``is_global`` checks. To exercise the actual rejection path,
+        we override the patched ``getaddrinfo`` here to return the literal
+        loopback address for the loopback hostname.
         """
         connector = _make_connector()
         first = _mock_response([], status_code=302)
         first.headers = {"Location": "http://127.0.0.1/secret"}
 
-        call_log: list = []
-        safe_calls = []
-
-        def _safe_by_url(url):
-            call_log.append(url)
-            safe_calls.append(url)
-            # First hop pins the public hostname. Any later hop must raise.
-            if "127.0.0.1" in url or "localhost" in url:
-                raise ValueError("loopback blocked")
-            return ("api.example.com", "93.184.216.34")
-
-        monkeypatch.setattr(
-            "common.data_source.rest_api_connector.assert_url_is_safe",
-            _safe_by_url,
-        )
-        monkeypatch.setattr(
-            "common.data_source.rest_api_connector.pin_dns",
-            lambda *a, **kw: nullcontext(),
-        )
+        def _dns_for_host(host, *args, **kwargs):
+            # Mirror _MOCK_DNS_ADDRINFO shape: (family, type, proto, canon, sockaddr).
+            if host == "127.0.0.1":
+                return [(2, 1, 6, "", ("127.0.0.1", 0))]
+            return list(_MOCK_DNS_ADDRINFO)
 
         with _mocked_rest_api_requests_and_dns() as mock_rl:
             mock_rl.get.return_value = first
-            # Coderabbit MAJOR #3486038795: SSRF validation failures inside
-            # _safe_request are now wrapped to raise ConnectorValidationError
-            # (the connector's documented error contract) instead of leaking
-            # raw ValueError from ssrf_guard.
-            with pytest.raises(ConnectorValidationError, match="loopback blocked"):
-                connector._safe_request(
-                    "GET",
-                    connector.url,
-                    headers={},
-                    params={},
-                )
-
-        # Sanity: both the original URL and the loopback redirect must have
-        # been validated before the redirect was followed.
-        assert any("api.example.com" in u for u in safe_calls)
-        assert any("127.0.0.1" in u for u in safe_calls)
+            # The ``_mocked_rest_api_requests_and_dns`` context manager already
+            # patches ``socket.getaddrinfo`` with a constant ``return_value``;
+            # replace it here with a side_effect that distinguishes loopback
+            # from public hostnames so the SSRF guard actually rejects the
+            # redirect target.
+            import common.data_source.rest_api_connector as rc_module
+            from unittest.mock import patch as _patch
+            with _patch.object(rc_module.socket, "getaddrinfo", side_effect=_dns_for_host):
+                # Coderabbit MAJOR #3486038795: SSRF validation failures inside
+                # _safe_request are now wrapped to raise ConnectorValidationError
+                # (the connector's documented error contract) instead of leaking
+                # raw ValueError from ssrf_guard.
+                with pytest.raises(ConnectorValidationError, match="loopback blocked"):
+                    connector._safe_request(
+                        "GET",
+                        connector.url,
+                        headers={},
+                        params={},
+                    )
 
     @patch("common.data_source.rest_api_connector.assert_url_is_safe")
     @patch("common.data_source.rest_api_connector.pin_dns")
