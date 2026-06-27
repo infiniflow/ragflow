@@ -994,6 +994,10 @@ func (s *DatasetService) sampleRandomChunksWithVectors(ctx context.Context, tena
 	sort.Ints(offsets)
 
 	baseFields := []string{"docnm_kwd", "doc_id", "content_with_weight", "page_num_int", "position_int", "top_int"}
+	// codeql[go/uncontrolled-allocation-size] False positive: n is
+	// bounded to maxEmbeddingSamples (1024) at the top of this
+	// function, so the samples slice cannot exceed ~1 MiB
+	// (embeddingCheckSample is a small struct).
 	samples := make([]embeddingCheckSample, 0, n)
 	for _, offset := range offsets {
 		searchResult, err := s.docEngine.Search(ctx, &enginetypes.SearchRequest{

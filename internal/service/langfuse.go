@@ -233,10 +233,10 @@ func (c *LangfuseClient) post(ctx context.Context, envelope []byte) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", auth)
-	// codeql[go/request-forgery] False positive: c.Host is configured
 	// per tenant by an operator (see entity.TenantLangfuse), not by
 	// the requesting user. End users only supply trace payloads
 	// (Kind + Body), never the destination URL.
+	// codeql[go/request-forgery] False positive: c.Host is configured
 	res, err := c.HTTP.Do(req)
 	if err != nil {
 		return
@@ -304,9 +304,9 @@ func (c *LangfuseClient) GetProject(ctx context.Context) (string, string, error)
 	}
 	req.Header.Set("Authorization", basicAuth(c.PublicKey, c.SecretKey))
 
-	// codeql[go/request-forgery] False positive: c.Host is configured
 	// per tenant by an operator (see entity.TenantLangfuse), not by
 	// the requesting user.
+	// codeql[go/request-forgery] False positive: c.Host is configured
 	res, err := c.HTTP.Do(req)
 	if err != nil {
 		return "", "", err

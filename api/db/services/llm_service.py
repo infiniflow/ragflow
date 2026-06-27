@@ -79,6 +79,11 @@ class LLMBundle(LLM4Tenant):
             if text is None or not str(text).strip():
                 marker = "None" if text is None else "whitespace-only"
                 logging.warning(
+                    # codeql[py/clear-text-logging-sensitive-data] False positive:
+                    # model_config["llm_name"] is the model identifier (e.g.
+                    # "gpt-4"), not an API key or credential. CodeQL flags
+                    # it as a sensitive data source only because it lives
+                    # in the same dict as api_key.
                     "LLMBundle.encode: empty input at index %d (%s) coerced to placeholder 'None' for model %s",
                     idx,
                     marker,
@@ -112,6 +117,9 @@ class LLMBundle(LLM4Tenant):
         if query is None or not str(query).strip():
             marker = "None" if query is None else "whitespace-only"
             logging.warning(
+                # codeql[py/clear-text-logging-sensitive-data] False positive:
+                # llm_name is a model identifier, not a credential. See the
+                # matching suppression on the encode() warning above.
                 "LLMBundle.encode_queries: empty query (%s) coerced to placeholder 'None' for model %s",
                 marker,
                 self.model_config["llm_name"],
@@ -248,6 +256,9 @@ class LLMBundle(LLM4Tenant):
 
         for chunk in self.mdl.tts(text):
             if isinstance(chunk, int):
+                # codeql[py/clear-text-logging-sensitive-data] False positive:
+                # llm_name is a model identifier (e.g. "tts-1"), not a
+                # credential. The token count is non-sensitive.
                 logging.info("LLMBundle.tts used_tokens: {}, model_name: {}".format(chunk, self.model_config["llm_name"]))
                 return
             yield chunk

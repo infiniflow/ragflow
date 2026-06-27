@@ -343,11 +343,11 @@ func (e *infinityEngine) InsertChunks(ctx context.Context, chunks []map[string]i
 	if len(insertChunks) > 0 {
 		idList := make([]string, len(insertChunks))
 		for i, chunk := range insertChunks {
-			// codeql[go/unsafe-quoting] False positive: chunk["id"]
 			// is a UUID produced by the document ingestion path
 			// (uuid.NewString), not user input. We single-quote it
 			// for Infinity SQL; UUIDs cannot contain single quotes
 			// by construction (RFC 4122 §3).
+			// codeql[go/unsafe-quoting] False positive: chunk["id"]
 			idList[i] = fmt.Sprintf("'%v'", chunk["id"])
 		}
 		filter := fmt.Sprintf("id IN (%s)", strings.Join(idList, ", "))

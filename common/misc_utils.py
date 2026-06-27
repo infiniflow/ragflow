@@ -115,8 +115,14 @@ async def download_img(url):
                         async for chunk in response.aiter_bytes():
                             if len(body) + len(chunk) > _OAUTH_AVATAR_MAX_BYTES:
                                 logger.warning(
+                                    # codeql[py/clear-text-logging-sensitive-data]
+                                    # False positive: current_url was dropped
+                                    # from the format args in this branch to
+                                    # avoid leaking OAuth tokens embedded in
+                                    # the URL query string. Only the static
+                                    # threshold value is logged.
                                     "download_img response exceeded max size: max_bytes=%s",
-                                
+
                                     _OAUTH_AVATAR_MAX_BYTES,
                                 )
                                 await response.aclose()
@@ -156,9 +162,13 @@ async def download_img(url):
             return ""
         return str(payload)
 
+    # codeql[py/clear-text-logging-sensitive-data]
+    # False positive: current_url was already dropped from the format
+    # args in this branch to avoid leaking OAuth tokens. Only the
+    # hop count and configured max are logged.
     logger.warning(
         "download_img redirect hop limit exceeded: redirect_hops=%s max_redirects=%s",
-                                
+
         redirect_hops,
         _OAUTH_AVATAR_MAX_REDIRECTS,
     )
