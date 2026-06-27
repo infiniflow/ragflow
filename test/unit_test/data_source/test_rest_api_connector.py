@@ -226,7 +226,11 @@ class TestSSRFValidation:
 
         with _mocked_rest_api_requests_and_dns() as mock_rl:
             mock_rl.get.return_value = first
-            with pytest.raises(ValueError, match="loopback blocked"):
+            # Coderabbit MAJOR #3486038795: SSRF validation failures inside
+            # _safe_request are now wrapped to raise ConnectorValidationError
+            # (the connector's documented error contract) instead of leaking
+            # raw ValueError from ssrf_guard.
+            with pytest.raises(ConnectorValidationError, match="loopback blocked"):
                 connector._fetch_page({})
 
         assert mock_safe.call_count == 2
