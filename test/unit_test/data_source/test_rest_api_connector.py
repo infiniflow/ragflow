@@ -231,7 +231,8 @@ class TestSSRFValidation:
         def _safe_by_url(url):
             # First hop (original target) pins the public hostname. Any later
             # hop — including the loopback redirect — must be rejected.
-            if "127.0.0.1" in url:
+            print(f"[TEST] _safe_by_url called with url={url!r}", flush=True)
+            if "127.0.0.1" in url or "localhost" in url:
                 raise ValueError("loopback blocked")
             return ("api.example.com", "93.184.216.34")
 
@@ -252,8 +253,16 @@ class TestSSRFValidation:
                     params={},
                 )
 
-        # The original URL plus the loopback redirect — at minimum 2 calls.
-        assert mock_safe.call_count >= 2
+        # Sanity check: assert_url_is_safe must have been called for at least
+        # the original URL and the loopback redirect. If the loop in
+        # _safe_request ran past the second hop without ever invoking the
+        # mock, the test setup itself is broken — surface that loudly instead
+        # of silently passing.
+        assert mock_safe.call_count >= 2, (
+            f"assert_url_is_safe was called {mock_safe.call_count} times; "
+            f"expected at least 2 (original + loopback redirect). "
+            f"Calls: {mock_safe.call_args_list}"
+        )
 
     @patch("common.data_source.rest_api_connector.assert_url_is_safe")
     @patch("common.data_source.rest_api_connector.pin_dns")
