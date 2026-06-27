@@ -229,7 +229,6 @@ class Invoke(ComponentBase, ABC):
             return
 
         args = self._build_request_args(kwargs)
-        url = self._build_url(kwargs)
         headers = self._build_headers(kwargs)
         proxies = self._build_proxies()
 
@@ -239,6 +238,11 @@ class Invoke(ComponentBase, ABC):
                 return
 
             try:
+                # Coderabbit MAJOR #3486038788: URL validation is now inside the
+                # retry/except block so SSRF rejections (ValueError from
+                # assert_url_is_safe) populate _ERROR via the standard error
+                # path instead of escaping _invoke().
+                url = self._build_url(kwargs)
                 if not self._pinned_hostname or not self._pinned_ip:
                     raise ValueError("Invoke URL was not validated before request.")
                 with pin_dns(self._pinned_hostname, self._pinned_ip):
