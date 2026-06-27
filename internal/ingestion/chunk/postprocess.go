@@ -42,8 +42,10 @@ type mergeConfig struct {
 }
 
 type filterConfig struct {
-	MinLength int `json:"min_length"`
-	MaxLength int `json:"max_length"`
+	MinLength      int  `json:"min_length"`
+	MaxLength      int  `json:"max_length"`
+	DropEmpty      bool `json:"drop_empty"`
+	DropDuplicates bool `json:"drop_duplicates"`
 }
 
 type metadataConfig struct {
@@ -130,6 +132,12 @@ func NewPostprocessOperator(config map[string]interface{}) (*PostprocessOperator
 		}
 		if v, ok := f["max_length"].(float64); ok {
 			op.filter.MaxLength = int(v)
+		}
+		if v, ok := f["drop_empty"].(bool); ok {
+			op.filter.DropEmpty = v
+		}
+		if v, ok := f["drop_duplicates"].(bool); ok {
+			op.filter.DropDuplicates = v
 		}
 	}
 
@@ -228,6 +236,8 @@ func (o *PostprocessOperator) String() string {
 		fmt.Fprintf(&buf, "  filter:\n")
 		fmt.Fprintf(&buf, "    min_length: %d\n", o.filter.MinLength)
 		fmt.Fprintf(&buf, "    max_length: %d\n", o.filter.MaxLength)
+		fmt.Fprintf(&buf, "    drop_empty: %t\n", o.filter.DropEmpty)
+		fmt.Fprintf(&buf, "    drop_duplicates: %t\n", o.filter.DropDuplicates)
 	}
 
 	if o.addMetadata != nil {
@@ -412,16 +422,29 @@ func (o *PostprocessOperator) resolveOverlapConfig(chunk ChunkData) overlapConfi
 	return cfg
 }
 
-// filterChunks removes chunks outside the length bounds.
+// filterChunks removes chunks rejected by the configured filter.
 func (o *PostprocessOperator) filterChunks(chunks []ChunkData) []ChunkData {
 	filtered := make([]ChunkData, 0, len(chunks))
+	var seen map[string]struct{}
+	if o.filter.DropDuplicates {
+		seen = make(map[string]struct{}, len(chunks))
+	}
 	for _, c := range chunks {
+		if o.filter.DropEmpty && strings.TrimSpace(c.Content) == "" {
+			continue
+		}
 		l := len([]rune(c.Content))
 		if o.filter.MinLength > 0 && l < o.filter.MinLength {
 			continue
 		}
 		if o.filter.MaxLength > 0 && l > o.filter.MaxLength {
 			continue
+		}
+		if o.filter.DropDuplicates {
+			if _, ok := seen[c.Content]; ok {
+				continue
+			}
+			seen[c.Content] = struct{}{}
 		}
 		filtered = append(filtered, c)
 	}
