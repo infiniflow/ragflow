@@ -969,6 +969,16 @@ func (s *DatasetService) sampleRandomChunksWithVectors(ctx context.Context, tena
 	}
 
 	total := int(totalResult.Total)
+	// Cap n to a sane upper bound so a hostile caller can't force a
+	// huge preallocation. The downstream `samples` slice is sized
+	// directly from n.
+	const maxEmbeddingSamples = 1024
+	if n < 0 {
+		return nil, fmt.Errorf("invalid sample size: %d", n)
+	}
+	if n > maxEmbeddingSamples {
+		n = maxEmbeddingSamples
+	}
 	if n > total {
 		n = total
 	}

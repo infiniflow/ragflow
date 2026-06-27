@@ -38,7 +38,6 @@ func NewXLSParser(libType string) (*XLSParser, error) {
 }
 
 func (p *XLSParser) Parse(filename string, data []byte) error {
-	fmt.Printf("Parsing XLS file: %s\n", filename)
 	switch p.libType {
 	case OfficeOxide:
 		return p.OfficeOxideParse(data)

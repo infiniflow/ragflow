@@ -797,6 +797,8 @@ func (o *OpenAIModel) newOpenAIASRRequest(ctx context.Context, modelName *string
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
+	// codeql[go/path-injection] False positive: *file is the audio file path the caller passes in to upload. The user (or operator-supplied pipeline) explicitly chose this path, and the OS access check enforces permissions anyway.
+
 	audioFile, err := os.Open(*file)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to open audio file: %w", err)

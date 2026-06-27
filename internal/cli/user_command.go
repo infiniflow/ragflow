@@ -3589,7 +3589,7 @@ func (c *CLI) UserParseLocalFile(cmd *Command) (ResponseIf, error) {
 
 	var result SimpleResponse
 	result.Code = 0
-	result.Message = fmt.Sprintf("Success to parse local file %q, vision: %v, chat: %v, asr: %v, ocr: %v, embedding: %v, doc_parse: %v", filename, visionModel, chatModel, asrModel, ocrModel, embeddingModel, docParseModel)
+	result.Message = fmt.Sprintf("Success to parse local file %q, vision: %v, chat: %v, asr: %v, ocr: %v, embedding: %v, doc_parse: %v", filepath.Base(filename), visionModel, chatModel, asrModel, ocrModel, embeddingModel, docParseModel)
 	fmt.Println(result.Message)
 	return &result, nil
 }

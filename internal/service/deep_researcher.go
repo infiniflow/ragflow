@@ -266,6 +266,10 @@ func (dr *DeepResearcher) _research(
 
 	if suff.IsSufficient {
 		if callback != nil {
+			// codeql[go/unsafe-quoting] False positive: callback is a
+			// string-emitting function (SSE delta to the chat client),
+			// not SQL or a shell. The single-quotes here are typographic
+			// punctuation, not string delimiters in a structured sink.
 			callback(fmt.Sprintf("Yes, the retrieved information is sufficient for '%s'.", question))
 		}
 		return retContent, nil
