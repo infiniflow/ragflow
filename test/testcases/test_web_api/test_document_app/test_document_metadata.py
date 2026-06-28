@@ -624,6 +624,7 @@ class TestDocumentMetadataUnit:
         assert res["code"] == RetCode.DATA_ERROR
         assert "Image not found" in res["message"]
 
+    @pytest.mark.p2
     def test_get_artifact_denied_without_session_reference_unit(self, document_app_module, monkeypatch):
         module = document_app_module
         filename = "a1b2c3d4e5f6789012345678901234abcd.png"
@@ -633,6 +634,7 @@ class TestDocumentMetadataUnit:
         assert res["code"] == RetCode.DATA_ERROR
         assert res["message"] == "Artifact not found."
 
+    @pytest.mark.p2
     def test_get_artifact_denied_when_agent_not_accessible_unit(self, document_app_module, monkeypatch):
         module = document_app_module
         filename = "a1b2c3d4e5f6789012345678901234abcd.png"
@@ -643,6 +645,7 @@ class TestDocumentMetadataUnit:
         assert res["code"] == RetCode.DATA_ERROR
         assert res["message"] == "Artifact not found."
 
+    @pytest.mark.p2
     def test_get_artifact_success_and_missing_blob_unit(self, document_app_module, monkeypatch):
         module = document_app_module
         filename = "a1b2c3d4e5f6789012345678901234abcd.png"
