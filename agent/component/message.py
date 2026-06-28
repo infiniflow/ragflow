@@ -290,11 +290,12 @@ class Message(ComponentBase):
         self.set_output("downloads", downloads)
         self.set_output("content", content)
         self._convert_content(content)
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.run_coroutine_threadsafe(self._save_to_memory(content), loop)
-        else:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
             asyncio.run(self._save_to_memory(content))
+        else:
+            asyncio.run_coroutine_threadsafe(self._save_to_memory(content), loop)
 
     def thoughts(self) -> str:
         return ""
