@@ -452,7 +452,7 @@ async def create_agent_session(agent_id, tenant_id):
 @_require_canvas_access_sync
 def get_agent_session(agent_id, session_id, tenant_id):
     exists, conv = API4ConversationService.get_by_id(session_id)
-    if not exists:
+    if not exists or conv.dialog_id != agent_id:
         return get_data_error_result(message="Session not found!")
     return get_json_result(data=conv.to_dict())
 
@@ -462,6 +462,9 @@ def get_agent_session(agent_id, session_id, tenant_id):
 @add_tenant_id_to_kwargs
 @_require_canvas_access_sync
 def delete_agent_session_item(agent_id, session_id, tenant_id):
+    exists, conv = API4ConversationService.get_by_id(session_id)
+    if not exists or conv.dialog_id != agent_id:
+        return get_data_error_result(message="Session not found!")
     return get_json_result(data=API4ConversationService.delete_by_id(session_id))
 
 
