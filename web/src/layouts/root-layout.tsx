@@ -1,5 +1,10 @@
+import { lazy, Suspense } from 'react';
 import { Outlet } from 'react-router';
 import { Header } from './components/header';
+
+const DocAssistantWidget = lazy(
+  () => import('@/components/doc-assistant'),
+);
 
 export function RootLayoutContainer({ children }: React.PropsWithChildren) {
   return (
@@ -7,6 +12,9 @@ export function RootLayoutContainer({ children }: React.PropsWithChildren) {
       <Header className="px-5 py-4" />
 
       <main className="size-full overflow-hidden">{children}</main>
+      <Suspense fallback={null}>
+        <DocAssistantWidget />
+      </Suspense>
     </div>
   );
 }

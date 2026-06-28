@@ -392,6 +392,10 @@ export default {
   adminSetSandboxConfig: `${restAPIv1}/admin/sandbox/config`,
   adminTestSandboxConnection: `${restAPIv1}/admin/sandbox/test`,
 
+  // Doc assistant
+  docAssistantAsk: `${restAPIv1}/doc-assistant/ask`,
+  docAssistantStatus: `${restAPIv1}/doc-assistant/status`,
+
   // Skill spaces
   skillSpaces: `${restAPIv1}/skills/spaces`,
   skillSpace: (spaceId: string) => `${restAPIv1}/skills/spaces/${spaceId}`,
