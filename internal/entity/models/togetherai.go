@@ -17,7 +17,6 @@
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -30,46 +29,28 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 )
 
 type TogetherAIModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 func NewTogetherAIModel(baseURL map[string]string, urlSuffix URLSuffix) *TogetherAIModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-	transport.ResponseHeaderTimeout = 60 * time.Second
-
 	return &TogetherAIModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
 
 func (t *TogetherAIModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewTogetherAIModel(baseURL, t.URLSuffix)
+	return NewTogetherAIModel(baseURL, t.baseModel.URLSuffix)
 }
 
 func (t *TogetherAIModel) Name() string {
 	return "togetherai"
-}
-
-func (t *TogetherAIModel) baseURLForRegion(region string) (string, error) {
-	base, ok := t.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("togetherai: no base URL configured for region %q", region)
-	}
-	return strings.TrimSuffix(base, "/"), nil
 }
 
 type togetherAIReasoningOptions struct {
@@ -118,16 +99,13 @@ func (t *TogetherAIModel) chatPayload(modelName string, messages []Message, stre
 }
 
 func (t *TogetherAIModel) chatURL(apiConfig *APIConfig) (string, error) {
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
 
-	baseURL, err := t.baseURLForRegion(region)
+	baseURL, err := t.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s/%s", baseURL, t.URLSuffix.Chat), nil
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	return fmt.Sprintf("%s/%s", baseURL, t.baseModel.URLSuffix.Chat), nil
 }
 
 type togetherAIChatMessage struct {
@@ -149,8 +127,8 @@ type togetherAIChatResponse struct {
 }
 
 func (t *TogetherAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
@@ -179,7 +157,7 @@ func (t *TogetherAIModel) ChatWithMessages(modelName string, messages []Message,
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -216,11 +194,12 @@ func (t *TogetherAIModel) ChatWithMessages(modelName string, messages []Message,
 }
 
 func (t *TogetherAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if sender == nil {
 		return fmt.Errorf("sender is required")
-	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return fmt.Errorf("model name is required")
@@ -242,9 +221,6 @@ func (t *TogetherAIModel) ChatStreamlyWithSender(modelName string, messages []Me
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// ResponseHeaderTimeout caps the initial header wait. This context
-	// also caps the body-read phase so a stalled SSE stream cannot hold
-	// the caller's goroutine and connection indefinitely.
 	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
 	defer cancel()
 
@@ -256,7 +232,7 @@ func (t *TogetherAIModel) ChatStreamlyWithSender(modelName string, messages []Me
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	req.Header.Set("Accept", "text/event-stream")
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -267,30 +243,13 @@ func (t *TogetherAIModel) ChatStreamlyWithSender(modelName string, messages []Me
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	sawTerminal := false
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-
-		data := strings.TrimSpace(line[5:])
-		if data == "[DONE]" {
-			sawTerminal = true
-			break
-		}
-
-		var event togetherAIChatResponse
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			return fmt.Errorf("togetherai: invalid SSE event: %w", err)
-		}
+	done, err := ParseSSEStream[togetherAIChatResponse](resp.Body, func(event togetherAIChatResponse) error {
 		if event.Error != nil {
 			return fmt.Errorf("togetherai: upstream stream error: %v", event.Error)
 		}
 		if len(event.Choices) == 0 {
-			continue
+			return nil
 		}
 
 		choice := event.Choices[0]
@@ -311,13 +270,13 @@ func (t *TogetherAIModel) ChatStreamlyWithSender(modelName string, messages []Me
 		}
 		if choice.FinishReason != "" || event.FinishReason != "" {
 			sawTerminal = true
-			break
 		}
-	}
-	if err := scanner.Err(); err != nil {
+		return nil
+	})
+	if err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
-	if !sawTerminal {
+	if !done && !sawTerminal {
 		return fmt.Errorf("togetherai: stream ended before [DONE] or finish_reason")
 	}
 
@@ -329,21 +288,17 @@ type togetherAIModelInfo struct {
 	ID string `json:"id"`
 }
 
-func (t *TogetherAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+func (t *TogetherAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := t.baseURLForRegion(region)
+	baseURL, err := t.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, t.URLSuffix.Models)
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, t.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -355,7 +310,7 @@ func (t *TogetherAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -369,18 +324,12 @@ func (t *TogetherAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result []togetherAIModelInfo
+	var result []DSModel
 	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]string, 0, len(result))
-	for _, model := range result {
-		if model.ID != "" {
-			models = append(models, model.ID)
-		}
-	}
-	return models, nil
+	return ParseListModel(ModelList{Models: result}), nil
 }
 
 func (t *TogetherAIModel) CheckConnection(apiConfig *APIConfig) error {
@@ -401,28 +350,24 @@ type togetherAIEmbeddingResponse struct {
 }
 
 func (t *TogetherAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	if len(texts) == 0 {
-		return []EmbeddingData{}, nil
+	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
 	}
 
 	if modelName == nil || strings.TrimSpace(*modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := t.baseURLForRegion(region)
+	baseURL, err := t.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, t.URLSuffix.Embedding)
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, t.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -448,7 +393,7 @@ func (t *TogetherAIModel) Embed(modelName *string, texts []string, apiConfig *AP
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -493,16 +438,19 @@ func (t *TogetherAIModel) Embed(modelName *string, texts []string, apiConfig *AP
 }
 
 func (t *TogetherAIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", t.BaseURL[region], t.URLSuffix.Rerank)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, t.baseModel.URLSuffix.Rerank)
 
 	var topN = rerankConfig.TopN
 	if rerankConfig.TopN != 0 {
@@ -529,7 +477,7 @@ func (t *TogetherAIModel) Rerank(modelName *string, query string, documents []st
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -572,25 +520,26 @@ func (t *TogetherAIModel) Balance(apiConfig *APIConfig) (map[string]interface{},
 }
 
 func (t *TogetherAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("TogetherAI API key is missing")
+	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if file == nil || *file == "" {
 		return nil, fmt.Errorf("file is missing")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", t.BaseURL[region], t.URLSuffix.ASR)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, t.baseModel.URLSuffix.ASR)
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
 	// audio file
+
+	// codeql[go/path-injection] False positive: *file is the audio file path the caller passes in to upload. The user (or operator-supplied pipeline) explicitly chose this path, and the OS access check enforces permissions anyway.
 	audioFile, err := os.Open(*file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open audio file: %w", err)
@@ -644,7 +593,7 @@ func (t *TogetherAIModel) TranscribeAudio(modelName *string, file *string, apiCo
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -678,20 +627,19 @@ func (t *TogetherAIModel) TranscribeAudioWithSender(modelName *string, file *str
 }
 
 func (t *TogetherAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("TogetherAI API key is missing")
+	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if audioContent == nil || *audioContent == "" {
 		return nil, fmt.Errorf("text content is missing")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", t.BaseURL[region], t.URLSuffix.TTS)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, t.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -720,7 +668,7 @@ func (t *TogetherAIModel) AudioSpeech(modelName *string, audioContent *string, a
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -739,21 +687,20 @@ func (t *TogetherAIModel) AudioSpeech(modelName *string, audioContent *string, a
 }
 
 func (t *TogetherAIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("TogetherAI API key is missing")
+	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 
 	if audioContent == nil || *audioContent == "" {
 		return fmt.Errorf("text content is missing")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
 	}
-
-	cleanBaseURL := strings.TrimRight(t.BaseURL[region], "/")
-	cleanSuffix := strings.TrimLeft(t.URLSuffix.TTS, "/")
+	cleanBaseURL := strings.TrimRight(resolvedBaseURL, "/")
+	cleanSuffix := strings.TrimLeft(t.baseModel.URLSuffix.TTS, "/")
 	url := fmt.Sprintf("%s/%s", cleanBaseURL, cleanSuffix)
 
 	// Build Request body
@@ -788,7 +735,7 @@ func (t *TogetherAIModel) AudioSpeechWithSender(modelName *string, audioContent 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -800,35 +747,13 @@ func (t *TogetherAIModel) AudioSpeechWithSender(modelName *string, audioContent 
 		return fmt.Errorf("TogetherAI stream API error: %d - %s", resp.StatusCode, string(buf[:n]))
 	}
 
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
-
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-
-		dataStr := strings.TrimSpace(line[6:])
-		if dataStr == "" {
-			continue
-		}
-
-		// End
-		if dataStr == "[DONE]" {
-			break
-		}
-
-		var event struct {
-			Type  string `json:"type"`
-			Delta string `json:"delta"`
-		}
-
-		if err := json.Unmarshal([]byte(dataStr), &event); err != nil {
-			continue
-		}
-
+	if _, err := ParseSSEStream[struct {
+		Type  string `json:"type"`
+		Delta string `json:"delta"`
+	}](resp.Body, func(event struct {
+		Type  string `json:"type"`
+		Delta string `json:"delta"`
+	}) error {
 		// Parse delta audio
 		if event.Type == "conversation.item.audio_output.delta" && event.Delta != "" {
 			audioBytes, err := base64.StdEncoding.DecodeString(event.Delta)
@@ -839,10 +764,9 @@ func (t *TogetherAIModel) AudioSpeechWithSender(modelName *string, audioContent 
 				}
 			}
 		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("error reading TogetherAI stream: %w", err)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to scan response body: %w", err)
 	}
 
 	return nil

@@ -82,3 +82,8 @@ func (dao *File2DocumentDAO) GetByDocumentID(docID string) ([]*entity.File2Docum
 func (dao *File2DocumentDAO) DeleteByDocumentID(docID string) error {
 	return DB.Unscoped().Where("document_id = ?", docID).Delete(&entity.File2Document{}).Error
 }
+
+// Create inserts a new file2document mapping record.
+func (dao *File2DocumentDAO) Create(mapping *entity.File2Document) error {
+	return DB.Create(mapping).Error
+}

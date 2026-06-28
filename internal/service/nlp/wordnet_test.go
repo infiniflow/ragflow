@@ -27,6 +27,7 @@ import (
 var testWordNetDir string
 
 func TestNewWordNet(t *testing.T) {
+	requireWordNetData(t)
 	wn, err := NewWordNet(testWordNetDir)
 	if err != nil {
 		t.Fatalf("Failed to create WordNet: %v", err)
@@ -45,6 +46,7 @@ func TestNewWordNet(t *testing.T) {
 }
 
 func TestMorphy(t *testing.T) {
+	requireWordNetData(t)
 	wn, err := NewWordNet(testWordNetDir)
 	if err != nil {
 		t.Fatalf("Failed to create WordNet: %v", err)
@@ -71,6 +73,7 @@ func TestMorphy(t *testing.T) {
 }
 
 func TestSynsets(t *testing.T) {
+	requireWordNetData(t)
 	wn, err := NewWordNet(testWordNetDir)
 	if err != nil {
 		t.Fatalf("Failed to create WordNet: %v", err)
@@ -141,6 +144,7 @@ func TestSynsets(t *testing.T) {
 }
 
 func TestSynsetsDetailed(t *testing.T) {
+	requireWordNetData(t)
 	wn, err := NewWordNet(testWordNetDir)
 	if err != nil {
 		t.Fatalf("Failed to create WordNet: %v", err)
@@ -171,6 +175,7 @@ func TestSynsetsDetailed(t *testing.T) {
 }
 
 func TestSynsetsConsistencyWithPython(t *testing.T) {
+	requireWordNetData(t)
 	wn, err := NewWordNet(testWordNetDir)
 	if err != nil {
 		t.Fatalf("Failed to create WordNet: %v", err)
@@ -209,6 +214,7 @@ func TestSynsetsConsistencyWithPython(t *testing.T) {
 }
 
 func TestSynsetContent(t *testing.T) {
+	requireWordNetData(t)
 	wn, err := NewWordNet(testWordNetDir)
 	if err != nil {
 		t.Fatalf("Failed to create WordNet: %v", err)

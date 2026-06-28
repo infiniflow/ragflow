@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 from datetime import datetime
 from functools import partial
 from timeit import default_timer as timer
-from langfuse import Langfuse
+from langfuse import Langfuse, propagate_attributes
 from peewee import fn
 from api.db.services.file_service import FileService
 from common.constants import LLMType, ParserType, StatusEnum
@@ -286,38 +286,41 @@ class DialogService(CommonService):
         return list(objs)
 
 
-async def async_chat_solo(dialog, messages, stream=True):
-    llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
+async def async_chat_solo(dialog, messages, stream=True, session_id=None):
     attachments = ""
     image_attachments = []
     image_files = []
-    if "files" in messages[-1]:
+
+    if dialog.llm_id:
+        llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
         if "chat" in llm_types:
+            model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+        else:
+            model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
+    else:
+        model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
+
+    chat_mdl = LLMBundle(dialog.tenant_id, model_config, langfuse_session_id=session_id)
+    factory = model_config.get("llm_factory", "") if model_config else ""
+    if "files" in messages[-1]:
+        if model_config["model_type"] == "chat":
             text_attachments, image_attachments = split_file_attachments(messages[-1]["files"])
         else:
             text_attachments, image_files = split_file_attachments(messages[-1]["files"], raw=True)
         attachments = "\n\n".join(text_attachments)
 
-    if dialog.llm_id:
-        model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
-    else:
-        model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
-
-    chat_mdl = LLMBundle(dialog.tenant_id, model_config)
-    factory = model_config.get("llm_factory", "") if model_config else ""
-
     prompt_config = dialog.prompt_config
     tts_mdl = None
     if prompt_config.get("tts"):
         default_tts_model = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.TTS)
-        tts_mdl = LLMBundle(dialog.tenant_id, default_tts_model)
+        tts_mdl = LLMBundle(dialog.tenant_id, default_tts_model, trace_context=chat_mdl.trace_context, langfuse_session_id=session_id)
     msg = [{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])} for m in messages if m["role"] != "system"]
     if attachments and msg:
         msg[-1]["content"] += attachments
-    if "chat" in llm_types and image_attachments:
+    if model_config["model_type"] == "chat" and image_attachments:
         convert_last_user_msg_to_multimodal(msg, image_attachments, factory)
     if stream:
-        if "chat" in llm_types:
+        if model_config["model_type"] == "chat":
             stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, dialog.llm_setting)
         else:
             stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, dialog.llm_setting, images=image_files)
@@ -328,7 +331,7 @@ async def async_chat_solo(dialog, messages, stream=True):
                 continue
             yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "prompt": "", "created_at": time.time(), "final": False}
     else:
-        if "chat" in llm_types:
+        if model_config["model_type"] == "chat":
             answer = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, dialog.llm_setting)
         else:
             answer = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, dialog.llm_setting, images=image_files)
@@ -337,7 +340,7 @@ async def async_chat_solo(dialog, messages, stream=True):
         yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, answer), "prompt": "", "created_at": time.time()}
 
 
-def get_models(dialog):
+def get_models(dialog, trace_context=None, langfuse_session_id=None):
     embd_mdl, chat_mdl, rerank_mdl, tts_mdl = None, None, None, None
     kbs = KnowledgebaseService.get_by_ids(dialog.kb_ids)
     embedding_list = list(set([kb.embd_id for kb in kbs]))
@@ -347,7 +350,7 @@ def get_models(dialog):
     if embedding_list:
         embd_owner_tenant_id = kbs[0].tenant_id
         embd_model_config = get_model_config_from_provider_instance(embd_owner_tenant_id, LLMType.EMBEDDING, embedding_list[0])
-        embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config)
+        embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config, trace_context=trace_context, langfuse_session_id=langfuse_session_id)
         if not embd_mdl:
             raise LookupError("Embedding model(%s) not found" % embedding_list[0])
 
@@ -356,15 +359,15 @@ def get_models(dialog):
     else:
         chat_model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 
-    chat_mdl = LLMBundle(dialog.tenant_id, chat_model_config)
+    chat_mdl = LLMBundle(dialog.tenant_id, chat_model_config, trace_context=trace_context, langfuse_session_id=langfuse_session_id)
 
     if dialog.rerank_id:
         rerank_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.RERANK, dialog.rerank_id)
-        rerank_mdl = LLMBundle(dialog.tenant_id, rerank_model_config)
+        rerank_mdl = LLMBundle(dialog.tenant_id, rerank_model_config, trace_context=trace_context, langfuse_session_id=langfuse_session_id)
 
     if dialog.prompt_config.get("tts"):
         default_tts_model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.TTS)
-        tts_mdl = LLMBundle(dialog.tenant_id, default_tts_model_config)
+        tts_mdl = LLMBundle(dialog.tenant_id, default_tts_model_config, trace_context=trace_context, langfuse_session_id=langfuse_session_id)
     return kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl
 
 
@@ -541,20 +544,21 @@ def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
 async def async_chat(dialog, messages, stream=True, **kwargs):
     logging.debug("Begin async_chat")
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
+    session_id = kwargs.get("session_id")
     use_web_search = _should_use_web_search(dialog.prompt_config, kwargs.get("internet"))
     logging.debug("web_search kb=%s tavily=%s internet=%r enabled=%s", bool(dialog.kb_ids), bool(dialog.prompt_config.get("tavily_api_key")), kwargs.get("internet"), use_web_search)
     if not dialog.kb_ids and not use_web_search:
-        async for ans in async_chat_solo(dialog, messages, stream):
+        async for ans in async_chat_solo(dialog, messages, stream, session_id=session_id):
             yield ans
         return
 
     chat_start_ts = timer()
     if dialog.llm_id:
         llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
-        if "image2text" in llm_types:
-            llm_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
-        else:
+        if "chat" in llm_types:
             llm_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+        else:
+            llm_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
     else:
         llm_model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 
@@ -579,7 +583,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             pass
 
     check_langfuse_tracer_ts = timer()
-    kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl = get_models(dialog)
+    kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl = get_models(dialog, trace_context=trace_context, langfuse_session_id=session_id)
     toolcall_session, tools = kwargs.get("toolcall_session"), kwargs.get("tools")
     if toolcall_session and tools:
         chat_mdl.bind_tools(toolcall_session, tools)
@@ -737,7 +741,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                 kbinfos["doc_aggs"].extend(tav_res["doc_aggs"])
             if prompt_config.get("use_kg"):
                 default_chat_model = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
-                ck = await settings.kg_retriever.retrieval(" ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl, LLMBundle(dialog.tenant_id, default_chat_model))
+                ck = await settings.kg_retriever.retrieval(" ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl, LLMBundle(dialog.tenant_id, default_chat_model, trace_context=trace_context, langfuse_session_id=session_id))
                 if ck["content_with_weight"]:
                     kbinfos["chunks"].insert(0, ck)
 
@@ -758,10 +762,21 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         yield {"answer": empty_res, "reference": kbinfos, "prompt": "\n\n### Query:\n%s" % " ".join(questions), "audio_binary": tts(tts_mdl, empty_res), "final": True}
         return
 
-    kwargs["knowledge"] = "\n------\n" + "\n\n------\n\n".join(knowledges)
+    # Only overwrite kwargs["knowledge"] when retrieval produced something;
+    # otherwise preserve any caller-supplied value.
+    knowledge_text = "\n\n------\n\n".join(knowledges)
+    if knowledge_text:
+        kwargs["knowledge"] = "\n------\n" + knowledge_text
+    else:
+        kwargs.setdefault("knowledge", "")
     gen_conf = dialog.llm_setting
 
-    msg = [{"role": "system", "content": prompt_config["system"].format(**kwargs) + attachments_}]
+    system_content = prompt_config["system"].format(**kwargs) + attachments_
+    # If knowledge was retrieved but the template has no {knowledge}
+    # placeholder, auto-append it so the LLM still sees the context.
+    if knowledges and "{knowledge}" not in prompt_config.get("system", ""):
+        system_content += kwargs["knowledge"]
+    msg = [{"role": "system", "content": system_content}]
     prompt4citation = ""
     if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
         prompt4citation = citation_prompt()
@@ -866,13 +881,18 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
 
     if langfuse_tracer:
         try:
-            langfuse_generation = langfuse_tracer.start_observation(
-                as_type="generation",
-                trace_context=trace_context,
-                name="chat",
-                model=llm_model_config["llm_name"],
-                input={"prompt": prompt, "prompt4citation": prompt4citation, "messages": msg},
-            )
+            observation_kwargs = {
+                "as_type": "generation",
+                "trace_context": trace_context,
+                "name": "chat",
+                "model": llm_model_config["llm_name"],
+                "input": {"prompt": prompt, "prompt4citation": prompt4citation, "messages": msg},
+            }
+            if session_id:
+                with propagate_attributes(session_id=session_id):
+                    langfuse_generation = langfuse_tracer.start_observation(**observation_kwargs)
+            else:
+                langfuse_generation = langfuse_tracer.start_observation(**observation_kwargs)
         except Exception as e:  # noqa: BLE001 - tracing must not break chat flow
             logger.warning("Langfuse start_observation failed; continuing without tracing: %s", e)
             langfuse_tracer = None
@@ -896,6 +916,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             final = await decorate_answer(_extract_visible_answer(thought + full_answer))
             final["final"] = True
             final["audio_binary"] = None
+            final["answer"] = ""
             yield final
     else:
         if llm_model_config["model_type"] == "chat":
@@ -1049,7 +1070,9 @@ RULES:
    - Question mentions "not null" or "excluding null"
    - Add NULL check for count specific column
    - DO NOT add NULL check for COUNT(*) queries (COUNT(*) counts all rows including nulls)
-7. Output ONLY the SQL, no explanations"""
+7. json_extract_string() returns JSON-quoted strings ("value"), so WHERE comparisons MUST wrap values in double-quotes inside single-quotes (no spaces between quotes): '"value"' (e.g. WHERE json_extract_string(chunk_data, '$.name') = '"Alice"')
+8. For partial text search, use LIKE with wildcards: '"%value%"' (e.g. WHERE json_extract_string(chunk_data, '$.name') LIKE '"%Alice%"')
+9. Output ONLY the SQL, no explanations"""
         user_prompt = """Table: {}
 Fields (EXACT case): {}
 {}
@@ -1121,9 +1144,13 @@ Write SQL using exact field names above. Include doc_id, docnm_kwd for data quer
         logging.debug(f"use_sql: Executing SQL retrieval (attempt {tried_times})")
         tbl = settings.retriever.sql_retrieval(sql, format="json")
         if tbl is None:
-            logging.debug("use_sql: SQL retrieval returned None")
+            logging.debug("use_sql: SQL retrieval failed (returned None)")
             return None, sql
-        logging.debug(f"use_sql: SQL retrieval completed, got {len(tbl.get('rows', []))} rows")
+        row_count = len(tbl.get("rows", []))
+        if row_count == 0:
+            logging.debug("use_sql: SQL execution succeeded but returned 0 rows")
+        else:
+            logging.debug(f"use_sql: SQL retrieval completed, got {row_count} rows")
         return tbl, sql
 
     async def repair_table_for_missing_source_columns(previous_sql):
@@ -1282,7 +1309,7 @@ Please correct the error and write SQL again using json_extract_string(chunk_dat
     # compose Markdown table
     columns = "|" + "|".join([map_column_name(tbl["columns"][i]["name"]) for i in column_idx]) + ("|Source|" if docid_idx and doc_name_idx else "|")
 
-    line = "|" + "|".join(["------" for _ in range(len(column_idx))]) + ("|------|" if docid_idx and docid_idx else "")
+    line = "|" + "|".join(["------" for _ in range(len(column_idx))]) + ("|------|" if docid_idx and doc_name_idx else "")
 
     # Build rows ensuring column names match values - create a dict for each row
     # keyed by column name to handle any SQL column order
@@ -1436,11 +1463,12 @@ class _ThinkStreamState:
     def __init__(self) -> None:
         self.full_text = ""
         self.last_idx = 0
-        self.endswith_think = False
-        self.last_full = ""
         self.last_model_full = ""
         self.in_think = False
-        self.buffer = ""
+        self.close_pending = False
+        self.pending_after_close = ""
+        self.think_buffer = ""
+        self.answer_buffer = ""
 
 
 def _extract_visible_answer(text: str) -> str:
@@ -1456,34 +1484,35 @@ def _extract_visible_answer(text: str) -> str:
     return f"<think>{thought}</think>{answer}"
 
 
-def _next_think_delta(state: _ThinkStreamState) -> str:
-    full_text = state.full_text
-    if full_text == state.last_full:
-        return ""
-    state.last_full = full_text
-    delta_ans = full_text[state.last_idx :]
-
-    if delta_ans.find("<think>") == 0:
-        state.last_idx += len("<think>")
-        return "<think>"
-    if delta_ans.find("<think>") > 0:
-        delta_text = full_text[state.last_idx : state.last_idx + delta_ans.find("<think>")]
-        state.last_idx += delta_ans.find("<think>")
-        return delta_text
-    if delta_ans.endswith("</think>"):
-        state.endswith_think = True
-    elif state.endswith_think:
-        state.endswith_think = False
-        return "</think>"
-
-    state.last_idx = len(full_text)
-    if full_text.endswith("</think>"):
-        state.last_idx -= len("</think>")
-    return re.sub(r"(<think>|</think>)", "", delta_ans)
-
-
 async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
     state = _ThinkStreamState()
+
+    def _emit_text(section: str, text: str):
+        if not text:
+            return None
+        if section == "think":
+            return text
+        state.answer_buffer += text
+        if num_tokens_from_string(state.answer_buffer) >= min_tokens:
+            out = state.answer_buffer
+            state.answer_buffer = ""
+            return out
+        return None
+
+    def _flush_think_buffer():
+        if not state.think_buffer:
+            return None
+        out = state.think_buffer
+        state.think_buffer = ""
+        return out
+
+    def _flush_answer_buffer():
+        if not state.answer_buffer:
+            return None
+        out = state.answer_buffer
+        state.answer_buffer = ""
+        return out
+
     async for chunk in stream_iter:
         if not chunk:
             continue
@@ -1496,31 +1525,96 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
         if not new_part:
             continue
         state.full_text += new_part
-        delta = _next_think_delta(state)
-        if not delta:
-            continue
-        if delta in ("<think>", "</think>"):
-            if delta == "<think>" and state.in_think:
-                continue
-            if delta == "</think>" and not state.in_think:
-                continue
-            if state.buffer:
-                yield ("text", state.buffer, state)
-                state.buffer = ""
-            state.in_think = delta == "<think>"
-            yield ("marker", delta, state)
-            continue
-        state.buffer += delta
-        if num_tokens_from_string(state.buffer) < min_tokens:
-            continue
-        yield ("text", state.buffer, state)
-        state.buffer = ""
+        pending = new_part
 
-    if state.buffer:
-        yield ("text", state.buffer, state)
-        state.buffer = ""
-    if state.endswith_think:
+        if state.close_pending and "</think>" not in pending:
+            state.close_pending = False
+            think_piece = _flush_think_buffer()
+            if think_piece is not None:
+                yield ("text", think_piece, state)
+            state.in_think = False
+            yield ("marker", "</think>", state)
+            if state.pending_after_close:
+                answer_piece = state.pending_after_close
+                state.pending_after_close = ""
+                out = _emit_text("answer", answer_piece)
+                if out is not None:
+                    yield ("text", out, state)
+            answer_piece = re.sub(r"</?think>", "", pending or "")
+            if answer_piece:
+                out = _emit_text("answer", answer_piece)
+                if out is not None:
+                    yield ("text", out, state)
+            continue
+
+        while pending:
+            open_idx = pending.find("<think>")
+            close_idx = pending.find("</think>")
+
+            if open_idx == -1 and close_idx == -1:
+                piece = re.sub(r"</?think>", "", pending or "")
+                if piece:
+                    section = "think" if state.in_think else "answer"
+                    out = _emit_text(section, piece)
+                    if out is not None:
+                        yield ("text", out, state)
+                break
+
+            if open_idx != -1 and (close_idx == -1 or open_idx < close_idx):
+                before = pending[:open_idx]
+                if before:
+                    piece = re.sub(r"</?think>", "", before or "")
+                    section = "think" if state.in_think else "answer"
+                    out = _emit_text(section, piece)
+                    if out is not None:
+                        yield ("text", out, state)
+                pending = pending[open_idx + len("<think>") :]
+                if not state.in_think:
+                    answer_piece = _flush_answer_buffer()
+                    if answer_piece is not None:
+                        yield ("text", answer_piece, state)
+                    think_piece = _flush_think_buffer()
+                    if think_piece is not None:
+                        yield ("text", think_piece, state)
+                    state.in_think = True
+                    yield ("marker", "<think>", state)
+                continue
+
+            before = pending[:close_idx]
+            after = pending[close_idx + len("</think>") :]
+            if before:
+                piece = re.sub(r"</?think>", "", before or "")
+                section = "think" if state.in_think else "answer"
+                out = _emit_text(section, piece)
+                if out is not None:
+                    yield ("text", out, state)
+            after_visible = re.sub(r"</?think>", "", after or "")
+            if after_visible.strip():
+                think_piece = _flush_think_buffer()
+                if think_piece is not None:
+                    yield ("text", think_piece, state)
+                state.in_think = False
+                yield ("marker", "</think>", state)
+                pending = after_visible
+                continue
+            state.close_pending = True
+            if after_visible:
+                state.pending_after_close += after_visible
+            pending = ""
+            break
+
+    if state.think_buffer:
+        yield ("text", state.think_buffer, state)
+        state.think_buffer = ""
+    if state.close_pending:
+        state.in_think = False
         yield ("marker", "</think>", state)
+    if state.answer_buffer:
+        yield ("text", state.answer_buffer, state)
+        state.answer_buffer = ""
+    if state.pending_after_close:
+        yield ("text", state.pending_after_close, state)
+        state.pending_after_close = ""
 
 
 async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}, search_id=None):
@@ -1533,6 +1627,14 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     include_reference_metadata, metadata_fields = _resolve_reference_metadata(search_config)
 
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
+    if not kbs:
+        if not kb_ids:
+            error = "**ERROR**: No KB selected"
+        else:
+            error = "**ERROR**: The selected KB is not valid"
+        yield {"answer": error, "reference": {}, "final": True}
+        return
+
     embedding_list = list(set([kb.embd_id for kb in kbs]))
 
     is_knowledge_graph = all([kb.parser_id == ParserType.KG for kb in kbs])
@@ -1636,6 +1738,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     full_answer = last_state.full_text if last_state else ""
     final = await decorate_answer(_extract_visible_answer(full_answer))
     final["final"] = True
+    final["answer"] = ""
     yield final
 
 

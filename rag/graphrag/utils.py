@@ -18,6 +18,7 @@ import os
 import re
 import time
 from collections import defaultdict
+from copy import deepcopy
 from hashlib import md5
 from typing import Any, Callable, Set, Tuple
 
@@ -370,7 +371,7 @@ def chunk_id(chunk):
     return xxhash.xxh64((chunk["content_with_weight"] + chunk["kb_id"]).encode("utf-8")).hexdigest()
 
 
-async def graph_node_to_chunk(kb_id, embd_mdl, ent_name, meta, chunks):
+async def graph_node_to_chunk(kb_id, embd_mdl, ent_name, meta, chunks, nhop_neighbors=None):
     global chat_limiter
     enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
     chunk = {
@@ -383,6 +384,11 @@ async def graph_node_to_chunk(kb_id, embd_mdl, ent_name, meta, chunks):
         "content_with_weight": json.dumps(meta, ensure_ascii=False),
         "content_ltks": rag_tokenizer.tokenize(meta["description"]),
         "source_id": meta["source_id"],
+        # pagerank drives the P(E|Q) = pagerank * sim ranking in KGSearch; the
+        # n-hop neighbour paths feed its relation-enrichment step.  Both are read
+        # back as `rank_flt` / `n_hop_with_weight` in rag/graphrag/search.py.
+        "rank_flt": float(meta.get("pagerank", 0) or 0),
+        "n_hop_with_weight": json.dumps(nhop_neighbors or [], ensure_ascii=False),
         "kb_id": kb_id,
         "available_int": 0,
     }
@@ -549,8 +555,9 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
     tasks = []
     for ii, node in enumerate(change.added_updated_nodes):
         node_attrs = graph.nodes[node]
+        nhop_neighbors = n_neighbor(graph, node)
         tasks.append(asyncio.create_task(
-            graph_node_to_chunk(kb_id, embd_mdl, node, node_attrs, chunks)
+            graph_node_to_chunk(kb_id, embd_mdl, node, node_attrs, chunks, nhop_neighbors)
         ))
         if ii % 100 == 9 and callback:
             callback(msg=f"Get embedding of nodes: {ii}/{len(change.added_updated_nodes)}")
@@ -695,6 +702,41 @@ def merge_tuples(list1, list2):
             if not already_match_flag:
                 result.append(tup)
     return result
+
+
+def n_neighbor(graph: nx.Graph, node, n_hop: int = 2):
+    """Enumerate paths of up to ``n_hop`` edges starting at ``node`` together
+    with the edge weight along each step.
+
+    Returns a list of ``{"path": (n0, n1, ...), "weights": [w0, w1, ...]}``
+    dicts (``len(weights) == len(path) - 1``).  This is the structure consumed
+    by :class:`rag.graphrag.search.KGSearch` for n-hop relation enrichment and
+    is stored per entity chunk as ``n_hop_with_weight``.
+    """
+    source_edge = list(graph.edges(node))
+    if not source_edge:
+        return []
+    count = 1
+    while count < n_hop:
+        count += 1
+        sc_edge = deepcopy(source_edge)
+        source_edge = []
+        for pair in sc_edge:
+            append_edge = list(graph.edges(pair[-1]))
+            for tuples in merge_tuples([pair], append_edge):
+                source_edge.append(tuples)
+    wts = nx.get_edge_attributes(graph, "weight")
+    nbrs = []
+    for path in source_edge:
+        nbr = {"path": path, "weights": []}
+        for i in range(len(path) - 1):
+            f, t = path[i], path[i + 1]
+            w = wts.get((f, t))
+            if w is None:
+                w = wts.get((t, f), 0)
+            nbr["weights"].append(w)
+        nbrs.append(nbr)
+    return nbrs
 
 
 async def get_entity_type2samples(idxnms, kb_ids: list):

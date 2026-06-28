@@ -229,7 +229,12 @@ class RAGFlowExcelParser:
                 tb_rows_0 += f"<th>{escape(_fmt(t.value))}</th>"
             tb_rows_0 += "</tr>"
 
-            for chunk_i in range((len(rows) - 1) // chunk_rows + 1):
+            # rows[0] is the header; split the remaining data rows into
+            # ceil(n_data / chunk_rows) chunks. Using +1 here over-counts by one
+            # when the data-row count is an exact multiple of chunk_rows and emits
+            # a spurious header-only chunk.
+            n_data_rows = len(rows) - 1
+            for chunk_i in range((n_data_rows + chunk_rows - 1) // chunk_rows):
                 tb = ""
                 tb += f"<table><caption>{sheetname}</caption>"
                 tb += tb_rows_0
@@ -278,7 +283,7 @@ class RAGFlowExcelParser:
             for r in list(rows[1:]):
                 fields = []
                 for i, c in enumerate(r):
-                    if not c.value:
+                    if c.value is None or str(c.value).strip() == "":
                         continue
                     t = str(ti[i].value) if i < len(ti) else ""
                     t += ("：" if t else "") + str(c.value)

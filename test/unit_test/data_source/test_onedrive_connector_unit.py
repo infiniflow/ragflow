@@ -7,6 +7,7 @@ from common.data_source.onedrive_connector import OneDriveConnector, OneDriveChe
 from common.data_source.models import SlimDocument
 from common.data_source.exceptions import (
     ConnectorMissingCredentialError,
+    ConnectorValidationError,
     InsufficientPermissionsError,
     UnexpectedValidationError,
 )
@@ -17,6 +18,65 @@ _GOOD_CREDS = {
     "client_id": "client-abc",
     "client_secret": "secret-xyz",
 }
+
+_GRAPH_BASE = "https://graph.microsoft.com/v1.0"
+
+
+# ---------------------------------------------------------------------------
+# folder_path / _delta_url
+# ---------------------------------------------------------------------------
+
+@pytest.mark.p2
+def test_folder_path_prepends_leading_slash_for_delta_url():
+    connector = OneDriveConnector(folder_path="Documents/Reports")
+    assert connector.folder_path == "/Documents/Reports"
+    assert connector._delta_url("drive-1") == (
+        f"{_GRAPH_BASE}/drives/drive-1/root:/Documents/Reports:/delta"
+    )
+
+
+@pytest.mark.p2
+def test_folder_path_preserves_leading_slash():
+    connector = OneDriveConnector(folder_path="/Documents/Reports/")
+    assert connector.folder_path == "/Documents/Reports"
+    assert connector._delta_url("drive-1") == (
+        f"{_GRAPH_BASE}/drives/drive-1/root:/Documents/Reports:/delta"
+    )
+
+
+@pytest.mark.p2
+def test_folder_path_rejects_parent_segments():
+    with pytest.raises(ConnectorValidationError, match="\\.\\."):
+        OneDriveConnector(folder_path="/Documents/../secret")
+
+
+@pytest.mark.p2
+def test_folder_path_normalizes_consecutive_slashes():
+    connector = OneDriveConnector(folder_path="//Documents//Reports")
+    assert connector.folder_path == "/Documents/Reports"
+    assert connector._delta_url("drive-1") == (
+        f"{_GRAPH_BASE}/drives/drive-1/root:/Documents/Reports:/delta"
+    )
+
+
+@pytest.mark.p2
+def test_folder_path_strips_whitespace():
+    connector = OneDriveConnector(folder_path="  Documents/Reports  ")
+    assert connector.folder_path == "/Documents/Reports"
+
+
+@pytest.mark.p2
+def test_folder_path_root_uses_drive_root_delta():
+    connector = OneDriveConnector(folder_path="/")
+    assert connector.folder_path is None
+    assert connector._delta_url("drive-1") == f"{_GRAPH_BASE}/drives/drive-1/root/delta"
+
+
+@pytest.mark.p2
+def test_folder_path_double_slash_only_uses_drive_root_delta():
+    connector = OneDriveConnector(folder_path="//")
+    assert connector.folder_path is None
+    assert connector._delta_url("drive-1") == f"{_GRAPH_BASE}/drives/drive-1/root/delta"
 
 
 # ---------------------------------------------------------------------------

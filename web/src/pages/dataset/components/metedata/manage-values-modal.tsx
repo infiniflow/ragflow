@@ -172,7 +172,7 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
       ? [
           {
             name: 'valueType',
-            label: 'Type',
+            label: t('knowledgeDetails.metadata.type'),
             type: FormFieldType.Select,
             options: metadataValueTypeOptions,
             defaultValue: metaData.valueType || metadataValueTypeEnum.string,

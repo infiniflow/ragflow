@@ -72,6 +72,12 @@
       ]
     },
     {
+      "name": "jina-clip-v2",
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
       "name": "HunyuanOCR",
       "model_types": [
         "ocr"

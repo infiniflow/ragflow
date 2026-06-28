@@ -24,6 +24,13 @@ from api.db.services.task_service import has_canceled
 from common.exceptions import TaskCanceledException
 from common.connection_utils import timeout
 from rag.graphrag.entity_resolution import EntityResolution
+from rag.graphrag.checkpoints import (
+    COMMUNITY_CHECKPOINT,
+    RESOLUTION_CHECKPOINT,
+    cleanup_checkpoints,
+    load_checkpoints,
+    save_checkpoint,
+)
 from rag.graphrag.general.community_reports_extractor import CommunityReportsExtractor
 from rag.graphrag.general.extractor import Extractor
 from rag.graphrag.general.graph_extractor import GraphExtractor as GeneralKGExt
@@ -763,10 +770,22 @@ async def resolve_entities(
     _has_cancel_and_exit(task_id, f"Task {task_id} cancelled during entity resolution.", callback)
 
     start = asyncio.get_running_loop().time()
+    checkpoints = await load_checkpoints(tenant_id, kb_id, RESOLUTION_CHECKPOINT)
+
+    async def save_resolution_checkpoint(checkpoint_key: str, payload):
+        return await save_checkpoint(tenant_id, kb_id, RESOLUTION_CHECKPOINT, checkpoint_key, payload)
+
     er = EntityResolution(
         llm_bdl,
     )
-    reso = await er(graph, subgraph_nodes, callback=callback, task_id=task_id)
+    reso = await er(
+        graph,
+        subgraph_nodes,
+        callback=callback,
+        task_id=task_id,
+        checkpoints=checkpoints,
+        save_checkpoint=save_resolution_checkpoint,
+    )
     graph = reso.graph
     change = reso.change
     callback(msg=f"Graph resolution removed {len(change.removed_nodes)} nodes and {len(change.removed_edges)} edges.")
@@ -776,6 +795,7 @@ async def resolve_entities(
 
     _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before saving resolved graph.", callback)
     await set_graph(tenant_id, kb_id, embed_bdl, graph, change, callback)
+    await cleanup_checkpoints(tenant_id, kb_id, RESOLUTION_CHECKPOINT)
     now = asyncio.get_running_loop().time()
     callback(msg=f"Graph resolution done in {now - start:.2f}s.")
 
@@ -794,10 +814,21 @@ async def extract_community(
     _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before community extraction.", callback)
 
     start = asyncio.get_running_loop().time()
+    checkpoints = await load_checkpoints(tenant_id, kb_id, COMMUNITY_CHECKPOINT)
+
+    async def save_community_checkpoint(checkpoint_key: str, payload):
+        return await save_checkpoint(tenant_id, kb_id, COMMUNITY_CHECKPOINT, checkpoint_key, payload)
+
     ext = CommunityReportsExtractor(
         llm_bdl,
     )
-    cr = await ext(graph, callback=callback, task_id=task_id)
+    cr = await ext(
+        graph,
+        callback=callback,
+        task_id=task_id,
+        checkpoints=checkpoints,
+        save_checkpoint=save_community_checkpoint,
+    )
 
     _has_cancel_and_exit(task_id, f"Task {task_id} cancelled during community extraction.", callback)
 
@@ -881,6 +912,7 @@ async def extract_community(
             logging.exception("Failed to prune %d stale community reports for kb %s", len(stale_ids), kb_id)
 
     _has_cancel_and_exit(task_id, f"Task {task_id} cancelled after community indexing.", callback)
+    await cleanup_checkpoints(tenant_id, kb_id, COMMUNITY_CHECKPOINT)
 
     now = asyncio.get_running_loop().time()
     callback(msg=f"Graph indexed {len(cr.structured_output)} communities in {now - start:.2f}s.")

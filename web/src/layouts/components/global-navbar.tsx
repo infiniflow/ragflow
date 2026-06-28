@@ -17,6 +17,11 @@ const PathMap = {
   [Routes.Files]: [Routes.Files],
 } as const;
 
+// Match on path-segment boundaries, not a loose substring, so e.g.
+// "/user-setting/chat-channel" does not match the "/chat" tab.
+const matchesPath = (pathname: string, candidate: string) =>
+  pathname === candidate || pathname.startsWith(`${candidate}/`);
+
 const menuItems = [
   { path: Routes.Root, name: 'header.Root', icon: LucideHouse },
   { path: Routes.Datasets, name: 'header.dataset' /* icon: Library, */ },
@@ -49,7 +54,7 @@ const GlobalNavbar = supportsCssAnchor
         return (
           Object.keys(PathMap).find((x: string) =>
             PathMap[x as keyof typeof PathMap].some((y: string) =>
-              pathname.includes(y),
+              matchesPath(pathname, y),
             ),
           ) || pathname
         );
@@ -115,7 +120,7 @@ const GlobalNavbar = supportsCssAnchor
         return (
           Object.keys(PathMap).find((x: string) =>
             PathMap[x as keyof typeof PathMap].some((y: string) =>
-              pathname.includes(y),
+              matchesPath(pathname, y),
             ),
           ) || pathname
         );

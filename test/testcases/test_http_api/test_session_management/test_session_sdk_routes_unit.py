@@ -275,7 +275,6 @@ def _load_session_module(monkeypatch):
     }
     api_utils_mod.get_request_json = lambda: _AwaitableValue({})
     api_utils_mod.server_error_response = lambda e: {"code": _StubRetCode.SERVER_ERROR, "message": str(e)}
-    api_utils_mod.token_required = lambda func: func
     api_utils_mod.validate_request = lambda *_args, **_kwargs: (lambda func: func)
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 

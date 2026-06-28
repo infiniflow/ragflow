@@ -131,6 +131,20 @@ async def update_memory(memory_id: str, new_memory_setting: dict):
     """
     current_memory = _require_memory_access(memory_id)
 
+    def _normalize_memory_type(value):
+        if value is None:
+            return []
+        if isinstance(value, int):
+            return sorted(get_memory_type_human(value))
+        if isinstance(value, list):
+            return sorted(str(v).strip().lower() for v in value if str(v).strip())
+        return sorted(str(value).strip().lower().split(","))
+
+    def _normalize_str(value):
+        if value is None:
+            return ""
+        return str(value).strip()
+
     update_dict = {}
     # check name length
     if "name" in new_memory_setting:
@@ -186,8 +200,21 @@ async def update_memory(memory_id: str, new_memory_setting: dict):
     memory_dict.update({"memory_type": get_memory_type_human(current_memory.memory_type)})
     to_update = {}
     for k, v in update_dict.items():
-        if isinstance(v, list) and set(memory_dict[k]) != set(v):
-            to_update[k] = v
+        if k == "memory_type":
+            current_value = _normalize_memory_type(memory_dict.get(k))
+            new_value = _normalize_memory_type(v)
+            if current_value != new_value:
+                to_update[k] = new_value
+        elif k == "embd_id":
+            current_value = _normalize_str(memory_dict.get(k))
+            new_value = _normalize_str(v)
+            if current_value != new_value:
+                to_update[k] = new_value
+        elif isinstance(v, list):
+            current_value = sorted(str(item).strip() for item in memory_dict.get(k, []))
+            new_value = sorted(str(item).strip() for item in v)
+            if current_value != new_value:
+                to_update[k] = v
         elif memory_dict[k] != v:
             to_update[k] = v
 

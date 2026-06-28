@@ -463,7 +463,7 @@ func TestLongCatListModelsAndCheckConnection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if got := strings.Join(models, ","); got != "LongCat-Flash-Chat,LongCat-Flash-Thinking-2601" {
+	if got := joinModelNames(models, ","); got != "LongCat-Flash-Chat,LongCat-Flash-Thinking-2601" {
 		t.Errorf("models=%q", got)
 	}
 	if err := newLongCatForTest(srv.URL).CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {
