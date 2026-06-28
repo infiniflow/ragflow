@@ -250,6 +250,28 @@ async def begin_inputs(agent_id, tenant_id=None):
               "prologue": canvas.get_prologue(), "mode": canvas.get_mode()})
 
 
+async def _assert_caller_owns_kbs(user_id, kb_ids):
+    """Cross-tenant access guard for the embedded search endpoints.
+
+    Returns an error ``Response`` to short-circuit with when any requested
+    ``kb_id`` is not owned by one of the caller's tenants, or ``None`` when all
+    are owned. Mirrors the ownership gate already enforced in
+    ``retrieval_test_embedded`` so a beta token cannot retrieve from another
+    tenant's knowledge base.
+    """
+    if isinstance(kb_ids, str):
+        kb_ids = [kb_ids]
+    tenants = await thread_pool_exec(UserTenantService.query, user_id=user_id)
+    for kb_id in kb_ids:
+        for tenant in tenants:
+            if await thread_pool_exec(KnowledgebaseService.query, tenant_id=tenant.tenant_id, id=kb_id):
+                break
+        else:
+            return get_json_result(data=False, message="Only owner of dataset authorized for this operation.",
+                                   code=RetCode.OPERATING_ERROR)
+    return None
+
+
 @manager.route("/searchbots/ask", methods=["POST"])  # noqa: F821
 @login_required(auth_types=AUTH_BETA)
 @add_tenant_id_to_kwargs
@@ -264,6 +286,10 @@ async def ask_about_embedded(tenant_id=None):
         if search_app := await thread_pool_exec(SearchService.get_detail, search_id):
             search_config = search_app.get("search_config", {})
 
+    # async_ask retrieves against each kb's own tenant, so the caller must own
+    # every kb_id it asks about (search_config may override the request value).
+    if err := await _assert_caller_owns_kbs(uid, search_config.get("kb_ids", req["kb_ids"])):
+        return err
     chat_llm_name = ""
     if not search_config or not search_config.get("chat_id"):
         _, tenant_info = TenantService.get_by_id(uid)
@@ -499,6 +525,9 @@ async def mindmap(tenant_id=None):
 
     search_id = req.get("search_id", "")
     search_app = await thread_pool_exec(SearchService.get_detail, search_id) if search_id else {}
+
+    if err := await _assert_caller_owns_kbs(tenant_id, req["kb_ids"]):
+        return err
 
     mind_map =await gen_mindmap(req["question"], req["kb_ids"], tenant_id, search_app.get("search_config", {}))
     if "error" in mind_map:
