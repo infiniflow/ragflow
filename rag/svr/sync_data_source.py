@@ -2070,6 +2070,7 @@ class _RDBMSBase(SyncBase):
             id_column=self.conf.get("id_column") or None,
             timestamp_column=self.conf.get("timestamp_column") or None,
             batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+            file_extension=self.conf.get("file_extension", ".txt"),
         )
 
         credentials = self.conf.get("credentials")

@@ -55,6 +55,7 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         id_column: Optional[str] = None,
         timestamp_column: Optional[str] = None,
         batch_size: int = INDEX_BATCH_SIZE,
+        file_extension=None,
     ) -> None:
         """
         Initialize the RDBMS connector.
@@ -70,6 +71,7 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             id_column: Column to use as unique document ID (optional, will generate hash if not provided)
             timestamp_column: Column to use for incremental sync (optional, must be datetime/timestamp type)
             batch_size: Number of documents per batch
+            file_extension: File Extension to save content column into
         """
         self.db_type = DatabaseType(db_type.lower())
         self.host = host.strip()
@@ -83,6 +85,7 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         self.id_column = id_column.strip() if id_column else None
         self.timestamp_column = timestamp_column.strip() if timestamp_column else None
         self.batch_size = batch_size
+        self.file_extension = file_extension if file_extension else '.txt'
         
         self._connection = None
         self._credentials: Dict[str, Any] = {}
@@ -469,7 +472,7 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             blob=blob,
             source=DocumentSource(self.db_type.value),
             semantic_identifier=semantic_id,
-            extension=".txt",
+            extension=self.file_extension,
             doc_updated_at=doc_updated_at,
             size_bytes=len(blob),
             metadata=metadata if metadata else None,
