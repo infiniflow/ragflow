@@ -27,6 +27,7 @@ The value is a small dict (or ``None`` when no request context is active), e.g.
 """
 
 import contextvars
+import logging
 
 llm_request_context: contextvars.ContextVar = contextvars.ContextVar("ragflow_llm_request_context", default=None)
 
@@ -42,6 +43,8 @@ def set_llm_request_context(session_id: str | None = None, user_id: str | None =
         ctx["session_id"] = str(session_id)[:128]
     if user_id:
         ctx["user_id"] = str(user_id)[:128]
+    # Log only presence flags, never the raw identifiers.
+    logging.debug("Installing LLM request context (session=%s, user=%s)", bool(session_id), bool(user_id))
     return llm_request_context.set(ctx or None)
 
 
@@ -51,6 +54,7 @@ def reset_llm_request_context(token) -> None:
     except ValueError:
         # The context may be reset from a different context (e.g. an async generator
         # closed on client disconnect); fall back to clearing the value.
+        logging.warning("LLM request context reset failed; clearing active context", exc_info=True)
         llm_request_context.set(None)
 
 

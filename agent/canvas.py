@@ -548,11 +548,13 @@ class Canvas(Graph):
                     if use_async:
                         await cpn_obj.invoke_async(**(call_kwargs or {}))
                         return
-                    # run_in_executor does not propagate context variables; copy the
-                    # current context so the token usage sink / Langfuse attributes set
-                    # by run() remain visible to LLMBundle calls inside sync components.
-                    ctx = contextvars.copy_context()
-                    await loop.run_in_executor(self._thread_pool, lambda: ctx.run(partial(sync_fn, **(call_kwargs or {}))))
+                    # run_in_executor does not carry context variables into the worker
+                    # thread; copy the current context so the LLM request context (the
+                    # `user` forwarding), token usage sink, and Langfuse attributes set
+                    # by run() remain visible to sync components.
+                    bound_call = partial(sync_fn, **(call_kwargs or {}))
+                    call_ctx = contextvars.copy_context()
+                    await loop.run_in_executor(self._thread_pool, partial(call_ctx.run, bound_call))
 
             i = f
             while i < t:

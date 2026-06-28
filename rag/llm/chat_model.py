@@ -2184,9 +2184,10 @@ class LiteLLMBase(ABC):
         }
         # Forward the originating session/user as the OpenAI-standard `user` field so
         # providers (OpenAI, OpenRouter, ...) receive it in the request body and
-        # upstream activity can be correlated back to the session. Caller-supplied
-        # `user` (if any) takes precedence.
-        if not completion_args.get("user"):
+        # upstream activity can be correlated back to the session. An explicit
+        # caller-supplied `user` (including an empty string to suppress it) wins, so
+        # check key presence rather than truthiness.
+        if "user" not in completion_args:
             request_user = current_llm_user()
             if request_user:
                 completion_args["user"] = request_user
