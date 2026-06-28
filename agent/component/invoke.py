@@ -25,6 +25,7 @@ import requests
 
 from agent.component.base import ComponentBase, ComponentParamBase
 from common.connection_utils import timeout
+from common.ssrf_guard import assert_url_is_safe, pin_dns
 from deepdoc.parser import HtmlParser
 
 
@@ -55,6 +56,11 @@ class InvokeParam(ComponentParamBase):
 class Invoke(ComponentBase, ABC):
     component_name = "Invoke"
     header_variable_ref_patt = r"\{([a-zA-Z_][a-zA-Z0-9_.@-]*)\}"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._pinned_hostname: str | None = None
+        self._pinned_ip: str | None = None
 
     @staticmethod
     def _coerce_json_arg_if_possible(key, value):
@@ -169,6 +175,9 @@ class Invoke(ComponentBase, ABC):
         url = self._resolve_template_text(self._param.url.strip(), kwargs)
         if not url.startswith(("http://", "https://")):
             url = "http://" + url
+        hostname, ip = assert_url_is_safe(url)
+        self._pinned_hostname = hostname
+        self._pinned_ip = ip
         return url
 
     def _build_headers(self, kwargs: dict) -> dict:
@@ -194,6 +203,7 @@ class Invoke(ComponentBase, ABC):
             "headers": headers,
             "proxies": proxies,
             "timeout": self._param.timeout,
+            "allow_redirects": False,
         }
 
         # GET sends query params; POST/PUT send either JSON or form data based on datatype.
@@ -219,7 +229,6 @@ class Invoke(ComponentBase, ABC):
             return
 
         args = self._build_request_args(kwargs)
-        url = self._build_url(kwargs)
         headers = self._build_headers(kwargs)
         proxies = self._build_proxies()
 
@@ -229,7 +238,15 @@ class Invoke(ComponentBase, ABC):
                 return
 
             try:
-                response = self._send_request(url, args, headers, proxies)
+                # Coderabbit MAJOR #3486038788: URL validation is now inside the
+                # retry/except block so SSRF rejections (ValueError from
+                # assert_url_is_safe) populate _ERROR via the standard error
+                # path instead of escaping _invoke().
+                url = self._build_url(kwargs)
+                if not self._pinned_hostname or not self._pinned_ip:
+                    raise ValueError("Invoke URL was not validated before request.")
+                with pin_dns(self._pinned_hostname, self._pinned_ip):
+                    response = self._send_request(url, args, headers, proxies)
                 result = self._format_response(response)
                 self.set_output("result", result)
                 return result

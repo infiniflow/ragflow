@@ -450,6 +450,23 @@ class TestDocumentMetadataUnit:
         assert res["code"] == 500
         assert "download boom" in res["message"]
 
+    def test_download_document_rejects_other_tenant_unit(self, document_rest_api_module, monkeypatch):
+        module = document_rest_api_module
+        monkeypatch.setattr(module.DocumentService, "accessible", lambda _doc_id, _user_id: False)
+
+        res = _run(module.download_document("doc1"))
+        assert res["code"] == RetCode.DATA_ERROR
+        assert "Document not found!" in res["message"]
+
+    def test_dataset_document_download_rejects_other_tenant_unit(self, document_rest_api_module, monkeypatch):
+        module = document_rest_api_module
+        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda kb_id, user_id: False)
+        monkeypatch.setattr(module.DocumentService, "accessible", lambda _doc_id, _user_id: True)
+
+        res = _run(module.download("kb1", "doc1"))
+        assert res["code"] == RetCode.DATA_ERROR
+        assert "Document not found!" in res["message"]
+
     @pytest.mark.p2
     def test_get_document_image_content_type_from_object_extension_unit(self, document_app_module, monkeypatch):
         module = document_app_module
