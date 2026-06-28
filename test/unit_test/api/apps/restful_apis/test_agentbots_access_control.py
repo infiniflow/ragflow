@@ -156,3 +156,13 @@ class TestAgentBotAccessControl:
 
         assert calls.get("get_by_id") == "own-agent"
         assert result["code"] == 0
+
+    @pytest.mark.p1
+    def test_completions_allowed_for_accessible_agent(self, monkeypatch):
+        calls = {}
+        module = _load_bot_api(monkeypatch, accessible=True, calls=calls)
+
+        result = asyncio.run(module.agent_bot_completions(agent_id="own-agent"))
+
+        assert calls.get("completion") is True
+        assert result["code"] == 0

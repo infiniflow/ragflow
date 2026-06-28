@@ -161,6 +161,11 @@ async def agent_bot_completions(agent_id, tenant_id=None):
     req = await get_request_json()
 
     if not await thread_pool_exec(UserCanvasService.accessible, agent_id, tenant_id):
+        logger.warning(
+            "agent_bot_completions access denied tenant_id=%s agent_id=%s",
+            tenant_id,
+            agent_id,
+        )
         return get_error_data_result(message=f"Can't find agent by ID: {agent_id}")
 
     if req.get("stream", True):
@@ -244,6 +249,11 @@ async def agent_bot_completions(agent_id, tenant_id=None):
 @add_tenant_id_to_kwargs
 async def begin_inputs(agent_id, tenant_id=None):
     if not await thread_pool_exec(UserCanvasService.accessible, agent_id, tenant_id):
+        logger.warning(
+            "begin_inputs access denied tenant_id=%s agent_id=%s",
+            tenant_id,
+            agent_id,
+        )
         return get_error_data_result(f"Can't find agent by ID: {agent_id}")
 
     e, cvs = await thread_pool_exec(UserCanvasService.get_by_id, agent_id)
