@@ -1,0 +1,44 @@
+{
+  "name": "Xiaomi",
+  "url": {
+    "default": "https://api.xiaomimimo.com/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions"
+  },
+  "models": [
+    {
+      "name": "mimo-v2.5-pro",
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "mimo-v2.5",
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "mimo-v2.5-asr",
+      "max_tokens": 8192,
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "mimo-v2.5-tts",
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "mimo-v2-tts",
+      "model_types": [
+        "tts"
+      ]
+    }
+  ]
+}

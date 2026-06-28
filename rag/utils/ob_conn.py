@@ -48,6 +48,8 @@ column_mom_id = Column("mom_id", String(256), nullable=True, comment="parent chu
 column_chunk_data = Column("chunk_data", JSON, nullable=True, comment="table parser row data")
 column_raptor_kwd = Column("raptor_kwd", String(256), nullable=True, comment="RAPTOR summary marker")
 column_raptor_layer_int = Column("raptor_layer_int", Integer, nullable=True, comment="RAPTOR summary layer")
+column_n_hop_with_weight = Column("n_hop_with_weight", LONGTEXT, nullable=True,
+                                  comment="JSON-encoded n-hop neighbour paths and weights for a graph entity")
 
 column_definitions: list[Column] = [
     Column("id", String(256), primary_key=True, comment="chunk id"),
@@ -86,6 +88,7 @@ column_definitions: list[Column] = [
     Column("weight_flt", Double, nullable=True, comment="the weight of community report"),
     Column("entities_kwd", ARRAY(String(256)), nullable=True, comment="node ids of entities"),
     Column("rank_flt", Double, nullable=True, comment="rank of this entity"),
+    column_n_hop_with_weight,
     Column("removed_kwd", String(256), nullable=True, index=True, server_default="'N'",
            comment="whether it has been deleted"),
     column_raptor_kwd,
@@ -138,6 +141,7 @@ EXTRA_COLUMNS: list[Column] = [
     column_chunk_data,
     column_raptor_kwd,
     column_raptor_layer_int,
+    column_n_hop_with_weight,
 ]
 
 

@@ -33,7 +33,7 @@ import (
 	"github.com/elastic/go-elasticsearch/v8/esapi"
 )
 
-// Engine Elasticsearch engine implementation
+// elasticsearchEngine is the Elasticsearch engine implementation
 type elasticsearchEngine struct {
 	client *elasticsearch.Client
 	config *server.ElasticsearchConfig
@@ -159,7 +159,7 @@ func (e *elasticsearchEngine) CreateIndexTemplate(ctx context.Context, templateN
 	// Build template body with proper structure
 	templateBody := map[string]interface{}{
 		"index_patterns": []string{indexPattern},
-		"priority": p, // Configurable priority to override existing templates
+		"priority":       p, // Configurable priority to override existing templates
 		"template": map[string]interface{}{
 			"settings": templateSettings,
 			"mappings": templateMappings,
@@ -375,4 +375,39 @@ func extractErrorReason(bodyBytes []byte) string {
 	}
 
 	return ""
+}
+
+// GetIndexStats gets statistics for specified indices using the _cat/indices API
+// Returns index, health, status, docs.count, store.size, dataset.size for each index
+func (e *elasticsearchEngine) GetIndexStats(indices []string) ([]map[string]interface{}, error) {
+	if len(indices) == 0 {
+		return []map[string]interface{}{}, nil
+	}
+
+	req := esapi.CatIndicesRequest{
+		Index:  indices,
+		Format: "json",
+		H:      []string{"index", "health", "status", "docs.count", "store.size", "dataset.size"},
+	}
+
+	res, err := req.Do(context.Background(), e.client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get index stats: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		if res.StatusCode == 404 {
+			return []map[string]interface{}{}, nil
+		}
+		bodyBytes, _ := io.ReadAll(res.Body)
+		return nil, fmt.Errorf("elasticsearch cat indices error: %s, body: %s", res.Status(), string(bodyBytes))
+	}
+
+	var results []map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&results); err != nil {
+		return nil, fmt.Errorf("failed to decode index stats: %w", err)
+	}
+
+	return results, nil
 }

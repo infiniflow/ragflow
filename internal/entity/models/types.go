@@ -1,5 +1,7 @@
 package models
 
+import "encoding/json"
+
 // Message represents a chat message with role and content
 //
 // Content is interface{} to support different formats:
@@ -7,8 +9,15 @@ package models
 //   - []interface{}: multimodal content array where each element is map[string]interface{}
 //     (e.g., [{"type": "text", "text": "..."}, {"type": "image_url", "image_url": {"url": "..."}}])
 type Message struct {
-	Role    string      `json:"role"`
-	Content interface{} `json:"content"`
+	Role       string                   `json:"role"`
+	Content    interface{}              `json:"content"`
+	ToolCallID string                   `json:"tool_call_id,omitempty"`
+	ToolCalls  []map[string]interface{} `json:"tool_calls,omitempty"`
+}
+
+// ToolCallSession mirrors Python's common.mcp_tool_call_conn.ToolCallSession protocol.
+type ToolCallSession interface {
+	ToolCall(name string, arguments map[string]interface{}) (string, error)
 }
 
 // EmbeddingModel interface for embedding models
@@ -36,7 +45,7 @@ type ModelDriver interface {
 	// ParseFile parse file
 	ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error)
 	// ListModels List supported models
-	ListModels(apiConfig *APIConfig) ([]string, error)
+	ListModels(apiConfig *APIConfig) ([]ListModelResponse, error)
 
 	Balance(apiConfig *APIConfig) (map[string]interface{}, error)
 
@@ -48,8 +57,9 @@ type ModelDriver interface {
 }
 
 type ChatResponse struct {
-	Answer        *string `json:"answer"`
-	ReasonContent *string `json:"reason_content"`
+	Answer        *string                  `json:"answer"`
+	ReasonContent *string                  `json:"reason_content"`
+	ToolCalls     []map[string]interface{} `json:"tool_calls,omitempty"`
 }
 
 type EmbeddingData struct {
@@ -78,6 +88,15 @@ type OCRFileResponse struct {
 	Text *string `json:"text"`
 }
 
+type ListModelResponse struct {
+	Name         string         `json:"name"`
+	MaxTokens    *int           `json:"max_tokens"`
+	ModelTypes   []string       `json:"model_types"`
+	Thinking     *ModelThinking `json:"thinking"`
+	MaxDimension *int           `json:"max_dimension"` // used by embedding models
+	Dimensions   []int          `json:"dimensions"`
+}
+
 type ParseFileResponse struct {
 	TaskID string `json:"task_id"`
 }
@@ -94,6 +113,11 @@ type TaskSegment struct {
 
 type TaskResponse struct {
 	Segments []TaskSegment `json:"segments"`
+}
+
+type ModelList struct {
+	Object string    `json:"object"`
+	Models []DSModel `json:"data"`
 }
 
 // URLSuffix represents the URL suffixes for different API endpoints
@@ -116,17 +140,20 @@ type URLSuffix struct {
 }
 
 type ChatConfig struct {
-	Stream      *bool
-	Vision      *bool
-	Thinking    *bool
-	MaxTokens   *int
-	Temperature *float64
-	TopP        *float64
-	DoSample    *bool
-	Stop        *[]string
-	ModelClass  *string
-	Effort      *string
-	Verbosity   *string
+	Stream          *bool
+	Vision          *bool
+	Thinking        *bool
+	MaxTokens       *int
+	Temperature     *float64
+	TopP            *float64
+	DoSample        *bool
+	Stop            *[]string
+	ModelClass      *string
+	Effort          *string
+	Verbosity       *string
+	Tools           interface{}               `json:"tools,omitempty"`
+	ToolChoice      *string                   `json:"tool_choice,omitempty"`
+	ToolCallsResult *[]map[string]interface{} `json:"-"`
 }
 
 type APIConfig struct {
@@ -197,11 +224,20 @@ func (r *RerankModel) Rerank(query string, texts []string, apiConfig *APIConfig,
 	return r.ModelDriver.Rerank(r.ModelName, query, texts, apiConfig, rerankConfig)
 }
 
+// ToolConfig bundles tool-calling configuration for a ChatModel.
+type ToolConfig struct {
+	Tools           string          // JSON-encoded tools list
+	MaxRounds       int             // max tool-calling rounds (default: 5)
+	MaxRetries      int             // max retries on failure (default: 3)
+	ToolCallSession ToolCallSession // session that executes tool calls
+}
+
 // ChatModel wraps a ModelDriver with chat-specific configuration
 type ChatModel struct {
 	ModelDriver ModelDriver
 	ModelName   *string
 	APIConfig   *APIConfig
+	ToolConfig  *ToolConfig
 }
 
 // NewChatModel creates a new ChatModel
@@ -210,5 +246,28 @@ func NewChatModel(driver ModelDriver, modelName *string, apiConfig *APIConfig) *
 		ModelDriver: driver,
 		ModelName:   modelName,
 		APIConfig:   apiConfig,
+	}
+}
+
+// BindTools registers tools for the ChatModel to call.
+// Mirrors Python's Base.bind_tools() in rag/llm/chat_model.py.
+func (cm *ChatModel) BindTools(session ToolCallSession, tools interface{}) {
+	// Serialize tools to JSON if it's a list/map.
+	toolsJSON := ""
+	switch v := tools.(type) {
+	case string:
+		toolsJSON = v
+	case []byte:
+		toolsJSON = string(v)
+	default:
+		if b, err := json.Marshal(tools); err == nil {
+			toolsJSON = string(b)
+		}
+	}
+	cm.ToolConfig = &ToolConfig{
+		Tools:           toolsJSON,
+		MaxRounds:       defaultMaxRounds,
+		MaxRetries:      defaultMaxRetries,
+		ToolCallSession: session,
 	}
 }

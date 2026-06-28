@@ -22,20 +22,21 @@ import (
 
 // DummyModel implements ModelDriver for Dummy AI
 type DummyModel struct {
-	BaseURL   map[string]string
-	URLSuffix URLSuffix
+	baseModel BaseModel
 }
 
 // NewDummyModel creates a new Dummy AI model instance
 func NewDummyModel(baseURL map[string]string, urlSuffix URLSuffix) *DummyModel {
 	return &DummyModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+		},
 	}
 }
 
 func (d *DummyModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return nil
+	return NewDummyModel(baseURL, d.baseModel.URLSuffix)
 }
 
 func (d *DummyModel) Name() string {
@@ -57,7 +58,7 @@ func (d *DummyModel) Embed(modelName *string, texts []string, apiConfig *APIConf
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (d *DummyModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (d *DummyModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 

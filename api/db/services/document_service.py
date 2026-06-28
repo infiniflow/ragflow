@@ -945,7 +945,7 @@ class DocumentService(CommonService):
                     if t.progress == -1:
                         bad += 1
                     prg += t.progress if t.progress >= 0 else 0
-                    if t.progress_msg.strip():
+                    if (t.progress_msg or "").strip():
                         msg.append(t.progress_msg)
                     priority = max(priority, t.priority)
                 prg /= len(tsks)

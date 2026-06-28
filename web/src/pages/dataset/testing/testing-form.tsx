@@ -22,6 +22,7 @@ import {
   similarityThresholdSchema,
   vectorSimilarityWeightSchema,
 } from '@/components/similarity-slider';
+import { TopSelectFormItem } from '@/components/top-select';
 import { ButtonLoading } from '@/components/ui/button';
 import {
   Form,
@@ -64,6 +65,7 @@ export default function TestingForm({
     use_kg: z.boolean().optional(),
     dataset_ids: z.array(z.string()).optional(),
     ...MetadataFilterSchema,
+    size: z.number().optional(),
   });
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -74,6 +76,7 @@ export default function TestingForm({
       ...initialTopKValue,
       use_kg: false,
       dataset_ids: [knowledgeBaseId],
+      size: 10,
     },
   });
 
@@ -106,6 +109,7 @@ export default function TestingForm({
               name={'cross_languages'}
             ></CrossLanguageFormField>
             <MetadataFilter prefix=""></MetadataFilter>
+            <TopSelectFormItem></TopSelectFormItem>
           </FormContainer>
         </div>
 
@@ -115,7 +119,6 @@ export default function TestingForm({
             name="question"
             render={({ field }) => (
               <FormItem>
-                {/* <FormLabel>{t('knowledgeDetails.testText')}</FormLabel> */}
                 <FormControl>
                   <Textarea {...field}></Textarea>
                 </FormControl>

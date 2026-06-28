@@ -28,6 +28,7 @@ import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
+import { NICKNAME_PATTERN } from '../user-setting/profile/constants';
 import { BgSvg } from './bg';
 import FlipCard3D, { FlipFaceContext } from './card';
 import './index.less';
@@ -149,24 +150,25 @@ function LoginFormContent({
                   name="remember"
                   render={({ field }) => (
                     <FormItem>
-                      <FormControl>
-                        <div className="flex gap-2">
+                      <div className="flex gap-2 group">
+                        <FormControl>
                           <Checkbox
                             checked={field.value}
                             onCheckedChange={(checked) => {
                               field.onChange(checked);
                             }}
+                            className="group-hover:border-border-default group-hover:bg-border-button"
                           />
-                          <FormLabel
-                            className={cn(' hover:text-text-primary', {
-                              'text-text-disabled': !field.value,
-                              'text-text-primary': field.value,
-                            })}
-                          >
-                            {t('rememberMe')}
-                          </FormLabel>
-                        </div>
-                      </FormControl>
+                        </FormControl>
+                        <FormLabel
+                          className={cn('cursor-pointer', {
+                            'text-text-disabled': !field.value,
+                            'text-text-primary': field.value,
+                          })}
+                        >
+                          {t('rememberMe')}
+                        </FormLabel>
+                      </div>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -252,6 +254,9 @@ const Login = () => {
   const { login: loginWithChannel, loading: loginWithChannelLoading } =
     useLoginWithChannel();
   const { t } = useTranslation('translation', { keyPrefix: 'login' });
+  const { t: tSetting } = useTranslation('translation', {
+    keyPrefix: 'setting',
+  });
   const [isLoginPage, setIsLoginPage] = useState(true);
 
   const loading =
@@ -286,7 +291,7 @@ const Login = () => {
 
   const FormSchema = z
     .object({
-      nickname: z.string(),
+      nickname: z.string().optional(),
       email: z
         .string()
         .email()
@@ -295,10 +300,19 @@ const Login = () => {
       remember: z.boolean().optional(),
     })
     .superRefine((data, ctx) => {
-      if (title === 'register' && !data.nickname) {
+      if (title !== 'register') return;
+      if (!data.nickname) {
         ctx.addIssue({
           path: ['nickname'],
           message: 'nicknamePlaceholder',
+          code: z.ZodIssueCode.custom,
+        });
+        return;
+      }
+      if (!NICKNAME_PATTERN.test(data.nickname)) {
+        ctx.addIssue({
+          path: ['nickname'],
+          message: tSetting('usernameInvalidCharacters'),
           code: z.ZodIssueCode.custom,
         });
       }

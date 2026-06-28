@@ -16,14 +16,14 @@ import { FormTooltip } from '@/components/ui/tooltip';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
 import { Plus } from 'lucide-react';
-import { memo, useEffect, useMemo, useRef } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { AgentDialogueMode, BeginQueryType } from '../../constant';
 import { INextOperatorForm } from '../../interface';
 import { ParameterDialog } from './parameter-dialog';
 import { QueryTable } from './query-table';
-import { BeginFormSchema } from './schema';
+import { BeginFormSchema, BeginFormSchemaType } from './schema';
 import { useEditQueryRecord } from './use-edit-query';
 import { useHandleModeChange } from './use-handle-mode-change';
 import { useValues } from './use-values';
@@ -49,7 +49,10 @@ function BeginForm({ node }: INextOperatorForm) {
 
   useWatchFormChange(node?.id, form);
 
-  const inputs = useWatch({ control: form.control, name: 'inputs' });
+  const inputs = useWatch<BeginFormSchemaType, 'inputs'>({
+    control: form.control,
+    name: 'inputs',
+  });
   const mode = useWatch({ control: form.control, name: 'mode' });
 
   const hasFileInput = useMemo(
@@ -88,6 +91,10 @@ function BeginForm({ node }: INextOperatorForm) {
     form,
     node,
   });
+
+  const handleAddQuery = useCallback(() => {
+    showModal();
+  }, [showModal]);
 
   return (
     <section className="px-5 space-y-5 pb-4">
@@ -167,6 +174,7 @@ function BeginForm({ node }: INextOperatorForm) {
               render={() => <div></div>}
             />
             <Collapse
+              defaultOpen
               title={
                 <div>
                   {t('flow.input')}
@@ -174,19 +182,13 @@ function BeginForm({ node }: INextOperatorForm) {
                 </div>
               }
               rightContent={
-                <Button
-                  variant={'ghost'}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    showModal();
-                  }}
-                >
+                <Button variant={'ghost'} onClick={handleAddQuery}>
                   <Plus />
                 </Button>
               }
             >
               <QueryTable
-                data={inputs}
+                data={inputs ?? []}
                 showModal={showModal}
                 deleteRecord={handleDeleteRecord}
               ></QueryTable>

@@ -31,6 +31,7 @@ from api.db.services.dialog_service import DialogService, async_ask, gen_mindmap
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
+from api.db.services.user_service import TenantService
 from common.metadata_utils import apply_meta_data_filter
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import UserTenantService
@@ -148,6 +149,7 @@ async def chatbots_inputs(dialog_id, tenant_id=None):
             "avatar": dialog.icon,
             "prologue": dialog.prompt_config.get("prologue", ""),
             "has_tavily_key": bool(dialog.prompt_config.get("tavily_api_key", "").strip()),
+            "llm_id": dialog.llm_id or "",
         }
     )
 
@@ -268,10 +270,15 @@ async def ask_about_embedded(tenant_id=None):
         if search_app := await thread_pool_exec(SearchService.get_detail, search_id):
             search_config = search_app.get("search_config", {})
 
+    chat_llm_name = ""
+    if not search_config or not search_config.get("chat_id"):
+        _, tenant_info = TenantService.get_by_id(uid)
+        chat_llm_name = tenant_info.llm_id
+
     async def stream():
         nonlocal req, uid
         try:
-            async for ans in async_ask(req["question"], req["kb_ids"], uid, search_config=search_config):
+            async for ans in async_ask(req["question"], req["kb_ids"], uid, chat_llm_name=chat_llm_name, search_config=search_config):
                 yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
         except Exception as e:
             yield "data:" + json.dumps(

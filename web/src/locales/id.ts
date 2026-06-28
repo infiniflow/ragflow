@@ -36,6 +36,8 @@ export default {
       preview: 'Pratinjau',
       move: 'Pindahkan',
       warn: 'Peringatan',
+      owner: 'Pemilik',
+      running: 'Berjalan...',
     },
     login: {
       login: 'Masuk',
@@ -334,6 +336,8 @@ export default {
     },
     chunk: {
       chunk: 'Potongan',
+      createChunk: 'Buat potongan',
+      editChunk: 'Edit potongan',
       bulk: 'Massal',
       selectAll: 'Pilih Semua',
       enabledSelected: 'Aktifkan yang Dipilih',
@@ -474,6 +478,12 @@ export default {
         'Dalam percakapan multi-putaran, kueri ke basis pengetahuan dioptimalkan. Model besar akan dipanggil untuk mengonsumsi token tambahan.',
       languageSelectionTip: 'Pilih bahasa yang digunakan dalam percakapan.',
       description: 'Description of assistant',
+      showChunkMetadata: 'Tampilkan metadata chunk',
+      showChunkMetadataTip:
+        'Tampilkan metadata dokumen (mis. judul, nomor halaman, tanggal unggah) bersama potongan teks yang diambil',
+      metadataFields: 'Bidang metadata',
+      metadataFieldsTip:
+        'Pilih bidang metadata yang akan ditampilkan untuk setiap chunk',
     },
     setting: {
       profile: 'Profil',
@@ -1136,6 +1146,11 @@ export default {
       promptTip:
         'Gunakan prompt sistem untuk menjelaskan tugas untuk LLM, tentukan bagaimana harus merespons, dan menguraikan persyaratan lainnya. Prompt sistem sering digunakan bersama dengan kunci (variabel), yang berfungsi sebagai berbagai input data untuk LLM. Gunakan garis miring `/` atau tombol (x) untuk menampilkan kunci yang digunakan.',
       promptMessage: 'Prompt diperlukan',
+      tags: 'Tag',
+      canvasCategory: 'Kategori kanvas',
+      created: 'Dibuat',
+      id: 'ID',
+      logTitle: 'Judul',
     },
     footer: {
       profile: 'Semua hak dilindungi @ React',
@@ -1147,6 +1162,7 @@ export default {
       bulgarian: 'Bulgaria',
       arabic: 'Arab',
       turkish: 'Turki',
+      korean: 'Korea',
     },
   },
 };

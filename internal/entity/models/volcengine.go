@@ -17,7 +17,6 @@
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -26,34 +25,26 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"strings"
-	"time"
 )
 
 // VolcEngine implements ModelDriver for VolcEngine
 type VolcEngine struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client // Reusable HTTP client with connection pool
+	baseModel BaseModel
 }
 
 // NewVolcEngine creates a new VolcEngine model instance
 func NewVolcEngine(baseURL map[string]string, urlSuffix URLSuffix) *VolcEngine {
 	return &VolcEngine{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-				DisableCompression:  false,
-			},
+		baseModel: BaseModel{
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
 
 func (v *VolcEngine) NewInstance(baseURL map[string]string) ModelDriver {
-	return nil
+	return NewVolcEngine(baseURL, v.baseModel.URLSuffix)
 }
 
 func (v *VolcEngine) Name() string {
@@ -62,16 +53,19 @@ func (v *VolcEngine) Name() string {
 
 // ChatWithMessages sends multiple messages with roles and returns response
 func (v *VolcEngine) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", v.BaseURL[region], v.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Chat)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -159,11 +153,9 @@ func (v *VolcEngine) ChatWithMessages(modelName string, messages []Message, apiC
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig != nil && apiConfig.ApiKey != nil {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := v.httpClient.Do(req)
+	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -225,17 +217,19 @@ func (v *VolcEngine) ChatWithMessages(modelName string, messages []Message, apiC
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
 func (v *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
 	}
-
-	url := fmt.Sprintf("%s/chat/completions", v.BaseURL[region])
+	url := fmt.Sprintf("%s/chat/completions", resolvedBaseURL)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -252,6 +246,10 @@ func (v *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message
 		"messages":    apiMessages,
 		"stream":      true,
 		"temperature": 1,
+	}
+
+	if modelConfig == nil {
+		modelConfig = &ChatConfig{}
 	}
 
 	if modelConfig.Stream != nil {
@@ -282,7 +280,11 @@ func (v *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message
 	if modelConfig.Thinking != nil {
 		if *modelConfig.Thinking {
 			var thinkingFlag string
-			switch *modelConfig.Effort {
+			effort := "medium"
+			if modelConfig.Effort != nil {
+				effort = *modelConfig.Effort
+			}
+			switch effort {
 			case "none", "minimal":
 				thinkingFlag = "disabled"
 				reqBody["reasoning_effort"] = "minimal"
@@ -332,7 +334,7 @@ func (v *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := v.httpClient.Do(req)
+	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -343,45 +345,22 @@ func (v *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// SSE parsing: read line by line
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		common.Info(line)
-
-		// SSE data line start with data:
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-
-		// Extract JSON after data:
-		data := strings.TrimSpace(line[5:])
-
-		// [DONE] marks the end of stream
-		if data == "[DONE]" {
-			break
-		}
-
-		// Parse the JSON event
-		var event map[string]interface{}
-		if err := json.Unmarshal([]byte(data), &event); err != nil {
-			continue
-		}
+	if _, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
+		common.Info(fmt.Sprintf("%v", event))
 
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
-			continue
+			return nil
 		}
 
 		firstChoice, ok := choices[0].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		delta, ok := firstChoice["delta"].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		content, ok := delta["content"].(string)
@@ -398,10 +377,9 @@ func (v *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message
 			}
 		}
 
-		finishReason, ok := firstChoice["finish_reason"].(string)
-		if ok && finishReason != "" {
-			break
-		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to scan response body: %w", err)
 	}
 
 	// Send [DONE] marker for OpenAI compatibility
@@ -410,7 +388,7 @@ func (v *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message
 		return err
 	}
 
-	return scanner.Err()
+	return nil
 }
 
 type volcengineEmbeddingResponse struct {
@@ -440,16 +418,19 @@ type volcenginePromptTokensDetails struct {
 
 // Embed embeds a list of texts into embeddings
 func (v *VolcEngine) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", v.BaseURL[region], v.URLSuffix.Embedding)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Embedding)
 
 	var embeddings []EmbeddingData
 
@@ -464,6 +445,9 @@ func (v *VolcEngine) Embed(modelName *string, texts []string, apiConfig *APIConf
 					"text": text,
 				},
 			},
+		}
+		if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
+			reqBody["dimensions"] = embeddingConfig.Dimension
 		}
 
 		jsonData, err := json.Marshal(reqBody)
@@ -491,7 +475,7 @@ func (v *VolcEngine) Embed(modelName *string, texts []string, apiConfig *APIConf
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-			resp, err := v.httpClient.Do(req)
+			resp, err := v.baseModel.httpClient.Do(req)
 			if err != nil {
 				return parsed, fmt.Errorf("failed to send request: %w", err)
 			}
@@ -557,20 +541,20 @@ func (v *VolcEngine) ParseFile(modelName *string, content []byte, url *string, a
 	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
 
-func (v *VolcEngine) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+func (v *VolcEngine) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	baseURL := v.BaseURL[region]
-	if baseURL == "" {
-		baseURL = v.BaseURL["default"]
+	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
+	baseURL := resolvedBaseURL
 	if baseURL == "" {
-		return nil, fmt.Errorf("volcengine: no base URL configured for region %q", region)
+		baseURL = resolvedBaseURL
 	}
-	modelsSuffix := strings.Trim(strings.TrimSpace(v.URLSuffix.Models), "/")
+	modelsSuffix := strings.Trim(strings.TrimSpace(v.baseModel.URLSuffix.Models), "/")
 	if modelsSuffix == "" {
 		return nil, fmt.Errorf("volcengine: models URL suffix is not configured")
 	}
@@ -585,11 +569,9 @@ func (v *VolcEngine) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := v.httpClient.Do(req)
+	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -604,21 +586,13 @@ func (v *VolcEngine) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("VolcEngine models API error: %s, body: %s", resp.Status, string(body))
 	}
 
-	var modelList DSModelList
+	// Parse response
+	var modelList ModelList
 	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]string, 0, len(modelList.Models))
-	for _, model := range modelList.Models {
-		modelName := model.ID
-		if model.OwnedBy != "" {
-			modelName = model.ID + "@" + model.OwnedBy
-		}
-		models = append(models, modelName)
-	}
-
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 func (v *VolcEngine) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
@@ -626,12 +600,15 @@ func (v *VolcEngine) Balance(apiConfig *APIConfig) (map[string]interface{}, erro
 }
 
 func (v *VolcEngine) CheckConnection(apiConfig *APIConfig) error {
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 
-	url := fmt.Sprintf("%s/%s", v.BaseURL[region], v.URLSuffix.Files)
+	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Files)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -644,7 +621,7 @@ func (v *VolcEngine) CheckConnection(apiConfig *APIConfig) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := v.httpClient.Do(req)
+	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
