@@ -14,8 +14,12 @@
 #  limitations under the License.
 #
 
+import logging
+
 from common.http_client import async_request, sync_request
 from .oauth import OAuthClient, UserInfo
+
+GITHUB_EMAIL_UNAVAILABLE_ERROR = "GitHub account email is unavailable."
 
 
 class GithubOAuthClient(OAuthClient):
@@ -47,8 +51,19 @@ class GithubOAuthClient(OAuthClient):
             )
             email_response.raise_for_status()
             email_info = email_response.json()
-            user_info["email"] = next((email for email in email_info if email["primary"]), None)["email"]
+            primary_email = next((email for email in email_info if email.get("primary")), None)
+            if not primary_email:
+                logging.info("GitHub primary email missing; falling back to public user email")
+            email = primary_email.get("email") if primary_email else user_info.get("email")
+            if not email:
+                logging.warning("GitHub account email unavailable: no primary email and no public email")
+                raise ValueError(GITHUB_EMAIL_UNAVAILABLE_ERROR)
+            user_info["email"] = email
             return self.normalize_user_info(user_info)
+        except ValueError as e:
+            if str(e) == GITHUB_EMAIL_UNAVAILABLE_ERROR:
+                raise
+            raise ValueError(f"Failed to fetch github user info: {e}")
         except Exception as e:
             raise ValueError(f"Failed to fetch github user info: {e}")
 
@@ -74,8 +89,19 @@ class GithubOAuthClient(OAuthClient):
             )
             email_response.raise_for_status()
             email_info = email_response.json()
-            user_info["email"] = next((email for email in email_info if email["primary"]), None)["email"]
+            primary_email = next((email for email in email_info if email.get("primary")), None)
+            if not primary_email:
+                logging.info("GitHub primary email missing; falling back to public user email")
+            email = primary_email.get("email") if primary_email else user_info.get("email")
+            if not email:
+                logging.warning("GitHub account email unavailable: no primary email and no public email")
+                raise ValueError(GITHUB_EMAIL_UNAVAILABLE_ERROR)
+            user_info["email"] = email
             return self.normalize_user_info(user_info)
+        except ValueError as e:
+            if str(e) == GITHUB_EMAIL_UNAVAILABLE_ERROR:
+                raise
+            raise ValueError(f"Failed to fetch github user info: {e}")
         except Exception as e:
             raise ValueError(f"Failed to fetch github user info: {e}")
 

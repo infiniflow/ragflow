@@ -25,7 +25,7 @@ import pytest
 
 class _FakeResponse:
     def __init__(self, payload=None, err=None):
-        self._payload = payload or {}
+        self._payload = {} if payload is None else payload
         self._err = err
 
     def raise_for_status(self):
@@ -635,6 +635,44 @@ def test_github_fetch_user_info_sync_success_and_error_unit(monkeypatch):
 
 
 @pytest.mark.p2
+def test_github_fetch_user_info_sync_uses_public_email_when_primary_missing_unit(monkeypatch):
+    github_module = _load_github_module(monkeypatch)
+    client = github_module.GithubOAuthClient(_base_config())
+
+    def _fake_sync_request(_method, url, headers=None, timeout=None):
+        if url.endswith("/emails"):
+            return _FakeResponse(
+                [
+                    {"email": "other@example.com", "primary": False},
+                    {"email": "secondary@example.com"},
+                ]
+            )
+        return _FakeResponse({"email": "public@example.com", "login": "octocat"})
+
+    monkeypatch.setattr(github_module, "sync_request", _fake_sync_request)
+    info = client.fetch_user_info("sync-token")
+
+    assert info.email == "public@example.com"
+    assert info.username == "octocat"
+
+
+@pytest.mark.p2
+def test_github_fetch_user_info_sync_raises_when_email_unavailable_unit(monkeypatch):
+    github_module = _load_github_module(monkeypatch)
+    client = github_module.GithubOAuthClient(_base_config())
+
+    def _fake_sync_request(_method, url, headers=None, timeout=None):
+        if url.endswith("/emails"):
+            return _FakeResponse([])
+        return _FakeResponse({"login": "octocat"})
+
+    monkeypatch.setattr(github_module, "sync_request", _fake_sync_request)
+
+    with pytest.raises(ValueError) as exc_info:
+        client.fetch_user_info("sync-token")
+    assert str(exc_info.value) == "GitHub account email is unavailable."
+
+@pytest.mark.p2
 def test_github_fetch_user_info_async_success_and_error_unit(monkeypatch):
     github_module = _load_github_module(monkeypatch)
     client = github_module.GithubOAuthClient(_base_config())
@@ -676,3 +714,42 @@ def test_github_fetch_user_info_async_success_and_error_unit(monkeypatch):
     monkeypatch.setattr(github_module, "async_request", _async_request_raises)
     with pytest.raises(ValueError, match="Failed to fetch github user info: async status boom"):
         asyncio.run(client.async_fetch_user_info("async-token"))
+
+
+@pytest.mark.p2
+def test_github_fetch_user_info_async_uses_public_email_when_primary_missing_unit(monkeypatch):
+    github_module = _load_github_module(monkeypatch)
+    client = github_module.GithubOAuthClient(_base_config())
+
+    async def _fake_async_request(_method, url, headers=None, **kwargs):
+        if url.endswith("/emails"):
+            return _FakeResponse(
+                [
+                    {"email": "other@example.com", "primary": False},
+                    {"email": "secondary@example.com"},
+                ]
+            )
+        return _FakeResponse({"email": "public-async@example.com", "login": "octocat-async"})
+
+    monkeypatch.setattr(github_module, "async_request", _fake_async_request)
+    info = asyncio.run(client.async_fetch_user_info("async-token"))
+
+    assert info.email == "public-async@example.com"
+    assert info.username == "octocat-async"
+
+
+@pytest.mark.p2
+def test_github_fetch_user_info_async_raises_when_email_unavailable_unit(monkeypatch):
+    github_module = _load_github_module(monkeypatch)
+    client = github_module.GithubOAuthClient(_base_config())
+
+    async def _fake_async_request(_method, url, headers=None, **kwargs):
+        if url.endswith("/emails"):
+            return _FakeResponse([])
+        return _FakeResponse({"login": "octocat-async"})
+
+    monkeypatch.setattr(github_module, "async_request", _fake_async_request)
+
+    with pytest.raises(ValueError) as exc_info:
+        asyncio.run(client.async_fetch_user_info("async-token"))
+    assert str(exc_info.value) == "GitHub account email is unavailable."
