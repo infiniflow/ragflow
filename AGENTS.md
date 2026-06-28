@@ -24,6 +24,7 @@ RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on d
 - `agent/`: Agentic reasoning components.
 - `web/`: Frontend application (React + UmiJS).
 - `docker/`: Docker deployment configurations.
+- `helm/`: Helm chart for deployment on Kubernetes. Keep this in sync with production-relevant changes to `docker/`.
 - `sdk/`: Python SDK.
 - `test/`: Backend tests.
 
