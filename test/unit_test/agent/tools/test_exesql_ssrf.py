@@ -110,6 +110,7 @@ def _build_exesql(host, db_type="mysql"):
     return cpn
 
 
+@pytest.mark.p2
 @pytest.mark.parametrize("host", ["127.0.0.1", "169.254.169.254", "10.0.0.5"])
 def test_internal_host_rejected_before_connect(host):
     _fake_pymysql.dialed_host = None
@@ -121,6 +122,7 @@ def test_internal_host_rejected_before_connect(host):
     assert _fake_pymysql.dialed_host is None
 
 
+@pytest.mark.p2
 def test_empty_host_rejected():
     cpn = _build_exesql("")
     with pytest.raises(Exception) as ei:
@@ -128,6 +130,7 @@ def test_empty_host_rejected():
     assert "not allowed" in str(ei.value)
 
 
+@pytest.mark.p2
 def test_public_host_dials_validated_ip(monkeypatch):
     # Public host: pretend it resolves to a public IP, and ensure the driver is
     # dialed with that validated IP (not the raw hostname).
@@ -138,7 +141,3 @@ def test_public_host_dials_validated_ip(monkeypatch):
     with pytest.raises(Exception):
         cpn._invoke(sql="SELECT 1")  # RuntimeError from the recording connect
     assert _fake_pymysql.dialed_host == "93.184.216.34"
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])

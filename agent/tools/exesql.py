@@ -15,6 +15,7 @@
 #
 import contextlib
 import json
+import logging
 import os
 import re
 from abc import ABC
@@ -129,10 +130,13 @@ class ExeSQL(ToolBase, ABC):
         # metadata) the same way the `test_db_connection` endpoint does. Connect
         # to the validated, resolved public IP so a later DNS change cannot
         # rebind the host to an internal address (mirrors agent_api.py).
+        logging.info(f"ExeSQL validating database host: {self._param.host}")
         try:
             safe_host = assert_host_is_safe(self._param.host)
         except ValueError as e:
+            logging.warning(f"ExeSQL rejected database host {self._param.host}: {e}")
             raise Exception(f"Database host '{self._param.host}' is not allowed: {e}")
+        logging.info(f"ExeSQL validated database host {self._param.host} -> {safe_host}")
 
         sqls = sql.split(";")
         if self._param.db_type in ["mysql", "mariadb"]:
