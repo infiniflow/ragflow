@@ -20,7 +20,7 @@ from quart import request
 from common.constants import RetCode
 from api.apps import login_required, current_user
 from api.utils.api_utils import get_error_argument_result, get_error_data_result, get_json_result, get_result, add_tenant_id_to_kwargs
-from api.utils.pagination_utils import validate_rest_api_page_size
+from api.utils.pagination_utils import parse_pagination
 from api.utils.validation_utils import (
     CreateDatasetReq,
     DeleteDatasetReq,
@@ -661,8 +661,7 @@ async def check_embedding(tenant_id, dataset_id):
 @add_tenant_id_to_kwargs
 def list_ingestion_logs(tenant_id, dataset_id):
     try:
-        page = int(request.args.get("page", 0))
-        page_size = validate_rest_api_page_size(int(request.args.get("page_size", 0)))
+        page, page_size = parse_pagination(request.args, default_page=0, default_page_size=0)
         orderby = request.args.get("orderby", "create_time")
         desc = request.args.get("desc", "true").lower() != "false"
         operation_status = request.args.getlist("operation_status")
