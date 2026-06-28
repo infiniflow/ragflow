@@ -122,7 +122,6 @@ export default function ListFilterBar({
             <FilterButton count={filterCount}></FilterButton>
           </FilterPopover>
         )}
-
         {showSearch && (
           <SearchInput
             value={searchString}

@@ -257,11 +257,20 @@ class RAGFlow:
             return Agent(self, res["data"])
         raise Exception(res["message"])
 
-    def create_agent(self, title: str, dsl: dict, description: str | None = None) -> None:
+    def create_agent(
+        self,
+        title: str,
+        dsl: dict,
+        description: str | None = None,
+        canvas_type: str | None = None,
+    ) -> None:
         req = {"title": title, "dsl": dsl}
 
         if description is not None:
             req["description"] = description
+
+        if canvas_type is not None:
+            req["canvas_type"] = canvas_type
 
         res = self.post("/agents", req)
         res = res.json()
@@ -269,7 +278,14 @@ class RAGFlow:
         if res.get("code") != 0:
             raise Exception(res["message"])
 
-    def update_agent(self, agent_id: str, title: str | None = None, description: str | None = None, dsl: dict | None = None) -> None:
+    def update_agent(
+        self,
+        agent_id: str,
+        title: str | None = None,
+        description: str | None = None,
+        dsl: dict | None = None,
+        canvas_type: str | None = None,
+    ) -> None:
         req = {}
 
         if title is not None:
@@ -280,6 +296,9 @@ class RAGFlow:
 
         if dsl is not None:
             req["dsl"] = dsl
+
+        if canvas_type is not None:
+            req["canvas_type"] = canvas_type
 
         res = self.put(f"/agents/{agent_id}", req)
         res = res.json()

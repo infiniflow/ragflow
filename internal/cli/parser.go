@@ -28,12 +28,13 @@ type Parser struct {
 	lexer     *Lexer
 	curToken  Token
 	peekToken Token
+	original  string
 }
 
 // NewParser creates a new parser
 func NewParser(input string) *Parser {
 	l := NewLexer(input)
-	p := &Parser{lexer: l}
+	p := &Parser{lexer: l, original: input}
 	// Read two tokens to initialize curToken and peekToken
 	p.nextToken()
 	p.nextToken()
@@ -46,7 +47,7 @@ func (p *Parser) nextToken() {
 }
 
 // Parse parses the input and returns a Command
-func (p *Parser) Parse(adminCommand bool) (*Command, error) {
+func (p *Parser) Parse(cliMode CommandLineMode) (*Command, error) {
 	if p.curToken.Type == TokenEOF {
 		return nil, nil
 	}
@@ -56,13 +57,7 @@ func (p *Parser) Parse(adminCommand bool) (*Command, error) {
 		return p.parseMetaCommand()
 	}
 
-	// Check for ContextEngine commands (ls, cat, search)
-	// Note: These are now handled in parseUserCommand to support both SQL-style and CE-style syntax
-	// if p.curToken.Type == TokenIdentifier && isCECommand(p.curToken.Value) {
-	// 	return p.parseCECommand()
-	// }
-
-	return p.parseCommand(adminCommand)
+	return p.parseCommand(cliMode)
 }
 
 func (p *Parser) parseMetaCommand() (*Command, error) {
@@ -92,43 +87,53 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 	case TokenPing:
 		return p.parseAdminPingServer()
 	case TokenList:
-		return p.parseAdminListCommand()
+		return p.parseAdminListCommands()
 	case TokenShow:
-		return p.parseAdminShowCommand()
+		return p.parseAdminShowCommands()
+	case TokenCheck:
+		return p.parseAdminCheck()
 	case TokenCreate:
 		return p.parseAdminCreateCommand()
 	case TokenDrop:
-		return p.parseAdminDropCommand()
+		return p.parseAdminDropCommands()
 	case TokenAlter:
-		return p.parseAdminAlterCommand()
+		return p.parseAdminAlterCommands()
 	case TokenGrant:
-		return p.parseAdminGrantCommand()
+		return p.parseAdminGrantCommands()
 	case TokenRevoke:
-		return p.parseAdminRevokeCommand()
+		return p.parseAdminRevokeCommands()
 	case TokenSet:
 		return p.parseAdminSetCommand()
-	case TokenUnset:
-		return p.parseAdminUnsetCommand()
 	case TokenReset:
 		return p.parseAdminResetCommand()
-	case TokenGenerate:
-		return p.parseAdminGenerateCommand()
-	case TokenImport:
-		return p.parseAdminImportCommand()
-	case TokenSearch:
-		return p.parseAdminSearchCommand()
-	case TokenParse:
-		return p.parseAdminParseCommand()
 	case TokenBenchmark:
 		return p.parseAdminBenchmarkCommand()
-	case TokenRegister:
-		return p.parseAdminRegisterCommand()
-	case TokenStartup:
-		return p.parseAdminStartupCommand()
+	case TokenStart:
+		return p.parseAdminStartService()
 	case TokenShutdown:
-		return p.parseAdminShutdownCommand()
+		return p.parseAdminShutdownCommands()
 	case TokenRestart:
-		return p.parseAdminRestartCommand()
+		return p.parseAdminRestart()
+	case TokenMQ:
+		return p.parseMessageQueueCommand()
+	case TokenRemove:
+		return p.parseAdminRemoveCommands()
+	case TokenStop:
+		return p.parseAdminStopIngestionTasks()
+	case TokenAdd:
+		return p.parseAdminAddCommand()
+	case TokenDelete:
+		return p.parseAdminDeleteCommands()
+	case TokenEnable:
+		return p.parseAdminEnableCommand()
+	case TokenDisable:
+		return p.parseAdminDisableCommand()
+	case TokenSave:
+		return p.parseAdminSaveCommand()
+	case TokenUse:
+		return p.parseAdminUseCommand()
+	case TokenPurge:
+		return p.parseAdminPurgeCommand()
 	default:
 		return nil, fmt.Errorf("unknown command: %s", p.curToken.Value)
 	}
@@ -138,55 +143,41 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 
 	switch p.curToken.Type {
 	case TokenLogin:
-		return p.parseLoginUser()
+		return p.parseAPILoginUser()
 	case TokenLogout:
-		return p.parseLogout()
+		return p.parseAPILogout()
 	case TokenPing:
-		return p.parsePingServer()
+		return p.parseAPIPingServer()
 	case TokenList:
-		return p.parseListCommand()
+		return p.parseAPIListCommands()
 	case TokenShow:
-		return p.parseShowCommand()
+		return p.parseAPIShowCommands()
 	case TokenCreate:
-		return p.parseCreateCommand()
+		return p.parseAPICreateCommands()
 	case TokenDrop:
-		return p.parseDropCommand()
+		return p.parseAPIDropCommands()
 	case TokenAdd:
 		return p.parseAddCommand()
 	case TokenDelete:
 		return p.parseDeleteCommand()
 	case TokenAlter:
 		return p.parseAlterCommand()
-	case TokenGrant:
-		return p.parseGrantCommand()
-	case TokenRevoke:
-		return p.parseRevokeCommand()
 	case TokenSet:
-		return p.parseSetCommand()
-	case TokenUnset:
-		return p.parseUnsetCommand()
+		return p.parseAPISetCommands()
 	case TokenReset:
-		return p.parseResetCommand()
-	case TokenGenerate:
-		return p.parseGenerateCommand()
+		return p.parseAPIResetCommands()
 	case TokenImport:
 		return p.parseImportCommand()
 	case TokenInsert:
 		return p.parseInsertCommand()
-	case TokenSearch:
-		return p.parseSearchCommand()
+	case TokenRetrieve:
+		return p.parseRetrieveCommand()
 	case TokenParse:
 		return p.parseParseCommand()
 	case TokenBenchmark:
 		return p.parseBenchmarkCommand()
 	case TokenRegister:
-		return p.parseRegisterCommand()
-	case TokenStartup:
-		return p.parseStartupCommand()
-	case TokenShutdown:
-		return p.parseShutdownCommand()
-	case TokenRestart:
-		return p.parseRestartCommand()
+		return p.parseAPIRegisterCommand()
 	case TokenEnable:
 		return p.parseEnableCommand()
 	case TokenDisable:
@@ -195,6 +186,8 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseStreamCommand()
 	case TokenChat:
 		return p.parseChatCommand()
+	case TokenOpenaiChat:
+		return p.parseOpenaiChatCommand()
 	case TokenThink:
 		return p.parseThinkCommand()
 	case TokenEmbed:
@@ -209,34 +202,46 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseOCRCommand()
 	case TokenCheck:
 		return p.parseCheckCommand()
-	case TokenLS:
-		return p.parseCEListCommand()
-	case TokenCat:
-		return p.parseCECatCommand()
+	case TokenStart:
+		return p.parseUserStartIngestion()
+	case TokenStop:
+		return p.parseUserStopIngestion()
+	case TokenSave:
+		return p.parseAPISaveCommand()
 	case TokenUse:
-		return p.parseUseCommand()
+		return p.parseAPIUseCommands()
 	case TokenUpdate:
 		return p.parseUpdateCommand()
 	case TokenRemove:
 		return p.parseRemoveCommand()
 	case TokenGet:
 		return p.parseGetCommand()
+	case TokenExplain:
+		return p.parseExplainCommand()
+	case TokenChunk:
+		return p.parseChunkCommand(false)
 
+	case TokenLS, TokenCat, TokenSearch:
+		// For context engine
+		return p.parseFileSystemCommand()
 	default:
 		return nil, fmt.Errorf("unknown command: %s", p.curToken.Value)
 	}
 }
 
-func (p *Parser) parseCommand(adminCommand bool) (*Command, error) {
+func (p *Parser) parseCommand(cliMode CommandLineMode) (*Command, error) {
 	if p.curToken.Type != TokenIdentifier && !isKeyword(p.curToken.Type) {
 		return nil, fmt.Errorf("expected command, got %s", p.curToken.Value)
 	}
 
-	if adminCommand {
+	switch cliMode {
+	case AdminMode:
 		return p.parseAdminCommand()
+	case APIMode:
+		return p.parseUserCommand()
+	default:
+		return nil, fmt.Errorf("unknown mode: %s", cliMode)
 	}
-
-	return p.parseUserCommand()
 }
 
 func (p *Parser) expectPeek(tokenType int) error {
@@ -259,7 +264,7 @@ func (p *Parser) expectSemicolon() error {
 }
 
 func isKeyword(tokenType int) bool {
-	return tokenType >= TokenLogin && tokenType <= TokenTag
+	return tokenType >= TokenLogin && tokenType <= TokenPanic
 }
 
 // isCECommand checks if the given string is a Filesystem command
@@ -304,7 +309,10 @@ func (p *Parser) parseNumber() (int, error) {
 }
 
 func (p *Parser) parseFloat() (float64, error) {
-	if p.curToken.Type != TokenInteger {
+	// Accept either TokenInteger or TokenFloat so that literals like
+	// `0.3` (which the lexer tags as TokenFloat) and `10` (TokenInteger)
+	// both parse cleanly.
+	if p.curToken.Type != TokenInteger && p.curToken.Type != TokenFloat {
 		return math.NaN(), fmt.Errorf("expected number, got %s", p.curToken.Value)
 	}
 	result, err := strconv.ParseFloat(p.curToken.Value, 64)
@@ -315,253 +323,76 @@ func (p *Parser) parseFloat() (float64, error) {
 	return result, nil
 }
 
+// parseQuotedStringList consumes a bracket-delimited list of quoted strings:
+//
+//	[ 'a', 'b', 'c' ]
+//
+// Empty list [] is allowed. The cursor must be positioned on '[' when called;
+// on return, the cursor is positioned just past the closing ']'.
+func (p *Parser) parseQuotedStringList() ([]string, error) {
+	if p.curToken.Type != TokenLBracket {
+		return nil, fmt.Errorf("expected '[', got %s", p.curToken.Value)
+	}
+	p.nextToken() // skip '['
+
+	// Always return a non-nil slice so callers (and json.Marshal) see []
+	// instead of null for the empty-list case.
+	list := make([]string, 0)
+	// Allow empty list []
+	if p.curToken.Type == TokenRBracket {
+		p.nextToken() // skip ']'
+		return list, nil
+	}
+
+	for {
+		s, err := p.parseQuotedString()
+		if err != nil {
+			return nil, fmt.Errorf("expected quoted string in list: %w", err)
+		}
+		list = append(list, s)
+		p.nextToken() // step past the closing quote
+
+		if p.curToken.Type == TokenComma {
+			p.nextToken() // step past ','
+			continue
+		}
+		if p.curToken.Type == TokenRBracket {
+			p.nextToken() // step past ']'
+			return list, nil
+		}
+		return nil, fmt.Errorf("expected ',' or ']' in list, got %s", p.curToken.Value)
+	}
+}
+
 func tokenTypeToString(t int) string {
-	// Simplified for error messages
+	switch t {
+	case TokenEOF:
+		return "end of input"
+	case TokenIdentifier:
+		return "identifier"
+	case TokenInteger:
+		return "integer"
+	case TokenFloat:
+		return "float"
+	case TokenQuotedString:
+		return "quoted string"
+	case TokenLBracket:
+		return "'['"
+	case TokenRBracket:
+		return "']'"
+	case TokenComma:
+		return "','"
+	case TokenSemicolon:
+		return "';'"
+	}
 	return fmt.Sprintf("token(%d)", t)
 }
 
-// parseCECommand parses ContextEngine commands (ls, search)
-func (p *Parser) parseCECommand() (*Command, error) {
-	cmdName := strings.ToUpper(p.curToken.Value)
+func (p *Parser) parseFileSystemCommand() (*Command, error) {
+	p.nextToken() // consume COMMAND
 
-	switch cmdName {
-	case "LS", "LIST":
-		return p.parseCEListCommand()
-	case "CAT":
-		return p.parseCECatCommand()
-	case "SEARCH":
-		return p.parseCESearchCommand()
-	default:
-		return nil, fmt.Errorf("unknown ContextEngine command: %s", cmdName)
-	}
-}
-
-// parseCEListCommand parses the ls command
-// Syntax: ls [path] or ls datasets
-func (p *Parser) parseCEListCommand() (*Command, error) {
-	p.nextToken() // consume LS/LIST
-
-	cmd := NewCommand("ce_ls")
-
-	// Check if there's a path argument
-	// Also accept TokenDatasets since "datasets" is a keyword but can be a path
-	if p.curToken.Type == TokenIdentifier || p.curToken.Type == TokenQuotedString ||
-		p.curToken.Type == TokenDatasets {
-		path := p.curToken.Value
-		// Remove quotes if present
-		if p.curToken.Type == TokenQuotedString {
-			path = strings.Trim(path, "\"'")
-		}
-		p.nextToken()
-
-		// Handle path components separated by slashes (e.g., "skills/hub1")
-		for p.curToken.Type == TokenSlash {
-			p.nextToken() // consume slash
-			if p.curToken.Type == TokenIdentifier || p.curToken.Type == TokenDatasets ||
-				p.curToken.Type == TokenAgents || p.curToken.Type == TokenChats {
-				path = path + "/" + p.curToken.Value
-				p.nextToken()
-			} else if p.curToken.Type == TokenNumber {
-				// Handle version numbers like 1.0.0 (parsed as number . number . number)
-				// OR filenames starting with numbers like 3_list_compressors.pdf
-				numberPart := p.curToken.Value
-				p.nextToken()
-				// Continue reading .number parts (version number format)
-				if p.curToken.Type == TokenIllegal && p.curToken.Value == "." {
-					versionPart := numberPart
-					for p.curToken.Type == TokenIllegal && p.curToken.Value == "." {
-						p.nextToken() // consume .
-						if p.curToken.Type == TokenNumber {
-							versionPart = versionPart + "." + p.curToken.Value
-							p.nextToken()
-						} else {
-							break
-						}
-					}
-					path = path + "/" + versionPart
-				} else if p.curToken.Type == TokenIdentifier {
-					// Filename starting with number: 3_list_compressors.pdf
-					path = path + "/" + numberPart + p.curToken.Value
-					p.nextToken()
-				} else {
-					// Just a number
-					path = path + "/" + numberPart
-				}
-			} else {
-				// Trailing slash, just append it
-				path = path + "/"
-				break
-			}
-		}
-
-		cmd.Params["path"] = path
-	} else {
-		// Default to "datasets" root
-		cmd.Params["path"] = "datasets"
-	}
-
-	// Optional semicolon
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-
-	return cmd, nil
-}
-
-// parseCECatCommand parses the cat command
-// Syntax: cat <path>
-func (p *Parser) parseCECatCommand() (*Command, error) {
-	p.nextToken() // consume CAT
-
-	cmd := NewCommand("ce_cat")
-
-	if p.curToken.Type != TokenIdentifier && p.curToken.Type != TokenQuotedString {
-		return nil, fmt.Errorf("expected path after CAT")
-	}
-
-	path := p.curToken.Value
-	if p.curToken.Type == TokenQuotedString {
-		path = strings.Trim(path, "\"'")
-	}
-	p.nextToken()
-
-	// Handle path components separated by slashes (e.g., "skills/hub1/skill/README.md")
-	for p.curToken.Type == TokenSlash {
-		p.nextToken() // consume slash
-		if p.curToken.Type == TokenIdentifier || p.curToken.Type == TokenAgents ||
-			p.curToken.Type == TokenChats || p.curToken.Type == TokenDatasets {
-			path = path + "/" + p.curToken.Value
-			p.nextToken()
-		} else if p.curToken.Type == TokenNumber {
-			// Handle version numbers like 1.0.0 (parsed as number . number . number)
-			// OR filenames starting with numbers like 3_list_compressors.pdf
-			numberPart := p.curToken.Value
-			p.nextToken()
-			// Continue reading .number parts (version number format)
-			if p.curToken.Type == TokenIllegal && p.curToken.Value == "." {
-				versionPart := numberPart
-				for p.curToken.Type == TokenIllegal && p.curToken.Value == "." {
-					p.nextToken() // consume .
-					if p.curToken.Type == TokenNumber {
-						versionPart = versionPart + "." + p.curToken.Value
-						p.nextToken()
-					} else {
-						break
-					}
-				}
-				path = path + "/" + versionPart
-			} else if p.curToken.Type == TokenIdentifier {
-				// Filename starting with number: 3_list_compressors.pdf
-				path = path + "/" + numberPart + p.curToken.Value
-				p.nextToken()
-			} else {
-				// Just a number
-				path = path + "/" + numberPart
-			}
-		} else if p.curToken.Type == TokenQuotedString {
-			path = path + "/" + strings.Trim(p.curToken.Value, "\"'")
-			p.nextToken()
-		} else {
-			// Trailing slash, just append it
-			path = path + "/"
-			break
-		}
-	}
-
-	cmd.Params["path"] = path
-
-	// Optional semicolon
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-
-	return cmd, nil
-}
-
-// parseCESearchCommand parses the search command
-// Syntax: search <query> or search <query> in <path>
-func (p *Parser) parseCESearchCommand() (*Command, error) {
-	p.nextToken() // consume SEARCH
-
-	cmd := NewCommand("ce_search")
-
-	if p.curToken.Type != TokenIdentifier && p.curToken.Type != TokenQuotedString {
-		return nil, fmt.Errorf("expected query after SEARCH")
-	}
-
-	query := p.curToken.Value
-	if p.curToken.Type == TokenQuotedString {
-		query = strings.Trim(query, "\"'")
-	}
-	cmd.Params["query"] = query
-	p.nextToken()
-
-	// Check for optional "in <path>" clause
-	if p.curToken.Type == TokenIdentifier && strings.ToUpper(p.curToken.Value) == "IN" {
-		p.nextToken() // consume IN
-
-		if p.curToken.Type != TokenIdentifier && p.curToken.Type != TokenQuotedString {
-			return nil, fmt.Errorf("expected path after IN")
-		}
-
-		path := p.curToken.Value
-		if p.curToken.Type == TokenQuotedString {
-			path = strings.Trim(path, "\"'")
-		}
-		p.nextToken()
-
-		// Handle path components separated by slashes (e.g., "skills/hub1")
-		for p.curToken.Type == TokenSlash {
-			p.nextToken() // consume slash
-			if p.curToken.Type == TokenIdentifier || p.curToken.Type == TokenAgents ||
-				p.curToken.Type == TokenChats || p.curToken.Type == TokenDatasets {
-				path = path + "/" + p.curToken.Value
-				p.nextToken()
-			} else if p.curToken.Type == TokenNumber {
-				// Handle version numbers like 1.0.0 (parsed as number . number . number)
-				// OR filenames starting with numbers like 3_list_compressors.pdf
-				numberPart := p.curToken.Value
-				p.nextToken()
-				// Continue reading .number parts (version number format)
-				if p.curToken.Type == TokenIllegal && p.curToken.Value == "." {
-					versionPart := numberPart
-					for p.curToken.Type == TokenIllegal && p.curToken.Value == "." {
-						p.nextToken() // consume .
-						if p.curToken.Type == TokenNumber {
-							versionPart = versionPart + "." + p.curToken.Value
-							p.nextToken()
-						} else {
-							break
-						}
-					}
-					path = path + "/" + versionPart
-				} else if p.curToken.Type == TokenIdentifier {
-					// Filename starting with number: 3_list_compressors.pdf
-					path = path + "/" + numberPart + p.curToken.Value
-					p.nextToken()
-				} else {
-					// Just a number
-					path = path + "/" + numberPart
-				}
-			} else if p.curToken.Type == TokenQuotedString {
-				path = path + "/" + strings.Trim(p.curToken.Value, "\"'")
-				p.nextToken()
-			} else {
-				// Trailing slash, just append it
-				path = path + "/"
-				break
-			}
-		}
-
-		cmd.Params["path"] = path
-	} else {
-		cmd.Params["path"] = "."
-	}
-
-	// Optional semicolon
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
+	cmd := NewCommand("file_system_command")
+	cmd.Params["command"] = p.original
 
 	return cmd, nil
 }

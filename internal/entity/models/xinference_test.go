@@ -14,8 +14,10 @@ func newXinferenceForTest(baseURL string) *XinferenceModel {
 	return NewXinferenceModel(
 		map[string]string{"default": baseURL},
 		URLSuffix{
-			Chat:   "v1/chat/completions",
-			Models: "v1/models",
+			Chat:      "v1/chat/completions",
+			Embedding: "v1/embeddings",
+			Models:    "v1/models",
+			Rerank:    "v1/rerank",
 		},
 	)
 }
@@ -264,11 +266,213 @@ func TestXinferenceListModelsAndCheckConnection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if strings.Join(models, ",") != "qwen2.5-instruct,custom-chat" {
+	if joinModelNames(models, ",") != "qwen2.5-instruct,custom-chat" {
 		t.Errorf("models=%v", models)
 	}
 	if err := x.CheckConnection(apiConfig); err != nil {
 		t.Fatalf("CheckConnection: %v", err)
+	}
+}
+
+func newXinferenceEmbedServer(t *testing.T, handler func(t *testing.T, body map[string]interface{}, w http.ResponseWriter)) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method=%s, want POST", r.Method)
+			return
+		}
+		if r.URL.Path != "/v1/embeddings" {
+			t.Errorf("path=%s, want /v1/embeddings", r.URL.Path)
+			return
+		}
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Errorf("Authorization=%q, want empty when no API key configured", got)
+			return
+		}
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read body: %v", err)
+			return
+		}
+		var body map[string]interface{}
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Errorf("unmarshal request: %v\n%s", err, string(raw))
+			return
+		}
+		handler(t, body, w)
+	}))
+}
+
+func TestXinferenceEmbedHappyPathAndOmitsEmptyAuth(t *testing.T) {
+	srv := newXinferenceEmbedServer(t, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		if body["model"] != "bge-m3" {
+			t.Errorf("model=%v, want bge-m3", body["model"])
+		}
+		inputs, ok := body["input"].([]interface{})
+		if !ok || len(inputs) != 2 || inputs[0] != "hello" || inputs[1] != "world" {
+			t.Errorf("input=%v, want [hello world]", body["input"])
+		}
+		// API key is empty — Authorization must not be set on a no-auth Xinference deployment.
+		// Return data out of input order to verify the driver reorders by Index.
+		_, _ = io.WriteString(w, `{"data":[{"index":1,"embedding":[0.4,0.5]},{"index":0,"embedding":[0.1,0.2]}]}`)
+	})
+	defer srv.Close()
+
+	x := newXinferenceForTest(srv.URL)
+	model := "bge-m3"
+	got, err := x.Embed(&model, []string{"hello", "world"}, &APIConfig{}, nil)
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len(got)=%d, want 2", len(got))
+	}
+	if got[0].Index != 0 || got[0].Embedding[0] != 0.1 || got[0].Embedding[1] != 0.2 {
+		t.Errorf("got[0]=%+v, want Index=0 Embedding=[0.1 0.2]", got[0])
+	}
+	if got[1].Index != 1 || got[1].Embedding[0] != 0.4 || got[1].Embedding[1] != 0.5 {
+		t.Errorf("got[1]=%+v, want Index=1 Embedding=[0.4 0.5]", got[1])
+	}
+}
+
+func TestXinferenceEmbedSendsAuthWhenKeyConfigured(t *testing.T) {
+	gotAuth := ""
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		_, _ = io.WriteString(w, `{"data":[{"index":0,"embedding":[0.1]}]}`)
+	}))
+	defer srv.Close()
+
+	x := newXinferenceForTest(srv.URL)
+	key := "sk-test"
+	model := "bge-m3"
+	if _, err := x.Embed(&model, []string{"x"}, &APIConfig{ApiKey: &key}, nil); err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if gotAuth != "Bearer sk-test" {
+		t.Errorf("Authorization=%q, want Bearer sk-test", gotAuth)
+	}
+}
+
+func TestXinferenceEmbedNormalizesBaseURLWithV1Suffix(t *testing.T) {
+	srv := newXinferenceEmbedServer(t, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		_, _ = io.WriteString(w, `{"data":[{"index":0,"embedding":[0.1]}]}`)
+	})
+	defer srv.Close()
+
+	x := NewXinferenceModel(
+		map[string]string{"default": srv.URL + "/v1"}, // tenant supplied /v1 suffix
+		URLSuffix{Chat: "v1/chat/completions", Embedding: "v1/embeddings", Models: "v1/models"},
+	)
+	model := "bge-m3"
+	if _, err := x.Embed(&model, []string{"x"}, &APIConfig{}, nil); err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+}
+
+func TestXinferenceEmbedForwardsDimension(t *testing.T) {
+	srv := newXinferenceEmbedServer(t, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		if body["dimensions"] != float64(384) {
+			t.Errorf("dimensions=%v, want 384", body["dimensions"])
+		}
+		_, _ = io.WriteString(w, `{"data":[{"index":0,"embedding":[0.1]}]}`)
+	})
+	defer srv.Close()
+
+	x := newXinferenceForTest(srv.URL)
+	model := "bge-m3"
+	if _, err := x.Embed(&model, []string{"x"}, &APIConfig{}, &EmbeddingConfig{Dimension: 384}); err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+}
+
+func TestXinferenceEmbedRejectsDuplicateIndex(t *testing.T) {
+	srv := newXinferenceEmbedServer(t, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		_, _ = io.WriteString(w, `{"data":[{"index":0,"embedding":[0.1]},{"index":0,"embedding":[0.2]}]}`)
+	})
+	defer srv.Close()
+
+	x := newXinferenceForTest(srv.URL)
+	model := "bge-m3"
+	_, err := x.Embed(&model, []string{"a", "b"}, &APIConfig{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "duplicate embedding index") {
+		t.Errorf("expected duplicate-index error, got %v", err)
+	}
+}
+
+func TestXinferenceEmbedRejectsOutOfRangeIndex(t *testing.T) {
+	srv := newXinferenceEmbedServer(t, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		_, _ = io.WriteString(w, `{"data":[{"index":5,"embedding":[0.1]}]}`)
+	})
+	defer srv.Close()
+
+	x := newXinferenceForTest(srv.URL)
+	model := "bge-m3"
+	_, err := x.Embed(&model, []string{"a", "b"}, &APIConfig{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "out of range") {
+		t.Errorf("expected out-of-range error, got %v", err)
+	}
+}
+
+func TestXinferenceEmbedRejectsMissingIndex(t *testing.T) {
+	srv := newXinferenceEmbedServer(t, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		// Two inputs requested but only one returned — index 1 is missing.
+		_, _ = io.WriteString(w, `{"data":[{"index":0,"embedding":[0.1]}]}`)
+	})
+	defer srv.Close()
+
+	x := newXinferenceForTest(srv.URL)
+	model := "bge-m3"
+	_, err := x.Embed(&model, []string{"a", "b"}, &APIConfig{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "missing embedding") {
+		t.Errorf("expected missing-embedding error, got %v", err)
+	}
+}
+
+func TestXinferenceEmbedEmptyTextsShortCircuits(t *testing.T) {
+	x := newXinferenceForTest("http://unused")
+	model := "bge-m3"
+	got, err := x.Embed(&model, nil, &APIConfig{}, nil)
+	if err != nil {
+		t.Fatalf("expected nil error for empty inputs, got %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("len(got)=%d, want 0", len(got))
+	}
+}
+
+func TestXinferenceEmbedRequiresModelName(t *testing.T) {
+	x := newXinferenceForTest("http://unused")
+	_, err := x.Embed(nil, []string{"x"}, &APIConfig{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "model name is required") {
+		t.Errorf("expected model-name error, got %v", err)
+	}
+}
+
+func TestXinferenceEmbedSurfacesHTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = io.WriteString(w, `{"error":"model not loaded"}`)
+	}))
+	defer srv.Close()
+
+	x := newXinferenceForTest(srv.URL)
+	model := "bge-m3"
+	_, err := x.Embed(&model, []string{"x"}, &APIConfig{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "Xinference embeddings API error") {
+		t.Errorf("expected API error, got %v", err)
+	}
+}
+
+func TestXinferenceEmbedRejectsMissingEmbeddingSuffix(t *testing.T) {
+	x := NewXinferenceModel(
+		map[string]string{"default": "http://unused"},
+		URLSuffix{Chat: "v1/chat/completions"}, // no Embedding suffix
+	)
+	model := "bge-m3"
+	_, err := x.Embed(&model, []string{"x"}, &APIConfig{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "no embedding URL suffix configured") {
+		t.Errorf("expected missing-suffix error, got %v", err)
 	}
 }
 
@@ -277,7 +481,7 @@ func TestXinferenceMissingBaseURLFailsClearly(t *testing.T) {
 	_, err := x.ChatWithMessages("qwen2.5-instruct",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{}, nil)
-	if err == nil || !strings.Contains(err.Error(), "missing base URL") {
+	if err == nil || !strings.Contains(err.Error(), "base URL") {
 		t.Errorf("expected missing-base-URL error, got %v", err)
 	}
 }
@@ -286,28 +490,213 @@ func TestXinferenceUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
 	x := newXinferenceForTest("http://unused")
 	model := "qwen2.5-instruct"
 
-	if _, err := x.Embed(&model, []string{"x"}, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("Embed: expected no such method, got %v", err)
-	}
-	if _, err := x.Rerank(&model, "q", []string{"d"}, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("Rerank: expected no such method, got %v", err)
-	}
 	if _, err := x.Balance(&APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Balance: expected no such method, got %v", err)
 	}
-	if _, err := x.TranscribeAudio(&model, nil, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("TranscribeAudio: expected no such method, got %v", err)
+	// TranscribeAudio IS implemented; it validates inputs after APIConfigCheck.
+	// The test passes nil file, which should yield an input-validation error,
+	// not an api-key error.
+	if _, err := x.TranscribeAudio(&model, nil, &APIConfig{}, nil); err == nil || strings.Contains(err.Error(), "api key is required") {
+		t.Errorf("TranscribeAudio: expected input validation error (file missing), got %v", err)
 	}
 	if err := x.TranscribeAudioWithSender(&model, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("TranscribeAudioWithSender: expected no such method, got %v", err)
 	}
-	if _, err := x.AudioSpeech(&model, nil, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("AudioSpeech: expected no such method, got %v", err)
+	// AudioSpeech IS implemented; it validates inputs after APIConfigCheck.
+	if _, err := x.AudioSpeech(&model, nil, &APIConfig{}, nil); err == nil || strings.Contains(err.Error(), "api key is required") {
+		t.Errorf("AudioSpeech: expected input validation error (text missing), got %v", err)
 	}
 	if err := x.AudioSpeechWithSender(&model, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("AudioSpeechWithSender: expected no such method, got %v", err)
 	}
 	if _, err := x.OCRFile(&model, nil, nil, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: expected no such method, got %v", err)
+	}
+}
+
+func newXinferenceRerankServer(t *testing.T, expectedAuth string, handler func(t *testing.T, body map[string]interface{}, w http.ResponseWriter)) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/rerank" {
+			t.Errorf("path=%s want /v1/rerank", r.URL.Path)
+		}
+		if r.Method != http.MethodPost {
+			t.Errorf("method=%s want POST", r.Method)
+		}
+		if got := r.Header.Get("Authorization"); got != expectedAuth {
+			t.Errorf("Authorization=%q want %q", got, expectedAuth)
+		}
+		if got := r.Header.Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+			t.Errorf("Content-Type=%q", got)
+		}
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read body: %v", err)
+			return
+		}
+		var body map[string]interface{}
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Errorf("unmarshal: %v\nraw=%s", err, string(raw))
+			return
+		}
+		handler(t, body, w)
+	}))
+}
+
+func TestXinferenceRerankHappyPathReordersByIndex(t *testing.T) {
+	srv := newXinferenceRerankServer(t, "", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		if body["model"] != "bge-reranker-v2-m3" {
+			t.Errorf("model=%v", body["model"])
+		}
+		if body["query"] != "capital of France" {
+			t.Errorf("query=%v", body["query"])
+		}
+		if got := body["top_n"].(float64); got != 3 {
+			t.Errorf("top_n=%v want 3", got)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"results": []map[string]interface{}{
+				{"index": 2, "relevance_score": 0.91},
+				{"index": 0, "relevance_score": 0.88},
+				{"index": 1, "relevance_score": 0.42},
+			},
+		})
+	})
+	defer srv.Close()
+
+	x := newXinferenceForTest(srv.URL)
+	model := "bge-reranker-v2-m3"
+	resp, err := x.Rerank(&model, "capital of France",
+		[]string{"Paris is the capital of France.", "Eiffel Tower.", "Berlin is the capital of Germany."},
+		&APIConfig{}, nil,
+	)
+	if err != nil {
+		t.Fatalf("Rerank: %v", err)
+	}
+	if len(resp.Data) != 3 {
+		t.Fatalf("Data len=%d", len(resp.Data))
+	}
+	if resp.Data[0].Index != 2 || resp.Data[1].Index != 0 || resp.Data[2].Index != 1 {
+		t.Errorf("order=%v %v %v", resp.Data[0].Index, resp.Data[1].Index, resp.Data[2].Index)
+	}
+	if resp.Data[0].RelevanceScore != 0.91 {
+		t.Errorf("top score=%v", resp.Data[0].RelevanceScore)
+	}
+}
+
+func TestXinferenceRerankNormalizesV1BaseURL(t *testing.T) {
+	srv := newXinferenceRerankServer(t, "Bearer test-key", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"results": []map[string]interface{}{}})
+	})
+	defer srv.Close()
+
+	x := NewXinferenceModel(
+		map[string]string{"default": srv.URL + "/v1"},
+		URLSuffix{Rerank: "v1/rerank"},
+	)
+	apiKey := "test-key"
+	model := "bge-reranker-v2-m3"
+	_, err := x.Rerank(&model, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("Rerank: %v", err)
+	}
+}
+
+func TestXinferenceRerankRespectsTopNConfig(t *testing.T) {
+	srv := newXinferenceRerankServer(t, "", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		if got := body["top_n"].(float64); got != 2 {
+			t.Errorf("top_n=%v want 2", got)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"results": []map[string]interface{}{}})
+	})
+	defer srv.Close()
+
+	x := newXinferenceForTest(srv.URL)
+	model := "bge-reranker-v2-m3"
+	_, err := x.Rerank(&model, "q", []string{"a", "b", "c", "d"}, &APIConfig{}, &RerankConfig{TopN: 2})
+	if err != nil {
+		t.Fatalf("Rerank: %v", err)
+	}
+}
+
+func TestXinferenceRerankEmptyDocumentsShortCircuits(t *testing.T) {
+	x := newXinferenceForTest("http://unused")
+	model := "bge-reranker-v2-m3"
+	resp, err := x.Rerank(&model, "q", nil, &APIConfig{}, nil)
+	if err != nil {
+		t.Fatalf("Rerank: %v", err)
+	}
+	if len(resp.Data) != 0 {
+		t.Errorf("Data len=%d want 0", len(resp.Data))
+	}
+}
+
+func TestXinferenceRerankRequiresModelName(t *testing.T) {
+	x := newXinferenceForTest("http://unused")
+	_, err := x.Rerank(nil, "q", []string{"a"}, &APIConfig{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "model name is required") {
+		t.Errorf("err=%v", err)
+	}
+}
+
+func TestXinferenceRerankRejectsOutOfRangeIndex(t *testing.T) {
+	srv := newXinferenceRerankServer(t, "", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"results": []map[string]interface{}{{"index": 5, "relevance_score": 0.1}},
+		})
+	})
+	defer srv.Close()
+
+	x := newXinferenceForTest(srv.URL)
+	model := "bge-reranker-v2-m3"
+	_, err := x.Rerank(&model, "q", []string{"a", "b"}, &APIConfig{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "out of range") {
+		t.Errorf("err=%v", err)
+	}
+}
+
+func TestXinferenceRerankRejectsDuplicateIndex(t *testing.T) {
+	srv := newXinferenceRerankServer(t, "", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"results": []map[string]interface{}{
+				{"index": 0, "relevance_score": 0.9},
+				{"index": 0, "relevance_score": 0.8},
+			},
+		})
+	})
+	defer srv.Close()
+
+	x := newXinferenceForTest(srv.URL)
+	model := "bge-reranker-v2-m3"
+	_, err := x.Rerank(&model, "q", []string{"a", "b"}, &APIConfig{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Errorf("err=%v", err)
+	}
+}
+
+func TestXinferenceRerankSurfacesHTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"model not loaded"}`))
+	}))
+	defer srv.Close()
+
+	x := newXinferenceForTest(srv.URL)
+	model := "bge-reranker-v2-m3"
+	_, err := x.Rerank(&model, "q", []string{"a"}, &APIConfig{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "Xinference rerank API error") {
+		t.Errorf("err=%v", err)
+	}
+}
+
+func TestXinferenceRerankRejectsMissingRerankSuffix(t *testing.T) {
+	x := NewXinferenceModel(
+		map[string]string{"default": "http://unused"},
+		URLSuffix{Chat: "v1/chat/completions"},
+	)
+	model := "bge-reranker-v2-m3"
+	_, err := x.Rerank(&model, "q", []string{"a"}, &APIConfig{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "no rerank URL suffix configured") {
+		t.Errorf("err=%v", err)
 	}
 }

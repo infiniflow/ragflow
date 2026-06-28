@@ -169,6 +169,15 @@ func (dao *ChatDAO) GetExistingNames(tenantID string, status string) ([]string, 
 	return names, err
 }
 
+// ExistsByNameTenantStatus checks whether a chat with the given name exists.
+func (dao *ChatDAO) ExistsByNameTenantStatus(name, tenantID, status string) (bool, error) {
+	var count int64
+	err := DB.Model(&entity.Chat{}).
+		Where("name = ? AND tenant_id = ? AND status = ?", name, tenantID, status).
+		Count(&count).Error
+	return count > 0, err
+}
+
 // Create creates a new chat/dialog
 func (dao *ChatDAO) Create(chat *entity.Chat) error {
 	return DB.Create(chat).Error

@@ -1,11 +1,11 @@
 [project]
 name = "ragflow"
-version = "0.25.5"
+version = "0.26.1"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license-files = ["LICENSE"]
 readme = "README.md"
-requires-python = ">=3.13,<3.15"
+requires-python = ">=3.13,<3.14"
 dependencies = [
     # discord-py==2.3.2 unconditionally imports audioop in discord/player.py at module-
     # load time. audioop was removed from the CPython stdlib in Python 3.13 (PEP 594),
@@ -14,20 +14,21 @@ dependencies = [
     "audioop-lts>=0.2.1",
     "aiosmtplib>=5.0.0",
     "akshare>=1.15.78,<2.0.0",
-    "anthropic==0.34.1",
+    "anthropic==0.76.0",
     "arxiv==2.1.3",
     "atlassian-python-api==4.0.7",
     "azure-identity>=1.25.3",
     "azure-storage-file-datalake==12.16.0",
     "beartype>=0.20.0,<1.0.0",
     "bio==1.7.1",
+    "browser-use>=0.11.1,<0.12.0",
     "boto3>=1.28.0",
     "boxsdk>=10.1.0",
     "captcha>=0.7.1",
     "chardet>=5.2.0,<6.0.0",
     "cn2an==0.5.22",
     "cohere==5.6.2",
-    "Crawl4AI>=0.4.0,<1.0.0",
+    "crawl4ai>=0.8.0",
     "dashscope==1.25.11",
     "deepl==1.18.0",
     "debugpy>=1.8.13",
@@ -52,7 +53,7 @@ dependencies = [
     "google-genai>=1.41.0,<2.0.0",
     "google-search-results==2.4.2",
     "graspologic @ git+https://gitee.com/infiniflow/graspologic.git@38e680cab72bc9fb68a7992c3bcc2d53b24e42fd",
-    "groq==0.9.0",
+    "groq>=0.30.0,<1.0.0",
     "grpcio-status==1.67.1",
     "html-text==0.6.2",
     "infinity-sdk==0.7.0",
@@ -79,7 +80,7 @@ dependencies = [
     "opencv-python-headless==4.10.0.84",
     "opendal>=0.45.0,<0.46.0",
     "opensearch-py==2.7.1",
-    "ormsgpack>=1.5.0",
+    "ormsgpack>=1.6.0",
     "pdfplumber==0.10.4",
     "pluginlib>=0.10.0",
     "psycopg2-binary>=2.9.11,<3.0.0",
@@ -111,7 +112,7 @@ dependencies = [
     "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
     "slack-sdk==3.37.0",
     "socksio==1.0.0",
-    "agentrun-sdk>=0.0.16,<1.0.0",
+    "agentrun-sdk>=0.0.51,<1.0.0",
     "nest-asyncio>=1.6.0,<2.0.0",  # Needed for agent/component/message.py
     "sqlglotrs==0.9.0",
     "tavily-python==0.5.1",
@@ -125,6 +126,7 @@ dependencies = [
     "wikipedia==1.4.0",
     "word2number==1.1",
     "xgboost==1.6.0",
+    "setuptools>=78.1.1,<81.0.0",
     "xpinyin==0.7.6",
     "yfinance==0.2.65",
     "zhipuai==2.0.1",
@@ -144,7 +146,6 @@ dependencies = [
     #    "requests>=2.32.3,<3.0.0",
     #    "scikit-learn==1.5.0",
     #    "selenium==4.22.0",
-    #    "setuptools>=78.1.1,<81.0.0",
     #    "shapely==2.0.5",
     #    "six==1.16.0",
     #    "tabulate==0.9.0",
@@ -154,7 +155,12 @@ dependencies = [
     #    "xxhash>=3.5.0,<4.0.0",
     #    "trio>=0.17.0,<0.29.0",
     #    "click>=8.1.8",
-    "litellm~=1.82.0,!=1.82.7,!=1.82.8",
+    # 1.88.0 ships a broken `litellm.integrations.custom_logger`
+    # (imports `AgenticLoopPlan` from a sibling types module where the
+    # symbol is missing — see PR #15952 CI run 27414495913), and the
+    # 1.82.6/1.82.7/1.82.8 minors have a broken `litellm.caching.caching`
+    # import chain. Pin to a single known-good 1.82.x release.
+    "litellm==1.82.5",
     #    "pip>=25.2",
     #    "imageio-ffmpeg>=0.6.0",
     #    "cryptography==46.0.3",
@@ -165,6 +171,12 @@ dependencies = [
     "python-gitlab>=7.0.0",
     "alibabacloud-dingtalk>=2.0.0",
     "quart-schema==0.23.0",
+    "lark-oapi>=1.2.0",
+    "discord.py>=2.3.0",
+    "python-telegram-bot>=21.0",
+    "line-bot-sdk>=3.0.0",
+    "wechatpy>=1.8.18",
+    "aiohttp>=3.14.1",
 ]
 
 [dependency-groups]
@@ -198,6 +210,11 @@ constraint-dependencies = [
     # via selenium-wire -> trio-websocket -> trio.
     "trio>=0.26.0",
 ]
+exclude-dependencies = [
+    # crawl4ai>=0.8.6 depends on unclecode-litellm, which installs the same
+    # `litellm` package namespace as upstream litellm and can corrupt imports.
+    "unclecode-litellm",
+]
 override-dependencies = [
     # moodlepy<=0.24.1 pins attrs<23.0.0, but trio>=0.26.0 requires attrs>=23.2.0.
     # attrs 23.x is backward-compatible; moodlepy works fine at runtime with it.
@@ -221,12 +238,18 @@ packages = [
     'agent',
     'api',
     'deepdoc',
-    'graphrag',
-    'intergrations.chatgpt-on-wechat.plugins',
+    'rag.graphrag',
+    'tools.chatgpt_on_wechat.plugins',
     'mcp.server',
     'rag',
     'sdk.python.ragflow_sdk',
 ]
+
+# tools/ holds standalone Python projects whose names contain hyphens
+# (chatgpt-on-wechat). Python package names cannot contain hyphens, so
+# we map the underscored Python name to the hyphenated filesystem path.
+[tool.setuptools.package-dir]
+"tools.chatgpt_on_wechat.plugins" = "tools/chatgpt-on-wechat/plugins"
 
 [tool.ruff]
 line-length = 200
@@ -257,9 +280,12 @@ markers = [
 ]
 
 # Test collection and runtime configuration
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 filterwarnings = [
     "error",  # Treat warnings as errors
     "ignore::DeprecationWarning",  # Ignore specific warnings
+    "ignore:pkg_resources is deprecated:UserWarning",
 ]
 
 # Command line options
@@ -268,7 +294,9 @@ addopts = [
     "--strict-markers",  # Enforce marker definitions
     "--tb=short",  # Simplified traceback
     "--disable-warnings",  # Disable warnings
-    "--color=yes"  # Colored output
+    "--color=yes",  # Colored output
+    "-p",
+    "no:anyio",  # anyio's pytest plugin conflicts with pytest-asyncio on Py3.13
 ]
 
 

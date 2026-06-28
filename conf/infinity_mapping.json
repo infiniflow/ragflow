@@ -39,5 +39,6 @@
 	"doc_type_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"toc_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"raptor_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
-	"raptor_layer_int": {"type": "integer", "default": 0}
+	"raptor_layer_int": {"type": "integer", "default": 0},
+	"extra": {"type": "varchar", "default": ""}
 }

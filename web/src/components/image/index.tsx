@@ -1,6 +1,9 @@
+import { Authorization } from '@/constants/authorization';
 import { restAPIv1 } from '@/utils/api';
+import { getAuthorization } from '@/utils/authorization-util';
+import { getSearchValue } from '@/utils/common-util';
 import classNames from 'classnames';
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 
 interface IImage extends React.ImgHTMLAttributes<HTMLImageElement> {
@@ -9,11 +12,120 @@ interface IImage extends React.ImgHTMLAttributes<HTMLImageElement> {
   label?: string;
 }
 
+type ImageCacheItem = {
+  count: number;
+  objectUrl?: string;
+  promise?: Promise<string>;
+  timer?: ReturnType<typeof setTimeout>;
+};
+
+const imageCache = new Map<string, ImageCacheItem>();
+
+export const buildDocumentImageUrl = (id: string, t?: string | number) => {
+  const params = new URLSearchParams();
+
+  if (t) {
+    params.set('_t', String(t));
+  }
+
+  const query = params.toString();
+  return `${restAPIv1}/documents/images/${id}${query ? `?${query}` : ''}`;
+};
+
+const fetchDocumentImage = (url: string, authorization: string) => {
+  const cacheKey = `${authorization}:${url}`;
+  let item = imageCache.get(cacheKey);
+
+  if (!item) {
+    item = { count: 0 };
+    imageCache.set(cacheKey, item);
+  }
+  if (item.timer) {
+    clearTimeout(item.timer);
+    item.timer = undefined;
+  }
+  item.count += 1;
+
+  if (!item.promise) {
+    item.promise = fetch(url, { headers: { [Authorization]: authorization } })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(response.statusText);
+        }
+        return response.blob();
+      })
+      .then((blob) => {
+        item.objectUrl = URL.createObjectURL(blob);
+        return item.objectUrl;
+      })
+      .catch((error) => {
+        imageCache.delete(cacheKey);
+        throw error;
+      });
+  }
+
+  return {
+    promise: item.promise,
+    release: () => {
+      item.count -= 1;
+      if (item.count <= 0) {
+        item.timer = setTimeout(() => {
+          if (item.count <= 0) {
+            if (item.objectUrl) {
+              URL.revokeObjectURL(item.objectUrl);
+            }
+            imageCache.delete(cacheKey);
+          }
+        }, 30000);
+      }
+    },
+  };
+};
+
+export const useDocumentImageUrl = (id: string, t?: string | number) => {
+  const directUrl = useMemo(() => buildDocumentImageUrl(id, t), [id, t]);
+  const [imageUrl, setImageUrl] = useState(() =>
+    getAuthorization() && getSearchValue('shared_id') ? '' : directUrl,
+  );
+
+  useEffect(() => {
+    const authorization = getAuthorization();
+    if (!authorization || !getSearchValue('shared_id')) {
+      setImageUrl(directUrl);
+      return;
+    }
+
+    let ignore = false;
+    setImageUrl('');
+    const { promise, release } = fetchDocumentImage(directUrl, authorization);
+    promise
+      .then((url) => {
+        if (ignore) {
+          return;
+        }
+        setImageUrl(url);
+      })
+      .catch(() => {
+        if (!ignore) {
+          setImageUrl('');
+        }
+      });
+
+    return () => {
+      ignore = true;
+      release();
+    };
+  }, [directUrl]);
+
+  return imageUrl;
+};
+
 const Image = ({ id, t, label, className, ...props }: IImage) => {
+  const src = useDocumentImageUrl(id, t);
   const imageElement = (
     <img
       {...props}
-      src={`${restAPIv1}/documents/images/${id}${t ? `?_t=${t}` : ''}`}
+      src={src || undefined}
       className={classNames('max-w-[45vw] max-h-[40wh] block', className)}
     />
   );

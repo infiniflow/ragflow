@@ -339,7 +339,7 @@ func TestMistralListModelsHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if len(ids) != 3 || ids[0] != "mistral-large-latest" || ids[2] != "mistral-embed" {
+	if len(ids) != 3 || ids[0].Name != "mistral-large-latest" || ids[2].Name != "mistral-embed" {
 		t.Errorf("ids=%v, want [mistral-large-latest mistral-small-latest mistral-embed]", ids)
 	}
 }
@@ -387,6 +387,49 @@ func TestMistralRerankReturnsNoSuchMethod(t *testing.T) {
 	_, err := m.Rerank(&q, "what is rag?", []string{"a", "b"}, &APIConfig{}, &RerankConfig{TopN: 2})
 	if err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: expected 'no such method', got %v", err)
+	}
+}
+
+func TestMistralUnsupportedDefaultsReturnNoSuchMethod(t *testing.T) {
+	m := newMistralForTest("http://unused")
+	modelName := "mistral-large-latest"
+
+	checks := []struct {
+		name string
+		call func() error
+	}{
+		{"TranscribeAudio", func() error {
+			_, err := m.TranscribeAudio(&modelName, nil, &APIConfig{}, nil)
+			return err
+		}},
+		{"TranscribeAudioWithSender", func() error {
+			return m.TranscribeAudioWithSender(&modelName, nil, &APIConfig{}, nil, nil)
+		}},
+		{"AudioSpeech", func() error {
+			_, err := m.AudioSpeech(&modelName, nil, &APIConfig{}, nil)
+			return err
+		}},
+		{"AudioSpeechWithSender", func() error {
+			return m.AudioSpeechWithSender(&modelName, nil, &APIConfig{}, nil, nil)
+		}},
+		{"ParseFile", func() error {
+			_, err := m.ParseFile(&modelName, nil, nil, &APIConfig{}, nil)
+			return err
+		}},
+		{"ListTasks", func() error {
+			_, err := m.ListTasks(&APIConfig{})
+			return err
+		}},
+		{"ShowTask", func() error {
+			_, err := m.ShowTask("task-id", &APIConfig{})
+			return err
+		}},
+	}
+
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			requireNoSuchMethod(t, check.name, check.call())
+		})
 	}
 }
 
@@ -570,5 +613,204 @@ func TestMistralEmbedRejectsHTTPError(t *testing.T) {
 	_, err := m.Embed(&model, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil)
 	if err == nil || !strings.Contains(err.Error(), "Mistral embeddings API error") {
 		t.Errorf("expected Mistral embeddings API error, got %v", err)
+	}
+}
+
+// --- structured-content (magistral reasoning) tests ---
+
+// Regression net: the existing string-content path stays green for every
+// non-reasoning Mistral model.
+func TestMistralChatHandlesStringContent(t *testing.T) {
+	srv := newMistralServer(t, "/chat/completions", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{{"message": map[string]interface{}{
+				"role":    "assistant",
+				"content": "Pong.",
+			}}},
+		})
+	})
+	defer srv.Close()
+
+	m := newMistralForTest(srv.URL)
+	apiKey := "test-key"
+	resp, err := m.ChatWithMessages("ministral-3b-latest",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if *resp.Answer != "Pong." {
+		t.Errorf("Answer=%q want %q", *resp.Answer, "Pong.")
+	}
+	if *resp.ReasonContent != "" {
+		t.Errorf("ReasonContent=%q want empty", *resp.ReasonContent)
+	}
+}
+
+// New path: magistral with a non-trivial answer returns a structured
+// content array. Two part types — `thinking` and `text` — must be
+// concatenated into ReasonContent and Answer respectively.
+//
+// The fixture body is a trimmed copy of the actual response captured
+// from api.mistral.ai/v1/chat/completions against magistral-medium-latest
+// with the prompt "When do two trains meet?".
+func TestMistralChatExtractsReasoningFromStructuredContent(t *testing.T) {
+	srv := newMistralServer(t, "/chat/completions", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{{"message": map[string]interface{}{
+				"role": "assistant",
+				"content": []map[string]interface{}{
+					{
+						"type": "thinking",
+						"thinking": []map[string]interface{}{
+							{"type": "text", "text": "Combined speed is 150 mph. "},
+							{"type": "text", "text": "300 / 150 = 2 hours."},
+						},
+						"closed": true,
+					},
+					{"type": "text", "text": "They will meet after **2 hours**."},
+				},
+			}}},
+		})
+	})
+	defer srv.Close()
+
+	m := newMistralForTest(srv.URL)
+	apiKey := "test-key"
+	resp, err := m.ChatWithMessages("magistral-medium-latest",
+		[]Message{{Role: "user", Content: "When do they meet?"}},
+		&APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	wantAnswer := "They will meet after **2 hours**."
+	wantReason := "Combined speed is 150 mph. 300 / 150 = 2 hours."
+	if *resp.Answer != wantAnswer {
+		t.Errorf("Answer=%q want %q", *resp.Answer, wantAnswer)
+	}
+	if *resp.ReasonContent != wantReason {
+		t.Errorf("ReasonContent=%q want %q", *resp.ReasonContent, wantReason)
+	}
+}
+
+// magistral with a trivial answer that needed no reasoning returns the
+// structured shape with only a `text` part. ReasonContent must be empty.
+func TestMistralChatHandlesStructuredContentWithoutThinking(t *testing.T) {
+	srv := newMistralServer(t, "/chat/completions", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{{"message": map[string]interface{}{
+				"role": "assistant",
+				"content": []map[string]interface{}{
+					{"type": "text", "text": "12"},
+				},
+			}}},
+		})
+	})
+	defer srv.Close()
+
+	m := newMistralForTest(srv.URL)
+	apiKey := "test-key"
+	resp, err := m.ChatWithMessages("magistral-small-latest",
+		[]Message{{Role: "user", Content: "15% of 80?"}},
+		&APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if *resp.Answer != "12" {
+		t.Errorf("Answer=%q want %q", *resp.Answer, "12")
+	}
+	if *resp.ReasonContent != "" {
+		t.Errorf("ReasonContent=%q want empty (no thinking part)", *resp.ReasonContent)
+	}
+}
+
+// Unknown part types must be skipped, not crash the driver. This makes
+// the parser forward-compatible with new Mistral content variants
+// (audio chunks, citations, etc.) that ragflow doesn't surface yet.
+func TestMistralChatIgnoresUnknownContentPartTypes(t *testing.T) {
+	srv := newMistralServer(t, "/chat/completions", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{{"message": map[string]interface{}{
+				"role": "assistant",
+				"content": []map[string]interface{}{
+					{"type": "audio_url", "audio_url": "ignored://x"},
+					{"type": "text", "text": "Hello"},
+					{"type": "future_part_type", "blob": "?"},
+				},
+			}}},
+		})
+	})
+	defer srv.Close()
+
+	m := newMistralForTest(srv.URL)
+	apiKey := "test-key"
+	resp, err := m.ChatWithMessages("magistral-small-latest",
+		[]Message{{Role: "user", Content: "x"}},
+		&APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if *resp.Answer != "Hello" {
+		t.Errorf("Answer=%q want %q", *resp.Answer, "Hello")
+	}
+}
+
+// Direct unit coverage of the helper, including the nil and bad-type
+// edge cases that won't surface in the integration tests above.
+func TestExtractMistralContent(t *testing.T) {
+	tests := []struct {
+		name       string
+		input      interface{}
+		wantAns    string
+		wantReason string
+		wantErr    bool
+	}{
+		{"plain string", "hi", "hi", "", false},
+		{"empty string", "", "", "", false},
+		{"nil", nil, "", "", false},
+		{"empty array", []interface{}{}, "", "", false},
+		{
+			"text only",
+			[]interface{}{
+				map[string]interface{}{"type": "text", "text": "a"},
+				map[string]interface{}{"type": "text", "text": "b"},
+			},
+			"ab", "", false,
+		},
+		{
+			"thinking then text",
+			[]interface{}{
+				map[string]interface{}{
+					"type": "thinking",
+					"thinking": []interface{}{
+						map[string]interface{}{"type": "text", "text": "why "},
+						map[string]interface{}{"type": "text", "text": "this"},
+					},
+				},
+				map[string]interface{}{"type": "text", "text": "answer"},
+			},
+			"answer", "why this", false,
+		},
+		{"unknown root type", 42, "", "", true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ans, reason, err := extractMistralContent(tc.input)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("want error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected err: %v", err)
+			}
+			if ans != tc.wantAns {
+				t.Errorf("answer=%q want %q", ans, tc.wantAns)
+			}
+			if reason != tc.wantReason {
+				t.Errorf("reason=%q want %q", reason, tc.wantReason)
+			}
+		})
 	}
 }

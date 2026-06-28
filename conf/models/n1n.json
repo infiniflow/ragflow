@@ -1,0 +1,117 @@
+{
+  "name": "n1n",
+  "url": {
+    "default": "https://api.n1n.ai"
+  },
+  "url_suffix": {
+    "chat": "v1/chat/completions",
+    "models": "v1/models",
+    "embedding": "v1/embeddings",
+    "rerank": "v1/rerank"
+  },
+  "class": "n1n",
+  "models": [
+    {
+      "name": "gpt-4o-mini",
+      "max_tokens": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "gpt-4o",
+      "max_tokens": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "gpt-5.2",
+      "max_tokens": 400000,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "claude-sonnet-4-6",
+      "max_tokens": 200000,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "deepseek-v3-0324",
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v3-1-250821",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v3-1-think-250821",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "kimi-k2-250905",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen3-coder-plus",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "text-embedding-3-small",
+      "max_tokens": 8191,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "text-embedding-3-large",
+      "max_tokens": 8191,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "text-embedding-ada-002",
+      "max_tokens": 8191,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "BAAI/bge-reranker-v2-m3",
+      "max_tokens": 8192,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "Qwen/Qwen3-Reranker-0.6B",
+      "max_tokens": 32768,
+      "model_types": [
+        "rerank"
+      ]
+    }
+  ]
+}
