@@ -330,3 +330,21 @@ def test_invoke_disables_redirect_following(monkeypatch):
     monkeypatch.setattr(module.requests, "get", mock_get)
     invoke._invoke()
     assert mock_get.call_args[1]["allow_redirects"] is False
+
+
+@pytest.mark.p2
+def test_invoke_pins_dns_and_disables_redirects(monkeypatch):
+    module = _load_invoke_module(monkeypatch)
+    invoke = _make_invoke(module, url="http://example.com")
+    pin_ctx = MagicMock()
+    pin_ctx.__enter__ = MagicMock(return_value=None)
+    pin_ctx.__exit__ = MagicMock(return_value=None)
+    monkeypatch.setattr(module, "assert_url_is_safe", MagicMock(return_value=("example.com", "93.184.216.34")))
+    monkeypatch.setattr(module, "pin_dns", MagicMock(return_value=pin_ctx))
+    mock_get = MagicMock(return_value=SimpleNamespace(text="ok"))
+    monkeypatch.setattr(module.requests, "get", mock_get)
+
+    invoke._invoke()
+
+    module.pin_dns.assert_called_once_with("example.com", "93.184.216.34")
+    assert mock_get.call_args[1]["allow_redirects"] is False

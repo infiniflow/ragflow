@@ -2003,6 +2003,10 @@ async def download(dataset_id, document_id):
     """
     if not document_id:
         return get_error_data_result(message="Specify document_id please.")
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=current_user.id):
+        return get_data_error_result(message="Document not found!")
+    if not DocumentService.accessible(document_id, current_user.id):
+        return get_data_error_result(message="Document not found!")
     doc = DocumentService.query(kb_id=dataset_id, id=document_id)
     if not doc:
         return get_error_data_result(message=f"The dataset not own the document {document_id}.")
@@ -2060,6 +2064,8 @@ async def download_document(document_id):
     """
     if not document_id:
         return get_error_data_result(message="Specify document_id please.")
+    if not DocumentService.accessible(document_id, current_user.id):
+        return get_data_error_result(message="Document not found!")
     doc = DocumentService.query(id=document_id)
     if not doc:
         return get_error_data_result(message=f"The dataset not own the document {document_id}.")
