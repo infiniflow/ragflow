@@ -217,11 +217,101 @@ def _move_litellm_provider_body_fields(provider: SupportedLiteLLMProvider | str 
         completion_args["extra_body"] = body
     return completion_args
 
+
+# Model-level customization (issue #15981). An operator can attach custom request
+# headers and default generation parameters to a model configuration; both arrive
+# via **kwargs (`default_headers`, `default_gen_conf`) from the model config.
+# Headers let OpenAI-compatible gateways / enterprise proxies authenticate or route
+# requests; default gen params act as model-level defaults that a chat's own
+# gen_conf overrides. Defined here so the OpenAI-compatible (Base) and LiteLLM
+# backends share one implementation.
+
+# Generation params an operator may set as model-level defaults. A request's own
+# gen_conf overrides these; any other key is dropped by the backend allow-list.
+SUPPORTED_DEFAULT_GEN_CONF_KEYS = frozenset(
+    {"temperature", "top_p", "max_tokens", "presence_penalty", "frequency_penalty"}
+)
+
+# Inclusive bounds per the OpenAI API; out-of-range defaults are dropped.
+_GEN_CONF_BOUNDS = {
+    "temperature": (0.0, 2.0),
+    "top_p": (0.0, 1.0),
+    "presence_penalty": (-2.0, 2.0),
+    "frequency_penalty": (-2.0, 2.0),
+}
+
+
+def _as_config_dict(raw):
+    """Coerce a config value (dict, or a JSON-object string) into a dict, else {}."""
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (JSONDecodeError, ValueError):
+            return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def parse_custom_headers(raw) -> dict:
+    """Normalize operator-supplied custom headers into a clean ``{str: str}`` map.
+
+    Accepts a dict or a JSON-object string. Keys must be non-empty strings; values
+    are stringified when scalar and skipped otherwise, so one malformed entry can
+    never break client construction. Returns ``{}`` when nothing usable is given.
+    Header *values* are deliberately never logged — they may carry secrets."""
+    headers = {}
+    for k, v in _as_config_dict(raw).items():
+        if not isinstance(k, str) or not k.strip():
+            continue
+        if isinstance(v, bool):  # bool is an int subclass — exclude explicitly
+            continue
+        if isinstance(v, (str, int, float)):
+            headers[k.strip()] = str(v)
+    return headers
+
+
+def validate_default_gen_conf(raw) -> dict:
+    """Keep only supported, well-typed, in-range model-level default gen params.
+
+    Unsupported keys and out-of-range / wrong-typed values are dropped silently
+    (the issue asks that unsupported params be ignored safely rather than error).
+    ``max_tokens`` must be a positive int; the rest are floats within
+    :data:`_GEN_CONF_BOUNDS`."""
+    out = {}
+    for k, v in _as_config_dict(raw).items():
+        if k not in SUPPORTED_DEFAULT_GEN_CONF_KEYS or isinstance(v, bool):
+            continue
+        if k == "max_tokens":
+            if isinstance(v, int) and v > 0:
+                out[k] = v
+            continue
+        if isinstance(v, (int, float)):
+            lo, hi = _GEN_CONF_BOUNDS[k]
+            if lo <= float(v) <= hi:
+                out[k] = float(v)
+    return out
+
+
+def merge_gen_conf(defaults: dict | None, gen_conf: dict | None) -> dict:
+    """Layer model-level ``defaults`` under a request's ``gen_conf`` (request wins)."""
+    merged = dict(defaults or {})
+    merged.update(gen_conf or {})
+    return merged
+
+
 class Base(ABC):
     def __init__(self, key, model_name, base_url, **kwargs):
         timeout = int(os.environ.get("LLM_TIMEOUT_SECONDS", 600))
-        self.client = OpenAI(api_key=key, base_url=base_url, timeout=timeout)
-        self.async_client = AsyncOpenAI(api_key=key, base_url=base_url, timeout=timeout)
+        # Custom headers (issue #15981): forward to the OpenAI-compatible client so
+        # gateways / proxies can authenticate or route requests. Omitted entirely
+        # when none are configured, preserving the default client behavior.
+        self.custom_headers = parse_custom_headers(kwargs.get("default_headers") or kwargs.get("custom_headers"))
+        client_kwargs = {"api_key": key, "base_url": base_url, "timeout": timeout}
+        if self.custom_headers:
+            client_kwargs["default_headers"] = self.custom_headers
+        self.client = OpenAI(**client_kwargs)
+        self.async_client = AsyncOpenAI(**client_kwargs)
+        # Model-level default generation params; a request's gen_conf overrides them.
+        self.default_gen_conf = validate_default_gen_conf(kwargs.get("default_gen_conf"))
         self.model_name = model_name
         # Configure retry parameters
         self.max_retries = kwargs.get("max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5)))
@@ -256,6 +346,11 @@ class Base(ABC):
         return LLMErrorCode.ERROR_GENERIC
 
     def _clean_conf(self, gen_conf):
+        # Apply model-level default generation params first (issue #15981); a
+        # request's own gen_conf (which may carry chat-level overrides) wins.
+        default_gen_conf = getattr(self, "default_gen_conf", None)
+        if default_gen_conf:
+            gen_conf = merge_gen_conf(default_gen_conf, gen_conf)
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
 
@@ -1551,6 +1646,11 @@ class LiteLLMBase(ABC):
         self.tools = []
         self.toolcall_sessions = {}
 
+        # Model-level customization (issue #15981): custom headers forwarded to
+        # litellm per request, and default gen params merged under each request.
+        self.custom_headers = parse_custom_headers(kwargs.get("default_headers") or kwargs.get("custom_headers"))
+        self.default_gen_conf = validate_default_gen_conf(kwargs.get("default_gen_conf"))
+
         # Factory specific fields
         if self.provider == SupportedLiteLLMProvider.OpenRouter:
             try:
@@ -1599,6 +1699,11 @@ class LiteLLMBase(ABC):
         return LLMErrorCode.ERROR_GENERIC
 
     def _clean_conf(self, gen_conf):
+        # Apply model-level default generation params first (issue #15981); a
+        # request's own gen_conf (which may carry chat-level overrides) wins.
+        default_gen_conf = getattr(self, "default_gen_conf", None)
+        if default_gen_conf:
+            gen_conf = merge_gen_conf(default_gen_conf, gen_conf)
         gen_conf, _ = _apply_model_family_policies(
             self.model_name,
             backend="litellm",
@@ -2069,6 +2174,10 @@ class LiteLLMBase(ABC):
             "num_retries": self.max_retries,
             **kwargs,
         }
+        # Custom headers (issue #15981): litellm forwards `headers` to the provider.
+        custom_headers = getattr(self, "custom_headers", None)
+        if custom_headers:
+            completion_args["headers"] = custom_headers
         if stream:
             completion_args.update(
                 {
