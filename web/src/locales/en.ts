@@ -1056,6 +1056,12 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       maxTokensTip: `The maximum context size of the model; an invalid or incorrect value will cause an error. Defaults to 512.`,
       maxTokensInvalidMessage: 'Please enter a valid number for Max tokens.',
       maxTokensMinMessage: 'Max tokens cannot be less than 0.',
+      thinking: 'Thinking',
+      thinkingDefault: 'System default',
+      thinkingEnabled: 'Enabled',
+      thinkingDisabled: 'Disabled',
+      thinkingTip:
+        'Only controls thinking mode for official Qwen, Kimi, and GLM model providers. System default disables Qwen thinking to avoid long-running tasks.',
       quote: 'Show quote',
       quoteTip: 'Whether to display the original text as a reference.',
       selfRag: 'Self-RAG',
