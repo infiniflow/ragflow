@@ -557,6 +557,13 @@ async def _iter_session_completion_events(tenant_id, agent_id, req, return_trace
             continue
 
         if event in ["message", "message_end", "user_inputs", "workflow_finished"]:
+            if event in ["user_inputs", "workflow_finished"]:
+                logging.debug(
+                    "Forwarding session completion event: tenant_id=%s agent_id=%s event=%s",
+                    tenant_id,
+                    agent_id,
+                    event,
+                )
             yield ans
 
 
@@ -1546,6 +1553,8 @@ async def agent_chat_completion(tenant_id, agent_id=None):
                         }
                     )
             if ans.get("event") == "message_end":
+                final_ans = ans
+            elif ans.get("event") == "user_inputs" and not final_ans:
                 final_ans = ans
         except Exception as exc:
             return get_result(data=f"**ERROR**: {str(exc)}")
