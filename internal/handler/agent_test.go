@@ -729,9 +729,11 @@ func (s *stubChatRunner) RunAgent(_ context.Context, _, _, _, _ string, _ any) (
 
 // TestAgentChatCompletions_StreamSetsContentType covers the SSE
 // path: the handler streams canvas.RunEvent frames as
-// `data: {...}\n\n` with a trailing `data: [DONE]\n\n` terminator,
-// matching the Python `completion()` wire format in
-// api/db/services/canvas_service.py:368.
+// `data: {...}\n\n` with a trailing `data: [DONE]\n\n` terminator.
+// The frame shape is the unified python envelope
+// {code:0, message:"", data:{answer, reference, audio_binary, id,
+// session_id}} — the same shape /api/v1/agentbots/<id>/completions
+// emits. See service.WriteChatbotRunEvent and WriteChatbotFrame.
 //
 // The stubChatRunner emits one `message` frame and one `done` frame
 // so the test verifies the body contains both the framed event and
@@ -757,8 +759,12 @@ func TestAgentChatCompletions_StreamSetsContentType(t *testing.T) {
 		t.Errorf("Content-Type = %q, want text/event-stream", got)
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, "\"event\":\"message\"") || !strings.Contains(body, "\"answer\":\"hi back\"") {
-		t.Errorf("body should contain framed message event, got %q", body)
+	// Body must contain the unified python envelope (`code/data.answer`)
+	// and the [DONE] terminator. The iframe SDK JSON.parse()s `answer`
+	// to extract the inner fields, so the embedded JSON is double-encoded
+	// (escaped quotes inside the outer `"answer"` string).
+	if !strings.Contains(body, "\"code\":0") || !strings.Contains(body, `"answer":"{\"answer\":\"hi back\",\"reference\":[]}"`) {
+		t.Errorf("body should contain unified python envelope with answer, got %q", body)
 	}
 	if !strings.HasSuffix(body, "data: [DONE]\n\n") {
 		t.Errorf("body should end with [DONE] terminator, got %q", body)
@@ -768,9 +774,9 @@ func TestAgentChatCompletions_StreamSetsContentType(t *testing.T) {
 // TestAgentChatCompletions_DefaultBranchStreamsSSE covers the
 // scenario the user actually hit: `openai-compatible: false` with no
 // `stream` field on the body. The handler must still invoke the
-// canvas runner and stream the result as SSE — matching Python's
-// `completion()` which always yields SSE on the non-openai path
-// regardless of the stream flag.
+// canvas runner and stream the result as SSE — the SSE envelope is
+// the unified python shape shared with
+// /api/v1/agentbots/<id>/completions regardless of the stream flag.
 func TestAgentChatCompletions_DefaultBranchStreamsSSE(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -792,8 +798,8 @@ func TestAgentChatCompletions_DefaultBranchStreamsSSE(t *testing.T) {
 		t.Errorf("Content-Type = %q, want text/event-stream (default branch must stream)", got)
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, "\"event\":\"message\"") || !strings.Contains(body, "\"answer\":\"hello back\"") {
-		t.Errorf("body should contain framed message event, got %q", body)
+	if !strings.Contains(body, "\"code\":0") || !strings.Contains(body, `"answer":"{\"answer\":\"hello back\",\"reference\":[]}"`) {
+		t.Errorf("body should contain unified python envelope with answer, got %q", body)
 	}
 	if !strings.HasSuffix(body, "data: [DONE]\n\n") {
 		t.Errorf("body should end with [DONE] terminator, got %q", body)

@@ -124,6 +124,16 @@ func (simpleRetrievalService) Search(_ context.Context, req RetrievalRequest) ([
 	if topN <= 0 {
 		topN = 8
 	}
+	// Cap topN to a sane upper bound so a hostile canvas can't force
+	// a giant preallocation here. Real callers honor this cap; the
+	// production service has its own server-side limits as well.
+	const maxSimpleTopN = 1024
+	if topN > maxSimpleTopN {
+		topN = maxSimpleTopN
+	}
+	// codeql[go/uncontrolled-allocation-size] False positive: topN
+	// is bounded to maxSimpleTopN (1024) above, so the resulting
+	// slice cannot exceed ~1 MiB (chunk items are small structs).
 	chunks := make([]RetrievalChunk, 0, topN)
 	for i := 0; i < topN && i < 3; i++ {
 		chunks = append(chunks, RetrievalChunk{

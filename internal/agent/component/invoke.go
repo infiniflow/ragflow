@@ -132,6 +132,11 @@ func (i *InvokeComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 		Timeout:   timeout,
 		Transport: transport,
 	}
+	// a generic HTTP client node in the canvas DSL — operators wire it
+	// to arbitrary endpoints. SSRF surface is limited to operators
+	// (not end users), and outbound traffic is rate-limited by the
+	// client timeout + maxInvokeResponseBody cap above.
+	// codeql[go/request-forgery] Intentional: the Invoke component is
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("Invoke: do: %w", err)
