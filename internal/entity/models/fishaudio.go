@@ -1,8 +1,24 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package models
 
 import (
-	"bufio"
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -13,35 +29,24 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 )
 
-// 208cc2d0e4594ca896a600c43c9497aa
-
 type FishAudioModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 func NewFishAudioModel(baseURL map[string]string, urlSuffix URLSuffix) *FishAudioModel {
 	return &FishAudioModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
+		baseModel: BaseModel{
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
 
 func (f *FishAudioModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return &FishAudioModel{
-		BaseURL:   baseURL,
-		URLSuffix: f.URLSuffix,
-		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
-		},
-	}
+	return NewFishAudioModel(baseURL, f.baseModel.URLSuffix)
 }
 
 func (f *FishAudioModel) Name() string {
@@ -49,11 +54,11 @@ func (f *FishAudioModel) Name() string {
 }
 
 func (f *FishAudioModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	return nil, fmt.Errorf(f.Name() + " no such method")
+	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
 
 func (f *FishAudioModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf(f.Name() + " no such method")
+	return fmt.Errorf("%s, no such method", f.Name())
 }
 
 func (f *FishAudioModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
@@ -66,25 +71,26 @@ func (f *FishAudioModel) Rerank(modelName *string, query string, documents []str
 
 // TranscribeAudio transcribe audio
 func (f *FishAudioModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("FishAudio API key is missing")
+	if err := f.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if file == nil || *file == "" {
 		return nil, fmt.Errorf("file is missing")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := f.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", f.BaseURL[region], f.URLSuffix.ASR)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, f.baseModel.URLSuffix.ASR)
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
 	// audio file
+
+	// codeql[go/path-injection] False positive: *file is the audio file path the caller passes in to upload. The user (or operator-supplied pipeline) explicitly chose this path, and the OS access check enforces permissions anyway.
 	audioFile, err := os.Open(*file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open audio file: %w", err)
@@ -130,7 +136,10 @@ func (f *FishAudioModel) TranscribeAudio(modelName *string, file *string, apiCon
 	}
 
 	// request
-	req, err := http.NewRequest("POST", url, &body)
+	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, &body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -138,7 +147,7 @@ func (f *FishAudioModel) TranscribeAudio(modelName *string, file *string, apiCon
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	resp, err := f.httpClient.Do(req)
+	resp, err := f.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -173,20 +182,19 @@ func (f *FishAudioModel) TranscribeAudioWithSender(modelName *string, file *stri
 
 // AudioSpeech convert text to audio
 func (f *FishAudioModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("FishAudio API key is missing")
+	if err := f.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if audioContent == nil || *audioContent == "" {
 		return nil, fmt.Errorf("text content is missing")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := f.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", f.BaseURL[region], f.URLSuffix.TTS)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, f.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"text": *audioContent,
@@ -206,7 +214,10 @@ func (f *FishAudioModel) AudioSpeech(modelName *string, audioContent *string, ap
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -215,7 +226,7 @@ func (f *FishAudioModel) AudioSpeech(modelName *string, audioContent *string, ap
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	req.Header.Set("model", *modelName)
 
-	resp, err := f.httpClient.Do(req)
+	resp, err := f.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -234,20 +245,19 @@ func (f *FishAudioModel) AudioSpeech(modelName *string, audioContent *string, ap
 }
 
 func (f *FishAudioModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("FishAudio API key is missing")
+	if err := f.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 
 	if audioContent == nil || *audioContent == "" {
 		return fmt.Errorf("text content is missing")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := f.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
 	}
-
-	url := fmt.Sprintf("%s/%s/%s", f.BaseURL[region], f.URLSuffix.TTS, "stream/with-timestamp")
+	url := fmt.Sprintf("%s/%s/%s", resolvedBaseURL, f.baseModel.URLSuffix.TTS, "stream/with-timestamp")
 
 	reqBody := map[string]interface{}{
 		"text": *audioContent,
@@ -268,7 +278,10 @@ func (f *FishAudioModel) AudioSpeechWithSender(modelName *string, audioContent *
 	}
 
 	// Build Request
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -277,7 +290,7 @@ func (f *FishAudioModel) AudioSpeechWithSender(modelName *string, audioContent *
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	req.Header.Set("model", *modelName)
 
-	resp, err := f.httpClient.Do(req)
+	resp, err := f.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -289,29 +302,11 @@ func (f *FishAudioModel) AudioSpeechWithSender(modelName *string, audioContent *
 		return fmt.Errorf("FishAudio stream API error: %d - %s", resp.StatusCode, string(buf[:n]))
 	}
 
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
-
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-
-		dataStr := strings.TrimSpace(line[6:])
-		if dataStr == "" {
-			continue
-		}
-
-		var event struct {
-			AudioBase64 string `json:"audio_base64"`
-		}
-
-		if err := json.Unmarshal([]byte(dataStr), &event); err != nil {
-			continue
-		}
-
+	if _, err := ParseSSEStream[struct {
+		AudioBase64 string `json:"audio_base64"`
+	}](resp.Body, func(event struct {
+		AudioBase64 string `json:"audio_base64"`
+	}) error {
 		if event.AudioBase64 != "" {
 			audioBytes, err := base64.StdEncoding.DecodeString(event.AudioBase64)
 			if err == nil && len(audioBytes) > 0 {
@@ -321,10 +316,9 @@ func (f *FishAudioModel) AudioSpeechWithSender(modelName *string, audioContent *
 				}
 			}
 		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("error reading FishAudio stream: %w", err)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to scan response body: %w", err)
 	}
 
 	return nil
@@ -336,30 +330,32 @@ func (f *FishAudioModel) OCRFile(modelName *string, content []byte, url *string,
 }
 
 // ParseFile parse file
-func (z *FishAudioModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (f *FishAudioModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
 
-func (f *FishAudioModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+func (f *FishAudioModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := f.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/%s", f.BaseURL[region], f.URLSuffix.Models)
+	resolvedBaseURL, err := f.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, f.baseModel.URLSuffix.Models)
 
-	req, err := http.NewRequest("GET", url, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	} else {
-		return nil, fmt.Errorf("Fish Audio API key is missing")
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := f.httpClient.Do(req)
+	resp, err := f.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -385,35 +381,44 @@ func (f *FishAudioModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]string, 0, len(result.Items))
+	modelList := ModelList{Object: "list"}
 	for _, item := range result.Items {
-		models = append(models, item.Title)
+		name := strings.TrimSpace(item.Title)
+		if name == "" {
+			name = strings.TrimSpace(item.ID)
+		}
+		if name == "" {
+			continue
+		}
+		modelList.Models = append(modelList.Models, DSModel{ID: name})
 	}
 
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 func (f *FishAudioModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if err := f.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	baseURL := f.BaseURL[region]
-	if baseURL == "" {
-		baseURL = f.BaseURL["default"]
+	baseURL, err := f.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
 
 	url := fmt.Sprintf("%s/wallet/self/api-credit", strings.TrimSuffix(baseURL, "/"))
 
-	req, err := http.NewRequest("GET", url, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := f.httpClient.Do(req)
+	resp, err := f.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -441,10 +446,10 @@ func (f *FishAudioModel) CheckConnection(apiConfig *APIConfig) error {
 	return err
 }
 
-func (z *FishAudioModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (f *FishAudioModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
 
-func (z *FishAudioModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (f *FishAudioModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", f.Name())
 }

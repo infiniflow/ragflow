@@ -315,6 +315,7 @@ async def completion(tenant_id, agent_id, session_id=None, **kwargs):
     files = kwargs.get("files", [])
     inputs = kwargs.get("inputs", {})
     user_id = kwargs.get("user_id", "")
+    chat_template_kwargs = kwargs.get("chat_template_kwargs")
     custom_header = kwargs.get("custom_header", "")
     release_mode = str(kwargs.get("release", "")).strip().lower()
 
@@ -347,7 +348,16 @@ async def completion(tenant_id, agent_id, session_id=None, **kwargs):
         "files": files
     })
     txt = ""
-    async for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
+    run_kwargs = {
+        "query": query,
+        "files": files,
+        "user_id": user_id,
+        "inputs": inputs,
+    }
+    if chat_template_kwargs is not None:
+        run_kwargs["chat_template_kwargs"] = chat_template_kwargs
+
+    async for ans in canvas.run(**run_kwargs):
         ans["session_id"] = session_id
         if ans["event"] == "message":
             txt += ans["data"]["content"]
@@ -358,7 +368,14 @@ async def completion(tenant_id, agent_id, session_id=None, **kwargs):
         yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
 
     conv.message.append({"role": "assistant", "content": txt, "created_at": time.time(), "id": message_id})
-    conv.reference = canvas.get_reference()
+    current_reference = canvas.get_reference()
+    if not isinstance(current_reference, dict):
+        current_reference = {}
+    if not conv.reference:
+        conv.reference = []
+    if isinstance(conv.reference, dict):
+        conv.reference = [conv.reference]
+    conv.reference.append(current_reference)
     conv.errors = canvas.error
     conv.dsl = str(canvas)
     conv = conv.to_dict()

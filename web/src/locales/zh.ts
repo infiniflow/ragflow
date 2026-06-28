@@ -14,6 +14,7 @@ export default {
       yes: '是',
       no: '否',
       total: '总共',
+      top: '前 {{top}} 条',
       rename: '重命名',
       name: '名称',
       save: '保存',
@@ -56,6 +57,7 @@ export default {
       add: '添加',
       remove: '移除',
       search: '搜索',
+      reset: '重置',
       noDataFound: '没有找到数据。',
       noData: '暂无数据',
       bedrockCredentialsHint:
@@ -64,6 +66,8 @@ export default {
       promptPlaceholder: '请输入或使用 / 快速插入变量。',
       selected: '已选择',
       seeAll: '查看全部',
+      owner: '所有者',
+      running: '运行中...',
     },
     login: {
       loginTitle: '登录账户',
@@ -341,7 +345,6 @@ export default {
       metadata: {
         fields: '字段',
         selectFiles: '已选择 {{count}} 个文件',
-        type: '类型',
         fieldNameInvalid: '字段名称只能包含字母或下划线。',
         builtIn: '内置',
         generation: '生成',
@@ -368,6 +371,7 @@ export default {
         value: '值',
         action: '操作',
         field: '字段',
+        type: '类型',
         description: '描述',
         fieldName: '字段名称',
         editMetadata: '编辑元数据',
@@ -826,9 +830,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       community: '社区报告生成',
       communityTip:
         '区块被聚集成层次化的社区，实体和关系通过更高抽象层次将每个部分连接起来。然后，我们使用 LLM 生成每个社区的摘要，称为社区报告。更多信息：https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
+      top: '前n条',
     },
     chunk: {
       chunk: '解析块',
+      createChunk: '创建解析块',
+      editChunk: '编辑解析块',
       bulk: '批量',
       selectAll: '选择所有',
       enabledSelected: '启用选定的',
@@ -1040,6 +1047,11 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       tocEnhanceTip: `解析文档时生成了目录信息（见General方法的'启用目录抽取'），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关chunk，对这些chunk在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
       batchDeleteSessions: '批量删除',
       deleteSelectedConfirm: '删除选中的 {{count}} 个会话？',
+      showChunkMetadata: '显示块元数据',
+      showChunkMetadataTip:
+        '在检索到的文本块旁边显示文档元数据（如标题、页码、上传日期）',
+      metadataFields: '元数据字段',
+      metadataFieldsTip: '选择每个块要显示的元数据字段',
     },
     setting: {
       Verify: '验证',
@@ -1099,6 +1111,69 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       gmailTokenTip:
         '请上传由 Google Console 生成的 OAuth JSON。如果仅包含 client credentials，请通过浏览器授权一次以获取长期有效的刷新 Token。',
       dropboxDescription: '连接 Dropbox，同步指定账号下的文件与文件夹。',
+      onedriveDescription:
+        '连接 OneDrive 或 OneDrive for Business，通过 Microsoft Graph delta 查询索引文件和文件夹。',
+      onedriveTenantIdTip:
+        'Microsoft 365 组织的 Azure Active Directory 租户 ID（目录 ID）。',
+      onedriveClientIdTip:
+        '拥有 Files.Read.All 权限的 Azure AD 应用注册的应用程序（客户端）ID。',
+      onedriveClientSecretTip: '在 Azure AD 应用注册中生成的客户端密钥值。',
+      onedriveFolderPathTip:
+        '可选的子文件夹路径，用于限制索引范围（例如 /Documents/Reports）。留空则索引整个云盘。',
+      outlookDescription:
+        '连接 Outlook / Microsoft 365 邮箱，通过 Microsoft Graph delta 查询索引邮件。',
+      outlookTenantIdTip:
+        'Microsoft 365 组织的 Azure Active Directory 租户 ID（目录 ID）。',
+      outlookClientIdTip:
+        '拥有 Mail.Read 权限的 Azure AD 应用注册的应用程序（客户端）ID。',
+      outlookClientSecretTip: '在 Azure AD 应用注册中生成的客户端密钥值。',
+      outlookFolderTip:
+        '要同步的邮件文件夹（例如 inbox、sentitems、archive），默认为 inbox。',
+      outlookUserIdsTip:
+        '要同步的邮箱 UPN 或对象 ID 列表（逗号分隔）。留空则同步租户内的所有邮箱（需要 User.Read.All 权限）。',
+      salesforceDescription:
+        '连接 Salesforce 组织，通过 SOQL 增量同步并索引 CRM 记录（客户、联系人、商机、个案、知识文章）。',
+      salesforceInstanceUrlTip:
+        'Salesforce 组织地址，例如 https://your-domain.my.salesforce.com（不要包含末尾斜杠）。',
+      salesforceClientIdTip:
+        '已启用 Client Credentials Flow 且包含 api 权限的 Connected App 的 Consumer Key。',
+      salesforceClientSecretTip:
+        '用于客户端凭证身份验证的 Connected App 的 Consumer Secret。',
+      salesforceObjectsTip:
+        '要索引的 SObject API 名称列表（逗号分隔）。默认值：Account, Contact, Opportunity, Case, Knowledge__kav。',
+      salesforceApiVersionTip:
+        'Salesforce REST API 版本（例如 v59.0），请使用您组织所支持的版本。',
+      azure_blobDescription:
+        '将 Azure Blob 存储容器中的文件索引到知识库。支持账户密钥、连接字符串和 SAS 令牌三种认证方式，通过 ETag 指纹跳过未变更的文件。',
+      azureBlobAuthModeTip:
+        '选择认证方式。账户密钥和连接字符串需填写容器名称；SAS 令牌方式需填写容器 URL 和 SAS 令牌。',
+      azureBlobAccountNameTip:
+        'Azure 存储账户名称（例如 mystorageaccount），账户密钥认证时必填。',
+      azureBlobAccountKeyTip:
+        '存储账户访问密钥（Base64 编码），账户密钥认证时必填。',
+      azureBlobConnectionStringTip:
+        '完整的 Azure 存储连接字符串（DefaultEndpointsProtocol=https;AccountName=...;...），连接字符串认证时必填。',
+      azureBlobContainerUrlTip:
+        '容器的完整 HTTPS 地址（例如 https://account.blob.core.windows.net/container），SAS 令牌认证时必填。',
+      azureBlobSasTokenTip:
+        'SAS 查询字符串（不含开头的"?"），SAS 令牌认证时必填。',
+      azureBlobContainerNameTip:
+        '要索引的容器名称，账户密钥和连接字符串认证时必填。',
+      azureBlobPrefixTip:
+        '可选的 Blob 名称前缀，用于限定索引范围（例如 documents/reports/）。留空则索引整个容器。',
+      teamsDescription:
+        '通过 Microsoft Graph 连接 Microsoft Teams，同步频道帖子与回复。',
+      teamsTenantIdTip:
+        'Azure AD 租户 ID。需要具备 Team.ReadBasic.All 与 ChannelMessage.Read.All 应用权限（管理员同意）的应用。',
+      slackDescription: '连接你的 Slack 工作区，同步频道消息与讨论串。',
+      slackBotTokenTip:
+        'Slack 机器人用户 OAuth Token（以 xoxb- 开头）。应用需具备 channels:read、channels:history 和 users:read 权限。',
+      slackChannelsTip:
+        '可选：需要同步的频道名称（例如 general）。留空则同步所有可访问的频道。',
+      sharepointDescription:
+        '通过 Microsoft Graph 连接 SharePoint 站点，同步其文档库。',
+      sharepointSiteUrlTip:
+        '要索引的 SharePoint 站点完整 URL，例如 https://contoso.sharepoint.com/sites/MySite。需要具备 Sites.Read.All 与 Files.Read.All 应用权限（管理员同意）的 Azure AD 应用。',
       boxDescription: '连接你的 Box 云盘以同步文件和文件夹。',
       bitbucketDescription: '连接 Bitbucket，同步 PR 内容。',
       bitbucketTopWorkspaceTip:
@@ -1141,6 +1216,47 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       availableSourcesDescription: '选择要添加的数据源',
       availableSources: '可用数据源',
       datasourceDescription: '管理您的数据源和连接',
+      chatChannels: '聊天渠道',
+      chatChannelsDescription: '管理您的聊天渠道机器人及凭证',
+      channelEmptyTip: '暂未添加任何聊天渠道，请从下方选择一个进行连接。',
+      availableChannels: '可用渠道',
+      availableChannelsDescription: '选择要添加的聊天渠道',
+      addChannelModalTitle: '添加 {{name}} 机器人',
+      editChannelModalTitle: '编辑 {{name}} 机器人',
+      deleteChannelModalTitle: '删除聊天渠道',
+      deleteChannelModalContent:
+        '确定要删除此聊天渠道机器人吗？此操作无法撤销。',
+      connectDialog: '关联助手',
+      connectDialogTitle: '将 {{name}} 关联到助手',
+      selectDialog: '选择助手',
+      connectDialogTip:
+        '该渠道收到的消息将由关联的助手回复。清空选择即可解除关联。',
+      notConnected: '未关联助手',
+      chatChannelDesc: {
+        clickclack: '连接 ClickClack 机器人',
+        discord: '连接 Discord 机器人',
+        dingtalk: '连接钉钉机器人',
+        feishu: '连接飞书 / Lark 机器人',
+        googlechat: '连接 Google Chat 机器人',
+        irc: '连接 IRC 服务器',
+        line: '连接 LINE 消息机器人',
+        matrix: '连接 Matrix 机器人',
+        mattermost: '连接 Mattermost 机器人',
+        msteams: '连接 Microsoft Teams 机器人',
+        nextcloud_talk: '连接 Nextcloud Talk 机器人',
+        nostr: '连接 Nostr 机器人',
+        qqbot: '连接 QQ 机器人',
+        slack: '连接 Slack 机器人',
+        synology_chat: '连接群晖 Chat 机器人',
+        telegram: '连接 Telegram 机器人',
+        tlon: '连接 Tlon (Urbit) 机器人',
+        twitch: '连接 Twitch 聊天机器人',
+        wecom: '连接企业微信机器人',
+        whatsapp: '连接 WhatsApp 机器人（扫码配对）',
+        yuanbao: '连接腾讯元宝机器人',
+        zalo: '连接 Zalo 机器人',
+        zalouser: '连接个人 Zalo 账号',
+      },
       save: '保存',
       search: '搜索',
       availableModels: '可选模型',
@@ -1164,6 +1280,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       api: 'API',
       username: '用户名',
       usernameMessage: '请输入用户名',
+      usernameMaxLength: '名称最多 {{max}} 个字符。',
+      usernameInvalidCharacters:
+        "名称只能包含字母、数字、空格以及 . _ ' - 字符。",
       photo: '头像',
       photoDescription: '这将显示在您的个人资料上。',
       colorSchema: '主题',
@@ -1186,7 +1305,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       confirmPasswordMessage: '请确认新密码',
       confirmPasswordNonMatchMessage: '您输入的新密码不匹配！',
       cancel: '取消',
-      addedModels: '添加了的模型',
+      addedModels: '已添加的模型',
       modelsToBeAdded: '待添加的模型',
       addTheModel: '添加',
       apiKey: 'API-Key',
@@ -1204,6 +1323,38 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       tongyiBaseUrlPlaceholder: '(仅国际用户需要)',
       minimaxBaseUrlTip: '仅国际用户：使用 https://api.minimax.io/v1。',
       minimaxBaseUrlPlaceholder: '(仅国际用户填写 https://api.minimax.io/v1)',
+      openaiBaseUrlPlaceholder: 'https://api.openai.com/v1',
+      anthropicBaseUrlPlaceholder: 'https://api.anthropic.com/v1',
+      siliconflowBaseUrlPlaceholder: 'https://api.siliconflow.cn/v1',
+      groupId: 'Group ID',
+      providerOrder: 'Provider 顺序',
+      paddleocrApiUrl: 'PaddleOCR API URL',
+      paddleocrApiUrlMessage: '请输入 PaddleOCR API URL！',
+      paddleocrApiUrlPlaceholder:
+        '例如：https://paddleocr-server.com/layout-parsing',
+      paddleocrAccessToken: 'AI Studio 访问令牌',
+      paddleocrAccessTokenMessage: 'PaddleOCR API 的访问令牌（可选）',
+      paddleocrAccessTokenPlaceholder: '您的 AI Studio 令牌（可选）',
+      paddleocrAlgorithm: 'PaddleOCR 算法',
+      paddleocrAlgorithmMessage: '请选择 PaddleOCR 算法',
+      mineruApiserver: 'MinerU API 服务器',
+      mineruApiserverMessage: '请输入 MinerU API 服务器地址！',
+      mineruApiserverPlaceholder: '例如：http://host.docker.internal:9987',
+      mineruOutputDir: 'MinerU 输出目录',
+      mineruOutputDirMessage: '请输入 MinerU 输出目录！',
+      mineruOutputDirPlaceholder: '/tmp/mineru',
+      mineruBackend: 'MinerU 后端',
+      mineruBackendMessage: '请选择 MinerU 后端！',
+      mineruSelectBackend: '选择处理后端',
+      mineruServerUrl: 'MinerU 服务器 URL',
+      mineruServerUrlMessage: '请输入 MinerU 服务器 URL！',
+      mineruServerUrlPlaceholder: '例如：http://your-vllm-server:30000',
+      mineruDeleteOutput: '处理完成后删除输出文件',
+      mineruDeleteOutputMessage: '删除输出值无效',
+      opendataloaderApiserver: 'OpenDataLoader API 服务器',
+      opendataloaderApiserverMessage: '请输入 OpenDataLoader API 服务器！',
+      opendataloaderApiserverPlaceholder:
+        'http://your-opendataloader-service:9383',
       modify: '修改',
       systemModelSettings: '设置默认模型',
       chatModel: 'LLM',
@@ -1227,6 +1378,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       addLlmTitle: '添加 LLM',
       editLlmTitle: '编辑 {{name}} 模型',
       editModel: '编辑模型',
+      instanceName: '实例名称',
+      instanceNameMessage: '请输入实例名称！',
+      instanceNameTip: '用于在同一厂商下唯一标识该实例的名称。',
       modelName: '模型名称',
       modelID: '模型ID',
       modelUid: '模型UID',
@@ -1359,6 +1513,32 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       },
       showToc: '显示目录',
       hideToc: '隐藏目录',
+      listModels: '模型列表',
+      allModels: '所有模型',
+      listModelsSearchPlaceholder: '搜索模型…',
+      listModelsEmpty: '暂无可用模型',
+      listModelsLoading: '正在加载模型…',
+      selectModelBeforeVerify: '请至少选择一个模型后再验证。',
+      addCustomModel: '添加自定义模型',
+      addCustomModelTitle: '添加自定义模型',
+      editCustomModelTitle: '编辑模型',
+      modelMaxTokens: '最大 Token 数',
+      modelTypes: {
+        chat: 'Chat',
+        embedding: 'Embedding',
+        rerank: 'Rerank',
+        sequence2text: 'sequence2text',
+        tts: 'TTS',
+        image2text: 'VLM',
+        ocr: 'OCR',
+        speech2text: 'ASR',
+      },
+      modelFeatures: '模型特性',
+      modelNameRequired: '请输入模型名称',
+      modelNameDuplicate: '模型名称已存在',
+      modelTypeRequired: '请至少选择一个模型类型',
+      modelMaxTokensMessage: '最大 Token 数必须为数字',
+      modelMaxTokensMinMessage: '最大 Token 数不能小于 0',
     },
     message: {
       registered: '注册成功',
@@ -1428,6 +1608,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         author: '作者',
         sectionTitle: '章节标题',
       },
+      canvasCategory: '画布分类',
+      tags: '标签',
+      created: '创建于',
       editTags: '编辑标签',
       editTagsDescription: '添加标签以整理和筛选你的智能体。按回车或逗号添加。',
       tagsPlaceholder: '输入标签后按回车',
@@ -2404,6 +2587,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       okText: '保存',
       cancelText: '返回',
       chooseDataset: '请先选择知识库',
+      selectLocalePlaceholder: '选择语言',
     },
     language: {
       english: '英语',

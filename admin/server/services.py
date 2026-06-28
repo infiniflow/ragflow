@@ -693,17 +693,17 @@ class SandboxMgr:
                 raise AdminException("Failed to create sandbox instance.")
 
             try:
-                # Simple test code that exercises provider wrapping via main().
+                # Keep the probe close to the original coverage, but avoid
+                # `sys` because the sandbox security analyzer blocks it.
                 test_code = """
 import json
 import math
-import sys
 
 
 def main() -> dict:
-    print("Python version:", sys.version)
-    print("Platform:", sys.platform)
-    print(f"2 + 2 = {2 + 2}")
+    left = 2
+    right = 2
+    print(f"2 + 2 = {left + right}")
     print(f"JSON dump: {json.dumps({'test': 'data', 'value': 123})}")
     print(f"Math.sqrt(16) = {math.sqrt(16)}")
     print("TEST_PASSED")

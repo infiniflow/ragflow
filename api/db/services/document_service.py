@@ -945,7 +945,7 @@ class DocumentService(CommonService):
                     if t.progress == -1:
                         bad += 1
                     prg += t.progress if t.progress >= 0 else 0
-                    if t.progress_msg.strip():
+                    if (t.progress_msg or "").strip():
                         msg.append(t.progress_msg)
                     priority = max(priority, t.priority)
                 prg /= len(tsks)
@@ -1098,12 +1098,12 @@ def queue_raptor_o_graphrag_tasks(sample_doc, ty, priority, fake_doc_id="", doc_
 
     task["doc_ids"] = doc_ids
     DocumentService.begin2parse(task["doc_id"], keep_progress=True)
-    assert REDIS_CONN.queue_product(settings.get_svr_queue_name(priority), message=task), "Can't access Redis. Please check the Redis' status."
+    assert REDIS_CONN.queue_product(settings.get_svr_queue_name(priority, ty), message=task), "Can't access Redis. Please check the Redis' status."
     return task["id"]
 
 
-def get_queue_length(priority):
-    group_info = REDIS_CONN.queue_info(settings.get_svr_queue_name(priority), SVR_CONSUMER_GROUP_NAME)
+def get_queue_length(priority, suffix="common"):
+    group_info = REDIS_CONN.queue_info(settings.get_svr_queue_name(priority, suffix), SVR_CONSUMER_GROUP_NAME)
     if not group_info:
         return 0
     return int(group_info.get("lag", 0) or 0)

@@ -171,7 +171,7 @@ class ConnectorService(CommonService):
             return 0, []
 
         source_type = f"{conn.source}/{conn.id}"
-        retain_doc_ids = {hash128(f"{connector_id}:{file.id}") for file in file_list}
+        retain_doc_ids = {doc_id for file in file_list for doc_id in (hash128(f"{connector_id}:{file.id}"), hash128(f"{kb_id}:{connector_id}:{file.id}"))}
         existing_docs = DocumentService.list_doc_headers_by_kb_and_source_type(
             kb_id,
             source_type,

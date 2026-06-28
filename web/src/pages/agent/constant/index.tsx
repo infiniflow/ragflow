@@ -192,6 +192,29 @@ export const initialSearXNGValues = {
   },
 };
 
+export enum KeenableMode {
+  Pro = 'pro',
+  Realtime = 'realtime',
+}
+
+export const initialKeenableValues = {
+  api_key: '',
+  query: AgentGlobals.SysQuery,
+  mode: KeenableMode.Pro,
+  site: '',
+  top_n: 10,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
+};
+
 export const initialWikipediaValues = {
   top_n: 10,
   language: 'en',
@@ -665,6 +688,7 @@ export const RestrictedUpstreamMap = {
   [Operator.GoogleScholar]: [Operator.Begin, Operator.Retrieval],
   [Operator.GitHub]: [Operator.Begin, Operator.Retrieval],
   [Operator.SearXNG]: [Operator.Begin, Operator.Retrieval],
+  [Operator.KeenableSearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.ExeSQL]: [Operator.Begin],
   [Operator.Switch]: [Operator.Begin],
   [Operator.WenCai]: [Operator.Begin],
@@ -716,6 +740,7 @@ export const NodeMap = {
   [Operator.GoogleScholar]: 'ragNode',
   [Operator.GitHub]: 'ragNode',
   [Operator.SearXNG]: 'ragNode',
+  [Operator.KeenableSearch]: 'ragNode',
   [Operator.ExeSQL]: 'ragNode',
   [Operator.Switch]: 'switchNode',
   [Operator.WenCai]: 'ragNode',
@@ -724,7 +749,7 @@ export const NodeMap = {
   [Operator.Crawler]: 'ragNode',
   [Operator.Invoke]: 'ragNode',
   [Operator.Email]: 'ragNode',
-  [Operator.Iteration]: 'group',
+  [Operator.Iteration]: 'iterationNode',
   [Operator.IterationStart]: 'iterationStartNode',
   [Operator.Code]: 'ragNode',
   [Operator.WaitingDialogue]: 'ragNode',
@@ -786,6 +811,7 @@ export const NoDebugOperatorsList = [
   Operator.TitleChunker,
   Operator.Extractor,
   Operator.Tool,
+  Operator.Loop,
 ];
 
 export const NoCopyOperatorsList = [
@@ -978,6 +1004,10 @@ export const initialDocGeneratorValues = {
   include_download_info_in_content: false,
   font_size: 12,
   outputs: {
+    doc_id: { type: 'string' },
+    filename: { type: 'string' },
+    mime_type: { type: 'string' },
+    size: { type: 'number' },
     download: { type: 'string' },
   },
 };

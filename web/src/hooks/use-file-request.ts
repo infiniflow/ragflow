@@ -317,6 +317,8 @@ export const useFetchPureFileList = () => {
     mutationFn: async (parentId: string) => {
       const { data } = await fileManagerService.listFile({
         parent_id: parentId,
+        page_size: 100,
+        page: 1,
       });
 
       return data;

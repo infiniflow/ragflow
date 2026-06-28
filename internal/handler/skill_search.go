@@ -522,10 +522,7 @@ func (h *SkillSearchHandler) DeleteSpace(c *gin.Context) {
 		return
 	}
 
-	// Get Authorization header for Python API calls
-	authHeader := c.GetHeader("Authorization")
-
-	code, err := h.spaceService.DeleteSpace(spaceID, user.ID, h.docEngine, authHeader)
+	code, err := h.spaceService.DeleteSpace(spaceID, user.ID, h.docEngine, c.Request.Context())
 	if err != nil {
 		jsonError(c, code, err.Error())
 		return
