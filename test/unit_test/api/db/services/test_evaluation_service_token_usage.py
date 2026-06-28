@@ -168,3 +168,14 @@ def test_compute_summary_metrics_aggregates_metrics():
     assert summary["avg_execution_time"] == pytest.approx(2.0)
     assert summary["avg_precision"] == pytest.approx(0.75)
     assert summary["avg_answer_length"] == pytest.approx(15.0)
+
+
+@pytest.mark.p2
+def test_retrieval_metrics_ignore_missing_retrieved_chunk_ids():
+    metrics = EvaluationService._compute_retrieval_metrics([None, "chunk-1"], ["chunk-1"])
+
+    assert metrics["precision"] == pytest.approx(1.0)
+    assert metrics["recall"] == pytest.approx(1.0)
+    assert metrics["f1_score"] == pytest.approx(1.0)
+    assert metrics["hit_rate"] == pytest.approx(1.0)
+    assert metrics["mrr"] == pytest.approx(1.0)

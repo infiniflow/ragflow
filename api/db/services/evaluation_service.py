@@ -528,6 +528,7 @@ class EvaluationService(CommonService):
         if not relevant_ids:
             return {}
 
+        retrieved_ids = [chunk_id for chunk_id in retrieved_ids if chunk_id is not None]
         retrieved_set = set(retrieved_ids)
         relevant_set = set(relevant_ids)
 
