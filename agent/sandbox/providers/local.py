@@ -49,12 +49,6 @@ LOCAL_PYTHON_THREAD_ENV_VARS = (
     "BLIS_NUM_THREADS",
     "VECLIB_MAXIMUM_THREADS",
 )
-
-
-def _env_enabled(name: str) -> bool:
-    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
-
-
 class LocalProvider(SandboxProvider):
     """
     Execute code as a local child process.
@@ -76,17 +70,14 @@ class LocalProvider(SandboxProvider):
         self._instances: dict[str, Path] = {}
 
     def initialize(self, config: Dict[str, Any]) -> bool:
-        if not _env_enabled("SANDBOX_LOCAL_ENABLED"):
-            raise SandboxProviderConfigError("Local code execution is disabled. Set SANDBOX_LOCAL_ENABLED=true to enable it.")
-
-        self.python_bin = str(self._resolve_config_value(config, "python_bin", "SANDBOX_LOCAL_PYTHON_BIN", "python3"))
-        self.node_bin = str(self._resolve_config_value(config, "node_bin", "SANDBOX_LOCAL_NODE_BIN", "node"))
-        self.work_dir = Path(self._resolve_config_value(config, "work_dir", "SANDBOX_LOCAL_WORK_DIR", "/tmp/ragflow-codeexec")).resolve()
-        self.timeout = int(self._resolve_config_value(config, "timeout", "SANDBOX_LOCAL_TIMEOUT", 30))
-        self.max_memory_mb = int(self._resolve_config_value(config, "max_memory_mb", "SANDBOX_LOCAL_MAX_MEMORY_MB", 512))
-        self.max_output_bytes = int(self._resolve_config_value(config, "max_output_bytes", "SANDBOX_LOCAL_MAX_OUTPUT_BYTES", 1024 * 1024))
-        self.max_artifacts = int(self._resolve_config_value(config, "max_artifacts", "SANDBOX_LOCAL_MAX_ARTIFACTS", 20))
-        self.max_artifact_bytes = int(self._resolve_config_value(config, "max_artifact_bytes", "SANDBOX_LOCAL_MAX_ARTIFACT_BYTES", 10 * 1024 * 1024))
+        self.python_bin = str(config.get("python_bin", "python3"))
+        self.node_bin = str(config.get("node_bin", "node"))
+        self.work_dir = Path(str(config.get("work_dir", "/tmp/ragflow-codeexec"))).resolve()
+        self.timeout = int(config.get("timeout", 30))
+        self.max_memory_mb = int(config.get("max_memory_mb", 512))
+        self.max_output_bytes = int(config.get("max_output_bytes", 1024 * 1024))
+        self.max_artifacts = int(config.get("max_artifacts", 20))
+        self.max_artifact_bytes = int(config.get("max_artifact_bytes", 10 * 1024 * 1024))
 
         self._validate_limits()
         self.work_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -194,14 +185,72 @@ class LocalProvider(SandboxProvider):
     @staticmethod
     def get_config_schema() -> Dict[str, Dict]:
         return {
-            "python_bin": {"type": "string", "required": False, "default": "python3"},
-            "node_bin": {"type": "string", "required": False, "default": "node"},
-            "work_dir": {"type": "string", "required": False, "default": "/tmp/ragflow-codeexec"},
-            "timeout": {"type": "integer", "required": False, "default": 30},
-            "max_memory_mb": {"type": "integer", "required": False, "default": 512},
-            "max_output_bytes": {"type": "integer", "required": False, "default": 1048576},
-            "max_artifacts": {"type": "integer", "required": False, "default": 20},
-            "max_artifact_bytes": {"type": "integer", "required": False, "default": 10485760},
+            "python_bin": {
+                "type": "string",
+                "required": False,
+                "default": "python3",
+                "label": "Python Binary",
+                "description": "Python executable used for local code execution.",
+            },
+            "node_bin": {
+                "type": "string",
+                "required": False,
+                "default": "node",
+                "label": "Node.js Binary",
+                "description": "Node.js executable used for local JavaScript execution.",
+            },
+            "work_dir": {
+                "type": "string",
+                "required": False,
+                "default": "/tmp/ragflow-codeexec",
+                "label": "Working Directory",
+                "description": "Directory used to store temporary scripts and artifacts on the current host.",
+            },
+            "timeout": {
+                "type": "integer",
+                "required": False,
+                "default": 30,
+                "label": "Timeout (seconds)",
+                "description": "Maximum execution time for each local run. Unit: seconds.",
+                "min": 1,
+                "max": 600,
+            },
+            "max_memory_mb": {
+                "type": "integer",
+                "required": False,
+                "default": 512,
+                "label": "Max Memory (MB)",
+                "description": "Address-space memory limit for the local child process. Unit: MB.",
+                "min": 1,
+                "max": 65536,
+            },
+            "max_output_bytes": {
+                "type": "integer",
+                "required": False,
+                "default": 1048576,
+                "label": "Max Output (bytes)",
+                "description": "Maximum combined stdout and stderr size. Unit: bytes.",
+                "min": 1024,
+                "max": 10485760,
+            },
+            "max_artifacts": {
+                "type": "integer",
+                "required": False,
+                "default": 20,
+                "label": "Max Artifacts",
+                "description": "Maximum number of files collected from the artifacts directory.",
+                "min": 0,
+                "max": 100,
+            },
+            "max_artifact_bytes": {
+                "type": "integer",
+                "required": False,
+                "default": 10485760,
+                "label": "Max Artifact Size (bytes)",
+                "description": "Maximum size of a single artifact file. Unit: bytes.",
+                "min": 1024,
+                "max": 104857600,
+            },
         }
 
     def _validate_limits(self) -> None:
@@ -226,13 +275,6 @@ class LocalProvider(SandboxProvider):
             script_path.write_text(build_javascript_wrapper(code, args_json), encoding="utf-8")
             return [self.node_bin, str(script_path)], script_path
         raise RuntimeError(f"Unsupported language for local provider: {language}")
-
-    @staticmethod
-    def _resolve_config_value(config: Dict[str, Any], key: str, env_name: str, default: Any) -> Any:
-        value = config.get(key)
-        if value is not None:
-            return value
-        return os.environ.get(env_name, default)
 
     def _build_child_env(self, instance_dir: Path) -> dict[str, str]:
         env = {

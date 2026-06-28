@@ -25,6 +25,7 @@ from copy import deepcopy
 from urllib.parse import urljoin
 
 import json_repair
+from json.decoder import JSONDecodeError
 import litellm
 import openai
 from openai import AsyncOpenAI, OpenAI
@@ -33,6 +34,8 @@ from enum import StrEnum
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
+from rag.llm.key_utils import _normalize_replicate_key
+from rag.llm.tool_decorator import FunctionToolSession, is_tool
 from rag.nlp import is_chinese, is_english
 
 
@@ -60,6 +63,47 @@ ERROR_PREFIX = "**ERROR**"
 LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小限制，回答已经被大模型截断。"
 LENGTH_NOTIFICATION_EN = "...\nThe answer is truncated by your chosen LLM due to its limitation on context length."
 
+# Generation parameters that are safe to forward to the underlying completion
+# call. `gen_conf` originates from a chat assistant's `llm_setting`, which can
+# also carry RAGFlow-internal metadata (e.g. `model_type`). Anything outside
+# this set is dropped so providers don't reject the request with errors like
+# "Extra inputs are not permitted" / "Unknown parameter: 'model_type'" (#15427).
+ALLOWED_GEN_CONF_KEYS = frozenset(
+    {
+        "temperature",
+        "max_completion_tokens",
+        "top_p",
+        "stream",
+        "stream_options",
+        "stop",
+        "n",
+        "presence_penalty",
+        "frequency_penalty",
+        "functions",
+        "function_call",
+        "logit_bias",
+        "user",
+        "response_format",
+        "seed",
+        "tools",
+        "tool_choice",
+        "logprobs",
+        "top_logprobs",
+        "extra_headers",
+    }
+)
+
+# LiteLLM additionally understands reasoning-control parameters that the
+# model-family policies may inject into `gen_conf` (e.g. `thinking` for
+# Anthropic / Kimi reasoning models, `reasoning_effort` for OpenAI o-series).
+LITELLM_ALLOWED_GEN_CONF_KEYS = ALLOWED_GEN_CONF_KEYS | frozenset(
+    {
+        "thinking",
+        "reasoning_effort",
+        "extra_body",
+    }
+)
+
 
 def _apply_model_family_policies(
     model_name: str,
@@ -85,11 +129,15 @@ def _apply_model_family_policies(
             for key in ("temperature", "top_p", "logprobs", "top_logprobs"):
                 sanitized_gen_conf.pop(key, None)
                 sanitized_kwargs.pop(key, None)
+        elif provider == SupportedLiteLLMProvider.Anthropic and model_name_lower in {"claude-opus-4-7", "claude-opus-4-8"}:
+            for key in ("temperature", "top_p", "top_k"):
+                sanitized_gen_conf.pop(key, None)
+                sanitized_kwargs.pop(key, None)
 
         if provider == SupportedLiteLLMProvider.HunYuan:
             for key in ("presence_penalty", "frequency_penalty"):
                 sanitized_gen_conf.pop(key, None)
-        elif "kimi-k2.5" in model_name_lower:
+        elif "kimi-k2.5" in model_name_lower or "kimi-k2.6" in model_name_lower:
             reasoning = sanitized_gen_conf.pop("reasoning", None)
             thinking = {"type": "enabled"}
             if reasoning is not None:
@@ -158,30 +206,7 @@ class Base(ABC):
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
 
-        allowed_conf = {
-            "temperature",
-            "max_completion_tokens",
-            "top_p",
-            "stream",
-            "stream_options",
-            "stop",
-            "n",
-            "presence_penalty",
-            "frequency_penalty",
-            "functions",
-            "function_call",
-            "logit_bias",
-            "user",
-            "response_format",
-            "seed",
-            "tools",
-            "tool_choice",
-            "logprobs",
-            "top_logprobs",
-            "extra_headers",
-        }
-
-        gen_conf = {k: v for k, v in gen_conf.items() if k in allowed_conf}
+        gen_conf = {k: v for k, v in gen_conf.items() if k in ALLOWED_GEN_CONF_KEYS}
         return gen_conf
 
     async def _async_chat_streamly(self, history, gen_conf, **kwargs):
@@ -350,7 +375,29 @@ class Base(ABC):
             hist.append({"role": "tool", "tool_call_id": tc.id, "content": content})
         return hist
 
-    def bind_tools(self, toolcall_session, tools):
+    def bind_tools(self, toolcall_session=None, tools=None):
+        """Register tools the LLM can call.
+
+        Two calling styles are accepted:
+
+        * Legacy: ``bind_tools(toolcall_session, tools_schemas)`` where
+          ``toolcall_session`` implements :class:`ToolCallSession` and
+          ``tools_schemas`` is a pre-built list of OpenAI function-schema
+          dicts (used by the agent/dialog layer).
+        * Decorator: ``bind_tools(tools=[fn1, fn2, ...])`` where each ``fn``
+          is decorated with :func:`rag.llm.tool_decorator.tool`. The session
+          and schemas are derived from the callables automatically.
+        """
+        if tools is None and isinstance(toolcall_session, list):
+            tools, toolcall_session = toolcall_session, None
+
+        if tools and toolcall_session is None and all(is_tool(t) for t in tools):
+            session = FunctionToolSession(tools)
+            self.is_tools = True
+            self.toolcall_session = session
+            self.tools = session.schemas
+            return
+
         if not (toolcall_session and tools):
             return
         self.is_tools = True
@@ -373,7 +420,7 @@ class Base(ABC):
                     logging.info(f"{self.tools=}")
                     response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, tool_choice="auto", **gen_conf)
                     tk_count += total_token_count_from_response(response)
-                    if any([not response.choices, not response.choices[0].message]):
+                    if not response.choices or not response.choices[0].message:
                         raise Exception(f"500 response structure error. Response: {response}")
 
                     if not hasattr(response.choices[0].message, "tool_calls") or not response.choices[0].message.tool_calls:
@@ -391,6 +438,10 @@ class Base(ABC):
                         name = tc.function.name
                         try:
                             args = json_repair.loads(tc.function.arguments)
+                            if not isinstance(args, dict):
+                                raise TypeError(
+                                    f"Tool arguments for {name} must be a JSON object, got {type(args).__name__}"
+                                )
                             if hasattr(self.toolcall_session, "tool_call_async"):
                                 result = await self.toolcall_session.tool_call_async(name, args)
                             else:
@@ -493,6 +544,10 @@ class Base(ABC):
                         name = tc.function.name
                         try:
                             args = json_repair.loads(tc.function.arguments)
+                            if not isinstance(args, dict):
+                                raise TypeError(
+                                    f"Tool arguments for {name} must be a JSON object, got {type(args).__name__}"
+                                )
                             if hasattr(self.toolcall_session, "tool_call_async"):
                                 result = await self.toolcall_session.tool_call_async(name, args)
                             else:
@@ -654,6 +709,8 @@ class BaiChuanChat(Base):
             extra_body={"tools": [{"type": "web_search", "web_search": {"enable": True, "search_mode": "performance_first"}}]},
             **gen_conf,
         )
+        if not response.choices:
+            raise ValueError("LLM returned empty response")  # pact: guard empty choices list
         ans = response.choices[0].message.content.strip()
         if response.choices[0].finish_reason == "length":
             if is_chinese([ans]):
@@ -733,9 +790,9 @@ class LocalLLM(Base):
         from rag.svr.jina_server import Generation
 
         answer = ""
+        loop = asyncio.new_event_loop()
         try:
             res = self.client.stream_doc(on=endpoint, inputs=prompt, return_type=Generation)
-            loop = asyncio.get_event_loop()
             try:
                 while True:
                     answer = loop.run_until_complete(res.__anext__()).text
@@ -744,6 +801,8 @@ class LocalLLM(Base):
                 pass
         except Exception as e:
             yield answer + "\n**ERROR**: " + str(e)
+        finally:
+            loop.close()
         yield num_tokens_from_string(answer)
 
     def chat(self, system, history, gen_conf=None, **kwargs):
@@ -774,9 +833,12 @@ class VolcEngineChat(Base):
         model_name is for display only
         """
         base_url = base_url if base_url else "https://ark.cn-beijing.volces.com/api/v3"
-        ark_api_key = json.loads(key).get("ark_api_key", "")
-        model_name = json.loads(key).get("ep_id", "") + json.loads(key).get("endpoint_id", "")
-        super().__init__(ark_api_key, model_name, base_url, **kwargs)
+        try:
+            ark_api_key = json.loads(key).get("ark_api_key", "")
+            model_name = json.loads(key).get("ep_id", "") + json.loads(key).get("endpoint_id", "")
+            super().__init__(ark_api_key, model_name, base_url, **kwargs)
+        except JSONDecodeError:
+            super().__init__(key, model_name, base_url, **kwargs)
 
 
 class MistralChat(Base):
@@ -800,6 +862,8 @@ class MistralChat(Base):
         gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
         response = self.client.chat(model=self.model_name, messages=history, **gen_conf)
+        if not response.choices:
+            raise ValueError("LLM returned empty response")  # pact: guard empty choices list
         ans = response.choices[0].message.content
         if response.choices[0].finish_reason == "length":
             if is_chinese(ans):
@@ -857,6 +921,15 @@ class OpenAI_APIChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
+class Xiaomi(Base):
+    _FACTORY_NAME = "Xiaomi"
+
+    def __init__(self, key, model_name, base_url, **kwargs):
+        if not base_url:
+            base_url = "https://api.xiaomimimo.com/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
 class LeptonAIChat(Base):
     _FACTORY_NAME = "LeptonAI"
 
@@ -875,7 +948,7 @@ class ReplicateChat(Base):
         from replicate.client import Client
 
         self.model_name = model_name
-        self.client = Client(api_token=key)
+        self.client = Client(api_token=_normalize_replicate_key(key))
 
     def _chat(self, history, gen_conf=None, **kwargs):
         gen_conf = dict(gen_conf or {})
@@ -907,6 +980,43 @@ class ReplicateChat(Base):
             yield ans + "\n**ERROR**: " + str(e)
 
         yield num_tokens_from_string(ans)
+
+    async def async_chat_streamly(self, system, history, gen_conf: dict | None = None, **kwargs):
+        gen_conf = dict(gen_conf or {})
+        if "max_tokens" in gen_conf:
+            del gen_conf["max_tokens"]
+
+        def _do_chat():
+            msgs = list(history or [])
+            if system and msgs and msgs[0].get("role") != "system":
+                msgs.insert(0, {"role": "system", "content": system})
+            elif system and not msgs:
+                msgs = [{"role": "system", "content": system}]
+
+            system_msg = msgs[0]["content"] if msgs and msgs[0].get("role") == "system" else ""
+            prompt = "\n".join(
+                [item["role"] + ":" + item["content"] for item in msgs[-5:] if item.get("role") != "system"]
+            )
+            try:
+                response = self.client.run(
+                    self.model_name,
+                    input={"system_prompt": system_msg, "prompt": prompt, **gen_conf},
+                )
+                chunks = []
+                for resp in response:
+                    chunks.append(resp if isinstance(resp, str) else str(resp))
+                answer = "".join(chunks)
+                return chunks or ([answer] if answer else []), num_tokens_from_string(answer), None
+            except Exception as e:
+                return [], 0, e
+
+        chunks, total_tokens, error = await asyncio.to_thread(_do_chat)
+        if error:
+            yield f"**ERROR**: {error}"
+        else:
+            for chunk in chunks:
+                yield chunk
+        yield total_tokens
 
 
 class SparkChat(Base):
@@ -980,9 +1090,53 @@ class BaiduYiyanChat(Base):
 
         yield total_tokens
 
+    async def async_chat_streamly(self, system, history, gen_conf: dict | None = None, **kwargs):
+        gen_conf = dict(gen_conf or {})
+        gen_conf["penalty_score"] = ((gen_conf.get("presence_penalty", 0) + gen_conf.get("frequency_penalty", 0)) / 2) + 1
+        if "max_tokens" in gen_conf:
+            del gen_conf["max_tokens"]
+
+        def _do_chat():
+            system_msg = history[0]["content"] if history and history[0].get("role") == "system" else ""
+            msgs = [h for h in history if h.get("role") != "system"]
+            try:
+                response = self.client.do(model=self.model_name, messages=msgs, system=system_msg, stream=True, **gen_conf)
+                result_text = ""
+                total_tokens = 0
+                for resp in response:
+                    resp = resp.body
+                    result_text = resp["result"]
+                    total_tokens = total_token_count_from_response(resp)
+                return result_text, total_tokens, None
+            except Exception as e:
+                return "", 0, e
+
+        result_text, total_tokens, error = await asyncio.to_thread(_do_chat)
+        if error:
+            yield f"**ERROR**: {error}"
+        else:
+            yield result_text
+        yield total_tokens
+
 
 class GoogleChat(Base):
     _FACTORY_NAME = "Google Cloud"
+
+    @staticmethod
+    def _vertex_http_options(region: str):
+        region_norm = (region or "").strip().lower()
+        multipoint_hosts = {
+            "eu": "https://aiplatform.eu.rep.googleapis.com/",
+            "us": "https://aiplatform.us.rep.googleapis.com/",
+        }
+        base_url = multipoint_hosts.get(region_norm)
+        if base_url:
+            from google.genai.types import HttpOptions
+
+            # Gemini 3.x multi-region endpoints require *.rep hostnames
+            # instead of region-aiplatform host synthesis.
+            return HttpOptions(base_url=base_url, api_version="v1")
+        return None
 
     def __init__(self, key, model_name, base_url=None, **kwargs):
         super().__init__(key, model_name, base_url=base_url, **kwargs)
@@ -1014,11 +1168,21 @@ class GoogleChat(Base):
         else:
             from google import genai
 
+            client_kwargs = {
+                "vertexai": True,
+                "project": project_id,
+                "location": region,
+            }
+            http_options = self._vertex_http_options(region)
+            if http_options is not None:
+                client_kwargs["http_options"] = http_options
+
             if access_token:
                 credits = service_account.Credentials.from_service_account_info(access_token, scopes=scopes)
-                self.client = genai.Client(vertexai=True, project=project_id, location=region, credentials=credits)
+                client_kwargs["credentials"] = credits
+                self.client = genai.Client(**client_kwargs)
             else:
-                self.client = genai.Client(vertexai=True, project=project_id, location=region)
+                self.client = genai.Client(**client_kwargs)
 
     def _clean_conf(self, gen_conf):
         if "claude" in self.model_name:
@@ -1308,8 +1472,12 @@ class LiteLLMBase(ABC):
 
         # Factory specific fields
         if self.provider == SupportedLiteLLMProvider.OpenRouter:
-            self.api_key = json.loads(key).get("api_key", "")
-            self.provider_order = json.loads(key).get("provider_order", "")
+            try:
+                self.api_key = json.loads(key).get("api_key", "")
+                self.provider_order = json.loads(key).get("provider_order", "")
+            except JSONDecodeError:
+                self.api_key = key
+                self.provider_order = ""
         elif self.provider == SupportedLiteLLMProvider.Azure_OpenAI:
             self.api_key = json.loads(key).get("api_key", "")
             self.api_version = json.loads(key).get("api_version", "2024-02-01")
@@ -1358,6 +1526,7 @@ class LiteLLMBase(ABC):
         )
 
         gen_conf.pop("max_tokens", None)
+        gen_conf = {k: v for k, v in gen_conf.items() if k in LITELLM_ALLOWED_GEN_CONF_KEYS}
         return gen_conf
 
     def _need_reasoning_content_back(self) -> bool:
@@ -1388,7 +1557,7 @@ class LiteLLMBase(ABC):
                     timeout=self.timeout,
                 )
 
-                if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):
+                if not response.choices or not response.choices[0].message or not response.choices[0].message.content:
                     return "", 0
                 ans = response.choices[0].message.content.strip()
                 if response.choices[0].finish_reason == "length":
@@ -1495,7 +1664,11 @@ class LiteLLMBase(ABC):
         return msg
 
     def _verbose_tool_use(self, name, args, res):
-        return "<tool_call>" + json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False, indent=2) + "</tool_call>"
+        return "<tool_call>" + json.dumps(
+            {"name": name, "args": args, "result": str(res) if isinstance(res, Exception) else res},
+            ensure_ascii=False,
+            indent=2,
+        ) + "</tool_call>"
 
     def _append_history(self, hist, tool_call, tool_res, reasoning_content=None):
         assistant_msg = {
@@ -1553,7 +1726,29 @@ class LiteLLMBase(ABC):
             hist.append({"role": "tool", "tool_call_id": tc.id, "content": content})
         return hist
 
-    def bind_tools(self, toolcall_session, tools):
+    def bind_tools(self, toolcall_session=None, tools=None):
+        """Register tools the LLM can call.
+
+        Two calling styles are accepted:
+
+        * Legacy: ``bind_tools(toolcall_session, tools_schemas)`` where
+          ``toolcall_session`` implements :class:`ToolCallSession` and
+          ``tools_schemas`` is a pre-built list of OpenAI function-schema
+          dicts (used by the agent/dialog layer).
+        * Decorator: ``bind_tools(tools=[fn1, fn2, ...])`` where each ``fn``
+          is decorated with :func:`rag.llm.tool_decorator.tool`. The session
+          and schemas are derived from the callables automatically.
+        """
+        if tools is None and isinstance(toolcall_session, list):
+            tools, toolcall_session = toolcall_session, None
+
+        if tools and toolcall_session is None and all(is_tool(t) for t in tools):
+            session = FunctionToolSession(tools)
+            self.is_tools = True
+            self.toolcall_session = session
+            self.tools = session.schemas
+            return
+
         if not (toolcall_session and tools):
             return
         self.is_tools = True
@@ -1604,6 +1799,8 @@ class LiteLLMBase(ABC):
                         name = tc.function.name
                         try:
                             args = json_repair.loads(tc.function.arguments)
+                            if not isinstance(args, dict):
+                                raise TypeError(f"Tool arguments for {name} must be a JSON object, got {type(args).__name__}")
                             if hasattr(self.toolcall_session, "tool_call_async"):
                                 result = await self.toolcall_session.tool_call_async(name, args)
                             else:
@@ -1720,6 +1917,8 @@ class LiteLLMBase(ABC):
                         name = tc.function.name
                         try:
                             args = json_repair.loads(tc.function.arguments)
+                            if not isinstance(args, dict):
+                                raise TypeError(f"Tool arguments for {name} must be a JSON object, got {type(args).__name__}")
                             if hasattr(self.toolcall_session, "tool_call_async"):
                                 result = await self.toolcall_session.tool_call_async(name, args)
                             else:
@@ -1900,4 +2099,14 @@ class RAGconChat(Base):
         if not base_url:
             base_url = "https://connect.ragcon.com/v1"
 
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
+class NewAPIChat(Base):
+    _FACTORY_NAME = "New API"
+
+    def __init__(self, key, model_name, base_url, **kwargs):
+        if not base_url:
+            raise ValueError("url cannot be None")
+        model_name = model_name.split("___")[0]
         super().__init__(key, model_name, base_url, **kwargs)

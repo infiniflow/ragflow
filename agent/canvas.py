@@ -329,6 +329,11 @@ class Canvas(Graph):
         self.dsl["memory"] = self.memory
         return super().__str__()
 
+    def clear_history(self):
+        self.history = []
+        if isinstance(self.globals.get("sys.history"), list):
+            self.globals["sys.history"] = []
+
     def reset(self, mem=False):
         super().reset()
         if not mem:
@@ -402,7 +407,7 @@ class Canvas(Graph):
                 break
 
         for k in kwargs.keys():
-            if k in ["query", "user_id", "files"] and kwargs[k]:
+            if k in ["query", "user_id", "files", "chat_template_kwargs"] and kwargs[k]:
                 if k == "files":
                     self.globals[f"sys.{k}"] = await self.get_files_async(kwargs[k], layout_recognize)
                 else:
@@ -410,6 +415,7 @@ class Canvas(Graph):
         if not self.globals["sys.conversation_turns"] :
             self.globals["sys.conversation_turns"] = 0
         self.globals["sys.conversation_turns"] += 1
+        is_resume = bool(self.path) and self.path[0].lower().find("userfillup") >= 0
 
         def decorate(event, dt):
             nonlocal created_at
@@ -422,16 +428,16 @@ class Canvas(Graph):
                 "data": dt
             }
 
-        if not self.path or self.path[-1].lower().find("userfillup") < 0:
+        if not is_resume:
             self.path.append("begin")
             self.retrieval.append({"chunks": [], "doc_aggs": []})
-
         if self.is_canceled():
             msg = f"Task {self.task_id} has been canceled before starting."
             logging.info(msg)
             raise TaskCanceledException(msg)
 
-        yield decorate("workflow_started", {"inputs": kwargs.get("inputs")})
+        if not is_resume:
+            yield decorate("workflow_started", {"inputs": kwargs.get("inputs")})
         self.retrieval.append({"chunks": {}, "doc_aggs": {}})
 
         async def _run_batch(f, t):
@@ -496,7 +502,7 @@ class Canvas(Graph):
                        })
 
         self.error = ""
-        idx = len(self.path) - 1
+        idx = 0 if is_resume else len(self.path) - 1
         partials = []
         tts_mdl = None
         while idx < len(self.path):
@@ -633,18 +639,23 @@ class Canvas(Graph):
                 break
             idx = to
 
-            if any([self.get_component_obj(c).component_name.lower() == "userfillup" for c in self.path[idx:]]):
-                path = [c for c in self.path[idx:] if self.get_component(c)["obj"].component_name.lower() == "userfillup"]
-                path.extend([c for c in self.path[idx:] if self.get_component(c)["obj"].component_name.lower() != "userfillup"])
+            if any([self.components.get(c) is not None and self.get_component_obj(c).component_name.lower() == "userfillup" for c in self.path[idx:]]):
+                path = [c for c in self.path[idx:] if self.components.get(c) is not None and self.get_component(c)["obj"].component_name.lower() == "userfillup"]
+                path.extend([c for c in self.path[idx:] if self.components.get(c) is not None and self.get_component(c)["obj"].component_name.lower() != "userfillup"])
                 another_inputs = {}
                 tips = ""
                 for c in path:
                     o = self.get_component_obj(c)
                     if o.component_name.lower() == "userfillup":
                         o.invoke()
-                        another_inputs.update(o.get_input_elements())
+                        another_inputs.update({
+                            k: v for k, v in o.get_input_elements().items()
+                            if not self._is_input_field_satisfied(v)
+                        })
                         if o.get_param("enable_tips"):
                             tips = o.output("tips")
+                if not another_inputs:
+                    continue
                 self.path = path
                 yield decorate("user_inputs", {"inputs": another_inputs, "tips": tips})
                 return
@@ -729,7 +740,25 @@ class Canvas(Graph):
 
     def add_user_input(self, question):
         self.history.append(("user", question))
-        self.globals["sys.history"].append(f"{self.history[-1][0]}: {self.history[-1][1]}")
+        rendered = json.dumps(question, ensure_ascii=False) if isinstance(question, dict) else question
+        self.globals["sys.history"].append(f"{self.history[-1][0]}: {rendered}")
+
+    @staticmethod
+    def _is_input_field_satisfied(field: Any) -> bool:
+        if not isinstance(field, dict):
+            return field is not None
+
+        value = field.get("value")
+        field_type = str(field.get("type", "")).lower()
+        if field_type.find("file") >= 0:
+            if field.get("optional") and value is None:
+                return True
+            return value not in (None, [], "")
+
+        if value is None:
+            return False
+
+        return True
 
     def get_prologue(self):
         return self.components["begin"]["obj"]._param.prologue

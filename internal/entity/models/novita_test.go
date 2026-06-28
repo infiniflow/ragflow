@@ -49,8 +49,27 @@ func newNovitaServer(t *testing.T, expectedPath string, handler func(t *testing.
 func newNovitaForTest(baseURL string) *NovitaModel {
 	return NewNovitaModel(
 		map[string]string{"default": baseURL},
-		URLSuffix{Chat: "openai/v1/chat/completions", Models: "openai/v1/models"},
+		URLSuffix{
+			Chat:      "openai/v1/chat/completions",
+			Models:    "openai/v1/models",
+			Embedding: "openai/v1/embeddings",
+			Rerank:    "openai/v1/rerank",
+		},
 	)
+}
+
+func TestNovitaNewModelWithCustomDefaultTransport(t *testing.T) {
+	original := http.DefaultTransport
+	http.DefaultTransport = roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return nil, nil
+	})
+	t.Cleanup(func() {
+		http.DefaultTransport = original
+	})
+
+	if model := NewNovitaModel(map[string]string{"default": "http://unused"}, URLSuffix{}); model == nil {
+		t.Fatal("NewNovitaModel returned nil")
+	}
 }
 
 // newNovitaSSEServer asserts the SSE-chat wire contract (POST, path,
@@ -650,38 +669,163 @@ func TestNovitaCheckConnection(t *testing.T) {
 	}
 }
 
-func TestNovitaEmbedReturnsNoSuchMethod(t *testing.T) {
-	m := "x"
-	_, err := newNovitaForTest("http://unused").Embed(&m, []string{"a"}, &APIConfig{}, nil)
-	if err == nil || !strings.Contains(err.Error(), "no such method") {
+func TestNovitaRerankHappyPathReordersByIndex(t *testing.T) {
+	srv := newNovitaServer(t, "/openai/v1/rerank", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		if body["model"] != "baai/bge-reranker-v2-m3" {
+			t.Errorf("model=%v", body["model"])
+		}
+		if body["query"] != "what is rag" {
+			t.Errorf("query=%v", body["query"])
+		}
+		docs, ok := body["documents"].([]interface{})
+		if !ok || len(docs) != 3 || docs[0] != "a" || docs[1] != "b" || docs[2] != "c" {
+			t.Errorf("documents=%v", body["documents"])
+		}
+		if body["top_n"] != float64(3) {
+			t.Errorf("top_n=%v, want 3", body["top_n"])
+		}
+		_, _ = io.WriteString(w, `{"results":[{"document":{"text":"c"},"index":2,"relevance_score":0.91},{"document":{"text":"a"},"index":0,"relevance_score":0.42},{"document":{"text":"b"},"index":1,"relevance_score":0.08}]}`)
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "baai/bge-reranker-v2-m3"
+	resp, err := newNovitaForTest(srv.URL).Rerank(&model, "what is rag", []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("Rerank: %v", err)
+	}
+	if len(resp.Data) != 3 {
+		t.Fatalf("len(Data)=%d, want 3", len(resp.Data))
+	}
+	want := map[int]float64{2: 0.91, 0: 0.42, 1: 0.08}
+	for i, item := range resp.Data {
+		if want[item.Index] != item.RelevanceScore {
+			t.Errorf("Data[%d]={Index:%d, Score:%v}", i, item.Index, item.RelevanceScore)
+		}
+	}
+}
+
+func TestNovitaRerankRespectsTopNConfig(t *testing.T) {
+	srv := newNovitaServer(t, "/openai/v1/rerank", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		if body["top_n"] != float64(2) {
+			t.Errorf("top_n=%v, want 2", body["top_n"])
+		}
+		_, _ = io.WriteString(w, `{"results":[{"index":0,"relevance_score":0.9},{"index":1,"relevance_score":0.5}]}`)
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "baai/bge-reranker-v2-m3"
+	if _, err := newNovitaForTest(srv.URL).Rerank(&model, "q", []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{TopN: 2}); err != nil {
+		t.Fatalf("Rerank: %v", err)
+	}
+}
+
+func TestNovitaRerankEmptyDocumentsShortCircuits(t *testing.T) {
+	apiKey := "test-key"
+	model := "x"
+	resp, err := newNovitaForTest("http://unused").Rerank(&model, "q", nil, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("expected nil error for empty docs, got %v", err)
+	}
+	if len(resp.Data) != 0 {
+		t.Errorf("len(Data)=%d, want 0", len(resp.Data))
+	}
+}
+
+func TestNovitaRerankRequiresApiKey(t *testing.T) {
+	model := "x"
+	_, err := newNovitaForTest("http://unused").Rerank(&model, "q", []string{"a"}, &APIConfig{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("got %v", err)
 	}
 }
 
-func TestNovitaRerankReturnsNoSuchMethod(t *testing.T) {
-	m := "x"
-	_, err := newNovitaForTest("http://unused").Rerank(&m, "q", []string{"a"}, &APIConfig{}, &RerankConfig{TopN: 1})
-	if err == nil || !strings.Contains(err.Error(), "no such method") {
+func TestNovitaRerankRequiresModelName(t *testing.T) {
+	apiKey := "test-key"
+	_, err := newNovitaForTest("http://unused").Rerank(nil, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "model name is required") {
+		t.Errorf("got %v", err)
+	}
+}
+
+func TestNovitaRerankRejectsOutOfRangeIndex(t *testing.T) {
+	srv := newNovitaServer(t, "/openai/v1/rerank", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		_, _ = io.WriteString(w, `{"results":[{"index":5,"relevance_score":0.5}]}`)
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "x"
+	_, err := newNovitaForTest(srv.URL).Rerank(&model, "q", []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "out of range") {
+		t.Errorf("got %v", err)
+	}
+}
+
+func TestNovitaRerankRejectsDuplicateIndex(t *testing.T) {
+	srv := newNovitaServer(t, "/openai/v1/rerank", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		_, _ = io.WriteString(w, `{"results":[{"index":0,"relevance_score":0.9},{"index":0,"relevance_score":0.5}]}`)
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "x"
+	_, err := newNovitaForTest(srv.URL).Rerank(&model, "q", []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Errorf("got %v", err)
+	}
+}
+
+func TestNovitaRerankSurfacesHTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = io.WriteString(w, `{"error":"bad key"}`)
+	}))
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "x"
+	_, err := newNovitaForTest(srv.URL).Rerank(&model, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "Novita rerank API error") {
+		t.Errorf("got %v", err)
+	}
+}
+
+func TestNovitaRerankRejectsMissingRerankSuffix(t *testing.T) {
+	apiKey := "test-key"
+	model := "x"
+	driver := NewNovitaModel(
+		map[string]string{"default": "http://unused"},
+		URLSuffix{Chat: "openai/v1/chat/completions"},
+	)
+	_, err := driver.Rerank(&model, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "no rerank URL suffix configured") {
 		t.Errorf("got %v", err)
 	}
 }
 
 func TestNovitaBalanceReturnsNoSuchMethod(t *testing.T) {
-	if _, err := newNovitaForTest("http://unused").Balance(&APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("got %v", err)
+	// Balance IS implemented (makes HTTP call), not a "no such method" stub.
+	// With dummy key it should reach the HTTP call stage, not fail at APIConfigCheck.
+	apiKey := "test-key"
+	_, err := newNovitaForTest("http://unused").Balance(&APIConfig{ApiKey: &apiKey})
+	if err == nil || strings.Contains(err.Error(), "api key is required") {
+		t.Errorf("expected non-api-key error (e.g. connection refused), got %v", err)
 	}
 }
 
 func TestNovitaAudioOCRReturnNoSuchMethod(t *testing.T) {
 	m := "x"
+	apiKey := "test-key"
 	v := newNovitaForTest("http://unused")
-	if _, err := v.TranscribeAudio(&m, &m, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := v.TranscribeAudio(&m, &m, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("TranscribeAudio: %v", err)
 	}
-	if _, err := v.AudioSpeech(&m, &m, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := v.AudioSpeech(&m, &m, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("AudioSpeech: %v", err)
 	}
-	if _, err := v.OCRFile(&m, nil, &m, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := v.OCRFile(&m, nil, &m, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: %v", err)
 	}
 }

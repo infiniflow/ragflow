@@ -457,10 +457,20 @@ class SandboxMgr:
 
     # Provider registry with metadata
     PROVIDER_REGISTRY = {
+        "local": {
+            "name": "Local",
+            "description": "Execute code directly on the current host process.",
+            "tags": ["local", "host", "minimal"],
+        },
         "self_managed": {
             "name": "Self-Managed",
             "description": "On-premise deployment using Daytona/Docker",
             "tags": ["self-hosted", "low-latency", "secure"],
+        },
+        "ssh": {
+            "name": "SSH",
+            "description": "Execute code on a remote machine over SSH.",
+            "tags": ["remote", "ssh", "custom-runtime"],
         },
         "aliyun_codeinterpreter": {
             "name": "Aliyun Code Interpreter",
@@ -489,13 +499,17 @@ class SandboxMgr:
     def get_provider_config_schema(provider_id: str):
         """Get configuration schema for a specific provider."""
         from agent.sandbox.providers import (
+            LocalProvider,
             SelfManagedProvider,
+            SSHProvider,
             AliyunCodeInterpreterProvider,
             E2BProvider,
         )
 
         schemas = {
+            "local": LocalProvider.get_config_schema(),
             "self_managed": SelfManagedProvider.get_config_schema(),
+            "ssh": SSHProvider.get_config_schema(),
             "aliyun_codeinterpreter": AliyunCodeInterpreterProvider.get_config_schema(),
             "e2b": E2BProvider.get_config_schema(),
         }
@@ -512,7 +526,6 @@ class SandboxMgr:
             # Get active provider type
             provider_type_settings = SystemSettingsService.get_by_name("sandbox.provider_type")
             if not provider_type_settings:
-                # Return default config if not set
                 provider_type = "self_managed"
             else:
                 provider_type = provider_type_settings[0].value
@@ -526,6 +539,15 @@ class SandboxMgr:
                     provider_config = json.loads(provider_config_settings[0].value)
                 except json.JSONDecodeError:
                     provider_config = {}
+
+            if not provider_config:
+                schema = SandboxMgr.get_provider_config_schema(provider_type)
+                provider_config = {}
+                for field_name, field_schema in schema.items():
+                    if field_schema.get("readonly"):
+                        continue
+                    if field_schema.get("default") is not None:
+                        provider_config[field_name] = field_schema["default"]
 
             return {
                 "provider_type": provider_type,
@@ -550,7 +572,9 @@ class SandboxMgr:
             Dictionary with updated provider_type and config
         """
         from agent.sandbox.providers import (
+            LocalProvider,
             SelfManagedProvider,
+            SSHProvider,
             AliyunCodeInterpreterProvider,
             E2BProvider,
         )
@@ -577,7 +601,7 @@ class SandboxMgr:
                     elif field_type == "string":
                         if not isinstance(config[field_name], str):
                             raise AdminException(f"Field '{field_name}' must be a string")
-                    elif field_type == "bool":
+                    elif field_type == "boolean":
                         if not isinstance(config[field_name], bool):
                             raise AdminException(f"Field '{field_name}' must be a boolean")
 
@@ -592,7 +616,9 @@ class SandboxMgr:
 
             # Provider-specific custom validation
             provider_classes = {
+                "local": LocalProvider,
                 "self_managed": SelfManagedProvider,
+                "ssh": SSHProvider,
                 "aliyun_codeinterpreter": AliyunCodeInterpreterProvider,
                 "e2b": E2BProvider,
             }
@@ -608,6 +634,8 @@ class SandboxMgr:
             # Always update the provider config
             config_json = json.dumps(config)
             SettingsMgr.update_by_name(f"sandbox.{provider_type}", config_json)
+            from agent.sandbox.client import reload_provider
+            reload_provider()
 
             return {"provider_type": provider_type, "config": config}
         except AdminException:
@@ -634,14 +662,18 @@ class SandboxMgr:
         """
         try:
             from agent.sandbox.providers import (
+                LocalProvider,
                 SelfManagedProvider,
+                SSHProvider,
                 AliyunCodeInterpreterProvider,
                 E2BProvider,
             )
 
             # Instantiate provider based on type
             provider_classes = {
+                "local": LocalProvider,
                 "self_managed": SelfManagedProvider,
+                "ssh": SSHProvider,
                 "aliyun_codeinterpreter": AliyunCodeInterpreterProvider,
                 "e2b": E2BProvider,
             }
@@ -657,59 +689,40 @@ class SandboxMgr:
 
             # Create a temporary sandbox instance for testing
             instance = provider.create_instance(template="python")
+            if not instance:
+                raise AdminException("Failed to create sandbox instance.")
 
-            if not instance or instance.status != "READY":
-                raise AdminException(f"Failed to create sandbox instance. Status: {instance.status if instance else 'None'}")
-
-            # Simple test code that exercises basic Python functionality
-            test_code = """
-# Test basic Python functionality
-import sys
+            try:
+                # Keep the probe close to the original coverage, but avoid
+                # `sys` because the sandbox security analyzer blocks it.
+                test_code = """
 import json
 import math
 
-print("Python version:", sys.version)
-print("Platform:", sys.platform)
 
-# Test basic calculations
-result = 2 + 2
-print(f"2 + 2 = {result}")
-
-# Test JSON operations
-data = {"test": "data", "value": 123}
-print(f"JSON dump: {json.dumps(data)}")
-
-# Test math operations
-print(f"Math.sqrt(16) = {math.sqrt(16)}")
-
-# Test error handling
-try:
-    x = 1 / 1
-    print("Division test: OK")
-except Exception as e:
-    print(f"Error: {e}")
-
-# Return success indicator
-print("TEST_PASSED")
+def main() -> dict:
+    left = 2
+    right = 2
+    print(f"2 + 2 = {left + right}")
+    print(f"JSON dump: {json.dumps({'test': 'data', 'value': 123})}")
+    print(f"Math.sqrt(16) = {math.sqrt(16)}")
+    print("TEST_PASSED")
+    return {"ok": True, "provider_test": "TEST_PASSED"}
 """
 
-            # Execute test code with timeout
-            execution_result = provider.execute_code(
-                instance_id=instance.instance_id,
-                code=test_code,
-                language="python",
-                timeout=10  # 10 seconds timeout
-            )
-
-            # Clean up the test instance (if provider supports it)
-            try:
-                if hasattr(provider, 'terminate_instance'):
-                    provider.terminate_instance(instance.instance_id)
+                # Execute test code with timeout
+                execution_result = provider.execute_code(
+                    instance_id=instance.instance_id,
+                    code=test_code,
+                    language="python",
+                    timeout=10,
+                )
+            finally:
+                try:
+                    provider.destroy_instance(instance.instance_id)
                     logging.info(f"Cleaned up test instance {instance.instance_id}")
-                else:
-                    logging.warning(f"Provider {provider_type} does not support terminate_instance, test instance may leak")
-            except Exception as cleanup_error:
-                logging.warning(f"Failed to cleanup test instance {instance.instance_id}: {cleanup_error}")
+                except Exception as cleanup_error:
+                    logging.warning(f"Failed to cleanup test instance {instance.instance_id}: {cleanup_error}")
 
             # Build detailed result message
             success = execution_result.exit_code == 0 and "TEST_PASSED" in execution_result.stdout

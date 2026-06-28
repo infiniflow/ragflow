@@ -17,11 +17,8 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
-	"os"
 	"ragflow/internal/common"
-	"ragflow/internal/engine"
 	"ragflow/internal/service"
 	"strings"
 
@@ -127,7 +124,7 @@ func (h *KnowledgebaseHandler) UpdateKB(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/kb/update_metadata_setting [post]
 func (h *KnowledgebaseHandler) UpdateMetadataSetting(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
 		return
@@ -139,8 +136,17 @@ func (h *KnowledgebaseHandler) UpdateMetadataSetting(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.kbService.UpdateMetadataSetting(&req)
+	if !h.kbService.Accessible(req.KBID, user.ID) {
+		jsonError(c, common.CodeAuthenticationError, "No authorization.")
+		return
+	}
+
+	result, code, err := h.kbService.UpdateMetadataSetting(&req, user.ID)
 	if err != nil {
+		if strings.Contains(err.Error(), "authorized") {
+			jsonError(c, common.CodeAuthenticationError, err.Error())
+			return
+		}
 		jsonError(c, code, err.Error())
 		return
 	}
@@ -181,7 +187,7 @@ func (h *KnowledgebaseHandler) GetDetail(c *gin.Context) {
 		return
 	}
 
-		jsonResponse(c, common.CodeSuccess, result, "success")
+	jsonResponse(c, common.CodeSuccess, result, "success")
 }
 
 // ListTags handles the list tags request for a knowledge base
@@ -247,74 +253,6 @@ func (h *KnowledgebaseHandler) ListTagsFromKbs(c *gin.Context) {
 	}
 
 	jsonResponse(c, common.CodeSuccess, []string{}, "success")
-}
-
-// RemoveTags handles the remove tags request
-// @Summary Remove Tags
-// @Description Remove tags from a knowledge base
-// @Tags knowledgebase
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param kb_id path string true "Knowledge Base ID"
-// @Param request body object{tags []string} true "tags to remove"
-// @Success 200 {object} map[string]interface{}
-// @Router /v1/kb/{kb_id}/rm_tags [post]
-func (h *KnowledgebaseHandler) RemoveTags(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
-		return
-	}
-
-	kbID := c.Param("kb_id")
-	if kbID == "" {
-		jsonError(c, common.CodeDataError, "kb_id is required")
-		return
-	}
-
-	if !h.kbService.Accessible(kbID, user.ID) {
-		jsonError(c, common.CodeAuthenticationError, "No authorization.")
-		return
-	}
-
-	var req struct {
-		Tags []string `json:"tags" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
-		return
-	}
-
-	// Get KB to find tenant_id and build index name
-	kb, err := h.kbService.GetByID(kbID)
-	if err != nil {
-		jsonError(c, common.CodeDataError, "knowledge base not found")
-		return
-	}
-
-	// Build index name prefix: ragflow_<tenant_id>
-	indexName := "ragflow_" + kb.TenantID
-
-	// For each tag, call UpdateChunk to remove it from documents
-	for _, tag := range req.Tags {
-		condition := map[string]interface{}{
-			"tag_kwd": tag,
-			"kb_id":   kbID,
-		}
-		newValue := map[string]interface{}{
-			"remove": map[string]interface{}{
-				"tag_kwd": tag,
-			},
-		}
-		err := h.kbService.RemoveTag(condition, newValue, indexName, kbID)
-		if err != nil {
-			jsonError(c, common.CodeServerError, "Failed to remove tag: "+err.Error())
-			return
-		}
-	}
-
-	jsonResponse(c, common.CodeSuccess, true, "success")
 }
 
 // RenameTag handles the rename tag request
@@ -494,174 +432,4 @@ func (h *KnowledgebaseHandler) GetBasicInfo(c *gin.Context) {
 	}
 
 	jsonResponse(c, common.CodeSuccess, map[string]interface{}{}, "success")
-}
-
-// CreateDatasetInDocEngine handles the create dataset request for a knowledge base
-// @Summary Create Dataset in Doc Engine
-// @Description Create the Infinity table for a knowledge base
-// @Tags knowledgebase
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param request body service.CreateDatasetTableRequest true "create dataset request"
-// @Success 200 {object} map[string]interface{}
-// @Router /v1/kb/doc_engine_table [post]
-func (h *KnowledgebaseHandler) CreateDatasetInDocEngine(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
-		return
-	}
-
-	var req service.CreateDatasetTableRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
-		return
-	}
-
-	// Check authorization
-	if !h.kbService.Accessible(req.KBID, user.ID) {
-		jsonError(c, common.CodeAuthenticationError, "No authorization.")
-		return
-	}
-
-	result, code, err := h.kbService.CreateDatasetInDocEngine(&req)
-	if err != nil {
-		jsonError(c, code, err.Error())
-		return
-	}
-
-	jsonResponse(c, common.CodeSuccess, result, "success")
-}
-
-// DeleteDatasetInDocEngineRequest represents the request for deleting a dataset table
-type DeleteDatasetInDocEngineRequest struct {
-	KBID string `json:"kb_id" binding:"required"`
-}
-
-// DeleteDatasetInDocEngine handles the delete dataset request for a knowledge base
-// @Summary Delete Dataset in Doc Engine
-// @Description Delete the Infinity table for a knowledge base
-// @Tags knowledgebase
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param request body DeleteDatasetInDocEngineRequest true "delete dataset request"
-// @Success 200 {object} map[string]interface{}
-// @Router /v1/kb/doc_engine_table [delete]
-func (h *KnowledgebaseHandler) DeleteDatasetInDocEngine(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
-		return
-	}
-
-	var req DeleteDatasetInDocEngineRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
-		return
-	}
-
-	// Check authorization
-	if !h.kbService.Accessible(req.KBID, user.ID) {
-		jsonError(c, common.CodeAuthenticationError, "No authorization.")
-		return
-	}
-
-	code, err := h.kbService.DeleteDatasetInDocEngine(req.KBID)
-	if err != nil {
-		jsonError(c, code, err.Error())
-		return
-	}
-
-	jsonResponse(c, common.CodeSuccess, nil, "success")
-}
-
-// InsertDatasetFromFileRequest request for inserting chunks into dataset from file
-type InsertDatasetFromFileRequest struct {
-	FilePath string `json:"file_path" binding:"required"`
-}
-
-// @Summary Insert chunks into dataset from file
-// @Description Internal: Insert into dataset table from a JSON file (table name extracted from file)
-// @Tags knowledgebase
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param request body InsertDatasetFromFileRequest true "insert dataset request"
-// @Success 200 {object} map[string]interface{}
-// @Router /v1/kb/insert_from_file [post]
-func (h *KnowledgebaseHandler) InsertDatasetFromFile(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
-		return
-	}
-
-	var req InsertDatasetFromFileRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": err.Error(),
-		})
-		return
-	}
-
-	if req.FilePath == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "file_path is required",
-		})
-		return
-	}
-
-	// Read the JSON file
-	data, err := os.ReadFile(req.FilePath)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "failed to read file: " + err.Error(),
-		})
-		return
-	}
-
-	// Parse JSON - format: {"table_name": ..., "knowledgebase_id": ..., "chunks": [...]}
-	var debugFormat struct {
-		TableNamePrefix string                   `json:"table_name"`
-		KnowledgebaseID string                   `json:"knowledgebase_id"`
-		Chunks          []map[string]interface{} `json:"chunks"`
-	}
-
-	if err := json.Unmarshal(data, &debugFormat); err != nil || debugFormat.Chunks == nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "invalid JSON format: expected {\"table_name\": ..., \"knowledgebase_id\": ..., \"chunks\": [...]}",
-		})
-		return
-	}
-
-	if len(debugFormat.Chunks) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "no chunks found in file",
-		})
-		return
-	}
-
-	// Get the document engine and insert
-	docEngine := engine.Get()
-	result, err := docEngine.InsertChunks(c.Request.Context(), debugFormat.Chunks, debugFormat.TableNamePrefix, debugFormat.KnowledgebaseID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "failed to insert into dataset: " + err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"data":    result,
-		"message": "success",
-	})
 }

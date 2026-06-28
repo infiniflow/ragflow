@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from types import SimpleNamespace
 
 import pytest
 from test_common import list_documents
@@ -217,3 +218,66 @@ class TestDocumentsList:
             assert res["code"] == 0
             assert len(res["data"]["docs"]) == 0
 
+
+class _DummyArgs(dict):
+    def getlist(self, key):
+        value = self.get(key, [])
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return value
+        return [value]
+
+
+@pytest.mark.p2
+class TestDocumentsListUnit:
+    def test_run_status_query_param_filters_documents(self, document_app_module, monkeypatch):
+        captured = {}
+
+        def fake_get_by_kb_id(kb_id, page, page_size, orderby, desc, keywords, run_status, types, suffix, **kwargs):
+            captured["run_status"] = run_status
+            return [], 0
+
+        monkeypatch.setattr(document_app_module.DocumentService, "get_by_kb_id", fake_get_by_kb_id)
+
+        err_code, _, _, _ = document_app_module._get_docs_with_request(
+            SimpleNamespace(args=_DummyArgs({"run_status": "DONE"})),
+            "kb-1",
+        )
+
+        assert err_code == 0
+        assert captured["run_status"] == ["3"]
+
+    def test_empty_run_status_query_param_is_ignored(self, document_app_module, monkeypatch):
+        captured = {}
+
+        def fake_get_by_kb_id(kb_id, page, page_size, orderby, desc, keywords, run_status, types, suffix, **kwargs):
+            captured["run_status"] = run_status
+            return [], 0
+
+        monkeypatch.setattr(document_app_module.DocumentService, "get_by_kb_id", fake_get_by_kb_id)
+
+        err_code, _, _, _ = document_app_module._get_docs_with_request(
+            SimpleNamespace(args=_DummyArgs({"run_status": ""})),
+            "kb-1",
+        )
+
+        assert err_code == 0
+        assert captured["run_status"] == []
+
+    def test_run_status_query_param_filters_aggregated_filters(self, document_app_module, monkeypatch):
+        captured = {}
+
+        def fake_get_filter_by_kb_id(kb_id, keywords, run_status, types, suffix):
+            captured["run_status"] = run_status
+            return {}, 0
+
+        monkeypatch.setattr(document_app_module.DocumentService, "get_filter_by_kb_id", fake_get_filter_by_kb_id)
+
+        err_code, _, _, _ = document_app_module._get_doc_filters_with_request(
+            SimpleNamespace(args=_DummyArgs({"run_status": "RUNNING"})),
+            "kb-1",
+        )
+
+        assert err_code == 0
+        assert captured["run_status"] == ["1"]

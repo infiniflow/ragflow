@@ -361,10 +361,20 @@ class CodeExec(ToolBase, ABC):
             # Try using the new sandbox provider system first
             try:
                 from agent.sandbox.client import execute_code as sandbox_execute_code
+                from agent.sandbox.client import get_provider_info
+                from agent.sandbox.client import reload_provider
                 from agent.sandbox.providers.base import SandboxProviderConfigError
 
                 if self.check_if_canceled("CodeExec execution"):
                     return
+
+                reload_provider()
+                provider_info = get_provider_info()
+                provider_type = provider_info.get("provider_type") or "unknown"
+                logging.info(
+                    f"[CodeExec]: dispatching execution to sandbox provider '{provider_type}' "
+                    f"(language={language}, timeout={timeout_seconds}s)"
+                )
 
                 # Execute code using the provider system
                 result = sandbox_execute_code(code=code, language=language, timeout=timeout_seconds, arguments=arguments)
@@ -376,7 +386,7 @@ class CodeExec(ToolBase, ABC):
                 return self._process_execution_result(
                     result.stdout,
                     result.stderr,
-                    "Provider system",
+                    f"Provider system ({provider_type})",
                     artifacts,
                     execution_metadata=result.metadata,
                 )
@@ -388,10 +398,8 @@ class CodeExec(ToolBase, ABC):
                 # Provider modules are unavailable, fall back to legacy HTTP sandbox.
                 logging.info(f"[CodeExec]: Provider system not available, using HTTP fallback: {provider_error}")
             except RuntimeError as provider_error:
-                if not self._should_fallback_to_http(provider_error):
-                    self.set_output("_ERROR", f"Provider system execution failed: {provider_error}")
-                    return self.output()
-                logging.info(f"[CodeExec]: Provider system not available, using HTTP fallback: {provider_error}")
+                self.set_output("_ERROR", f"Provider system execution failed: {provider_error}")
+                return self.output()
 
             # Fallback to direct HTTP request
             code_b64 = self._encode_code(code)
@@ -501,15 +509,6 @@ class CodeExec(ToolBase, ABC):
         if metadata.get("result_present") is True:
             return metadata.get("result_value"), False
         return self._deserialize_stdout(stdout), True
-
-    @staticmethod
-    def _should_fallback_to_http(provider_error: RuntimeError) -> bool:
-        message = str(provider_error).lower()
-        fallback_markers = (
-            "no sandbox provider configured",
-            "sandbox provider type not configured",
-        )
-        return any(marker in message for marker in fallback_markers)
 
     @classmethod
     def _ensure_bucket_lifecycle(cls):

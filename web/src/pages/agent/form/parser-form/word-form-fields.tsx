@@ -1,9 +1,11 @@
-import { LlmModelType } from '@/constants/knowledge';
-import { useComposeLlmOptionsByModelTypes } from '@/hooks/use-llm-request';
+import {
+  ModelTreeSelectFormField,
+  ModelTypeMap,
+} from '@/components/model-tree-select';
 import { useWatch } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import {
   FlattenMediaToTextFormField,
-  LargeModelFormField,
   OutputFormatFormFieldProps,
   RemoveHeaderFooterFormField,
   RmdirFormField,
@@ -11,9 +13,7 @@ import {
 import { buildFieldNameWithPrefix } from './utils';
 
 export function WordFormFields({ prefix }: OutputFormatFormFieldProps) {
-  const modelOptions = useComposeLlmOptionsByModelTypes([
-    LlmModelType.Image2text,
-  ]);
+  const { t } = useTranslation();
   const flattenMediaToText = useWatch({
     name: buildFieldNameWithPrefix('flatten_media_to_text', prefix),
   });
@@ -24,10 +24,12 @@ export function WordFormFields({ prefix }: OutputFormatFormFieldProps) {
       <RemoveHeaderFooterFormField prefix={prefix} />
       <FlattenMediaToTextFormField prefix={prefix} />
       {!flattenMediaToText && (
-        <LargeModelFormField
-          prefix={prefix}
-          options={modelOptions}
-        ></LargeModelFormField>
+        <ModelTreeSelectFormField
+          name={buildFieldNameWithPrefix('vlm.llm_id', prefix)}
+          label={t('chat.model')}
+          modelTypes={ModelTypeMap.img2txt_id}
+          allowClear
+        />
       )}
     </>
   );

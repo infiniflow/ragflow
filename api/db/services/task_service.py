@@ -28,7 +28,7 @@ from api.db.db_models import Task, Document, Knowledgebase, Tenant
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from common.misc_utils import get_uuid
-from common.time_utils import current_timestamp
+from common.time_utils import current_timestamp, get_format_time
 from common.constants import StatusEnum, TaskStatus, MAXIMUM_PAGE_NUMBER, MAXIMUM_TASK_PAGE_NUMBER
 from deepdoc.parser.excel_parser import RAGFlowExcelParser
 from rag.utils.redis_conn import REDIS_CONN
@@ -138,6 +138,7 @@ class TaskService(CommonService):
         ).where(cls.model.id == docs[0]["id"]).execute()
 
         if docs[0]["retry_count"] >= 3:
+            DocumentService.update_by_id(docs[0]["doc_id"], {"progress": -1, "run": TaskStatus.FAIL.value, "update_time": current_timestamp(), "update_date": get_format_time()})
             return None
 
         return docs[0]
@@ -343,8 +344,15 @@ class TaskService(CommonService):
                         ((prog == -1) | (prog > cls.model.progress))))
                     ).execute()
 
-        process_duration = (datetime.now() - task.begin_at).total_seconds()
-        cls.model.update(process_duration=process_duration).where(cls.model.id == id).execute()
+        begin_at = task.begin_at
+        if begin_at is not None:
+            process_duration = (datetime.now() - begin_at).total_seconds()
+            cls.model.update(process_duration=process_duration).where(cls.model.id == id).execute()
+        if info.get("progress") == -1:
+            doc_info = {"progress": -1, "run": TaskStatus.FAIL.value, "update_time": current_timestamp(), "update_date": get_format_time()}
+            if info.get("progress_msg"):
+                doc_info["progress_msg"] = trim_header_by_lines((task.progress_msg or "") + "\n" + info["progress_msg"], TASK_MAX_LOG_LENGTH)
+            DocumentService.update_by_id(task.doc_id, doc_info)
 
     @classmethod
     @DB.connection_context()
@@ -388,14 +396,13 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
 
     if doc["type"] == FileType.PDF.value:
         file_bin = settings.STORAGE_IMPL.get(bucket, name)
-        do_layout = doc["parser_config"].get("layout_recognize", "DeepDOC")
         pages = PdfParser.total_page_number(doc["name"], file_bin)
         if pages is None:
             pages = 0
         page_size = doc["parser_config"].get("task_page_size") or 12
         if doc["parser_id"] == "paper":
             page_size = doc["parser_config"].get("task_page_size") or 22
-        if doc["parser_id"] in ["one", "knowledge_graph"] or do_layout != "DeepDOC" or doc["parser_config"].get("toc_extraction", False):
+        if doc["parser_id"] in ["one", "knowledge_graph"] or doc["parser_config"].get("toc_extraction", False):
             page_size = MAXIMUM_TASK_PAGE_NUMBER
         page_ranges = doc["parser_config"].get("pages") or [(1, MAXIMUM_PAGE_NUMBER)]
         for s, e in page_ranges:
@@ -418,6 +425,9 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
             parse_task_array.append(task)
     else:
         parse_task_array.append(new_task())
+
+    # Determine suffix based on parser_id (consistent with SAAS version line 444)
+    suffix = "common" if doc["parser_id"] != "resume" else "resume"
 
     chunking_config = DocumentService.get_chunking_config(doc["id"])
     for task in parse_task_array:
@@ -456,7 +466,7 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
     unfinished_task_array = [task for task in parse_task_array if task["progress"] < 1.0]
     for unfinished_task in unfinished_task_array:
         assert REDIS_CONN.queue_product(
-            settings.get_svr_queue_name(priority), message=unfinished_task
+            settings.get_svr_queue_name(priority, suffix), message=unfinished_task
         ), "Can't access Redis. Please check the Redis' status."
 
 
@@ -547,7 +557,7 @@ def queue_dataflow(tenant_id:str, flow_id:str, task_id:str, doc_id:str=CANVAS_DE
     task["file"] = file
 
     if not REDIS_CONN.queue_product(
-            settings.get_svr_queue_name(priority), message=task
+            settings.get_svr_queue_name(priority, "common"), message=task
     ):
         return False, "Can't access Redis. Please check the Redis' status."
 

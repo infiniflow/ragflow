@@ -513,43 +513,29 @@ class Dealer:
     def rerank_by_model(self, rerank_mdl, sres, query, tkweight=0.3,
                         vtweight=0.7, cfield="content_ltks",
                         rank_feature: dict | None = None):
-        print(f"[DEBUG rerank_by_model] query={query}, tkweight={tkweight}, vtweight={vtweight}")
         _, keywords = self.qryr.question(query)
-        print(f"[DEBUG rerank_by_model] keywords={keywords}")
 
         for i in sres.ids:
             if isinstance(sres.field[i].get("important_kwd", []), str):
                 sres.field[i]["important_kwd"] = [sres.field[i]["important_kwd"]]
         ins_tw = []
         for i in sres.ids:
+            #content_ltks = list(OrderedDict.fromkeys(sres.field[i][cfield].split()))
             content_ltks = sres.field[i][cfield].split()
             title_tks = [t for t in sres.field[i].get("title_tks", "").split() if t]
             important_kwd = sres.field[i].get("important_kwd", [])
             tks = content_ltks + title_tks + important_kwd
             ins_tw.append(tks)
-            print(f"[DEBUG rerank_by_model] chunk id={i}, content_ltks={len(content_ltks)}, title_tks={len(title_tks)}, important_kwd={len(important_kwd)}")
-            doc_text = remove_redundant_spaces(" ".join(tks))
-            if len(doc_text) > 100:
-                print(f"[DEBUG rerank_by_model] chunk id={i}, doc_text (first 100)={doc_text[:100]}...")
-            else:
-                print(f"[DEBUG rerank_by_model] chunk id={i}, doc_text={doc_text}")
 
         docs = [remove_redundant_spaces(" ".join(tks)) for tks in ins_tw]
-        print(f"[DEBUG rerank_by_model] docs sent to reranker: {len(docs)} docs")
-        for idx, doc in enumerate(docs[:2]):  # Print first 2
-            print(f"[DEBUG rerank_by_model] doc[{idx}] len={len(doc)}, full={doc}")
-            if len(doc) > 100:
-                print(f"[DEBUG rerank_by_model] doc[{idx}] (first 100)={doc[:100]}...")
-            else:
-                print(f"[DEBUG rerank_by_model] doc[{idx}]={doc}")
 
         tksim = self.qryr.token_similarity(keywords, ins_tw)
-        print(f"[DEBUG rerank_by_model] tksim={tksim}")
+        # rerank_mdl.similarity() returns scores normalized to [0, 1] for every
+        # provider (see RerankModel.Base.similarity), so the blend below stays
+        # on a single scale regardless of the configured reranker.
         vtsim, _ = rerank_mdl.similarity(query, docs)
-        print(f"[DEBUG rerank_by_model] vtsim from reranker={vtsim}")
         ## For rank feature(tag_fea) scores.
         rank_fea = self._rank_feature_scores(rank_feature, sres)
-        print(f"[DEBUG rerank_by_model] rank_fea={rank_fea}")
 
         return tkweight * np.array(tksim) + vtweight * vtsim + rank_fea, tksim, vtsim
 
@@ -558,6 +544,31 @@ class Dealer:
                                            ins_embd,
                                            rag_tokenizer.tokenize(ans).split(),
                                            rag_tokenizer.tokenize(inst).split())
+
+    @staticmethod
+    def _rerank_window(page_size: int, top: int = 0) -> int:
+        """Candidate-window size shared by retrieval's block fetch and slice.
+
+        ``retrieval`` reuses this value BOTH as the backend block size and as
+        the modulus for extracting a single page from a (re)ranked block::
+
+            req["page"] = global_offset // window   # which block to fetch
+            begin       = global_offset %  window   # where the page starts
+
+        For those two to agree the window MUST be an exact multiple of
+        ``page_size``; otherwise blocks and pages drift apart and deep
+        pagination silently drops results and returns short pages.
+
+        The window targets a provider-friendly pool of ~64 candidates, bounded
+        by ``top`` when given (i.e. when an external reranker is active), and is
+        always rounded UP to a whole number of pages to preserve the invariant.
+        """
+        if page_size <= 1:
+            return min(30, top) if top > 0 else 30
+        window = math.ceil(64 / page_size) * page_size
+        if top > 0:
+            window = min(window, math.ceil(top / page_size) * page_size)
+        return window
 
     async def retrieval(
             self,
@@ -575,17 +586,18 @@ class Dealer:
             rerank_mdl=None,
             highlight=False,
             rank_feature: dict | None = {PAGERANK_FLD: 10},
+            trace_id=None,
     ):
         ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
         if not question:
             return ranks
 
-        # Keep the historical windowing strategy by default, but when an external
-        # reranker is enabled cap candidate count by both top_k and provider-safe 64.
-        RERANK_LIMIT = math.ceil(64 / page_size) * page_size if page_size > 1 else 1
-        RERANK_LIMIT = max(30, RERANK_LIMIT)
-        if rerank_mdl and top > 0:
-            RERANK_LIMIT = min(RERANK_LIMIT, top, 64)
+        # Candidate window for block-based pagination. It MUST stay a multiple
+        # of page_size so the block fetched (global_offset // RERANK_LIMIT) and
+        # the in-block page slice (global_offset % RERANK_LIMIT) stay aligned;
+        # see _rerank_window. When an external reranker is active the pool is
+        # also bounded by top.
+        RERANK_LIMIT = self._rerank_window(page_size, top if rerank_mdl else 0)
         page = max(page, 1)
         global_offset = (page - 1) * page_size
         req = {
@@ -614,12 +626,24 @@ class Dealer:
             ranks["doc_aggs"] = []
             return ranks
 
+        term_similarity_weight = 1 - vector_similarity_weight
+        logging.debug(
+            "[Search] retrieval weights: trace_id=%s kb_count=%s similarity_threshold=%s "
+            "vector_similarity_weight=%s full_text_weight=%s rerank_enabled=%s",
+            trace_id,
+            len(kb_ids),
+            similarity_threshold,
+            vector_similarity_weight,
+            term_similarity_weight,
+            bool(rerank_mdl),
+        )
+
         if rerank_mdl and sres.total > 0:
             sim, tsim, vsim = self.rerank_by_model(
                 rerank_mdl,
                 sres,
                 question,
-                1 - vector_similarity_weight,
+                term_similarity_weight,
                 vector_similarity_weight,
                 rank_feature=rank_feature,
             )
@@ -636,7 +660,7 @@ class Dealer:
                 sim, tsim, vsim = self.rerank(
                     sres,
                     question,
-                    1 - vector_similarity_weight,
+                    term_similarity_weight,
                     vector_similarity_weight,
                     rank_feature=rank_feature,
                 )
@@ -650,7 +674,7 @@ class Dealer:
                     sres,
                     question,
                     knn_scores,
-                    1 - vector_similarity_weight,
+                    term_similarity_weight,
                     vector_similarity_weight,
                     rank_feature=rank_feature,
                 )
@@ -660,7 +684,8 @@ class Dealer:
             ranks["doc_aggs"] = []
             return ranks
 
-        sorted_idx = np.argsort(sim_np * -1)
+        # Use stable sort for deterministic ordering when scores are tied
+        sorted_idx = np.argsort(sim_np * -1, kind='stable')
 
         # When vector_similarity_weight is 0, similarity_threshold is not meaningful for term-only scores.
         post_threshold = 0.0 if vector_similarity_weight <= 0 else similarity_threshold

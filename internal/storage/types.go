@@ -17,15 +17,7 @@
 package storage
 
 import (
-	"errors"
 	"time"
-)
-
-var (
-	// ErrNotFound is returned when an object is not found
-	ErrNotFound = errors.New("object not found")
-	// ErrBucketNotFound is returned when a bucket is not found
-	ErrBucketNotFound = errors.New("bucket not found")
 )
 
 // StorageType represents the type of storage backend

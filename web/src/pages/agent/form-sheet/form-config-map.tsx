@@ -3,6 +3,7 @@ import AgentForm from '../form/agent-form';
 import ArXivForm from '../form/arxiv-form';
 import BeginForm from '../form/begin-form';
 import BingForm from '../form/bing-form';
+import BrowserForm from '../form/browser-use-form';
 import CategorizeForm from '../form/categorize-form';
 import CodeForm from '../form/code-form';
 import CrawlerForm from '../form/crawler-form';
@@ -18,6 +19,7 @@ import GoogleScholarForm from '../form/google-scholar-form';
 import InvokeForm from '../form/invoke-form';
 import IterationForm from '../form/iteration-form';
 import IterationStartForm from '../form/iteration-start-from';
+import KeenableForm from '../form/keenable-form';
 import ListOperationsForm from '../form/list-operations-form';
 import LoopForm from '../form/loop-form';
 import MessageForm from '../form/message-form';
@@ -69,6 +71,9 @@ export const FormConfigMap = {
   [Operator.DuckDuckGo]: {
     component: DuckDuckGoForm,
   },
+  [Operator.KeenableSearch]: {
+    component: KeenableForm,
+  },
   [Operator.Wikipedia]: {
     component: WikipediaForm,
   },
@@ -113,6 +118,9 @@ export const FormConfigMap = {
   },
   [Operator.DocGenerator]: {
     component: DocGeneratorForm,
+  },
+  [Operator.Browser]: {
+    component: BrowserForm,
   },
   [Operator.Note]: {
     component: () => <></>,

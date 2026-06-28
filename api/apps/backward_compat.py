@@ -21,7 +21,7 @@ RESTful API migration. Each deprecated route forwards to the corresponding
 new API implementation.
 
 Deprecated APIs and their replacements:
-- POST /api/v1/agents/{agent_id}/completions -> POST /api/v1/agents/chat/completion
+- POST /api/v1/agents/{agent_id}/completions -> POST /api/v1/agents/chat/completions
 - POST /api/v1/agents_openai/{agent_id}/chat/completions -> POST /api/v1/agents/chat/completions
 - POST /api/v1/chats/{chat_id}/completions -> POST /api/v1/chat/completions
 - POST /api/v1/chats_openai/{chat_id}/chat/completions -> POST /api/v1/openai/{chat_id}/chat/completions
@@ -34,11 +34,12 @@ Deprecated APIs and their replacements:
 - PUT /api/v1/chats/{chat_id}/sessions/{session_id} -> PATCH /api/v1/chats/{chat_id}/sessions/{session_id}
 - DELETE /api/v1/chats -> DELETE /api/v1/chats/{chat_id} (with body)
 - POST /api/v1/file/convert -> POST /api/v1/files/link-to-datasets
+- POST /v1/document/upload_info -> POST /api/v1/documents/upload
 - GET /api/v1/file/* -> GET /api/v1/files*
 - POST /api/v1/file/* -> POST /api/v1/files*
 - GET /api/v1/document/get/{doc_id} -> GET /api/v1/documents/{doc_id}/preview
-- GET /api/v1/document/download/{doc_id} -> GET /api/v1/documents/{doc_id}/download
-- GET /v1/document/download/{attachment_id} -> GET /api/v1/documents/{attachment_id}/download
+- GET /api/v1/document/download/{doc_id} -> GET /api/v1/agents/attachments/{doc_id}/download
+- GET /v1/document/download/{attachment_id} -> GET /api/v1/agents/attachments/{attachment_id}/download
 - GET /v1/system/healthz -> GET /api/v1/system/healthz
 - POST /api/v1/sessions/related_questions -> POST /api/v1/chat/recommandation
 - PUT (chunk update) -> PATCH (chunk update)
@@ -563,6 +564,25 @@ async def deprecated_file_upload_info():
     return await document_api.upload_info(tenant_id=tenant_id)
 
 
+@legacy_v1_manager.route("/document/upload_info", methods=["POST"])
+@login_required
+async def deprecated_legacy_document_upload_info():
+    """
+    Deprecated: Use POST /api/v1/documents/upload instead.
+
+    Old path: POST /v1/document/upload_info
+    New path: POST /api/v1/documents/upload
+    """
+    from api.apps import current_user
+
+    logging.warning(
+        "API endpoint /v1/document/upload_info is deprecated. "
+        "Please use POST /api/v1/documents/upload instead."
+    )
+    tenant_id = current_user.id
+    return await document_api.upload_info(tenant_id=tenant_id)
+
+
 # =============================================================================
 # Document APIs
 # =============================================================================
@@ -606,17 +626,17 @@ async def deprecated_document_get(doc_id):
 @login_required
 async def deprecated_document_download(doc_id):
     """
-    Deprecated: Use GET /api/v1/documents/{doc_id}/download instead.
+    Deprecated: Use GET /api/v1/agents/attachments/{attachment_id}/download instead.
 
     Old path: GET /api/v1/document/download/{doc_id}
-    New path: GET /api/v1/documents/{doc_id}/download
+    New path: GET /api/v1/agents/attachments/{doc_id}/download
     """
     logging.warning(
         "API endpoint /api/v1/document/download/%s is deprecated. "
-        "Please use /api/v1/documents/%s/download instead.",
+        "Please use /api/v1/agents/attachments/%s/download instead.",
         doc_id, doc_id,
     )
-    return await document_api.download_attachment(doc_id=doc_id)
+    return await agent_api.download_attachment(attachment_id=doc_id)
 
 
 @legacy_v1_manager.route("/document/download/<attachment_id>", methods=["GET"])
@@ -626,14 +646,14 @@ async def document_download_v1(attachment_id):
     Compatibility alias for document download under /v1.
 
     Old path: GET /v1/document/download/{attachment_id}
-    New path: GET /api/v1/documents/{attachment_id}/download
+    New path: GET /api/v1/agents/attachments/{attachment_id}/download
     """
     logging.warning(
         "API endpoint /v1/document/download/%s is deprecated. "
-        "Please use /api/v1/documents/%s/download instead.",
+        "Please use /api/v1/agents/attachments/%s/download instead.",
         attachment_id, attachment_id,
     )
-    return await document_api.download_attachment(attachment_id=attachment_id)
+    return await agent_api.download_attachment(attachment_id=attachment_id)
 
 # =============================================================================
 # Agent Chat API
