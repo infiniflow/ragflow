@@ -274,19 +274,62 @@ def test_header_variable_with_put(monkeypatch):
 
 
 @pytest.mark.p2
-def test_invoke_rejects_private_url(monkeypatch):
+def test_invoke_blocks_loopback_url_with_ssrf_guard(monkeypatch):
+    """Invoke must use the shared SSRF guard before requests.* (issue Invoke SSRF)."""
     module = _load_invoke_module(monkeypatch)
-    invoke = _make_invoke(module, url="http://127.0.0.1:22")
-    monkeypatch.setattr(
-        module,
-        "assert_url_is_safe",
-        MagicMock(side_effect=ValueError("URL resolves to a non-public address")),
-    )
-    # Coderabbit MAJOR #3486038793: _build_url() is now inside the retry
-    # try/except block, so the ValueError from assert_url_is_safe is caught
-    # and the message is stored in _ERROR via the standard error path.
+    invoke = _make_invoke(module, url="http://127.0.0.1:8123/api")
+    mock_get = MagicMock(return_value=SimpleNamespace(text="ok"))
+    monkeypatch.setattr(module.requests, "get", mock_get)
+    result = invoke._invoke()
+    mock_get.assert_not_called()
+    assert result == "Http request error: URL not valid"
+    assert invoke.output("_ERROR") == "URL not valid"
+
+
+@pytest.mark.p2
+def test_invoke_blocks_metadata_ip(monkeypatch):
+    module = _load_invoke_module(monkeypatch)
+    invoke = _make_invoke(module, url="http://169.254.169.254/latest/meta-data/")
+    mock_get = MagicMock(return_value=SimpleNamespace(text="should not run"))
+    monkeypatch.setattr(module.requests, "get", mock_get)
+    result = invoke._invoke()
+    mock_get.assert_not_called()
+    assert "URL not valid" in result
+    assert invoke.output("_ERROR") == "URL not valid"
+
+
+@pytest.mark.p2
+def test_invoke_url_without_scheme_gets_scheme_then_validated(monkeypatch):
+    """Bare hostnames are prefixed with http:// before SSRF validation."""
+    module = _load_invoke_module(monkeypatch)
+    invoke = _make_invoke(module, url="127.0.0.1:9380/")
+    mock_get = MagicMock(return_value=SimpleNamespace(text="should not run"))
+    monkeypatch.setattr(module.requests, "get", mock_get)
+    result = invoke._invoke()
+    mock_get.assert_not_called()
+    assert "URL not valid" in result
+
+
+@pytest.mark.p2
+def test_invoke_blocks_loopback_proxy(monkeypatch):
+    module = _load_invoke_module(monkeypatch)
+    invoke = _make_invoke(module, url="http://example.com", proxy="http://127.0.0.1:8080")
+    mock_get = MagicMock(return_value=SimpleNamespace(text="should not run"))
+    monkeypatch.setattr(module.requests, "get", mock_get)
+    result = invoke._invoke()
+    mock_get.assert_not_called()
+    assert "URL not valid" in result
+    assert invoke.output("_ERROR") == "URL not valid"
+
+
+@pytest.mark.p2
+def test_invoke_disables_redirect_following(monkeypatch):
+    module = _load_invoke_module(monkeypatch)
+    invoke = _make_invoke(module, url="http://example.com")
+    mock_get = MagicMock(return_value=SimpleNamespace(text="ok"))
+    monkeypatch.setattr(module.requests, "get", mock_get)
     invoke._invoke()
-    assert "non-public address" in invoke._param.outputs["_ERROR"]
+    assert mock_get.call_args[1]["allow_redirects"] is False
 
 
 @pytest.mark.p2

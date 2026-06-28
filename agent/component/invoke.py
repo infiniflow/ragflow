@@ -20,6 +20,7 @@ import re
 import time
 from abc import ABC
 from functools import partial
+from urllib.parse import urlparse
 
 import requests
 
@@ -190,8 +191,24 @@ class Invoke(ComponentBase, ABC):
 
         return {key: self._resolve_header_text(value, kwargs) if isinstance(value, str) else value for key, value in headers.items()}
 
+    @staticmethod
+    def _ssrf_log_target(url: str) -> str:
+        parsed = urlparse(url)
+        if not parsed.scheme or not parsed.hostname:
+            return "invalid-url"
+        return f"{parsed.scheme}://{parsed.hostname}"
+
+    def _normalize_proxy_url(self) -> str | None:
+        proxy = (self._param.proxy or "").strip()
+        if not re.sub(r"https?:?/?/?", "", proxy):
+            return None
+        if not proxy.startswith(("http://", "https://")):
+            proxy = "http://" + proxy
+        return proxy
+
     def _build_proxies(self) -> dict | None:
-        if not re.sub(r"https?:?/?/?", "", self._param.proxy):
+        proxy_url = self._normalize_proxy_url()
+        if not proxy_url:
             return None
         return {"http": self._param.proxy, "https": self._param.proxy}
 
@@ -231,6 +248,20 @@ class Invoke(ComponentBase, ABC):
         args = self._build_request_args(kwargs)
         headers = self._build_headers(kwargs)
         proxies = self._build_proxies()
+        proxy_hostname = proxy_ip = None
+
+        if proxies:
+            proxy_url = self._normalize_proxy_url()
+            try:
+                proxy_hostname, proxy_ip = assert_url_is_safe(proxy_url)
+            except ValueError as exc:
+                logging.warning(
+                    "Invoke SSRF guard blocked proxy=%s: %s",
+                    self._ssrf_log_target(proxy_url),
+                    exc,
+                )
+                self.set_output("_ERROR", "URL not valid")
+                return "Http request error: URL not valid"
 
         last_error = None
         for _ in range(self._param.max_retries + 1):
@@ -238,18 +269,26 @@ class Invoke(ComponentBase, ABC):
                 return
 
             try:
-                # Coderabbit MAJOR #3486038788: URL validation is now inside the
-                # retry/except block so SSRF rejections (ValueError from
-                # assert_url_is_safe) populate _ERROR via the standard error
-                # path instead of escaping _invoke().
                 url = self._build_url(kwargs)
                 if not self._pinned_hostname or not self._pinned_ip:
                     raise ValueError("Invoke URL was not validated before request.")
                 with pin_dns(self._pinned_hostname, self._pinned_ip):
-                    response = self._send_request(url, args, headers, proxies)
+                    if proxy_hostname and proxy_ip:
+                        with pin_dns(proxy_hostname, proxy_ip):
+                            response = self._send_request(url, args, headers, proxies)
+                    else:
+                        response = self._send_request(url, args, headers, proxies)
                 result = self._format_response(response)
                 self.set_output("result", result)
                 return result
+            except ValueError as e:
+                logging.warning(
+                    "Invoke SSRF guard blocked url=%s: %s",
+                    self._ssrf_log_target(locals().get("url", self._param.url)),
+                    e,
+                )
+                self.set_output("_ERROR", "URL not valid")
+                return "Http request error: URL not valid"
             except Exception as e:
                 if self.check_if_canceled("Invoke processing"):
                     return
