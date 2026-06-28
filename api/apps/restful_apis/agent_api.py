@@ -1545,7 +1545,8 @@ async def agent_chat_completion(tenant_id, agent_id=None):
                             "trace": [copy.deepcopy(data)],
                         }
                     )
-            final_ans = ans
+            if ans.get("event") == "message_end":
+                final_ans = ans
         except Exception as exc:
             return get_result(data=f"**ERROR**: {str(exc)}")
 

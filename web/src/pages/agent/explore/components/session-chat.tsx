@@ -10,13 +10,12 @@ import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { IAgentLogResponse } from '@/interfaces/database/agent';
 import { IMessage } from '@/interfaces/database/chat';
 import DebugContent from '@/pages/agent/debug-content';
-import { useAwaitCompentData } from '@/pages/agent/hooks/use-chat-logic';
+import { useAwaitComponentData } from '@/pages/agent/hooks/use-chat-logic';
 import { BeginQuery } from '@/pages/agent/interface';
 import { ParameterDialog } from '@/pages/agent/share/parameter-dialog';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams } from 'react-router';
 import { useExploreUrlParams } from '../hooks/use-explore-url-params';
 import { useSendSessionMessage } from '../hooks/use-send-session-message';
 
@@ -29,7 +28,6 @@ export function SessionChat({ session }: SessionChatProps) {
   const { data: userInfo } = useFetchUserInfo();
   const { sessionId, isNew } = useExploreUrlParams();
   const hasLocalMessageRef = useRef(false);
-  const { id: canvasId } = useParams();
 
   const sessionLoading = false;
 
@@ -54,10 +52,9 @@ export function SessionChat({ session }: SessionChatProps) {
     setDerivedMessages,
   } = useSendSessionMessage();
 
-  const { buildInputList, handleOk, isWaitting } = useAwaitCompentData({
+  const { buildInputList, handleOk, isWaiting } = useAwaitComponentData({
     derivedMessages,
     sendFormMessage,
-    canvasId: canvasId as string,
   });
   const hasActiveSession = Boolean(
     sessionId || isNew || hasLocalMessageRef.current,
@@ -134,49 +131,58 @@ export function SessionChat({ session }: SessionChatProps) {
               </div>
             ) : (
               <div className="w-full pr-5">
-                {derivedMessages.map((message, i) => (
-                  <MessageItem
-                    loading={
-                      message.role === MessageType.Assistant &&
-                      sendLoading &&
-                      derivedMessages.length - 1 === i
-                    }
-                    key={buildMessageUuidWithRole(message)}
-                    item={message}
-                    nickname={userInfo.nickname}
-                    avatar={userInfo.avatar}
-                    avatarDialog={canvasInfo?.avatar || ''}
-                    reference={findReferenceByMessageId(message.id)}
-                    clickDocumentButton={clickDocumentButton}
-                    index={i}
-                    showLikeButton={false}
-                    sendLoading={sendLoading}
-                    showLog={false}
-                  >
-                    {message.role === MessageType.Assistant &&
-                      derivedMessages.length - 1 === i && (
-                        <DebugContent
-                          parameters={buildInputList(message)}
-                          message={message}
-                          ok={handleOk(message)}
-                          isNext={false}
-                          btnText={'Submit'}
-                        ></DebugContent>
-                      )}
-                    {message.role === MessageType.Assistant &&
-                      derivedMessages.length - 1 !== i && (
-                        <div>
-                          <MarkdownContent
-                            content={message?.data?.tips}
-                            loading={false}
-                          ></MarkdownContent>
+                {derivedMessages.map((message, i) => {
+                  const inputList = buildInputList(message);
+                  const hasUserFillUpInputs =
+                    message.role === MessageType.Assistant &&
+                    inputList.length > 0;
+
+                  return (
+                    <MessageItem
+                      loading={
+                        message.role === MessageType.Assistant &&
+                        sendLoading &&
+                        derivedMessages.length - 1 === i
+                      }
+                      key={buildMessageUuidWithRole(message)}
+                      item={message}
+                      nickname={userInfo.nickname}
+                      avatar={userInfo.avatar}
+                      avatarDialog={canvasInfo?.avatar || ''}
+                      reference={findReferenceByMessageId(message.id)}
+                      clickDocumentButton={clickDocumentButton}
+                      index={i}
+                      showLikeButton={false}
+                      sendLoading={sendLoading}
+                      showLog={false}
+                    >
+                      {hasUserFillUpInputs &&
+                        derivedMessages.length - 1 === i && (
+                          <DebugContent
+                            parameters={inputList}
+                            message={message}
+                            ok={handleOk(message)}
+                            isNext={false}
+                            btnText={t('common.submit')}
+                          ></DebugContent>
+                        )}
+                      {hasUserFillUpInputs &&
+                        derivedMessages.length - 1 !== i && (
                           <div>
-                            {buildInputList(message)?.map((item) => item.value)}
+                            <MarkdownContent
+                              content={message?.data?.tips}
+                              loading={false}
+                            ></MarkdownContent>
+                            <div>
+                              {inputList.map((item) => (
+                                <div key={item.key}>{item.value}</div>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      )}
-                  </MessageItem>
-                ))}
+                        )}
+                    </MessageItem>
+                  );
+                })}
               </div>
             )}
             <div ref={scrollRef} />
@@ -186,9 +192,9 @@ export function SessionChat({ session }: SessionChatProps) {
           <NextMessageInput
             value={value}
             sendLoading={sendLoading}
-            disabled={isWaitting}
-            sendDisabled={sendLoading || isWaitting}
-            isUploading={isUploading || isWaitting}
+            disabled={isWaiting}
+            sendDisabled={sendLoading || isWaiting}
+            isUploading={isUploading || isWaiting}
             onPressEnter={handleSessionPressEnter}
             onInputChange={handleInputChange}
             stopOutputMessage={stopOutputMessage}
