@@ -27,6 +27,7 @@ from quart import Response, request
 
 from api.apps import current_user, login_required
 from api.apps.restful_apis._generation_params import merge_generation_config, pop_generation_config
+from api.apps.restful_apis._validators import validate_chat_config, validate_name
 from api.db.joint_services.tenant_model_service import (
     get_tenant_default_model_by_type, get_model_config_from_provider_instance, get_api_key, split_model_name
 )
@@ -110,7 +111,6 @@ _DEFAULT_DIRECT_CHAT_PROMPT_CONFIG = {
     "tts": False,
     "refine_multiturn": True,
 }
-_DEFAULT_RERANK_MODELS = {"BAAI/bge-reranker-v2-m3", "maidalun1020/bce-reranker-base_v1"}
 _READONLY_FIELDS = {"id", "tenant_id", "created_by", "create_time", "create_date", "update_time", "update_date"}
 _PERSISTED_FIELDS = set(DialogService.model._meta.fields)
 
@@ -139,19 +139,6 @@ def _has_knowledge_placeholder(prompt_config):
     return "{knowledge}" in (prompt_config or {}).get("system", "")
 
 
-def _validate_name(name, *, required=True):
-    if name is None:
-        if required:
-            return None, "`name` is required."
-        return None, None
-    if not isinstance(name, str):
-        return None, "Chat name must be a string."
-    name = name.strip()
-    if not name:
-        return None, "`name` is required." if required else "`name` cannot be empty."
-    if len(name.encode("utf-8")) > 255:
-        return None, f"Chat name length is {len(name.encode('utf-8'))} which is larger than 255."
-    return name, None
 
 
 def _build_session_response(conv: dict) -> dict:
@@ -268,83 +255,6 @@ def _normalize_completion_messages(req):
     return (messages, msg), None
 
 
-async def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
-    if not llm_id:
-        return None
-
-    conf_model_type = (llm_setting or {}).get("model_type")
-    if isinstance(conf_model_type, str):
-        model_type = conf_model_type if conf_model_type in {"chat", "image2text"} else "chat"
-    elif isinstance(conf_model_type, list):
-        model_type = "image2text" if "image2text" in conf_model_type else "chat"
-    else:
-        model_type = "chat"
-    try:
-        await thread_pool_exec(
-            get_model_config_from_provider_instance,
-            tenant_id=tenant_id,
-            model_name=llm_id,
-            model_type=model_type,
-        )
-    except Exception as e:
-        logging.error(f"Fail to get model config for {llm_id}: {e}")
-        return f"`llm_id` {llm_id} doesn't exist"
-
-    return None
-
-async def _validate_rerank_id(rerank_id, tenant_id):
-    if not rerank_id:
-        return None
-    parts = rerank_id.split('@')
-    llm_name = parts[0]
-    if llm_name in _DEFAULT_RERANK_MODELS:
-        return None
-    try:
-        await thread_pool_exec(
-            get_model_config_from_provider_instance,
-            tenant_id=tenant_id,
-            model_name=rerank_id,
-            model_type="rerank",
-        )
-    except Exception as e:
-        logging.error(f"Fail to get model config for {rerank_id}: {e}")
-        return f"`rerank_id` {rerank_id} doesn't exist"
-    return None
-
-
-# def _validate_prompt_config(prompt_config):
-#     for parameter in prompt_config.get("parameters", []):
-#         if parameter.get("optional"):
-#             continue
-#         if prompt_config.get("system", "").find("{%s}" % parameter["key"]) < 0:
-#             return f"Parameter '{parameter['key']}' is not used"
-#     return None
-
-
-async def _validate_dataset_ids(dataset_ids, tenant_id):
-    if dataset_ids is None:
-        return []
-    if not isinstance(dataset_ids, list):
-        return "`dataset_ids` should be a list."
-
-    normalized_ids = [dataset_id for dataset_id in dataset_ids if dataset_id]
-    kbs = []
-    for dataset_id in normalized_ids:
-        if not await thread_pool_exec(KnowledgebaseService.accessible, kb_id=dataset_id, user_id=tenant_id):
-            return f"You don't own the dataset {dataset_id}"
-        matches = await thread_pool_exec(KnowledgebaseService.query, id=dataset_id)
-        if not matches:
-            return f"You don't own the dataset {dataset_id}"
-        kb = matches[0]
-        if kb.chunk_num == 0:
-            return f"The dataset {dataset_id} doesn't own parsed file"
-        kbs.append(kb)
-
-    embd_ids = [split_model_name(kb.embd_id)[0] for kb in kbs]
-    if len(set(embd_ids)) > 1:
-        return f'Datasets use different embedding models: {[kb.embd_id for kb in kbs]}'
-
-    return normalized_ids
 
 
 def _apply_prompt_defaults(req):
@@ -372,27 +282,14 @@ async def create():
             return get_data_error_result(message="`tenant_id` must not be provided.")
 
         # Validate name
-        name, err = _validate_name(req.get("name"), required=True)
+        name, err = validate_name(req.get("name"), required=True)
         if err:
             return get_data_error_result(message=err)
         req["name"] = name
 
-        if "dataset_ids" in req:
-            kb_ids = await _validate_dataset_ids(req.get("dataset_ids"), current_user.id)
-            if isinstance(kb_ids, str):
-                return get_data_error_result(message=kb_ids)
-            req["kb_ids"] = kb_ids
-            req.pop("dataset_ids", None)
-
-        if "llm_id" in req:
-            err = await _validate_llm_id(req.get("llm_id"), current_user.id, req.get("llm_setting"))
-            if err:
-                return get_data_error_result(message=err)
-
-        if "rerank_id" in req:
-            err = await _validate_rerank_id(req.get("rerank_id"), current_user.id)
-            if err:
-                return get_data_error_result(message=err)
+        req, err = await validate_chat_config(req, current_user.id)
+        if err:
+            return get_data_error_result(message=err)
 
         if "prompt_config" in req:
             if not isinstance(req["prompt_config"], dict):
@@ -531,41 +428,19 @@ async def update_chat(chat_id):
             return get_data_error_result(message="`tenant_id` must not be provided.")
 
         if "name" in req:
-            name, err = _validate_name(req.get("name"), required=True)
+            name, err = validate_name(req.get("name"), required=True)
             if err:
                 return get_data_error_result(message=err)
             req["name"] = name
 
-        if "dataset_ids" in req:
-            kb_ids = await _validate_dataset_ids(req.get("dataset_ids"), current_user.id)
-            if isinstance(kb_ids, str):
-                return get_data_error_result(message=kb_ids)
-            req["kb_ids"] = kb_ids
-            req.pop("dataset_ids", None)
-
-        if "llm_id" in req:
-            err = await _validate_llm_id(req.get("llm_id"), current_user.id, req.get("llm_setting"))
-            if err:
-                return get_data_error_result(message=err)
-
-        if "rerank_id" in req:
-            err = await _validate_rerank_id(req.get("rerank_id"), current_user.id)
-            if err:
-                return get_data_error_result(message=err)
+        req, err = await validate_chat_config(req, current_user.id)
+        if err:
+            return get_data_error_result(message=err)
 
         if "prompt_config" in req:
             if not isinstance(req["prompt_config"], dict):
                 return get_data_error_result(message="`prompt_config` should be an object.")
-            # err = _validate_prompt_config(req["prompt_config"])
-            # if err:
-            #     return get_data_error_result(message=err)
 
-        # prompt_config = req.get("prompt_config", {})
-        # if not prompt_config:
-        #     prompt_config = current_chat.get("prompt_config", {})
-        # kb_ids = req.get("kb_ids", current_chat.get("kb_ids", []))
-        # if not kb_ids and not prompt_config.get("tavily_api_key") and _has_knowledge_placeholder(prompt_config):
-        #     return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no dataset / Tavily used here.")
         req = {field: value for field, value in req.items() if field in _PERSISTED_FIELDS}
         for field in _READONLY_FIELDS:
             req.pop(field, None)
@@ -612,28 +487,15 @@ async def patch_chat(chat_id):
         current_chat = current_chat.to_dict()
 
         if "name" in req:
-            name, err = _validate_name(req.get("name"), required=False)
+            name, err = validate_name(req.get("name"), required=False)
             if err:
                 return get_data_error_result(message=err)
             if name is not None:
                 req["name"] = name
 
-        if "dataset_ids" in req:
-            kb_ids = await _validate_dataset_ids(req.get("dataset_ids"), current_user.id)
-            if isinstance(kb_ids, str):
-                return get_data_error_result(message=kb_ids)
-            req["kb_ids"] = kb_ids
-            req.pop("dataset_ids", None)
-
-        if "llm_id" in req:
-            err = await _validate_llm_id(req.get("llm_id"), current_user.id, req.get("llm_setting"))
-            if err:
-                return get_data_error_result(message=err)
-
-        if "rerank_id" in req:
-            err = await _validate_rerank_id(req.get("rerank_id"), current_user.id)
-            if err:
-                return get_data_error_result(message=err)
+        req, err = await validate_chat_config(req, current_user.id)
+        if err:
+            return get_data_error_result(message=err)
 
         if "prompt_config" in req:
             if not isinstance(req["prompt_config"], dict):

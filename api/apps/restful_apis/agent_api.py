@@ -20,7 +20,6 @@ import copy
 import hashlib
 import hmac
 import inspect
-import ipaddress
 import json
 import logging
 import time
@@ -32,6 +31,7 @@ import jwt
 from quart import Response, jsonify, request, make_response
 
 from api.apps import current_user, login_required
+from api.apps.restful_apis._security import validate_webhook_security
 from api.apps.services.canvas_replica_service import CanvasReplicaService
 from api.db import CanvasCategory
 from api.db.db_models import Task
@@ -1603,217 +1603,9 @@ async def webhook(agent_id: str):
         ),RetCode.BAD_REQUEST
 
     # 6. Validate webhook security
-    async def validate_webhook_security(security_cfg: dict):
-        """Validate webhook security rules based on security configuration."""
-
-        if not security_cfg:
-            return  # No security config → allowed by default
-
-        # 1. Validate max body size
-        await _validate_max_body_size(security_cfg)
-
-        # 2. Validate IP whitelist
-        _validate_ip_whitelist(security_cfg)
-
-        # # 3. Validate rate limiting
-        _validate_rate_limit(security_cfg)
-
-        # 4. Validate authentication
-        auth_type = security_cfg.get("auth_type", "none")
-
-        if auth_type == "none":
-            return
-
-        if auth_type == "token":
-            _validate_token_auth(security_cfg)
-
-        elif auth_type == "basic":
-            _validate_basic_auth(security_cfg)
-
-        elif auth_type == "jwt":
-            _validate_jwt_auth(security_cfg)
-
-        else:
-            raise Exception(f"Unsupported auth_type: {auth_type}")
-
-    async def _validate_max_body_size(security_cfg):
-        """Check request size does not exceed max_body_size."""
-        max_size = security_cfg.get("max_body_size")
-        if not max_size:
-            return
-
-        # Convert "10MB" → bytes
-        units = {"kb": 1024, "mb": 1024**2}
-        size_str = max_size.lower()
-
-        for suffix, factor in units.items():
-            if size_str.endswith(suffix):
-                limit = int(size_str.replace(suffix, "")) * factor
-                break
-        else:
-            raise Exception("Invalid max_body_size format")
-        MAX_LIMIT = 10 * 1024 * 1024  # 10MB
-        if limit > MAX_LIMIT:
-            raise Exception("max_body_size exceeds maximum allowed size (10MB)")
-
-        content_length = request.content_length or 0
-        if content_length > limit:
-            raise Exception(f"Request body too large: {content_length} > {limit}")
-
-    def _validate_ip_whitelist(security_cfg):
-        """Allow only IPs listed in ip_whitelist."""
-        whitelist = security_cfg.get("ip_whitelist", [])
-        if not whitelist:
-            return
-
-        client_ip = request.remote_addr
-
-
-        for rule in whitelist:
-            if "/" in rule:
-                # CIDR notation
-                if ipaddress.ip_address(client_ip) in ipaddress.ip_network(rule, strict=False):
-                    return
-            else:
-                # Single IP
-                if client_ip == rule:
-                    return
-
-        raise Exception(f"IP {client_ip} is not allowed by whitelist")
-
-    def _validate_rate_limit(security_cfg):
-        """Simple in-memory rate limiting."""
-        rl = security_cfg.get("rate_limit")
-        if not rl:
-            return
-
-        limit = int(rl.get("limit", 60))
-        if limit <= 0:
-            raise Exception("rate_limit.limit must be > 0")
-        per = rl.get("per", "minute")
-
-        window = {
-            "second": 1,
-            "minute": 60,
-            "hour": 3600,
-            "day": 86400,
-        }.get(per)
-
-        if not window:
-            raise Exception(f"Invalid rate_limit.per: {per}")
-
-        capacity = limit
-        rate = limit / window
-        cost = 1
-
-        key = f"rl:tb:{agent_id}"
-        now = time.time()
-
-        try:
-            from rag.utils.redis_conn import REDIS_CONN
-
-            res = REDIS_CONN.lua_token_bucket(
-                keys=[key],
-                args=[capacity, rate, now, cost],
-                client=REDIS_CONN.REDIS,
-            )
-
-            allowed = int(res[0])
-            if allowed != 1:
-                raise Exception("Too many requests (rate limit exceeded)")
-
-        except Exception as e:
-            raise Exception(f"Rate limit error: {e}")
-
-    def _validate_token_auth(security_cfg):
-        """Validate header-based token authentication."""
-        token_cfg = security_cfg.get("token",{})
-        header = token_cfg.get("token_header")
-        token_value = token_cfg.get("token_value")
-
-        provided = request.headers.get(header)
-        if provided != token_value:
-            raise Exception("Invalid token authentication")
-
-    def _validate_basic_auth(security_cfg):
-        """Validate HTTP Basic Auth credentials."""
-        auth_cfg = security_cfg.get("basic_auth", {})
-        username = auth_cfg.get("username")
-        password = auth_cfg.get("password")
-
-        auth = request.authorization
-        if not auth or auth.username != username or auth.password != password:
-            raise Exception("Invalid Basic Auth credentials")
-
-    def _validate_jwt_auth(security_cfg):
-        """Validate JWT token in Authorization header."""
-        jwt_cfg = security_cfg.get("jwt", {})
-        secret = jwt_cfg.get("secret")
-        if not secret:
-            raise Exception("JWT secret not configured")
-
-        auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
-            raise Exception("Missing Bearer token")
-
-        token = auth_header[len("Bearer "):].strip()
-        if not token:
-            raise Exception("Empty Bearer token")
-
-        alg = (jwt_cfg.get("algorithm") or "HS256").upper()
-
-        decode_kwargs = {
-            "key": secret,
-            "algorithms": [alg],
-        }
-        options = {}
-        if jwt_cfg.get("audience"):
-            decode_kwargs["audience"] = jwt_cfg["audience"]
-            options["verify_aud"] = True
-        else:
-            options["verify_aud"] = False
-
-        if jwt_cfg.get("issuer"):
-            decode_kwargs["issuer"] = jwt_cfg["issuer"]
-            options["verify_iss"] = True
-        else:
-            options["verify_iss"] = False
-        try:
-            decoded = jwt.decode(
-                token,
-                options=options,
-                **decode_kwargs,
-            )
-        except Exception as e:
-            raise Exception(f"Invalid JWT: {str(e)}")
-
-        raw_required_claims = jwt_cfg.get("required_claims", [])
-        if isinstance(raw_required_claims, str):
-            required_claims = [raw_required_claims]
-        elif isinstance(raw_required_claims, (list, tuple, set)):
-            required_claims = list(raw_required_claims)
-        else:
-            required_claims = []
-
-        required_claims = [
-            c for c in required_claims
-            if isinstance(c, str) and c.strip()
-        ]
-
-        RESERVED_CLAIMS = {"exp", "sub", "aud", "iss", "nbf", "iat"}
-        for claim in required_claims:
-            if claim in RESERVED_CLAIMS:
-                raise Exception(f"Reserved JWT claim cannot be required: {claim}")
-
-        for claim in required_claims:
-            if claim not in decoded:
-                raise Exception(f"Missing JWT claim: {claim}")
-
-        return decoded
-
     try:
-        security_config=webhook_cfg.get("security", {})
-        await validate_webhook_security(security_config)
+        security_config = webhook_cfg.get("security", {})
+        await validate_webhook_security(security_config, agent_id)
     except Exception as e:
         return get_data_error_result(code=RetCode.BAD_REQUEST,message=str(e)),RetCode.BAD_REQUEST
     if not isinstance(cvs.dsl, str):
