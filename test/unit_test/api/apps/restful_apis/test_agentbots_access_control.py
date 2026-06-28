@@ -65,8 +65,8 @@ def _load_bot_api(monkeypatch, *, accessible, calls):
         calls["completion"] = True
 
         async def _gen():
-            if False:
-                yield ""
+            yield 'data: {"event":"message","data":{"content":"ok"}}\n\n'
+            yield 'data: {"event":"message_end","data":{"content":"ok"}}\n\n'
         return _gen()
 
     _stub(monkeypatch, "quart", Response=lambda *a, **k: SimpleNamespace(headers=SimpleNamespace(add_header=lambda *aa, **kk: None)), request=SimpleNamespace())
@@ -83,7 +83,12 @@ def _load_bot_api(monkeypatch, *, accessible, calls):
     _stub(monkeypatch, "api.db.services.llm_service", LLMBundle=SimpleNamespace())
     _stub(monkeypatch, "common.metadata_utils", apply_meta_data_filter=lambda *_a, **_k: None)
     _stub(monkeypatch, "api.db.services.search_service", SearchService=SimpleNamespace())
-    _stub(monkeypatch, "api.db.services.user_service", UserTenantService=SimpleNamespace())
+    _stub(
+        monkeypatch,
+        "api.db.services.user_service",
+        TenantService=SimpleNamespace(),
+        UserTenantService=SimpleNamespace(),
+    )
     _stub(monkeypatch, "api.db.joint_services.tenant_model_service", get_tenant_default_model_by_type=lambda *_a, **_k: None, get_model_config_from_provider_instance=lambda *_a, **_k: None)
     _stub(monkeypatch, "common.misc_utils", get_uuid=lambda: "uuid", thread_pool_exec=_passthrough_thread_pool_exec)
     _stub(
@@ -118,7 +123,7 @@ def _load_bot_api(monkeypatch, *, accessible, calls):
 
 
 async def _async_empty_json():
-    return {}
+    return {"stream": False}
 
 
 @pytest.mark.p1
