@@ -1510,7 +1510,7 @@ def test_documents_download_requires_auth_and_invalid_id_contract(rest_client, c
     assert invalid_dataset_res.status_code == 200
     invalid_dataset_payload = invalid_dataset_res.json()
     assert invalid_dataset_payload["code"] == 102, invalid_dataset_payload
-    assert f"The dataset not own the document {document_id}." in invalid_dataset_payload["message"], invalid_dataset_payload
+    assert invalid_dataset_payload["message"] == "Document not found!", invalid_dataset_payload
 
 
 @pytest.mark.p2
