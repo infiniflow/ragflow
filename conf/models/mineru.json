@@ -7,7 +7,7 @@
     "doc_parse": "v4/extract/task",
     "tasks": ""
   },
-  "class": "mineru",
+  "class": "mineru.net",
   "models": [
     {
       "name": "vlm",

@@ -243,6 +243,20 @@ func (dao *FileDAO) ListAllFilesByParentID(parentID string) ([]*entity.File, err
 	return files, err
 }
 
+// ListNonFolderByParentID lists non-folder files directly under a parent folder.
+func (dao *FileDAO) ListNonFolderByParentID(parentID string) ([]*entity.File, error) {
+	var files []*entity.File
+	err := DB.Where("parent_id = ? AND id != ? AND type != ?", parentID, parentID, "folder").Find(&files).Error
+	return files, err
+}
+
+// ListFolderByParentID lists sub-folders directly under a parent folder.
+func (dao *FileDAO) ListFolderByParentID(parentID string) ([]*entity.File, error) {
+	var files []*entity.File
+	err := DB.Where("parent_id = ? AND type = ?", parentID, "folder").Find(&files).Error
+	return files, err
+}
+
 // GetByParentIDAndName gets file by parent folder ID and name
 func (dao *FileDAO) GetByParentIDAndName(parentID, name string) (*entity.File, error) {
 	var file entity.File

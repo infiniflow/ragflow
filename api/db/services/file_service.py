@@ -164,12 +164,12 @@ class FileService(CommonService):
         #     result_ids: List to store results
         # Returns:
         #     List of file IDs
-        subfolders = cls.model.select().where(cls.model.parent_id == folder_id)
-        if subfolders.exists():
-            for subfolder in subfolders:
-                cls.get_all_innermost_file_ids(subfolder.id, result_ids)
-        else:
-            result_ids.append(folder_id)
+        subfiles = cls.model.select().where((cls.model.parent_id == folder_id) & (cls.model.id != folder_id))
+        for subfile in subfiles:
+            if subfile.type == FileType.FOLDER.value:
+                cls.get_all_innermost_file_ids(subfile.id, result_ids)
+            else:
+                result_ids.append(subfile.id)
         return result_ids
 
     @classmethod

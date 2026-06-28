@@ -1,7 +1,9 @@
 {
   "name": "Gitee",
   "url": {
-    "default": "https://api.moark.com/v1"
+    "default": "https://api.moark.ai/v1",
+    "china": "https://api.moark.com/v1",
+    "deprecated": "https://ai.gitee.com/v1"
   },
   "url_suffix": {
     "chat": "chat/completions",
@@ -67,6 +69,12 @@
       "name": "PaddleOCR-VL-1.5",
       "model_types": [
         "ocr"
+      ]
+    },
+    {
+      "name": "jina-clip-v2",
+      "model_types": [
+        "embedding"
       ]
     },
     {

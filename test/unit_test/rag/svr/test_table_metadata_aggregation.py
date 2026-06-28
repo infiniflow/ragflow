@@ -14,11 +14,11 @@
 #  limitations under the License.
 #
 
-"""Unit tests for aggregate_table_manual_doc_metadata."""
+"""Unit tests for aggregate_table_doc_metadata."""
 
 import pytest
 
-from rag.utils.table_es_metadata import aggregate_table_manual_doc_metadata, merge_table_parser_config_from_kb
+from rag.utils.table_es_metadata import aggregate_table_doc_metadata, merge_table_parser_config_from_kb
 
 
 @pytest.fixture
@@ -73,30 +73,64 @@ class TestAggregateTableManualDocMetadata:
                 "category_tks": "y",
             },
         ]
-        out = aggregate_table_manual_doc_metadata(chunks, task)
+        out = aggregate_table_doc_metadata(chunks, task)
         assert out["country"] == ["Brazil", "Turkey"]
         assert out["category"] == ["Economy", "Disaster"]
 
-    def test_aggregate_auto_mode_returns_empty(self, es_engine):
+    def test_aggregate_auto_mode_returns_data(self, es_engine):
         task = {
             "parser_id": "table",
             "parser_config": {},
             "kb_parser_config": {
                 "table_column_mode": "auto",
-                "table_column_roles": {"country": "metadata"},
+                "table_column_names": ["country"],
+                "field_map": {"country_tks": "country"},
             },
         }
-        assert aggregate_table_manual_doc_metadata([{"country_tks": "x"}], task) == {}
+        chunks = [{"country_raw": "Brazil", "country_tks": "x"}]
+        out = aggregate_table_doc_metadata(chunks, task)
+        assert out == {"country": ["Brazil"]}
 
-    def test_aggregate_no_mode_returns_empty(self, es_engine):
+    def test_aggregate_auto_mode_all_columns_both(self, es_engine):
         task = {
             "parser_id": "table",
             "parser_config": {},
             "kb_parser_config": {
-                "table_column_roles": {"country": "metadata"},
+                "table_column_mode": "auto",
+                "table_column_names": ["country", "category"],
+                "field_map": {"country_tks": "country", "category_tks": "category"},
             },
         }
-        assert aggregate_table_manual_doc_metadata([{}], task) == {}
+        chunks = [
+            {"country_raw": "Brazil", "country_tks": "x", "category_raw": "Economy", "category_tks": "y"},
+            {"country_raw": "Turkey", "country_tks": "x", "category_raw": "Disaster", "category_tks": "y"},
+        ]
+        out = aggregate_table_doc_metadata(chunks, task)
+        assert out["country"] == ["Brazil", "Turkey"]
+        assert out["category"] == ["Economy", "Disaster"]
+
+    def test_aggregate_no_mode_defaults_to_auto(self, es_engine):
+        """When table_column_mode is missing, it defaults to 'auto'."""
+        task = {
+            "parser_id": "table",
+            "parser_config": {},
+            "kb_parser_config": {
+                "table_column_names": ["country"],
+                "field_map": {"country_tks": "country"},
+            },
+        }
+        chunks = [{"country_raw": "Brazil", "country_tks": "x"}]
+        out = aggregate_table_doc_metadata(chunks, task)
+        assert out == {"country": ["Brazil"]}
+
+    def test_aggregate_no_mode_no_columns_returns_empty(self, es_engine):
+        """No mode and no column names/roles -> empty (nothing to aggregate)."""
+        task = {
+            "parser_id": "table",
+            "parser_config": {},
+            "kb_parser_config": {},
+        }
+        assert aggregate_table_doc_metadata([{}], task) == {}
 
     def test_aggregate_no_metadata_columns(self, es_engine):
         task = {
@@ -108,14 +142,14 @@ class TestAggregateTableManualDocMetadata:
                 "table_column_names": ["country"],
             },
         }
-        assert aggregate_table_manual_doc_metadata([{"country_tks": "x"}], task) == {}
+        assert aggregate_table_doc_metadata([{"country_tks": "x"}], task) == {}
 
     def test_aggregate_prefers_raw_over_tks(self, es_engine):
         task = _table_task()
         task["kb_parser_config"]["table_column_roles"] = {"country": "metadata"}
         task["kb_parser_config"]["table_column_names"] = ["country"]
         chunks = [{"country_raw": "Brazil", "country_tks": ["brazil"]}]
-        out = aggregate_table_manual_doc_metadata(chunks, task)
+        out = aggregate_table_doc_metadata(chunks, task)
         assert out == {"country": ["Brazil"]}
 
     def test_aggregate_tks_fallback(self, es_engine):
@@ -123,7 +157,7 @@ class TestAggregateTableManualDocMetadata:
         task["kb_parser_config"]["table_column_roles"] = {"country": "metadata"}
         task["kb_parser_config"]["table_column_names"] = ["country"]
         chunks = [{"country_tks": ["brazil"]}]
-        out = aggregate_table_manual_doc_metadata(chunks, task)
+        out = aggregate_table_doc_metadata(chunks, task)
         assert out == {"country": ["brazil"]}
 
     def test_aggregate_partial_roles_defaults_to_both(self, es_engine):
@@ -138,7 +172,7 @@ class TestAggregateTableManualDocMetadata:
             },
         }
         chunks = [{"city_raw": "SP", "city_tks": "t", "country_tks": "x"}]
-        out = aggregate_table_manual_doc_metadata(chunks, task)
+        out = aggregate_table_doc_metadata(chunks, task)
         assert out == {"city": ["SP"]}
         assert "country" not in out
 
@@ -156,7 +190,7 @@ class TestAggregateTableManualDocMetadata:
         chunks = [
             {"country_raw": "BR", "city_raw": "SP", "country_tks": "x", "city_tks": "y"},
         ]
-        out = aggregate_table_manual_doc_metadata(chunks, task)
+        out = aggregate_table_doc_metadata(chunks, task)
         assert "country" in out and "city" in out
 
     def test_aggregate_deduplicates_values(self, es_engine):
@@ -168,7 +202,7 @@ class TestAggregateTableManualDocMetadata:
             {"country_raw": "UK", "country_tks": "y"},
             {"country_raw": "US", "country_tks": "x"},
         ]
-        out = aggregate_table_manual_doc_metadata(chunks, task)
+        out = aggregate_table_doc_metadata(chunks, task)
         assert out["country"] == ["US", "UK"]
 
     def test_aggregate_kb_reload_field_map(self, es_engine, monkeypatch):
@@ -197,7 +231,7 @@ class TestAggregateTableManualDocMetadata:
             "kb_id": "kb-1",
         }
         chunks = [{"country_raw": "X", "country_tks": "t"}]
-        out = aggregate_table_manual_doc_metadata(chunks, task)
+        out = aggregate_table_doc_metadata(chunks, task)
         assert out == {"country": ["X"]}
 
     def test_merge_infinity_chunk_data(self, infinity_engine):
@@ -214,7 +248,7 @@ class TestAggregateTableManualDocMetadata:
             {"chunk_data": {"country": "US"}},
             {"chunk_data": {"country": "UK"}},
         ]
-        out = aggregate_table_manual_doc_metadata(chunks, task)
+        out = aggregate_table_doc_metadata(chunks, task)
         assert out == {"country": ["US", "UK"]}
 
 

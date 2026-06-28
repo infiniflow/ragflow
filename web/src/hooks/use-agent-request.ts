@@ -243,8 +243,6 @@ export const useUpdateAgentSetting = () => {
         queryClient.invalidateQueries({
           queryKey: [AgentApiAction.FetchAgentListByPage],
         });
-      } else {
-        message.error(ret?.data?.data);
       }
       return ret?.data?.code;
     },
@@ -339,7 +337,7 @@ export const useFetchAgent = (): {
     isFetching: loading,
     refetch,
   } = useQuery({
-    queryKey: [AgentApiAction.FetchAgentDetail],
+    queryKey: [AgentApiAction.FetchAgentDetail, sharedId || id],
     initialData: {} as IFlow,
     refetchOnReconnect: false,
     refetchOnMount: false,
@@ -429,7 +427,7 @@ export const useSetAgent = (showMessage: boolean = true) => {
         });
         if (agentId) {
           queryClient.invalidateQueries({
-            queryKey: [AgentApiAction.FetchAgentDetail],
+            queryKey: [AgentApiAction.FetchAgentDetail, agentId],
           });
         }
       }
@@ -697,7 +695,11 @@ export const useFetchVersion = (
 
 export const useFetchAgentLog = (searchParams: IAgentLogsRequest) => {
   const { id } = useParams();
-  const { data, isFetching: loading } = useQuery<IAgentLogsResponse>({
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery<IAgentLogsResponse>({
     queryKey: [AgentApiAction.FetchAgentLog, id, searchParams],
     initialData: {} as IAgentLogsResponse,
     gcTime: 0,
@@ -710,7 +712,7 @@ export const useFetchAgentLog = (searchParams: IAgentLogsRequest) => {
     },
   });
 
-  return { data, loading };
+  return { data, loading, refetch };
 };
 
 export const useFetchSessionsByCanvasId = () => {
@@ -729,7 +731,7 @@ export const useFetchSessionsByCanvasId = () => {
 
       const { data } = await fetchAgentLogsByCanvasId(canvasId, {
         page: 1,
-        page_size: 100000,
+        page_size: 100,
         exp_user_id: tenantInfo.tenant_id,
       });
 
@@ -1053,11 +1055,9 @@ export const useExportAgentLog = () => {
     mutationFn: async (searchParams: IAgentLogsRequest) => {
       const { data } = await fetchAgentLogsByCanvasId(id as string, {
         ...searchParams,
-        page: 1,
-        page_size: 100000,
       });
 
-      return data?.data?.sessions ?? [];
+      return data?.data ?? [];
     },
   });
 

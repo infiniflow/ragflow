@@ -66,6 +66,12 @@ class StatusEnum(Enum):
     INVALID = "0"
 
 
+class ActiveStatusEnum(Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    UNSUPPORTED = "unsupported"
+
+
 class ActiveEnum(Enum):
     ACTIVE = "1"
     INACTIVE = "0"
@@ -149,6 +155,10 @@ class FileSource(StrEnum):
     MYSQL = "mysql"
     POSTGRESQL = "postgresql"
     DINGTALK_AI_TABLE = "dingtalk_ai_table"
+    ONEDRIVE = "onedrive"
+    OUTLOOK = "outlook"
+    SALESFORCE = "salesforce"
+    AZURE_BLOB = "azure_blob"
 
 
 class PipelineTaskType(StrEnum):
@@ -246,7 +256,7 @@ class ForgettingPolicy(StrEnum):
 # ENV_TRACE_MALLOC_ENABLED = "TRACE_MALLOC_ENABLED"
 
 PAGERANK_FLD = "pagerank_fea"
-SVR_QUEUE_NAME = "rag_flow_svr_queue"
+SVR_QUEUE_NAME = "te"
 SVR_CONSUMER_GROUP_NAME = "rag_flow_svr_task_broker"
 TAG_FLD = "tag_feas"
 
@@ -266,8 +276,9 @@ MINERU_DEFAULT_CONFIG = {
     "MINERU_DELETE_OUTPUT": 1,
 }
 
-PADDLEOCR_ENV_KEYS = ["PADDLEOCR_API_URL", "PADDLEOCR_ACCESS_TOKEN", "PADDLEOCR_ALGORITHM"]
+PADDLEOCR_ENV_KEYS = ["PADDLEOCR_BASE_URL", "PADDLEOCR_API_URL", "PADDLEOCR_ACCESS_TOKEN", "PADDLEOCR_ALGORITHM"]
 PADDLEOCR_DEFAULT_CONFIG = {
+    "PADDLEOCR_BASE_URL": "",
     "PADDLEOCR_API_URL": "",
     "PADDLEOCR_ACCESS_TOKEN": None,
     "PADDLEOCR_ALGORITHM": "PaddleOCR-VL",
