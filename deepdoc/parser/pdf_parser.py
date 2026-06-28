@@ -2053,7 +2053,7 @@ class VisionParser(RAGFlowPdfParser):
         all_docs = []
 
         for idx, img_binary in enumerate(self.page_images or []):
-            pdf_page_num = idx  # 0-based
+            pdf_page_num = from_page + idx  # 0-based
             if pdf_page_num < start_page or pdf_page_num >= end_page:
                 continue
 

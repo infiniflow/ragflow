@@ -67,9 +67,10 @@ func (dao *DocumentDAO) UpdateByID(id string, updates map[string]interface{}) er
 	return DB.Model(&entity.Document{}).Where("id = ?", id).Updates(updates).Error
 }
 
-// Delete delete document
-func (dao *DocumentDAO) Delete(id string) error {
-	return DB.Delete(&entity.Document{}, "id = ?", id).Error
+// Delete hard-deletes document by ID. Returns rows affected.
+func (dao *DocumentDAO) Delete(id string) (int64, error) {
+	result := DB.Where("id = ?", id).Delete(&entity.Document{})
+	return result.RowsAffected, result.Error
 }
 
 // List list documents
@@ -108,6 +109,86 @@ func (dao *DocumentDAO) ListByKBID(kbID string, offset, limit int) ([]*entity.Do
 	return documents, total, err
 }
 
+// GetByKBID retrieves all documents in a knowledge base ordered by create time.
+func (dao *DocumentDAO) GetByKBID(kbID string) ([]*entity.Document, int64, error) {
+	var documents []*entity.Document
+	var total int64
+
+	query := DB.Model(&entity.Document{}).Where("kb_id = ?", kbID)
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	err := query.Order("create_time ASC").Find(&documents).Error
+	return documents, total, err
+}
+
+// GetChunkingConfig returns the document, dataset, and tenant fields used to
+// build a parsing task digest, mirroring DocumentService.get_chunking_config.
+func (dao *DocumentDAO) GetChunkingConfig(docID string) (map[string]interface{}, error) {
+	var row struct {
+		ID           string         `gorm:"column:id"`
+		KbID         string         `gorm:"column:kb_id"`
+		ParserID     string         `gorm:"column:parser_id"`
+		ParserConfig entity.JSONMap `gorm:"column:parser_config"`
+		Size         int64          `gorm:"column:size"`
+		ContentHash  *string        `gorm:"column:content_hash"`
+		Language     *string        `gorm:"column:language"`
+		EmbdID       string         `gorm:"column:embd_id"`
+		TenantID     string         `gorm:"column:tenant_id"`
+		Img2TxtID    string         `gorm:"column:img2txt_id"`
+		ASRID        string         `gorm:"column:asr_id"`
+		LLMID        string         `gorm:"column:llm_id"`
+	}
+
+	err := DB.Table("document").
+		Select(`
+			document.id,
+			document.kb_id,
+			document.parser_id,
+			document.parser_config,
+			document.size,
+			document.content_hash,
+			knowledgebase.language,
+			knowledgebase.embd_id,
+			tenant.id AS tenant_id,
+			tenant.img2txt_id,
+			tenant.asr_id,
+			tenant.llm_id
+		`).
+		Joins("JOIN knowledgebase ON document.kb_id = knowledgebase.id").
+		Joins("JOIN tenant ON knowledgebase.tenant_id = tenant.id").
+		Where("document.id = ?", docID).
+		Take(&row).Error
+	if err != nil {
+		return nil, err
+	}
+
+	config := map[string]interface{}{
+		"id":            row.ID,
+		"kb_id":         row.KbID,
+		"parser_id":     row.ParserID,
+		"parser_config": row.ParserConfig,
+		"size":          row.Size,
+		"embd_id":       row.EmbdID,
+		"tenant_id":     row.TenantID,
+		"img2txt_id":    row.Img2TxtID,
+		"asr_id":        row.ASRID,
+		"llm_id":        row.LLMID,
+	}
+	if row.ContentHash != nil {
+		config["content_hash"] = *row.ContentHash
+	} else {
+		config["content_hash"] = nil
+	}
+	if row.Language != nil {
+		config["language"] = *row.Language
+	} else {
+		config["language"] = nil
+	}
+	return config, nil
+}
+
 // DeleteByTenantID deletes all documents by tenant ID (hard delete)
 func (dao *DocumentDAO) DeleteByTenantID(tenantID string) (int64, error) {
 	result := DB.Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.Document{})
@@ -134,12 +215,22 @@ func (dao *DocumentDAO) GetAllDocIDsByKBIDs(kbIDs []string) ([]map[string]string
 
 // GetByIDs retrieves documents by multiple IDs
 func (dao *DocumentDAO) GetByIDs(ids []string) ([]*entity.Document, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
 	var documents []*entity.Document
 	err := DB.Where("id IN ?", ids).Find(&documents).Error
 	if err != nil {
 		return nil, err
 	}
 	return documents, nil
+}
+
+// GetByDocumentIDAndDatasetID retrieves a document by document ID and dataset/KB ID.
+func (dao *DocumentDAO) GetByDocumentIDAndDatasetID(documentID, datasetID string) (*entity.Document, error) {
+	var document entity.Document
+	err := DB.Where("id = ? AND kb_id = ?", documentID, datasetID).First(&document).Error
+	return &document, err
 }
 
 // CountByTenantID counts documents by tenant ID
@@ -157,4 +248,63 @@ func (dao *DocumentDAO) SumSizeByDatasetID(datasetID string) (int64, error) {
 		Where("kb_id = ?", datasetID).
 		Scan(&total).Error
 	return total, err
+}
+
+// GetParsingStatusByKBID aggregates document parsing status counts for a
+// dataset, mirroring DocumentService.get_parsing_status_by_kb_ids in Python.
+func (dao *DocumentDAO) GetParsingStatusByKBID(kbID string) (map[string]int64, error) {
+	result := map[string]int64{
+		"unstart_count": 0,
+		"running_count": 0,
+		"cancel_count":  0,
+		"done_count":    0,
+		"fail_count":    0,
+	}
+
+	var rows []struct {
+		Run *string `gorm:"column:run"`
+		Cnt int64   `gorm:"column:cnt"`
+	}
+	err := DB.Model(&entity.Document{}).
+		Select("run, COUNT(id) as cnt").
+		Where("kb_id = ?", kbID).
+		Group("run").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	statusFieldMap := map[string]string{
+		string(entity.TaskStatusUnstart): "unstart_count",
+		string(entity.TaskStatusRunning): "running_count",
+		string(entity.TaskStatusCancel):  "cancel_count",
+		string(entity.TaskStatusDone):    "done_count",
+		string(entity.TaskStatusFail):    "fail_count",
+	}
+	for _, row := range rows {
+		if row.Run == nil {
+			continue
+		}
+		if field, ok := statusFieldMap[*row.Run]; ok {
+			result[field] = row.Cnt
+		}
+	}
+	return result, nil
+}
+
+func (dao *DocumentDAO) GetByNameAndKBID(name, kbID string) ([]*entity.Document, error) {
+	var docs []*entity.Document
+	err := DB.Where("name = ? AND kb_id = ?", name, kbID).Find(&docs).Error
+	return docs, err
+}
+
+// ListNamesByKbID returns every document name in a dataset, used to compute a
+// non-colliding upload filename (mirrors Python duplicate_name).
+func (dao *DocumentDAO) ListNamesByKbID(kbID string) ([]string, error) {
+	var names []string
+	err := DB.Model(&entity.Document{}).Where("kb_id = ?", kbID).Pluck("name", &names).Error
+	if err != nil {
+		return nil, err
+	}
+	return names, nil
 }

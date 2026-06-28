@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import base64
+import binascii
 import datetime
 import logging
 import re
@@ -24,8 +25,8 @@ from quart import request
 
 from api.apps import login_required
 from api.db.joint_services.tenant_model_service import (
-    get_model_config_by_id,
-    get_model_config_by_type_and_name,
+    split_model_name,
+    get_model_config_from_provider_instance,
     get_tenant_default_model_by_type,
 )
 from api.db.db_models import Document, Task
@@ -44,7 +45,6 @@ from api.utils.api_utils import (
     get_request_json,
     get_result,
     server_error_response,
-    token_required,
 )
 from api.utils.pagination_utils import validate_rest_api_page_size
 from api.utils.image_utils import store_chunk_image
@@ -65,6 +65,31 @@ from rag.prompts.generator import cross_languages, keyword_extraction
 
 DOC_STOP_PARSING_INVALID_STATE_MESSAGE = "Can't stop parsing document that has not started or already completed"
 DOC_STOP_PARSING_INVALID_STATE_ERROR_CODE = "DOC_STOP_PARSING_INVALID_STATE"
+
+
+def _decode_chunk_image_base64(image_base64):
+    if not isinstance(image_base64, str) or not image_base64.strip():
+        return None, "`image_base64` must be a non-empty string"
+    try:
+        image_binary = base64.b64decode(image_base64, validate=True)
+    except (binascii.Error, ValueError):
+        return None, "Invalid `image_base64`"
+    if not image_binary:
+        return None, "`image_base64` is empty"
+    return image_binary, None
+
+
+def _store_chunk_image_or_error(dataset_id, chunk_id, image_binary):
+    try:
+        store_chunk_image(dataset_id, chunk_id, image_binary)
+    except Exception:
+        logging.exception(
+            "Failed to store chunk image. dataset_id=%s chunk_id=%s",
+            dataset_id,
+            chunk_id,
+        )
+        return "Failed to store chunk image"
+    return None
 
 
 class Chunk(BaseModel):
@@ -132,9 +157,13 @@ def _enrich_chunks_with_document_metadata(chunks: list[dict], metadata_fields=No
 
 
 @manager.route("/datasets/<dataset_id>/chunks", methods=["POST"])  # noqa: F821
-@token_required
+@login_required
+@add_tenant_id_to_kwargs
 async def parse(tenant_id, dataset_id):
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
+    if not dataset_tenant_id:
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     req = await get_request_json()
     if not req.get("document_ids"):
@@ -164,7 +193,16 @@ async def parse(tenant_id, dataset_id):
             == 0
         ):
             return get_error_data_result("Can't parse document that is currently being processed")
-        settings.docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), dataset_id)
+        index_name = search.index_name(dataset_tenant_id)
+        if settings.docStoreConn.index_exist(index_name, doc[0].kb_id):
+            settings.docStoreConn.delete({"doc_id": id}, index_name, doc[0].kb_id)
+        else:
+            logging.info(
+                "Skipping chunk delete during parse for doc %s: index %s/%s does not exist",
+                id,
+                index_name,
+                doc[0].kb_id,
+            )
         TaskService.filter_delete([Task.doc_id == id])
         e, doc = DocumentService.get_by_id(id)
         doc = doc.to_dict()
@@ -187,9 +225,13 @@ async def parse(tenant_id, dataset_id):
 
 
 @manager.route("/datasets/<dataset_id>/chunks", methods=["DELETE"])  # noqa: F821
-@token_required
+@login_required
+@add_tenant_id_to_kwargs
 async def stop_parsing(tenant_id, dataset_id):
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
+    if not dataset_tenant_id:
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     req = await get_request_json()
 
@@ -213,7 +255,16 @@ async def stop_parsing(tenant_id, dataset_id):
         cancel_all_task_of(id)
         info = {"run": "2", "progress": 0, "chunk_num": 0}
         DocumentService.update_by_id(id, info)
-        settings.docStoreConn.delete({"doc_id": doc[0].id}, search.index_name(tenant_id), dataset_id)
+        index_name = search.index_name(dataset_tenant_id)
+        if settings.docStoreConn.index_exist(index_name, doc[0].kb_id):
+            settings.docStoreConn.delete({"doc_id": doc[0].id}, index_name, doc[0].kb_id)
+        else:
+            logging.info(
+                "Skipping chunk delete during stop_parsing for doc %s: index %s/%s does not exist",
+                doc[0].id,
+                index_name,
+                doc[0].kb_id,
+            )
         success_count += 1
     if duplicate_messages:
         if success_count > 0:
@@ -227,7 +278,8 @@ async def stop_parsing(tenant_id, dataset_id):
 
 
 @manager.route("/retrieval", methods=["POST"])  # noqa: F821
-@token_required
+@login_required
+@add_tenant_id_to_kwargs
 async def retrieval_test(tenant_id):
     req = await get_request_json()
     if not req.get("dataset_ids"):
@@ -239,7 +291,7 @@ async def retrieval_test(tenant_id):
         if not KnowledgebaseService.accessible(kb_id=id, user_id=tenant_id):
             return get_error_data_result(f"You don't own the dataset {id}.")
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
-    embd_nms = list(set([TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]))
+    embd_nms = list(set([split_model_name(kb.embd_id)[0] for kb in kbs]))
     if len(embd_nms) != 1:
         return get_result(message="Datasets use different embedding models.", code=RetCode.DATA_ERROR)
     if "question" not in req:
@@ -291,16 +343,12 @@ async def retrieval_test(tenant_id):
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
         if not e:
             return get_error_data_result(message="Dataset not found!")
-        embd_model_config = get_model_config_by_id(kb.tenant_embd_id) if kb.tenant_embd_id else get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+        embd_model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
         embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
         rerank_mdl = None
-        if req.get("tenant_rerank_id"):
-            allowed_rerank_tenant_ids = {tenant_id, *[dataset.tenant_id for dataset in kbs]}
-            rerank_model_config = get_model_config_by_id(req["tenant_rerank_id"], allowed_tenant_ids=allowed_rerank_tenant_ids, requester_tenant_id=tenant_id)
-            rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
-        elif req.get("rerank_id"):
-            rerank_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.RERANK, req["rerank_id"])
+        if req.get("rerank_id"):
+            rerank_model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.RERANK, req["rerank_id"])
             rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
 
         if langs:
@@ -512,25 +560,23 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         except ValueError as exc:
             return get_error_data_result(f"`tag_feas` {exc}")
 
-    image_base64 = req.get("image_base64")
-    if image_base64:
+    if "image_base64" in req:
+        image_binary, image_err = _decode_chunk_image_base64(req.get("image_base64"))
+        if image_err:
+            return get_error_data_result(message=image_err)
+        store_err = _store_chunk_image_or_error(dataset_id, chunk_id, image_binary)
+        if store_err:
+            return get_error_data_result(message=store_err)
         d["img_id"] = f"{dataset_id}-{chunk_id}"
         d["doc_type_kwd"] = "image"
 
-    tenant_embd_id = DocumentService.get_tenant_embd_id(document_id)
-    if tenant_embd_id:
-        model_config = get_model_config_by_id(tenant_embd_id)
-    else:
-        embd_id = DocumentService.get_embd_id(document_id)
-        model_config = get_model_config_by_type_and_name(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
+    embd_id = DocumentService.get_embd_id(document_id)
+    model_config = get_model_config_from_provider_instance(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
     embd_mdl = TenantLLMService.model_instance(model_config)
     v, c = embd_mdl.encode([doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
     v = 0.1 * v[0] + 0.9 * v[1]
     d[f"q_{len(v)}_vec"] = v.tolist()
     settings.docStoreConn.insert([d], search.index_name(dataset_tenant_id), dataset_id)
-
-    if image_base64:
-        store_chunk_image(dataset_id, chunk_id, base64.b64decode(image_base64))
 
     DocumentService.increment_chunk_num(doc.id, doc.kb_id, c, 1, 0)
     key_mapping = {
@@ -656,17 +702,18 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
             d["tag_feas"] = validate_tag_features(req["tag_feas"])
         except ValueError as exc:
             return get_error_data_result(f"`tag_feas` {exc}")
-    image_base64 = req.get("image_base64")
-    if image_base64:
+    if "image_base64" in req:
+        image_binary, image_err = _decode_chunk_image_base64(req.get("image_base64"))
+        if image_err:
+            return get_error_data_result(message=image_err)
+        store_err = _store_chunk_image_or_error(dataset_id, chunk_id, image_binary)
+        if store_err:
+            return get_error_data_result(message=store_err)
         d["img_id"] = f"{dataset_id}-{chunk_id}"
         d["doc_type_kwd"] = "image"
 
-    tenant_embd_id = DocumentService.get_tenant_embd_id(document_id)
-    if tenant_embd_id:
-        model_config = get_model_config_by_id(tenant_embd_id)
-    else:
-        embd_id = DocumentService.get_embd_id(document_id)
-        model_config = get_model_config_by_type_and_name(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
+    embd_id = DocumentService.get_embd_id(document_id)
+    model_config = get_model_config_from_provider_instance(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
     embd_mdl = TenantLLMService.model_instance(model_config)
     if doc.parser_id == ParserType.QA:
         arr = [t for t in re.split(r"[\n\t]", d["content_with_weight"]) if len(t) > 1]
@@ -684,8 +731,6 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
     v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
     d[f"q_{len(v)}_vec"] = v.tolist()
     settings.docStoreConn.update({"id": chunk_id}, d, search.index_name(dataset_tenant_id), dataset_id)
-    if image_base64:
-        store_chunk_image(dataset_id, chunk_id, base64.b64decode(image_base64))
     return get_result()
 
 

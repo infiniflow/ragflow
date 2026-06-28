@@ -138,25 +138,18 @@ class TestComparisonReport:
         assert "No comparison details" in md
 
 
-class TestContextComparatorInit:
-    """Tests for ContextComparator initialization."""
+class TestContextComparatorCompareValue:
+    """Tests for ContextComparator.compare_value method and initialization."""
 
     def test_init_default_tolerance(self):
         """Test initialization with default tolerance."""
-        comparator = ContextComparator()
-        assert comparator.float_tolerance == 1e-6
+        assert ContextComparator().float_tolerance == 1e-6
 
     def test_init_custom_tolerance(self):
         """Test initialization with custom tolerance."""
-        comparator = ContextComparator(float_tolerance=0.01)
-        assert comparator.float_tolerance == 0.01
-
-
-class TestContextComparatorCompareValue:
-    """Tests for ContextComparator.compare_value method."""
+        assert ContextComparator(float_tolerance=0.01).float_tolerance == 0.01
 
     def setup_method(self):
-        """Set up test fixtures."""
         self.comparator = ContextComparator()
 
     def test_compare_none_values(self):

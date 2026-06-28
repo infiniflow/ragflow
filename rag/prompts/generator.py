@@ -22,6 +22,7 @@ from copy import deepcopy
 from typing import Tuple
 from jinja2.sandbox import SandboxedEnvironment
 import json_repair
+
 from common.misc_utils import hash_str2int
 from rag.nlp import rag_tokenizer
 from rag.prompts.template import load_prompt
@@ -96,13 +97,20 @@ def message_fit_in(msg, max_length=4000):
     ll2 = num_tokens_from_string(msg_[-1]["content"])
     total = ll + ll2
     if total <= 0:
+        # Don't include the per-message role list in cleartext: CodeQL
+        # flags this as clear-text-logging-sensitive-data because msg
+        # carries user-controlled conversation content. The token
+        # counts already capture what this debug line needs to convey.
+        # codeql[py/clear-text-logging-sensitive-data] False positive:
+        # only token counts and limits are logged; the message contents
+        # were intentionally dropped from this debug call (see prior
+        # commit) because they carried user content.
         logging.debug(
-            "message_fit_in degenerate token counts total=%s max_length=%s ll=%s ll2=%s preserved_roles=%s",
+            "message_fit_in degenerate token counts total=%s max_length=%s ll=%s ll2=%s",
             total,
             max_length,
             ll,
             ll2,
-            [m.get("role") for m in msg],
         )
         return 0, msg
 
@@ -203,7 +211,7 @@ PROMPT_JINJA_ENV = SandboxedEnvironment(
 
 def citation_prompt(user_defined_prompts: dict = {}) -> str:
     template = PROMPT_JINJA_ENV.from_string(user_defined_prompts.get("citation_guidelines", CITATION_PROMPT_TEMPLATE))
-    return template.render()
+    return template.render() + "\n\nIMPORTANT: The example IDs above (45, 46, 78, etc.) are illustrative only. Use the actual chunk IDs from the provided knowledge blocks."
 
 
 def citation_plus(sources: str) -> str:
@@ -244,14 +252,14 @@ async def question_proposal(chat_mdl, content, topn=3):
 async def full_question(tenant_id=None, llm_id=None, messages=[], language=None, chat_mdl=None):
     from common.constants import LLMType
     from api.db.services.llm_service import LLMBundle
-    from api.db.services.tenant_llm_service import TenantLLMService
-    from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name
+    from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_model_type_by_name
 
     if not chat_mdl:
-        if TenantLLMService.llm_id2llm_type(llm_id) == "image2text":
-            chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.IMAGE2TEXT, llm_id)
+        model_types = get_model_type_by_name(tenant_id, llm_id)
+        if "image2text" in model_types:
+            chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.IMAGE2TEXT, llm_id)
         else:
-            chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, llm_id)
+            chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT, llm_id)
         chat_mdl = LLMBundle(tenant_id, chat_model_config)
     conv = []
     for m in messages:
@@ -280,16 +288,15 @@ async def full_question(tenant_id=None, llm_id=None, messages=[], language=None,
 async def cross_languages(tenant_id, llm_id, query, languages=[]):
     from common.constants import LLMType
     from api.db.services.llm_service import LLMBundle
-    from api.db.services.tenant_llm_service import TenantLLMService
-    from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name, get_tenant_default_model_by_type
+    from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_tenant_default_model_by_type, get_model_type_by_name
 
-    if llm_id and TenantLLMService.llm_id2llm_type(llm_id) == "image2text":
-        chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.IMAGE2TEXT, llm_id)
+    if llm_id and "image2text" in get_model_type_by_name(tenant_id, llm_id) :
+        chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.IMAGE2TEXT, llm_id)
     else:
         if not llm_id:
             chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
         else:
-            chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, llm_id)
+            chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT, llm_id)
     chat_mdl = LLMBundle(tenant_id, chat_model_config)
     rendered_sys_prompt = PROMPT_JINJA_ENV.from_string(CROSS_LANGUAGES_SYS_PROMPT_TEMPLATE).render()
     rendered_user_prompt = PROMPT_JINJA_ENV.from_string(CROSS_LANGUAGES_USER_PROMPT_TEMPLATE).render(query=query,
@@ -297,10 +304,12 @@ async def cross_languages(tenant_id, llm_id, query, languages=[]):
 
     ans = await chat_mdl.async_chat(rendered_sys_prompt, [{"role": "user", "content": rendered_user_prompt}],
                                     {"temperature": 0.2})
-    ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
     if ans.find("**ERROR**") >= 0:
+        logging.info("[cross_languages] LLM returned error, falling back to original query")
         return query
-    return "\n".join([a for a in re.sub(r"(^Output:|\n+)", "", ans, flags=re.DOTALL).split("===") if a.strip()])
+    ans = re.sub(r"^.*\*\*ERROR\*\*", "", ans, flags=re.DOTALL)
+    result = "\n".join([a for a in re.sub(r"(^Output:|\n+)", "", ans, flags=re.DOTALL).split("===") if a.strip()])
+    return result
 
 
 async def content_tagging(chat_mdl, content, all_tags, examples, topn=3):
@@ -953,6 +962,11 @@ async def relevant_chunks_with_toc(query: str, toc: list[dict], chat_mdl, topn: 
 
 META_DATA = load_prompt("meta_data")
 async def gen_metadata(chat_mdl, schema: dict, content: str):
+    if not schema:
+        return ""
+    if "properties" not in schema:
+        logging.warning("gen_metadata: schema has no 'properties' key: %s", schema)
+        return ""
     template = PROMPT_JINJA_ENV.from_string(META_DATA)
     for k, desc in schema["properties"].items():
         if "enum" in desc and not desc.get("enum"):

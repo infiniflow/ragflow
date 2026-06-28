@@ -21,6 +21,7 @@ type UserCanvas struct {
 	ID             string  `gorm:"column:id;primaryKey;size:32" json:"id"`
 	Avatar         *string `gorm:"column:avatar;type:longtext" json:"avatar,omitempty"`
 	UserID         string  `gorm:"column:user_id;size:255;not null;index" json:"user_id"`
+	Tags           string  `gorm:"column:tags;size:512;not null;default:'';index" json:"tags"`
 	Title          *string `gorm:"column:title;size:255" json:"title,omitempty"`
 	Permission     string  `gorm:"column:permission;size:16;not null;default:me;index" json:"permission"`
 	Release        bool    `gorm:"column:release;not null;default:false;index" json:"release"`

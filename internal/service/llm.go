@@ -353,7 +353,7 @@ func (s *LLMService) SetAPIKey(tenantID string, req *SetAPIKeyRequest) (*SetAPIK
 		if req.Verify {
 			return &SetAPIKeyResult{Message: msg, Success: false}, nil
 		}
-		return nil, fmt.Errorf(msg)
+		return nil, fmt.Errorf("%s", msg)
 	}
 
 	llmConfig := map[string]interface{}{

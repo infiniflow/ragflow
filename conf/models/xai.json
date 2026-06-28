@@ -7,7 +7,7 @@
     "chat": "chat/completions",
     "models": "models",
     "tts": "tts",
-    "ast": "stt"
+    "asr": "stt"
   },
   "class": "grok",
   "models": [
@@ -61,4 +61,3 @@
     }
   ]
 }
-

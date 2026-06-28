@@ -1,4 +1,4 @@
-import { useFetchModelId } from '@/hooks/logic-hooks';
+import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import { Connection, Node, Position, ReactFlowInstance } from '@xyflow/react';
 import humanId from 'human-id';
 import { t } from 'i18next';
@@ -29,6 +29,7 @@ import {
   initialInvokeValues,
   initialIterationStartValues,
   initialIterationValues,
+  initialKeenableValues,
   initialListOperationsValues,
   initialLoopValues,
   initialMessageValues,
@@ -123,13 +124,17 @@ function useAddGroupNode() {
   return { addGroupNode };
 }
 export const useInitializeOperatorParams = () => {
-  const llmId = useFetchModelId();
+  const defaultModelDictionary = useFetchDefaultModelDictionary();
+  const llmId = defaultModelDictionary.llm_id;
 
   const initialFormValuesMap = useMemo(() => {
     return {
       [Operator.Begin]: initialBeginValues,
       [Operator.Retrieval]: initialRetrievalValues,
-      [Operator.Categorize]: { ...initialCategorizeValues, llm_id: llmId },
+      [Operator.Categorize]: {
+        ...initialCategorizeValues,
+        llm_id: llmId,
+      },
       [Operator.RewriteQuestion]: {
         ...initialRewriteQuestionValues,
         llm_id: llmId,
@@ -159,6 +164,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Agent]: { ...initialAgentValues, llm_id: llmId },
       [Operator.Tool]: {},
       [Operator.TavilySearch]: initialTavilyValues,
+      [Operator.KeenableSearch]: initialKeenableValues,
       [Operator.UserFillUp]: initialUserFillUpValues,
       [Operator.StringTransform]: initialStringTransformValues,
       [Operator.TavilyExtract]: initialTavilyExtractValues,
