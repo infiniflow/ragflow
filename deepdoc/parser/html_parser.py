@@ -71,6 +71,8 @@ class RAGFlowHtmlParser:
             comment.extract()
 
         root = soup.body or soup
+        if soup.body is None:
+            logging.debug("html_parser: parsing HTML fragment without <body>; falling back to soup root")
         cls.read_text_recursively(root, temp_sections, chunk_token_num=chunk_token_num)
         block_txt_list, table_list = cls.merge_block_text(temp_sections)
         sections = cls.chunk_block(block_txt_list, chunk_token_num=chunk_token_num)
