@@ -263,17 +263,6 @@ class Invoke(ComponentBase, ABC):
                 self.set_output("_ERROR", "URL not valid")
                 return "Http request error: URL not valid"
 
-        try:
-            hostname, resolved_ip = assert_url_is_safe(url)
-        except ValueError as exc:
-            logging.warning(
-                "Invoke SSRF guard blocked url=%s: %s",
-                self._ssrf_log_target(url),
-                exc,
-            )
-            self.set_output("_ERROR", "URL not valid")
-            return "Http request error: URL not valid"
-
         last_error = None
         for _ in range(self._param.max_retries + 1):
             if self.check_if_canceled("Invoke processing"):
