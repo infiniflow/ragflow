@@ -256,6 +256,8 @@ async def collect():
         task["kb_id"] = msg.get("kb_id", "")
     if task_type[:6] == "memory":
         task["memory_id"] = msg["memory_id"]
+        if msg.get("tenant_id"):
+            task["tenant_id"] = msg["tenant_id"]
         task["source_id"] = msg["source_id"]
         task["message_dict"] = msg["message_dict"]
     return redis_msg, task

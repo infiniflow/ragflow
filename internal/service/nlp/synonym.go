@@ -22,6 +22,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -30,7 +31,7 @@ import (
 // Synonym provides synonym lookup functionality
 // Reference: rag/nlp/synonym.py Dealer class
 type Synonym struct {
-	lookupNum  int
+	lookupNum  atomic.Int64
 	loadTm     time.Time
 	dictionary map[string][]string
 	redis      RedisClient // Optional Redis client for real-time synonym loading
@@ -51,13 +52,13 @@ type RedisClient interface {
 //	If empty, WordNet will not be initialized.
 func NewSynonym(redis RedisClient, resPath string, wordnetDir string) *Synonym {
 	s := &Synonym{
-		lookupNum:  100000000,
 		loadTm:     time.Now().Add(-1000000 * time.Second),
 		dictionary: make(map[string][]string),
 		redis:      redis,
 		wordNet:    nil, // Will be initialized below
 		resPath:    resPath,
 	}
+	s.lookupNum.Store(100000000)
 
 	if resPath == "" {
 		s.resPath = "rag/res"
@@ -160,7 +161,7 @@ func (s *Synonym) Lookup(tk string, topN int) []string {
 	}
 
 	// 1) Check the custom dictionary first
-	//s.lookupNum++
+	s.lookupNum.Add(1)
 	//s.load()
 
 	key := regexp.MustCompile(`[ \t]+`).ReplaceAllString(strings.TrimSpace(tk), " ")
@@ -216,7 +217,7 @@ func (s *Synonym) GetDictionary() map[string][]string {
 
 // GetLookupNum returns the number of lookups since last load
 func (s *Synonym) GetLookupNum() int {
-	return s.lookupNum
+	return int(s.lookupNum.Load())
 }
 
 // GetLoadTime returns the last load time

@@ -55,10 +55,12 @@ def create_api_token(client: HttpClient, login_token: str, token_name: Optional[
 
 
 def get_my_llms(client: HttpClient) -> Dict[str, Any]:
-    res = client.request_json("GET", "/llm/my_llms", use_api_base=False, auth_kind="login")
+    """List tenant-configured providers. Returns a dict keyed by provider name."""
+    res = client.request_json("GET", "/providers", use_api_base=True, auth_kind="login")
     if res.get("code") != 0:
-        raise AuthError(f"Failed to list LLMs: {res.get('message')}")
-    return res.get("data", {})
+        raise AuthError(f"Failed to list providers: {res.get('message')}")
+    providers = res.get("data", [])
+    return {p.get("name", ""): p for p in providers} if isinstance(providers, list) else {}
 
 
 def set_llm_api_key(
@@ -67,22 +69,48 @@ def set_llm_api_key(
     api_key: str,
     base_url: Optional[str] = None,
 ) -> None:
-    payload = {"llm_factory": llm_factory, "api_key": api_key}
-    if base_url:
-        payload["base_url"] = base_url
-    res = client.request_json("POST", "/llm/set_api_key", use_api_base=False, auth_kind="login", json_body=payload)
-    if res.get("code") != 0:
-        raise AuthError(f"Failed to set LLM API key: {res.get('message')}")
+    """Add a provider (PUT /providers) and create a default instance (POST /providers/{name}/instances)."""
+    provider_payload = {"provider_name": llm_factory}
+    provider_res = client.request_json("PUT", "/providers", use_api_base=True, auth_kind="login", json_body=provider_payload)
+    provider_msg = provider_res.get("message", "")
+    if provider_res.get("code") != 0 and "duplicated" not in provider_msg.lower() and "already exist" not in provider_msg.lower():
+        raise AuthError(f"Failed to add provider: {provider_msg}")
+
+    instance_payload = {
+        "instance_name": "default",
+        "api_key": api_key,
+        "region": "default",
+        "base_url": base_url or "",
+    }
+    instance_res = client.request_json("POST", f"/providers/{llm_factory}/instances", use_api_base=True,
+                                      auth_kind="login", json_body=instance_payload)
+    instance_msg = instance_res.get("message", "")
+    if instance_res.get("code") != 0 and "already exist" not in instance_msg.lower():
+        raise AuthError(f"Failed to add instance: {instance_msg}")
 
 
-def get_tenant_info(client: HttpClient) -> Dict[str, Any]:
-    res = client.request_json("GET", "/users/me/models", use_api_base=True, auth_kind="login")
+def get_default_models(client: HttpClient) -> Dict[str, Any]:
+    """List tenant default models."""
+    res = client.request_json("GET", "/models/default", use_api_base=True, auth_kind="login")
     if res.get("code") != 0:
-        raise AuthError(f"Failed to get tenant info: {res.get('message')}")
+        raise AuthError(f"Failed to get default models: {res.get('message')}")
     return res.get("data", {})
 
 
-def set_tenant_info(client: HttpClient, payload: Dict[str, Any]) -> None:
-    res = client.request_json("PATCH", "/users/me/models", use_api_base=True, auth_kind="login", json_body=payload)
+def set_default_model(
+    client: HttpClient,
+    model_provider: str,
+    model_instance: str,
+    model_name: str,
+    model_type: str,
+) -> None:
+    """Set a tenant default model via PATCH /models/default."""
+    payload = {
+        "model_provider": model_provider,
+        "model_instance": model_instance,
+        "model_name": model_name,
+        "model_type": model_type,
+    }
+    res = client.request_json("PATCH", "/models/default", use_api_base=True, auth_kind="login", json_body=payload)
     if res.get("code") != 0:
-        raise AuthError(f"Failed to set tenant info: {res.get('message')}")
+        raise AuthError(f"Failed to set default model: {res.get('message')}")

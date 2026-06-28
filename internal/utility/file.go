@@ -22,13 +22,22 @@ import (
 	"strings"
 )
 
+type FileType string
+
 const (
-	FileTypePDF    = "pdf"
-	FileTypeDOC    = "doc"
-	FileTypeVISUAL = "visual"
-	FileTypeAURAL  = "aural"
-	FileTypeFOLDER = "folder"
-	FileTypeOTHER  = "other"
+	FileTypePDF      FileType = "pdf"
+	FileTypeDOC      FileType = "doc"
+	FileTypeDOCX     FileType = "docx"
+	FileTypePPT      FileType = "ppt"
+	FileTypePPTX     FileType = "pptx"
+	FileTypeXLS      FileType = "xls"
+	FileTypeXLSX     FileType = "xlsx"
+	FileTypeHTML     FileType = "html"
+	FileTypeMarkdown FileType = "md"
+	FileTypeVISUAL   FileType = "visual"
+	FileTypeAURAL    FileType = "aural"
+	FileTypeFOLDER   FileType = "folder"
+	FileTypeOTHER    FileType = "other"
 )
 
 var (
@@ -50,7 +59,41 @@ func normalizeFilename(filename string) (string, bool) {
 	return strings.ToLower(base), true
 }
 
-func FilenameType(filename string) string {
+func GetFileType(filename string) FileType {
+
+	ext := filepath.Ext(filename)
+	var suffix string
+	if len(ext) > 0 && ext[0] == '.' {
+		suffix = strings.ToLower(ext[1:])
+	} else {
+		suffix = strings.ToLower(ext)
+	}
+
+	switch suffix {
+	case "pdf":
+		return FileTypePDF
+	case "xls":
+		return FileTypeXLS
+	case "xlsx":
+		return FileTypeXLSX
+	case "doc":
+		return FileTypeDOC
+	case "docx":
+		return FileTypeDOCX
+	case "ppt":
+		return FileTypePPT
+	case "pptx":
+		return FileTypePPTX
+	case "html", "htm":
+		return FileTypeHTML
+	case "md":
+		return FileTypeMarkdown
+	default:
+		return FileTypeOTHER
+	}
+}
+
+func FilenameType(filename string) FileType {
 	normalized, ok := normalizeFilename(filename)
 	if !ok {
 		return FileTypeOTHER
@@ -216,7 +259,7 @@ var FORCE_ATTACHMENT_CONTENT_TYPES = map[string]bool{
 	"image/svg+xml":         true,
 	"application/xhtml+xml": true,
 	"text/xml":              true,
-	"application/xml":        true,
+	"application/xml":       true,
 	"multipart/related":     true,
 }
 
@@ -241,7 +284,7 @@ func GetContentType(ext string, fileType string) string {
 		return contentType
 	}
 	fallbackPrefix := "application"
-	if fileType == FileTypeVISUAL {
+	if fileType == string(FileTypeVISUAL) {
 		fallbackPrefix = "image"
 	}
 	return fallbackPrefix + "/" + normalizedExt

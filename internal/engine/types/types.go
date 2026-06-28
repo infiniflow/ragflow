@@ -17,12 +17,15 @@
 package types
 
 import (
+	"errors"
 	"fmt"
 
 	"go.uber.org/zap"
 
 	"ragflow/internal/common"
 )
+
+var ErrDocumentNotFound = errors.New("document not found")
 
 // SearchRequest unified search request for all engines
 type SearchRequest struct {

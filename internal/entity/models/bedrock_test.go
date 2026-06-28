@@ -438,8 +438,8 @@ func TestBedrockListModelsParsesCatalog(t *testing.T) {
 		t.Fatalf("len(got)=%d want %d (%v)", len(got), len(want), got)
 	}
 	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("got[%d]=%q want %q", i, got[i], want[i])
+		if got[i].Name != want[i] {
+			t.Errorf("got[%d]=%s want %q", i, got[i].Name, want[i])
 		}
 	}
 }

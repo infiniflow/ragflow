@@ -11,10 +11,13 @@ func TestNormalizeModelFamily(t *testing.T) {
 		{name: "nil", input: nil, want: ""},
 		{name: "empty", input: modelFamilyTestString(""), want: ""},
 		{name: "qwen3", input: modelFamilyTestString("qwen3"), want: "qwen3"},
-		{name: "qwen3 variant", input: modelFamilyTestString("qwen3-8b"), want: "qwen3"},
+		{name: "qwen3 hyphen variant", input: modelFamilyTestString("qwen3-8b"), want: "qwen3"},
+		{name: "qwen3 dot variant", input: modelFamilyTestString("qwen3.5-4b"), want: "qwen3"},
 		{name: "provider-prefixed qwen3", input: modelFamilyTestString("qwen/qwen3-8b"), want: "qwen3"},
 		{name: "case-varied qwen3", input: modelFamilyTestString("Qwen/Qwen3.5-4B"), want: "qwen3"},
 		{name: "provider-prefixed non-qwen", input: modelFamilyTestString("deepseek/deepseek-r1"), want: "deepseek"},
+		{name: "qwen plus not qwen3", input: modelFamilyTestString("qwen-plus"), want: "qwen"},
+		{name: "provider-prefixed qwen2.5 not qwen3", input: modelFamilyTestString("qwen/qwen2.5-32b-instruct"), want: "qwen2.5"},
 	}
 
 	for _, tt := range tests {
@@ -27,21 +30,19 @@ func TestNormalizeModelFamily(t *testing.T) {
 }
 
 func TestGetThinkingAndAnswerExtractsQwenThinking(t *testing.T) {
-	tests := []string{
+	content := "<think>\nplan</think>\nanswer"
+
+	for _, modelType := range []string{
 		"qwen3",
 		"qwen3-8b",
 		"qwen/qwen3",
 		"qwen/qwen3-8b",
 		"Qwen/Qwen3.5-4B",
-	}
-
-	for _, modelFamily := range tests {
-		t.Run(modelFamily, func(t *testing.T) {
-			content := "<think>\nreasoning</think>\nanswer"
-			reasoning, answer := GetThinkingAndAnswer(&modelFamily, &content)
-
-			if reasoning == nil || *reasoning != "reasoning" {
-				t.Fatalf("reasoning=%v, want reasoning", reasoning)
+	} {
+		t.Run(modelType, func(t *testing.T) {
+			thinking, answer := GetThinkingAndAnswer(&modelType, &content)
+			if thinking == nil || *thinking != "plan" {
+				t.Fatalf("thinking=%v, want plan", thinking)
 			}
 			if answer == nil || *answer != "answer" {
 				t.Fatalf("answer=%v, want answer", answer)
@@ -50,32 +51,49 @@ func TestGetThinkingAndAnswerExtractsQwenThinking(t *testing.T) {
 	}
 }
 
-func TestGetThinkingAndAnswerSkipsUnknownFamily(t *testing.T) {
-	modelFamily := "deepseek/deepseek-r1"
-	content := "<think>reasoning</think>answer"
+func TestGetThinkingAndAnswerLeavesUnknownModelFamiliesUnchanged(t *testing.T) {
+	content := "<think>\nplan</think>\nanswer"
 
-	reasoning, answer := GetThinkingAndAnswer(&modelFamily, &content)
-	if reasoning != nil {
-		t.Fatalf("reasoning=%q, want nil", *reasoning)
-	}
-	if answer == nil || *answer != content {
-		t.Fatalf("answer=%v, want original content", answer)
+	for _, modelType := range []string{
+		"deepseek",
+		"deepseek/deepseek-r1",
+		"qwen-plus",
+		"qwen/qwen2.5-32b-instruct",
+	} {
+		t.Run(modelType, func(t *testing.T) {
+			thinking, answer := GetThinkingAndAnswer(&modelType, &content)
+			if thinking != nil {
+				t.Fatalf("thinking=%v, want nil", thinking)
+			}
+			if answer != &content {
+				t.Fatalf("answer pointer changed")
+			}
+		})
 	}
 }
 
 func TestGetThinkingAndAnswerHandlesNilInputs(t *testing.T) {
-	reasoning, answer := GetThinkingAndAnswer(nil, nil)
-	if reasoning != nil || answer != nil {
-		t.Fatalf("GetThinkingAndAnswer(nil, nil)=(%v, %v), want nils", reasoning, answer)
+	thinking, answer := GetThinkingAndAnswer(nil, nil)
+	if thinking != nil || answer != nil {
+		t.Fatalf("GetThinkingAndAnswer(nil, nil)=(%v, %v), want nils", thinking, answer)
 	}
 
-	content := "answer"
-	reasoning, answer = GetThinkingAndAnswer(nil, &content)
-	if reasoning != nil {
-		t.Fatalf("reasoning=%q, want nil", *reasoning)
+	content := "<think>\nplan</think>\nanswer"
+	thinking, answer = GetThinkingAndAnswer(nil, &content)
+	if thinking != nil {
+		t.Fatalf("thinking=%v, want nil", thinking)
 	}
-	if answer == nil || *answer != content {
-		t.Fatalf("answer=%v, want original content", answer)
+	if answer != &content {
+		t.Fatalf("answer pointer changed")
+	}
+
+	modelType := "qwen3"
+	thinking, answer = GetThinkingAndAnswer(&modelType, nil)
+	if thinking != nil {
+		t.Fatalf("thinking=%v, want nil", thinking)
+	}
+	if answer != nil {
+		t.Fatalf("answer=%v, want nil", answer)
 	}
 }
 

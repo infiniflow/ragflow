@@ -673,13 +673,13 @@ def test_dataset_update_identifier_validation_contract(rest_client):
     assert not_uuid_res.status_code == 200
     not_uuid_payload = not_uuid_res.json()
     assert not_uuid_payload["code"] == 101, not_uuid_payload
-    assert "Invalid UUID1 format" in not_uuid_payload["message"], not_uuid_payload
+    assert "Invalid UUID format" in not_uuid_payload["message"], not_uuid_payload
 
     not_uuid1_res = rest_client.put(f"/datasets/{uuid.uuid4().hex}", json=payload)
     assert not_uuid1_res.status_code == 200
     not_uuid1_payload = not_uuid1_res.json()
-    assert not_uuid1_payload["code"] == 101, not_uuid1_payload
-    assert "Invalid UUID1 format" in not_uuid1_payload["message"], not_uuid1_payload
+    assert not_uuid1_payload["code"] == 102, not_uuid1_payload
+    assert "lacks permission for dataset" in not_uuid1_payload["message"], not_uuid1_payload
 
     wrong_uuid_res = rest_client.put("/datasets/d94a8dc02c9711f0930f7fbc369eab6d", json=payload)
     assert wrong_uuid_res.status_code == 200
@@ -1835,13 +1835,13 @@ def test_dataset_delete_contract_matrix(rest_client, clear_datasets):
     assert id_not_uuid_res.status_code == 200
     id_not_uuid_payload = id_not_uuid_res.json()
     assert id_not_uuid_payload["code"] == 101, id_not_uuid_payload
-    assert "Invalid UUID1 format" in id_not_uuid_payload["message"], id_not_uuid_payload
+    assert "Invalid UUID format" in id_not_uuid_payload["message"], id_not_uuid_payload
 
     id_not_uuid1_res = rest_client.delete("/datasets", json={"ids": [uuid.uuid4().hex]})
     assert id_not_uuid1_res.status_code == 200
     id_not_uuid1_payload = id_not_uuid1_res.json()
-    assert id_not_uuid1_payload["code"] == 101, id_not_uuid1_payload
-    assert "Invalid UUID1 format" in id_not_uuid1_payload["message"], id_not_uuid1_payload
+    assert id_not_uuid1_payload["code"] == 102, id_not_uuid1_payload
+    assert "lacks permission for dataset" in id_not_uuid1_payload["message"], id_not_uuid1_payload
 
     id_wrong_uuid_res = rest_client.delete("/datasets", json={"ids": ["d94a8dc02c9711f0930f7fbc369eab6d"]})
     assert id_wrong_uuid_res.status_code == 200
@@ -2113,13 +2113,13 @@ def test_dataset_list_query_contract_matrix(rest_client, clear_datasets):
     assert id_not_uuid_res.status_code == 200
     id_not_uuid_payload = id_not_uuid_res.json()
     assert id_not_uuid_payload["code"] == 101, id_not_uuid_payload
-    assert "Invalid UUID1 format" in id_not_uuid_payload["message"], id_not_uuid_payload
+    assert "Invalid UUID format" in id_not_uuid_payload["message"], id_not_uuid_payload
 
     id_not_uuid1_res = rest_client.get("/datasets", params={"id": uuid.uuid4().hex})
     assert id_not_uuid1_res.status_code == 200
     id_not_uuid1_payload = id_not_uuid1_res.json()
-    assert id_not_uuid1_payload["code"] == 101, id_not_uuid1_payload
-    assert "Invalid UUID1 format" in id_not_uuid1_payload["message"], id_not_uuid1_payload
+    assert id_not_uuid1_payload["code"] == 102, id_not_uuid1_payload
+    assert "lacks permission for dataset" in id_not_uuid1_payload["message"], id_not_uuid1_payload
 
     id_wrong_uuid_res = rest_client.get("/datasets", params={"id": "d94a8dc02c9711f0930f7fbc369eab6d"})
     assert id_wrong_uuid_res.status_code == 200
@@ -2131,7 +2131,7 @@ def test_dataset_list_query_contract_matrix(rest_client, clear_datasets):
     assert id_empty_res.status_code == 200
     id_empty_payload = id_empty_res.json()
     assert id_empty_payload["code"] == 101, id_empty_payload
-    assert "Invalid UUID1 format" in id_empty_payload["message"], id_empty_payload
+    assert "Invalid UUID format" in id_empty_payload["message"], id_empty_payload
 
     id_none_res = rest_client.get("/datasets", params={"id": None})
     assert id_none_res.status_code == 200

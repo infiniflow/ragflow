@@ -10,7 +10,7 @@ void test_single_thread() {
     std::cout << "Test 1: Single thread, 1000 iterations..." << std::endl;
     
     // Create analyzer instance
-    RAGAnalyzerHandle handle = RAGAnalyzer_Create(".");
+    RAGAnalyzerHandle handle = RAGAnalyzer_Create("./resource");
     assert(handle != nullptr && "Failed to create RAGAnalyzer");
     
     // Load the analyzer
@@ -110,8 +110,9 @@ void test_multi_thread() {
 }
 
 int main() {
+    std::cout << "Please make sure the './resource' directory exists and is accessible." << std::endl;
     std::cout << "=== RAGAnalyzer C API Test ===" << std::endl;
-    
+
     test_single_thread();
     // test_multi_thread();
     

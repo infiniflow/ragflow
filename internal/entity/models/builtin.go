@@ -115,7 +115,7 @@ func (b *BuiltinModel) Embed(modelName *string, texts []string, apiConfig *APICo
 	for i, emb := range embeddings {
 		result[i] = EmbeddingData{
 			Embedding: emb,
-			Index:    i,
+			Index:     i,
 		}
 	}
 
@@ -150,8 +150,12 @@ func (b *BuiltinModel) ParseFile(modelName *string, content []byte, url *string,
 	return nil, fmt.Errorf("builtin model does not support parse file")
 }
 
-func (b *BuiltinModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	return []string{b.model}, nil
+func (b *BuiltinModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+	return []ListModelResponse{
+		{
+			Name: b.model,
+		},
+	}, nil
 }
 
 func (b *BuiltinModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

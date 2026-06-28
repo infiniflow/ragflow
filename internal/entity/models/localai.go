@@ -17,7 +17,6 @@
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -39,20 +38,12 @@ type LocalAIModel struct {
 
 // NewLocalAIModel creates a new LocalAI model instance
 func NewLocalAIModel(baseURL map[string]string, urlSuffix URLSuffix) *LocalAIModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-	transport.ResponseHeaderTimeout = 60 * time.Second
-
 	return &LocalAIModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
-			httpClient: &http.Client{
-				Transport: transport,
-			},
+			BaseURL:          baseURL,
+			URLSuffix:        urlSuffix,
+			AllowEmptyAPIKey: true,
+			httpClient:       NewDriverHTTPClient(),
 		},
 	}
 }
@@ -146,7 +137,9 @@ func (l *LocalAIModel) ChatWithMessages(modelName string, messages []Message, ap
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -268,7 +261,9 @@ func (l *LocalAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -304,45 +299,25 @@ func (l *LocalAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		}
 	}()
 
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	sawTerminal := false
-	for scanner.Scan() {
+	streamDone, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		lastActiveMu.Lock()
 		lastActive = time.Now()
 		lastActiveMu.Unlock()
 
-		line := scanner.Text()
-
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-
-		data := strings.TrimSpace(line[5:])
-
-		if data == "[DONE]" {
-			sawTerminal = true
-			break
-		}
-
-		var event map[string]interface{}
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			continue
-		}
-
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
-			continue
+			return nil
 		}
 
 		firstChoice, ok := choices[0].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		delta, ok := firstChoice["delta"].(map[string]interface{})
 		if !ok {
-			continue
+			return nil
 		}
 
 		if reasoning := extractLocalAIReasoning(delta); reasoning != "" {
@@ -361,17 +336,16 @@ func (l *LocalAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		finishReason, ok := firstChoice["finish_reason"].(string)
 		if ok && finishReason != "" {
 			sawTerminal = true
-			break
 		}
-	}
-
-	if err := scanner.Err(); err != nil {
+		return nil
+	})
+	if err != nil {
 		if ctx.Err() != nil {
 			return fmt.Errorf("localai: stream idle for more than %s, aborted", localAIStreamIdleTimeout)
 		}
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
-	if !sawTerminal {
+	if !streamDone && !sawTerminal {
 		return fmt.Errorf("localai: stream ended before [DONE] or finish_reason")
 	}
 
@@ -435,7 +409,9 @@ func (l *LocalAIModel) Embed(modelName *string, texts []string, apiConfig *APICo
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -538,7 +514,9 @@ func (l *LocalAIModel) Rerank(modelName *string, query string, documents []strin
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -574,7 +552,7 @@ func (l *LocalAIModel) Rerank(modelName *string, query string, documents []strin
 	return rerankResponse, nil
 }
 
-func (l *LocalAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (l *LocalAIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := l.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -594,7 +572,9 @@ func (l *LocalAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -611,30 +591,16 @@ func (l *LocalAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
+	// Parse response
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	data, ok := result["data"].([]interface{})
-	if !ok {
+	if modelList.Models == nil {
 		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	models := make([]string, 0)
-	for _, model := range data {
-		modelMap, ok := model.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		modelName, ok := modelMap["id"].(string)
-		if !ok {
-			continue
-		}
-		models = append(models, modelName)
-	}
-
-	return models, nil
+	return ParseListModel(modelList), nil
 }
 
 func (l *LocalAIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {

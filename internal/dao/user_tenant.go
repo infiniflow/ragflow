@@ -17,6 +17,7 @@
 package dao
 
 import (
+	"context"
 	"fmt"
 
 	"ragflow/internal/entity"
@@ -57,8 +58,13 @@ func (dao *UserTenantDAO) Delete(id string) error {
 
 // GetByUserID get user tenant relationships by user ID
 func (dao *UserTenantDAO) GetByUserID(userID string) ([]*entity.UserTenant, error) {
+	return dao.GetByUserIDWithContext(context.Background(), userID)
+}
+
+// GetByUserIDWithContext gets active user tenant relationships by user ID with context.
+func (dao *UserTenantDAO) GetByUserIDWithContext(ctx context.Context, userID string) ([]*entity.UserTenant, error) {
 	var relations []*entity.UserTenant
-	err := DB.Where("user_id = ? AND status = ?", userID, "1").Find(&relations).Error
+	err := DB.WithContext(ctx).Where("user_id = ? AND status = ?", userID, "1").Find(&relations).Error
 	return relations, err
 }
 

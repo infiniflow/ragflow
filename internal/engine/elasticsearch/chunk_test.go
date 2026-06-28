@@ -35,12 +35,13 @@ func makeResponse(n int, startID int, total int64) SearchResponse {
 		return resp
 	}
 	hits := make([]struct {
-		ID     string                 `json:"_id"`
-		Index  string                 `json:"_index"`
-		Score  float64                `json:"_score"`
-		Source map[string]interface{} `json:"_source"`
-		Fields map[string]interface{} `json:"fields"`
-		Sort   []interface{}          `json:"sort,omitempty"`
+		ID        string                 `json:"_id"`
+		Index     string                 `json:"_index"`
+		Score     float64                `json:"_score"`
+		Source    map[string]interface{} `json:"_source"`
+		Fields    map[string]interface{} `json:"fields"`
+		Highlight map[string]interface{} `json:"highlight,omitempty"`
+		Sort      []interface{}          `json:"sort,omitempty"`
 	}, n)
 	for i := 0; i < n; i++ {
 		id := startID + i
@@ -378,7 +379,7 @@ func sortedCopy(in []int) []int {
 func TestBuildBoolQueryFromConditionIDFilter(t *testing.T) {
 	check := func(name string, cond map[string]interface{}, wantFields []string) {
 		t.Helper()
-		got := buildBoolQueryFromCondition(cond, nil, false)
+		got := buildBoolQueryFromCondition(cond, nil, false, false)
 		outer, ok := got["bool"].(map[string]interface{})
 		if !ok {
 			t.Fatalf("%s: missing bool wrapper: %v", name, got)

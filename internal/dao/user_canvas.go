@@ -17,8 +17,45 @@
 package dao
 
 import (
+	"errors"
+
+	"gorm.io/gorm"
+
 	"ragflow/internal/entity"
 )
+
+// ErrUserCanvasNotFound is returned by GetByIDForUser when the canvas is
+// missing or the caller has no read access. We deliberately do not
+// distinguish "missing" from "forbidden" so the response cannot be used
+// to enumerate other users' canvas ids — see plan §4.8 (IDOR mitigation).
+
+// userCanvasOrderableColumns whitelists the columns that may appear in an
+// ORDER BY clause. Keeps user-supplied `orderby` query params from being
+// spliced straight into SQL.
+var userCanvasOrderableColumns = map[string]struct{}{
+	"id":              {},
+	"user_id":         {},
+	"title":           {},
+	"permission":      {},
+	"canvas_type":     {},
+	"canvas_category": {},
+	"create_time":     {},
+	"create_date":     {},
+	"update_time":     {},
+	"update_date":     {},
+}
+
+func userCanvasOrderClause(orderby string, desc bool) string {
+	if _, ok := userCanvasOrderableColumns[orderby]; !ok {
+		orderby = "create_time"
+	}
+	if desc {
+		return orderby + " DESC"
+	}
+	return orderby + " ASC"
+}
+
+var ErrUserCanvasNotFound = errors.New("user_canvas: not found or access denied")
 
 // UserCanvasDAO user canvas data access object
 type UserCanvasDAO struct{}
@@ -38,6 +75,49 @@ func (dao *UserCanvasDAO) GetByID(id string) (*entity.UserCanvas, error) {
 	var canvas entity.UserCanvas
 	err := DB.Where("id = ?", id).First(&canvas).Error
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrUserCanvasNotFound
+		}
+		return nil, err
+	}
+	return &canvas, nil
+}
+
+// GetByIDForUser fetches a canvas and enforces ownership visibility:
+//
+//   - canvases with permission="me" or owned by the requesting user are
+//     always returned;
+//   - canvases with permission="team" are returned when the canvas owner
+//     is a tenant the requesting user belongs to (the team membership
+//     predicate mirrors user_canvas.ListByTenantIDs).
+//
+// Any other case — missing row, foreign private canvas, foreign team
+// canvas — yields ErrUserCanvasNotFound. The single error type stops
+// callers from leaking "exists but not yours" vs "doesn't exist" via the
+// HTTP status code.
+func (dao *UserCanvasDAO) GetByIDForUser(canvasID, userID string, tenantIDs []string) (*entity.UserCanvas, error) {
+	if canvasID == "" {
+		return nil, ErrUserCanvasNotFound
+	}
+	if userID == "" {
+		return nil, ErrUserCanvasNotFound
+	}
+
+	// owner=userID is allowed regardless of permission, matching the
+	// ListByTenantIDs predicate used by GET /api/v1/agents.
+	ownerOrTeam := DB.Where("user_id = ?", userID)
+	if len(tenantIDs) > 0 {
+		ownerOrTeam = ownerOrTeam.Or(
+			"user_id IN ? AND permission = ?", tenantIDs, "team",
+		)
+	}
+
+	var canvas entity.UserCanvas
+	err := DB.Where("id = ?", canvasID).Where(ownerOrTeam).First(&canvas).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrUserCanvasNotFound
+		}
 		return nil, err
 	}
 	return &canvas, nil
@@ -50,7 +130,46 @@ func (dao *UserCanvasDAO) Update(userCanvas *entity.UserCanvas) error {
 
 // Delete delete user canvas
 func (dao *UserCanvasDAO) Delete(id string) error {
-	return DB.Delete(&entity.UserCanvas{}, id).Error
+	// gorm v2 treats the first non-int inline arg as a column name, not a
+	// primary-key value — passing `id` verbatim produced WHERE ID = ?
+	// and made MySQL complain about an unknown "AGENT_ID" column. The
+	// explicit Where+Delete form is the same pattern used by
+	// API4ConversationDAO.Delete (see api_token.go:142-144).
+	return DB.Where("id = ?", id).Delete(&entity.UserCanvas{}).Error
+}
+
+// UpdateTx is the transactional variant of Update. Callers wrap a sequence
+// of *Tx calls in dao.DB.Transaction(func(tx *gorm.DB) error { ... }) so
+// multi-step writes (e.g. publish-agent, delete-agent) are atomic.
+func (dao *UserCanvasDAO) UpdateTx(tx *gorm.DB, userCanvas *entity.UserCanvas) error {
+	return tx.Save(userCanvas).Error
+}
+
+// DeleteTx is the transactional variant of Delete. The canvas must
+// already be loaded and access-checked by the caller.
+func (dao *UserCanvasDAO) DeleteTx(tx *gorm.DB, id string) error {
+	// See Delete() above for the rationale on Where("id = ?", id).
+	return tx.Where("id = ?", id).Delete(&entity.UserCanvas{}).Error
+}
+
+// GetByUserAndTitle returns the canvas matching user_id + title (and
+// optional canvas_category), or (nil, nil) when no such canvas exists.
+// Used by service.AgentService.CreateAgent to enforce the "title
+// already exists" rule that the Python agent API mirrors with
+// UserCanvasService.query(user_id=..., title=...).
+func (dao *UserCanvasDAO) GetByUserAndTitle(userID, title, canvasCategory string) (*entity.UserCanvas, error) {
+	q := DB.Where("user_id = ? AND title = ?", userID, title)
+	if canvasCategory != "" {
+		q = q.Where("canvas_category = ?", canvasCategory)
+	}
+	var row entity.UserCanvas
+	if err := q.First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &row, nil
 }
 
 // GetList get canvases list with pagination and filtering
@@ -74,11 +193,12 @@ func (dao *UserCanvasDAO) GetList(tenantID string, pageNumber, itemsPerPage int,
 	}
 
 	// Order by
-	if desc {
-		query = query.Order(orderby + " DESC")
-	} else {
-		query = query.Order(orderby + " ASC")
-	}
+	// Route orderby through userCanvasOrderClause above so user-supplied
+	// query params can never reach Order() verbatim. The helper validates
+	// against userCanvasOrderableColumns (a closed allowlist) and falls
+	// back to "create_time" on any miss, so the string spliced into the
+	// SQL fragment is always one of a fixed set of column names.
+	query = query.Order(userCanvasOrderClause(orderby, desc))
 
 	// Pagination
 	if pageNumber > 0 && itemsPerPage > 0 {
@@ -137,12 +257,12 @@ func (dao *UserCanvasDAO) ListByTenantIDs(ownerIDs []string, userID string, page
 		return nil, 0, err
 	}
 
-	order := orderby
-	if desc {
-		order += " DESC"
-	} else {
-		order += " ASC"
-	}
+	order := userCanvasOrderClause(orderby, desc)
+	// codeql[go/sql-injection] False positive: `order` was just derived
+	// from userCanvasOrderClause above, which validates `orderby`
+	// against userCanvasOrderableColumns (a closed allowlist) and
+	// defaults to "create_time" on miss. The string spliced into
+	// Order() is always one of a fixed set of column names.
 	query := base.Order(order)
 
 	if page > 0 && pageSize > 0 {

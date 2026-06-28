@@ -298,12 +298,24 @@ class GptV4(Base):
         return res.choices[0].message.content.strip(), total_token_count_from_response(res)
 
 
+def _resolve_azure_credentials(key):
+    try:
+        key_obj = json.loads(key)
+        if isinstance(key_obj, dict):
+            return key_obj.get("api_key", ""), key_obj.get("api_version", "2024-02-01")
+        logging.warning(
+            "Azure credential payload parsed as JSON but is not an object; using raw api_key string"
+        )
+    except (json.JSONDecodeError, TypeError):
+        logging.warning("Azure credential payload is not valid JSON; using raw api_key string")
+    return key, "2024-02-01"
+
+
 class AzureGptV4(GptV4):
     _FACTORY_NAME = "Azure-OpenAI"
 
     def __init__(self, key, model_name, lang="Chinese", **kwargs):
-        api_key = json.loads(key).get("api_key", "")
-        api_version = json.loads(key).get("api_version", "2024-02-01")
+        api_key, api_version = _resolve_azure_credentials(key)
         self.client = AzureOpenAI(api_key=api_key, azure_endpoint=kwargs["base_url"], api_version=api_version)
         self.async_client = AsyncAzureOpenAI(api_key=api_key, azure_endpoint=kwargs["base_url"], api_version=api_version)
         self.model_name = model_name
@@ -635,13 +647,17 @@ class OpenRouterCV(GptV4):
     def __init__(self, key, model_name, lang="Chinese", base_url="https://openrouter.ai/api/v1", **kwargs):
         if not base_url:
             base_url = "https://openrouter.ai/api/v1"
-        api_key = json.loads(key).get("api_key", "")
+        try:
+            api_key = json.loads(key).get("api_key", "")
+            provider_order = json.loads(key).get("provider_order", "")
+        except JSONDecodeError:
+            api_key = key
+            provider_order = ""
         self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.async_client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang
         Base.__init__(self, **kwargs)
-        provider_order = json.loads(key).get("provider_order", "")
         self.extra_body = {}
         if provider_order:
 
@@ -1222,6 +1238,22 @@ class AnthropicCV(Base):
 class GoogleCV(AnthropicCV, GeminiCV):
     _FACTORY_NAME = "Google Cloud"
 
+    @staticmethod
+    def _vertex_http_options(region: str):
+        region_norm = (region or "").strip().lower()
+        multipoint_hosts = {
+            "eu": "https://aiplatform.eu.rep.googleapis.com/",
+            "us": "https://aiplatform.us.rep.googleapis.com/",
+        }
+        base_url = multipoint_hosts.get(region_norm)
+        if base_url:
+            from google.genai.types import HttpOptions
+
+            # Gemini 3.x multi-region endpoints require *.rep hostnames
+            # instead of region-aiplatform host synthesis.
+            return HttpOptions(base_url=base_url, api_version="v1")
+        return None
+
     def __init__(self, key, model_name, lang="Chinese", base_url=None, **kwargs):
         import base64
 
@@ -1250,11 +1282,20 @@ class GoogleCV(AnthropicCV, GeminiCV):
                 self.client = AnthropicVertex(region=region, project_id=project_id)
         else:
             from google import genai
+            client_kwargs = {
+                "vertexai": True,
+                "project": project_id,
+                "location": region,
+            }
+            http_options = self._vertex_http_options(region)
+            if http_options is not None:
+                client_kwargs["http_options"] = http_options
             if access_token:
                 credits = service_account.Credentials.from_service_account_info(access_token, scopes=scopes)
-                self.client = genai.Client(vertexai=True, project=project_id, location=region, credentials=credits)
+                client_kwargs["credentials"] = credits
+                self.client = genai.Client(**client_kwargs)
             else:
-                self.client = genai.Client(vertexai=True, project=project_id, location=region)
+                self.client = genai.Client(**client_kwargs)
         Base.__init__(self, **kwargs)
 
     def describe(self, image):
@@ -1377,3 +1418,16 @@ class BedrockCV(Base):
 
     def describe(self, image):
         return self.describe_with_prompt(image)
+
+
+class NewAPICv(GptV4):
+    _FACTORY_NAME = "New API"
+
+    def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
+        if not base_url:
+            raise ValueError("url cannot be None")
+        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.async_client = AsyncOpenAI(api_key=key, base_url=base_url)
+        self.model_name = model_name.split("___")[0]
+        self.lang = lang
+        Base.__init__(self, **kwargs)

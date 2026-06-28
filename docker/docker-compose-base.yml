@@ -104,10 +104,16 @@ services:
     profiles:
       - oceanbase
     image: oceanbase/oceanbase-ce:4.4.1.0-100000032025101610
+    entrypoint: ["bash", "/root/boot/ragflow-oceanbase-entrypoint.sh"]
+    ulimits:
+      nofile:
+        soft: 655350
+        hard: 655350
     volumes:
       - ./oceanbase/data:/root/ob
       - ./oceanbase/conf:/root/.obd/cluster
       - ./oceanbase/init.d:/root/boot/init.d
+      - ./oceanbase-entrypoint.sh:/root/boot/ragflow-oceanbase-entrypoint.sh:ro
     ports:
       - ${OCEANBASE_PORT:-2881}:2881
     env_file: .env
@@ -244,6 +250,25 @@ services:
       timeout: 10s
       retries: 120
 
+  nats:
+    profiles:
+      - ragflow-go
+    image: nats:2.14.2
+    ports:
+      - ${NATS_PORT}:4222
+      - "8222:8222"
+    volumes:
+      - nats_data:/data
+    command: -js -sd /data
+    env_file: .env
+    networks:
+      - ragflow
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "${NATS_PORT}"]
+      interval: 10s
+      timeout: 10s
+      retries: 120
 
   tei-cpu:
     profiles:
@@ -322,6 +347,8 @@ volumes:
   tei_data:
     driver: local
   kibana_data:
+    driver: local
+  nats_data:
     driver: local
 
 networks:

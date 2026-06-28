@@ -37,20 +37,11 @@ type ReplicateModel struct {
 }
 
 func NewReplicateModel(baseURL map[string]string, urlSuffix URLSuffix) *ReplicateModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-	transport.ResponseHeaderTimeout = 60 * time.Second
-
 	return &ReplicateModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
-			httpClient: &http.Client{
-				Transport: transport,
-			},
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(),
 		},
 	}
 }
@@ -76,16 +67,19 @@ type replicatePrediction struct {
 	URLs   replicatePredictionURLs `json:"urls"`
 }
 
-type replicateModelsResponse struct {
-	Results []struct {
-		Owner string `json:"owner"`
-		Name  string `json:"name"`
-	} `json:"results"`
-}
-
 type replicateSSEEvent struct {
 	event string
 	data  string
+}
+
+type replicateModelList struct {
+	Results []replicateModelSummary `json:"results"`
+}
+
+type replicateModelSummary struct {
+	ID    string `json:"id"`
+	Owner string `json:"owner"`
+	Name  string `json:"name"`
 }
 
 func (r *ReplicateModel) endpoint(apiConfig *APIConfig, suffix string) (string, error) {
@@ -504,7 +498,7 @@ func dispatchReplicateSSEEvent(event replicateSSEEvent, sender func(*string, *st
 	}
 }
 
-func (r *ReplicateModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (r *ReplicateModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -538,18 +532,38 @@ func (r *ReplicateModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result replicateModelsResponse
-	if err = json.Unmarshal(body, &result); err != nil {
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	models := make([]string, 0, len(result.Results))
-	for _, model := range result.Results {
-		if model.Owner != "" && model.Name != "" {
-			models = append(models, fmt.Sprintf("%s/%s", model.Owner, model.Name))
-		}
+	if modelList.Models != nil {
+		return ParseListModel(modelList), nil
 	}
-	return models, nil
+
+	var replicateList replicateModelList
+	if err = json.Unmarshal(body, &replicateList); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	if replicateList.Results == nil {
+		return nil, fmt.Errorf("invalid models list format")
+	}
+	for _, model := range replicateList.Results {
+		modelName := strings.TrimSpace(model.ID)
+		if modelName == "" && model.Owner != "" && model.Name != "" {
+			modelName = fmt.Sprintf("%s/%s", model.Owner, model.Name)
+		}
+		if modelName == "" {
+			modelName = strings.TrimSpace(model.Name)
+		}
+		if modelName == "" {
+			continue
+		}
+		modelList.Models = append(modelList.Models, DSModel{
+			ID: modelName,
+		})
+	}
+
+	return ParseListModel(modelList), nil
 }
 
 func (r *ReplicateModel) CheckConnection(apiConfig *APIConfig) error {
@@ -659,15 +673,6 @@ func replicateKeys(m map[string]interface{}) []string {
 }
 
 // Embed turns a list of texts into embedding vectors via Replicate's
-// prediction API. Replicate's embedding surface is the same async
-// /v1/predictions or /v1/models/{owner}/{name}/predictions endpoint
-// the chat path already uses: create a prediction with `Prefer: wait`
-// to skip the polling round-trip when possible, fall back to
-// waitForPrediction for predictions that don't finish in the wait
-// window. The driver targets the canonical Replicate embedding
-// schema (input.text / input.text_batch, output is an array of
-// {embedding: [floats]} objects); see replicateEmbedInput and
-// replicateEmbedOutputToVectors for details.
 func (r *ReplicateModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -708,19 +713,7 @@ func (r *ReplicateModel) Embed(modelName *string, texts []string, apiConfig *API
 	return replicateEmbedOutputToVectors(prediction.Output, len(texts))
 }
 
-// replicateRerankInput shapes the request body for Replicate's
-// canonical bge-style reranker schema. The documented input is a
-// single string field `input_list` carrying a JSON-encoded list of
-// `[query, passage]` pairs; the model returns a flat list of
-// numeric scores, one per pair, in the same order.
-//
-// See yxzwayne/bge-reranker-v2-m3's openapi_schema + default_example
-// at https://replicate.com/yxzwayne/bge-reranker-v2-m3. Other
-// reranker models on Replicate (sesamo-srl/bge-reranker-v2-m3,
-// ninehills/bge-reranker-large) follow compatible
-// pair-list-in-string conventions; this driver targets the
-// canonical shape and leaves model-specific adapters for future
-// PRs if other schemas are needed.
+// replicateRerankInput shapes the request body
 func replicateRerankInput(query string, documents []string) (map[string]interface{}, error) {
 	if len(documents) == 0 {
 		return nil, fmt.Errorf("replicate: documents is empty")
@@ -737,16 +730,6 @@ func replicateRerankInput(query string, documents []string) (map[string]interfac
 }
 
 // replicateRerankOutputToScores normalizes Replicate's two observed
-// rerank-output shapes into a []float64 aligned with the caller's
-// document order:
-//
-//	[]float64        — flat scores array, used by
-//	                   yxzwayne/bge-reranker-v2-m3 (canonical)
-//	{ "scores": [..] } — wrapped object, used by ninehills/bge-reranker-large
-//
-// Rejects mismatched cardinality and non-numeric scores rather than
-// silently truncate, matching the defensive posture the Embed
-// implementation already uses.
 func replicateRerankOutputToScores(output interface{}, n int) ([]float64, error) {
 	if scores, ok := output.([]interface{}); ok {
 		return replicateScoresFromInterface(scores, n)
@@ -780,18 +763,7 @@ func replicateScoresFromInterface(arr []interface{}, n int) ([]float64, error) {
 	return out, nil
 }
 
-// Rerank scores a query against a list of documents via Replicate's
-// prediction API. The driver targets bge-reranker-v2-m3-style models
-// (the most widely-published rerank schema on Replicate) and reuses
-// the existing createPrediction + waitForPrediction plumbing from
-// the chat and embed paths.
-//
-// Replicate rerank model outputs are raw similarity scores — they
-// are NOT normalized to [0, 1] like Cohere or Voyage rerank
-// responses. Higher scores still indicate stronger relevance; the
-// driver passes the raw value through without rescaling so callers
-// can compare against per-model thresholds, but the RelevanceScore
-// field should not be assumed to be a probability.
+// Rerank scores a query against a list of documents
 func (r *ReplicateModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
 	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -834,11 +806,6 @@ func (r *ReplicateModel) Rerank(modelName *string, query string, documents []str
 		return nil, err
 	}
 
-	// Build the canonical RerankResponse with one entry per input
-	// document. Optional top_n trimming sorts by score descending
-	// and keeps the highest-ranking documents; otherwise return all
-	// scores in original document order, matching how Voyage's
-	// driver in this package surfaces its results.
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
 		topN = rerankConfig.TopN

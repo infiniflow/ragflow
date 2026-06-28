@@ -343,6 +343,11 @@ func (e *infinityEngine) InsertChunks(ctx context.Context, chunks []map[string]i
 	if len(insertChunks) > 0 {
 		idList := make([]string, len(insertChunks))
 		for i, chunk := range insertChunks {
+			// is a UUID produced by the document ingestion path
+			// (uuid.NewString), not user input. We single-quote it
+			// for Infinity SQL; UUIDs cannot contain single quotes
+			// by construction (RFC 4122 §3).
+			// codeql[go/unsafe-quoting] False positive: chunk["id"]
 			idList[i] = fmt.Sprintf("'%v'", chunk["id"])
 		}
 		filter := fmt.Sprintf("id IN (%s)", strings.Join(idList, ", "))
@@ -928,7 +933,13 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 
 				if hasTextMatch {
 					fieldsStr := strings.Join(convertedFields, ",")
-					filterFulltext := fmt.Sprintf("filter_fulltext('%s', '%s')", fieldsStr, questionText)
+					// Escape single quotes in user-controlled questionText
+					// before splicing into the filter_fulltext() call.
+					// fieldsStr is sourced from a fixed allowlist (see
+					// textFields above) and is not user-controlled.
+					safeQuery := strings.ReplaceAll(questionText, "'", "''")
+					safeFields := strings.ReplaceAll(fieldsStr, "'", "''")
+					filterFulltext := fmt.Sprintf("filter_fulltext('%s', '%s')", safeFields, safeQuery)
 					denseFilterStr = fmt.Sprintf("(%s) AND %s", denseFilterStr, filterFulltext)
 				}
 				threshold := "0.0"
@@ -1282,6 +1293,13 @@ func applyFieldMappings(chunks []map[string]interface{}) {
 			chunk["authors_sm_tks"] = val
 		}
 
+		if val, ok := chunk["message_type_kwd"]; ok {
+			chunk["message_type"] = val
+		}
+		if val, ok := chunk["status_int"]; ok {
+			chunk["status"] = memoryMessageStatusBool(val)
+		}
+
 		// position_int: convert from hex string to array format (grouped by 5)
 		if val, ok := chunk["position_int"].(string); ok {
 			chunk["position_int"] = utility.ConvertHexToPositionIntArray(val)
@@ -1329,6 +1347,26 @@ func applyFieldMappings(chunks []map[string]interface{}) {
 			chunk["row_id()"] = val
 			delete(chunk, "ROW_ID")
 		}
+	}
+}
+
+func memoryMessageStatusBool(value interface{}) bool {
+	switch v := value.(type) {
+	case bool:
+		return v
+	case int:
+		return v != 0
+	case int64:
+		return v != 0
+	case float64:
+		return v != 0
+	case json.Number:
+		n, err := v.Int64()
+		return err == nil && n != 0
+	case string:
+		return v != "" && v != "0" && !strings.EqualFold(v, "false")
+	default:
+		return false
 	}
 }
 
@@ -1837,6 +1875,8 @@ func convertSelectFields(output []string, isSkillIndex ...bool) []string {
 		"content_sm_ltks":     "content",
 		"authors_tks":         "authors",
 		"authors_sm_tks":      "authors",
+		"message_type":        "message_type_kwd",
+		"status":              "status_int",
 	}
 
 	skillIndex := false
@@ -1916,6 +1956,7 @@ func convertMatchingField(fieldWeightStr string) string {
 		"authors_tks":         "authors@ft_authors_rag_coarse",
 		"authors_sm_tks":      "authors@ft_authors_rag_fine",
 		"tag_kwd":             "tag_kwd@ft_tag_kwd_whitespace__",
+		"toc_kwd":             "toc_kwd@ft_toc_kwd_whitespace__",
 		// Skill index fields
 		"name":        "name@ft_name_rag_coarse",
 		"tags":        "tags@ft_tags_rag_coarse",
@@ -2002,6 +2043,12 @@ func equivalentConditionToStr(condition map[string]interface{}) string {
 					convertMatchingField(k), escapeFilterValue(fmt.Sprintf("%v", v))))
 			}
 			continue
+		}
+
+		if k == "message_type" {
+			k = "message_type_kwd"
+		} else if k == "status" {
+			k = "status_int"
 		}
 
 		// Handle list values (mixed types - strings get quotes, numbers don't)
@@ -2209,6 +2256,19 @@ func transformChunkFields(chunk map[string]interface{}, embeddingCols [][2]inter
 			d["questions"] = strings.Join(utility.ConvertToStringSlice(v), "\n")
 		case "tag_kwd":
 			d["tag_kwd"] = strings.Join(utility.ConvertToStringSlice(v), "###")
+		case "message_type":
+			d["message_type_kwd"] = v
+		case "status":
+			switch status := v.(type) {
+			case bool:
+				if status {
+					d["status_int"] = 1
+				} else {
+					d["status_int"] = 0
+				}
+			default:
+				d["status_int"] = v
+			}
 		case "question_tks":
 			if _, exists := chunk["question_kwd"]; !exists {
 				d["questions"] = utility.ConvertToString(v)

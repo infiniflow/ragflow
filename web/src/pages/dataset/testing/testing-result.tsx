@@ -4,7 +4,6 @@ import { FilterButton } from '@/components/list-filter-bar';
 import { FilterPopover } from '@/components/list-filter-bar/filter-popover';
 import { FilterCollection } from '@/components/list-filter-bar/interface';
 import { Card } from '@/components/ui/card';
-import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useTestRetrieval } from '@/hooks/use-knowledge-request';
 import { ITestingChunk } from '@/interfaces/database/dataset';
@@ -34,22 +33,13 @@ const ChunkTitle = ({ item }: { item: ITestingChunk }) => {
 
 type TestingResultProps = Pick<
   ReturnType<typeof useTestRetrieval>,
-  | 'data'
-  | 'filterValue'
-  | 'handleFilterSubmit'
-  | 'page'
-  | 'pageSize'
-  | 'onPaginationChange'
-  | 'loading'
+  'data' | 'filterValue' | 'handleFilterSubmit' | 'loading'
 >;
 
 export function TestingResult({
   filterValue,
   handleFilterSubmit,
-  page,
-  pageSize,
   loading,
-  onPaginationChange,
   data,
 }: TestingResultProps) {
   const filters: FilterCollection[] = useMemo(() => {
@@ -69,10 +59,13 @@ export function TestingResult({
 
   return (
     <article className="size-full flex flex-col">
-      <header className="flex-0 px-5 py-3 flex justify-between">
+      <header className="flex-0 px-5 py-3 flex justify-between items-center">
         <h2 className="font-semibold text-base leading-8">
           {t('knowledgeDetails.testResults')}
         </h2>
+        <span className="mr-auto text-sm text-text-secondary pl-2">
+          {t('common.total')}: {data.total}
+        </span>
 
         <FilterPopover
           filters={filters}
@@ -96,14 +89,6 @@ export function TestingResult({
                 </article>
               ))}
             </section>
-            <div className="p-2">
-              <RAGFlowPagination
-                total={data.total}
-                onChange={onPaginationChange}
-                current={page}
-                pageSize={pageSize}
-              ></RAGFlowPagination>
-            </div>
           </>
         )}
         {!data.chunks?.length && !loading && (

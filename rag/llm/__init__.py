@@ -105,7 +105,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.xAI: "xai/",
     SupportedLiteLLMProvider.DeepInfra: "deepinfra/",
     SupportedLiteLLMProvider.Groq: "groq/",
-    SupportedLiteLLMProvider.Cohere: "",  # don't need a prefix
+    SupportedLiteLLMProvider.Cohere: "cohere_chat/",
     SupportedLiteLLMProvider.Gemini: "gemini/",
     SupportedLiteLLMProvider.DeepSeek: "deepseek/",
     SupportedLiteLLMProvider.Nvidia: "nvidia_nim/",

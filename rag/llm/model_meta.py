@@ -16,6 +16,8 @@
 import json
 import aiohttp
 from abc import ABC
+from urllib.parse import urlparse
+from json.decoder import JSONDecodeError
 
 from common.constants import LLMType
 
@@ -58,9 +60,63 @@ class Base(ABC):
 class VolcEngine(Base):
     _FACTORY_NAME = "VolcEngine"
 
-    def get_model_list(self):
-        # todo implement access token auth
-        raise NotImplementedError
+    def _get_api_key(self):
+        try:
+            api_key = json.loads(self.api_key).get("ark_api_key", "")
+        except JSONDecodeError:
+            api_key = self.api_key
+        return api_key
+
+    def _get_model_list_url(self):
+        if not self.base_url:
+            self.base_url = "https://ark.cn-beijing.volces.com/api/v3"
+        parsed = urlparse(self.base_url)
+        return f"{parsed.scheme}://{parsed.netloc}/api/v3/models"
+
+    def _format_model_list(self, raw_model_list):
+        serving_model = [model for model in raw_model_list["data"] if model.get("status", "") != "Shutdown"]
+        res = []
+        for model in serving_model:
+
+            model_types = []
+
+            if model.get("domain", "") == "Embedding":
+                model_types.append(LLMType.EMBEDDING.value)
+            elif set(model.get("task_type", [])) & {"TextEmbedding", "ImageEmbedding"}:
+                model_types.append(LLMType.EMBEDDING.value)
+            else:
+                modalities = model.get("modalities", {})
+                input_modalities = modalities.get("input_modalities", [])
+                output_modalities = modalities.get("output_modalities", [])
+
+                if "text" in output_modalities:
+                    model_types.append(LLMType.CHAT.value)
+                if "embeddings" in output_modalities:
+                    model_types.append(LLMType.EMBEDDING.value)
+                if "image" in input_modalities and "text" in output_modalities:
+                    model_types.append(LLMType.IMAGE2TEXT.value)
+                if "audio" in input_modalities and "text" in output_modalities:
+                    model_types.append(LLMType.SPEECH2TEXT.value)
+                if "audio" in output_modalities:
+                    model_types.append(LLMType.TTS.value)
+
+            if not model_types:
+                continue
+
+            features = []
+            if model.get("features", {}).get("tools", {}).get("function_calling", False):
+                features.append("is_tools")
+            if model.get("token_limits", {}).get("max_reasoning_token_length", 0) > 0:
+                features.append("thinking")
+
+            res.append({
+                "name": model["id"],
+                "model_types": model_types,
+                "features": features,
+                "max_tokens": model.get("token_limits", {}).get("max_input_token_length", 8192),
+                "status": model.get("status")
+            })
+        return res
 
 
 class Ollama(Base):
@@ -205,7 +261,7 @@ class LocalAI(Base):
                     context_length = model_info.get("model_info", {}).get("general.context_length", 8192)
                     res.append(
                         {
-                            "name": model["name"],
+                            "name": model["name"].rsplit(":", 1)[0],
                             "model_types": [capability_to_model_type_mapping[c] for c in model_info.get("capabilities", []) if c in capability_to_model_type_mapping],
                             "features": [capability_to_feature_mapping[c] for c in model_info.get("capabilities", []) if c in capability_to_feature_mapping],
                             "max_tokens": context_length or 8192,
@@ -261,128 +317,6 @@ class BaiduYiyan(Base):
             pass
 
         return res
-
-
-class TencentCloud(Base):
-    """Tencent Cloud is used for ASR (speech-to-text) only.
-
-    It uses SDK-based authentication (SID/SK with HMAC signing).
-    No REST API is available for model listing, and there are no LLM models.
-    """
-
-    _FACTORY_NAME = "Tencent Cloud"
-
-    def get_model_list(self):
-        raise NotImplementedError
-
-
-class FishAudio(Base):
-    _FACTORY_NAME = "Fish Audio"
-
-    def _get_access_token(self):
-        api_key = self._get_api_key()
-        if not api_key:
-            return ""
-        try:
-            payload = json.loads(api_key)
-        except Exception:
-            return api_key
-        if isinstance(payload, dict):
-            return payload.get("fish_audio_ak") or payload.get("access_token") or payload.get("api_key") or api_key
-        return api_key
-
-    def _get_model_list_url(self):
-        if not self.base_url:
-            return "https://api.fish.audio/model"
-        base_url = self.base_url.rstrip("/")
-        if "/v1/" in base_url:
-            return base_url.split("/v1")[0].rstrip("/") + "/model"
-        if base_url.endswith("/v1"):
-            return base_url[:-3] + "/model"
-        return base_url + "/model"
-
-    async def get_model_list(self):
-        url = self._get_model_list_url()
-        access_token = self._get_access_token()
-        if not url or not access_token:
-            return []
-
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers={"Authorization": f"Bearer {access_token}"}) as resp:
-                if resp.status != 200:
-                    return []
-                raw_model_list = await resp.json()
-                if not isinstance(raw_model_list, dict):
-                    return []
-                models = raw_model_list.get("items") or []
-                if not isinstance(models, list):
-                    return []
-
-                model_list = []
-                for model in models:
-                    if not isinstance(model, dict):
-                        continue
-                    model_name = model.get("title") or model.get("_id")
-                    if not model_name:
-                        continue
-                    model_list.append(
-                        {
-                            "name": model_name,
-                            "model_types": [LLMType.TTS.value],
-                            "features": [],
-                            "max_tokens": 8192,
-                        }
-                    )
-                return model_list
-
-
-class MinerU(Base):
-    _FACTORY_NAME = "MinerU"
-
-    def _get_access_token(self):
-        api_key = self._get_api_key()
-        if not api_key:
-            return ""
-        try:
-            payload = json.loads(api_key)
-        except Exception:
-            return api_key
-        if isinstance(payload, dict):
-            return payload.get("access_token") or payload.get("api_key") or api_key
-        return api_key
-
-    async def get_model_list(self):
-        url = self._get_model_list_url()
-        access_token = self._get_access_token()
-        if not url or not access_token:
-            return []
-
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers={"Authorization": f"Bearer {access_token}"}) as resp:
-                if resp.status != 200:
-                    return []
-                raw_model_list = await resp.json()
-                if isinstance(raw_model_list, dict):
-                    raw_model_list = raw_model_list.get("data") or raw_model_list.get("models") or raw_model_list.get("items") or []
-                if not isinstance(raw_model_list, list):
-                    return []
-
-                model_list = []
-                for model in raw_model_list:
-                    if not isinstance(model, dict):
-                        continue
-                    model_name = model.get("title") or model.get("name") or model.get("id") or model.get("_id")
-                    if not model_name:
-                        continue
-                    model_list.append(
-                        {
-                            "name": model_name,
-                            "model_types": [LLMType.OCR.value],
-                            "features": [],
-                            "max_tokens": model.get("max_tokens", 8192),
-                        }
-                    )
-                return model_list
 
 
 class OpenRouter(Base):
@@ -465,7 +399,7 @@ class OpenRouter(Base):
 class OpenAIAPICompatible(Base):
     _FACTORY_NAME = "OpenAI-API-Compatible"
 
-    _EMBEDDING_HINTS = ("embed", "embedding")
+    _EMBEDDING_HINTS = ("embed", "embedding", "bge")
     _RERANK_HINTS = ("rerank", "reranker")
     _SPEECH2TEXT_HINTS = ("asr", "stt", "transcribe", "transcriber", "whisper")
     _TTS_HINTS = ("tts", "text-to-speech")
@@ -535,3 +469,16 @@ class VLLM(OpenAIAPICompatible):
 
 class LMStudio(OpenAIAPICompatible):
     _FACTORY_NAME = "LM-Studio"
+
+
+class NewAPI(OpenAIAPICompatible):
+    _FACTORY_NAME = "New API"
+
+    def _get_api_key(self):
+        try:
+            parsed = json.loads(self.api_key)
+            if isinstance(parsed, dict):
+                return parsed.get("api_key", self.api_key)
+        except (JSONDecodeError, TypeError):
+            pass
+        return self.api_key

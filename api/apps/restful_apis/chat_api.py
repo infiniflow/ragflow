@@ -1229,6 +1229,11 @@ async def session_completion(chat_id_in_arg=""):
             dia.llm_id = tenant_info.llm_id
             merge_generation_config(dia, chat_model_config)
 
+        legacy = _get_bool_request_flag(
+            req,
+            "legacy",
+            default=False,
+        )
         stream_mode = req.pop("stream", True)
 
         def _format_answer(ans):
@@ -1242,10 +1247,53 @@ async def session_completion(chat_id_in_arg=""):
             """Yield SSE-formatted chunks from the async chat generator."""
             nonlocal dia, msg, req, conv
             try:
-                async for ans in async_chat(dia, msg, True, **req):
-                    ans = _format_answer(ans)
-                    payload = _sanitize_json_floats({"code": 0, "message": "", "data": ans})
-                    yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
+                if legacy:
+                    # v0.23.0-style streaming: emit accumulated answer text and
+                    # reconstruct raw <think>...</think> markers from the newer
+                    # start_to_think/end_to_think events.
+                    legacy_answer = ""
+                    final_answer = None
+                    async for ans in async_chat(dia, msg, True, session_id=session_id, **req):
+                        ans = _format_answer(ans)
+                        if ans.get("final"):
+                            final_answer = ans
+                            continue
+                        if ans.get("start_to_think"):
+                            legacy_answer += "<think>"
+                            legacy_chunk = {**ans, "answer": legacy_answer}
+                            legacy_chunk.pop("start_to_think", None)
+                            legacy_chunk.pop("end_to_think", None)
+                            payload = _sanitize_json_floats({"code": 0, "message": "", "data": legacy_chunk})
+                            yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
+                            continue
+                        if ans.get("end_to_think"):
+                            legacy_answer += "</think>"
+                            legacy_chunk = {**ans, "answer": legacy_answer}
+                            legacy_chunk.pop("start_to_think", None)
+                            legacy_chunk.pop("end_to_think", None)
+                            payload = _sanitize_json_floats({"code": 0, "message": "", "data": legacy_chunk})
+                            yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
+                            continue
+                        delta = ans.get("answer") or ""
+                        if not delta:
+                            continue
+                        legacy_answer += delta
+                        legacy_chunk = {**ans, "answer": legacy_answer}
+                        legacy_chunk.pop("start_to_think", None)
+                        legacy_chunk.pop("end_to_think", None)
+                        payload = _sanitize_json_floats({"code": 0, "message": "", "data": legacy_chunk})
+                        yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
+                    if final_answer is not None:
+                        final_chunk = {**final_answer, "answer": final_answer.get("answer") or legacy_answer}
+                        final_chunk.pop("start_to_think", None)
+                        final_chunk.pop("end_to_think", None)
+                        payload = _sanitize_json_floats({"code": 0, "message": "", "data": final_chunk})
+                        yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
+                else:
+                    async for ans in async_chat(dia, msg, True, session_id=session_id, **req):
+                        ans = _format_answer(ans)
+                        payload = _sanitize_json_floats({"code": 0, "message": "", "data": ans})
+                        yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
                 if conv is not None:
                     await thread_pool_exec(ConversationService.update_by_id, conv.id, conv.to_dict())
             except Exception as ex:
@@ -1262,7 +1310,7 @@ async def session_completion(chat_id_in_arg=""):
             return resp
 
         answer = None
-        async for ans in async_chat(dia, msg, False, **req):
+        async for ans in async_chat(dia, msg, False, session_id=session_id, **req):
             answer = _format_answer(ans)
             if conv is not None:
                 await thread_pool_exec(ConversationService.update_by_id, conv.id, conv.to_dict())
