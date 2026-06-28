@@ -61,7 +61,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -69,6 +68,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 )
 
 // selfManagedDefaultEndpoint is the canonical executor_manager
@@ -323,8 +325,12 @@ func (p *SelfManagedProvider) ExecuteCode(
 		"runtime_error_type":  raw.RuntimeErr,
 		"structured_result":   structured,
 	}
-	log.Printf("DEBUG CodeExec self_managed: http_result=%#v structured_result=%#v stdout=%q stderr=%q exit_code=%d",
-		raw.Result, structured, stdout, raw.Stderr, raw.ExitCode)
+	common.Debug("CodeExec self_managed",
+		zap.Any("http_result", raw.Result),
+		zap.Any("structured_result", structured),
+		zap.String("stdout", stdout),
+		zap.String("stderr", raw.Stderr),
+		zap.Int("exit_code", raw.ExitCode))
 
 	return &ExecutionResult{
 		Stdout:        stdout,

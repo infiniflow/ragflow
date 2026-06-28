@@ -20,7 +20,10 @@ package canvas
 
 import (
 	"encoding/json"
-	"log"
+
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 )
 
 // StreamEvent is the unit emitted by canvas components to the SSE writer.
@@ -69,8 +72,9 @@ func (e *channelEmitter) Emit(ev StreamEvent) error {
 	case e.ch <- ev:
 		return nil
 	default:
-		log.Printf("canvas stream: dropping event %q for task %q (buffer full)",
-			ev.Event, ev.TaskID)
+		common.Warn("canvas stream: dropping event (buffer full)",
+			zap.String("event", ev.Event),
+			zap.String("task", ev.TaskID))
 		return nil
 	}
 }

@@ -235,7 +235,14 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
     def _get_optimal_clusters(self, embeddings: np.ndarray, random_state: int, task_id: str = ""):
         """Choose the GMM cluster count with the lowest BIC score."""
         max_clusters = min(self._max_cluster, len(embeddings))
-        n_clusters = np.arange(1, max_clusters)
+        if max_clusters <= 1:
+            logging.info(
+                "RAPTOR GMM: _get_optimal_clusters returning 1 (max_clusters=%s, embeddings=%d)",
+                max_clusters,
+                len(embeddings),
+            )
+            return 1
+        n_clusters = np.arange(1, max_clusters + 1)
         bics = []
         for n in n_clusters:
             self._check_task_canceled(task_id, "get optimal clusters")
@@ -244,7 +251,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             gm.fit(embeddings)
             bics.append(gm.bic(embeddings))
         optimal_clusters = n_clusters[np.argmin(bics)]
-        return optimal_clusters
+        return int(optimal_clusters)
 
     def _get_clusters_ahc(self, embeddings: np.ndarray, task_id: str = "") -> np.ndarray:
         """Cluster embeddings with Ward-linkage AHC and a dendrogram gap heuristic."""

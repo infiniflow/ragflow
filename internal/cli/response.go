@@ -88,14 +88,6 @@ func (r *ModelsResponse) PrintOut() {
 	}
 }
 
-type UserIndexResponse struct {
-	InternalData CommonDataResponse
-}
-
-func (r *UserIndexResponse) TimeCost() float64 {
-	return r.InternalData.Duration
-}
-
 type CommonDataResponse struct {
 	Code         int                    `json:"code"`
 	Data         map[string]interface{} `json:"data"`
@@ -114,6 +106,24 @@ func (r *CommonDataResponse) TimeCost() float64 {
 
 func (r *CommonDataResponse) SetOutputFormat(format OutputFormat) {
 	r.OutputFormat = format
+}
+
+func (r *CommonDataResponse) orderedMetricTable() []map[string]interface{} {
+	table := make([]map[string]interface{}, 0)
+	if orderRaw, ok := r.Data["_order"]; ok {
+		if orderSlice, ok := orderRaw.([]interface{}); ok {
+			for _, keyRaw := range orderSlice {
+				key := fmt.Sprintf("%v", keyRaw)
+				if value, exists := r.Data[key]; exists {
+					table = append(table, map[string]interface{}{
+						"Metric": key,
+						"Value":  value,
+					})
+				}
+			}
+		}
+	}
+	return table
 }
 
 func (r *CommonDataResponse) PrintOut() {
@@ -159,6 +169,114 @@ func (r *ListDocumentsResponse) PrintOut() {
 		total := r.Data["total"].(float64)
 		fmt.Printf("Total: %0.0f\n", total)
 		docs := r.Data["docs"].([]interface{})
+		table := make([]map[string]interface{}, 0)
+		for _, doc := range docs {
+			table = append(table, doc.(map[string]interface{}))
+		}
+		PrintTableSimpleByFormat(table, r.OutputFormat)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
+type ListAgentsResponse struct {
+	Code         int                    `json:"code"`
+	Data         map[string]interface{} `json:"data"`
+	Message      string                 `json:"message"`
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *ListAgentsResponse) Type() string {
+	return "list_agents"
+}
+
+func (r *ListAgentsResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *ListAgentsResponse) SetOutputFormat(format OutputFormat) {
+	r.OutputFormat = format
+}
+
+func (r *ListAgentsResponse) PrintOut() {
+	if r.Code == 0 {
+		total := r.Data["total"].(float64)
+		fmt.Printf("Total: %0.0f\n", total)
+		docs := r.Data["canvas"].([]interface{})
+		table := make([]map[string]interface{}, 0)
+		for _, doc := range docs {
+			table = append(table, doc.(map[string]interface{}))
+		}
+		PrintTableSimpleByFormat(table, r.OutputFormat)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
+type ListChatsResponse struct {
+	Code         int                    `json:"code"`
+	Data         map[string]interface{} `json:"data"`
+	Message      string                 `json:"message"`
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *ListChatsResponse) Type() string {
+	return "list_chats"
+}
+
+func (r *ListChatsResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *ListChatsResponse) SetOutputFormat(format OutputFormat) {
+	r.OutputFormat = format
+}
+
+func (r *ListChatsResponse) PrintOut() {
+	if r.Code == 0 {
+		total := r.Data["total"].(float64)
+		fmt.Printf("Total: %0.0f\n", total)
+		docs := r.Data["chats"].([]interface{})
+		table := make([]map[string]interface{}, 0)
+		for _, doc := range docs {
+			table = append(table, doc.(map[string]interface{}))
+		}
+		PrintTableSimpleByFormat(table, r.OutputFormat)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
+type ListSearchesResponse struct {
+	Code         int                    `json:"code"`
+	Data         map[string]interface{} `json:"data"`
+	Message      string                 `json:"message"`
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *ListSearchesResponse) Type() string {
+	return "list_searches"
+}
+
+func (r *ListSearchesResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *ListSearchesResponse) SetOutputFormat(format OutputFormat) {
+	r.OutputFormat = format
+}
+
+func (r *ListSearchesResponse) PrintOut() {
+	if r.Code == 0 {
+		total := r.Data["total"].(float64)
+		fmt.Printf("Total: %0.0f\n", total)
+		docs := r.Data["search_apps"].([]interface{})
 		table := make([]map[string]interface{}, 0)
 		for _, doc := range docs {
 			table = append(table, doc.(map[string]interface{}))
@@ -789,6 +907,142 @@ func chunkDocName(c map[string]interface{}) string {
 	return ""
 }
 
+type UserIndexResponse struct {
+	CommonDataResponse
+}
+
+func (r *UserIndexResponse) Type() string {
+	return "user_index"
+}
+
+func (r *UserIndexResponse) PrintOut() {
+	if r.Code != 0 {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+		return
+	}
+
+	summaryTable := r.orderedMetricTable()
+	indexColumns := []string{"index", "health", "status", "docs.count", "dataset.size", "store.size"}
+	indexTable := make([]map[string]interface{}, 0)
+	indicesRaw, hasIndices := r.Data["indices"]
+	if hasIndices {
+		if indices, ok := indicesRaw.([]interface{}); ok {
+			for _, idx := range indices {
+				if m, ok := idx.(map[string]interface{}); ok {
+					orderedRow := make(map[string]interface{})
+					for _, col := range indexColumns {
+						if v, exists := m[col]; exists {
+							orderedRow[col] = v
+						} else {
+							orderedRow[col] = ""
+						}
+					}
+					indexTable = append(indexTable, orderedRow)
+				}
+			}
+		}
+	}
+
+	if r.OutputFormat == OutputFormatJSON {
+		payload := make(map[string]interface{})
+		if len(summaryTable) > 0 {
+			payload["summary"] = summaryTable
+		}
+		if len(indexTable) > 0 {
+			payload["indices"] = indexTable
+		}
+		jsonData, err := json.MarshalIndent(payload, "", "  ")
+		if err != nil {
+			fmt.Printf("Error marshaling JSON: %v\n", err)
+			return
+		}
+		fmt.Println(string(jsonData))
+		return
+	}
+
+	if len(summaryTable) > 0 {
+		PrintTableSimpleByFormat(summaryTable, r.OutputFormat)
+	}
+
+	if len(indexTable) > 0 {
+		fmt.Println()
+		fmt.Println("Index Details:")
+		PrintTableSimpleByFormatWithOrder(indexTable, indexColumns, r.OutputFormat)
+	} else if hasIndices {
+		fmt.Println()
+		fmt.Println("No indices found for this user.")
+	}
+}
+
+type UserStorageResponse struct {
+	CommonDataResponse
+}
+
+func (r *UserStorageResponse) Type() string {
+	return "user_storage"
+}
+
+func (r *UserStorageResponse) PrintOut() {
+	if r.Code != 0 {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+		return
+	}
+
+	summaryTable := r.orderedMetricTable()
+	fileColumns := []string{"name", "size"}
+	fileTable := make([]map[string]interface{}, 0)
+	filesRaw, hasFiles := r.Data["files"]
+	if hasFiles {
+		if files, ok := filesRaw.([]interface{}); ok {
+			for _, f := range files {
+				if m, ok := f.(map[string]interface{}); ok {
+					orderedRow := make(map[string]interface{})
+					for _, col := range fileColumns {
+						if v, exists := m[col]; exists {
+							orderedRow[col] = v
+						} else {
+							orderedRow[col] = ""
+						}
+					}
+					fileTable = append(fileTable, orderedRow)
+				}
+			}
+		}
+	}
+
+	if r.OutputFormat == OutputFormatJSON {
+		payload := make(map[string]interface{})
+		if len(summaryTable) > 0 {
+			payload["summary"] = summaryTable
+		}
+		if len(fileTable) > 0 {
+			payload["files"] = fileTable
+		}
+		jsonData, err := json.MarshalIndent(payload, "", "  ")
+		if err != nil {
+			fmt.Printf("Error marshaling JSON: %v\n", err)
+			return
+		}
+		fmt.Println(string(jsonData))
+		return
+	}
+
+	if len(summaryTable) > 0 {
+		PrintTableSimpleByFormat(summaryTable, r.OutputFormat)
+	}
+
+	if len(fileTable) > 0 {
+		fmt.Println()
+		fmt.Println("Files（Top 10）:")
+		PrintTableSimpleByFormatWithOrder(fileTable, fileColumns, r.OutputFormat)
+	} else if hasFiles {
+		fmt.Println()
+		fmt.Println("No files found for this user.")
+	}
+}
+
 func truncateStr(s string, maxLen int) string {
 	s = strings.TrimSpace(s)
 	runes := []rune(s)
@@ -796,4 +1050,76 @@ func truncateStr(s string, maxLen int) string {
 		return s
 	}
 	return string(runes[:maxLen]) + "..."
+}
+
+type UserQuotaResponse struct {
+	CommonDataResponse
+}
+
+func (r *UserQuotaResponse) Type() string {
+	return "user_quota"
+}
+
+func (r *UserQuotaResponse) PrintOut() {
+	if r.Code != 0 {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+		return
+	}
+
+	summaryTable := make([]map[string]interface{}, 0)
+	if rowsRaw, ok := r.Data["rows"]; ok {
+		if rows, ok := rowsRaw.([]interface{}); ok {
+			for _, row := range rows {
+				if m, ok := row.(map[string]interface{}); ok {
+					summaryTable = append(summaryTable, m)
+				}
+			}
+		}
+	}
+	if len(summaryTable) > 0 {
+		PrintTableSimpleByFormatWithOrder(summaryTable, []string{"Metric", "Used", "Limit"}, r.OutputFormat)
+	}
+}
+
+type OrderedCommonResponse struct {
+	CommonResponse
+}
+
+func (r *OrderedCommonResponse) PrintOut() {
+	if r.Code == 0 {
+		if colNames, cleanData, ok := ExtractColumnsAndCleanData(r.Data); ok {
+			PrintTableSimpleByFormatWithOrder(cleanData, colNames, r.OutputFormat)
+		} else {
+			PrintTableSimpleByFormat(r.Data, r.OutputFormat)
+		}
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
+type OrderedCommonDataResponse struct {
+	CommonDataResponse
+}
+
+func (r *OrderedCommonDataResponse) PrintOut() {
+	if r.Code == 0 {
+		if table := r.orderedMetricTable(); len(table) > 0 {
+			PrintTableSimpleByFormat(table, r.OutputFormat)
+		} else {
+			table := make([]map[string]interface{}, 0)
+			for key, value := range r.Data {
+				elem := map[string]interface{}{
+					"field": key,
+					"value": value,
+				}
+				table = append(table, elem)
+			}
+			PrintTableSimpleByFormat(table, r.OutputFormat)
+		}
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
 }

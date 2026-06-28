@@ -79,6 +79,7 @@ export default {
       selected: 'Selezionato',
       seeAll: 'Vedi tutto',
       bulkOperate: 'Operazione multipla',
+      owner: 'Proprietario',
     },
     login: {
       loginTitle: 'Accedi al tuo account',
@@ -385,7 +386,6 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       metadata: {
         fields: 'campi',
         selectFiles: 'Selezionati {{count}} file',
-        type: 'Tipo',
         fieldNameInvalid:
           'Il nome del campo può contenere solo lettere o underscore.',
         builtIn: 'Integrato',
@@ -417,6 +417,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
         value: 'Valore',
         action: 'Azione',
         field: 'Campo',
+        type: 'Tipo',
         description: 'Descrizione',
         fieldName: 'Nome campo',
         editMetadata: 'Modifica metadati',
@@ -938,6 +939,8 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
       size: 'Dimensione',
       uploadedTime: 'Ora di caricamento',
       chunk: 'Chunk',
+      createChunk: 'Crea Chunk',
+      editChunk: 'Modifica Chunk',
       bulk: 'Multiplo',
       selectAll: 'Seleziona tutto',
       enabledSelected: 'Abilita selezionati',
@@ -1160,6 +1163,12 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
       tocEnhanceTip: ` Durante l'analisi del documento, sono state generate informazioni sull'indice (vedi l'opzione 'Abilita estrazione indice' nel metodo Generale). Questo permette al modello grande di restituire elementi dell'indice rilevanti per la query dell'utente, usando così questi elementi per recuperare i chunk correlati e applicare una ponderazione a questi chunk durante il processo di ordinamento. Questo approccio imita il comportamento umano di ricerca delle informazioni nei libri.`,
       batchDeleteSessions: 'Eliminazione multipla',
       deleteSelectedConfirm: 'Eliminare le {{count}} sessioni selezionate?',
+      showChunkMetadata: 'Mostra metadati del chunk',
+      showChunkMetadataTip:
+        'Mostra i metadati del documento (ad es. titolo, numero di pagina, data di caricamento) accanto ai chunk di testo recuperati',
+      metadataFields: 'Campi metadati',
+      metadataFieldsTip:
+        'Seleziona i campi di metadati da visualizzare per ogni chunk',
     },
     setting: {
       Verify: 'Verifica',
@@ -2819,6 +2828,8 @@ Le informazioni strutturate importanti possono includere: nomi, date, luoghi, ev
       success: 'Successo',
       failed: 'Fallito',
       logTitle: 'Titolo',
+      tags: 'Tag',
+      canvasCategory: 'Categoria canvas',
     },
     llmTools: {
       bad_calculator: {
@@ -2877,6 +2888,7 @@ Le informazioni strutturate importanti possono includere: nomi, date, luoghi, ev
       okText: 'Salva',
       cancelText: 'Annulla',
       chooseDataset: 'Seleziona prima un dataset',
+      selectLocalePlaceholder: 'Seleziona una lingua',
     },
     language: {
       english: 'Inglese',

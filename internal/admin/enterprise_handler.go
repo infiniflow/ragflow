@@ -410,7 +410,7 @@ func (h *Handler) ListModels(c *gin.Context) {
 	})
 }
 
-func (h *Handler) ShowModel(c *gin.Context) {
+func (h *Handler) ShowProviderModel(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -440,6 +440,198 @@ func (h *Handler) ShowModel(c *gin.Context) {
 		"message": "success",
 		"data":    model,
 	})
+}
+
+func (h *Handler) ListModelInstances(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	result, err := h.service.ListModelInstances(userID, providerName)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Model instances listed successfully")
+}
+
+func (h *Handler) ShowProviderInstance(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+	userID := c.GetString("user_id")
+
+	result, err := h.service.ShowProviderInstance(userID, providerName, instanceName)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Model instance shown successfully")
+}
+
+func (h *Handler) ShowProviderInstanceBalance(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+	userID := c.GetString("user_id")
+
+	result, err := h.service.ShowProviderInstanceBalance(userID, providerName, instanceName)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Model instance balance shown successfully")
+}
+
+func (h *Handler) CheckInstanceConnection(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+	userID := c.GetString("user_id")
+
+	result, err := h.service.CheckInstanceConnection(userID, providerName, instanceName)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Model instance connection checked successfully")
+}
+
+type CheckConnectionRequest struct {
+	APIKey  string `json:"api_key"`
+	Region  string `json:"region"`
+	BaseURL string `json:"base_url"`
+}
+
+func (h *Handler) CheckProviderConnection(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	var req CheckConnectionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	result, err := h.service.CheckProviderConnection(userID, providerName, req.Region, req.APIKey, req.BaseURL)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Model instance connection checked successfully")
+}
+
+type AlterProviderInstanceRequest struct {
+	ModelName string `json:"model_name"`
+	APIKey    string `json:"api_key"`
+}
+
+func (h *Handler) AlterProviderInstance(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+
+	var req AlterProviderInstanceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+	if userID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeUnauthorized,
+			"message": "Unauthorized",
+		})
+		return
+	}
+
+	result, err := h.service.AlterProviderInstance(userID, providerName, instanceName, req.ModelName, req.APIKey)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Model instance altered successfully")
 }
 
 type AddModelInstanceRequest struct {
@@ -509,6 +701,92 @@ func (h *Handler) DeleteModelInstance(c *gin.Context) {
 	}
 
 	success(c, result, "Model provider added successfully")
+}
+
+func (h *Handler) ListInstanceModels(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	result, err := h.service.ListInstanceModels(userID, providerName, instanceName)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Models listed successfully")
+}
+
+type EnableOrDisableModelRequest struct {
+	ModelID string `json:"model_id"`
+	Status  string `json:"status"`
+}
+
+func (h *Handler) EnableOrDisableModel(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+
+	var req EnableOrDisableModelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		println("JSON bind error: %v (type: %T)", err, err)
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	modelID := strings.TrimSpace(req.ModelID)
+	modelName := strings.TrimPrefix(c.Param("model_name"), "/")
+	modelName = strings.TrimSpace(modelName)
+	if modelName == "" && modelID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": "model_name or model_id is required",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	result, err := h.service.EnableOrDisableModel(userID, providerName, instanceName, modelName, modelID, req.Status)
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+		return
+	}
+
+	success(c, result, "Models listed successfully")
 }
 
 type AddModelsRequest struct {
@@ -596,41 +874,6 @@ func (h *Handler) DeleteModels(c *gin.Context) {
 	}
 
 	success(c, result, "Model deleted successfully")
-}
-
-type ListModelsOrShowModelRequest struct {
-	ModelName string `json:"model_name"`
-}
-
-func (h *Handler) ListModelsOrShowModel(c *gin.Context) {
-	var req ListModelsOrShowModelRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Invalid request body",
-		})
-		return
-	}
-
-	if req.ModelName == "" {
-		// List models
-		models, err := h.service.ListAllModels()
-		if err != nil {
-			errorResponse(c, err.Error(), 500)
-			return
-		}
-
-		success(c, models, "")
-	} else {
-		// Get model
-		model, err := h.service.GetModelByModelName(req.ModelName)
-		if err != nil {
-			errorResponse(c, err.Error(), 500)
-			return
-		}
-
-		success(c, model, "")
-	}
 }
 
 // GetSystemFingerprint handle get system fingerprint
@@ -757,7 +1000,7 @@ func (h *Handler) ShowUserDatasetSummary(c *gin.Context) {
 	}
 
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -783,7 +1026,7 @@ func (h *Handler) ShowUserDatasetSummary(c *gin.Context) {
 // ShowUserSummary handle show user summary
 func (h *Handler) ShowUserSummary(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -809,7 +1052,7 @@ func (h *Handler) ShowUserSummary(c *gin.Context) {
 // ShowUserStorage handle show user storage
 func (h *Handler) ShowUserStorage(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -835,7 +1078,7 @@ func (h *Handler) ShowUserStorage(c *gin.Context) {
 // ShowUserQuota handle show user quota
 func (h *Handler) ShowUserQuota(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -861,7 +1104,7 @@ func (h *Handler) ShowUserQuota(c *gin.Context) {
 // ShowUserIndex handle show user index
 func (h *Handler) ShowUserIndex(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -892,7 +1135,7 @@ type UpdateUserRoleHTTPRequest struct {
 // UpdateUserRole handle update user role
 func (h *Handler) UpdateUserRole(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -920,7 +1163,7 @@ func (h *Handler) UpdateUserRole(c *gin.Context) {
 // ShowUserPermission handle show user permission
 func (h *Handler) ShowUserPermission(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -942,7 +1185,7 @@ func (h *Handler) ShowUserPermission(c *gin.Context) {
 // ListUserDatasets handle show user datasets
 func (h *Handler) ListUserDatasets(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -964,7 +1207,7 @@ func (h *Handler) ListUserDatasets(c *gin.Context) {
 // ListUserAgents handle show user agents
 func (h *Handler) ListUserAgents(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -986,7 +1229,7 @@ func (h *Handler) ListUserAgents(c *gin.Context) {
 // ListUserChats handle show user chats
 func (h *Handler) ListUserChats(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1008,7 +1251,7 @@ func (h *Handler) ListUserChats(c *gin.Context) {
 // ListUserSearches handle show user searches
 func (h *Handler) ListUserSearches(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1030,7 +1273,7 @@ func (h *Handler) ListUserSearches(c *gin.Context) {
 // ListUserModels handle show user models
 func (h *Handler) ListUserModels(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1052,7 +1295,7 @@ func (h *Handler) ListUserModels(c *gin.Context) {
 // ListUserFiles handle show user files
 func (h *Handler) ListUserFiles(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1074,7 +1317,7 @@ func (h *Handler) ListUserFiles(c *gin.Context) {
 // ListUserProviders handle show user providers
 func (h *Handler) ListUserProviders(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1096,7 +1339,7 @@ func (h *Handler) ListUserProviders(c *gin.Context) {
 // ListUserProviderInstances handle show user provider instances
 func (h *Handler) ListUserProviderInstances(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	userName, err := common.DecodeEmail(encodedUsername)
+	userName, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1124,7 +1367,7 @@ func (h *Handler) ListUserProviderInstances(c *gin.Context) {
 // ListUserProviderInstanceModels handle show user provider instance models
 func (h *Handler) ListUserProviderInstanceModels(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	userName, err := common.DecodeEmail(encodedUsername)
+	userName, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1158,7 +1401,7 @@ func (h *Handler) ListUserProviderInstanceModels(c *gin.Context) {
 // ListUserDefaultModels handle show user default models
 func (h *Handler) ListUserDefaultModels(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	userName, err := common.DecodeEmail(encodedUsername)
+	userName, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1597,7 +1840,7 @@ func (h *Handler) PurgeUserData(c *gin.Context) {
 		return
 	}
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1655,7 +1898,7 @@ func (h *Handler) PurgeUsersData(c *gin.Context) {
 // GenerateUserAPIKey handle create tenant API key
 func (h *Handler) GenerateUserAPIKey(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1673,7 +1916,7 @@ func (h *Handler) GenerateUserAPIKey(c *gin.Context) {
 // DeleteUserAPIKey handle delete user API key
 func (h *Handler) DeleteUserAPIKey(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
@@ -1696,7 +1939,7 @@ func (h *Handler) DeleteUserAPIKey(c *gin.Context) {
 // ListUserAPIKeys handle list user API keys
 func (h *Handler) ListUserAPIKeys(c *gin.Context) {
 	encodedUsername := c.Param("username")
-	username, err := common.DecodeEmail(encodedUsername)
+	username, err := common.DecodeFromBase64(encodedUsername)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return

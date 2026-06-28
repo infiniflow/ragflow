@@ -124,6 +124,10 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 		return p.parseAdminAddCommand()
 	case TokenDelete:
 		return p.parseAdminDeleteCommands()
+	case TokenEnable:
+		return p.parseAdminEnableCommand()
+	case TokenDisable:
+		return p.parseAdminDisableCommand()
 	case TokenSave:
 		return p.parseAdminSaveCommand()
 	case TokenUse:
@@ -139,19 +143,19 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 
 	switch p.curToken.Type {
 	case TokenLogin:
-		return p.parseLoginUser()
+		return p.parseAPILoginUser()
 	case TokenLogout:
-		return p.parseLogout()
+		return p.parseAPILogout()
 	case TokenPing:
-		return p.parsePingServer()
+		return p.parseAPIPingServer()
 	case TokenList:
-		return p.parseListCommand()
+		return p.parseAPIListCommands()
 	case TokenShow:
-		return p.parseShowCommand()
+		return p.parseAPIShowCommands()
 	case TokenCreate:
-		return p.parseCreateCommand()
+		return p.parseAPICreateCommands()
 	case TokenDrop:
-		return p.parseDropCommand()
+		return p.parseAPIDropCommands()
 	case TokenAdd:
 		return p.parseAddCommand()
 	case TokenDelete:
@@ -159,13 +163,9 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 	case TokenAlter:
 		return p.parseAlterCommand()
 	case TokenSet:
-		return p.parseSetCommand()
-	case TokenUnset:
-		return p.parseUnsetCommand()
+		return p.parseAPISetCommands()
 	case TokenReset:
-		return p.parseResetCommand()
-	case TokenGenerate:
-		return p.parseGenerateCommand()
+		return p.parseAPIResetCommands()
 	case TokenImport:
 		return p.parseImportCommand()
 	case TokenInsert:
@@ -177,7 +177,7 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 	case TokenBenchmark:
 		return p.parseBenchmarkCommand()
 	case TokenRegister:
-		return p.parseRegisterCommand()
+		return p.parseAPIRegisterCommand()
 	case TokenEnable:
 		return p.parseEnableCommand()
 	case TokenDisable:
@@ -206,11 +206,10 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseUserStartIngestion()
 	case TokenStop:
 		return p.parseUserStopIngestion()
-
 	case TokenSave:
-		return p.parseUserSaveCommand()
+		return p.parseAPISaveCommand()
 	case TokenUse:
-		return p.parseUseCommand()
+		return p.parseAPIUseCommands()
 	case TokenUpdate:
 		return p.parseUpdateCommand()
 	case TokenRemove:

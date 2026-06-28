@@ -52,13 +52,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 )
 
 // RunEvent is the unit the Runner pushes onto its output channel.
@@ -219,7 +221,8 @@ func (r *Runner) getInterruptID(canvasID, sessionID string) string {
 func (r *Runner) Run(
 	ctx context.Context,
 	run RunFunc,
-	canvasID, sessionID, userInput string,
+	canvasID, sessionID string,
+	userInput any,
 	root map[string]any,
 ) <-chan RunEvent {
 	out := make(chan RunEvent, 8)
@@ -280,7 +283,10 @@ func (r *Runner) Run(
 		// surfaces a clear root cause in the server log.
 		defer func() {
 			if rec := recover(); rec != nil {
-				log.Printf("canvas runner PANIC canvas=%q session=%q: %v\n%s", canvasID, sessionID, rec, debug.Stack())
+				common.Error("canvas runner PANIC", fmt.Errorf("%v", rec),
+					zap.String("canvas", canvasID),
+					zap.String("session", sessionID),
+					zap.String("stack", string(debug.Stack())))
 			}
 		}()
 
@@ -290,7 +296,7 @@ func (r *Runner) Run(
 		// invoking the workflow. The sentinel keys are deleted from
 		// root inside the RunFunc — see service/agent.go's
 		// buildRunFunc.
-		if userInput != "" {
+		if userInput != nil {
 			if id := r.getInterruptID(canvasID, sessionID); id != "" {
 				root["__resume_interrupt_id__"] = id
 				root["__resume_data__"] = userInput
@@ -309,7 +315,13 @@ func (r *Runner) Run(
 				// the prompt to the visible waiting node.
 				displayID := FirstInterruptID(ctxs)
 				resumeID := RootInterruptID(ctxs)
-				log.Printf("canvas runner interrupt canvas=%q session=%q task=%q contexts=%s display=%q resume=%q", canvasID, sessionID, taskID, formatInterruptContexts(ctxs), displayID, resumeID)
+				common.Info("canvas runner interrupt",
+					zap.String("canvas", canvasID),
+					zap.String("session", sessionID),
+					zap.String("task", taskID),
+					zap.String("contexts", formatInterruptContexts(ctxs)),
+					zap.String("display", displayID),
+					zap.String("resume", resumeID))
 				r.saveInterruptID(canvasID, sessionID, resumeID)
 				waiting := WaitingForUserEvent{CpnID: displayID}
 				if ctx := FirstUserFillUpInterrupt(ctxs); ctx != nil {
@@ -409,7 +421,8 @@ func safeInvoke(ctx context.Context, cancel chan struct{}, run RunFunc, root map
 		// runner emit a terminal `done` event.
 		defer func() {
 			if rec := recover(); rec != nil {
-				log.Printf("canvas runner PANIC: %v\n%s", rec, debug.Stack())
+				common.Error("canvas runner PANIC", fmt.Errorf("%v", rec),
+					zap.String("stack", string(debug.Stack())))
 				err = fmt.Errorf("canvas runner panic: %v", rec)
 			}
 			close(done)

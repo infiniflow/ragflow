@@ -30,22 +30,22 @@ const (
 
 // Task represents a unit of work managed by plantask.
 type Task struct {
-	ID          string         `json:"id"`
-	Title       string         `json:"title"`
-	Description string         `json:"description"`
-	State       TaskState       `json:"state"`
-	Result      string         `json:"result,omitempty"`
-	Error       string         `json:"error,omitempty"`
-	ParentID    string         `json:"parent_id,omitempty"`
-	Dependencies []string      `json:"dependencies,omitempty"`
-	Metadata    map[string]any `json:"metadata,omitempty"`
+	ID           string         `json:"id"`
+	Title        string         `json:"title"`
+	Description  string         `json:"description"`
+	State        TaskState      `json:"state"`
+	Result       string         `json:"result,omitempty"`
+	Error        string         `json:"error,omitempty"`
+	ParentID     string         `json:"parent_id,omitempty"`
+	Dependencies []string       `json:"dependencies,omitempty"`
+	Metadata     map[string]any `json:"metadata,omitempty"`
 }
 
 // Manager manages tasks for an agent run session.
 type Manager struct {
-	mu      sync.RWMutex
-	tasks   map[string]*taskInternal
-	nextID  int64
+	mu     sync.RWMutex
+	tasks  map[string]*taskInternal
+	nextID int64
 }
 
 type taskInternal struct {
@@ -64,7 +64,9 @@ func NewManager() *Manager {
 // as a subtask of the parent within the same lock (TOCTOU-safe).
 func (m *Manager) Create(ctx context.Context, title, desc string, opts ...CreateOption) (*Task, error) {
 	cfg := &createConfig{State: TaskPending}
-	for _, o := range opts { o(cfg) }
+	for _, o := range opts {
+		o(cfg)
+	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -95,7 +97,9 @@ func (m *Manager) Get(id string) (*Task, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	t, ok := m.tasks[id]
-	if !ok { return nil, fmt.Errorf("task '%s' not found", id) }
+	if !ok {
+		return nil, fmt.Errorf("task '%s' not found", id)
+	}
 	return t.Task, nil
 }
 
@@ -115,9 +119,15 @@ func (m *Manager) List() ([]*Task, error) {
 // ListByState returns tasks filtered by state.
 func (m *Manager) ListByState(state TaskState) ([]*Task, error) {
 	all, err := m.List()
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	var result []*Task
-	for _, t := range all { if t.State == state { result = append(result, t) } }
+	for _, t := range all {
+		if t.State == state {
+			result = append(result, t)
+		}
+	}
 	return result, nil
 }
 
@@ -126,8 +136,12 @@ func (m *Manager) Update(id string, opts ...UpdateOption) (*Task, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	t, ok := m.tasks[id]
-	if !ok { return nil, fmt.Errorf("task '%s' not found", id) }
-	for _, o := range opts { o(t.Task) }
+	if !ok {
+		return nil, fmt.Errorf("task '%s' not found", id)
+	}
+	for _, o := range opts {
+		o(t.Task)
+	}
 	return t.Task, nil
 }
 
@@ -136,7 +150,9 @@ func (m *Manager) SetState(id string, state TaskState) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	t, ok := m.tasks[id]
-	if !ok { return fmt.Errorf("task '%s' not found", id) }
+	if !ok {
+		return fmt.Errorf("task '%s' not found", id)
+	}
 	t.State = state
 	return nil
 }
@@ -157,7 +173,9 @@ func (m *Manager) SetError(id, errMsg string) error {
 func (m *Manager) Delete(id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, ok := m.tasks[id]; !ok { return fmt.Errorf("task '%s' not found", id) }
+	if _, ok := m.tasks[id]; !ok {
+		return fmt.Errorf("task '%s' not found", id)
+	}
 	delete(m.tasks, id)
 	return nil
 }
@@ -173,9 +191,13 @@ func (m *Manager) GetSubtasks(parentID string) ([]*Task, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	pt, ok := m.tasks[parentID]
-	if !ok { return nil, fmt.Errorf("task '%s' not found", parentID) }
+	if !ok {
+		return nil, fmt.Errorf("task '%s' not found", parentID)
+	}
 	var subs []*Task
-	for _, st := range pt.subtasks { subs = append(subs, st.Task) }
+	for _, st := range pt.subtasks {
+		subs = append(subs, st.Task)
+	}
 	return subs, nil
 }
 
@@ -212,11 +234,11 @@ func WithTaskMetadata(md map[string]any) CreateOption {
 
 type UpdateOption func(*Task)
 
-func WithTitle(t string) UpdateOption           { return func(task *Task) { task.Title = t } }
-func WithDescription(d string) UpdateOption     { return func(task *Task) { task.Description = d } }
-func WithState(s TaskState) UpdateOption         { return func(task *Task) { task.State = s } }
-func WithResult(r string) UpdateOption           { return func(task *Task) { task.Result = r } }
-func WithError(e string) UpdateOption            { return func(task *Task) { task.Error = e } }
+func WithTitle(t string) UpdateOption             { return func(task *Task) { task.Title = t } }
+func WithDescription(d string) UpdateOption       { return func(task *Task) { task.Description = d } }
+func WithState(s TaskState) UpdateOption          { return func(task *Task) { task.State = s } }
+func WithResult(r string) UpdateOption            { return func(task *Task) { task.Result = r } }
+func WithError(e string) UpdateOption             { return func(task *Task) { task.Error = e } }
 func WithMetadata(md map[string]any) UpdateOption { return func(task *Task) { task.Metadata = md } }
 
 // ---- Tools ----
@@ -225,8 +247,12 @@ func WithMetadata(md map[string]any) UpdateOption { return func(task *Task) { ta
 // Returns nil if not found or if called outside agent execution.
 func GetManagerFromContext(ctx context.Context) *Manager {
 	val, ok, _ := core.GetRunLocalValue(ctx, plantaskSessionKey)
-	if !ok { return nil }
-	if m, ok := val.(*Manager); ok { return m }
+	if !ok {
+		return nil
+	}
+	if m, ok := val.(*Manager); ok {
+		return m
+	}
 	return nil
 }
 
@@ -236,7 +262,9 @@ const plantaskSessionKey = "_plantask_manager"
 // Call this in BeforeAgent middleware before tools that need task management are used.
 func InitManager(ctx context.Context) (*Manager, error) {
 	m := NewManager()
-	if err := core.SetRunLocalValue(ctx, plantaskSessionKey, m); err != nil { return nil, err }
+	if err := core.SetRunLocalValue(ctx, plantaskSessionKey, m); err != nil {
+		return nil, err
+	}
 	return m, nil
 }
 
@@ -247,17 +275,25 @@ func ToolCreateTask() core.Tool {
 		"Create a new task. Args JSON: {\"title\":\"...\",\"description\":\"...\",\"parent_id?\":\"...\"}",
 		func(ctx context.Context, args string) (string, error) {
 			m := GetManagerFromContext(ctx)
-			if m == nil { return "", fmt.Errorf("plantask manager not initialized") }
+			if m == nil {
+				return "", fmt.Errorf("plantask manager not initialized")
+			}
 			var in struct {
 				Title       string `json:"title"`
 				Description string `json:"description"`
 				ParentID    string `json:"parent_id,omitempty"`
 			}
-			if err := json.Unmarshal([]byte(args), &in); err != nil { return "", err }
+			if err := json.Unmarshal([]byte(args), &in); err != nil {
+				return "", err
+			}
 			opts := []CreateOption{}
-			if in.ParentID != "" { opts = append(opts, WithParentID(in.ParentID)) }
+			if in.ParentID != "" {
+				opts = append(opts, WithParentID(in.ParentID))
+			}
 			t, err := m.Create(ctx, in.Title, in.Description, opts...)
-			if err != nil { return "", err }
+			if err != nil {
+				return "", err
+			}
 			b, _ := json.Marshal(t)
 			return string(b), nil
 		},
@@ -271,8 +307,12 @@ func ToolListTasks() core.Tool {
 		"List all tasks. Optionally filter by state. Args JSON: {\"state?\":\"pending|running|completed|failed\"}",
 		func(ctx context.Context, args string) (string, error) {
 			m := GetManagerFromContext(ctx)
-			if m == nil { return "", fmt.Errorf("plantask manager not initialized") }
-			var in struct { State *string `json:"state,omitempty"` }
+			if m == nil {
+				return "", fmt.Errorf("plantask manager not initialized")
+			}
+			var in struct {
+				State *string `json:"state,omitempty"`
+			}
 			json.Unmarshal([]byte(args), &in) // ignore error - optional field
 			var tasks []*Task
 			var err error
@@ -281,7 +321,9 @@ func ToolListTasks() core.Tool {
 			} else {
 				tasks, err = m.List()
 			}
-			if err != nil { return "", err }
+			if err != nil {
+				return "", err
+			}
 			b, _ := json.Marshal(tasks)
 			return string(b), nil
 		},
@@ -295,11 +337,19 @@ func ToolGetTask() core.Tool {
 		"Get task details by ID. Args JSON: {\"id\":\"task_1\"}",
 		func(ctx context.Context, args string) (string, error) {
 			m := GetManagerFromContext(ctx)
-			if m == nil { return "", fmt.Errorf("plantask manager not initialized") }
-			var in struct{ ID string `json:"id"` }
-			if err := json.Unmarshal([]byte(args), &in); err != nil { return "", err }
+			if m == nil {
+				return "", fmt.Errorf("plantask manager not initialized")
+			}
+			var in struct {
+				ID string `json:"id"`
+			}
+			if err := json.Unmarshal([]byte(args), &in); err != nil {
+				return "", err
+			}
 			t, err := m.Get(in.ID)
-			if err != nil { return "", err }
+			if err != nil {
+				return "", err
+			}
 			b, _ := json.Marshal(t)
 			return string(b), nil
 		},
@@ -313,7 +363,9 @@ func ToolUpdateTask() core.Tool {
 		"Update a task. Args JSON: {\"id\":\"...\",\"state?\":\"completed\",\"result?\":\"...\"}",
 		func(ctx context.Context, args string) (string, error) {
 			m := GetManagerFromContext(ctx)
-			if m == nil { return "", fmt.Errorf("plantask manager not initialized") }
+			if m == nil {
+				return "", fmt.Errorf("plantask manager not initialized")
+			}
 			var in struct {
 				ID     string `json:"id"`
 				State  string `json:"state,omitempty"`
@@ -321,14 +373,26 @@ func ToolUpdateTask() core.Tool {
 				Error  string `json:"error,omitempty"`
 				Title  string `json:"title,omitempty"`
 			}
-			if err := json.Unmarshal([]byte(args), &in); err != nil { return "", err }
+			if err := json.Unmarshal([]byte(args), &in); err != nil {
+				return "", err
+			}
 			var opts []UpdateOption
-			if in.State != "" { opts = append(opts, WithState(TaskState(in.State))) }
-			if in.Result != "" { opts = append(opts, WithResult(in.Result)) }
-			if in.Error != "" { opts = append(opts, WithError(in.Error)) }
-			if in.Title != "" { opts = append(opts, WithTitle(in.Title)) }
+			if in.State != "" {
+				opts = append(opts, WithState(TaskState(in.State)))
+			}
+			if in.Result != "" {
+				opts = append(opts, WithResult(in.Result))
+			}
+			if in.Error != "" {
+				opts = append(opts, WithError(in.Error))
+			}
+			if in.Title != "" {
+				opts = append(opts, WithTitle(in.Title))
+			}
 			t, err := m.Update(in.ID, opts...)
-			if err != nil { return "", err }
+			if err != nil {
+				return "", err
+			}
 			b, _ := json.Marshal(t)
 			return string(b), nil
 		},
@@ -342,10 +406,18 @@ func ToolDeleteTask() core.Tool {
 		"Delete a task by ID. Args JSON: {\"id\":\"task_1\"}",
 		func(ctx context.Context, args string) (string, error) {
 			m := GetManagerFromContext(ctx)
-			if m == nil { return "", fmt.Errorf("plantask manager not initialized") }
-			var in struct{ ID string `json:"id"` }
-			if err := json.Unmarshal([]byte(args), &in); err != nil { return "", err }
-			if err := m.Delete(in.ID); err != nil { return "", err }
+			if m == nil {
+				return "", fmt.Errorf("plantask manager not initialized")
+			}
+			var in struct {
+				ID string `json:"id"`
+			}
+			if err := json.Unmarshal([]byte(args), &in); err != nil {
+				return "", err
+			}
+			if err := m.Delete(in.ID); err != nil {
+				return "", err
+			}
 			return fmt.Sprintf(`{"deleted":true,"id":"%s"}`, in.ID), nil
 		},
 	)

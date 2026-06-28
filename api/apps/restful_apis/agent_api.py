@@ -173,7 +173,17 @@ def _normalize_agent_session(conv):
         messages = [message for i, message in enumerate(conv["message"]) if i != 0 and message["role"] != "user"]
         for message, reference in zip(messages, conv["reference"]):
             chunks = reference.get("chunks", [])
-            message["reference"] = [_normalize_agent_reference_chunk(chunk) for chunk in chunks]
+            if isinstance(chunks, dict):
+                refs = []
+                for citation_id, chunk in chunks.items():
+                    ref = _normalize_agent_reference_chunk(chunk)
+                    ref["citation_id"] = str(citation_id)
+                    refs.append(ref)
+                message["reference"] = refs
+            elif isinstance(chunks, list):
+                message["reference"] = [_normalize_agent_reference_chunk(chunk) for chunk in chunks]
+            else:
+                message["reference"] = []
     del conv["reference"]
     return conv
 
@@ -1197,7 +1207,10 @@ async def test_db_connection():
         return server_error_response(exc)
 
 
-@manager.route("/agents/chat/completion", methods=["POST"])  # noqa: F821
+# NOTE: The singular form `/agents/chat/completion` was a historical typo
+# in earlier releases — no client, SDK, or doc ever used it, and the
+# plural form below is the canonical route. The singular is intentionally
+# NOT registered; clients sending it receive 404.
 @manager.route("/agents/chat/completions", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs

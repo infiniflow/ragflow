@@ -90,7 +90,7 @@ func main() {
 	}
 
 	// Initialize logger with default level
-	if err := common.Init("info", "ingestion_server.log"); err != nil {
+	if err := common.Init("info", common.FileOutput{Path: "ingestion_server.log"}); err != nil {
 		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
 	}
 
@@ -123,7 +123,17 @@ func main() {
 		level = "debug"
 	}
 
-	if err := common.Init(level, "ingestion_server.log"); err != nil {
+	fileOut := common.FileOutput{
+		Path:       "ingestion_server.log",
+		MaxSize:    config.Log.MaxSize,
+		MaxBackups: config.Log.MaxBackups,
+		MaxAge:     config.Log.MaxAge,
+		Compress:   common.ResolveCompress(config.Log.Compress),
+	}
+	if config.Log.Path != "" {
+		fileOut.Path = config.Log.Path
+	}
+	if err := common.Init(level, fileOut); err != nil {
 		common.Error("Failed to reinitialize logger", err)
 	}
 	server.SetLogger(common.Logger)

@@ -21,13 +21,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/cloudwego/eino/compose"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/canvas"
@@ -47,6 +47,51 @@ import (
 // joinable across Python and Go writers.
 func genID32() string {
 	return strings.ReplaceAll(uuid.New().String(), "-", "")[:32]
+}
+
+// webhookPayloadKey is the unexported context key RunAgent reads to
+// inject root["webhook_payload"]. Only the AgentService.RunAgentWithWebhook
+// public wrapper sets it; the chat / agent-run paths leave it absent so
+// existing callers see no behaviour change.
+//
+// We deliberately do NOT surface the payload as a new RunAgent parameter
+// — keeping the public signature stable means existing tests
+// (agent_run_e2e_test.go, agent_wait_for_user_test.go) keep compiling.
+type webhookPayloadKey struct{}
+
+// LoadCanvasByID is the read-side counterpart of loadCanvasForUser that
+// the webhook handler uses. It deliberately returns the raw DAO/service
+// error (no error-code mapping) because the webhook envelope is 102
+// "Canvas not found." while the chat/run envelope is 103 "Make sure you
+// have permission..." — the choice must stay at the HTTP layer where
+// each handler knows its own spec.
+//
+// Mirrors python: api/apps/restful_apis/agent_api.py:1570
+// (`UserCanvasService.get_by_id(agent_id)`), with the same IDOR guard
+// the chat handler uses.
+func (s *AgentService) LoadCanvasByID(
+	ctx context.Context, userID, canvasID string,
+) (*entity.UserCanvas, error) {
+	return s.loadCanvasForUser(ctx, userID, canvasID)
+}
+
+// RunAgentWithWebhook is a thin wrapper over RunAgent that attaches the
+// webhook payload to the runner root so the Begin component can surface
+// it as state.Sys["webhook_payload"] for downstream components.
+//
+// The payload is intentionally passed via context value (rather than a new
+// RunAgent parameter) to keep the public RunAgent signature stable for
+// the existing chat tests.
+//
+// Mirrors python: api/apps/restful_apis/agent_api.py:2125
+// (`canvas.run(..., webhook_payload=clean_request)`).
+func (s *AgentService) RunAgentWithWebhook(
+	ctx context.Context, userID, canvasID string, payload map[string]any,
+) (<-chan canvas.RunEvent, error) {
+	if payload != nil {
+		ctx = context.WithValue(ctx, webhookPayloadKey{}, payload)
+	}
+	return s.RunAgent(ctx, userID, canvasID, "", "", "")
 }
 
 // ErrAgentNotOwner is returned by DeleteAgent when the canvas exists and
@@ -560,7 +605,7 @@ func (s *AgentService) DeleteVersion(ctx context.Context, userID, canvasID, vers
 // The per-run RunFunc is built by buildRunFunc — see its doc comment
 // for the full production chain (real Compile/Invoke, resume path,
 // error-layering contract).
-func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID, version, userInput string) (<-chan canvas.RunEvent, error) {
+func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any) (<-chan canvas.RunEvent, error) {
 	canvasRow, err := s.loadCanvasForUser(ctx, userID, canvasID)
 	if err != nil {
 		return nil, err
@@ -664,11 +709,19 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		"session_id": sessionID,
 		"user_id":    userID,
 	}
-	if userInput != "" {
+	if userInput != nil {
 		root["user_input"] = userInput
 	}
 	if dsl != nil {
 		root["__dsl_present__"] = true
+	}
+	// Webhook payload injection. Only RunAgentWithWebhook sets this
+	// context value; the chat / agent-run paths leave it nil so the
+	// existing surface is unchanged. The Begin component reads
+	// inputs["webhook_payload"] and writes it to state.Sys so
+	// downstream components can read sys.webhook_payload.
+	if payload, ok := ctx.Value(webhookPayloadKey{}).(map[string]any); ok && payload != nil {
+		root["webhook_payload"] = payload
 	}
 	// Phase 4.4 V2.1 (v3.6.1): populate root["tenant_id"] so the
 	// RunTracker.Start call (in buildRunFunc) records the run
@@ -680,13 +733,20 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	if tenantIDs, terr := s.userTenantDAO.GetTenantIDsByUserID(userID); terr == nil && len(tenantIDs) > 0 {
 		root["tenant_id"] = tenantIDs[0]
 	} else if terr != nil {
-		log.Printf("service: RunAgent userTenantDAO.GetTenantIDsByUserID(%q): %v (best-effort, run not blocked)", userID, terr)
+		common.Warn("service: RunAgent userTenantDAO.GetTenantIDsByUserID (best-effort, run not blocked)",
+			zap.String("user_id", userID),
+			zap.Error(terr))
 	}
 	// v3.6.1 diagnostic: log what RunAgent put into root so we can
 	// confirm tenant_id / user_id / session_id / user_input all
 	// reached the buildRunFunc closure (which runs in the runner's
 	// goroutine, possibly after a context switch).
-	log.Printf("DEBUG RunAgent root canvasID=%q userID=%q sessionID=%q tenantID=%v userInput_len=%d", canvasID, userID, sessionID, root["tenant_id"], func() int { s, _ := root["user_input"].(string); return len(s) }())
+	common.Debug("RunAgent root",
+		zap.String("canvasID", canvasID),
+		zap.String("userID", userID),
+		zap.String("sessionID", sessionID),
+		zap.Any("tenantID", root["tenant_id"]),
+		zap.Any("userInput", root["user_input"]))
 
 	return s.runner.Run(ctx, run, canvasID, sessionID, userInput, root), nil
 }
@@ -748,9 +808,10 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 
 		startedAt := float64(time.Now().UnixNano()) / 1e9
 
-		userInput := ""
-		if v, ok := root["user_input"].(string); ok {
-			userInput = v
+		userInput := root["user_input"]
+		userInputText := ""
+		if v, ok := userInput.(string); ok {
+			userInputText = v
 		}
 
 		resumeID, isResume := root["__resume_interrupt_id__"].(string)
@@ -817,6 +878,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			}
 		}
 		state.Sys["query"] = userInput
+		if uid, ok := root["user_id"].(string); ok && uid != "" {
+			state.Sys["user_id"] = uid
+		}
 		if tid, ok := root["tenant_id"].(string); ok && tid != "" {
 			state.Sys["tenant_id"] = tid
 		}
@@ -846,7 +910,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 
 		if s.runTracker != nil {
 			_ = s.runTracker.Start(ctx2, runID, canvasID,
-				tenantIDFromRoot(root), userInput)
+				tenantIDFromRoot(root), userInputText)
 		}
 
 		// Compile.
@@ -865,10 +929,13 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			cc, err = canvas.Compile(ctx2, c)
 		}
 		if err != nil {
-			log.Printf(
-				"DEBUG RunAgent compile err canvas=%q session=%q task=%q run=%q: %T: %v",
-				canvasID, sessionID, taskID, runID, err, err,
-			)
+			common.Debug("RunAgent compile err",
+				zap.String("canvas", canvasID),
+				zap.String("session", sessionID),
+				zap.String("task", taskID),
+				zap.String("run", runID),
+				zap.String("type", fmt.Sprintf("%T", err)),
+				zap.Error(err))
 			s.markRunFailed(ctx2, runID, "compile: "+err.Error())
 			return nil, fmt.Errorf("canvas compile: %w: %w", ErrAgentStorageError, err)
 		}
@@ -929,10 +996,13 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		}
 
 		if err != nil {
-			log.Printf(
-				"DEBUG RunAgent invoke err canvas=%q session=%q task=%q run=%q: %T: %v",
-				canvasID, sessionID, taskID, runID, err, err,
-			)
+			common.Debug("RunAgent invoke err",
+				zap.String("canvas", canvasID),
+				zap.String("session", sessionID),
+				zap.String("task", taskID),
+				zap.String("run", runID),
+				zap.String("type", fmt.Sprintf("%T", err)),
+				zap.Error(err))
 			if canvas.IsInterruptError(err) {
 				s.markRunFailed(ctx2, runID, "interrupt: "+err.Error())
 				if answer != "" {
@@ -962,7 +1032,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				emit("message_end", string(meData))
 
 				wfData, _ := json.Marshal(map[string]interface{}{
-					"inputs":       map[string]string{"query": userInput},
+					"inputs":       map[string]any{"query": userInput},
 					"outputs":      answer,
 					"elapsed_time": now - startedAt,
 					"created_at":   now,
@@ -990,7 +1060,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 
 		// Emit workflow_finished with the final outputs.
 		wfData, _ := json.Marshal(map[string]interface{}{
-			"inputs":       map[string]string{"query": userInput},
+			"inputs":       map[string]any{"query": userInput},
 			"outputs":      answer,
 			"elapsed_time": now - startedAt,
 			"created_at":   now,
@@ -1040,7 +1110,9 @@ func (s *AgentService) markRunSucceeded(ctx context.Context, runID string) {
 		return
 	}
 	if err := s.runTracker.MarkSucceeded(ctx, runID); err != nil {
-		log.Printf("service: RunAgent runTracker.MarkSucceeded(%q): %v (best-effort, run not blocked)", runID, err)
+		common.Warn("service: RunAgent runTracker.MarkSucceeded (best-effort, run not blocked)",
+			zap.String("run_id", runID),
+			zap.Error(err))
 	}
 }
 
@@ -1052,7 +1124,10 @@ func (s *AgentService) markRunFailed(ctx context.Context, runID, reason string) 
 		return
 	}
 	if err := s.runTracker.MarkFailed(ctx, runID, reason); err != nil {
-		log.Printf("service: RunAgent runTracker.MarkFailed(%q, %q): %v (best-effort, run not blocked)", runID, reason, err)
+		common.Warn("service: RunAgent runTracker.MarkFailed (best-effort, run not blocked)",
+			zap.String("run_id", runID),
+			zap.String("reason", reason),
+			zap.Error(err))
 	}
 }
 

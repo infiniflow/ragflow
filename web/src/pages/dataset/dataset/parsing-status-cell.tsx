@@ -14,7 +14,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { IDocumentInfo } from '@/interfaces/database/document';
-import { CircleX } from 'lucide-react';
+import { CircleQuestionMark, CircleX } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DocumentType, RunningStatus } from './constant';
@@ -153,7 +153,12 @@ export function ParsingStatusCell({
                 onClick={() => handleShowLog(record)}
               >
                 <Progress value={p} className="h-1 flex-1 min-w-10" />
-                {p}%
+                <div className="flex items-center gap-1">
+                  {p}%
+                  <sup className="inline-flex">
+                    <CircleQuestionMark className="size-[1.25em]" />
+                  </sup>
+                </div>
               </Button>
 
               <Button

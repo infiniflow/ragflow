@@ -377,15 +377,21 @@ func jsonDecodeMessage(t *testing.T, body []byte) string {
 }
 
 func nullableInt(p *int) string {
-	if p == nil { return "nil" }
+	if p == nil {
+		return "nil"
+	}
 	return fmt.Sprintf("%d", *p)
 }
 func nullableBool(p *bool) string {
-	if p == nil { return "nil" }
+	if p == nil {
+		return "nil"
+	}
 	return fmt.Sprintf("%v", *p)
 }
 func nullableFloat(p *float64) string {
-	if p == nil { return "nil" }
+	if p == nil {
+		return "nil"
+	}
 	return fmt.Sprintf("%v", *p)
 }
 func TestSearchBotsRetrieval_EmptyQuestion(t *testing.T) {
@@ -404,6 +410,7 @@ func TestSearchBotsRetrieval_EmptyQuestion(t *testing.T) {
 		t.Errorf("expected validation error mentioning Question and required, got %q", msg)
 	}
 }
+
 // fakeSearchbotLLM implements searchbotLLM for testing.
 type fakeSearchbotLLM struct {
 	response string
@@ -898,8 +905,6 @@ func TestAskHandler_WhitespaceKbIDFiltered(t *testing.T) {
 		t.Errorf("expected 400 for all-whitespace kb_ids, got %d", w.Code)
 	}
 }
-
-
 
 // ---- SSE helper direct tests ----
 

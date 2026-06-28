@@ -14,7 +14,6 @@ package component
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 
 	einotool "github.com/cloudwego/eino/components/tool"
@@ -25,7 +24,10 @@ import (
 	"ragflow/internal/agent/component/prompts"
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
+	"ragflow/internal/common"
 	"ragflow/internal/entity/models"
+
+	"go.uber.org/zap"
 )
 
 // agentLLMIDPattern matches `<model>@<provider>` and
@@ -471,10 +473,17 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	// agentRunner state right before the `msg.Content` deref so a
 	// subsequent panic shows whether the agent returned (nil, nil).
 	if msg == nil {
-		log.Printf("DEBUG agent.Invoke: msg is NIL after agentRunner — driver=%q modelID=%q userPrompt_len=%d err=%v", p.Driver, p.ModelID, len(p.UserPrompt), err)
+		common.Debug("agent.Invoke: msg is NIL after agentRunner",
+			zap.String("driver", p.Driver),
+			zap.String("modelID", p.ModelID),
+			zap.Int("userPrompt_len", len(p.UserPrompt)),
+			zap.Error(err))
 		return nil, fmt.Errorf("component: Agent.Invoke: agent runner returned nil message (driver=%q modelID=%q): %w", p.Driver, p.ModelID, err)
 	}
-	log.Printf("DEBUG agent.Invoke: msg OK driver=%q modelID=%q content_len=%d", p.Driver, p.ModelID, len(msg.Content))
+	common.Debug("agent.Invoke: msg OK",
+		zap.String("driver", p.Driver),
+		zap.String("modelID", p.ModelID),
+		zap.Int("content_len", len(msg.Content)))
 	content := msg.Content
 	var groundingStatus string
 	if p.Cite {

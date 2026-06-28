@@ -189,6 +189,10 @@ func initialUserFillUpData(ctx context.Context, inputSpec map[string]any) (any, 
 	if err != nil || raw == nil {
 		return nil, false
 	}
+	if values, ok := raw.(map[string]any); ok {
+		state.Sys["__initial_user_input_consumed__"] = true
+		return values, true
+	}
 	text, ok := raw.(string)
 	if !ok || text == "" {
 		return nil, false
