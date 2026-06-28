@@ -295,6 +295,7 @@ def test_invoke_blocks_metadata_ip(monkeypatch):
     result = invoke._invoke()
     mock_get.assert_not_called()
     assert "URL not valid" in result
+    assert invoke.output("_ERROR") == "URL not valid"
 
 
 @pytest.mark.p2
@@ -318,6 +319,7 @@ def test_invoke_blocks_loopback_proxy(monkeypatch):
     result = invoke._invoke()
     mock_get.assert_not_called()
     assert "URL not valid" in result
+    assert invoke.output("_ERROR") == "URL not valid"
 
 
 @pytest.mark.p2
@@ -328,4 +330,3 @@ def test_invoke_disables_redirect_following(monkeypatch):
     monkeypatch.setattr(module.requests, "get", mock_get)
     invoke._invoke()
     assert mock_get.call_args[1]["allow_redirects"] is False
->>>>>>> 899e752c1 (test(agent): cover Invoke proxy SSRF guard and redirect policy)
