@@ -15,6 +15,7 @@
 #
 import contextlib
 import json
+import logging
 import os
 import re
 from abc import ABC
@@ -24,6 +25,7 @@ import psycopg2
 import pyodbc
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
 from common.connection_utils import timeout
+from common.ssrf_guard import assert_host_is_safe
 
 
 class ExeSQLParam(ToolParamBase):
@@ -123,20 +125,33 @@ class ExeSQL(ToolBase, ABC):
         if self.check_if_canceled("ExeSQL processing"):
             return
 
+        # The DB host/port are node-author-controlled and are connected to
+        # server-side, so guard against SSRF (internal hosts, loopback, cloud
+        # metadata) the same way the `test_db_connection` endpoint does. Connect
+        # to the validated, resolved public IP so a later DNS change cannot
+        # rebind the host to an internal address (mirrors agent_api.py).
+        logging.info(f"ExeSQL validating database host: {self._param.host}")
+        try:
+            safe_host = assert_host_is_safe(self._param.host)
+        except ValueError as e:
+            logging.warning(f"ExeSQL rejected database host {self._param.host}: {e}")
+            raise Exception(f"Database host '{self._param.host}' is not allowed: {e}")
+        logging.info(f"ExeSQL validated database host {self._param.host} -> {safe_host}")
+
         sqls = sql.split(";")
         if self._param.db_type in ["mysql", "mariadb"]:
-            db = pymysql.connect(db=self._param.database, user=self._param.username, host=self._param.host,
+            db = pymysql.connect(db=self._param.database, user=self._param.username, host=safe_host,
                                  port=self._param.port, password=self._param.password)
         elif self._param.db_type == 'oceanbase':
-            db = pymysql.connect(db=self._param.database, user=self._param.username, host=self._param.host,
+            db = pymysql.connect(db=self._param.database, user=self._param.username, host=safe_host,
                                  port=self._param.port, password=self._param.password, charset='utf8mb4')
         elif self._param.db_type == 'postgres':
-            db = psycopg2.connect(dbname=self._param.database, user=self._param.username, host=self._param.host,
+            db = psycopg2.connect(dbname=self._param.database, user=self._param.username, host=safe_host,
                                   port=self._param.port, password=self._param.password)
         elif self._param.db_type == 'mssql':
             conn_str = (
                     r'DRIVER={ODBC Driver 17 for SQL Server};'
-                    r'SERVER=' + self._param.host + ',' + str(self._param.port) + ';'
+                    r'SERVER=' + safe_host + ',' + str(self._param.port) + ';'
                     r'DATABASE=' + self._param.database + ';'
                     r'UID=' + self._param.username + ';'
                     r'PWD=' + self._param.password
@@ -171,7 +186,7 @@ class ExeSQL(ToolBase, ABC):
 
             try:
                 db = trino.dbapi.connect(
-                    host=self._param.host,
+                    host=safe_host,
                     port=int(self._param.port or 8080),
                     user=self._param.username or "ragflow",
                     catalog=catalog,
@@ -185,7 +200,7 @@ class ExeSQL(ToolBase, ABC):
             import ibm_db
             conn_str = (
                 f"DATABASE={self._param.database};"
-                f"HOSTNAME={self._param.host};"
+                f"HOSTNAME={safe_host};"
                 f"PORT={self._param.port};"
                 f"PROTOCOL=TCPIP;"
                 f"UID={self._param.username};"

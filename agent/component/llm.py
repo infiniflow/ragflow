@@ -49,6 +49,7 @@ class LLMParam(ComponentParamBase):
         self.output_structure = None
         self.cite = True
         self.visual_files_var = None
+        self.thinking = ""
 
     def check(self):
         self.check_decimal_float(float(self.temperature), "[Agent] Temperature")
@@ -77,6 +78,8 @@ class LLMParam(ComponentParamBase):
             conf["presence_penalty"] = float(self.presence_penalty)
         if float(self.frequency_penalty) > 0 and get_attr("frequencyPenaltyEnabled"):
             conf["frequency_penalty"] = float(self.frequency_penalty)
+        if get_attr("thinking") in {"enabled", "disabled"}:
+            conf["thinking"] = get_attr("thinking")
         return conf
 
 

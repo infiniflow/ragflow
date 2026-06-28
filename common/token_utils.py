@@ -14,13 +14,27 @@
 #  limitations under the License.
 #
 
-
 import os
+import shutil
 import tiktoken
 
 from common.file_utils import get_project_base_directory
 
-tiktoken_cache_dir = get_project_base_directory()
+
+def _ensure_tiktoken_cache() -> str:
+    cache_dir = get_project_base_directory()
+    os.environ["TIKTOKEN_CACHE_DIR"] = cache_dir
+
+    bundled_encoding_path = get_project_base_directory("ragflow_deps", "cl100k_base.tiktoken")
+    cached_encoding_path = os.path.join(cache_dir, "9b5ad71b2ce5302211f9c61530b329a4922fc6a4")
+
+    if os.path.exists(bundled_encoding_path) and not os.path.exists(cached_encoding_path):
+        shutil.copyfile(bundled_encoding_path, cached_encoding_path)
+
+    return cache_dir
+
+
+tiktoken_cache_dir = _ensure_tiktoken_cache()
 os.environ["TIKTOKEN_CACHE_DIR"] = tiktoken_cache_dir
 # encoder = tiktoken.encoding_for_model("gpt-3.5-turbo")
 encoder = tiktoken.get_encoding("cl100k_base")
